@@ -407,9 +407,17 @@ class NostrService @Inject constructor(
         val answeredBy: Set<String> = emptySet(),
         /** The relays that sent [event]. */
         val from: Set<String> = emptySet(),
+        /**
+         * A copy was skipped for being dated [ListMerge.MAX_SKEW] or more ahead: a list exists somewhere, so
+         * "none" isn't known.
+         */
+        val ahead: Boolean = false,
     ) {
-        val confirmedNone: Boolean get() = event == null && asked > 0 && answered >= asked
+        val confirmedNone: Boolean get() = event == null && !ahead && asked > 0 && answered >= asked
     }
+
+    /** The relays the account's own kind 10002 names, never the app's defaults; empty with no relay list. */
+    suspend fun ownListRelays(account: String): List<String> = ownListRelaysImpl(account)
 
     /** With [dTag], an addressable event (kinds 30000-39999) at that `d` tag. */
     suspend fun lookupNewestReplaceable(kind: Int, pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000, dTag: String? = null): ReplaceableLookup = lookupNewestReplaceableImpl(kind, pubkey, alsoAsk, timeoutMs, dTag)
@@ -417,7 +425,7 @@ class NostrService @Inject constructor(
     fun publishBlockedRelayList() { publishBlockedRelayListImpl() }
 
     /** [dropMesh]: the home vault this phone listed before, when it changed. */
-    fun publishServerList(dropMesh: Collection<String> = emptyList()) { publishServerListImpl(dropMesh) }
+    fun publishServerList(dropMesh: Collection<String> = emptyList(), onRefused: (String) -> Unit = {}) { publishServerListImpl(dropMesh, onRefused) }
 
     /** Adopts media servers from the owner's published kind 10063. See [syncOwnerServerList]. */
     fun syncServerList() {

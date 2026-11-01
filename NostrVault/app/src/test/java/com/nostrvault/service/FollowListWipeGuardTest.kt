@@ -63,21 +63,41 @@ class FollowListWipeGuardTest {
 
     @Test fun oneRelaySayingNoneIsNotAnEmptyList() {
         // Some relays answered "none", others didn't: unknown, refuse to Save.
-        assertNull(ContactManager.saveBase(me, fetched = null, confirmedNone = false, freshKey = false, known = null))
+        assertNull(ContactManager.saveBase(me, fetched = null, confirmedNone = false, freshKey = false, known = null, unknownWhy = null))
         // Every relay answered none, or the key was made here: the list really is empty.
-        assertEquals(0, ContactManager.saveBase(me, null, confirmedNone = true, freshKey = false, known = null)!!.tags.size)
-        assertEquals(0, ContactManager.saveBase(me, null, confirmedNone = false, freshKey = true, known = null)!!.tags.size)
+        assertEquals(0, ContactManager.saveBase(me, null, confirmedNone = true, freshKey = false, known = null, unknownWhy = null)!!.tags.size)
+        assertEquals(0, ContactManager.saveBase(me, null, confirmedNone = false, freshKey = true, known = null, unknownWhy = null)!!.tags.size)
     }
 
     @Test fun saveEditsTheNewestCopyNotTheLaunchCopy() {
         val launch = copy(100, "b".repeat(64))
         val elsewhere = copy(200, "b".repeat(64), "c".repeat(64))
-        assertEquals(elsewhere, ContactManager.saveBase(me, elsewhere, false, false, known = launch))
+        assertEquals(elsewhere, ContactManager.saveBase(me, elsewhere, false, false, known = launch, unknownWhy = null))
         // A lagging relay never wins over a copy this device already holds.
-        assertEquals(elsewhere, ContactManager.saveBase(me, launch, false, false, known = elsewhere))
+        assertEquals(elsewhere, ContactManager.saveBase(me, launch, false, false, known = elsewhere, unknownWhy = null))
         // Another account's copy is never the base.
         val other = copy(300, "d".repeat(64), owner = "e".repeat(64))
-        assertEquals(launch, ContactManager.saveBase(me, launch, false, false, known = other))
+        assertEquals(launch, ContactManager.saveBase(me, launch, false, false, known = other, unknownWhy = null))
+    }
+
+    @Test fun noOwnRelaysMeansNoSave() {
+        // Logen 2026-11-01: with no relay list, a copy (or "none") from the app's defaults never becomes the base.
+        val found = copy(100, "b".repeat(64))
+        assertNull(ContactManager.saveBase(me, found, confirmedNone = false, freshKey = false, known = null, unknownWhy = ListMerge.NO_RELAY_LIST))
+        assertNull(ContactManager.saveBase(me, null, confirmedNone = true, freshKey = false, known = null, unknownWhy = ListMerge.NO_RELAY_LIST))
+        // A key made on this device has no lists anywhere: its first follow still goes out.
+        assertEquals(0, ContactManager.saveBase(me, null, false, freshKey = true, known = null, unknownWhy = ListMerge.NO_RELAY_LIST)!!.tags.size)
+        // The toast says why rather than "try again".
+        assertEquals("Couldn't follow. ${ListMerge.NO_RELAY_LIST}", followFailedMessage(follow = true, why = ListMerge.NO_RELAY_LIST))
+        assertEquals("Couldn't unfollow, try again", followFailedMessage(follow = false, why = ListMerge.NOT_ANSWERED))
+    }
+
+    @Test fun aCopyDatedAheadIsNeverTheBase() {
+        val now = 1_000_000L
+        val ahead = copy(now + ListMerge.MAX_SKEW, "b".repeat(64))
+        val real = copy(now - 60, "b".repeat(64), "c".repeat(64))
+        assertEquals(real, ContactManager.saveBase(me, real, false, false, known = ahead, unknownWhy = null, now = now))
+        assertEquals(real, ContactManager.saveBase(me, ahead, false, false, known = real, unknownWhy = null, now = now))
     }
 
     @Test fun anEditAppliesToWhateverTheNewestCopyHolds() {

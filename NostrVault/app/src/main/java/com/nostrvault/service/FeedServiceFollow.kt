@@ -26,7 +26,7 @@ import com.nostrvault.ui.notification.FollowKind
         shown: List<String>,
         edit: ContactManager.FollowEdit,
         rollback: List<String>? = null,
-        onFailed: (() -> Unit)? = null,
+        onFailed: ((why: String?) -> Unit)? = null,
     ) {
         // Discovery's follows-of-follows tally is an hour-long cache of the
         // old list: after an unfollow it kept everyone that follow brought
@@ -39,6 +39,7 @@ import com.nostrvault.ui.notification.FollowKind
         // Signed as the account this list belongs to: a switch while a signer
         // prompt is open must not put A's follows under B's key.
         val lock = nostrService.lockPostingAccount()
+        var refusal: String? = null
         val fail: (refusedAt: Long?) -> Unit = { refusedAt ->
             scope.launch(Dispatchers.Main.immediate) {
                 val restore = followRollback(_followedPubkeys.value, shown, rollback)
@@ -48,7 +49,7 @@ import com.nostrvault.ui.notification.FollowKind
                     recomputeFilteredNotes()
                     resubscribePrimaryToConnected()
                 }
-                onFailed?.invoke()
+                onFailed?.invoke(refusal)
             }
         }
         // Bump the local-edit guard synchronously to "now" so an immediate contact
@@ -67,13 +68,21 @@ import com.nostrvault.ui.notification.FollowKind
             // lower id, dropping the other's follows.
             val saved = try {
                 contactListPublishMutex.withLock {
-                    val lookup = runCatching { nostrService.lookupNewestReplaceable(3, owner, alsoAsk) }
+                    // Only the account's own relays (its kind 10002) say the list is known, never the app's
+                    // defaults (Logen 2026-11-01), so they are asked too.
+                    val own = if (freshKey) emptyList() else runCatching { nostrService.ownListRelays(owner) }
+                        .onFailure { if (it is CancellationException) throw it }
+                        .getOrDefault(emptyList())
+                    val lookup = runCatching { nostrService.lookupNewestReplaceable(3, owner, (own + alsoAsk).distinct()) }
                         .onFailure { if (it is CancellationException) throw it }
                         .getOrNull()
                     val fetched = lookup?.event?.let { ContactManager.ListCopy(owner, it.tags, it.content, it.createdAt) }
-                    val base = ContactManager.saveBase(owner, fetched, lookup?.confirmedNone == true, freshKey, knownContactList)
+                    val why = if (lookup == null) ListMerge.NOT_ANSWERED
+                        else ListMerge.unknownWhy(own, lookup.answeredBy, lookup.from, fetched != null || knownContactList?.owner == owner, lookup.ahead)
+                    val base = ContactManager.saveBase(owner, fetched, lookup?.confirmedNone == true, freshKey, knownContactList, why)
                     if (base == null) {
-                        Log.w(TAG, "contact list not signed: relays didn't answer (${lookup?.answered ?: 0}/${lookup?.asked ?: 0})")
+                        refusal = why
+                        Log.w(TAG, "contact list not signed: ${why ?: "relays didn't answer"} (${lookup?.answered ?: 0}/${lookup?.asked ?: 0}, ${own.size} own)")
                         return@withLock null
                     }
                     knownContactList = base
@@ -152,8 +161,12 @@ import com.nostrvault.ui.notification.FollowKind
      * The pill when a follow or unfollow didn't go out and the button snapped
      * back: says which, and that another tap may work. Never silent.
      */
-    internal fun followFailedMessage(follow: Boolean): String =
-        if (follow) "Couldn't follow, try again" else "Couldn't unfollow, try again"
+    /** With no relay list ([ListMerge.NO_RELAY_LIST]) "try again" never helps: say why instead. */
+    internal fun followFailedMessage(follow: Boolean, why: String? = null): String = when {
+        why == ListMerge.NO_RELAY_LIST -> (if (follow) "Couldn't follow. " else "Couldn't unfollow. ") + why
+        follow -> "Couldn't follow, try again"
+        else -> "Couldn't unfollow, try again"
+    }
 
     /**
      * A read-only account (no key here, no outside signer) can't sign a follow
@@ -189,8 +202,8 @@ import com.nostrvault.ui.notification.FollowKind
             onSuccess = { followResult ->
                 val previous = _followedPubkeys.value
                 _followedPubkeys.value = followResult.pubkeys
-                publishContactList(followResult.pubkeys, ContactManager.FollowEdit(add = listOf(pubkey)), rollback = previous) {
-                    notificationManager.showFollow(displayName, FollowKind.FAILED(followFailedMessage(follow = true)))
+                publishContactList(followResult.pubkeys, ContactManager.FollowEdit(add = listOf(pubkey)), rollback = previous) { why ->
+                    notificationManager.showFollow(displayName, FollowKind.FAILED(followFailedMessage(follow = true, why)))
                 }
                 // Re-filter so already-loaded notes from the newly-followed author
                 // surface immediately in the Following feed.
@@ -241,8 +254,8 @@ import com.nostrvault.ui.notification.FollowKind
             onSuccess = { followResult ->
                 val previous = _followedPubkeys.value
                 _followedPubkeys.value = followResult.pubkeys
-                publishContactList(followResult.pubkeys, ContactManager.FollowEdit(remove = listOf(pubkey)), rollback = previous) {
-                    notificationManager.showFollow(displayName, FollowKind.FAILED(followFailedMessage(follow = false)))
+                publishContactList(followResult.pubkeys, ContactManager.FollowEdit(remove = listOf(pubkey)), rollback = previous) { why ->
+                    notificationManager.showFollow(displayName, FollowKind.FAILED(followFailedMessage(follow = false, why)))
                 }
                 // Re-filter so the unfollowed author's notes disappear from the
                 // Following feed immediately (the filter excludes non-follows).

@@ -135,18 +135,23 @@ class ListMergeTest {
 
     private fun list(createdAt: Long) = NostrEvent("", "me", createdAt, 10000, amethystList, "private", "")
 
+    private val mine = listOf("wss://mine.example", "wss://two.example", "wss://three.example")
+    private fun heard(event: NostrEvent?, answered: Set<String>, from: Set<String> = emptySet(), asked: Int = 4, ahead: Boolean = false) =
+        NostrService.ReplaceableLookup(event, asked, answered.size, answered, from, ahead)
+
     @Test
     fun `edit builds on the newer of the fetched and the held list`() {
-        val fetched = NostrService.ReplaceableLookup(list(100), asked = 3, answered = 1)
-        assertEquals(ListMerge.EditBase.Found(list(200)), ListMerge.editBase(fetched, list(200)))
-        assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(fetched, null))
+        val fetched = heard(list(100), setOf("wss://mine.example"), setOf("wss://mine.example"))
+        assertEquals(ListMerge.EditBase.Found(list(200)), ListMerge.editBase(fetched, list(200), mine))
+        assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(fetched, null, mine))
     }
 
     @Test
     fun `edit is not published when the fetch fails`() {
-        assertEquals(ListMerge.EditBase.Unknown, ListMerge.editBase(NostrService.ReplaceableLookup(null, 3, 0), list(200)))
-        assertEquals(ListMerge.EditBase.Unknown, ListMerge.editBase(NostrService.ReplaceableLookup(null, 3, 2), null))
-        assertEquals(ListMerge.EditBase.None, ListMerge.editBase(NostrService.ReplaceableLookup(null, 3, 3), null))
+        assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(heard(null, emptySet()), list(200), mine))
+        assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(heard(null, setOf("wss://mine.example", "wss://two.example")), null, mine))
+        val all = mine.toSet() + "wss://purplepag.es"
+        assertEquals(ListMerge.EditBase.None, ListMerge.editBase(heard(null, all), null, mine))
     }
 
     @Test
@@ -154,13 +159,72 @@ class ListMergeTest {
         val own = listOf("wss://mine.example")
         // Only purplepag.es answered; the user's relay timed out.
         val stale = NostrService.ReplaceableLookup(list(100), 3, 1, setOf("wss://purplepag.es"), setOf("wss://purplepag.es"))
-        assertEquals(ListMerge.EditBase.Unknown, ListMerge.editBase(stale, list(50), own))
+        assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(stale, list(50), own))
         // The user's relay sent it.
         val fromMine = NostrService.ReplaceableLookup(list(100), 3, 1, setOf("wss://mine.example/"), setOf("wss://mine.example/"))
         assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(fromMine, null, own))
         // The user's relay answered with an older copy; the newer one counts.
         val newerElsewhere = NostrService.ReplaceableLookup(list(100), 3, 2, setOf("wss://mine.example", "wss://purplepag.es"), setOf("wss://purplepag.es"))
         assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(newerElsewhere, null, own))
+    }
+
+    // Logen 2026-11-01: with no kind 10002 the account has no relays of its own, and the app's defaults never stand in.
+
+    @Test
+    fun `with no relay list of its own the list is unknown, and it says why`() {
+        val defaults = setOf("wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://relay.snort.social")
+        // Every default answered "none": not "you have none".
+        assertEquals(ListMerge.EditBase.Unknown(ListMerge.NO_RELAY_LIST), ListMerge.editBase(heard(null, defaults, asked = 3), null, emptyList()))
+        // A default sent a copy: still not the base.
+        val onDefault = heard(list(100), defaults, setOf("wss://relay.damus.io"), asked = 3)
+        assertEquals(ListMerge.EditBase.Unknown(ListMerge.NO_RELAY_LIST), ListMerge.editBase(onDefault, list(50), emptyList()))
+        assertEquals(ListMerge.NO_RELAY_LIST, ListMerge.unknownWhy(emptyList(), defaults, defaults, found = true))
+    }
+
+    @Test
+    fun `a found copy needs an own relay to send it or most own relays to answer`() {
+        // One of three own relays answered (not the one that sent it): unknown.
+        val one = heard(list(100), setOf("wss://mine.example", "wss://purplepag.es"), setOf("wss://purplepag.es"))
+        assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(one, null, mine))
+        // Two of three: known.
+        val two = heard(list(100), setOf("wss://mine.example", "wss://two.example", "wss://purplepag.es"), setOf("wss://purplepag.es"))
+        assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(two, null, mine))
+        // An own relay sent it: known even if it was the only one.
+        val sent = heard(list(100), setOf("wss://three.example"), setOf("wss://three.example"))
+        assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(sent, null, mine))
+    }
+
+    @Test
+    fun `none needs every own relay to answer`() {
+        // Every relay but one own relay answered: unknown, even though the rest said "none".
+        val most = heard(null, setOf("wss://mine.example", "wss://two.example", "wss://purplepag.es"), asked = 3)
+        assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(most, null, mine))
+        assertEquals(ListMerge.EditBase.None, ListMerge.editBase(heard(null, mine.toSet(), asked = 3), null, mine))
+    }
+
+    @Test
+    fun `a copy dated far ahead is never the base, and makes none unknown`() {
+        val now = 1_000_000L
+        val ahead = NostrEvent("", "me", now + ListMerge.MAX_SKEW, 10000, amethystList, "", "")
+        val near = NostrEvent("", "me", now + ListMerge.MAX_SKEW - 1, 10000, amethystList, "", "")
+        val older = list(now - 10)
+        // A held copy dated ahead loses to the fetched one.
+        val fetched = heard(older, mine.toSet(), setOf("wss://mine.example"), asked = 3)
+        assertEquals(ListMerge.EditBase.Found(older), ListMerge.editBase(fetched, ahead, mine, now))
+        assertEquals(ListMerge.EditBase.Found(near), ListMerge.editBase(fetched, near, mine, now))
+        // The lookup skipped one dated ahead: a list exists, so "none" isn't known.
+        val skipped = heard(null, mine.toSet(), asked = 3, ahead = true)
+        assertEquals(false, skipped.confirmedNone)
+        assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(skipped, null, mine, now))
+        assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(skipped, ahead, mine, now))
+    }
+
+    @Test
+    fun `own relays are network relays from the list, each once`() {
+        assertEquals(
+            listOf("wss://a.example", "ws://b.example:7777"),
+            ownRelaysOf(listOf(" wss://a.example ", "wss://A.example/", "ws://127.0.0.1:3355", "wss://localhost", "ws://b.example:7777", "https://x", "")),
+        )
     }
 
     // Unblocking from the private part

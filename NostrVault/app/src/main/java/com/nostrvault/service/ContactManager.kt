@@ -131,14 +131,21 @@ object ContactManager {
      * The copy a Save edits (Logen 2026-10-31: never overwrite a user's
      * list). The newest of the copy fetched right before Save and the one
      * this device already holds ([known], loaded or signed here) for the same
-     * account. No copy found counts as "you have none" only when every relay
-     * asked answered ([confirmedNone]) or the key was made on this device
-     * ([freshKey]); one relay saying none is not enough. Null: refuse to Save.
+     * account, never one dated [ListMerge.MAX_SKEW] or more ahead. [unknownWhy]
+     * ([ListMerge.unknownWhy], counting only the account's own relays) non-null
+     * refuses: no relay list, or its relays didn't answer (Logen 2026-11-01). No
+     * copy found counts as "you have none" only when every relay asked answered
+     * ([confirmedNone]) too. A key made on this device ([freshKey]) has no list
+     * anywhere and skips both. Null: refuse to Save.
      */
-    fun saveBase(owner: String, fetched: ListCopy?, confirmedNone: Boolean, freshKey: Boolean, known: ListCopy?): ListCopy? {
-        if (fetched == null && !confirmedNone && !freshKey) return null
-        return listOfNotNull(fetched, known?.takeIf { it.owner == owner }).maxByOrNull { it.createdAt }
-            ?: ListCopy(owner, emptyList(), "", 0L)
+    fun saveBase(owner: String, fetched: ListCopy?, confirmedNone: Boolean, freshKey: Boolean, known: ListCopy?, unknownWhy: String?, now: Long = System.currentTimeMillis() / 1000): ListCopy? {
+        val newest = listOfNotNull(fetched, known?.takeIf { it.owner == owner })
+            .filter { ListMerge.notAhead(it.createdAt, now) }.maxByOrNull { it.createdAt }
+        if (!freshKey) {
+            if (unknownWhy != null) return null
+            if (fetched == null && !confirmedNone) return null
+        }
+        return newest ?: ListCopy(owner, emptyList(), "", 0L)
     }
 
     fun loadConfirmsList(foundList: Boolean, relaysAsked: Int, relaysAnswered: Int): Boolean =

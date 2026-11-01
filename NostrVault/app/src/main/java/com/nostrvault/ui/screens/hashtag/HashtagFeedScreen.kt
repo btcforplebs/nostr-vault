@@ -196,7 +196,7 @@ fun HashtagFeedScreen(
         AlertDialog(
             onDismissRequest = viewModel::clearFollowFailed,
             title = { Text("Couldn't save") },
-            text = { Text("Your relays didn't answer, so your hashtag list wasn't changed. Try again in a moment.") },
+            text = { Text(viewModel.followFailedText()) },
             confirmButton = { TextButton(onClick = viewModel::clearFollowFailed) { Text("OK") } },
         )
     }

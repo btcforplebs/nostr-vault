@@ -209,6 +209,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val best = java.util.concurrent.atomic.AtomicReference<NostrEvent?>(null)
         val answered = java.util.concurrent.atomic.AtomicInteger(0)
         val answeredBy = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+        val ahead = java.util.concurrent.atomic.AtomicBoolean(false)
         val newestBy = java.util.concurrent.ConcurrentHashMap<String, NostrEvent>()
         coroutineScope {
             targets.map { url ->
@@ -227,6 +228,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                                             val ev = parseSignedEvent(obj.toString()) ?: return@collect
                                             if (ev.kind != kind || ev.pubkey != pubkey || !HavenBridge.verifyEvent(obj.toString())) return@collect
                                             if (dTag != null && ev.tags.none { it.size >= 2 && it[0] == "d" && it[1] == dTag }) return@collect
+                                            // Dated too far ahead: never the newest copy (an edit signed now would lose to it).
+                                            if (!ListMerge.notAhead(ev.createdAt)) { ahead.set(true); return@collect }
                                             best.updateAndGet { cur -> if (cur == null || ev.createdAt > cur.createdAt) ev else cur }
                                             newestBy.merge(url, ev) { a, b -> if (b.createdAt > a.createdAt) b else a }
                                         }
@@ -258,7 +261,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         }
         val newest = best.get()
         val from = newestBy.filterValues { newest != null && it.id == newest.id }.keys
-        return ReplaceableLookup(newest, targets.size, answered.get(), answeredBy.toSet(), from.toSet())
+        return ReplaceableLookup(newest, targets.size, answered.get(), answeredBy.toSet(), from.toSet(), ahead.get())
     }
 
     /**

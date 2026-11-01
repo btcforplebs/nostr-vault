@@ -69,4 +69,5 @@ class HashtagFeedViewModel @Inject constructor(
     }
 
     fun clearFollowFailed() { _followFailed.value = false }
+    fun followFailedText(): String = interestListService.failedText()
 }

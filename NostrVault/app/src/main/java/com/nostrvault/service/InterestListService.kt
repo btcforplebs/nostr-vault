@@ -70,10 +70,20 @@ class InterestListService @Inject constructor(
     /** True once this account's list is known (found, or every relay answered none). */
     private var confirmed = false
     private var fetch: Deferred<Boolean>? = null
+    /**
+     * Why the last change wasn't saved because the list isn't known ([ListMerge.NO_RELAY_LIST] or
+     * [ListMerge.NOT_ANSWERED]), for the screen to say; null when it was known.
+     */
+    @Volatile var refusal: String? = null
+        private set
 
     init {
         scope.launch { configStore.activeAccountHexPubkey.collect { switchAccount(it) } }
     }
+
+    /** What a "Couldn't save" dialog says: why, when there's no relay list; else that the relays didn't answer. */
+    fun failedText(): String = if (refusal == ListMerge.NO_RELAY_LIST) ListMerge.NO_RELAY_LIST
+        else "Your relays didn't answer, so your hashtag list wasn't changed. Try again in a moment."
 
     fun isFollowing(hashtag: String): Boolean = InterestList.normalize(hashtag) in _hashtags.value
 
@@ -160,6 +170,7 @@ class InterestListService @Inject constructor(
         fetch = null
         accountHex = hex
         confirmed = false
+        refusal = null
         list = loadCached(hex) ?: InterestList()
         _hashtags.value = list.hashtags
         if (hex.isNotEmpty()) startFetch()
@@ -168,10 +179,17 @@ class InterestListService @Inject constructor(
     private fun startFetch(): Deferred<Boolean> {
         val hex = accountHex
         val task = scope.async {
-            val result = withContext(Dispatchers.IO) { fetchLatest(hex, queryRelays(hex)) }
+            val result = withContext(Dispatchers.IO) {
+                // Only the account's own relays (its kind 10002) say the list is known (Logen 2026-11-01).
+                val own = runCatching { nostrService.ownListRelays(hex) }
+                    .onFailure { if (it is CancellationException) throw it }.getOrDefault(emptyList())
+                val seen = HashSet<String>()
+                fetchLatest(hex, (own + queryRelays(hex)).filter { seen.add(LookupSocketPool.relayKey(it)) }, own)
+            }
             if (accountHex != hex) return@async false
             fetch = null
-            if (result == null) return@async false
+            refusal = result.unknownWhy
+            if (result.unknownWhy != null) return@async false
             val remote = result.newest
             if (remote != null && remote.createdAt >= list.createdAt) accept(remote)
             confirmed = true
@@ -204,16 +222,24 @@ class InterestListService @Inject constructor(
         return urls.filter { it.isNotBlank() && seen.add(LookupSocketPool.relayKey(it)) }
     }
 
-    /** The list is known: [newest] found, or null when every relay answered that it has none. */
-    private class FetchResult(val newest: InterestList?)
+    /**
+     * [newest] found, or null when none was. [unknownWhy] non-null: the list isn't known ([ListMerge.unknownWhy]) and
+     * nothing may be signed over it.
+     */
+    private class FetchResult(val newest: InterestList?, val unknownWhy: String?)
 
     /**
-     * The newest kind 10015 by [author]. Null when it is unknown: none found
-     * and not every relay answered (one "none" is not "you have none").
+     * The newest kind 10015 by [author], known only by the account's [own] relays ([ListMerge.unknownWhy]): an own
+     * relay sent it or most of them answered, and for "none" every own relay and every relay asked answered (one
+     * "none" is not "you have none"). A copy dated [ListMerge.MAX_SKEW] or more ahead is skipped.
      */
-    private suspend fun fetchLatest(author: String, relays: List<String>): FetchResult? {
-        if (relays.isEmpty()) return null
+    private suspend fun fetchLatest(author: String, relays: List<String>, own: List<String>): FetchResult {
+        if (own.isEmpty()) return FetchResult(null, ListMerge.NO_RELAY_LIST)
+        if (relays.isEmpty()) return FetchResult(null, ListMerge.NOT_ANSWERED)
         val answered = AtomicInteger(0)
+        val answeredBy = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+        val sentBy = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        val ahead = java.util.concurrent.atomic.AtomicBoolean(false)
         val lock = Any()
         var newest: InterestList? = null
         val filter = """{"kinds":[${InterestList.KIND}],"authors":["$author"],"limit":1}"""
@@ -224,6 +250,8 @@ class InterestListService @Inject constructor(
                     val outcome = try {
                         lookupPool.query(url, subId, listOf(filter), FETCH_TIMEOUT_MS) { msg ->
                             parseEvent(msg, author)?.let { found ->
+                                if (!ListMerge.notAhead(found.createdAt)) { ahead.set(true); return@let }
+                                sentBy.merge(url, found.createdAt, ::maxOf)
                                 synchronized(lock) {
                                     if (found.createdAt > (newest?.createdAt ?: -1)) newest = found
                                 }
@@ -234,12 +262,15 @@ class InterestListService @Inject constructor(
                     } catch (e: Exception) {
                         LookupSocketPool.Outcome.FAILED
                     }
-                    if (outcome == LookupSocketPool.Outcome.EOSE) answered.incrementAndGet()
+                    if (outcome == LookupSocketPool.Outcome.EOSE) { answered.incrementAndGet(); answeredBy.add(url) }
                 }
             }.awaitAll()
         }
         val found = synchronized(lock) { newest }
-        return if (found != null || answered.get() >= relays.size) FetchResult(found) else null
+        val from = sentBy.filterValues { found != null && it == found.createdAt }.keys
+        val why = ListMerge.unknownWhy(own, answeredBy, from, found != null, ahead.get())
+            ?: if (found == null && answered.get() < relays.size) ListMerge.NOT_ANSWERED else null
+        return FetchResult(found, why)
     }
 
     /** A validly signed kind 10015 by [author] from an EVENT frame, else null. */

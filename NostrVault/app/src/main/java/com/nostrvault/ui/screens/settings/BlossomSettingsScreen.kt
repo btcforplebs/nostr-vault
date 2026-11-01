@@ -110,8 +110,9 @@ class BlossomSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             configStore.update { it.copy(blossomMirrors = _mirrors.value, blossomMirrorsUpdatedAt = System.currentTimeMillis() / 1000) }
             try {
-                nostrService.publishServerList()
                 _publishStatus.value = "Server list published"
+                // Nothing goes out over a list that isn't known (no relay list, or the relays didn't answer): say why.
+                nostrService.publishServerList(onRefused = { why -> _publishStatus.value = "Not published. $why" })
             } catch (e: Exception) {
                 _publishStatus.value = "Failed to publish: ${e.message}"
             }
