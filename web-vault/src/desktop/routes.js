@@ -14,8 +14,8 @@ export function deskModeFor(width) {
   return "phone"
 }
 
-/** Screens with a list column and a note column. WoT, the Dashboard (relay) and Settings (with Accounts and Wallet)
- *  take the full width: Settings is a page of its own, so folding the note column can't hide it. */
+/** Screens with a list that a note, conversation or person opens over. WoT, the Dashboard (relay) and Settings (with
+ *  Accounts and Wallet) are pages of their own. */
 export const SPLIT = new Set(["feed", "search", "profile", "vault", "messages", "notifications"])
 export const FULL = new Set(["wot", "relay", "settings", "accounts", "wallet"])
 
