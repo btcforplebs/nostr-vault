@@ -167,6 +167,11 @@ export function loadBlocks({ vault, session, signer }, relays, { opener, query, 
   return loading
 }
 
+/** Show a block list this page just signed (Recover a List's merge), as setBlock does after its own. */
+export async function showBlockList(ctx, ev) {
+  if (state.pubkey === ctx.session.pubkey) await apply(ctx.session.pubkey, ev, await decrypterFor(ctx.session, { signer: ctx.signer }))
+}
+
 /** A repost or reaction whose `e` tag points at a muted thread. */
 const isMutedThreadRef = (ev, blocked) => !!blocked?.threads?.size && (ev.tags ?? []).some(t => t[0] === "e" && blocked.threads.has(String(t[1] ?? "").toLowerCase()))
 

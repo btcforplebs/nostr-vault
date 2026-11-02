@@ -46,7 +46,7 @@ test("only these files sign anything", () => {
   assert.deepEqual(scan().signers, [
     "src/box/api.js", "src/box/box-vault.js", "src/guest/guest.js", "src/net/actions.js", "src/net/blocks.js",
     "src/net/blossom-gallery.js", "src/net/dms.js", "src/net/follow-backup.js", "src/net/follows.js",
-    "src/net/list-edit.js", "src/net/new-account.js", "src/net/profile-edit.js", "src/net/reports.js",
+    "src/net/list-edit.js", "src/net/list-merge-save.js" /* Recover a List: Save on a merge, kind from list-version-merge MERGE_KINDS (no 0, no 10002) */, "src/net/new-account.js", "src/net/profile-edit.js", "src/net/reports.js",
     "src/net/sync.js", "src/net/upload.js", "src/net/zaps.js", "src/readers/LiveChat.jsx", "src/signer/local.js",
     "src/signer/nip07.js", "src/signer/nip46.js", "src/signer/readonly.js",
   ])

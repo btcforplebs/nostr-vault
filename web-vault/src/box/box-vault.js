@@ -73,12 +73,12 @@ export function boxHaven({ signer, Socket, loc } = {}) {
   }
 }
 
-/** startVault for box mode -> { haven, owners: null, outbox, feed, inbox, loadMs, startMs }. `routeClient` from
+/** startVault for box mode -> { haven, owners: null, outbox, feed, inbox, lists, loadMs, startMs }. `routeClient` from
  *  haven/vault.js, passed in so this file doesn't load haven.wasm's loader. */
 export function startBoxVault({ signer, routeClient, deviceKey, Socket, loc }) {
   const t0 = Date.now()
   const haven = boxHaven({ signer, Socket, loc })
   const sk = deviceKey()
   const open = route => routeClient(haven, route, sk)
-  return { haven, owners: null, box: true, outbox: open("/"), feed: open("/feed"), inbox: open("/inbox"), loadMs: 0, startMs: Date.now() - t0 }
+  return { haven, owners: null, box: true, outbox: open("/"), feed: open("/feed"), inbox: open("/inbox"), lists: open("/lists"), loadMs: 0, startMs: Date.now() - t0 }
 }

@@ -32,6 +32,7 @@ export const SETTINGS_GROUPS = [
     { id: "blocked", title: "Blocked", icon: "block", color: "#ff453a", href: "#/settings/blocked" },
     { id: "recently-deleted", title: "Recently Deleted", icon: "trash", color: "#8e8e93", href: "#/settings/recently-deleted" },
     { id: "following-backup", title: "Following Backup", icon: "people", color: "#40c8e0", href: "#/settings/following-backup" },
+    { id: "recover-list", title: "Recover a List", icon: "restore", color: "#64d2ff", href: "#/settings/recover-list" },
     { id: "wallet", title: "Wallet", icon: "bolt", color: "#ff9f0a", href: "#/wallet" },
   ] },
   { title: "Relays", rows: [
