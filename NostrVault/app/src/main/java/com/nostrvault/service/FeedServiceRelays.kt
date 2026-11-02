@@ -88,7 +88,8 @@ import kotlinx.serialization.json.*
             } else if (resend && before[relayUrl] != authors &&
                 client.connectionState.value == WebSocketClient.ConnectionState.CONNECTED
             ) {
-                sendPrimaryFeedSubscription(relayUrl, primaryFeedSubId())
+                // Its follows changed: their older notes are wanted too.
+                sendPrimaryFeedSubscription(relayUrl, primaryFeedSubId(), resume = false)
             }
         }
     }

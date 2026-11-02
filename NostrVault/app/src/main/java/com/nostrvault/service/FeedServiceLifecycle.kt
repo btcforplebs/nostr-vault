@@ -30,6 +30,8 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
         if (prewarmJob?.isActive == true) return
         prewarmJob = scope.launch {
             if (restoreFromDiskIfAvailable()) cachedFeedRestored = true
+            // Discover's own saved notes, over the shared snapshot.
+            if (restoreSavedModeCache(_feedMode.value) != null) cachedFeedRestored = true
             if (BuildConfig.DEBUG) Log.d(TAG, "prewarmFromCache: restored=$cachedFeedRestored, notes=${_notes.value.size}")
         }
     }
@@ -42,9 +44,16 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
         loadWotPubkeys()
 
         if (_feedMode.value == FeedMode.POPULAR) {
-            loadPopularFeed()
+            // The last ranking shows at once; one over five minutes old is
+            // computed again behind it.
+            scope.launch {
+                val savedAgeMs = restoreSavedModeCache(FeedMode.POPULAR)
+                if (_feedMode.value == FeedMode.POPULAR) showCachedPopularOrLoad(savedAgeMs)
+            }
             return
         }
+        // Saved Discover / Popular, so a switch to them finds them.
+        scope.launch { loadSavedModeCaches() }
 
         scope.launch {
             // A prewarm still reading the snapshot finishes first, so it is
@@ -52,7 +61,9 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
             prewarmJob?.join()
             val restored = cachedFeedRestored || restoreFromDiskIfAvailable()
             if (BuildConfig.DEBUG) Log.d(TAG, "startInitialLoad: snapshot restored=$restored, notes=${_notes.value.size}, followedPubkeys=${_followedPubkeys.value.size}")
-            if (restored) {
+            // Discover needs its network before it can ask for notes: a
+            // straight top-up found it empty and stopped there.
+            if (restored && _feedMode.value != FeedMode.DISCOVERY) {
                 topUpFromRelays()
             } else {
                 refresh()
@@ -160,6 +171,8 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
         }
         if (flow.value == mode) return
         flow.value = mode
+        // The list now mixes both scopes' notes: ask wide.
+        forgetFeedNotesKey()
         _pendingNotes.value = emptyList()
         if (mode == MediaFeedMode.GLOBAL) loadWotPubkeys()
         subscribeToAllRelays()
@@ -169,6 +182,8 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
     internal fun FeedService.setMediaFeedModeImpl(mode: MediaFeedMode) {
         if (mode == _mediaFeedMode.value) return
         _mediaFeedMode.value = mode
+        // The list now mixes both scopes' notes: ask wide.
+        forgetFeedNotesKey()
 
         // Pending notes were scoped to the previous media filter; drop them so the
         // "New Posts" count doesn't carry stale entries into the new scope.
@@ -189,6 +204,8 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
     internal fun FeedService.pauseFeedImpl() {
         if (BuildConfig.DEBUG) Log.d(TAG, "pauseFeed: persisting snapshot; feed clients close after the grace")
         persistCurrentSnapshot()
+        // Discover / Popular on screen are saved for the next launch too.
+        if (_feedMode.value in FeedModeCacheDisk.MODES) captureModeCache(_feedMode.value)
         saveInteractionState()
         pauseGrace.pause()
     }
@@ -322,6 +339,13 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
                 .collect { recomputeFilteredNotes() }
         }
 
+        // The account the launch's notes belong to, taken before any switch
+        // (FeedModeCaches.ownsNotes).
+        scope.launch {
+            configStore.activeAccountHexPubkey.collect {
+                if (notesAccount == null) notesAccount = nostrService.activeHexPubkey.ifEmpty { null }
+            }
+        }
         scope.launch {
             configStore.accountSwitches
                 .collect {

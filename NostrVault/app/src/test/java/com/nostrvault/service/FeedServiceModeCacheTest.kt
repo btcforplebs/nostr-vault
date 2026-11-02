@@ -2,6 +2,7 @@ package com.nostrvault.service
 
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.DeletedNotesStore
+import com.nostrvault.data.local.EngagementTracker
 import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.relay.HavenConfig
@@ -105,13 +106,60 @@ class FeedServiceModeCacheTest {
         showFeed(note("a1", 1))
         feed.captureModeCache(FeedMode.GLOBAL)
         account = "bob"
+        // The list is bob's from here (clearInMemoryFeedState does this on a real switch).
+        feed.notesAccount = "bob"
         showFeed(note("b1", 1))
         feed.captureModeCache(FeedMode.GLOBAL)
 
         account = "alice"
+        feed.notesAccount = "alice"
         feed.restoreModeCache(FeedMode.GLOBAL)
         assertEquals(listOf("a1".padEnd(64, '0')), feed._notes.value.map { it.id })
         account = "bob"
+        feed.restoreModeCache(FeedMode.GLOBAL)
+        assertEquals(listOf("b1".padEnd(64, '0')), feed._notes.value.map { it.id })
+    }
+
+    @Test
+    fun `notes still waiting to flush are thrown away by the reset`() {
+        // Alice's note is in the buffer when the switch to bob lands.
+        feed.accumulator.addNote(note("a1", 1))
+        feed.accumulator.addReaction(EngagementTracker.ReactionEvent("a1".padEnd(64, '0'), "x", "r", "+"))
+        account = "bob"
+        feed.clearInMemoryFeedState()
+        val left = feed.accumulator.drain()
+        assertEquals(emptyList<FeedNote>(), left.notes)
+        assertEquals(0, left.reactions.size)
+    }
+
+    @Test
+    fun `an event from a socket opened before the reset never reaches the list`() {
+        val now = System.currentTimeMillis() / 1000 - 10
+        fun event(id: String) =
+            """["EVENT","feed-following",{"id":"${id.padEnd(64, '0')}","pubkey":"${"c".repeat(64)}","kind":1,"created_at":$now,"tags":[],"content":"hello from $id","sig":"00"}]"""
+        val before = feed.feedEpoch
+        // Alice's primary REQ is still streaming when the switch to bob lands.
+        account = "bob"
+        feed.clearInMemoryFeedState()
+        feed.processAccumulatorMessage(event("a1"), "wss://relay.example", before)
+        assertEquals(emptyList<FeedNote>(), feed.accumulator.drain().notes)
+        // A socket opened after the reset (bob's) is taken.
+        feed.processAccumulatorMessage(event("b1"), "wss://relay.example", feed.feedEpoch)
+        assertEquals(listOf("b1".padEnd(64, '0')), feed.accumulator.drain().notes.map { it.id })
+    }
+
+    @Test
+    fun `the old account's list is not filed under the new one before the reset`() {
+        showFeed(note("a1", 1))
+        feed.captureModeCache(FeedMode.DISCOVERY)
+        // The pubkey flips to bob; clearInMemoryFeedState has not run yet.
+        account = "bob"
+        feed.captureModeCache(FeedMode.GLOBAL)
+        assertNull(feed.restoreModeCache(FeedMode.GLOBAL))
+        // Once the reset has run, bob's own list is filed again.
+        feed.clearInMemoryFeedState()
+        showFeed(note("b1", 1))
+        feed.captureModeCache(FeedMode.GLOBAL)
         feed.restoreModeCache(FeedMode.GLOBAL)
         assertEquals(listOf("b1".padEnd(64, '0')), feed._notes.value.map { it.id })
     }

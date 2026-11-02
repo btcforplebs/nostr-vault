@@ -159,50 +159,17 @@ internal fun ScopedEmptyPlaceholder(
 }
 
 /**
- * iOS FeedView's loading screens (loadingContactsView, loadingExtendedNetworkView,
- * loadingPopularView): a large spinner, a bold title, a monospaced line of
- * what it is doing, and a faint footer.
+ * The feed's first load, before any note is in: five shimmer rows shaped like
+ * note cards (iOS `FeedNoteSkeletonRow`). Read out as one "Loading feed".
  */
 @Composable
-internal fun FeedLoadingPlaceholder(title: String, detail: String, footer: String) {
-    val colors = LocalNostrVaultColors.current
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+internal fun FeedLoadingSkeleton() {
+    com.nostrvault.ui.components.SkeletonFeed(
+        count = 5,
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp)
-            .semantics(mergeDescendants = true) {},
-    ) {
-        CircularProgressIndicator(color = colors.primary)
-        Spacer(Modifier.height(16.dp))
-        Text(
-            text = title,
-            color = PrimaryText,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.3.sp,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = detail,
-            color = SecondaryText,
-            fontSize = 13.sp,
-            fontFamily = FontFamily.Monospace,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(32.dp))
-        Text(
-            text = footer,
-            color = SecondaryText.copy(alpha = SecondaryText.alpha * 0.6f),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            fontFamily = FontFamily.Monospace,
-            letterSpacing = 0.5.sp,
-            textAlign = TextAlign.Center,
-        )
-    }
+            .semantics(mergeDescendants = true) { contentDescription = "Loading feed" },
+    )
 }
 
 /**

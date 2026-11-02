@@ -45,6 +45,8 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
             addAll(config.activeBlastrRelays)
         }.distinct().let { FeedService.relaysForMode(mode, it) }
 
+        // A page that lands after a reset is the previous list's.
+        val epoch = feedEpoch
         scope.launch(Dispatchers.IO) {
             val subId = "feed-hist-${UUID.randomUUID().toString().take(8)}"
             val clients = mutableListOf<WebSocketClient>()
@@ -64,7 +66,7 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
                     collectors.add(scope.launch(processingDispatcher) {
                         client.messages.collect { msg ->
                             launch(processingDispatcher) {
-                                processAccumulatorMessage(msg, relayUrl)
+                                processAccumulatorMessage(msg, relayUrl, epoch)
                             }
                         }
                     })
@@ -103,7 +105,7 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
                             askOnFeedClient(feedClient, subId, listOf(filter)) {}
                         } else {
                             lookupPool.query(relayUrl, subId, listOf(filter), NOTE_FETCH_TIMEOUT_MS) { msg ->
-                                processAccumulatorMessage(msg, relayUrl)
+                                processAccumulatorMessage(msg, relayUrl, epoch)
                             }
                         }
                     })

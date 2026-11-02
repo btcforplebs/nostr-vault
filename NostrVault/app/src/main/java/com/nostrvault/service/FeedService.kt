@@ -379,6 +379,27 @@ class FeedService @Inject constructor(
     internal val _popularNoteScores = MutableStateFlow<Map<String, Double>>(emptyMap())
     val popularNoteScores: StateFlow<Map<String, Double>> = _popularNoteScores.asStateFlow()
     internal val modeCaches = FeedModeCaches() // Each feed kept for a switch back: FeedServiceModeCache.kt
+    /** The feed [notes] holds up to its newest note, and this round's resume point: FeedServiceResumeSince.kt */
+    internal var feedNotesKey: String? = null
+    internal var roundSinceSec: Long? = null
+    internal val roundEoseRelays = HashSet<String>()
+    /** This round's relays, frozen at its start, and those whose dial failed in it. */
+    internal val roundRelays = HashSet<String>()
+    internal val roundFailedRelays = HashSet<String>()
+    /** Relays that answered the round [feedNotesKey] was set from; only they may resume. */
+    internal val feedNotesRelays = HashSet<String>()
+    /** [feedNotesRelays] as frozen at this round's start, with [roundSinceSec]. */
+    internal val roundResumeRelays = HashSet<String>()
+    /** Account whose notes [_notes] holds; a tab cache is filed only for it (FeedModeCacheDisk.kt). */
+    internal var notesAccount: String? = null
+    /**
+     * Bumped by every reset of the list (clearInMemoryFeedState). A socket or
+     * page carries the epoch it was opened in; anything it delivers after a
+     * reset is the previous list's, and is dropped.
+     */
+    @Volatile internal var feedEpoch = 0
+    /** Account whose saved Discover / Popular are in [modeCaches]: FeedModeCacheDisk.kt */
+    internal var savedModeCachesLoadedFor: String? = null
 
     /**
      * Replies to the Popular and Global posts, fetched only for Threaded View,

@@ -488,19 +488,16 @@ fun FeedScreen(
                 // The relay is busy importing ("Keep it running"), so nothing
                 // loads until it's back. iOS FeedView.importingFeedView.
                 ImportingFeedPlaceholder(relayImportStatus)
-            } else if (isFollowSetFeed && followPlaceholder == FollowingFeedPlaceholder.LOADING) {
-                // iOS loadingContactsView.
-                FeedLoadingPlaceholder("Synchronizing", "fetching your follows", "This may take a moment")
-            } else if (feedMode == FeedMode.DISCOVERY && isLoadingExtendedNetwork && notes.isEmpty()) {
-                // iOS loadingExtendedNetworkView.
-                FeedLoadingPlaceholder("Analyzing Network", "finding mutual connections", "This may take a moment")
-            } else if (feedMode == FeedMode.POPULAR && isLoadingPopular && notes.isEmpty()) {
-                // iOS loadingPopularView.
-                FeedLoadingPlaceholder(
-                    "Finding Popular Notes",
-                    "scoring engagement across relays",
-                    "Analyzing reactions, reposts, and zaps",
-                )
+            } else if (
+                (isFollowSetFeed && followPlaceholder == FollowingFeedPlaceholder.LOADING) ||
+                (feedMode == FeedMode.DISCOVERY && isLoadingExtendedNetwork && notes.isEmpty()) ||
+                (feedMode == FeedMode.POPULAR && isLoadingPopular && notes.isEmpty())
+            ) {
+                // Follows, Discover's network or Popular's ranking still on
+                // their way: shimmer rows where the notes will land, gone as
+                // soon as the first ones do. Was a spinner with "Synchronizing",
+                // "Analyzing Network" or "Finding Popular Notes".
+                FeedLoadingSkeleton()
             } else if (isFollowSetFeed && followPlaceholder == FollowingFeedPlaceholder.EMPTY) {
                 // iOS emptyStateView: while the relay boots, say that rather
                 // than asking someone to follow people.
