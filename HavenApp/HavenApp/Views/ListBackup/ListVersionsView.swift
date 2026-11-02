@@ -6,6 +6,7 @@ struct ListVersionsView: View {
     let key: ListHistory.Key
     @ObservedObject private var service = ListBackupService.shared
     @State private var restoring: ListVersion?
+    @State private var merging = false
 
     private var versions: [ListVersion] { service.groups[key] ?? [] }
 
@@ -24,6 +25,12 @@ struct ListVersionsView: View {
         .formStyle(.grouped)
         .navigationTitle(ListBackupFormat.title(key))
         .sheet(item: $restoring) { old in ListRestoreView(old: old) }
+        .toolbar {
+            if ListVersionMerge.canMerge(key.kind) && versions.count >= 2 {
+                ToolbarItem(placement: .primaryAction) { Button("Merge") { merging = true } }
+            }
+        }
+        .sheet(isPresented: $merging) { ListMergeView(key: key) }
     }
 
     private func row(_ version: ListVersion, index: Int) -> some View {

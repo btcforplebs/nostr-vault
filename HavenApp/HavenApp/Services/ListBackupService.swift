@@ -75,7 +75,7 @@ final class ListBackupService: ObservableObject {
         UserDefaults.standard.set(Array(dismissed), forKey: Self.dismissedKey)
     }
 
-    private func vaultEvents(for v: ListVersion) -> [NostrEvent] {
+    func vaultEvents(for v: ListVersion) -> [NostrEvent] {
         (groups[ListHistory.Key(kind: v.kind, d: v.d)] ?? []).compactMap { events[$0.id] }
     }
 
