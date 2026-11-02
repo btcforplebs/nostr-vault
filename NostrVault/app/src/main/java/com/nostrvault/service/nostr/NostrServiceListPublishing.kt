@@ -3,6 +3,7 @@ package com.nostrvault.service
 import android.util.Log
 import com.nostrvault.BuildConfig
 import com.nostrvault.data.model.MuteList
+import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.relay.DMInbox
 import com.nostrvault.relay.HavenConfig
 import kotlinx.coroutines.*
@@ -365,6 +366,14 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         build: (NostrEvent?) -> Pair<List<List<String>>, String>?,
     ) {
         if (author.isBlank()) return
+        // An active-account list is locked before the lookup, which can wait 6 s: a switch in that time would
+        // otherwise sign this account's list with the key of the account switched to (as publishMuteListChangeImpl).
+        val lock = if (forceOwner) null else lockPostingAccount()
+        if (lock != null && !lock.hex.equals(author, ignoreCase = true)) {
+            Log.w(TAG, "kind $kind: active account is not ${author.take(8)}; not published")
+            onRefused(PostingAccount.MESSAGE)
+            return
+        }
         scope.launch(Dispatchers.IO) {
             val own = ownListRelays(author)
             val lookup = runCatching {
@@ -388,12 +397,26 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             }
             val extra = extraRelays()
             val event = try {
-                signEventAsync(kind = kind, content = content, tags = tags, forceOwner = forceOwner, notBefore = ListMerge.notBefore(base))
+                signEventAsync(
+                    kind = kind, content = content, tags = tags, forceOwner = forceOwner, lockedTo = lock,
+                    notBefore = ListMerge.notBefore(base),
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: PostingAccount.AccountChangedException) {
+                onRefused(PostingAccount.MESSAGE)
+                return@launch
             } catch (e: Exception) {
                 Log.e(TAG, "kind $kind not signed: ${e.message}")
                 null
             } ?: run {
                 onNotSigned()
+                return@launch
+            }
+            // Only the list of the account it was fetched for, whatever the signer did, for every caller.
+            if (!event.pubkey.equals(author, ignoreCase = true)) {
+                Log.w(TAG, "kind $kind signed as ${event.pubkey.take(8)}, list is ${author.take(8)}'s; not published")
+                onRefused(PostingAccount.MESSAGE)
                 return@launch
             }
             postEvent(event)

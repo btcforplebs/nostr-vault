@@ -135,13 +135,22 @@ extension NostrService {
     /// Adds (`on`) or removes one bookmark on `author`'s kind 10003, built on
     /// the newest list the account's own relays agree on (publishMergedList):
     /// every other tag and the encrypted private part go back as they were.
-    /// Returns the newest list after it (the same one when nothing changed),
-    /// or nil when it couldn't be checked or signed, so nothing was published.
+    /// `.saved` holds the newest list after it: the same one when nothing
+    /// changed, nil when there is no list and nothing to change (removing from
+    /// none). `.failed` when it couldn't be checked or signed, so nothing was
+    /// published.
+    enum BookmarkPublish { case saved(NostrEvent?), failed }
+
     @MainActor
-    func publishBookmark(_ entry: BookmarkList.Entry, on: Bool, author: String, signAsNpub: String?) async -> NostrEvent? {
-        await publishMergedList(kind: 10003, author: author, signAsNpub: signAsNpub, skipIfUnchanged: true) { published in
-            (BookmarkList.toggled(published?.tags ?? [], entry, on: on), published?.content ?? "")
+    func publishBookmark(_ entry: BookmarkList.Entry, on: Bool, author: String, signAsNpub: String?) async -> BookmarkPublish {
+        var unchanged = false
+        let event = await publishMergedList(kind: 10003, author: author, signAsNpub: signAsNpub, skipIfUnchanged: true) { published in
+            let tags = BookmarkList.toggled(published?.tags ?? [], entry, on: on)
+            unchanged = tags == (published?.tags ?? [])
+            return (tags, published?.content ?? "")
         }
+        if let event { return .saved(event) }
+        return unchanged ? .saved(nil) : .failed
     }
 
     /// Publishes `kind` for `author`: `local` as `name` tags, plus the entries

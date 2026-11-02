@@ -79,12 +79,12 @@ final class BookmarkService: ObservableObject {
         Task {
             let result = await NostrService.shared.publishBookmark(entry, on: on, author: hex, signAsNpub: npub)
             saving.remove(entry)
-            guard let result else {
+            guard case .saved(let newest) = result else {
                 ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
                                                message: "Bookmark not saved: your relays didn't answer", tone: .error)
                 return
             }
-            if author == hex, result.pubkey == hex { list = result; loadedAt = Date() }
+            if let newest, author == hex, newest.pubkey == hex { list = newest; loadedAt = Date() }
             ActionToastManager.shared.show(icon: on ? "bookmark.fill" : "bookmark.slash",
                                            message: on ? "Bookmarked" : "Bookmark removed")
         }

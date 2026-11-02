@@ -47,6 +47,9 @@ fun rememberBookmarkAction(note: FeedNote): NoteAction? {
     val lane = LocalNotificationManager.current
     LaunchedEffect(Unit) { service.refreshInBackground() }
     if (!canSign) return null
+    // A repost of an article that was never unpacked holds the repost's tags, not the article's, so its d is
+    // unknown and the coordinate would be wrong: no Bookmark there rather than one that points at nothing.
+    if (note.kind == 6 && note.effectiveKind in 30000..39999 && note.tags.none { it.size >= 2 && it[0] == "d" }) return null
     val entry = service.entry(note.effectiveEventId, note.effectiveAuthor, note.effectiveKind, note.tags)
     if (entry in saving) return null
     val marked = service.isBookmarked(list, entry)

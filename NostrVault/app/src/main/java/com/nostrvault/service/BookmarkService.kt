@@ -139,7 +139,10 @@ class BookmarkService @Inject constructor(
         val hex = configStore.activeAccountHexPubkey.value
         val urls = sources(hex)
         val out = mutableMapOf<BookmarkList.Entry, NostrEvent>()
-        val ids = entries.filterIsInstance<BookmarkList.Entry.Event>().map { it.id }
+        // Only 64-hex ids and pubkeys go into a filter: they are written into its JSON as they are, and one
+        // malformed tag on the list would break the whole request.
+        val hex64 = Regex("^[0-9a-f]{64}$")
+        val ids = entries.filterIsInstance<BookmarkList.Entry.Event>().map { it.id }.filter { hex64.matches(it) }
         for (chunk in ids.chunked(100)) {
             val filter = "{\"ids\":[${chunk.joinToString(",") { "\"$it\"" }}]}"
             runCatching { nostrService.queryRawEvents(listOf(filter), urls) }.getOrDefault(emptyList())
@@ -149,7 +152,7 @@ class BookmarkService @Inject constructor(
         // Addresses grouped by kind and author; a filter matches every combination of its values, so each
         // result is checked against a wanted coordinate.
         val wanted = entries.filterIsInstance<BookmarkList.Entry.Address>().toSet()
-        val groups = wanted.mapNotNull { it.parts }.groupBy { it.first to it.second }
+        val groups = wanted.mapNotNull { it.parts }.filter { hex64.matches(it.second) }.groupBy { it.first to it.second }
         for ((key, coords) in groups) {
             val ds = coords.joinToString(",") { "\"${it.third.replace("\\", "\\\\").replace("\"", "\\\"")}\"" }
             val filter = "{\"kinds\":[${key.first}],\"authors\":[\"${key.second}\"],\"#d\":[$ds]}"

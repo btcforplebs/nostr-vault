@@ -162,4 +162,18 @@ class UserListSignGuardTest {
             assertTrue("$fn must pass the found copy's created_at", impl.contains("lookup.event?.createdAt"))
         }
     }
+
+    @Test
+    fun `a merged list is signed only as the account it was fetched for`() {
+        // A switch during the ~6 s lookup used to sign one account's bookmarks with the next one's key (Tron, #1592).
+        val impl = src("com/nostrvault/service/nostr/NostrServiceListPublishing.kt")
+            .substringAfter("fun NostrService.publishMergedList(").substringBefore(" fun ")
+        val lock = impl.indexOf("lockPostingAccount()")
+        assertTrue("publishMergedList must lock the account", lock >= 0)
+        assertTrue("before the lookup", lock < impl.indexOf("lookupNewestReplaceable"))
+        assertTrue("and sign locked to it", impl.contains("lockedTo = lock"))
+        val check = impl.indexOf("event.pubkey.equals(author, ignoreCase = true)")
+        assertTrue("publishMergedList must check who signed", check >= 0)
+        assertTrue("before posting", check < impl.indexOf("postEvent(event)"))
+    }
 }
