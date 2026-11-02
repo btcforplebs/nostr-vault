@@ -218,6 +218,10 @@ class VaultActivityViewModel @Inject constructor(
     /** The picked chip; null is the active account's own list, as with one account. */
     val accountChip: StateFlow<VaultAccountChip?> = _accountChip.asStateFlow()
 
+    /** A chip just picked whose accounts are still being read: its ring shows, the list stays. */
+    private val _pendingChip = MutableStateFlow<VaultAccountChip?>(null)
+    val pendingChip: StateFlow<VaultAccountChip?> = _pendingChip.asStateFlow()
+
     private val _otherLines = MutableStateFlow<Map<String, List<VaultActivity>>>(emptyMap())
     /** The other accounts' lines, by account hex, before filtering. */
     val otherLines: StateFlow<Map<String, List<VaultActivity>>> = _otherLines.asStateFlow()
@@ -457,8 +461,19 @@ class VaultActivityViewModel @Inject constructor(
             since[hex] = if (last > 0) last else now
         }
         _otherUnreadSince.value = since
-        _accountChip.value = if (VaultAccountChips.isDefault(chip, me)) null else chip
-        loadOtherAccounts()
+        if (VaultAccountChips.needsRead(chip, accountHexes.value, me, _otherLines.value.keys)) {
+            // Keep the list on screen; switch when this chip's lines are read.
+            _pendingChip.value = chip
+            loadOtherAccounts(chip)
+        } else {
+            applyChip(chip)
+            loadOtherAccounts()
+        }
+    }
+
+    private fun applyChip(chip: VaultAccountChip) {
+        _pendingChip.value = null
+        _accountChip.value = if (VaultAccountChips.isDefault(chip, _activeHex.value)) null else chip
     }
 
     /** A line for [account] was opened: that account's count empties. */
@@ -492,6 +507,7 @@ class VaultActivityViewModel @Inject constructor(
     private fun resetAccountChip() {
         otherJob?.cancel()
         _accountChip.value = null
+        _pendingChip.value = null
         _otherLines.value = emptyMap()
         _otherUnreadSince.value = emptyMap()
         _otherLoading.value = false
@@ -502,23 +518,31 @@ class VaultActivityViewModel @Inject constructor(
      * their lines with the same rules as the active account's. The device's
      * relay serves every account, so nothing else needs asking.
      */
-    fun loadOtherAccounts() {
+    /**
+     * [pick] is a chip still waiting for its read: the list on screen stays (no
+     * spinner) and switches to it once the read is in. A plain re-read while a
+     * pick waits reads for that pick, so it can't be left stuck.
+     */
+    fun loadOtherAccounts(pick: VaultAccountChip? = null) {
         val me = _activeHex.value
         val accounts = accountHexes.value
-        val chip = VaultAccountChips.resolve(_accountChip.value, accounts, me)
+        val waiting = pick ?: _pendingChip.value
+        val chip = waiting ?: VaultAccountChips.resolve(_accountChip.value, accounts, me)
         val wanted = VaultAccountChips.accounts(chip, accounts).filter { it != me }
         otherJob?.cancel()
         if (wanted.isEmpty()) {
             _otherLoading.value = false
+            waiting?.let(::applyChip)
             return
         }
         val gen = generation
-        _otherLoading.value = _otherLines.value.isEmpty()
+        if (waiting == null) _otherLoading.value = _otherLines.value.isEmpty()
         otherJob = viewModelScope.launch {
             val built = wanted.map { hex -> async { hex to linesFor(hex) } }.awaitAll()
             if (gen != generation) return@launch
             _otherLines.value = _otherLines.value + built
             _otherLoading.value = false
+            if (waiting != null && _pendingChip.value == waiting) applyChip(waiting)
             nostrService.fetchMissingProfiles(built.flatMap { (_, lines) -> lines.take(SHOW_STEP).flatMap { it.actors.take(6) } }.distinct())
         }
     }
@@ -605,6 +629,7 @@ internal fun VaultActivityScreen(
     val accountHexes by activity.accountHexes.collectAsState()
     val activeHex by activity.activeHex.collectAsState()
     val pickedChip by activity.accountChip.collectAsState()
+    val pendingChip by activity.pendingChip.collectAsState()
     val otherLines by activity.otherLines.collectAsState()
     val otherUnreadSince by activity.otherUnreadSince.collectAsState()
     val otherLoading by activity.otherLoading.collectAsState()
@@ -696,7 +721,8 @@ internal fun VaultActivityScreen(
                 if (chips.isNotEmpty()) {
                     AccountChipRow(
                         chips = chips,
-                        selected = currentChip,
+                        // A pick still reading shows its ring at once; the list stays.
+                        selected = pendingChip ?: currentChip,
                         activeHex = activeHex,
                         profiles = profiles,
                         counts = unreadCounts,

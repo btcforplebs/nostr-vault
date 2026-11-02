@@ -56,6 +56,14 @@ enum VaultAccountChips {
         }
     }
 
+    /// Whether picking `chip` must wait for a read: it shows another account
+    /// whose lines aren't read yet. Until then the list on screen stays and
+    /// only the ring moves, so a pick never flashes a spinner or an empty list.
+    static func needsRead(_ chip: VaultAccountChip, accounts: [String], active: String, loaded: Set<String>) -> Bool {
+        let me = active.lowercased()
+        return Self.accounts(for: chip, accounts: accounts).contains { $0 != me && !loaded.contains($0) }
+    }
+
     /// The picked chip, or the active account's when none is picked or the
     /// picked account is gone (removed, or the device is down to one).
     static func resolve(_ picked: VaultAccountChip?, accounts: [String], active: String) -> VaultAccountChip {

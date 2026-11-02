@@ -65,6 +65,9 @@ struct VaultView: View {
     /// The account chip picked over the Vault list (VaultAccountChips). Nil
     /// is the active account's own list, as with one account.
     @State var accountChip: VaultAccountChip?
+    /// A chip just picked whose accounts are still being read: its ring shows,
+    /// the list stays as it is until the read lands (no spinner flash).
+    @State var pendingAccountChip: VaultAccountChip?
     /// The other accounts' Vault lines, by account hex, before filtering.
     @State var otherAccountActivity: [String: [VaultActivity]] = [:]
     /// Per other account: its lines newer than this are new since its last visit.

@@ -113,4 +113,18 @@ final class VaultAccountChipsTests: XCTestCase {
         XCTAssertFalse(VaultAccountChips.pageShowsSwitchRow(.activity))
         XCTAssertFalse(VaultAccountChips.pageShowsSwitchRow(.media))
     }
+
+    // MARK: - No flash on a pick (Logen 11-02)
+
+    func testAPickWaitsOnlyForAnotherAccountNotReadYet() {
+        let accounts = ["aa", "bb", "cc"]
+        // The active account's own list is always there.
+        XCTAssertFalse(VaultAccountChips.needsRead(.account("aa"), accounts: accounts, active: "AA", loaded: []))
+        // Another account not read yet: wait, keep the list on screen.
+        XCTAssertTrue(VaultAccountChips.needsRead(.account("bb"), accounts: accounts, active: "aa", loaded: []))
+        XCTAssertFalse(VaultAccountChips.needsRead(.account("bb"), accounts: accounts, active: "aa", loaded: ["bb"]))
+        // All waits until every other account is read.
+        XCTAssertTrue(VaultAccountChips.needsRead(.all, accounts: accounts, active: "aa", loaded: ["bb"]))
+        XCTAssertFalse(VaultAccountChips.needsRead(.all, accounts: accounts, active: "aa", loaded: ["bb", "cc"]))
+    }
 }
