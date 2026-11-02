@@ -176,6 +176,48 @@ class FipsMeshFallbackTest {
         assertEquals("Couldn't reach the owner's vault", MeshMediaPhase.Unreached.text())
     }
 
+    @Test fun `a vault without the photo is not asked for it again for ten minutes`() {
+        listVaults(v1, v2)
+        var v1Has = false
+        val chain = { MeshTestChain(request()) { r ->
+            when (vaultOf(r)) {
+                null -> MeshTestChain.reset()
+                v1 -> if (v1Has) MeshTestChain.reply(r, 200, blob) else MeshTestChain.reply(r, 404)
+                else -> MeshTestChain.reply(r, 200, blob)
+            }
+        } }
+        val first = chain()
+        assertEquals("fips", read(first).header(FipsMeshInterceptor.VIA_HEADER))
+        assertEquals(listOf(v1, v2).map { "http://127.0.0.1:9/$it/$sha" }, first.sent.drop(1))
+        now += FipsMediaRouter.MISS_RETRY_MS - 1
+        val soon = chain()
+        read(soon)
+        assertEquals("inside ten minutes only the vault that had it is asked", listOf("http://127.0.0.1:9/$v2/$sha"), soon.sent.drop(1))
+        now += 2
+        v1Has = true
+        val later = chain()
+        read(later)
+        assertEquals("past them the first vault is asked again", listOf("http://127.0.0.1:9/$v1/$sha"), later.sent.drop(1))
+    }
+
+    @Test fun `a server error from a vault is not remembered as a miss`() {
+        listVaults(v1)
+        var code = 503
+        val chain = { MeshTestChain(request()) { r -> if (vaultOf(r) == null) MeshTestChain.reset() else if (code == 200) MeshTestChain.reply(r, 200, blob) else MeshTestChain.reply(r, code) } }
+        // The vault failed too, so the URL's own error comes back.
+        assertTrue(runCatching { read(chain()) }.isFailure)
+        code = 200
+        assertEquals("fips", read(chain()).header(FipsMeshInterceptor.VIA_HEADER))
+    }
+
+    @Test fun `a miss covers only that photo`() {
+        assertFalse(FipsMediaRouter.recentlyMissed(v3, sha, now))
+        FipsMediaRouter.recordMiss(v3, sha, now)
+        assertTrue(FipsMediaRouter.recentlyMissed(v3, sha, now))
+        assertFalse(FipsMediaRouter.recentlyMissed(v3, "0".repeat(64), now))
+        assertFalse(FipsMediaRouter.recentlyMissed(v4, sha, now))
+    }
+
     @Test fun `no more than three vaults are asked for one photo`() {
         listVaults(v1, v2, v3, v4)
         val chain = MeshTestChain(request()) { r -> if (vaultOf(r) == null) MeshTestChain.reply(r, 404) else MeshTestChain.reply(r, 404) }

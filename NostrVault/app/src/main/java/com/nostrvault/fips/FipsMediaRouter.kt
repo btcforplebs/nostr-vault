@@ -165,6 +165,31 @@ object FipsMediaRouter {
         ingress.put(npub, Ingress(null, System.currentTimeMillis()))
     }
 
+    /**
+     * "vault npub|sha256" -> when that vault answered without the photo (404/410) or with one too big for the
+     * mesh. Memory only: it names the owner's follows' mesh vaults, so it is never written anywhere a relay
+     * could serve it (iOS MeshMediaRouter.misses).
+     */
+    private val misses = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** How long a vault that did not have a photo is not asked for it again (iOS missRetry). */
+    const val MISS_RETRY_MS = 10 * 60 * 1000L
+    private const val MAX_MISSES = 2000
+
+    fun recordMiss(npub: String, sha256: String, now: Long) {
+        misses["$npub|$sha256"] = now
+        if (misses.size <= MAX_MISSES) return
+        misses.entries.removeIf { now - it.value >= MISS_RETRY_MS }
+        if (misses.size > MAX_MISSES) {
+            misses.entries.sortedBy { it.value }.take(misses.size - MAX_MISSES).forEach { misses.remove(it.key, it.value) }
+        }
+    }
+
+    fun recentlyMissed(npub: String, sha256: String, now: Long): Boolean {
+        val at = misses["$npub|$sha256"] ?: return false
+        return now - at < MISS_RETRY_MS
+    }
+
     /** Drop a base that stopped answering (node restarted, vault evicted). */
     fun forget(npub: String) {
         ingress.remove(npub)

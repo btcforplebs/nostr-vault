@@ -94,6 +94,7 @@ class MediaCacheService @Inject constructor(
     }
 
     private var blossomDirectory: File? = null
+    private val blossomFolderIndex = BlossomFolderIndex()
     private var localHost: String? = null
 
     // ── Download coalescing ───────────────────────────────────────────
@@ -381,18 +382,14 @@ class MediaCacheService @Inject constructor(
         val exact = File(dir, forHash)
         if (exact.exists()) return exact
 
-        // Try with common extensions
-        val extensions = listOf(
-            extensionHint, "jpg", "jpeg", "png", "gif", "webp",
-            "mp4", "mov", "webm", "mp3", "wav",
-        ).filterNotNull().distinct()
-
-        for (ext in extensions) {
-            val withExt = File(dir, "$forHash.$ext")
-            if (withExt.exists()) return withExt
+        if (!extensionHint.isNullOrEmpty()) {
+            val withHint = File(dir, "$forHash.$extensionHint")
+            if (withHint.exists()) return withHint
         }
 
-        return null
+        // Any `<hash>.<ext>`, from the folder's file list kept in memory: a photo not on the phone (the usual
+        // case for other people's) costs one look at the folder's date, not a check per extension.
+        return blossomFolderIndex.file(forHash, dir)
     }
 
     fun isInLocalBlossom(hash: String): Boolean {
