@@ -316,6 +316,7 @@ fun ProfileScreen(
                     isFollowing = isFollowing,
                     followsMe = followsMe,
                     awaiting = awaitingMetadata,
+                    onAvatarTap = { com.nostrvault.ui.components.FullScreenMediaRouter.open(listOf(it), 0, copyLink = true) },
                 )
             }
 

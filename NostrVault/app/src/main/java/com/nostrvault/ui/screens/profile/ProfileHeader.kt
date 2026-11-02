@@ -2,6 +2,9 @@ package com.nostrvault.ui.screens.profile
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,8 +31,11 @@ internal fun ProfileHeader(
     followsMe: Boolean,
     /** Still waiting for the kind 0; held by the screen so scrolling does not restart the wait. */
     awaiting: Boolean,
+    /** Opens the picture in the full-screen viewer (iOS: tap the header avatar). */
+    onAvatarTap: (String) -> Unit = {},
 ) {
     val colors = LocalNostrVaultColors.current
+    val pictureUrl = profile?.pictureURL?.takeIf { it.isNotBlank() }
 
     Column {
         Row(
@@ -54,7 +60,15 @@ internal fun ProfileHeader(
                     .background(WindowBackground, CircleShape)
                     .padding(3.dp)
                     // iOS: a faint accent outline on the picture itself.
-                    .border(1.5.dp, colors.primary.copy(alpha = 0.35f), CircleShape),
+                    .border(1.5.dp, colors.primary.copy(alpha = 0.35f), CircleShape)
+                    .then(
+                        if (pictureUrl != null) {
+                            Modifier
+                                .clip(CircleShape)
+                                .semantics { contentDescription = "Profile picture" }
+                                .clickable(role = Role.Image) { onAvatarTap(pictureUrl) }
+                        } else Modifier,
+                    ),
             )
 
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
