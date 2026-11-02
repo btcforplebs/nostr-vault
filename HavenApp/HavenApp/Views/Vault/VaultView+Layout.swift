@@ -35,9 +35,6 @@ extension VaultView {
                 .tabBarBottomPadding()
             }
             .scrollDismissesKeyboard(.interactively)
-            .refreshable {
-                refreshAll(.incremental)
-            }
             .scrollDirectionTracking(feedService: feedService)
             // Tapping the Relay tab again: back to the list from a note, or
             // up to the top, as the Feed tab does.
@@ -127,9 +124,6 @@ extension VaultView {
                                     .id(nostrService.events.count)
                             }
                         }
-                        .refreshable {
-                            refreshAll(.incremental)
-                        }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         // Feeds the filter-note bubble in the banner stack.
                         .filterNoteHost(filterNote)
@@ -171,9 +165,6 @@ extension VaultView {
                 .tabBarBottomPadding()
             }
             .scrollDismissesKeyboard(.interactively)
-            .refreshable {
-                refreshAll(.incremental)
-            }
             .scrollDirectionTracking(feedService: feedService)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .filterNoteHost(filterNote)
@@ -216,8 +207,6 @@ extension VaultView {
 
                 Spacer()
 
-                refreshButton
-
                 if viewMode == .notes {
                     filterView
                 } else if viewMode == .likes {
@@ -242,22 +231,5 @@ extension VaultView {
         .padding(.horizontal)
         .padding(.vertical, 12)
         .background(Color.platformSecondaryGroupedBackground)
-    }
-
-    // MARK: - Refresh
-
-    /// `.refreshable` is the vault's only refresh path and macOS has no pull-to-refresh,
-    /// so without this the list could only be refreshed by switching accounts or
-    /// restarting the relay.
-    @ViewBuilder
-    var refreshButton: some View {
-        IconFilterButton(
-            icon: "arrow.clockwise",
-            tooltip: "Refresh Vault",
-            isSelected: true,
-            color: .havenPurple,
-            action: { refreshAll(.incremental) }
-        )
-        .keyboardShortcut("r", modifiers: .command)
     }
 }

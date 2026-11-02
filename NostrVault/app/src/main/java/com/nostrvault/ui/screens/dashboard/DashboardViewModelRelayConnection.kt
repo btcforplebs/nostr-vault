@@ -263,6 +263,8 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.MAX_SEEN
                     val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return
                     val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
                     val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: return
+                    // A wrong clock dated it ahead: it would top the pages (VaultActivity.isFuture).
+                    if (VaultActivity.isFuture(createdAt, VaultActivity.nowSeconds())) return
                     val sig = eventObj["sig"]?.jsonPrimitive?.contentOrNull ?: ""
                     val tags = eventObj["tags"]?.jsonArray?.map { tagArr ->
                         tagArr.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }

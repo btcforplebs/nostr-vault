@@ -255,4 +255,29 @@ class VaultActivityTest {
         assertEquals("b and c", VaultActivity.who(listOf(ann, bob), name))
         assertEquals("b and 3 others", VaultActivity.who(listOf(ann, bob, cat, me), name))
     }
+
+    // Clock guard (Logen 11-02: the Vault froze on a future date). Mirrors iOS.
+
+    @Test fun futureMeansMoreThanTenMinutesAhead() {
+        val now = 1_800_000_000L
+        assertTrue(!VaultActivity.isFuture(now - 86_400L * 90, now))
+        assertTrue(!VaultActivity.isFuture(now + 600, now))
+        assertTrue(VaultActivity.isFuture(now + 601, now))
+    }
+
+    @Test fun refreshSinceNeverAsksForTheFuture() {
+        val now = 1_800_000_000L
+        assertNull(VaultActivity.refreshSince(null, now))
+        assertEquals(now - 3_660, VaultActivity.refreshSince(now - 3_600, now))
+        assertEquals(now + 540, VaultActivity.refreshSince(now + 31_536_000, now))
+    }
+
+    @Test fun aFutureDatedLikeOnAnOldNoteMakesNoLine() {
+        val now = 1_800_000_000L
+        val old = event("n1", me, at = now - 86_400L * 90, content = "old note")
+        val like = event("r1", ann, kind = 7, at = now + 31_536_000, tags = listOf(listOf("e", "n1")))
+        val reply = event("x1", bob, at = now - 60, content = "hi", tags = listOf(listOf("p", me)))
+        val lines = VaultActivity.build(listOf(old, like, reply), me, noteKinds, zone = ZoneOffset.UTC, now = now)
+        assertEquals(listOf("x1"), lines.map { it.id })
+    }
 }

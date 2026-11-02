@@ -81,6 +81,26 @@ data class VaultActivity(
         private val json = Json { ignoreUnknownKeys = true }
 
         /**
+         * How far ahead of this device's clock an event may be dated (the relay
+         * refuses the same, haven-go future_events.go). Later is a sender with a
+         * wrong clock: its line would top the list, and a refresh asking for
+         * "newer than the newest held" would ask for the future and get nothing
+         * more, so the Vault froze (Logen 11-02). iOS: VaultActivity.swift.
+         */
+        const val MAX_FUTURE_SKEW = 600L
+
+        fun nowSeconds(): Long = System.currentTimeMillis() / 1000
+
+        /** Whether an event dated [createdAt] is too far ahead of [now] to keep. */
+        fun isFuture(createdAt: Long, now: Long): Boolean = createdAt > now + MAX_FUTURE_SKEW
+
+        /**
+         * The `since` of a top-up: a minute before the newest event held, never
+         * later than the clock allows. Null when nothing is held.
+         */
+        fun refreshSince(newest: Long?, now: Long): Long? = newest?.let { minOf(it, now + MAX_FUTURE_SKEW) - 60 }
+
+        /**
          * Builds the list. [noteKinds] are the kinds the Vault lists (the relay
          * tab's); [isBlocked] drops blocked authors and, for posts that tag
          * you, [isOutside] drops replies from outside your network (the Notes
@@ -95,6 +115,7 @@ data class VaultActivity(
             isBlocked: (String) -> Boolean = { false },
             isOutside: (String) -> Boolean = { false },
             zone: ZoneId = ZoneId.systemDefault(),
+            now: Long = nowSeconds(),
         ): List<VaultActivity> {
             if (owner.isEmpty()) return emptyList()
 
@@ -126,7 +147,7 @@ data class VaultActivity(
 
             // Newest first, so each fold's actor list comes out newest first.
             for (event in events.sortedByDescending { it.createdAt }) {
-                if (event.pubkey == owner || !seen.add(event.id)) continue
+                if (event.pubkey == owner || isFuture(event.createdAt, now) || !seen.add(event.id)) continue
 
                 if (event.kind == REACTION_KIND) {
                     if (isBlocked(event.pubkey)) continue

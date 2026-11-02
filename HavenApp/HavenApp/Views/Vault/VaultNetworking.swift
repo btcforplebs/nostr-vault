@@ -85,7 +85,8 @@ extension VaultView {
         // boundary safety). fetchNotes reuses connected clients as-is.
         let since: Int64? = needsFull
             ? nil
-            : nostrService.events.map(\.created_at).max().map { $0 - 60 }
+            : VaultActivity.refreshSince(newest: nostrService.events.map(\.created_at).max(),
+                                         now: Int64(Date().timeIntervalSince1970))
 
         nostrService.fetchNotes(from: urls, since: since, authors: authors)
     }

@@ -7,7 +7,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import com.nostrvault.tutorials.TutorialContent
 import com.nostrvault.tutorials.tutorialAnchor
@@ -472,11 +471,8 @@ fun DashboardScreen(
             feedService.blockUser(note.pubkey)
         }
 
-        PullToRefreshBox(
-            isRefreshing = isRefreshing,
-            onRefresh = viewModel::loadLocalRelayNotes,
-            modifier = Modifier.fillMaxSize(),
-        ) {
+        // No pull to refresh: the live subscription keeps the pages current.
+        Box(modifier = Modifier.fillMaxSize()) {
             when (viewMode) {
                 VaultViewMode.NOTES -> NotesContent(
                     notes = displayNotes,

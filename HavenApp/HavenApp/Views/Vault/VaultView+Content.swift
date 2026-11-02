@@ -13,7 +13,6 @@ extension VaultView {
                     HStack {
                         modeView
                         Spacer()
-                        refreshButton
                         searchToggleButton
                     }
                     if viewMode == .notes {
@@ -49,7 +48,6 @@ extension VaultView {
                         } else if viewMode == .followers {
                             followersFilterView
                         }
-                        refreshButton
                         searchToggleButton
                         compactToggleButton
                     }

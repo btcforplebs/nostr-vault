@@ -338,6 +338,7 @@ func initRelays(ctx context.Context) error {
 	privateRelay.RejectCountFilter = append(privateRelay.RejectCountFilter, policies.MustAuth, MustBeWhitelistedToQuery)
 
 	privateRelay.RejectEvent = append(privateRelay.RejectEvent,
+		policies.PreventTimestampsInTheFuture(maxFutureSkew),
 		policies.RejectEventsWithBase64Media,
 		whitelistBypassEventRateLimiter(
 			privateRelayLimits.EventIPLimiterTokensPerInterval,
@@ -411,6 +412,7 @@ func initRelays(ctx context.Context) error {
 	chatRelay.RejectCountFilter = append(chatRelay.RejectCountFilter, policies.MustAuth, MustBeInWotToQuery)
 
 	chatRelay.RejectEvent = append(chatRelay.RejectEvent,
+		policies.PreventTimestampsInTheFuture(maxFutureSkew),
 		policies.RejectEventsWithBase64Media,
 		whitelistBypassEventRateLimiter(
 			chatRelayLimits.EventIPLimiterTokensPerInterval,
@@ -499,6 +501,7 @@ func initRelays(ctx context.Context) error {
 	outboxRelay.RejectCountFilter = append(outboxRelay.RejectCountFilter, meshNoQueries)
 
 	outboxRelay.RejectEvent = append(outboxRelay.RejectEvent,
+		policies.PreventTimestampsInTheFuture(maxFutureSkew),
 		meshOwnerEventsOnly,
 		policies.RejectEventsWithBase64Media,
 		whitelistBypassEventRateLimiter(
@@ -627,6 +630,7 @@ func initRelays(ctx context.Context) error {
 	}
 
 	inboxRelay.RejectEvent = append(inboxRelay.RejectEvent,
+		policies.PreventTimestampsInTheFuture(maxFutureSkew),
 		policies.RejectEventsWithBase64Media,
 		whitelistBypassEventRateLimiter(
 			inboxRelayLimits.EventIPLimiterTokensPerInterval,
@@ -721,6 +725,7 @@ func initRelays(ctx context.Context) error {
 	// Reuse the outbox limiter numbers: the feed route is localhost-facing,
 	// and localhost connections bypass the connection limiter anyway.
 	feedRelay.RejectEvent = append(feedRelay.RejectEvent,
+		policies.PreventTimestampsInTheFuture(maxFutureSkew),
 		policies.RejectEventsWithBase64Media,
 		whitelistBypassEventRateLimiter(
 			outboxRelayLimits.EventIPLimiterTokensPerInterval,
