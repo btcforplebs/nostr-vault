@@ -15,14 +15,14 @@ import { followsOf, relation, setFollow } from "../net/follows.js"
 import { fetchPersonArticles, fetchPersonLists, fetchTagged, openPersonNotes, readPersonNotes, syncPersonNotes, PERSON_PAGE } from "../net/person.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { fetchShop } from "../net/profile-tabs.js"
+import { WOT_GLOBE } from "../components/wot-glyph.js"
 import "../styles/person.css"
 
-const WOT = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM12 10V3.5M13.7 13l5.6 3.5M10.3 13l-5.6 3.5"
 const MESSAGE = "M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-5A8 8 0 1 1 21 12z"
 /** The WoT tab's globe (TabBar), so the button and the tab read as one place (ProfileActions.trustWeb). */
 export const WotButton = ({ pubkey, hint }) => (
   <a class="more-btn" href={pubkey ? `#/wot/${pubkey}` : "#/wot"} aria-label="Web of Trust" title={hint}>
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={WOT} /></svg>
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d={WOT_GLOBE} /></svg>
   </a>
 )
 
