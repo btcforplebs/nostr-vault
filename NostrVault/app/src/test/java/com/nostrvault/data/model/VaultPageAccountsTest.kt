@@ -75,4 +75,29 @@ class VaultPageAccountsTest {
         assertEquals(a, VaultPageAccounts.mergeFollowers(listOf(a)))
         assertNull(VaultPageAccounts.mergeFollowers(emptyList()))
     }
+
+    // ── Report / Block on page rows (iOS #1562) ──
+
+    @Test
+    fun anyAccountOnThisDeviceIsOwn() {
+        assertTrue(VaultPageAccounts.isOwnAccount("CC", accounts, "bb"))
+        assertTrue(VaultPageAccounts.isOwnAccount("bb", emptyList(), "BB"))
+        assertFalse(VaultPageAccounts.isOwnAccount("dd", accounts, "bb"))
+    }
+
+    @Test
+    fun strangersRowForTheActiveAccountKeepsTheMenu() {
+        assertTrue(VaultPageAccounts.showsRowMenu("dd", null, accounts, "bb"))
+    }
+
+    @Test
+    fun rowListedForAnotherAccountHasNoMenu() {
+        assertFalse(VaultPageAccounts.showsRowMenu("dd", "aa", accounts, "bb"))
+    }
+
+    @Test
+    fun noteByAnotherAccountOnThisDeviceHasNoMenu() {
+        assertFalse(VaultPageAccounts.showsRowMenu("aa", null, accounts, "bb"))
+        assertFalse(VaultPageAccounts.showsRowMenu("bb", null, accounts, "bb"))
+    }
 }

@@ -122,8 +122,9 @@ internal fun ZapsContent(
             modifier = Modifier.fillMaxSize(),
         ) {
             items(items = notes, key = { it.id }) { note ->
+                val showsMenu = viewModel.showsRowMenu(note.id, note.pubkey)
                 val noteType = when {
-                    note.pubkey == viewModel.currentUserPubkey() -> VaultNoteType.MINE
+                    viewModel.isOwnAccount(note.pubkey) -> VaultNoteType.MINE
                     viewModel.isWhitelisted(note.pubkey) -> VaultNoteType.WHITELISTED
                     else -> VaultNoteType.TAGGED
                 }
@@ -138,8 +139,9 @@ internal fun ZapsContent(
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
-                    onReport = { reason, description -> onReportNote(note, reason, description) },
-                    onBlock = { onBlockAuthor(note.pubkey) },
+                    // No Report / Block on another account's rows (iOS #1562).
+                    onReport = if (showsMenu) ({ reason, description -> onReportNote(note, reason, description) }) else null,
+                    onBlock = if (showsMenu) ({ onBlockAuthor(note.pubkey) }) else null,
                     modifier = Modifier
                         .padding(horizontal = 16.dp, vertical = 6.dp)
                         .relayFocusOutline(note.id == focusedEventId),
