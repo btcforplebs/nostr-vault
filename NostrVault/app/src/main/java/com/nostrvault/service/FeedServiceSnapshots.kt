@@ -153,23 +153,17 @@ import com.nostrvault.service.FeedService.Companion.AVATAR_PREWARM_COUNT
         modeCaches.clear()
         savedModeCachesLoadedFor = null
         forgetFeedNotesKey()
-        // Notes, reactions and zaps still waiting to flush came for the
-        // previous list (on a switch, the previous account): thrown away.
+        // Every socket and page opened so far asked for the previous list (on
+        // a switch, the previous account's feed, mentions and zaps). Their
+        // REQs would keep streaming into this one, and a refresh that finds
+        // nothing to ask for (no follows yet) would never replace them: drop
+        // the sockets, and whatever they still deliver, and reconnect fresh.
+        feedEpoch++
+        teardownAllFeedClients()
+        // Notes, reactions and zaps still waiting to flush: thrown away too.
         accumulator.drain()
         // The list is emptied for this account: what fills it from here is its own.
         notesAccount = nostrService.activeHexPubkey.ifEmpty { null }
-        // Reused feed sockets keep their REQs across the refresh, which
-        // re-sends only the primary one. Mentions go again for this account
-        // now (same sub id, so the relay replaces the old one); zaps and the
-        // rest go again on the next primary EOSE.
-        auxSubsSent.clear()
-        for ((relayUrl, client) in feedClients) {
-            if (relayUrl !in outboxPlan &&
-                client.connectionState.value == com.nostrvault.data.remote.WebSocketClient.ConnectionState.CONNECTED
-            ) {
-                sendMentionSubscription(relayUrl)
-            }
-        }
         _notes.value = emptyList()
         _pendingNotes.value = emptyList()
         _noteStats.value = emptyMap()

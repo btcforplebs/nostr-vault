@@ -392,6 +392,12 @@ class FeedService @Inject constructor(
     internal val roundResumeRelays = HashSet<String>()
     /** Account whose notes [_notes] holds; a tab cache is filed only for it (FeedModeCacheDisk.kt). */
     internal var notesAccount: String? = null
+    /**
+     * Bumped by every reset of the list (clearInMemoryFeedState). A socket or
+     * page carries the epoch it was opened in; anything it delivers after a
+     * reset is the previous list's, and is dropped.
+     */
+    @Volatile internal var feedEpoch = 0
     /** Account whose saved Discover / Popular are in [modeCaches]: FeedModeCacheDisk.kt */
     internal var savedModeCachesLoadedFor: String? = null
 

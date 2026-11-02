@@ -24,7 +24,9 @@ import com.nostrvault.service.FeedService.Companion.MAX_SEEN_IDS
 
     // ══════════════════════════════════════════════════════════════════
 
-    internal fun FeedService.processAccumulatorMessage(message: String, relayUrl: String) {
+    internal fun FeedService.processAccumulatorMessage(message: String, relayUrl: String, epoch: Int = feedEpoch) {
+        // Opened before the last reset: the previous list's (or account's) answer.
+        if (epoch != feedEpoch) return
         try {
             val parsed = json.parseToJsonElement(message).jsonArray
             if (parsed.isEmpty()) return
@@ -55,7 +57,9 @@ import com.nostrvault.service.FeedService.Companion.MAX_SEEN_IDS
                         !FeedAccountGuard.mentions(eventObj, nostrService.activeHexPubkey)
                     ) return
 
-                    // Feed notes → accumulator
+                    // Feed notes → accumulator. Checked again: a reset can
+                    // land while this message was being parsed.
+                    if (epoch != feedEpoch) return
                     accumulateEvent(eventObj, message, relayUrl)
 
                     // Inject mention events into local relay inbox so they persist

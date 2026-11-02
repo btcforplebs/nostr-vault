@@ -182,10 +182,11 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
 
         // Collected on Default, not Main: each message used to cost a Main
         // dispatch just to be handed on to Default.
+        val epoch = feedEpoch
         val messagesJob = scope.launch(processingDispatcher) {
             client.messages.collect { msg ->
                 launch(processingDispatcher) {
-                    processAccumulatorMessage(msg, relayUrl)
+                    processAccumulatorMessage(msg, relayUrl, epoch)
                 }
             }
         }
@@ -464,7 +465,7 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         }
     }
 
-    internal fun FeedService.sendMentionSubscription(relayUrl: String) {
+    private fun FeedService.sendMentionSubscription(relayUrl: String) {
         val client = feedClients[relayUrl] ?: return
         val ownerHex = nostrService.activeHexPubkey
         if (ownerHex.isEmpty()) return

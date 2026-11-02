@@ -133,6 +133,22 @@ class FeedServiceModeCacheTest {
     }
 
     @Test
+    fun `an event from a socket opened before the reset never reaches the list`() {
+        val now = System.currentTimeMillis() / 1000 - 10
+        fun event(id: String) =
+            """["EVENT","feed-following",{"id":"${id.padEnd(64, '0')}","pubkey":"${"c".repeat(64)}","kind":1,"created_at":$now,"tags":[],"content":"hello from $id","sig":"00"}]"""
+        val before = feed.feedEpoch
+        // Alice's primary REQ is still streaming when the switch to bob lands.
+        account = "bob"
+        feed.clearInMemoryFeedState()
+        feed.processAccumulatorMessage(event("a1"), "wss://relay.example", before)
+        assertEquals(emptyList<FeedNote>(), feed.accumulator.drain().notes)
+        // A socket opened after the reset (bob's) is taken.
+        feed.processAccumulatorMessage(event("b1"), "wss://relay.example", feed.feedEpoch)
+        assertEquals(listOf("b1".padEnd(64, '0')), feed.accumulator.drain().notes.map { it.id })
+    }
+
+    @Test
     fun `the old account's list is not filed under the new one before the reset`() {
         showFeed(note("a1", 1))
         feed.captureModeCache(FeedMode.DISCOVERY)
