@@ -8,6 +8,7 @@ import { useProfile } from "./useProfile.js"
 import { actionContext } from "../net/actions.js"
 import { setFollow } from "../net/follows.js"
 import { setBlock } from "../net/blocks.js"
+import { WOT_GLOBE } from "./wot-glyph.js"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
 
 const nameOf = (p, pk) => p?.display_name || p?.name || pk.slice(0, 8)
@@ -71,7 +72,7 @@ function QuickMenu({ ctx, pubkey, onClose }) {
         {busy === "follow" ? <span class="kind-spinner" /> : <Icon d={followed ? PERSON + "M17 11h6" : PERSON + "M20 8v6M17 11h6"} />}
       </button>
       <a role="menuitem" class="wot" href={`#/wot/${pubkey}`} aria-label="Web of Trust" title={`Shows how you're connected to ${name}`} onClick={onClose}>
-        <Icon d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM12 10V3.5M13.7 13l5.6 3.5M10.3 13l-5.6 3.5" />
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d={WOT_GLOBE} /></svg>{/* Assets WoTTab, as AuthorQuickMenu.swift */}
       </a>
       <hr />
       <button type="button" role="menuitem" class="block" disabled={!!busy} onClick={block} aria-label={`Block ${name}`} title={`Block ${name}`}>
