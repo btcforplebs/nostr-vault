@@ -170,3 +170,24 @@ test("a newer version not opened yet: what it may hide comes back private; nothi
   const rows2 = buildMerge({ current: cur, picked: [v1], all: [cur, v1, v0] })
   assert.equal(rows2.find(r => r.tag[1] === P(5)).private, false)
 })
+
+test("an unmute in a newer locked version stays out once Merge opens it (Tron, PR 1570 r2)", async () => {
+  const { openForMerge } = await import("../src/net/list-version-merge.js")
+  let asked = 0
+  const counting = c => { asked++; return open(c) }
+  const v0 = await openVersion(ev(10000, [], 5, enc([["p", P(8)]])), undefined)
+  const v1 = await openVersion(ev(10000, [["p", P(5)]], 10), undefined)
+  const v2 = await openVersion(ev(10000, [["p", P(6)]], 20, enc([["word", "y"]])), undefined) // unmuted P(5)
+  const cur = await openVersion(ev(10000, [["p", P(6)]], 30, enc([["word", "y"]])), counting)
+  asked = 0
+  const all = await openForMerge([cur, v2, v1, v0], [v1], counting)
+  assert.equal(asked, 1, "only the locked version newer than the oldest picked one is opened")
+  assert.equal(all.find(v => v.ev.id === v0.ev.id).locked, true, "an older one stays locked")
+  const rows = buildMerge({ current: cur, picked: [all.find(v => v.ev.id === v1.ev.id)], all })
+  const x = rows.find(r => r.tag[1] === P(5))
+  assert.equal(x.status, "removed")
+  assert.equal(x.ticked, false)
+  assert.equal(x.private, false)
+  // Without opening it, the same merge can't tell: it would come back (the case Tron found).
+  assert.equal(buildMerge({ current: cur, picked: [v1], all: [cur, v2, v1, v0] }).find(r => r.tag[1] === P(5)).status, "back")
+})

@@ -14,7 +14,7 @@ import { decrypterFor, showBlockList } from "../net/blocks.js"
 import { findVersions, listOverview } from "../net/list-versions.js"
 import { saveMerged } from "../net/list-merge-save.js"
 import {
-  MERGE_KINDS, mergeKind, openVersion, unread, isEmpty, pickProblem, deltaOf, deltaLine, shrank, buildMerge, mergedTags, mergeSummary,
+  MERGE_KINDS, mergeKind, openVersion, openForMerge, unread, isEmpty, pickProblem, deltaOf, deltaLine, shrank, buildMerge, mergedTags, mergeSummary,
 } from "../net/list-version-merge.js"
 
 const day = at => new Date(at * 1000).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
@@ -60,6 +60,7 @@ function ListVersions({ ctx, kind, onBack }) {
   const [picked, setPicked] = useState(() => new Set())
   const [rows, setRows] = useState(null) // the merge being confirmed
   const [review, setReview] = useState(false)
+  const [opening, setOpening] = useState(false)
   const [msg, setMsg] = useState("")
 
   useEffect(() => { (async () => {
@@ -91,6 +92,17 @@ function ListVersions({ ctx, kind, onBack }) {
     onReview={() => setReview(true)} onCancel={() => { setRows(null); setReview(false) }} onSaved={done} onStale={done} />
   if (rows && review) return <MergeView ctx={ctx} name={name} rows={rows} setRows={setRows} onBack={() => setReview(false)}>{confirm}</MergeView>
 
+  // Opens the versions newer than the oldest ticked one first, so what the user removed on purpose stays out.
+  const merge = async () => {
+    setOpening(true)
+    try {
+      const opened = await openForMerge(versions, chosen, state.open)
+      if (ctx.session.pubkey !== me) return
+      setState(st => ({ ...st, versions: opened }))
+      const ids = new Set(chosen.map(v => v.ev.id))
+      setRows(buildMerge({ current, picked: opened.filter(v => ids.has(v.ev.id)), all: opened }))
+    } finally { setOpening(false) }
+  }
   const toggle = async id => {
     setRows(null)
     const v = versions.find(x => x.ev.id === id)
@@ -116,7 +128,7 @@ function ListVersions({ ctx, kind, onBack }) {
       </section>
       {readOnly ? <p class="settings-note muted small">{READ_ONLY}</p> : others.length > 0 && (rows ? confirm : (
         <div class="settings-note">
-          <button class="primary" disabled={!enough || !!current?.reason} onClick={() => setRows(buildMerge({ current, picked: chosen, all: versions }))}>Merge + save</button>
+          <button class="primary" disabled={!enough || !!current?.reason || opening} onClick={merge}>{opening ? "Opening versions…" : "Merge + save"}</button>
           <p class="muted small">{current ? "Tick the versions to bring back." : "Tick two or more versions."} Everything in your list now stays. You can change single entries later in the list itself.</p>
         </div>
       ))}
@@ -164,7 +176,7 @@ function SaveConfirm({ ctx, kind, name, current, rows, review, onReview, onCance
   const nothing = !sum.added && !sum.removed
   return (
     <div class="card">
-      <p class="small">{nothing ? "Nothing to bring back: your list now already has all of it."
+      <p class="small">{nothing ? "Nothing to bring back."
         : `Saves your ${name.toLowerCase()} as ${entries(sum.total)}: ${sum.added} back${sum.removed ? `, ${sum.removed} taken out` : ""}. Signed by you; the list you have now stays in your vault's history.`}</p>
       {leftOut > 0 && <p class="muted small">{leftOut} you removed yourself later {leftOut === 1 ? "stays" : "stay"} out.</p>}
       {sum.remutes > 0 && <p class="small">This mutes {sum.remutes} {sum.remutes === 1 ? "person" : "people"} again.</p>}
