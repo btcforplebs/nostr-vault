@@ -73,19 +73,19 @@ private struct Burst: View {
             Circle()
                 .fill(
                     RadialGradient(
-                        colors: [Color.orange.opacity(glowOpacity), Color.orange.opacity(0)],
+                        colors: [Color.havenZapGold.opacity(glowOpacity), Color.havenZapGold.opacity(0)],
                         center: .center, startRadius: 0, endRadius: 20
                     )
                 )
                 .scaleEffect(0.5 + progress * 0.9)
 
             Circle()
-                .stroke(Color.orange.opacity(ringOpacity), lineWidth: 1.25)
+                .stroke(Color.havenZapGold.opacity(ringOpacity), lineWidth: 1.25)
                 .scaleEffect(0.55 + progress * 1.35)
 
             ForEach(sparks) { spark in
                 Circle()
-                    .fill(Color.orange.opacity(sparkOpacity))
+                    .fill(Color.havenZapGold.opacity(sparkOpacity))
                     .frame(width: spark.size, height: spark.size)
                     .offset(
                         x: cos(spark.angle) * spark.distance * progress,

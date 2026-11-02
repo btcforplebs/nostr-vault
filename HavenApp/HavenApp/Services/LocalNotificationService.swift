@@ -612,7 +612,7 @@ final class LocalNotificationService {
         case "reply":          return ("arrowshape.turn.up.left.fill", Color.havenPurple)
         case "quote":          return ("quote.bubble.fill", Color.blue)
         case "dm", "giftwrap": return ("envelope.fill", Color.blue)
-        case "zap":            return ("bolt.fill", Color.orange)
+        case "zap":            return ("bolt.fill", Color.havenZapGold)
         case "reaction":       return ("heart.fill", Color.red)
         case "repost":         return ("arrow.2.squarepath", Color.green)
         case "follow", "followers": return ("person.badge.plus", Color.havenPurple)

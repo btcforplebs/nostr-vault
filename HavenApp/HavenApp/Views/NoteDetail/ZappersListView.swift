@@ -29,7 +29,7 @@ struct ZappersListView: View {
                                 Spacer()
                                 Text("\(zap.amountSats) sats")
                                     .font(.appSystem(size: 13, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.orange)
+                                    .foregroundColor(Color.havenZapGold)
                             }
                             if !zap.comment.isEmpty {
                                 Text(zap.comment)

@@ -26,12 +26,13 @@ internal val WizardBgPrimary = Color(0xFF09090B)
 internal val WizardBgCard = Color(0xFF18181B)
 internal val WizardBgElevated = Color(0xFF27272A)
 internal val WizardBorderSubtle = Color.White.copy(alpha = 0.06f)
-internal val WizardBorderActive = Color(0xFFF59E0B).copy(alpha = 0.4f)
-internal val WizardAccent = Color(0xFFF59E0B)
-internal val WizardAccentGlow = Color(0xFFF59E0B).copy(alpha = 0.3f)
+// The brand orange ramp (Color.kt AppTheme), not a wizard-only amber.
+internal val WizardBorderActive = Color(0xFFE67326).copy(alpha = 0.4f)
+internal val WizardAccent = Color(0xFFE67326)
+internal val WizardAccentGlow = Color(0xFFE67326).copy(alpha = 0.3f)
 internal val WizardTextMuted = Color(0xFF71717A)
 internal val WizardGradient = Brush.horizontalGradient(
-    colors = listOf(Color(0xFFEA580C), Color(0xFFF59E0B)),
+    colors = listOf(Color(0xFFB35214), Color(0xFFE67326)),
 )
 
 // ══════════════════════════════════════════════════════════════════

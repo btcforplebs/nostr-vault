@@ -76,8 +76,8 @@ struct CustomZapSheet: View {
         HStack(spacing: 10) {
             Image(systemName: "bolt.fill")
                 .font(.appSystem(size: 18, weight: .bold))
-                .foregroundColor(.orange)
-                .shadow(color: .orange.opacity(0.6), radius: 8)
+                .foregroundColor(Color.havenZapGold)
+                .shadow(color: Color.havenZapGold.opacity(0.6), radius: 8)
 
             Text("Zap Amount")
                 .font(.appSystem(size: 18, weight: .bold, design: .rounded))
@@ -123,7 +123,7 @@ struct CustomZapSheet: View {
                             isSelected
                                 ? AnyShapeStyle(
                                     LinearGradient(
-                                        colors: [.orange, .orange.opacity(0.7)],
+                                        colors: [Color.havenZapGold, Color.havenZapGold.opacity(0.7)],
                                         startPoint: .topLeading,
                                         endPoint: .bottomTrailing
                                     )
@@ -135,13 +135,13 @@ struct CustomZapSheet: View {
                             RoundedRectangle(cornerRadius: 12)
                                 .stroke(
                                     isSelected
-                                        ? Color.orange.opacity(0.8)
+                                        ? Color.havenZapGold.opacity(0.8)
                                         : Color.platformSeparator,
                                     lineWidth: isSelected ? 1.5 : 0.8
                                 )
                         )
                         .shadow(
-                            color: isSelected ? Color.orange.opacity(0.3) : .clear,
+                            color: isSelected ? Color.havenZapGold.opacity(0.3) : .clear,
                             radius: 6
                         )
                 }
@@ -158,7 +158,7 @@ struct CustomZapSheet: View {
         HStack(spacing: 10) {
             Image(systemName: "pencil.line")
                 .font(.appSystem(size: 14, weight: .medium))
-                .foregroundColor(isCustomActive ? .orange : .secondary)
+                .foregroundColor(isCustomActive ? Color.havenZapGold : .secondary)
 
             TextField("Custom amount", text: $customAmountText)
                 .font(.appSystem(size: 16, weight: .medium, design: .monospaced))
@@ -184,7 +184,7 @@ struct CustomZapSheet: View {
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(
-                    isCustomActive ? Color.orange.opacity(0.6) : Color.platformSeparator,
+                    isCustomActive ? Color.havenZapGold.opacity(0.6) : Color.platformSeparator,
                     lineWidth: isCustomActive ? 1.5 : 0.8
                 )
         )
@@ -198,7 +198,7 @@ struct CustomZapSheet: View {
         HStack(spacing: 10) {
             Image(systemName: "text.bubble")
                 .font(.appSystem(size: 14, weight: .medium))
-                .foregroundColor(comment.isEmpty ? .secondary : .orange)
+                .foregroundColor(comment.isEmpty ? .secondary : Color.havenZapGold)
 
             TextField("Add a comment (optional)", text: $comment)
                 .font(.appSystem(size: 16))
@@ -245,7 +245,7 @@ struct CustomZapSheet: View {
             .background(
                 LinearGradient(
                     colors: effectiveAmount > 0
-                        ? [.orange, Color(red: 0.95, green: 0.55, blue: 0.1)]
+                        ? [Color.havenZapGold, Color.havenPurple]
                         : [Color.secondary.opacity(0.3), Color.secondary.opacity(0.2)],
                     startPoint: .leading,
                     endPoint: .trailing
@@ -253,7 +253,7 @@ struct CustomZapSheet: View {
             )
             .cornerRadius(14)
             .shadow(
-                color: effectiveAmount > 0 ? .orange.opacity(0.35) : .clear,
+                color: effectiveAmount > 0 ? Color.havenZapGold.opacity(0.35) : .clear,
                 radius: 10, x: 0, y: 4
             )
         }

@@ -84,7 +84,7 @@ struct LiveChatRowView: View {
         .padding(message.isZap ? 8 : 0)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(message.isZap ? Color.orange.opacity(0.12) : Color.clear)
+                .fill(message.isZap ? Color.havenZapGold.opacity(0.12) : Color.clear)
         )
     }
 

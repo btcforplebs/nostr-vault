@@ -60,7 +60,7 @@ extension WalletLightningTab {
             if range.isFixed {
                 Text("Amount: \(range.minSats.formatted()) sats")
                     .font(.appSystem(size: 13, weight: .semibold))
-                    .foregroundColor(.orange)
+                    .foregroundColor(Color.havenZapGold)
             } else {
                 TextField("Amount (sats)", text: $lnurlAmountSats)
                     .font(.appSystem(size: 14, design: .monospaced))
@@ -92,7 +92,7 @@ extension WalletLightningTab {
                 .padding(.vertical, 10)
             }
             .buttonStyle(.bordered)
-            .tint(.orange)
+            .tint(Color.havenZapGold)
             .disabled(isSending || !isOK(check))
             .confirmDestructive(
                 "Send Payment",

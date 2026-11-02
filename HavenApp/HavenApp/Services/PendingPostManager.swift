@@ -31,16 +31,6 @@ class PendingPostManager: ObservableObject {
             }
         }
 
-        var color: Color {
-            switch self {
-            case .reply:   return Color(red: 0.22, green: 0.52, blue: 0.95)
-            case .quote:   return Color(red: 0.12, green: 0.70, blue: 0.60)
-            case .newPost: return Color(red: 0.55, green: 0.18, blue: 0.92)
-            case .repost:  return Color(red: 0.55, green: 0.18, blue: 0.92)
-            case .delete:  return .red
-            }
-        }
-
         /// The choices offered in Settings. 0 = Off: no pill, no undo.
         static let countdownChoices: [Double] = [0, 5, 10]
         static let countdownDefault: Double = 5

@@ -401,7 +401,7 @@ struct CondensedNoteLine: View, Equatable {
                     )
                 }
                 if engagement.zaps > 0 {
-                    countChip(symbol: .system("bolt.fill"), count: engagement.zaps, tint: .orange)
+                    countChip(symbol: .system("bolt.fill"), count: engagement.zaps, tint: Color.havenZapGold)
                 }
                 if engagement.reposts > 0 {
                     countChip(symbol: .system("arrow.2.squarepath"), count: engagement.reposts, tint: .green)

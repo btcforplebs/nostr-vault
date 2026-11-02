@@ -14,8 +14,8 @@ private struct AmbientGradientView: View {
                 let radius = min(size.width, size.height) * 0.45
 
                 let gradient = Gradient(colors: [
-                    Color(red: 0.961, green: 0.620, blue: 0.043).opacity(0.15),
-                    Color(red: 0.918, green: 0.345, blue: 0.047).opacity(0.08),
+                    Color(red: 0.902, green: 0.451, blue: 0.149).opacity(0.15), // #E67326
+                    Color(red: 0.702, green: 0.322, blue: 0.078).opacity(0.08), // #B35214
                     Color.clear
                 ])
                 let shading = GraphicsContext.Shading.radialGradient(

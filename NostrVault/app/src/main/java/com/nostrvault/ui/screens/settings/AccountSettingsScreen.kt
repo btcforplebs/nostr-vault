@@ -171,10 +171,11 @@ private fun Badge2(text: String, color: Color) {
 }
 
 private fun colorPrimaryFor(mode: String): Color = when (mode) {
-    "owner" -> Color(0xFF9C27B0)
-    "amber" -> Color(0xFF4CAF50)
-    "nip46" -> Color(0xFF2196F3)
-    else -> Color(0xFFF59E0B)
+    // One orange ramp, dark to light: the badge text says which signer.
+    "owner" -> Color(0xFFE67326)
+    "amber" -> Color(0xFFF08A45)
+    "nip46" -> Color(0xFFB35214)
+    else -> Color(0xFFFA9447)
 }
 
 /**

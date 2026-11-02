@@ -303,7 +303,7 @@ struct ZapFlightStage: View {
         .accessibilityHidden(true)
     }
 
-    private static let amber = Color(red: 1, green: 0.62, blue: 0.1)
+    private static let amber = Color.havenZapGold
     private static let hot = Color(red: 1, green: 0.93, blue: 0.7)
     private static let violet = Color(red: 0.72, green: 0.6, blue: 1)
 
@@ -455,7 +455,7 @@ private struct ZapFlightOriginModifier: ViewModifier {
                 Color.black
                 VStack {
                     Image(systemName: "bolt")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color.havenZapGold)
                         .frame(width: 32, height: 32)
                         .zapFlightTarget(anchor)
                         .overlay { ZapBurstView(isAnimating: $burst) }

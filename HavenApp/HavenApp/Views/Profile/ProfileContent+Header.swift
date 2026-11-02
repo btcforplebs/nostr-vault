@@ -266,7 +266,7 @@ extension ProfileContent {
             if let lud16 = lightningAddress {
                 Button { ProfileFormat.copy(lud16); flash($copiedLightning) } label: {
                     linkChip(lud16, icon: copiedLightning ? "checkmark" : "bolt.fill",
-                             tint: copiedLightning ? .green : .orange)
+                             tint: copiedLightning ? .green : Color.havenZapGold)
                 }
                 .accessibilityLabel(copiedLightning ? "Lightning address copied" : "Copy Lightning address \(lud16)")
             }
