@@ -13,11 +13,10 @@ import { ThreadScreen } from "../screens/ThreadScreen.jsx"
 import { MessagesScreen } from "../screens/MessagesScreen.jsx"
 import { ConversationScreen } from "../screens/ConversationScreen.jsx"
 import { VaultScreen } from "../screens/VaultScreen.jsx"
-import { SettingsScreen, hasKeyPage } from "../screens/SettingsScreen.jsx"
+import { SettingsScreen } from "../screens/SettingsScreen.jsx"
 import { AccountsScreen } from "../screens/AccountsScreen.jsx"
 import { WalletScreen } from "../screens/WalletScreen.jsx"
 import { WotScreen } from "../screens/WotScreen.jsx"
-import { isPage } from "../net/settings.js"
 import { compose } from "../net/actions.js"
 import { parseHash, withParam, sideOf, SPLIT, FULL } from "./routes.js"
 import { keyCommand, SHEET } from "./keys.js"
@@ -66,7 +65,6 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   useEffect(() => { if ((note || dm) && noteHidden) setNoteHidden(false) }, [note, dm])
 
   const closeDetail = () => {
-    if (["settings", "accounts", "wallet"].includes(view.route)) { location.hash = "#/settings"; return }
     location.hash = withParam(withParam(composing ? lastList : hash, "note", null), "dm", null)
   }
   const cameIn = useRef(false) // Compose reached by navigating here (Back closes it), not opened cold from a link
@@ -76,8 +74,7 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   useShortcuts({ ctx, composing, closeCompose, closeDetail, hasDetail: !!(note || dm), help, setHelp,
     foldSide: () => setSideFolded(!sideFolded), foldNote: () => setNoteHidden(!noteHidden) })
 
-  const settingsish = ["settings", "accounts", "wallet"].includes(view.route)
-  const listKey = other ? `person:${view.arg}` : settingsish ? "settings" : view.route
+  const listKey = other ? `person:${view.arg}` : view.route
   const list = (
     <>
       {kept.feed && <div class="desk-pane" hidden={listKey !== "feed"}><FeedScreen ctx={ctx} /></div>}
@@ -90,7 +87,6 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
             : view.route === "vault" ? <VaultScreen ctx={ctx} desk />
             : view.route === "messages" ? <MessagesScreen ctx={ctx} />
             : view.route === "notifications" ? <NotificationsScreen ctx={ctx} />
-            : settingsish ? <SettingsScreen ctx={ctx} />
             : null}
         </div>
       )}
@@ -101,25 +97,26 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   if (view.route === "messages") {
     placeholder = "Pick a conversation."
     if (dm) detail = <div class="desk-pane"><ConversationScreen key={dm} ctx={ctx} peer={dm} /></div>
-  } else if (settingsish) {
-    placeholder = "Pick a setting."
-    if (view.route === "settings" && (isPage(view.arg) || (view.arg === "key" && hasKeyPage(ctx)))) detail = <div class="desk-pane"><SettingsScreen key={view.arg} ctx={ctx} page={view.arg} /></div>
-    if (view.route === "accounts") detail = <div class="desk-pane"><AccountsScreen ctx={ctx} /></div>
-    if (view.route === "wallet") detail = <div class="desk-pane"><WalletScreen /></div>
   } else if (note) {
     detail = <ThreadPane key={note} ctx={ctx} id={note} onClose={closeDetail} />
   }
 
   const full = view.route === "wot" || view.route === "relay"
+  // Settings, Accounts and Wallet: one page across the main area, the phone's own screen with its ‹ Settings button.
+  const page = view.route === "settings" ? <SettingsScreen key={view.arg} ctx={ctx} page={view.arg} />
+    : view.route === "accounts" ? <AccountsScreen ctx={ctx} />
+    : view.route === "wallet" ? <WalletScreen />
+    : null
   return (
     <div class={`desk ${mode}${rail ? " rail" : ""}`}>
       <Sidebar ctx={ctx} side={side} rail={rail} />
       <section class="desk-main">
         {view.route === "wot" ? <div class="desk-full"><WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(view.arg) ? view.arg : undefined} /></div>
+          : page ? <div class="desk-page" key={view.path}>{page}</div>
           : full ? null /* the Dashboard: main.jsx keeps the relay screen mounted and lays it over this area */
           : <SplitPane single={mode === "single"} list={list} detail={detail} placeholder={placeholder}
               noteHidden={noteHidden} setNoteHidden={setNoteHidden} onBack={closeDetail} />}
-        <Current note={note} dm={dm} page={settingsish ? (view.route === "settings" ? `settings/${view.arg}` : view.route) : null} />
+        <Current note={note} dm={dm} />
       </section>
       {composing && <ComposeDialog ctx={ctx} onClose={closeCompose} />}
       {help && <ShortcutSheet onClose={() => setHelp(false)} />}
@@ -129,12 +126,11 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   )
 }
 
-/** Marks the list row whose note, conversation or setting is open, by attribute, so rows that load later are marked too. */
-function Current({ note, dm, page }) {
+/** Marks the list row whose note or conversation is open, by attribute, so rows that load later are marked too. */
+function Current({ note, dm }) {
   const rules = []
   if (note) rules.push(`.desk-list [data-note-id="${note}"]`)
   if (dm) rules.push(`.desk-list a.dm-row[href="#/dm/${dm}"]`)
-  if (page && /^[a-z/-]+$/.test(page)) rules.push(`.desk-list a.settings-row[href="#/${page}"]`)
   if (!rules.length) return null
   return <style>{`${rules.join(", ")} { background: var(--s2); border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }`}</style>
 }
