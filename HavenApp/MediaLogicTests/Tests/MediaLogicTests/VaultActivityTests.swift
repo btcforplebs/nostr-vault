@@ -222,4 +222,30 @@ final class VaultActivityTests: XCTestCase {
         XCTAssertTrue(VaultActivity.build(events: [event("x", ann, at: 1, tags: [["p", ""]])],
                                           owner: "", noteKinds: noteKinds).isEmpty)
     }
+
+    // MARK: - Clock guard (Logen 11-02: the Vault froze on a future date)
+
+    func testFutureMeansMoreThanTenMinutesAhead() {
+        let now: Int64 = 1_800_000_000
+        XCTAssertFalse(VaultActivity.isFuture(now - 86_400 * 90, now: now))
+        XCTAssertFalse(VaultActivity.isFuture(now + 600, now: now))
+        XCTAssertTrue(VaultActivity.isFuture(now + 601, now: now))
+    }
+
+    func testRefreshSinceNeverAsksForTheFuture() {
+        let now: Int64 = 1_800_000_000
+        XCTAssertNil(VaultActivity.refreshSince(newest: nil, now: now))
+        XCTAssertEqual(VaultActivity.refreshSince(newest: now - 3_600, now: now), now - 3_660)
+        // A note dated a year ahead must not hold the top-up in the future.
+        XCTAssertEqual(VaultActivity.refreshSince(newest: now + 31_536_000, now: now), now + 540)
+    }
+
+    func testAFutureDatedLikeOnAnOldNoteMakesNoLine() {
+        let now: Int64 = 1_800_000_000
+        let old = event("n1", me, at: now - 86_400 * 90, content: "old note")
+        let like = event("r1", ann, kind: 7, at: now + 31_536_000, tags: [["e", "n1"]])
+        let reply = event("x1", bob, at: now - 60, content: "hi", tags: [["p", me]])
+        let lines = VaultActivity.build(events: [old, like, reply], owner: me, noteKinds: noteKinds, now: now)
+        XCTAssertEqual(lines.map(\.id), ["x1"])
+    }
 }

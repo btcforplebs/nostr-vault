@@ -116,6 +116,11 @@ func (g *gatedDB) DeleteEvent(ctx context.Context, evt *nostr.Event) error {
 }
 
 func (g *gatedDB) SaveEvent(ctx context.Context, evt *nostr.Event) error {
+	// Every write passes here (websocket, imports, backups): no event dated
+	// past the clock gets stored or broadcast.
+	if isFutureEvent(evt, nostr.Now()) {
+		return errFutureEvent
+	}
 	if !g.enter() {
 		return errDBClosing
 	}
@@ -124,6 +129,11 @@ func (g *gatedDB) SaveEvent(ctx context.Context, evt *nostr.Event) error {
 }
 
 func (g *gatedDB) ReplaceEvent(ctx context.Context, evt *nostr.Event) error {
+	// Every write passes here (websocket, imports, backups): no event dated
+	// past the clock gets stored or broadcast.
+	if isFutureEvent(evt, nostr.Now()) {
+		return errFutureEvent
+	}
 	if !g.enter() {
 		return errDBClosing
 	}

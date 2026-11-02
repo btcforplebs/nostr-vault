@@ -99,7 +99,8 @@ struct VaultActivity: Identifiable, Equatable {
         noteKinds: Set<Int>,
         follows: [(pubkey: String, at: Int64)] = [],
         isBlocked: (String) -> Bool = { _ in false },
-        isOutside: (String) -> Bool = { _ in false }
+        isOutside: (String) -> Bool = { _ in false },
+        now: Int64 = Int64(Date().timeIntervalSince1970)
     ) -> [VaultActivity] {
         guard !owner.isEmpty else { return [] }
 
@@ -128,7 +129,8 @@ struct VaultActivity: Identifiable, Equatable {
 
         // Newest first, so each fold's actor list comes out newest first.
         for event in events.sorted(by: { $0.createdAt > $1.createdAt }) {
-            guard event.pubkey != owner, seen.insert(event.id).inserted else { continue }
+            guard event.pubkey != owner, !isFuture(event.createdAt, now: now),
+                  seen.insert(event.id).inserted else { continue }
 
             if event.kind == reactionKind {
                 guard !isBlocked(event.pubkey),
@@ -247,5 +249,28 @@ struct VaultActivity: Identifiable, Equatable {
             .split(whereSeparator: { $0.isWhitespace })
             .filter { !pictures.contains(String($0)) }
             .joined(separator: " ")
+    }
+}
+
+// MARK: - Clock guard
+
+extension VaultActivity {
+    /// How far ahead of this device's clock an event may be dated (the relay
+    /// refuses the same, haven-go future_events.go). Later than that is a
+    /// sender with a wrong clock: its line would sit on top of the list, and
+    /// a refresh asking for "newer than the newest held" would ask for the
+    /// future and get nothing more, so the Vault froze (Logen 11-02).
+    static let maxFutureSkew: Int64 = 600
+
+    /// Whether an event dated `createdAt` is too far ahead of `now` to keep.
+    static func isFuture(_ createdAt: Int64, now: Int64) -> Bool {
+        createdAt > now + maxFutureSkew
+    }
+
+    /// The `since` of a top-up: a minute before the newest event held, and
+    /// never later than the clock allows, so a stray future date can't stop
+    /// new events from arriving. Nil when nothing is held.
+    static func refreshSince(newest: Int64?, now: Int64) -> Int64? {
+        newest.map { min($0, now + maxFutureSkew) - 60 }
     }
 }

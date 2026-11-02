@@ -203,6 +203,10 @@ func importDB(ctx context.Context, db DBBackend, r io.Reader) error {
 		if listsDB != nil && db == listsDB {
 			if isOwnerList(&event) {
 				if err := recordListVersion(ctx, db, &event); err != nil {
+					if errors.Is(err, errFutureEvent) {
+						skipped++
+						continue
+					}
 					return err
 				}
 				count++
@@ -213,6 +217,10 @@ func importDB(ctx context.Context, db DBBackend, r io.Reader) error {
 		}
 		if isUserList(&event) {
 			if err := db.ReplaceEvent(ctx, &event); err != nil {
+				if errors.Is(err, errFutureEvent) {
+					skipped++
+					continue
+				}
 				return err
 			}
 			count++
@@ -221,6 +229,10 @@ func importDB(ctx context.Context, db DBBackend, r io.Reader) error {
 		if err := db.SaveEvent(ctx, &event); err != nil {
 			if errors.Is(err, eventstore.ErrDupEvent) {
 				slog.Debug("⏭️ skipping duplicate event", "id", event.ID)
+				continue
+			}
+			if errors.Is(err, errFutureEvent) {
+				skipped++
 				continue
 			}
 			return err

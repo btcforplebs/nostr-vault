@@ -48,6 +48,10 @@ extension NostrService {
            let eventData = try? JSONSerialization.data(withJSONObject: eventDict),
            let event = try? JSONDecoder().decode(NostrEvent.self, from: eventData) {
 
+            // A wrong clock dated it ahead: it would top the Vault's lists and
+            // push the next top-up's since into the future (VaultActivity).
+            if VaultActivity.isFuture(event.created_at, now: Int64(Date().timeIntervalSince1970)) { return }
+
             // Inject feed-relevant events from external relays into the local relay
             // so they persist beyond the current session (e.g. mac relay events).
             if let sourceURL = URL(string: urlString), !isLocalRelay(sourceURL) {

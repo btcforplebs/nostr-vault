@@ -37,7 +37,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -304,8 +303,9 @@ class VaultActivityViewModel @Inject constructor(
         viewModelScope.launch {
             val owner = nostrService.activeHexPubkey
             if (owner.isEmpty()) return@launch
-            val since = eventsMutex.withLock { events.values.maxOfOrNull { it.createdAt } }
-                ?.let { ",\"since\":${it - 60}" } ?: ""
+            val newest = eventsMutex.withLock { events.values.maxOfOrNull { it.createdAt } }
+            val since = VaultActivity.refreshSince(newest, VaultActivity.nowSeconds())
+                ?.let { ",\"since\":$it" } ?: ""
             _isRefreshing.value = true
             try {
                 fetch(
@@ -353,7 +353,8 @@ class VaultActivityViewModel @Inject constructor(
     private suspend fun fetch(filters: List<String>): Int {
         val gen = generation
         val raw = runCatching { nostrService.queryRawEvents(filters, relays(), QUERY_TIMEOUT_MS) }.getOrDefault(emptyList())
-        val valid = raw.mapNotNull(::parse).filter { keepsZap(it) }
+        val now = VaultActivity.nowSeconds()
+        val valid = raw.mapNotNull(::parse).filter { !VaultActivity.isFuture(it.createdAt, now) && keepsZap(it) }
         if (gen != generation) return 0
         val added = eventsMutex.withLock { valid.count { events.put(it.id, it) == null } }
         if (added > 0 || !_hasLoadedOnce.value) scheduleRebuild()
@@ -756,14 +757,8 @@ internal fun VaultActivityScreen(
             }
         },
     ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = isRefreshing && hasLoadedOnce,
-            onRefresh = {
-                runCatching { HavenBridge.requestRelaySync() }
-                activity.refresh()
-            },
-            modifier = Modifier.fillMaxSize(),
-        ) {
+        // No pull to refresh: the relay's inbox tick keeps the list current.
+        Box(modifier = Modifier.fillMaxSize()) {
             val booting = relayStatus != RelayForegroundService.RelayStatus.RUNNING
             when {
                 rows.isEmpty() && (
