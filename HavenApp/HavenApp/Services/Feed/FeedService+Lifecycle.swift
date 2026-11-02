@@ -11,7 +11,10 @@ extension FeedService {
     func startInitialLoad() {
         didStartInitialLoad = true
         if feedMode == .popular {
-            // Popular feed is ephemeral — never restored from a snapshot.
+            // The last ranking saved to disk shows at once; loadPopularFeed
+            // keeps it up while the new one is computed.
+            _ = restoreModeCache(for: .popular)
+            recomputeFilteredNotes()
             refresh()
             return
         }
@@ -271,8 +274,16 @@ extension FeedService {
         isSyncing = false
         let cachedAge = Self.usesNotePipeline(mode) ? restoreModeCache(for: mode) : nil
         recomputeFilteredNotes()
-        // Disconnect feed clients before re-subscribing.
-        disconnectFeedClients()
+        // Between two relay-streamed feeds the open sockets stay: the next
+        // subscribe re-sends each one the new REQ, which replaces the old
+        // subscription (one id per relay). Closing and reopening every socket
+        // on every switch was the slow part. Anything else closes them.
+        if FeedSpeedPolicy.keepsFeedSockets(fromStreams: Self.streamsFromRelays(previous),
+                                            toStreams: Self.streamsFromRelays(mode)) {
+            detachFeedClients()
+        } else {
+            disconnectFeedClients()
+        }
         cancellables.removeAll()
 
         // Reset global mode flag when switching away from global
@@ -317,7 +328,13 @@ extension FeedService {
             // so only ask relays for what is newer (subscriptions resume from
             // the restored lastEventTimestamp).
             shouldScrollToTopOnLoad = false
-            topUpFromRelays()
+            if mode == .discovery && extendedNetworkPubkeys.isEmpty {
+                // Discover restored from disk before its network was known:
+                // the saved notes stay up while the network is walked.
+                loadExtendedNetwork { [weak self] in self?.subscribeToAllRelays() }
+            } else {
+                topUpFromRelays()
+            }
         } else if isGlobal {
             // Global mode doesn't need contacts — subscribe directly
             loadWotPubkeys()
@@ -362,6 +379,30 @@ extension FeedService {
     /// Close only the feed-level WebSocket connections. The
     /// `NostrService.clients` pool is left alone so profile and Kind-10002
     /// lookups carry over across account switches.
+    /// The feeds whose notes stream from relay subscriptions through this
+    /// service's pipeline (Popular is computed, side feeds run their own).
+    static func streamsFromRelays(_ mode: FeedMode) -> Bool {
+        usesNotePipeline(mode) && mode != .popular
+    }
+
+    /// Keeps the feed sockets open but drops this service's ties to them:
+    /// their sinks go with `cancellables`, and the next subscribe attaches new
+    /// ones and re-sends the REQ (see `subscribeToAllRelays`). One-shot page
+    /// clients belong to the old feed and are closed, and so is any socket
+    /// not connected yet: its connect sink is gone, so it would open and
+    /// never be sent a REQ.
+    private func detachFeedClients() {
+        for (key, client) in feedClients where key.hasPrefix("page-") || client.connectionState != .connected {
+            client.disconnect()
+            feedClients.removeValue(forKey: key)
+            relayStateSinks.removeValue(forKey: key)
+            relayStates.removeValue(forKey: Self.relayStateKey(key))
+        }
+        subscribedAuthorsByRelay.removeAll()
+        subscribedClientKeys.removeAll()
+        contactRetryScheduled = false
+    }
+
     private func disconnectFeedClients() {
         feedClients.values.forEach { $0.disconnect() }
         feedClients.removeAll()

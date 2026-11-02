@@ -96,6 +96,9 @@ class FeedService: ObservableObject {
     @Published var popularFilter: PopularFilter = .all
     @Published var showPopularEngagement = false
     @Published var isLoadingFeed    = false
+    /// A relay has answered this load's primary subscription (EOSE): the
+    /// loading rows give way to the feed's own state (FeedSpeedPolicy).
+    @Published var hasFeedAnswer = false
     @Published var connectionStatus = "Disconnected"
 
     @Published var newNoteCount: Int = 0

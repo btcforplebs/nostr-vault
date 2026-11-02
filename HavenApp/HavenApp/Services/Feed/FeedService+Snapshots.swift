@@ -241,6 +241,8 @@ extension FeedService {
     /// empty. The actual encode + write runs off the main thread.
     func persistCurrentSnapshot() {
         guard !notes.isEmpty else { return }
+        // Discover and Popular also keep their own tab cache on disk.
+        if FeedSpeedPolicy.persistsModeCache(feedMode.rawValue) { captureModeCache(for: feedMode) }
         let key = loadedSnapshotNpub.isEmpty ? currentSnapshotKey() : loadedSnapshotNpub
         saveDiskSnapshot(forKey: key)
     }

@@ -30,6 +30,7 @@ extension FeedService {
                 guard let self = self else { return }
                 if isPrimaryFeed {
                     self.eoseCount += 1
+                    if !self.hasFeedAnswer { self.hasFeedAnswer = true }
 
                     // Dispatch deferred auxiliary subscriptions now that
                     // this relay's primary feed content has arrived.

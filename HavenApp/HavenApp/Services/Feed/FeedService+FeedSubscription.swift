@@ -19,6 +19,7 @@ extension FeedService {
         }
 
         isLoadingFeed = true
+        hasFeedAnswer = false
         eoseCount = 0
         primaryEoseRelays.removeAll()
         subIdToRelayKey.removeAll()
@@ -94,6 +95,9 @@ extension FeedService {
                             self?.handleFeedRelayMessage(msg, totalRelays: totalRelays, inject: !isLocalRelay)
                         }
                         .store(in: &cancellables)
+                    // Kept across a tab switch or a warm account switch: its
+                    // reconnect and error handling went with the old sinks.
+                    attachFeedStateSink(existing, url: url, totalRelays: totalRelays, skipCurrent: true)
                 }
                 sendPrimaryFeedSubscription(client: existing, label: key)
             } else if url == localRelayURL || url == localInboxURL || url == localFeedURL {
@@ -140,7 +144,21 @@ extension FeedService {
             }
             .store(in: &cancellables)
 
-        c.$connectionState
+        attachFeedStateSink(c, url: url, totalRelays: totalRelays)
+
+        c.connect(url: url)
+    }
+
+    /// The connection-state sink of a feed socket: on connect it sends the
+    /// primary REQ, on errors it retries and, after three, counts the relay
+    /// as answered. A socket kept across a tab switch gets a new one with
+    /// `skipCurrent`, so its present "connected" doesn't send a second REQ.
+    func attachFeedStateSink(_ c: WebSocketClient, url: URL, totalRelays: Int, skipCurrent: Bool = false) {
+        let key = url.absoluteString
+        let states: AnyPublisher<WebSocketClient.ConnectionState, Never> = skipCurrent
+            ? c.$connectionState.dropFirst().eraseToAnyPublisher()
+            : c.$connectionState.eraseToAnyPublisher()
+        states
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
                 guard let self = self else { return }
@@ -186,8 +204,6 @@ extension FeedService {
                 }
             }
             .store(in: &cancellables)
-
-        c.connect(url: url)
     }
 
     /// One-shot pagination client — opens, fetches until the given timestamp, then disconnects.
