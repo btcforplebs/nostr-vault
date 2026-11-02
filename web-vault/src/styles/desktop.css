@@ -102,9 +102,10 @@
 .kbd-on:focus { outline: 2px solid var(--strong); }
 
 /* Full width: the WoT globe, with the trust card as a right-hand panel instead of the phone's bottom sheet. */
-.desk-full { height: 100%; overflow: hidden; }
+.desk-full { position: relative; height: 100%; overflow: hidden; }
 .desk-full .screen.wot { height: 100%; }
-.desk-full .wot-card { left: auto; right: 16px; top: 68px; bottom: auto; transform: none; width: 360px; max-height: calc(100dvh - var(--bar-h) - 84px); overflow-y: auto; }
+/* Held in the WoT page's own column, so it never lands on Your space beside it. */
+.desk-full .wot-card { position: absolute; left: auto; right: 16px; top: 68px; bottom: auto; transform: none; width: 360px; max-height: calc(100dvh - var(--bar-h) - 84px); overflow-y: auto; }
 .desk-full .wot-myweb-button { right: 24px; bottom: 20px; }
 
 /* The Dashboard (main.jsx keeps the relay screen mounted outside the shell): laid over the left column's page. */
