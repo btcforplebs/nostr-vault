@@ -14,6 +14,22 @@ val localProps = Properties().apply {
     if (f.exists()) load(f.inputStream())
 }
 
+// nostr.build GIF key from the gitignored local.properties (see defaultConfig).
+val gifKey = (localProps["NOSTR_BUILD_GIF_KEY"] as String?)?.trim().orEmpty()
+
+// Release gate: a release build without the GIF key would ship with the GIF button hidden, which has happened from
+// fresh checkouts more than once. Fails at execution, not configuration, so debug builds and tests never need the key.
+val checkGifKey = tasks.register("checkGifKey") {
+    val missing = gifKey.isEmpty()
+    doLast {
+        if (missing) throw GradleException(
+            "NOSTR_BUILD_GIF_KEY is missing from local.properties, so this release would hide the GIF button. " +
+                "Copy it from the main checkout's NostrVault/local.properties."
+        )
+    }
+}
+tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(checkGifKey) }
+
 android {
     namespace = "com.nostrvault"
     compileSdk = 37
@@ -49,7 +65,7 @@ android {
         // nostr.build GIF API key. The repo is public, so it never goes in
         // git: it comes from the gitignored local.properties. Without it the
         // GIF button stays hidden (a picker that finds nothing must not ship).
-        val gifKey = (localProps["NOSTR_BUILD_GIF_KEY"] as String?)?.trim().orEmpty()
+        // A release build without it fails (checkGifKey, above the android block).
         buildConfigField("String", "NOSTR_BUILD_GIF_KEY", "\"$gifKey\"")
 
         ndk {

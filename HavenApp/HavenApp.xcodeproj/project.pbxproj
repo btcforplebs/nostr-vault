@@ -3737,6 +3737,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = C4838A2894D505C5FCC87843 /* Build configuration list for PBXNativeTarget "HavenApp-iOS" */;
 			buildPhases = (
+				6B217801FFEACD99800974C0 /* Check GIF Key */,
 				FA9359A486A7BC73C21528F2 /* Build Go Library (iOS) */,
 				F05EADC0061FD61FD31F9FFF /* Build FIPS Mesh Library (iOS) */,
 				3B51B5B01C78DBB1CD1991A6 /* Sources */,
@@ -3780,6 +3781,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 511D342B4D1165AF2165B56E /* Build configuration list for PBXNativeTarget "HavenApp" */;
 			buildPhases = (
+				D68A67F7E09670168BCD7C91 /* Check GIF Key */,
 				E607D2B8B06A5D00090F816C /* Build Go Library (macOS) */,
 				E69799B284509F731B3145C8 /* Build FIPS Mesh Library (macOS) */,
 				534F20CBA2F65451DA2F55A4 /* Sources */,
@@ -3906,6 +3908,44 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		6B217801FFEACD99800974C0 /* Check GIF Key */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Check GIF Key";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PROJECT_DIR}/HavenApp/App/check_gif_key.sh\"\n";
+		};
+		D68A67F7E09670168BCD7C91 /* Check GIF Key */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Check GIF Key";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PROJECT_DIR}/HavenApp/App/check_gif_key.sh\"\n";
+		};
 		E607D2B8B06A5D00090F816C /* Build Go Library (macOS) */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
