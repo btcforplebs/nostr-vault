@@ -10,7 +10,11 @@ extension VaultView {
         // the iOS, wide-mac and compact-mac layouts.
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
-                accountSwitchRow
+                // The Vault list draws its own row; every other page but Media here.
+                if showsAccountRowOnTop && viewMode != .activity {
+                    accountChipRow
+                        .padding(.bottom, 10)
+                }
                 Group {
                     if isSearchActive {
                         vaultSearchResults
@@ -36,7 +40,17 @@ extension VaultView {
             // onAppear covers a tap that mounted this tab; onReceive, one that
             // arrived while it was already on screen.
             .onAppear { consumeRelayFocus(proxy: proxy) }
+            // Another account's chip picked: a new page reads what it needs.
+            .onChange(of: viewMode) { _, _ in vaultPageChanged() }
+            .onReceive(AccountUnreadStore.shared.$state.removeDuplicates().debounce(for: .seconds(1), scheduler: RunLoop.main)) { _ in
+                // Something came in for an account: top the shown ones up.
+                if showsOtherAccounts && viewMode != .activity && viewMode != .media { loadOtherAccountPages() }
+            }
             .task(id: followersOwnerHex) { await pollFollowers() }
+            // On every page, not only the Vault list: a post opened from Notes,
+            // Likes or Zaps can switch account, and the chip, the other
+            // accounts' reads and any read in flight belong to the one left.
+            .onChange(of: followersOwnerHex) { old, new in activeAccountChanged(from: old, to: new) }
             // The relay drops blocked followers from the ledger it serves;
             // re-read now rather than at the next minute's poll.
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))) { _ in
@@ -148,19 +162,12 @@ extension VaultView {
                 .background(Color.platformWindowBackground)
             } else {
                 let whitelisted = configService.whitelistedHexPubkeys
-                let owner = nostrService.activeHexPubkey
+                // Every account the chips show: their own posts carry the bar.
+                let owners = pageOwners
                 LazyVStack(spacing: 12) {
                     ForEach(displayNotes) { event in
-                        let showEngagement = event.pubkey == owner || whitelisted.contains(event.pubkey)
-                        #if os(iOS)
-                        NoteNavigationLink(note: FeedNote(
-                            id: event.id,
-                            pubkey: event.pubkey,
-                            content: event.content,
-                            createdAt: event.createdAtDate,
-                            tags: event.tags,
-                            kind: event.kind
-                        )) {
+                        let showEngagement = owners.contains(event.pubkey.lowercased()) || whitelisted.contains(event.pubkey)
+                        pageNoteLink(event) {
                             NoteRow(
                                 event: event,
                                 layoutMode: rowLayoutMode,
@@ -168,7 +175,8 @@ extension VaultView {
                                 latestReactionDate: showEngagement ? latestReactionDates[event.id] : nil,
                                 zappers: showEngagement ? zapMap[event.id] : nil,
                                 reposterPubkeys: showEngagement ? repostMap[event.id] : nil,
-                                quoterPubkeys: showEngagement ? quoteMap[event.id] : nil
+                                quoterPubkeys: showEngagement ? quoteMap[event.id] : nil,
+                                isOtherAccountRow: pageNoteAccount[event.id] != nil
                             )
                             .relayFocusOutline(focusedEventId == event.id)
                             // Likes and Zaps rows carry this same inset; Notes rows
@@ -176,26 +184,7 @@ extension VaultView {
                             // differently from the other two.
                             .padding(.horizontal, 16)
                         }
-                        .buttonStyle(.plain)
                         .onAppear { loadMoreIfLast(event) }
-                        #else
-                        NoteRow(
-                            event: event,
-                            layoutMode: rowLayoutMode,
-                            reactors: showEngagement ? reactionMap[event.id] : nil,
-                            latestReactionDate: showEngagement ? latestReactionDates[event.id] : nil,
-                            zappers: showEngagement ? zapMap[event.id] : nil,
-                            reposterPubkeys: showEngagement ? repostMap[event.id] : nil,
-                            quoterPubkeys: showEngagement ? quoteMap[event.id] : nil
-                        )
-                        .relayFocusOutline(focusedEventId == event.id)
-                        .padding(.horizontal, 16)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            self.openNote(event.id)
-                        }
-                        .onAppear { loadMoreIfLast(event) }
-                        #endif
                     }
                 }
                 .environment(\.openURL, nostrLinkAction)
@@ -267,39 +256,17 @@ extension VaultView {
                         let rowReactors = likesFilter != .myLikes ? reactionMap[event.id] : nil
                         let rowReactionDate = likesFilter != .myLikes ? latestReactionDates[event.id] : nil
                         VStack(alignment: .leading, spacing: 0) {
-                            #if os(iOS)
-                            NoteNavigationLink(note: FeedNote(
-                                id: event.id,
-                                pubkey: event.pubkey,
-                                content: event.content,
-                                createdAt: event.createdAtDate,
-                                tags: event.tags,
-                                kind: event.kind
-                            )) {
-                                NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, reactors: rowReactors, latestReactionDate: rowReactionDate)
+                            pageNoteLink(event) {
+                                NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, reactors: rowReactors, latestReactionDate: rowReactionDate,
+                                        isOtherAccountRow: pageNoteAccount[event.id] != nil)
                                     .relayFocusOutline(focusedEventId == event.id)
                                     .padding(.horizontal, 16)
-                                    .onAppear {
-                                        if event.id == displayLikedNotes.last?.id {
-                                            loadMoreItems()
-                                        }
-                                    }
                             }
-                            .buttonStyle(.plain)
-                            #else
-                            NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, reactors: rowReactors, latestReactionDate: rowReactionDate)
-                                .relayFocusOutline(focusedEventId == event.id)
-                                .padding(.horizontal, 16)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    self.openNote(event.id)
+                            .onAppear {
+                                if event.id == displayLikedNotes.last?.id {
+                                    loadMoreItems()
                                 }
-                                .onAppear {
-                                    if event.id == displayLikedNotes.last?.id {
-                                        loadMoreItems()
-                                    }
-                                }
-                            #endif
+                            }
                         }
                     }
                 }
@@ -371,39 +338,17 @@ extension VaultView {
                         // card's engagement bar under the post, not in a row above it.
                         let rowZappers = zapMap[event.id]
                         VStack(alignment: .leading, spacing: 0) {
-                            #if os(iOS)
-                            NoteNavigationLink(note: FeedNote(
-                                id: event.id,
-                                pubkey: event.pubkey,
-                                content: event.content,
-                                createdAt: event.createdAtDate,
-                                tags: event.tags,
-                                kind: event.kind
-                            )) {
-                                NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, zappers: rowZappers)
+                            pageNoteLink(event) {
+                                NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, zappers: rowZappers,
+                                        isOtherAccountRow: pageNoteAccount[event.id] != nil)
                                     .relayFocusOutline(focusedEventId == event.id)
                                     .padding(.horizontal, 16)
-                                    .onAppear {
-                                        if event.id == displayZappedNotes.last?.id {
-                                            loadMoreItems()
-                                        }
-                                    }
                             }
-                            .buttonStyle(.plain)
-                            #else
-                            NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, zappers: rowZappers)
-                                .relayFocusOutline(focusedEventId == event.id)
-                                .padding(.horizontal, 16)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    self.openNote(event.id)
+                            .onAppear {
+                                if event.id == displayZappedNotes.last?.id {
+                                    loadMoreItems()
                                 }
-                                .onAppear {
-                                    if event.id == displayZappedNotes.last?.id {
-                                        loadMoreItems()
-                                    }
-                                }
-                            #endif
+                            }
                         }
                     }
                 }
