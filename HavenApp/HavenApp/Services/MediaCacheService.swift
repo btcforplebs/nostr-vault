@@ -192,6 +192,8 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
     /// Verification verdicts keyed by path+size+mtime — a rewritten file re-verifies.
     var integrityVerdicts: [String: Bool] = [:]
     let integrityLock = NSLock()
+    /// The Blossom folder's files by hash, so a miss is not a full listing.
+    let blossomFolderIndex = BlossomFolderIndex()
     /// Files above this size are trusted without hashing; the failed-player remote
     /// fallback in VideoPlayerCache still heals them if they turn out corrupt.
     static let integrityMaxHashBytes: UInt64 = 64 * 1024 * 1024
