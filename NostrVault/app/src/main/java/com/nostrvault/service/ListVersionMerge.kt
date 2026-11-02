@@ -263,7 +263,7 @@ object ListVersionMerge {
 
     private fun plural(n: Int, noun: String) = when {
         n == 1 -> noun
-        noun.endsWith("y") -> noun.dropLast(1) + "ies"
+        Regex("[^aeiou]y$").containsMatchIn(noun) -> noun.dropLast(1) + "ies"
         else -> noun + "s"
     }
 

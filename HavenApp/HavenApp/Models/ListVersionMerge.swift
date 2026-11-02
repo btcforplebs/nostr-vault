@@ -149,7 +149,7 @@ enum ListVersionMerge {
     static func deltaLine(kind: Int, added: Int, removed: Int) -> String {
         if added == 0 && removed == 0 { return "Same as now" }
         let n = noun(kind)
-        func plural(_ c: Int) -> String { c == 1 ? n : n.hasSuffix("y") ? String(n.dropLast()) + "ies" : n + "s" }
+        func plural(_ c: Int) -> String { c == 1 ? n : n.range(of: "[^aeiou]y$", options: .regularExpression) != nil ? String(n.dropLast()) + "ies" : n + "s" }
         var parts: [String] = []
         if added > 0 { parts.append("+\(added) \(plural(added))") }
         if removed > 0 { parts.append(added > 0 ? "−\(removed)" : "−\(removed) \(plural(removed))") }

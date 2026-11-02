@@ -185,6 +185,8 @@ class ListVersionMergeTest {
         assertEquals("+1 follow", ListVersionMerge.deltaLine(3, ListVersionMerge.Delta(1, 0)))
         assertEquals("−3 muted entries", ListVersionMerge.deltaLine(10000, ListVersionMerge.Delta(0, 3)))
         assertEquals("Same as now", ListVersionMerge.deltaLine(10003, ListVersionMerge.Delta(0, 0)))
+        assertEquals("+3 relays", ListVersionMerge.deltaLine(10050, ListVersionMerge.Delta(3, 0)))
+        assertEquals("+2 communities", ListVersionMerge.deltaLine(10004, ListVersionMerge.Delta(2, 0)))
     }
 
     @Test
