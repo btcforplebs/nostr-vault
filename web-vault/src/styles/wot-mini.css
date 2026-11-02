@@ -1,0 +1,25 @@
+/* Web of Trust mini (src/desktop/space/WotMini.jsx): a "Your space" panel. The card, header and footer are space.css's
+   (.sp-*); here only what this panel adds. It keeps its own height: the globe, the numbers and one row of faces. */
+.sp-panel.wot-mini { flex-shrink: 0; }
+.wm-top { display: flex; align-items: center; gap: 14px; padding: 0 14px 8px; }
+.wm-globe-link { flex: none; display: block; border-radius: 50%; }
+.wm-globe-link:hover { box-shadow: 0 0 0 1px var(--accent-line); }
+.wm-globe { display: block; }
+.wm-stats { display: grid; gap: 4px; flex: 1; min-width: 0; margin: 0; }
+.wm-stats div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.wm-stats dt { font: var(--t-foot); color: var(--text-2); }
+.wm-stats dd { margin: 0; font: 700 14px var(--font); color: var(--text); font-variant-numeric: tabular-nums; }
+.wm-stats dd.wm-vouched { color: var(--accent-light); }
+
+.wm-new { padding: 8px 12px 10px; border-top: 1px solid var(--hair); }
+.wm-new h4 { display: flex; align-items: center; gap: 6px; margin: 0 2px 8px; font: 600 12px var(--font); color: var(--text-2); }
+.wm-count { min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: var(--accent);
+  color: #1a0d03; font: 700 10px/18px var(--font); text-align: center; }
+.wm-note { margin: 0 2px; font: var(--t-foot); color: var(--text-3); }
+/* One row of faces, a fixed height whatever loads into it. */
+.wm-faces { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; height: 58px; margin: 0; padding: 0; list-style: none; }
+.wm-face { display: grid; justify-items: center; gap: 4px; padding: 2px 0; border-radius: 9px; color: var(--text-2); text-decoration: none; }
+.wm-face:hover { background: var(--s2); color: var(--text); }
+.wm-face .avatar { box-shadow: 0 0 0 2px var(--accent); }
+.wm-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-cap); }
+.wm-name .author-name { font: inherit; color: inherit; }

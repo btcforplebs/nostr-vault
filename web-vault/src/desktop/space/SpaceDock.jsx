@@ -1,12 +1,11 @@
 // "Your space" (Logen, 2026-11-02): the right-hand column of the desktop layout, panels pinned beside whatever the
-// left column shows. Live Vault is the first panel; more come later. Folded, it is a thin strip that still shows the
+// left column shows, in panels.js's order. Folded, it is a thin strip that still shows the
 // Vault's unread count. Folded or open is kept per account in this browser (live-vault.js readFolded).
 import { useState } from "preact/hooks"
 import { useVaultUnread } from "../../components/useVaultUnread.js"
 import { badgeCount } from "../../components/useUnreadTotal.js"
 import { readFolded, writeFolded } from "./live-vault.js"
-import { LiveVault } from "./LiveVault.jsx"
-import { MessagesPeek } from "./MessagesPeek.jsx"
+import { PANELS } from "./panels.js"
 import { Icon, ICON } from "../Sidebar.jsx"
 import "../../styles/space.css"
 
@@ -35,8 +34,7 @@ export function SpaceDock({ ctx, folded, onFold }) {
         <button type="button" class="sp-btn" title="Fold Your space (])" aria-label="Fold Your space" onClick={() => onFold(true)}><Icon d={FOLD} size={18} /></button>
       </header>
       <div class="sp-panels">
-        <LiveVault ctx={ctx} />
-        <MessagesPeek ctx={ctx} />
+        {PANELS.map(({ id, Panel }) => <Panel key={id} ctx={ctx} />)}
       </div>
     </aside>
   )
