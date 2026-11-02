@@ -197,9 +197,10 @@ extension FeedService {
             // Fetch their profile too so the reposted card renders with the right name/avatar.
             if note.pubkey != pubkey { acc.profiles.append(note.pubkey) }
 
-            // Track engagement: reposts (kind 6 and 16)
+            // Track engagement: reposts (kind 6 and 16), each person once per note
             if feedKind == 6 {
-                if let targetId = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
+                if let targetId = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1],
+                   EngagementTracker.isNewReposter(targetId: targetId, pubkey: pubkey, seen: &acc.seenEngagementIds) {
                     acc.repostTargets.append(targetId)
                 }
             }

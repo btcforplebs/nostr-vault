@@ -136,6 +136,16 @@ enum EngagementTracker {
         return mine
     }
 
+    // MARK: - Repost Dedup
+
+    /// Whether a repost of `targetId` by `pubkey` is new, i.e. not seen
+    /// before in `seen`. Records it either way, so each person counts once per
+    /// note however many relays, refreshes or repost events bring it back
+    /// (the feed counted every copy: 4 reposts showed as 139).
+    static func isNewReposter(targetId: String, pubkey: String, seen: inout Set<String>) -> Bool {
+        seen.insert("repost:\(targetId):\(pubkey)").inserted
+    }
+
     // MARK: - Engagement Count Merging
 
     /// Merges a batch of reaction events and repost targets into the running

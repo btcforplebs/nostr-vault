@@ -26,6 +26,7 @@ extension FeedService {
         // Shared mutable state — all mutations happen on the main thread via
         // DispatchQueue.main.async so no locks are needed.
         var seenEventIds = Set<String>()
+        var seenReposters = Set<String>()
         var reposts  = 0
         var reactions = 0
         var zaps     = 0
@@ -79,7 +80,12 @@ extension FeedService {
                     seenEventIds.insert(evId)
 
                     switch kind {
-                    case 6:    reposts   += 1
+                    case 6:
+                        // Each person once, like the Thread Stats row.
+                        if let pubkey = ev["pubkey"] as? String,
+                           EngagementTracker.isNewReposter(targetId: noteId, pubkey: pubkey, seen: &seenReposters) {
+                            reposts += 1
+                        }
                     case 7:    reactions += 1
                     case 9735: zaps      += 1
                     default:   break
