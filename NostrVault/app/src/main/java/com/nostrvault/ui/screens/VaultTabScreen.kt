@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -272,6 +273,7 @@ fun VaultTabScreen(
                 feedService = feedService,
                 onOpenDashboard = openDashboard,
                 viewModel = viewModel,
+                accountRow = { VaultAccountSwitchRow(activity) },
             )
         }
     }
@@ -285,6 +287,35 @@ fun VaultTabScreen(
             onDismiss = { showDashboard = false },
         )
     }
+}
+
+/**
+ * The account pictures over Notes, Likes, Zaps and Followers (not Media, not
+ * the Vault list, which has its own row with "All"): those pages are one
+ * account's own, so a tap switches to that account. iOS: accountSwitchRow.
+ */
+@Composable
+private fun VaultAccountSwitchRow(activity: VaultActivityViewModel) {
+    val accountHexes by activity.accountHexes.collectAsState()
+    val activeHex by activity.activeHex.collectAsState()
+    val profiles by activity.profiles.collectAsState()
+    val unreadCounts by activity.accountUnreadState.collectAsState()
+    val chips = remember(accountHexes, activeHex) {
+        com.nostrvault.data.model.VaultAccountChips.switchChips(accountHexes, activeHex)
+    }
+    if (chips.isEmpty()) return
+    val me = com.nostrvault.data.model.VaultAccountChip.Account(activeHex.lowercase())
+    AccountChipRow(
+        chips = chips,
+        selected = me,
+        activeHex = activeHex,
+        profiles = profiles,
+        counts = unreadCounts,
+        onPick = { chip ->
+            if (chip != me && chip is com.nostrvault.data.model.VaultAccountChip.Account) activity.switchToAccount(chip.hex)
+        },
+        modifier = Modifier.padding(bottom = 8.dp),
+    )
 }
 
 /** The relay's health as the Vault button's colour (the folded bar's tint too). */

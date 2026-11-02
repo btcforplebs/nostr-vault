@@ -9,6 +9,12 @@ enum VaultAccountChip: Hashable {
     case account(String)
 }
 
+/// The Vault pages, as the account row sees them (the app's ViewMode, kept
+/// free of app types for MediaLogicTests).
+enum VaultAccountPage {
+    case activity, notes, media, likes, zaps, followers
+}
+
 /// A Vault line and the account it is for. Two accounts can each have a line
 /// with the same id (a day's follows, a like on a post both were tagged in),
 /// so the id carries the account.
@@ -31,6 +37,23 @@ enum VaultAccountChips {
         let me = active.lowercased()
         let ordered = list.contains(me) ? [me] + list.filter { $0 != me } : list
         return [.all] + ordered.map { .account($0) }
+    }
+
+    /// The row on the Vault's other pages (Notes, Likes, Zaps, Followers; not
+    /// Media): each account, the active one first, no "All". Those pages show
+    /// one account's own data, so picking a chip switches to that account.
+    /// Empty when there is only one account. Android: VaultAccountChips.kt.
+    static func switchChips(accounts: [String], active: String) -> [VaultAccountChip] {
+        chips(accounts: accounts, active: active).filter { $0 != .all }
+    }
+
+    /// Whether a page shows the account row (the activity list has its own,
+    /// with "All"; Media shows none).
+    static func pageShowsSwitchRow(_ page: VaultAccountPage) -> Bool {
+        switch page {
+        case .notes, .likes, .zaps, .followers: return true
+        case .activity, .media: return false
+        }
     }
 
     /// The picked chip, or the active account's when none is picked or the

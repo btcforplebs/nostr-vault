@@ -38,6 +38,22 @@ object VaultAccountChips {
     }
 
     /**
+     * The row on the Vault's other pages (Notes, Articles, Highlights, Likes,
+     * Zaps, Followers; not Media): each account, the active one first, no
+     * "All". Those pages show one account's own data, so picking a chip
+     * switches to that account. Empty with one account. iOS: switchChips.
+     */
+    fun switchChips(accounts: List<String>, active: String): List<VaultAccountChip> =
+        chips(accounts, active).filter { it != VaultAccountChip.All }
+
+    /** Whether a page shows that row (the Vault list has its own, with "All"; Media none). */
+    fun pageShowsSwitchRow(mode: VaultMode): Boolean = when (mode) {
+        VaultMode.NOTES, VaultMode.ARTICLES, VaultMode.HIGHLIGHTS,
+        VaultMode.LIKES, VaultMode.ZAPS, VaultMode.FOLLOWERS -> true
+        VaultMode.ACTIVITY, VaultMode.MEDIA -> false
+    }
+
+    /**
      * The picked chip, or the active account's when none is picked or the
      * picked account is gone (removed, or the device is down to one).
      */

@@ -85,4 +85,29 @@ class VaultAccountChipsTest {
         // An account the device no longer holds: nothing to switch to.
         assertEquals(null, VaultAccountChips.switchTarget(cat, me, npubs))
     }
+
+    // The row on the other pages (Logen 11-02, option B; iOS VaultAccountChipsTests).
+
+    @Test
+    fun otherPagesGetEveryAccountButNoAll() {
+        val chips = VaultAccountChips.switchChips(listOf("bb", "aa", "cc"), "AA")
+        assertEquals(listOf(VaultAccountChip.Account("aa"), VaultAccountChip.Account("bb"), VaultAccountChip.Account("cc")), chips)
+        assertFalse(VaultAccountChip.All in chips)
+    }
+
+    @Test
+    fun oneAccountShowsNoRowOnAnyPage() {
+        assertEquals(emptyList<VaultAccountChip>(), VaultAccountChips.switchChips(listOf("aa"), "aa"))
+        assertEquals(emptyList<VaultAccountChip>(), VaultAccountChips.switchChips(emptyList(), "aa"))
+    }
+
+    @Test
+    fun everyPageButMediaAndTheVaultListShowsTheSwitchRow() {
+        for (mode in listOf(VaultMode.NOTES, VaultMode.ARTICLES, VaultMode.HIGHLIGHTS, VaultMode.LIKES, VaultMode.ZAPS, VaultMode.FOLLOWERS)) {
+            assertTrue(mode.name, VaultAccountChips.pageShowsSwitchRow(mode))
+        }
+        // The Vault list has its own row (with All); Media has none.
+        assertFalse(VaultAccountChips.pageShowsSwitchRow(VaultMode.ACTIVITY))
+        assertFalse(VaultAccountChips.pageShowsSwitchRow(VaultMode.MEDIA))
+    }
 }

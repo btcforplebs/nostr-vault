@@ -13,6 +13,20 @@ enum ViewMode {
     case followers
 }
 
+extension ViewMode {
+    /// This page for the account row's rules (VaultAccountChips).
+    var accountPage: VaultAccountPage {
+        switch self {
+        case .activity: return .activity
+        case .notes: return .notes
+        case .media: return .media
+        case .likes: return .likes
+        case .zaps: return .zaps
+        case .followers: return .followers
+        }
+    }
+}
+
 /// Followers from the relay's follower ledger, spam left out: the latest
 /// ones, or everyone.
 enum FollowersFilter {
