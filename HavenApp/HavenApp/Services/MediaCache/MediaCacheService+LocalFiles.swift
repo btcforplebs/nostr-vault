@@ -146,14 +146,6 @@ extension MediaCacheService {
             return withExtension
         }
 
-        guard let contents = try? FileManager.default.contentsOfDirectory(
-            at: blossomDirectory,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        ) else {
-            return nil
-        }
-
-        return contents.first { $0.lastPathComponent.hasPrefix("\(hash).") && $0.pathExtension != "corrupt" }
+        return blossomFolderIndex.file(forHash: hash, in: blossomDirectory)
     }
 }

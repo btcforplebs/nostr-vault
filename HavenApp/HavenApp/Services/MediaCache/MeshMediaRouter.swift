@@ -60,12 +60,21 @@ actor MeshMediaRouter {
     /// How long a read waits for a 10063 it has just asked for.
     static let listWait: Duration = .seconds(6)
     static let listPoll: Duration = .milliseconds(500)
+    /// A vault that answered but did not have a photo (or had it too big to
+    /// read over the mesh) is not asked for that photo again for this long.
+    /// Kept in memory only: it names the owner's follows' mesh vaults, so it
+    /// is never written anywhere a relay could serve it.
+    static let missRetry: TimeInterval = 10 * 60
+    /// The most misses remembered; the oldest go first.
+    static let maxMisses = 2000
 
     private let deps: Dependencies
     private var ingressCache: [String: (base: URL?, at: Date)] = [:]
     private var ingressInFlight: [String: Task<URL?, Never>] = [:]
     private var distrusted: Set<String> = []
     private var requested: [String: Date] = [:]
+    /// "vault npub|sha256" to when that vault last answered without the photo.
+    private var misses: [String: Date] = [:]
 
     init(_ deps: Dependencies) {
         self.deps = deps
@@ -165,7 +174,7 @@ actor MeshMediaRouter {
         // says which are theirs.
         guard let list = await serverList(of: author) else { return nil }
         let giveUp = deps.now() + Self.photoPatience
-        for npub in Self.vaults(for: plan, serverList: list) {
+        for npub in Self.vaults(for: plan, serverList: list) where !recentlyMissed(npub, sha256: plan.sha256) {
             let left = giveUp.timeIntervalSince(deps.now())
             guard left > 0 else { return nil }
             guard let reply = await patientGet(npub, sha256: plan.sha256, patience: min(Self.readPatience, left)) else {
@@ -174,8 +183,14 @@ actor MeshMediaRouter {
                 continue
             }
             // Honestly missing, or honestly too big (a video): the vault keeps
-            // its standing, and the next one may have it.
-            guard reply.status == 200, let data = reply.data else { continue }
+            // its standing, and the next one may have it. Those two answers
+            // are remembered for this photo; a server error is not.
+            guard reply.status == 200, let data = reply.data else {
+                if reply.status == 404 || reply.status == 410 || reply.status == 200 {
+                    recordMiss(npub, sha256: plan.sha256)
+                }
+                continue
+            }
             guard Self.hashMatches(data, sha256: plan.sha256) else {
                 // Wrong bytes are not a passing fault.
                 distrusted.insert(npub)
@@ -185,6 +200,22 @@ actor MeshMediaRouter {
             return data
         }
         return nil
+    }
+
+    private func recentlyMissed(_ npub: String, sha256: String) -> Bool {
+        guard let at = misses["\(npub)|\(sha256)"] else { return false }
+        return deps.now().timeIntervalSince(at) < Self.missRetry
+    }
+
+    private func recordMiss(_ npub: String, sha256: String) {
+        let now = deps.now()
+        misses["\(npub)|\(sha256)"] = now
+        guard misses.count > Self.maxMisses else { return }
+        misses = misses.filter { now.timeIntervalSince($0.value) < Self.missRetry }
+        if misses.count > Self.maxMisses {
+            let newest = misses.sorted { $0.value > $1.value }.prefix(Self.maxMisses)
+            misses = Dictionary(uniqueKeysWithValues: newest.map { ($0.key, $0.value) })
+        }
     }
 
     /// The vault's answer, asking again while it refuses or drops the

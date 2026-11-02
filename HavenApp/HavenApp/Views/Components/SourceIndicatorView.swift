@@ -103,6 +103,23 @@ final class BlossomBackupStore: ObservableObject {
         if inFlight[hash] == task { inFlight[hash] = nil }
     }
 
+    /// Each server's answer for `hash` when every one of `mirrors` has a real
+    /// present/absent answer that is under a day old; nil means ask again.
+    func freshAnswer(hash: String, mirrors: [String]) -> [String: BlobPresence]? {
+        guard let byMirror = results[hash], isFresh(hash) else { return nil }
+        let definite = mirrors.allSatisfy { byMirror[$0] == .present || byMirror[$0] == .absent }
+        return definite ? byMirror : nil
+    }
+
+    /// Drops what is known about `hash` (after a copy changed it), so the next
+    /// look at it asks the servers.
+    func forget(hash: String) {
+        results[hash] = nil
+        checkedAt[hash] = nil
+        disk.entries[hash] = nil
+        scheduleSave()
+    }
+
     private func isFresh(_ hash: String) -> Bool {
         guard let date = checkedAt[hash] else { return false }
         return Date().timeIntervalSince(date) < BlossomPresenceDisk.maxAge

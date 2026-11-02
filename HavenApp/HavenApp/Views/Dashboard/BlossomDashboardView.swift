@@ -393,12 +393,19 @@ struct BlossomDashboardView: View {
 
             // Only push blobs missing from at least one configured mirror — a HEAD
             // check is far cheaper than re-uploading blobs that are already there.
+            // A file the servers answered for in the last day (the photo badges
+            // and the Media servers page share these answers) is not asked again.
             // The checking phase gets the first half of the progress bar so it
             // doesn't sit at 0% while potentially scanning many files.
+            let store = BlossomBackupStore.shared
             var needsPush: [String] = []
             for (index, hash) in hashes.enumerated() {
-                let status = await service.checkMirrorStatus(sha256: hash)
-                if mirrorURLs.contains(where: { status[$0] != true }) {
+                var status = await store.freshAnswer(hash: hash, mirrors: mirrorURLs)
+                if status == nil {
+                    await store.refresh(hash: hash, service: service, force: true)
+                    status = await store.presence(hash: hash)
+                }
+                if mirrorURLs.contains(where: { status?[$0] != .present }) {
                     needsPush.append(hash)
                 }
                 await MainActor.run {
@@ -426,6 +433,8 @@ struct BlossomDashboardView: View {
             for (index, hash) in needsPush.enumerated() {
                 let ok = await service.pushLocalToMirrors(sha256: hash)
                 if ok { succeeded += 1 } else { failed += 1 }
+                // The servers' answers for this file just changed.
+                await store.forget(hash: hash)
                 await MainActor.run {
                     syncProgress = 0.5 + 0.5 * Double(index + 1) / Double(needsPush.count)
                     syncMessage = "Backed up \(index + 1) of \(needsPush.count)..."
