@@ -165,6 +165,12 @@ a.settings-row:hover { background: var(--s2); }
 .deleted-text { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 /* Settings › Following Backup. */
 .follow-backup-open { flex: 1; min-width: 0; display: grid; gap: 2px; padding: 0; min-height: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
+/* Settings › Recover a List: the wipe flag on a version, and who a merge brings back or takes out. */
+.list-wipe-flag { color: #ff9f0a; font-weight: 600; }
+.merge-peek { display: grid; gap: 6px; margin: 8px 0; }
+.merge-peek .section-label { margin: 0; }
+.merge-peek-list { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.merge-peek-person { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
 .mesh-photos-switch { margin-top: 20px; cursor: pointer; }
 .notify-switch { cursor: pointer; }
 .notify-type .settings-title { padding-left: 12px; }

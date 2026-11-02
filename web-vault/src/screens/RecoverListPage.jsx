@@ -13,8 +13,9 @@ import { latestList, ListNotSaved } from "../net/list-edit.js"
 import { decrypterFor, showBlockList } from "../net/blocks.js"
 import { findVersions, listOverview } from "../net/list-versions.js"
 import { saveMerged } from "../net/list-merge-save.js"
+import { clientName, countLine, changeLine, changeTitles, mergeExplainer, saveLine } from "../net/list-version-labels.js"
 import {
-  MERGE_KINDS, mergeKind, openVersion, openForMerge, unread, isEmpty, pickProblem, deltaOf, deltaLine, shrank, buildMerge, mergedTags, mergeSummary,
+  MERGE_KINDS, mergeKind, openVersion, openForMerge, unread, pickProblem, deltaOf, shrank, buildMerge, mergedTags, mergeSummary,
 } from "../net/list-version-merge.js"
 
 const day = at => new Date(at * 1000).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
@@ -85,12 +86,15 @@ function ListVersions({ ctx, kind, onBack }) {
   if (!state) return <><Back name={name} onBack={onBack} /><p class="settings-note muted small">Looking for versions in your vault and on your relays…</p></>
   const { current, checked, versions } = state
   const others = versions.filter(v => v.ev.id !== current?.ev.id)
+  // Every version, newest first, so each row can say what it changed against the one before it.
+  const timeline = [...versions].sort((a, b) => b.ev.created_at - a.ev.created_at || (a.ev.id < b.ev.id ? -1 : 1))
+  const olderOf = v => timeline[timeline.indexOf(v) + 1]
   const chosen = others.filter(v => picked.has(v.ev.id))
   const enough = chosen.length >= (current ? 1 : 2)
   const done = text => { setMsg(text); setLoad(n => n + 1) }
   const confirm = rows && <SaveConfirm ctx={ctx} kind={kind} name={name} current={current} rows={rows} review={review}
     onReview={() => setReview(true)} onCancel={() => { setRows(null); setReview(false) }} onSaved={done} onStale={done} />
-  if (rows && review) return <MergeView ctx={ctx} name={name} rows={rows} setRows={setRows} onBack={() => setReview(false)}>{confirm}</MergeView>
+  if (rows && review) return <MergeView ctx={ctx} kind={kind} name={name} rows={rows} setRows={setRows} onBack={() => setReview(false)}>{confirm}</MergeView>
 
   // Opens the versions newer than the oldest ticked one first, so what the user removed on purpose stays out.
   const merge = async () => {
@@ -117,19 +121,22 @@ function ListVersions({ ctx, kind, onBack }) {
     <>
       <Back name={name} onBack={onBack} />
       <div class="card">
-        <p class="muted small">{current ? `Your ${name.toLowerCase()} now: ${entries(current.entries.size)}, from ${day(current.ev.created_at)}.` : `No current ${name.toLowerCase()} list of yours was found.`}
-          {current?.reason ? ` Its private part can't be opened (${current.reason}), so it can't be merged.` : ""}</p>
+        <p class="settings-title">Merge old versions</p>
+        <p class="muted small">{mergeExplainer(kind)} Tick the versions below, then tap Merge + save. Nothing changes until you tap Save.</p>
+        {!current && <p class="muted small">No current {name.toLowerCase()} list of yours was found.</p>}
+        {current?.reason && <p class="small">Your list now has a private part that can't be opened ({current.reason}), so it can't be merged.</p>}
         {!checked && <p class="small">Not enough of your relays answered to be sure this is your newest list. Save waits until they answer.</p>}
         {msg && <p class="small">{msg}</p>}
       </div>
       <section class="settings-group">
         {!others.length && <p class="settings-note muted small">No older version of this list was found yet. Your vault keeps one each time the list changes.</p>}
-        {others.map((v, i) => <VersionRow key={v.ev.id} kind={kind} v={v} older={others[i + 1]} current={current} picked={picked.has(v.ev.id)} onToggle={() => toggle(v.ev.id)} />)}
+        {current && <VersionRow kind={kind} v={current} older={olderOf(current)} now />}
+        {others.map(v => <VersionRow key={v.ev.id} kind={kind} v={v} older={olderOf(v)} picked={picked.has(v.ev.id)} onToggle={() => toggle(v.ev.id)} />)}
       </section>
       {readOnly ? <p class="settings-note muted small">{READ_ONLY}</p> : others.length > 0 && (rows ? confirm : (
         <div class="settings-note">
           <button class="primary" disabled={!enough || !!current?.reason || opening} onClick={merge}>{opening ? "Opening versions…" : "Merge + save"}</button>
-          <p class="muted small">{current ? "Tick the versions to bring back." : "Tick two or more versions."} Everything in your list now stays. You can change single entries later in the list itself.</p>
+          <p class="muted small">{current ? "Tick the versions to bring back." : "Tick two or more versions."} You can change single entries later in the list itself.</p>
         </div>
       ))}
     </>
@@ -138,15 +145,21 @@ function ListVersions({ ctx, kind, onBack }) {
 
 const Back = ({ name, onBack }) => <div class="settings-note"><button class="small" onClick={onBack}>‹ Recover a List</button> <strong>{name}</strong></div>
 
-function VersionRow({ kind, v, older, current, picked, onToggle }) {
-  const problem = pickProblem(v)
+/** One version: the app that saved it and when, how many entries, what it changed against the one before it, and a
+ *  flag when that change was a wipe. `now`: the list as it is, shown first and not tickable. */
+function VersionRow({ kind, v, older, now, picked, onToggle }) {
+  const problem = now ? "" : pickProblem(v)
   const wipe = older && shrank(older.ev, v.ev)
+  const count = countLine(kind, v.entries.size) + (unread(v) ? " + private" : "")
   return (
     <label class="settings-row static relay-edit-row">
-      <input type="checkbox" checked={picked} disabled={!!problem} onChange={onToggle} aria-label={`Merge the version from ${day(v.ev.created_at)}`} />
+      {now ? <span class="tag">Now</span>
+        : <input type="checkbox" checked={picked} disabled={!!problem} onChange={onToggle} aria-label={`Merge the version from ${day(v.ev.created_at)}`} />}
       <span class="follow-backup-open">
-        <span class="settings-title">{day(v.ev.created_at)}{wipe && !isEmpty(v) && <span class="tag">Shrank</span>}</span>
-        <span class="muted small">{problem || deltaLine(kind, deltaOf(v, current))}{!problem && v.locked ? " · private part opens when you tick it" : ""}</span>
+        <span class="settings-title">{clientName(v.ev)}, {day(v.ev.created_at)}</span>
+        <span class="muted small">{older ? `${count}, ${changeLine(deltaOf(v, older))}` : count}</span>
+        {wipe && <span class="small list-wipe-flag">This one wiped your list</span>}
+        {(problem || v.locked) && <span class="muted small">{problem || "Private part opens when you tick it"}</span>}
       </span>
     </label>
   )
@@ -158,6 +171,10 @@ function SaveConfirm({ ctx, kind, name, current, rows, review, onReview, onCance
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState("")
   const sum = mergeSummary(kind, rows)
+  const titles = changeTitles(kind)
+  const backRows = rows.filter(r => r.status !== "current" && r.ticked)
+  const goneRows = rows.filter(r => r.status === "current" && !r.ticked)
+  useEffect(() => { fetchPeople(ctx, rows) }, [rows])
   const leftOut = rows.filter(r => r.status === "removed" && !r.ticked).length
   useEffect(() => setShrinkOk(false), [sum.removed])
   const save = async () => {
@@ -176,11 +193,12 @@ function SaveConfirm({ ctx, kind, name, current, rows, review, onReview, onCance
   const nothing = !sum.added && !sum.removed
   return (
     <div class="card">
-      <p class="small">{nothing ? "Nothing to bring back."
-        : `Saves your ${name.toLowerCase()} as ${entries(sum.total)}: ${sum.added} back${sum.removed ? `, ${sum.removed} taken out` : ""}. Signed by you; the list you have now stays in your vault's history.`}</p>
+      <p class="small">{saveLine(kind, name, sum)}</p>
+      <PeoplePeek title={titles.back} rows={backRows} />
+      <PeoplePeek title={titles.gone} rows={goneRows} />
       {leftOut > 0 && <p class="muted small">{leftOut} you removed yourself later {leftOut === 1 ? "stays" : "stay"} out.</p>}
       {sum.remutes > 0 && <p class="small">This mutes {sum.remutes} {sum.remutes === 1 ? "person" : "people"} again.</p>}
-      {sum.removed > 0 && <label class="small"><input type="checkbox" checked={shrinkOk} onChange={e => setShrinkOk(e.currentTarget.checked)} /> Yes, take {entries(sum.removed)} out of the list I have now.</label>}
+      {sum.removed > 0 && <label class="small"><input type="checkbox" checked={shrinkOk} onChange={e => setShrinkOk(e.currentTarget.checked)} /> {kind === 3 ? `Yes, unfollow ${sum.removed}.` : `Yes, take ${entries(sum.removed)} out of the list I have now.`}</label>}
       <div class="row">
         <button class="primary" disabled={busy || nothing || !sum.total || (sum.removed > 0 && !shrinkOk)} onClick={save} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save"}</button>
         <button disabled={busy} onClick={onCancel}>Cancel</button>
@@ -192,13 +210,10 @@ function SaveConfirm({ ctx, kind, name, current, rows, review, onReview, onCance
 }
 
 /** Review: the merged entries, each with a tick. Only behind the Review link. */
-function MergeView({ ctx, name, rows, setRows, onBack, children }) {
+function MergeView({ ctx, kind, name, rows, setRows, onBack, children }) {
+  const titles = changeTitles(kind)
   const [showAll, setShowAll] = useState({})
   const back = rows.filter(r => r.status !== "current"), now = rows.filter(r => r.status === "current")
-  useEffect(() => {
-    const pks = rows.filter(r => r.tag[0] === "p").map(r => r.tag[1]).slice(0, 300)
-    if (pks.length) fetchProfiles(ctx.vault, pks, uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS])).catch(() => {})
-  }, [])
   const tick = key => setRows(rs => rs.map(r => r.key === key ? { ...r, ticked: !r.ticked } : r))
   const section = (label, list, id, note) => list.length > 0 && (
     <section class="settings-group">
@@ -212,8 +227,8 @@ function MergeView({ ctx, name, rows, setRows, onBack, children }) {
     <>
       <div class="settings-note"><button class="small" onClick={onBack}>‹ {name} versions</button></div>
       {children}
-      {section("Coming back", back, "back", "Ones you removed yourself are left unticked; tick them to bring them back.")}
-      {section("In your list now", now, "now", "Untick an entry to take it out.")}
+      {section(titles.back, back, "back", "Ones you removed yourself are left unticked; tick them to bring them back.")}
+      {section(titles.kept, now, "now", kind === 3 ? "Untick someone to unfollow them." : "Untick an entry to take it out.")}
     </>
   )
 }
@@ -229,6 +244,29 @@ function EntryRow({ row, onTick }) {
       {row.private && <span class="tag">Private</span>}
       {label && <span class="muted small">{label}</span>}
     </label>
+  )
+}
+
+/** Pictures and names for the people in a merge, so no one shows as a key. */
+function fetchPeople(ctx, rows) {
+  const pks = rows.filter(r => r.tag[0] === "p").map(r => r.tag[1]).slice(0, 300)
+  if (pks.length) fetchProfiles(ctx.vault, pks, uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS])).catch(() => {})
+}
+
+const PEEK = 8
+/** The first few entries of one side of a merge, as picture + name (people) or text, and how many more. */
+function PeoplePeek({ title, rows }) {
+  if (!rows.length) return null
+  return (
+    <div class="merge-peek">
+      <div class="section-label">{title} ({rows.length.toLocaleString("en-US")})</div>
+      <div class="merge-peek-list">
+        {rows.slice(0, PEEK).map(r => r.tag[0] === "p"
+          ? <span key={r.key} class="merge-peek-person"><Avatar pubkey={r.tag[1]} size={22} /><AuthorName pubkey={r.tag[1]} /></span>
+          : <span key={r.key} class="merge-peek-person">{entryText(r.tag)}</span>)}
+        {rows.length > PEEK && <span class="muted small">and {(rows.length - PEEK).toLocaleString("en-US")} more</span>}
+      </div>
+    </div>
   )
 }
 
