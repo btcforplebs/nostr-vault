@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -105,6 +106,13 @@ fun NoteCard(
     engagement: PostEngagement? = null,
     /** The 🔥 rank line at the top, in the Popular feed. Null draws none. */
     popularRank: PopularRank? = null,
+    /**
+     * No card of its own: no fill, outline, corner or padding. For a note
+     * opened inside a thread card, which already draws the one outline — a
+     * second card inside it reads as a mistake (iOS FeedNoteRow
+     * suppressCardStyling).
+     */
+    suppressCardStyling: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -182,12 +190,12 @@ fun NoteCard(
     Column(modifier = modifier.fillMaxWidth()) {
     popularRank?.let { PopularRankLine(it) }
     Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = SecondaryGroupedBg.copy(alpha = 0.85f),
+        shape = if (suppressCardStyling) RectangleShape else RoundedCornerShape(12.dp),
+        color = if (suppressCardStyling) Color.Transparent else SecondaryGroupedBg.copy(alpha = 0.85f),
         // The accent outline iOS draws (FeedNoteRow.fullLayout): faint on a
         // grey card, 30% (40% on a reply) in OLED mode where the card has no
         // fill to separate it from the black; full strength when focused.
-        border = BorderStroke(
+        border = if (suppressCardStyling) null else BorderStroke(
             when {
                 isFocused -> 2.dp
                 isOled -> 1.5.dp
@@ -222,14 +230,14 @@ fun NoteCard(
     ) {
         // Subtle tint overlay matching iOS havenPurple.opacity(0.015) on focused notes
         Box(
-            modifier = if (isFocused) {
+            modifier = if (isFocused && !suppressCardStyling) {
                 Modifier
                     .fillMaxWidth()
                     .background(colors.primary.copy(alpha = 0.04f))
             } else Modifier.fillMaxWidth(),
         ) {
         Column(
-            modifier = Modifier.padding(14.dp),
+            modifier = if (suppressCardStyling) Modifier.padding(vertical = 4.dp) else Modifier.padding(14.dp),
         ) {
             // Parent note preview (inside card, matching iOS)
             val showParentPreview = showReplyContext && note.isReply && !parentIsNext && note.parentEventId != null
