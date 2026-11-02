@@ -17,6 +17,8 @@ test("counts use the list's noun", () => {
   assert.equal(countLine(3, 1009), "1,009 follows")
   assert.equal(countLine(10000, 2), "2 muted entries")
   assert.equal(countLine(10050, 1), "1 relay")
+  assert.equal(countLine(10050, 4), "4 relays")
+  assert.equal(countLine(10004, 2), "2 communities")
 })
 
 test("change against the version before", () => {

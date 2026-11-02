@@ -9,7 +9,7 @@ export function clientName(ev) {
   return t ? t[1].trim() : "An unknown app"
 }
 
-const plural = (n, noun) => n === 1 ? noun : noun.endsWith("y") ? `${noun.slice(0, -1)}ies` : `${noun}s`
+const plural = (n, noun) => n === 1 ? noun : /[^aeiou]y$/.test(noun) ? `${noun.slice(0, -1)}ies` : `${noun}s`
 const num = n => n.toLocaleString("en-US")
 
 /** "300 follows", "1 muted entry". */
