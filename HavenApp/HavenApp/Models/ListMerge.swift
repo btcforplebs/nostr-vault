@@ -147,13 +147,14 @@ enum ListMerge {
 
     /// The newest of the list the relays returned and the one this device
     /// already `held`. Only the account's `own` relays (its write relays,
-    /// loopback dropped) count, and every one of them has to answer, for a
-    /// list as for "none" (which also needs knowsNone). One own relay sending
-    /// an old copy while another, holding a newer one, was still slow made
-    /// the old copy the base, and the edit dropped what other apps had added
-    /// since (list-wipe audit 2026-11-02). The lookup waits for every relay
-    /// up to its timeout, so a slow one is waited for; one that never answers
-    /// refuses the save. No own relays (no kind 10002 yet): `.noRelayList`. Copies dated `maxSkew` or more ahead of
+    /// loopback dropped) count towards most. A list is the base once more than
+    /// half of them answered and at least two relays answered in all
+    /// (`ownMajority`), and it is the newest copy among those that answered
+    /// and the one held here. A single answer is never enough: one relay may
+    /// send an old copy while a slower one holds a newer one (list-wipe audit
+    /// 2026-11-02; Logen 13:21Z: most, not all). "None" still needs every own relay answering
+    /// and knowsNone: with no base there is nothing to check a first list
+    /// against. No own relays (no kind 10002 yet): `.noRelayList`. Copies dated `maxSkew` or more ahead of
     /// `now` are skipped, and one being found (here or by the lookup, `ahead`)
     /// means a list exists, so it is never "none".
     /// `own` has no default, so every call site has to name them (Tron #1459).
@@ -167,7 +168,7 @@ enum ListMerge {
         let copies = [lookup.event, held].compactMap { $0 }
         let usable = copies.filter { createdAt($0) < now + maxSkew }
         if let newest = usable.max(by: { createdAt($0) < createdAt($1) }) {
-            return ownAnswered == mine.count ? .list(newest) : .unknown
+            return ownMajority(ownAnswered: ownAnswered, own: mine.count, answered: lookup.answered) ? .list(newest) : .unknown
         }
         let ahead = lookup.ahead || usable.count < copies.count
         return !ahead && knowsNone(asked: lookup.asked, answered: lookup.answered) && ownAnswered == mine.count ? .none : .unknown
@@ -191,6 +192,17 @@ enum ListMerge {
         let usable = copies.filter { createdAt($0) < now + maxSkew }
         guard !lookup.ahead, usable.count == copies.count else { return base }
         return usable.max(by: { createdAt($0) < createdAt($1) }).map { .list($0) } ?? .none
+    }
+
+    /// Whether enough relays answered to edit a list on the newest copy they
+    /// sent: more than half of the account's `own` relays, and at least two
+    /// relays in all (`answered` counts every relay asked, as knowsNone). A
+    /// single answer, or none, never is (Logen 2026-11-02 13:21Z). An account
+    /// with one own relay edits once it and one more relay (an indexer)
+    /// answered. Same rule as Android ListMerge.ownMajority and web
+    /// follows.js ownMajority.
+    static func ownMajority(ownAnswered: Int, own: Int, answered: Int) -> Bool {
+        own > 0 && ownAnswered * 2 > own && answered >= 2
     }
 
     /// "You have no list" is known only when at least two relays answered and

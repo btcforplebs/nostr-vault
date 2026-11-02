@@ -3,7 +3,7 @@
 // one back. Restore publishes the old list as your follow list now, so it is only ever done after the user confirms.
 import { pool, publishRelays, uniq, PROFILE_RELAYS } from "./pool.js"
 import { checkSigned } from "./sync.js"
-import { followsOf, findLatestList, allOwnAnswered, NO_OWN_RELAYS } from "./follows.js"
+import { followsOf, findLatestList, ownMajority, NO_OWN_RELAYS } from "./follows.js"
 import { verifyEvent } from "nostr-tools/pure"
 
 export const MAX_SNAPSHOTS = 50
@@ -75,7 +75,7 @@ export function diffLists(current, old) {
 // ---- Restore ----
 
 /**
- * Your newest follow list, as Restore will replace it. Refused when any of your relays can't be heard or none has a
+ * Your newest follow list, as Restore will replace it. Refused when most of your relays can't be heard or none has a
  * list (wipeGuard's first two rules): with no list to keep first, a restore couldn't be undone.
  * -> the newest kind 3
  */
@@ -84,11 +84,11 @@ export async function restoreBase({ ctx, ask }) {
   // Only the relays the user's 10002 names decide (pool.js relayLists `listed`), as setFollow: with no 10002, read and
   // write are the defaults, and a Restore replaces the whole kind 3 (Tron #1464). None: asked is 0 and it refuses.
   const relays = ctx.account.relays.listed ?? []
-  const { base, asked, answered } = await findLatestList({ vault: ctx.vault, pubkey: me, relays, ask })
+  const { base, asked, answered, heard } = await findLatestList({ vault: ctx.vault, pubkey: me, relays, ask })
   if (!asked) throw new Error(NO_OWN_RELAYS)
-  // Every own relay, as setFollow (follows.js allOwnAnswered): one that didn't answer may hold a newer list.
-  if (!allOwnAnswered({ asked, answered }))
-    throw new Error("Not all of your relays answered, so your newest follow list isn't known and nothing was changed. Try again when they're all reachable.")
+  // Most own relays and never a single answer, as setFollow (follows.js ownMajority): a Restore replaces the newest list.
+  if (!ownMajority({ asked, answered, heard }))
+    throw new Error("Not enough of your relays answered to know your newest follow list, so nothing was changed. Try again when more of them are reachable.")
   if (!base) throw new Error("Your follow list wasn't found on your relays, so nothing was changed. Try again when they answer.")
   return base
 }

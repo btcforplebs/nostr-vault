@@ -56,7 +56,7 @@ struct InterestList: Codable, Equatable {
     }
 
     /// What a follow or unfollow builds on: the newest kind 10015 found by
-    /// `lookup` (every one of the account's `own` relays answering, as for
+    /// `lookup` (most of the account's `own` relays answering, ListMerge.ownMajority, as for
     /// every other list) or the `held` copy cached here. The app's own local
     /// relay is never asked, so its old copy can't pass for the newest one.
     /// A key setup made here (`fresh`) can't have a list anywhere yet, so it

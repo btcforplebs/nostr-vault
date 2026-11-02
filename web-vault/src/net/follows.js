@@ -1,7 +1,8 @@
 // Follow / Unfollow: a new kind 3 built on the newest one this browser can find, with the iPhone app's wipe guard
 // (ContactManager.mayPublish). A kind 3 replaces the whole list, so a stale or missing base would wipe the follows:
-// nothing is published unless every one of the user's relays answered, and never one that drops most of what the user
-// had. An account that never had a list may start one once every one of its relays answered without one.
+// nothing is published unless most of the user's relays answered (never on a single answer), and never one that drops
+// most of what the user had. An account that never had a list may start one once every one of its relays answered
+// without one.
 import { verifyEvent } from "nostr-tools/pure"
 import { pool, publishRelays, PROFILE_RELAYS, uniq } from "./pool.js"
 import { checkSigned } from "./sync.js"
@@ -20,13 +21,24 @@ export const MAX_LOCAL_AGE = 7 * 86400
 const ASK_MS = 6000
 
 /**
- * Whether every one of the account's own relays answered (a real EOSE) the lookup, the rule every list edit starts
- * from (follows, blocks, list-edit.js; Logen 2026-11-02: "all apps pick the newest copy across relays"). A copy one
- * relay sent isn't enough: another, slower relay may hold a newer copy another app saved, and building on the old one
- * would drop that change. So the lookup waits for each relay until its timeout, and one that didn't answer leaves the
- * list unknown and the save refused. None asked (no 10002) is never known.
+ * Whether every one of the account's own relays answered (a real EOSE) the lookup: what "you have no list" needs. With
+ * no list found there is nothing to check a first list against, and the one relay that didn't answer may hold it.
+ * None asked (no 10002) is never known.
  */
 export const allOwnAnswered = ({ asked, answered }) => asked > 0 && answered === asked
+
+/**
+ * Whether enough relays answered to edit a list found on them: more than half of the account's own relays (`answered`
+ * of `asked`), and at least two relays in all (`heard`: every relay asked that sent its EOSE, purplepag.es too;
+ * defaults to `answered`). A single answer, or none, never is (Logen 2026-11-02 13:21Z): one relay may send an old copy
+ * while a slower one holds a newer one another app saved (list-wipe audit 2026-11-02). The base is then the newest copy
+ * among those that answered. Same rule as iOS ListMerge.ownMajority and Android ListMerge.ownMajority.
+ */
+export const ownMajority = ({ asked, answered, heard = answered }) => asked > 0 && answered * 2 > asked && heard >= 2
+
+/** A list edit's rule: a found copy needs ownMajority, "no list" needs allOwnAnswered. */
+export const editKnown = ({ asked, answered, heard, found }) =>
+  found ? ownMajority({ asked, answered, heard }) : allOwnAnswered({ asked, answered })
 
 /** verifyEvent on a fresh copy: it trusts a "verified" flag an event object carries, and a relay or a test can set one. */
 const verifiedCopy = ({ id, pubkey, created_at, kind, tags, content, sig }) => verifyEvent({ id, pubkey, created_at, kind, tags, content, sig })
@@ -78,7 +90,8 @@ export async function askRelay(url, filter, ms = ASK_MS) {
  * purplepag.es alone may be old; it is still in `seen`, so it can be the base and counts toward the size rule).
  * Nothing found here is written to the vault: a list the guard refuses must not become the app's follows.
  * `ahead`: a list of the user's was found but dated too far ahead to count, so a list exists somewhere.
- * `ask` is for tests. -> { base, seen: [kind 3], asked, answered, netFound, ahead }
+ * `heard`: how many relays asked, purplepag.es too, sent their EOSE.
+ * `ask` is for tests. -> { base, seen: [kind 3], asked, answered, heard, netFound, ahead }
  */
 export async function findLatestList({ vault, pubkey, relays, known, ask = askRelay }) {
   const filter = { kinds: [3], authors: [pubkey] }
@@ -90,12 +103,13 @@ export async function findLatestList({ vault, pubkey, relays, known, ask = askRe
   ])
   const net = replies.flatMap(r => r.events).filter(ev => ev?.kind === 3 && ev.pubkey === pubkey && verifiedCopy(ev))
   const answered = replies.filter((r, i) => r.answered && own.includes(asked[i])).length
+  const heard = replies.filter(r => r.answered).length
   const at = now()
   const mine = [...local, ...net, ...(known ? [known] : [])].filter(ev => ev?.kind === 3 && ev.pubkey === pubkey)
   const seen = mine.filter(ev => ev.created_at < at + MAX_SKEW)
   const netFound = replies.some((r, i) => own.includes(asked[i]) &&
     r.events.some(ev => ev?.kind === 3 && ev.pubkey === pubkey && verifiedCopy(ev) && ev.created_at < at + MAX_SKEW))
-  return { base: newestList(seen, pubkey, at), seen, asked: own.length, answered, netFound, ahead: mine.length > seen.length }
+  return { base: newestList(seen, pubkey, at), seen, asked: own.length, answered, heard, netFound, ahead: mine.length > seen.length }
 }
 
 /** The tags of `base` with `target` followed or not. Every other tag, and the content, are kept as they were. */
@@ -107,13 +121,12 @@ export function editedTags(base, target, follow) {
 
 /**
  * Why this list may not be published, or "" if it may. The rules, in order:
- *  - any of the user's own relays didn't answer: refuse (allOwnAnswered), even when another of them sent a list. The
- *    one that didn't answer may hold a newer list another app saved, and the size rule below can't tell an old copy
- *    from it. As iOS (loadConfirmsList), which wants every relay; the web used to take a list from any one relay, or a
- *    majority answering (Logen 2026-10-14), and that built on old copies (Logen 2026-11-02).
- *  - no base list found: a first list of one follow, as iOS (loadConfirmsList with foundList false). Refused for an
- *    unfollow, when the app shows follows, and when a list was found dated ahead (`ahead`): those mean a list exists
- *    somewhere;
+ *  - a list found: more than half of the user's own relays and at least two relays in all must have answered
+ *    (ownMajority), and the base is the newest copy among them. A copy one relay sent alone isn't enough: a slower one
+ *    may hold a newer list another app saved (list-wipe audit, Logen 2026-11-02 13:21Z).
+ *  - no base list found: every one of the user's own relays must have answered (allOwnAnswered), then a first list of
+ *    one follow, as iOS (loadConfirmsList with foundList false). Refused for an unfollow, when the app shows follows,
+ *    and when a list was found dated ahead (`ahead`): those mean a list exists somewhere;
  *  - nothing that would be empty, unless it is a single unfollow of the last follow (1 -> 0, as iOS);
  *  - the base itself must not be a shrunken copy: if the most follows any list we saw had (or the app shows) is over
  *    10, the result must keep at least half of it (iOS shouldBlockPublish). This catches a relay that returns an old
@@ -122,11 +135,13 @@ export function editedTags(base, target, follow) {
  *    The size rule can't catch that case (the base and the app's count are the same copy), and an old copy would drop
  *    every follow since and bring back anyone unfollowed on another client.
  */
-export function wipeGuard({ base, tags, target, follow, seen = [], appCount = 0, asked = 0, answered = 0, netFound = false, ahead = false, at = now() }) {
+export function wipeGuard({ base, tags, target, follow, seen = [], appCount = 0, asked = 0, answered = 0, heard = answered, netFound = false, ahead = false, at = now() }) {
   if (!asked) return NO_OWN_RELAYS
-  if (!allOwnAnswered({ asked, answered })) {
+  if (!editKnown({ asked, answered, heard, found: !!base })) {
     if (!answered) return "None of your relays answered, so your newest follow list isn't known and nothing was changed. Try again when they're reachable."
-    return `Only ${answered} of your ${asked} relays answered, so your newest follow list isn't known (one that didn't may hold a newer copy) and nothing was changed. Try again when they're all reachable.`
+    if (base && answered * 2 > asked) return "Only one relay answered, so your newest follow list isn't known (another may hold a newer copy) and nothing was changed. Try again shortly."
+    if (base) return `Only ${answered} of your ${asked} relays answered, so your newest follow list isn't known (one that didn't may hold a newer copy) and nothing was changed. Try again when more of them are reachable.`
+    return `${answered} of your ${asked} relays answered and none had a follow list. Your first one needs every relay to answer, so nothing was changed. Try again shortly.`
   }
   if (!base && (!follow || appCount > 0 || ahead))
     return "Your follow list wasn't found on your relays, so nothing was changed. Try again when they answer."
@@ -153,9 +168,9 @@ export function wipeGuard({ base, tags, target, follow, seen = [], appCount = 0,
 export async function setFollow({ vault, signer, pubkey, target, follow, readRelays, writeRelays, ownRelays = [], known, appCount = 0, ask, publish = (urls, ev) => pool.publish(urls, ev) }) {
   if (!HEX.test(target ?? "")) throw new Error("That isn't a profile that can be followed.")
   if (target === pubkey) throw new Error("You can't follow or unfollow yourself.")
-  const { base, seen, asked, answered, netFound, ahead } = await findLatestList({ vault, pubkey, relays: ownRelays, known, ask })
+  const { base, seen, asked, answered, heard, netFound, ahead } = await findLatestList({ vault, pubkey, relays: ownRelays, known, ask })
   const tags = editedTags(base, target, follow)
-  const refused = wipeGuard({ base, tags, target, follow, seen, appCount, asked, answered, netFound, ahead })
+  const refused = wipeGuard({ base, tags, target, follow, seen, appCount, asked, answered, heard, netFound, ahead })
   if (refused) throw new Error(refused)
   // Newer than the base, so no relay keeps the old list over this one on a same-second tie. findLatestList only
   // picks a base dated before now + MAX_SKEW, so this is never later than that.

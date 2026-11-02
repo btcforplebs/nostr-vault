@@ -169,7 +169,9 @@ test("only the account's own relays count, and every one of them must answer, a 
   // Haven's copy and one own relay of two answering empty: not every one, so not known (Tron #1456 2).
   const local = await latestList(fakeCtx({ outbox: [mine] }), 10002, { online: true, ask: by({ "wss://r.example": none }) })
   assert.deepEqual([local.event.id, local.checked], [mine.id, false])
-  assert.deepEqual([listKnown({ asked: 0, answered: 0, found: false }), listKnown({ asked: 3, answered: 2, found: true }), listKnown({ asked: 3, answered: 1, found: true, netFound: true }), listKnown({ asked: 4, answered: 2, found: true }), listKnown({ asked: 3, answered: 2, found: false }), listKnown({ asked: 3, answered: 3, found: false }), listKnown({ asked: 3, answered: 3, found: true })], [false, false, false, false, false, true, true])
+  assert.deepEqual([listKnown({ asked: 0, answered: 0, found: false }), listKnown({ asked: 3, answered: 2, found: true }), listKnown({ asked: 3, answered: 1, found: true, netFound: true }), listKnown({ asked: 4, answered: 2, found: true }), listKnown({ asked: 3, answered: 2, found: false }), listKnown({ asked: 3, answered: 3, found: false }), listKnown({ asked: 3, answered: 3, found: true })], [false, true, false, false, false, true, true])
+  // Logen 2026-11-02 13:21Z: more than half, never a single answer.
+  assert.deepEqual([listKnown({ asked: 1, answered: 1, heard: 1, found: true }), listKnown({ asked: 1, answered: 1, heard: 2, found: true }), listKnown({ asked: 2, answered: 1, heard: 4, found: true })], [false, true, false])
 })
 
 test("Save waits for every own relay: A's old copy with B silent refuses; B's newer copy is the base once both answer (Logen 11-02)", async t => {

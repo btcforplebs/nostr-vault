@@ -61,7 +61,8 @@ class MuteListAccountLockTest {
             switchDuringLookup?.let { active = it }
             NostrService.ReplaceableLookup(
                 NostrEvent("e".repeat(64), alice, 100, 10000, listOf(listOf("p", carol)), "", ""),
-                asked = 1, answered = 1, answeredBy = own.toSet(), from = own.toSet(),
+                // Its own relay and an indexer answered: a single answer is never enough.
+                asked = 2, answered = 2, answeredBy = own.toSet() + "wss://purplepag.es", from = own.toSet(),
             )
         }
         // As signEventAsyncImpl: with lockedTo, refuses unless that account is still the active one.

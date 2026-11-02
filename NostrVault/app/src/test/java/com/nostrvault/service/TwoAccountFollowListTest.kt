@@ -64,7 +64,7 @@ class TwoAccountFollowListTest {
         // Account A has a relay list of its own and that relay answered: the list is known to be empty.
         coEvery { nostr.ownListRelays(accountA) } returns listOf("wss://own.example")
         coEvery { nostr.lookupNewestReplaceable(3, accountA, any(), any(), any()) } returns
-            NostrService.ReplaceableLookup(null, asked = 1, answered = 1, answeredBy = setOf("wss://own.example"))
+            NostrService.ReplaceableLookup(null, asked = 2, answered = 2, answeredBy = setOf("wss://own.example", "wss://purplepag.es"))
         val tags = slot<List<List<String>>>()
         coEvery { nostr.signEventAsync(3, any(), capture(tags), any(), any(), any(), any(), any()) } answers {
             NostrEvent(

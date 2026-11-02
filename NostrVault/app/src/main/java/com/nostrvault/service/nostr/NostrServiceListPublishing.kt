@@ -160,7 +160,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
 
     /**
      * The account's own relays: the write relays its kind 10002 names, never the app's defaults or its read (inbox)
-     * relays, which don't hold its own lists (NIP-65) and would each have to answer before a list is known. Same set
+     * relays, which don't hold its own lists (NIP-65) and would count towards most of them answering. Same set
      * as iOS and web. From the list this device already read, else looked up now. Empty when the account has no relay list, or none of it is
      * reachable from here; a user list is then unknown ([ListMerge.unknownWhy]).
      */
@@ -733,20 +733,30 @@ internal object ListMerge {
     /**
      * Whether a user list (every kind but 10002 itself) is known, counting only the account's [own] relays: the ones
      * its kind 10002 names, never the app's defaults (Logen 2026-11-01, as web listKnown and iOS editBase). With no
-     * own relays nothing is known. Every own relay has to answer, for a found copy as for "none"; "none" also needs
-     * no copy skipped for being dated ahead ([ahead]). One own relay sending an old copy, or most of them answering,
-     * used to be enough: a slower own relay holding a newer copy was then not waited for, and the edit dropped what
-     * other apps had added since (list-wipe audit 2026-11-02). The lookup waits for every relay up to its timeout, so
-     * a slow one is waited for; one that never answers refuses the save. Same rule as iOS ListMerge.editBase.
+     * own relays nothing is known. A found copy counts once more than half of the own relays answered and at least
+     * two relays answered in all ([ownMajority]); the copy is the newest among those that answered. "None" needs every
+     * own relay to answer and no copy skipped for being dated ahead ([ahead]): with no base there is nothing to check a
+     * first list against. One own relay sending an old copy used to be enough, and the edit dropped what a slower own
+     * relay held from other apps (list-wipe audit 2026-11-02); every relay, then most of them (Logen 2026-11-02 13:21Z).
+     * Same rule as iOS ListMerge.editBase.
      * Null: known. Otherwise what to tell the person.
      */
     fun unknownWhy(own: Collection<String>, answeredBy: Collection<String>, found: Boolean, ahead: Boolean = false): String? {
         val mine = own.map(::relayKey).toSet()
         if (mine.isEmpty()) return NO_RELAY_LIST
         val answered = answeredBy.map(::relayKey).toSet().count { it in mine }
-        val known = answered >= mine.size && (found || !ahead)
+        val known = if (found) ownMajority(answered, mine.size, answeredBy.map(::relayKey).toSet().size)
+        else !ahead && answered >= mine.size
         return if (known) null else NOT_ANSWERED
     }
+
+    /**
+     * Whether enough relays answered to edit a found list: more than half of the account's [own] relays
+     * ([ownAnswered] of them), and at least two relays in all ([answered], every relay asked). A single answer, or
+     * none, never is (Logen 2026-11-02 13:21Z); one own relay plus an indexer is. Same as iOS ListMerge.ownMajority
+     * and web follows.js ownMajority.
+     */
+    fun ownMajority(ownAnswered: Int, own: Int, answered: Int): Boolean = own > 0 && ownAnswered * 2 > own && answered >= 2
 
     /** The earliest created_at an edit built on [base] may carry: one second after it, so it replaces it (iOS notBefore). */
     fun notBefore(base: NostrEvent?): Long = base?.createdAt?.plus(1) ?: 0

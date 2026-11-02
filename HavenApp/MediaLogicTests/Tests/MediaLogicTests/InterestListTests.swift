@@ -51,7 +51,7 @@ final class InterestListSaveBaseTests: XCTestCase {
         guard case .unknown = InterestList.saveBase(old, held: Self.list("cached", at: 90), own: Self.own, fresh: false) else { return XCTFail("built on the cache") }
     }
 
-    func testTheNewestCopyWinsOnceEveryOwnRelayAnswered() {
+    func testTheNewestCopyWinsOnceMostOwnRelaysAnswered() {
         let both = ReplaceableLookup(event: Self.list("new", at: 200), asked: 3, answered: 2,
                                      answeredBy: ["wss://a.example", "wss://b.example"], from: ["wss://b.example"])
         guard case .list(let base) = InterestList.saveBase(both, held: Self.list("cached", at: 100), own: Self.own, fresh: false) else { return XCTFail("no base") }

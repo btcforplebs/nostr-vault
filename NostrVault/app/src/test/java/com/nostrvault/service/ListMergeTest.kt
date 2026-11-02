@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -160,8 +161,11 @@ class ListMergeTest {
         // Only purplepag.es answered; the user's relay timed out.
         val stale = NostrService.ReplaceableLookup(list(100), 3, 1, setOf("wss://purplepag.es"), setOf("wss://purplepag.es"))
         assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(stale, list(50), own))
-        // The user's only relay sent it.
-        val fromMine = NostrService.ReplaceableLookup(list(100), 3, 1, setOf("wss://mine.example/"), setOf("wss://mine.example/"))
+        // The user's only relay sent it alone: one answer is never enough (Logen 2026-11-02 13:21Z).
+        val alone = NostrService.ReplaceableLookup(list(100), 3, 1, setOf("wss://mine.example/"), setOf("wss://mine.example/"))
+        assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(alone, null, own))
+        // It sent it and purplepag.es answered too: two answers, most own relays.
+        val fromMine = NostrService.ReplaceableLookup(list(100), 3, 2, setOf("wss://mine.example/", "wss://purplepag.es"), setOf("wss://mine.example/"))
         assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(fromMine, null, own))
         // The user's relay answered with an older copy; the newer one counts.
         val newerElsewhere = NostrService.ReplaceableLookup(list(100), 3, 2, setOf("wss://mine.example", "wss://purplepag.es"), setOf("wss://purplepag.es"))
@@ -181,16 +185,17 @@ class ListMergeTest {
         assertEquals(ListMerge.NO_RELAY_LIST, ListMerge.unknownWhy(emptyList(), defaults, found = true))
     }
 
-    // List-wipe audit 2026-11-02: a found copy is the base only when every own relay answered.
+    // List-wipe audit 2026-11-02, Logen 13:21Z: a found copy is the base once most own relays answered, never one.
 
     @Test
-    fun `a found copy needs every own relay to answer`() {
+    fun `a found copy needs most own relays to answer`() {
         // One of three own relays answered (not the one that sent it): unknown.
         val one = heard(list(100), setOf("wss://mine.example", "wss://purplepag.es"), setOf("wss://purplepag.es"))
         assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(one, null, mine))
-        // Two of three: still unknown, the third may hold a newer copy.
+        // Two of three: most of them, the newest copy among those that answered is the base.
         val two = heard(list(100), setOf("wss://mine.example", "wss://two.example", "wss://purplepag.es"), setOf("wss://purplepag.es"))
-        assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(two, null, mine))
+        assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(two, null, mine))
+        assertEquals(ListMerge.EditBase.Found(list(150)), ListMerge.editBase(two, list(150), mine))
         // An own relay sent it but the others were silent: unknown.
         val sent = heard(list(100), setOf("wss://three.example"), setOf("wss://three.example"))
         assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(sent, null, mine))
@@ -217,6 +222,25 @@ class ListMergeTest {
         val both = NostrService.ReplaceableLookup(list(200), 2, 2, setOf("wss://a.example", "wss://b.example/"), setOf("wss://b.example/"))
         assertEquals(ListMerge.EditBase.Found(list(200)), ListMerge.editBase(both, list(100), own))
         assertNull(ListMerge.unknownWhy(own, setOf("wss://A.example", "wss://b.example/"), found = true))
+    }
+
+    @Test
+    fun `more than half and at least two answers`() {
+        assertFalse(ListMerge.ownMajority(0, 1, 3))
+        assertFalse("a single answer", ListMerge.ownMajority(1, 1, 1))
+        assertTrue("its one relay and an indexer", ListMerge.ownMajority(1, 1, 2))
+        assertFalse(ListMerge.ownMajority(1, 2, 3))
+        assertTrue(ListMerge.ownMajority(2, 2, 2))
+        assertTrue(ListMerge.ownMajority(2, 3, 2))
+        assertFalse("half is not more than half", ListMerge.ownMajority(2, 4, 5))
+        assertTrue(ListMerge.ownMajority(3, 4, 3))
+        assertFalse(ListMerge.ownMajority(2, 5, 6))
+        assertFalse("no own relays", ListMerge.ownMajority(0, 0, 4))
+        val four = listOf("wss://a.example", "wss://b.example", "wss://c.example", "wss://d.example")
+        assertEquals(ListMerge.NOT_ANSWERED, ListMerge.unknownWhy(four, setOf("wss://a.example", "wss://b.example", "wss://x.example"), found = true))
+        assertNull(ListMerge.unknownWhy(four, setOf("wss://a.example", "wss://b.example", "wss://c.example"), found = true))
+        // "None" still needs all four.
+        assertEquals(ListMerge.NOT_ANSWERED, ListMerge.unknownWhy(four, setOf("wss://a.example", "wss://b.example", "wss://c.example"), found = false))
     }
 
     @Test

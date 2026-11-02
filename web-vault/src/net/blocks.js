@@ -10,7 +10,7 @@
 // every screen that already hides blocked people's notes hides muted ones too.
 import { verifyEvent } from "nostr-tools/pure"
 import { pool, publishRelays, relayLists, BROADCAST_RELAYS, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./pool.js"
-import { askRelay, allOwnAnswered, MAX_SKEW } from "./follows.js"
+import { askRelay, editKnown, MAX_SKEW } from "./follows.js"
 import { checkSigned } from "./sync.js"
 import { replyRefs, repostInner } from "./thread.js"
 import { findExtension } from "../signer/nip07.js"
@@ -268,7 +268,8 @@ async function listedRelays({ pubkey, relays, ask }) {
  * kind 10002 names (listedRelays); purplepag.es and the old broadcast relays (where lists were also sent before 11-01) are asked too but
  * don't count unless that 10002 names them. `answered`: how many of the user's own relays sent their EOSE; `netFound`: one of them had a list;
  * `relaysKnown`: whether the 10002 is known (listedRelays), so the user's own relays are all of them.
- * `ask` is for tests. -> { base, asked, answered, netFound, relaysKnown }
+ * `heard`: how many of all the relays asked sent their EOSE.
+ * `ask` is for tests. -> { base, asked, answered, heard, netFound, relaysKnown }
  */
 export async function findLatestBlockList({ vault, pubkey, relays, ask = askRelay }) {
   const filter = { kinds: [10000], authors: [pubkey] }
@@ -286,8 +287,9 @@ export async function findLatestBlockList({ vault, pubkey, relays, ask = askRela
   const mine = i => own.includes(urls[i])
   const lists = r => r.events.filter(ev => ev?.kind === 10000 && ev.pubkey === pubkey && verifiedCopy(ev))
   const answered = replies.filter((r, i) => r.answered && mine(i)).length
+  const heard = replies.filter(r => r.answered).length
   const netFound = replies.some((r, i) => mine(i) && lists(r).length > 0)
-  return { base: newestBlockList([...local, ...replies.flatMap(lists)], pubkey), asked: own.length, answered, netFound, relaysKnown: listed.known }
+  return { base: newestBlockList([...local, ...replies.flatMap(lists)], pubkey), asked: own.length, answered, heard, netFound, relaysKnown: listed.known }
 }
 
 /** verifyEvent on a fresh copy: it trusts a "verified" flag an event object carries (follows.js does the same). */
@@ -298,9 +300,11 @@ const verifiedCopy = ({ id, pubkey, created_at, kind, tags, content, sig }) => {
 /**
  * Why a new list may not be built, or "". A kind 10000 replaces the whole list, so one built on an old copy, or on
  * none, would drop what other apps added (Amethyst's blocks, words, hashtags, threads, the private part) and bring
- * back people unblocked elsewhere. So a new list is built only once every one of the user's relays answered
- * (follows.js allOwnAnswered): one that didn't may hold a newer list, even when another sent one. Then the newest copy
- * found is the base, and none found really means none yet, so the first block may start one. And as follows.js's size
+ * back people unblocked elsewhere. So a new list is built on a found one only once more than half of the user's relays
+ * and at least two relays in all answered (follows.js ownMajority; Logen 2026-11-02 13:21Z), and the newest copy among
+ * them is the base: one relay alone may send an old copy while a slower one holds a newer list. With none found, every
+ * one of the user's relays must have answered (allOwnAnswered); then none really means none yet, so the first block may
+ * start one. And as follows.js's size
  * rule: when the app's list already holds more than 10 public entries (people, words, hashtags and threads; a list of
  * muted words is wiped as easily as one of people), a newest list holding fewer than half of them is a truncated or
  * stale copy, not something to build on. All of this needs the
@@ -308,10 +312,12 @@ const verifiedCopy = ({ id, pubkey, created_at, kind, tags, content, sig }) => {
  * answer), the relays it names weren't asked and may hold the newest list, so nothing is built.
  * `base`: the list found; `known`: how many public entries (entryCount) the app's list holds now.
  */
-export function blockGuard({ asked, answered, relaysKnown, base, known = 0 }) {
-  if (!allOwnAnswered({ asked, answered })) {
+export function blockGuard({ asked, answered, heard = answered, relaysKnown, base, known = 0 }) {
+  if (!editKnown({ asked, answered, heard, found: !!base })) {
     if (!answered) return "None of your relays answered, so your newest block list isn't known and nothing was changed. Try again when they're reachable."
-    return `Only ${answered} of your ${asked} relays answered, so your newest block list isn't known (one that didn't may hold a newer copy) and nothing was changed. Try again when they're all reachable.`
+    if (base && answered * 2 > asked) return "Only one relay answered, so your newest block list isn't known (another may hold a newer copy) and nothing was changed. Try again shortly."
+    if (base) return `Only ${answered} of your ${asked} relays answered, so your newest block list isn't known (one that didn't may hold a newer copy) and nothing was changed. Try again when more of them are reachable.`
+    return `Only ${answered} of your ${asked} relays answered and none had your block list, so it isn't known whether you have one and nothing was changed. Try again when they're all reachable.`
   }
   if (relaysKnown !== true) return "Your relay list (kind 10002) couldn't be loaded, so the relays that may hold your block list weren't asked and nothing was changed. Try again when they're reachable."
   const have = entryCount(base?.tags)

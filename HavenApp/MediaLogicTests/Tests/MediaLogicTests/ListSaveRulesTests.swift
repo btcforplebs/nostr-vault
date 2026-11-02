@@ -35,9 +35,12 @@ final class ListSaveRulesTests: XCTestCase {
     func testAFoundListIsTheBaseAndAHeldNewerOneWins() {
         XCTAssertEqual(base(lookup(100, asked: 3, answered: 3)), "list 100")
         XCTAssertEqual(base(lookup(100, asked: 3, answered: 3), held: 200), "list 200", "the one just signed here")
-        // Two own relays still silent: either may hold a newer copy (list-wipe audit 2026-11-02).
+        // Most own relays answered (Logen 2026-11-02 13:21Z): known, newest wins.
+        XCTAssertEqual(base(lookup(100, asked: 3, answered: 2), held: 200), "list 200")
+        XCTAssertEqual(base(lookup(300, asked: 3, answered: 2), held: 200), "list 300")
+        // One answer is never most (list-wipe audit 2026-11-02).
         XCTAssertEqual(base(lookup(100, asked: 3, answered: 1)), "unknown")
-        XCTAssertEqual(base(lookup(100, asked: 3, answered: 2), held: 200), "unknown")
+        XCTAssertEqual(base(lookup(100, asked: 1, answered: 1)), "unknown", "a single answer")
         XCTAssertEqual(base(lookup(nil, asked: 3, answered: 0), held: 200), "unknown", "nobody answered")
     }
 
