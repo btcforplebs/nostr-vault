@@ -17,7 +17,11 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -25,7 +29,7 @@ import com.nostrvault.ui.theme.*
 
 /**
  * Shimmer skeleton placeholder matching NoteCard layout.
- * Shows animated pulsing rectangles where content will appear.
+ * A light band sweeps across the bars where content will appear.
  */
 @Composable
 fun NoteCardSkeleton(
@@ -33,27 +37,11 @@ fun NoteCardSkeleton(
 ) {
     val colors = LocalNostrVaultColors.current
 
-    // Under Reduce Motion `Motion.shimmer` is null, and the skeleton simply
-    // holds still at the bright end of its range. Note that it holds at 0.7 and
-    // not at the 0.5 midpoint: the placeholder still has to be legible as a
-    // placeholder once it has stopped breathing. Skipping the animation must
-    // never mean skipping the value — an unanimated alpha left at the 0.3
-    // initialValue would strand every skeleton at near-invisible.
-    val shimmerSpec = Motion.shimmer
-    val alpha = if (shimmerSpec == null) {
-        0.7f
-    } else {
-        val infiniteTransition = rememberInfiniteTransition(label = "skeleton")
-        val animated by infiniteTransition.animateFloat(
-            initialValue = 0.3f,
-            targetValue = 0.7f,
-            animationSpec = shimmerSpec,
-            label = "skeletonAlpha",
-        )
-        animated
-    }
-
-    val shimmerColor = TertiaryText.copy(alpha = alpha)
+    // A light band sweeps left to right across every bar. Under Reduce Motion
+    // `Motion.shimmer` is null and the bars hold still at 0.7, not at a dim
+    // start value: the placeholder still has to be legible as one once it has
+    // stopped moving.
+    val shimmerColor = skeletonShimmerBrush()
 
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -151,6 +139,35 @@ fun NoteCardSkeleton(
         }
     }
 }
+
+/**
+ * The skeleton bars' fill: a band sweeping across, or a still 0.7 alpha under
+ * Reduce Motion. One sweep per [SWEEP_MS], restarting from the left.
+ */
+@Composable
+private fun skeletonShimmerBrush(): Brush {
+    val still = TertiaryText.copy(alpha = 0.7f)
+    if (Motion.shimmer == null) return SolidColor(still)
+    val bandPx = with(LocalDensity.current) { SWEEP_BAND.toPx() }
+    val travelPx = with(LocalDensity.current) { LocalConfiguration.current.screenWidthDp.dp.toPx() } + 2 * bandPx
+    val transition = rememberInfiniteTransition(label = "skeleton")
+    val progress by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(SWEEP_MS, easing = LinearEasing), RepeatMode.Restart),
+        label = "skeletonSweep",
+    )
+    val x = progress * travelPx - bandPx
+    val dim = TertiaryText.copy(alpha = 0.35f)
+    return Brush.linearGradient(
+        colors = listOf(dim, still, dim),
+        start = Offset(x, 0f),
+        end = Offset(x + bandPx, 0f),
+    )
+}
+
+private const val SWEEP_MS = 1200
+private val SWEEP_BAND = 160.dp
 
 /**
  * Shows a column of skeleton loading cards.

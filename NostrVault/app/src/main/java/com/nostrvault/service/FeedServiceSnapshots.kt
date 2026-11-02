@@ -40,6 +40,8 @@ import com.nostrvault.service.FeedService.Companion.AVATAR_PREWARM_COUNT
                 }
 
                 withContext(Dispatchers.Main.immediate) {
+                    // The snapshot is whatever list was on screen, not one feed's.
+                    forgetFeedNotesKey()
                     // distinctBy: a snapshot written while _notes briefly held a
                     // duplicate id would otherwise crash-loop every launch
                     // (LazyColumn duplicate key on first render).
@@ -149,6 +151,8 @@ import com.nostrvault.service.FeedService.Companion.AVATAR_PREWARM_COUNT
         // A feed switch between the pubkey flipping and this reset filed
         // the old account's notes under the new one's key.
         modeCaches.clear()
+        savedModeCachesLoadedFor = null
+        forgetFeedNotesKey()
         _notes.value = emptyList()
         _pendingNotes.value = emptyList()
         _noteStats.value = emptyMap()

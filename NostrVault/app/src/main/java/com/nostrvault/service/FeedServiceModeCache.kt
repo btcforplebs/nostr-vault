@@ -13,6 +13,10 @@ internal data class ModeFeedCache(
     val noteStats: Map<String, NoteStats>,
     val popularNoteScores: Map<String, Double>,
     val capturedAtMs: Long,
+    /** [currentFeedNotesKey] when the feed had finished loading, else null: the REQ resumes only from a full list. */
+    val feedKey: String? = null,
+    /** Read back from disk after a relaunch (FeedModeCacheDisk.kt): kept for [FeedModeCaches.DISK_MAX_AGE_MS]. */
+    val fromDisk: Boolean = false,
 )
 
 /**
@@ -25,16 +29,28 @@ internal data class ModeFeedCache(
 internal class FeedModeCaches(private val now: () -> Long = System::currentTimeMillis) {
     private val caches = HashMap<String, ModeFeedCache>()
 
-    fun put(key: String, notes: List<FeedNote>, noteStats: Map<String, NoteStats>, scores: Map<String, Double>) {
-        if (notes.isEmpty()) return
-        caches[key] = ModeFeedCache(notes, noteStats, scores, now())
+    fun put(
+        key: String,
+        notes: List<FeedNote>,
+        noteStats: Map<String, NoteStats>,
+        scores: Map<String, Double>,
+        feedKey: String? = null,
+    ): ModeFeedCache? {
+        if (notes.isEmpty()) return null
+        return ModeFeedCache(notes, noteStats, scores, now(), feedKey).also { caches[key] = it }
+    }
+
+    /** A feed saved before the relaunch; one filed since then is newer and stays. */
+    fun putSaved(key: String, cache: ModeFeedCache) {
+        if (cache.notes.isEmpty() || key in caches) return
+        caches[key] = cache.copy(fromDisk = true)
     }
 
     /** The cache and its age in ms, or null when there is none fresh enough; a stale one is dropped. */
     fun take(key: String): Pair<ModeFeedCache, Long>? {
         val cache = caches[key] ?: return null
         val age = now() - cache.capturedAtMs
-        if (age >= MAX_AGE_MS || cache.notes.isEmpty()) {
+        if (age >= (if (cache.fromDisk) DISK_MAX_AGE_MS else MAX_AGE_MS) || cache.notes.isEmpty()) {
             caches.remove(key)
             return null
         }
@@ -47,6 +63,9 @@ internal class FeedModeCaches(private val now: () -> Long = System::currentTimeM
     companion object {
         /** Older than this, a cached feed is dropped and the feed loads as before. */
         const val MAX_AGE_MS = 15 * 60 * 1000L
+
+        /** A feed saved to disk is shown after a relaunch for this long, as the launch snapshot is. */
+        const val DISK_MAX_AGE_MS = FeedService.SNAPSHOT_MAX_AGE_MS
 
         /** Popular is computed, not streamed; within this it is shown as cached, with no recompute. */
         const val POPULAR_FRESH_MS = 5 * 60 * 1000L
@@ -94,12 +113,16 @@ internal fun FeedService.captureModeCache(mode: FeedMode) {
     if (mode == FeedMode.POPULAR && (_isLoadingPopular.value || _popularNoteScores.value.isEmpty())) return
     val kept = FeedModeCaches.notesToKeep(_filteredNotes.value, _pendingNotes.value, _notes.value)
     val ids = kept.mapTo(HashSet()) { it.id }
-    modeCaches.put(
-        key = modeCacheKey(mode),
+    val key = modeCacheKey(mode)
+    val cache = modeCaches.put(
+        key = key,
         notes = kept,
         noteStats = _noteStats.value.filterKeys { it in ids },
         scores = _popularNoteScores.value,
-    )
+        // Called before the mode changes, so this is still [mode]'s key.
+        feedKey = feedNotesKey?.takeIf { it == currentFeedNotesKey() },
+    ) ?: return
+    if (mode in FeedModeCacheDisk.MODES) saveModeCacheToDisk(key, cache)
 }
 
 /**
@@ -108,7 +131,12 @@ internal fun FeedService.captureModeCache(mode: FeedMode) {
  */
 internal fun FeedService.restoreModeCache(mode: FeedMode): Long? {
     if (!FeedModeCaches.usesNotePipeline(mode)) return null
-    val (cache, age) = modeCaches.take(modeCacheKey(mode)) ?: return null
+    val (cache, age) = modeCaches.take(modeCacheKey(mode)) ?: run {
+        // The list left on screen is the previous feed's.
+        forgetFeedNotesKey()
+        return null
+    }
+    feedNotesKey = cache.feedKey
     // A merge still running would publish the old list over this one.
     cancelMergeWorker()
     // A cache saved before a delete still holds the post.

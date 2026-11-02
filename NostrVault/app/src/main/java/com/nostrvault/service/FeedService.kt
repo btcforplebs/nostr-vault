@@ -379,6 +379,12 @@ class FeedService @Inject constructor(
     internal val _popularNoteScores = MutableStateFlow<Map<String, Double>>(emptyMap())
     val popularNoteScores: StateFlow<Map<String, Double>> = _popularNoteScores.asStateFlow()
     internal val modeCaches = FeedModeCaches() // Each feed kept for a switch back: FeedServiceModeCache.kt
+    /** The feed [notes] holds up to its newest note, and this round's resume point: FeedServiceResumeSince.kt */
+    internal var feedNotesKey: String? = null
+    internal var roundSinceSec: Long? = null
+    internal val roundEoseRelays = HashSet<String>()
+    /** Account whose saved Discover / Popular are in [modeCaches]: FeedModeCacheDisk.kt */
+    internal var savedModeCachesLoadedFor: String? = null
 
     /**
      * Replies to the Popular and Global posts, fetched only for Threaded View,

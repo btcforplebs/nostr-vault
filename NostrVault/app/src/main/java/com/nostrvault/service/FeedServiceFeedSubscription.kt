@@ -67,6 +67,9 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
 
         _isLoadingFeed.value = true
         isInitialLoad = true
+        // Frozen before any relay connects (FeedServiceResumeSince.kt).
+        roundSinceSec = resumeSinceForRound()
+        roundEoseRelays.clear()
         _connectionStatus.value = "Connecting..."
         _connectionColor.value = "yellow"
 
@@ -260,7 +263,8 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         reconcileOutboxRelays(resend = false)
         for ((relayUrl, client) in feedClients) {
             if (client.connectionState.value == WebSocketClient.ConnectionState.CONNECTED) {
-                sendPrimaryFeedSubscription(relayUrl, "feed-$label")
+                // A changed follow set: the new follows' older notes are wanted too.
+                sendPrimaryFeedSubscription(relayUrl, "feed-$label", resume = false)
             }
         }
     }
@@ -336,7 +340,11 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         return true
     }
 
-    internal fun FeedService.sendPrimaryFeedSubscription(relayUrl: String, subId: String) {
+    /**
+     * [resume] false asks as wide as before even when the list is this feed's:
+     * a changed author set needs the new authors' older notes too.
+     */
+    internal fun FeedService.sendPrimaryFeedSubscription(relayUrl: String, subId: String, resume: Boolean = true) {
         // Reels, Live, Marketplace, Music and Hashtags run their own queries.
         // The feed connections stay up for mentions, but the note timeline
         // idles underneath rather than streaming a list nobody sees.
@@ -350,11 +358,17 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         }
         val client = feedClients[relayUrl] ?: return
         val ownerHex = nostrService.activeHexPubkey
+        // The list is this feed's through to its newest note: ask only for what came after.
+        val resumeSince = if (resume) roundSinceSec else null
 
         val filter = buildString {
             append("{\"kinds\":[${primaryFeedKinds()}]")
             if (!appendPrimaryScope(this, relayUrl)) return
 
+            if (resumeSince != null) {
+                append(",\"since\":$resumeSince,\"limit\":500}")
+                return@buildString
+            }
             // Since timestamp. The note list outlives a mode switch, so Polls
             // counts only polls: another mode's notes would cut older polls off.
             val oldest = if (_feedMode.value == FeedMode.POLLS) {
@@ -382,7 +396,7 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
             relayUrl != configStore.config.value.localRelayURL("feed")
         ) {
             val trust = globalTrustSet()
-            globalTrustScopedFilters(primaryFeedKinds(), filter, trust, trustedSince(trust))
+            globalTrustScopedFilters(primaryFeedKinds(), filter, trust, resumeSince ?: trustedSince(trust))
         } else {
             listOf(filter)
         }
@@ -432,6 +446,7 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         if (subId == primaryFeedSubId() && relayUrl !in outboxPlan && auxSubsSent.add(relayUrl)) {
             sendAuxiliarySubscriptions(relayUrl)
         }
+        if (subId == primaryFeedSubId()) notePrimaryEose(relayUrl)
 
         // Once the feed has loaded, every later EOSE (mentions, reactions,
         // zaps, older pages) lands here too. Forcing a flush on each rebuilt
