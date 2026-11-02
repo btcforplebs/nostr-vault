@@ -537,6 +537,10 @@ extension FeedView {
                 .hoverEffect(.lift)
             }
             }
+            #else
+            MacModeComposeButton(feedMode: feedService.feedMode, canSign: configService.activeAccountCanSign) {
+                modeComposer = $0
+            }
             #endif
         }
     }
