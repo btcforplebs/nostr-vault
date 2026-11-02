@@ -462,8 +462,22 @@ func (pool *SimplePool) subMany(
 		}()
 	}
 
-	pending := xsync.NewCounter()
-	pending.Add(int64(len(urls)))
+	// HAVEN PATCH: one count per unique relay, and the goroutine whose
+	// Add(-1) reaches 0 is the only one that closes events. Dec then Value
+	// let two goroutines ending together both see 0 and both close it
+	// ("close of closed channel" on relay shutdown), and a duplicate URL
+	// was counted but never ran, so events never closed.
+	for i, url := range urls {
+		urls[i] = NormalizeURL(url)
+	}
+	unique := 0
+	for i, url := range urls {
+		if slices.Index(urls, url) == i {
+			unique++
+		}
+	}
+	var pending atomic.Int64
+	pending.Store(int64(unique))
 	if len(urls) == 0 {
 		// HAVEN PATCH: with no relays nothing ever closed events, so a caller
 		// ranging over it hung past ctx cancellation and held its relay
@@ -476,8 +490,6 @@ func (pool *SimplePool) subMany(
 		return events
 	}
 	for i, url := range urls {
-		url = NormalizeURL(url)
-		urls[i] = url
 		if idx := slices.Index(urls, url); idx != i {
 			// skip duplicate relays in the list
 			eoseWg.Done()
@@ -488,8 +500,7 @@ func (pool *SimplePool) subMany(
 
 		go func(nm string) {
 			defer func() {
-				pending.Dec()
-				if pending.Value() == 0 {
+				if pending.Add(-1) == 0 {
 					close(events)
 					cancel(fmt.Errorf("aborted: %w", context.Cause(ctx)))
 				}
