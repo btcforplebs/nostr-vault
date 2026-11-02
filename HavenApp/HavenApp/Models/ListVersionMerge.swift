@@ -15,6 +15,13 @@ enum ListVersionMerge {
 
     static func canMerge(_ kind: Int) -> Bool { kinds.contains(kind) }
 
+    /// True when every version the merge was built from (base and ticked)
+    /// belongs to `me`: a sheet left open across an account switch must not
+    /// sign one account's entries as another account's list.
+    static func authoredBy(_ me: String, authors: Set<String>) -> Bool {
+        !me.isEmpty && !authors.isEmpty && authors.allSatisfy { $0 == me }
+    }
+
     /// What one entry is called, for "+340 follows, −2".
     static func noun(_ kind: Int) -> String {
         switch kind {

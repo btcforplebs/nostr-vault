@@ -168,7 +168,8 @@ struct ListMergeView: View {
         defer { working = false }
         let (tags, privateTags) = ListVersionMerge.tags(rows, current: current)
         let vault = current.map { service.vaultEvents(for: $0.version) } ?? []
-        if let error = await NostrService.shared.saveMergedList(kind: kind, base: current, tags: tags, privateTags: privateTags, vaultVersions: vault) {
+        let authors = Set(([current].compactMap { $0 } + chosen).map(\.version.pubkey))
+        if let error = await NostrService.shared.saveMergedList(kind: kind, base: current, authors: authors, tags: tags, privateTags: privateTags, vaultVersions: vault) {
             problem = error.message
             if error.message.contains("changed while") { self.rows = nil; await service.load(); await load() }
         } else {

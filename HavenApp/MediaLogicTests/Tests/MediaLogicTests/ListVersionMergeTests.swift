@@ -147,4 +147,13 @@ final class ListVersionMergeTests: XCTestCase {
         for i in rows.indices { rows[i].ticked = rows[i].tag[1] != p(3) }
         XCTAssertEqual(ListVersionMerge.tags(rows, current: cur).tags, [["title", "Mine"], ["e", p(1)], ["e", p(2)]])
     }
+
+    func testSaveRefusesVersionsFromAnotherAccount() {
+        let a = String(repeating: "a", count: 64), b = String(repeating: "b", count: 64)
+        XCTAssertTrue(ListVersionMerge.authoredBy(a, authors: [a]))
+        XCTAssertFalse(ListVersionMerge.authoredBy(b, authors: [a]), "A's ticked versions signed as B")
+        XCTAssertFalse(ListVersionMerge.authoredBy(a, authors: [a, b]))
+        XCTAssertFalse(ListVersionMerge.authoredBy(a, authors: []))
+        XCTAssertFalse(ListVersionMerge.authoredBy("", authors: [""]))
+    }
 }

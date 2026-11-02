@@ -8,10 +8,13 @@ extension NostrService {
     /// private entries are encrypted to the account again. Twin of web
     /// `net/list-merge-save.js`.
     /// `base`: the current list the merge was built on (nil: there was none);
+    /// `authors`: the pubkeys of every version the merge was built from (base
+    /// and ticked); all must be the active account, so a sheet left open
+    /// across an account switch can't sign one account's entries as another's.
     /// `vaultVersions`: every version of this list the vault holds, newest first.
     @MainActor
-    func saveMergedList(kind: Int, base: ListVersionMerge.Opened?, tags: [[String]], privateTags: [[String]],
-                        vaultVersions: [NostrEvent]) async -> ListRestoreError? {
+    func saveMergedList(kind: Int, base: ListVersionMerge.Opened?, authors: Set<String>, tags: [[String]],
+                        privateTags: [[String]], vaultVersions: [NostrEvent]) async -> ListRestoreError? {
         let name = ListShrinkRule.name(kind)
         guard ListVersionMerge.canMerge(kind) else { return .refused("This list can't be merged here.") }
         let entries = tags.filter { $0.first.map { !ListShrinkRule.metadataTags.contains($0) } ?? false }
@@ -22,7 +25,8 @@ extension NostrService {
             return .refused("The private part of your \(name) couldn't be opened, so saving would wipe it. Nothing was changed.")
         }
         let npub = Self.restoreAccountNpub()
-        guard let me = Bech32.decode(npub)?.hexString, base == nil || base?.version.pubkey == me else {
+        guard let me = Bech32.decode(npub)?.hexString, base == nil || base?.version.pubkey == me,
+              ListVersionMerge.authoredBy(me, authors: authors) else {
             return .refused("This list belongs to another account. Switch to it first.")
         }
         let like = ListVersion(id: "", pubkey: me, kind: kind, createdAt: 0, tags: [], content: "")
