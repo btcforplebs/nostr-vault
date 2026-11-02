@@ -69,6 +69,13 @@ enum FeedSpeedPolicy {
         return Int(digits)
     }
 
+    /// The generation after `current`, begun on every tab switch and every
+    /// account switch: a socket kept across either must not pass the old
+    /// feed's (or the old account's) frames into the new one.
+    static func nextFeedSubGeneration(after current: Int) -> Int {
+        current == Int.max ? 0 : current + 1
+    }
+
     /// A frame for a feed subscription from an earlier generation: the old
     /// feed, still arriving on a socket kept across the switch. Dropped, or
     /// Global's strangers would land in Discover and its EOSE would end the

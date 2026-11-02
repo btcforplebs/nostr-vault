@@ -58,6 +58,23 @@ final class FeedSpeedPolicyTests: XCTestCase {
                         "zaps-in-feed-3-damusio", "zaps-out-feed-3-damusio"])
     }
 
+    /// A warm account switch keeps the sockets too: account A's late frames
+    /// carry A's generation and are dropped once B's begins, even on the same
+    /// feed (Tron, #1547 follow-up).
+    func testAnAccountSwitchStartsANewGenerationSoTheOldAccountsFramesDrop() {
+        let accountA = 7
+        let accountB = FeedSpeedPolicy.nextFeedSubGeneration(after: accountA)
+        XCTAssertNotEqual(accountA, accountB)
+        for late in FeedSpeedPolicy.feedSubIds(generation: accountA, relaySuffix: "primalnet") {
+            XCTAssertTrue(FeedSpeedPolicy.isStaleFeedSub(late, current: accountB), late)
+        }
+        for fresh in FeedSpeedPolicy.feedSubIds(generation: accountB, relaySuffix: "primalnet") {
+            XCTAssertFalse(FeedSpeedPolicy.isStaleFeedSub(fresh, current: accountB), fresh)
+        }
+        // Never stuck on one value, even at the top of the range.
+        XCTAssertNotEqual(FeedSpeedPolicy.nextFeedSubGeneration(after: Int.max), Int.max)
+    }
+
     /// Ids that aren't the feed's own (parent fetches, deletes, the globe, and
     /// the pre-generation format) are never dropped by this rule.
     func testOtherSubscriptionsAreLeftAlone() {
