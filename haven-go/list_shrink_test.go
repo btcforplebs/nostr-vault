@@ -131,3 +131,23 @@ func TestListHistoryPinsBeforeAStepDownDrain(t *testing.T) {
 		}
 	})
 }
+
+// A drain in many small steps (about 30% each) makes nearly every step a wipe
+// of its own. They are one drain, so they take one pin slot and its largest
+// pin still reaches the copy from before the drain (Tron, PR 1587 review).
+func TestListHistoryPinsBeforeAManyStepDrain(t *testing.T) {
+	forEachHistoryBackend(t, func(t *testing.T, f *listHistoryFixture) {
+		full := f.bookmarks(100, 0)
+		f.publish(full)
+		for i, n := range []int{70, 49, 34, 24, 17, 12, 8, 6, 4, 3, 2, 1, 0} {
+			f.publish(f.bookmarks(n, 1+i))
+		}
+		for i := 0; i < 10; i++ {
+			f.publish(f.bookmarks(i%2, 30+i))
+		}
+		f.mustKeep(full, "30% steps to zero")
+		if got := len(f.versionIDs(10003, "")); got > listHistoryKeep+3*listHistoryPinnedMax {
+			t.Fatalf("%d versions kept, want at most %d", got, listHistoryKeep+3*listHistoryPinnedMax)
+		}
+	})
+}

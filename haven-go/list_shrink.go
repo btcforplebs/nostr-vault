@@ -136,6 +136,12 @@ const shrinkLookback = 5
 // that removes a few items at a time stays an edit: it takes more than
 // shrinkLookback steps to lose half.
 func listWiped(older []*nostr.Event, next *nostr.Event) bool {
+	return listWipedAgainst(older, next) >= 0
+}
+
+// listWipedAgainst is listWiped, giving the index in older of the version
+// next is a wipe of, or -1 when it is not a wipe.
+func listWipedAgainst(older []*nostr.Event, next *nostr.Event) int {
 	for i := 0; i < len(older) && i < shrinkLookback; i++ {
 		if !listShrank(older[i], next) {
 			continue
@@ -148,10 +154,10 @@ func listWiped(older []*nostr.Event, next *nostr.Event) bool {
 			}
 		}
 		if !explained {
-			return true
+			return i
 		}
 	}
-	return false
+	return -1
 }
 
 // listItems is the set of a list's public items by (name, value), or for a
