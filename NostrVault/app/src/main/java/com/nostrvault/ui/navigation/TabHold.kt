@@ -30,13 +30,17 @@ internal sealed class TabHold {
         }
     }
 
-    class Vault(val onPick: (VaultMode) -> Unit) : TabHold() {
+    class Vault(val onPick: (VaultPick) -> Unit) : TabHold() {
         override val isOpen get() = VaultTabPicker.menu.isOpen
         override val isPressed get() = VaultTabPicker.menu.isPressed
         override val shownName get() = VaultTabPicker.shownMode?.displayName
         override fun actions(current: () -> TabHold?) =
-            VaultTabPicker.menu.listed.ifEmpty { VaultMode.menu(zapsOnly = false) }.map { mode ->
-                CustomAccessibilityAction(mode.displayName) { (current() as? Vault)?.onPick?.invoke(mode); true }
+            VaultTabPicker.menu.listed.ifEmpty { VaultTabPicker.items(zapsOnly = false) }.map { pick ->
+                val name = when (pick) {
+                    is VaultPick.Page -> pick.mode.displayName
+                    VaultPick.Messages -> "Messages"
+                }
+                CustomAccessibilityAction(name) { (current() as? Vault)?.onPick?.invoke(pick); true }
             }
     }
 
@@ -62,8 +66,8 @@ internal fun Modifier.tabHoldGesture(
     is TabHold.Feed -> dockHold(FeedTabPicker.menu, coordinates, view, onTap) { mode ->
         (current() as? TabHold.Feed)?.onPick?.invoke(mode)
     }
-    is TabHold.Vault -> dockHold(VaultTabPicker.menu, coordinates, view, onTap) { mode ->
-        (current() as? TabHold.Vault)?.onPick?.invoke(mode)
+    is TabHold.Vault -> dockHold(VaultTabPicker.menu, coordinates, view, onTap) { pick ->
+        (current() as? TabHold.Vault)?.onPick?.invoke(pick)
     }
     is TabHold.Accounts -> dockHold(AccountTabPicker.menu, coordinates, view, onTap) { npub ->
         (current() as? TabHold.Accounts)?.onPick?.invoke(npub)

@@ -185,6 +185,13 @@ fun NostrVaultNavHost(
             }
         }
     }
+    // The Vault hold menu's Messages row opens the inbox, as the Vault tab's envelope does.
+    fun openVaultPick(pick: VaultPick) {
+        when (pick) {
+            is VaultPick.Page -> openVaultMode(pick.mode)
+            VaultPick.Messages -> navController.navigate(Screen.DMInbox.route) { launchSingleTop = true }
+        }
+    }
     // Zaps Only hides Likes: a like then lights no Vault list.
     LaunchedEffect(config.zapsOnlyMode) { RelayForegroundService.setZapsOnlyMode(config.zapsOnlyMode) }
 
@@ -374,7 +381,7 @@ fun NostrVaultNavHost(
                     onCondensedAction = onCondensedAction,
                     onExpand = { ScrollChrome.expand(scope) },
                     nowPlaying = { com.nostrvault.ui.screens.music.CollapsedNowPlayingButton(musicActions) },
-                    onPickVaultMode = { mode -> openVaultMode(mode) },
+                    onPickVaultMode = { pick -> openVaultPick(pick) },
                     // As iOS: with one account the picture's hold does nothing.
                     onPickAccount = if (switchAccounts.size > 1) { npub -> selectAccount(npub) } else null,
                     onPickFeedMode = { mode ->
@@ -425,7 +432,11 @@ fun NostrVaultNavHost(
         }
         // Hold-the-Vault-tab pages: over everything, the bar included.
         if (showBottomBar) {
-            VaultTabPickerOverlay(zapsOnly = vaultZapsOnly, onPick = { mode -> openVaultMode(mode) })
+            VaultTabPickerOverlay(
+                zapsOnly = vaultZapsOnly,
+                messagesUnread = unreadDMsState.value > 0,
+                onPick = { pick -> openVaultPick(pick) },
+            )
         }
         // Hold-the-Feed-tab list: over everything, the bar included.
         if (showBottomBar) {

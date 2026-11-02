@@ -142,7 +142,7 @@ fun BottomNavBar(
     /** Hold the Feed tab and slide to a feed (iOS #239). Null keeps it a plain tab. */
     onPickFeedMode: ((FeedMode) -> Unit)? = null,
     /** Hold the Vault tab and slide to one of its pages (iOS #1505). Null keeps it a plain tab. */
-    onPickVaultMode: ((VaultMode) -> Unit)? = null,
+    onPickVaultMode: ((VaultPick) -> Unit)? = null,
 ) {
     val colors = LocalNostrVaultColors.current
     val isOled = LocalOledMode.current
@@ -274,7 +274,7 @@ private fun ExpandedNavRow(
     onAccountSwitcher: () -> Unit,
     onPickAccount: ((String) -> Unit)? = null,
     onPickFeedMode: ((FeedMode) -> Unit)? = null,
-    onPickVaultMode: ((VaultMode) -> Unit)? = null,
+    onPickVaultMode: ((VaultPick) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // The glass pill is drawn by BottomNavBar, behind both forms.
