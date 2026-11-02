@@ -39,21 +39,54 @@ enum VaultAccountChips {
         return [.all] + ordered.map { .account($0) }
     }
 
-    /// The row on the Vault's other pages (Notes, Likes, Zaps, Followers; not
-    /// Media): each account, the active one first, no "All". Those pages show
-    /// one account's own data, so picking a chip switches to that account.
-    /// Empty when there is only one account. Android: VaultAccountChips.kt.
-    static func switchChips(accounts: [String], active: String) -> [VaultAccountChip] {
-        chips(accounts: accounts, active: active).filter { $0 != .all }
+    /// Whether a page shows the chips (Logen 11-02): the Vault list and
+    /// Notes, Likes, Zaps and Followers, each filtering what it shows. Media
+    /// shows none.
+    static func pageShowsChips(_ page: VaultAccountPage) -> Bool {
+        page != .media
     }
 
-    /// Whether a page shows the account row (the activity list has its own,
-    /// with "All"; Media shows none).
-    static func pageShowsSwitchRow(_ page: VaultAccountPage) -> Bool {
-        switch page {
-        case .notes, .likes, .zaps, .followers: return true
-        case .activity, .media: return false
+    /// The posts `account` liked or zapped (kind 7 it signed, zap receipts
+    /// whose sender tag `P` is it): My Likes and My Zaps list those, so they
+    /// are read with the account's other events.
+    static func givenTargets(_ events: [(pubkey: String, kind: Int, tags: [[String]])], account: String) -> Set<String> {
+        let me = account.lowercased()
+        var out = Set<String>()
+        for e in events {
+            let given = (e.kind == 7 && e.pubkey.lowercased() == me)
+                || (e.kind == 9735 && e.tags.contains { $0.count >= 2 && $0[0] == "P" && $0[1].lowercased() == me })
+            guard given, let target = e.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] else { continue }
+            out.insert(target)
         }
+        return out
+    }
+
+    /// Several accounts' followers in one list, as one ledger orders them:
+    /// follows we watched happen (newest first), then earlier ones (newest
+    /// list first). Someone following two of them is listed once.
+    static func mergeFollowers<T>(_ lists: [[T]], id: (T) -> String, isNews: (T) -> Bool,
+                                  followedAt: (T) -> Int64, listAt: (T) -> Int64) -> [T] {
+        var seen = Set<String>()
+        let all = lists.joined().filter { seen.insert(id($0)).inserted }
+        let watched = all.filter(isNews).sorted { followedAt($0) > followedAt($1) }
+        let earlier = all.filter { !isNews($0) }.sorted { listAt($0) > listAt($1) }
+        return watched + earlier
+    }
+
+    /// Whose a listed post is, among the accounts the chip shows: its author,
+    /// else the first one it tags, else whoever of them liked or zapped it
+    /// (`giver`). Nil when that is the active account (it opens as is).
+    static func pageAccount(author: String, tags: [[String]], giver: String?, owners: Set<String>, active: String) -> String? {
+        let me = active.lowercased()
+        let who: String?
+        if owners.contains(author.lowercased()) {
+            who = author.lowercased()
+        } else if let tagged = tags.first(where: { $0.count >= 2 && $0[0] == "p" && owners.contains($0[1].lowercased()) })?[1] {
+            who = tagged.lowercased()
+        } else {
+            who = giver?.lowercased()
+        }
+        return who == me ? nil : who
     }
 
     /// Whether picking `chip` must wait for a read: it shows another account

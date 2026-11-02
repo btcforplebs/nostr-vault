@@ -92,26 +92,45 @@ final class VaultAccountChipsTests: XCTestCase {
         XCTAssertNil(VaultAccountChips.nextOtherAccountLimit(current: 300, readFull: false))
     }
 
-    // MARK: - The row on the other pages (Logen 11-02, option B)
+    // MARK: - Every page filters (Logen 11-02: chips filter, a post tap switches)
 
-    func testOtherPagesGetEveryAccountButNoAll() {
-        let chips = VaultAccountChips.switchChips(accounts: ["bb", "aa", "cc"], active: "AA")
-        XCTAssertEqual(chips, [.account("aa"), .account("bb"), .account("cc")])
-        XCTAssertFalse(chips.contains(.all))
-    }
-
-    func testOneAccountShowsNoRowOnAnyPage() {
-        XCTAssertEqual(VaultAccountChips.switchChips(accounts: ["aa"], active: "aa"), [])
-        XCTAssertEqual(VaultAccountChips.switchChips(accounts: [], active: "aa"), [])
-    }
-
-    func testEveryPageButMediaAndTheVaultListShowsTheSwitchRow() {
-        for page in [VaultAccountPage.notes, .likes, .zaps, .followers] {
-            XCTAssertTrue(VaultAccountChips.pageShowsSwitchRow(page), "\(page)")
+    func testEveryPageButMediaShowsTheChips() {
+        for page in [VaultAccountPage.activity, .notes, .likes, .zaps, .followers] {
+            XCTAssertTrue(VaultAccountChips.pageShowsChips(page), "\(page)")
         }
-        // The Vault list has its own row (with All); Media has none.
-        XCTAssertFalse(VaultAccountChips.pageShowsSwitchRow(.activity))
-        XCTAssertFalse(VaultAccountChips.pageShowsSwitchRow(.media))
+        XCTAssertFalse(VaultAccountChips.pageShowsChips(.media))
+    }
+
+    func testGivenTargetsAreTheAccountsOwnLikesAndZaps() {
+        let events: [(pubkey: String, kind: Int, tags: [[String]])] = [
+            ("BB", 7, [["e", "liked"], ["p", "x"]]),           // bb's like
+            ("cc", 7, [["e", "notMine"]]),                      // someone else's like
+            ("wallet", 9735, [["P", "bb"], ["e", "zapped"]]),   // a zap bb sent
+            ("wallet", 9735, [["P", "cc"], ["e", "theirs"]]),   // a zap cc sent
+            ("bb", 1, [["e", "reply"]]),                        // a reply is not a like
+        ]
+        XCTAssertEqual(VaultAccountChips.givenTargets(events, account: "bb"), ["liked", "zapped"])
+    }
+
+    func testAPostBelongsToItsAuthorThenTheTaggedThenTheGiver() {
+        let owners: Set<String> = ["aa", "bb"]
+        // The active account's own: nil, it opens as is.
+        XCTAssertNil(VaultAccountChips.pageAccount(author: "aa", tags: [], giver: nil, owners: owners, active: "aa"))
+        XCTAssertEqual(VaultAccountChips.pageAccount(author: "BB", tags: [], giver: nil, owners: owners, active: "aa"), "bb")
+        // Someone else's post tagging bb.
+        XCTAssertEqual(VaultAccountChips.pageAccount(author: "zz", tags: [["p", "x"], ["p", "bb"]], giver: nil, owners: owners, active: "aa"), "bb")
+        // A post bb liked (My Likes), tagging no one of ours.
+        XCTAssertEqual(VaultAccountChips.pageAccount(author: "zz", tags: [], giver: "bb", owners: owners, active: "aa"), "bb")
+        XCTAssertNil(VaultAccountChips.pageAccount(author: "zz", tags: [], giver: nil, owners: owners, active: "aa"))
+    }
+
+    func testFollowersMergeOncePerPersonWatchedFirst() {
+        typealias F = (pubkey: String, isNews: Bool, followedAt: Int64, listAt: Int64)
+        let a: [F] = [("x", true, 50, 0), ("old1", false, 0, 10)]
+        let b: [F] = [("y", true, 90, 0), ("x", true, 20, 0), ("old2", false, 0, 30)]
+        let merged = VaultAccountChips.mergeFollowers([a, b], id: { $0.pubkey }, isNews: { $0.isNews },
+                                                      followedAt: { $0.followedAt }, listAt: { $0.listAt })
+        XCTAssertEqual(merged.map(\.pubkey), ["y", "x", "old2", "old1"])
     }
 
     // MARK: - No flash on a pick (Logen 11-02)

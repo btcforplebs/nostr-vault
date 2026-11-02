@@ -25,8 +25,13 @@ extension VaultView {
     /// The account pictures head the list on screen (no search; every page
     /// but Media).
     var showsAccountRowOnTop: Bool {
-        guard !isSearchActive, !accountChips.isEmpty else { return false }
-        return viewMode == .activity || VaultAccountChips.pageShowsSwitchRow(viewMode.accountPage)
+        !isSearchActive && !accountChips.isEmpty && VaultAccountChips.pageShowsChips(viewMode.accountPage)
+    }
+
+    /// The accounts the chip shows (lowercased hex): the active one alone
+    /// unless another chip is picked.
+    var pageOwners: Set<String> {
+        Set(VaultAccountChips.accounts(for: currentAccountChip, accounts: vaultAccountHexes))
     }
 
     /// True when the list is anything but the active account's own.
@@ -65,14 +70,33 @@ extension VaultView {
             // A first visit marks nothing: everything would be "new".
             otherAccountUnreadSince[hex] = Int64(last > 0 ? last : now)
         }
-        if VaultAccountChips.needsRead(chip, accounts: vaultAccountHexes, active: me,
-                                       loaded: Set(otherAccountActivity.keys)) {
+        let onActivity = viewMode == .activity
+        let loaded = Set(onActivity ? Array(otherAccountActivity.keys) : Array(otherAccountEvents.keys))
+        if VaultAccountChips.needsRead(chip, accounts: vaultAccountHexes, active: me, loaded: loaded) {
             // Keep the list on screen; switch when this chip's lines are read.
             pendingAccountChip = chip
-            loadOtherAccountActivity(for: chip, then: { applyAccountChip(chip) })
+            if onActivity {
+                loadOtherAccountActivity(for: chip, then: { applyAccountChip(chip) })
+            } else {
+                loadOtherAccountPages(for: chip, then: { applyAccountChip(chip) })
+            }
         } else {
             applyAccountChip(chip)
-            loadOtherAccountActivity()
+            if onActivity { loadOtherAccountActivity() } else { loadOtherAccountPages() }
+        }
+    }
+
+    /// The page changed with another account's chip picked: read what the new
+    /// page needs that isn't read yet (the list stays until it lands).
+    func vaultPageChanged() {
+        guard showsOtherAccounts else { return }
+        if viewMode == .activity {
+            if VaultAccountChips.needsRead(currentAccountChip, accounts: vaultAccountHexes,
+                                           active: followersOwnerHex, loaded: Set(otherAccountActivity.keys)) {
+                loadOtherAccountActivity()
+            }
+        } else if viewMode != .media {
+            loadOtherAccountPages()
         }
     }
 
@@ -82,6 +106,8 @@ extension VaultView {
         withAnimation(Motion.toggle) {
             accountChip = VaultAccountChips.isDefault(chip, active: followersOwnerHex) ? nil : chip
         }
+        // The pages build from the picked accounts' events.
+        if viewMode != .activity { scheduleUpdateDisplayData() }
     }
 
     /// A line was opened: its account's count empties.
@@ -93,9 +119,13 @@ extension VaultView {
     /// Back to the active account's own list (account switched, or removed).
     func resetAccountChip() {
         otherAccountLoadTask?.cancel()
+        otherPageLoadTask?.cancel()
         accountChip = nil
         pendingAccountChip = nil
         otherAccountActivity = [:]
+        otherAccountEvents = [:]
+        otherFollowerSnapshots = [:]
+        pageNoteAccount = [:]
         otherAccountUnreadSince = [:]
         otherAccountLoading = false
         otherAccountLimit = VaultAccountChips.otherAccountPage
@@ -237,6 +267,112 @@ extension VaultView {
         }
     }
 
+    // MARK: Pages
+
+    /// Reads, for the chip's other accounts, what Notes, Likes and Zaps build
+    /// from (their posts and likes, what tags them, likes and zaps on them,
+    /// zaps they sent, and the posts they liked or zapped) and their
+    /// followers ledger. `chip` is a pick still waiting for this read (the
+    /// list on screen stays); `then` runs once it is in.
+    func loadOtherAccountPages(for chip: VaultAccountChip? = nil, then: (() -> Void)? = nil) {
+        if chip == nil, let waiting = pendingAccountChip {
+            loadOtherAccountPages(for: waiting, then: { applyAccountChip(waiting) })
+            return
+        }
+        let me = followersOwnerHex.lowercased()
+        let wanted = VaultAccountChips.accounts(for: chip ?? currentAccountChip, accounts: vaultAccountHexes).filter { $0 != me }
+        otherPageLoadTask?.cancel()
+        guard !wanted.isEmpty, relayManager.isRunning, !relayManager.isBooting else {
+            then?()
+            return
+        }
+        let base = configService.config.nostrURL
+        let npubs = vaultAccountNpubsByHex
+        let blocked = Dictionary(wanted.map { ($0, configService.blockedHexPubkeys(forAccount: npubs[$0] ?? "")) },
+                                 uniquingKeysWith: { a, _ in a })
+        let noteKinds = NostrService.relayTabNoteKinds
+        let limit = VaultAccountChips.otherAccountPage
+        let service = nostrService
+        otherPageLoadTask = Task { @MainActor in
+            var built: [String: [NostrEvent]] = [:]
+            var ledgers: [String: FollowerSnapshot] = [:]
+            await withTaskGroup(of: (String, [NostrEvent], FollowerSnapshot?).self) { group in
+                for hex in wanted {
+                    group.addTask {
+                        async let mine = service.fetchEvents(
+                            filter: ["authors": [hex], "kinds": noteKinds + [7], "limit": limit],
+                            from: [base], includeLoopback: true)
+                        async let tagged = service.fetchEvents(
+                            filter: ["#p": [hex], "kinds": noteKinds + [6, 7, 9735], "limit": limit],
+                            from: [base + "/inbox"], includeLoopback: true)
+                        async let sent = service.fetchEvents(
+                            filter: ["#P": [hex], "kinds": [9735], "limit": limit],
+                            from: [base, base + "/inbox"], includeLoopback: true)
+                        let first = await [mine, tagged, sent].flatMap { $0 }
+                        // The posts they liked or zapped, for My Likes / My Zaps.
+                        let have = Set(first.map(\.id))
+                        let wantIds = VaultAccountChips.givenTargets(
+                            first.map { ($0.pubkey, $0.kind, $0.tags) }, account: hex).filter { !have.contains($0) }
+                        let targets = wantIds.isEmpty ? [] : await service.fetchEvents(
+                            filter: ["ids": Array(wantIds.prefix(limit))], from: [base, base + "/inbox"], includeLoopback: true)
+                        let block = blocked[hex] ?? []
+                        var seen = Set<String>()
+                        let events = (first + targets).filter {
+                            ($0.pubkey.lowercased() == hex || !block.contains($0.pubkey)) && seen.insert($0.id).inserted
+                        }
+                        return (hex, events, FollowerSnapshot.load(owner: hex))
+                    }
+                }
+                for await (hex, events, ledger) in group {
+                    built[hex] = events
+                    if let ledger { ledgers[hex] = ledger }
+                }
+            }
+            guard !Task.isCancelled else { return }
+            for (hex, events) in built { otherAccountEvents[hex] = events }
+            for (hex, ledger) in ledgers { otherFollowerSnapshots[hex] = ledger }
+            then?()
+            scheduleUpdateDisplayData()
+            service.fetchMissingProfiles(for: Array(Set(built.values.flatMap { $0.prefix(100).map(\.pubkey) })))
+        }
+    }
+
+    /// A page row: opens the post; another account's post switches to that
+    /// account first, so a reply or like from it signs with the right key.
+    @ViewBuilder
+    func pageNoteLink<Row: View>(_ event: NostrEvent, @ViewBuilder row: () -> Row) -> some View {
+        let content = row()
+        #if os(iOS)
+        if let account = pageNoteAccount[event.id] {
+            Button { openPageNote(event.id, account: account) } label: { content }
+                .buttonStyle(.plain)
+        } else {
+            NoteNavigationLink(note: FeedNote(
+                id: event.id,
+                pubkey: event.pubkey,
+                content: event.content,
+                createdAt: event.createdAtDate,
+                tags: event.tags,
+                kind: event.kind
+            )) { content }
+            .buttonStyle(.plain)
+        }
+        #else
+        content
+            .contentShape(Rectangle())
+            .onTapGesture { openPageNote(event.id, account: pageNoteAccount[event.id]) }
+        #endif
+    }
+
+    func openPageNote(_ id: String, account: String?) {
+        if let npub = VaultAccountChips.switchTarget(lineAccount: account, active: followersOwnerHex,
+                                                     npubByHex: vaultAccountNpubsByHex) {
+            configService.switchActiveAccount(to: npub)
+            if let account { AccountSwitchFlash.shared.show(hex: account) }
+        }
+        openNote(id)
+    }
+
     // MARK: Chips
 
     /// "All · <acct> · <acct>": the active account first after All, each
@@ -257,35 +393,6 @@ extension VaultView {
             .padding(.horizontal, 16)
             // Room for the ring and the red bubble's overhang.
             .padding(.vertical, 6)
-        }
-    }
-
-    /// The same pictures over Notes, Likes, Zaps and Followers (not Media):
-    /// those pages are one account's own, so a tap switches to that account,
-    /// as the switcher does. No "All" here; that stays on the Vault list.
-    @ViewBuilder
-    var accountSwitchRow: some View {
-        let me = followersOwnerHex.lowercased()
-        let chips = VaultAccountChips.switchChips(accounts: vaultAccountHexes, active: me)
-        if !isSearchActive, VaultAccountChips.pageShowsSwitchRow(viewMode.accountPage), !chips.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(chips, id: \.self) { chip in
-                        VaultAccountChipView(
-                            chip: chip,
-                            isSelected: chip == .account(me),
-                            isActiveAccount: chip == .account(me),
-                            npub: chipNpub(chip)
-                        ) {
-                            guard chip != .account(me), let npub = chipNpub(chip) else { return }
-                            configService.switchActiveAccount(to: npub)
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 6)
-            }
-            .padding(.bottom, 10)
         }
     }
 
