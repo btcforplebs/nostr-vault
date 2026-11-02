@@ -195,10 +195,12 @@ final class MeshMediaRouterTests: XCTestCase {
         await fake.setStatus(404)
         let missing = await router.read(plan: plan, author: author)
         XCTAssertNil(missing)
+        await fake.advance(MeshMediaRouter.missRetry + 1)
         await fake.setOversized(true)
         await fake.setStatus(200)
         let tooBig = await router.read(plan: plan, author: author)
         XCTAssertNil(tooBig)
+        await fake.advance(MeshMediaRouter.missRetry + 1)
         await fake.setOversized(false)
         let data = await router.read(plan: plan, author: author)
         XCTAssertEqual(data, photo)
@@ -286,6 +288,58 @@ final class MeshMediaRouterTests: XCTestCase {
         XCTAssertEqual(state.gets.count, 2, "a 404 is an answer: no retries on that vault")
     }
 
+    func testAVaultThatDidNotHaveAPhotoIsNotAskedForItAgainForTenMinutes() async {
+        let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(other)/", "fipsmesh://\(vault)/"]])
+        await fake.setMissing([other])
+        await fake.setBase(URL(string: "http://127.0.0.1:41235/other")!, for: other)
+        let router = MeshMediaRouter(fake.deps(follows: [author]))
+        let plan = MeshMediaRouter.Plan(sha256: sha, hostNpub: nil)
+        let first = await router.read(plan: plan, author: author)
+        XCTAssertEqual(first, photo)
+        do { let n = await fake.snapshot().gets.count; XCTAssertEqual(n, 2) }
+        // Inside the ten minutes: only the vault that had it is asked.
+        await fake.advance(MeshMediaRouter.missRetry - 1)
+        let again = await router.read(plan: plan, author: author)
+        XCTAssertEqual(again, photo)
+        do { let n = await fake.snapshot().gets.count; XCTAssertEqual(n, 3) }
+        // Past them: the vault that missed is asked again, it may have it now.
+        await fake.advance(2)
+        // Now only the first vault has it, so the photo loading proves it was asked.
+        await fake.setMissing([vault])
+        let later = await router.read(plan: plan, author: author)
+        XCTAssertEqual(later, photo)
+        do { let n = await fake.snapshot().gets.count; XCTAssertEqual(n, 4) }
+    }
+
+    func testAMissOnlyCoversThatPhotoNotTheVaultsOtherPhotos() async {
+        let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(vault)/"]])
+        let router = MeshMediaRouter(fake.deps(follows: [author]))
+        await fake.setStatus(404)
+        let missing = await router.read(plan: .init(sha256: sha, hostNpub: vault), author: author)
+        XCTAssertNil(missing)
+        let skipped = await router.read(plan: .init(sha256: sha, hostNpub: vault), author: author)
+        XCTAssertNil(skipped)
+        do { let n = await fake.snapshot().gets.count; XCTAssertEqual(n, 1, "the remembered miss is not asked again") }
+        await fake.setStatus(200)
+        let otherPhoto = Data("another photo".utf8)
+        await fake.setPhoto(otherPhoto)
+        let otherSha = SHA256.hash(data: otherPhoto).map { String(format: "%02x", $0) }.joined()
+        let data = await router.read(plan: .init(sha256: otherSha, hostNpub: vault), author: author)
+        XCTAssertEqual(data, otherPhoto)
+    }
+
+    func testAServerErrorIsNotRememberedAsAMiss() async {
+        let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(vault)/"]])
+        let router = MeshMediaRouter(fake.deps(follows: [author]))
+        let plan = MeshMediaRouter.Plan(sha256: sha, hostNpub: vault)
+        await fake.setStatus(503)
+        let failed = await router.read(plan: plan, author: author)
+        XCTAssertNil(failed)
+        await fake.setStatus(200)
+        let data = await router.read(plan: plan, author: author)
+        XCTAssertEqual(data, photo)
+    }
+
     func testAVaultThatNeverAnswersHandsThePhotoToTheNextAfterItsPatience() async {
         let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(other)/", "fipsmesh://\(vault)/"]])
         await fake.setDialFails(true, for: other)
@@ -355,6 +409,8 @@ private actor Fake {
     private var deadVaults: Set<String> = []
     private var missing: Set<String> = []
     private var lastDial: String?
+    /// Vaults given their own loopback base, so a GET says which vault it went to.
+    private var bases: [String: URL] = [:]
     private var getFailures = 0
     private let dialDelayPolls: Int
     private let clock = TestClock()
@@ -376,6 +432,7 @@ private actor Fake {
     /// Vaults that are up but answer 404 for the photo.
     func setMissing(_ npubs: Set<String>) { missing = npubs }
     func setGetFailures(_ count: Int) { getFailures = count }
+    func setBase(_ url: URL, for npub: String) { bases[npub] = url }
     func time() -> Date { clock.now }
     func advance(_ seconds: TimeInterval) { clock.advance(seconds) }
 
@@ -410,7 +467,7 @@ private actor Fake {
         lastDial = npub
         // Let the other reads queue up behind this dial.
         for _ in 0..<dialDelayPolls { await Task.yield() }
-        return dialFails || deadVaults.contains(npub) ? nil : base
+        return dialFails || deadVaults.contains(npub) ? nil : (bases[npub] ?? base)
     }
 
     func get(_ url: URL, maxBytes: Int) -> MeshMediaRouter.Reply? {
@@ -421,7 +478,8 @@ private actor Fake {
             return nil
         }
         // Reads here run one at a time: the GET goes to the vault just dialled.
-        if let lastDial, missing.contains(lastDial) { return .init(status: 404, data: Data()) }
+        let target = bases.first { url.absoluteString.hasPrefix($0.value.absoluteString) }?.key ?? lastDial
+        if let target, missing.contains(target) { return .init(status: 404, data: Data()) }
         return .init(status: status, data: oversized ? nil : photo)
     }
 
