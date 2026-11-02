@@ -68,6 +68,12 @@ extension ProfileContent {
                 .background(Circle().fill(Color.platformWindowBackground))
                 // Half over the banner; the name column stays below it.
                 .padding(.top, -36)
+                .contentShape(Circle())
+                .onTapGesture {
+                    if let url = profile?.pictureURL { showingMediaUrl = IdentifiableURL(url: url) }
+                }
+                .accessibilityAddTraits(profile?.pictureURL == nil ? [] : .isButton)
+                .accessibilityHint(profile?.pictureURL == nil ? "" : "Opens the profile picture full screen")
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
