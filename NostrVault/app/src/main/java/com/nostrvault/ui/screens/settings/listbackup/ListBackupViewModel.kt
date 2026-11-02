@@ -42,6 +42,8 @@ class ListBackupViewModel @Inject constructor(
 
     val profiles get() = service.profiles
 
+    fun fetchProfiles(pubkeys: List<String>) = service.fetchProfiles(pubkeys)
+
     suspend fun mergeStart(key: ListHistory.Key) = service.mergeStart(key)
 
     fun opener(pubkey: String) = service.opener(pubkey)

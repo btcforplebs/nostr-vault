@@ -31,9 +31,11 @@ import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 
 /**
- * Every kept version of one list, newest first, with what changed against the
- * newest; tap an older one to restore it, or Merge to bring back entries
- * from several ([ListMergeScreen], mergeable lists only). Twin of iOS `ListVersionsView`.
+ * Every kept version of one list, newest first: the app that saved it, when,
+ * how many entries and what it changed against the one before, the wipes
+ * flagged. Tap an older one to restore it, or the explained Merge entry on
+ * top to bring back entries from several ([ListMergeScreen], mergeable lists
+ * only). Twin of iOS `ListVersionsView`.
  */
 @Composable
 internal fun ListVersionsPage(key: ListHistory.Key, viewModel: ListBackupViewModel, onBack: () -> Unit) {
@@ -58,32 +60,22 @@ internal fun ListVersionsPage(key: ListHistory.Key, viewModel: ListBackupViewMod
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            if (ListVersionMerge.mergeKind(key.kind) != null && key.d.isEmpty() && versions.isNotEmpty()) {
-                item {
-                    ListRow(onClick = { merging = true }) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Bring back entries from several versions", color = SecondaryText, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                            Text("Merge", color = Color(0xFF0A84FF), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
+            item {
+                val mergeable = ListVersionMerge.mergeKind(key.kind) != null && key.d.isEmpty() && versions.isNotEmpty()
+                ListVersionsChoice(kind = key.kind, onMerge = if (mergeable) ({ merging = true }) else null)
             }
             itemsIndexed(versions, key = { _, v -> v.id }) { index, version ->
-                val newest = versions.first()
-                val wiped = index + 1 < versions.size && ListShrinkRule.shrank(versions[index + 1], version)
+                val older = versions.getOrNull(index + 1)
+                val wiped = older != null && ListShrinkRule.shrank(older, version)
                 ListRow(onClick = if (index > 0) ({ restoring = version }) else null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Row {
-                                Text(ListBackupFormat.date(version.createdAt), color = PrimaryText, fontSize = 15.sp)
-                                if (index == 0) { Spacer(Modifier.width(6.dp)); Text("Newest", color = SecondaryText, fontSize = 12.sp) }
-                                if (wiped) { Spacer(Modifier.width(6.dp)); Text("Wipe", color = Color(0xFFFF9500), fontSize = 12.sp) }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(ListVersionText.title(version), color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f, fill = false))
+                                if (index == 0) { Spacer(Modifier.width(6.dp)); Text("Now", color = SecondaryText, fontSize = 12.sp) }
                             }
-                            val detail = if (index == 0) ListBackupFormat.count(version) else {
-                                val (comeBack, go) = ListHistory.diff(version, newest)
-                                "${ListBackupFormat.count(version)} · ${comeBack.size} not in newest, ${go.size} added since"
-                            }
-                            Text(detail, color = SecondaryText, fontSize = 13.sp)
+                            Text(ListVersionText.detail(version, older), color = SecondaryText, fontSize = 13.sp)
+                            if (wiped) Text(ListVersionText.WIPED, color = Color(0xFFFF9500), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
                         if (index > 0) Text("Restore", color = Color(0xFF0A84FF), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }

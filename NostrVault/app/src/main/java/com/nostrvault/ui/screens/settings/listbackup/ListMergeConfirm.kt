@@ -51,7 +51,8 @@ internal fun ListMergeConfirm(
 
     ListRow(onClick = null) {
         Text(
-            if (nothing) "Nothing to bring back." else
+            if (nothing) "Nothing to bring back." else ListVersionText.followConfirm(kind, sum.added, sum.removed)
+                ?.let { "$it Signed by you; the list you have now stays in your vault's history." } ?:
                 "Saves your ${name.lowercase()} as ${entryCount(sum.total)}: ${sum.added} back" +
                     (if (sum.removed > 0) ", ${sum.removed} taken out" else "") +
                     ". Signed by you; the list you have now stays in your vault's history.",
