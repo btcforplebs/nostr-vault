@@ -17,7 +17,15 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.SAVED_RE
 
     /** The newest created_at in each dotted list, from what the tab holds now. */
     internal suspend fun DashboardViewModel.dotNewest(): Map<VaultViewMode, Long> {
-        val events = allEventsMutex.withLock { allEvents.map { it.kind to it.createdAt } }
+        // The active account's own events only, as the lit check counts
+        // (VaultPageAccounts.isActiveAccounts): another account's newer
+        // events must not move the seen mark past the active account's.
+        val owner = nostrService.activeHexPubkey
+        val whitelist = resolveWhitelistedHexPubkeys()
+        val events = allEventsMutex.withLock {
+            allEvents.filter { VaultPageAccounts.isActiveAccounts(it.pubkey, it.tags, owner, whitelist) }
+                .map { it.kind to it.createdAt }
+        }
         return VaultDots.newest(events, RELAY_TAB_NOTE_KINDS, System.currentTimeMillis() / 1000)
     }
 
