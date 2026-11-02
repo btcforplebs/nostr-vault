@@ -7,7 +7,7 @@ import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure
 import * as nip44 from "nostr-tools/nip44"
 import * as nip04 from "nostr-tools/nip04"
 import { wrap } from "../src/signer/nip46.js"
-import { editedBlockList, blockGuard, setBlock, loadBlocks, getBlocks, resetBlocks, pTags, newestBlockList } from "../src/net/blocks.js"
+import { editedBlockList, blockGuard, setBlock, loadBlocks, getBlocks, resetBlocks, pTags, newestBlockList, entryCount } from "../src/net/blocks.js"
 import { REASONS, reportTemplate, reportAndBlock } from "../src/net/reports.js"
 
 const sk = generateSecretKey()
@@ -112,15 +112,27 @@ test("no list yet: the first block starts one", async () => {
   assert.deepEqual(tags, [["p", B]]); assert.equal(content, "")
 })
 
-test("the guard: a list from the user's relays, or all of them answering; and no building on a shrunken copy", () => {
-  assert.equal(blockGuard({ relaysKnown: true, asked: 3, answered: 0, netFound: true }), "")
+test("the guard: most of the user's relays (never one answer) for a found list, all of them for none; and no building on a shrunken copy", () => {
+  const found = list([["p", A]])
+  assert.equal(blockGuard({ relaysKnown: true, asked: 3, answered: 3, base: found }), "", "all answered: the newest copy is the base")
+  assert.match(blockGuard({ relaysKnown: true, asked: 3, answered: 0, netFound: true, base: found }), /None of your relays answered/, "a copy from one relay isn't enough on its own")
+  assert.equal(blockGuard({ relaysKnown: true, asked: 3, answered: 2, netFound: true, base: found }), "", "most of them answered (Logen 2026-11-02 13:21Z)")
+  assert.match(blockGuard({ relaysKnown: true, asked: 3, answered: 1, heard: 3, netFound: true, base: found }), /Only 1 of your 3/, "one of three is not most")
+  assert.match(blockGuard({ relaysKnown: true, asked: 4, answered: 2, heard: 4, netFound: true, base: found }), /Only 2 of your 4/, "half is not more than half")
+  assert.match(blockGuard({ relaysKnown: true, asked: 1, answered: 1, heard: 1, netFound: true, base: found }), /Only one relay answered/, "a single answer is never enough")
+  assert.equal(blockGuard({ relaysKnown: true, asked: 1, answered: 1, heard: 2, netFound: true, base: found }), "", "its one relay and an indexer")
   assert.equal(blockGuard({ relaysKnown: true, asked: 3, answered: 3, netFound: false }), "", "all answered and none had one: there is none yet")
-  assert.match(blockGuard({ relaysKnown: true, asked: 3, answered: 2, netFound: false }), /Only 2 of your 3/, "the one that didn't answer may hold it")
+  assert.match(blockGuard({ relaysKnown: true, asked: 3, answered: 2, netFound: false }), /Only 2 of your 3 relays answered and none had/, "the one that didn't answer may hold it")
   assert.match(blockGuard({ relaysKnown: true, asked: 3, answered: 0, netFound: false }), /None of your relays answered/)
   assert.match(blockGuard({ relaysKnown: true, asked: 4, answered: 2, netFound: false }), /Only 2 of your 4/)
   const small = list([["p", A], ["p", B]])
-  assert.match(blockGuard({ relaysKnown: true, asked: 1, answered: 1, netFound: true, base: small, known: 12 }), /holds 2 people but you had 12/)
-  assert.equal(blockGuard({ relaysKnown: true, asked: 1, answered: 1, netFound: true, base: small, known: 4 }), "", "small lists aren't second-guessed")
+  assert.match(blockGuard({ relaysKnown: true, asked: 1, answered: 1, heard: 2, netFound: true, base: small, known: 12 }), /holds only 2 of the 12 entries/)
+  assert.equal(blockGuard({ relaysKnown: true, asked: 1, answered: 1, heard: 2, netFound: true, base: small, known: 4 }), "", "small lists aren't second-guessed")
+  // Words, hashtags and threads count as entries, as people do: a list of muted words is wiped as easily.
+  const words = list([["p", A], ["word", "scam"], ["word", "Scam "], ["t", "nsfw"], ["e", "e".repeat(64)], ["e", "not-an-id"], ["relay", "wss://x"]])
+  assert.equal(entryCount(words.tags), 4, "p, word, t and e; duplicates and other tags not counted")
+  assert.equal(blockGuard({ relaysKnown: true, asked: 1, answered: 1, heard: 2, base: words, known: 8 }), "")
+  assert.match(blockGuard({ relaysKnown: true, asked: 1, answered: 1, heard: 2, base: words, known: 12 }), /holds only 4 of the 12 entries/)
   assert.match(blockGuard({ relaysKnown: false, asked: 3, answered: 3, netFound: false }), /relay list \(kind 10002\) couldn't be loaded/, "a 10002 that timed out isn't a user with none")
   assert.match(blockGuard({ asked: 3, answered: 3, netFound: true }), /couldn't be loaded/, "not said = not known")
 })
@@ -151,6 +163,36 @@ test("setBlock: built on the newest list from the relays, signed by the bunker, 
   const { event: un } = await setBlock(ctx, C, { block: false, ask: askWith(), publish: okPublish(sent) })
   assert.deepEqual(pTags(un.tags), [A, B])
   assert.ok(!getBlocks().blocked.has(C))
+})
+
+test("setBlock: own relay A sends an old list and B is silent -> refused; both answer and B is newer -> built on B (Logen 11-02)", async () => {
+  const old = list([["p", A]], "", 100)
+  const newer = list([["p", A], ["p", C], ["word", "scam"]], "", 200)
+  const calls = [], sent = []
+  const ctx = ctxOf(fakeVault(), calls)
+  resetBlocks()
+  await loadBlocks(ctx, [], { query: async () => [] })
+  // wss://w1 holds the newer list but doesn't answer in time: the old copy from wss://r1 is no base.
+  await assert.rejects(setBlock(ctx, B, { ask: askWith({ "wss://r1.example": { events: [old], answered: true }, "wss://w1.example": { events: [], answered: false } }), publish: okPublish(sent) }),
+    /Only 1 of your 2 relays answered/)
+  assert.deepEqual([calls, sent], [[], []], "not signed, not sent")
+  // Both answer: w1's newer list is the base, so C and the muted word aren't lost.
+  const { event } = await setBlock(ctx, B, { ask: askWith({ "wss://r1.example": { events: [old], answered: true }, "wss://w1.example": { events: [newer], answered: true } }), publish: okPublish(sent) })
+  assert.deepEqual(event.tags, [["p", A], ["p", C], ["word", "scam"], ["p", B]])
+  assert.ok(event.created_at > newer.created_at)
+})
+
+test("setBlock: the size guard counts muted words, hashtags and threads, not only people", async () => {
+  const many = Array.from({ length: 12 }, (_, i) => ["word", `w${i}`])
+  const vault = fakeVault([list(many, "", 100)])
+  const calls = []
+  const ctx = ctxOf(vault, calls)
+  resetBlocks()
+  await loadBlocks(ctx, [], { query: async () => [] })
+  // The relays' newest copy dropped the words: building on it would unmute eleven of twelve.
+  const truncated = list([["word", "w0"]], "", 200)
+  await assert.rejects(setBlock(ctx, B, { ask: askWith({ "wss://r1.example": { events: [truncated], answered: true } }), publish: okPublish([]) }), /holds only 1 of the 12 entries/)
+  assert.deepEqual(calls, [], "not signed")
 })
 
 test("setBlock privately through the bunker: encrypted to the user, and read back as blocked", async () => {

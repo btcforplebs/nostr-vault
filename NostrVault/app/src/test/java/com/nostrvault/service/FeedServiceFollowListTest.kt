@@ -50,9 +50,15 @@ class FeedServiceFollowListTest {
     /** The account's own relays (its kind 10002); empty means it has no relay list. */
     @Volatile private var own: List<String> = listOf("wss://one", "wss://two")
 
-    private fun relayCopy(at: Long, tags: List<List<String>>, sentBy: String = "wss://one") = NostrService.ReplaceableLookup(
+    /** A copy [sentBy] one relay, with every own relay answering ([answeredBy] narrows that). */
+    private fun relayCopy(
+        at: Long,
+        tags: List<List<String>>,
+        sentBy: String = "wss://one",
+        answeredBy: Set<String> = own.toSet() + sentBy,
+    ) = NostrService.ReplaceableLookup(
         NostrEvent(id = "f".repeat(64), pubkey = alice, createdAt = at, kind = 3, tags = tags, content = "{}", sig = ""),
-        asked = 2, answered = 1, answeredBy = setOf(sentBy), from = setOf(sentBy),
+        asked = answeredBy.size, answered = answeredBy.size, answeredBy = answeredBy, from = setOf(sentBy),
     )
 
     @Before
@@ -199,6 +205,17 @@ class FeedServiceFollowListTest {
     }
 
     @Test
+    fun `no list signed over one own relay's copy while the other own relay is silent`() {
+        // wss://one sent an old copy; wss://two, which may hold a newer one, never answered.
+        onRelays = relayCopy(200, listOf(listOf("p", bob)), answeredBy = setOf("wss://one"))
+        feed.publishContactList(listOf(alice), ContactManager.FollowEdit(add = listOf(alice)), rollback = emptyList())
+        coVerify(timeout = 5_000) { nostr.lookupNewestReplaceable(3, alice, any(), any(), any()) }
+        Thread.sleep(300)
+        coVerify(exactly = 0) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any(), any()) }
+        assertEquals(0, feed.contactEditsInFlight.get())
+    }
+
+    @Test
     fun `no list signed over a copy from the app's defaults when the account has no relay list`() {
         own = emptyList()
         onRelays = relayCopy(200, listOf(listOf("p", bob)), sentBy = "wss://relay.damus.io")
@@ -212,7 +229,9 @@ class FeedServiceFollowListTest {
     @Test
     fun `the own relays are asked for the follow list too`() {
         own = listOf("wss://own-only.example")
-        onRelays = relayCopy(200, listOf(listOf("p", bob)), sentBy = "wss://own-only.example")
+        // Its one relay and purplepag.es answered: two answers, as a single one is never enough.
+        onRelays = relayCopy(200, listOf(listOf("p", bob)), sentBy = "wss://own-only.example",
+            answeredBy = setOf("wss://own-only.example", "wss://purplepag.es"))
         feed.publishContactList(listOf(bob, alice), ContactManager.FollowEdit(add = listOf(alice)))
         coVerify(timeout = 5_000) { nostr.lookupNewestReplaceable(3, alice, match { "wss://own-only.example" in it }, any(), any()) }
         coVerify(timeout = 5_000) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any(), any()) }

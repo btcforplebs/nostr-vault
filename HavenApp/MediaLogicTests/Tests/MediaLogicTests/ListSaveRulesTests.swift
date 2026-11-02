@@ -33,8 +33,14 @@ final class ListSaveRulesTests: XCTestCase {
     }
 
     func testAFoundListIsTheBaseAndAHeldNewerOneWins() {
-        XCTAssertEqual(base(lookup(100, asked: 3, answered: 1)), "list 100")
-        XCTAssertEqual(base(lookup(100, asked: 3, answered: 1), held: 200), "list 200", "the one just signed here")
+        XCTAssertEqual(base(lookup(100, asked: 3, answered: 3)), "list 100")
+        XCTAssertEqual(base(lookup(100, asked: 3, answered: 3), held: 200), "list 200", "the one just signed here")
+        // Most own relays answered (Logen 2026-11-02 13:21Z): known, newest wins.
+        XCTAssertEqual(base(lookup(100, asked: 3, answered: 2), held: 200), "list 200")
+        XCTAssertEqual(base(lookup(300, asked: 3, answered: 2), held: 200), "list 300")
+        // One answer is never most (list-wipe audit 2026-11-02).
+        XCTAssertEqual(base(lookup(100, asked: 3, answered: 1)), "unknown")
+        XCTAssertEqual(base(lookup(100, asked: 1, answered: 1)), "unknown", "a single answer")
         XCTAssertEqual(base(lookup(nil, asked: 3, answered: 0), held: 200), "unknown", "nobody answered")
     }
 
@@ -87,7 +93,10 @@ final class ListSaveRulesTests: XCTestCase {
             .deletingLastPathComponent().appendingPathComponent("HavenApp")
         var sites: [String] = []
         let walk = try XCTUnwrap(FileManager.default.enumerator(at: app, includingPropertiesForKeys: nil))
-        for case let url as URL in walk where url.pathExtension == "swift" && url.lastPathComponent != "ListMerge.swift" {
+        // InterestList.saveBase passes its own `own` through; its one caller
+        // must name the own relays (checked below).
+        for case let url as URL in walk where url.pathExtension == "swift"
+            && url.lastPathComponent != "ListMerge.swift" && url.lastPathComponent != "InterestList.swift" {
             let src = try String(contentsOf: url, encoding: .utf8)
             var rest = src[...]
             while let call = rest.range(of: "ListMerge.editBase(") {
@@ -102,6 +111,9 @@ final class ListSaveRulesTests: XCTestCase {
         }
         XCTAssertEqual(sites.sorted(), ["FeedService+Follow.swift", "NostrService+ListPublishing.swift",
                                         "NostrService+ListPublishing.swift", "NostrService+ListPublishing.swift"])
+        let interests = try String(contentsOf: app.appendingPathComponent("Services/InterestListService.swift"), encoding: .utf8)
+        XCTAssertTrue(interests.contains("InterestList.saveBase(") && interests.contains("own: NostrService.ownListRelays(for: hex)"),
+                      "the interest list's save base names the own relays")
     }
 
 

@@ -53,8 +53,12 @@ class ConfigStoreSaveTest {
         filesDir.deleteRecursively()
     }
 
+    /** The SharedPreferences files a store emptied. */
+    private val clearedPrefs = mutableListOf<String>()
+
     private fun store() = ConfigStore(context).apply {
         keyVault = vault
+        clearPrefs = { clearedPrefs += it }
         publicKeyOf = { if (it == secret) ownerHex else null }
         reload()
     }
@@ -193,5 +197,25 @@ class ConfigStoreSaveTest {
         assertTrue(setAside().isEmpty())
         assertFalse(configFile.exists())
         assertNull(store.config.value.ownerHexKey)
+    }
+
+    @Test
+    fun `factory reset forgets what this phone last published, the hashtag cache and its fresh keys`() = runBlocking {
+        val bases = File(filesDir, com.nostrvault.service.ListMerge.BASES_FILE)
+        bases.writeText("""{"10063:abc":["https://m.example"],"10006:abc":["wss://a.example"]}""")
+        val store = store()
+
+        store.resetApp()
+
+        // The next 10063 / 10006 / 10015 edit starts from the network's copy, not this phone's.
+        assertFalse(bases.exists())
+        assertEquals(listOf("interest_lists", "fresh_account_keys"), clearedPrefs)
+    }
+
+    @Test
+    fun `forgetting list state with nothing saved yet is fine`() {
+        val cleared = mutableListOf<String>()
+        forgetListState(filesDir) { cleared += it }
+        assertEquals(listOf("interest_lists", "fresh_account_keys"), cleared)
     }
 }

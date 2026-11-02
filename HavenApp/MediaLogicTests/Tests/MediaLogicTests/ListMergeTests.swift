@@ -71,7 +71,7 @@ final class ListMergeTests: XCTestCase {
 
     func testEditBaseTakesTheNewerOfFetchedAndHeld() {
         let own = ["wss://a.example", "wss://b.example"]
-        let fetched = ReplaceableLookup(event: 100 as Int64, asked: 3, answered: 1, answeredBy: ["wss://a.example"], from: ["wss://a.example"])
+        let fetched = ReplaceableLookup(event: 100 as Int64, asked: 3, answered: 2, answeredBy: ["wss://a.example", "wss://b.example"], from: ["wss://a.example"])
         guard case .list(let newest) = ListMerge.editBase(fetched, held: 200, own: own, createdAt: { $0 }) else { return XCTFail("no list") }
         XCTAssertEqual(newest, 200)
         guard case .list(let fetchedOnly) = ListMerge.editBase(fetched, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("no list") }
@@ -128,9 +128,13 @@ final class ListMergeTests: XCTestCase {
         let stale = ReplaceableLookup(event: 100 as Int64, asked: 3, answered: 1,
                                       answeredBy: ["wss://purplepag.es"], from: ["wss://purplepag.es"])
         guard case .unknown = ListMerge.editBase(stale, held: 50, own: own, createdAt: { $0 }) else { return XCTFail("built on a stale copy") }
-        // The user's relay sent it.
-        let fromMine = ReplaceableLookup(event: 100 as Int64, asked: 3, answered: 1,
-                                         answeredBy: ["wss://mine.example/"], from: ["wss://mine.example/"])
+        // The user's relay sent it alone: one answer is never enough (Logen 2026-11-02).
+        let alone = ReplaceableLookup(event: 100 as Int64, asked: 3, answered: 1,
+                                      answeredBy: ["wss://mine.example/"], from: ["wss://mine.example/"])
+        guard case .unknown = ListMerge.editBase(alone, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("one answer") }
+        // The user's relay sent it and another relay answered too.
+        let fromMine = ReplaceableLookup(event: 100 as Int64, asked: 3, answered: 2,
+                                         answeredBy: ["wss://mine.example/", "wss://purplepag.es"], from: ["wss://mine.example/"])
         guard case .list(let list) = ListMerge.editBase(fromMine, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("no list") }
         XCTAssertEqual(list, 100)
         // The user's relay answered with an older copy; the newer one counts.
@@ -152,7 +156,7 @@ final class ListMergeTests: XCTestCase {
         let one = ReplaceableLookup(event: 100 as Int64, asked: 6, answered: 2,
                                     answeredBy: ["wss://purplepag.es", "wss://w1.example"], from: ["wss://purplepag.es"])
         guard case .unknown = ListMerge.editBase(one, held: nil, own: write, createdAt: { $0 }) else { return XCTFail("1 of 3 own relays is not most") }
-        // Two of three answered: most of them, the newest copy is the base.
+        // Two of three answered: most of them (Logen 2026-11-02 13:21Z), the newest copy is the base.
         let two = ReplaceableLookup(event: 100 as Int64, asked: 6, answered: 3,
                                     answeredBy: ["wss://purplepag.es", "wss://w1.example", "wss://w2.example"], from: ["wss://purplepag.es"])
         guard case .list(let base) = ListMerge.editBase(two, held: nil, own: write, createdAt: { $0 }) else { return XCTFail("most own relays answered") }
@@ -161,6 +165,61 @@ final class ListMergeTests: XCTestCase {
         let noneButOne = ReplaceableLookup<Int64>(event: nil, asked: 5, answered: 5,
                                                   answeredBy: ["wss://purplepag.es", "wss://r.example", "wss://w1.example", "wss://w2.example", "wss://x.example"])
         guard case .unknown = ListMerge.editBase(noneButOne, held: nil, own: write, createdAt: { $0 }) else { return XCTFail("none with an own relay unheard") }
+    }
+
+    /// List-wipe audit 2026-11-02: own relay A answers fast with an old copy,
+    /// own relay B holds a newer one and is slow. Building on A's copy dropped
+    /// what other apps had added on B. The save waits for B, or refuses.
+    func testEditBaseWaitsForEveryOwnRelayNotJustTheOneThatSentACopy() {
+        let own = ["wss://a.example", "wss://b.example"]
+        // A sent its old copy, B never answered: one answer is never most, even with A vouching.
+        let staleA = ReplaceableLookup(event: 100 as Int64, asked: 3, answered: 1,
+                                       answeredBy: ["wss://a.example"], from: ["wss://a.example"])
+        guard case .unknown = ListMerge.editBase(staleA, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("built on A's copy with B unheard") }
+        // A held copy doesn't stand in for B either.
+        guard case .unknown = ListMerge.editBase(staleA, held: 90, own: own, createdAt: { $0 }) else { return XCTFail("built on a held copy with B unheard") }
+        // B answered in time with the newer copy: that one is the base.
+        let both = ReplaceableLookup(event: 200 as Int64, asked: 3, answered: 2,
+                                     answeredBy: ["wss://a.example", "wss://b.example/"], from: ["wss://b.example/"])
+        guard case .list(let base) = ListMerge.editBase(both, held: 100, own: own, createdAt: { $0 }) else { return XCTFail("every own relay answered") }
+        XCTAssertEqual(base, 200)
+    }
+
+    /// Logen 2026-11-02 13:21Z: an edit goes ahead once more than half of the
+    /// own relays answered, never on one answer or none, and builds on the
+    /// newest copy among those that answered.
+    func testEditBaseNeedsMoreThanHalfAndAtLeastTwoOwnRelays() {
+        XCTAssertFalse(ListMerge.ownMajority(ownAnswered: 0, own: 1, answered: 3))
+        XCTAssertFalse(ListMerge.ownMajority(ownAnswered: 1, own: 1, answered: 1), "a single answer is never enough")
+        XCTAssertTrue(ListMerge.ownMajority(ownAnswered: 1, own: 1, answered: 2), "its one relay and an indexer")
+        XCTAssertFalse(ListMerge.ownMajority(ownAnswered: 1, own: 2, answered: 3))
+        XCTAssertTrue(ListMerge.ownMajority(ownAnswered: 2, own: 2, answered: 2))
+        XCTAssertTrue(ListMerge.ownMajority(ownAnswered: 2, own: 3, answered: 2))
+        XCTAssertFalse(ListMerge.ownMajority(ownAnswered: 2, own: 4, answered: 5), "half is not more than half")
+        XCTAssertTrue(ListMerge.ownMajority(ownAnswered: 3, own: 4, answered: 3))
+        XCTAssertFalse(ListMerge.ownMajority(ownAnswered: 2, own: 5, answered: 6))
+        XCTAssertFalse(ListMerge.ownMajority(ownAnswered: 0, own: 0, answered: 4), "no own relays")
+        let own = ["wss://a.example", "wss://b.example", "wss://c.example", "wss://d.example"]
+        // Half of four answered: refused.
+        let half = ReplaceableLookup(event: 100 as Int64, asked: 4, answered: 2,
+                                     answeredBy: ["wss://a.example", "wss://b.example"], from: ["wss://a.example"])
+        guard case .unknown = ListMerge.editBase(half, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("half is not most") }
+        // Three of four: the newest of the copy they sent and the held one.
+        let most = ReplaceableLookup(event: 300 as Int64, asked: 4, answered: 3,
+                                     answeredBy: ["wss://a.example", "wss://b.example", "wss://c.example"], from: ["wss://c.example"])
+        guard case .list(let base) = ListMerge.editBase(most, held: 200, own: own, createdAt: { $0 }) else { return XCTFail("most answered") }
+        XCTAssertEqual(base, 300)
+        // One own relay: its answer alone never edits, with an indexer's too it does.
+        let single = ReplaceableLookup(event: 100 as Int64, asked: 3, answered: 1,
+                                       answeredBy: ["wss://a.example"], from: ["wss://a.example"])
+        guard case .unknown = ListMerge.editBase(single, held: nil, own: ["wss://a.example"], createdAt: { $0 }) else { return XCTFail("one answer") }
+        let pair = ReplaceableLookup(event: 100 as Int64, asked: 3, answered: 2,
+                                     answeredBy: ["wss://a.example", "wss://x.example"], from: ["wss://a.example"])
+        guard case .list = ListMerge.editBase(pair, held: nil, own: ["wss://a.example"], createdAt: { $0 }) else { return XCTFail("own relay + indexer") }
+        // "None" still needs every own relay: three of four said none, the fourth may hold the list.
+        let noneMost = ReplaceableLookup<Int64>(event: nil, asked: 4, answered: 3,
+                                                answeredBy: ["wss://a.example", "wss://b.example", "wss://c.example"])
+        guard case .unknown = ListMerge.editBase(noneMost, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("none with an own relay unheard") }
     }
 
     // MARK: - Unblocking from the private part

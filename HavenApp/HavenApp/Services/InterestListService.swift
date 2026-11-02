@@ -61,17 +61,13 @@ final class InterestListService: ObservableObject {
         // Optimistic: the button flips now.
         self.hashtags = applied(to: list).hashtags
 
-        // A key setup just made has no list anywhere: nothing to wait for.
-        if !confirmed, FreshAccountKeys.isFresh(hex) {
-            confirmed = true
-        } else {
-            // Every save starts from the newest list on the relays, fetched
-            // now, not the copy read at launch (Logen 2026-10-31).
-            let ok = await (fetch ?? startFetch()).value
-            guard ok, accountHex == hex else {
-                if accountHex == hex { self.hashtags = list.hashtags }
-                return false
-            }
+        // Every save starts from the newest list on the relays, fetched now,
+        // not the copy read at launch (Logen 2026-10-31). A key setup just
+        // made is asked about too (InterestList.saveBase).
+        let ok = await (fetch ?? startFetch()).value
+        guard ok, accountHex == hex else {
+            if accountHex == hex { self.hashtags = list.hashtags }
+            return false
         }
 
         let next = applied(to: list)
@@ -79,8 +75,10 @@ final class InterestListService: ObservableObject {
             self.hashtags = list.hashtags
             return true
         }
-        guard let event = await NostrService.shared.signEventAsync(kind: 10015, content: next.content, tags: next.tags),
-              accountHex == hex else {
+        let notBefore = list.createdAt > 0 ? ListMerge.signedAt(now: Int64(Date().timeIntervalSince1970), base: list.createdAt) : nil
+        guard let event = await NostrService.shared.signEventAsync(kind: 10015, content: next.content, tags: next.tags,
+                                                                   notBefore: notBefore),
+              accountHex == hex, event.pubkey == hex else {
             if accountHex == hex { self.hashtags = list.hashtags }
             return false
         }
@@ -106,16 +104,24 @@ final class InterestListService: ObservableObject {
     private func startFetch() -> Task<Bool, Never> {
         let hex = accountHex
         let task = Task { [weak self] () -> Bool in
-            let result = await Self.fetchLatest(author: hex, relays: Self.queryRelays(for: hex))
+            let lookup = await NostrService.shared.lookupNewestReplaceable(
+                kind: 10015, for: hex, alsoAsk: Self.queryRelays(for: hex), skipAhead: true)
             guard let self, !Task.isCancelled, self.accountHex == hex else { return false }
             self.fetch = nil
-            guard let result else { return false }
-            if let remote = result {
-                if remote.createdAt >= self.list.createdAt { self.accept(remote) }
-            } else {
+            let found = ReplaceableLookup(
+                event: lookup.event.map { InterestList(tags: $0.tags, content: $0.content, createdAt: $0.created_at) },
+                asked: lookup.asked, answered: lookup.answered, answeredBy: lookup.answeredBy,
+                from: lookup.from, ahead: lookup.ahead)
+            switch InterestList.saveBase(found, held: self.list, own: NostrService.ownListRelays(for: hex),
+                                         fresh: FreshAccountKeys.isFresh(hex)) {
+            case .list(let newest):
+                if newest.createdAt >= self.list.createdAt { self.accept(newest) }
+            case .none:
                 // The relays agree there is no list: a save starts from an
                 // empty one, not from what this phone cached.
                 self.accept(InterestList())
+            case .unknown, .noRelayList:
+                return false
             }
             self.confirmed = true
             return true
@@ -130,28 +136,14 @@ final class InterestListService: ObservableObject {
         Self.saveCached(newList, for: accountHex)
     }
 
-    /// Where an account's lists live: its own outbox first, then the relays
-    /// this app reads and writes, including the local relay.
-    private static func queryRelays(for hex: String) -> [URL] {
+    /// Where else to ask besides the account's own write relays (which the
+    /// lookup always asks): the relays this app reads and writes. Not the
+    /// local relay: it holds whatever copy this device last saw, which may
+    /// be older than the network's.
+    private static func queryRelays(for hex: String) -> [String] {
         let config = ConfigService.shared.config
-        var urls: [String] = NostrService.shared.outboxRelays[hex] ?? []
-        if RelayProcessManager.shared.isRunning, !RelayProcessManager.shared.isBooting {
-            urls.append(config.nostrURL)
-        }
-        urls += config.activeFeedRelays + config.activeBlastrRelays
-        if urls.isEmpty { urls = HavenConfig.fallbackRelays }
         var seen = Set<String>()
-        return urls.filter { seen.insert($0).inserted }.compactMap(URL.init(string:))
-    }
-
-    /// The newest kind 10015 by `author`. Outer nil: no relay answered.
-    /// Inner nil: relays answered and have none.
-    private static func fetchLatest(author: String, relays: [URL]) async -> InterestList?? {
-        guard !relays.isEmpty else { return nil }
-        return await withCheckedContinuation { continuation in
-            let query = OneShotQuery(relays: relays, author: author) { continuation.resume(returning: $0) }
-            query.start()
-        }
+        return (config.activeFeedRelays + config.activeBlastrRelays).filter { seen.insert($0).inserted }
     }
 
     // MARK: Cache
@@ -166,91 +158,5 @@ final class InterestListService: ObservableObject {
     private static func saveCached(_ list: InterestList, for hex: String) {
         guard !hex.isEmpty, let data = try? JSONEncoder().encode(list) else { return }
         UserDefaults.standard.set(data, forKey: cacheKey(hex))
-    }
-}
-
-/// One REQ for an author's kind 10015 across several relays. Finishes when
-/// every relay sent EOSE, or after a timeout with whatever arrived.
-@MainActor
-private final class OneShotQuery {
-    private let relays: [URL]
-    private let author: String
-    private var completion: ((InterestList??) -> Void)?
-    private var clients: [WebSocketClient] = []
-    private var cancellables = Set<AnyCancellable>()
-    private var answered = 0
-    private var newest: InterestList?
-    private var retainSelf: OneShotQuery?
-
-    init(relays: [URL], author: String, completion: @escaping (InterestList??) -> Void) {
-        self.relays = relays
-        self.author = author
-        self.completion = completion
-    }
-
-    func start() {
-        retainSelf = self
-        let subId = "interests-\(UUID().uuidString.prefix(8))"
-        let filter: [String: Any] = ["kinds": [10015], "authors": [author], "limit": 1]
-        guard let data = try? JSONSerialization.data(withJSONObject: ["REQ", subId, filter] as [Any]),
-              let req = String(data: data, encoding: .utf8) else {
-            finish()
-            return
-        }
-        for url in relays {
-            let client = WebSocketClient()
-            client.isTemporary = true
-            clients.append(client)
-            var sent = false
-            client.$connectionState
-                .receive(on: DispatchQueue.main)
-                .sink { [weak client] state in
-                    guard state == .connected, !sent, let client else { return }
-                    sent = true
-                    client.send(text: req)
-                }
-                .store(in: &cancellables)
-            client.messageSubject
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] message in self?.handle(message, subId: subId) }
-                .store(in: &cancellables)
-            client.connect(url: url)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in self?.finish() }
-    }
-
-    private func handle(_ message: String, subId: String) {
-        guard let data = message.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              json.count >= 2, let type = json[0] as? String, json[1] as? String == subId else { return }
-        if type == "EOSE" {
-            answered += 1
-            if answered >= relays.count { finish() }
-            return
-        }
-        guard type == "EVENT", json.count >= 3,
-              let raw = json[2] as? [String: Any], NostrEventVerifier.isValid(raw),
-              let eventData = try? JSONSerialization.data(withJSONObject: raw),
-              let event = try? JSONDecoder().decode(NostrEvent.self, from: eventData),
-              event.kind == 10015, event.pubkey == author else { return }
-        if event.created_at > (newest?.createdAt ?? -1) {
-            newest = InterestList(tags: event.tags, content: event.content, createdAt: event.created_at)
-        }
-    }
-
-    private func finish() {
-        guard let completion else { return }
-        self.completion = nil
-        clients.forEach { $0.disconnect() }
-        clients = []
-        cancellables.removeAll()
-        // "None" only when the relays agree: one relay answering may just
-        // not hold the list (Logen 2026-10-31).
-        if newest != nil || ListMerge.knowsNone(asked: relays.count, answered: answered) {
-            completion(.some(newest))
-        } else {
-            completion(nil)
-        }
-        retainSelf = nil
     }
 }

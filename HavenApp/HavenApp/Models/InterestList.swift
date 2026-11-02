@@ -55,6 +55,22 @@ struct InterestList: Codable, Equatable {
         return (hashtags, rejected)
     }
 
+    /// What a follow or unfollow builds on: the newest kind 10015 found by
+    /// `lookup` (most of the account's `own` relays answering, ListMerge.ownMajority, as for
+    /// every other list) or the `held` copy cached here. The app's own local
+    /// relay is never asked, so its old copy can't pass for the newest one.
+    /// A key setup made here (`fresh`) can't have a list anywhere yet, so it
+    /// builds on what it holds, but only after relays were asked and none of
+    /// them sent a copy dated far ahead (ListMerge.freshKeyBase). It used to
+    /// skip the relays altogether and could publish over a list set in
+    /// another app (list-wipe audit 2026-11-02).
+    static func saveBase(_ lookup: ReplaceableLookup<InterestList>, held: InterestList?, own: [String], fresh: Bool,
+                         now: Int64 = Int64(Date().timeIntervalSince1970)) -> ListMerge.EditBase<InterestList> {
+        let held = held.flatMap { $0.createdAt > 0 ? $0 : nil }
+        let base = ListMerge.editBase(lookup, held: held, own: own, now: now, createdAt: { $0.createdAt })
+        return ListMerge.freshKeyBase(base, fresh: fresh, lookup: lookup, held: held, now: now, createdAt: { $0.createdAt })
+    }
+
     /// Adds or removes one hashtag. Removing drops every case variant of it;
     /// everything else stays as it was.
     func setting(_ hashtag: String, followed: Bool) -> InterestList {

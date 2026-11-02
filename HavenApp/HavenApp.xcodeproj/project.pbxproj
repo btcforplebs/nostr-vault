@@ -489,6 +489,7 @@
 		52AE4B10209AB38C847E7F1C /* MediaGalleryViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D02100F9C47D8B2A714FBA /* MediaGalleryViewer.swift */; };
 		52B1CF6FDF93928ECC60D213 /* DMInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D917784217297C478102785 /* DMInboxView.swift */; };
 		52C253E70122E23F588C589C /* ZapHistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BA557D10C9E58C90C37C72A /* ZapHistoryService.swift */; };
+		52C693587EAAB2B0A4A10B48 /* ListPublishReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01EE381BC579E96331A3449 /* ListPublishReset.swift */; };
 		52CAC9B45B184FBECD565101 /* BlossomUploadReply.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7C42A113F1DF2AA4AE3B00 /* BlossomUploadReply.swift */; };
 		5335596D525595585FFBE345 /* NoteDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FB96BA330E32C7807A2F867 /* NoteDetailView.swift */; };
 		534A6A8C88AC4C715A31F92A /* MediaServersPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C52A97A40D28F1C1381665A /* MediaServersPage.swift */; };
@@ -1493,6 +1494,7 @@
 		F0FDE2B37884AA6B6C008AA3 /* FeedService+DeletedNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80146D638D2E00F6CDCFB382 /* FeedService+DeletedNotes.swift */; };
 		F10135C9F1B704EF4CFDCDB7 /* MempoolAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71CC7FAABBAB90283299F087 /* MempoolAPIService.swift */; };
 		F11DF1086DA8F6B030403814 /* QuoteReferenceIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */; };
+		F14C2ED898A504C184E0750D /* ListPublishReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01EE381BC579E96331A3449 /* ListPublishReset.swift */; };
 		F1717200BED8A301E9C95904 /* FloatingButtonRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC11AD03532022248A5C4583 /* FloatingButtonRow.swift */; };
 		F1969630DB545EB78256124E /* SettingsHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7507E56424A5CF8EA46857DA /* SettingsHelp.swift */; };
 		F1AE2C32C05D49543A8DDAC7 /* DeletedPost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F46900B31B7943F8CBF7892 /* DeletedPost.swift */; };
@@ -2304,6 +2306,7 @@
 		CF8E202D004E4592BA82BC0F /* ConfigFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigFileStore.swift; sourceTree = "<group>"; };
 		CF8F05DC86428629E19AEEA3 /* DMReadAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMReadAuth.swift; sourceTree = "<group>"; };
 		CFD316B1F53D755B6C3CBED9 /* FeedNoteRow+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedNoteRow+Layout.swift"; sourceTree = "<group>"; };
+		D01EE381BC579E96331A3449 /* ListPublishReset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListPublishReset.swift; sourceTree = "<group>"; };
 		D069FB5194A04D262C4C449C /* TrustWebView+MyWeb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrustWebView+MyWeb.swift"; sourceTree = "<group>"; };
 		D073E928415EAF56E0DB8924 /* ZapFlightView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapFlightView.swift; sourceTree = "<group>"; };
 		D0D02100F9C47D8B2A714FBA /* MediaGalleryViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGalleryViewer.swift; sourceTree = "<group>"; };
@@ -3253,6 +3256,7 @@
 				06A0BB929DA965323CDD105A /* LinkPreviewCacheKey.swift */,
 				EB07D1CAEE1E5FBF436D7371 /* ListingDraft.swift */,
 				7F6F8180BFCF4A2CA360DD6D /* ListMerge.swift */,
+				D01EE381BC579E96331A3449 /* ListPublishReset.swift */,
 				A21B9BEF9DAADA51C5B8C4D3 /* LiveChat.swift */,
 				D23E2F257E6BF9573B8CA257 /* LiveChatMedia.swift */,
 				FD9D44519AE3AFB7DF22C301 /* LiveNoteCleanup.swift */,
@@ -4361,6 +4365,7 @@
 				2DD420459ECE57ACDD5E1432 /* LinkPreviewCard.swift in Sources */,
 				0C8D6CA3BC04B268F580C95E /* LinkPreviewService.swift in Sources */,
 				33DA43E5719FACF70AA4594B /* ListMerge.swift in Sources */,
+				F14C2ED898A504C184E0750D /* ListPublishReset.swift in Sources */,
 				DA168364485DBA9AC9FD8385 /* ListingDraft.swift in Sources */,
 				F4175A333FE9BC285E25056C /* LiveArcsShowSection.swift in Sources */,
 				9A80C5476EAD577BF194A260 /* LiveAvatarRing.swift in Sources */,
@@ -5166,6 +5171,7 @@
 				79A7B0E3D32383C1DE4C7C92 /* LinkPreviewCard.swift in Sources */,
 				A5DC568CD5B2B92D554D9D22 /* LinkPreviewService.swift in Sources */,
 				67BE7395BAFF9749E0FA0E3E /* ListMerge.swift in Sources */,
+				52C693587EAAB2B0A4A10B48 /* ListPublishReset.swift in Sources */,
 				9157ACB85192A360E8EFA7E7 /* ListingDraft.swift in Sources */,
 				D26D1F18CFDB421D03397F2F /* LiveArcsShowSection.swift in Sources */,
 				2B77B07DB61DF5B33AA051D0 /* LiveAvatarRing.swift in Sources */,

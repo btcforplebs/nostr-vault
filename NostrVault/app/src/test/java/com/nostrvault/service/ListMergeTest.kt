@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -141,7 +142,7 @@ class ListMergeTest {
 
     @Test
     fun `edit builds on the newer of the fetched and the held list`() {
-        val fetched = heard(list(100), setOf("wss://mine.example"), setOf("wss://mine.example"))
+        val fetched = heard(list(100), mine.toSet(), setOf("wss://mine.example"))
         assertEquals(ListMerge.EditBase.Found(list(200)), ListMerge.editBase(fetched, list(200), mine))
         assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(fetched, null, mine))
     }
@@ -155,13 +156,16 @@ class ListMergeTest {
     }
 
     @Test
-    fun `edit is not published on a copy no own relay vouches for`() {
+    fun `edit is not published when the own relay did not answer`() {
         val own = listOf("wss://mine.example")
         // Only purplepag.es answered; the user's relay timed out.
         val stale = NostrService.ReplaceableLookup(list(100), 3, 1, setOf("wss://purplepag.es"), setOf("wss://purplepag.es"))
         assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(stale, list(50), own))
-        // The user's relay sent it.
-        val fromMine = NostrService.ReplaceableLookup(list(100), 3, 1, setOf("wss://mine.example/"), setOf("wss://mine.example/"))
+        // The user's only relay sent it alone: one answer is never enough (Logen 2026-11-02 13:21Z).
+        val alone = NostrService.ReplaceableLookup(list(100), 3, 1, setOf("wss://mine.example/"), setOf("wss://mine.example/"))
+        assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(alone, null, own))
+        // It sent it and purplepag.es answered too: two answers, most own relays.
+        val fromMine = NostrService.ReplaceableLookup(list(100), 3, 2, setOf("wss://mine.example/", "wss://purplepag.es"), setOf("wss://mine.example/"))
         assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(fromMine, null, own))
         // The user's relay answered with an older copy; the newer one counts.
         val newerElsewhere = NostrService.ReplaceableLookup(list(100), 3, 2, setOf("wss://mine.example", "wss://purplepag.es"), setOf("wss://purplepag.es"))
@@ -178,20 +182,65 @@ class ListMergeTest {
         // A default sent a copy: still not the base.
         val onDefault = heard(list(100), defaults, setOf("wss://relay.damus.io"), asked = 3)
         assertEquals(ListMerge.EditBase.Unknown(ListMerge.NO_RELAY_LIST), ListMerge.editBase(onDefault, list(50), emptyList()))
-        assertEquals(ListMerge.NO_RELAY_LIST, ListMerge.unknownWhy(emptyList(), defaults, defaults, found = true))
+        assertEquals(ListMerge.NO_RELAY_LIST, ListMerge.unknownWhy(emptyList(), defaults, found = true))
     }
 
+    // List-wipe audit 2026-11-02, Logen 13:21Z: a found copy is the base once most own relays answered, never one.
+
     @Test
-    fun `a found copy needs an own relay to send it or most own relays to answer`() {
+    fun `a found copy needs most own relays to answer`() {
         // One of three own relays answered (not the one that sent it): unknown.
         val one = heard(list(100), setOf("wss://mine.example", "wss://purplepag.es"), setOf("wss://purplepag.es"))
         assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(one, null, mine))
-        // Two of three: known.
+        // Two of three: most of them, the newest copy among those that answered is the base.
         val two = heard(list(100), setOf("wss://mine.example", "wss://two.example", "wss://purplepag.es"), setOf("wss://purplepag.es"))
         assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(two, null, mine))
-        // An own relay sent it: known even if it was the only one.
+        assertEquals(ListMerge.EditBase.Found(list(150)), ListMerge.editBase(two, list(150), mine))
+        // An own relay sent it but the others were silent: unknown.
         val sent = heard(list(100), setOf("wss://three.example"), setOf("wss://three.example"))
-        assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(sent, null, mine))
+        assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(sent, null, mine))
+        // All three answered: known.
+        val all = heard(list(100), mine.toSet(), setOf("wss://three.example"))
+        assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(all, null, mine))
+    }
+
+    @Test
+    fun `a stale copy from one own relay while the other is silent refuses the save`() {
+        val own = listOf("wss://a.example", "wss://b.example")
+        // Relay A answered with an old copy; relay B, holding a newer one, missed the timeout.
+        val stale = NostrService.ReplaceableLookup(list(100), 2, 1, setOf("wss://a.example"), setOf("wss://a.example"))
+        assertEquals(ListMerge.EditBase.Unknown(ListMerge.NOT_ANSWERED), ListMerge.editBase(stale, null, own))
+        // Not even a copy held here makes it known.
+        assertEquals(ListMerge.EditBase.Unknown(ListMerge.NOT_ANSWERED), ListMerge.editBase(stale, list(50), own))
+        assertEquals(ListMerge.NOT_ANSWERED, ListMerge.unknownWhy(own, setOf("wss://a.example"), found = true))
+    }
+
+    @Test
+    fun `both own relays answer and the newer copy is the base`() {
+        val own = listOf("wss://a.example", "wss://b.example")
+        // The lookup keeps the newest copy across relays: B's (200) over A's (100).
+        val both = NostrService.ReplaceableLookup(list(200), 2, 2, setOf("wss://a.example", "wss://b.example/"), setOf("wss://b.example/"))
+        assertEquals(ListMerge.EditBase.Found(list(200)), ListMerge.editBase(both, list(100), own))
+        assertNull(ListMerge.unknownWhy(own, setOf("wss://A.example", "wss://b.example/"), found = true))
+    }
+
+    @Test
+    fun `more than half and at least two answers`() {
+        assertFalse(ListMerge.ownMajority(0, 1, 3))
+        assertFalse("a single answer", ListMerge.ownMajority(1, 1, 1))
+        assertTrue("its one relay and an indexer", ListMerge.ownMajority(1, 1, 2))
+        assertFalse(ListMerge.ownMajority(1, 2, 3))
+        assertTrue(ListMerge.ownMajority(2, 2, 2))
+        assertTrue(ListMerge.ownMajority(2, 3, 2))
+        assertFalse("half is not more than half", ListMerge.ownMajority(2, 4, 5))
+        assertTrue(ListMerge.ownMajority(3, 4, 3))
+        assertFalse(ListMerge.ownMajority(2, 5, 6))
+        assertFalse("no own relays", ListMerge.ownMajority(0, 0, 4))
+        val four = listOf("wss://a.example", "wss://b.example", "wss://c.example", "wss://d.example")
+        assertEquals(ListMerge.NOT_ANSWERED, ListMerge.unknownWhy(four, setOf("wss://a.example", "wss://b.example", "wss://x.example"), found = true))
+        assertNull(ListMerge.unknownWhy(four, setOf("wss://a.example", "wss://b.example", "wss://c.example"), found = true))
+        // "None" still needs all four.
+        assertEquals(ListMerge.NOT_ANSWERED, ListMerge.unknownWhy(four, setOf("wss://a.example", "wss://b.example", "wss://c.example"), found = false))
     }
 
     @Test
@@ -219,8 +268,8 @@ class ListMergeTest {
         assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(skipped, ahead, mine, now))
         // The hashtag list (10015) asks unknownWhy alone: every own relay saying "none" while one copy was skipped
         // for being dated ahead is still not "you have none".
-        assertEquals(ListMerge.NOT_ANSWERED, ListMerge.unknownWhy(mine, mine, emptySet(), found = false, ahead = true))
-        assertEquals(null, ListMerge.unknownWhy(mine, mine, emptySet(), found = false, ahead = false))
+        assertEquals(ListMerge.NOT_ANSWERED, ListMerge.unknownWhy(mine, mine, found = false, ahead = true))
+        assertEquals(null, ListMerge.unknownWhy(mine, mine, found = false, ahead = false))
     }
 
     @Test
