@@ -89,6 +89,7 @@ struct DraftPickerView: View {
                                         Label("Reply", systemImage: "arrowshape.turn.up.left")
                                             .font(.appCaption)
                                             .foregroundColor(.havenPurple)
+                                        DraftReplyParentLine(draft: draft)
                                     } else if draft.isQuote {
                                         Label("Quote", systemImage: "quote.bubble")
                                             .font(.appCaption)
@@ -199,6 +200,31 @@ struct DraftPickerView: View {
         }
         .onAppear {
             Task { await draftService.fetchDrafts() }
+        }
+    }
+}
+
+/// "↩ name: first line of their note" under a reply draft's chip. Loads the
+/// note (and its author's profile) when it isn't in memory yet; old drafts too.
+private struct DraftReplyParentLine: View {
+    let draft: Draft
+    @ObservedObject private var feed = FeedService.shared
+    @ObservedObject private var nostr = NostrService.shared
+
+    var body: some View {
+        if let id = draft.replyToId {
+            let parent = feed.findNote(id: id)
+            let pubkey = parent?.pubkey ?? draft.parentPubkey
+            let name = pubkey.flatMap { nostr.profiles[$0]?.bestName } ?? pubkey.map { String($0.prefix(8)) } ?? "someone"
+            Text(DraftReplyParent.line(name: name, parentContent: parent?.content))
+                .font(.appSystem(size: 13))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .task(id: id) {
+                    if let pk = pubkey, nostr.profiles[pk] == nil { nostr.fetchMissingProfiles(for: [pk]) }
+                    guard feed.findNote(id: id) == nil, let note = await DraftParentLoader.load(id) else { return }
+                    if nostr.profiles[note.pubkey] == nil { nostr.fetchMissingProfiles(for: [note.pubkey]) }
+                }
         }
     }
 }
