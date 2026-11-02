@@ -6,6 +6,7 @@ import { useVaultUnread } from "../../components/useVaultUnread.js"
 import { badgeCount } from "../../components/useUnreadTotal.js"
 import { readFolded, writeFolded } from "./live-vault.js"
 import { LiveVault } from "./LiveVault.jsx"
+import { MessagesPeek } from "./MessagesPeek.jsx"
 import { Icon, ICON } from "../Sidebar.jsx"
 import "../../styles/space.css"
 
@@ -35,6 +36,7 @@ export function SpaceDock({ ctx, folded, onFold }) {
       </header>
       <div class="sp-panels">
         <LiveVault ctx={ctx} />
+        <MessagesPeek ctx={ctx} />
       </div>
     </aside>
   )
