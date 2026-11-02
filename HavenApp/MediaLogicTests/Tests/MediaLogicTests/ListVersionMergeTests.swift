@@ -48,6 +48,8 @@ final class ListVersionMergeTests: XCTestCase {
         XCTAssertEqual(ListVersionMerge.deltaLine(kind: 3, added: 1, removed: 0), "+1 follow")
         XCTAssertEqual(ListVersionMerge.deltaLine(kind: 10000, added: 0, removed: 3), "−3 muted entries")
         XCTAssertEqual(ListVersionMerge.deltaLine(kind: 10003, added: 0, removed: 0), "Same as now")
+        XCTAssertEqual(ListVersionMerge.deltaLine(kind: 10050, added: 3, removed: 0), "+3 relays")
+        XCTAssertEqual(ListVersionMerge.deltaLine(kind: 10004, added: 2, removed: 0), "+2 communities")
     }
 
     func testEmptyVersionsAreNeverOffered() async {
