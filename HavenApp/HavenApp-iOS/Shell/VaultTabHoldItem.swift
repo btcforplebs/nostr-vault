@@ -4,7 +4,8 @@ import SwiftUI
 
 /// The Vault tab: tap for the tab, press and hold, slide onto a page (Vault,
 /// Notes, Media, ...) and let go to open it (`DockHoldMenu`). The same pages,
-/// in the same order, as the Vault mode pill, with its red dots.
+/// in the same order, as the Vault mode pill, with its red dots, and
+/// Messages at the top (Logen 2026-11-02), red-dotted while one is unread.
 struct VaultTabHoldItem<Label: View>: View {
     let selected: Bool
     let zapsOnly: Bool
@@ -14,6 +15,10 @@ struct VaultTabHoldItem<Label: View>: View {
     @ViewBuilder let label: () -> Label
 
     @ObservedObject private var section = VaultSection.shared
+    @ObservedObject private var dmService = DMService.shared
+
+    /// The Messages row's id; never a `VaultMode` raw value.
+    static var messagesId: String { "messages" }
 
     private var modes: [VaultMode] {
         VaultMode.allCases.filter { !(zapsOnly && $0 == .likes) }
@@ -30,6 +35,7 @@ struct VaultTabHoldItem<Label: View>: View {
             .accessibilityHint("Hold to pick a Vault page")
             .accessibilityAction { onTap() }
             .accessibilityActions {
+                Button("Messages") { openMessages() }
                 ForEach(modes, id: \.self) { mode in
                     Button(mode.title) { open(mode) }
                 }
@@ -38,15 +44,24 @@ struct VaultTabHoldItem<Label: View>: View {
 
     private func entries() -> [DockHoldEntry] {
         let news = section.newModes.union(relayManager.newActivityModes)
+        // Rows are drawn bottom-up from the tab, so the last entry is the top row.
         return modes.map {
             DockHoldEntry(id: $0.rawValue, title: $0.title, symbol: $0.symbol,
                           isCurrent: $0 == current, hasNews: news.contains($0))
-        }
+        } + [DockHoldEntry(id: Self.messagesId, title: "Messages", symbol: "envelope",
+                           hasNews: dmService.totalUnreadCount > 0)]
     }
 
     private func pick(_ id: String) {
+        if id == Self.messagesId { return openMessages() }
         guard let mode = VaultMode(rawValue: id) else { return }
         open(mode)
+    }
+
+    /// The inbox, as the Vault tab's envelope button opens it (ContentView
+    /// puts the Vault tab on screen too).
+    private func openMessages() {
+        NotificationCenter.default.post(name: .havenOpenDMInbox, object: nil)
     }
 
     /// The Vault list applies the page once it is built: on a first visit

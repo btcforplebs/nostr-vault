@@ -100,4 +100,16 @@ class DockHoldTest {
         assertEquals(setOf(VaultMode.NOTES), VaultTabPicker.news(setOf(VaultMode.LIKES), zapsOnly = true))
         VaultTabPicker.listDots = emptySet()
     }
+
+    @Test
+    fun `Vault hold menu lists the pages, then Messages as the top row`() {
+        val items = VaultTabPicker.items(zapsOnly = false)
+        assertEquals(VaultPick.Messages, items.last())
+        assertEquals(VaultMode.menu(zapsOnly = false).map { VaultPick.Page(it) }, items.dropLast(1))
+        assertEquals(1, items.count { it == VaultPick.Messages })
+        // Zaps Only still leaves out Likes, and still offers Messages.
+        val zapsOnly = VaultTabPicker.items(zapsOnly = true)
+        assertEquals(VaultPick.Messages, zapsOnly.last())
+        assertEquals(false, zapsOnly.contains(VaultPick.Page(VaultMode.LIKES)))
+    }
 }
