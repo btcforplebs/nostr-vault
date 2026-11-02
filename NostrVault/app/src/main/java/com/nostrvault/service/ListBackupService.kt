@@ -29,7 +29,7 @@ class ListBackupService @Inject constructor(
     enum class State { IDLE, LOADING, LOADED, UNAVAILABLE }
 
     /** What a restore would change, against the newest list known when the page opened. */
-    data class Preview(val current: NostrEvent?, val comeBack: Set<String>, val go: Set<String>)
+    data class Preview(val current: NostrEvent?, val comeBack: Set<String>, val go: Set<String>, val replacesPrivate: Boolean)
 
     private val _state = MutableStateFlow(State.IDLE)
     val state: StateFlow<State> = _state.asStateFlow()
@@ -70,7 +70,19 @@ class ListBackupService @Inject constructor(
         author = hex
         _state.value = State.LOADING
         val filter = "{\"authors\":[\"$hex\"],\"kinds\":${ListShrinkRule.protectedKinds},\"limit\":1000}"
-        val found = runCatching { VaultSocket.query(url, filter, { signAuth(url, it) }) }.getOrNull()
+        var found = runCatching { VaultSocket.query(url, filter, { signAuth(url, it) }) }.getOrNull()
+        // At the limit the relay cut the oldest, which may be a pinned list from before a wipe:
+        // ask again one kind at a time (Tron, PR 1568).
+        if (found != null && found.size >= 1000) {
+            val all = mutableListOf<NostrEvent>()
+            for (kind in ListShrinkRule.protectedKinds) {
+                val one = "{\"authors\":[\"$hex\"],\"kinds\":[$kind],\"limit\":1000}"
+                val some = runCatching { VaultSocket.query(url, one, { signAuth(url, it) }) }.getOrNull()
+                if (some == null) { found = null; break }
+                all += some
+            }
+            if (found != null) found = all
+        }
         if (configStore.activeAccountHexPubkey.value != hex) return
         if (found == null) {
             _state.value = State.UNAVAILABLE
@@ -84,7 +96,7 @@ class ListBackupService @Inject constructor(
     /** Wipes the newest version of a list made that the person hasn't dismissed, newest first. */
     fun wipes(groups: Map<ListHistory.Key, List<ListVersion>>, dismissed: Set<String>): List<Pair<ListHistory.Key, ListHistory.Wipe>> =
         groups.mapNotNull { (key, versions) ->
-            ListHistory.latestWipe(versions)?.takeIf { it.after.id !in dismissed }?.let { key to it }
+            ListHistory.latestWipe(versions)?.takeIf { ListHistory.worthABanner(it) && it.after.id !in dismissed }?.let { key to it }
         }.sortedByDescending { it.second.after.createdAt }
 
     /** "Keep the new list": this wipe is not shown again. */
@@ -118,8 +130,9 @@ class ListBackupService @Inject constructor(
 
     /** What restoring [old] would bring back and take away, against the newest list as fetched now. */
     suspend fun preview(old: ListVersion): Result<Preview> = currentList(old).map { current ->
-        val (comeBack, go) = ListHistory.diff(old, current?.let(ListVersion::of))
-        Preview(current, comeBack, go)
+        val now = current?.let(ListVersion::of)
+        val (comeBack, go) = ListHistory.diff(old, now)
+        Preview(current, comeBack, go, ListHistory.replacesPrivatePart(old, now))
     }
 
     /**
@@ -129,7 +142,7 @@ class ListBackupService @Inject constructor(
      * 2. the vault must hold that newest list first, so the restore can be undone;
      * 3. the old tags are signed by the same account, dated after the newest; kind 3 keeps the newest content;
      * 4. the vault must accept it, then it goes to the person's relays;
-     * 5. the app's follow list is reloaded.
+     * 5. the app's follow list and mutes are reloaded.
      * Never called without a tap.
      */
     suspend fun restore(old: ListVersion, shown: Preview): String? {
@@ -163,11 +176,19 @@ class ListBackupService @Inject constructor(
             null
         }
         if (signed == null || signed.pubkey != old.pubkey) return "The list couldn't be signed. Nothing was changed."
+        if (configStore.activeAccountHexPubkey.value != old.pubkey) return "You switched accounts during the restore. Nothing was changed."
         if (!VaultSocket.publish(vaultUrl, signed, { signAuth(vaultUrl, it) })) {
             return "Your vault refused the restored $name. Nothing was sent to your relays."
         }
+        // postEvent sends through the active account's relays: still this one?
+        if (configStore.activeAccountHexPubkey.value != old.pubkey) {
+            return "You switched accounts during the restore. Your vault kept the restored list; this app didn't send it to your relays. Switch back and check it."
+        }
         nostrService.postEvent(signed)
-        if (old.kind == 3) runCatching { feedService.refreshContactList() }
+        when (old.kind) {
+            3 -> runCatching { feedService.refreshContactList() }
+            10000 -> runCatching { nostrService.applyMuteList(signed.pubkey, signed.id, signed.tags, signed.content, signed.createdAt) }
+        }
         return null
     }
 

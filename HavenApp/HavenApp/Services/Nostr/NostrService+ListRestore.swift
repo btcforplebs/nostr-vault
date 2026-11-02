@@ -8,6 +8,11 @@ extension ListVersion {
 }
 
 extension NostrService {
+    @MainActor static func restoreAccountNpub() -> String {
+        let config = ConfigService.shared.config
+        return config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
+    }
+
     /// Why a restore did not happen, in words for the person.
     enum ListRestoreError: Error {
         case refused(String)
@@ -21,6 +26,8 @@ extension NostrService {
         let current: NostrEvent?
         let comeBack: Set<String>
         let go: Set<String>
+        /// The encrypted private part changes too (ListHistory.replacesPrivatePart).
+        let replacesPrivate: Bool
     }
 
     /// The newest copy of `old`'s list, from the account's own relays and the
@@ -56,8 +63,7 @@ extension NostrService {
     @MainActor
     /// `vaultVersions`: every version of this list the vault holds, newest first.
     func restoreList(_ old: ListVersion, shown preview: ListRestorePreview, vaultVersions: [NostrEvent]) async -> ListRestoreError? {
-        let config = ConfigService.shared.config
-        let npub = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
+        let npub = Self.restoreAccountNpub()
         guard Bech32.decode(npub)?.hexString == old.pubkey else {
             return .refused("This list belongs to another account. Switch to it first.")
         }
@@ -84,8 +90,15 @@ extension NostrService {
               signed.pubkey == old.pubkey else {
             return .refused("The list couldn't be signed. Nothing was changed.")
         }
+        guard Self.restoreAccountNpub() == npub else {
+            return .refused("You switched accounts during the restore. Nothing was changed.")
+        }
         guard await VaultSocket.publish(signed) else {
             return .refused("Your vault refused the restored \(ListShrinkRule.name(old.kind)). Nothing was sent to your relays.")
+        }
+        // postEvent sends through the active account's relays: still this one?
+        guard Self.restoreAccountNpub() == npub else {
+            return .refused("You switched accounts during the restore. Your vault kept the restored list; this app didn't send it to your relays. Switch back and check it.")
         }
         postEvent(signed)
         switch old.kind {

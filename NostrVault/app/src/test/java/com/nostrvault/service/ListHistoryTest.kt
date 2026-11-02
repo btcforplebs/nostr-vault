@@ -129,4 +129,26 @@ class ListHistoryTest {
         assertEquals("kind 3 keeps the current content", "current relays", content)
         assertEquals("ciphertext", ListHistory.restored(list(10000, 2, "ciphertext"), list(10000, 0)).second)
     }
+
+    @Test
+    fun bannerNeedsAListOfThreeOrALongPrivatePart() {
+        assertFalse(ListHistory.worthABanner(ListHistory.Wipe(list(10003, 1), list(10003, 0))))
+        assertFalse(ListHistory.worthABanner(ListHistory.Wipe(list(10003, 2), list(10003, 0))))
+        assertTrue(ListHistory.worthABanner(ListHistory.Wipe(list(10003, 3), list(10003, 0))))
+        val longPrivate = "x".repeat(1000)
+        assertTrue(ListHistory.worthABanner(ListHistory.Wipe(list(10000, 0, longPrivate), list(10000, 0))))
+        assertFalse("kind 3 content is not private", ListHistory.worthABanner(ListHistory.Wipe(list(3, 0, longPrivate), list(3, 0))))
+    }
+
+    @Test
+    fun restoreSaysWhenItReplacesThePrivatePart() {
+        val old = list(10003, 2, "old cipher")
+        val current = list(10003, 2, "new cipher")
+        val (comeBack, go) = ListHistory.diff(old, current)
+        assertTrue(comeBack.isEmpty() && go.isEmpty())
+        assertTrue(ListHistory.replacesPrivatePart(old, current))
+        assertFalse(ListHistory.replacesPrivatePart(old, list(10003, 0, "old cipher")))
+        assertFalse("kind 3 keeps the current content", ListHistory.replacesPrivatePart(list(3, 2, "a"), list(3, 2, "b")))
+        assertTrue(ListHistory.replacesPrivatePart(old, null))
+    }
 }

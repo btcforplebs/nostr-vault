@@ -49,6 +49,18 @@ object ListHistory {
         return Wipe(best, after)
     }
 
+    /** The smallest list a banner is shown for: emptying a list of one or two items is an ordinary edit (Tron, PR 1568). */
+    const val BANNER_MIN_ITEMS = 3
+
+    /** Whether a wipe is worth the dashboard banner: at least [BANNER_MIN_ITEMS] items before, or a long private part. */
+    fun worthABanner(wipe: Wipe): Boolean =
+        ListShrinkRule.itemCount(wipe.before) >= BANNER_MIN_ITEMS ||
+            (wipe.before.kind in ListShrinkRule.encryptedKinds && wipe.before.content.length >= ListShrinkRule.MIN_CONTENT)
+
+    /** Whether a restore of [old] replaces the encrypted private part: the diff only sees public items. */
+    fun replacesPrivatePart(old: ListVersion, current: ListVersion?): Boolean =
+        old.kind in ListShrinkRule.encryptedKinds && old.content != (current?.content ?: "")
+
     /** What restoring [old] over [current] changes, as item keys: what comes back and what goes. */
     fun diff(old: ListVersion, current: ListVersion?): Pair<Set<String>, Set<String>> {
         val was = ListShrinkRule.items(old)

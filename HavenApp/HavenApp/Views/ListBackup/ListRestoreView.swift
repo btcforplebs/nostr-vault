@@ -36,8 +36,15 @@ struct ListRestoreView: View {
                 if let preview, !done {
                     changes("Comes back", preview.comeBack)
                     changes("Goes", preview.go)
+                    if preview.replacesPrivate {
+                        Section {
+                            Label("Your private items go back to the ones from \(ListBackupFormat.date(old.createdAt)). Private items added since then are removed.",
+                                  systemImage: "lock.fill")
+                                .foregroundColor(.orange)
+                        }
+                    }
                     if preview.comeBack.isEmpty && preview.go.isEmpty {
-                        Section { Text("Same items as your newest \(name).").foregroundColor(.secondary) }
+                        Section { Text(preview.replacesPrivate ? "Same public items as your newest \(name)." : "Same items as your newest \(name).").foregroundColor(.secondary) }
                     }
                 }
             }

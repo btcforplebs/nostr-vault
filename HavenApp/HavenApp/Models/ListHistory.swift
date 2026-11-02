@@ -58,6 +58,26 @@ enum ListHistory {
         return Wipe(before: best, after: after)
     }
 
+    /// The smallest list a banner is shown for: emptying a list of one or
+    /// two items is an ordinary edit (removing your last bookmark), though
+    /// the vault still pins it (Tron, PR 1568 review).
+    static let bannerMinItems = 3
+
+    /// Whether a wipe is worth the dashboard banner: the list before held at
+    /// least `bannerMinItems` items, or a private part of
+    /// ListShrinkRule.minContent characters.
+    static func worthABanner(_ wipe: Wipe) -> Bool {
+        if ListShrinkRule.itemCount(wipe.before) >= bannerMinItems { return true }
+        return ListShrinkRule.encryptedKinds.contains(wipe.before.kind)
+            && wipe.before.content.count >= ListShrinkRule.minContent
+    }
+
+    /// Whether a restore of `old` replaces the encrypted private part: the
+    /// diff only sees public items, so the confirm page has to say so.
+    static func replacesPrivatePart(_ old: ListVersion, current: ListVersion?) -> Bool {
+        ListShrinkRule.encryptedKinds.contains(old.kind) && old.content != (current?.content ?? "")
+    }
+
     /// What restoring `old` over `current` changes, as item keys
     /// (ListShrinkRule.items): what comes back and what goes.
     static func diff(restoring old: ListVersion, over current: ListVersion?) -> (comeBack: Set<String>, go: Set<String>) {

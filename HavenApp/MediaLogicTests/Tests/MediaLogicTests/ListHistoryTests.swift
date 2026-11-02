@@ -107,4 +107,25 @@ final class ListHistoryTests: XCTestCase {
         let mutes = list(10000, 2, content: "ciphertext")
         XCTAssertEqual(ListHistory.restored(mutes, current: list(10000, 0)).content, "ciphertext")
     }
+
+    /// Removing your last bookmark is no banner; a real wipe is (Tron, PR 1568).
+    func testBannerNeedsAListOfThreeOrALongPrivatePart() {
+        XCTAssertFalse(ListHistory.worthABanner(.init(before: list(10003, 1), after: list(10003, 0))))
+        XCTAssertFalse(ListHistory.worthABanner(.init(before: list(10003, 2), after: list(10003, 0))))
+        XCTAssertTrue(ListHistory.worthABanner(.init(before: list(10003, 3), after: list(10003, 0))))
+        let longPrivate = String(repeating: "x", count: 1000)
+        XCTAssertTrue(ListHistory.worthABanner(.init(before: list(10000, 0, content: longPrivate), after: list(10000, 0))))
+        XCTAssertFalse(ListHistory.worthABanner(.init(before: list(3, 0, content: longPrivate), after: list(3, 0))), "kind 3 content is not private")
+    }
+
+    /// The public diff can be empty while the private part is swapped (Tron, PR 1568).
+    func testRestoreSaysWhenItReplacesThePrivatePart() {
+        let old = list(10003, 2, content: "old cipher"), current = list(10003, 2, content: "new cipher")
+        let diff = ListHistory.diff(restoring: old, over: current)
+        XCTAssertTrue(diff.comeBack.isEmpty && diff.go.isEmpty)
+        XCTAssertTrue(ListHistory.replacesPrivatePart(old, current: current))
+        XCTAssertFalse(ListHistory.replacesPrivatePart(old, current: list(10003, 0, content: "old cipher")))
+        XCTAssertFalse(ListHistory.replacesPrivatePart(list(3, 2, content: "a"), current: list(3, 2, content: "b")), "kind 3 keeps the current content")
+        XCTAssertTrue(ListHistory.replacesPrivatePart(old, current: nil))
+    }
 }

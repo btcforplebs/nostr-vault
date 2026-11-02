@@ -72,8 +72,16 @@ internal fun ListRestoreDialog(old: ListVersion, viewModel: ListBackupViewModel,
                     else -> {
                         Changes("Comes back", shown.comeBack)
                         Changes("Goes", shown.go)
+                        if (shown.replacesPrivate) {
+                            Text(
+                                "Your private items go back to the ones from ${ListBackupFormat.date(old.createdAt)}. " +
+                                    "Private items added since then are removed.",
+                                color = Color(0xFFFF9500),
+                            )
+                            Spacer(Modifier.size(8.dp))
+                        }
                         if (shown.comeBack.isEmpty() && shown.go.isEmpty()) {
-                            Text("Same items as your newest $name.", color = SecondaryText)
+                            Text(if (shown.replacesPrivate) "Same public items as your newest $name." else "Same items as your newest $name.", color = SecondaryText)
                         }
                     }
                 }

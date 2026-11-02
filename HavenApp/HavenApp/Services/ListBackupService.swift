@@ -32,9 +32,23 @@ final class ListBackupService: ObservableObject {
         author = hex
         state = .loading
         let filter: [String: Any] = ["authors": [hex], "kinds": ListShrinkRule.protectedKinds, "limit": 1000]
-        guard let found = await VaultSocket.query(path: "/lists", filter: filter), author == hex else {
+        guard var found = await VaultSocket.query(path: "/lists", filter: filter), author == hex else {
             if author == hex { state = .unavailable }
             return
+        }
+        // At the limit the relay cut the oldest, which may be a pinned list
+        // from before a wipe: ask again one kind at a time (Tron, PR 1568).
+        if found.count >= 1000 {
+            var all: [NostrEvent] = []
+            for kind in ListShrinkRule.protectedKinds {
+                guard let some = await VaultSocket.query(path: "/lists", filter: ["authors": [hex], "kinds": [kind], "limit": 1000]),
+                      author == hex else {
+                    if author == hex { state = .unavailable }
+                    return
+                }
+                all += some
+            }
+            found = all
         }
         events = Dictionary(found.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         groups = ListHistory.group(found.map(ListVersion.init), author: hex)
@@ -48,7 +62,8 @@ final class ListBackupService: ObservableObject {
     /// dismissed, newest first.
     var wipes: [(key: ListHistory.Key, wipe: ListHistory.Wipe)] {
         groups.compactMap { key, versions in
-            guard let wipe = ListHistory.latestWipe(versions), !dismissed.contains(wipe.after.id) else { return nil }
+            guard let wipe = ListHistory.latestWipe(versions), ListHistory.worthABanner(wipe),
+                  !dismissed.contains(wipe.after.id) else { return nil }
             return (key, wipe)
         }
         .sorted { $0.wipe.after.createdAt > $1.wipe.after.createdAt }
@@ -70,8 +85,10 @@ final class ListBackupService: ObservableObject {
         switch await NostrService.shared.currentList(like: old, vaultNewest: vaultEvents(for: old).first) {
         case .failure(let error): return .failure(error)
         case .success(let current):
-            let diff = ListHistory.diff(restoring: old, over: current.map(ListVersion.init))
-            return .success(.init(current: current, comeBack: diff.comeBack, go: diff.go))
+            let now = current.map(ListVersion.init)
+            let diff = ListHistory.diff(restoring: old, over: now)
+            return .success(.init(current: current, comeBack: diff.comeBack, go: diff.go,
+                                  replacesPrivate: ListHistory.replacesPrivatePart(old, current: now)))
         }
     }
 
