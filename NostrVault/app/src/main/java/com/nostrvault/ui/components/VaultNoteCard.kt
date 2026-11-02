@@ -260,8 +260,7 @@ private fun CompactLayout(
                 )
 
                 if (note.isFromNostrVault) {
-                    Spacer(Modifier.width(4.dp))
-                    NostrVaultBadge(size = 10.dp)
+                    NostrVaultBadge(size = 10.dp, leadingGap = 4.dp)
                 }
 
                 Spacer(Modifier.width(4.dp))
@@ -436,8 +435,7 @@ private fun ExpandedLayout(
                     )
 
                     if (reposter == null && note.isFromNostrVault) {
-                        Spacer(Modifier.width(6.dp))
-                        NostrVaultBadge(size = 12.dp)
+                        NostrVaultBadge(size = 12.dp, leadingGap = 6.dp)
                     }
 
                     Spacer(Modifier.width(6.dp))

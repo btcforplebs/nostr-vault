@@ -275,8 +275,7 @@ fun CondensedNoteLine(
                             )
                         }
                         if (note.isFromNostrVault) {
-                            Spacer(Modifier.width(3.dp))
-                            NostrVaultBadge(size = 9.dp)
+                            NostrVaultBadge(size = 9.dp, leadingGap = 3.dp)
                         }
                         Text(
                             text = " · ${formatTimestamp(note.postedAt.time / 1000)}",
@@ -521,12 +520,23 @@ val FeedNote.isFromNostrVault: Boolean
     get() = tags.any { it.size > 1 && it[0] == "client" && it[1].startsWith("Nostr Vault") }
 
 /**
+ * Appearance → "Hide Nostr Vault logo on posts"
+ * ([com.nostrvault.relay.HavenConfig.hideNostrVaultBadge]). Provided once in
+ * MainActivity; false (logo shows) until the user turns it on.
+ */
+val LocalHideNostrVaultBadge = androidx.compose.runtime.compositionLocalOf { false }
+
+/**
  * A tiny vault doorway, the app icon's shape, beside the author's name on
  * posts sent from Nostr Vault. Drawn rather than the icon image: the icon is
  * dark and turns into a blob at name size. iOS: NostrVaultBadge.
+ * [leadingGap] is the space before it, so hiding it (LocalHideNostrVaultBadge)
+ * leaves no gap after the name.
  */
 @Composable
-fun NostrVaultBadge(size: androidx.compose.ui.unit.Dp = 11.dp) {
+fun NostrVaultBadge(size: androidx.compose.ui.unit.Dp = 11.dp, leadingGap: androidx.compose.ui.unit.Dp = 0.dp) {
+    if (LocalHideNostrVaultBadge.current) return
+    if (leadingGap > 0.dp) Spacer(Modifier.width(leadingGap))
     val colors = LocalNostrVaultColors.current
     val color = colors.primary
     androidx.compose.foundation.Canvas(

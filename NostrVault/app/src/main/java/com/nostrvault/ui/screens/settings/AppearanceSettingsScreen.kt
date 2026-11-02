@@ -113,6 +113,14 @@ class AppearanceViewModel @Inject constructor(
         configStore.update { it.copy(showNewPostsPill = on) }
     }
 
+    val hideNostrVaultBadge = configStore.config
+        .map { it.hideNostrVaultBadge }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.hideNostrVaultBadge)
+
+    fun setHideNostrVaultBadge(on: Boolean) {
+        configStore.update { it.copy(hideNostrVaultBadge = on) }
+    }
+
     val postButtons = configStore.config
         .map { it.postButtons }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.postButtons)
@@ -190,6 +198,7 @@ fun AppearanceSettingsScreen(
     val showTranslateButton by viewModel.showTranslateButton.collectAsState()
     val translateTarget by viewModel.translateTarget.collectAsState()
     val showNewPostsPill by viewModel.showNewPostsPill.collectAsState()
+    val hideNostrVaultBadge by viewModel.hideNostrVaultBadge.collectAsState()
     val postButtons by viewModel.postButtons.collectAsState()
     val sendDelaySeconds by viewModel.sendDelaySeconds.collectAsState()
 
@@ -285,6 +294,24 @@ fun AppearanceSettingsScreen(
                 Switch(
                     checked = showNewPostsPill,
                     onCheckedChange = viewModel::setShowNewPostsPill,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = PrimaryText,
+                        checkedTrackColor = LocalNostrVaultColors.current.primary,
+                    ),
+                )
+            }
+
+            Spacer(Modifier.height(32.dp))
+
+            // iOS Appearance > Posts > "Hide Nostr Vault logo on posts". Off: the logo shows.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                SettingHeading("Hide Nostr Vault logo on posts", modifier = Modifier.weight(1f))
+                Switch(
+                    checked = hideNostrVaultBadge,
+                    onCheckedChange = viewModel::setHideNostrVaultBadge,
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = PrimaryText,
                         checkedTrackColor = LocalNostrVaultColors.current.primary,

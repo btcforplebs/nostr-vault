@@ -251,6 +251,12 @@ data class HavenConfig(
      */
     val showNewPostsPill: Boolean = true,
     /**
+     * Appearance → "Hide Nostr Vault logo on posts": hides NostrVaultBadge, the
+     * vault mark beside the author's name on posts sent from Nostr Vault. Off by
+     * default, so the logo shows. Mirrors iOS HavenConfig.hideNostrVaultBadge.
+     */
+    val hideNostrVaultBadge: Boolean = false,
+    /**
      * Appearance → Post buttons: the emoji the action bar under a post shows.
      * Only ⚡️ is read: with it, posts get a zap button. Mirrors iOS
      * `postButtons`, except the default: iOS ships it empty (zaps off, for App

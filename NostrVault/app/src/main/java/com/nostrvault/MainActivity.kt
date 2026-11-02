@@ -224,6 +224,7 @@ class MainActivity : FragmentActivity() {
                     com.nostrvault.ui.components.LocalReactionActions provides reactionActions,
                     LocalNotificationManager provides notificationManager,
                     com.nostrvault.ui.components.LocalShowZapButton provides com.nostrvault.relay.HavenConfig.postButtonsShowZap(config.postButtons),
+                    com.nostrvault.ui.components.LocalHideNostrVaultBadge provides config.hideNostrVaultBadge,
                 ) {
                     Surface(
                         modifier = Modifier.fillMaxSize(),

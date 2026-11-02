@@ -137,8 +137,7 @@ internal fun HeroNoteCard(
                             )
                         }
                         if (note.isFromNostrVault) {
-                            Spacer(Modifier.width(6.dp))
-                            NostrVaultBadge(size = 12.dp)
+                            NostrVaultBadge(size = 12.dp, leadingGap = 6.dp)
                         }
                         Spacer(Modifier.weight(1f))
                         Text(
