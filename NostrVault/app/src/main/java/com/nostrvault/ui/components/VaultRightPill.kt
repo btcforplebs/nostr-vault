@@ -1,5 +1,7 @@
 package com.nostrvault.ui.components
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -28,7 +30,7 @@ import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.SecondaryText
 
 /** Unread messages and the way to the inbox, for the Vault tab's right pill. */
-data class VaultMessages(val unread: Int, val open: () -> Unit)
+data class VaultMessages(val unread: Int, val open: () -> Unit, val openBookmarks: (() -> Unit)? = null)
 
 /** Provided by the Vault tab, so each of its screens can lead with ✉️. */
 val LocalVaultMessages = compositionLocalOf<VaultMessages?> { null }
@@ -55,6 +57,16 @@ fun VaultRightPill(
         }
         if (messages != null) {
             VaultMessagesButton(messages)
+            messages.openBookmarks?.let { open ->
+                IconButton(onClick = open, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        Icons.Outlined.BookmarkBorder,
+                        contentDescription = "Bookmarks",
+                        tint = SecondaryText,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
             if (filters != null) {
                 Box(
                     Modifier

@@ -25,7 +25,7 @@ class UserListSignGuardTest {
         .filter { it.isFile && it.extension == "kt" }
         .associate { it.relativeTo(root).path to it.readText().replace(Regex("\\s+"), " ") }
 
-    private val listKinds = setOf(0, 3, 10000, 10002, 10006, 10015, 10050, 10063)
+    private val listKinds = setOf(0, 3, 10000, 10002, 10003, 10006, 10015, 10050, 10063)
 
     /** Named kinds that are list kinds. */
     private val namedListKinds = mapOf("InterestList.KIND" to InterestList.KIND)

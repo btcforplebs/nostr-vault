@@ -359,6 +359,9 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         extraRelays: () -> List<String> = { emptyList() },
         onPosted: () -> Unit = {},
         onRefused: (String) -> Unit = {},
+        onSigned: (NostrEvent) -> Unit = {},
+        onUnchanged: (base: NostrEvent?) -> Unit = {},
+        onNotSigned: () -> Unit = {},
         build: (NostrEvent?) -> Pair<List<List<String>>, String>?,
     ) {
         if (author.isBlank()) return
@@ -380,6 +383,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             }
             val (tags, content) = build(base) ?: run {
                 Log.w(TAG, "kind $kind: nothing that may be published; not published")
+                onUnchanged(base)
                 return@launch
             }
             val extra = extraRelays()
@@ -388,11 +392,42 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             } catch (e: Exception) {
                 Log.e(TAG, "kind $kind not signed: ${e.message}")
                 null
-            } ?: return@launch
+            } ?: run {
+                onNotSigned()
+                return@launch
+            }
             postEvent(event)
             extra.forEach { fireAndForgetPublish(event, it) }
+            onSigned(event)
             onPosted()
         }
+    }
+
+    /**
+     * Adds ([on]) or removes one bookmark on [author]'s kind 10003, built on the newest list the account's own
+     * relays agree on ([publishMergedList]): every other tag and the encrypted private part go back as they were.
+     * Nothing is signed when the list already says so. Twin of iOS NostrService.publishBookmark.
+     */
+    internal suspend fun NostrService.publishBookmarkImpl(
+        entry: BookmarkList.Entry,
+        on: Boolean,
+        author: String,
+        forceOwner: Boolean,
+    ): BookmarkList.Publish {
+        val done = CompletableDeferred<BookmarkList.Publish>()
+        if (author.isBlank()) return BookmarkList.Publish.Failed(null)
+        publishMergedList(
+            BookmarkList.KIND, author, forceOwner,
+            onRefused = { done.complete(BookmarkList.Publish.Failed(it)) },
+            onSigned = { done.complete(BookmarkList.Publish.Saved(it)) },
+            onUnchanged = { done.complete(BookmarkList.Publish.Unchanged(it)) },
+            onNotSigned = { done.complete(BookmarkList.Publish.Failed(null)) },
+        ) { published ->
+            val tags = published?.tags.orEmpty()
+            val next = BookmarkList.toggled(tags, entry, on)
+            if (next == tags) null else next to (published?.content ?: "")
+        }
+        return withTimeoutOrNull(60_000) { done.await() } ?: BookmarkList.Publish.Failed(null)
     }
 
     /**

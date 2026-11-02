@@ -230,6 +230,7 @@ struct ArticleReaderView: View {
             actionButton("highlighter", tint: highlighting ? .havenPurple : .secondary, label: "Highlight") {
                 withAnimation(Motion.panel) { highlighting.toggle() }
             }
+            ArticleBookmarkButton(note: note)
             ShareLink(item: URL(string: "https://nostrvault.app/thread/\(note.nevent)")!) {
                 actionIcon("square.and.arrow.up", tint: .secondary)
             }

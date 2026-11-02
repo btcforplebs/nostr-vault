@@ -111,6 +111,9 @@ extension VaultView {
                 }
             }
             .accessibilityValue(hasNewFollowers ? "New followers" : "")
+            #if os(macOS)
+            VaultBookmarksButton()
+            #endif
         }
     }
 
@@ -137,6 +140,7 @@ extension VaultView {
     private func trailingPill(buttonWidth: CGFloat, spacing: CGFloat) -> some View {
         HStack(spacing: spacing) {
             VaultMessagesButton()
+            VaultBookmarksButton()
             if viewMode != .media {
                 Divider().frame(height: 20).padding(.horizontal, 2)
                 trailingFilters(spacing: spacing)

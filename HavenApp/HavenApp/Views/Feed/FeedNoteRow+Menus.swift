@@ -98,6 +98,7 @@ extension FeedNoteRow {
                     Label("Copy Text", systemImage: "doc.on.doc")
                 }
             }
+            BookmarkMenuItem(note: bodySource)
             Divider()
             if rowData.isOwnNote {
                 Button(role: .destructive) {
@@ -127,6 +128,8 @@ extension FeedNoteRow {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .accessibilityLabel("More")
+        // So the menu knows whether this note is bookmarked (cached; one read for all rows).
+        .task { await BookmarkService.shared.refresh() }
     }
 
     private func copyToPasteboard(_ string: String) {

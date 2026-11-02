@@ -200,7 +200,7 @@ fun VaultTabScreen(
         if (activeTutorial == TutorialID.POCKET_RELAY && !showDashboard) openDashboard()
     }
 
-    val messages = VaultMessages(unread = unreadDMs, open = { onNavigate(Screen.DMInbox) })
+    val messages = VaultMessages(unread = unreadDMs, open = { onNavigate(Screen.DMInbox) }, openBookmarks = { onNavigate(Screen.Bookmarks) })
     // The Vault's search (iOS VaultSearchBar): over the Vault list and the
     // relay's lists, not Media. Kept across a note or profile it opens.
     var searchOpen by rememberSaveable { mutableStateOf(false) }
