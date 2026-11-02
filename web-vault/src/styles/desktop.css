@@ -276,11 +276,13 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 .desk-compose .desk-compose-hint { margin-top: -42px; padding: 0 140px 12px var(--gutter); line-height: 38px; }
 .desk-compose:has(.screen > .error, .screen > .result) .desk-compose-hint { margin-top: 0; line-height: inherit; }
 
-/* Settings on desktop is a sidebar section with its pages beside it, so the phone's Close (list) and ‹ Settings
-   (page) buttons, and the spacers that centred the title between them, have nothing to do. One column at
-   760–1023px has its own ‹ Back. */
-.desk-app .screen-head > a.button.small[href="#/settings"], .desk-app .settings > .screen-head > a.button.small[href="#/profile"],
-.desk-app .screen-head > span:empty { display: none; }
+/* Desktop titles sit left, so the phone's spacers that centred them have nothing to do. Settings is a full-width page
+   (.desk-page), so it works with the note column folded: its index drops the phone's Close (the sidebar is the way
+   out) and its pages keep the phone's ‹ Settings. In the list or note column (a setting linked from elsewhere)
+   ‹ Settings has nothing to go back to beside it, so it hides; one column at 760–1023px has its own ‹ Back. */
+.desk-app .screen-head > span:empty, .desk-page .settings > .screen-head > a.button.small[href="#/profile"],
+.desk-split .screen-head > a.button.small[href="#/settings"] { display: none; }
+.desk-page { height: 100dvh; overflow-y: auto; }
 
 /* A page in the note column (a setting, Accounts, Wallet, a conversation) keeps its 640px measure, but its toolbar
    runs the column's full width like the list's, rather than stopping at the measure. */
