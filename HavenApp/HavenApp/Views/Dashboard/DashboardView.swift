@@ -117,6 +117,8 @@ struct DashboardView: View {
 
                     exportStatusView
 
+                    DashboardListBackupsRow()
+
                     Spacer(minLength: 0)
                 }
                 .frame(width: 380)
@@ -192,6 +194,13 @@ struct DashboardView: View {
 
                         exportStatusView
                             .padding(.horizontal)
+
+                        // iPhone has this row on the Vault Dashboard; the
+                        // narrow Mac window uses this layout too.
+                        #if os(macOS)
+                        DashboardListBackupsRow()
+                            .padding(.horizontal)
+                        #endif
                     }
 
                     if includesBlossom {
