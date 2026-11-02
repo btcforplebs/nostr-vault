@@ -211,8 +211,27 @@ extension VaultView {
         let currentFilter = contentFilter
         let scopeKinds = noteScope.kinds(from: NostrService.relayTabNoteKinds, split: vaultTabHostsMedia)
         let currentRecipesOnly = noteScope == .articles && recipesOnly
-        let currentEvents = nostrService.events
         let owner = nostrService.activeHexPubkey
+        // The accounts the chip shows (Logen 11-02): the pages build from all
+        // of them, the Vault list keeps its own per-account lines.
+        let me = owner.lowercased()
+        let owners: Set<String> = viewMode == .activity ? [me] : pageOwners
+        let currentEvents: [NostrEvent] = {
+            guard owners != [me] else { return nostrService.events }
+            var seen = Set<String>()
+            var out: [NostrEvent] = []
+            if owners.contains(me) { out = nostrService.events.filter { seen.insert($0.id).inserted } }
+            for hex in owners.sorted() where hex != me {
+                out += (otherAccountEvents[hex] ?? []).filter { seen.insert($0.id).inserted }
+            }
+            // The pages read events newest first.
+            return out.sorted { $0.created_at > $1.created_at }
+        }()
+        let isOwn: (String) -> Bool = { owners.contains($0.lowercased()) }
+        let accountFor: (NostrEvent, String?) -> String? = { event, giver in
+            owners == [me] ? nil : VaultAccountChips.pageAccount(author: event.pubkey, tags: event.tags,
+                                                                giver: giver, owners: owners, active: me)
+        }
         let whitelist = configService.whitelistedHexPubkeys
         let blacklist = configService.activeAccountBlockedHexPubkeys
         let ownAccounts = configService.allAccountHexes
@@ -278,8 +297,10 @@ extension VaultView {
                 if currentLikesFilter == .myLikes {
                     // My Likes: notes I reacted to (kind 7 from me)
                     var myLikeDates: [String: Date] = [:]
-                    for event in currentEvents where event.kind == 7 && event.pubkey == owner {
+                    var likedBy: [String: String] = [:]
+                    for event in currentEvents where event.kind == 7 && isOwn(event.pubkey) {
                         if let targetId = event.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
+                            likedBy[targetId] = event.pubkey.lowercased()
                             if let existing = myLikeDates[targetId] {
                                 if event.createdAtDate > existing { myLikeDates[targetId] = event.createdAtDate }
                             } else {
@@ -292,12 +313,15 @@ extension VaultView {
                         .filter { noteKinds.contains($0.kind) && myLikedNoteIds.contains($0.id) }
                         .sorted { (myLikeDates[$0.id] ?? Date.distantPast) > (myLikeDates[$1.id] ?? Date.distantPast) }
 
+                    let accounts = Dictionary(result.compactMap { e in accountFor(e, likedBy[e.id]).map { (e.id, $0) } },
+                                              uniquingKeysWith: { a, _ in a })
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                     await MainActor.run {
                         let newDisplay = Array(result.prefix(self.maxDisplayedItems))
                         if self.displayLikedNotes.map({ $0.id }) != newDisplay.map({ $0.id }) {
                             self.displayLikedNotes = newDisplay
                         }
+                        self.pageNoteAccount = accounts
                         if !self.reactionMap.isEmpty { self.reactionMap = [:] }
                         if !newDisplay.isEmpty { self.likesHasLoadedOnce = true }
                         self.displayPass &+= 1
@@ -307,7 +331,7 @@ extension VaultView {
                     let targetNoteIds: Set<String>
                     switch currentLikesFilter {
                     case .onMyNotes:
-                        targetNoteIds = Set(currentEvents.filter { $0.pubkey == owner && noteKinds.contains($0.kind) }.map { $0.id })
+                        targetNoteIds = Set(currentEvents.filter { isOwn($0.pubkey) && noteKinds.contains($0.kind) }.map { $0.id })
                     case .myLikes:
                         targetNoteIds = [] // handled above
                     }
@@ -317,7 +341,7 @@ extension VaultView {
                     var latestReaction: [String: Date] = [:]
                     let excludeSelf = (currentLikesFilter == .onMyNotes)
                     for event in currentEvents where event.kind == 7 {
-                        if excludeSelf && event.pubkey == owner { continue }
+                        if excludeSelf && isOwn(event.pubkey) { continue }
                         if let targetId = event.tags.first(where: { $0.count >= 2 && $0[0] == "e" && targetNoteIds.contains($0[1]) })?[1] {
                             let emoji = event.content.isEmpty ? "+" : event.content
                             rxMap[targetId, default: []].append((pubkey: event.pubkey, emoji: emoji))
@@ -343,12 +367,15 @@ extension VaultView {
 
                     let finalRxMap = rxMap
                     let finalReactionDates = latestReaction
+                    let accounts = Dictionary(result.compactMap { e in accountFor(e, nil).map { (e.id, $0) } },
+                                              uniquingKeysWith: { a, _ in a })
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                     await MainActor.run {
                         let newDisplay = Array(result.prefix(self.maxDisplayedItems))
                         if self.displayLikedNotes.map({ $0.id }) != newDisplay.map({ $0.id }) {
                             self.displayLikedNotes = newDisplay
                         }
+                        self.pageNoteAccount = accounts
                         self.reactionMap = finalRxMap
                         self.latestReactionDates = finalReactionDates
                         if !newDisplay.isEmpty { self.likesHasLoadedOnce = true }
@@ -403,21 +430,25 @@ extension VaultView {
                 if currentZapsFilter == .myZaps {
                     // My Zaps: notes I zapped
                     var myZappedNoteIds = Set(parsedReceipts.compactMap { item -> String? in
-                        guard item.parsed.senderPubkey == owner, item.parsed.requestIsSigned else { return nil }
+                        guard isOwn(item.parsed.senderPubkey), item.parsed.requestIsSigned else { return nil }
                         return item.parsed.targetNoteId
                     })
                     // …and what this app recorded zapping from this phone.
-                    myZappedNoteIds.formUnion(locallyZapped.keys)
+                    // (This phone's records and wallet are the active account's.)
+                    if owners.contains(me) { myZappedNoteIds.formUnion(locallyZapped.keys) }
                     // The wallet's history, then anything only a receipt on
                     // the relays or this app's own list knows about.
-                    var seen = Set(walletGiven.map(\.id))
-                    var filtered = walletGiven
+                    let ownWallet = owners.contains(me) ? walletGiven : []
+                    var seen = Set(ownWallet.map(\.id))
+                    var filtered = ownWallet
                     filtered += currentEvents.filter {
                         noteKinds.contains($0.kind) && myZappedNoteIds.contains($0.id) && seen.insert($0.id).inserted
                     }
                     var lastZapAt = walletGivenAt
-                    for item in parsedReceipts where item.parsed.senderPubkey == owner && item.parsed.requestIsSigned {
+                    var zappedBy: [String: String] = [:]
+                    for item in parsedReceipts where isOwn(item.parsed.senderPubkey) && item.parsed.requestIsSigned {
                         guard let id = item.parsed.targetNoteId, let at = receiptTimes[item.receiptId] else { continue }
+                        zappedBy[id] = item.parsed.senderPubkey.lowercased()
                         lastZapAt[id] = max(lastZapAt[id] ?? 0, at)
                     }
                     // A zap only this app recorded has no time: the post's own stands in.
@@ -426,12 +457,16 @@ extension VaultView {
                         return ta != tb ? ta > tb : a.created_at > b.created_at
                     }
                     var givenMap: [String: [(pubkey: String, amount: Int64)]] = [:]
-                    for (id, sats) in locallyZapped where sats > 0 { givenMap[id] = [(pubkey: owner, amount: Int64(sats))] }
-                    for (id, sats) in walletGivenSats { givenMap[id] = [(pubkey: owner, amount: sats)] }
+                    if owners.contains(me) {
+                        for (id, sats) in locallyZapped where sats > 0 { givenMap[id] = [(pubkey: owner, amount: Int64(sats))] }
+                        for (id, sats) in walletGivenSats { givenMap[id] = [(pubkey: owner, amount: sats)] }
+                    }
 
                     // Immutable copies for the main-actor hop.
                     let result = filtered
                     let finalGivenMap = givenMap
+                    let accounts = Dictionary(result.compactMap { e in accountFor(e, zappedBy[e.id] ?? me).map { (e.id, $0) } },
+                                              uniquingKeysWith: { a, _ in a })
 
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                     await MainActor.run {
@@ -439,6 +474,7 @@ extension VaultView {
                         if self.displayZappedNotes.map({ $0.id }) != newDisplay.map({ $0.id }) {
                             self.displayZappedNotes = newDisplay
                         }
+                        self.pageNoteAccount = accounts
                         self.zapMap = finalGivenMap
                         if !newDisplay.isEmpty { self.zapsHasLoadedOnce = true }
                         self.displayPass &+= 1
@@ -448,14 +484,15 @@ extension VaultView {
                     let targetNoteIds: Set<String>
                     switch currentZapsFilter {
                     case .onMyNotes:
-                        targetNoteIds = Set(currentEvents.filter { $0.pubkey == owner && noteKinds.contains($0.kind) }.map { $0.id })
+                        targetNoteIds = Set(currentEvents.filter { isOwn($0.pubkey) && noteKinds.contains($0.kind) }.map { $0.id })
                     case .myZaps:
                         targetNoteIds = [] // handled above
                     }
 
                     let excludeSelf = (currentZapsFilter == .onMyNotes)
                     let (zMap, lastZapAt) = VaultActivity.zapsOnPosts(
-                        parsedReceipts.map {
+                        // Zaps between the accounts shown aren't "on your posts".
+                        parsedReceipts.filter { !(excludeSelf && isOwn($0.parsed.senderPubkey)) }.map {
                             VaultActivity.Zap(sender: $0.parsed.senderPubkey, target: $0.parsed.targetNoteId,
                                               sats: $0.parsed.amountSats, at: receiptTimes[$0.receiptId] ?? 0)
                         },
@@ -471,12 +508,15 @@ extension VaultView {
                         }
 
                     let finalZMap = zMap
+                    let accounts = Dictionary(result.compactMap { e in accountFor(e, nil).map { (e.id, $0) } },
+                                              uniquingKeysWith: { a, _ in a })
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                     await MainActor.run {
                         let newDisplay = Array(result.prefix(self.maxDisplayedItems))
                         if self.displayZappedNotes.map({ $0.id }) != newDisplay.map({ $0.id }) {
                             self.displayZappedNotes = newDisplay
                         }
+                        self.pageNoteAccount = accounts
                         self.zapMap = finalZMap
                         if !newDisplay.isEmpty { self.zapsHasLoadedOnce = true }
                         self.displayPass &+= 1
@@ -490,10 +530,10 @@ extension VaultView {
 
                     if blacklist.contains(event.pubkey) { return false }
 
-                    let isMine = event.pubkey == owner
-                    let isTagged = event.tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == owner }
+                    let isMine = isOwn(event.pubkey)
+                    let isTagged = event.tags.contains { $0.count >= 2 && $0[0] == "p" && owners.contains($0[1].lowercased()) }
                     let isWhitelisted = whitelist.contains(event.pubkey)
-                    let isOutside = isTagged && ContentFilter.isOutside(
+                    let isOutside = !isMine && isTagged && ContentFilter.isOutside(
                         author: event.pubkey, owner: owner, whitelist: whitelist, trusted: trusted)
                     switch currentFilter {
                     case .all:
@@ -511,7 +551,7 @@ extension VaultView {
                 // there, so drop the card. Several reposts of the same note
                 // that isn't listed collapse to the newest one.
                 let listedWithEngagement = Set(filtered.lazy
-                    .filter { $0.kind != 6 && ($0.pubkey == owner || whitelist.contains($0.pubkey)) }
+                    .filter { $0.kind != 6 && (isOwn($0.pubkey) || whitelist.contains($0.pubkey)) }
                     .map(\.id))
                 var repostTargetsShown = Set<String>()
                 // Events arrive newest first, so the first repost kept is the newest.
@@ -594,12 +634,15 @@ extension VaultView {
                 let finalZMap = zMap
                 let finalRpMap = rpMap
                 let finalQtMap = qtMap
+                let accounts = Dictionary(displaySlice.compactMap { e in accountFor(e, nil).map { (e.id, $0) } },
+                                          uniquingKeysWith: { a, _ in a })
 
                 // Skip UI update if a newer generation has been triggered
                 guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
 
                 await MainActor.run {
                     self.displayNotes = displaySlice
+                    self.pageNoteAccount = accounts
                     self.reactionMap = finalRxMap
                     self.latestReactionDates = finalReactionDates
                     self.zapMap = finalZMap

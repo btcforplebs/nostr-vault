@@ -118,8 +118,8 @@ extension VaultView {
     }
 
     func fetchFollowerProfiles() {
-        guard let followerSnapshot else { return }
-        let shown = followerSnapshot.entries(for: followersFilter).prefix(300).map(\.pubkey)
+        guard let snapshots = shownFollowerSnapshots else { return }
+        let shown = followerEntries(snapshots).prefix(300).map(\.pubkey)
         nostrService.fetchMissingProfiles(for: Array(shown))
     }
 
@@ -133,12 +133,30 @@ extension VaultView {
         }
     }
 
+    /// The ledgers the chip shows: the active account's, or each picked
+    /// account's (read with the other accounts' pages). Nil until one is read.
+    var shownFollowerSnapshots: [FollowerSnapshot]? {
+        let me = followersOwnerHex.lowercased()
+        let owners = pageOwners
+        guard owners != [me] else { return followerSnapshot.map { [$0] } }
+        let read = owners.sorted().compactMap { $0 == me ? followerSnapshot : otherFollowerSnapshots[$0] }
+        return read.isEmpty ? nil : read
+    }
+
+    /// One ledger's entries as is; several merged (VaultAccountChips.mergeFollowers).
+    func followerEntries(_ snapshots: [FollowerSnapshot]) -> [FollowerSnapshot.Entry] {
+        guard snapshots.count > 1 else { return snapshots.first?.entries(for: followersFilter) ?? [] }
+        let merged = VaultAccountChips.mergeFollowers(snapshots.map(\.current), id: \.pubkey, isNews: \.isNews,
+                                                      followedAt: \.followedAt, listAt: \.listAt)
+        return followersFilter == .new ? Array(merged.prefix(FollowerSnapshot.newLimit)) : merged
+    }
+
     @ViewBuilder
     var followersList: some View {
-        if let followerSnapshot {
-            let entries = followerSnapshot.entries(for: followersFilter)
+        if let snapshots = shownFollowerSnapshots {
+            let entries = followerEntries(snapshots)
             LazyVStack(spacing: 0) {
-                followersSummary(followerSnapshot)
+                followersSummary(snapshots)
                 if entries.isEmpty {
                     followersEmptyState
                 } else {
@@ -170,11 +188,12 @@ extension VaultView {
     }
 
     /// One count. Spam is left out on purpose.
-    private func followersSummary(_ snapshot: FollowerSnapshot) -> some View {
+    private func followersSummary(_ snapshots: [FollowerSnapshot]) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "person.2.fill")
                 .foregroundColor(.havenPurple)
-            Text("\(snapshot.counts.trusted + snapshot.counts.others) followers")
+            // Several accounts: their totals added (someone following two counts twice).
+            Text("\(snapshots.reduce(0) { $0 + $1.counts.trusted + $1.counts.others }) followers")
                 .font(.appSystem(size: 15, weight: .bold))
             Spacer()
         }

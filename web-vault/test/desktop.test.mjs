@@ -1,7 +1,7 @@
 // The desktop layout's routing and shortcuts (src/desktop/routes.js, keys.js).
 import test from "node:test"
 import assert from "node:assert/strict"
-import { deskModeFor, parseHash, withParam, deskRedirect, phoneRedirect, sideOf } from "../src/desktop/routes.js"
+import { deskModeFor, parseHash, withParam, deskRedirect, phoneRedirect, sideOf, isListHash, SPLIT, FULL } from "../src/desktop/routes.js"
 import { keyCommand } from "../src/desktop/keys.js"
 
 const A = "a".repeat(64), B = "b".repeat(64)
@@ -65,6 +65,15 @@ test("sidebar rows light for their screens", () => {
   assert.equal(sideOf("relay"), "vault")
   assert.equal(sideOf("profile", true), "search")
   assert.equal(sideOf("compose"), null)
+})
+
+test("Settings, Accounts and Wallet are full-width pages, not list screens", () => {
+  for (const r of ["settings", "accounts", "wallet"]) {
+    assert.ok(FULL.has(r) && !SPLIT.has(r), r)
+    assert.equal(isListHash(`#/${r}`), false)
+  }
+  // A thread link from Settings opens beside the Feed, not beside Settings.
+  assert.equal(deskRedirect(`#/thread/${A}`, null), `#/feed?note=${A}`)
 })
 
 test("single keys work only outside text fields", () => {

@@ -68,6 +68,15 @@ struct VaultView: View {
     /// A chip just picked whose accounts are still being read: its ring shows,
     /// the list stays as it is until the read lands (no spinner flash).
     @State var pendingAccountChip: VaultAccountChip?
+    /// Notes, Likes, Zaps and Followers for the other accounts a chip shows,
+    /// read from the device's relay (the active account's come from
+    /// nostrService). By account hex.
+    @State var otherAccountEvents: [String: [NostrEvent]] = [:]
+    @State var otherFollowerSnapshots: [String: FollowerSnapshot] = [:]
+    @State var otherPageLoadTask: Task<Void, Never>?
+    /// A listed post that is another account's (id to account hex): opening
+    /// it switches to that account first, as a Vault line does.
+    @State var pageNoteAccount: [String: String] = [:]
     /// The other accounts' Vault lines, by account hex, before filtering.
     @State var otherAccountActivity: [String: [VaultActivity]] = [:]
     /// Per other account: its lines newer than this are new since its last visit.
