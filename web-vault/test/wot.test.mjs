@@ -7,7 +7,7 @@ import { registerHooks } from "node:module"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils" // Vite 8's own transformer
-import { followLists, missingLists, buildWeb, filterWeb, shownByKey, trustPath, trustPathText, layerCounts, LAYERS, SHOWN_BRIDGES, fraction, hexPrefix, EXTENDED_MIN, RETRY_MS } from "../src/net/wot.js"
+import { followLists, missingLists, unsettledLists, buildWeb, filterWeb, shownByKey, trustPath, trustPathText, layerCounts, LAYERS, SHOWN_BRIDGES, fraction, hexPrefix, EXTENDED_MIN, RETRY_MS } from "../src/net/wot.js"
 import { direction, LAYER_WEIGHTS } from "../src/net/wot-globe.js"
 
 const hex = (c, i = 0) => (c.repeat(63) + i.toString(16)).slice(-64)
@@ -235,4 +235,14 @@ test("follows' lists: asked for once each this session, a new follow on its own,
   await followLists(me, [f1, f2, f3], { query })
   assert.deepEqual(asked, [[f1, f2], [f3]], "only the new follow is asked for")
   await followLists(me, [f1, f2, f3], { query: async () => assert.fail("nothing new to ask") })
+})
+
+test("unsettled lists: a cut-off answer leaves them unsettled, one the relay doesn't have is settled as missing", async () => {
+  const me = hex("c", 55), f1 = hex("1", 51), f2 = hex("1", 52)
+  // Nothing came back (a timeout): both are still to come.
+  await followLists(me, [f1, f2], { query: async () => [], now: () => 1_000 })
+  assert.deepEqual([missingLists([f1, f2]), unsettledLists([f1, f2])], [2, 2])
+  // The relay answered with f1's list and not f2's: f2 is a known miss, so nothing is left to wait for.
+  await followLists(me, [f1, f2], { query: async () => [list(f1, [hex("6")])], retryMs: 0, now: () => 2_000_000 })
+  assert.deepEqual([missingLists([f1, f2]), unsettledLists([f1, f2])], [1, 0])
 })

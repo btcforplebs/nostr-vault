@@ -1,7 +1,8 @@
 // Messages peek: a "Your space" panel (Logen, 2026-11-02). The user's chats beside whatever is open, unread first, each
 // with its last line. Nothing is typed here: a click opens the chat in the left column (#/dm/<pubkey>, which the
-// desktop turns into Messages with the chat open, routes.js deskRedirect). It shows only what the Messages screen has
-// opened this session (messages-peek.js): it never asks the signer, starts no read of its own, and publishes nothing.
+// desktop turns into Messages with the chat open, routes.js deskRedirect). It reads the messages itself, as the Messages
+// screen does and with its rules (MessagesScreen.jsx useMessages: Haven's copies, then the inbox relays, opened by the
+// signer), so it fills without a visit to Messages first (Logen, 2026-11-02 polish). It publishes nothing.
 import { useEffect, useState } from "preact/hooks"
 import { Avatar } from "../../components/Avatar.jsx"
 import { AuthorName } from "../../components/NoteCard.jsx"
@@ -9,8 +10,9 @@ import { ago } from "../../components/time.js"
 import { useBlocks } from "../../components/useBlocks.js"
 import { useDmTrust } from "../../components/useDmTrust.js"
 import { badgeCount } from "../../components/useUnreadTotal.js"
-import { getMessages, onMessages, lastPreview } from "../../net/dms.js"
+import { lastPreview } from "../../net/dms.js"
 import { onRead, unreadCounts } from "../../net/dm-read.js"
+import { useMessages } from "../../screens/MessagesScreen.jsx"
 import { fetchProfiles } from "../../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../../net/pool.js"
 import { peekRows, peekOpen } from "./messages-peek.js"
@@ -20,14 +22,10 @@ import "../../styles/messages-peek.css"
 export function MessagesPeek({ ctx }) {
   const me = ctx.session.pubkey
   const [, setTick] = useState(0)
-  useEffect(() => {
-    const bump = () => setTick(t => t + 1)
-    const offM = onMessages(bump), offR = onRead(bump)
-    return () => { offM(); offR() }
-  }, [])
+  useEffect(() => onRead(() => setTick(t => t + 1)), [])
   const { blocked } = useBlocks(ctx)
   const trusted = useDmTrust(ctx)
-  const state = getMessages()
+  const state = useMessages(ctx)
   const open = peekOpen(state, me)
   const rows = open ? peekRows(state.messages, me, blocked, trusted, unreadCounts(state.messages, me, blocked)) : []
   const waiting = rows.filter(r => r.unread > 0).length
@@ -45,7 +43,7 @@ export function MessagesPeek({ ctx }) {
         {waiting > 0 && <span class="mp-count" role="img" aria-label={`${waiting} unread ${waiting === 1 ? "chat" : "chats"}`}>{badgeCount(waiting)}</span>}
       </header>
       <ul class="sp-rows">
-        {!open ? <li class="sp-empty">{state.note ? `Your messages can't be read here (${state.note}).` : "Open Messages once and your chats show up here."}</li>
+        {!open ? <li class="sp-empty">{state.note ? `Your messages can't be read here (${state.note}).` : "Reading your messages…"}</li>
           : !rows.length ? <li class="sp-empty">No messages yet.</li>
           : rows.map(r => <Row key={r.peer} row={r} me={me} load={ctx.account.follows.includes(r.peer)} />)}
       </ul>

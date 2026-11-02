@@ -1,6 +1,6 @@
 // The Messages peek panel's rules (no styles, so tests can import it). The panel draws the user's inbox beside whatever
-// is open: unread chats first, then the rest, each with its last line. It reads only what the Messages screen has
-// already opened this session (net/dms.js getMessages): nothing here asks the signer or publishes.
+// is open: unread chats first, then the rest, each with its last line. MessagesPeek.jsx loads the messages as the
+// Messages screen does; nothing here publishes.
 import { conversations } from "../../net/dms.js"
 import { splitConversations } from "../../net/dm-trust.js"
 
@@ -19,6 +19,5 @@ export function peekRows(messages, me, blocked, trusted, counts, max = PEEK_ROWS
   return [...unread, ...read].slice(0, max)
 }
 
-/** Whether the Messages screen has opened this account's messages this session (or is opening them): until then the
- *  panel has nothing to draw, and says where to open them. Another account's messages (just switched) count as none. */
+/** Whether this account's messages are open (or opening): until then the panel has nothing to draw and says it is reading them. Another account's messages (just switched) count as none. */
 export const peekOpen = (state, me) => !!me && state.pubkey === me && (state.loaded || state.messages.size > 0)
