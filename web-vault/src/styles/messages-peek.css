@@ -1,0 +1,11 @@
+/* Messages peek (src/desktop/space/MessagesPeek.jsx): a "Your space" panel. The card, rows and footer are space.css's
+   (.sp-*); here only what this panel adds. */
+.mp-count { min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 999px; background: var(--accent);
+  color: #1a0d03; font: 700 11px/20px var(--font); text-align: center; }
+.msg-peek .sp-row.unread .author-name { font-weight: 700; }
+.msg-peek .sp-row.unread .sp-row-text { color: var(--text-2); }
+.mp-unread { min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: var(--accent);
+  color: #1a0d03; font: 700 10px/18px var(--font); text-align: center; }
+/* Next to a long panel (Live Vault's 30 lines) it keeps up to half the column instead of being squeezed to its header;
+   its own list scrolls inside that. */
+.sp-panel.msg-peek { flex-shrink: 0; max-height: 50%; }
