@@ -281,9 +281,15 @@ extension FeedService {
         if FeedSpeedPolicy.keepsFeedSockets(fromStreams: Self.streamsFromRelays(previous),
                                             toStreams: Self.streamsFromRelays(mode)) {
             detachFeedClients()
+            closeFeedSubscriptions()
         } else {
             disconnectFeedClients()
         }
+        // New subscription ids from here on; frames for the old ones are
+        // dropped on processingQueue, which runs this before any new sink's.
+        feedSubGeneration += 1
+        let generation = feedSubGeneration
+        processingQueue.async { [bgAccumulator] in bgAccumulator.feedSubGeneration = generation }
         cancellables.removeAll()
 
         // Reset global mode flag when switching away from global
@@ -401,6 +407,19 @@ extension FeedService {
         subscribedAuthorsByRelay.removeAll()
         subscribedClientKeys.removeAll()
         contactRetryScheduled = false
+    }
+
+    /// Sends CLOSE for every subscription the old feed opened on the sockets
+    /// kept across a switch, so relays stop streaming it.
+    private func closeFeedSubscriptions() {
+        for (key, client) in feedClients where !key.hasPrefix("page-") {
+            for subId in FeedSpeedPolicy.feedSubIds(generation: feedSubGeneration, relaySuffix: Self.feedSubSuffix(key)) {
+                if let data = try? JSONSerialization.data(withJSONObject: ["CLOSE", subId]),
+                   let text = String(data: data, encoding: .utf8) {
+                    client.send(text: text)
+                }
+            }
+        }
     }
 
     private func disconnectFeedClients() {

@@ -38,6 +38,36 @@ final class FeedSpeedPolicyTests: XCTestCase {
         XCTAssertFalse(FeedSpeedPolicy.keepsFeedSockets(fromStreams: false, toStreams: false))
     }
 
+    // MARK: - Subscription ids per tab switch (Tron, #1547)
+
+    func testEachSwitchGetsItsOwnIds() {
+        XCTAssertEqual(FeedSpeedPolicy.feedSubId(generation: 3, relaySuffix: "damusio"), "feed-3-damusio")
+        XCTAssertNotEqual(FeedSpeedPolicy.feedSubId(generation: 3, relaySuffix: "damusio"),
+                          FeedSpeedPolicy.feedSubId(generation: 4, relaySuffix: "damusio"))
+    }
+
+    /// Global's open subscription, still streaming on a socket kept for
+    /// Discover: every one of its frames is dropped, the new feed's pass.
+    func testTheOldFeedsFramesAreDroppedAfterASwitch() {
+        for old in FeedSpeedPolicy.feedSubIds(generation: 3, relaySuffix: "damusio") {
+            XCTAssertTrue(FeedSpeedPolicy.isStaleFeedSub(old, current: 4), old)
+            XCTAssertFalse(FeedSpeedPolicy.isStaleFeedSub(old, current: 3), old)
+        }
+        XCTAssertEqual(FeedSpeedPolicy.feedSubIds(generation: 3, relaySuffix: "damusio"),
+                       ["feed-3-damusio", "wot-feed-3-damusio", "m-feed-3-damusio", "rx-feed-3-damusio",
+                        "zaps-in-feed-3-damusio", "zaps-out-feed-3-damusio"])
+    }
+
+    /// Ids that aren't the feed's own (parent fetches, deletes, the globe, and
+    /// the pre-generation format) are never dropped by this rule.
+    func testOtherSubscriptionsAreLeftAlone() {
+        for other in ["tfetch-abc", "del-feed", "globe-1", "feed-damusio", "xfeed-3-a", "feed-3x-a", ""] {
+            XCTAssertNil(FeedSpeedPolicy.feedSubGeneration(of: other), other)
+            XCTAssertFalse(FeedSpeedPolicy.isStaleFeedSub(other, current: 9), other)
+        }
+        XCTAssertEqual(FeedSpeedPolicy.feedSubGeneration(of: "zaps-out-feed-12-relay"), 12)
+    }
+
     // MARK: - Popular
 
     /// The old ranking stays up while the new one is computed, and an empty

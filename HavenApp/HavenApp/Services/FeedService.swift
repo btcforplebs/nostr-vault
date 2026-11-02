@@ -258,6 +258,10 @@ class FeedService: ObservableObject {
     var primaryEoseRelays = Set<String>()
     /// Maps primary feed subscription IDs to relay keys for EOSE → auxiliary dispatch.
     var subIdToRelayKey: [String: String] = [:]
+    /// Bumped on every tab switch and carried in the feed's subscription ids
+    /// (FeedSpeedPolicy.feedSubId), so a socket kept across the switch can't
+    /// pass the old feed's notes or EOSEs into the new one.
+    var feedSubGeneration = 0
 
     /// The author set the live primary REQ was last sent with, per relay key.
     /// `nil`/absent for a relay key means no live primary subscription exists

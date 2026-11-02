@@ -269,7 +269,11 @@ extension FeedService {
     }
 
     private func feedSubId(for label: String) -> String {
-        "feed-\(label.suffix(8).filter { $0.isLetter || $0.isNumber })"
+        FeedSpeedPolicy.feedSubId(generation: feedSubGeneration, relaySuffix: Self.feedSubSuffix(label))
+    }
+
+    static func feedSubSuffix(_ label: String) -> String {
+        String(label.suffix(8).filter { $0.isLetter || $0.isNumber })
     }
 
     /// Send only the primary feed filter (kinds 1, 6, 30023). Auxiliary subscriptions
