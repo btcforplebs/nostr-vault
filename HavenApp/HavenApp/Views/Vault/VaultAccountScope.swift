@@ -65,10 +65,23 @@ extension VaultView {
             // A first visit marks nothing: everything would be "new".
             otherAccountUnreadSince[hex] = Int64(last > 0 ? last : now)
         }
-        withAnimation(Motion.toggle) {
-            accountChip = VaultAccountChips.isDefault(chip, active: me) ? nil : chip
+        if VaultAccountChips.needsRead(chip, accounts: vaultAccountHexes, active: me,
+                                       loaded: Set(otherAccountActivity.keys)) {
+            // Keep the list on screen; switch when this chip's lines are read.
+            pendingAccountChip = chip
+            loadOtherAccountActivity(for: chip, then: { applyAccountChip(chip) })
+        } else {
+            applyAccountChip(chip)
+            loadOtherAccountActivity()
         }
-        loadOtherAccountActivity()
+    }
+
+    /// The list switches to `chip` (its lines are read, or are being topped up).
+    func applyAccountChip(_ chip: VaultAccountChip) {
+        pendingAccountChip = nil
+        withAnimation(Motion.toggle) {
+            accountChip = VaultAccountChips.isDefault(chip, active: followersOwnerHex) ? nil : chip
+        }
     }
 
     /// A line was opened: its account's count empties.
@@ -81,6 +94,7 @@ extension VaultView {
     func resetAccountChip() {
         otherAccountLoadTask?.cancel()
         accountChip = nil
+        pendingAccountChip = nil
         otherAccountActivity = [:]
         otherAccountUnreadSince = [:]
         otherAccountLoading = false
@@ -129,13 +143,24 @@ extension VaultView {
 
     /// Reads the picked chip's other accounts from the device's relay and
     /// builds their lines with the same rules as the active account's.
-    func loadOtherAccountActivity() {
+    /// `chip` is a pick still waiting for its read (the list on screen
+    /// stays, so no spinner); `then` runs once that read is in.
+    func loadOtherAccountActivity(for chip: VaultAccountChip? = nil, then: (() -> Void)? = nil) {
+        // A re-read (relay up, a notification) while a pick waits: it reads
+        // for that pick and still switches to it, rather than leaving it stuck.
+        if chip == nil, let waiting = pendingAccountChip {
+            loadOtherAccountActivity(for: waiting, then: { applyAccountChip(waiting) })
+            return
+        }
         let me = followersOwnerHex.lowercased()
-        let wanted = VaultAccountChips.accounts(for: currentAccountChip, accounts: vaultAccountHexes).filter { $0 != me }
+        let wanted = VaultAccountChips.accounts(for: chip ?? currentAccountChip, accounts: vaultAccountHexes).filter { $0 != me }
+        let pending = chip != nil
         otherAccountLoadTask?.cancel()
         guard !wanted.isEmpty, relayManager.isRunning, !relayManager.isBooting else {
             // Still starting: the spinner holds, and the relay-up handler
-            // (VaultView) reads again.
+            // (VaultView) reads again. A waiting pick switches now: there is
+            // nothing to read yet, and the list it leaves is the same story.
+            if let then { then() }
             otherAccountLoading = !wanted.isEmpty && relayManager.isBooting
             return
         }
@@ -154,7 +179,7 @@ extension VaultView {
         let service = nostrService
         // A spinner while any picked account has nothing read yet, not only
         // the first one picked.
-        otherAccountLoading = wanted.contains { otherAccountActivity[$0] == nil }
+        otherAccountLoading = !pending && wanted.contains { otherAccountActivity[$0] == nil }
         let limit = otherAccountLimit
         // Cleared while the read is in flight, so "load more" can't raise
         // the limit again before this one answers.
@@ -207,6 +232,7 @@ extension VaultView {
             for (hex, lines) in built { otherAccountActivity[hex] = lines }
             otherAccountReadFull = readFull
             otherAccountLoading = false
+            then?()
             service.fetchMissingProfiles(for: Array(Set(built.values.flatMap { $0.flatMap { $0.actors.prefix(5) } })))
         }
     }
@@ -221,7 +247,8 @@ extension VaultView {
                 ForEach(accountChips, id: \.self) { chip in
                     VaultAccountChipView(
                         chip: chip,
-                        isSelected: chip == currentAccountChip,
+                        // A pick still reading shows its ring at once.
+                        isSelected: chip == (pendingAccountChip ?? currentAccountChip),
                         isActiveAccount: chip == .account(followersOwnerHex.lowercased()),
                         npub: chipNpub(chip)
                     ) { pickAccountChip(chip) }

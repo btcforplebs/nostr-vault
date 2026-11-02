@@ -110,4 +110,19 @@ class VaultAccountChipsTest {
         assertFalse(VaultAccountChips.pageShowsSwitchRow(VaultMode.ACTIVITY))
         assertFalse(VaultAccountChips.pageShowsSwitchRow(VaultMode.MEDIA))
     }
+
+    // No flash on a pick (Logen 11-02; iOS testAPickWaitsOnlyForAnotherAccountNotReadYet).
+
+    @Test
+    fun aPickWaitsOnlyForAnotherAccountNotReadYet() {
+        val accounts = listOf("aa", "bb", "cc")
+        // The active account's own list is always there.
+        assertFalse(VaultAccountChips.needsRead(VaultAccountChip.Account("aa"), accounts, "AA", emptySet()))
+        // Another account not read yet: wait, keep the list on screen.
+        assertTrue(VaultAccountChips.needsRead(VaultAccountChip.Account("bb"), accounts, "aa", emptySet()))
+        assertFalse(VaultAccountChips.needsRead(VaultAccountChip.Account("bb"), accounts, "aa", setOf("bb")))
+        // All waits until every other account is read.
+        assertTrue(VaultAccountChips.needsRead(VaultAccountChip.All, accounts, "aa", setOf("bb")))
+        assertFalse(VaultAccountChips.needsRead(VaultAccountChip.All, accounts, "aa", setOf("bb", "cc")))
+    }
 }
