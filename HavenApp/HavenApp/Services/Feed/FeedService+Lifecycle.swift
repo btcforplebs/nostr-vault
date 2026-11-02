@@ -47,7 +47,14 @@ extension FeedService {
         if !hasSnapshot {
             // No snapshot — will need fresh data, so disconnect now.
             disconnectFeedClients()
+        } else {
+            // Kept sockets stop streaming the previous account's feed.
+            closeFeedSubscriptions()
         }
+        // The previous account's late frames on a kept socket carry the old
+        // ids and are dropped, so they can't land in this account's feed or
+        // its tab cache (Tron, #1547 follow-up).
+        beginFeedSubGeneration()
         // NOTE: Global services (profile + Kind 10002 fetches) keep their clients
         // running across account switches by design.
 
@@ -285,11 +292,7 @@ extension FeedService {
         } else {
             disconnectFeedClients()
         }
-        // New subscription ids from here on; frames for the old ones are
-        // dropped on processingQueue, which runs this before any new sink's.
-        feedSubGeneration += 1
-        let generation = feedSubGeneration
-        processingQueue.async { [bgAccumulator] in bgAccumulator.feedSubGeneration = generation }
+        beginFeedSubGeneration()
         cancellables.removeAll()
 
         // Reset global mode flag when switching away from global
@@ -407,6 +410,15 @@ extension FeedService {
         subscribedAuthorsByRelay.removeAll()
         subscribedClientKeys.removeAll()
         contactRetryScheduled = false
+    }
+
+    /// New feed subscription ids from here on, for a tab or account switch.
+    /// Frames for the old ones are dropped on processingQueue, which runs this
+    /// before any new sink's (FeedSpeedPolicy.isStaleFeedSub).
+    func beginFeedSubGeneration() {
+        feedSubGeneration = FeedSpeedPolicy.nextFeedSubGeneration(after: feedSubGeneration)
+        let generation = feedSubGeneration
+        processingQueue.async { [bgAccumulator] in bgAccumulator.feedSubGeneration = generation }
     }
 
     /// Sends CLOSE for every subscription the old feed opened on the sockets
