@@ -226,12 +226,12 @@ export function deltaLine(kind, { added, removed }) {
 }
 
 /**
- * Before a merge: open the private parts still locked in every version newer than the oldest picked one. Those are
+ * Before a merge: open the private parts still locked in every version as new as the oldest picked one or newer. Those are
  * the versions that may have removed or hidden a picked entry, so without them "removed on purpose stays out" can't
  * be told (Tron, PR 1570). Runs on the Merge tap, so signer prompts still only follow a tap. -> the versions, the
  * needed ones opened (one that fails keeps its `reason`).
  */
 export async function openForMerge(versions, picked, open) {
   const oldest = Math.min(...[...picked].map(v => v.ev.created_at))
-  return Promise.all(versions.map(v => v.locked && v.ev.created_at > oldest ? openVersion(v.ev, open) : v))
+  return Promise.all(versions.map(v => v.locked && v.ev.created_at >= oldest ? openVersion(v.ev, open) : v))
 }
