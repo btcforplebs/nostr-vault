@@ -37,8 +37,9 @@ struct iPhoneTabView: View {
     @State private var isLandscape = false
 
     /// iPad (regular width): every tab's list sits in a `NoteSplitPane`, in
-    /// both orientations. The pane shows an opened note beside the list in
-    /// landscape and over it in portrait. Always the same view tree, so
+    /// both orientations. An opened note covers the list, with ‹ Back, as on
+    /// the web's desktop layout; landscape gives the right side to "Your
+    /// space" (`LiveVaultColumn`) instead. Always the same view tree, so
     /// rotating keeps the tab, its scroll position and any sheet open in it
     /// (the composer, with its text and photos). `horizontalSizeClass` is read
     /// before `body` sets every screen to compact, so it is the real one.
@@ -54,7 +55,7 @@ struct iPhoneTabView: View {
             NoteSplitPane(
                 emptyTitle: "No Note Selected",
                 emptyMessage: emptyMessage,
-                allowsTwoColumns: isLandscape,
+                allowsTwoColumns: false,
                 content: content
             )
         } else {
@@ -62,7 +63,33 @@ struct iPhoneTabView: View {
         }
     }
 
+    /// iPad in landscape: "Your space" sits right of the app.
+    private var showsSpace: Bool { usesNoteSplit && isLandscape }
+
     var body: some View {
+        HStack(spacing: 0) {
+            tabs
+            if showsSpace {
+                Divider().ignoresSafeArea()
+                LiveVaultColumn()
+                    .transition(.move(edge: .trailing))
+            }
+        }
+        .background {
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { isLandscape = geo.size.width > geo.size.height }
+                    .onChange(of: geo.size) { _, size in isLandscape = size.width > size.height }
+            }
+            .ignoresSafeArea()
+        }
+        // The iPad is laid out like the iPhone: same headers, same buttons,
+        // no system toolbar row. Screens branch on the width class for that,
+        // so every one below sees compact.
+        .environment(\.horizontalSizeClass, .compact)
+    }
+
+    private var tabs: some View {
         TabView(selection: $selectedTab) {
             Group {
                 // In the split, Feed and Relay do not build their own stack
@@ -210,17 +237,5 @@ struct iPhoneTabView: View {
             VaultSection.shared.isOnScreen = tab == 4
         }
         .onDisappear { buttonRow.update(chromeHeight: 0) }
-        .background {
-            GeometryReader { geo in
-                Color.clear
-                    .onAppear { isLandscape = geo.size.width > geo.size.height }
-                    .onChange(of: geo.size) { _, size in isLandscape = size.width > size.height }
-            }
-            .ignoresSafeArea()
-        }
-        // The iPad is laid out like the iPhone: same headers, same buttons,
-        // no system toolbar row. Screens branch on the width class for that,
-        // so every one below sees compact.
-        .environment(\.horizontalSizeClass, .compact)
     }
 }

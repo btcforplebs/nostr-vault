@@ -186,6 +186,8 @@ struct VaultActivityRow: View {
     var account: String? = nil
     /// A tapped thumbnail: the picture, and the line's pictures to swipe.
     var onImage: ((URL, [URL]) -> Void)? = nil
+    /// One fixed-height line (iPad's Live Vault column), no thumbnails.
+    var compact = false
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
     /// Loaded images for the line's custom emoji, by URL.
@@ -194,6 +196,10 @@ struct VaultActivityRow: View {
     private static let avatarLimit = 6
 
     var body: some View {
+        if compact { compactBody } else { fullBody }
+    }
+
+    private var fullBody: some View {
         HStack(alignment: .top, spacing: 12) {
             badge
                 .overlay(alignment: .bottomTrailing) {
@@ -257,7 +263,7 @@ struct VaultActivityRow: View {
             .accessibilityLabel("For \(name(hex))")
     }
 
-    private var badge: some View {
+    var badge: some View {
         Image(systemName: style.icon)
             .font(.appSystem(size: 15, weight: .bold))
             .foregroundColor(style.color)
@@ -322,7 +328,7 @@ struct VaultActivityRow: View {
 
     /// The preview with `nostr:` links made readable: people become @names,
     /// links to posts drop out (a one-line preview can't show them).
-    private var readablePreview: String {
+    var readablePreview: String {
         guard line.preview.contains("nostr:") else { return line.preview }
         return line.preview.split(separator: " ").compactMap { word -> String? in
             guard word.hasPrefix("nostr:") else { return String(word) }
@@ -346,7 +352,7 @@ struct VaultActivityRow: View {
         nostrService.profiles[pubkey]?.bestName ?? "npub…" + String(pubkey.suffix(6))
     }
 
-    private var who: String {
+    var who: String {
         let actors = line.actors
         switch actors.count {
         case 0: return "Someone"
@@ -356,7 +362,7 @@ struct VaultActivityRow: View {
         }
     }
 
-    private var verb: String {
+    var verb: String {
         switch line.kind {
         case .reply: return "replied to you"
         case .mention: return "mentioned you"
@@ -374,7 +380,7 @@ struct VaultActivityRow: View {
         }
     }
 
-    private var style: (icon: String, color: Color) {
+    var style: (icon: String, color: Color) {
         switch line.kind {
         case .reply: return ("arrowshape.turn.up.left.fill", .havenPurple)
         case .mention: return ("at", .havenPurple)
@@ -388,7 +394,7 @@ struct VaultActivityRow: View {
         }
     }
 
-    private var timeAgo: String {
+    var timeAgo: String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: Date(timeIntervalSince1970: TimeInterval(line.createdAt)), relativeTo: Date())
