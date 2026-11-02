@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.PrimaryText
+import com.nostrvault.ui.theme.SecondaryText
 
 /**
  * One item in a note's overflow menu.
@@ -23,6 +24,8 @@ data class NoteAction(
     val icon: ImageVector,
     val label: String,
     val destructive: Boolean = false,
+    /** Shown but not tappable, e.g. "Bookmarked privately". */
+    val enabled: Boolean = true,
     val onClick: () -> Unit,
 )
 
@@ -49,8 +52,9 @@ fun NoteActionsMenu(
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         for (action in actions) {
-            val tint: Color = if (action.destructive) ErrorRed else PrimaryText
+            val tint: Color = if (!action.enabled) SecondaryText else if (action.destructive) ErrorRed else PrimaryText
             DropdownMenuItem(
+                enabled = action.enabled,
                 text = { Text(action.label, color = tint) },
                 onClick = {
                     onDismiss()

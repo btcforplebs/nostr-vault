@@ -90,7 +90,9 @@ extension NostrService {
     /// published one (nil when there is none). Skips when no relay answered,
     /// since publishing then would overwrite a list this device never saw.
     @MainActor
-    private func publishMergedList(kind: Int, author: String, signAsNpub: String?,
+    /// `skipIfUnchanged`: when the built list is the newest one as it is,
+    /// nothing is signed and the newest is returned (nil when there is none).
+    private func publishMergedList(kind: Int, author: String, signAsNpub: String?, skipIfUnchanged: Bool = false,
                                    build: (NostrEvent?) -> (tags: [[String]], content: String)) async -> NostrEvent? {
         guard !author.isEmpty else { return nil }
         let alsoAsk = Array(ConfigService.shared.config.readRelays.prefix(3))
@@ -112,6 +114,10 @@ extension NostrService {
             return nil
         }
         let (tags, content) = build(published)
+        // Nothing to change (an empty list is never published over "none").
+        if skipIfUnchanged, tags == (published?.tags ?? []), content == (published?.content ?? "") {
+            return published
+        }
         guard let event = await signEventAsync(kind: kind, content: content, tags: tags, signAsNpub: signAsNpub,
                                                notBefore: published.map { ListMerge.signedAt(now: Int64(Date().timeIntervalSince1970), base: $0.created_at) }) else {
             #if DEBUG
@@ -124,6 +130,27 @@ extension NostrService {
         print("NostrService: Published Kind \(kind) list with \(tags.count) tags for \(author.prefix(8))")
         #endif
         return event
+    }
+
+    /// Adds (`on`) or removes one bookmark on `author`'s kind 10003, built on
+    /// the newest list the account's own relays agree on (publishMergedList):
+    /// every other tag and the encrypted private part go back as they were.
+    /// `.saved` holds the newest list after it: the same one when nothing
+    /// changed, nil when there is no list and nothing to change (removing from
+    /// none). `.failed` when it couldn't be checked or signed, so nothing was
+    /// published.
+    enum BookmarkPublish { case saved(NostrEvent?), failed }
+
+    @MainActor
+    func publishBookmark(_ entry: BookmarkList.Entry, on: Bool, author: String, signAsNpub: String?) async -> BookmarkPublish {
+        var unchanged = false
+        let event = await publishMergedList(kind: 10003, author: author, signAsNpub: signAsNpub, skipIfUnchanged: true) { published in
+            let tags = BookmarkList.toggled(published?.tags ?? [], entry, on: on)
+            unchanged = tags == (published?.tags ?? [])
+            return (tags, published?.content ?? "")
+        }
+        if let event { return .saved(event) }
+        return unchanged ? .saved(nil) : .failed
     }
 
     /// Publishes `kind` for `author`: `local` as `name` tags, plus the entries

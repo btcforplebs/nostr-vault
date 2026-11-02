@@ -10,7 +10,7 @@ import XCTest
 /// on load, a Save edits the newest copy fetched right before it, and one relay saying "none" is not "you have none".
 final class UserListSignGuardTests: XCTestCase {
 
-    private static let listKinds: Set<String> = ["0", "3", "10000", "10002", "10006", "10015", "10050", "10063"]
+    private static let listKinds: Set<String> = ["0", "3", "10000", "10002", "10003", "10006", "10015", "10050", "10063"]
 
     /// A sign call and its kind argument (not a declaration).
     private static let signCall = try! NSRegularExpression(

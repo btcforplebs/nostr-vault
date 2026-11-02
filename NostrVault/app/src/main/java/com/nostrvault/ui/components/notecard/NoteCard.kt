@@ -125,6 +125,7 @@ fun NoteCard(
     val menuContext = LocalContext.current
     val menuClipboard = LocalClipboardManager.current
     val menuLane = LocalNotificationManager.current
+    val bookmarkAction = if (repostPlaceholder == null) rememberBookmarkAction(note) else null
     val moreActions = buildList {
         // Share and Broadcast live here rather than in the action row: neither
         // carries a count, both are secondary to Reply/Repost/Like/Zap, and the
@@ -165,6 +166,7 @@ fun NoteCard(
                 },
             )
         }
+        bookmarkAction?.let { add(it) }
         // Broadcast is the action bar's last button, as on iOS, not a menu item.
         if (isOwnNote) {
             onDelete?.let {
