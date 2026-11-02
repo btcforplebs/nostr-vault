@@ -149,9 +149,9 @@ func recordListVersion(ctx context.Context, store DBBackend, evt *nostr.Event) e
 
 // listHistoryToDrop picks, from one list's versions newest first, the ones
 // retention lets go: everything but the newest listHistoryKeep, except what
-// a wipe pins. A wipe is a version that shrank the one just before it
-// (listShrank against its neighbour, as the apps see it), so a slow tidy over
-// many small edits is not one. Each wipe pins at most two versions, each only
+// a wipe pins. A wipe is a version that shrank one of the shrinkLookback
+// versions just before it (listWiped), so a list emptied in steps of half is
+// one while a slow tidy over many small edits is not. Each wipe pins at most two versions, each only
 // while no newer version holds all its items (listHolds: restored or rebuilt,
 // not merely refilled), together with the wipe itself so it can still be
 // seen:
@@ -181,7 +181,7 @@ func listHistoryToDrop(versions []*nostr.Event) []*nostr.Event {
 	}
 	var wipes []int
 	for w := 0; w+1 < len(versions); w++ {
-		if listShrank(versions[w+1], versions[w]) {
+		if listWiped(versions[w+1:], versions[w]) {
 			wipes = append(wipes, w)
 		}
 	}

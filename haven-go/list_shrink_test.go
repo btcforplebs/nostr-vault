@@ -85,3 +85,49 @@ func TestProfileFieldCount(t *testing.T) {
 		}
 	}
 }
+
+// A list emptied in halves never loses half against the version just before,
+// but it does against the largest of the recent ones (misses #2, Logen
+// 2026-11-02).
+func TestListWipedLooksBackFiveVersions(t *testing.T) {
+	v := func(n int) *nostr.Event { return listOf(10003, n, "") }
+	cases := []struct {
+		name  string
+		older []*nostr.Event // nearest first
+		next  *nostr.Event
+		want  bool
+	}{
+		{"40 to 20 is half", []*nostr.Event{v(40)}, v(20), false},
+		{"40, 20 to 10", []*nostr.Event{v(20), v(40)}, v(10), true},
+		{"40, 20, 10 to 5", []*nostr.Event{v(10), v(20), v(40)}, v(5), true},
+		{"one item at a time from 14", []*nostr.Event{v(10), v(11), v(12), v(13), v(14)}, v(9), false},
+		{"the 40 is six versions back", []*nostr.Event{v(20), v(20), v(20), v(20), v(20), v(40)}, v(10), false},
+		{"the 40 is five versions back", []*nostr.Event{v(20), v(20), v(20), v(20), v(40)}, v(10), true},
+		{"a plain wipe still counts", []*nostr.Event{v(3)}, v(0), true},
+		{"an edit right after a wipe is not another", []*nostr.Event{v(1), v(0), v(40)}, v(2), false},
+		{"the 20 already lost half of the 40", []*nostr.Event{v(19), v(40)}, v(5), true},
+		{"5 after 10 counts against the 20", []*nostr.Event{v(10), v(20), v(40)}, v(4), true},
+		{"no older version", nil, v(0), false},
+	}
+	for _, c := range cases {
+		if got := listWiped(c.older, c.next); got != c.want {
+			t.Errorf("%s: listWiped = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// The store side: 40, 20, 10, 5 and then many small edits still keeps the
+// 40-item copy.
+func TestListHistoryPinsBeforeAStepDownDrain(t *testing.T) {
+	forEachHistoryBackend(t, func(t *testing.T, f *listHistoryFixture) {
+		full := f.bookmarks(40, 0)
+		f.publish(full, f.bookmarks(20, 1), f.bookmarks(10, 2), f.bookmarks(5, 3))
+		for i := 0; i < 30; i++ {
+			f.publish(f.bookmarks(4+i%2, 4+i))
+		}
+		f.mustKeep(full, "emptied in halves: 40, 20, 10, 5")
+		if got := len(f.versionIDs(10003, "")); got > listHistoryKeep+2*listHistoryPinnedMax {
+			t.Fatalf("%d versions kept, want at most %d", got, listHistoryKeep+2*listHistoryPinnedMax)
+		}
+	})
+}
