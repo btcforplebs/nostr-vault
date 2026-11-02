@@ -4,7 +4,7 @@
 import { pool, publishRelays, uniq, DEFAULT_RELAYS, PROFILE_RELAYS } from "./pool.js"
 import { checkSigned } from "./sync.js"
 import { serverUrl } from "./upload.js"
-import { askRelay, MAX_SKEW } from "./follows.js"
+import { askRelay, allOwnAnswered, MAX_SKEW } from "./follows.js"
 import { verifyEvent } from "nostr-tools/pure"
 
 const newest = evs => evs.reduce((a, e) => (!a || e.created_at > a.created_at ? e : a), undefined)
@@ -18,16 +18,14 @@ const verifiedCopy = ({ id, pubkey, created_at, kind, tags, content, sig }) => {
 const listRelays = ctx => uniq([...ctx.account.relays.read, ...ctx.account.relays.write, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])
 
 /**
- * Whether the newest list is known, by follows.js's rule for kind 3 (wipeGuard, Logen 2026-10-14), counting only the
- * account's own relays (`asked` of them, `answered` sent their EOSE; the defaults and purplepag.es are asked too but
- * don't count): a copy came from one of them (`netFound`), or most of them answered; and to say there is no list at
- * all, every one of them answered. A copy from this browser or a default relay alone, with the user's relays down,
- * says nothing about what those relays hold.
+ * Whether the newest list is known, by follows.js's rule (allOwnAnswered), counting only the account's own relays
+ * (`asked` of them, `answered` sent their EOSE; the defaults and purplepag.es are asked too but don't count): every one
+ * of them answered, whether a copy was found (`found`) or there is no list at all. A copy from one of them isn't enough
+ * while another hasn't answered: that one may hold a newer copy another app saved. A copy from this browser or a
+ * default relay alone, with the user's relays down, says nothing about what those relays hold.
  */
-export function listKnown({ asked, answered, netFound, found }) {
-  if (!asked) return false
-  if (!found) return answered === asked
-  return netFound || answered * 2 > asked
+export function listKnown({ asked, answered }) {
+  return allOwnAnswered({ asked, answered })
 }
 
 /**
@@ -53,15 +51,15 @@ export async function latestList(ctx, kind, { ask = askRelay, online = globalThi
   const local = newest((await ctx.vault.outbox.query(filter).catch(() => [])).filter(ok))
   if (!online) return { event: local, checked: false, asked: own.length, answered: 0, noRelayList }
   if (local) on?.({ event: local })
-  let best = local, answered = 0, netFound = false
+  let best = local, answered = 0
   await Promise.all(listRelays(ctx).map(relay => ask(relay, filter).catch(() => ({ events: [], answered: false })).then(r => {
     const evs = (r?.events ?? []).filter(ok)
-    if (own.includes(relay)) { if (r?.answered) answered++; if (evs.length) netFound = true }
+    if (own.includes(relay) && r?.answered) answered++
     const ev = newest(evs)
     if (ev && (!best || ev.created_at > best.created_at)) { best = ev; on?.({ event: ev }) }
   })))
   if (best && best !== local) await ctx.vault.outbox.event(best).catch(() => {})
-  return { event: best, checked: listKnown({ asked: own.length, answered, netFound, found: !!best }), asked: own.length, answered, noRelayList }
+  return { event: best, checked: listKnown({ asked: own.length, answered }), asked: own.length, answered, noRelayList }
 }
 
 /** What a list page says when the account has no relay list (kind 10002) yet, so its own relays aren't known. */

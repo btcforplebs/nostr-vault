@@ -520,6 +520,9 @@ class ConfigService: ObservableObject {
 
         // 3. Keychain passwords, notifications and widget data
         ResetLeftovers.clear()
+        // What this device published to lists: kept, the next edit after
+        // signing back in removed entries published before the reset.
+        ListPublishReset.clear()
 
         // 4. Reset in-memory config
         config = HavenConfig.default

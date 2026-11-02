@@ -78,7 +78,7 @@ import com.nostrvault.ui.notification.FollowKind
                         .getOrNull()
                     val fetched = lookup?.event?.let { ContactManager.ListCopy(owner, it.tags, it.content, it.createdAt) }
                     val why = if (lookup == null) ListMerge.NOT_ANSWERED
-                        else ListMerge.unknownWhy(own, lookup.answeredBy, lookup.from, fetched != null || knownContactList?.owner == owner, lookup.ahead)
+                        else ListMerge.unknownWhy(own, lookup.answeredBy, fetched != null || knownContactList?.owner == owner, lookup.ahead)
                     val base = ContactManager.saveBase(owner, fetched, lookup?.confirmedNone == true, freshKey, knownContactList, why)
                     if (base == null) {
                         refusal = why

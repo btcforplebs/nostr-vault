@@ -100,7 +100,7 @@ test("restore: current list kept first, the old one's tags signed after it with 
 test("restore refuses: relays unheard, someone else's list, an empty list, or no relay took it", async t => {
   const ctx = ctxWith()
   t.mock.method(pool, "publish", urls => urls.map(() => Promise.reject(new Error("no"))))
-  await assert.rejects(restoreList({ ctx, old: list([1], 5), ask: async () => ({ events: [], answered: false }) }), /Not enough of your relays/)
+  await assert.rejects(restoreList({ ctx, old: list([1], 5), ask: async () => ({ events: [], answered: false }) }), /Not all of your relays answered/)
   await assert.rejects(restoreList({ ctx, old: list([1], 5, OTHER), ask: async () => ({ events: [], answered: true }) }), /isn't one you signed/)
   await assert.rejects(restoreList({ ctx, old: list([], 5), ask: async () => ({ events: [], answered: true }) }), /follows nobody/)
   await assert.rejects(restoreList({ ctx, old: list([1], 5), store: memStore(), ask: async () => ({ events: [list([2], 9)], answered: true }) }), /No relay took it/)

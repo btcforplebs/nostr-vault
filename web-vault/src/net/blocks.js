@@ -10,7 +10,7 @@
 // every screen that already hides blocked people's notes hides muted ones too.
 import { verifyEvent } from "nostr-tools/pure"
 import { pool, publishRelays, relayLists, BROADCAST_RELAYS, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./pool.js"
-import { askRelay, MAX_SKEW } from "./follows.js"
+import { askRelay, allOwnAnswered, MAX_SKEW } from "./follows.js"
 import { checkSigned } from "./sync.js"
 import { replyRefs, repostInner } from "./thread.js"
 import { findExtension } from "../signer/nip07.js"
@@ -33,6 +33,12 @@ export function muteEntries(tags) {
     hashtags: new Set(of("t").map(t => t.replace(/^#/, ""))),
     threads: new Set(of("e").filter(id => HEX64.test(id))),
   }
+}
+
+/** How many entries a list of tags holds: people, muted words, hashtags and threads, each once (the size guard's count). */
+export function entryCount(tags) {
+  const { words, hashtags, threads } = muteEntries(tags)
+  return pTags(tags).length + words.length + hashtags.size + threads.size
 }
 
 /** A Set of blocked pubkeys carrying the muted words, hashtags and threads (muteEntries) along with it. */
@@ -117,7 +123,7 @@ export async function refreshBlockList(vault, pubkey, relays, { query = (r, f, o
 }
 
 // What the screens read. One list per signed-in account; a new account starts empty.
-const empty = pubkey => ({ pubkey, blocked: muteSet(), privateBlocked: new Set(), privateNote: "", eventId: null })
+const empty = pubkey => ({ pubkey, blocked: muteSet(), privateBlocked: new Set(), privateNote: "", eventId: null, publicEntries: 0 })
 let state = empty(null)
 let loading = null
 let asked = new Set() // relays already asked for this account's list
@@ -135,7 +141,7 @@ async function apply(pubkey, ev, opener) {
   if (state.eventId && ev.id !== state.eventId && ev.created_at < (state.created_at ?? 0)) return // never go back to an older list
   const priv = await privateBlocks(ev, opener)
   if (state.pubkey !== pubkey) return // signed out or switched while decrypting
-  state = { pubkey, blocked: muteSet([...pTags(ev.tags), ...priv.pubkeys], [...(ev.tags ?? []), ...priv.tags]), privateBlocked: new Set(priv.pubkeys), privateNote: priv.note, eventId: ev.id, created_at: ev.created_at }
+  state = { pubkey, blocked: muteSet([...pTags(ev.tags), ...priv.pubkeys], [...(ev.tags ?? []), ...priv.tags]), privateBlocked: new Set(priv.pubkeys), privateNote: priv.note, eventId: ev.id, created_at: ev.created_at, publicEntries: entryCount(ev.tags) }
   for (const cb of listeners) cb()
 }
 
@@ -292,23 +298,25 @@ const verifiedCopy = ({ id, pubkey, created_at, kind, tags, content, sig }) => {
 /**
  * Why a new list may not be built, or "". A kind 10000 replaces the whole list, so one built on an old copy, or on
  * none, would drop what other apps added (Amethyst's blocks, words, hashtags, threads, the private part) and bring
- * back people unblocked elsewhere. So a new list is built on the newest one the user's relays had; when none of them
- * had one, every one of them must have answered, so "no list anywhere" really means none yet and the first block may
- * start one. And as follows.js's size rule: when the app already shows more than 10 public blocks, a newest list
- * holding fewer than half of them is a truncated or stale copy, not something to build on. All of this needs the
+ * back people unblocked elsewhere. So a new list is built only once every one of the user's relays answered
+ * (follows.js allOwnAnswered): one that didn't may hold a newer list, even when another sent one. Then the newest copy
+ * found is the base, and none found really means none yet, so the first block may start one. And as follows.js's size
+ * rule: when the app's list already holds more than 10 public entries (people, words, hashtags and threads; a list of
+ * muted words is wiped as easily as one of people), a newest list holding fewer than half of them is a truncated or
+ * stale copy, not something to build on. All of this needs the
  * user's relays: when their kind 10002 isn't known (`relaysKnown` false: none found and a relay asked for it didn't
  * answer), the relays it names weren't asked and may hold the newest list, so nothing is built.
- * `base`: the list found; `known`: how many public blocks the app shows now.
+ * `base`: the list found; `known`: how many public entries (entryCount) the app's list holds now.
  */
-export function blockGuard({ asked, answered, netFound, relaysKnown, base, known = 0 }) {
-  if (!netFound && !(asked > 0 && answered === asked)) {
+export function blockGuard({ asked, answered, relaysKnown, base, known = 0 }) {
+  if (!allOwnAnswered({ asked, answered })) {
     if (!answered) return "None of your relays answered, so your newest block list isn't known and nothing was changed. Try again when they're reachable."
-    return `Only ${answered} of your ${asked} relays answered and none had your block list, so your newest one isn't known and nothing was changed. Try again when they're all reachable.`
+    return `Only ${answered} of your ${asked} relays answered, so your newest block list isn't known (one that didn't may hold a newer copy) and nothing was changed. Try again when they're all reachable.`
   }
   if (relaysKnown !== true) return "Your relay list (kind 10002) couldn't be loaded, so the relays that may hold your block list weren't asked and nothing was changed. Try again when they're reachable."
-  const have = pTags(base?.tags).length
+  const have = entryCount(base?.tags)
   if (known > 10 && have < known / 2)
-    return `The newest block list your relays have holds ${have} people but you had ${known}. Building on it would unblock most of them, so nothing was changed.`
+    return `The newest block list your relays have holds only ${have} of the ${known} entries you had (people, words, hashtags and threads). Building on it would drop most of them, so nothing was changed.`
   return ""
 }
 
@@ -366,7 +374,8 @@ export async function setBlock(ctx, target, { block = true, isPrivate = false, a
   if (target === me) throw new Error("You can't block yourself.")
   const { read = [], write = [] } = ctx.account.relays
   const found = await findLatestBlockList({ vault: ctx.vault, pubkey: me, relays: uniq([...read, ...write]), ask })
-  const known = state.pubkey === me ? state.blocked.size - state.privateBlocked.size : 0
+  // Public entries only: the private part's count can't be checked against a base whose private part may not open.
+  const known = state.pubkey === me ? state.publicEntries : 0
   const refused = blockGuard({ ...found, known })
   if (refused) throw new Error(refused)
   const { tags, content } = await editedBlockList(found.base, { target, block, isPrivate, crypto: ctx.signer.crypto, me })

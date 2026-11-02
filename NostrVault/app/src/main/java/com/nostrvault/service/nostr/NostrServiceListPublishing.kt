@@ -160,9 +160,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
 
     /**
      * The account's own relays: the write relays its kind 10002 names, never the app's defaults or its read (inbox)
-     * relays, which don't hold its own lists (NIP-65) and would push the majority count over half. Same set as iOS and
-     * web. From the
-     * list this device already read, else looked up now. Empty when the account has no relay list, or none of it is
+     * relays, which don't hold its own lists (NIP-65) and would each have to answer before a list is known. Same set
+     * as iOS and web. From the list this device already read, else looked up now. Empty when the account has no relay list, or none of it is
      * reachable from here; a user list is then unknown ([ListMerge.unknownWhy]).
      */
     internal suspend fun NostrService.ownListRelaysImpl(account: String): List<String> {
@@ -259,7 +258,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
      * threads, and the encrypted private part are kept. [localBlocks], this
      * device's public blocks after the change, is published only when the
      * account has no list anywhere. Returns what to tell the person when
-     * nothing was published (the list couldn't be fetched, or wasn't signed).
+     * nothing was published (the list couldn't be fetched, wasn't signed, or
+     * the active account is no longer [accountNpub]).
      * [privateBefore] is the account's private blocks before an unblock took
      * the person off this device's list.
      */
@@ -277,6 +277,14 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val author = npubToHex(accountNpub) ?: ownerHexPubkey
         if (author.isBlank()) return null
         val action = if (add.isEmpty()) "Unblock" else "Block"
+        val switched = "$action saved on this device only: the account changed before your mute list was published."
+        // Locked before the lookup, which can wait 6 s: a switch in that time used to sign this account's list with
+        // the key of the account switched to. The active account must be the one whose list is fetched, and stay so.
+        val lock = lockPostingAccount()
+        if (!lock.hex.equals(author, ignoreCase = true)) {
+            Log.w(TAG, "publishMuteList: active account is not ${author.take(8)}; not published")
+            return switched
+        }
         val cfg = configStore.config.value
         // The relays the mute list is read from at sign-in, so a block builds
         // on the list another app last wrote, not an older copy, and the
@@ -315,15 +323,22 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val tags = ListMerge.edit("p", baseTags, add.mapNotNull { npubToHex(it) }, removeHex)
         val event = try {
             signEventAsync(
-                kind = 10000, content = content, tags = tags, forceOwner = forceOwner,
+                kind = 10000, content = content, tags = tags, forceOwner = forceOwner, lockedTo = lock,
                 notBefore = ListMerge.notBefore((editBase as? ListMerge.EditBase.Found)?.event),
             )
         } catch (e: CancellationException) {
             throw e
+        } catch (e: com.nostrvault.data.model.PostingAccount.AccountChangedException) {
+            return switched
         } catch (e: Exception) {
             Log.e(TAG, "kind 10000 not signed: ${e.message}")
             null
         } ?: return "$action saved on this device only: your signer didn't answer"
+        // Only the list of the account it was fetched for, whatever the signer did.
+        if (!event.pubkey.equals(author, ignoreCase = true)) {
+            Log.w(TAG, "kind 10000 signed as ${event.pubkey.take(8)}, list is ${author.take(8)}'s; not published")
+            return switched
+        }
         postEvent(event)
         // This device's blocks become the published list, so people another
         // app blocked show as blocked here too.
@@ -333,9 +348,9 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
 
     /**
      * Publishes [kind] for [author] built by [build] from the newest
-     * published one (null when there is none). Skips when none was found and
-     * not every relay answered, since publishing then would overwrite a list
-     * this device never saw.
+     * published one (null when there is none). Skips when not every one of
+     * the account's own relays answered, or none was found and not every relay
+     * answered, since publishing then could overwrite a list this device never saw.
      */
     private fun NostrService.publishMergedList(
         kind: Int,
@@ -718,16 +733,18 @@ internal object ListMerge {
     /**
      * Whether a user list (every kind but 10002 itself) is known, counting only the account's [own] relays: the ones
      * its kind 10002 names, never the app's defaults (Logen 2026-11-01, as web listKnown and iOS editBase). With no
-     * own relays nothing is known. A found copy counts when an own relay sent it ([from]) or most own relays answered;
-     * "none" needs every own relay to answer, and no copy skipped for being dated ahead ([ahead]).
+     * own relays nothing is known. Every own relay has to answer, for a found copy as for "none"; "none" also needs
+     * no copy skipped for being dated ahead ([ahead]). One own relay sending an old copy, or most of them answering,
+     * used to be enough: a slower own relay holding a newer copy was then not waited for, and the edit dropped what
+     * other apps had added since (list-wipe audit 2026-11-02). The lookup waits for every relay up to its timeout, so
+     * a slow one is waited for; one that never answers refuses the save. Same rule as iOS ListMerge.editBase.
      * Null: known. Otherwise what to tell the person.
      */
-    fun unknownWhy(own: Collection<String>, answeredBy: Collection<String>, from: Collection<String>, found: Boolean, ahead: Boolean = false): String? {
+    fun unknownWhy(own: Collection<String>, answeredBy: Collection<String>, found: Boolean, ahead: Boolean = false): String? {
         val mine = own.map(::relayKey).toSet()
         if (mine.isEmpty()) return NO_RELAY_LIST
         val answered = answeredBy.map(::relayKey).toSet().count { it in mine }
-        val known = if (found) from.any { relayKey(it) in mine } || answered * 2 > mine.size
-        else !ahead && answered >= mine.size
+        val known = answered >= mine.size && (found || !ahead)
         return if (known) null else NOT_ANSWERED
     }
 
@@ -744,7 +761,7 @@ internal object ListMerge {
      */
     fun editBase(lookup: NostrService.ReplaceableLookup, held: NostrEvent?, own: Collection<String>, now: Long = System.currentTimeMillis() / 1000): EditBase {
         val newest = listOfNotNull(lookup.event, held).filter { notAhead(it.createdAt, now) }.maxByOrNull { it.createdAt }
-        unknownWhy(own, lookup.answeredBy, lookup.from, newest != null, lookup.ahead)?.let { return EditBase.Unknown(it) }
+        unknownWhy(own, lookup.answeredBy, newest != null, lookup.ahead)?.let { return EditBase.Unknown(it) }
         return when {
             newest != null -> EditBase.Found(newest)
             lookup.confirmedNone -> EditBase.None

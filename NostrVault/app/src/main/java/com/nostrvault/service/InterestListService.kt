@@ -53,7 +53,7 @@ class InterestListService @Inject constructor(
 ) {
     companion object {
         private const val TAG = "InterestList"
-        private const val PREFS_NAME = "interest_lists"
+        internal const val PREFS_NAME = "interest_lists"
         private const val FETCH_TIMEOUT_MS = 6_000L
     }
 
@@ -230,16 +230,14 @@ class InterestListService @Inject constructor(
     private class FetchResult(val newest: InterestList?, val unknownWhy: String?)
 
     /**
-     * The newest kind 10015 by [author], known only by the account's [own] relays ([ListMerge.unknownWhy]): an own
-     * relay sent it or most of them answered, and for "none" every own relay and every relay asked answered (one
-     * "none" is not "you have none"). A copy dated [ListMerge.MAX_SKEW] or more ahead is skipped.
+     * The newest kind 10015 by [author], known only by the account's [own] relays ([ListMerge.unknownWhy]): every own
+     * relay answered, and for "none" every relay asked did too (one "none" is not "you have none"). A copy dated [ListMerge.MAX_SKEW] or more ahead is skipped.
      */
     private suspend fun fetchLatest(author: String, relays: List<String>, own: List<String>): FetchResult {
         if (own.isEmpty()) return FetchResult(null, ListMerge.NO_RELAY_LIST)
         if (relays.isEmpty()) return FetchResult(null, ListMerge.NOT_ANSWERED)
         val answered = AtomicInteger(0)
         val answeredBy = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-        val sentBy = java.util.concurrent.ConcurrentHashMap<String, Long>()
         val ahead = java.util.concurrent.atomic.AtomicBoolean(false)
         val lock = Any()
         var newest: InterestList? = null
@@ -252,7 +250,6 @@ class InterestListService @Inject constructor(
                         lookupPool.query(url, subId, listOf(filter), FETCH_TIMEOUT_MS) { msg ->
                             parseEvent(msg, author)?.let { found ->
                                 if (!ListMerge.notAhead(found.createdAt)) { ahead.set(true); return@let }
-                                sentBy.merge(url, found.createdAt, ::maxOf)
                                 synchronized(lock) {
                                     if (found.createdAt > (newest?.createdAt ?: -1)) newest = found
                                 }
@@ -268,8 +265,7 @@ class InterestListService @Inject constructor(
             }.awaitAll()
         }
         val found = synchronized(lock) { newest }
-        val from = sentBy.filterValues { found != null && it == found.createdAt }.keys
-        val why = ListMerge.unknownWhy(own, answeredBy, from, found != null, ahead.get())
+        val why = ListMerge.unknownWhy(own, answeredBy, found != null, ahead.get())
             ?: if (found == null && answered.get() < relays.size) ListMerge.NOT_ANSWERED else null
         return FetchResult(found, why)
     }

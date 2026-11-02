@@ -1,7 +1,7 @@
 // Follow / Unfollow: a new kind 3 built on the newest one this browser can find, with the iPhone app's wipe guard
 // (ContactManager.mayPublish). A kind 3 replaces the whole list, so a stale or missing base would wipe the follows:
-// nothing is published unless a list came from one of the user's relays or most of them answered, and never one that
-// drops most of what the user had. An account that never had a list may start one once most of its relays answered.
+// nothing is published unless every one of the user's relays answered, and never one that drops most of what the user
+// had. An account that never had a list may start one once every one of its relays answered without one.
 import { verifyEvent } from "nostr-tools/pure"
 import { pool, publishRelays, PROFILE_RELAYS, uniq } from "./pool.js"
 import { checkSigned } from "./sync.js"
@@ -18,6 +18,15 @@ export const NO_OWN_RELAYS = "Your own relays aren't known: you have no relay li
 /** How old this browser's own copy may be and still be built on when none of the user's relays had a list. */
 export const MAX_LOCAL_AGE = 7 * 86400
 const ASK_MS = 6000
+
+/**
+ * Whether every one of the account's own relays answered (a real EOSE) the lookup, the rule every list edit starts
+ * from (follows, blocks, list-edit.js; Logen 2026-11-02: "all apps pick the newest copy across relays"). A copy one
+ * relay sent isn't enough: another, slower relay may hold a newer copy another app saved, and building on the old one
+ * would drop that change. So the lookup waits for each relay until its timeout, and one that didn't answer leaves the
+ * list unknown and the save refused. None asked (no 10002) is never known.
+ */
+export const allOwnAnswered = ({ asked, answered }) => asked > 0 && answered === asked
 
 /** verifyEvent on a fresh copy: it trusts a "verified" flag an event object carries, and a relay or a test can set one. */
 const verifiedCopy = ({ id, pubkey, created_at, kind, tags, content, sig }) => verifyEvent({ id, pubkey, created_at, kind, tags, content, sig })
@@ -98,14 +107,13 @@ export function editedTags(base, target, follow) {
 
 /**
  * Why this list may not be published, or "" if it may. The rules, in order:
- *  - no list came from the user's own relays and no more than half of them answered: refuse. Then the base can only be
- *    this browser's own copy, which may be old, and a relay that timed out may hold the real list; the size rule
- *    below can't tell (the app's count comes from that same copy). iOS (loadConfirmsList) wants every relay; the web
- *    takes a majority (Logen, 2026-10-14) so one relay that is down for good doesn't block following.
- *  - no base list found: a first list of one follow, only once every one of the user's relays answered without one,
- *    as iOS (loadConfirmsList with foundList false). Here the majority isn't enough: with no base the size rule can't
- *    protect a real list sitting on the relay that didn't answer. Refused for an unfollow, when the app shows follows,
- *    and when a list was found dated ahead (`ahead`): those mean a list exists somewhere;
+ *  - any of the user's own relays didn't answer: refuse (allOwnAnswered), even when another of them sent a list. The
+ *    one that didn't answer may hold a newer list another app saved, and the size rule below can't tell an old copy
+ *    from it. As iOS (loadConfirmsList), which wants every relay; the web used to take a list from any one relay, or a
+ *    majority answering (Logen 2026-10-14), and that built on old copies (Logen 2026-11-02).
+ *  - no base list found: a first list of one follow, as iOS (loadConfirmsList with foundList false). Refused for an
+ *    unfollow, when the app shows follows, and when a list was found dated ahead (`ahead`): those mean a list exists
+ *    somewhere;
  *  - nothing that would be empty, unless it is a single unfollow of the last follow (1 -> 0, as iOS);
  *  - the base itself must not be a shrunken copy: if the most follows any list we saw had (or the app shows) is over
  *    10, the result must keep at least half of it (iOS shouldBlockPublish). This catches a relay that returns an old
@@ -116,14 +124,12 @@ export function editedTags(base, target, follow) {
  */
 export function wipeGuard({ base, tags, target, follow, seen = [], appCount = 0, asked = 0, answered = 0, netFound = false, ahead = false, at = now() }) {
   if (!asked) return NO_OWN_RELAYS
-  if (!netFound && !(asked > 0 && answered * 2 > asked)) {
+  if (!allOwnAnswered({ asked, answered })) {
     if (!answered) return "None of your relays answered, so your newest follow list isn't known and nothing was changed. Try again when they're reachable."
-    return `Only ${answered} of your ${asked} relays answered and none had your follow list, so your newest one isn't known and nothing was changed. Try again when most of them are reachable.`
+    return `Only ${answered} of your ${asked} relays answered, so your newest follow list isn't known (one that didn't may hold a newer copy) and nothing was changed. Try again when they're all reachable.`
   }
   if (!base && (!follow || appCount > 0 || ahead))
     return "Your follow list wasn't found on your relays, so nothing was changed. Try again when they answer."
-  if (!base && answered < asked)
-    return `${answered} of your ${asked} relays answered and none had a follow list. Your first one needs every relay to answer, so nothing was changed. Try again shortly.`
   if (base && !netFound && base.created_at < at - MAX_LOCAL_AGE) {
     const day = new Date(base.created_at * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
     return `Your relays no longer have your follow list and this browser's copy is from ${day}, so nothing was changed. Open the app on your phone, or try again when your relays are reachable.`

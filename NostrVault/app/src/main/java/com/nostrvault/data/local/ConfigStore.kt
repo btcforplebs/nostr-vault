@@ -14,6 +14,9 @@ import com.nostrvault.relay.RelayBlocklist
 import com.nostrvault.relay.RelayConfiguration
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.ContactManager
+import com.nostrvault.service.FreshAccountKeys
+import com.nostrvault.service.InterestListService
+import com.nostrvault.service.ListMerge
 import com.nostrvault.service.NIP46Service
 import com.nostrvault.service.SignerRouting
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -94,6 +97,14 @@ class ConfigStore @Inject constructor(
     /** A secret key's hex pubkey, for a key whose config names no owner. Tests put their own here. */
     internal var publicKeyOf: (String) -> String? = { key ->
         try { if (HavenBridge.isLoaded) HavenBridge.getPublicKey(key) else null } catch (_: Throwable) { null }
+    }
+
+    /**
+     * Empties a SharedPreferences file by name, at once (commit, not apply): Factory Reset relaunches the app right
+     * after. Tests put their own here.
+     */
+    internal var clearPrefs: (String) -> Unit = { name ->
+        context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit()
     }
 
     /** (pubkey, key) known to be in [keyVault], so a save need not write it again. */
@@ -504,6 +515,7 @@ class ConfigStore @Inject constructor(
             vaulted = null
             // The relay's certificate goes with its data; a new one is coming.
             LocalTls.forgetAll()
+            forgetListState(context.filesDir, clearPrefs)
             _config.value = HavenConfig.newInstall()
             _activeAccountHexPubkey.value = ""
         }
@@ -518,6 +530,18 @@ private fun hexPubkey(npub: String): String? = when {
     npub.startsWith("npub1") -> HavenBridge.decodeNpub(npub)
     npub.length == 64 && npub.all { it in '0'..'9' || it in 'a'..'f' } -> npub
     else -> null
+}
+
+/**
+ * Factory Reset: what this phone remembers about the account's published lists. [ListMerge.BASES_FILE] (what it last
+ * published per list), the hashtag list cache and the keys setup made here all outlived the reset, so after signing
+ * the same account back in the next media server (10063), blocked relay (10006) or hashtag (10015) edit started
+ * from this phone's old copy instead of the network's, and dropped what was published since.
+ */
+internal fun forgetListState(filesDir: File, clearPrefs: (String) -> Unit) {
+    File(filesDir, ListMerge.BASES_FILE).delete()
+    clearPrefs(InterestListService.PREFS_NAME)
+    clearPrefs(FreshAccountKeys.PREFS)
 }
 
 /** Whether the active account moving from [previous] to [current] is a switch. */

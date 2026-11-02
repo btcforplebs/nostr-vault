@@ -146,13 +146,14 @@ enum ListMerge {
     }
 
     /// The newest of the list the relays returned and the one this device
-    /// already `held`, by the web's kind-3 rule (follows.js findLatestList,
-    /// list-edit.js listKnown): only the account's `own` relays (its write
-    /// relays, loopback dropped) count. A list is the base when one of them
-    /// sent it or most of them answered; "none" needs knowsNone and every one
-    /// of them answering. A copy from purplepag.es or a read relay alone, with
-    /// the own relays silent, can be older than theirs. No own relays (no
-    /// kind 10002 yet): `.noRelayList`. Copies dated `maxSkew` or more ahead of
+    /// already `held`. Only the account's `own` relays (its write relays,
+    /// loopback dropped) count, and every one of them has to answer, for a
+    /// list as for "none" (which also needs knowsNone). One own relay sending
+    /// an old copy while another, holding a newer one, was still slow made
+    /// the old copy the base, and the edit dropped what other apps had added
+    /// since (list-wipe audit 2026-11-02). The lookup waits for every relay
+    /// up to its timeout, so a slow one is waited for; one that never answers
+    /// refuses the save. No own relays (no kind 10002 yet): `.noRelayList`. Copies dated `maxSkew` or more ahead of
     /// `now` are skipped, and one being found (here or by the lookup, `ahead`)
     /// means a list exists, so it is never "none".
     /// `own` has no default, so every call site has to name them (Tron #1459).
@@ -166,10 +167,7 @@ enum ListMerge {
         let copies = [lookup.event, held].compactMap { $0 }
         let usable = copies.filter { createdAt($0) < now + maxSkew }
         if let newest = usable.max(by: { createdAt($0) < createdAt($1) }) {
-            // The lookup's copy was skipped: whoever sent it vouches for nothing.
-            let fromLookup = lookup.event.map { createdAt($0) < now + maxSkew } ?? false
-            let vouched = (fromLookup && lookup.from.contains { mine.contains(relayKey($0)) }) || ownAnswered * 2 > mine.count
-            return vouched ? .list(newest) : .unknown
+            return ownAnswered == mine.count ? .list(newest) : .unknown
         }
         let ahead = lookup.ahead || usable.count < copies.count
         return !ahead && knowsNone(asked: lookup.asked, answered: lookup.answered) && ownAnswered == mine.count ? .none : .unknown
@@ -241,10 +239,13 @@ enum ListMerge {
         init(file: URL) { self.file = file }
 
         /// The store in Application Support/Haven.
-        static var shared: Bases {
-            let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        static var shared: Bases { Bases(file: sharedFile) }
+
+        /// Where `shared` keeps its file; a factory reset deletes it (ListPublishReset).
+        static var sharedFile: URL {
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
                 .appendingPathComponent("Haven", isDirectory: true)
-            return Bases(file: dir.appendingPathComponent(basesFileName))
+                .appendingPathComponent(basesFileName)
         }
 
         func get(_ key: String) -> [String]? {
