@@ -245,108 +245,14 @@ class DraftService: ObservableObject {
         let ownPubkey = NostrService.shared.activeHexPubkey
         guard !ownPubkey.isEmpty else { return }
 
-        let relayReady = await RelayProcessManager.shared.ensureRelayReady(timeout: 10.0)
-        guard relayReady else { return }
-
-        let config = ConfigService.shared.config
-        guard let privateURL = URL(string: config.nostrURL + "/private") else { return }
-
         isLoading = true
         defer { isLoading = false }
 
-        let client = WebSocketClient()
-        client.isTemporary = true
-
-        let subId = "drafts-\(UUID().uuidString.prefix(8))"
-        var receivedEvents: [NostrEvent] = []
-
-        func sendReq() {
-            let filter: [String: Any] = [
-                "kinds": [31234],
-                "authors": [ownPubkey]
-            ]
-            let req: [Any] = ["REQ", subId, filter]
-            if let data = try? JSONSerialization.data(withJSONObject: req),
-               let str = String(data: data, encoding: .utf8) {
-                client.send(text: str)
-            }
-        }
-
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            var hasResumed = false
-            // /private requires NIP-42 AUTH before it'll answer a REQ (see
-            // haven-go/init.go's khatru.RequestAuth + policies.MustAuth) — without
-            // this, the REQ above is silently rejected and we just burn the full
-            // 5s timeout below on every call, never actually fetching drafts.
-            var authSent = false
-
-            client.$connectionState
-                .receive(on: DispatchQueue.main)
-                .sink { state in
-                    if state == .connected {
-                        sendReq()
-                    }
-                }
-                .store(in: &self.cancellables)
-
-            client.messageSubject
-                .receive(on: DispatchQueue.main)
-                .sink { text in
-                    guard let data = text.data(using: .utf8),
-                          let arr = try? JSONSerialization.jsonObject(with: data) as? [Any],
-                          let type = arr.first as? String else { return }
-
-                    if type == "AUTH", !authSent, let challenge = arr[safe: 1] as? String {
-                        authSent = true
-                        Task {
-                            guard let authEvent = await NostrService.shared.signEventAsync(
-                                kind: 22242, content: "",
-                                tags: [["relay", config.nostrURL + "/private"], ["challenge", challenge]],
-                                forceOwner: true
-                            ) else {
-                                // A bunker owner with no session yet (restart with
-                                // another account active): log it in for next time.
-                                NIP46Service.shared.connectOwnerInBackgroundIfNeeded()
-                                return
-                            }
-                            let msg: [Any] = ["AUTH", self.eventToDict(authEvent)]
-                            if let msgData = try? JSONSerialization.data(withJSONObject: msg),
-                               let msgStr = String(data: msgData, encoding: .utf8) {
-                                client.send(text: msgStr)
-                            }
-                            // The original REQ (sent immediately on connect, before this
-                            // challenge arrived) was rejected pre-auth — resend now.
-                            sendReq()
-                        }
-                        return
-                    }
-
-                    if type == "EVENT", arr.count >= 3,
-                       let eventDict = arr[2] as? [String: Any],
-                       let eventData = try? JSONSerialization.data(withJSONObject: eventDict),
-                       let event = try? JSONDecoder().decode(NostrEvent.self, from: eventData) {
-                        receivedEvents.append(event)
-                    } else if type == "EOSE" {
-                        client.disconnect()
-                        if !hasResumed {
-                            hasResumed = true
-                            continuation.resume()
-                        }
-                    }
-                }
-                .store(in: &self.cancellables)
-
-            // Timeout after 5 seconds in case EOSE never arrives
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                if !hasResumed {
-                    hasResumed = true
-                    client.disconnect()
-                    continuation.resume()
-                }
-            }
-
-            client.connect(url: privateURL)
-        }
+        // /private needs NIP-42 AUTH before it answers; VaultSocket waits for
+        // the AUTH's OK before sending the REQ (a REQ sent right behind the
+        // AUTH is refused and drafts came back empty).
+        let filter: [String: Any] = ["kinds": [31234], "authors": [ownPubkey]]
+        let receivedEvents = await VaultSocket.query(path: "/private", filter: filter, timeout: 5) ?? []
 
         // Parse relay events into Draft structs
         let relayDrafts = receivedEvents.compactMap { event -> Draft? in
@@ -420,78 +326,7 @@ class DraftService: ObservableObject {
     /// Post an event to the /private relay endpoint and wait for the Nostr OK response.
     @discardableResult
     private func postEventToPrivateRelayConfirmed(_ event: NostrEvent) async -> Bool {
-        let config = ConfigService.shared.config
-        guard let url = URL(string: config.nostrURL + "/private") else { return false }
-
-        let msg: [Any] = ["EVENT", [
-            "id": event.id,
-            "pubkey": event.pubkey,
-            "created_at": event.created_at,
-            "kind": event.kind,
-            "tags": event.tags,
-            "content": event.content,
-            "sig": event.sig
-        ] as [String: Any]]
-
-        guard let data = try? JSONSerialization.data(withJSONObject: msg),
-              let str = String(data: data, encoding: .utf8) else { return false }
-
-        let client = WebSocketClient()
-        client.isTemporary = true
-
-        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            var hasResumed = false
-
-            client.$connectionState
-                .receive(on: DispatchQueue.main)
-                .sink { state in
-                    if state == .connected {
-                        client.send(text: str)
-                    }
-                }
-                .store(in: &self.cancellables)
-
-            client.messageSubject
-                .receive(on: DispatchQueue.main)
-                .sink { text in
-                    guard let msgData = text.data(using: .utf8),
-                          let arr = try? JSONSerialization.jsonObject(with: msgData) as? [Any],
-                          let type = arr.first as? String else { return }
-
-                    if type == "OK", arr.count >= 3 {
-                        let success = (arr[2] as? Bool) ?? false
-                        client.disconnect()
-                        if !hasResumed {
-                            hasResumed = true
-                            continuation.resume(returning: success)
-                        }
-                    }
-                }
-                .store(in: &self.cancellables)
-
-            // Timeout after 5 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                if !hasResumed {
-                    hasResumed = true
-                    client.disconnect()
-                    continuation.resume(returning: false)
-                }
-            }
-
-            client.connect(url: url)
-        }
-    }
-
-    private func eventToDict(_ event: NostrEvent) -> [String: Any] {
-        return [
-            "id": event.id,
-            "pubkey": event.pubkey,
-            "created_at": event.created_at,
-            "kind": event.kind,
-            "tags": event.tags,
-            "content": event.content,
-            "sig": event.sig
-        ]
+        await VaultSocket.publish(event, path: "/private", timeout: 5)
     }
 }
 

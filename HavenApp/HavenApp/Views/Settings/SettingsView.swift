@@ -49,6 +49,7 @@ struct SettingsView: View {
         case blocked = "Blocked"
         case recentlyDeleted = "Recently Deleted"
         case followingBackup = "Following Backup"
+        case listBackups = "List backups"
         case wallet = "Wallet"
         case privacy = "Privacy"
         case feed = "Feed"
@@ -90,6 +91,7 @@ struct SettingsView: View {
             case .blocked: return "person.crop.circle.badge.xmark"
             case .recentlyDeleted: return "trash"
             case .followingBackup: return "person.crop.circle.badge.clock"
+            case .listBackups: return "clock.arrow.circlepath"
             case .wallet: return "bitcoinsign.circle"
             case .privacy: return "hand.raised"
             case .feed: return "newspaper"
@@ -132,7 +134,7 @@ struct SettingsView: View {
         let relayTabs: [SettingsTab] = [.macRelay, .relayAccess, .importNotes, .backup]
         #endif
         return [
-            ("Account", [.accounts, .blocked, .recentlyDeleted, .followingBackup, .wallet, .privacy]),
+            ("Account", [.accounts, .blocked, .recentlyDeleted, .followingBackup, .listBackups, .wallet, .privacy]),
             ("Feed & Display", [.feed, .appearance, .media]),
             ("Notifications", [.pushNotifications]),
             ("Relays", [.relays, .blossom]),
@@ -619,6 +621,7 @@ struct SettingsView: View {
         case .backup: return .indigo
         case .startup: return .green
         case .followingBackup: return .teal
+        case .listBackups: return .indigo
         // Stays system green: this list is a categorical palette for the
         // section icons (pink, mint, blue, indigo, teal…), not a status. Using
         // `havenOnline` here would give one settings row the vocabulary of a
@@ -666,6 +669,7 @@ struct SettingsView: View {
             case .startup: StartupSettingsView()
             case .backup: BackupSettingsView()
             case .followingBackup: FollowingBackupSettingsView()
+            case .listBackups: ListBackupView()
             case .blossom: BlossomSettingsView()
             case .macRelay:
                 #if os(iOS)

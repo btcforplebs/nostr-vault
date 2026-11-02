@@ -18,7 +18,8 @@ struct ListBackupView: View {
                 Section {
                     switch service.state {
                     case .unavailable:
-                        Text("Your vault didn't answer. Make sure it is running, then pull to refresh.").foregroundColor(.secondary)
+                        Text("Your vault didn't answer. Make sure it is running, then try again.").foregroundColor(.secondary)
+                        Button("Try again") { Task { await service.load() } }
                     case .loaded:
                         Text("No list versions kept yet. They are kept from the next time a list changes.").foregroundColor(.secondary)
                     case .idle, .loading:
@@ -34,7 +35,6 @@ struct ListBackupView: View {
             }
         }
         .formStyle(.grouped)
-        .refreshable { await service.load() }
         .task(id: config.config.activeAccountNpub) { await service.load() }
     }
 
