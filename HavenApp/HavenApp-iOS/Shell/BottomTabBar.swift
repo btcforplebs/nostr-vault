@@ -15,6 +15,8 @@ struct BottomTabBar: View {
     @ObservedObject var nostrService: NostrService
     @ObservedObject var dmService: DMService
     @ObservedObject var feedService: FeedService
+    /// iPad landscape: the same items stacked down a slim sidebar, no fold.
+    var vertical = false
 
     /// Scroll-linked fold, 0 = full tab bar, 1 = avatar + compose capsule.
     private var chrome: ChromeCollapse { .shared }
@@ -34,6 +36,24 @@ struct BottomTabBar: View {
     }
 
     var body: some View {
+        if vertical { sidebar } else { dock }
+    }
+
+    /// iPad landscape: the dock's items down the left edge, in a glass
+    /// column. Post stays the screen's floating button, as on the iPhone.
+    private var sidebar: some View {
+        VStack(spacing: 22) {
+            expandedContent
+        }
+        .padding(.vertical, 18)
+        .frame(width: 76)
+        .applyGlassCapsule()
+        .padding(.leading, 12)
+        .padding(.vertical, 12)
+        .frame(maxHeight: .infinity, alignment: .center)
+    }
+
+    private var dock: some View {
         // The per-frame fold lives in `BottomTabBarFold`, so a scroll frame
         // re-renders only the capsule, not every tab, badge and account menu
         // built here.

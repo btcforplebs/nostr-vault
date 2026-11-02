@@ -63,11 +63,28 @@ struct iPhoneTabView: View {
         }
     }
 
-    /// iPad in landscape: "Your space" sits right of the app.
+    /// iPad in landscape: a sidebar left of the app (in place of the
+    /// dock) and "Your space" right of it.
     private var showsSpace: Bool { usesNoteSplit && isLandscape }
 
     var body: some View {
         HStack(spacing: 0) {
+            if showsSpace {
+                // The dock's items down the left side; the dock itself goes.
+                BottomTabBar(
+                    selectedTab: $selectedTab,
+                    searchPath: $searchPath,
+                    profilePath: $profilePath,
+                    mediaPath: $mediaPath,
+                    relayPath: $relayPath,
+                    configService: configService,
+                    relayManager: relayManager,
+                    nostrService: nostrService,
+                    dmService: dmService,
+                    feedService: feedService,
+                    vertical: true
+                )
+            }
             tabs
             if showsSpace {
                 Divider().ignoresSafeArea()
@@ -168,7 +185,7 @@ struct iPhoneTabView: View {
             // The music mini player rides above the tab bar on every tab.
             // Measured together, so screens inset for both.
             // Hidden while typing on Search, so results get the space.
-            if !hidesChromeForKeyboard {
+            if !hidesChromeForKeyboard && !showsSpace {
             VStack(spacing: 6) {
                 // Leaves room on the right for the screen's floating button
                 // (Post, Blossom, Relay), which drops level with it.
