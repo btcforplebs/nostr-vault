@@ -81,7 +81,7 @@ func runImport(ctx context.Context) {
 	// NOTE: do NOT use flag.FlagSet / os.Args here — in C-shared (iOS embedded)
 	// mode os.Args belongs to the host app and index [2:] is garbage.
 	// All configuration is already loaded from environment variables by loadConfig().
-	if err := GranularInitDBs([]string{"chat", "outbox", "inbox"}); err != nil {
+	if err := GranularInitDBs([]string{"chat", "outbox", "inbox", "lists"}); err != nil {
 		log.Println("🚫 failed to init import DBs:", err)
 		return
 	}

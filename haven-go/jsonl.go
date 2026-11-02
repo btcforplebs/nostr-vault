@@ -198,6 +198,19 @@ func importDB(ctx context.Context, db DBBackend, r io.Reader) error {
 			skipped++
 			continue
 		}
+		// The list history keeps every version: replacing would collapse a
+		// restored history to one copy per list.
+		if listsDB != nil && db == listsDB {
+			if isOwnerList(&event) {
+				if err := recordListVersion(ctx, db, &event); err != nil {
+					return err
+				}
+				count++
+			} else {
+				skipped++
+			}
+			continue
+		}
 		if isUserList(&event) {
 			if err := db.ReplaceEvent(ctx, &event); err != nil {
 				return err

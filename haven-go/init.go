@@ -134,7 +134,7 @@ func newDBBackend(path string) DBBackend {
 }
 
 func initDBs() error {
-	return GranularInitDBs([]string{"private", "chat", "outbox", "inbox", "blossom", "feed"})
+	return GranularInitDBs([]string{"private", "chat", "outbox", "inbox", "blossom", "feed", "lists"})
 }
 
 // dbMu guards the dbs map and per-DB global assignment against
@@ -167,7 +167,12 @@ func GranularInitDBs(names []string) error {
 		if err := inner.Init(); err != nil {
 			return fmt.Errorf("%sDB init failed: %w", name, err)
 		}
-		db := DBBackend(newGatedDB(inner))
+		store := inner
+		if name == "outbox" {
+			// Every owner list version is also kept in `lists`.
+			store = newListHistoryDB(inner, func() DBBackend { return listsDB })
+		}
+		db := DBBackend(newGatedDB(store))
 		dbs[name] = db
 		slog.Info(fmt.Sprintf("✓ %s database ready", name))
 
@@ -185,6 +190,8 @@ func GranularInitDBs(names []string) error {
 			blossomDB = db
 		case "feed":
 			feedDB = db
+		case "lists":
+			listsDB = db
 		}
 	}
 
@@ -290,6 +297,7 @@ func initRelays(ctx context.Context) error {
 	outboxRelay = khatru.NewRelay()
 	inboxRelay = khatru.NewRelay()
 	feedRelay = khatru.NewRelay()
+	listsRelay = initListsRelay()
 
 	// Serve NIP-77 negentropy so clients and other Haven instances can
 	// set-reconcile against these relays instead of replaying whole windows.
@@ -304,6 +312,7 @@ func initRelays(ctx context.Context) error {
 	if err := initDBs(); err != nil {
 		return err
 	}
+	seedListHistory(ctx, outboxDB, listsDB)
 
 	initRelayLimits()
 
@@ -842,6 +851,8 @@ func dynamicRelayHandler(w http.ResponseWriter, r *http.Request) {
 		relay = inboxRelay
 	case "/feed":
 		relay = feedRelay
+	case "/lists":
+		relay = listsRelay
 	case "":
 		relay = outboxRelay
 	default:
