@@ -23,9 +23,10 @@ var listsDB DBBackend
 const (
 	// Versions kept per list (account, kind, d).
 	listHistoryKeep = 20
-	// Wipes whose lists are kept beyond that, at most, newest first. Each
-	// keeps up to three versions: the wipe, the version just before it and
-	// the largest list since the wipe before (listHistoryToDrop).
+	// Drains (runs of wipes) whose lists are kept beyond that, at most,
+	// newest first. Each keeps up to four versions: its newest wipe, the
+	// versions just before its newest and oldest wipes, and the largest list
+	// since the drain before (listHistoryToDrop).
 	listHistoryPinnedMax = 5
 	// Enough for every version of one list, under every store's MaxLimit.
 	listHistoryQueryLimit = 1000
@@ -154,17 +155,19 @@ func recordListVersion(ctx context.Context, store DBBackend, evt *nostr.Event) e
 // one while a slow tidy over many small edits is not. A drain is a run of
 // wipes, each measured against a version at or before the wipe ahead of it
 // (a list emptied 100, 70, 49, 34 ... 0 is one drain, not a dozen). Each drain
-// pins at most two versions, each only while no newer version holds all its
+// pins at most three versions, each only while no newer version holds all its
 // items (listHolds: restored or rebuilt, not merely refilled), together with
 // its newest wipe so it can still be seen:
 //   - the version just before its newest wipe;
+//   - the version just before its oldest wipe, the copy from before the
+//     drain started;
 //   - the largest version since the drain before it that one of its wipes
-//     shrank. That is the copy from before the drain; and a late, older copy
+//     shrank. That reaches a bigger list from before the drain; and a late, older copy
 //     filed between the list and the wipe becomes the neighbour, so without
 //     this the list it displaced would be let go.
 //
 // At most listHistoryPinnedMax drains, newest first, so repeated wipes can't
-// grow the store without end (20 + 15 versions per list at most).
+// grow the store without end (20 + 20 versions per list at most).
 func listHistoryToDrop(versions []*nostr.Event) []*nostr.Event {
 	keep := map[string]bool{}
 	for i := 0; i < len(versions) && i < listHistoryKeep; i++ {
@@ -210,6 +213,10 @@ func listHistoryToDrop(versions []*nostr.Event) []*nostr.Event {
 		if unheld(w + 1) {
 			pins = append(pins, w+1)
 		}
+		before := wipes[last] + 1 // the copy from just before the drain
+		if before != w+1 && unheld(before) {
+			pins = append(pins, before)
+		}
 		largest := -1
 		for i := w + 2; i < end; i++ {
 			if !unheld(i) || (largest >= 0 && listItemCount(versions[i]) <= listItemCount(versions[largest])) {
@@ -222,7 +229,7 @@ func listHistoryToDrop(versions []*nostr.Event) []*nostr.Event {
 				}
 			}
 		}
-		if largest >= 0 && largest != w+1 {
+		if largest >= 0 && largest != w+1 && largest != before {
 			pins = append(pins, largest)
 		}
 		if len(pins) == 0 {

@@ -146,8 +146,23 @@ func TestListHistoryPinsBeforeAManyStepDrain(t *testing.T) {
 			f.publish(f.bookmarks(i%2, 30+i))
 		}
 		f.mustKeep(full, "30% steps to zero")
-		if got := len(f.versionIDs(10003, "")); got > listHistoryKeep+3*listHistoryPinnedMax {
-			t.Fatalf("%d versions kept, want at most %d", got, listHistoryKeep+3*listHistoryPinnedMax)
+		if got := len(f.versionIDs(10003, "")); got > listHistoryKeep+4*listHistoryPinnedMax {
+			t.Fatalf("%d versions kept, want at most %d", got, listHistoryKeep+4*listHistoryPinnedMax)
 		}
+	})
+}
+
+// The copy from just before a drain is kept even when an older, bigger list
+// sits in the drain's span and takes its largest pin (Tron, PR 1587 review).
+func TestListHistoryPinsTheCopyJustBeforeADrain(t *testing.T) {
+	forEachHistoryBackend(t, func(t *testing.T, f *listHistoryFixture) {
+		a1 := f.bookmarks(100, 0)
+		a2 := f.bookmarksFrom(1000, 90, 1)
+		f.publish(a1, a2, f.bookmarksFrom(1000, 44, 2), f.bookmarksFrom(1000, 30, 3), f.bookmarksFrom(1000, 21, 4))
+		for i := 0; i < 20; i++ {
+			f.publish(f.bookmarksFrom(1000, 20+i%2, 10+i))
+		}
+		f.mustKeep(a2, "pre-drain 90")
+		f.mustKeep(a1, "the 100 before it")
 	})
 }
