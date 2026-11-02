@@ -12,6 +12,12 @@ extension FeedService {
         // The WOT globe's live arrivals share this connection: they're its own,
         // and never go in your relay.
         if GlobeArcs.isGlobeFrame(type: frame.type, json: frame.json) { return }
+        // The old feed's frames on a socket kept across a tab switch.
+        if let subId = frame.json.count >= 2 ? frame.json[1] as? String : nil,
+           FeedSpeedPolicy.isStaleFeedSub(subId, current: bgAccumulator.feedSubGeneration) {
+            if inject { injectExternalFrame(type: frame.type, json: frame.json) }
+            return
+        }
         handleFeedFrame(type: frame.type, json: frame.json, totalRelays: totalRelays)
         if inject { injectExternalFrame(type: frame.type, json: frame.json) }
     }
@@ -30,6 +36,7 @@ extension FeedService {
                 guard let self = self else { return }
                 if isPrimaryFeed {
                     self.eoseCount += 1
+                    if !self.hasFeedAnswer { self.hasFeedAnswer = true }
 
                     // Dispatch deferred auxiliary subscriptions now that
                     // this relay's primary feed content has arrived.

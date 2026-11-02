@@ -15,24 +15,42 @@ extension FeedService {
         curatedGraphReady ? "No popular notes found" : curatedGraphPendingStatus
     }
 
+    /// Computes the Popular ranking. A ranking already on screen (the tab
+    /// cache, or the last one saved to disk) stays up while the new one is
+    /// worked out, and is swapped for it when it lands; only an empty screen
+    /// shows the loading rows. Leaving Popular mid-compute no longer strands
+    /// it: the flag is cleared whatever mode is showing, and the result is
+    /// filed in Popular's cache for the next visit.
     func loadPopularFeed() {
         guard !isLoadingPopular else { return }
         isLoadingPopular = true
-        isLoadingFeed = true
-        shouldScrollToTopOnLoad = true
-        connectionStatus = "Discovering popular notes..."
-        notes.removeAll()
-        popularNoteScores.removeAll()
-        resetFeedThreadReplies()
-        recomputeFilteredNotes()
+        let showingOld = feedMode == .popular && !notes.isEmpty
+        if !showingOld {
+            isLoadingFeed = true
+            shouldScrollToTopOnLoad = true
+            connectionStatus = "Discovering popular notes..."
+            notes.removeAll()
+            popularNoteScores.removeAll()
+            resetFeedThreadReplies()
+            recomputeFilteredNotes()
+        }
+
+        /// Ends a compute that produced nothing to show. Only Popular's own
+        /// loading state and status are touched: another feed may be on screen.
+        func finishEmpty(_ status: String) {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.isLoadingPopular = false
+                guard self.feedMode == .popular else { return }
+                self.isLoadingFeed = false
+                // A ranking already on screen stays, with its status.
+                if self.notes.isEmpty { self.connectionStatus = status }
+            }
+        }
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let resultPtr = ComputePopularNotesC() else {
-                DispatchQueue.main.async {
-                    self?.isLoadingPopular = false
-                    self?.isLoadingFeed = false
-                    self?.connectionStatus = "No popular notes found"
-                }
+                finishEmpty("No popular notes found")
                 return
             }
             let jsonString = String(cString: resultPtr)
@@ -41,22 +59,14 @@ extension FeedService {
             if let errorData = jsonString.data(using: .utf8),
                let errorObj = try? JSONSerialization.jsonObject(with: errorData) as? [String: String],
                let errorMsg = errorObj["error"] {
-                DispatchQueue.main.async {
-                    self?.isLoadingPopular = false
-                    self?.isLoadingFeed = false
-                    self?.connectionStatus = "Error: \(errorMsg)"
-                }
+                finishEmpty("Error: \(errorMsg)")
                 return
             }
 
             // Parse popular notes
             guard let data = jsonString.data(using: .utf8),
                   let popularNotes = try? JSONDecoder().decode([PopularNoteResult].self, from: data) else {
-                DispatchQueue.main.async {
-                    self?.isLoadingPopular = false
-                    self?.isLoadingFeed = false
-                    self?.connectionStatus = "Failed to parse results"
-                }
+                finishEmpty("Failed to parse results")
                 return
             }
 
@@ -78,16 +88,29 @@ extension FeedService {
             }
 
             DispatchQueue.main.async {
-                guard let self = self, self.feedMode == .popular else { return }
-                self.notes = feedNotes
-                self.popularNoteScores = scores
+                guard let self else { return }
+                // Cleared before the mode check: left set, the next visit's
+                // loadPopularFeed returned at its guard and the screen sat on
+                // the loading view for good.
                 self.isLoadingPopular = false
+                guard self.feedMode == .popular else {
+                    // Computed for nobody on screen: kept for the next visit.
+                    self.storePopularResult(feedNotes, scores: scores)
+                    return
+                }
+                // An empty answer doesn't wipe a ranking already showing.
+                if FeedSpeedPolicy.popularReplacesShown(resultCount: feedNotes.count, showingOld: showingOld) {
+                    self.notes = feedNotes
+                    self.popularNoteScores = scores
+                    if showingOld { self.resetFeedThreadReplies() }
+                }
                 self.isLoadingFeed = false
-                self.connectionStatus = feedNotes.isEmpty ? self.popularEmptyStatus() : "Live"
-                if feedNotes.isEmpty && !self.curatedGraphReady {
+                self.connectionStatus = self.notes.isEmpty ? self.popularEmptyStatus() : "Live"
+                if self.notes.isEmpty && !self.curatedGraphReady {
                     self.pollForCuratedGraph()
                 }
                 self.recomputeFilteredNotes()
+                if !feedNotes.isEmpty { self.captureModeCache(for: .popular) }
             }
         }
     }

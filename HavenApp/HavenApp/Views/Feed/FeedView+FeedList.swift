@@ -196,12 +196,21 @@ extension FeedView {
                         } else {
                             LazyVStack(spacing: 12) {
 
-                        // Loading header
-                        if feedService.isLoadingFeed && feedService.notes.isEmpty {
+                        // Loading rows, only until the first relay answers;
+                        // then the load's own status while the rest come in.
+                        if FeedSpeedPolicy.showsLoadingRows(isLoading: feedService.isLoadingFeed,
+                                                            hasNotes: !feedService.notes.isEmpty,
+                                                            relayAnswered: feedService.hasFeedAnswer) {
                             ForEach(0..<5, id: \.self) { _ in
                                 FeedNoteSkeletonRow()
                                     .padding(.horizontal, 16)
                             }
+                        } else if feedService.isLoadingFeed && feedService.notes.isEmpty {
+                            Text(feedService.connectionStatus)
+                                .font(.appSystem(size: 13))
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 24)
                         }
 
                         if feedService.feedMode == .polls && feedService.filteredNotes.isEmpty && !feedService.isLoadingFeed {

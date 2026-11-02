@@ -96,6 +96,9 @@ class FeedService: ObservableObject {
     @Published var popularFilter: PopularFilter = .all
     @Published var showPopularEngagement = false
     @Published var isLoadingFeed    = false
+    /// A relay has answered this load's primary subscription (EOSE): the
+    /// loading rows give way to the feed's own state (FeedSpeedPolicy).
+    @Published var hasFeedAnswer = false
     @Published var connectionStatus = "Disconnected"
 
     @Published var newNoteCount: Int = 0
@@ -255,6 +258,10 @@ class FeedService: ObservableObject {
     var primaryEoseRelays = Set<String>()
     /// Maps primary feed subscription IDs to relay keys for EOSE → auxiliary dispatch.
     var subIdToRelayKey: [String: String] = [:]
+    /// Bumped on every tab switch and carried in the feed's subscription ids
+    /// (FeedSpeedPolicy.feedSubId), so a socket kept across the switch can't
+    /// pass the old feed's notes or EOSEs into the new one.
+    var feedSubGeneration = 0
 
     /// The author set the live primary REQ was last sent with, per relay key.
     /// `nil`/absent for a relay key means no live primary subscription exists

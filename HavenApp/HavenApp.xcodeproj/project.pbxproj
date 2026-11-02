@@ -192,6 +192,7 @@
 		2039FF12BEB8AE4FCF61C1D2 /* MediaVaultLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64BBE97369E66B2804EFFC5F /* MediaVaultLink.swift */; };
 		204A8F9BC80EEE068D97459E /* FollowingFeedState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4464865603517B64343AFC9 /* FollowingFeedState.swift */; };
 		205332EE3D3ECB5D686E1AEB /* MediaPostRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 177153C4A2D4AFBC483689BE /* MediaPostRetry.swift */; };
+		205B7AE7E638FDB0FA24F3D5 /* FeedSpeedPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C54EC3846583043C553DC3 /* FeedSpeedPolicy.swift */; };
 		206173696EB1D685569C073F /* GlobeStormProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03DBB409E343A8D2FF2B53D1 /* GlobeStormProbe.swift */; };
 		2061C05EDB45E6A677C44828 /* NoteTranslation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDB08989DAA08A101C01CEC2 /* NoteTranslation.swift */; };
 		20909F66629BEC603D2806A0 /* FloatingArrowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C6F73BF6DECD70643354714 /* FloatingArrowController.swift */; };
@@ -515,6 +516,7 @@
 		567D911077CA1B08DAEE62D5 /* VaultActivityThumbnails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C7E5BAC0F73460D1EED71C3 /* VaultActivityThumbnails.swift */; };
 		5686CC2CCACE6E4F7B59F892 /* MessageComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47E52CADA44AC55958A69E64 /* MessageComposerView.swift */; };
 		569CA523726603213D68EE68 /* ChromeFold.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C74DEB1B130E9A13A641C5 /* ChromeFold.swift */; };
+		570308960C6A8DD9B9C7DE4E /* FeedSpeedPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C54EC3846583043C553DC3 /* FeedSpeedPolicy.swift */; };
 		570A40C83118E1F4AACE2A18 /* FeedMediaPager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1712AE584A0D34C1680170F /* FeedMediaPager.swift */; };
 		5718556DCD5068820B77FD2F /* RelayProcessManager+Start.swift in Sources */ = {isa = PBXBuildFile; fileRef = F384237B25AFC73114898C58 /* RelayProcessManager+Start.swift */; };
 		57368C0B1B3A9F988A64EA03 /* GatedArticleBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0909C6301A67A52A5CA1E250 /* GatedArticleBody.swift */; };
@@ -2308,6 +2310,7 @@
 		D0F4B46B5C5EE525BDE1206A /* GlobeArcs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobeArcs.swift; sourceTree = "<group>"; };
 		D1712AE584A0D34C1680170F /* FeedMediaPager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedMediaPager.swift; sourceTree = "<group>"; };
 		D199DA259B7DA070C714E363 /* GenericRepost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenericRepost.swift; sourceTree = "<group>"; };
+		D1C54EC3846583043C553DC3 /* FeedSpeedPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedSpeedPolicy.swift; sourceTree = "<group>"; };
 		D1CBD42B98E57609F77CA5E7 /* TrustPathService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustPathService.swift; sourceTree = "<group>"; };
 		D23E2F257E6BF9573B8CA257 /* LiveChatMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveChatMedia.swift; sourceTree = "<group>"; };
 		D27AC592B3A258559EAF7732 /* FollowListLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowListLogic.swift; sourceTree = "<group>"; };
@@ -3220,6 +3223,7 @@
 				1C7B0FCECC367D25BBB73718 /* FeedLayoutMode.swift */,
 				03CA3570ED08E58BCFE90E28 /* FeedOutboxPlan.swift */,
 				FB04FF5ECC6BE85A9D783C18 /* FeedProfile.swift */,
+				D1C54EC3846583043C553DC3 /* FeedSpeedPolicy.swift */,
 				935F68EC9A7EBD1E570211CF /* FeedThreadGrouping.swift */,
 				A65E47EAB300A4D76EE4F262 /* FeedVideoShape.swift */,
 				093D54B83D57F902ED44E397 /* FillYourFeedGuide.swift */,
@@ -4240,6 +4244,7 @@
 				8C3BD71D4EE345968FB81D1E /* FeedService.swift in Sources */,
 				5E779E545DA5566174AE5AF6 /* FeedServiceTypes.swift in Sources */,
 				51159D6D70A1ECF17FCEF895 /* FeedSettingsView.swift in Sources */,
+				205B7AE7E638FDB0FA24F3D5 /* FeedSpeedPolicy.swift in Sources */,
 				2CB176ED82313ACA85A8AE44 /* FeedThreadCard.swift in Sources */,
 				60135B288D01F67F43BF7E6B /* FeedThreadGrouping.swift in Sources */,
 				0C9DE6ADE24831CB3EB91BE9 /* FeedVideoShape.swift in Sources */,
@@ -5044,6 +5049,7 @@
 				B3A065D965688DBC83174179 /* FeedService.swift in Sources */,
 				DC564055F17E779B59E55881 /* FeedServiceTypes.swift in Sources */,
 				845E3413FEF16395FC4AB6EC /* FeedSettingsView.swift in Sources */,
+				570308960C6A8DD9B9C7DE4E /* FeedSpeedPolicy.swift in Sources */,
 				F7E4D75941ED6FAE9AF5480E /* FeedThreadCard.swift in Sources */,
 				E9B017046B79DE70C07E4574 /* FeedThreadGrouping.swift in Sources */,
 				A32BE09A005360A1730BB3D1 /* FeedVideoShape.swift in Sources */,

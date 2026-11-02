@@ -4,55 +4,15 @@ extension FeedView {
     // MARK: - Loading Contacts
 
     var loadingContactsView: some View {
-        VStack(spacing: 32) {
-            VStack(spacing: 16) {
-                ProgressView()
-                    .controlSize(.large)
-                    .tint(Color.havenPurple)
-
-                VStack(spacing: 8) {
-                    Text(String(localized: "feed.loading.synchronizing"))
-                        .font(.appSystem(size: 18, weight: .bold, design: .default))
-                        .tracking(0.3)
-                    Text(String(localized: "feed.loading.fetchingFollows"))
-                        .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            Text(String(localized: "feed.loading.patience"))
-                .font(.appSystem(size: 12, weight: .medium, design: .monospaced))
-                .foregroundColor(.secondary.opacity(0.6))
-                .tracking(0.5)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.platformControlBackground)
+        FeedLoadingRows()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Color.platformControlBackground)
     }
 
     var loadingExtendedNetworkView: some View {
-        VStack(spacing: 32) {
-            VStack(spacing: 16) {
-                ProgressView()
-                    .controlSize(.large)
-                    .tint(Color.havenPurple)
-
-                VStack(spacing: 8) {
-                    Text(String(localized: "feed.loading.analyzingNetwork"))
-                        .font(.appSystem(size: 18, weight: .bold, design: .default))
-                        .tracking(0.3)
-                    Text(String(localized: "feed.loading.findingConnections"))
-                        .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            Text(String(localized: "feed.loading.patience"))
-                .font(.appSystem(size: 12, weight: .medium, design: .monospaced))
-                .foregroundColor(.secondary.opacity(0.6))
-                .tracking(0.5)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.platformControlBackground)
+        FeedLoadingRows()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Color.platformControlBackground)
     }
 
     // MARK: - Empty State
@@ -232,29 +192,9 @@ extension FeedView {
     // MARK: - Popular Feed States
 
     var loadingPopularView: some View {
-        VStack(spacing: 32) {
-            VStack(spacing: 16) {
-                ProgressView()
-                    .controlSize(.large)
-                    .tint(Color.havenPurple)
-
-                VStack(spacing: 8) {
-                    Text(String(localized: "feed.loading.findingPopular"))
-                        .font(.appSystem(size: 18, weight: .bold, design: .default))
-                        .tracking(0.3)
-                    Text(String(localized: "feed.loading.scoringEngagement"))
-                        .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            Text(String(localized: "feed.loading.analyzingReactions"))
-                .font(.appSystem(size: 12, weight: .medium, design: .monospaced))
-                .foregroundColor(.secondary.opacity(0.6))
-                .tracking(0.5)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.platformControlBackground)
+        FeedLoadingRows()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Color.platformControlBackground)
     }
 
     var emptyPopularStateView: some View {

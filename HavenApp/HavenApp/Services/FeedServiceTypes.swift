@@ -324,6 +324,9 @@ extension FeedNote: ThreadGroupable {
 /// Thread-safe buffer for events parsed off the main thread.
 /// All methods must be called on the FeedService processingQueue.
 final class BackgroundAccumulator: @unchecked Sendable {
+    /// The feed's current subscription generation, read on processingQueue
+    /// to drop frames for an earlier one (FeedSpeedPolicy.isStaleFeedSub).
+    var feedSubGeneration = 0
     var notes: [FeedNote] = []
     var profiles: [String] = []
     /// Reaction events. Used for both self-like detection and per-note
