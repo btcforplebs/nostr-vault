@@ -148,34 +148,48 @@ func recordListVersion(ctx context.Context, store DBBackend, evt *nostr.Event) e
 
 // listHistoryToDrop picks, from one list's versions newest first, the ones
 // retention lets go: everything but the newest listHistoryKeep, except a
-// version a shrink replaced. That one stays pinned, together with the shrink
-// that replaced it (without it, the pair's neighbour changes and the wipe
-// can no longer be seen), until a newer version is at least as large
-// (restored or rebuilt). At most listHistoryPinnedMax pairs, newest first,
-// so repeated wipes can't grow the store without end.
+// version that a newer one shrank (listShrank, against every newer version,
+// not only the next: a late older copy filed in between can't move the pin)
+// and that no newer version still holds (listHolds: restored or rebuilt,
+// not merely refilled to the same size). That one stays pinned, together
+// with the nearest shrink (so the wipe can still be seen). Versions a later
+// edit still held are not pinned, so a wipe pins the last list(s) before
+// it, not every older edit. At most listHistoryPinnedMax, newest first, so
+// repeated wipes can't grow the store without end.
 func listHistoryToDrop(versions []*nostr.Event) []*nostr.Event {
 	keep := map[string]bool{}
 	for i := 0; i < len(versions) && i < listHistoryKeep; i++ {
 		keep[versions[i].ID] = true
 	}
+	items := make([]map[string]struct{}, len(versions))
+	for i, v := range versions {
+		items[i] = listItems(v)
+	}
 	pinned := 0
 	for i := 1; i < len(versions) && pinned < listHistoryPinnedMax; i++ {
-		prev, next := versions[i], versions[i-1]
-		if !listShrank(prev, next) {
-			continue
-		}
-		rebuilt := false
-		for j := 0; j < i; j++ {
-			if listAtLeastAsLarge(versions[j], prev) {
-				rebuilt = true
+		v := versions[i]
+		shrink := -1
+		for j := i - 1; j >= 0; j-- { // nearest newer version that shrank it
+			if listShrank(v, versions[j]) {
+				shrink = j
 				break
 			}
 		}
-		if rebuilt {
+		if shrink < 0 {
 			continue
 		}
-		keep[prev.ID] = true
-		keep[next.ID] = true
+		held := false
+		for k := 0; k < i; k++ {
+			if listHolds(versions[k], items[k], items[i], v) {
+				held = true
+				break
+			}
+		}
+		if held {
+			continue
+		}
+		keep[v.ID] = true
+		keep[versions[shrink].ID] = true
 		pinned++
 	}
 	var drop []*nostr.Event

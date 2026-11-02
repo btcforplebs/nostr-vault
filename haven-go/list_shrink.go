@@ -122,13 +122,47 @@ func listShrank(prev, next *nostr.Event) bool {
 	return false
 }
 
-// listAtLeastAsLarge reports whether ev holds at least as much as than: as
-// many public items and, for an encrypted list, as long a content. A version
-// pinned before a wipe is let go once a newer one is this large (restored,
-// or rebuilt by hand).
-func listAtLeastAsLarge(ev, than *nostr.Event) bool {
-	if listItemCount(ev) < listItemCount(than) {
-		return false
+// listItems is the set of a list's public items by (name, value), or for a
+// profile its filled-in fields by (field, value).
+func listItems(ev *nostr.Event) map[string]struct{} {
+	items := map[string]struct{}{}
+	if ev.Kind == 0 {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal([]byte(ev.Content), &fields) != nil {
+			return items
+		}
+		for k, v := range fields {
+			if val := string(v); val != "null" && val != `""` {
+				items[k+"\x00"+val] = struct{}{}
+			}
+		}
+		return items
+	}
+	for _, t := range ev.Tags {
+		if len(t) == 0 {
+			continue
+		}
+		if _, meta := listMetadataTags[t[0]]; meta {
+			continue
+		}
+		key := t[0]
+		if len(t) > 1 {
+			key += "\x00" + t[1]
+		}
+		items[key] = struct{}{}
+	}
+	return items
+}
+
+// listHolds reports whether ev still holds everything in than: every public
+// item and, for an encrypted list, at least as long a content. Only then is
+// a version pinned before a wipe let go (restored, or rebuilt by hand). A
+// list refilled to the same size with other items does not count.
+func listHolds(ev *nostr.Event, evItems, thanItems map[string]struct{}, than *nostr.Event) bool {
+	for k := range thanItems {
+		if _, ok := evItems[k]; !ok {
+			return false
+		}
 	}
 	if _, enc := encryptedListKinds[than.Kind]; enc && len(ev.Content) < len(than.Content) {
 		return false

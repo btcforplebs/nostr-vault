@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
@@ -60,11 +62,20 @@ func newListHistoryFixture(t *testing.T, open func(string) DBBackend) *listHisto
 	}
 }
 
-// bookmarks signs a kind 10003 with n items, `minutes` after the fixture's base.
+// bookmarks signs a kind 10003 with items 0..n-1, `minutes` after the
+// fixture's base.
 func (f *listHistoryFixture) bookmarks(n, minutes int) *nostr.Event {
+	return f.bookmarksFrom(0, n, minutes)
+}
+
+// bookmarksFrom: items first..first+n-1, each a distinct event id.
+func (f *listHistoryFixture) bookmarksFrom(first, n, minutes int) *nostr.Event {
 	tags := nostr.Tags{}
-	for i := 0; i < n; i++ {
-		tags = append(tags, nostr.Tag{"e", hexid(byte('a' + i%26))})
+	for i := first; i < first+n; i++ {
+		// A real-looking id: LMDB indexes a tag by its first bytes, so ids
+		// sharing a prefix would collide inside one event.
+		id := sha256.Sum256([]byte(fmt.Sprint(i)))
+		tags = append(tags, nostr.Tag{"e", hex.EncodeToString(id[:])})
 	}
 	return signedList(f.t, f.sk, 10003, f.now.Add(time.Duration(minutes)*time.Minute), tags)
 }
@@ -377,4 +388,44 @@ func signedProfile(t *testing.T, sk string, at time.Time, content string) *nostr
 		t.Fatal(err)
 	}
 	return ev
+}
+
+func (f *listHistoryFixture) mustKeep(ev *nostr.Event, why string) {
+	f.t.Helper()
+	for _, id := range f.versionIDs(ev.Kind, ev.Tags.GetD()) {
+		if id == ev.ID {
+			return
+		}
+	}
+	f.t.Fatalf("the pre-wipe list was deleted: %s", why)
+}
+
+// A list refilled to the same size with other items is not a restore: the
+// pin holds (Tron, PR 1567 review, must-fix 1).
+func TestListHistoryRefillWithOtherItemsKeepsThePin(t *testing.T) {
+	forEachHistoryBackend(t, func(t *testing.T, f *listHistoryFixture) {
+		full := f.bookmarksFrom(0, 15, 0)
+		f.publish(full, f.bookmarks(0, 1), f.bookmarksFrom(100, 15, 2))
+		for i := 0; i < 25; i++ {
+			f.publish(f.bookmarksFrom(100, 14+i%2, 3+i))
+		}
+		f.mustKeep(full, "refilled with 15 other items")
+	})
+}
+
+// A late copy, older than the wipe but newer than the pinned list, can't
+// move the pin off it (Tron, PR 1567 review, must-fix 2).
+func TestListHistoryLateCopyDoesNotMoveThePin(t *testing.T) {
+	forEachHistoryBackend(t, func(t *testing.T, f *listHistoryFixture) {
+		full := f.bookmarks(20, 0)
+		f.publish(full, f.bookmarks(0, 2))
+		for i := 0; i < 25; i++ {
+			f.publish(f.bookmarks(1+i%2, 3+i))
+		}
+		f.publish(f.bookmarks(11, 1)) // arrives late, dated between
+		for i := 0; i < 5; i++ {
+			f.publish(f.bookmarks(1+i%2, 40+i))
+		}
+		f.mustKeep(full, "a late 11-item copy arrived")
+	})
 }
