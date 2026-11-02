@@ -118,6 +118,12 @@ targets:
         MARKETING_VERSION: "3.1.0"
 
     preBuildScripts:
+      - name: Check GIF Key
+        script: |
+          "${PROJECT_DIR}/HavenApp/App/check_gif_key.sh"
+        # Release fails without the nostr.build GIF key (the app would hide its GIF button); Debug warns. First, so a
+        # keyless Release build stops before the Go and Rust builds.
+        basedOnDependencyAnalysis: false
       - name: Build Go Library (macOS)
         script: |
           "${PROJECT_DIR}/HavenApp/App/build_haven.sh"
@@ -212,6 +218,12 @@ targets:
         MARKETING_VERSION: "3.1.0"
 
     preBuildScripts:
+      - name: Check GIF Key
+        script: |
+          "${PROJECT_DIR}/HavenApp/App/check_gif_key.sh"
+        # Release fails without the nostr.build GIF key (the app would hide its GIF button); Debug warns. First, so a
+        # keyless Release build stops before the Go and Rust builds.
+        basedOnDependencyAnalysis: false
       - name: Build Go Library (iOS)
         script: |
           "${PROJECT_DIR}/HavenApp/App/build_haven_ios.sh"
