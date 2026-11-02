@@ -18,8 +18,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.model.Draft
+import com.nostrvault.data.model.DraftReplyParent
+import com.nostrvault.data.model.FeedNote
 import com.nostrvault.service.DraftService
+import com.nostrvault.service.FeedService
+import com.nostrvault.service.NostrService
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.text.SimpleDateFormat
@@ -29,8 +39,41 @@ import javax.inject.Inject
 @HiltViewModel
 class DraftsViewModel @Inject constructor(
     private val draftService: DraftService,
+    private val nostrService: NostrService,
+    private val feedService: FeedService,
 ) : ViewModel() {
     val drafts = draftService.drafts
+    val profiles = nostrService.profiles
+
+    private val _parents = MutableStateFlow<Map<String, FeedNote>>(emptyMap())
+    /** The notes reply drafts answer, by id, once loaded. */
+    val parents: StateFlow<Map<String, FeedNote>> = _parents.asStateFlow()
+    private val asked = mutableSetOf<String>()
+
+    /** Loads the note [draft] replies to (memory first, then relays) and its author's profile. Once per id. */
+    fun loadParent(draft: Draft) {
+        val id = draft.replyToId ?: return
+        DraftReplyParent.parentPubkey(draft)?.let { askProfile(it) }
+        if (!asked.add(id)) return
+        feedService.findNote(id)?.let { found ->
+            _parents.update { it + (id to found) }
+            askProfile(found.pubkey)
+            return
+        }
+        nostrService.fetchNoteById(id) { note ->
+            if (note == null) return@fetchNoteById
+            viewModelScope.launch {
+                _parents.update { it + (id to note) }
+                askProfile(note.pubkey)
+            }
+        }
+    }
+
+    private fun askProfile(pubkey: String) {
+        if (pubkey.isNotEmpty() && nostrService.profiles.value[pubkey] == null) {
+            nostrService.fetchMissingProfiles(listOf(pubkey))
+        }
+    }
 
     init {
         // Pick up drafts saved on another device (iOS: DraftPickerView.onAppear).
@@ -55,6 +98,16 @@ fun DraftsScreen(
     viewModel: DraftsViewModel = hiltViewModel(),
 ) {
     val drafts by viewModel.drafts.collectAsState()
+    val parents by viewModel.parents.collectAsState()
+    val profiles by viewModel.profiles.collectAsState()
+    LaunchedEffect(drafts) { drafts.forEach { if (it.isReply) viewModel.loadParent(it) } }
+    fun parentLine(draft: Draft): String? {
+        val id = draft.replyToId ?: return null
+        val parent = parents[id]
+        val pubkey = parent?.pubkey ?: DraftReplyParent.parentPubkey(draft)
+        val name = pubkey?.let { profiles[it]?.bestName } ?: pubkey?.take(8) ?: "someone"
+        return DraftReplyParent.line(name, parent?.content)
+    }
     val themeColors = LocalNostrVaultColors.current
 
     var isSelecting by remember { mutableStateOf(false) }
@@ -241,7 +294,7 @@ fun DraftsScreen(
                                 ),
                             )
                             Box(modifier = Modifier.weight(1f)) {
-                                DraftCard(draft = draft, onClick = toggle)
+                                DraftCard(draft = draft, parentLine = parentLine(draft), onClick = toggle)
                             }
                         }
                         return@items
@@ -289,6 +342,7 @@ fun DraftsScreen(
                     ) {
                         DraftCard(
                             draft = draft,
+                            parentLine = parentLine(draft),
                             onClick = {
                                 onResumeDraft(
                                     draft.id,
@@ -308,6 +362,7 @@ fun DraftsScreen(
 @Composable
 private fun DraftCard(
     draft: Draft,
+    parentLine: String?,
     onClick: () -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -389,6 +444,18 @@ private fun DraftCard(
                     text = dateFormatter.format(Date(draft.updatedAt)),
                     color = TertiaryText,
                     fontSize = 12.sp,
+                )
+            }
+
+            // Who and what a reply draft answers
+            if (parentLine != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = parentLine,
+                    color = SecondaryText,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
 

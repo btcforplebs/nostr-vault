@@ -116,9 +116,21 @@ extension ComposeView {
         lastSavedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Restore reply context from saved draft
+        // A reply draft stays a reply: the stand-in from its saved tags keeps
+        // the "Reply" title and the root/reply tags until the real note loads
+        // (or for good, when no relay has it), so it never posts as a new note.
         if let replyId = draft.replyToId {
-            draftReplyTo = FeedService.shared.notes.first(where: { $0.id == replyId })
-                ?? FeedService.shared.parentNotesCache[replyId]
+            if let found = FeedService.shared.findNote(id: replyId) {
+                draftReplyTo = found
+            } else {
+                draftReplyTo = draft.standInParent
+                let draftId = draft.id
+                Task { @MainActor in
+                    guard let note = await DraftParentLoader.load(replyId),
+                          self.draftId == draftId, self.draftReplyTo?.id == replyId else { return }
+                    self.draftReplyTo = note
+                }
+            }
         } else {
             draftReplyTo = nil
         }

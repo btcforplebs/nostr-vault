@@ -494,3 +494,39 @@ class DraftService: ObservableObject {
         ]
     }
 }
+
+// MARK: - Reply parent (drafts list + resume)
+
+extension Draft {
+    /// The parent's author, from the saved tags (`DraftReplyParent`).
+    var parentPubkey: String? { DraftReplyParent.parentPubkey(replyToId: replyToId, tags: tags) }
+
+    /// A parent built from this draft's saved tags, so a resumed reply opens
+    /// as "Reply" and posts with the same root/reply tags even before the real
+    /// note loads, or when no relay has it.
+    var standInParent: FeedNote? {
+        guard let id = replyToId, let pubkey = parentPubkey else { return nil }
+        return FeedNote(id: id, pubkey: pubkey, content: "", createdAt: updatedAt,
+                        tags: DraftReplyParent.standInTags(replyToId: id, rootId: rootId, parentPubkey: pubkey, tags: tags),
+                        kind: 1)
+    }
+}
+
+/// Loads the note a reply draft answers: from memory, else from this device's
+/// relay and the read relays, then keeps it in the feed's parent cache.
+@MainActor
+enum DraftParentLoader {
+    static func load(_ id: String) async -> FeedNote? {
+        let feed = FeedService.shared
+        if let note = feed.findNote(id: id) { return note }
+        let config = ConfigService.shared.config
+        let relays = [config.nostrURL, config.nostrURL + "/inbox"] + config.readRelays
+        let events = await NostrService.shared.fetchEvents(filter: ["ids": [id], "limit": 1], from: relays,
+                                                           timeout: 6, includeLoopback: true)
+        guard let ev = events.first(where: { $0.id == id }) else { return nil }
+        let note = FeedNote(id: ev.id, pubkey: ev.pubkey, content: ev.content, createdAt: ev.createdAtDate,
+                            tags: ev.tags, kind: ev.kind)
+        feed.parentNotesCache[id] = note
+        return note
+    }
+}
