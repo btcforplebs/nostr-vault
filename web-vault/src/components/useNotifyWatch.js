@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "preact/hooks"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { receiptTrust } from "../net/zaps.js"
-import { fetchInbound, fetchFollowerLists, readInbound, readOwn, readLists, keepLists, mergeLists } from "../net/vault-lists.js"
+import { fetchInbound, fetchFollowerLists, readInbound, readOwn, readLists, keepLists, mergeLists, clampSince } from "../net/vault-lists.js"
 import { readSeen, onSeen } from "../net/vault-new.js"
 import { getProfile, fetchProfiles } from "../net/profiles.js"
 import { getBlocks } from "../net/blocks.js"
@@ -61,7 +61,7 @@ export function useNotifyWatch(ctx) {
       polling = true
       lastPoll = Date.now()
       const { vault } = live.current
-      const after = Math.max(0, mark - 60)
+      const after = clampSince(Math.max(0, mark - 60))
       if (navigator.onLine !== false) {
         await Promise.allSettled([
           fetchInbound(vault, me, relays, { since: after, limit: 100, trust: receiptTrust(live.current) }),
