@@ -90,6 +90,9 @@ final class UserListSignGuardTests: XCTestCase {
             "HavenApp/Services/ModePostPublisher.swift": ["kind"],
             "HavenApp/Services/NIP17Service.swift": ["eventJSON"],
             "HavenApp/Services/Nostr/NostrService+ListPublishing.swift": ["kind"],
+            // Restore of a list version the vault kept: only on a tap, after a fresh
+            // editBase, the undo copy in the vault, and the person seeing the change.
+            "HavenApp/Services/Nostr/NostrService+ListRestore.swift": ["old.kind"],
             "HavenApp/Services/Nostr/NostrService+Lookups.swift": ["VertexReputation.requestKind"],
             "HavenApp/Services/Nostr/NostrService+Signing.swift": ["_", "eventJSON", "kind"],
         ])
