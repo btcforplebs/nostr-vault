@@ -15,7 +15,7 @@ class SettingsGroupsTest {
         )
         assertEquals(
             listOf(
-                "Accounts & Keys", "Blocked", "Recently Deleted", "Following Backup", "Wallet", "Privacy",
+                "Accounts & Keys", "Blocked", "Recently Deleted", "Following Backup", "List backups", "Wallet", "Privacy",
                 "Feed", "Appearance", "Media & Cache",
                 "Notifications",
                 "Relays", "Media Servers",
@@ -25,6 +25,15 @@ class SettingsGroupsTest {
                 "Proof of Work", "Database & Reset", "Bitcoin On-Chain", "Logs",
             ),
             SETTINGS_GROUPS.flatMap { g -> g.rows.map { it.title } },
+        )
+    }
+
+    /** List backups opens from Settings too, not only the Vault dashboard (iPhone/Mac #1579). */
+    @Test
+    fun `list backups is in Account`() {
+        assertEquals(
+            listOf("Account"),
+            SETTINGS_GROUPS.filter { g -> g.rows.any { it.screen == Screen.ListBackup } }.map { it.title },
         )
     }
 
