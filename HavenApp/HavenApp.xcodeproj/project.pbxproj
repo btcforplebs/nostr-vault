@@ -52,6 +52,7 @@
 		067B8021AC2BAF187223891B /* ZapBurstView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C24FF7AFE3FFD1EBFFD119FA /* ZapBurstView.swift */; };
 		06F2063CF0C9109C87AC1656 /* HavenConfig+OwnerKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F3EF8E9C5B0D5EB2E673007 /* HavenConfig+OwnerKeys.swift */; };
 		070BC2E922A305BD037D845B /* ReelsFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A98C1C315AD9DCB214071B65 /* ReelsFeedView.swift */; };
+		072888AF5265939B4F99724D /* TrustCardWebButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8998AD992C68DCAF68A30092 /* TrustCardWebButton.swift */; };
 		0731D8B3DE085946811D3C1A /* libhaven.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 27A87225270090D65AC98D48 /* libhaven.a */; };
 		0747868ACF7C85B5C374FE46 /* VaultAccountChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08B8C6912FB25B264EDAE511 /* VaultAccountChips.swift */; };
 		077B1D3ADA470A6BE173B8E4 /* ComposeView+Drafts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E36D157E04EFBA9F2C2C802 /* ComposeView+Drafts.swift */; };
@@ -1140,6 +1141,7 @@
 		BB42C47EA6799609B78A865C /* PollsFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8848D051F615C2424F1AB0D /* PollsFeedViews.swift */; };
 		BB4DD4971F99F92F5F44BBFD /* ProfilePostsLoadPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB256B302F132F38FBEA3C5 /* ProfilePostsLoadPlan.swift */; };
 		BB5C8F527ABD9F6C8C1D96CB /* MacRelaySyncStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8152C31E47774D859AE128B /* MacRelaySyncStatusView.swift */; };
+		BBBEE7D2C258592E87853C76 /* TrustCardWebButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8998AD992C68DCAF68A30092 /* TrustCardWebButton.swift */; };
 		BBCAC24C43564F431E394A02 /* AccountsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 251CF8F576FE6FC7D5A2306B /* AccountsSettingsView.swift */; };
 		BBD8C5A4D3CCA41A25E9B22D /* MirrorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B03DACD65D976F80B315E19 /* MirrorService.swift */; };
 		BBEB6E9E824AA4B887755B8E /* EventBroadcastSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26251868EAC178C0BAF356A8 /* EventBroadcastSheet.swift */; };
@@ -2057,6 +2059,7 @@
 		880DB060F395AAD9CE1427E1 /* DMService+Sending.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+Sending.swift"; sourceTree = "<group>"; };
 		8826E9845079D00F1FE9D22A /* LinkPreviewCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkPreviewCard.swift; sourceTree = "<group>"; };
 		89481C18D3B08E23CC1A680F /* VaultSearchBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultSearchBar.swift; sourceTree = "<group>"; };
+		8998AD992C68DCAF68A30092 /* TrustCardWebButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustCardWebButton.swift; sourceTree = "<group>"; };
 		89A56934F313BFA876DC49BA /* BitcoinSweepDisclaimerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinSweepDisclaimerView.swift; sourceTree = "<group>"; };
 		8A0D442B3835900C7663D934 /* DMThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMThreadView.swift; sourceTree = "<group>"; };
 		8A5CB15E45E0E65A13FC6132 /* MediaGalleryDataProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGalleryDataProcessing.swift; sourceTree = "<group>"; };
@@ -3316,6 +3319,7 @@
 				DC4C2DFE093087D6AA0047DC /* TapLandingLine.swift */,
 				86B6DE9563AEAC1E8BF203EA /* ThreadEngagementQuery.swift */,
 				6F893631E7565E9BB00A8EEC /* TopicFeedFilter.swift */,
+				8998AD992C68DCAF68A30092 /* TrustCardWebButton.swift */,
 				B5F560D2926BAD9DC92F86DE /* TrustedWebMemo.swift */,
 				F8222A5F6E491EA57892ADC3 /* TrustMap.swift */,
 				3D2B4820E350399E40C1C674 /* TrustMapHaze.swift */,
@@ -4656,6 +4660,7 @@
 				E169BDD9A242B04B8B984B7A /* ThreadedReplyNode.swift in Sources */,
 				7542C08754E3CE4E6413EDD4 /* ToolbarContent+SharedBackground.swift in Sources */,
 				BEAE6DBD2E1DEFD5AD821BBF /* TopicFeedFilter.swift in Sources */,
+				072888AF5265939B4F99724D /* TrustCardWebButton.swift in Sources */,
 				4EF7525BC35DFB520B2CC9AF /* TrustGlobeCanvas.swift in Sources */,
 				3D00F9E30D5216784C53ADDD /* TrustMap.swift in Sources */,
 				C4649B9F9EE35DA3D3DC65F5 /* TrustMapHaze.swift in Sources */,
@@ -5447,6 +5452,7 @@
 				FB89228E126B00DD97677142 /* ThreadedReplyNode.swift in Sources */,
 				E6A1BDD5A7BE0F2B8F84D938 /* ToolbarContent+SharedBackground.swift in Sources */,
 				CE12923E39ACFDE970D61E88 /* TopicFeedFilter.swift in Sources */,
+				BBBEE7D2C258592E87853C76 /* TrustCardWebButton.swift in Sources */,
 				DA455878A98B3172DC89DA14 /* TrustGlobeCanvas.swift in Sources */,
 				EDFAB1E4090AA01EB824A3B2 /* TrustMap.swift in Sources */,
 				F2C3C239F26DA40FA64E52CE /* TrustMapHaze.swift in Sources */,

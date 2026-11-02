@@ -68,11 +68,20 @@ extension TrustWebView {
             }
             if opensInWOTTab {
                 // A profile's or a post's globe is a look, not a place to
-                // explore: one button takes them to the WOT tab (Logen, 10/15).
-                cardButton("Open in WoT", icon: "WoTTab", asset: true, filled: true) {
-                    WOTOpenRequest.shared.open(pubkey)
+                // explore: one button takes them to the WOT tab (Logen, 10/15),
+                // the other to Brainstorm, to check their trust off this device
+                // (Android's pair, Logen 11/02).
+                HStack(spacing: 8) {
+                    cardButton("Open in WoT", icon: "WoTTab", asset: true, filled: true) {
+                        WOTOpenRequest.shared.open(pubkey)
+                    }
+                    .accessibilityHint(Text("Shows \(name(pubkey)) on your web in the WOT tab"))
+                    if let web = TrustCardWebButton.forPerson(pubkey) {
+                        cardButton(web.title, short: web.short, icon: "safari", filled: false) {
+                            PlatformURL.open(web.url)
+                        }
+                    }
                 }
-                .accessibilityHint(Text("Shows \(name(pubkey)) on your web in the WOT tab"))
                 .padding(.leading, 4)
             } else {
                 cardActions(pubkey, following: following, blocked: blocked)
