@@ -22,9 +22,11 @@ extension VaultView {
         VaultAccountChips.resolve(accountChip, accounts: vaultAccountHexes, active: followersOwnerHex)
     }
 
-    /// The account pictures head the list on screen (Vault list, no search).
+    /// The account pictures head the list on screen (no search; every page
+    /// but Media).
     var showsAccountRowOnTop: Bool {
-        viewMode == .activity && !isSearchActive && !accountChips.isEmpty
+        guard !isSearchActive, !accountChips.isEmpty else { return false }
+        return viewMode == .activity || VaultAccountChips.pageShowsSwitchRow(viewMode.accountPage)
     }
 
     /// True when the list is anything but the active account's own.
@@ -228,6 +230,35 @@ extension VaultView {
             .padding(.horizontal, 16)
             // Room for the ring and the red bubble's overhang.
             .padding(.vertical, 6)
+        }
+    }
+
+    /// The same pictures over Notes, Likes, Zaps and Followers (not Media):
+    /// those pages are one account's own, so a tap switches to that account,
+    /// as the switcher does. No "All" here; that stays on the Vault list.
+    @ViewBuilder
+    var accountSwitchRow: some View {
+        let me = followersOwnerHex.lowercased()
+        let chips = VaultAccountChips.switchChips(accounts: vaultAccountHexes, active: me)
+        if !isSearchActive, VaultAccountChips.pageShowsSwitchRow(viewMode.accountPage), !chips.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(chips, id: \.self) { chip in
+                        VaultAccountChipView(
+                            chip: chip,
+                            isSelected: chip == .account(me),
+                            isActiveAccount: chip == .account(me),
+                            npub: chipNpub(chip)
+                        ) {
+                            guard chip != .account(me), let npub = chipNpub(chip) else { return }
+                            configService.switchActiveAccount(to: npub)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+            .padding(.bottom, 10)
         }
     }
 

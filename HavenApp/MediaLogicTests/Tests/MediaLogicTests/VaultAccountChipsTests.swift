@@ -91,4 +91,26 @@ final class VaultAccountChipsTests: XCTestCase {
         XCTAssertNil(VaultAccountChips.nextOtherAccountLimit(current: 1000, readFull: true))
         XCTAssertNil(VaultAccountChips.nextOtherAccountLimit(current: 300, readFull: false))
     }
+
+    // MARK: - The row on the other pages (Logen 11-02, option B)
+
+    func testOtherPagesGetEveryAccountButNoAll() {
+        let chips = VaultAccountChips.switchChips(accounts: ["bb", "aa", "cc"], active: "AA")
+        XCTAssertEqual(chips, [.account("aa"), .account("bb"), .account("cc")])
+        XCTAssertFalse(chips.contains(.all))
+    }
+
+    func testOneAccountShowsNoRowOnAnyPage() {
+        XCTAssertEqual(VaultAccountChips.switchChips(accounts: ["aa"], active: "aa"), [])
+        XCTAssertEqual(VaultAccountChips.switchChips(accounts: [], active: "aa"), [])
+    }
+
+    func testEveryPageButMediaAndTheVaultListShowsTheSwitchRow() {
+        for page in [VaultAccountPage.notes, .likes, .zaps, .followers] {
+            XCTAssertTrue(VaultAccountChips.pageShowsSwitchRow(page), "\(page)")
+        }
+        // The Vault list has its own row (with All); Media has none.
+        XCTAssertFalse(VaultAccountChips.pageShowsSwitchRow(.activity))
+        XCTAssertFalse(VaultAccountChips.pageShowsSwitchRow(.media))
+    }
 }

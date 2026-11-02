@@ -10,6 +10,7 @@ extension VaultView {
         // the iOS, wide-mac and compact-mac layouts.
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
+                accountSwitchRow
                 Group {
                     if isSearchActive {
                         vaultSearchResults

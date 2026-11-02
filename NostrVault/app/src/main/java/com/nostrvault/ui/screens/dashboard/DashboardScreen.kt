@@ -158,6 +158,8 @@ fun DashboardScreen(
     /** The Vault Dashboard, which the Vault tab presents over either half. */
     onOpenDashboard: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel(),
+    /** The account pictures under the bar (VaultTabScreen's VaultAccountSwitchRow). */
+    accountRow: @Composable () -> Unit = {},
 ) {
     // Mode & filters
     val viewMode by viewModel.viewMode.collectAsState()
@@ -349,7 +351,7 @@ fun DashboardScreen(
 
     GlassScaffold(
         toolbar = {
-            Box {
+            Column {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -378,6 +380,11 @@ fun DashboardScreen(
                             RelayFilters(viewMode, contentFilter, likesFilter, zapsFilter, followersFilter, noteScope, recipesOnly, viewModel, onPicked = onFilterPicked)
                         }
                     }
+                }
+                // Every page but Media: the account pictures, a tap switches (Logen 11-02).
+                if (com.nostrvault.data.model.VaultAccountChips.pageShowsSwitchRow(
+                        VaultMode.of(showsMedia = false, viewMode = viewMode, scope = noteScope))) {
+                    accountRow()
                 }
             }
         },
