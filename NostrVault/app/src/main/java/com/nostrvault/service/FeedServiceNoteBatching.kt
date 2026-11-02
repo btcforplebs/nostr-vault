@@ -49,6 +49,12 @@ import com.nostrvault.service.FeedService.Companion.MAX_SEEN_IDS
                         return
                     }
 
+                    // A mention REQ sent for the previous account can still
+                    // answer after a switch: its notes are not this account's.
+                    if (subId == "feed-mentions" &&
+                        !FeedAccountGuard.mentions(eventObj, nostrService.activeHexPubkey)
+                    ) return
+
                     // Feed notes → accumulator
                     accumulateEvent(eventObj, message, relayUrl)
 
@@ -368,3 +374,17 @@ import com.nostrvault.service.FeedService.Companion.MAX_SEEN_IDS
         if (sorted.size > MAX_PENDING_NOTES) sorted = sorted.take(MAX_PENDING_NOTES)
         _pendingNotes.value = sorted
     }
+
+/** Keeps another account's notes out of the feed list after a switch (#1557). */
+internal object FeedAccountGuard {
+    /** [eventObj] p-tags [accountHex]: a mention of that account. */
+    fun mentions(eventObj: JsonObject, accountHex: String): Boolean {
+        if (accountHex.isEmpty()) return false
+        val tags = eventObj["tags"] as? JsonArray ?: return false
+        return tags.any { tag ->
+            val t = tag as? JsonArray ?: return@any false
+            t.size >= 2 && t[0].jsonPrimitive.contentOrNull == "p" &&
+                t[1].jsonPrimitive.contentOrNull == accountHex
+        }
+    }
+}

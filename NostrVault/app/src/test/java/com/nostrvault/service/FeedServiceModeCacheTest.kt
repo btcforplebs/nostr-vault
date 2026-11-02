@@ -2,6 +2,7 @@ package com.nostrvault.service
 
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.DeletedNotesStore
+import com.nostrvault.data.local.EngagementTracker
 import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.relay.HavenConfig
@@ -117,6 +118,18 @@ class FeedServiceModeCacheTest {
         account = "bob"
         feed.restoreModeCache(FeedMode.GLOBAL)
         assertEquals(listOf("b1".padEnd(64, '0')), feed._notes.value.map { it.id })
+    }
+
+    @Test
+    fun `notes still waiting to flush are thrown away by the reset`() {
+        // Alice's note is in the buffer when the switch to bob lands.
+        feed.accumulator.addNote(note("a1", 1))
+        feed.accumulator.addReaction(EngagementTracker.ReactionEvent("a1".padEnd(64, '0'), "x", "r", "+"))
+        account = "bob"
+        feed.clearInMemoryFeedState()
+        val left = feed.accumulator.drain()
+        assertEquals(emptyList<FeedNote>(), left.notes)
+        assertEquals(0, left.reactions.size)
     }
 
     @Test

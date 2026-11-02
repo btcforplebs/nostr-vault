@@ -3,6 +3,7 @@ package com.nostrvault.service
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.NoteStats
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -111,5 +112,15 @@ class FeedSpeedTest {
         assertNotNull(a)
         assertTrue(a != FeedModeCacheDisk.fileName("ab12|POPULAR"))
         assertTrue(a != FeedModeCacheDisk.fileName("cd34|DISCOVERY"))
+    }
+
+    @Test
+    fun `a mention counts only for the account it p-tags`() {
+        val json = Json { ignoreUnknownKeys = true }
+        val ev = json.parseToJsonElement("""{"id":"x","tags":[["e","y"],["p","alice"]]}""").jsonObject
+        assertTrue(FeedAccountGuard.mentions(ev, "alice"))
+        assertFalse(FeedAccountGuard.mentions(ev, "bob"))
+        assertFalse(FeedAccountGuard.mentions(ev, ""))
+        assertFalse(FeedAccountGuard.mentions(json.parseToJsonElement("""{"id":"x"}""").jsonObject, "alice"))
     }
 }

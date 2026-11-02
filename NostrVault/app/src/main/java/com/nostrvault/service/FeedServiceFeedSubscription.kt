@@ -464,7 +464,7 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         }
     }
 
-    private fun FeedService.sendMentionSubscription(relayUrl: String) {
+    internal fun FeedService.sendMentionSubscription(relayUrl: String) {
         val client = feedClients[relayUrl] ?: return
         val ownerHex = nostrService.activeHexPubkey
         if (ownerHex.isEmpty()) return
