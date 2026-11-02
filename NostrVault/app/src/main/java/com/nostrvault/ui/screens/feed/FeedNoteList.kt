@@ -151,6 +151,8 @@ internal fun FeedNoteList(
                             onLongPressLike = { id -> emojiPickerNoteId = id },
                             // The line it answers sits right above it in the card.
                             showReplyContext = false,
+                            // The thread card draws the one outline.
+                            suppressCardStyling = true,
                         )
                     },
                 )

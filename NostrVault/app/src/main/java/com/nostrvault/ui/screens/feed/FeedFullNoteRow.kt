@@ -44,6 +44,8 @@ internal fun FeedFullNoteRow(
      * FeedThreadCard passes showParent: false).
      */
     showReplyContext: Boolean = true,
+    /** No card of its own, for a line opened inside a thread card (see [NoteCard]). */
+    suppressCardStyling: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     // A bare repost is drawn as the note it points at, once that arrives.
@@ -70,6 +72,7 @@ internal fun FeedFullNoteRow(
             onDelete = onDelete,
             onLongPressLike = onLongPressLike,
             showReplyContext = showReplyContext,
+            suppressCardStyling = suppressCardStyling,
             modifier = modifier,
         )
     }
@@ -128,6 +131,7 @@ private fun FeedFullNoteRowContent(
     onDelete: (String) -> Unit,
     onLongPressLike: (String) -> Unit,
     showReplyContext: Boolean,
+    suppressCardStyling: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val headPubkeys = remember(note.id) {
@@ -235,6 +239,7 @@ private fun FeedFullNoteRowContent(
         autoplayVideos = autoplayVideos,
         avatarMenu = rememberFeedAvatarMenu(viewModel),
         popularRank = popularRank,
+        suppressCardStyling = suppressCardStyling,
         modifier = modifier,
     )
 }
