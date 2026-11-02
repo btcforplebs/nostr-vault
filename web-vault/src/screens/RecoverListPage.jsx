@@ -14,7 +14,7 @@ import { decrypterFor, showBlockList } from "../net/blocks.js"
 import { findVersions, listOverview } from "../net/list-versions.js"
 import { saveMerged } from "../net/list-merge-save.js"
 import {
-  MERGE_KINDS, mergeKind, openVersion, isEmpty, pickProblem, deltaOf, deltaLine, shrank, buildMerge, mergedTags, mergeSummary,
+  MERGE_KINDS, mergeKind, openVersion, unread, isEmpty, pickProblem, deltaOf, deltaLine, shrank, buildMerge, mergedTags, mergeSummary,
 } from "../net/list-version-merge.js"
 
 const day = at => new Date(at * 1000).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
@@ -71,11 +71,13 @@ function ListVersions({ ctx, kind, onBack }) {
     ])
     const evs = latest.event && !found.some(e => e.id === latest.event.id) ? [{ ...latest.event, from: ["relays"] }, ...found] : found
     const open = opener?.decrypt ? c => opener.decrypt(c) : null
+    // Only the list now is decrypted here; an older version's private part is opened when it is ticked, so a NIP-07 or
+    // bunker signer isn't asked once per version just to look (Tron, PR 1570).
     const versions = []
-    for (const ev of evs) versions.push(await openVersion(ev, open))
+    for (const ev of evs) versions.push(await openVersion(ev, ev.id === latest.event?.id ? open : undefined))
     if (ctx.session.pubkey !== me) return
     const current = latest.event ? versions.find(v => v.ev.id === latest.event.id) : null
-    setState({ current, checked: !!latest.checked, versions })
+    setState({ current, checked: !!latest.checked, versions, open })
     setPicked(new Set()); setRows(null); setReview(false)
   })() }, [kind, load])
 
@@ -89,7 +91,16 @@ function ListVersions({ ctx, kind, onBack }) {
     onReview={() => setReview(true)} onCancel={() => { setRows(null); setReview(false) }} onSaved={done} onStale={done} />
   if (rows && review) return <MergeView ctx={ctx} name={name} rows={rows} setRows={setRows} onBack={() => setReview(false)}>{confirm}</MergeView>
 
-  const toggle = id => { setRows(null); setPicked(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n }) }
+  const toggle = async id => {
+    setRows(null)
+    const v = versions.find(x => x.ev.id === id)
+    if (v?.locked && !picked.has(id)) {
+      const opened = await openVersion(v.ev, state.open)
+      setState(st => ({ ...st, versions: st.versions.map(x => x.ev.id === id ? opened : x) }))
+      if (opened.reason) return
+    }
+    setPicked(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
   return (
     <>
       <Back name={name} onBack={onBack} />
@@ -123,7 +134,7 @@ function VersionRow({ kind, v, older, current, picked, onToggle }) {
       <input type="checkbox" checked={picked} disabled={!!problem} onChange={onToggle} aria-label={`Merge the version from ${day(v.ev.created_at)}`} />
       <span class="follow-backup-open">
         <span class="settings-title">{day(v.ev.created_at)}{wipe && !isEmpty(v) && <span class="tag">Shrank</span>}</span>
-        <span class="muted small">{problem || deltaLine(kind, deltaOf(v, current))}</span>
+        <span class="muted small">{problem || deltaLine(kind, deltaOf(v, current))}{!problem && v.locked ? " · private part opens when you tick it" : ""}</span>
       </span>
     </label>
   )
@@ -141,7 +152,7 @@ function SaveConfirm({ ctx, kind, name, current, rows, review, onReview, onCance
     setBusy(true); setMsg("")
     try {
       const { tags, privateTags } = mergedTags(rows, current)
-      const { event, took, of } = await saveMerged(ctx, kind, { base: current?.ev ?? null, tags, privateTags })
+      const { event, took, of } = await saveMerged(ctx, kind, { base: current?.ev ?? null, baseOpened: !!current && !unread(current), tags, privateTags })
       await ctx.reloadAccount?.().catch(() => {})
       if (kind === 10000) await showBlockList(ctx, event).catch(() => {})
       onSaved(`Saved: your ${name.toLowerCase()} now has ${entries(sum.total)}, taken by ${took} of your ${of} relays. The list you had stays in your vault's history.`)

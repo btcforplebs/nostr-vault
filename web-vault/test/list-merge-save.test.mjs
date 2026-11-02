@@ -64,9 +64,11 @@ test("a version as the page holds it (with where it was found) goes to the vault
 
 test("private entries are encrypted to the user; none means an empty content", async () => {
   const base = ev(10000, [["p", P(1)]], 100, "old-cipher")
-  const r = await saveMerged(ctxFor(), 10000, { base, tags: [["p", P(1)]], privateTags: [["p", P(2)]], latest: latestIs(base), publish: okPublish })
+  await assert.rejects(saveMerged(ctxFor(), 10000, { base, tags: [["p", P(1)]], privateTags: [["p", P(2)]], latest: latestIs(base), publish: okPublish }),
+    /couldn't be opened, so saving would wipe it/, "a private part not read is refused here, not only by the page (Tron, PR 1570)")
+  const r = await saveMerged(ctxFor(), 10000, { base, baseOpened: true, tags: [["p", P(1)]], privateTags: [["p", P(2)]], latest: latestIs(base), publish: okPublish })
   assert.deepEqual(JSON.parse(nip44.v2.decrypt(r.event.content, KEY)), [["p", P(2)]])
-  const r2 = await saveMerged(ctxFor(), 10000, { base, tags: [["p", P(1)]], privateTags: [], latest: latestIs(base), publish: okPublish })
+  const r2 = await saveMerged(ctxFor(), 10000, { base, baseOpened: true, tags: [["p", P(1)]], privateTags: [], latest: latestIs(base), publish: okPublish })
   assert.equal(r2.event.content, "", "every private entry unticked: no private part")
 })
 

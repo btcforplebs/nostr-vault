@@ -87,8 +87,10 @@ export function shrank(prev, next) {
 /**
  * A version opened for merging: its entries, public and private, each once (an entry listed twice, or both publicly
  * and privately, is one entry, and private wins). `open(content)` is the signer's decrypt; it is only asked when the
- * version has a private part. -> { ev, entries: Map(key -> { tag, private }), reason } where `reason` says why the
- * private part couldn't be opened ("" when it could, or there is none).
+ * version has a private part. `open` undefined: the private part is left for later (the page opens a version's only
+ * when it is ticked, so a NIP-07 or bunker signer isn't asked once per version on opening the list) and the version
+ * is `locked`. -> { ev, entries: Map(key -> { tag, private }), reason, locked } where `reason` says why the private
+ * part couldn't be opened ("" when it could, or there is none).
  */
 export async function openVersion(ev, open) {
   const entries = new Map()
@@ -101,6 +103,7 @@ export async function openVersion(ev, open) {
   }
   for (const t of ev.tags ?? []) add(t, false)
   let reason = ""
+  if (hasPrivate(ev) && open === undefined) return { ev, entries, reason, locked: true }
   if (hasPrivate(ev)) {
     if (!open) reason = "this sign-in can't open private entries"
     else {
@@ -111,12 +114,15 @@ export async function openVersion(ev, open) {
       } catch (e) { reason = `its private part couldn't be opened (${e?.message ?? e})` }
     }
   }
-  return { ev, entries, reason }
+  return { ev, entries, reason, locked: false }
 }
+
+/** A version whose private part wasn't read (left for later, or couldn't be opened): what it held privately is unknown. */
+export const unread = v => !!(v.reason || v.locked)
 
 /** Empty: no entries, and no private part left unopened (that one may hold any number). Never offered (Lazarus
  *  invariant 3, Logen: never suggest an empty list). */
-export const isEmpty = v => v.entries.size === 0 && !v.reason
+export const isEmpty = v => v.entries.size === 0 && !unread(v)
 
 /** Why a version can't be picked, or "". */
 export function pickProblem(v) {
@@ -158,6 +164,16 @@ export function buildMerge({ current, picked, all }) {
       rows.set(key, { key, tag: e.tag, private: e.private, from: [v.ev.id] })
     }
   }
+  // Private anywhere it was ever listed, not only in the merged versions: an entry the user moved to the private part
+  // after a picked version must not come back public (Tron, PR 1570). A newer version whose private part wasn't read
+  // may hold it privately, so then it is private too: hiding an entry that was public loses nothing, publishing one
+  // that was hidden can't be undone.
+  for (const row of rows.values()) {
+    if (all.some(v => v.entries.get(row.key)?.private)) { row.private = true; continue }
+    if (current?.entries.has(row.key)) continue
+    const i = timeline.findIndex(v => v.entries.has(row.key))
+    if (timeline.slice(0, i < 0 ? timeline.length : i).some(v => !NO_PRIVATE.has(v.ev.kind) && unread(v))) row.private = true
+  }
   for (const row of rows.values()) {
     if (current?.entries.has(row.key)) { Object.assign(row, { status: "current", at: 0, ticked: true }); continue }
     // The newest version holding it, then the one that replaced that.
@@ -166,7 +182,7 @@ export function buildMerge({ current, picked, all }) {
     if (!next) Object.assign(row, { status: "back", at: 0, ticked: true })
     else if (shrank(timeline[i].ev, next.ev)) Object.assign(row, { status: "lost", at: next.ev.created_at, ticked: true })
     // The next version's private part unopened: whether it still held the entry isn't known, so it isn't called a removal.
-    else if (next.reason && row.private) Object.assign(row, { status: "back", at: 0, ticked: true })
+    else if (unread(next) && row.private) Object.assign(row, { status: "back", at: 0, ticked: true })
     else Object.assign(row, { status: "removed", at: next.ev.created_at, ticked: false })
   }
   return [...rows.values()]

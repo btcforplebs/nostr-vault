@@ -138,3 +138,35 @@ test("one summary line per version", async () => {
   assert.equal(deltaLine(10000, { added: 0, removed: 3 }), "−3 muted entries")
   assert.equal(deltaLine(10003, { added: 0, removed: 0 }), "Same as now")
 })
+
+test("an entry moved to the private part after the picked version comes back private (Tron, PR 1570)", async () => {
+  const v1 = await openVersion(ev(10000, [["p", P(5)], ["p", P(6)]], 10), open)
+  const v2 = await openVersion(ev(10000, [["p", P(6)]], 20, enc([["p", P(5)]])), open)
+  const cur = await openVersion(ev(10000, [], 30), open) // a wipe
+  const rows = buildMerge({ current: cur, picked: [v1], all: [cur, v2, v1] })
+  const x = rows.find(r => r.tag[1] === P(5))
+  assert.equal(x.private, true)
+  assert.equal(x.ticked, true)
+  const { tags, privateTags } = mergedTags(rows, cur)
+  assert.ok(!tags.some(t => t[1] === P(5)), "not in the public tags")
+  assert.ok(privateTags.some(t => t[1] === P(5)))
+  assert.equal(rows.find(r => r.tag[1] === P(6)).private, false, "an entry never private stays public")
+})
+
+test("a newer version not opened yet: what it may hide comes back private; nothing is decrypted until asked", async () => {
+  let asked = 0
+  const counting = c => { asked++; return open(c) }
+  const v1 = await openVersion(ev(10000, [["p", P(5)]], 10), counting)
+  const v2 = await openVersion(ev(10000, [], 20, enc([["p", P(5)]])), undefined)
+  assert.equal(v2.locked, true)
+  assert.equal(asked, 0, "a locked version isn't decrypted")
+  assert.ok(!isEmpty(v2) && !pickProblem(v2), "locked is not empty and can be ticked")
+  const cur = await openVersion(ev(10000, [["p", P(9)]], 30), counting)
+  const rows = buildMerge({ current: cur, picked: [v1], all: [cur, v2, v1] })
+  assert.equal(rows.find(r => r.tag[1] === P(5)).private, true)
+  assert.equal(rows.find(r => r.tag[1] === P(9)).private, false, "the list now keeps its form")
+  // An older unread version can't have hidden it later: no change.
+  const v0 = await openVersion(ev(10000, [], 5, enc([["p", P(5)]])), undefined)
+  const rows2 = buildMerge({ current: cur, picked: [v1], all: [cur, v1, v0] })
+  assert.equal(rows2.find(r => r.tag[1] === P(5)).private, false)
+})

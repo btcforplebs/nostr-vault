@@ -8,7 +8,7 @@ import { checkSigned } from "./sync.js"
 import { MAX_SKEW } from "./follows.js"
 import { latestList, ListNotSaved, NO_RELAY_LIST } from "./list-edit.js"
 import { keepSnapshot, snapshotStore } from "./follow-backup.js"
-import { mergeKind } from "./list-version-merge.js"
+import { mergeKind, hasPrivate } from "./list-version-merge.js"
 
 const now = () => Math.floor(Date.now() / 1000)
 /** Only the NIP-01 fields: a version found by list-versions.js carries `from`, and Haven refuses an envelope with
@@ -39,14 +39,17 @@ export async function keepUndoCopy(ctx, version, { store } = {}) {
 /**
  * Sign the merged list and send it out. `base`: the current version the merge was built on (null: there was none).
  * `tags`: the public tags (mergedTags), `privateTags` the entries kept private, encrypted to the user with NIP-44.
- * `latest`, `publish` and `store` are for tests.
+ * `baseOpened`: the base's private part was read, so `privateTags` can hold all of it; without it a base with a private
+ * part is refused (the new event replaces that part, and entries never read would be wiped). `latest`, `publish` and
+ * `store` are for tests.
  * -> { event, relays: [{ url, ok, message }], took } ; throws ListNotSaved or Error, and then nothing was signed.
  */
-export async function saveMerged(ctx, kind, { base, tags, privateTags = [], latest = latestList, publish = (urls, ev) => pool.publish(urls, ev), store } = {}) {
+export async function saveMerged(ctx, kind, { base, baseOpened = false, tags, privateTags = [], latest = latestList, publish = (urls, ev) => pool.publish(urls, ev), store } = {}) {
   const me = ctx.session.pubkey
   if (!mergeKind(kind)) throw new Error("Not saved: this list can't be merged here.")
   if (!tags.filter(t => !["d", "title", "name", "description", "image", "alt", "client"].includes(t[0])).length && !privateTags.length)
     throw new Error("Not saved: the merged list would be empty.")
+  if (hasPrivate(base) && !baseOpened) throw new Error("Not saved: the private part of the list you have now couldn't be opened, so saving would wipe it. Nothing was changed.")
   const fresh = await latest(ctx, kind)
   if (!fresh.checked && fresh.noRelayList) throw new ListNotSaved(`Not saved. ${NO_RELAY_LIST} Nothing was changed.`, fresh.event, false)
   if (!fresh.checked) throw new ListNotSaved("Not saved: not enough of your relays answered, so your newest list couldn't be read. Nothing was changed. Try again when more of them are reachable.", fresh.event, false)
