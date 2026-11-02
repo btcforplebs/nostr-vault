@@ -100,15 +100,15 @@ extension WalletLightningTab {
                             .font(.appSystem(size: 8, weight: .bold))
                             .foregroundColor(.white)
                             .padding(2)
-                            .background(Circle().fill(Color.orange))
+                            .background(Circle().fill(Color.havenZapGold))
                             .offset(x: 3, y: 3)
                     }
             } else {
                 Image(systemName: zap != nil ? "bolt.fill" : (incoming ? "arrow.down.left" : "arrow.up.right"))
                     .font(.appSystem(size: 13, weight: .bold))
-                    .foregroundColor(zap != nil ? .orange : (incoming ? .green : .orange))
+                    .foregroundColor(zap != nil ? Color.havenZapGold : (incoming ? .green : Color.havenZapGold))
                     .frame(width: 28, height: 28)
-                    .background((zap != nil ? Color.orange : (incoming ? Color.green : Color.orange)).opacity(0.12))
+                    .background((zap != nil ? Color.havenZapGold : (incoming ? Color.green : Color.havenZapGold)).opacity(0.12))
                     .clipShape(Circle())
             }
             VStack(alignment: .leading, spacing: 2) {

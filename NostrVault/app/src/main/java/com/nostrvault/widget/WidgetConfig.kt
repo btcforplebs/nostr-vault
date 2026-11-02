@@ -20,12 +20,13 @@ enum class QuickAction(
     val destination: String,
     val tint: Long,
 ) {
-    COMPOSE("Post", "New note", "compose", 0xFF8259F0),
-    DMS("DMs", "Messages", "dms", 0xFF4FA8FA),
-    SEARCH("Search", "Search", "search", 0xFF70C78C),
-    RELAY("Relay", "Relay", "relay", 0xFFFA8C24),
-    MEDIA("Media", "Media", "media", 0xFFEB6B9E),
-    WALLET("Wallet", "Wallet", "wallet", 0xFFFAC73D);
+    // One orange ramp, dark to soft (iOS QuickActionsWidget); wallet = zap gold.
+    COMPOSE("Post", "New note", "compose", 0xFFE67326),
+    DMS("DMs", "Messages", "dms", 0xFFF08A45),
+    SEARCH("Search", "Search", "search", 0xFFFA9447),
+    RELAY("Relay", "Relay", "relay", 0xFFB35214),
+    MEDIA("Media", "Media", "media", 0xFFF5B98C),
+    WALLET("Wallet", "Wallet", "wallet", 0xFFF2A33A);
 
     companion object {
         fun fromKey(key: String?): QuickAction? = entries.firstOrNull { it.name == key }

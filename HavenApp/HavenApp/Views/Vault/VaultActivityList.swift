@@ -382,7 +382,7 @@ struct VaultActivityRow: View {
         case .quote: return ("quote.bubble.fill", .blue)
         case .reaction: return ("heart.fill", .red)
         case .repost: return ("arrow.2.squarepath", .green)
-        case .zap: return ("bolt.fill", .orange)
+        case .zap: return ("bolt.fill", Color.havenZapGold)
         case .article: return ("doc.richtext", .havenPurple)
         case .highlight: return ("highlighter", .yellow)
         case .follow: return ("person.badge.plus", .havenPurple)

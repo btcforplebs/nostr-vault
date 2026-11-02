@@ -6,8 +6,9 @@ enum WizardColors {
     static let bgPrimary = Color(red: 0.035, green: 0.035, blue: 0.043)      // #09090B
     static let bgCard = Color(red: 0.094, green: 0.094, blue: 0.106)          // #18181B
     static let bgElevated = Color(red: 0.153, green: 0.153, blue: 0.165)      // #27272A
-    static let accentPrimary = Color(red: 0.961, green: 0.620, blue: 0.043)   // #F59E0B
-    static let accentGlow = Color(red: 0.961, green: 0.620, blue: 0.043).opacity(0.3)
+    // The brand orange ramp (Theming.swift AppTheme), not a wizard-only amber.
+    static let accentPrimary = Color(red: 0.902, green: 0.451, blue: 0.149)   // #E67326
+    static let accentGlow = Color(red: 0.902, green: 0.451, blue: 0.149).opacity(0.3)
     static let textPrimary = Color(red: 0.980, green: 0.980, blue: 0.980)     // #FAFAFA
     static let textSecondary = Color(red: 0.631, green: 0.631, blue: 0.667)   // #A1A1AA
     static let textMuted = Color(red: 0.443, green: 0.443, blue: 0.478)       // #71717A
@@ -17,12 +18,12 @@ enum WizardColors {
     /// defines for exactly this case: a border that is the only cue for a control.
     /// 3.23:1 against `bgElevated`, 3.75:1 against `bgCard`.
     static let borderSubtle = Color.borderStrong
-    static let borderActive = Color(red: 0.961, green: 0.620, blue: 0.043).opacity(0.5)
+    static let borderActive = Color(red: 0.902, green: 0.451, blue: 0.149).opacity(0.5)
     static let success = Color(red: 0.133, green: 0.773, blue: 0.369)         // #22C55E
     static let error = Color(red: 0.937, green: 0.267, blue: 0.267)           // #EF4444
 
     static let accentGradient = LinearGradient(
-        colors: [Color(red: 0.918, green: 0.345, blue: 0.047), Color(red: 0.961, green: 0.620, blue: 0.043)],
+        colors: [Color(red: 0.702, green: 0.322, blue: 0.078), Color(red: 0.902, green: 0.451, blue: 0.149)], // #B35214 -> #E67326
         startPoint: .leading,
         endPoint: .trailing
     )

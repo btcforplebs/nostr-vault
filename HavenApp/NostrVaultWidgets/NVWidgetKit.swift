@@ -8,8 +8,15 @@ import WidgetKit
 // same values, restated for a process that has to stay small.
 
 enum NV {
-    static let purple = Color(red: 0.51, green: 0.35, blue: 0.94)
-    static let orange = Color(red: 0.98, green: 0.55, blue: 0.14)
+    // The brand orange ramp (Theming.swift AppTheme / tokens.css). `purple`
+    // keeps the app's historical name for the accent (havenPurple).
+    static let purple = Color(red: 0.902, green: 0.451, blue: 0.149)   // #E67326
+    static let orange = Color(red: 0.902, green: 0.451, blue: 0.149)   // #E67326
+    static let orangeDark = Color(red: 0.702, green: 0.322, blue: 0.078) // #B35214
+    static let orangeMid = Color(red: 0.941, green: 0.541, blue: 0.271)  // #F08A45
+    static let orangeLight = Color(red: 0.980, green: 0.580, blue: 0.278) // #FA9447
+    static let orangeSoft = Color(red: 0.961, green: 0.725, blue: 0.549) // #F5B98C
+    static let zapGold = Color(red: 0.949, green: 0.639, blue: 0.227)    // #F2A33A
     static let ink = Color(red: 0.05, green: 0.05, blue: 0.07)
     static let inkSoft = Color(red: 0.11, green: 0.11, blue: 0.14)
 

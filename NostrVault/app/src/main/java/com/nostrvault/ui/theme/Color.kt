@@ -102,8 +102,10 @@ val InfoBlue = Color(0xFF007AFF)
 // which is all the app has (the light-mode values read dull on black).
 val LikeRed = Color(0xFFFF453A)
 val RepostGreen = Color(0xFF30D158)
-val ZapOrange = Color(0xFFFF9F0A)
+// The one zap gold (#F2A33A), shared with iOS havenZapGold: a warm step off
+// the brand orange, so sats read as their own thing inside the palette.
+val ZapOrange = Color(0xFFF2A33A)
 
 // Wizard accent (setup flow)
-val WizardOrange = Color(0xFFF59E0B)
-val WizardOrangeDark = Color(0xFFEA580C)
+val WizardOrange = Color(0xFFE67326)
+val WizardOrangeDark = Color(0xFFB35214)

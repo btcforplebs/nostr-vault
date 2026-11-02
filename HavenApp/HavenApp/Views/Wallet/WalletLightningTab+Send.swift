@@ -9,7 +9,7 @@ extension WalletLightningTab {
             HStack {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.appSystem(size: 14, weight: .semibold))
-                    .foregroundColor(.orange)
+                    .foregroundColor(Color.havenZapGold)
                 Text("SEND")
                     .font(.appSystem(size: 12, weight: .bold))
                     .foregroundColor(.secondary)
@@ -93,7 +93,7 @@ extension WalletLightningTab {
                 .padding(.vertical, 10)
             }
             .buttonStyle(.bordered)
-            .tint(.orange)
+            .tint(Color.havenZapGold)
             .disabled(invoiceToPay.isEmpty || isSending)
             .confirmDestructive(
                 "Pay Invoice",

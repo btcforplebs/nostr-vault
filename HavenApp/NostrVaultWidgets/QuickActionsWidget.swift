@@ -45,12 +45,13 @@ enum QuickAction: String, AppEnum, CaseIterable {
 
     var tint: Color {
         switch self {
-        case .compose: return NV.purple
-        case .dms: return Color(red: 0.31, green: 0.66, blue: 0.98)
-        case .search: return Color(red: 0.44, green: 0.78, blue: 0.55)
-        case .relay: return NV.orange
-        case .media: return Color(red: 0.92, green: 0.42, blue: 0.62)
-        case .wallet: return Color(red: 0.98, green: 0.78, blue: 0.24)
+        // One orange ramp, dark to soft; the wallet keeps the zap gold.
+        case .compose: return NV.orange
+        case .dms: return NV.orangeMid
+        case .search: return NV.orangeLight
+        case .relay: return NV.orangeDark
+        case .media: return NV.orangeSoft
+        case .wallet: return NV.zapGold
         }
     }
 

@@ -59,6 +59,10 @@ extension Color {
     /// custom mint somewhere else.
     static var havenOnline: Color { Color(red: 0.2, green: 0.85, blue: 0.5) }
 
+    /// The one zap gold (#F2A33A): a warm step off the brand orange, so sats read
+    /// as their own thing without leaving the palette. Was three ambers.
+    static let havenZapGold = Color(red: 0.949, green: 0.639, blue: 0.227)
+
     /// The colour of a log line, by level.
     ///
     /// Three consoles carried their own copy of this switch and disagreed on

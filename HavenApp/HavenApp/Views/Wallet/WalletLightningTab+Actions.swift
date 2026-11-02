@@ -37,7 +37,7 @@ extension WalletLightningTab {
         case .sats(let sats):
             Text("Paying \(sats.formatted()) sats")
                 .font(.appSystem(size: 13, weight: .semibold))
-                .foregroundColor(.orange)
+                .foregroundColor(Color.havenZapGold)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .unspecified:
             Text("This invoice names no amount, and Nostr Vault cannot set one — your wallet will probably refuse it.")

@@ -99,7 +99,7 @@ struct FeedDashboardView: View {
             statTile(value: s.activePeople, label: "people posted", icon: "person.2", color: .green) {
                 onOpenFeed(.following)
             }
-            statTile(value: s.satsReceived, label: "sats to you", icon: "bolt.fill", color: .orange) {
+            statTile(value: s.satsReceived, label: "sats to you", icon: "bolt.fill", color: Color.havenZapGold) {
                 openVault { NotificationCenter.default.post(name: .havenOpenRelayZaps, object: nil) }
             }
             statTile(value: s.newFollowers, label: s.newFollowers == 1 ? "new follower" : "new followers",

@@ -241,12 +241,12 @@ extension FeedNoteRow {
                 HStack(spacing: 4) {
                     Image(systemName: isZapped ? "bolt.fill" : "bolt")
                         .font(.appSystem(size: 14, weight: .medium))
-                        .foregroundColor(isZapped ? .orange : (hasLightning ? .secondary : .secondary.opacity(0.35)))
+                        .foregroundColor(isZapped ? Color.havenZapGold : (hasLightning ? .secondary : .secondary.opacity(0.35)))
                     countText(engagement?.zapSats)
                 }
                     .padding(.horizontal, (engagement?.zapSats ?? 0) > 0 ? 10 : 0)
                     .frame(minWidth: 32, minHeight: 32, maxHeight: 32)
-                    .background(isZapped ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.1))
+                    .background(isZapped ? Color.havenZapGold.opacity(0.2) : Color.secondary.opacity(0.1))
                     .clipShape(Capsule())
                     .zapFlightTarget(zapBoltAnchor)
                     .overlay { ZapBurstView(isAnimating: $showLightning) }

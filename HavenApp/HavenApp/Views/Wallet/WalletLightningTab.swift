@@ -151,7 +151,7 @@ struct WalletLightningTab: View {
             HStack {
                 Image(systemName: "bolt.fill")
                     .font(.appSystem(size: 14, weight: .semibold))
-                    .foregroundColor(.orange)
+                    .foregroundColor(Color.havenZapGold)
                 Text("LIGHTNING BALANCE")
                     .font(.appSystem(size: 12, weight: .bold))
                     .foregroundColor(.secondary)
@@ -211,7 +211,7 @@ struct WalletLightningTab: View {
         HStack(spacing: 12) {
             Image(systemName: "bolt.fill")
                 .font(.appSystem(size: 14, weight: .semibold))
-                .foregroundColor(.orange)
+                .foregroundColor(Color.havenZapGold)
             Text(address)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundColor(.secondary)

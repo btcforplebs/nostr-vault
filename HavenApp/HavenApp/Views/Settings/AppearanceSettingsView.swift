@@ -234,9 +234,9 @@ private struct PostButtonsSection: View {
             ForEach(previewIcons, id: \.self) { icon in
                 Image(systemName: icon)
                     .font(.appSystem(size: 14, weight: .medium))
-                    .foregroundColor(icon == "bolt" ? .orange : .secondary)
+                    .foregroundColor(icon == "bolt" ? Color.havenZapGold : .secondary)
                     .frame(width: 32, height: 32)
-                    .background(icon == "bolt" ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.1))
+                    .background(icon == "bolt" ? Color.havenZapGold.opacity(0.2) : Color.secondary.opacity(0.1))
                     .clipShape(Capsule())
             }
             Spacer(minLength: 0)

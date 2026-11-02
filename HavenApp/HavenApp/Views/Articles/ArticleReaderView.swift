@@ -218,7 +218,7 @@ struct ArticleReaderView: View {
                 composeContext = ComposeContext(replyTo: note, quoteTo: nil)
             }
             if PostButtons.showsZap(postButtons) {
-                actionButton(zapped ? "bolt.fill" : "bolt", tint: zapped ? .orange : .secondary, label: "Zap",
+                actionButton(zapped ? "bolt.fill" : "bolt", tint: zapped ? Color.havenZapGold : .secondary, label: "Zap",
                              count: zapSats, countText: zapSats > 0 ? Self.compact(zapSats) : nil) {
                     if lightningAddress != nil {
                         zapSheetContext = ZapSheetContext(defaultAmount: ConfigService.shared.config.defaultZapAmount / 1000)

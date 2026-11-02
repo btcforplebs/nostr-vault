@@ -32,7 +32,7 @@ struct LightningInvoiceCard: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: "bolt.fill")
                     .font(.appSystem(size: 15, weight: .semibold))
-                    .foregroundColor(expired ? .secondary : .orange)
+                    .foregroundColor(expired ? .secondary : Color.havenZapGold)
                 Text(amountText)
                     .font(.appSystem(size: 22, weight: .bold, design: .rounded))
                     .foregroundColor(expired ? .secondary : .primary)
@@ -82,7 +82,7 @@ struct LightningInvoiceCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.orange.opacity(expired ? 0.12 : 0.35), lineWidth: 1)
+                .stroke(Color.havenZapGold.opacity(expired ? 0.12 : 0.35), lineWidth: 1)
         )
         .accessibilityElement(children: .contain)
     }
@@ -102,7 +102,7 @@ struct LightningInvoiceCard: View {
             .font(.appSystem(size: 14, weight: .semibold))
             .foregroundColor(enabled || state == .paid ? .black : .secondary)
             .frame(maxWidth: .infinity, minHeight: 36)
-            .background(enabled || state == .paid ? Color.orange : Color.primary.opacity(0.08))
+            .background(enabled || state == .paid ? Color.havenZapGold : Color.primary.opacity(0.08))
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
