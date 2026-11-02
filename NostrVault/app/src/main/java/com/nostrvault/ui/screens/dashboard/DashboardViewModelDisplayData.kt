@@ -78,6 +78,15 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
         val trusted = feedService.relayTabTrustedPubkeys()
         val blocked = configStore.config.value.blockedForActiveAccount()
             .mapNotNull { nostrService.npubToHex(it) }.toSet()
+        // The picked chip's accounts (VaultPageAccounts): the active one alone
+        // unless a chip widens it. Every account's events are loaded.
+        val owners = pageOwners()
+        val ownerSet = owners.toSet()
+        val blockedBy = HashMap<String, Set<String>>()
+        fun blockedFor(account: String?): Set<String> =
+            if (account == null || account == owner.lowercase()) blocked
+            else blockedBy.getOrPut(account) { blockedHexFor(account) }
+        val accountOf = HashMap<String, String>()
 
         // Partition once instead of re-scanning the full list per kind.
         // allEvents can hold one event twice (history pages query outbox and
@@ -96,7 +105,10 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
             }
         }
         if (dotSeenAt.isNotEmpty()) {
-            val newest = VaultDots.newest(events.map { it.kind to it.createdAt }, RELAY_TAB_NOTE_KINDS, System.currentTimeMillis() / 1000)
+            val newest = VaultDots.newest(
+                events.filter { VaultPageAccounts.isActiveAccounts(it.pubkey, it.tags, owner, whitelist) }.map { it.kind to it.createdAt },
+                RELAY_TAB_NOTE_KINDS, System.currentTimeMillis() / 1000,
+            )
             withContext(Dispatchers.Main) { refreshDots(newest) }
         }
 
@@ -125,12 +137,13 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                     if (event.kind !in scopeKinds) return@filter false
                     if (recipesOnly && !VaultNoteScope.isRecipe(event.tags)) return@filter false
 
-                    if (event.pubkey in blocked) return@filter false
+                    val account = VaultPageAccounts.rowAccount(event.pubkey, event.tags, owners)
+                    if (event.pubkey in blockedFor(account)) return@filter false
 
-                    val isMine = event.pubkey == owner
-                    val isTagged = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == owner }
+                    val isMine = event.pubkey in ownerSet
+                    val isTagged = !isMine && account != null
                     val isOutside = isTagged &&
-                        VaultContentFilter.isOutside(event.pubkey, owner, whitelist, trusted)
+                        VaultContentFilter.isOutside(event.pubkey, account!!, whitelist, trusted)
                     when (currentFilter) {
                         VaultContentFilter.ALL -> {
                             val isWhitelisted = whitelist.contains(event.pubkey)
@@ -147,7 +160,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                         }
                     }
                 }.sortedByDescending { it.createdAt }
-                    .let { VaultRepostDedupe.apply(it, owner, whitelist) }
+                    .let { VaultRepostDedupe.apply(it, ownerSet, whitelist) }
 
                 Log.d(TAG, "NOTES mode: filter=${currentFilter.displayName}, total=${filtered.size} notes, maxDisplayedItems=$maxDisplayedItems")
                 notesFilteredCount = filtered.size
@@ -176,7 +189,10 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                         )
                         else -> note
                     }
-                }.filter { it.kind == 6 || it.publisher == owner || !it.isNoiseOrSpam() }
+                }.filter { it.kind == 6 || it.publisher in ownerSet || !it.isNoiseOrSpam() }
+                for (event in filtered.take(cap)) {
+                    VaultPageAccounts.rowAccount(event.pubkey, event.tags, owners)?.let { accountOf[event.id] = it }
+                }
                 // Reposts are headed by the reposter but show the original's author.
                 displaySlice.filter { it.repostedBy != null }
                     .flatMap { listOf(it.pubkey, it.repostedBy!!) }
@@ -245,6 +261,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                 if (gen != updateGeneration) return@withContext
                 withContext(Dispatchers.Main.immediate) {
                     _displayNotes.value = displaySlice
+                    noteAccounts = accountOf
                     _reactionMap.value = rxMap
                     _zapMap.value = zMap
                     _latestReactionDates.value = latestReaction
@@ -262,11 +279,12 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                     // My Likes: notes I reacted to
                     val myLikeDates = mutableMapOf<String, Long>()
                     for (event in reactionEvents) {
-                        if (event.pubkey != owner) continue
+                        if (event.pubkey !in ownerSet) continue
                         val targetId = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1) ?: continue
                         val existing = myLikeDates[targetId]
                         if (existing == null || event.createdAt > existing) {
                             myLikeDates[targetId] = event.createdAt
+                            accountOf[targetId] = event.pubkey
                         }
                     }
 
@@ -282,6 +300,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                     if (gen != updateGeneration) return@withContext
                     withContext(Dispatchers.Main.immediate) {
                         _displayLikedNotes.value = displaySlice
+                        noteAccounts = accountOf
                         _reactionMap.value = emptyMap()
                         _latestReactionDates.value = emptyMap()
                         if (displaySlice.isNotEmpty()) _likesHasLoadedOnce.value = true
@@ -289,17 +308,20 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                 } else {
                     // Incoming reactions on target note sets
                     // Received: reactions others left on my notes.
-                    val targetNoteIds: Set<String> =
-                        noteEvents.filter { it.pubkey == owner }.map { it.id }.toSet()
+                    val noteAuthor: Map<String, String> =
+                        noteEvents.filter { it.pubkey in ownerSet }.associate { it.id to it.pubkey }
+                    val targetNoteIds: Set<String> = noteAuthor.keys
 
                     val rxMap = mutableMapOf<String, MutableList<Pair<String, String>>>()
                     val latestReaction = mutableMapOf<String, Long>()
 
                     for (event in reactionEvents) {
-                        if (event.pubkey == owner) continue
                         val targetId = event.tags.firstOrNull {
                             it.size >= 2 && it[0] == "e" && targetNoteIds.contains(it[1])
                         }?.get(1) ?: continue
+                        // An account's own like on its own note isn't one it received.
+                        if (event.pubkey == noteAuthor[targetId]) continue
+                        accountOf[targetId] = noteAuthor.getValue(targetId)
                         val emoji = if (event.content.isEmpty()) "+" else event.content
                         rxMap.getOrPut(targetId) { mutableListOf() }.add(Pair(event.pubkey, emoji))
                         val existing = latestReaction[targetId]
@@ -321,6 +343,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                     if (gen != updateGeneration) return@withContext
                     withContext(Dispatchers.Main.immediate) {
                         _displayLikedNotes.value = displaySlice
+                        noteAccounts = accountOf
                         _reactionMap.value = rxMap
                         _latestReactionDates.value = latestReaction
                         if (displaySlice.isNotEmpty()) _likesHasLoadedOnce.value = true
@@ -345,13 +368,16 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
 
                 if (currentZapsFilter == VaultZapsFilter.MY_ZAPS) {
                     val myReceipts = parsedReceipts
-                        .filter { it.parsed.senderPubkey == owner && it.parsed.requestIsSigned }
+                        .filter { it.parsed.senderPubkey in ownerSet && it.parsed.requestIsSigned }
+                    // The wallet and this phone's own zap list are the active account's.
+                    val activeShown = owner.lowercase() in ownerSet
                     // Receipts on the relays, plus what this app recorded
                     // zapping from this phone.
                     // Stream and profile zaps record a non-note key; only event ids count.
-                    val locallyZapped = feedService.zappedEventIds.value.filterKeys(RelayGiven::isEventId)
+                    val locallyZapped = if (!activeShown) emptyMap() else feedService.zappedEventIds.value.filterKeys(RelayGiven::isEventId)
                     val myZappedNoteIds = myReceipts.mapNotNull { it.parsed.targetNoteId }.toSet() + locallyZapped.keys
-                    val wallet = walletGiven
+                    val wallet = if (activeShown) walletGiven else DashboardViewModel.WalletGiven()
+                    for (item in myReceipts) item.parsed.targetNoteId?.let { accountOf.putIfAbsent(it, item.parsed.senderPubkey) }
 
                     // The wallet's history, then anything only a receipt or
                     // this app's own list knows about.
@@ -374,27 +400,34 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                     if (gen != updateGeneration) return@withContext
                     withContext(Dispatchers.Main.immediate) {
                         _displayZappedNotes.value = displaySlice
+                        noteAccounts = accountOf
                         _zapMap.value = givenMap
                         if (displaySlice.isNotEmpty()) _zapsHasLoadedOnce.value = true
                     }
                 } else {
                     // Incoming zaps on target note sets
                     // Received: zaps others sent to my notes.
-                    val targetNoteIds: Set<String> =
-                        noteEvents.filter { it.pubkey == owner }.map { it.id }.toSet()
-
                     // Blocked zappers are hidden here; the block observer in
                     // init{} reruns this pass, so unblocking brings them back.
-                    val received = VaultZapsReceived.build(
-                        receipts = parsedReceipts.map {
-                            VaultZapsReceived.Receipt(it.parsed, receiptTimes[it.receiptId] ?: 0L)
-                        },
-                        myNoteIds = targetNoteIds,
-                        owner = owner,
-                        isBlocked = { it in blocked },
-                    )
-                    val zMap = received.zappers
-                    val lastZapAt = received.lastZapAt
+                    // Built per account: each skips its own zaps and its own blocks.
+                    val receipts = parsedReceipts.map {
+                        VaultZapsReceived.Receipt(it.parsed, receiptTimes[it.receiptId] ?: 0L)
+                    }
+                    val zMap = LinkedHashMap<String, List<Pair<String, Long>>>()
+                    val lastZapAt = HashMap<String, Long>()
+                    for (account in owners) {
+                        val mine = noteEvents.filter { it.pubkey == account }.map { it.id }.toSet()
+                        if (mine.isEmpty()) continue
+                        val received = VaultZapsReceived.build(
+                            receipts = receipts,
+                            myNoteIds = mine,
+                            owner = account,
+                            isBlocked = { it in blockedFor(account) },
+                        )
+                        zMap.putAll(received.zappers)
+                        lastZapAt.putAll(received.lastZapAt)
+                        received.zappers.keys.forEach { accountOf[it] = account }
+                    }
 
                     val zappedNoteIds = zMap.keys
                     val filtered = RelayGiven.newestZapFirst(
@@ -411,6 +444,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                     if (gen != updateGeneration) return@withContext
                     withContext(Dispatchers.Main.immediate) {
                         _displayZappedNotes.value = displaySlice
+                        noteAccounts = accountOf
                         _zapMap.value = zMap
                         if (displaySlice.isNotEmpty()) _zapsHasLoadedOnce.value = true
                     }
@@ -429,9 +463,13 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
  * iOS updateDisplayData (VaultDataProcessing.swift).
  */
 internal object VaultRepostDedupe {
-    fun apply(events: List<NostrEvent>, owner: String, whitelist: Set<String>): List<NostrEvent> {
+    fun apply(events: List<NostrEvent>, owner: String, whitelist: Set<String>): List<NostrEvent> =
+        apply(events, setOf(owner), whitelist)
+
+    /** [owners]: the accounts a page's chip shows (VaultPageAccounts). */
+    fun apply(events: List<NostrEvent>, owners: Set<String>, whitelist: Set<String>): List<NostrEvent> {
         val listedWithEngagement = events.asSequence()
-            .filter { it.kind != 6 && (it.pubkey == owner || it.pubkey in whitelist) }
+            .filter { it.kind != 6 && (it.pubkey in owners || it.pubkey in whitelist) }
             .map { it.id }
             .toHashSet()
         val shownTargets = HashSet<String>()

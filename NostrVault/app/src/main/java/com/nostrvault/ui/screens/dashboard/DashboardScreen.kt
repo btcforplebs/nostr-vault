@@ -158,9 +158,23 @@ fun DashboardScreen(
     /** The Vault Dashboard, which the Vault tab presents over either half. */
     onOpenDashboard: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel(),
-    /** The account pictures under the bar (VaultTabScreen's VaultAccountSwitchRow). */
+    /** The account chips under the bar (VaultTabScreen's VaultPageChipRow). */
     accountRow: @Composable () -> Unit = {},
+    /**
+     * Opens a note as another account: switch first, then open, as the Vault
+     * list does (VaultActivityViewModel.openLineAs). A chip only filters; a tap
+     * on another account's note is what switches.
+     */
+    openAs: (account: String, open: () -> Unit) -> Unit = { _, open -> open() },
 ) {
+    val openNote: (String) -> Unit = { id ->
+        val account = viewModel.accountForNote(id)
+        if (account == null) onNoteClick(id) else openAs(account) { onNoteClick(id) }
+    }
+    val openArticle: (String) -> Unit = { id ->
+        val account = viewModel.accountForNote(id)
+        if (account == null) onArticleClick(id) else openAs(account) { onArticleClick(id) }
+    }
     // Mode & filters
     val viewMode by viewModel.viewMode.collectAsState()
     val noteScope by viewModel.noteScope.collectAsState()
@@ -381,8 +395,8 @@ fun DashboardScreen(
                         }
                     }
                 }
-                // Every page but Media: the account pictures, a tap switches (Logen 11-02).
-                if (com.nostrvault.data.model.VaultAccountChips.pageShowsSwitchRow(
+                // Every page but Media: the account chips; they filter (Logen 11-02).
+                if (com.nostrvault.data.model.VaultAccountChips.pageShowsChipRow(
                         VaultMode.of(showsMedia = false, viewMode = viewMode, scope = noteScope))) {
                     accountRow()
                 }
@@ -482,8 +496,8 @@ fun DashboardScreen(
                     allProfiles = allProfiles,
                     padding = padding,
                     viewModel = viewModel,
-                    onNoteClick = onNoteClick,
-                    onArticleClick = onArticleClick,
+                    onNoteClick = openNote,
+                    onArticleClick = openArticle,
                     onProfileClick = onProfileClick,
                     focusedEventId = focusedEventId,
                     onReportNote = reportNote,
@@ -500,8 +514,8 @@ fun DashboardScreen(
                     allProfiles = allProfiles,
                     padding = padding,
                     viewModel = viewModel,
-                    onNoteClick = onNoteClick,
-                    onArticleClick = onArticleClick,
+                    onNoteClick = openNote,
+                    onArticleClick = openArticle,
                     onProfileClick = onProfileClick,
                     focusedEventId = focusedEventId,
                     onReportNote = reportNote,
@@ -519,8 +533,8 @@ fun DashboardScreen(
                     allProfiles = allProfiles,
                     padding = padding,
                     viewModel = viewModel,
-                    onNoteClick = onNoteClick,
-                    onArticleClick = onArticleClick,
+                    onNoteClick = openNote,
+                    onArticleClick = openArticle,
                     onProfileClick = onProfileClick,
                     focusedEventId = focusedEventId,
                     onReportNote = reportNote,

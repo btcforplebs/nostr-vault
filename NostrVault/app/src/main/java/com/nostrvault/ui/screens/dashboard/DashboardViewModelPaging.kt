@@ -85,13 +85,11 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.OLDER_PA
             val localUrl = config.nostrURL ?: return
             val inboxUrl = config.localInboxURL ?: return
 
-            // Build author set matching loadLocalRelayNotes
+            // Build author set matching loadLocalRelayNotes: every account's, so
+            // a page's "All" chip pages back through each of them.
             val ownerHex = nostrService.activeHexPubkey
-            val authors = mutableSetOf<String>()
-            if (ownerHex.isNotEmpty()) authors.add(ownerHex)
-            config.whitelistedNpubs?.forEach { npub ->
-                nostrService.npubToHex(npub)?.let { authors.add(it) }
-            }
+            val authors = buildAuthorSet() + vaultTaggedAccounts()
+            val taggedJson = vaultTaggedAccounts().joinToString(",") { "\"$it\"" }
 
             _isLoadingMore.value = true
 
@@ -101,7 +99,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.OLDER_PA
                 val authorFilter = """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"authors":[$authorsJson],"until":$untilSecs,"limit":200}"""
 
                 val filters = if (ownerHex.isNotEmpty()) {
-                    val mentionsFilter = """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"#p":["$ownerHex"],"until":$untilSecs,"limit":300}"""
+                    val mentionsFilter = """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"#p":[$taggedJson],"until":$untilSecs,"limit":300}"""
                     "$authorFilter,$mentionsFilter"
                 } else {
                     authorFilter
@@ -164,10 +162,10 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.OLDER_PA
         val outboxUrl = config.nostrURL ?: return
         val inboxUrl = config.localInboxURL
         val ownerHex = nostrService.activeHexPubkey
-        val authors = buildList {
-            if (ownerHex.isNotEmpty()) add(ownerHex)
-            config.whitelistedNpubs?.forEach { npub -> nostrService.npubToHex(npub)?.let(::add) }
-        }.distinct()
+        val authors = (buildAuthorSet() + vaultTaggedAccounts()).toList()
+        // Every account's tags, as the first load: the chips filter what's loaded.
+        val taggedAccounts = vaultTaggedAccounts().toSet()
+        val taggedJson = taggedAccounts.joinToString(",") { "\"$it\"" }
         if (authors.isEmpty()) return
         val kind = scope.kinds(RELAY_TAB_NOTE_KINDS).single()
         val gen = olderGeneration
@@ -175,7 +173,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.OLDER_PA
         viewModelScope.launch(Dispatchers.IO) {
             val authorSet = authors.toSet()
             fun mine(e: NostrEvent) = e.kind == kind && e.pubkey in authorSet
-            fun tagged(e: NostrEvent) = e.kind == kind && e.tags.any { it.size >= 2 && it[0] == "p" && it[1] == ownerHex }
+            fun tagged(e: NostrEvent) = e.kind == kind && e.tags.any { it.size >= 2 && it[0] == "p" && it[1].lowercase() in taggedAccounts }
             val loaded = allEventsMutex.withLock { allEvents.filter { it.kind == kind } }
             val now = System.currentTimeMillis() / 1000
             val (outCursor, inCursor) = olderCursors[scope] ?: Pair(
@@ -203,7 +201,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.OLDER_PA
             )
             val (nextIn, inEvents) = page(
                 inCursor, inboxUrl,
-                """{"kinds":[$kind],"#p":["$ownerHex"],"until":${inCursor.until},"limit":$OLDER_PAGE_SIZE}""",
+                """{"kinds":[$kind],"#p":[$taggedJson],"until":${inCursor.until},"limit":$OLDER_PAGE_SIZE}""",
                 "older-in", ::tagged,
             )
 
