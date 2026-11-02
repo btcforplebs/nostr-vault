@@ -339,6 +339,13 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
                 .collect { recomputeFilteredNotes() }
         }
 
+        // The account the launch's notes belong to, taken before any switch
+        // (FeedModeCaches.ownsNotes).
+        scope.launch {
+            configStore.activeAccountHexPubkey.collect {
+                if (notesAccount == null) notesAccount = nostrService.activeHexPubkey.ifEmpty { null }
+            }
+        }
         scope.launch {
             configStore.accountSwitches
                 .collect {

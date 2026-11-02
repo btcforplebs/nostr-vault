@@ -20,6 +20,7 @@ internal data class DiskModeCache(
     val popularNoteScores: Map<String, Double> = emptyMap(),
     val savedAt: Long,
     val feedKey: String? = null,
+    val feedRelays: Set<String> = emptySet(),
 )
 
 /**
@@ -48,6 +49,7 @@ internal object FeedModeCacheDisk {
             popularNoteScores = cache.popularNoteScores.filterKeys { it in ids },
             savedAt = cache.capturedAtMs,
             feedKey = cache.feedKey,
+            feedRelays = cache.feedRelays,
         )
     }
 
@@ -57,6 +59,7 @@ internal object FeedModeCacheDisk {
         popularNoteScores = disk.popularNoteScores,
         capturedAtMs = disk.savedAt,
         feedKey = disk.feedKey,
+        feedRelays = disk.feedRelays,
         fromDisk = true,
     )
 }

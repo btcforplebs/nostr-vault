@@ -383,6 +383,15 @@ class FeedService @Inject constructor(
     internal var feedNotesKey: String? = null
     internal var roundSinceSec: Long? = null
     internal val roundEoseRelays = HashSet<String>()
+    /** This round's relays, frozen at its start, and those whose dial failed in it. */
+    internal val roundRelays = HashSet<String>()
+    internal val roundFailedRelays = HashSet<String>()
+    /** Relays that answered the round [feedNotesKey] was set from; only they may resume. */
+    internal val feedNotesRelays = HashSet<String>()
+    /** [feedNotesRelays] as frozen at this round's start, with [roundSinceSec]. */
+    internal val roundResumeRelays = HashSet<String>()
+    /** Account whose notes [_notes] holds; a tab cache is filed only for it (FeedModeCacheDisk.kt). */
+    internal var notesAccount: String? = null
     /** Account whose saved Discover / Popular are in [modeCaches]: FeedModeCacheDisk.kt */
     internal var savedModeCachesLoadedFor: String? = null
 

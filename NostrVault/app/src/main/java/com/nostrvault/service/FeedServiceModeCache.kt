@@ -15,6 +15,8 @@ internal data class ModeFeedCache(
     val capturedAtMs: Long,
     /** [currentFeedNotesKey] when the feed had finished loading, else null: the REQ resumes only from a full list. */
     val feedKey: String? = null,
+    /** The relays that answered the load [feedKey] stands for; only they resume. */
+    val feedRelays: Set<String> = emptySet(),
     /** Read back from disk after a relaunch (FeedModeCacheDisk.kt): kept for [FeedModeCaches.DISK_MAX_AGE_MS]. */
     val fromDisk: Boolean = false,
 )
@@ -35,9 +37,13 @@ internal class FeedModeCaches(private val now: () -> Long = System::currentTimeM
         noteStats: Map<String, NoteStats>,
         scores: Map<String, Double>,
         feedKey: String? = null,
+        feedRelays: Set<String> = emptySet(),
     ): ModeFeedCache? {
         if (notes.isEmpty()) return null
-        return ModeFeedCache(notes, noteStats, scores, now(), feedKey).also { caches[key] = it }
+        return ModeFeedCache(
+            notes, noteStats, scores, now(), feedKey,
+            feedRelays = if (feedKey != null) feedRelays else emptySet(),
+        ).also { caches[key] = it }
     }
 
     /** A feed saved before the relaunch; one filed since then is newer and stays. */
@@ -61,6 +67,13 @@ internal class FeedModeCaches(private val now: () -> Long = System::currentTimeM
     fun clear() = caches.clear()
 
     companion object {
+        /**
+         * The notes on screen belong to [active]: the account they were
+         * cleared for, or (before any switch) whoever is active, if anyone.
+         */
+        fun ownsNotes(notesAccount: String?, active: String): Boolean =
+            active.isNotEmpty() && (notesAccount == null || notesAccount == active)
+
         /** Older than this, a cached feed is dropped and the feed loads as before. */
         const val MAX_AGE_MS = 15 * 60 * 1000L
 
@@ -109,6 +122,10 @@ internal fun FeedService.modeCacheKey(mode: FeedMode): String {
 /** Keeps what [mode] showed, for a quick switch back. Call before the mode changes. */
 internal fun FeedService.captureModeCache(mode: FeedMode) {
     if (!FeedModeCaches.usesNotePipeline(mode) || _notes.value.isEmpty()) return
+    // Between the account flipping and clearInMemoryFeedState, the list is
+    // still the previous account's: never file it (or save it) under this one.
+    if (!FeedModeCaches.ownsNotes(notesAccount, nostrService.activeHexPubkey)) return
+    if (notesAccount == null) notesAccount = nostrService.activeHexPubkey
     // Until its result lands, Popular is showing the previous feed's notes.
     if (mode == FeedMode.POPULAR && (_isLoadingPopular.value || _popularNoteScores.value.isEmpty())) return
     val kept = FeedModeCaches.notesToKeep(_filteredNotes.value, _pendingNotes.value, _notes.value)
@@ -121,6 +138,7 @@ internal fun FeedService.captureModeCache(mode: FeedMode) {
         scores = _popularNoteScores.value,
         // Called before the mode changes, so this is still [mode]'s key.
         feedKey = feedNotesKey?.takeIf { it == currentFeedNotesKey() },
+        feedRelays = feedNotesRelays.toSet(),
     ) ?: return
     if (mode in FeedModeCacheDisk.MODES) saveModeCacheToDisk(key, cache)
 }
@@ -137,6 +155,8 @@ internal fun FeedService.restoreModeCache(mode: FeedMode): Long? {
         return null
     }
     feedNotesKey = cache.feedKey
+    feedNotesRelays.clear()
+    if (cache.feedKey != null) feedNotesRelays.addAll(cache.feedRelays)
     // A merge still running would publish the old list over this one.
     cancelMergeWorker()
     // A cache saved before a delete still holds the post.

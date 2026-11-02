@@ -105,13 +105,32 @@ class FeedServiceModeCacheTest {
         showFeed(note("a1", 1))
         feed.captureModeCache(FeedMode.GLOBAL)
         account = "bob"
+        // The list is bob's from here (clearInMemoryFeedState does this on a real switch).
+        feed.notesAccount = "bob"
         showFeed(note("b1", 1))
         feed.captureModeCache(FeedMode.GLOBAL)
 
         account = "alice"
+        feed.notesAccount = "alice"
         feed.restoreModeCache(FeedMode.GLOBAL)
         assertEquals(listOf("a1".padEnd(64, '0')), feed._notes.value.map { it.id })
         account = "bob"
+        feed.restoreModeCache(FeedMode.GLOBAL)
+        assertEquals(listOf("b1".padEnd(64, '0')), feed._notes.value.map { it.id })
+    }
+
+    @Test
+    fun `the old account's list is not filed under the new one before the reset`() {
+        showFeed(note("a1", 1))
+        feed.captureModeCache(FeedMode.DISCOVERY)
+        // The pubkey flips to bob; clearInMemoryFeedState has not run yet.
+        account = "bob"
+        feed.captureModeCache(FeedMode.GLOBAL)
+        assertNull(feed.restoreModeCache(FeedMode.GLOBAL))
+        // Once the reset has run, bob's own list is filed again.
+        feed.clearInMemoryFeedState()
+        showFeed(note("b1", 1))
+        feed.captureModeCache(FeedMode.GLOBAL)
         feed.restoreModeCache(FeedMode.GLOBAL)
         assertEquals(listOf("b1".padEnd(64, '0')), feed._notes.value.map { it.id })
     }

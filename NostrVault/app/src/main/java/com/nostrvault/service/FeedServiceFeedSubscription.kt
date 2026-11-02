@@ -69,7 +69,7 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         isInitialLoad = true
         // Frozen before any relay connects (FeedServiceResumeSince.kt).
         roundSinceSec = resumeSinceForRound()
-        roundEoseRelays.clear()
+        startResumeRound(relayUrls)
         _connectionStatus.value = "Connecting..."
         _connectionColor.value = "yellow"
 
@@ -216,6 +216,7 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
                         updateFeedConnectionStatus()
                         if (dialing) {
                             dialing = false
+                            notePrimaryRelayFailed(relayUrl)
                             val failures = (feedConnectFailures[relayUrl] ?: 0) + 1
                             feedConnectFailures[relayUrl] = failures
                             // The follows this relay was reaching get asked
@@ -359,7 +360,8 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
         val client = feedClients[relayUrl] ?: return
         val ownerHex = nostrService.activeHexPubkey
         // The list is this feed's through to its newest note: ask only for what came after.
-        val resumeSince = if (resume) roundSinceSec else null
+        // A relay that did not answer that round (new, or failed to connect) asks wide.
+        val resumeSince = if (resume && relayUrl in roundResumeRelays) roundSinceSec else null
 
         val filter = buildString {
             append("{\"kinds\":[${primaryFeedKinds()}]")

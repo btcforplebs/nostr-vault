@@ -24,12 +24,36 @@ class FeedSpeedTest {
     }
 
     @Test
-    fun `a round is complete only once every connected relay has answered`() {
-        assertFalse(FeedResumeSince.roundComplete(setOf("local"), setOf("local", "damus")))
-        assertTrue(FeedResumeSince.roundComplete(setOf("local", "damus"), setOf("local", "damus")))
-        // A relay that dropped after answering still counts; one that never connected does not hold it up.
-        assertTrue(FeedResumeSince.roundComplete(setOf("local", "damus"), setOf("local")))
-        assertFalse(FeedResumeSince.roundComplete(emptySet(), emptySet()))
+    fun `a round is complete only once every relay it started with has answered or failed`() {
+        val round = setOf("local", "damus", "nos")
+        // The local relay answers while the remotes still wait out their stagger: not complete.
+        assertFalse(FeedResumeSince.roundComplete(round, setOf("local"), emptySet()))
+        assertFalse(FeedResumeSince.roundComplete(round, setOf("local", "damus"), emptySet()))
+        assertTrue(FeedResumeSince.roundComplete(round, setOf("local", "damus", "nos"), emptySet()))
+        // A relay whose dial failed no longer holds the round open.
+        assertTrue(FeedResumeSince.roundComplete(round, setOf("local", "damus"), setOf("nos")))
+        // Nobody answered, or only a relay from another round: not complete.
+        assertFalse(FeedResumeSince.roundComplete(round, emptySet(), round))
+        assertFalse(FeedResumeSince.roundComplete(setOf("local"), setOf("old"), emptySet()))
+        assertFalse(FeedResumeSince.roundComplete(emptySet(), setOf("local"), emptySet()))
+    }
+
+    @Test
+    fun `notes are filed only for the account they belong to`() {
+        // Between the switch to B and the reset, the list is still A's.
+        assertFalse(FeedModeCaches.ownsNotes("aaaa", "bbbb"))
+        assertTrue(FeedModeCaches.ownsNotes("bbbb", "bbbb"))
+        // Before any switch, whoever is active; nobody when no account decodes.
+        assertTrue(FeedModeCaches.ownsNotes(null, "aaaa"))
+        assertFalse(FeedModeCaches.ownsNotes(null, ""))
+        assertFalse(FeedModeCaches.ownsNotes("aaaa", ""))
+    }
+
+    @Test
+    fun `resume relays are kept only with a resume key`() {
+        val relays = setOf("local", "damus")
+        assertEquals(relays, caches.put("me|DISCOVERY", listOf(note("a", 1)), emptyMap(), emptyMap(), "k", relays)!!.feedRelays)
+        assertEquals(emptySet<String>(), caches.put("me|DISCOVERY", listOf(note("a", 1)), emptyMap(), emptyMap(), null, relays)!!.feedRelays)
     }
 
     @Test
@@ -66,7 +90,7 @@ class FeedSpeedTest {
         val notes = (0 until 250).map { note("n$it-", 1_000L - it) }
         val stats = mapOf(notes[0].id to NoteStats(), "gone".padEnd(64, '0') to NoteStats())
         val scores = mapOf(notes[0].id to 3.5, notes[249].id to 1.0)
-        val cache = ModeFeedCache(notes, stats, scores, capturedAtMs = 42L, feedKey = "me|POPULAR#1")
+        val cache = ModeFeedCache(notes, stats, scores, capturedAtMs = 42L, feedKey = "me|POPULAR#1", feedRelays = setOf("local"))
         val json = Json { ignoreUnknownKeys = true }
         val text = json.encodeToString(DiskModeCache.serializer(), FeedModeCacheDisk.toDisk(cache))
         val back = FeedModeCacheDisk.fromDisk(json.decodeFromString(DiskModeCache.serializer(), text))
@@ -76,6 +100,7 @@ class FeedSpeedTest {
         assertEquals(mapOf(notes[0].id to 3.5), back.popularNoteScores)
         assertEquals(42L, back.capturedAtMs)
         assertEquals("me|POPULAR#1", back.feedKey)
+        assertEquals(setOf("local"), back.feedRelays)
         assertTrue(back.fromDisk)
     }
 

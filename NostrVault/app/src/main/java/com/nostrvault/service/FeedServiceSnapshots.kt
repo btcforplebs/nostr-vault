@@ -153,6 +153,8 @@ import com.nostrvault.service.FeedService.Companion.AVATAR_PREWARM_COUNT
         modeCaches.clear()
         savedModeCachesLoadedFor = null
         forgetFeedNotesKey()
+        // The list is emptied for this account: what fills it from here is its own.
+        notesAccount = nostrService.activeHexPubkey.ifEmpty { null }
         _notes.value = emptyList()
         _pendingNotes.value = emptyList()
         _noteStats.value = emptyMap()
