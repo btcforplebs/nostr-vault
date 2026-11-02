@@ -1,7 +1,11 @@
 /* The desktop layout, 760px and up (src/desktop). Two columns (Logen, 2026-11-02): on the left the app as on the iPhone,
    its sections in a bar on top and one page at a time under it; on the right, from 1024px, "Your space" (space.css).
    Each part scrolls on its own; the page itself never scrolls. */
-.desk-app { --bar-h: 56px; --dock-w: 0px; padding-bottom: 0; height: 100dvh; overflow: hidden; }
+.desk-app { --bar-h: 56px; --dock-w: 0px; height: 100dvh; overflow: hidden; overflow: clip; }
+/* Two classes so it beats app.css's .app, which loads later: the phone's room for its tab bar (144px) made the page
+   144px taller than the window, and a focus or scrollIntoView near the bottom scrolled the whole layout up under the
+   window's top edge, bar and all. overflow: clip (not hidden) also means nothing can scroll this box. */
+.app.desk-app { padding-bottom: 0; }
 .desk-app:has(.desk.space) { --dock-w: 380px; }
 .desk-app:has(.desk.space.folded) { --dock-w: 56px; }
 .desk { display: grid; grid-template-columns: minmax(0, 1fr) var(--dock-w); height: 100dvh; }
@@ -269,3 +273,7 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 .desk-split.single .desk-back button { transform: translate(var(--gutter), 9px); }
 .desk-split.single .desk-detail > .desk-pane > .screen > .screen-head, .desk-split.single .desk-detail > .desk-pane > .desk-detail-head {
   padding-left: max(calc(var(--measure-pad) + var(--gutter)), 100px); }
+
+/* The compact row's photo opens full size on a wide window (desktop/ThumbOpen.jsx): a button that looks like the photo. */
+.condensed-open { padding: 0; border: 0; background: none; min-height: 0; min-width: 0; cursor: zoom-in; }
+.condensed-open:hover img { filter: brightness(1.08); }

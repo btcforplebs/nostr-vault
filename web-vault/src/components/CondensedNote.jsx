@@ -13,6 +13,7 @@ import { ago } from "./time.js"
 import { mediaType, mediaUrls, tileNote } from "../net/media.js"
 import { imageItem } from "../net/note-media.js"
 import { MediaImage } from "./MediaImage.jsx"
+import { ThumbOpen, thumbOpens } from "../desktop/ThumbOpen.jsx"
 import { gateIds } from "../net/actions.js"
 import { rememberNote } from "../desktop/noteIndex.js"
 import { replyRefs, repostedId } from "../net/thread.js"
@@ -120,7 +121,7 @@ function Row({ event, note, placeholder, depth = 0, lines, card = false, onOpen 
         {!parts.length && !media.length && !links.length && <p class="condensed-text muted">(no text)</p>}
         {links.length > 0 && <span class="condensed-link"><LinkIcon />{domainOf(links[0])}{links.length > 1 && <b>+{links.length - 1}</b>}</span>}
       </div>
-      {media.length > 0 && <Thumb url={media[0]} note={note} more={media.length - 1} big={root} />}
+      {media.length > 0 && <Thumb url={media[0]} note={note} more={media.length - 1} big={root} media={media} />}
     </div>
   )
 }
@@ -156,9 +157,11 @@ function label(note, depth) {
 
 // A photo whose server lost it, or a .fips one, comes from the author's mesh vault (MediaImage), as in the note.
 // The whole photo at its own shape in the top right of the square, not a cropped square (Logen 11-01; iOS
-// CondensedMediaThumbnail); the +N badge sits on the photo.
-export function Thumb({ url, note, more, big }) {
+// CondensedMediaThumbnail); the +N badge sits on the photo. On a wide window a click on the photo opens it full size
+// (desktop/ThumbOpen.jsx); on a phone the row's tap opens the thread, as on the iPhone.
+export function Thumb({ url, note, more, big, media = [url] }) {
   const video = mediaType(url) === "video"
+  if (!video && thumbOpens()) return <ThumbOpen media={media} note={note} more={more} big={big} />
   return (
     <span class={`condensed-thumb${big ? " big" : ""}`} aria-hidden="true">
       {video ? <span class="condensed-play">▶</span> : (

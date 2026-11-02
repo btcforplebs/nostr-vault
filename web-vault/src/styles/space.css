@@ -6,7 +6,9 @@
 .sp-btn { display: inline-grid; place-items: center; width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 0;
   border: 0; border-radius: 9px; background: none; color: var(--text-2); }
 .sp-btn:hover { background: var(--s2); color: var(--text); }
-.sp-panels { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+.sp-panels { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 12px; overflow-y: auto; overscroll-behavior: contain; }
+/* On a short window the panels scroll in the column instead of Live Vault being squeezed to its header. */
+.sp-panel.live-vault { min-height: 220px; }
 
 /* A panel: a card with its own header; the list inside scrolls, the header stays. */
 .sp-panel { display: flex; flex-direction: column; min-height: 0; max-height: 100%; border-radius: 14px; background: var(--s1);

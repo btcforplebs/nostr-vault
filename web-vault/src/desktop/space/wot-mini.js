@@ -10,17 +10,23 @@ export const NEW_FACES = 6
 export const NEW_FOR_S = 7 * 86400
 /** Newcomers kept at most (newest first). */
 export const NEW_KEPT = 40
-/** Of your follows, the share whose lists may still be missing for the web to count as mapped: a web built from part
- *  of the lists has people missing, who would come back later as "new". */
-export const MAPPED_SHARE = 0.1
+/** Of your follows, the share whose lists may still be unsettled (on their way, or cut off and due again) for the web
+ *  to count as mapped: a web built from part of the lists has people missing, who would come back later as "new".
+ *  Lists a relay doesn't have (wot.js known misses) don't count: they won't come. */
+export const MAPPED_SHARE = 0.02
+/** Asks again for lists that were cut off at most this many times, RETRY_MS apart. */
+export const MAP_ROUNDS = 3
 /** Vouched people drawn on the little globe at most (the follows are all drawn). */
 export const GLOBE_OUTER = 400
 
 /** The first 8 hex characters of a key: enough to tell a few thousand people apart, a quarter of the room. */
 const short = pk => pk.slice(0, 8)
 
-/** Is the web built from enough of the follows' lists to say who is new? */
-export const mapped = (follows, missing) => follows > 0 && missing <= Math.floor(follows * MAPPED_SHARE)
+/** Is the web built from enough of the follows' lists to say who is new? `unsettled`: wot.js unsettledLists. */
+export const mapped = (follows, unsettled) => follows > 0 && unsettled <= Math.floor(follows * MAPPED_SHARE)
+
+/** The panel's line while the web loads: "Loading your web: 640 of 1,054 follows' lists". */
+export const loadingText = (have, follows) => `Loading your web: ${have.toLocaleString()} of ${follows.toLocaleString()} follows' lists`
 
 /**
  * Who is new among `vouched` (the web's extended layer, most linked first), against what this browser kept `kept`

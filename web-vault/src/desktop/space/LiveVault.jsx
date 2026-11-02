@@ -10,7 +10,7 @@ import { verb } from "../../screens/VaultScreen.jsx"
 import { lineHref } from "../../net/notify-watch.js"
 import { readSeen, writeSeen, markSeen } from "../../net/vault-new.js"
 import { useVaultLines } from "./useVaultLines.js"
-import { snapshot, splitShown, topFaces, pillCount, rowText, MAX_ROWS } from "./live-vault.js"
+import { snapshot, splitShown, topFaces, pillCount, rowText, facesText, MAX_ROWS } from "./live-vault.js"
 import { Icon, ICON } from "../Sidebar.jsx"
 
 export function LiveVault({ ctx }) {
@@ -21,7 +21,9 @@ export function LiveVault({ ctx }) {
   const [shown, setShown] = useState(null)
   useEffect(() => { if (lines && fetched && shown === null) setShown(snapshot(lines)) }, [lines, fetched])
   const list = useRef()
-  const trusted = pk => pk === me || ctx.account.follows.includes(pk) // whose picture may load, as in the Vault list
+  // Every row's picture loads here (Logen, 2026-11-02 polish): these are people who just liked, replied to, zapped or
+  // followed you. The Vault list itself still waits on a stranger's picture.
+  const trusted = () => true
   const { rows, held } = !lines ? { rows: [], held: [] } : shown ? splitShown(lines, shown) : { rows: lines.slice(0, MAX_ROWS), held: [] }
   const pill = pillCount(unread.size, held.length)
   const news = lines ? lines.filter(r => unread.has(r.id)) : []
@@ -42,8 +44,7 @@ export function LiveVault({ ctx }) {
       {faces.length > 0 && (
         <div class="sp-faces" aria-hidden="true">
           {faces.map(pk => <Avatar key={pk} pubkey={pk} size={30} load={trusted(pk)} />)}
-          {more > 0 && <span class="sp-more">+{more}</span>}
-          <span class="sp-faces-text">{news.length ? "New since you looked" : "Latest"}</span>
+          <span class="sp-faces-text">{facesText(faces.length + more, news.length > 0)}</span>
         </div>
       )}
       <ul class="sp-rows" ref={list}>

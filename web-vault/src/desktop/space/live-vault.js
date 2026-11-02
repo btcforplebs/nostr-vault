@@ -36,6 +36,9 @@ export function topFaces(lines, n = TOP_FACES) {
   return { faces: all.slice(0, n), more: Math.max(0, all.length - n) }
 }
 
+/** What the faces on top stand for: "84 people since you looked", "12 people lately" (the "+79" alone said nothing). */
+export const facesText = (people, news) => `${people.toLocaleString()} ${people === 1 ? "person" : "people"} ${news ? "since you looked" : "lately"}`
+
 /** The pill's count: lines newer than the last look, else the ones waiting to be drawn; 0 hides it. */
 export const pillCount = (unread, held) => (unread > 0 ? unread : held)
 

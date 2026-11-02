@@ -8,11 +8,11 @@ import { Avatar } from "../../components/Avatar.jsx"
 import { AuthorName } from "../../components/NoteCard.jsx"
 import { useBlocks } from "../../components/useBlocks.js"
 import { WOT_GLOBE } from "../../components/wot-glyph.js"
-import { followLists, missingLists, buildWeb, layerCounts } from "../../net/wot.js"
+import { followLists, missingLists, unsettledLists, buildWeb, layerCounts, RETRY_MS } from "../../net/wot.js"
 import { fetchProfiles } from "../../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../../net/pool.js"
 import { MiniGlobe } from "./MiniGlobe.jsx"
-import { newInWeb, readKept, writeKept, mapped, vouchText, globePoints, NEW_FACES } from "./wot-mini.js"
+import { newInWeb, readKept, writeKept, mapped, loadingText, vouchText, globePoints, NEW_FACES, MAP_ROUNDS } from "./wot-mini.js"
 import { Icon } from "../Sidebar.jsx"
 import "../../styles/wot-mini.css"
 
@@ -22,15 +22,29 @@ export function WotMini({ ctx }) {
   const key = `${me}:${follows.length}:${follows[0] ?? ""}:${follows.at(-1) ?? ""}`
   const { blocked } = useBlocks(ctx)
   const [lists, setLists] = useState(null)
-  const [missing, setMissing] = useState(0)
+  const [unsettled, setUnsettled] = useState(0) // lists cut off, not known to be missing (wot.js unsettledLists)
+  const [have, setHave] = useState(0) // follows' lists in so far, for the loading line
+  const [gaveUp, setGaveUp] = useState(false)
   useEffect(() => {
     if (!follows.length) return
-    let live = true
-    followLists(me, follows).then(l => { if (live) { setLists(l); setMissing(missingLists(follows)) } }).catch(() => {})
-    return () => { live = false }
+    let live = true, round = 0, timer
+    // How far the lists have got, read once a second while they come in.
+    const poll = setInterval(() => setHave(follows.length - missingLists(follows)), 1000)
+    // Lists cut off are asked for again, RETRY_MS apart, a few times: a web built from part of them would call people
+    // "new" later who only came back with their bridge's list.
+    const go = () => followLists(me, follows).then(l => {
+      if (!live) return
+      const left = unsettledLists(follows)
+      setLists(l); setUnsettled(left); setHave(l.size)
+      if (mapped(follows.length, left)) clearInterval(poll)
+      else if (++round < MAP_ROUNDS) timer = setTimeout(go, RETRY_MS + 1000)
+      else { clearInterval(poll); setGaveUp(true) }
+    }).catch(() => {})
+    go()
+    return () => { live = false; clearInterval(poll); clearTimeout(timer) }
   }, [key])
   const web = useMemo(() => (lists ? buildWeb(me, follows, lists, { blocked }) : null), [lists, blocked])
-  const ready = !!web && mapped(follows.length, missing)
+  const ready = !!web && mapped(follows.length, unsettled)
 
   // Who is new, worked out once per web and kept for the next look.
   const fresh = useMemo(() => {
@@ -49,8 +63,8 @@ export function WotMini({ ctx }) {
 
   const status = !ctx.account.loaded ? "Loading your follows…"
     : !follows.length ? "Follow someone to see your web: it's built from the people you follow and who they follow."
-    : !web ? "Mapping your web…"
-    : !ready ? "Part of your web is still missing. New people show here once it's all in."
+    : gaveUp && !ready ? `${unsettled.toLocaleString()} of your follows' lists didn't arrive. New people show here once they do.`
+    : !ready ? `${loadingText(have, follows.length)}…`
     : null
   return (
     <section class="sp-panel wot-mini" aria-label="Web of Trust">

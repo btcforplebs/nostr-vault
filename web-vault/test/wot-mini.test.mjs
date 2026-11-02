@@ -3,7 +3,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { newInWeb, readKept, writeKept, mapped, globePoints, turn, vouchText, NEW_FOR_S, NEW_KEPT, GLOBE_OUTER } from "../src/desktop/space/wot-mini.js"
+import { newInWeb, readKept, writeKept, mapped, loadingText, globePoints, turn, vouchText, NEW_FOR_S, NEW_KEPT, GLOBE_OUTER } from "../src/desktop/space/wot-mini.js"
 
 const pk = (n, c = "a") => n.toString(16).padStart(8, "0") + c.repeat(56)
 const store = () => { const m = new Map(); return { m, getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)) } }
@@ -50,10 +50,19 @@ test("kept per account under a key signing out wipes, and a broken value reads a
   assert.equal(readKept(ME, undefined), null)
 })
 
-test("new people are only worked out once nearly all the follows' lists are in", () => {
+test("new people are only worked out once nearly every list has come or is known not to exist", () => {
   assert.equal(mapped(0, 0), false)
-  assert.equal(mapped(100, 10), true)
-  assert.equal(mapped(100, 11), false)
+  assert.equal(mapped(1054, 21), true, "2% still on their way is fine")
+  assert.equal(mapped(1054, 22), false)
+  assert.equal(mapped(100, 0), true)
+  assert.equal(loadingText(640, 1054), "Loading your web: 640 of 1,054 follows' lists")
+})
+
+test("the panel says how far the web has loaded and hides New in your web until it is ready", () => {
+  const src = readFileSync(new URL("../src/desktop/space/WotMini.jsx", import.meta.url), "utf8")
+  assert.match(src, /!ready \? `\$\{loadingText\(have, follows\.length\)\}…`/)
+  assert.match(src, /\{status \? <p class="wm-note">\{status\}<\/p>/, "the faces only show with no status line")
+  assert.match(src, /mapped\(follows\.length, unsettledLists\(follows\)\)|const left = unsettledLists\(follows\)/)
 })
 
 test("the globe draws every follow, up to GLOBE_OUTER vouched people, and every new one", () => {

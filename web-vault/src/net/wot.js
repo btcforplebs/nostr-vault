@@ -139,6 +139,9 @@ async function refreshLists(cache, follows, { relays, query, keep, reachable, no
 
 /** How many of these follows' lists haven't come back (the Web tab says so, and offers to ask again). */
 export const missingLists = (follows, slot = "home") => uniq(follows).filter(pk => !caches[slot].lists.has(pk)).length
+/** Of those, the ones not known to be missing: still on their way, or cut off and due to be asked again after
+ *  RETRY_MS. A relay that has no list for someone (a known miss) doesn't count: asking again won't bring it. */
+export const unsettledLists = (follows, slot = "home") => uniq(follows).filter(pk => !caches[slot].lists.has(pk) && !caches[slot].missed.has(pk)).length
 
 const followedBy = ev => uniq((ev?.tags ?? []).filter(t => t[0] === "p" && HEX64.test(t[1] ?? "")).map(t => t[1]))
 
