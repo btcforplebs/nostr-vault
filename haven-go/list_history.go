@@ -23,8 +23,9 @@ var listsDB DBBackend
 const (
 	// Versions kept per list (account, kind, d).
 	listHistoryKeep = 20
-	// Shrinks kept beyond that, at most: each the version from just before
-	// it and the shrink itself.
+	// Wipes whose lists are kept beyond that, at most, newest first. Each
+	// keeps up to three versions: the wipe, the version just before it and
+	// the largest list since the wipe before (listHistoryToDrop).
 	listHistoryPinnedMax = 5
 	// Enough for every version of one list, under every store's MaxLimit.
 	listHistoryQueryLimit = 1000
@@ -147,15 +148,20 @@ func recordListVersion(ctx context.Context, store DBBackend, evt *nostr.Event) e
 }
 
 // listHistoryToDrop picks, from one list's versions newest first, the ones
-// retention lets go: everything but the newest listHistoryKeep, except a
-// version that a newer one shrank (listShrank, against every newer version,
-// not only the next: a late older copy filed in between can't move the pin)
-// and that no newer version still holds (listHolds: restored or rebuilt,
-// not merely refilled to the same size). That one stays pinned, together
-// with the nearest shrink (so the wipe can still be seen). Versions a later
-// edit still held are not pinned, so a wipe pins the last list(s) before
-// it, not every older edit. At most listHistoryPinnedMax, newest first, so
-// repeated wipes can't grow the store without end.
+// retention lets go: everything but the newest listHistoryKeep, except what
+// a wipe pins. A wipe is a version that shrank the one just before it
+// (listShrank against its neighbour, as the apps see it), so a slow tidy over
+// many small edits is not one. Each wipe pins at most two versions, each only
+// while no newer version holds all its items (listHolds: restored or rebuilt,
+// not merely refilled), together with the wipe itself so it can still be
+// seen:
+//   - the version just before it;
+//   - the largest version since the wipe before it that it shrank. A late,
+//     older copy filed between the list and the wipe becomes the neighbour,
+//     so without this the list it displaced would be let go.
+//
+// At most listHistoryPinnedMax wipes, newest first, so repeated wipes can't
+// grow the store without end (20 + 15 versions per list at most).
 func listHistoryToDrop(versions []*nostr.Event) []*nostr.Event {
 	keep := map[string]bool{}
 	for i := 0; i < len(versions) && i < listHistoryKeep; i++ {
@@ -165,31 +171,51 @@ func listHistoryToDrop(versions []*nostr.Event) []*nostr.Event {
 	for i, v := range versions {
 		items[i] = listItems(v)
 	}
-	pinned := 0
-	for i := 1; i < len(versions) && pinned < listHistoryPinnedMax; i++ {
-		v := versions[i]
-		shrink := -1
-		for j := i - 1; j >= 0; j-- { // nearest newer version that shrank it
-			if listShrank(v, versions[j]) {
-				shrink = j
-				break
-			}
-		}
-		if shrink < 0 {
-			continue
-		}
-		held := false
+	unheld := func(i int) bool {
 		for k := 0; k < i; k++ {
-			if listHolds(versions[k], items[k], items[i], v) {
-				held = true
-				break
+			if listHolds(versions[k], items[k], items[i], versions[i]) {
+				return false
 			}
 		}
-		if held {
-			continue
+		return true
+	}
+	var wipes []int
+	for w := 0; w+1 < len(versions); w++ {
+		if listShrank(versions[w+1], versions[w]) {
+			wipes = append(wipes, w)
 		}
-		keep[v.ID] = true
-		keep[versions[shrink].ID] = true
+	}
+	pinned := 0
+	for n, w := range wipes {
+		if pinned >= listHistoryPinnedMax {
+			break
+		}
+		// This wipe's span: back to the wipe before it, not including it.
+		end := len(versions)
+		if n+1 < len(wipes) {
+			end = wipes[n+1]
+		}
+		var pins []int
+		if unheld(w + 1) {
+			pins = append(pins, w+1)
+		}
+		largest := -1
+		for i := w + 2; i < end; i++ {
+			if listShrank(versions[i], versions[w]) && unheld(i) &&
+				(largest < 0 || listItemCount(versions[i]) > listItemCount(versions[largest])) {
+				largest = i
+			}
+		}
+		if largest >= 0 {
+			pins = append(pins, largest)
+		}
+		if len(pins) == 0 {
+			continue // restored
+		}
+		keep[versions[w].ID] = true
+		for _, i := range pins {
+			keep[versions[i].ID] = true
+		}
 		pinned++
 	}
 	var drop []*nostr.Event

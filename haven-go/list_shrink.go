@@ -157,7 +157,10 @@ func listItems(ev *nostr.Event) map[string]struct{} {
 // listHolds reports whether ev still holds everything in than: every public
 // item and, for an encrypted list, at least as long a content. Only then is
 // a version pinned before a wipe let go (restored, or rebuilt by hand). A
-// list refilled to the same size with other items does not count.
+// list refilled to the same size with other items does not count. The
+// vault can't read an encrypted part, so there a newer content at least as
+// long counts as holding it: a refill of the private part to the same
+// length lets the pin go.
 func listHolds(ev *nostr.Event, evItems, thanItems map[string]struct{}, than *nostr.Event) bool {
 	for k := range thanItems {
 		if _, ok := evItems[k]; !ok {

@@ -429,3 +429,46 @@ func TestListHistoryLateCopyDoesNotMoveThePin(t *testing.T) {
 		f.mustKeep(full, "a late 11-item copy arrived")
 	})
 }
+
+// A slow tidy after a wipe pins nothing of its own, so it can't push the
+// wipe's list out of the 5 pins (Tron, PR 1567 re-check, case 1).
+func TestListHistoryTidyAfterAWipeKeepsThePin(t *testing.T) {
+	forEachHistoryBackend(t, func(t *testing.T, f *listHistoryFixture) {
+		full := f.bookmarks(20, 0)
+		f.publish(full, f.bookmarks(0, 1))
+		minute := 2
+		for n := 40; n >= 9; n-- { // rebuilt with other items, then removed one at a time
+			f.publish(f.bookmarksFrom(100, n, minute))
+			minute++
+		}
+		for i := 0; i < 10; i++ {
+			f.publish(f.bookmarksFrom(100, 9, minute))
+			minute++
+		}
+		f.mustKeep(full, "a tidy from 40 down to 9")
+	})
+}
+
+// A second wipe after a few swaps pins at most two lists, so the first
+// wipe's list stays (Tron, PR 1567 re-check, case 2).
+func TestListHistorySecondWipeKeepsTheFirstPin(t *testing.T) {
+	forEachHistoryBackend(t, func(t *testing.T, f *listHistoryFixture) {
+		full := f.bookmarks(20, 0)
+		f.publish(full, f.bookmarks(0, 1))
+		minute := 2
+		for i := 0; i < 6; i++ { // rebuilt with 12, swapping one item each time
+			f.publish(f.bookmarksFrom(100+i, 12, minute))
+			minute++
+		}
+		f.publish(f.bookmarks(0, minute))
+		minute++
+		for i := 0; i < 25; i++ {
+			f.publish(f.bookmarksFrom(200, 1+i%2, minute))
+			minute++
+		}
+		f.mustKeep(full, "a second wipe after six swaps")
+		if got := len(f.versionIDs(10003, "")); got > listHistoryKeep+2*3 {
+			t.Fatalf("%d versions kept, want at most %d", got, listHistoryKeep+6)
+		}
+	})
+}
