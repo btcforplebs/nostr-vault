@@ -26,7 +26,12 @@ internal fun PendingDeepLinkEffect(
         // mention of a second identity does not open under the first.
         target.accountNpub
             ?.takeIf { it != configStore.config.value.activeOrOwnerNpub() }
-            ?.let { configStore.switchActiveAccount(it) }
+            ?.let {
+                configStore.switchActiveAccount(it)
+                // Same "Switched to <name>" bubble as opening a Vault line.
+                configStore.activeAccountHexPubkey.value.takeIf { hex -> hex.isNotEmpty() }
+                    ?.let { hex -> com.nostrvault.ui.components.AccountSwitchFlash.show(hex) }
+            }
         if (target.mediaPaste) PendingMediaPaste.request()
         // The Vault tab opens on the half the link names: Media for the
         // gallery and Magic Paste, the relay's lists for a post. A tap naming

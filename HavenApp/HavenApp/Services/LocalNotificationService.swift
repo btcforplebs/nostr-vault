@@ -632,6 +632,10 @@ final class LocalNotificationService {
             : ConfigService.shared.config.activeAccountNpub
         if let npub, !npub.isEmpty, npub != currentNpub {
             ConfigService.shared.switchActiveAccount(to: npub)
+            #if os(iOS)
+            // Same "Switched to <name>" bubble as opening a Vault line.
+            if let hex = Bech32.decode(npub)?.hexString { AccountSwitchFlash.shared.show(hex: hex) }
+            #endif
         }
         #if os(iOS)
         // A post opens straight away in the Feed tab's thread view, from the

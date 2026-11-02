@@ -34,7 +34,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                !recipientHex.isEmpty,
                let hexData = Data(hexString: recipientHex),
                let npub = Bech32.encode(hrp: "npub", data: hexData) {
+                let wasOther = recipientHex.lowercased() != ConfigService.shared.activeAccountHexPubkey.lowercased()
                 ConfigService.shared.switchActiveAccount(to: npub)
+                // Same "Switched to <name>" bubble as opening a Vault line.
+                if wasOther { AccountSwitchFlash.shared.show(hex: recipientHex) }
             }
 
             switch action.eventKind {
