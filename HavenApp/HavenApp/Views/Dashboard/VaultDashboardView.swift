@@ -32,6 +32,7 @@ struct VaultDashboardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 statusCard
+                ListWipeBanner()
                 safetySection
                 reachSection
                 VaultContentsSection(model: contents)
@@ -366,6 +367,15 @@ struct VaultDashboardView: View {
                 state: followingBackup.snapshots.isEmpty ? .todo : .done
             ) {
                 FollowingBackupSettingsView().settingsPage("Following Backup")
+            }
+            DashboardDivider()
+            DashboardRowLink(
+                icon: "clock.arrow.circlepath",
+                title: "List backups",
+                detail: "Your vault keeps old versions of every list and your profile.",
+                state: .info
+            ) {
+                ListBackupView().settingsPage("List backups")
             }
             DashboardDivider()
             DashboardRowLink(

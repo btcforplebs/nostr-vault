@@ -109,8 +109,10 @@ final class ListSaveRulesTests: XCTestCase {
                 rest = tail[end...]
             }
         }
+        // NostrService+ListRestore.swift: a restore from the vault's list history.
         XCTAssertEqual(sites.sorted(), ["FeedService+Follow.swift", "NostrService+ListPublishing.swift",
-                                        "NostrService+ListPublishing.swift", "NostrService+ListPublishing.swift"])
+                                        "NostrService+ListPublishing.swift", "NostrService+ListPublishing.swift",
+                                        "NostrService+ListRestore.swift"])
         let interests = try String(contentsOf: app.appendingPathComponent("Services/InterestListService.swift"), encoding: .utf8)
         XCTAssertTrue(interests.contains("InterestList.saveBase(") && interests.contains("own: NostrService.ownListRelays(for: hex)"),
                       "the interest list's save base names the own relays")

@@ -1,6 +1,7 @@
 package com.nostrvault.ui.screens.dashboard
 
 import androidx.compose.foundation.clickable
+import com.nostrvault.ui.screens.settings.listbackup.ListShrinkBanner
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +20,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Laptop
@@ -210,6 +212,9 @@ internal fun VaultDashboardContent(
             onForceRestart = { RelayForegroundService.forceRestart(context) },
         )
 
+        // A list another app (or this one) just wiped, from the vault's history.
+        ListShrinkBanner()
+
         // ── Is it safe? ────────────────────────────────────────
         val backupAt = history.notesBackup
         DashSection(
@@ -230,6 +235,14 @@ internal fun VaultDashboardContent(
                 detail = VaultDashboardModel.followListDetail(followSavedAt, now),
                 state = if (followSavedAt == null) RowState.TODO else RowState.DONE,
                 onClick = { onOpenScreen(Screen.FollowingBackup) },
+            )
+            DashDivider()
+            DashRowLink(
+                icon = Icons.Filled.History,
+                title = "List backups",
+                detail = "Your vault keeps old versions of every list and your profile.",
+                state = RowState.INFO,
+                onClick = { onOpenScreen(Screen.ListBackup) },
             )
             DashDivider()
             DashRowLink(
