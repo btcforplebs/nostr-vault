@@ -301,6 +301,7 @@
 		309A02659B324862A4C40D5F /* FeedNoteSkeletonRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98D86B19A51EEB1A211A1F3 /* FeedNoteSkeletonRow.swift */; };
 		309B32F737870929628309E8 /* NostrService+RelayListSave.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3418518C726F177780E29385 /* NostrService+RelayListSave.swift */; };
 		30D8A68AB9D5370D2047AD1D /* ZapService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6DAA5E7383F9175577A61C7 /* ZapService.swift */; };
+		31409DF40877139C30BAAF30 /* MacModeComposeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDC471CDEB623A380FC45C62 /* MacModeComposeButton.swift */; };
 		31678CD3AA73D9AE222E8179 /* NWCService+PayInvoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = F720A3057EBF19D5EE421C52 /* NWCService+PayInvoice.swift */; };
 		317391DCBA9DF606C5BD6011 /* HavenApp_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D1A35E8F156B18C3269D943 /* HavenApp_iOS.swift */; };
 		317F503A1708A580ED8FF693 /* PopularRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F0C028D1E2DC57C43CED675 /* PopularRanking.swift */; };
@@ -1104,6 +1105,7 @@
 		B139C60064CD42C867B118AA /* VaultFollowers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A58EA5A96FF1042528234F /* VaultFollowers.swift */; };
 		B1B790EA826AFAA926ADC444 /* BlossomService+Delete.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FBEF0271AE2E33206E9750E /* BlossomService+Delete.swift */; };
 		B1FB09DF1783A4326584D426 /* ComposeView+Chrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6EE10E9C93BC7D32CD6D065 /* ComposeView+Chrome.swift */; };
+		B214FDD53C7C0AD906BCEC1B /* MacModeComposeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDC471CDEB623A380FC45C62 /* MacModeComposeButton.swift */; };
 		B2473820C7E6731993675705 /* NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 118DA8971CC8566F3783F1EE /* NowPlayingView.swift */; };
 		B2560F4961E6746935CE3E8E /* TutorialContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 451C1EC5891AAECA7401505F /* TutorialContent.swift */; };
 		B269F0CA9A5435B3EA0A9922 /* BlossomDashboardMirrors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD2828F9DD6C5EB7FA5ADE4 /* BlossomDashboardMirrors.swift */; };
@@ -2506,6 +2508,7 @@
 		FD57608996E7CA8D632A0147 /* TutorialProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialProgress.swift; sourceTree = "<group>"; };
 		FD9D44519AE3AFB7DF22C301 /* LiveNoteCleanup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveNoteCleanup.swift; sourceTree = "<group>"; };
 		FDB08989DAA08A101C01CEC2 /* NoteTranslation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteTranslation.swift; sourceTree = "<group>"; };
+		FDC471CDEB623A380FC45C62 /* MacModeComposeButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacModeComposeButton.swift; sourceTree = "<group>"; };
 		FE2060B412DD17816F0495D8 /* MediaItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaItem.swift; sourceTree = "<group>"; };
 		FE65F95458326DF0C43FCEAC /* FilterButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterButton.swift; sourceTree = "<group>"; };
 		FEC8D69A1DD319E0BBC022F1 /* MediaDateGrouping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaDateGrouping.swift; sourceTree = "<group>"; };
@@ -3537,6 +3540,7 @@
 				7BE7C8BF88EE91C6E05CD3DF /* GlobalFeedEmptyState.swift */,
 				0FC58BB54728488999244E19 /* HighlightInlineBody.swift */,
 				68B2994F2A95D651708846D6 /* IdentifiableString.swift */,
+				FDC471CDEB623A380FC45C62 /* MacModeComposeButton.swift */,
 				9CB1418A113C8C037133410C /* NewPostsFold.swift */,
 				0FD61246C5617D0FAF9A4D5F /* PopularRankControls.swift */,
 				E13000616CA698B02FE82B9A /* QuotedNoteSkeleton.swift */,
@@ -4487,6 +4491,7 @@
 				C2B745C62BE0ABD77308B82F /* LongFormPreviewSection.swift in Sources */,
 				C696526E01A20FFAFD69FEC8 /* MacFipsMeshService.swift in Sources */,
 				AAFF0C3ABA9668AE9FC3E94C /* MacFipsMeshSettingsView.swift in Sources */,
+				B214FDD53C7C0AD906BCEC1B /* MacModeComposeButton.swift in Sources */,
 				21B7CF7CF4861D17CFDB2A1B /* MacRelayDomainSettingsView.swift in Sources */,
 				1790AE2C685C35F4DE2198A5 /* MacRelaySettingsView.swift in Sources */,
 				D63FFB1B0B8C7246DA32939B /* MacRelaySyncStatusView.swift in Sources */,
@@ -5310,6 +5315,7 @@
 				43E57289E37F9E02582EB8D9 /* LongFormPreviewSection.swift in Sources */,
 				DADD47CE66A0FE71FD19A897 /* MacFipsMeshService.swift in Sources */,
 				E39D3F9F80B7ED124F5AE5FA /* MacFipsMeshSettingsView.swift in Sources */,
+				31409DF40877139C30BAAF30 /* MacModeComposeButton.swift in Sources */,
 				DFFC01343DA4371437214187 /* MacRelayDomainSettingsView.swift in Sources */,
 				959AA396A3577E7A92167500 /* MacRelaySettingsView.swift in Sources */,
 				BB5C8F527ABD9F6C8C1D96CB /* MacRelaySyncStatusView.swift in Sources */,
