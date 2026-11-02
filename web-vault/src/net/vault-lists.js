@@ -262,19 +262,28 @@ function dedupe(evs) {
 /** Events per read of Haven's stores. A full page means older ones may be left: readOlder asks for them. */
 export const READ_PAGE = 500
 
+/** How far ahead of this device's clock an event may be dated, as the apps and the relay (haven-go future_events.go,
+ *  #1572). One dated later (a wrong clock) would top the newest-first lists, and a top-up asking "newer than the
+ *  newest held" would ask for the future and get nothing more: the Vault froze that way (Logen 11-02). */
+export const FUTURE_SKEW = 600
+export const isFuture = (ev, now = nowSec()) => ev?.created_at > now + FUTURE_SKEW
+const present = (evs, now = nowSec()) => evs.filter(e => !isFuture(e, now))
+/** A `since` never later than the clock allows, so a stray future date can't hold new events back. */
+export const clampSince = (since, now = nowSec()) => since ? Math.min(since, now + FUTURE_SKEW - 60) : since
+
 const untilOf = until => until ? { until } : {}
-const sinceOf = since => since ? { since } : {}
+const sinceOf = since => since ? { since: clampSince(since) } : {}
 
 /** The user's own events the lists draw from, from Haven's outbox: the newest page, or the page before `until`. */
 export async function readOwn(vault, me, { until, limit = READ_PAGE } = {}) {
   const evs = await vault.outbox.query({ kinds: [...NOTE_KINDS, 7, HIGHLIGHT_KIND, ARTICLE_KIND], authors: [me], limit, ...untilOf(until) })
-  return dedupe(evs)
+  return dedupe(present(evs))
 }
 
 /** What Haven's inbox already holds for the user (others' events that tag them), or [] when it has nothing. */
 export async function readInbound(vault, me, { until, limit = READ_PAGE } = {}) {
   if (!vault.inbox) return []
-  return dedupe(await vault.inbox.query({ kinds: INBOUND_KINDS, "#p": [me], limit, ...untilOf(until) }).catch(() => []))
+  return dedupe(present(await vault.inbox.query({ kinds: INBOUND_KINDS, "#p": [me], limit, ...untilOf(until) }).catch(() => [])))
 }
 
 /**
@@ -317,7 +326,9 @@ export async function eachRelay(relays, filter, on = () => {}, { maxWait = 8000,
   await Promise.all(urls.map(async url => {
     let evs
     try { evs = await query([url], filter, { maxWait }) } catch (e) { failed++; last = e; watch?.failed(); return }
-    const fresh = evs.filter(e => e && !seen.has(e.id) && seen.add(e.id))
+    // Dated ahead of the clock: never drawn or kept (FUTURE_SKEW).
+    const now = nowSec()
+    const fresh = evs.filter(e => e && !isFuture(e, now) && !seen.has(e.id) && seen.add(e.id))
     // An answer counts once it has been handed on, so a settled screen already shows what that relay sent.
     if (fresh.length) { all.push(...fresh); await on(fresh) }
     watch?.answered()
@@ -483,7 +494,7 @@ export function newestShown(inbound, lists = []) {
   let top = 0
   for (const e of inbound) if (e.created_at > top) top = e.created_at
   for (const l of lists) { const at = followedAtOf(l) ?? l.created_at; if (l.tags?.length && at > top) top = at }
-  return top
+  return Math.min(top, nowSec() + FUTURE_SKEW)
 }
 
 /**
@@ -518,6 +529,6 @@ export const keepVault = (me, state) => { kept.set(me, { ...state, at: Math.floo
 export const keptVault = me => kept.get(me) ?? null
 /** Where to ask the relays from when coming back: a minute before the tab was left, for relays' clocks and late
  *  arrivals. Ids already held are merged away. */
-export const sinceKept = k => k?.at ? Math.max(0, k.at - 60) : undefined
+export const sinceKept = k => k?.at ? clampSince(Math.max(0, k.at - 60)) : undefined
 
 export { replyTarget }
