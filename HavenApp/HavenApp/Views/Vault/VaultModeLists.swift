@@ -47,6 +47,10 @@ extension VaultView {
                 if showsOtherAccounts && viewMode != .activity && viewMode != .media { loadOtherAccountPages() }
             }
             .task(id: followersOwnerHex) { await pollFollowers() }
+            // On every page, not only the Vault list: a post opened from Notes,
+            // Likes or Zaps can switch account, and the chip, the other
+            // accounts' reads and any read in flight belong to the one left.
+            .onChange(of: followersOwnerHex) { old, new in activeAccountChanged(from: old, to: new) }
             // The relay drops blocked followers from the ledger it serves;
             // re-read now rather than at the next minute's poll.
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))) { _ in
@@ -171,7 +175,8 @@ extension VaultView {
                                 latestReactionDate: showEngagement ? latestReactionDates[event.id] : nil,
                                 zappers: showEngagement ? zapMap[event.id] : nil,
                                 reposterPubkeys: showEngagement ? repostMap[event.id] : nil,
-                                quoterPubkeys: showEngagement ? quoteMap[event.id] : nil
+                                quoterPubkeys: showEngagement ? quoteMap[event.id] : nil,
+                                isOtherAccountRow: pageNoteAccount[event.id] != nil
                             )
                             .relayFocusOutline(focusedEventId == event.id)
                             // Likes and Zaps rows carry this same inset; Notes rows
@@ -252,7 +257,8 @@ extension VaultView {
                         let rowReactionDate = likesFilter != .myLikes ? latestReactionDates[event.id] : nil
                         VStack(alignment: .leading, spacing: 0) {
                             pageNoteLink(event) {
-                                NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, reactors: rowReactors, latestReactionDate: rowReactionDate)
+                                NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, reactors: rowReactors, latestReactionDate: rowReactionDate,
+                                        isOtherAccountRow: pageNoteAccount[event.id] != nil)
                                     .relayFocusOutline(focusedEventId == event.id)
                                     .padding(.horizontal, 16)
                             }
@@ -333,7 +339,8 @@ extension VaultView {
                         let rowZappers = zapMap[event.id]
                         VStack(alignment: .leading, spacing: 0) {
                             pageNoteLink(event) {
-                                NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, zappers: rowZappers)
+                                NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, zappers: rowZappers,
+                                        isOtherAccountRow: pageNoteAccount[event.id] != nil)
                                     .relayFocusOutline(focusedEventId == event.id)
                                     .padding(.horizontal, 16)
                             }

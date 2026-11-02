@@ -13,6 +13,9 @@ struct NoteRow: View {
     var zappers: [(pubkey: String, amount: Int64)]? = nil
     var reposterPubkeys: [String]? = nil
     var quoterPubkeys: [String]? = nil
+    /// Listed for another account on this device (the Vault chips): its menu
+    /// would act as the active account, so there is none.
+    var isOtherAccountRow: Bool = false
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
     @State var isHovered = false
@@ -92,7 +95,9 @@ struct NoteRow: View {
     }
 
     var noteType: NoteType {
-        if event.pubkey == nostrService.activeHexPubkey {
+        // Any account on this device is yours: no Report or Block on it.
+        if event.pubkey == nostrService.activeHexPubkey
+            || configService.allAccountHexes.contains(event.pubkey.lowercased()) {
             return .mine
         }
         if configService.whitelistedHexPubkeys.contains(event.pubkey) {
@@ -111,7 +116,9 @@ struct NoteRow: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            if noteType != .mine {
+            // Another account's row (Vault chips): Report and Block would act as
+            // the active account, on a list it isn't looking at as itself.
+            if noteType != .mine && !isOtherAccountRow {
                 Button(action: {
                     showingReportDialog = true
                 }) {
