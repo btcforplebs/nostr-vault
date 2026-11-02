@@ -276,7 +276,7 @@ func StartRelayC(importMode bool) {
 			return fmt.Errorf("error initializing databases/relays: %w", err)
 		}
 		// Fresh relays each cycle: forget the last cycle's connections.
-		trackConnections(privateRelay, chatRelay, outboxRelay, inboxRelay, feedRelay)
+		trackConnections(privateRelay, chatRelay, outboxRelay, inboxRelay, feedRelay, listsRelay)
 		log.Println("✅ Databases ready")
 
 		log.Println("⏳ Starting background services [3/3]")
