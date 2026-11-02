@@ -117,6 +117,23 @@ struct AppearanceSettingsView: View {
                 Text("Off, new posts wait until you pull down to refresh.")
             }
 
+            Section {
+                Toggle(isOn: $configService.config.hideNostrVaultBadge) {
+                    Label {
+                        Text("Hide Nostr Vault logo on posts")
+                    } icon: {
+                        Image(systemName: "eye.slash")
+                    }
+                }
+                .onChange(of: configService.config.hideNostrVaultBadge) { _, _ in
+                    configService.save()
+                }
+            } header: {
+                Text("Posts")
+            } footer: {
+                Text("Posts sent from Nostr Vault show a small vault logo beside the author's name. On, the logo is hidden.")
+            }
+
             PostButtonsSection()
 
             Section {

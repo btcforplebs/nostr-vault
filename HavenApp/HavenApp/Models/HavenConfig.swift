@@ -73,6 +73,10 @@ struct HavenConfig: Codable, Equatable {
     var translateTargetLanguage: String = ""
     /// Global shows everyone, not only people in your Web of Trust. Off by default.
     var globalShowsEveryone: Bool = false
+    /// Appearance → "Hide Nostr Vault logo on posts": hides `NostrVaultBadge`,
+    /// the vault mark beside the author's name on posts sent from Nostr Vault.
+    /// Off by default, so the logo shows.
+    var hideNostrVaultBadge: Bool = false
 
     // Mac relay (iOS only)
     var macRelayURL: String = "" // wss:// URL to a remote Mac Haven relay to sync missed notes
@@ -309,7 +313,7 @@ struct HavenConfig: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
         case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, disableMediaCache, autoplayVideos, cacheTTLDays, prefetchProfilePictures, vertexLookups, fanfaresAutoCheck, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
-        case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, feedLayoutModes, noteDetailExpandedEngagement, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, compactLineLimit, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage
+        case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, feedLayoutModes, noteDetailExpandedEngagement, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, compactLineLimit, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage, hideNostrVaultBadge
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications, notifyOwnAccountTags
         case macRelayURL
@@ -395,6 +399,7 @@ struct HavenConfig: Codable, Equatable {
         showTranslateButton = try container.decodeIfPresent(Bool.self, forKey: .showTranslateButton) ?? defaults.showTranslateButton
         translateTargetLanguage = try container.decodeIfPresent(String.self, forKey: .translateTargetLanguage) ?? defaults.translateTargetLanguage
         globalShowsEveryone = try container.decodeIfPresent(Bool.self, forKey: .globalShowsEveryone) ?? defaults.globalShowsEveryone
+        hideNostrVaultBadge = try container.decodeIfPresent(Bool.self, forKey: .hideNostrVaultBadge) ?? defaults.hideNostrVaultBadge
 
         signingMode = try container.decodeIfPresent(String.self, forKey: .signingMode) ?? defaults.signingMode
         nip46BunkerURI = try container.decodeIfPresent(String.self, forKey: .nip46BunkerURI) ?? defaults.nip46BunkerURI

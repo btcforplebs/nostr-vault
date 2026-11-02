@@ -611,10 +611,17 @@ extension NostrEvent {
 /// A tiny vault doorway, the app icon's shape, beside the author's name on
 /// posts sent from Nostr Vault. Drawn rather than the icon image: the icon
 /// is dark and turns into a blob at name size.
+/// Settings → Appearance → "Hide Nostr Vault logo on posts" hides it
+/// everywhere (`HavenConfig.hideNostrVaultBadge`, off by default).
 struct NostrVaultBadge: View {
     var size: CGFloat = 11
+    @ObservedObject private var configService = ConfigService.shared
 
     var body: some View {
+        if !configService.config.hideNostrVaultBadge { mark }
+    }
+
+    private var mark: some View {
         ZStack(alignment: .bottom) {
             // Lit from the keyhole, like the icon's doorway.
             VaultDoorway()

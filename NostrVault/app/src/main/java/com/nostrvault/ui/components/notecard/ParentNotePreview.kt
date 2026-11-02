@@ -126,8 +126,7 @@ internal fun ParentNotePreview(
                     )
                 }
                 if (parentNote.isFromNostrVault) {
-                    Spacer(Modifier.width(6.dp))
-                    NostrVaultBadge(size = 10.dp)
+                    NostrVaultBadge(size = 10.dp, leadingGap = 6.dp)
                 }
 
                 Spacer(Modifier.weight(1f))
