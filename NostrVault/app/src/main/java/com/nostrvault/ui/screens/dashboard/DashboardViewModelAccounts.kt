@@ -41,6 +41,14 @@ fun DashboardViewModel.pickPageChip(chip: VaultAccountChip) {
 fun DashboardViewModel.accountForNote(noteId: String): String? =
     noteAccounts[noteId]?.takeIf { it != nostrService.activeHexPubkey.lowercase() }
 
+/** Whether [author] is any account on this device (VaultPageAccounts.isOwnAccount). */
+fun DashboardViewModel.isOwnAccount(author: String): Boolean =
+    VaultPageAccounts.isOwnAccount(author, accountHexes.value, nostrService.activeHexPubkey)
+
+/** Whether a page row gets Report / Block (VaultPageAccounts.showsRowMenu). */
+fun DashboardViewModel.showsRowMenu(noteId: String, author: String): Boolean =
+    VaultPageAccounts.showsRowMenu(author, accountForNote(noteId), accountHexes.value, nostrService.activeHexPubkey)
+
 /** [hex]'s block list, as hex. The active account's comes from the feed's memo. */
 internal fun DashboardViewModel.blockedHexFor(hex: String): Set<String> {
     val active = nostrService.activeHexPubkey.lowercase()

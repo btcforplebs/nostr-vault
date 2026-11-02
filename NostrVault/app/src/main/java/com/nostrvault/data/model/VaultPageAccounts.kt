@@ -58,6 +58,21 @@ object VaultPageAccounts {
         return tags.any { it.size >= 2 && it[0] == "p" && it[1].lowercase() == me }
     }
 
+    /** Whether [author] is an account on this device: its notes are yours, so no Report or Block. */
+    fun isOwnAccount(author: String, accounts: List<String>, active: String): Boolean {
+        val by = author.lowercase()
+        return by == active.lowercase() || by in accounts.map { it.lowercase() }
+    }
+
+    /**
+     * Whether a row gets the long-press Report / Block menu. Not on a row
+     * listed for another account ([rowAccount] non-null): those would act as
+     * the active account on a list it isn't looking at as itself. Not on a
+     * note by any account on this device. iOS: NoteRow isOtherAccountRow (#1562).
+     */
+    fun showsRowMenu(author: String, rowAccount: String?, accounts: List<String>, active: String): Boolean =
+        rowAccount == null && !isOwnAccount(author, accounts, active)
+
     /**
      * Several accounts' followers as one list: each follower once (a current
      * follow over an ended one, then the newest), follows we watched first as the ledger orders
