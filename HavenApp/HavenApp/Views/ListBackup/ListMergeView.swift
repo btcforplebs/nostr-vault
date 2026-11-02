@@ -86,7 +86,7 @@ struct ListMergeView: View {
             + (o.locked ? " · private part opens when you tick it" : "")
         return Toggle(isOn: Binding(get: { picked.contains(o.id) }, set: { on in Task { await tick(o, on) } })) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(ListBackupFormat.date(o.version.createdAt))
+                Text("\(ListVersionWording.app(o.version)), \(ListBackupFormat.date(o.version.createdAt))")
                 Text(line).font(.appCaption).foregroundColor(.secondary)
             }
         }
@@ -99,7 +99,14 @@ struct ListMergeView: View {
         let nothing = sum.added == 0 && sum.removed == 0
         Section {
             Text(nothing ? "Nothing to bring back."
+                 : kind == 3 ? ListVersionWording.followMergeLine(added: sum.added, removed: sum.removed) + " Signed by you; the list you have now stays in your vault's history."
                  : "Saves your \(name) as \(entries(sum.total)): \(sum.added) back\(sum.removed > 0 ? ", \(sum.removed) taken out" : ""). Signed by you; the list you have now stays in your vault's history.")
+            let back = rows.filter { $0.ticked && $0.status != .current }
+            if !back.isEmpty {
+                Text("\(ListVersionWording.titles(kind).back) (\(back.count))").font(.appCaption).foregroundColor(.secondary)
+                ForEach(back.prefix(5)) { r in ListEntryLabel(key: r.key) }
+                if back.count > 5 { Text("and \(back.count - 5) more, all in Review").font(.appCaption).foregroundColor(.secondary) }
+            }
             if sum.leftOut > 0 {
                 Text("\(sum.leftOut) you removed yourself later \(sum.leftOut == 1 ? "stays" : "stay") out.").foregroundColor(.secondary)
             }
@@ -115,7 +122,7 @@ struct ListMergeView: View {
                 .disabled(working)
             if !nothing {
                 NavigationLink("Review") {
-                    ListMergeReview(rows: Binding(get: { self.rows ?? [] }, set: { self.rows = $0; shrinkOK = false }))
+                    ListMergeReview(kind: kind, rows: Binding(get: { self.rows ?? [] }, set: { self.rows = $0; shrinkOK = false }))
                 }
                 .font(.appCaption)
             }
@@ -161,6 +168,7 @@ struct ListMergeView: View {
         versions = await ListVersionMerge.openForMerge(versions, picked: chosen, decrypt: decrypt(me))
         shrinkOK = false
         rows = ListVersionMerge.build(current: current, picked: chosen, all: versions)
+        ListEntryLabel.loadPeople((rows ?? []).filter { $0.status != .current }.map(\.key))
     }
 
     private func save(_ rows: [ListVersionMerge.Row]) async {
@@ -183,30 +191,34 @@ struct ListMergeView: View {
 
 /// Review: the merged entries, each with a tick.
 private struct ListMergeReview: View {
+    let kind: Int
     @Binding var rows: [ListVersionMerge.Row]
 
     var body: some View {
+        let titles = ListVersionWording.titles(kind)
         Form {
-            section("Coming back", rows.indices.filter { rows[$0].status != .current })
-            section("In your list now", rows.indices.filter { rows[$0].status == .current })
+            section(titles.back, rows.indices.filter { rows[$0].status != .current },
+                    footer: "Ones you removed yourself are left unticked; tick them to bring them back.")
+            section(titles.stays, rows.indices.filter { rows[$0].status == .current },
+                    footer: kind == 3 ? "Untick someone to unfollow them." : "Untick an entry to take it out.")
         }
         .formStyle(.grouped)
         .navigationTitle("Review")
+        .onAppear { ListEntryLabel.loadPeople(rows.map(\.key)) }
     }
 
     @ViewBuilder
-    private func section(_ title: String, _ indices: [Int]) -> some View {
+    private func section(_ title: String, _ indices: [Int], footer: String) -> some View {
         if !indices.isEmpty {
-            Section("\(title) (\(indices.count))") {
+            Section {
                 ForEach(indices.prefix(500), id: \.self) { i in
-                    Toggle(isOn: $rows[i].ticked) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(ListHistory.label(rows[i].key)).font(.appCaption).lineLimit(1).truncationMode(.middle)
-                            if let note = note(rows[i]) { Text(note).font(.appCaption).foregroundColor(.secondary) }
-                        }
-                    }
+                    Toggle(isOn: $rows[i].ticked) { ListEntryLabel(key: rows[i].key, note: note(rows[i])) }
                 }
                 if indices.count > 500 { Text("and \(indices.count - 500) more").foregroundColor(.secondary) }
+            } header: {
+                Text("\(title) (\(indices.count))")
+            } footer: {
+                Text(footer)
             }
         }
     }

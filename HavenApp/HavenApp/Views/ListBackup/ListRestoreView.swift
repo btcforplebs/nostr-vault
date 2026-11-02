@@ -14,12 +14,13 @@ struct ListRestoreView: View {
     @State private var done = false
 
     private var name: String { ListShrinkRule.name(old.kind) }
+    private var titles: ListVersionWording.Titles { ListVersionWording.titles(old.kind) }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Text("Your \(name) from \(ListBackupFormat.date(old.createdAt)), \(ListBackupFormat.count(old)).")
+                    Text("Your \(name) from \(ListBackupFormat.date(old.createdAt)), \(ListVersionWording.savedBy(old)): \(ListVersionWording.count(old)).")
                     if done {
                         Label("Restored. Your vault still keeps the list it replaced.", systemImage: "checkmark.circle.fill")
                             .foregroundColor(.havenOnline)
@@ -34,8 +35,8 @@ struct ListRestoreView: View {
                     }
                 }
                 if let preview, !done {
-                    changes("Comes back", preview.comeBack)
-                    changes("Goes", preview.go)
+                    changes(titles.back, preview.comeBack)
+                    changes(titles.out, preview.go)
                     if preview.replacesPrivate {
                         Section {
                             Label("Your private items go back to the ones from \(ListBackupFormat.date(old.createdAt)). Private items added since then are removed.",
@@ -76,7 +77,7 @@ struct ListRestoreView: View {
         if !items.isEmpty {
             Section("\(title) (\(items.count))") {
                 ForEach(items.sorted().prefix(50), id: \.self) { key in
-                    Text(ListHistory.label(key)).font(.appCaption).lineLimit(1).truncationMode(.middle)
+                    ListEntryLabel(key: key)
                 }
                 if items.count > 50 {
                     Text("and \(items.count - 50) more").foregroundColor(.secondary)
@@ -87,7 +88,9 @@ struct ListRestoreView: View {
 
     private func load() async {
         switch await service.preview(old) {
-        case .success(let result): preview = result
+        case .success(let result):
+            preview = result
+            ListEntryLabel.loadPeople(result.comeBack.sorted().prefix(50) + result.go.sorted().prefix(50))
         case .failure(let error): problem = error.message
         }
     }
