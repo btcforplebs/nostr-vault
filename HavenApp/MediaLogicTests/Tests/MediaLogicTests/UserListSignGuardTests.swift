@@ -89,6 +89,7 @@ final class UserListSignGuardTests: XCTestCase {
         XCTAssertEqual(scan().1, [
             "HavenApp/Services/ModePostPublisher.swift": ["kind"],
             "HavenApp/Services/NIP17Service.swift": ["eventJSON"],
+            "HavenApp/Services/Nostr/NostrService+ListMerge.swift": ["kind"], // List backups › Merge: only on the Save tap, after a fresh editBase matching the merged base and the undo copy in the vault; kinds limited to ListVersionMerge.kinds
             "HavenApp/Services/Nostr/NostrService+ListPublishing.swift": ["kind"],
             // Restore of a list version the vault kept: only on a tap, after a fresh
             // editBase, the undo copy in the vault, and the person seeing the change.
