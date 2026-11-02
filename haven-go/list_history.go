@@ -23,9 +23,10 @@ var listsDB DBBackend
 const (
 	// Versions kept per list (account, kind, d).
 	listHistoryKeep = 20
-	// Wipes whose lists are kept beyond that, at most, newest first. Each
-	// keeps up to three versions: the wipe, the version just before it and
-	// the largest list since the wipe before (listHistoryToDrop).
+	// Drains (runs of wipes) whose lists are kept beyond that, at most,
+	// newest first. Each keeps up to four versions: its newest wipe, the
+	// versions just before its newest and oldest wipes, and the largest list
+	// since the drain before (listHistoryToDrop).
 	listHistoryPinnedMax = 5
 	// Enough for every version of one list, under every store's MaxLimit.
 	listHistoryQueryLimit = 1000
@@ -149,19 +150,24 @@ func recordListVersion(ctx context.Context, store DBBackend, evt *nostr.Event) e
 
 // listHistoryToDrop picks, from one list's versions newest first, the ones
 // retention lets go: everything but the newest listHistoryKeep, except what
-// a wipe pins. A wipe is a version that shrank the one just before it
-// (listShrank against its neighbour, as the apps see it), so a slow tidy over
-// many small edits is not one. Each wipe pins at most two versions, each only
-// while no newer version holds all its items (listHolds: restored or rebuilt,
-// not merely refilled), together with the wipe itself so it can still be
-// seen:
-//   - the version just before it;
-//   - the largest version since the wipe before it that it shrank. A late,
-//     older copy filed between the list and the wipe becomes the neighbour,
-//     so without this the list it displaced would be let go.
+// a drain pins. A wipe is a version that shrank one of the shrinkLookback
+// versions just before it (listWiped), so a list emptied in steps of half is
+// one while a slow tidy over many small edits is not. A drain is a run of
+// wipes, each measured against a version at or before the wipe ahead of it
+// (a list emptied 100, 70, 49, 34 ... 0 is one drain, not a dozen). Each drain
+// pins at most three versions, each only while no newer version holds all its
+// items (listHolds: restored or rebuilt, not merely refilled), together with
+// its newest wipe so it can still be seen:
+//   - the version just before its newest wipe;
+//   - the version just before its oldest wipe, the copy from before the
+//     drain started;
+//   - the largest version since the drain before it that one of its wipes
+//     shrank. That reaches a bigger list from before the drain; and a late, older copy
+//     filed between the list and the wipe becomes the neighbour, so without
+//     this the list it displaced would be let go.
 //
-// At most listHistoryPinnedMax wipes, newest first, so repeated wipes can't
-// grow the store without end (20 + 15 versions per list at most).
+// At most listHistoryPinnedMax drains, newest first, so repeated wipes can't
+// grow the store without end (20 + 20 versions per list at most).
 func listHistoryToDrop(versions []*nostr.Event) []*nostr.Event {
 	keep := map[string]bool{}
 	for i := 0; i < len(versions) && i < listHistoryKeep; i++ {
@@ -179,34 +185,51 @@ func listHistoryToDrop(versions []*nostr.Event) []*nostr.Event {
 		}
 		return true
 	}
-	var wipes []int
+	// wipes newest first; against[n] is the index of the version wipes[n]
+	// shrank.
+	var wipes, against []int
 	for w := 0; w+1 < len(versions); w++ {
-		if listShrank(versions[w+1], versions[w]) {
+		if i := listWipedAgainst(versions[w+1:], versions[w]); i >= 0 {
 			wipes = append(wipes, w)
+			against = append(against, w+1+i)
 		}
 	}
 	pinned := 0
-	for n, w := range wipes {
-		if pinned >= listHistoryPinnedMax {
-			break
+	for n := 0; n < len(wipes) && pinned < listHistoryPinnedMax; {
+		// The drain: wipes[n] and every older wipe that one of its wipes was
+		// measured past.
+		w, reach, last := wipes[n], against[n], n
+		for last+1 < len(wipes) && reach >= wipes[last+1] {
+			last++
+			reach = max(reach, against[last])
 		}
-		// This wipe's span: back to the wipe before it, not including it.
+		// Its span: back to the drain before it, not including it.
 		end := len(versions)
-		if n+1 < len(wipes) {
-			end = wipes[n+1]
+		if last+1 < len(wipes) {
+			end = wipes[last+1]
 		}
+		n = last + 1
 		var pins []int
 		if unheld(w + 1) {
 			pins = append(pins, w+1)
 		}
+		before := wipes[last] + 1 // the copy from just before the drain
+		if before != w+1 && unheld(before) {
+			pins = append(pins, before)
+		}
 		largest := -1
 		for i := w + 2; i < end; i++ {
-			if listShrank(versions[i], versions[w]) && unheld(i) &&
-				(largest < 0 || listItemCount(versions[i]) > listItemCount(versions[largest])) {
-				largest = i
+			if !unheld(i) || (largest >= 0 && listItemCount(versions[i]) <= listItemCount(versions[largest])) {
+				continue
+			}
+			for _, d := range wipes[:last+1] {
+				if d >= w && d < i && listShrank(versions[i], versions[d]) {
+					largest = i
+					break
+				}
 			}
 		}
-		if largest >= 0 {
+		if largest >= 0 && largest != w+1 && largest != before {
 			pins = append(pins, largest)
 		}
 		if len(pins) == 0 {

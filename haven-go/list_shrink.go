@@ -122,6 +122,44 @@ func listShrank(prev, next *nostr.Event) bool {
 	return false
 }
 
+// shrinkLookback is how many versions before a new one it is compared with,
+// so a list emptied in steps (40, 20, 10, 5: each at least half the one
+// before) still counts as wiped against the largest recent copy (Logen
+// 2026-11-02, misses #2).
+const shrinkLookback = 5
+
+// listWiped reports whether next is a new wipe: it shrank (listShrank)
+// against one of the up to shrinkLookback versions in older (the ones before
+// it, nearest first), and no version in between already shrank against that
+// same one. The second part keeps the edits right after a wipe from counting
+// as wipes of their own against the list the wipe already pinned. A slow tidy
+// that removes a few items at a time stays an edit: it takes more than
+// shrinkLookback steps to lose half.
+func listWiped(older []*nostr.Event, next *nostr.Event) bool {
+	return listWipedAgainst(older, next) >= 0
+}
+
+// listWipedAgainst is listWiped, giving the index in older of the version
+// next is a wipe of, or -1 when it is not a wipe.
+func listWipedAgainst(older []*nostr.Event, next *nostr.Event) int {
+	for i := 0; i < len(older) && i < shrinkLookback; i++ {
+		if !listShrank(older[i], next) {
+			continue
+		}
+		explained := false
+		for j := 0; j < i; j++ {
+			if listShrank(older[i], older[j]) {
+				explained = true
+				break
+			}
+		}
+		if !explained {
+			return i
+		}
+	}
+	return -1
+}
+
 // listItems is the set of a list's public items by (name, value), or for a
 // profile its filled-in fields by (field, value).
 func listItems(ev *nostr.Event) map[string]struct{} {
