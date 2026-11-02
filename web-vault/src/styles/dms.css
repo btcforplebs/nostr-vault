@@ -61,7 +61,7 @@
 .dm-failed button.link { min-height: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 
 /* Desktop: no tab bar under the conversation pane, so the message box sits on the pane's floor, over the thread. */
-.desk-pane .dm-screen { display: flex; flex-direction: column; min-height: 100dvh; padding-bottom: 0; }
+.desk-pane .dm-screen { display: flex; flex-direction: column; min-height: 100%; padding-bottom: 0; }
 .desk-pane .dm-thread { flex: 1; }
 .desk-pane .dm-compose { bottom: 0; margin: 0; padding: 10px var(--gutter) 14px; background: rgb(0 0 0 / .86);
   -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border-top: 1px solid var(--hair); }

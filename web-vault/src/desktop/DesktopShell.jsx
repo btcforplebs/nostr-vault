@@ -1,7 +1,8 @@
-// The web Vault at 760px and up (OUTBOX NV_WEB_VAULT_DESKTOP_DESIGN.md, picks A1 · B1 · C1): the iPad's sidebar,
-// list column and note column. Feed, Search, Profile, Vault and Messages get list + note; WoT and the Dashboard take
-// the full width; New Post is a dialog and replies are written under the open thread. Every screen is the phone's
-// own screen component, so the two layouts can't drift apart.
+// The web Vault at 760px and up, two columns (Logen, 2026-11-02). Left: the app as on the iPhone, the sections in a bar
+// on top and one page at a time below it (a note, conversation or person covers the list, ‹ Back returns). Right,
+// from 1024px: "Your space", panels pinned beside whatever is open (space/SpaceDock.jsx). New Post is a dialog and
+// replies are written under the open thread. Every screen is the phone's own screen component, so the two layouts
+// can't drift apart.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { FeedScreen } from "../screens/FeedScreen.jsx"
 import { ComposeScreen } from "../screens/ComposeScreen.jsx"
@@ -23,6 +24,7 @@ import { keyCommand, SHEET } from "./keys.js"
 import { noteById } from "./noteIndex.js"
 import { Sidebar } from "./Sidebar.jsx"
 import { SplitPane } from "./SplitPane.jsx"
+import { SpaceDock, useSpaceFolded } from "./space/SpaceDock.jsx"
 import { PeekCard } from "./PeekCard.jsx"
 import { ContextMenu } from "./ContextMenu.jsx"
 import { MagicPasteIcon } from "../components/MagicPasteIcon.jsx"
@@ -33,11 +35,6 @@ const LABEL = { feed: "Feed", search: "Search", profile: "Profile", vault: "Vaul
 const ROW = ".note, .dm-row, .person-row, .settings-row, .media-tile, .vault-thumb"
 const OVERLAY = "dialog[open], .dash-sheet, .ctx-menu, .side-pop, .vault-menu-list, .more-menu, .zap-picker, #mention-picker"
 
-function useStored(key, initial) {
-  const [v, setV] = useState(() => { const s = localStorage.getItem(key); return s == null ? initial : s === "1" })
-  return [v, x => { setV(x); localStorage.setItem(key, x ? "1" : "0") }]
-}
-
 /** `mode`: "single" | "rail" | "full". `hash` is the address shown; `lastList` the list screen Compose opened over. */
 export function DesktopShell({ ctx, mode, hash, lastList }) {
   const me = ctx.session.pubkey
@@ -46,10 +43,9 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   // An address that names no screen (a bare #/, right after sign-in) is the Feed, as on the phone.
   const parsed = parseHash(composing ? lastList || "#/feed" : hash)
   const view = SPLIT.has(parsed.route) || FULL.has(parsed.route) ? parsed : parseHash("#/feed")
-  const [sideFolded, setSideFolded] = useStored("nv.desk.sideFolded", false)
-  const [noteHidden, setNoteHidden] = useStored("nv.desk.noteHidden", false)
+  const [spaceFolded, setSpaceFolded] = useSpaceFolded(me)
   const [help, setHelp] = useState(false)
-  const rail = mode !== "full" || sideFolded
+  const space = mode !== "single" // Your space needs the room: from 1024px
   const other = view.route === "profile" && HEX.test(view.arg) && view.arg !== me
   const side = sideOf(view.route, other)
   const note = HEX.test(view.params.get("note") ?? "") ? view.params.get("note") : null
@@ -61,8 +57,6 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   // The screen a person was opened from names the crumb back to it.
   const from = useRef("search")
   if (!other && LABEL[view.route]) from.current = view.route
-  // Opening a note brings a folded note column back.
-  useEffect(() => { if ((note || dm) && noteHidden) setNoteHidden(false) }, [note, dm])
 
   const closeDetail = () => {
     location.hash = withParam(withParam(composing ? lastList : hash, "note", null), "dm", null)
@@ -72,7 +66,7 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   const closeCompose = () => { if (cameIn.current) history.back(); else location.replace(lastList || "#/feed") }
 
   useShortcuts({ ctx, composing, closeCompose, closeDetail, hasDetail: !!(note || dm), help, setHelp,
-    foldSide: () => setSideFolded(!sideFolded), foldNote: () => setNoteHidden(!noteHidden) })
+    foldSpace: () => space && setSpaceFolded(!spaceFolded) })
 
   const listKey = other ? `person:${view.arg}` : view.route
   const list = (
@@ -93,9 +87,8 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
     </>
   )
 
-  let detail = null, placeholder = "Pick a note to read it here."
+  let detail = null
   if (view.route === "messages") {
-    placeholder = "Pick a conversation."
     if (dm) detail = <div class="desk-pane"><ConversationScreen key={dm} ctx={ctx} peer={dm} /></div>
   } else if (note) {
     detail = <ThreadPane key={note} ctx={ctx} id={note} onClose={closeDetail} />
@@ -108,16 +101,18 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
     : view.route === "wallet" ? <WalletScreen />
     : null
   return (
-    <div class={`desk ${mode}${rail ? " rail" : ""}`}>
-      <Sidebar ctx={ctx} side={side} rail={rail} />
+    <div class={`desk ${mode}${space ? (spaceFolded ? " space folded" : " space") : ""}`}>
+      <div class="desk-left">
+      <Sidebar ctx={ctx} side={side} rail />
       <section class="desk-main">
         {view.route === "wot" ? <div class="desk-full"><WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(view.arg) ? view.arg : undefined} /></div>
           : page ? <div class="desk-page" key={view.path}>{page}</div>
           : full ? null /* the Dashboard: main.jsx keeps the relay screen mounted and lays it over this area */
-          : <SplitPane single={mode === "single"} list={list} detail={detail} placeholder={placeholder}
-              noteHidden={noteHidden} setNoteHidden={setNoteHidden} onBack={closeDetail} />}
+          : <SplitPane list={list} detail={detail} onBack={closeDetail} />}
         <Current note={note} dm={dm} />
       </section>
+      </div>
+      {space && <SpaceDock ctx={ctx} folded={spaceFolded} onFold={setSpaceFolded} />}
       {composing && <ComposeDialog ctx={ctx} onClose={closeCompose} />}
       {help && <ShortcutSheet onClose={() => setHelp(false)} />}
       <PeekCard ctx={ctx} />
@@ -216,7 +211,7 @@ function useShortcuts(o) {
       r.focus({ preventScroll: true })
       r.scrollIntoView({ block: "nearest" })
     }
-    // The card a like or zap goes to: the selected row, or else the note opened in the note column.
+    // The card a like or zap goes to: the selected row, or else the open thread's note.
     // Two lookups, not one selector list: a list matches in tree order, and the thread draws its root first, so an
     // open reply would hand a like or zap to the root's author.
     const card = () => selected()?.closest("[data-note-id]")
@@ -248,9 +243,7 @@ function useShortcuts(o) {
           if (!rows.length) return false
           const i = rows.indexOf(selected())
           const r = rows[i < 0 ? 0 : Math.max(0, Math.min(rows.length - 1, i + (c.cmd === "next" ? 1 : -1)))]
-          select(r)
-          // With a note open, moving along the list reads the next one, as Mail does.
-          if (s.hasDetail && r.matches("[data-note-id]")) r.click()
+          select(r) // an open page covers the list, so there are no rows to move along until ‹ Back
           return
         }
         case "open": {
@@ -276,8 +269,7 @@ function useShortcuts(o) {
         }
         case "like": { const b = card()?.querySelector(".note-action.like"); return b ? b.click() : false }
         case "zap": { const b = card()?.querySelector(".zap-button"); return b ? b.click() : false }
-        case "foldSide": return s.foldSide()
-        case "foldNote": return s.foldNote()
+        case "foldSpace": return s.foldSpace()
         case "help": return s.setHelp(true)
       }
       return false

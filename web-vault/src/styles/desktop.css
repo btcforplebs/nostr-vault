@@ -1,38 +1,43 @@
-/* The desktop layout, 760px and up (src/desktop, design OUTBOX NV_WEB_VAULT_DESKTOP_DESIGN.md). Sidebar, list column,
-   note column, each scrolling on its own; the page itself never scrolls. Values follow the iPad (NoteSplitMetrics). */
-.desk-app { --side-w: 240px; padding-bottom: 0; height: 100dvh; overflow: hidden; }
-.desk-app:has(.desk.rail) { --side-w: 64px; }
-.desk { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); height: 100dvh; }
+/* The desktop layout, 760px and up (src/desktop). Two columns (Logen, 2026-11-02): on the left the app as on the iPhone,
+   its sections in a bar on top and one page at a time under it; on the right, from 1024px, "Your space" (space.css).
+   Each part scrolls on its own; the page itself never scrolls. */
+.desk-app { --bar-h: 56px; --dock-w: 0px; padding-bottom: 0; height: 100dvh; overflow: hidden; }
+.desk-app:has(.desk.space) { --dock-w: 380px; }
+.desk-app:has(.desk.space.folded) { --dock-w: 56px; }
+.desk { display: grid; grid-template-columns: minmax(0, 1fr) var(--dock-w); height: 100dvh; }
+.desk-left { display: flex; flex-direction: column; min-width: 0; min-height: 0; container: left / inline-size; }
 
-/* Sidebar */
-.desk-side { display: flex; flex-direction: column; gap: 2px; padding: 12px 10px; min-height: 0; overflow-y: auto;
-  background: var(--s1); border-right: 1px solid var(--hair); }
-.desk-side hr { border: 0; border-top: 1px solid var(--hair); margin: 8px 4px; width: auto; }
-.side-row { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 0 12px; border-radius: 10px;
-  color: var(--text-2); font: var(--t-sub); font-weight: 500; white-space: nowrap; }
+/* The sections bar: the iPad sidebar's rows laid in a line (Sidebar.jsx). Names show once the column has room for
+   them; until then icons, with the names in their tooltips. Settings, Learn and Docs are icons only. */
+.desk-side { position: relative; z-index: 20; display: flex; align-items: center; gap: 2px; height: var(--bar-h); flex: none;
+  padding: 0 12px; border-bottom: 1px solid var(--hair); background: var(--bg); }
+.desk-side hr { display: none; }
+.side-row { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; min-width: 40px; padding: 0 10px;
+  border-radius: 10px; color: var(--text-2); font: var(--t-sub); font-weight: 500; white-space: nowrap; }
 .side-row:hover { background: var(--s2); color: var(--text); }
 .side-row.on { background: var(--accent-pale); color: var(--accent-light); font-weight: 600; }
 .side-row svg { flex: none; }
 .side-icon { position: relative; display: flex; flex: none; }
-/* Unread messages: a count after the name (iPadSidebarView), a dot on the icon when the rail hides names. */
-.side-badge { margin-left: auto; min-width: 20px; padding: 2px 7px; border-radius: 999px; box-sizing: border-box; text-align: center;
-  background: var(--danger); color: #fff; font: 700 12px/16px var(--font); }
+.desk-side .side-label { display: none; }
+@container left (min-width: 920px) {
+  .desk-side .side-row:not([href="#/settings"], [href="/#about"], [href="/docs/"]) .side-label { display: inline; }
+}
+.desk-side a[href="#/settings"] { margin-left: auto; }
+/* Unread messages: a dot on the icon (iPadSidebarView's count shows in the tooltip). */
 .side-dot { position: absolute; top: -2px; right: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--danger);
   box-shadow: 0 0 0 2px var(--bg); }
-.side-post { color: var(--accent-light); font-weight: 600; }
-.side-post.off { color: var(--text-3); cursor: not-allowed; }
-.side-post.off:hover { background: none; color: var(--text-3); }
+.desk-side .side-post { order: 99; margin-left: 6px; padding: 0 16px; border-radius: 999px; background: var(--accent-grad); color: #1a0d03; font-weight: 700; }
+.desk-side .side-post .side-label { display: inline; }
+.desk-side .side-post:hover { background: var(--accent-grad); color: #1a0d03; filter: brightness(1.08); }
+.side-post.off { background: var(--s2); color: var(--text-3); cursor: not-allowed; }
+.side-post.off:hover { background: var(--s2); color: var(--text-3); filter: none; }
 
-.side-account { position: relative; margin-bottom: 6px; }
-.side-account-btn { width: 100%; min-height: 52px; display: flex; align-items: center; gap: 10px; padding: 6px 8px;
-  border-radius: 12px; border: 0; background: none; text-align: left; font: inherit; }
+.side-account { position: relative; margin-right: 6px; }
+.side-account-btn { display: flex; align-items: center; padding: 2px; border-radius: 50%; border: 0; background: none; }
 .side-account-btn:hover { background: var(--s2); }
 .side-account-btn:active:not(:disabled) { transform: none; }
-.side-account-names { display: grid; min-width: 0; flex: 1; }
-.side-account-name { font: var(--t-sub); font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-account-kind { font: var(--t-cap); color: var(--text-3); }
-.side-chevron { color: var(--text-3); display: flex; }
-.side-pop { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 200px; display: grid; padding: 6px;
+.side-account .side-label { display: none; }
+.side-pop { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: 220px; display: grid; padding: 6px;
   background: var(--s2); border: 1px solid var(--strong); border-radius: 12px; box-shadow: 0 12px 32px rgb(0 0 0 / .6); }
 .side-pop [role=menuitem] { display: flex; align-items: center; min-height: 36px; padding: 0 12px; border-radius: 8px; border: 0;
   background: none; color: var(--text); font: var(--t-sub); text-align: left; justify-content: flex-start; }
@@ -47,54 +52,23 @@
 .side-switch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-pop-error { margin: 4px 12px; color: var(--danger); font: var(--t-foot); }
 
-.side-foot { margin-top: auto; padding: 10px 8px 4px; border-top: 1px solid var(--hair); display: grid; gap: 6px; }
-.side-relay { display: flex; align-items: center; gap: 10px; color: var(--text); font: var(--t-foot); font-weight: 600; min-height: 28px; }
+/* The vault's status: a dot that opens the Dashboard; its count and Restart are in the Dashboard itself. */
+.side-foot { display: flex; align-items: center; margin-left: 4px; }
+.side-relay { display: grid; place-items: center; width: 32px; height: 40px; border-radius: 10px; }
+.side-relay:hover { background: var(--s2); }
 .side-relay .dot { width: 8px; height: 8px; flex: none; }
 .dot.booting { background: var(--booting); }
-.side-relay-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.side-restart { min-height: 28px; padding: 0 10px; }
 
-/* Rail: icons only, centred; names live in the tooltips. */
-.desk.rail .desk-side { padding: 12px 8px; align-items: center; }
-.desk.rail .side-label { display: none; }
-.desk.rail .side-row { width: 44px; justify-content: center; padding: 0; }
-.desk.rail .side-account-btn { width: 48px; justify-content: center; padding: 6px 0; }
-.desk.rail .side-foot { width: 100%; justify-items: center; }
-.desk.rail .side-relay { justify-content: center; }
-.desk.rail hr { width: 32px; }
-
-/* Main area, list and note columns */
-.desk-main { position: relative; min-width: 0; min-height: 0; }
-.desk-split { display: grid; grid-template-columns: var(--list-w, 380px) 0 minmax(0, 1fr); height: 100dvh; }
-.desk-split.folded { grid-template-columns: minmax(0, 1fr) 0; }
-.desk-split.single { grid-template-columns: minmax(0, 1fr); }
-.desk-list, .desk-detail { min-width: 0; min-height: 0; height: 100dvh; overflow-y: auto; overscroll-behavior: contain; }
+/* The page under the bar. */
+.desk-main { position: relative; flex: 1; min-width: 0; min-height: 0; }
+.desk-split { display: grid; grid-template-columns: minmax(0, 1fr); height: 100%; }
+.desk-list, .desk-detail { min-width: 0; min-height: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; }
 .desk-list[hidden], .desk-detail[hidden] { display: none; }
 .desk-detail { background: var(--bg); }
-.desk-split:not(.single) .desk-list { border-right: 1px solid var(--hair); }
-.desk-split.folded .desk-list .screen { max-width: 720px; }
 .desk-pane[hidden] { display: none; }
 .desk-pane .screen { padding-bottom: 24px; }
 
-/* The divider is a 0-width grid track; its hit area straddles the seam. */
-.desk-divider { position: relative; z-index: 6; width: 0; cursor: col-resize; outline: none; }
-.desk-divider::before { content: ""; position: absolute; top: 0; bottom: 0; left: -5px; width: 10px; }
-.desk-divider::after { content: ""; position: absolute; top: 0; bottom: 0; left: -1px; width: 2px; background: transparent; transition: background var(--press); }
-.desk-divider:hover::after, .desk-divider.dragging::after, .desk-divider:focus-visible::after { background: var(--accent); }
-.desk-divider.dragging { cursor: col-resize; }
-.desk-split:has(.desk-divider.dragging) { user-select: none; }
-.desk-fold { position: absolute; top: 50%; left: -12px; transform: translateY(-50%); width: 24px; height: 44px; min-height: 0; padding: 0;
-  display: flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid var(--hair);
-  background: var(--s1); color: var(--text-2); cursor: pointer; }
-.desk-fold:hover { color: var(--accent-light); border-color: var(--accent-line); }
-.desk-fold:active:not(:disabled) { transform: translateY(-50%) scale(.96); }
-.desk-split.folded .desk-fold { left: -24px; border-radius: 8px 0 0 8px; }
-
-.desk-empty { display: grid; place-content: center; justify-items: center; gap: 12px; height: 100%; color: var(--text-3); }
-.desk-empty svg { color: var(--accent-line); }
-.desk-empty p { margin: 0; font: var(--t-sub); }
-
-/* One column (760–1023px): the open note slides over the list. */
+/* An open page slides over the list. */
 .desk-detail.slide { animation: desk-slide .18s ease-out; }
 @keyframes desk-slide { from { transform: translateX(24px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .desk-detail.slide { animation: none; } }
@@ -102,13 +76,13 @@
 .desk-back button, .desk-crumb button { background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
 .desk-crumb + .screen .screen-head { top: 44px; }
 
-/* Note column: thread with the reply box pinned under it. */
+/* An open thread, with the reply box pinned under it. */
 .desk-thread { display: flex; flex-direction: column; min-height: 100%; }
 .desk-detail-head { position: sticky; top: 0; z-index: 7; display: flex; align-items: center; justify-content: space-between;
   padding: 10px var(--gutter); background: rgb(0 0 0 / .72); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   border-bottom: 1px solid var(--hair); font: var(--t-headline); }
 .desk-thread .screen { max-width: 680px; width: 100%; flex: 1; }
-.desk-thread .screen > .screen-head { display: none; }
+.desk-thread .screen > .screen-head, .desk-thread .thread-bar { display: none; } /* ‹ Back and Reply are here */
 .desk-x { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .desk-reply { position: sticky; bottom: 0; z-index: 7; padding: 10px 0 12px; background: rgb(0 0 0 / .86);
   -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border-top: 1px solid var(--hair); }
@@ -128,13 +102,13 @@
 .kbd-on:focus { outline: 2px solid var(--strong); }
 
 /* Full width: the WoT globe, with the trust card as a right-hand panel instead of the phone's bottom sheet. */
-.desk-full { height: 100dvh; overflow: hidden; }
-.desk-full .screen.wot { height: 100dvh; }
-.desk-full .wot-card { left: auto; right: 16px; top: 68px; bottom: auto; transform: none; width: 360px; max-height: calc(100dvh - 84px); overflow-y: auto; }
+.desk-full { height: 100%; overflow: hidden; }
+.desk-full .screen.wot { height: 100%; }
+.desk-full .wot-card { left: auto; right: 16px; top: 68px; bottom: auto; transform: none; width: 360px; max-height: calc(100dvh - var(--bar-h) - 84px); overflow-y: auto; }
 .desk-full .wot-myweb-button { right: 24px; bottom: 20px; }
 
-/* The Dashboard (main.jsx keeps the relay screen mounted outside the shell): laid over the main area. */
-.desk-app .relay-host:not([hidden]) { position: fixed; z-index: 4; top: 0; bottom: 0; right: 0; left: var(--side-w); overflow-y: auto; background: var(--bg); }
+/* The Dashboard (main.jsx keeps the relay screen mounted outside the shell): laid over the left column's page. */
+.desk-app .relay-host:not([hidden]) { position: fixed; z-index: 4; top: var(--bar-h); bottom: 0; right: var(--dock-w); left: 0; overflow-y: auto; background: var(--bg); }
 .desk-app .relay-host .screen { max-width: 760px; }
 
 /* Vault modes as a segmented header (B1). Icons only when the column is narrow. */
@@ -232,9 +206,8 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 .desk-app .screen-head.vault-head { flex-wrap: wrap; row-gap: 8px; }
 .desk-app .vault-head .vault-modes { flex: 1 1 100%; }
 
-/* Desktop density. The phone's 16px gutter, 12px card gap and 17px text make a narrow list column a stack of large
-   boxes (~38 characters a line). The list column runs a 12px gutter, 8px gap and a 15px body; the note column reads
-   at 16px. */
+/* Desktop density: the list runs a 12px gutter, 8px gap and a 15px body instead of the phone's 16px, 12px and 17px;
+   an open page reads at 16px. */
 .desk-list { --gutter: 12px; }
 .desk-list .note, .desk-list .article { margin-bottom: 8px; padding: 12px; }
 .desk-list .note-text { font: 400 15px/1.45 var(--font); margin-top: 8px; }
@@ -276,22 +249,21 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 .desk-compose .desk-compose-hint { margin-top: -42px; padding: 0 140px 12px var(--gutter); line-height: 38px; }
 .desk-compose:has(.screen > .error, .screen > .result) .desk-compose-hint { margin-top: 0; line-height: inherit; }
 
-/* Desktop titles sit left, so the phone's spacers that centred them have nothing to do. Settings is a full-width page
-   (.desk-page), so it works with the note column folded: its index drops the phone's Close (the sidebar is the way
-   out) and its pages keep the phone's ‹ Settings. In the list or note column (a setting linked from elsewhere)
-   ‹ Settings has nothing to go back to beside it, so it hides; one column at 760–1023px has its own ‹ Back. */
+/* Desktop titles sit left, so the phone's spacers that centred them have nothing to do. Settings is a page of its own
+   (.desk-page): its index drops the phone's Close (the sections bar is the way out) and its pages keep the phone's
+   ‹ Settings. A page opened over the list has its own ‹ Back, so a ‹ Settings there hides. */
 .desk-app .screen-head > span:empty, .desk-page .settings > .screen-head > a.button.small[href="#/profile"],
 .desk-split .screen-head > a.button.small[href="#/settings"] { display: none; }
-.desk-page { height: 100dvh; overflow-y: auto; }
+.desk-page { height: 100%; overflow-y: auto; }
 
-/* A page in the note column (a setting, Accounts, Wallet, a conversation) keeps its 640px measure, but its toolbar
-   runs the column's full width like the list's, rather than stopping at the measure. */
+/* A page opened over the list (a conversation) keeps its 640px measure, but its toolbar runs the column's full width
+   like the list's, rather than stopping at the measure. */
 .desk-detail { container-type: inline-size; --measure-pad: max(0px, (100cqw - 640px) / 2); }
 .desk-detail > .desk-pane:not(.desk-thread) > .screen { max-width: none; padding-inline: var(--measure-pad); }
 .desk-detail > .desk-pane:not(.desk-thread) > .screen > .screen-head { margin-inline: calc(-1 * var(--measure-pad));
   padding-inline: calc(var(--measure-pad) + var(--gutter)) calc(var(--measure-pad) + 12px); }
 
-/* One column (760–1023px): ‹ Back sits inside the open page's toolbar instead of on a row of its own above it. */
+/* ‹ Back sits inside the open page's toolbar instead of on a row of its own above it. */
 .desk-split.single .desk-back { height: 0; padding: 0; z-index: 8; }
 .desk-split.single .desk-back button { transform: translate(var(--gutter), 9px); }
 .desk-split.single .desk-detail > .desk-pane > .screen > .screen-head, .desk-split.single .desk-detail > .desk-pane > .desk-detail-head {

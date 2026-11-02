@@ -1,5 +1,6 @@
-// The desktop sidebar (design §2), in the iPad sidebar's order: account, New Post, Messages, then the sections, then
-// the relay's status at the foot. At 1024–1279px (or folded with "[") it is a 64px rail of icons with tooltips.
+// The desktop's sections, in the iPad sidebar's order: account, New Post, Messages, then the sections, then the relay's
+// status. Since the two-column layout (2026-11-02) it is laid as a bar over the left column (desktop.css): icons with
+// tooltips, names once the column has room, New Post at the end.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
@@ -14,7 +15,7 @@ import { methodLabel } from "../screens/SignInScreen.jsx"
 import { loadAccounts } from "../session.js"
 import { switchAccount } from "../signer/accounts.js"
 
-const ICON = {
+export const ICON = {
   post: "M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z",
   messages: "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3 7l9 6 9-6",
   feed: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M16 4.3a3.5 3.5 0 0 1 0 6.4M18 14.2a6.5 6.5 0 0 1 3.5 5.8",

@@ -1,0 +1,52 @@
+/* "Your space" (src/desktop/space): the desktop layout's right-hand column of pinned panels, from 1024px. */
+.space-dock { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100dvh; border-left: 1px solid var(--hair);
+  background: linear-gradient(180deg, rgb(230 115 38 / .06), transparent 240px), #050403; }
+.sp-top { display: flex; align-items: center; gap: 6px; flex: none; height: var(--bar-h); padding: 0 10px 0 18px; border-bottom: 1px solid var(--hair); }
+.sp-top h2 { margin: 0 auto 0 0; font: 700 16px/1.2 var(--font); }
+.sp-btn { display: inline-grid; place-items: center; width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 0;
+  border: 0; border-radius: 9px; background: none; color: var(--text-2); }
+.sp-btn:hover { background: var(--s2); color: var(--text); }
+.sp-panels { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+
+/* A panel: a card with its own header; the list inside scrolls, the header stays. */
+.sp-panel { display: flex; flex-direction: column; min-height: 0; max-height: 100%; border-radius: 14px; background: var(--s1);
+  border: 1px solid var(--accent-line); box-shadow: 0 10px 30px -20px var(--accent); overflow: hidden; }
+.sp-head { display: flex; align-items: center; gap: 8px; flex: none; padding: 10px 12px; }
+.sp-head h3 { margin: 0 auto 0 0; font: 600 14px var(--font); }
+.sp-icon { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: var(--accent-pale); color: var(--accent-light); }
+.sp-live { display: inline-flex; align-items: center; gap: 5px; font: 600 10px var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--accent-light); }
+.sp-pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgb(230 115 38 / .25); }
+.sp-new { min-height: 24px; padding: 0 10px; border: 0; border-radius: 999px; background: var(--accent-grad); color: #1a0d03; font: 700 12px var(--font); }
+.sp-new:hover { filter: brightness(1.08); }
+
+.sp-faces { display: flex; align-items: center; flex: none; margin: 0 12px; padding: 2px 0 10px; border-bottom: 1px solid var(--hair); }
+.sp-faces .avatar { box-shadow: 0 0 0 2px var(--s1); }
+.sp-faces .avatar + .avatar { margin-left: -8px; }
+.sp-more { margin-left: 6px; font: 600 12px var(--font); color: var(--text-2); }
+.sp-faces-text { margin-left: auto; font: var(--t-foot); color: var(--text-2); }
+
+/* Rows: one height each, whatever loads into them later (a name, a face), so nothing moves under the pointer. */
+.sp-rows { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; margin: 0; padding: 4px 0; }
+.sp-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; align-items: center; height: 58px; padding: 0 12px;
+  color: var(--text); text-decoration: none; }
+.sp-row:hover { background: var(--s2); }
+.sp-row-main { display: grid; min-width: 0; font: var(--t-foot); }
+.sp-row-who, .sp-row-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-row-who { color: var(--text-2); }
+.sp-row-who .author-name { font: inherit; color: var(--text); font-weight: 600; }
+.sp-row.unread .sp-row-who { color: var(--text); }
+.sp-row-text { color: var(--text-3); }
+.sp-row-side { display: grid; justify-items: end; gap: 6px; font: var(--t-cap); color: var(--text-3); }
+.sp-row.unread time { color: var(--accent-light); }
+.sp-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.sp-empty { padding: 16px 14px; color: var(--text-2); font: var(--t-foot); }
+.sp-foot { flex: none; padding: 10px 14px; border-top: 1px solid var(--hair); color: var(--accent-light); font: 600 12px var(--font); text-decoration: none; }
+.sp-foot:hover { text-decoration: underline; }
+
+/* Folded: a strip with the way back and the Vault's count. */
+.space-dock.folded { align-items: center; gap: 8px; padding-top: 11px; background: #050403; }
+.sp-mini { position: relative; display: grid; place-items: center; width: 40px; min-width: 40px; height: 40px; min-height: 40px; padding: 0;
+  border: 0; border-radius: 11px; background: var(--s1); color: var(--accent-light); }
+.sp-mini:hover { background: var(--s2); }
+.sp-mini-badge { position: absolute; top: -5px; right: -6px; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 999px;
+  background: var(--accent); color: #1a0d03; font: 700 10px/18px var(--font); text-align: center; box-shadow: 0 0 0 2px #050403; }
