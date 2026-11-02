@@ -79,6 +79,8 @@ class FipsMeshInterceptor : Interceptor {
         val vaults = awaitVaults(author, request.url.host) ?: return null
         val giveUp = clock() + PHOTO_PATIENCE_MS
         for (npub in vaults) {
+            // This vault said lately it does not have this photo: skip it for now.
+            if (FipsMediaRouter.recentlyMissed(npub, sha, clock())) continue
             val left = giveUp - clock()
             if (left <= 0) return null
             val reply = patientGet(chain, request, npub, sha, minOf(READ_PATIENCE_MS, left))
@@ -148,12 +150,17 @@ class FipsMeshInterceptor : Interceptor {
             .use { mesh ->
                 val body = mesh.body
                 when {
-                    // Honestly missing: the vault keeps its standing, and the next one may have it.
-                    mesh.code != 200 || body == null ->
+                    // Honestly missing: the vault keeps its standing, and the next one may have it. A 404/410
+                    // is remembered for this photo for a while; a server error is not.
+                    mesh.code != 200 || body == null -> {
                         Log.w(TAG, "mesh read ${sha.take(8)}: HTTP ${mesh.code} from ${npub.take(12)}")
+                        if (mesh.code == 404 || mesh.code == 410) FipsMediaRouter.recordMiss(npub, sha, clock())
+                    }
                     // Honestly too big (a video, say): nothing read, the vault keeps its standing.
-                    body.contentLength() > MAX_BYTES ->
+                    body.contentLength() > MAX_BYTES -> {
                         Log.w(TAG, "mesh read ${sha.take(8)}: ${body.contentLength()} bytes is over the cap")
+                        FipsMediaRouter.recordMiss(npub, sha, clock())
+                    }
                     else -> {
                         val bytes = readVerified(body.source(), sha)
                         if (bytes == null) {
