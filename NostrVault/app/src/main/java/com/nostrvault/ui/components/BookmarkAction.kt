@@ -2,6 +2,7 @@ package com.nostrvault.ui.components
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -10,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import com.nostrvault.data.model.FeedNote
+import com.nostrvault.service.BookmarkList
 import com.nostrvault.service.BookmarkService
 import com.nostrvault.ui.notification.LocalNotificationManager
 import com.nostrvault.ui.notification.PillTone
@@ -44,6 +46,7 @@ fun rememberBookmarkAction(note: FeedNote): NoteAction? {
     val canSign = rememberCanSign()
     val list by service.list.collectAsState()
     val saving by service.saving.collectAsState()
+    val privateSet by service.privateSet.collectAsState()
     val lane = LocalNotificationManager.current
     LaunchedEffect(Unit) { service.refreshInBackground() }
     if (!canSign) return null
@@ -52,7 +55,12 @@ fun rememberBookmarkAction(note: FeedNote): NoteAction? {
     if (note.kind == 6 && note.effectiveKind in 30000..39999 && note.tags.none { it.size >= 2 && it[0] == "d" }) return null
     val entry = service.entry(note.effectiveEventId, note.effectiveAuthor, note.effectiveKind, note.tags)
     if (entry in saving) return null
-    val marked = service.isBookmarked(list, entry)
+    val state = service.menuState(list, privateSet, entry)
+    if (state == BookmarkList.MenuState.PRIVATELY) {
+        // Shown, never tapped: adding it would make a private bookmark public.
+        return NoteAction(icon = Icons.Filled.Lock, label = "Bookmarked privately", enabled = false) {}
+    }
+    val marked = state == BookmarkList.MenuState.REMOVE
     return NoteAction(
         icon = if (marked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
         label = if (marked) "Remove bookmark" else "Bookmark",

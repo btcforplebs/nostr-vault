@@ -59,4 +59,17 @@ class BookmarkListTest {
         )
         assertEquals(emptyList<BookmarkList.Entry>(), BookmarkList.privateEntries("not json"))
     }
+
+    /** A note only in the private part is never offered "Bookmark": a tap would make it public (Logen 2026-11-02, cd729657). */
+    @Test
+    fun privateOnlyIsBookmarkedPrivately() {
+        val e = BookmarkList.Entry.Event(id)
+        assertEquals(BookmarkList.MenuState.PRIVATELY, BookmarkList.menuState(emptyList(), setOf(e), e))
+        assertEquals("public wins", BookmarkList.MenuState.REMOVE, BookmarkList.menuState(listOf(listOf("e", id)), setOf(e), e))
+        assertEquals(BookmarkList.MenuState.REMOVE, BookmarkList.menuState(listOf(listOf("e", id)), emptySet(), e))
+        assertEquals(
+            BookmarkList.MenuState.ADD,
+            BookmarkList.menuState(listOf(listOf("e", "other")), setOf(BookmarkList.Entry.Event("x")), e),
+        )
+    }
 }

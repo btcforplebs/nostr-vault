@@ -41,6 +41,10 @@ class BookmarkService @Inject constructor(
     private val _saving = MutableStateFlow<Set<BookmarkList.Entry>>(emptySet())
     val saving: StateFlow<Set<BookmarkList.Entry>> = _saving.asStateFlow()
 
+    /** The private bookmarks of [list], decrypted once per list version. */
+    private val _privateSet = MutableStateFlow<Pair<String, Set<BookmarkList.Entry>>?>(null)
+    val privateSet: StateFlow<Pair<String, Set<BookmarkList.Entry>>?> = _privateSet.asStateFlow()
+
     @Volatile private var author = ""
     @Volatile private var loadedAt = 0L
 
@@ -78,14 +82,27 @@ class BookmarkService @Inject constructor(
             .maxWithOrNull(compareBy<NostrEvent> { it.createdAt }.thenByDescending { it.id })
         if (newest != null && newest.createdAt >= (_list.value?.createdAt ?: 0)) _list.value = newest
         loadedAt = System.currentTimeMillis()
+        openPrivate()
+    }
+
+    /** Decrypts the private part of [list] when it changed, so the menu can say "Bookmarked privately". */
+    private suspend fun openPrivate() {
+        val list = _list.value ?: run { _privateSet.value = null; return }
+        if (_privateSet.value?.first == list.id) return
+        val entries = privateEntries().toSet()
+        if (_list.value?.id == list.id) _privateSet.value = list.id to entries
+    }
+
+    /** What the item for [entry] offers, given the [list] and [privateSet] the caller collected. */
+    fun menuState(list: NostrEvent?, privateSet: Pair<String, Set<BookmarkList.Entry>>?, entry: BookmarkList.Entry): BookmarkList.MenuState {
+        if (list == null || list.pubkey != configStore.activeAccountHexPubkey.value) return BookmarkList.MenuState.ADD
+        val priv = privateSet?.takeIf { it.first == list.id }?.second.orEmpty()
+        return BookmarkList.menuState(list.tags, priv, entry)
     }
 
     fun refreshInBackground() { scope.launch { refresh() } }
 
     fun entry(id: String, pubkey: String, kind: Int, tags: List<List<String>>) = BookmarkList.entry(id, pubkey, kind, tags)
-
-    fun isBookmarked(list: NostrEvent?, entry: BookmarkList.Entry): Boolean =
-        list != null && list.pubkey == configStore.activeAccountHexPubkey.value && BookmarkList.contains(list.tags, entry)
 
     val canSign: Boolean get() = !nostrService.isReadOnlyAccount() &&
         nostrService.forceOwnerFor(configStore.config.value.activeOrOwnerNpub()) != null
@@ -100,7 +117,9 @@ class BookmarkService @Inject constructor(
         val npub = configStore.config.value.activeOrOwnerNpub()
         val forceOwner = nostrService.forceOwnerFor(npub) ?: return
         if (hex.isEmpty() || entry in _saving.value) return
-        val on = !isBookmarked(_list.value, entry)
+        val state = menuState(_list.value, _privateSet.value, entry)
+        if (state == BookmarkList.MenuState.PRIVATELY) return
+        val on = state == BookmarkList.MenuState.ADD
         _saving.update { it + entry }
         scope.launch {
             val tell: suspend (String) -> Unit = { msg -> withContext(Dispatchers.Main) { onDone(msg) } }
@@ -111,6 +130,7 @@ class BookmarkService @Inject constructor(
                     if (configStore.activeAccountHexPubkey.value == hex && result.event.pubkey == hex) {
                         _list.value = result.event
                         loadedAt = System.currentTimeMillis()
+                        openPrivate()
                     }
                     tell(if (on) "Bookmarked" else "Bookmark removed")
                 }

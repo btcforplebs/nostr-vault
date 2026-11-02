@@ -36,4 +36,14 @@ final class BookmarkListTests: XCTestCase {
                        [.address("30023:\(pk):d"), .event(id)])
         XCTAssertEqual(BookmarkList.privateEntries(plaintext: "not json"), [])
     }
+
+    /// A note only in the private part is never offered "Bookmark": a tap would
+    /// make it public (Logen 2026-11-02, cd729657).
+    func testPrivateOnlyIsBookmarkedPrivately() {
+        let e = BookmarkList.Entry.event(id)
+        XCTAssertEqual(BookmarkList.menuState(publicTags: [], privateEntries: [e], e), .privately)
+        XCTAssertEqual(BookmarkList.menuState(publicTags: [["e", id]], privateEntries: [e], e), .remove, "public wins")
+        XCTAssertEqual(BookmarkList.menuState(publicTags: [["e", id]], privateEntries: [], e), .remove)
+        XCTAssertEqual(BookmarkList.menuState(publicTags: [["e", "other"]], privateEntries: [.event("x")], e), .add)
+    }
 }

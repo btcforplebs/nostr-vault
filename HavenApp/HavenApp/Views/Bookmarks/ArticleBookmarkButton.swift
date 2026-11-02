@@ -9,7 +9,8 @@ struct ArticleBookmarkButton: View {
 
     var body: some View {
         if configService.activeAccountCanSign {
-            let marked = bookmarks.isBookmarked(note)
+            let state = bookmarks.menuState(note)
+            let marked = state != .add
             Button { bookmarks.toggle(note) } label: {
                 Image(systemName: marked ? "bookmark.fill" : "bookmark")
                     .font(.appSystem(size: 15, weight: .medium))
@@ -19,9 +20,9 @@ struct ArticleBookmarkButton: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(bookmarks.saving.contains(bookmarks.entry(for: note)))
-            .accessibilityLabel(marked ? "Remove Bookmark" : "Bookmark")
-            .help(marked ? "Remove Bookmark" : "Bookmark")
+            .disabled(state == .privately || bookmarks.saving.contains(bookmarks.entry(for: note)))
+            .accessibilityLabel(state == .privately ? "Bookmarked privately" : marked ? "Remove Bookmark" : "Bookmark")
+            .help(state == .privately ? "Bookmarked privately" : marked ? "Remove Bookmark" : "Bookmark")
             .task { await bookmarks.refresh() }
         }
     }

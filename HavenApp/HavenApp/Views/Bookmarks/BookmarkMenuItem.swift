@@ -10,13 +10,22 @@ struct BookmarkMenuItem: View {
 
     var body: some View {
         if configService.activeAccountCanSign {
-            let marked = bookmarks.isBookmarked(note)
-            Button {
-                bookmarks.toggle(note)
-            } label: {
-                Label(marked ? "Remove Bookmark" : "Bookmark", systemImage: marked ? "bookmark.slash" : "bookmark")
+            Group {
+            switch bookmarks.menuState(note) {
+            case .privately:
+                // Shown, never tapped: adding it would make it public.
+                Button {} label: { Label("Bookmarked privately", systemImage: "lock.fill") }
+                    .disabled(true)
+            case let state:
+                let marked = state == .remove
+                Button {
+                    bookmarks.toggle(note)
+                } label: {
+                    Label(marked ? "Remove Bookmark" : "Bookmark", systemImage: marked ? "bookmark.slash" : "bookmark")
+                }
+                .disabled(bookmarks.saving.contains(bookmarks.entry(for: note)))
             }
-            .disabled(bookmarks.saving.contains(bookmarks.entry(for: note)))
+            }
             .task { await bookmarks.refresh() }
         }
     }

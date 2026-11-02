@@ -74,6 +74,19 @@ object BookmarkList {
     fun toggled(tags: List<List<String>>, entry: Entry, on: Boolean): List<List<String>> =
         if (on) { if (contains(tags, entry)) tags else tags + listOf(entry.tag) } else tags.filter { entry(it) != entry }
 
+    /**
+     * What a note's bookmark item offers. A note only in the private part shows as bookmarked privately and
+     * offers nothing: a tap would add it to the public tags, making a private bookmark visible to everyone
+     * (Logen 2026-11-02, cd729657). Public wins when it is in both. iOS `BookmarkList.MenuState`.
+     */
+    enum class MenuState { ADD, REMOVE, PRIVATELY }
+
+    fun menuState(publicTags: List<List<String>>, privateEntries: Set<Entry>, entry: Entry): MenuState = when {
+        contains(publicTags, entry) -> MenuState.REMOVE
+        entry in privateEntries -> MenuState.PRIVATELY
+        else -> MenuState.ADD
+    }
+
     /** The private bookmarks: the decrypted content, a JSON array of tags. Empty when it is anything else. */
     fun privateEntries(plaintext: String): List<Entry> {
         val array = runCatching { Json.parseToJsonElement(plaintext).jsonArray }.getOrNull() ?: return emptyList()

@@ -69,6 +69,17 @@ enum BookmarkList {
         return tags.filter { Self.entry(tag: $0) != entry }
     }
 
+    /// What a note's bookmark control offers. A note only in the private part
+    /// is shown as bookmarked privately and offers nothing: a tap would add
+    /// it to the public tags, making a private bookmark visible to everyone
+    /// (Logen 2026-11-02, cd729657). Public wins when it is in both.
+    enum MenuState: Equatable { case add, remove, privately }
+
+    static func menuState(publicTags: [[String]], privateEntries: Set<Entry>, _ entry: Entry) -> MenuState {
+        if contains(publicTags, entry) { return .remove }
+        return privateEntries.contains(entry) ? .privately : .add
+    }
+
     /// The private bookmarks: the decrypted content, a JSON array of tags.
     /// Empty when it is anything else.
     static func privateEntries(plaintext: String) -> [Entry] {

@@ -13,6 +13,9 @@ final class BookmarkService: ObservableObject {
     @Published private(set) var list: NostrEvent?
     @Published private(set) var author = ""
     @Published private(set) var saving: Set<BookmarkList.Entry> = []
+    /// The private bookmarks of `list`, decrypted once per list version.
+    @Published private(set) var privateSet: Set<BookmarkList.Entry> = []
+    private var privateOf: String?
     private var loadedAt: Date = .distantPast
     private var inFlight: Task<Void, Never>?
 
@@ -55,15 +58,31 @@ final class BookmarkService: ObservableObject {
             .max { $0.created_at != $1.created_at ? $0.created_at < $1.created_at : $0.id > $1.id }
         if let newest, newest.created_at >= (list?.created_at ?? 0) { list = newest }
         loadedAt = Date()
+        await openPrivate()
+    }
+
+    /// Decrypts the private part of `list` when it changed, so the menu can
+    /// say "Bookmarked privately".
+    private func openPrivate() async {
+        guard let list else { privateSet = []; privateOf = nil; return }
+        guard privateOf != list.id else { return }
+        let id = list.id
+        let entries = Set(await privateEntries())
+        guard self.list?.id == id else { return }
+        privateSet = entries
+        privateOf = id
     }
 
     func entry(for note: FeedNote) -> BookmarkList.Entry {
         BookmarkList.entry(id: note.id, pubkey: note.pubkey, kind: note.kind, tags: note.tags)
     }
 
-    func isBookmarked(_ note: FeedNote) -> Bool {
-        guard author == ConfigService.shared.activeAccountHexPubkey, let list else { return false }
-        return BookmarkList.contains(list.tags, entry(for: note))
+    func isBookmarked(_ note: FeedNote) -> Bool { menuState(note) == .remove }
+
+    /// What the note's bookmark control offers (BookmarkList.menuState).
+    func menuState(_ note: FeedNote) -> BookmarkList.MenuState {
+        guard author == ConfigService.shared.activeAccountHexPubkey, let list else { return .add }
+        return BookmarkList.menuState(publicTags: list.tags, privateEntries: privateOf == list.id ? privateSet : [], entry(for: note))
     }
 
     /// Adds or removes `note`, on the newest list fetched now; says how it
@@ -73,7 +92,9 @@ final class BookmarkService: ObservableObject {
         let hex = ConfigService.shared.activeAccountHexPubkey
         let npub = activeNpub
         let entry = entry(for: note)
-        let on = !isBookmarked(note)
+        let state = menuState(note)
+        guard state != .privately else { return }
+        let on = state == .add
         guard !hex.isEmpty, !saving.contains(entry) else { return }
         saving.insert(entry)
         Task {
@@ -84,7 +105,7 @@ final class BookmarkService: ObservableObject {
                                                message: "Bookmark not saved: your relays didn't answer", tone: .error)
                 return
             }
-            if let newest, author == hex, newest.pubkey == hex { list = newest; loadedAt = Date() }
+            if let newest, author == hex, newest.pubkey == hex { list = newest; loadedAt = Date(); await openPrivate() }
             ActionToastManager.shared.show(icon: on ? "bookmark.fill" : "bookmark.slash",
                                            message: on ? "Bookmarked" : "Bookmark removed")
         }
