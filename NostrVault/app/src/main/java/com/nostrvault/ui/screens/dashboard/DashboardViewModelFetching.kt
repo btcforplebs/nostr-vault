@@ -27,7 +27,9 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
         viewModelScope.launch(Dispatchers.Default) {
             val events = allEventsMutex.withLock { allEvents.toList() }
 
-            val myLikes = events.filter { it.kind == 7 && it.pubkey == owner }
+            // Every account's likes: a page's chip can show any of them.
+            val accounts = vaultTaggedAccounts().toSet()
+            val myLikes = events.filter { it.kind == 7 && (it.pubkey == owner || it.pubkey in accounts) }
             val likedAuthor = HashMap<String, String>()
             val likedNoteIds = HashSet<String>()
             for (like in myLikes) {

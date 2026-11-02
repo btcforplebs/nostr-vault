@@ -501,9 +501,6 @@ class VaultActivityViewModel @Inject constructor(
         }
     }
 
-    /** A chip on the Vault's other pages: switch to that account (the switcher's flash too). */
-    fun switchToAccount(account: String) = openLineAs(account) {}
-
     private fun resetAccountChip() {
         otherJob?.cancel()
         _accountChip.value = null

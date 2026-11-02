@@ -218,13 +218,22 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.MAX_SEEN
         val sinceClause = if (!isFullReload && newest > 0) ",\"since\":${newest - 60}" else ""
 
         val authorFilter = """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"authors":[$authorsJson]$sinceClause,"limit":500}"""
+        // The device's other accounts, each with its own limit so the active
+        // account's window stays what it was: the pages' chips filter what is
+        // loaded and never wait on a read (VaultPageAccounts).
+        val others = vaultTaggedAccounts().filter { it != ownerHex.lowercase() }
+        val otherAuthorFilters = others.map { hex ->
+            """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"authors":["$hex"]$sinceClause,"limit":500}"""
+        }
 
         val filters = if (ownerHex.isNotEmpty()) {
             // IMPORTANT: Mentions filter should NOT use sinceClause - we want ALL notes
             // where the user is tagged, not just recent ones. This fixes the bug where
             // older tagged notes never appear in the TAGGED filter.
-            val mentionsFilter = """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"#p":["$ownerHex"],"limit":500}"""
-            "$authorFilter,$mentionsFilter"
+            val mentionsFilters = (listOf(ownerHex) + others).map { hex ->
+                """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"#p":["$hex"],"limit":500}"""
+            }
+            (listOf(authorFilter) + otherAuthorFilters + mentionsFilters).joinToString(",")
         } else {
             authorFilter
         }

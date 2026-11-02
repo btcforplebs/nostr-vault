@@ -208,6 +208,24 @@ class DashboardViewModel @Inject constructor(
     /** Bumped on account switch, so a page still loading for the previous account is dropped. */
     @Volatile internal var olderGeneration = 0
 
+    // ── Account chips (VaultPageAccounts; see DashboardViewModelAccounts.kt) ──
+
+    /** Every account on the device, by hex (lowercase), in switcher order. */
+    val accountHexes: StateFlow<List<String>> = configStore.config
+        .map { c -> c.allAccountNpubs().mapNotNull { nostrService.npubToHex(it)?.lowercase() } }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptyList())
+
+    /** The pages' picked chip; null is the active account's own page. */
+    internal val _pageChip = MutableStateFlow<VaultAccountChip?>(null)
+    val pageChip: StateFlow<VaultAccountChip?> = _pageChip.asStateFlow()
+
+    /** Each shown note's account (VaultPageAccounts.rowAccount): a tap opens it as that account. */
+    @Volatile internal var noteAccounts: Map<String, String> = emptyMap()
+
+    /** Each account's follower ledger, by hex, so a chip can merge them. */
+    internal val followerSnapshots = ConcurrentHashMap<String, FollowerSnapshot>()
+
     // ── Followers (relay follower ledger, iOS #136) ──────────────
 
     /** Null while the relay is stopped or the ledger hasn't opened yet. */
@@ -359,6 +377,7 @@ class DashboardViewModel @Inject constructor(
     init {
         restoreSavedMode()
         loadStats()
+        observeAccountChips()
 
         // A new trust graph or follow changes who counts as outside your
         // network, without waiting for other events (iOS followCount).
@@ -511,6 +530,9 @@ class DashboardViewModel @Inject constructor(
             _repostMap.value = emptyMap()
             _quoteMap.value = emptyMap()
             _followerSnapshot.value = null
+            followerSnapshots.clear()
+            _pageChip.value = null
+            noteAccounts = emptyMap()
             _hasNewFollowers.value = false
             dotBaselineJob?.cancel()
             dotBaselineJob = null
@@ -642,7 +664,10 @@ class DashboardViewModel @Inject constructor(
                 ?.without(feedService.blockedHexForActiveAccount())
         } ?: return
         if (owner != nostrService.activeHexPubkey) return
-        _followerSnapshot.value = snapshot
+        followerSnapshots[owner.lowercase()] = snapshot
+        refreshOtherFollowers(owner)
+        if (owner != nostrService.activeHexPubkey) return
+        showFollowers()
         if (watchedMode() == VaultViewMode.FOLLOWERS) {
             markFollowersSeen()
         } else {
