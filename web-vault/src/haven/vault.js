@@ -54,7 +54,8 @@ export async function startVault({ pubkey, log = () => {} }) {
   })
   const open = route => routeClient(haven, route, sk)
   // /inbox holds what others sent the user (replies, likes, zaps…): the Vault tab reads it and fills it from the relays.
-  return { haven, owners, outbox: open("/"), feed: open("/feed"), inbox: open("/inbox"), loadMs, startMs: Date.now() - t0 - loadMs }
+  // /lists is read-only: every version of the user's lists Haven kept (Settings › Recover a List).
+  return { haven, owners, outbox: open("/"), feed: open("/feed"), inbox: open("/inbox"), lists: open("/lists"), loadMs, startMs: Date.now() - t0 - loadMs }
 }
 
 /** One route's client for the page: event, query and count like a HavenClient. Its stream can close under it (Safari
@@ -94,7 +95,7 @@ export const streamClosed = e => e?.message === "haven stream closed"
 // "blobs" is not a route: it holds Blossom's files themselves (haven-go/blobfs_wasm.go). Nor is "drafts": Compose's
 // unsent notes (ComposeScreen idbDrafts), nor "wallet": the NWC connection (net/wallet.js). Both only ever under the
 // pubkey, named like the routes so this wipe takes them.
-const ROUTES = ["private", "chat", "outbox", "inbox", "blossom", "feed", "blobs"]
+const ROUTES = ["private", "chat", "outbox", "inbox", "blossom", "feed", "lists", "blobs"]
 const PAGE_STORES = ["drafts", "wallet", "deleted", "followbackup", "wotlists"]
 export async function storeNames(pubkey, idb = indexedDB) {
   const known = [...ROUTES.flatMap(r => [`haven:${pubkey}:${r}`, `haven:${r}`]), ...PAGE_STORES.map(s => `haven:${pubkey}:${s}`)]

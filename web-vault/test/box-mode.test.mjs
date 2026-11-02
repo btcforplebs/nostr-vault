@@ -75,12 +75,12 @@ test("startBoxVault: the vault's shape, one socket per route, stop closes them",
   const routeClient = (haven, route) => ({ route, conn: haven.conn(`ui${route}`, { route }) })
   const v = startBoxVault({ signer, routeClient, deviceKey: () => device, Socket, loc })
   assert.equal(v.box, true)
-  assert.deepEqual([v.outbox.route, v.feed.route, v.inbox.route], ["/", "/feed", "/inbox"])
-  assert.deepEqual(sockets.map(s => s.url), ["ws://box.lan:8080/", "ws://box.lan:8080/feed", "ws://box.lan:8080/inbox"])
+  assert.deepEqual([v.outbox.route, v.feed.route, v.inbox.route, v.lists.route], ["/", "/feed", "/inbox", "/lists"])
+  assert.deepEqual(sockets.map(s => s.url), ["ws://box.lan:8080/", "ws://box.lan:8080/feed", "ws://box.lan:8080/inbox", "ws://box.lan:8080/lists"])
   let closed = 0
-  for (const c of [v.outbox.conn, v.feed.conn, v.inbox.conn]) c.onClose(() => closed++)
+  for (const c of [v.outbox.conn, v.feed.conn, v.inbox.conn, v.lists.conn]) c.onClose(() => closed++)
   await v.haven.stop()
-  assert.equal(closed, 3)
+  assert.equal(closed, 4)
   // Another caller's conn (dms.js /chat) works the same way.
   assert.equal(boxHaven({ signer, Socket, loc }).conn("chat", { route: "/chat" }).url, "ws://box.lan:8080/chat")
 })

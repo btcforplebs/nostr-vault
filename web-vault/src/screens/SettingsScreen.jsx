@@ -12,6 +12,7 @@ import { RelaysPage } from "./RelaysPage.jsx"
 import { MediaServersPage } from "./MediaServersPage.jsx"
 import { RecentlyDeletedPage } from "./RecentlyDeletedPage.jsx"
 import { FollowingBackupPage } from "./FollowingBackupPage.jsx"
+import { RecoverListPage } from "./RecoverListPage.jsx"
 import { YourKeyPage } from "./YourKeyPage.jsx"
 import { UnblockDialog } from "../components/Moderation.jsx"
 import { useProfile } from "../components/useProfile.js"
@@ -51,6 +52,8 @@ const ICONS = {
   learn: "M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z",
   docs: "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h5",
   people: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M16 4.3a3.5 3.5 0 0 1 0 6.4M18 14.2a6.5 6.5 0 0 1 3.5 5.8",
+  // A circle arrow going back (arrow.counterclockwise): an older version of a list.
+  restore: "M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4",
 }
 // SettingsView.swift iOSBody's sections, top to bottom. The web has no Feed & Display, Mesh or Help rows yet.
 const ORDER = ["Account", "Feed & Display", "Relays", "Your Vault", "Mesh", "Help", "Advanced"]
@@ -204,6 +207,7 @@ function Page({ ctx, page }) {
       {page === "blocked" && <Blocked ctx={ctx} />}
       {page === "recently-deleted" && <RecentlyDeletedPage ctx={ctx} />}
       {page === "following-backup" && <FollowingBackupPage ctx={ctx} />}
+      {page === "recover-list" && <RecoverListPage ctx={ctx} />}
       {page === "relays" && <RelaysPage ctx={ctx} />}
       {page === "media-servers" && <MediaServersPage ctx={ctx} />}
       {page === "import" && <Import ctx={ctx} />}
