@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.service.ListBackupService
@@ -94,7 +95,7 @@ internal fun ListMergeScreen(key: ListHistory.Key, viewModel: ListBackupViewMode
     val merged = rows
     if (merged != null && review) {
         BackHandler { review = false }
-        ListMergeReview(name = name, rows = merged, profiles = viewModel.profiles, onRows = { rows = it }, onBack = { review = false }, confirm = confirm)
+        ListMergeReview(kind = key.kind, name = name, rows = merged, profiles = viewModel.profiles, fetch = viewModel::fetchProfiles, onRows = { rows = it }, onBack = { review = false }, confirm = confirm)
         return
     }
 
@@ -185,7 +186,7 @@ internal fun ListMergeScreen(key: ListHistory.Key, viewModel: ListBackupViewMode
     }
 }
 
-/** One version: its date, a tick, and what it would bring back or drop against the list now. */
+/** One version: the app that saved it and when, a tick, and what it would bring back or drop against the list now. */
 @Composable
 private fun VersionRow(
     kind: Int,
@@ -201,13 +202,11 @@ private fun VersionRow(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = picked, onCheckedChange = { onToggle() }, enabled = problem.isEmpty())
             Column(Modifier.weight(1f)) {
-                Row {
-                    Text(ListBackupFormat.date(v.v.createdAt), color = PrimaryText, fontSize = 15.sp)
-                    if (wipe && !v.isEmpty) { Spacer(Modifier.width(6.dp)); Text("Shrank", color = Color(0xFFFF9500), fontSize = 12.sp) }
-                }
+                Text(ListVersionText.title(v.v), color = PrimaryText, fontSize = 15.sp)
                 val line = problem.ifEmpty { ListVersionMerge.deltaLine(kind, ListVersionMerge.deltaOf(v, current)) }
                 val locked = if (problem.isEmpty() && v.locked) " · private part opens when you tick it" else ""
                 Text(line + locked, color = SecondaryText, fontSize = 13.sp)
+                if (wipe && !v.isEmpty) Text(ListVersionText.WIPED, color = Color(0xFFFF9500), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }

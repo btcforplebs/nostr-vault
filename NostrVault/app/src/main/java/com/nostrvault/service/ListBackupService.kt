@@ -224,6 +224,9 @@ class ListBackupService @Inject constructor(
     /** Profiles already known to the app, for naming people in a merge. */
     val profiles get() = nostrService.profiles
 
+    /** Asks the relays for the profiles of [pubkeys] the app doesn't know yet, so people show by name and picture. */
+    fun fetchProfiles(pubkeys: List<String>) { if (pubkeys.isNotEmpty()) nostrService.fetchMissingProfiles(pubkeys) }
+
     /**
      * The safe save for a new version of [pubkey]'s list ([ListVersionSave]), wired to this
      * account's signer, vault and relays; a failure carries what to tell the person.

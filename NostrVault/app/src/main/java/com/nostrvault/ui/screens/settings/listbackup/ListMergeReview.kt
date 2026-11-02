@@ -14,6 +14,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,11 +24,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.FeedProfile
-import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.ListVersionMerge
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
@@ -42,14 +41,17 @@ private const val SHOW = 200
  */
 @Composable
 internal fun ListMergeReview(
+    kind: Int,
     name: String,
     rows: List<ListVersionMerge.Row>,
     profiles: StateFlow<Map<String, FeedProfile>>,
+    fetch: (List<String>) -> Unit,
     onRows: (List<ListVersionMerge.Row>) -> Unit,
     onBack: () -> Unit,
     confirm: @Composable () -> Unit,
 ) {
     val known by profiles.collectAsState()
+    LaunchedEffect(Unit) { fetch(rows.mapNotNull { ListVersionText.personTag(it.tag) }.filter { it !in known }.take(300)) }
     var showAll by remember { mutableStateOf(emptySet<String>()) }
     val back = rows.filter { it.status != ListVersionMerge.Status.CURRENT }
     val now = rows.filter { it.status == ListVersionMerge.Status.CURRENT }
@@ -79,8 +81,8 @@ internal fun ListMergeReview(
             modifier = Modifier.fillMaxSize(),
         ) {
             item(key = "confirm") { confirm() }
-            section("Coming back", back, "back", "Ones you removed yourself are left unticked; tick them to bring them back.")
-            section("In your list now", now, "now", "Untick an entry to take it out.")
+            section(ListVersionText.willAdd(kind), back, "back", "Ones you removed yourself are left unticked; tick them to bring them back.")
+            section(ListVersionText.stillIn(kind), now, "now", if (kind == 3) "Untick someone to unfollow them." else "Untick an entry to take it out.")
         }
     }
 }
@@ -96,7 +98,7 @@ private fun EntryRow(row: ListVersionMerge.Row, known: Map<String, FeedProfile>,
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = row.ticked, onCheckedChange = { onTick() })
             Column(Modifier.weight(1f)) {
-                Text(entryText(row.tag, known), color = PrimaryText, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                ListEntryLabel(person = ListVersionText.personTag(row.tag), text = entryText(row.tag), known = known, color = PrimaryText, fontSize = 14.sp)
                 if (label.isNotEmpty()) Text(label, color = SecondaryText, fontSize = 12.sp)
             }
             if (row.private) {
@@ -107,14 +109,11 @@ private fun EntryRow(row: ListVersionMerge.Row, known: Map<String, FeedProfile>,
     }
 }
 
-/** One entry as text: a person by the name the app knows, else their npub. */
-private fun entryText(tag: List<String>, known: Map<String, FeedProfile>): String {
+/** One entry that isn't a person, as text (people show by picture and name, [ListEntryLabel]). */
+private fun entryText(tag: List<String>): String {
     val kind = tag.getOrNull(0).orEmpty()
     val v = tag.getOrNull(1).orEmpty()
     return when (kind) {
-        "p" -> known[v.lowercase()]?.let { it.displayName?.takeIf(String::isNotBlank) ?: it.name?.takeIf(String::isNotBlank) }
-            ?: runCatching { HavenBridge.hexToNpub(v.lowercase()) }.getOrNull()?.let { "${it.take(16)}…" }
-            ?: v
         "e" -> "Note ${v.take(12)}…"
         "t" -> "#$v"
         "word" -> "“$v”"

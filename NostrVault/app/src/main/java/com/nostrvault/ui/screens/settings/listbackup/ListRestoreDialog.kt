@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -14,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,9 +25,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.service.ListBackupService
 import com.nostrvault.service.ListHistory
 import com.nostrvault.service.ListShrinkRule
@@ -34,7 +36,8 @@ import com.nostrvault.ui.theme.SecondaryText
 import kotlinx.coroutines.launch
 
 /**
- * Restore one kept version of a list: shows what comes back and what goes,
+ * Restore one kept version of a list: shows what it brings back and takes out
+ * ("Will follow again" / "Will unfollow", people by picture and name),
  * against the newest list fetched when this opens, and publishes only on the
  * tap. Twin of iOS `ListRestoreView`.
  */
@@ -46,6 +49,12 @@ internal fun ListRestoreDialog(old: ListVersion, viewModel: ListBackupViewModel,
     var working by remember(old.id) { mutableStateOf(false) }
     var done by remember(old.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val known by viewModel.profiles.collectAsState()
+
+    LaunchedEffect(preview) {
+        val shown = preview ?: return@LaunchedEffect
+        viewModel.fetchProfiles((shown.comeBack + shown.go).mapNotNull(ListVersionText::personKey).filter { it !in known }.take(300))
+    }
 
     LaunchedEffect(old.id) {
         viewModel.preview(old)
@@ -58,7 +67,7 @@ internal fun ListRestoreDialog(old: ListVersion, viewModel: ListBackupViewModel,
         title = { Text("Restore $name") },
         text = {
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
-                Text("Your $name from ${ListBackupFormat.date(old.createdAt)}, ${ListBackupFormat.count(old)}.")
+                Text("Your $name as ${ListVersionText.appInSentence(old.tags)} saved it on ${ListBackupFormat.date(old.createdAt)}: ${ListVersionText.count(old)}.")
                 Spacer(Modifier.size(10.dp))
                 val shown = preview
                 when {
@@ -70,8 +79,8 @@ internal fun ListRestoreDialog(old: ListVersion, viewModel: ListBackupViewModel,
                         Text("Checking your newest $name…", color = SecondaryText)
                     }
                     else -> {
-                        Changes("Comes back", shown.comeBack)
-                        Changes("Goes", shown.go)
+                        Changes(ListVersionText.willAdd(old.kind), shown.comeBack, known)
+                        Changes(ListVersionText.willRemove(old.kind), shown.go, known)
                         if (shown.replacesPrivate) {
                             Text(
                                 "Your private items go back to the ones from ${ListBackupFormat.date(old.createdAt)}. " +
@@ -110,11 +119,15 @@ internal fun ListRestoreDialog(old: ListVersion, viewModel: ListBackupViewModel,
 }
 
 @Composable
-private fun Changes(title: String, items: Set<String>) {
+private fun Changes(title: String, items: Set<String>, known: Map<String, FeedProfile>) {
     if (items.isEmpty()) return
     Text("$title (${items.size})", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-    items.sorted().take(50).forEach { key ->
-        Text(ListHistory.label(key), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = SecondaryText)
+    // People first, those with a known name before the rest, then by name.
+    val sorted = items.sortedWith(compareBy<String>({ ListVersionText.personKey(it) == null }, { ListVersionText.personKey(it)?.let { pk -> pk !in known } ?: false }, { key ->
+        ListVersionText.personKey(key)?.let { personName(it, known).lowercase() } ?: key
+    }))
+    sorted.take(50).forEach { key ->
+        ListEntryLabel(person = ListVersionText.personKey(key), text = ListHistory.label(key), known = known, color = SecondaryText, fontSize = 13.sp, modifier = Modifier.padding(vertical = 2.dp))
     }
     if (items.size > 50) Text("and ${items.size - 50} more", fontSize = 12.sp, color = SecondaryText)
     Spacer(Modifier.size(8.dp))
