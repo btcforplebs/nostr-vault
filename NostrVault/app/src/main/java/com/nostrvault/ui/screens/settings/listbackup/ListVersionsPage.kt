@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.settings.listbackup
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -25,18 +26,26 @@ import androidx.compose.ui.unit.sp
 import com.nostrvault.service.ListHistory
 import com.nostrvault.service.ListShrinkRule
 import com.nostrvault.service.ListVersion
+import com.nostrvault.service.ListVersionMerge
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 
 /**
  * Every kept version of one list, newest first, with what changed against the
- * newest; tap an older one to restore it. Twin of iOS `ListVersionsView`.
+ * newest; tap an older one to restore it, or Merge to bring back entries
+ * from several ([ListMergeScreen], mergeable lists only). Twin of iOS `ListVersionsView`.
  */
 @Composable
 internal fun ListVersionsPage(key: ListHistory.Key, viewModel: ListBackupViewModel, onBack: () -> Unit) {
     val groups by viewModel.groups.collectAsState()
     val versions = groups[key].orEmpty()
     var restoring by remember { mutableStateOf<ListVersion?>(null) }
+    var merging by remember { mutableStateOf(false) }
+    if (merging) {
+        BackHandler { merging = false }
+        ListMergeScreen(key = key, viewModel = viewModel, onBack = { merging = false })
+        return
+    }
 
     ListBackupScaffold(title = ListBackupFormat.title(key), onBack = onBack) { padding ->
         LazyColumn(
@@ -49,6 +58,16 @@ internal fun ListVersionsPage(key: ListHistory.Key, viewModel: ListBackupViewMod
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
+            if (ListVersionMerge.mergeKind(key.kind) != null && key.d.isEmpty() && versions.isNotEmpty()) {
+                item {
+                    ListRow(onClick = { merging = true }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Bring back entries from several versions", color = SecondaryText, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            Text("Merge", color = Color(0xFF0A84FF), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
             itemsIndexed(versions, key = { _, v -> v.id }) { index, version ->
                 val newest = versions.first()
                 val wiped = index + 1 < versions.size && ListShrinkRule.shrank(versions[index + 1], version)

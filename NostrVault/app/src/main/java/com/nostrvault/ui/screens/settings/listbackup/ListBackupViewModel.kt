@@ -6,6 +6,7 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.ListBackupService
 import com.nostrvault.service.ListHistory
 import com.nostrvault.service.ListVersion
+import com.nostrvault.service.ListVersionMerge
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -38,4 +39,13 @@ class ListBackupViewModel @Inject constructor(
     suspend fun preview(old: ListVersion) = service.preview(old)
 
     suspend fun restore(old: ListVersion, shown: ListBackupService.Preview): String? = service.restore(old, shown)
+
+    val profiles get() = service.profiles
+
+    suspend fun mergeStart(key: ListHistory.Key) = service.mergeStart(key)
+
+    fun opener(pubkey: String) = service.opener(pubkey)
+
+    suspend fun saveMerge(key: ListHistory.Key, current: ListVersionMerge.Opened?, authors: Set<String>, rows: List<ListVersionMerge.Row>) =
+        service.saveMerge(key, current, authors, rows)
 }

@@ -90,9 +90,9 @@ class UserListSignGuardTest {
                 "com/nostrvault/service/DraftService.kt" to setOf("DraftEvents.KIND"),
                 "com/nostrvault/service/EventPublisher.kt" to setOf("eventJSON"),
                 "com/nostrvault/service/FeedServiceReactions.kt" to setOf("repostKind"),
-                // Restore of a list version the vault kept: only on a tap, after a fresh
-                // editBase, the undo copy in the vault, and the person seeing the change.
-                "com/nostrvault/service/ListBackupService.kt" to setOf("old.kind"),
+                // Restore or merge of list versions the vault kept (ListVersionSave): only on a tap,
+                // after a fresh editBase, the undo copy in the vault, and the person seeing the change.
+                "com/nostrvault/service/ListBackupService.kt" to setOf("kind"),
                 "com/nostrvault/service/LiveChatService.kt" to setOf("CHAT_KIND"),
                 "com/nostrvault/service/MediaPostQueue.kt" to setOf("kind"),
                 "com/nostrvault/service/NIP17Service.kt" to setOf("sealEventJson"),
