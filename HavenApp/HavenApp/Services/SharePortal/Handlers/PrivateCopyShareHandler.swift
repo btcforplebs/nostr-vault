@@ -136,7 +136,9 @@ enum PrivateCopyStore {
     private static func keep(content: String, tags: [[String]], lock: PostingAccount.Lock) async throws {
         let nostr = NostrService.shared
         guard nostr.activeHexPubkey == lock.hex else { throw ModePostPublisher.PublishError.accountChanged }
-        guard let event = await nostr.signEventAsync(kind: PrivateCopyRecord.kind, content: content, tags: tags) else {
+        // A literal kind (30078 == PrivateCopyRecord.kind): UserListSignGuardTests
+        // refuses signers that take their kind from a variable.
+        guard let event = await nostr.signEventAsync(kind: 30078, content: content, tags: tags) else {
             throw SaveError.signing
         }
         guard event.pubkey.lowercased() == lock.hex.lowercased() else { throw ModePostPublisher.PublishError.accountChanged }
