@@ -76,19 +76,23 @@ class ListMergeGapsTest {
     fun `3 small list and relay lists - everything an old version had goes back ticked`() = runTest {
         val (s1, s2) = opened(follows(listOf(1, 2, 3, 4, 5), 10), follows(listOf(1, 2, 3, 4), 20))
         val small = ListVersionMerge.buildMerge(s2, listOf(s1), listOf(s2, s1))
-        assertEquals(back to true, small.of(5).status to small.of(5).ticked)
+        // Ticked, yet Review still says when it went (Tron's note 1, Logen 2026-11-03).
+        assertEquals(Triple(removed, true, 20L), Triple(small.of(5).status, small.of(5).ticked, small.of(5).at))
         // A DM relay list of 12, one dropped in an edit: still offered back.
         val urls = range(1, 12).map { listOf("relay", "wss://r$it.example") }
         val (r1, r2) = opened(ev(10050, urls, 10), ev(10050, urls.drop(1), 20))
         val r = ListVersionMerge.buildMerge(r2, listOf(r1), listOf(r2, r1)).url("wss://r1.example")
-        assertEquals(back to true, r.status to r.ticked)
+        assertEquals(Triple(removed, true, 20L), Triple(r.status, r.ticked, r.at))
         // Blocked relays across a gap too: relay lists don't wait on the gap rule.
         val (b1, b2, b3) = opened(
             ev(10006, listOf(listOf("relay", "wss://x.example")), 10),
             ev(10006, listOf(listOf("relay", "wss://y.example")), 20),
             ev(10006, listOf(listOf("relay", "wss://y.example")), 30),
         )
-        assertEquals(back, ListVersionMerge.buildMerge(b3, listOf(b1), listOf(b3, b2, b1), ids(b3)).url("wss://x.example").status)
+        val x = ListVersionMerge.buildMerge(b3, listOf(b1), listOf(b3, b2, b1), ids(b3)).url("wss://x.example")
+        assertEquals(Triple(removed, true, 20L), Triple(x.status, x.ticked, x.at))
+        val sum = ListVersionMerge.mergeSummary(10006, ListVersionMerge.buildMerge(b3, listOf(b1), listOf(b3, b2, b1), ids(b3)))
+        assertEquals("ticked removals aren't counted as left out", 0 to 1, sum.leftOut to sum.added)
     }
 
     @Test
