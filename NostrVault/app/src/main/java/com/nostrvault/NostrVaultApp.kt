@@ -71,6 +71,8 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
         // GIFs downloaded for "Save to my Blossom" that a crash left behind.
         applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             com.nostrvault.data.gif.GifCache.sweep(cacheDir)
+            // Decrypted private copies a crash or a kill left behind.
+            com.nostrvault.service.shareportal.PrivateCopyService.clearOpened(this@NostrVaultApp)
         }
         profilePicturePrefetcher.start(applicationScope)
         // The share sheet's "post as" line reads this, never the config with the keys.
