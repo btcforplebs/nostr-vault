@@ -148,14 +148,24 @@ struct SpaceLayout: Equatable {
         s.count == 64 && s.allSatisfy { $0.isHexDigit && !$0.isUppercase }
     }
 
+    /// How far ahead of this device's clock `at` may be. Further ahead, it is
+    /// pulled back to now plus this, so a device whose clock runs fast can't
+    /// win every later comparison. Same window as `ListMerge.maxSkew`.
+    static let maxSkew: Int64 = 15 * 60
+
     /// Any saved value -> a clean layout against the sections and panels this
     /// app has (docs/SPACE_LAYOUT.md, "Normalising"). Returns nil for a
     /// layout from a newer format (`v` above ours): leave that one alone.
-    static func normalize(_ value: JSONValue?, sections: [String], panelIds: [String]) -> SpaceLayout? {
-        guard case .object(let top)? = value, let v = top["v"]?.number else {
+    /// Numbers are checked before they are converted: a huge one (1e300)
+    /// traps a Double-to-Int conversion, and this runs on every launch.
+    static func normalize(_ value: JSONValue?, sections: [String], panelIds: [String],
+                          now: Int64 = Int64(Date().timeIntervalSince1970)) -> SpaceLayout? {
+        // `v` is a whole number; anything else is not a layout.
+        guard case .object(let top)? = value, let v = top["v"]?.number,
+              v.isFinite, v >= 0, v == v.rounded() else {
             return defaultLayout(panelIds: panelIds)
         }
-        if Int(v) > version { return nil }
+        if v > Double(version) { return nil }
 
         var pins: [Pin] = []
         var seen = Set<String>()
@@ -204,13 +214,21 @@ struct SpaceLayout: Equatable {
 
         var extra = top
         for key in ["v", "at", "pins", "panels"] { extra[key] = nil }
-        let at = top["at"]?.number.flatMap { $0.isFinite ? Int64($0) : nil } ?? 0
+        let at = clampedAt(top["at"]?.number, now: now)
         return SpaceLayout(at: at, pins: pins, panels: panels, extra: extra)
     }
 
-    static func decode(_ data: Data?, sections: [String], panelIds: [String]) -> SpaceLayout? {
+    /// `at` as whole seconds from 0 to `now + maxSkew`; 0 when missing or not a number.
+    static func clampedAt(_ value: Double?, now: Int64) -> Int64 {
+        guard let value, value.isFinite, value > 0 else { return 0 }
+        let ceiling = now + maxSkew
+        return value >= Double(ceiling) ? ceiling : Int64(value)
+    }
+
+    static func decode(_ data: Data?, sections: [String], panelIds: [String],
+                       now: Int64 = Int64(Date().timeIntervalSince1970)) -> SpaceLayout? {
         let value = data.flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }
-        return normalize(value, sections: sections, panelIds: panelIds)
+        return normalize(value, sections: sections, panelIds: panelIds, now: now)
     }
 
     var json: JSONValue {
@@ -226,6 +244,40 @@ struct SpaceLayout: Equatable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return (try? encoder.encode(json)) ?? Data()
+    }
+
+    // MARK: Sync read
+
+    /// What a read of the synced event decides.
+    struct SyncDecision: Equatable {
+        /// The layout to draw (and keep on the device).
+        var layout: SpaceLayout
+        /// This device has now seen the synced layout (opened it, or every
+        /// relay confirmed none), so its edits may be published.
+        var baseKnown: Bool
+        /// Publish the device's copy now: it is newer than what is synced.
+        var publish: Bool
+        /// The synced layout is from a newer format: never write over it.
+        var newerFormat = false
+    }
+
+    /// `plaintext`: the decrypted event content, nil when there was no event
+    /// or it couldn't be opened. `confirmedNone`: every relay asked answered
+    /// and none had one. Anything short of an opened event or a confirmed
+    /// none leaves the base unknown, so edits stay on the device.
+    static func syncRead(local: SpaceLayout, plaintext: String?, confirmedNone: Bool,
+                         sections: [String], panelIds: [String],
+                         now: Int64 = Int64(Date().timeIntervalSince1970)) -> SyncDecision {
+        guard let plaintext else {
+            return SyncDecision(layout: local, baseKnown: confirmedNone, publish: confirmedNone && local.at > 0)
+        }
+        guard let remote = decode(Data(plaintext.utf8), sections: sections, panelIds: panelIds, now: now) else {
+            return SyncDecision(layout: local, baseKnown: false, publish: false, newerFormat: true)
+        }
+        if remoteWins(remote: remote, local: local) {
+            return SyncDecision(layout: remote, baseKnown: true, publish: false)
+        }
+        return SyncDecision(layout: local, baseKnown: true, publish: local.at > remote.at)
     }
 
     // MARK: Which wins

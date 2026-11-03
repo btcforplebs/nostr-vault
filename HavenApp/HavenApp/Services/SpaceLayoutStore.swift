@@ -21,15 +21,31 @@ final class SpaceLayoutStore: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     /// A downloaded layout from a newer format: left alone, never written over.
     private var remoteIsNewerFormat = false
+    /// This device has seen the account's synced layout: opened it, or every
+    /// relay asked confirmed there is none. Until then edits stay on the
+    /// device, so a tap before (or after a failed) read can't overwrite pins
+    /// made on another device. A relay that didn't answer isn't "none".
+    private var syncedBaseKnown = false
+    private var pullTask: Task<Void, Never>?
 
     static func key(_ owner: String) -> String { "nv-space-layout:\(owner)" }
 
     private init() {
-        ConfigService.shared.$config
-            .map { _ in ConfigService.shared.activeAccountHexPubkey.lowercased() }
+        // The account itself, not `$config`: that fires in willSet, while the
+        // active key still names the account being left.
+        ConfigService.shared.$activeAccountHexPubkey
+            .map { $0.lowercased() }
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] hex in self?.attach(hex) }
+            .store(in: &cancellables)
+        // A bunker that finishes connecting can now open the synced layout.
+        NIP46Service.shared.$connectionState
+            .map { $0 == .connected }
+            .removeDuplicates()
+            .filter { $0 }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.startPull() }
             .store(in: &cancellables)
     }
 
@@ -38,11 +54,24 @@ final class SpaceLayoutStore: ObservableObject {
     private func attach(_ hex: String) {
         guard hex != owner else { return }
         publishTask?.cancel()
+        pullTask?.cancel()
+        pullTask = nil
         owner = hex
         remoteIsNewerFormat = false
+        syncedBaseKnown = false
         layout = Self.readLocal(hex) ?? .defaultLayout(panelIds: Self.panelIds)
-        guard !hex.isEmpty else { return }
-        Task { await pull(for: hex) }
+        startPull()
+    }
+
+    /// Reads the account's synced layout, once at a time.
+    private func startPull() {
+        let account = owner
+        guard !account.isEmpty, pullTask == nil, !syncedBaseKnown else { return }
+        pullTask = Task { [weak self] in
+            await self?.pull(for: account)
+            guard let self, self.owner == account else { return }
+            self.pullTask = nil
+        }
     }
 
     private static func readLocal(_ hex: String) -> SpaceLayout? {
@@ -99,6 +128,9 @@ final class SpaceLayoutStore: ObservableObject {
     // MARK: Sync (NIP-78)
 
     private func schedulePublish() {
+        // Not before this device has seen what is synced: ask again instead.
+        // A read that finds this copy newer publishes it then.
+        guard syncedBaseKnown else { startPull(); return }
         publishTask?.cancel()
         let account = owner
         publishTask = Task { [weak self] in
@@ -111,7 +143,7 @@ final class SpaceLayoutStore: ObservableObject {
     /// Publishes the device's copy, unless the account changed or the event
     /// on the relays is from a newer format.
     private func push(for account: String) async {
-        guard account == owner, !account.isEmpty, !remoteIsNewerFormat else { return }
+        guard account == owner, !account.isEmpty, syncedBaseKnown, !remoteIsNewerFormat else { return }
         let lock = ModePostPublisher.lockAccount(configService: ConfigService.shared)
         guard lock.hex.lowercased() == account,
               let plaintext = String(data: layout.encoded(), encoding: .utf8) else { return }
@@ -129,26 +161,36 @@ final class SpaceLayoutStore: ObservableObject {
         }
     }
 
-    /// Reads the account's synced layout; the newer `at` wins.
+    /// Reads the account's synced layout; the newer `at` wins. Marks the
+    /// synced base known only when the event was opened, or every relay
+    /// asked confirmed there is none; otherwise edits stay on the device and
+    /// the next edit asks again.
     private func pull(for account: String) async {
+        // A bunker still connecting can't decrypt: wait for a later ask.
+        if SpaceLayoutCrypto.usesRemoteSigner, !NIP46Service.shared.isConnected { return }
         let config = ConfigService.shared.config
         let lookup = await NostrService.shared.lookupNewestReplaceable(
             kind: 30078, for: account, alsoAsk: config.readRelays, dTag: SpaceLayout.syncD)
-        guard account == owner, let event = lookup.event, event.pubkey.lowercased() == account,
-              !event.content.isEmpty,
-              let plaintext = try? await SpaceLayoutCrypto.decryptFromSelf(event.content, me: account),
-              account == owner else { return }
-        guard let remote = SpaceLayout.decode(Data(plaintext.utf8), sections: Self.railSections, panelIds: Self.panelIds) else {
-            remoteIsNewerFormat = true
-            return
+        guard account == owner, !Task.isCancelled else { return }
+        var plaintext: String?
+        if let event = lookup.event {
+            // Found but not opened (wrong author, empty, decrypt refused or
+            // failed): not "none", so the base stays unknown.
+            guard event.pubkey.lowercased() == account, !event.content.isEmpty,
+                  let opened = try? await SpaceLayoutCrypto.decryptFromSelf(event.content, me: account),
+                  account == owner, !Task.isCancelled else { return }
+            plaintext = opened
         }
-        if SpaceLayout.remoteWins(remote: remote, local: layout) {
-            layout = remote
+        let decision = SpaceLayout.syncRead(local: layout, plaintext: plaintext,
+                                            confirmedNone: lookup.event == nil && lookup.confirmedNone,
+                                            sections: Self.railSections, panelIds: Self.panelIds)
+        remoteIsNewerFormat = decision.newerFormat
+        syncedBaseKnown = decision.baseKnown
+        if decision.layout != layout {
+            layout = decision.layout
             saveLocal()
-        } else if layout.at > remote.at {
-            // This device has the newer edit: let the other devices catch up.
-            schedulePublish()
         }
+        if decision.publish { schedulePublish() }
     }
 }
 
@@ -160,7 +202,7 @@ enum SpaceLayoutCrypto {
 
     enum CryptoError: Error { case noKey }
 
-    private static var usesRemoteSigner: Bool { ConfigService.shared.config.activeSigningMode() == "nip46" }
+    static var usesRemoteSigner: Bool { ConfigService.shared.config.activeSigningMode() == "nip46" }
 
     static func encryptToSelf(_ plaintext: String, me: String) async throws -> String {
         if usesRemoteSigner { return try await NIP44Service.encryptAsync(plaintext: plaintext, recipientPubkey: me) }

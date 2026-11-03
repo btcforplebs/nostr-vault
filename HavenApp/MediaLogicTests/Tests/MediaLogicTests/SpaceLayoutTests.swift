@@ -132,4 +132,74 @@ final class SpaceLayoutTests: XCTestCase {
         XCTAssertTrue(SpaceLayout.remoteWins(remote: .defaultLayout(panelIds: panelIds, at: 101), local: local))
         XCTAssertFalse(SpaceLayout.remoteWins(remote: .defaultLayout(panelIds: panelIds, at: 100), local: local))
     }
+
+    // MARK: Tron's must-fixes (#1629)
+
+    private let now: Int64 = 1_800_000_000
+
+    private func parse(_ json: String, now: Int64) -> SpaceLayout? {
+        SpaceLayout.decode(Data(json.utf8), sections: sections, panelIds: panelIds, now: now)
+    }
+
+    func testHugeOrOddVersionNeverTraps() {
+        // 1e300 traps Int(v); it is a newer format, left alone.
+        XCTAssertNil(parse(#"{"v":1e300,"pins":[]}"#, now: now))
+        // Not a whole number, or below zero: not a layout, so the default.
+        XCTAssertEqual(parse(#"{"v":1.5,"at":9}"#, now: now)?.at, 0)
+        XCTAssertEqual(parse(#"{"v":-1,"at":9}"#, now: now)?.at, 0)
+        XCTAssertEqual(parse(#"{"v":"1","at":9}"#, now: now)?.at, 0)
+    }
+
+    func testAtIsClampedToNowPlusSkew() {
+        let ceiling = now + SpaceLayout.maxSkew
+        XCTAssertEqual(parse(#"{"v":1,"at":1e300}"#, now: now)?.at, ceiling, "huge at never traps")
+        XCTAssertEqual(parse(#"{"v":1,"at":\#(now + 86400)}"#, now: now)?.at, ceiling, "a clock a day fast can't win forever")
+        XCTAssertEqual(parse(#"{"v":1,"at":\#(now + 60)}"#, now: now)?.at, now + 60, "a little skew is kept")
+        XCTAssertEqual(parse(#"{"v":1,"at":-5}"#, now: now)?.at, 0)
+        XCTAssertEqual(parse(#"{"v":1,"at":"soon"}"#, now: now)?.at, 0)
+    }
+
+    func testSyncReadKeepsEditsLocalUntilTheBaseIsKnown() {
+        let local = SpaceLayout.defaultLayout(panelIds: panelIds, at: now - 10)
+        // No event, but a relay didn't answer: not "none".
+        let unknown = SpaceLayout.syncRead(local: local, plaintext: nil, confirmedNone: false,
+                                           sections: sections, panelIds: panelIds, now: now)
+        XCTAssertFalse(unknown.baseKnown)
+        XCTAssertFalse(unknown.publish)
+        XCTAssertEqual(unknown.layout, local)
+        // Every relay confirmed none: known, and a device edit goes out.
+        let none = SpaceLayout.syncRead(local: local, plaintext: nil, confirmedNone: true,
+                                        sections: sections, panelIds: panelIds, now: now)
+        XCTAssertTrue(none.baseKnown)
+        XCTAssertTrue(none.publish)
+        // Nothing edited here yet (at 0): known, nothing to publish.
+        let fresh = SpaceLayout.syncRead(local: .defaultLayout(panelIds: panelIds), plaintext: nil, confirmedNone: true,
+                                         sections: sections, panelIds: panelIds, now: now)
+        XCTAssertTrue(fresh.baseKnown)
+        XCTAssertFalse(fresh.publish)
+    }
+
+    func testSyncReadNewerWinsEitherWay() {
+        let local = SpaceLayout.defaultLayout(panelIds: panelIds, at: now - 100)
+        let remoteJSON = #"{"v":1,"at":\#(now - 50),"pins":[{"type":"hashtag","t":"nostr"}]}"#
+        let pulled = SpaceLayout.syncRead(local: local, plaintext: remoteJSON, confirmedNone: false,
+                                          sections: sections, panelIds: panelIds, now: now)
+        XCTAssertTrue(pulled.baseKnown)
+        XCTAssertFalse(pulled.publish)
+        XCTAssertTrue(pulled.layout.pins.contains { $0.kind == .hashtag("nostr") }, "the other device's pins arrive")
+        let newerHere = SpaceLayout.defaultLayout(panelIds: panelIds, at: now - 10)
+        let pushed = SpaceLayout.syncRead(local: newerHere, plaintext: remoteJSON, confirmedNone: false,
+                                          sections: sections, panelIds: panelIds, now: now)
+        XCTAssertEqual(pushed.layout, newerHere)
+        XCTAssertTrue(pushed.publish)
+    }
+
+    func testSyncReadLeavesANewerFormatAlone() {
+        let local = SpaceLayout.defaultLayout(panelIds: panelIds, at: now - 10)
+        let decision = SpaceLayout.syncRead(local: local, plaintext: #"{"v":2,"pins":[]}"#, confirmedNone: false,
+                                            sections: sections, panelIds: panelIds, now: now)
+        XCTAssertTrue(decision.newerFormat)
+        XCTAssertFalse(decision.baseKnown)
+        XCTAssertFalse(decision.publish)
+    }
 }
