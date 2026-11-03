@@ -39,13 +39,17 @@ struct BottomTabBar: View {
         if vertical { sidebar } else { dock }
     }
 
-    /// iPad landscape: the dock's items down a slim rail on the left edge,
-    /// full height, like the web's icon rail. Post stays the screen's
-    /// floating button, as on the iPhone.
+    /// iPad landscape: a slim rail on the left edge, full height, like the
+    /// web's icon rail. Your account picture on top (a tap lists your
+    /// accounts), then the sections and your pinned favourites in the order
+    /// you set (`SpaceLayoutStore`), and Edit at the bottom. Plain taps only:
+    /// no hold or slide menus on the rail. Post stays the screen's floating
+    /// button, as on the iPhone.
     private var sidebar: some View {
-        VStack(spacing: 26) {
-            expandedContent
-            Spacer(minLength: 0)
+        RailPinsColumn(nostrService: nostrService) { id in
+            AnyView(railSectionItem(id))
+        } top: {
+            RailAccountButton(configService: configService, nostrService: nostrService)
         }
         // Below the window's close/minimise/resize buttons when the app runs
         // windowed: they sit in the top-left corner, over the first item.
@@ -59,6 +63,50 @@ struct BottomTabBar: View {
                 .fill(Color.white.opacity(0.08))
                 .frame(width: 1)
                 .ignoresSafeArea()
+        }
+    }
+
+    /// A section on the rail: the dock's tab, as a plain button.
+    @ViewBuilder
+    private func railSectionItem(_ id: String) -> some View {
+        switch id {
+        case "feed":
+            tabItem(index: 0, title: "Feed", icon: RailSection.symbol("feed")) {
+                NotificationCenter.default.post(name: NSNotification.Name("FeedTabReselected"), object: nil)
+            }
+        case "search":
+            tabItem(index: 1, title: "Search", icon: "magnifyingglass") { searchReselected() }
+        case "profile":
+            // The account picture is on top of the rail; Profile is an icon here.
+            tabItem(index: 2, title: "Profile", icon: RailSection.symbol("profile")) { profileReselected() }
+        case "wot":
+            tabItem(index: 3, title: "WoT", assetIcon: "WoTTab") {
+                NotificationCenter.default.post(name: .wotTabReselected, object: nil)
+            }
+        case "vault":
+            Button(action: vaultTabTapped) {
+                tabItemLabel(index: 4, title: "Vault", icon: VaultDashboard.symbol, hasRedBadge: vaultHasNews)
+            }
+            .buttonStyle(.plain)
+            .vaultAnchor(.bottom)
+        default:
+            EmptyView()
+        }
+    }
+
+    private func searchReselected() {
+        if !searchPath.isEmpty {
+            searchPath = NavigationPath()
+        } else {
+            NotificationCenter.default.post(name: NSNotification.Name("SearchScrollToTop"), object: nil)
+        }
+    }
+
+    private func profileReselected() {
+        if !profilePath.isEmpty {
+            profilePath = NavigationPath()
+        } else {
+            NotificationCenter.default.post(name: .havenProfileScrollToTop, object: nil)
         }
     }
 

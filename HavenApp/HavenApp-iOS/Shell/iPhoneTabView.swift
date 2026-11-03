@@ -39,7 +39,7 @@ struct iPhoneTabView: View {
     /// iPad (regular width): every tab's list sits in a `NoteSplitPane`, in
     /// both orientations. An opened note covers the list, with ‹ Back, as on
     /// the web's desktop layout; landscape gives the right side to "Your
-    /// space" (`LiveVaultColumn`) instead. Always the same view tree, so
+    /// space" (`SpaceColumn`) instead. Always the same view tree, so
     /// rotating keeps the tab, its scroll position and any sheet open in it
     /// (the composer, with its text and photos). `horizontalSizeClass` is read
     /// before `body` sets every screen to compact, so it is the real one.
@@ -87,7 +87,7 @@ struct iPhoneTabView: View {
             }
             tabs
             if showsSpace {
-                LiveVaultColumn()
+                SpaceColumn()
                     .transition(.move(edge: .trailing))
             }
         }
