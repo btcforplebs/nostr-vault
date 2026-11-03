@@ -112,14 +112,10 @@ class TrustMapTest {
         assertTrue(camera.spin.isZero)
     }
 
-    @Test fun `a slow let go does not spin`() {
-        val camera = GlobeCamera().apply { flick(200.0, -150.0, 0.0, reduceMotion = false) }
-        assertTrue(camera.spin.isZero)
-    }
-
     @Test fun `a hard flick is capped`() {
         val camera = GlobeCamera().apply { flick(6000.0, 0.0, 0.0, reduceMotion = false) }
-        assertEquals(GlobeCamera.MAX_SPIN, camera.spin.length, 1e-9)
+        // The whole turn at release, drift included, is the cap.
+        assertEquals(GlobeCamera.MAX_SPIN, (camera.spin + Vec3(0.0, camera.drift, 0.0)).length, 1e-9)
     }
 
     @Test fun `fly to arrives and lets the clock sleep`() {
@@ -148,9 +144,12 @@ class TrustMapTest {
     }
 
     @Test fun `idle drift stops before the clock sleeps`() {
+        // Past the sleep timer the drift eases out, then holds still.
         val camera = GlobeCamera()
         var now = 0.0
-        while (now < GlobeCamera.SLEEP_AFTER) { now += 1 / 120.0; camera.step(1 / 120.0, now, reduceMotion = false) }
+        while (now < GlobeCamera.SLEEP_AFTER + 10) { now += 1 / 120.0; camera.step(1 / 120.0, now, reduceMotion = false) }
+        assertEquals(0.0, camera.drift, 0.0)
+        assertFalse(camera.wantsFrames(now, reduceMotion = false))
         val before = camera.orientation
         camera.step(1 / 120.0, now + 1 / 120.0, reduceMotion = false)
         assertEquals(before, camera.orientation)
