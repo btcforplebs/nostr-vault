@@ -39,19 +39,28 @@ struct BottomTabBar: View {
         if vertical { sidebar } else { dock }
     }
 
-    /// iPad landscape: the dock's items down the left edge, in a glass
-    /// column. Post stays the screen's floating button, as on the iPhone.
+    /// iPad landscape: the dock's items down a slim rail on the left edge,
+    /// full height, like the web's icon rail. Post stays the screen's
+    /// floating button, as on the iPhone.
     private var sidebar: some View {
-        VStack(spacing: 22) {
+        VStack(spacing: 26) {
             expandedContent
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, 18)
-        .frame(width: 76)
-        .applyGlassCapsule()
-        .padding(.leading, 12)
-        .padding(.vertical, 12)
-        .frame(maxHeight: .infinity, alignment: .center)
+        .padding(.top, 20)
+        .frame(width: Self.railWidth)
+        .frame(maxHeight: .infinity)
+        .background(Color.platformWindowBackground.ignoresSafeArea())
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(Color.white.opacity(0.08))
+                .frame(width: 1)
+                .ignoresSafeArea()
+        }
     }
+
+    /// Width of the iPad landscape rail.
+    static let railWidth: CGFloat = 68
 
     private var dock: some View {
         // The per-frame fold lives in `BottomTabBarFold`, so a scroll frame

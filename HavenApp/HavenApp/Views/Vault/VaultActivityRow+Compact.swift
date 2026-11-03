@@ -47,6 +47,6 @@ extension VaultActivityRow {
 enum LiveVaultLayout {
     /// Every row's height, so drawn rows keep their place.
     static let rowHeight: CGFloat = 58
-    static let openWidth: CGFloat = 320
+    static let openWidth: CGFloat = 340
     static let foldedWidth: CGFloat = 56
 }

@@ -11,6 +11,7 @@ import Combine
 /// thin strip with the unread count; the choice is kept per account.
 struct LiveVaultColumn: View {
     @EnvironmentObject var configService: ConfigService
+    @EnvironmentObject var relayManager: RelayProcessManager
     @ObservedObject private var nostrService = NostrService.shared
     @ObservedObject private var unreadStore = AccountUnreadStore.shared
 
@@ -38,15 +39,46 @@ struct LiveVaultColumn: View {
                 foldedStrip(count: unreadCount)
             } else {
                 VStack(spacing: 0) {
-                    header(rows: rows, pill: pill)
-                    Divider()
-                    list(rows)
+                    spaceBar
+                    // The web's panel: a card with its own header; the
+                    // list inside scrolls, the header stays.
+                    VStack(spacing: 0) {
+                        header(rows: rows, pill: pill)
+                        Divider().opacity(0.6)
+                        list(rows)
+                    }
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Color.white.opacity(0.05))
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.havenPurple.opacity(0.28), lineWidth: 1)
+                    )
+                    .shadow(color: Color.havenPurple.opacity(0.18), radius: 14, y: 8)
+                    .padding(12)
                 }
                 .frame(width: LiveVaultLayout.openWidth)
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color.platformWindowBackground)
+        .background {
+            // space.css: a warm wash at the top over near-black.
+            ZStack(alignment: .top) {
+                Color(red: 5 / 255, green: 4 / 255, blue: 3 / 255)
+                LinearGradient(colors: [Color.havenPurple.opacity(0.08), .clear],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 260)
+            }
+            .ignoresSafeArea()
+        }
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Color.white.opacity(0.08))
+                .frame(width: 1)
+                .ignoresSafeArea()
+        }
         .onChange(of: owner, initial: true) { _, hex in
             folded = UserDefaults.standard.bool(forKey: LiveVault.foldedKey(hex))
             shot = nil
@@ -58,24 +90,67 @@ struct LiveVaultColumn: View {
             rebuild()
         }
         .onReceive(unreadStore.$state.removeDuplicates()) { _ in readSeen() }
+        .onChange(of: relayReady, initial: true) { _, ready in
+            if ready { startFetchIfIdle() }
+        }
+    }
+
+    private var relayReady: Bool { relayManager.isRunning && !relayManager.isBooting }
+
+    /// The Vault tab's view starts the fetch for these lines, and a tab is
+    /// only built once it is opened. Until then the column asks for them
+    /// itself, the same way, so it isn't empty after launch. Nothing is
+    /// reset: once events are in, the Vault tab's own refresh takes over.
+    private func startFetchIfIdle() {
+        guard nostrService.events.isEmpty else { return }
+        let (urls, authors) = VaultView.activitySources(configService)
+        guard !urls.isEmpty else { return }
+        nostrService.fetchNotes(from: urls, since: nil, authors: authors)
     }
 
     // MARK: Pieces
 
+    /// The column's own bar, as on the web: its name and the fold button.
+    private var spaceBar: some View {
+        HStack {
+            Text("Your space")
+                .font(.appSystem(size: 16, weight: .bold))
+            Spacer()
+            Button { setFolded(true) } label: {
+                Image(systemName: "sidebar.right")
+                    .font(.appSystem(size: 16, weight: .semibold))
+                    .frame(width: 34, height: 34)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.secondary)
+            .accessibilityLabel("Fold Your space")
+        }
+        .padding(.leading, 18)
+        .padding(.trailing, 10)
+        .frame(height: 52)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+        }
+    }
+
     private func header(rows: [VaultActivity], pill: Int) -> some View {
         let (faces, more) = LiveVault.faces(unreadCount > 0 ? Array(lines.prefix(unreadCount)) : rows)
         return VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            HStack(spacing: 8) {
+                Image(systemName: VaultMode.activity.symbol)
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .foregroundColor(.havenPurple)
+                    .frame(width: 26, height: 26)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(Color.havenPurple.opacity(0.15)))
                 Text("Live Vault")
-                    .font(.appSystem(size: 17, weight: .bold))
+                    .font(.appSystem(size: 15, weight: .bold))
+                Circle()
+                    .fill(Color.havenPurple)
+                    .frame(width: 7, height: 7)
+                    .shadow(color: Color.havenPurple.opacity(0.5), radius: 3)
+                    .accessibilityHidden(true)
                 Spacer()
-                Button { setFolded(true) } label: {
-                    Image(systemName: "sidebar.right")
-                        .font(.appSystem(size: 16, weight: .semibold))
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.secondary)
-                .accessibilityLabel("Fold Your space")
             }
             HStack(spacing: 8) {
                 HStack(spacing: -8) {
@@ -104,8 +179,8 @@ struct LiveVaultColumn: View {
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 14)
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
         .padding(.bottom, 10)
     }
 
