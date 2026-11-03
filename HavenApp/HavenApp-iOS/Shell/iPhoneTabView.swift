@@ -67,19 +67,6 @@ struct iPhoneTabView: View {
     /// dock) and "Your space" right of it.
     private var showsSpace: Bool { usesNoteSplit && isLandscape }
 
-    /// The web's reading measure (desktop.css, `.desk-thread .screen`).
-    /// Feed, Search and Profile keep it in iPad landscape, centred, with the
-    /// toolbar's bubbles over the column rather than out at the screen's
-    /// edges. The WoT globe and the Vault use the full width, as on the web.
-    /// Only the frame changes, so rotating keeps the same view tree.
-    private static let webMeasure: CGFloat = 680
-
-    private func atWebMeasure<V: View>(_ view: V) -> some View {
-        view
-            .frame(maxWidth: showsSpace ? Self.webMeasure : .infinity)
-            .frame(maxWidth: .infinity)
-    }
-
     var body: some View {
         HStack(spacing: 0) {
             if showsSpace {
@@ -125,9 +112,9 @@ struct iPhoneTabView: View {
                 // (NoteSplitPane owns the detail column), so the list column
                 // gets one for their toolbars.
                 if usesNoteSplit {
-                    atWebMeasure(noteSplit("Pick a note from the feed to read it here.") {
+                    noteSplit("Pick a note from the feed to read it here.") {
                         NavigationStack { FeedView() }
-                    })
+                    }
                 } else {
                     FeedView()
                 }
@@ -135,7 +122,7 @@ struct iPhoneTabView: View {
             .toolbar(.hidden, for: .tabBar)
             .tag(0)
 
-            atWebMeasure(noteSplit("Pick a note from the results to read it here.") {
+            noteSplit("Pick a note from the results to read it here.") {
                 NavigationStack(path: $searchPath) {
                     SearchView()
                         .navigationTitle("")
@@ -145,7 +132,7 @@ struct iPhoneTabView: View {
                             NoteDetailView(note: note)
                         }
                 }
-            })
+            }
             .onReceive(NotificationCenter.default.publisher(for: .havenFocusSearch)) { _ in
                 // ⌘F with a note pushed: pop so SearchView appears and takes the request.
                 if !searchPath.isEmpty { searchPath = NavigationPath() }
@@ -153,7 +140,7 @@ struct iPhoneTabView: View {
             .toolbar(.hidden, for: .tabBar)
             .tag(1)
 
-            atWebMeasure(noteSplit("Pick a note from your profile to read it here.") {
+            noteSplit("Pick a note from your profile to read it here.") {
                 NavigationStack(path: $profilePath) {
                     MyProfileView(pubkey: activeHex)
                         .navigationTitle("Profile")
@@ -163,7 +150,7 @@ struct iPhoneTabView: View {
                             NoteDetailView(note: note)
                         }
                 }
-            })
+            }
             .id(activeHex)
             // A note pushed on the tab would cover the profile.
             .onReceive(NotificationCenter.default.publisher(for: .havenShowMyProfileTab)) { _ in
