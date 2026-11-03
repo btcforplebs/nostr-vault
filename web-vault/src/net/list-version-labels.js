@@ -57,12 +57,15 @@ export function remuteLine(r) {
   return parts.length ? `This mutes again: ${parts.join(", ")}.` : ""
 }
 
-/** The left-out lines under the confirm: what an ordinary edit dropped later, and what can't be judged at all. */
-export function leftOutLines({ leftOut = 0, unsure = 0 }) {
+/** The left-out lines under the confirm: what an ordinary edit dropped later, and what can't be judged at all.
+ *  `box`: the vault is the user's box, which keeps every version published to it, so an ordinary edit there is the
+ *  user's (Tod 2026-11-03). */
+export function leftOutLines({ leftOut = 0, unsure = 0 }, { box = false } = {}) {
   const out = []
   // This browser's vault keeps only the copies it read, so another app's edits in between may be missing: an ordinary
   // edit isn't proof the user made it (Tron, PR 1595). Ticks stay as they are; only the claim is softened.
-  if (leftOut) out.push(`${num(leftOut)} dropped in an ordinary edit ${leftOut === 1 ? "stays" : "stay"} out. Your vault only keeps the copies it saw, so it can't tell whether you or another app took ${leftOut === 1 ? "it" : "them"} out. Tap Review to add ${leftOut === 1 ? "it" : "them"}.`)
+  if (leftOut && box) out.push(`${num(leftOut)} you removed yourself later ${leftOut === 1 ? "stays" : "stay"} out.`)
+  else if (leftOut) out.push(`${num(leftOut)} dropped in an ordinary edit ${leftOut === 1 ? "stays" : "stay"} out. Your vault only keeps the copies it saw, so it can't tell whether you or another app took ${leftOut === 1 ? "it" : "them"} out. Tap Review to add ${leftOut === 1 ? "it" : "them"}.`)
   if (unsure) out.push(`${num(unsure)} ${unsure === 1 ? "stays" : "stay"} out because the versions in between weren't all kept or couldn't be opened, so it can't be told whether you removed ${unsure === 1 ? "it" : "them"}. Tap Review to add ${unsure === 1 ? "it" : "them"}.`)
   return out
 }
@@ -72,10 +75,11 @@ export function leftOutLines({ leftOut = 0, unsure = 0 }) {
 export const needsNip44Note = (kind, currentContent, rows) =>
   kind !== 3 && /\?iv=/.test(currentContent ?? "") && rows.some(r => r.ticked && r.private)
 
-/** A Review row's note: when and how it left the list. "" for one in the list now or with no later version. */
-export function entryNote(row, date) {
+/** A Review row's note: when and how it left the list. "" for one in the list now or with no later version.
+ *  `box`: as leftOutLines; a box saw every version, so an ordinary edit there is "You removed this". */
+export function entryNote(row, date, { box = false } = {}) {
   if (row.status === "lost") return `Lost ${date(row.at)}`
-  if (row.status === "removed") return `Dropped ${date(row.at)}, can't tell by whom`
+  if (row.status === "removed") return box ? `You removed this ${date(row.at)}` : `Dropped ${date(row.at)}, can't tell by whom`
   if (row.status === "unsure") return `Gone ${date(row.at)}, can't tell why`
   return ""
 }
