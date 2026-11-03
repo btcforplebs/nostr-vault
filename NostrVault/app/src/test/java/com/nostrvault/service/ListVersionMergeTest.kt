@@ -108,9 +108,11 @@ class ListVersionMergeTest {
         assertEquals("the current list's own tag for 1 (its first p tag) is kept, not the old hint", 2, rows[0].tag.size)
         assertEquals(
             "a short list: everything goes back ticked (Hal's point 2)",
-            listOf(ListVersionMerge.Status.CURRENT, ListVersionMerge.Status.CURRENT, ListVersionMerge.Status.BACK, ListVersionMerge.Status.BACK),
+            listOf(ListVersionMerge.Status.CURRENT, ListVersionMerge.Status.CURRENT, ListVersionMerge.Status.REMOVED, ListVersionMerge.Status.REMOVED),
             rows.map { it.status },
         )
+        assertEquals("ticked, with the date the list now dropped them", listOf(true, true, true, true), rows.map { it.ticked })
+        assertEquals(listOf(0L, 0L, 30L, 30L), rows.map { it.at })
     }
 
     @Test
@@ -137,9 +139,11 @@ class ListVersionMergeTest {
         val v1 = opened(follows(listOf(1, 2), 10))
         val v2 = opened(follows(listOf(2, 3), 20))
         val rows = ListVersionMerge.buildMerge(null, listOf(v1, v2), listOf(v2, v1))
-        assertEquals("v2 dropped 1 from a short list: offered back", ListVersionMerge.Status.BACK, rows.of(p(1)).status)
+        assertEquals("v2 dropped 1 from a short list: offered back, dated", ListVersionMerge.Status.REMOVED, rows.of(p(1)).status)
         assertTrue(rows.of(p(1)).ticked)
-        assertEquals(ListVersionMerge.Status.BACK, rows.of(p(3)).status)
+        assertEquals(20L, rows.of(p(1)).at)
+        assertEquals("in the newest version: nothing took it out", ListVersionMerge.Status.BACK, rows.of(p(3)).status)
+        assertEquals(0L, rows.of(p(3)).at)
     }
 
     @Test

@@ -276,7 +276,9 @@ object ListVersionMerge {
      * vault keeps with no hole between them ([unbroken]; null: all of them). For an
      * entry not in the list now, with H the newest version holding it (picked or
      * not) and N the one after:
-     * - BACK: no N, a relay list, or H read and under [SHORT]: ticked;
+     * - BACK: no N (nothing took it out): ticked, `at` = 0;
+     * - REMOVED but ticked: a relay list, or H read and under [SHORT] (an edit and a
+     *   wipe look the same by count), `at` = N so Review says when it went;
      * - UNSURE: H or any newer version with its private part unread (it may hold the
      *   entry privately): unticked, `at` = N;
      * - H or N outside [vault]: versions between them may be gone; LOST if N wiped H
@@ -314,7 +316,8 @@ object ListVersionMerge {
             val next = if (i > 0) timeline[i - 1] else null
             when {
                 held == null || next == null -> out(Status.BACK, 0, true)
-                held.v.kind in relayKinds || (held.entries.size < SHORT && !held.unread) -> out(Status.BACK, 0, true)
+                // Ticked all the same, but N took it out of a list that held it: say when (Tron, Logen 2026-11-03).
+                held.v.kind in relayKinds || (held.entries.size < SHORT && !held.unread) -> out(Status.REMOVED, next.v.createdAt, true)
                 newerUnread || held.unread -> out(Status.UNSURE, next.v.createdAt, false)
                 held.v.id !in run || next.v.id !in run ->
                     if (wipedBy(held, next)) out(Status.LOST, next.v.createdAt, true) else out(Status.UNSURE, next.v.createdAt, false)
