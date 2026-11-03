@@ -137,3 +137,36 @@ npub, display name and picture URL only. No key, no signer kind.
   **Open now**, which starts the app with `nostrvault://shareportal`.
 - The share surface never publishes. Every action ends on a review card in the
   app with an explicit button.
+
+## 6. Lane D: Pay or zap, Send privately
+
+**Pay target.** `PayShareTarget.find(url, text, selection)` (`SharePortalKit/PayShareTarget.swift`,
+`shareportal/PayShareTarget.kt`) uses the classifier's own pay patterns: the
+first bolt11, else the first LNURL, else the whole trimmed `text` when it is a
+lightning address. Token lowercased, `lightning:` dropped. `recipientNpub` is
+set only when the share names exactly one npub. A zap is offered only when the
+target is an address equal to that npub's own profile `lud16`. Fixture:
+`pay-target-cases.json`.
+
+**Money rules.** The share surface shows the target and sets no amount. The
+review card pays only after its confirm; refuses an invoice with no amount or
+past its expiry (checked again at pay time); refuses an LNURL invoice whose
+msat differs from the amount asked (LUD-06); and records each pay share's
+attempt by intent id outside the queue (iOS `UserDefaults`, Android
+`SharedPreferences` `share_portal_pay`), so once a wallet call for an LNURL or
+zap has started that share can never pay again, even after the app is killed.
+A bolt11 may be retried (one payment hash cannot settle twice).
+
+**Recent private recipients.** `<root>/SharePortal/contacts.json` (Android:
+`filesDir/share_portal/contacts.json`), written by the app only after a
+private send from a share, read by the share surface:
+
+```json
+{ "v": 1, "recent": { "npub1<account>": [ { "npub": "npub1…", "name": "Bee", "picture": "https://…" } ] } }
+```
+
+Newest first, at most 8 per account, accounts no longer on the device are
+dropped on each write. npub, name and picture only. The sheet's pick is a
+suggestion (`form.to`); the review card shows the recipient and the exact text
+and sends only on its button, as the share's account only. Text only: files
+are not sent privately yet. Fixture: `contacts-cases.json`.

@@ -1,0 +1,234 @@
+{
+  "_doc": "Share Portal lane D: PayShareTarget.find and canZap. Read by MediaLogicTests (Swift) and PayShareTargetTest (Kotlin).",
+  "cases": [
+    {
+      "name": "bare invoice in text",
+      "input": {
+        "text": "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu"
+      },
+      "expect": {
+        "token": "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu",
+        "kind": "invoice",
+        "npub": null
+      }
+    },
+    {
+      "name": "lightning: prefix upper case",
+      "input": {
+        "text": "LIGHTNING:LNBC2500U1PVJLUEZPP5QQQSYQCYQ5RQWZQFQQQSYQCYQ5RQWZQFQQQSYQCYQ5RQWZQFQYPQDQ5XYSXXATSYP3K7ENXV4JSXQZPU"
+      },
+      "expect": {
+        "token": "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu",
+        "kind": "invoice",
+        "npub": null
+      }
+    },
+    {
+      "name": "invoice inside a sentence with url",
+      "input": {
+        "url": "https://shop.example/pay",
+        "text": "Pay here lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu thanks"
+      },
+      "expect": {
+        "token": "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu",
+        "kind": "invoice",
+        "npub": null
+      }
+    },
+    {
+      "name": "invoice in selection",
+      "input": {
+        "url": "https://x.example",
+        "selection": "invoice: lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu"
+      },
+      "expect": {
+        "token": "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu",
+        "kind": "invoice",
+        "npub": null
+      }
+    },
+    {
+      "name": "invoice wins over lnurl",
+      "input": {
+        "text": "lnurl1dp68gurn8ghj7um9wfmxjcm99e3k7mf0v9cxj0m385ekvcenxc6r2c35xvukxefcv5mkvv34x5ekzd3ev56nyd3hxqurzepexejxxepnxscrvwfnv9nxzcn9xq6xyefhvgcxxcmyxymnserxfq5fns\nlnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu"
+      },
+      "expect": {
+        "token": "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu",
+        "kind": "invoice",
+        "npub": null
+      }
+    },
+    {
+      "name": "lnurl",
+      "input": {
+        "text": "lightning:lnurl1dp68gurn8ghj7um9wfmxjcm99e3k7mf0v9cxj0m385ekvcenxc6r2c35xvukxefcv5mkvv34x5ekzd3ev56nyd3hxqurzepexejxxepnxscrvwfnv9nxzcn9xq6xyefhvgcxxcmyxymnserxfq5fns"
+      },
+      "expect": {
+        "token": "lnurl1dp68gurn8ghj7um9wfmxjcm99e3k7mf0v9cxj0m385ekvcenxc6r2c35xvukxefcv5mkvv34x5ekzd3ev56nyd3hxqurzepexejxxepnxscrvwfnv9nxzcn9xq6xyefhvgcxxcmyxymnserxfq5fns",
+        "kind": "lnurl",
+        "npub": null
+      }
+    },
+    {
+      "name": "lightning address",
+      "input": {
+        "text": "  Alice@Getalby.com \n"
+      },
+      "expect": {
+        "token": "alice@getalby.com",
+        "kind": "address",
+        "npub": null
+      }
+    },
+    {
+      "name": "lightning address with prefix",
+      "input": {
+        "text": "lightning:bob@walletofsatoshi.com"
+      },
+      "expect": {
+        "token": "bob@walletofsatoshi.com",
+        "kind": "address",
+        "npub": null
+      }
+    },
+    {
+      "name": "address inside a sentence is not a target",
+      "input": {
+        "text": "zap me at bob@example.com please"
+      },
+      "expect": null
+    },
+    {
+      "name": "address in url only is not a target",
+      "input": {
+        "url": "https://bob@example.com"
+      },
+      "expect": null
+    },
+    {
+      "name": "short ln word is not an invoice",
+      "input": {
+        "text": "lnbc123"
+      },
+      "expect": null
+    },
+    {
+      "name": "nothing",
+      "input": {
+        "text": "hello"
+      },
+      "expect": null
+    },
+    {
+      "name": "empty",
+      "input": {},
+      "expect": null
+    },
+    {
+      "name": "invoice plus one npub",
+      "input": {
+        "text": "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu from npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr"
+      },
+      "expect": {
+        "token": "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu",
+        "kind": "invoice",
+        "npub": "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr"
+      }
+    },
+    {
+      "name": "same npub twice counts once",
+      "input": {
+        "text": "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr",
+        "selection": "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr"
+      },
+      "expect": {
+        "token": "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu",
+        "kind": "invoice",
+        "npub": "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr"
+      }
+    },
+    {
+      "name": "two different npubs give no recipient",
+      "input": {
+        "text": "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+      },
+      "expect": {
+        "token": "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu",
+        "kind": "invoice",
+        "npub": null
+      }
+    }
+  ],
+  "zap": [
+    {
+      "name": "address equals profile lud16",
+      "target": {
+        "token": "alice@getalby.com",
+        "kind": "address",
+        "npub": "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr"
+      },
+      "lud16": "Alice@GetAlby.com ",
+      "expect": true
+    },
+    {
+      "name": "address differs from profile lud16",
+      "target": {
+        "token": "alice@getalby.com",
+        "kind": "address",
+        "npub": "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr"
+      },
+      "lud16": "mallory@evil.example",
+      "expect": false
+    },
+    {
+      "name": "no recipient npub",
+      "target": {
+        "token": "alice@getalby.com",
+        "kind": "address",
+        "npub": null
+      },
+      "lud16": "alice@getalby.com",
+      "expect": false
+    },
+    {
+      "name": "profile has no lud16",
+      "target": {
+        "token": "alice@getalby.com",
+        "kind": "address",
+        "npub": "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr"
+      },
+      "lud16": null,
+      "expect": false
+    },
+    {
+      "name": "blank lud16",
+      "target": {
+        "token": "alice@getalby.com",
+        "kind": "address",
+        "npub": "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr"
+      },
+      "lud16": "  ",
+      "expect": false
+    },
+    {
+      "name": "invoice is never a zap",
+      "target": {
+        "token": "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu",
+        "kind": "invoice",
+        "npub": "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr"
+      },
+      "lud16": "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu",
+      "expect": false
+    },
+    {
+      "name": "lnurl is never a zap",
+      "target": {
+        "token": "lnurl1dp68gurn8ghj7um9wfmxjcm99e3k7mf0v9cxj0m385ekvcenxc6r2c35xvukxefcv5mkvv34x5ekzd3ev56nyd3hxqurzepexejxxepnxscrvwfnv9nxzcn9xq6xyefhvgcxxcmyxymnserxfq5fns",
+        "kind": "lnurl",
+        "npub": "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr"
+      },
+      "lud16": "lnurl1dp68gurn8ghj7um9wfmxjcm99e3k7mf0v9cxj0m385ekvcenxc6r2c35xvukxefcv5mkvv34x5ekzd3ev56nyd3hxqurzepexejxxepnxscrvwfnv9nxzcn9xq6xyefhvgcxxcmyxymnserxfq5fns",
+      "expect": false
+    }
+  ]
+}

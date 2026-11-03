@@ -1,0 +1,1 @@
+../../../HavenApp/SharePortalKit/NVShareContactsSnapshot.swift

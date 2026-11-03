@@ -4,13 +4,21 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nostrvault.shareportal.ShareAction
+import com.nostrvault.shareportal.PayShareTarget
+import com.nostrvault.shareportal.ShareClassifier
+import com.nostrvault.shareportal.ShareContactsSnapshot
+import com.nostrvault.shareportal.ShareInput
 import com.nostrvault.shareportal.ShareIntent
+import com.nostrvault.ui.screens.shareportal.forms.DMShareForm
 import com.nostrvault.ui.screens.shareportal.forms.HighlightShareForm
+import com.nostrvault.ui.screens.shareportal.forms.PayShareForm
 import com.nostrvault.ui.theme.*
 
 /**
@@ -46,6 +54,20 @@ internal fun SharePortalSheet(
                             model.intent(ShareAction.HIGHLIGHT, mapOf("passage" to passage, "comment" to comment))?.let {
                                 model.sending(); onSend(it)
                             }
+                        },
+                    )
+                    ShareAction.PAY -> PayShareForm(
+                        target = model.read?.input?.let { PayShareTarget.find(it.url, it.text, it.selection)?.token },
+                        onBack = model::back,
+                        onSend = { model.intent(ShareAction.PAY, emptyMap())?.let { model.sending(); onSend(it) } },
+                    )
+                    ShareAction.DM -> DMShareForm(
+                        initialMessage = model.read?.input?.let { dmMessage(it) }.orEmpty(),
+                        recent = recentContacts(model.account),
+                        onBack = model::back,
+                        onSend = { message, to ->
+                            val form = buildMap { put("message", message); to?.let { put("to", it) } }
+                            model.intent(ShareAction.DM, form)?.let { model.sending(); onSend(it) }
                         },
                     )
                     else -> Text("Not ready yet.", color = SecondaryText)
@@ -109,4 +131,23 @@ internal fun label(action: ShareAction): String = when (action) {
     ShareAction.STATUS -> "Set as now playing"
     ShareAction.CALENDAR -> "Add to calendar"
     ShareAction.LABEL -> "Flag this link"
+}
+
+/** Send privately starts from the shared title and link, else the shared text. Twin: DMShareForm.swift. */
+private fun dmMessage(input: ShareInput): String {
+    val url = ShareClassifier.webUrl(input)
+    if (url != null) {
+        val title = input.title?.trim().orEmpty()
+        return if (title.isEmpty()) url else "$title\n$url"
+    }
+    return input.selection ?: input.text.orEmpty()
+}
+
+/** This account's recent private recipients, written by the app (lane D). */
+@Composable
+private fun recentContacts(account: String?): List<ShareContactsSnapshot.Contact> {
+    val context = LocalContext.current
+    return remember(account) {
+        ShareContactsSnapshot.read(ShareContactsSnapshot.file(context))?.contacts(account).orEmpty()
+    }
 }

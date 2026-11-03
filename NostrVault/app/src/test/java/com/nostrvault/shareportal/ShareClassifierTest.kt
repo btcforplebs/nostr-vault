@@ -43,6 +43,6 @@ class ShareClassifierTest {
 
     @Test fun availabilityShowsOnlyReadyActions() {
         val ranked = listOf(ShareAction.BOOKMARK, ShareAction.HIGHLIGHT, ShareAction.PAY, ShareAction.UPLOAD)
-        assertEquals(listOf(ShareAction.HIGHLIGHT, ShareAction.UPLOAD), ShareActionAvailability.available(ranked))
+        assertEquals(listOf(ShareAction.HIGHLIGHT, ShareAction.PAY, ShareAction.UPLOAD), ShareActionAvailability.available(ranked))
     }
 }

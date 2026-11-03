@@ -128,7 +128,7 @@ final class SharePortalKitTests: XCTestCase {
     // MARK: Availability
 
     func testPhaseOneOffersOnlyHighlightAndUpload() {
-        XCTAssertEqual(NVShareActionAvailability.offered(NVShareAction.allCases), [.highlight, .upload])
+        XCTAssertEqual(NVShareActionAvailability.offered(NVShareAction.allCases), [.highlight, .upload, .pay, .dm])
     }
 
     // MARK: Highlight tags

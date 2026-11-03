@@ -1,0 +1,221 @@
+{
+  "_doc": "NVShareContactsSnapshot / ShareContactsSnapshot decode cleaning and recording. Swift and Kotlin read this file.",
+  "decode": [
+    {
+      "name": "valid",
+      "json": {
+        "v": 1,
+        "recent": {
+          "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr": [
+            {
+              "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+              "name": "Bee",
+              "picture": "https://p.example/b.png"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr": [
+          "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+        ]
+      }
+    },
+    {
+      "name": "wrong version",
+      "json": {
+        "v": 2,
+        "recent": {
+          "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr": [
+            {
+              "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+              "name": "Bee"
+            }
+          ]
+        }
+      },
+      "expect": null
+    },
+    {
+      "name": "non-npub account dropped",
+      "json": {
+        "v": 1,
+        "recent": {
+          "bob": [
+            {
+              "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+              "name": "Bee"
+            }
+          ],
+          "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr": [
+            {
+              "npub": "npub1pppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+              "name": "Cee"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr": [
+          "npub1pppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+        ]
+      }
+    },
+    {
+      "name": "non-npub contact dropped",
+      "json": {
+        "v": 1,
+        "recent": {
+          "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr": [
+            {
+              "npub": "hex",
+              "name": "x"
+            },
+            {
+              "npub": "npub1pppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+              "name": "Cee"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr": [
+          "npub1pppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+        ]
+      }
+    },
+    {
+      "name": "short npub dropped",
+      "json": {
+        "v": 1,
+        "recent": {
+          "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr": [
+            {
+              "npub": "npub1abc",
+              "name": "x"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr": []
+      }
+    },
+    {
+      "name": "capped at eight",
+      "json": {
+        "v": 1,
+        "recent": {
+          "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr": [
+            {
+              "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+              "name": "q"
+            },
+            {
+              "npub": "npub1pppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+              "name": "p"
+            },
+            {
+              "npub": "npub1zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+              "name": "z"
+            },
+            {
+              "npub": "npub1rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+              "name": "r"
+            },
+            {
+              "npub": "npub1yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+              "name": "y"
+            },
+            {
+              "npub": "npub19999999999999999999999999999999999999999999999999999999999",
+              "name": "9"
+            },
+            {
+              "npub": "npub1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "name": "x"
+            },
+            {
+              "npub": "npub18888888888888888888888888888888888888888888888888888888888",
+              "name": "8"
+            },
+            {
+              "npub": "npub1gggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+              "name": "g"
+            },
+            {
+              "npub": "npub1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+              "name": "f"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr": [
+          "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+          "npub1pppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+          "npub1zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+          "npub1rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+          "npub1yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+          "npub19999999999999999999999999999999999999999999999999999999999",
+          "npub1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "npub18888888888888888888888888888888888888888888888888888888888"
+        ]
+      }
+    },
+    {
+      "name": "not json",
+      "raw": "nope",
+      "expect": null
+    }
+  ],
+  "record": [
+    {
+      "name": "new goes first and duplicates collapse",
+      "start": [
+        "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+        "npub1pppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+      ],
+      "add": "npub1pppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+      "expect": [
+        "npub1pppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+        "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+      ]
+    },
+    {
+      "name": "list capped at eight after insert",
+      "start": [
+        "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+        "npub1pppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+        "npub1zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+        "npub1rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+        "npub1yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+        "npub19999999999999999999999999999999999999999999999999999999999",
+        "npub1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "npub18888888888888888888888888888888888888888888888888888888888"
+      ],
+      "add": "npub1gggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+      "expect": [
+        "npub1gggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+        "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+        "npub1pppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+        "npub1zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+        "npub1rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+        "npub1yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+        "npub19999999999999999999999999999999999999999999999999999999999",
+        "npub1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      ]
+    },
+    {
+      "name": "non-npub contact ignored",
+      "start": [
+        "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+      ],
+      "add": "hexhex",
+      "expect": [
+        "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+      ]
+    }
+  ],
+  "account": "npub1yl3j4ev3r0v92ljmv889c7etvlrpemfhs2d0dr4atxfpvsux6mfqt269tr"
+}

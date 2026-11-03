@@ -52,6 +52,12 @@ struct SharePortalCard: View {
                 HighlightShareForm(input: model.input, accounts: model.accounts, account: $model.account) { form in
                     model.queue(.highlight, form: form)
                 }
+            case .pay:
+                PayShareForm(input: model.input) { model.queue(.pay, form: [:]) }
+            case .dm:
+                DMShareForm(input: model.input, account: model.account) { form in
+                    model.queue(.dm, form: form)
+                }
             default:
                 EmptyView()
             }
