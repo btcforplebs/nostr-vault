@@ -42,3 +42,29 @@ test("the confirm line", () => {
   assert.match(saveLine(10003, "Bookmarks", { total: 5, added: 2, removed: 0 }), /^Saves your bookmarks as 5 entries: 2 back\./)
   assert.equal(saveLine(3, "Follows", { total: 3, added: 0, removed: 0 }), "Nothing to bring back.")
 })
+
+test("an ordinary-edit drop isn't claimed as the user's: the browser vault may miss other apps' edits (Tron, PR 1595)", async () => {
+  const { leftOutLines, entryNote } = await import("../src/net/list-version-labels.js")
+  const [one] = leftOutLines({ leftOut: 1, unsure: 0 })
+  assert.match(one, /^1 dropped in an ordinary edit stays out\. .*can't tell whether you or another app took it out\. Tap Review to add it\.$/)
+  assert.match(leftOutLines({ leftOut: 3 })[0], /^3 dropped .* stay out\. .*took them out\. Tap Review to add them\.$/)
+  assert.doesNotMatch(leftOutLines({ leftOut: 2, unsure: 1 }).join(" "), /you removed yourself/)
+  const d = at => `d${at}`
+  assert.equal(entryNote({ status: "removed", at: 5 }, d), "Dropped d5, can't tell by whom")
+  assert.equal(entryNote({ status: "lost", at: 5 }, d), "Lost d5")
+  assert.equal(entryNote({ status: "unsure", at: 5 }, d), "Gone d5, can't tell why")
+  assert.equal(entryNote({ status: "current", at: 0 }, d), "")
+  assert.equal(entryNote({ status: "back", at: 0 }, d), "")
+})
+
+test("the NIP-44 note only when private entries are saved over a NIP-04 list", async () => {
+  const { needsNip44Note } = await import("../src/net/list-version-labels.js")
+  const nip04 = "abc?iv=def"
+  const priv = [{ ticked: true, private: true }], pub = [{ ticked: true, private: false }], off = [{ ticked: false, private: true }]
+  assert.equal(needsNip44Note(10000, nip04, priv), true)
+  assert.equal(needsNip44Note(10000, nip04, pub), false, "no private entries saved")
+  assert.equal(needsNip44Note(10000, nip04, off), false, "the private one is unticked")
+  assert.equal(needsNip44Note(10000, "nip44payload", priv), false, "already NIP-44")
+  assert.equal(needsNip44Note(10000, undefined, priv), false, "no current list")
+  assert.equal(needsNip44Note(3, nip04, priv), false, "kind 3 content is relay hints")
+})
