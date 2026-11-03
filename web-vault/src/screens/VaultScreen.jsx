@@ -1,6 +1,7 @@
 // The Vault tab (iPhone VaultTabView): a mode pill on the left (Vault · Notes · Articles · Highlights · Media ·
-// Likes · Zaps · Followers, then the Vault Dashboard), and on the right one pill with the Messages envelope, the mode's
-// filters as bare icons and search (VaultToolbar trailingPill). A floating "Vault" capsule, coloured by the app's relay
+// Likes · Zaps · Followers, then Messages and the Vault Dashboard: VaultPagesMenu.jsx), and on the right one pill with
+// the mode's filters as bare icons and search (VaultToolbar trailingPill). Messages has no envelope there any more
+// (Logen, 2026-11-03): it is a page of its own in the menu. A floating "Vault" capsule, coloured by the app's relay
 // connections, opens the Vault Dashboard sheet (VaultView+Layout; components/VaultButton.jsx, VaultDashboard.jsx).
 // Your own events come from Haven's outbox; what others sent you from Haven's inbox and the relays.
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
@@ -33,6 +34,7 @@ import { NewPostsPill, SkeletonRows } from "../components/FeedExtras.jsx"
 import { VaultButton } from "../components/VaultButton.jsx"
 import { dashboardHref, openDashboard } from "../net/dashboard-route.js"
 import { ICONS, filterIcon, Icon, Chevron, Menu, MenuItem } from "./vault-ui.jsx"
+import { VaultPagesMenu } from "./VaultPagesMenu.jsx"
 
 const nowSec = () => Math.floor(Date.now() / 1000)
 const scroller = el => el?.closest(".desk-list") ?? null
@@ -234,7 +236,6 @@ export function VaultScreen({ ctx, desk = false }) {
 
   // Anyone can reply, react, zap or follow: only a follow's (or your own) picture host and inline images are fetched.
   const trusted = pk => pk === me || account.follows.includes(pk)
-  const m = MODES.find(x => x.id === mode)
   const filters = FILTERS[mode]
   const f = filters.find(x => x.id === filter)
   return (
@@ -245,23 +246,16 @@ export function VaultScreen({ ctx, desk = false }) {
             {MODES.map(x => <button key={x.id} role="tab" aria-selected={x.id === mode} class={x.id === mode ? "on" : ""} title={fresh.has(x.id) ? `${x.title}: new` : x.title} onClick={() => pick(x.id)}><Icon d={ICONS[x.id]} /><span>{x.title}</span>{fresh.has(x.id) && <span class="vault-new-dot" aria-label="new" />}</button>)}
           </div>
         ) : (
-          <Menu label={<><Icon d={ICONS[mode]} /><b>{m.title}</b>{fresh.size > 0 && <span class="vault-new-dot" aria-label="new in another mode" />}<Chevron /></>} title={`Vault: ${m.title}`}>
-            {MODES.map(x => <MenuItem key={x.id} on={x.id === mode} onClick={() => pick(x.id)}><Icon d={ICONS[x.id]} />{x.title}{fresh.has(x.id) && <span class="vault-new">New</span>}</MenuItem>)}
-            <hr />
-            <MenuItem onClick={openDashboard}><Icon d={ICONS.dashboard} />Vault Dashboard</MenuItem>
-            <MenuItem onClick={() => { setRefreshes(n => n + 1); load({ hold: false }) }}><Icon d={ICONS.refresh} />Refresh</MenuItem>
-          </Menu>
+          <VaultPagesMenu ctx={ctx} current={mode} fresh={fresh} onPick={pick} onRefresh={() => { setRefreshes(n => n + 1); load({ hold: false }) }} />
         )}
         {!desk ? (
           <div class="vault-capsule">
-            <a class="vault-capsule-btn" href="#/messages" aria-label="Messages" title="Messages"><Icon d={ICONS.envelope} size={18} /></a>
             {filters.length > 0 && <>
-              <span class="vault-capsule-line" aria-hidden="true" />
               <div class="vault-capsule-filters" role="group" aria-label={`Filter: ${f?.title}`}>
                 {filters.map(x => <button key={x.id} class={`vault-capsule-btn ${x.id === filter ? "on" : ""}`} aria-pressed={x.id === filter} aria-label={x.title} title={x.title} onClick={() => choose(x.id)}><Icon d={filterIcon(mode, x.id)} size={18} /></button>)}
               </div>
+              <span class="vault-capsule-line" aria-hidden="true" />
             </>}
-            <span class="vault-capsule-line" aria-hidden="true" />
             <button class={`vault-capsule-btn ${searching ? "on" : ""}`} onClick={() => setSearching(!searching)} aria-label="Search your vault" aria-pressed={searching} title="Search your vault"><Icon d={ICONS.search} size={18} /></button>
           </div>
         ) : (

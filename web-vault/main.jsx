@@ -274,7 +274,7 @@ function PhoneScreens({ ctx, route, arg, other }) {
       {route === "search" && <SearchScreen ctx={ctx} onProfile={pk => { location.hash = `#/profile/${pk}` }} />}
       {route === "notifications" && <NotificationsScreen ctx={ctx} />}
       {route === "thread" && <ThreadScreen key={arg} ctx={ctx} id={arg} />}
-      {route === "messages" && <MessagesScreen ctx={ctx} />}
+      {route === "messages" && <MessagesScreen ctx={ctx} vaultMenu />}
       {route === "dm" && <ConversationScreen key={arg} ctx={ctx} peer={arg} />}
       {route === "vault" && <VaultScreen ctx={ctx} />}
       {route === "settings" && <SettingsScreen key={arg} ctx={ctx} page={arg} />}

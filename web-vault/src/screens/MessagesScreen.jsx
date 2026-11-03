@@ -21,6 +21,7 @@ import { hiddenFromUnread, useDmTrust } from "../components/useDmTrust.js"
 import { searchChats } from "../net/dm-search.js"
 import { RequestsButton, MessagesSearch, searchName } from "./MessagesTools.jsx"
 import { splitConversations } from "../net/dm-trust.js"
+import { VaultPagesMenu } from "./VaultPagesMenu.jsx"
 
 // The people strip under "New message" is the composer's @mention picker; its styles come with it.
 if (import.meta.env) import("../styles/compose.css")
@@ -157,7 +158,9 @@ export function SignerTrouble({ trouble, retry }) {
   )
 }
 
-export function MessagesScreen({ ctx }) {
+/** `vaultMenu`: the phone's Messages page, one of the Vault's pages, wears the Vault menu top left (VaultPagesMenu.jsx).
+ *  The desktop's Messages column (DesktopShell) doesn't: there Messages is a rail row. */
+export function MessagesScreen({ ctx, vaultMenu = false }) {
   const { messages, note, trouble, retry, refresh, syncing, more, loaded } = useMessages(ctx)
   const { blocked } = useBlocks(ctx)
   const [to, setTo] = useState("")
@@ -193,7 +196,7 @@ export function MessagesScreen({ ctx }) {
   return (
     <main class="screen">
       <header class="screen-head dm-head">
-        {showRequests && <a class="small button" href="#/messages">‹ Messages</a>}
+        {showRequests ? <a class="small button" href="#/messages">‹ Messages</a> : vaultMenu && <VaultPagesMenu ctx={ctx} current="messages" />}
         <h2 class={showRequests ? undefined : "sr-only"}>{showRequests ? "Requests" : "Messages"}</h2>
         <span class="dm-head-actions">
           {!showRequests && total > 0 && <button type="button" class="small" onClick={() => markRead(me, [...messages.values()].filter(m => inboxPeers.has(m.peer)))}>Mark all read</button>}
