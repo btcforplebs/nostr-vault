@@ -40,6 +40,7 @@ struct PrivateCopiesView: View {
         .confirmationDialog("Delete this private copy?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
                             titleVisibility: .visible) {
             Button("Delete", role: .destructive) { if let item = confirmDelete { delete(item) } }
+            Button("Cancel", role: .cancel) {}
         } message: {
             Text("The encrypted file and its key are removed from your vault. This can't be undone.")
         }
@@ -57,7 +58,9 @@ struct PrivateCopiesView: View {
                 Spacer()
                 if busy == item.id { ProgressView() }
             }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .disabled(busy != nil)
         .swipeActions {
             if item.record != nil {

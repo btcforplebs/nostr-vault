@@ -57,6 +57,20 @@ enum PrivateCopyStore {
 
     // MARK: Save
 
+    /// Shares already kept, by intent id: a card swiped away after Save and
+    /// shown again later opens on "Saved" instead of offering a second copy.
+    private static let savedKey = "sharePortal.privateCopy.savedIntents"
+
+    static func wasSaved(_ intent: NVShareIntent) -> Bool {
+        (UserDefaults.standard.stringArray(forKey: savedKey) ?? []).contains(intent.id)
+    }
+
+    private static func markSaved(_ intent: NVShareIntent) {
+        var ids = UserDefaults.standard.stringArray(forKey: savedKey) ?? []
+        ids.append(intent.id)
+        UserDefaults.standard.set(Array(ids.suffix(50)), forKey: savedKey)
+    }
+
     /// Seals and keeps the copy as `lock`'s account. Returns the copy id.
     @discardableResult
     static func save(_ intent: NVShareIntent, lockedTo lock: PostingAccount.Lock,
@@ -75,8 +89,21 @@ enum PrivateCopyStore {
                                                       contentType: "application/octet-stream", authBase64: auth) != nil else {
             throw SaveError.vaultDidNotTake
         }
+        do {
+            let id = try await keepRecord(intent, sealed: sealed, name: name, mime: mime, size: plain.count, lock: lock)
+            markSaved(intent)
+            return id
+        } catch {
+            // No record, no way to open it: take the sealed blob back out.
+            _ = await blossom.deleteFromLocal(sha256: sealed.x)
+            throw error
+        }
+    }
+
+    private static func keepRecord(_ intent: NVShareIntent, sealed: PrivateCopyRecord.Sealed, name: String, mime: String,
+                                   size: Int, lock: PostingAccount.Lock) async throws -> String {
         let id = UUID().uuidString.lowercased()
-        let record = PrivateCopyRecord.Record(name: name, mime: mime, size: plain.count, x: sealed.x, ox: sealed.ox,
+        let record = PrivateCopyRecord.Record(name: name, mime: mime, size: size, x: sealed.x, ox: sealed.ox,
                                               key: sealed.key, nonce: sealed.nonce, source: intent.source.url,
                                               title: intent.source.title, savedAt: Int(Date().timeIntervalSince1970))
         let ciphertext: String
@@ -113,7 +140,7 @@ enum PrivateCopyStore {
             throw SaveError.signing
         }
         guard event.pubkey.lowercased() == lock.hex.lowercased() else { throw ModePostPublisher.PublishError.accountChanged }
-        guard await VaultSocket.publish(event, path: privatePath, timeout: 8) else { throw SaveError.vaultRefused }
+        guard await VaultSocket.publish(event, path: privatePath, timeout: 15) else { throw SaveError.vaultRefused }
     }
 
     // MARK: List / open / delete
@@ -122,7 +149,7 @@ enum PrivateCopyStore {
     static func list(for hex: String) async -> [PrivateCopyItem]? {
         guard !hex.isEmpty else { return [] }
         let filter: [String: Any] = ["kinds": [PrivateCopyRecord.kind], "authors": [hex]]
-        guard let events = await VaultSocket.query(path: privatePath, filter: filter, timeout: 6) else { return nil }
+        guard let events = await VaultSocket.query(path: privatePath, filter: filter, timeout: 15) else { return nil }
         var newest: [String: NostrEvent] = [:]
         for e in events where e.pubkey.lowercased() == hex.lowercased() {
             guard let id = PrivateCopyRecord.id(kind: e.kind, tags: e.tags) else { continue }

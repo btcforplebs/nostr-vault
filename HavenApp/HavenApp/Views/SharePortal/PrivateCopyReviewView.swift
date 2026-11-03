@@ -21,23 +21,32 @@ struct PrivateCopyReviewView: View {
     }
 
     var body: some View {
-        if saved { done } else { form }
+        Group {
+            if saved { done } else { form }
+        }
+        .onAppear { if PrivateCopyStore.wasSaved(intent) { saved = true } }
     }
 
     private var form: some View {
         Form {
             Section("What's kept") {
                 if let file {
-                    Label(file.name, systemImage: "doc")
-                    Text(ByteCountFormatter.string(fromByteCount: Int64(file.bytes), countStyle: .file))
-                        .font(.footnote).foregroundStyle(.secondary)
+                    LabeledContent {
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(file.bytes), countStyle: .file))
+                    } label: {
+                        Label(file.name, systemImage: "doc").lineLimit(2)
+                    }
                     if tooBig {
                         Text(PrivateCopyStore.SaveError.tooBig.localizedDescription).font(.footnote).foregroundStyle(.orange)
                     }
                 } else if let page {
-                    if let title = intent.source.title, !title.isEmpty { Text(title).font(.subheadline) }
-                    Text(page.absoluteString).font(.caption).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle)
-                    Text("The page is saved as a PDF, as it looks now.").font(.footnote).foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(intent.source.title?.isEmpty == false ? intent.source.title! : (page.host ?? "Web page"),
+                              systemImage: "globe")
+                        Text(page.absoluteString).font(.caption).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle)
+                        Text("Saved as a PDF, as the page looks now.").font(.footnote).foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 2)
                 } else {
                     Text("Nothing to keep: no file or web page came with this share.").foregroundStyle(.secondary)
                 }
