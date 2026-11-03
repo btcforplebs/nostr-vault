@@ -92,8 +92,8 @@ extension NostrService {
     @MainActor
     /// `skipIfUnchanged`: when the built list is the newest one as it is,
     /// nothing is signed and the newest is returned (nil when there is none).
-    private func publishMergedList(kind: Int, author: String, signAsNpub: String?, skipIfUnchanged: Bool = false,
-                                   build: (NostrEvent?) -> (tags: [[String]], content: String)) async -> NostrEvent? {
+    func publishMergedList(kind: Int, author: String, signAsNpub: String?, skipIfUnchanged: Bool = false,
+                           build: (NostrEvent?) async -> (tags: [[String]], content: String)) async -> NostrEvent? {
         guard !author.isEmpty else { return nil }
         let alsoAsk = Array(ConfigService.shared.config.readRelays.prefix(3))
         let lookup = await lookupNewestReplaceable(kind: kind, for: author, alsoAsk: alsoAsk, skipAhead: true)
@@ -113,7 +113,7 @@ extension NostrService {
             #endif
             return nil
         }
-        let (tags, content) = build(published)
+        let (tags, content) = await build(published)
         // Nothing to change (an empty list is never published over "none").
         if skipIfUnchanged, tags == (published?.tags ?? []), content == (published?.content ?? "") {
             return published
