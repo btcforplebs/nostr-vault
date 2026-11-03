@@ -1,6 +1,7 @@
-// The desktop's sections, in the iPad sidebar's order: account, New Post, Messages, then the sections, then the relay's
-// status. Since the two-column layout (2026-11-02) it is laid as a bar over the left column (desktop.css): icons with
-// tooltips, names once the column has room, New Post at the end.
+// The desktop's sections as the iPad's slim rail down the left edge (Logen, 2026-11-03: the web takes its cues from the
+// iPad; the top bar it had since 2026-11-02 is gone). Top to bottom: the account, New Post, then Feed, Search,
+// Messages, WoT, Vault and Profile, each an icon with its name under it (BottomTabBar's vertical sidebar), and at the
+// foot Settings, Learn, Docs and the vault's status dot. desktop.css lays it out.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
@@ -32,7 +33,8 @@ export const Icon = ({ d, size = 20 }) => d === WOT_GLOBE
   ? <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true"><path d={d} /></svg>
   : <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
 
-const SECTIONS = [["feed", "Feed", "g f"], ["search", "Search", "/"], ["profile", "Profile", "g p"], ["wot", "WoT", "g w"], ["vault", "Vault", "g v"], ["settings", "Settings", "g ,"]]
+// Tod 2026-11-03 (Logen): Feed, Search, Messages, WoT, Vault, Profile; Settings at the foot.
+const SECTIONS = [["feed", "Feed", "g f"], ["search", "Search", "/"], ["messages", "Messages", "g m"], ["wot", "WoT", "g w"], ["vault", "Vault", "g v"], ["profile", "Profile", "g p"]]
 
 export function Sidebar({ ctx, side, rail }) {
   const readOnly = ctx.signer?.readOnly
@@ -53,10 +55,10 @@ export function Sidebar({ ctx, side, rail }) {
       {readOnly
         ? <span class="side-row side-post off" aria-disabled="true" title={`New Post. ${READ_ONLY_SHORT}`}><Icon d={ICON.post} /><span class="side-label">New Post</span></span>
         : <a class="side-row side-post" href="#/compose" title={rail ? "New Post (n)" : "n"} aria-label={rail ? "New Post" : undefined}><Icon d={ICON.post} /><span class="side-label">New Post</span></a>}
-      {row("messages", "Messages", "g m", unread)}
       <hr />
-      {SECTIONS.map(([id, label, keys]) => row(id, label, keys, id === "vault" ? vaultNew : 0))}
-      <hr />
+      {SECTIONS.map(([id, label, keys]) => row(id, label, keys, id === "messages" ? unread : id === "vault" ? vaultNew : 0))}
+      <span class="side-gap" aria-hidden="true" />
+      {row("settings", "Settings", "g ,")}
       <HelpRows rail={rail} />
       <RelayFoot ctx={ctx} rail={rail} />
     </nav>
