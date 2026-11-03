@@ -18,6 +18,12 @@ object ShareActionAvailability {
         ShareAction.CALENDAR,
         ShareAction.STATUS,
         ShareAction.LABEL,
+        // Lane B (phase 2).
+        ShareAction.MEDIA_POST,
+        ShareAction.PRIVATE_COPY,
+        // Lane C (phase 2).
+        ShareAction.PROFILE,
+        ShareAction.BOOKMARK,
         // Lane D (phase 2).
         ShareAction.PAY,
         ShareAction.DM,

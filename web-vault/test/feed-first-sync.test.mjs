@@ -206,6 +206,34 @@ test("a follow's new note arrives live, is saved and waits behind the pill; leav
   assert.ok(relays.live.every(s => s.closed), "every live REQ closed")
 })
 
+test("a live note Haven doesn't answer for still waits behind the pill, and a tap shows it", async () => {
+  const relays = gatedRelays()
+  const m = mount({ follows: [], relays: { read: [] }, loaded: false })
+  await tick(20)
+  m.rerender({ follows, relays: { read: [] }, loaded: true })
+  const window = { addEventListener() {}, removeEventListener() {}, scrollY: 0, scrollTo() {} }
+  Object.assign(globalThis, window)
+  try {
+    await until(() => relays.pending() === R, "chunk 1 asked")
+    relays.releaseChunk()
+    await until(() => relays.pending() === 2 * R, "chunks 2 and 3 asked")
+    relays.releaseChunk()
+    await until(() => /notes saved to your vault/.test(text(m.el)), "the finished sync")
+    // From here Haven stalls on saves ("haven: no answer to EVENT in 15000 ms", Logen 2026-11-03).
+    m.ctx.vault.feed.event = async () => { throw new Error("haven: no answer to EVENT in 15000 ms") }
+    const open = relays.live.filter(s => !s.closed)
+    open[0].params.onevent({ id: hex(8_888_888), pubkey: follows[1], kind: 1, created_at: now + 90, tags: [], content: "live while Haven stalls", sig: "" })
+    for (let i = 0; i < 100 && !/1 New Post(?!s)/.test(text(m.el)); i++) await tick(50)
+    assert.match(text(m.el), /1 New Post(?!s)/, "not dropped")
+    const find = (n, pred) => pred(n) ? n : n.childNodes?.map(c => find(c, pred)).find(Boolean)
+    const pill = find(m.el, n => n.attributes?.class?.startsWith("new-posts"))
+    const [type, onClick] = Object.entries(pill.on).find(([k]) => /^click$/i.test(k))
+    onClick.call(pill, { type })
+    await until(() => /live while Haven stalls/.test(text(m.el)), "the unsaved note shown")
+    render(null, m.el)
+  } finally { for (const k of Object.keys(window)) delete globalThis[k] }
+})
+
 test("Hashtag's new notes arrive live and wait behind the pill; a tap shows them on top; nothing is saved", async () => {
   const tagNote = (id, at, content) => ({ id: hex(id), pubkey: hex(70_000 + id), kind: 1, created_at: at, tags: [["t", "bitcoin"]], content, sig: "" })
   pool.ensureRelay = async () => ({})

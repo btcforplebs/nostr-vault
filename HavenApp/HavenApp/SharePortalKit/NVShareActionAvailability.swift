@@ -12,6 +12,10 @@ enum NVShareActionAvailability {
         .highlight, .upload,
         // Lane A (phase 2)
         .articleClip, .recipe, .calendar, .status, .label,
+        // Lane B (phase 2)
+        .mediaPost, .privateCopy,
+        // Lane C (phase 2)
+        .profile, .bookmark,
         // Lane D (phase 2)
         .pay, .dm,
     ]

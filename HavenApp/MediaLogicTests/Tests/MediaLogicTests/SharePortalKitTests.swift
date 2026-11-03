@@ -127,9 +127,17 @@ final class SharePortalKitTests: XCTestCase {
 
     // MARK: Availability
 
-    func testOfferedKeepsTheClassifierOrderAndDropsUnready() {
+    func testOfferedKeepsTheClassifierOrder() {
         XCTAssertEqual(NVShareActionAvailability.offered([.pay, .bookmark, .highlight, .profile, .dm, .upload]),
-                       [.pay, .highlight, .dm, .upload])
+                       [.pay, .bookmark, .highlight, .profile, .dm, .upload])
+    }
+
+    /// Every lane is in (A, B, C, D): the sheet offers all 13 actions. A
+    /// new action must be added here on purpose.
+    func testEveryActionIsReady() {
+        XCTAssertEqual(NVShareActionAvailability.ready, Set(NVShareAction.allCases))
+        XCTAssertEqual(NVShareActionAvailability.offered([.mediaPost, .privateCopy, .profile, .bookmark]),
+                       [.mediaPost, .privateCopy, .profile, .bookmark])
     }
 
     // MARK: Highlight tags
