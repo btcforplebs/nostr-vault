@@ -15,6 +15,8 @@ struct BottomTabBar: View {
     @ObservedObject var nostrService: NostrService
     @ObservedObject var dmService: DMService
     @ObservedObject var feedService: FeedService
+    /// iPad landscape: the same items stacked down a slim sidebar, no fold.
+    var vertical = false
 
     /// Scroll-linked fold, 0 = full tab bar, 1 = avatar + compose capsule.
     private var chrome: ChromeCollapse { .shared }
@@ -34,6 +36,33 @@ struct BottomTabBar: View {
     }
 
     var body: some View {
+        if vertical { sidebar } else { dock }
+    }
+
+    /// iPad landscape: the dock's items down a slim rail on the left edge,
+    /// full height, like the web's icon rail. Post stays the screen's
+    /// floating button, as on the iPhone.
+    private var sidebar: some View {
+        VStack(spacing: 26) {
+            expandedContent
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 20)
+        .frame(width: Self.railWidth)
+        .frame(maxHeight: .infinity)
+        .background(Color.platformWindowBackground.ignoresSafeArea())
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(Color.white.opacity(0.08))
+                .frame(width: 1)
+                .ignoresSafeArea()
+        }
+    }
+
+    /// Width of the iPad landscape rail.
+    static let railWidth: CGFloat = 68
+
+    private var dock: some View {
         // The per-frame fold lives in `BottomTabBarFold`, so a scroll frame
         // re-renders only the capsule, not every tab, badge and account menu
         // built here.

@@ -61,24 +61,8 @@ extension VaultView {
             nostrService.resetConnections()
         }
 
-        // Use the centralized nostrURL which handles local vs remote correctly
-        var urls = [configService.config.nostrURL, configService.config.nostrURL + "/inbox"].compactMap { URL(string: $0) }
+        let (urls, authors) = Self.activitySources(configService)
         guard !urls.isEmpty else { return }
-
-        // Also query the Mac relay for tagged notes the local relay may
-        // not have (e.g. due to shorter WoT depth or notes missed while suspended).
-        let macURL = configService.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !macURL.isEmpty {
-            if let macRelay = URL(string: macURL) { urls.append(macRelay) }
-            if let macInbox = URL(string: macURL + "/inbox") { urls.append(macInbox) }
-        }
-
-        var authorsSet = Set<String>()
-        if let ownerHex = Bech32.decode(configService.config.ownerNpub)?.hexString {
-            authorsSet.insert(ownerHex)
-        }
-        for pk in configService.whitelistedHexPubkeys { authorsSet.insert(pk) }
-        let authors = Array(authorsSet)
 
         // Incremental: re-issue the live REQs on the existing connections,
         // bounded to what's newer than we already have (60s overlap for
@@ -89,6 +73,31 @@ extension VaultView {
                                          now: Int64(Date().timeIntervalSince1970))
 
         nostrService.fetchNotes(from: urls, since: since, authors: authors)
+    }
+
+    /// Where the Vault's lines come from: the local relay and its inbox (and
+    /// the Mac relay's, when set), for the owner and the whitelist. Shared
+    /// with the iPad's Live Vault column, which can show before this tab is
+    /// ever built.
+    static func activitySources(_ config: ConfigService) -> (urls: [URL], authors: [String]) {
+        // Use the centralized nostrURL which handles local vs remote correctly
+        var urls = [config.config.nostrURL, config.config.nostrURL + "/inbox"].compactMap { URL(string: $0) }
+
+        // Also query the Mac relay for tagged notes the local relay may
+        // not have (e.g. due to shorter WoT depth or notes missed while suspended).
+        let macURL = config.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !macURL.isEmpty {
+            if let macRelay = URL(string: macURL) { urls.append(macRelay) }
+            if let macInbox = URL(string: macURL + "/inbox") { urls.append(macInbox) }
+        }
+
+        var authorsSet = Set<String>()
+        if let ownerHex = Bech32.decode(config.config.ownerNpub)?.hexString {
+            authorsSet.insert(ownerHex)
+        }
+        for pk in config.whitelistedHexPubkeys { authorsSet.insert(pk) }
+        let authors = Array(authorsSet)
+        return (urls, authors)
     }
 
     /// Fetch notes referenced by the owner's likes that aren't already in the events array.
