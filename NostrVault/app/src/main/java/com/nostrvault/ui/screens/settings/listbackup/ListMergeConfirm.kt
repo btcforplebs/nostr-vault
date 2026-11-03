@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
 
 /**
  * What Save does, in one or two lines, and Save: "Saves your follows as 22
- * entries: 18 back.", who a mute list mutes again, and a second tick when an
+ * entries: 18 back.", what stays out, what a mute list mutes again, and a second tick when an
  * entry of the list now is unticked. Shared by the quick path and Review.
  * [onSave] returns what to tell the person when it wasn't saved.
  */
@@ -36,13 +36,13 @@ internal fun ListMergeConfirm(
     name: String,
     rows: List<ListVersionMerge.Row>,
     review: Boolean,
+    nip44Note: Boolean,
     onReview: () -> Unit,
     onCancel: () -> Unit,
     onSave: suspend () -> String?,
 ) {
     val scope = rememberCoroutineScope()
     val sum = ListVersionMerge.mergeSummary(kind, rows)
-    val leftOut = rows.count { it.status == ListVersionMerge.Status.REMOVED && !it.ticked }
     var shrinkOk by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
@@ -59,12 +59,10 @@ internal fun ListMergeConfirm(
             color = PrimaryText,
             fontSize = 14.sp,
         )
-        if (leftOut > 0) {
-            Text("$leftOut you removed yourself later ${if (leftOut == 1) "stays" else "stay"} out.", color = SecondaryText, fontSize = 13.sp)
-        }
-        if (sum.remutes > 0) {
-            Text("This mutes ${sum.remutes} ${if (sum.remutes == 1) "person" else "people"} again.", color = Color(0xFFFF9500), fontSize = 13.sp)
-        }
+        for (line in ListVersionText.leftOutLines(sum)) Text(line, color = SecondaryText, fontSize = 13.sp)
+        val remute = ListVersionText.remuteLine(sum.remutes)
+        if (remute.isNotEmpty()) Text(remute, color = Color(0xFFFF9500), fontSize = 13.sp)
+        if (nip44Note) Text(ListVersionText.NIP44_NOTE, color = SecondaryText, fontSize = 13.sp)
         if (sum.removed > 0) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = shrinkOk, onCheckedChange = { shrinkOk = it })

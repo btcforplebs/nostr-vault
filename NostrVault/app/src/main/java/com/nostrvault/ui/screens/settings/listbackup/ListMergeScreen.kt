@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.service.ListBackupService
 import com.nostrvault.service.ListHistory
+import com.nostrvault.service.ListMergeSave
 import com.nostrvault.service.ListShrinkRule
 import com.nostrvault.service.ListVersionMerge
 import com.nostrvault.service.ListVersionSave
@@ -88,6 +89,7 @@ internal fun ListMergeScreen(key: ListHistory.Key, viewModel: ListBackupViewMode
         rows?.let { merged ->
             ListMergeConfirm(
                 kind = key.kind, name = name, rows = merged, review = review,
+                nip44Note = ListMergeSave.needsNip44Note(key.kind, current?.v?.content, merged),
                 onReview = { review = true }, onCancel = { rows = null; review = false }, onSave = save,
             )
         }
@@ -137,8 +139,9 @@ internal fun ListMergeScreen(key: ListHistory.Key, viewModel: ListBackupViewMode
             if (others.isEmpty()) {
                 item { Text("No older version of this list is kept yet. Your vault keeps one each time the list changes.", color = SecondaryText, fontSize = 13.sp) }
             }
-            itemsIndexed(others, key = { _, v -> v.v.id }) { i, v ->
-                VersionRow(kind = key.kind, v = v, older = others.getOrNull(i + 1), current = current, picked = v.v.id in picked) {
+            itemsIndexed(others, key = { _, v -> v.v.id }) { _, v ->
+                val j = loaded.versions.indexOfFirst { it.v.id == v.v.id }
+                VersionRow(kind = key.kind, v = v, wipe = ListVersionMerge.wasWipe(loaded.versions, j), current = current, picked = v.v.id in picked) {
                     rows = null
                     scope.launch {
                         val id = v.v.id
@@ -167,7 +170,7 @@ internal fun ListMergeScreen(key: ListHistory.Key, viewModel: ListBackupViewMode
                                     val opened = ListVersionMerge.openForMerge(loaded.versions, chosen, opener)
                                     start = loaded.copy(versions = opened)
                                     val ids = chosen.map { it.v.id }.toSet()
-                                    rows = ListVersionMerge.buildMerge(current, opened.filter { it.v.id in ids }, opened)
+                                    rows = ListVersionMerge.buildMerge(current, opened.filter { it.v.id in ids }, opened, loaded.vault)
                                 } finally {
                                     opening = false
                                 }
@@ -186,18 +189,17 @@ internal fun ListMergeScreen(key: ListHistory.Key, viewModel: ListBackupViewMode
     }
 }
 
-/** One version: the app that saved it and when, a tick, and what it would bring back or drop against the list now. */
+/** One version: the app that saved it and when, a tick, what it would bring back or drop against the list now, and [wipe]: it wiped the list ([ListVersionMerge.wasWipe]). */
 @Composable
 private fun VersionRow(
     kind: Int,
     v: ListVersionMerge.Opened,
-    older: ListVersionMerge.Opened?,
+    wipe: Boolean,
     current: ListVersionMerge.Opened?,
     picked: Boolean,
     onToggle: () -> Unit,
 ) {
     val problem = ListVersionMerge.pickProblem(v)
-    val wipe = older != null && ListShrinkRule.shrank(older.v, v.v)
     ListRow(onClick = if (problem.isEmpty()) onToggle else null) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = picked, onCheckedChange = { onToggle() }, enabled = problem.isEmpty())
