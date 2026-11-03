@@ -35,16 +35,17 @@ class RecipeShareHandler @Inject constructor(
         return RecipeLdParser.parse(html, intent.source.title, url)
     }
 
-    fun save(intent: ShareIntent, r: RecipeLdParser.Recipe, now: Long = System.currentTimeMillis()): Boolean {
-        val account = signer.accountHex(intent) ?: return false
+    fun save(intent: ShareIntent, r: RecipeLdParser.Recipe, now: Long = System.currentTimeMillis()): String? {
+        val account = signer.accountHex(intent) ?: return null
+        val id = ComposerDraftStore.newId()
         drafts.save(
             ComposerDraft(
-                kind = ComposerDraft.Kind.RECIPE, id = ComposerDraftStore.newId(), updatedAt = now,
+                kind = ComposerDraft.Kind.RECIPE, id = id, updatedAt = now,
                 title = r.title, summary = r.summary, body = r.body, prepTime = r.prepTime, cookTime = r.cookTime,
                 servings = r.servings, ingredients = r.ingredients, directions = r.directions, categories = r.categories,
             ),
             cover = null, account = account,
         )
-        return true
+        return id
     }
 }

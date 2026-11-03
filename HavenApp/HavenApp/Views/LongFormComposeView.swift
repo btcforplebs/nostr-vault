@@ -37,8 +37,11 @@ struct LongFormComposeView: View {
     @State private var coverLoad = 0
     @State private var previewing = false
 
-    init(flavor: Flavor, onDismiss: @escaping () -> Void) {
+    /// A saved draft to open on arrival (the Share Portal's Open in editor).
+    private let opening: ComposerDraft?
+    init(flavor: Flavor, opening: ComposerDraft? = nil, onDismiss: @escaping () -> Void) {
         self.flavor = flavor
+        self.opening = opening
         self.onDismiss = onDismiss
         _drafts = StateObject(wrappedValue: ComposerDraftKeeper(kind: flavor == .recipe ? .recipe : .article))
     }
@@ -246,6 +249,7 @@ struct LongFormComposeView: View {
         }
         .onChange(of: currentDraft) { _, draft in drafts.changed(draft, cover: coverData) }
         .onChange(of: coverData) { _, cover in drafts.changed(currentDraft, cover: cover) }
+        .onAppear { if let opening, title.isEmpty, body_.isEmpty { open(opening) } }
         // Swiping the sheet away keeps the draft, like Save Draft.
         .onDisappear { drafts.saveNow(currentDraft, cover: coverData) }
         .confirmationDialog(isRecipe ? "Save this recipe as a draft?" : "Save this article as a draft?",

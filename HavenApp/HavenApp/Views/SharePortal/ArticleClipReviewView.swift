@@ -11,6 +11,8 @@ struct ArticleClipReviewView: View {
     @State private var started = false
     @State private var saved = false
     @State private var error: String?
+    /// The saved draft, open in the editor.
+    @State private var editing: ComposerDraft?
 
     var body: some View {
         Form {
@@ -30,10 +32,20 @@ struct ArticleClipReviewView: View {
                     Button("Done", action: close)
                 }
             } else {
-                SharePortalActionButton(title: "Save draft", busy: false,
-                                        enabled: !title.trimmingCharacters(in: .whitespaces).isEmpty || !bodyText.isEmpty,
-                                        footer: "Saved on this device only. Nothing is posted.") { save() }
+                // The editor shows the active account's drafts, so it opens
+                // only when the draft is for that account.
+                SharePortalActionButton(title: "Open in editor", busy: false,
+                                        enabled: hasText && SharePortalAccountSection.isReady(intent),
+                                        footer: nil) { save(open: true) }
+                SharePortalActionButton(title: "Save draft", busy: false, enabled: hasText,
+                                        footer: "Saved on this device only. Nothing is posted.") { save(open: false) }
             }
+        }
+        // However the editor closes, the share is done: the draft is saved.
+        .sheet(item: $editing, onDismiss: close) { draft in
+            LongFormComposeView(flavor: .article, opening: draft, onDismiss: { editing = nil })
+                .environmentObject(NostrService.shared)
+                .environmentObject(ConfigService.shared)
         }
         .onAppear {
             guard !started else { return }
@@ -44,11 +56,14 @@ struct ArticleClipReviewView: View {
         }
     }
 
-    private func save() {
+    private var hasText: Bool { !title.trimmingCharacters(in: .whitespaces).isEmpty || !bodyText.isEmpty }
+
+    private func save(open: Bool) {
         var draft = ComposerDraft(kind: .article)
         draft.title = title
         draft.body = bodyText
-        if SharePortalPosting.saveDraft(draft, for: intent) { saved = true; error = nil }
-        else { error = "Couldn't save the draft." }
+        guard SharePortalPosting.saveDraft(draft, for: intent) else { error = "Couldn't save the draft."; return }
+        error = nil
+        if open { editing = draft } else { saved = true }
     }
 }

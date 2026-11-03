@@ -18,8 +18,10 @@ internal fun ArticleClipReviewContent(
     intent: ShareIntent,
     handler: ArticleClipShareHandler,
     busy: Boolean,
+    needsSwitch: Boolean,
+    onSwitchAccount: (String) -> Unit,
     onDismiss: () -> Unit,
-    onSave: (title: String, body: String) -> Unit,
+    onSave: (title: String, body: String, openEditor: Boolean) -> Unit,
 ) {
     val clip = remember(intent.id) { handler.clip(intent) }
     var title by remember(intent.id) { mutableStateOf(clip.title) }
@@ -29,11 +31,17 @@ internal fun ArticleClipReviewContent(
         OutlinedTextField(title, { title = it }, label = { Text("Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(body, { body = it }, label = { Text("Draft") }, minLines = 4, maxLines = 12, modifier = Modifier.fillMaxWidth())
         Text(
-            "A quote and a link, saved as a draft on this device. Nothing is posted. Find it under New article → Drafts.",
+            "A quote and a link, saved as a draft on this device. Nothing is posted. Open in editor saves it and opens it in New article; it also stays under Drafts.",
             color = SecondaryText, style = MaterialTheme.typography.bodySmall,
         )
+        // The editor opens the active account's drafts, so the draft has to be for that account.
+        ShareAccountSwitchRow(intent, needsSwitch, onSwitchAccount)
+        val hasText = title.isNotBlank() || body.isNotBlank()
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = { onSave(title, body) }, enabled = !busy && (title.isNotBlank() || body.isNotBlank())) {
+            Button(onClick = { onSave(title, body, true) }, enabled = !busy && !needsSwitch && hasText) {
+                Text("Open in editor")
+            }
+            OutlinedButton(onClick = { onSave(title, body, false) }, enabled = !busy && hasText) {
                 Text("Save draft")
             }
             TextButton(onClick = onDismiss, enabled = !busy) { Text("Dismiss") }

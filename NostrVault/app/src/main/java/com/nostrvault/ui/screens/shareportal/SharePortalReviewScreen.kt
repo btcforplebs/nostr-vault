@@ -21,6 +21,8 @@ import com.nostrvault.ui.theme.*
 @Composable
 fun SharePortalReviewScreen(
     onBack: () -> Unit,
+    /** Open a saved article/recipe draft in its composer (`ModeComposerKind` route, draft id). */
+    onOpenEditor: (kindRoute: String, draftId: String) -> Unit = { _, _ -> },
     viewModel: SharePortalReviewViewModel = hiltViewModel(),
 ) {
     val items by viewModel.items.collectAsState()
@@ -47,13 +49,19 @@ fun SharePortalReviewScreen(
                 Text("Nothing waiting. Share a link or some text to Nostr Vault from another app.", color = SecondaryText)
                 return@Column
             }
-            key(current.id) { ReviewCard(current, busy, active, viewModel) }
+            key(current.id) { ReviewCard(current, busy, active, viewModel, onOpenEditor) }
         }
     }
 }
 
 @Composable
-private fun ReviewCard(intent: ShareIntent, busy: Boolean, active: String, viewModel: SharePortalReviewViewModel) {
+private fun ReviewCard(
+    intent: ShareIntent,
+    busy: Boolean,
+    active: String,
+    viewModel: SharePortalReviewViewModel,
+    onOpenEditor: (String, String) -> Unit,
+) {
     if (intent.isStale(System.currentTimeMillis() / 1000)) {
         Text("Shared more than a week ago.", color = SecondaryText)
     }
@@ -82,7 +90,7 @@ private fun ReviewCard(intent: ShareIntent, busy: Boolean, active: String, viewM
             onDone = { viewModel.dismiss(intent) },
             onDismiss = { viewModel.dismiss(intent) },
         )
-        handler.isReady && intent.action in LaneAReviewActions -> LaneAReview(intent, busy, active, viewModel)
+        handler.isReady && intent.action in LaneAReviewActions -> LaneAReview(intent, busy, active, viewModel, onOpenEditor)
         handler.isReady && intent.action in LaneCReviewActions -> LaneCReview(intent, active, viewModel)
         intent.action == ShareAction.PAY && handler.isReady -> PayReviewContent(
             intent = intent,

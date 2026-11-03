@@ -80,12 +80,12 @@ class SharePortalReviewViewModel @Inject constructor(
      * Runs one lane A publish or save off the card: [work] returns the toast
      * to show and closes the card, or an error to show and keeps it.
      */
-    fun runAction(intent: ShareIntent, work: suspend () -> LaneAResult) {
+    fun runAction(intent: ShareIntent, after: () -> Unit = {}, work: suspend () -> LaneAResult) {
         if (_busy.value) return
         _busy.value = true
         viewModelScope.launch {
             when (val r = runCatching { work() }.getOrElse { LaneAResult.Failed("Something went wrong") }) {
-                is LaneAResult.Done -> { notificationManager.showToast(r.message); dismiss(intent) }
+                is LaneAResult.Done -> { notificationManager.showToast(r.message); dismiss(intent); after() }
                 is LaneAResult.Failed -> notificationManager.showError(r.message)
             }
             _busy.value = false

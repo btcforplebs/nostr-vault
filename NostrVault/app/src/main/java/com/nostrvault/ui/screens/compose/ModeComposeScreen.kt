@@ -25,6 +25,8 @@ import com.nostrvault.ui.components.ProseKeyboardOptions
 @Composable
 fun ModeComposeScreen(
     onDone: () -> Unit,
+    /** A saved draft to open on arrival (the share portal's Open in editor). */
+    openDraftId: String? = null,
     viewModel: ModeComposeViewModel = hiltViewModel(),
 ) {
     val colors = LocalNostrVaultColors.current
@@ -98,6 +100,14 @@ fun ModeComposeScreen(
         ingredients = saved.ingredients
         directions = saved.directions
         categories = saved.categories
+    }
+
+    var openedRequested by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(openDraftId) {
+        val keeper = drafts ?: return@LaunchedEffect
+        if (openDraftId == null || openedRequested) return@LaunchedEffect
+        openedRequested = true
+        viewModel.draftStore.drafts(keeper.kind, keeper.account).firstOrNull { it.id == openDraftId }?.let(::openDraft)
     }
 
     // Cancel asks to keep anything typed; an untouched form just closes.

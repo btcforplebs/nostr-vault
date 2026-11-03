@@ -57,18 +57,22 @@ internal fun CalendarReviewContent(
         if (!base.hasStart) Text("No date found. Fill one in.", color = SecondaryText)
         OutlinedTextField(title, { title = it }, label = { Text("Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Switch(checked = allDay, onCheckedChange = { allDay = it })
+            Switch(checked = allDay, onCheckedChange = { on ->
+                // Keep the picked days when switching between all-day and timed.
+                CalendarEditFields.datePart(start)?.let { start = CalendarEditFields.fieldText(it, CalendarEditFields.timePart(start), on) }
+                CalendarEditFields.datePart(end)?.let { end = CalendarEditFields.fieldText(it, CalendarEditFields.timePart(end), on) }
+                allDay = on
+            })
             Spacer(Modifier.width(8.dp))
             Text("All day")
         }
-        val hint = if (allDay) "YYYY-MM-DD" else "YYYY-MM-DD HH:MM"
-        OutlinedTextField(start, { start = it }, label = { Text("Starts ($hint)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(end, { end = it }, label = { Text("Ends (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        CalendarDateTimeField("Starts", start, allDay, onChange = { start = it })
+        CalendarDateTimeField("Ends (optional)", end, allDay, onChange = { end = it }, onClear = { end = "" })
         OutlinedTextField(location, { location = it }, label = { Text("Location") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(description, { description = it }, label = { Text("Notes") }, maxLines = 5, modifier = Modifier.fillMaxWidth())
         val edited = CalendarEditFields.apply(base, allDay, start, end, device)
             ?.copy(title = title.trim(), location = location.trim(), description = description.trim())
-        if (edited == null && start.isNotBlank()) Text("Check the dates: use $hint, and an end after the start.", color = SecondaryText)
+        if (edited == null && start.isNotBlank()) Text("The end has to be after the start.", color = SecondaryText)
         Text("Public: calendar events are posted to your relays.", color = SecondaryText, style = MaterialTheme.typography.bodySmall)
         ShareAccountSwitchRow(intent, needsSwitch, onSwitchAccount)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -3,6 +3,7 @@ package com.nostrvault.service.shareportal
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -22,6 +23,21 @@ object CalendarEditFields {
 
     fun endText(ev: CalendarShareParser.Event, device: ZoneId): String =
         if (ev.allDay) ev.endDate.orEmpty() else ev.endTs?.let { format(it, zone(ev, device)) }.orEmpty()
+
+    /** The date in a field's text (its first 10 characters), or null. */
+    fun datePart(text: String): LocalDate? = runCatching { LocalDate.parse(text.trim().take(10)) }.getOrNull()
+
+    /** The `HH:MM` in a timed field's text, or null. */
+    fun timePart(text: String): LocalTime? =
+        runCatching { LocalDateTime.parse(text.trim(), timeFormat).toLocalTime() }.getOrNull()
+
+    /**
+     * A field's text after the date picker (and, for a timed event, the time
+     * picker) chose [date] and [time]. A timed field with no time yet starts
+     * at [defaultTime].
+     */
+    fun fieldText(date: LocalDate, time: LocalTime?, allDay: Boolean, defaultTime: LocalTime = LocalTime.of(9, 0)): String =
+        if (allDay) date.toString() else LocalDateTime.of(date, time ?: defaultTime).format(timeFormat)
 
     private fun format(ts: Long, zone: ZoneId): String = Instant.ofEpochSecond(ts).atZone(zone).format(timeFormat)
 

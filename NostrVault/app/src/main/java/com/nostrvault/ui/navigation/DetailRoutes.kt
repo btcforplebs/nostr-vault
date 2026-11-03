@@ -171,9 +171,12 @@ internal fun NavGraphBuilder.detailRoutes(
 
     composable(
         route = Screen.ModeCompose.route,
-        arguments = listOf(navArgument("kind") { type = NavType.StringType }),
-    ) {
-        ModeComposeScreen(onDone = { navController.popBackStack() })
+        arguments = listOf(
+            navArgument("kind") { type = NavType.StringType },
+            navArgument("draft") { type = NavType.StringType; nullable = true; defaultValue = null },
+        ),
+    ) { entry ->
+        ModeComposeScreen(onDone = { navController.popBackStack() }, openDraftId = entry.arguments?.getString("draft"))
     }
 
     composable(Screen.Drafts.route) {

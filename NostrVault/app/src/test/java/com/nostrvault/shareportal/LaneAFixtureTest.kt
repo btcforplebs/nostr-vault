@@ -166,4 +166,18 @@ class CalendarEditFieldsTest {
         org.junit.Assert.assertNull(f.apply(ev, true, "2026-12-24", "2026-12-20", ny))
         org.junit.Assert.assertNull(f.apply(ev, false, "tomorrow", "", ny))
     }
+
+    /** What the date and time pickers write is what apply() reads back. */
+    @Test fun pickerTextRoundTrips() {
+        val f = com.nostrvault.service.shareportal.CalendarEditFields
+        val day = java.time.LocalDate.of(2026, 11, 5)
+        assertEquals("2026-11-05", f.fieldText(day, null, allDay = true))
+        assertEquals("2026-11-05 09:00", f.fieldText(day, null, allDay = false))
+        val timed = f.fieldText(day, java.time.LocalTime.of(12, 0), allDay = false)
+        assertEquals("2026-11-05 12:00", timed)
+        assertEquals(day, f.datePart(timed))
+        assertEquals(java.time.LocalTime.of(12, 0), f.timePart(timed))
+        org.junit.Assert.assertNull(f.timePart("2026-11-05"))
+        assertEquals(1793898000L, f.apply(this.timed, false, timed, "", ny)!!.startTs)
+    }
 }
