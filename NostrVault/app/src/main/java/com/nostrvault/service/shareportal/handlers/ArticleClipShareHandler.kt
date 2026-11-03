@@ -30,13 +30,14 @@ class ArticleClipShareHandler @Inject constructor(
     )
 
     /** Saves the draft; false when the account isn't on this device. */
-    fun save(intent: ShareIntent, title: String, body: String, now: Long = System.currentTimeMillis()): Boolean {
-        val account = signer.accountHex(intent) ?: return false
+    fun save(intent: ShareIntent, title: String, body: String, now: Long = System.currentTimeMillis()): String? {
+        val account = signer.accountHex(intent) ?: return null
+        val id = ComposerDraftStore.newId()
         drafts.save(
-            ComposerDraft(kind = ComposerDraft.Kind.ARTICLE, id = ComposerDraftStore.newId(), updatedAt = now,
+            ComposerDraft(kind = ComposerDraft.Kind.ARTICLE, id = id, updatedAt = now,
                 title = title.trim(), body = body.trim()),
             cover = null, account = account,
         )
-        return true
+        return id
     }
 }

@@ -19,8 +19,10 @@ internal fun RecipeReviewContent(
     intent: ShareIntent,
     handler: RecipeShareHandler,
     busy: Boolean,
+    needsSwitch: Boolean,
+    onSwitchAccount: (String) -> Unit,
     onDismiss: () -> Unit,
-    onSave: (RecipeLdParser.Recipe) -> Unit,
+    onSave: (RecipeLdParser.Recipe, openEditor: Boolean) -> Unit,
 ) {
     var recipe by remember(intent.id) { mutableStateOf<RecipeLdParser.Recipe?>(null) }
     LaunchedEffect(intent.id) { recipe = handler.load(intent) }
@@ -42,10 +44,12 @@ internal fun RecipeReviewContent(
                 r.servings.takeIf { it.isNotEmpty() }?.let { "Serves $it" }).filterNotNull().takeIf { it.isNotEmpty() }
                 ?.let { Text(it.joinToString(" · "), color = SecondaryText) }
         }
-        Text("Saved as a draft on this device. Nothing is posted. Find it under New recipe → Drafts.",
+        Text("Saved as a draft on this device. Nothing is posted. Open in editor saves it and opens it in New recipe; it also stays under Drafts.",
             color = SecondaryText, style = MaterialTheme.typography.bodySmall)
+        ShareAccountSwitchRow(intent, needsSwitch, onSwitchAccount)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = { onSave(r) }, enabled = !busy) { Text("Save draft") }
+            Button(onClick = { onSave(r, true) }, enabled = !busy && !needsSwitch) { Text("Open in editor") }
+            OutlinedButton(onClick = { onSave(r, false) }, enabled = !busy) { Text("Save draft") }
             TextButton(onClick = onDismiss, enabled = !busy) { Text("Dismiss") }
         }
     }

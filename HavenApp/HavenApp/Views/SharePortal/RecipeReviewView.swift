@@ -11,6 +11,8 @@ struct RecipeReviewView: View {
     @State private var foundRecipe = false
     @State private var saved = false
     @State private var error: String?
+    /// The saved draft, open in the editor.
+    @State private var editing: ComposerDraft?
 
     var body: some View {
         Form {
@@ -38,10 +40,19 @@ struct RecipeReviewView: View {
                         Button("Done", action: close)
                     }
                 } else {
+                    SharePortalActionButton(title: "Open in editor", busy: false,
+                                            enabled: SharePortalAccountSection.isReady(intent),
+                                            footer: nil) { save(open: true) }
                     SharePortalActionButton(title: "Save draft", busy: false, enabled: true,
-                                            footer: "Saved on this device only. Nothing is posted.") { save() }
+                                            footer: "Saved on this device only. Nothing is posted.") { save(open: false) }
                 }
             }
+        }
+        // However the editor closes, the share is done: the draft is saved.
+        .sheet(item: $editing, onDismiss: close) { draft in
+            LongFormComposeView(flavor: .recipe, opening: draft, onDismiss: { editing = nil })
+                .environmentObject(NostrService.shared)
+                .environmentObject(ConfigService.shared)
         }
         .task {
             guard loading else { return }
@@ -52,7 +63,7 @@ struct RecipeReviewView: View {
         }
     }
 
-    private func save() {
+    private func save(open: Bool) {
         var draft = ComposerDraft(kind: .recipe)
         draft.title = fields.title
         draft.summary = fields.summary
@@ -63,7 +74,8 @@ struct RecipeReviewView: View {
         draft.directions = fields.directions
         draft.categories = fields.categories
         draft.body = fields.body
-        if SharePortalPosting.saveDraft(draft, for: intent) { saved = true; error = nil }
-        else { error = "Couldn't save the draft." }
+        guard SharePortalPosting.saveDraft(draft, for: intent) else { error = "Couldn't save the draft."; return }
+        error = nil
+        if open { editing = draft } else { saved = true }
     }
 }

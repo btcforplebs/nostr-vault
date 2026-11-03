@@ -62,8 +62,10 @@ sealed class Screen(val route: String) {
         }
     }
     /** diVine, article or recipe composer; [kind] is a ModeComposerKind route. */
-    data object ModeCompose : Screen("compose_mode/{kind}") {
-        fun createRoute(kind: String) = "compose_mode/$kind"
+    data object ModeCompose : Screen("compose_mode/{kind}?draft={draft}") {
+        /** [draft]: a saved draft to open (the share portal's article clip / recipe). */
+        fun createRoute(kind: String, draft: String? = null) =
+            if (draft == null) "compose_mode/$kind" else "compose_mode/$kind?draft=${android.net.Uri.encode(draft)}"
     }
     data object Drafts : Screen("drafts")
 
