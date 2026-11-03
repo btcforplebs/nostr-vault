@@ -1,8 +1,10 @@
-// The signed-in account's saved layout (space-layout.js: Your space's panels and the left rail's favourites), held
-// once for the whole desktop so the rail and Your space draw the same copy and an edit in one shows in both. An edit is
-// kept in this browser at once, then sent to the user's own vault two seconds after the last one (net/space-sync.js),
-// so a drag sends one event, not one per step. A newer layout from the vault (another browser, later the iPad) replaces
-// this one when it arrives.
+// The signed-in account's saved layout (space-layout.js: Your space's panels and the left rail's pins), held once for
+// the whole desktop so the rail and Your space draw the same copy and an edit in one shows in both. The rules are
+// docs/SPACE_LAYOUT.md's: an edit is kept in this browser at once and sent to the user's own vault two seconds after
+// the last one (net/space-sync.js), so a drag sends one event, not one per step. On sign-in, and when the tab is
+// looked at again, the vault's copy is read: a newer one replaces this one; an older one is answered by sending this
+// one, so the other devices catch up. A copy in a newer format, or one that can't be opened, is left alone: this
+// browser keeps its own and writes nothing over it.
 import { useEffect, useState } from "preact/hooks"
 import { readLayout, writeLayout, normalize } from "./space-layout.js"
 import { PANEL_IDS } from "./panel-ids.js"
@@ -12,20 +14,29 @@ export const PUSH_DELAY_MS = 2000
 /** How often a look back at the tab asks the vault again, at most. */
 export const PULL_EVERY_MS = 60_000
 
-let held = { me: null, layout: null }
+let held = { me: null, layout: null, hold: false } // hold: the vault's copy is newer-format or unreadable, don't send
 const listeners = new Set()
-let push = null // { timer, ctx }
+let sync = null // { ctx, timer, send }
 
 /** The layout for `me`, read from this browser the first time. */
 export function currentLayout(me) {
-  if (held.me !== me) held = { me, layout: readLayout(me, PANEL_IDS) }
+  if (held.me !== me) held = { me, layout: readLayout(me, PANEL_IDS), hold: false }
   return held.layout
 }
 
 function set(me, layout) {
-  held = { me, layout }
+  held = { ...held, me, layout }
   writeLayout(me, layout)
   for (const f of listeners) f(layout)
+}
+
+/** Whether edits for `me` are being held back from the vault (its copy is newer-format or can't be opened). */
+export const holding = me => held.me === me && held.hold
+
+function schedule(me) {
+  if (!sync || sync.ctx.session.pubkey !== me || held.hold) return
+  clearTimeout(sync.timer)
+  sync.timer = setTimeout(() => { sync.timer = null; sync.send() }, PUSH_DELAY_MS)
 }
 
 /** Apply an edit for `me` (fn: layout -> layout). Unchanged: nothing happens. Changed: kept, drawn, and sent. */
@@ -34,20 +45,22 @@ export function changeLayout(me, fn) {
   const next = fn(before)
   if (next === before) return
   set(me, next)
-  if (push?.ctx?.session?.pubkey === me) {
-    clearTimeout(push.timer)
-    const ctx = push.ctx
-    push.timer = setTimeout(() => pushLayout(ctx, currentLayout(me)).catch(() => {}), PUSH_DELAY_MS)
-  }
+  schedule(me)
 }
 
-/** A layout read from the vault: taken when it is newer than the one held. -> whether it was taken. */
-export function takeRemote(me, remote) {
+/**
+ * What the vault's copy says, for `me` (pullLayout's answer). -> "taken" (newer, now drawn), "kept" (this one is the
+ * same or newer, and is sent when newer), "held" (newer format or unreadable: left alone) or "none".
+ */
+export function takeRemote(me, pulled, { now } = {}) {
   const local = currentLayout(me)
-  const next = newerLayout(local, remote && normalize(remote, PANEL_IDS))
-  if (next === local) return false
-  set(me, next)
-  return true
+  if (pulled?.state === "unreadable") { held = { ...held, hold: true }; return "held" }
+  if (pulled?.state !== "ok") return "none"
+  const remote = normalize(pulled.layout, PANEL_IDS, { now })
+  if (!remote) { held = { ...held, hold: true }; return "held" }
+  if (newerLayout(local, remote) !== local) { set(me, remote); return "taken" }
+  if (local.at > remote.at) schedule(me)
+  return "kept"
 }
 
 /** [layout, change] for `me`; re-renders on every edit, from here or the rail or the vault. */
@@ -67,12 +80,14 @@ export function useLayoutSync(ctx) {
   const me = ctx.session.pubkey
   useEffect(() => {
     if (ctx.signer?.readOnly || !ctx.signer?.crypto) return
-    push = { timer: null, ctx }
+    // A send checks the account is still the one that made the edit once the signer has sealed it.
+    const sendCtx = { ...ctx, stillMe: pk => held.me === pk }
+    sync = { ctx, timer: null, send: () => { if (!held.hold) pushLayout(sendCtx, currentLayout(me)).catch(() => {}) } }
     let live = true, last = 0
     const pull = () => {
       if (Date.now() - last < PULL_EVERY_MS) return
       last = Date.now()
-      pullLayout(ctx).then(remote => { if (live && remote) takeRemote(me, remote) }).catch(() => {})
+      pullLayout(ctx).then(r => { if (live) takeRemote(me, r) }).catch(() => {})
     }
     pull()
     const onShow = () => { if (!document.hidden) pull() }
@@ -81,8 +96,8 @@ export function useLayoutSync(ctx) {
       live = false
       document.removeEventListener("visibilitychange", onShow)
       // An edit still waiting goes out now, not never.
-      if (push?.timer) { clearTimeout(push.timer); pushLayout(ctx, currentLayout(me)).catch(() => {}) }
-      push = null
+      if (sync?.timer) { clearTimeout(sync.timer); sync.send() }
+      sync = null
     }
   }, [me])
 }

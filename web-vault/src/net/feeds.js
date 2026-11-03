@@ -122,7 +122,8 @@ export function tagChoice(hash = "") {
 }
 
 // Two feeds that are not in the picker, opened from a link (the desktop rail's favourites, desktop/rail/rail-favs.js):
-// one relay's notes ("relay", `relay` its address) and a people list's notes ("list", `list` = "<author>:<d>", with
+// one relay's notes ("relay", `relay` its address) and a people list's notes ("list", `list` its address
+// "<kind>:<author>:<d>", kind 30000 or 39089 as docs/SPACE_LAYOUT.md's list pin, with
 // `authors` once the list is read, net/list-feed.js). Both are strangers' notes, held in memory like Global's.
 export const LINK_PARAMS = ["tag", "feed", "relay", "list"]
 const HEX = /^[0-9a-f]{64}$/
@@ -132,7 +133,7 @@ const relayParam = v => (/^wss?:\/\/[^\s/]+/i.test(String(v ?? "").trim()) ? Str
 
 /**
  * The feed an address asks for: "?tag=" a hashtag (tagChoice), "?feed=<id>" a picker feed by its id (one of `feedIds`),
- * "?relay=<wss://…>" a relay's notes, "?list=<author>:<d>" a people list's. null when it asks for none.
+ * "?relay=<wss://…>" a relay's notes, "?list=<kind>:<author>:<d>" a people list's. null when it asks for none.
  */
 export function linkChoice(hash = "", feedIds = FEEDS.map(f => f.id)) {
   const t = tagChoice(hash)
@@ -144,8 +145,9 @@ export function linkChoice(hash = "", feedIds = FEEDS.map(f => f.id)) {
   const relay = relayParam(q.get("relay"))
   if (relay) return { mode: "relay", tag: "", relay, label: relay.replace(/^wss?:\/\//, "").replace(/^relay\./, "") }
   const list = q.get("list") ?? ""
-  const j = list.indexOf(":")
-  if (j > 0 && HEX.test(list.slice(0, j)) && list.length > j + 1) return { mode: "list", tag: "", list, authors: null, label: list.slice(j + 1) }
+  const k = list.indexOf(":"), j = list.indexOf(":", k + 1)
+  if (k > 0 && j > k && (list.slice(0, k) === "30000" || list.slice(0, k) === "39089") && HEX.test(list.slice(k + 1, j)) && list.length > j + 1)
+    return { mode: "list", tag: "", list, authors: null, label: list.slice(j + 1) }
   return null
 }
 

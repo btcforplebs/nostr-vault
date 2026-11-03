@@ -10,11 +10,11 @@ import { compose } from "../net/actions.js"
 import { setFollow } from "../net/follows.js"
 import { noteById } from "./noteIndex.js"
 import { changeLayout, currentLayout } from "./space/layout-store.js"
-import { setRail } from "./space/space-layout.js"
-import { favKey, isPinned, pin, unpin } from "./rail/rail-favs.js"
+import { setPins } from "./space/space-layout.js"
+import { favourite, isPinned, pin, pinKey, unpin } from "./rail/rail-favs.js"
 
-const person = pubkey => ({ type: "person", pubkey })
-const railOf = me => currentLayout(me).rail
+const person = pk => favourite("person", pk, getProfile(pk)?.display_name || getProfile(pk)?.name)
+const railOf = me => currentLayout(me).pins
 
 const HEX = /^[0-9a-f]{64}$/
 const nameOf = pk => getProfile(pk)?.display_name || getProfile(pk)?.name || npubEncode(pk).slice(0, 12) + "…"
@@ -107,7 +107,7 @@ export function ContextMenu({ ctx }) {
       // The left rail's favourites (rail/rail-favs.js): a person pinned there opens their profile in one click.
       [isPinned(railOf(me), person(pk)) ? "Unpin from the rail" : "Pin to the rail", run(() => {
         const on = isPinned(railOf(me), person(pk))
-        changeLayout(me, l => setRail(l, on ? unpin(l.rail, favKey(person(pk))) : pin(l.rail, person(pk))))
+        changeLayout(me, l => setPins(l, on ? unpin(l.pins, pinKey(person(pk))) : pin(l.pins, person(pk))))
         say(on ? `${nameOf(pk)} is off the rail` : `${nameOf(pk)} is on the rail`)
       })],
       !readOnly && pk !== me && "-",

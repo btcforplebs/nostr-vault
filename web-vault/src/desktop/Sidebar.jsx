@@ -20,8 +20,8 @@ import { switchAccount } from "../signer/accounts.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { useLayout } from "./space/layout-store.js"
-import { shownFavs, favKey } from "./rail/rail-favs.js"
-import { FavRow, FEED_IDS } from "./rail/RailFavs.jsx"
+import { shownPins, pinKey } from "./rail/rail-favs.js"
+import { PinRow } from "./rail/RailFavs.jsx"
 import { RailEdit } from "./rail/RailEdit.jsx"
 
 export { Icon, ICON } from "./icons.jsx"
@@ -43,9 +43,9 @@ export function Sidebar({ ctx, side, rail }) {
   )
   const [layout, change] = useLayout(ctx.session.pubkey)
   const [editing, setEditing] = useState(false)
-  const favs = shownFavs(layout.rail, FEED_IDS)
+  const pins = shownPins(layout.pins)
   // Pinned people's names and faces.
-  const people = favs.filter(f => f.type === "person").map(f => f.pubkey).join()
+  const people = pins.filter(p => p.type === "person").map(p => p.p).join()
   useEffect(() => {
     if (people) fetchProfiles(ctx.vault, people.split(","), uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])).catch(() => {})
   }, [people])
@@ -56,8 +56,8 @@ export function Sidebar({ ctx, side, rail }) {
         ? <span class="side-row side-post off" aria-disabled="true" title={`New Post. ${READ_ONLY_SHORT}`}><Icon d={ICON.post} /><span class="side-label">New Post</span></span>
         : <a class="side-row side-post" href="#/compose" title={rail ? "New Post (n)" : "n"} aria-label={rail ? "New Post" : undefined}><Icon d={ICON.post} /><span class="side-label">New Post</span></a>}
       <hr />
-      {favs.map(f => <FavRow key={favKey(f)} fav={f} on={f.type === "section" && side === f.id}
-        badge={f.type === "section" ? (f.id === "messages" ? unread : f.id === "vault" ? vaultNew : 0) : 0} />)}
+      {pins.map(p => <PinRow key={pinKey(p)} pin={p} on={p.type === "section" && side === p.id}
+        badge={p.type === "section" ? (p.id === "messages" ? unread : p.id === "vault" ? vaultNew : 0) : 0} />)}
       <button type="button" class={editing ? "side-row side-edit-btn on" : "side-row side-edit-btn"} aria-expanded={editing}
         title="Pin, reorder or take off what's on the rail" aria-label="Edit the rail" onClick={() => setEditing(!editing)}>
         <span class="side-icon"><Icon d={PIN} size={18} /></span><span class="side-label">Edit</span>

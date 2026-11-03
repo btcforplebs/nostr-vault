@@ -1,93 +1,118 @@
-// The left rail's favourites (src/desktop/rail/rail-favs.js), the Feed links they open (net/feeds.js linkChoice), list
-// feeds (net/list-feed.js) and the layout's vault sync (net/space-sync.js, desktop/space/layout-store.js).
+// The left rail's pins (src/desktop/rail/rail-favs.js) in docs/SPACE_LAYOUT.md's format, the Feed links they open
+// (net/feeds.js linkChoice), list feeds (net/list-feed.js) and the layout's vault sync (net/space-sync.js,
+// desktop/space/layout-store.js). The pin cases are the iPad's SpaceLayoutTests ones.
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { cleanFav, defaultRail, favHref, favKey, isPinned, missingSections, moveFav, moveFavBefore, normalizeRail, normalizeRelay, pin, relayName, sameRail, shownFavs, unpin, MAX_FAVS, SECTION_IDS } from "../src/desktop/rail/rail-favs.js"
-import { linkChoice, feedRelays, feedKey, fetchStrangerFeed, liveFilters, liveKeeps, FEEDS } from "../src/net/feeds.js"
-import { listName, listPeople, myLists, newestLists, resolveList } from "../src/net/list-feed.js"
-import { isLayoutEvent, layoutTemplate, newerLayout, newestEvent, parseLayout, pullLayout, pushLayout, SYNC_KIND, SYNC_TAGS } from "../src/net/space-sync.js"
-import { SYNC_D, defaultLayout } from "../src/desktop/space/space-layout.js"
+import { defaultPins, favourite, isPinned, MAX_FAVOURITES, movePin, movePinBefore, normalizePins, normalizeRelay, normalizeValue, pin, pinHref, pinKey, RAIL_SECTIONS, relayName, samePins, SECTION_IDS, shownPins, unpin } from "../src/desktop/rail/rail-favs.js"
+import { linkChoice, feedRelays, feedKey, fetchStrangerFeed, liveFilters, liveKeeps } from "../src/net/feeds.js"
+import { listAddress, listName, listPeople, myLists, newestLists, resolveList } from "../src/net/list-feed.js"
+import { isLayoutEvent, layoutTemplate, looksSealed, newerLayout, newestEvent, parseLayout, pullLayout, pushLayout, SYNC_KIND, SYNC_TAGS } from "../src/net/space-sync.js"
+import { SYNC_D, defaultLayout, normalize } from "../src/desktop/space/space-layout.js"
 import { PANEL_IDS } from "../src/desktop/space/panel-ids.js"
+import { currentLayout, holding, takeRemote } from "../src/desktop/space/layout-store.js"
 
 const A = "a".repeat(64), B = "b".repeat(64)
-const FEED_IDS = FEEDS.map(f => f.id)
-const keys = r => r.map(favKey)
+const keys = r => r.map(pinKey)
+const sections = r => r.filter(p => p.type === "section").map(p => p.id)
 
-test("the default rail is the six sections in Tod's order", () => {
-  assert.deepEqual(SECTION_IDS, ["feed", "search", "messages", "wot", "vault", "profile"])
-  assert.deepEqual(defaultRail(), SECTION_IDS.map(id => ({ type: "section", id })))
+test("the default pins are every section in the doc's order; the web's rail draws six of them", () => {
+  assert.deepEqual(SECTION_IDS, ["feed", "search", "profile", "wot", "vault", "messages", "notifications", "relay", "settings"])
+  assert.deepEqual(defaultPins(), SECTION_IDS.map(id => ({ type: "section", id })))
+  assert.deepEqual(RAIL_SECTIONS, ["feed", "search", "profile", "wot", "vault", "messages"])
+  assert.deepEqual(shownPins(defaultPins()).map(p => p.id), RAIL_SECTIONS)
 })
 
-test("cleanFav keeps good favourites, drops broken ones, keeps a newer app's type", () => {
-  assert.deepEqual(cleanFav({ type: "hashtag", tag: "#Bitcoin" }), { type: "hashtag", tag: "bitcoin" })
-  assert.equal(cleanFav({ type: "hashtag", tag: "two words" }), null)
-  assert.equal(cleanFav({ type: "person", pubkey: "xyz" }), null)
-  assert.deepEqual(cleanFav({ type: "relay", url: " wss://nos.lol/ " }), { type: "relay", url: "wss://nos.lol" })
-  assert.equal(cleanFav({ type: "relay", url: "https://nos.lol" }), null)
-  assert.deepEqual(cleanFav({ type: "list", pubkey: A, d: "friends", name: "  Friends " }), { type: "list", pubkey: A, d: "friends", name: "Friends" })
-  assert.equal(cleanFav({ type: "list", pubkey: A, d: "" }), null)
-  assert.deepEqual(cleanFav({ type: "zaps-board", x: 1 }), { type: "zaps-board", x: 1 })
-  for (const bad of [null, 3, {}, { type: "" }]) assert.equal(cleanFav(bad), null)
+test("pin values are normalised per the doc's table, or refused", () => {
+  assert.equal(normalizeValue("person", A.toUpperCase()), A)
+  assert.equal(normalizeValue("person", "xyz"), "")
+  assert.equal(normalizeValue("hashtag", "##Bitcoin"), "bitcoin")
+  assert.equal(normalizeValue("hashtag", "two words"), "")
+  assert.equal(normalizeValue("list", `30000:${A.toUpperCase()}:Devs`), `30000:${A}:Devs`)
+  assert.equal(normalizeValue("list", `39089:${A}:pack`), `39089:${A}:pack`)
+  assert.equal(normalizeValue("list", `3:${A}:x`), "")
+  assert.equal(normalizeValue("list", `30000:${A}:`), "")
+  assert.equal(normalizeValue("relay", " WSS://Relay.Example.COM/ "), "wss://relay.example.com")
+  assert.equal(normalizeRelay("https://x.com"), "")
   assert.equal(normalizeRelay("ws://127.0.0.1:4869"), "ws://127.0.0.1:4869")
   assert.equal(relayName("wss://relay.damus.io"), "damus.io")
+  assert.equal(relayName("wss://nos.lol"), "nos.lol")
+  assert.deepEqual(favourite("person", A, " Ann "), { type: "person", p: A, name: "Ann" })
+  assert.equal(favourite("section", "feed"), null)
+  assert.equal(favourite("hashtag", "a b"), null)
 })
 
-test("each favourite opens its place", () => {
-  assert.equal(favHref({ type: "section", id: "wot" }), "#/wot")
-  assert.equal(favHref({ type: "feed", mode: "articles" }), "#/feed?feed=articles")
-  assert.equal(favHref({ type: "person", pubkey: A }), `#/profile/${A}`)
-  assert.equal(favHref({ type: "hashtag", tag: "nostr" }), "#/feed?tag=nostr")
-  assert.equal(favHref({ type: "list", pubkey: A, d: "a b" }), `#/feed?list=${A}:a%20b`)
-  assert.equal(favHref({ type: "relay", url: "wss://nos.lol" }), "#/feed?relay=wss%3A%2F%2Fnos.lol")
-  assert.equal(favHref({ type: "zaps-board" }), null)
+test("normalizePins: bad entries and repeats drop out, unknown types and sections and fields stay as read", () => {
+  const future = { type: "zaps-board", x: 1 }
+  const r = normalizePins([
+    { type: "hashtag", t: "#A" }, { type: "hashtag", t: "a" }, null, [], { t: "x" }, { type: "person", p: "bad" },
+    { type: "section", id: "wot", w: 2 }, future, { type: "section", id: "studio" }, { type: "relay", url: "wss://R.io/", name: "R" },
+  ])
+  assert.deepEqual(r.filter(p => p.type === "hashtag"), [{ type: "hashtag", t: "a" }], "the first, normalised; the repeat dropped")
+  assert.ok(r.some(p => p.type === "section" && p.id === "wot" && p.w === 2), "an extra field kept")
+  assert.ok(r.includes(future), "a newer type kept exactly as read")
+  assert.ok(r.some(p => p.type === "section" && p.id === "studio"), "a section this app lacks kept")
+  assert.deepEqual(r.find(p => p.type === "relay"), { type: "relay", url: "wss://r.io", name: "R" })
+  assert.ok(!shownPins(r).includes(future) && !shownPins(r).some(p => p.id === "studio"), "...and not drawn")
 })
 
-test("normalizeRail: junk is the default, repeats drop out, Feed is always there, capped", () => {
-  for (const bad of [null, "x", {}]) assert.deepEqual(normalizeRail(bad), defaultRail())
-  const r = normalizeRail([{ type: "hashtag", tag: "a" }, { type: "hashtag", tag: "A" }, { type: "section", id: "wot" }, null, { type: "future", n: 1 }])
-  assert.deepEqual(keys(r), ["section:feed", "hashtag:a", "section:wot", `future:${JSON.stringify({ type: "future", n: 1 })}`])
-  // Unknown ones are kept, not drawn.
-  assert.deepEqual(keys(shownFavs(r, FEED_IDS)), ["section:feed", "hashtag:a", "section:wot"])
-  const many = Array.from({ length: 60 }, (_, i) => ({ type: "hashtag", tag: `t${i}` }))
-  assert.equal(normalizeRail(many).length, MAX_FAVS + 1) // MAX_FAVS kept, then Feed put back on top
-  assert.deepEqual(missingSections(r), ["search", "messages", "vault", "profile"])
+test("sections can move, not go: a missing one comes back after the section before it", () => {
+  const r = normalizePins([{ type: "section", id: "vault" }, { type: "hashtag", t: "x" }, { type: "section", id: "feed" }])
+  assert.equal(sections(r).length, 9, "every section is there")
+  // messages and the ones after it follow vault (the section before them that is there); search, profile and wot
+  // follow feed, the one before them.
+  assert.deepEqual(keys(r), ["section:vault", "section:messages", "section:notifications", "section:relay", "section:settings",
+    "hashtag:x", "section:feed", "section:search", "section:profile", "section:wot"])
+  assert.equal(unpin(r, "section:vault"), r, "a section is never taken off")
 })
 
-test("pin, unpin (Feed stays), and no pin twice", () => {
-  let r = defaultRail()
-  r = pin(r, { type: "person", pubkey: A })
-  assert.equal(r.at(-1).pubkey, A)
-  assert.equal(pin(r, { type: "person", pubkey: A }), r)
-  assert.equal(pin(r, { type: "person", pubkey: "nope" }), r)
-  assert.ok(isPinned(r, { type: "person", pubkey: A }))
-  assert.equal(unpin(r, "section:feed"), r)
-  assert.ok(!isPinned(unpin(r, `person:${A}`), { type: "person", pubkey: A }))
-  const full = Array.from({ length: MAX_FAVS }, (_, i) => ({ type: "hashtag", tag: `t${i}` }))
-  assert.equal(pin(full, { type: "hashtag", tag: "more" }), full)
+test("favourites past the 30th drop out; pin refuses a 31st, a repeat and a section", () => {
+  const many = Array.from({ length: 40 }, (_, i) => ({ type: "hashtag", t: `t${i}` }))
+  const r = normalizePins(many)
+  assert.equal(r.filter(p => p.type === "hashtag").length, MAX_FAVOURITES)
+  assert.equal(pin(r, favourite("hashtag", "more")), r)
+  let d = defaultPins()
+  d = pin(d, favourite("person", A))
+  assert.equal(d.at(-1).p, A)
+  assert.equal(pin(d, favourite("person", A)), d)
+  assert.equal(pin(d, { type: "section", id: "feed" }), d)
+  assert.ok(isPinned(d, favourite("person", A)))
+  assert.ok(!isPinned(unpin(d, `person:${A}`), favourite("person", A)))
 })
 
-test("reorder: up/down among drawn ones, drag before another or to the end", () => {
-  const r = normalizeRail([{ type: "section", id: "feed" }, { type: "future" }, { type: "hashtag", tag: "x" }, { type: "section", id: "wot" }])
-  assert.deepEqual(keys(moveFav(r, "section:wot", -1, FEED_IDS)).filter(k => !k.startsWith("future")), ["section:feed", "section:wot", "hashtag:x"])
-  assert.equal(moveFav(r, "section:feed", -1, FEED_IDS), r)
-  assert.equal(moveFav(r, "section:wot", 1, FEED_IDS), r)
-  assert.deepEqual(keys(moveFavBefore(r, "section:wot", "section:feed"))[0], "section:wot")
-  assert.equal(keys(moveFavBefore(r, "section:feed", null)).at(-1), "section:feed")
-  assert.equal(moveFavBefore(r, "hashtag:x", "section:wot"), r)
-  assert.ok(sameRail(defaultRail(), defaultRail()))
-  assert.ok(!sameRail(r, defaultRail()))
+test("each pin opens its place", () => {
+  assert.equal(pinHref({ type: "section", id: "wot" }), "#/wot")
+  assert.equal(pinHref({ type: "section", id: "settings" }), null, "Settings is the rail's foot, not a row")
+  assert.equal(pinHref({ type: "person", p: A }), `#/profile/${A}`)
+  assert.equal(pinHref({ type: "hashtag", t: "nostr" }), "#/feed?tag=nostr")
+  assert.equal(pinHref({ type: "list", a: `30000:${A}:a b` }), `#/feed?list=30000%3A${A}%3Aa%20b`)
+  assert.equal(pinHref({ type: "relay", url: "wss://nos.lol" }), "#/feed?relay=wss%3A%2F%2Fnos.lol")
+  assert.equal(pinHref({ type: "zaps-board" }), null)
 })
 
-test("the Feed opens a pinned feed, relay or list from its address", () => {
+test("reorder: up/down among drawn ones (hidden ones keep their places), drag before another or to the end", () => {
+  const r = normalizePins([{ type: "section", id: "feed" }, { type: "future" }, { type: "hashtag", t: "x" }])
+  const drawn = p => shownPins(p).map(pinKey)
+  // x steps over the future pin (not drawn) and the sections not drawn, and swaps with Messages.
+  assert.deepEqual(drawn(movePin(r, "hashtag:x", -1)).slice(-2), ["hashtag:x", "section:messages"])
+  assert.equal(keys(movePin(r, "hashtag:x", -1)).indexOf(`future:{"type":"future"}`), keys(r).indexOf(`future:{"type":"future"}`), "the future pin keeps its place")
+  assert.equal(movePin(r, "section:feed", -1), r)
+  assert.equal(keys(movePinBefore(r, "section:feed", null)).at(-1), "section:feed")
+  assert.equal(movePinBefore(r, "hashtag:x", "hashtag:x"), r)
+  assert.ok(samePins(defaultPins(), defaultPins()))
+  assert.ok(!samePins(r, defaultPins()))
+})
+
+test("the Feed opens a pinned relay or list from its address", () => {
   assert.deepEqual(linkChoice("#/feed?tag=Nostr"), { mode: "hashtag", tag: "nostr" })
   assert.deepEqual(linkChoice("#/feed?feed=global"), { mode: "global", tag: "" })
   assert.equal(linkChoice("#/feed?feed=made-up"), null)
   const relay = linkChoice("#/feed?relay=wss%3A%2F%2Frelay.damus.io%2F")
   assert.deepEqual(relay, { mode: "relay", tag: "", relay: "wss://relay.damus.io", label: "damus.io" })
   assert.equal(linkChoice("#/feed?relay=https%3A%2F%2Fx.com"), null)
-  assert.deepEqual(linkChoice(`#/feed?list=${A}:friends`), { mode: "list", tag: "", list: `${A}:friends`, authors: null, label: "friends" })
-  assert.equal(linkChoice("#/feed?list=nothex:friends"), null)
+  assert.deepEqual(linkChoice(`#/feed?list=${encodeURIComponent(`30000:${A}:friends`)}`), { mode: "list", tag: "", list: `30000:${A}:friends`, authors: null, label: "friends" })
+  assert.equal(linkChoice(`#/feed?list=${A}:friends`), null, "an address needs its kind")
+  assert.equal(linkChoice(`#/feed?list=1:${A}:friends`), null)
   assert.equal(linkChoice("#/feed"), null)
   assert.deepEqual(feedRelays(relay, ["wss://mine"]), ["wss://relay.damus.io"])
   assert.deepEqual(feedRelays({ mode: "global" }, ["wss://mine"]), ["wss://mine"])
@@ -114,24 +139,27 @@ test("a relay feed reads only that relay; a list feed only its people, newest pa
   assert.ok(!liveKeeps({ mode: "list", authors: [A] }, { kind: 1, pubkey: B }))
 })
 
-const list = (pubkey, d, at, ps, extra = []) => ({ kind: 30000, pubkey, created_at: at, tags: [["d", d], ...extra, ...ps.map(p => ["p", p])] })
-test("people lists: the newest copy of each, deleted or empty ones left out, named by title", async () => {
-  const evs = [list(A, "f", 1, [A]), list(A, "f", 2, [A, B], [["title", "Friends"]]), list(A, "gone", 3, [B], [["deleted", "true"]]), list(A, "none", 3, []), { kind: 3, tags: [] }]
+const list = (pubkey, d, at, ps, extra = [], kind = 30000) => ({ kind, pubkey, created_at: at, tags: [["d", d], ...extra, ...ps.map(p => ["p", p])] })
+test("people lists and follow packs: the newest copy of each by address, deleted or empty ones left out", async () => {
+  const evs = [list(A, "f", 1, [A]), list(A, "f", 2, [A, B], [["title", "Friends"]]), list(A, "f", 3, [B], [], 39089),
+    list(A, "gone", 3, [B], [["deleted", "true"]]), list(A, "none", 3, []), { kind: 3, tags: [] }]
   const lists = newestLists(evs)
-  assert.equal(lists.length, 1)
-  assert.equal(listName(lists[0]), "Friends")
-  assert.deepEqual(listPeople(lists[0]), [A, B])
+  assert.deepEqual(lists.map(listAddress).sort(), [`30000:${A}:f`, `39089:${A}:f`])
+  const friends = lists.find(e => e.kind === 30000)
+  assert.equal(listName(friends), "Friends")
+  assert.deepEqual(listPeople(friends), [A, B])
   const ctx = { session: { pubkey: A }, account: { relays: { read: ["wss://r"], write: [] } }, vault: { outbox: { query: async () => [] } } }
   const query = async () => evs
-  assert.deepEqual(await myLists(ctx, { query }), [{ pubkey: A, d: "f", name: "Friends", people: 2 }])
-  const full = await resolveList(ctx, { mode: "list", list: `${A}:f`, authors: null }, { query })
-  assert.deepEqual(full.authors, [A, B])
-  assert.equal(full.label, "Friends")
-  const missing = await resolveList(ctx, { mode: "list", list: `${A}:nope`, authors: null }, { query: async () => [] })
+  assert.deepEqual(await myLists(ctx, { query }), [{ a: `39089:${A}:f`, name: "f", people: 1 }, { a: `30000:${A}:f`, name: "Friends", people: 2 }])
+  const asked = []
+  const full = await resolveList(ctx, { mode: "list", list: `39089:${A}:f`, authors: null }, { query: async (r, f) => { asked.push(f); return evs } })
+  assert.deepEqual(asked[0].kinds, [39089])
+  assert.deepEqual(full.authors, [B])
+  const missing = await resolveList(ctx, { mode: "list", list: `30000:${A}:nope`, authors: null }, { query: async () => [] })
   assert.deepEqual(missing.authors, [])
 })
 
-test("the synced layout: one NIP-78 event sealed to yourself, the newest edit wins", async () => {
+test("the synced layout: one NIP-78 event, the newest created_at read, the newest edit kept", () => {
   assert.equal(SYNC_KIND, 30078)
   assert.deepEqual(SYNC_TAGS, [["d", SYNC_D], ["client", "Nostr Vault"], ["encryption", "nip44"]])
   const t = layoutTemplate("sealed", 7)
@@ -142,33 +170,85 @@ test("the synced layout: one NIP-78 event sealed to yourself, the newest edit wi
   assert.equal(newestEvent([ev("a", 1), ev("b", 3), ev("c", 9, B), ev("d", 9, A, "other")], A).id, "b")
   assert.ok(isLayoutEvent(ev("a", 1), A) && !isLayoutEvent(ev("a", 1), B))
   assert.equal(parseLayout("{nope"), null)
-  assert.equal(parseLayout(JSON.stringify({ at: 1 })), null)
+  assert.equal(parseLayout("[1]"), null)
   const local = { ...defaultLayout(PANEL_IDS), at: 10 }
+  assert.equal(newerLayout(local, { ...local, at: 10 }), local, "equal: the device's copy stays")
   assert.equal(newerLayout(local, { ...local, at: 9 }), local)
   assert.equal(newerLayout(local, null), local)
   assert.equal(newerLayout(local, { ...local, at: 11 }).at, 11)
+  assert.ok(looksSealed("AjF0x+9...", "{\"v\":1}"))
+  assert.ok(!looksSealed("{\"v\":1}", "{\"v\":1}"), "plaintext is never sent")
+  assert.ok(!looksSealed("{\"v\":2}", "{\"v\":1}"), "JSON is never ciphertext")
+  assert.ok(!looksSealed("", "x"))
 })
 
-test("push seals to your own key and publishes; pull opens the newest; read-only does neither", async () => {
-  const sent = [], stored = []
-  const crypto = { encrypt: async (pk, text) => `sealed-to-${pk}:${text}`, decrypt: async (pk, c) => c.replace(`sealed-to-${pk}:`, "") }
-  const layout = { ...defaultLayout(PANEL_IDS), at: 42 }
-  const ctx = {
-    session: { pubkey: A }, signer: { crypto, signEvent: async t => ({ ...t, id: "e1", pubkey: A, sig: "s" }) },
-    account: { relays: { write: [], read: [] } }, vault: { outbox: { event: async e => { stored.push(e) }, query: async () => stored } },
-  }
-  const pushed = await pushLayout(ctx, layout, { publish: async (c, t) => { sent.push(t); return { event: { ...t, id: "e1" } } } })
+// A stand-in NIP-44: base64 of the text, so it is neither the plaintext nor JSON.
+const b64 = s => Buffer.from(s).toString("base64")
+const crypto = { encrypt: async (pk, text) => `${pk.slice(0, 4)}${b64(text)}`, decrypt: async (pk, c) => Buffer.from(c.slice(4), "base64").toString() }
+
+test("push seals to your own key and publishes; never plaintext; dropped if the account changed; read-only does nothing", async () => {
+  const sent = []
+  const layout = { ...defaultLayout(PANEL_IDS), at: 42, ipad: { kept: true } }
+  const ctx = { session: { pubkey: A }, signer: { crypto }, account: { relays: { write: [], read: [] } } }
+  const publish = async (c, t) => { sent.push(t); return { event: { ...t, id: "e1" } } }
+  const pushed = await pushLayout(ctx, layout, { publish })
   assert.equal(sent.length, 1)
   assert.equal(sent[0].kind, 30078)
   assert.deepEqual(sent[0].tags, SYNC_TAGS)
-  assert.equal(sent[0].content, `sealed-to-${A}:${JSON.stringify(layout)}`, "sealed to the account's own key")
+  assert.deepEqual(JSON.parse(await crypto.decrypt(A, sent[0].content)), layout, "the whole layout, unknown keys too")
   assert.equal(pushed.id, "e1")
-  const readOnly = { ...ctx, signer: { readOnly: true } }
-  assert.equal(await pushLayout(readOnly, layout, { publish: async () => { throw new Error("must not send") } }), null)
-  assert.equal(await pullLayout({ ...ctx, signer: { readOnly: true } }), null)
-  stored.push({ id: "e0", kind: 30078, pubkey: A, created_at: 5, tags: [["d", SYNC_D]], content: `sealed-to-${A}:${JSON.stringify(layout)}` })
-  const back = await pullLayout(ctx, { query: async () => [] })
-  assert.deepEqual(back, layout)
+  const leaky = { ...ctx, signer: { crypto: { encrypt: async (pk, text) => text } } }
+  await assert.rejects(pushLayout(leaky, layout, { publish }), /encrypted/)
+  assert.equal(sent.length, 1, "plaintext was not sent")
+  assert.equal(await pushLayout({ ...ctx, stillMe: () => false }, layout, { publish }), null, "another account now: dropped")
+  assert.equal(sent.length, 1)
+  assert.equal(await pushLayout({ ...ctx, signer: { readOnly: true } }, layout, { publish }), null)
+})
+
+test("pull: the newest event opened; none; unreadable kept apart from none", async () => {
+  const layout = { ...defaultLayout(PANEL_IDS), at: 42 }
+  const stored = [{ id: "e0", kind: 30078, pubkey: A, created_at: 5, tags: [["d", SYNC_D]], content: `${A.slice(0, 4)}${b64(JSON.stringify(layout))}` }]
+  const ctx = { session: { pubkey: A }, signer: { crypto }, account: { relays: { write: [], read: [] } }, vault: { outbox: { event: async () => {}, query: async () => stored } } }
+  assert.deepEqual(await pullLayout(ctx, { query: async () => [] }), { state: "ok", layout })
+  assert.deepEqual(await pullLayout({ ...ctx, vault: { outbox: { query: async () => [] } } }, { query: async () => [] }), { state: "none" })
+  assert.deepEqual(await pullLayout({ ...ctx, signer: { crypto: { decrypt: async () => { throw new Error("refused") } } } }, { query: async () => [] }), { state: "unreadable" })
+  assert.deepEqual(await pullLayout({ ...ctx, signer: { readOnly: true } }), { state: "none" })
+})
+
+test("the vault's copy against this browser's: newer taken, equal or older kept, newer-format or unreadable held", () => {
+  const me = "c".repeat(64), now = 2_000_000
+  const local = currentLayout(me)
+  assert.equal(takeRemote(me, { state: "none" }), "none")
+  assert.equal(takeRemote(me, { state: "ok", layout: { ...local, at: 0 } }, { now }), "kept")
+  const remote = { v: 1, at: 500, pins: [{ type: "hashtag", t: "x" }], panels: [], ipad: 1 }
+  assert.equal(takeRemote(me, { state: "ok", layout: remote }, { now }), "taken")
+  assert.equal(currentLayout(me).at, 500)
+  assert.equal(currentLayout(me).ipad, 1, "the iPad's keys came with it")
+  assert.ok(currentLayout(me).pins.some(p => p.t === "x"), "and its pins")
+  assert.equal(takeRemote(me, { state: "ok", layout: { ...remote, at: 400 } }, { now }), "kept")
+  assert.equal(takeRemote(me, { state: "ok", layout: { ...remote, at: now + 99_999 } }, { now }), "taken")
+  assert.equal(currentLayout(me).at, now + 900, "a clock far ahead is pulled back to now + 15 min")
+  assert.ok(!holding(me))
+  assert.equal(takeRemote(me, { state: "ok", layout: { v: 2, at: now + 900 + 1 } }, { now }), "held")
+  assert.ok(holding(me), "a newer format: nothing is written over it")
+  assert.equal(currentLayout(me).at, now + 900, "and this browser's copy is unchanged")
+  const other = "d".repeat(64)
+  currentLayout(other)
+  assert.equal(takeRemote(other, { state: "unreadable" }), "held")
+  assert.ok(holding(other))
+})
+
+test("normalize is the doc's: what the iPad wrote survives a web round trip", () => {
+  const ipad = { v: 1, at: 1793736000, pins: [
+    { type: "section", id: "feed" }, { type: "list", a: `30000:${A}:Devs`, name: "Devs" }, { type: "person", p: B },
+    { type: "section", id: "search" }, { type: "hashtag", t: "bitcoin" }, { type: "relay", url: "wss://relay.example.com" },
+  ], panels: [{ id: "live-vault", on: true, open: true }], deviceNote: "x" }
+  const back = JSON.parse(JSON.stringify(normalize(ipad, PANEL_IDS)))
+  // Every pin the iPad wrote, in its order (the sections it left out go back in between, per the doc).
+  const wrote = new Set(ipad.pins.map(pinKey))
+  assert.deepEqual(back.pins.filter(p => wrote.has(pinKey(p))), ipad.pins)
+  assert.equal(back.deviceNote, "x")
+  assert.equal(back.at, ipad.at)
 })
 
 test("the desktop mounts the sync once and the rail and Your space share one layout", () => {
