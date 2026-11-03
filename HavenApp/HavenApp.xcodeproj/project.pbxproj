@@ -188,6 +188,7 @@
 		1F22F7CAA8220D8A784AC962 /* NoteDetailView+Sections.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC5A48EC3F65D58FED0264EA /* NoteDetailView+Sections.swift */; };
 		1F28F57023B41F320C1D7A3B /* MenuBarView+Sidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C28F31699E930265306429 /* MenuBarView+Sidebar.swift */; };
 		1F2AB00483503E504869A066 /* TrustWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE4905A56A56DDD6B06457D9 /* TrustWebView.swift */; };
+		1F4869EA36DDEA6F949CFB2A /* ShareInboxTrigger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64608CF1EFDCD7211E9AAE04 /* ShareInboxTrigger.swift */; };
 		1F63555FC06C83D35B299FFA /* PollCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DB5A549483647677783FDC9 /* PollCardView.swift */; };
 		1F6BC00D1FE7740874A65154 /* TrustWebView+Actions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45654EB66B99DB44F457EAFE /* TrustWebView+Actions.swift */; };
 		1F823537B9F13B3D4C003E11 /* ContactManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4EFE6422E6E0A896809308 /* ContactManager.swift */; };
@@ -1306,6 +1307,7 @@
 		CE4A586E41C95E02C4A1B7F3 /* RelayRequestBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E944BA26FF2F1C88F23319A /* RelayRequestBudget.swift */; };
 		CE50FBB4E33CAEAE5056B052 /* EventPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0D438DE03F310940F4D19A /* EventPublisher.swift */; };
 		CE658646406692011C5ACEF1 /* QuotedNoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0470608431CE649B6E55F7D /* QuotedNoteView.swift */; };
+		CE9BE3737EA6F24E11508EFD /* ShareInboxTrigger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64608CF1EFDCD7211E9AAE04 /* ShareInboxTrigger.swift */; };
 		CEBA8A8FAE1C365867C7E9E3 /* VaultDashboardDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = D67ADBC1563448EB3D0AE077 /* VaultDashboardDetails.swift */; };
 		CF11F2A3B34BC8D6843AE229 /* QuoteReferenceIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */; };
 		CF4C777AEA457AF1976BAA9D /* WotRebuildWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DF3E7F03589E36F93A1077E /* WotRebuildWatch.swift */; };
@@ -2021,6 +2023,7 @@
 		621A96E074FD92012D0EEB20 /* MacFipsMeshSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFipsMeshSettingsView.swift; sourceTree = "<group>"; };
 		62B1CCA082F36A09EF426579 /* MarketScopeGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketScopeGate.swift; sourceTree = "<group>"; };
 		64074B113CDD8831C2CD4942 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		64608CF1EFDCD7211E9AAE04 /* ShareInboxTrigger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInboxTrigger.swift; sourceTree = "<group>"; };
 		649EE87FE3A42105E4EC17E9 /* haven */ = {isa = PBXFileReference; path = haven; sourceTree = "<group>"; };
 		64BBE97369E66B2804EFFC5F /* MediaVaultLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaVaultLink.swift; sourceTree = "<group>"; };
 		6532640E58C10C0D8A136047 /* FeedService+WebOfTrust.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+WebOfTrust.swift"; sourceTree = "<group>"; };
@@ -3611,6 +3614,14 @@
 			path = Feed;
 			sourceTree = "<group>";
 		};
+		DBA26816017F703BD9EC2574 /* SharePortal */ = {
+			isa = PBXGroup;
+			children = (
+				64608CF1EFDCD7211E9AAE04 /* ShareInboxTrigger.swift */,
+			);
+			path = SharePortal;
+			sourceTree = "<group>";
+		};
 		DBED66577AE9426CAE20CB85 /* Profile */ = {
 			isa = PBXGroup;
 			children = (
@@ -3771,6 +3782,7 @@
 				22D8D67DB985CB4EA94E4FAF /* RelayProcessManager.swift */,
 				99E35C0784A2C0DE490A240C /* ResetLeftovers.swift */,
 				58DD627BE3CD8F7939B4F325 /* SellerListingsLoader.swift */,
+				DBA26816017F703BD9EC2574 /* SharePortal */,
 				9B403C7767568BFB3E44E0CE /* SleepWakeMonitor.swift */,
 				CF4EE3A08A385329682E48B6 /* SoundOnlyStream.swift */,
 				05E22622B26A3F1A5C9D0A2A /* StatsService.swift */,
@@ -4863,6 +4875,7 @@
 				0DDBA0634E1D7658E773326D /* SetupReferral.swift in Sources */,
 				DA0527CA8795AC3C49DAC7CF /* SetupRelayChoice.swift in Sources */,
 				973C4F0062DF084625E96527 /* SetupWizardView.swift in Sources */,
+				CE9BE3737EA6F24E11508EFD /* ShareInboxTrigger.swift in Sources */,
 				C8D5EDDC1399F497C8DD1700 /* ShareProfileSheet.swift in Sources */,
 				72CD4E84E5ECC2F15E446436 /* ShareSheet.swift in Sources */,
 				545AD9E60A65336AC87469B6 /* SidebarTabButton.swift in Sources */,
@@ -5687,6 +5700,7 @@
 				0557B421D566C5250C0E8FF8 /* SetupReferral.swift in Sources */,
 				A4B9D7D9C2964C6BC57A9CB5 /* SetupRelayChoice.swift in Sources */,
 				E92A45E9141FE09A2704B7AA /* SetupWizardView.swift in Sources */,
+				1F4869EA36DDEA6F949CFB2A /* ShareInboxTrigger.swift in Sources */,
 				7634F3216D29FD727A0DC681 /* ShareProfileSheet.swift in Sources */,
 				EC05976F014D8D0EA368495B /* ShareSheet.swift in Sources */,
 				DF334F134363929C956118D8 /* SidebarTabButton.swift in Sources */,
