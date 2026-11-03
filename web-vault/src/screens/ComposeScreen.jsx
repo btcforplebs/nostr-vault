@@ -382,10 +382,11 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
     <main class={`screen ${inline ? "compose-inline" : `compose-sheet${keyboard ? " keyboard" : ""} view-${view}`}`}
       style={keyboard ? { "--kb-top": `${keyboard.top}px`, "--kb-height": `${keyboard.height}px` } : undefined}>
       {pending && <SendPill pending={pending} onUndo={undo} />}
-      {/* The iPhone's compose sheet: Cancel, the title, and Post at the top right (ComposeView+Chrome). */}
+      {/* The iPhone's compose sheet: Cancel, and Post at the top right (ComposeView+Chrome). The title is for screen
+          readers only, so a long Post label ("Waiting for your signer…") has room (Logen, 2026-11-03). */}
       {!inline && <header class="compose-bar">
         <button type="button" class="compose-cancel" onClick={cancel}>Cancel</button>
-        <h2>{title}</h2>
+        <h2 class="sr-only">{title}</h2>
         {postButton("compose-post")}
       </header>}
       {!target && !inline && <ComposeKinds type="note" />}
