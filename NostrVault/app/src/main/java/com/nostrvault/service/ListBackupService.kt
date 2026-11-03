@@ -167,6 +167,8 @@ class ListBackupService @Inject constructor(
         val why: String,
         /** Newest first, the current one included. */
         val versions: List<ListVersionMerge.Opened>,
+        /** The versions the vault keeps with no hole between them ([ListVersionMerge.unbroken]); a current found only on relays isn't one. */
+        val vault: Set<String> = emptySet(),
     )
 
     /**
@@ -186,6 +188,7 @@ class ListBackupService @Inject constructor(
             checked = found.isSuccess,
             why = found.exceptionOrNull()?.message.orEmpty(),
             versions = versions,
+            vault = ListVersionMerge.unbroken(kept),
         )
     }
 

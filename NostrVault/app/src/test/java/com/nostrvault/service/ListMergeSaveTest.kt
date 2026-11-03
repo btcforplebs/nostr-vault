@@ -9,7 +9,7 @@ import org.junit.Test
 
 /**
  * What a merged list saves: refuses an empty result, a relay list, and a base whose private part wasn't read; keeps
- * kind 3's content; encrypts private entries to self in the scheme the list uses, checked by opening them again;
+ * kind 3's content; encrypts private entries to self with NIP-44 (also over a NIP-04 list), checked by opening them again;
  * none means an empty content. The safe save around it (stale list, undo copy, signer, account) is
  * [ListVersionSaveTest]. Port of web-vault/test/list-merge-save.test.mjs; stand-in cipher, nothing is published.
  */
@@ -62,9 +62,9 @@ class ListMergeSaveTest {
     }
 
     @Test
-    fun `a NIP-04 private part stays NIP-04`() = runTest {
+    fun `NIP-44 always, also over a NIP-04 list`() = runTest {
         val built = ListMergeSave.build(10000, base(10000, "abc?iv=def"), emptyList(), listOf(listOf("p", "2")), encrypt, decrypt)
-        assertEquals("""[["p","2"]]?iv=x""", (built as ListVersionSave.Build.Ready).content)
+        assertEquals("""n44:[["p","2"]]""", (built as ListVersionSave.Build.Ready).content)
     }
 
     @Test
@@ -74,7 +74,7 @@ class ListMergeSaveTest {
             { _, _ -> null },
             { _, _ -> throw IllegalStateException("signer offline") },
             { text, _ -> text },
-            { text, _ -> "$text?iv=x" },
+            { text, _ -> "$text?iv=x" }, // NIP-04 where NIP-44 was asked
         )
         for (bad in cases) {
             val built = ListMergeSave.build(10000, base(10000, "n44:old"), emptyList(), priv, bad, decrypt)

@@ -13,6 +13,12 @@ import kotlinx.serialization.json.JsonPrimitive
  * refused). Pure for the tests. Web twin: web-vault/src/net/list-merge-save.js.
  */
 object ListMergeSave {
+    /** The most NIP-44 v2 encrypts in one message, in bytes. A merge always writes NIP-44 (Logen 2026-11-03). */
+    const val NIP44_MAX = 65535
+
+    /** Said before a too-big save is signed, rather than passing on the signer's bare error. */
+    const val TOO_BIG = "Not saved: the private entries are too many for one encrypted list (NIP-44 holds 64 KB). Untick some in Review. Nothing was changed."
+
     /**
      * Why the merge can't be saved at all, before anything is fetched or signed, or null.
      * [baseOpened]: the base's private part was read, so [privateTags] can hold all of it;
@@ -41,10 +47,11 @@ object ListMergeSave {
 
     /**
      * The new version, [tags] and its content, once the newest list is [current]: kind 3 keeps
-     * its content (relay hints); otherwise the [privateTags] encrypted to self,
-     * in the scheme the current private part uses (NIP-04 when it has "?iv=",
-     * else NIP-44), and "" with none. The ciphertext is opened again and must
-     * give back the same text in the same scheme, so a signer that echoes the
+     * its content (relay hints); otherwise the [privateTags] encrypted to self
+     * with NIP-44, also over a NIP-04 list (as web and iPhone, Logen 2026-11-03),
+     * and "" with none; over [NIP44_MAX] bytes is refused before anything is
+     * signed. The ciphertext is opened again and must give back the same text
+     * in NIP-44, so a signer that echoes the
      * plaintext or uses another key never gets published (as [ListMerge.removingPrivate]).
      * [encrypt] / [decrypt] take the text and whether it is NIP-04, and return null when this device can't.
      * Refused when the private entries can't be encrypted and checked.
@@ -56,8 +63,13 @@ object ListMergeSave {
         privateTags: List<List<String>>,
         encrypt: suspend (String, Boolean) -> String?,
         decrypt: suspend (String, Boolean) -> String?,
-    ): ListVersionSave.Build = content(kind, current, tags, privateTags, encrypt, decrypt)
-        ?: ListVersionSave.Build.Refuse("Not saved: this sign-in can't encrypt your private entries. Nothing was changed.")
+    ): ListVersionSave.Build {
+        if (kind != 3 && privateTags.isNotEmpty() && plain(privateTags).toByteArray(Charsets.UTF_8).size > NIP44_MAX) {
+            return ListVersionSave.Build.Refuse(TOO_BIG)
+        }
+        return content(kind, current, tags, privateTags, encrypt, decrypt)
+            ?: ListVersionSave.Build.Refuse("Not saved: this sign-in can't encrypt your private entries. Nothing was changed.")
+    }
 
     private suspend fun content(
         kind: Int,
@@ -69,13 +81,19 @@ object ListMergeSave {
     ): ListVersionSave.Build.Ready? {
         if (kind == 3) return ListVersionSave.Build.Ready(tags, current?.content.orEmpty())
         if (privateTags.isEmpty()) return ListVersionSave.Build.Ready(tags, "")
-        val plaintext = JsonArray(privateTags.map { tag -> JsonArray(tag.map(::JsonPrimitive)) }).toString()
-        val nip04 = current?.content?.let { MuteList.isNip04(it.trim()) } ?: false
-        val encrypted = attempt { encrypt(plaintext, nip04) }
-        if (encrypted.isNullOrBlank() || MuteList.isNip04(encrypted) != nip04) return null
-        if (attempt { decrypt(encrypted, nip04) } != plaintext) return null
+        val plaintext = plain(privateTags)
+        val encrypted = attempt { encrypt(plaintext, false) }
+        if (encrypted.isNullOrBlank() || MuteList.isNip04(encrypted)) return null
+        if (attempt { decrypt(encrypted, false) } != plaintext) return null
         return ListVersionSave.Build.Ready(tags, encrypted)
     }
+
+    private fun plain(privateTags: List<List<String>>) =
+        JsonArray(privateTags.map { tag -> JsonArray(tag.map(::JsonPrimitive)) }).toString()
+
+    /** Whether the NIP-44 note shows: private entries saved over a NIP-04 list (web `needsNip44Note`). */
+    fun needsNip44Note(kind: Int, currentContent: String?, rows: List<ListVersionMerge.Row>): Boolean =
+        kind != 3 && MuteList.isNip04(currentContent.orEmpty()) && rows.any { it.ticked && it.private }
 
     private suspend fun attempt(block: suspend () -> String?): String? = try {
         block()
