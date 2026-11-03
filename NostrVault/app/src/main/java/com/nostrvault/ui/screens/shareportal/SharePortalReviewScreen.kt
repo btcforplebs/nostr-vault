@@ -68,6 +68,20 @@ private fun ReviewCard(intent: ShareIntent, busy: Boolean, active: String, viewM
             onPublish = { passage, comment -> viewModel.publishHighlight(intent, passage, comment) },
             onDismiss = { viewModel.dismiss(intent) },
         )
+        intent.action == ShareAction.MEDIA_POST && handler.isReady -> MediaPostReviewContent(
+            intent = intent,
+            needsSwitch = intent.account != null && intent.account != active,
+            onSwitchAccount = viewModel::switchAccount,
+            onDone = { viewModel.dismiss(intent) },
+            onDismiss = { viewModel.dismiss(intent) },
+        )
+        intent.action == ShareAction.PRIVATE_COPY && handler.isReady -> PrivateCopyReviewContent(
+            intent = intent,
+            needsSwitch = intent.account != null && intent.account != active,
+            onSwitchAccount = viewModel::switchAccount,
+            onDone = { viewModel.dismiss(intent) },
+            onDismiss = { viewModel.dismiss(intent) },
+        )
         else -> {
             Text(label(intent.action), style = MaterialTheme.typography.titleMedium)
             Text(handler.notReadyMessage, color = SecondaryText)
