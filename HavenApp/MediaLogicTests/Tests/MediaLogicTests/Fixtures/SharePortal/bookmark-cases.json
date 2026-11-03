@@ -1,0 +1,239 @@
+{
+ "_note": "BookmarkShareTags: Save for later adds an r tag publicly or privately; a link already saved either way is left alone; a private part that isn't a JSON array of string arrays is never written over. Read by HavenApp MediaLogicTests and Android shareportal tests.",
+ "urls": [
+  {
+   "raw": "  https://example.com/read  ",
+   "url": "https://example.com/read"
+  },
+  {
+   "raw": "http://a.b/c",
+   "url": "http://a.b/c"
+  },
+  {
+   "raw": "ftp://example.com/x",
+   "url": null
+  },
+  {
+   "raw": "https://",
+   "url": null
+  },
+  {
+   "raw": "",
+   "url": null
+  },
+  {
+   "raw": null,
+   "url": null
+  }
+ ],
+ "cases": [
+  {
+   "name": "public, empty list",
+   "url": "https://example.com/read",
+   "public": [],
+   "private": [],
+   "privately": false,
+   "expect": {
+    "public": [
+     [
+      "r",
+      "https://example.com/read"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "public keeps every other tag in order",
+   "url": "https://example.com/read",
+   "public": [
+    [
+     "e",
+     "aa"
+    ],
+    [
+     "a",
+     "30023:bb:d"
+    ],
+    [
+     "t",
+     "x"
+    ]
+   ],
+   "private": [],
+   "privately": false,
+   "expect": {
+    "public": [
+     [
+      "e",
+      "aa"
+     ],
+     [
+      "a",
+      "30023:bb:d"
+     ],
+     [
+      "t",
+      "x"
+     ],
+     [
+      "r",
+      "https://example.com/read"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "private keeps the private entries",
+   "url": "https://example.com/read",
+   "public": [
+    [
+     "e",
+     "aa"
+    ]
+   ],
+   "private": [
+    [
+     "e",
+     "cc"
+    ],
+    [
+     "r",
+     "https://other.example/"
+    ]
+   ],
+   "privately": true,
+   "expect": {
+    "private": [
+     [
+      "e",
+      "cc"
+     ],
+     [
+      "r",
+      "https://other.example/"
+     ],
+     [
+      "r",
+      "https://example.com/read"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "already public",
+   "url": "https://example.com/read",
+   "public": [
+    [
+     "r",
+     "https://example.com/read"
+    ]
+   ],
+   "private": [],
+   "privately": true,
+   "expect": {
+    "already": "public"
+   }
+  },
+  {
+   "name": "already private: a public save would expose it",
+   "url": "https://example.com/read",
+   "public": [],
+   "private": [
+    [
+     "r",
+     "https://example.com/read"
+    ]
+   ],
+   "privately": false,
+   "expect": {
+    "already": "private"
+   }
+  },
+  {
+   "name": "a tag with spaces counts as the same link",
+   "url": "https://example.com/read",
+   "public": [
+    [
+     "r",
+     " https://example.com/read "
+    ]
+   ],
+   "private": [],
+   "privately": false,
+   "expect": {
+    "already": "public"
+   }
+  },
+  {
+   "name": "a different link is a new bookmark",
+   "url": "https://example.com/read",
+   "public": [
+    [
+     "r",
+     "https://example.com/read/2"
+    ]
+   ],
+   "private": [],
+   "privately": false,
+   "expect": {
+    "public": [
+     [
+      "r",
+      "https://example.com/read/2"
+     ],
+     [
+      "r",
+      "https://example.com/read"
+     ]
+    ]
+   }
+  }
+ ],
+ "private_parts": [
+  {
+   "name": "empty",
+   "plaintext": "",
+   "tags": []
+  },
+  {
+   "name": "blank",
+   "plaintext": "  ",
+   "tags": []
+  },
+  {
+   "name": "tags",
+   "plaintext": "[[\"r\",\"https://x.example/\"],[\"e\",\"aa\",\"wss://r\"]]",
+   "tags": [
+    [
+     "r",
+     "https://x.example/"
+    ],
+    [
+     "e",
+     "aa",
+     "wss://r"
+    ]
+   ]
+  },
+  {
+   "name": "not json",
+   "plaintext": "oops",
+   "tags": null
+  },
+  {
+   "name": "an object",
+   "plaintext": "{\"r\":1}",
+   "tags": null
+  },
+  {
+   "name": "a number in a tag",
+   "plaintext": "[[\"r\",1]]",
+   "tags": null
+  },
+  {
+   "name": "a bare string entry",
+   "plaintext": "[\"r\"]",
+   "tags": null
+  }
+ ]
+}
