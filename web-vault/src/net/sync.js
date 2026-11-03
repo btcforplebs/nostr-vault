@@ -55,13 +55,25 @@ export async function refreshAccount(vault, pubkey, hintRelays, { log = () => {}
   const asked = new Set(early?.relays.map(norm))
   const rest = hintRelays.filter(u => !asked.has(norm(u)))
   const evs = (await Promise.all([early?.events ?? [], rest.length ? accountQuery(rest, pubkey) : []])).flat()
+  // A save Haven doesn't answer (it runs on the page's thread and can be slow: "no answer to EVENT in 15000 ms") is
+  // skipped and logged, not thrown: thrown, it ended the whole boot and the app stopped refreshing (Logen, 2026-11-03).
+  // What wasn't saved still counts for this visit; Haven gets it on the next refresh. A refusal stays out, as before.
+  const unsaved = []
   for (const k of ACCOUNT_KINDS) {
     const ev = newest(evs.filter(e => e.kind === k))
     if (!ev) continue
-    const r = await vault.outbox.event(ev)
+    let r
+    try { r = await vault.outbox.event(ev) } catch (e) {
+      log("account-store-failed", { kind: k, err: String(e?.message ?? e) })
+      unsaved.push(ev)
+      continue
+    }
     if (!r.ok && !/^duplicate:/.test(r.message)) log("account-store-refused", { kind: k, message: r.message })
   }
-  return readAccount(vault, pubkey)
+  if (!unsaved.length) return readAccount(vault, pubkey)
+  const held = await vault.outbox.query({ kinds: ACCOUNT_KINDS, authors: [pubkey] })
+    .catch(e => { log("account-read-failed", { err: String(e?.message ?? e) }); return [] })
+  return account([...held, ...unsaved])
 }
 
 /** The Following feed from Haven /feed, newest first. */
