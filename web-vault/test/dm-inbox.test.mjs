@@ -7,14 +7,15 @@ import { readFileSync } from "node:fs"
 
 const src = readFileSync(new URL("../src/screens/MessagesScreen.jsx", import.meta.url), "utf8")
 
-test("one Requests row, the iPhone's (below the list, glyph and count), not a second plain one above it", () => {
-  assert.equal(src.match(/href="#\/messages\/requests"/g).length, 1)
-  assert.match(src, /class="dm-row dm-requests" href="#\/messages\/requests" aria-label=\{`Requests, \$\{requests\.length\}`\}/)
+test("one way to Requests: the tray button at the top right (Logen, 2026-11-03), no row under the list", () => {
+  assert.equal(src.match(/<RequestsButton /g).length, 1)
+  assert.doesNotMatch(src, /href="#\/messages\/requests"/, "the tray (MessagesTools.jsx) is the only link")
   assert.doesNotMatch(src, /Requests \(\{requests\.length\}\)/)
 })
 
-test("the empty inbox shows only when there are no Requests either (DMInboxView: both lists empty)", () => {
-  assert.match(src, /showRequests \? <div class="empty"><strong>No Requests<\/strong><\/div> : requests\.length \? null : \(/)
+test("an empty inbox says so even with Requests waiting, and points at the tray", () => {
+  assert.match(src, /showRequests \? <div class="empty"><strong>No Requests<\/strong><\/div> : \(/)
+  assert.match(src, /Requests from people outside your Web of Trust are behind the tray at the top\./)
 })
 
 test("inbox row as the iPhone's: unread dot on the face, accent time, count only past 1, two-line preview", () => {

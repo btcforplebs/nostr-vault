@@ -56,7 +56,7 @@ body:has(.compose-sheet) .tabbar { display: none; }
 .compose-cancel, .compose-post { min-height: 44px; padding: 0 18px; border-radius: 999px; font: 600 17px/1 var(--font);
   background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
 .compose-cancel { justify-self: start; color: var(--accent); }
-.compose-post { justify-self: end; color: #fff; background: var(--accent); border-color: transparent; }
+.compose-post { grid-column: 3; justify-self: end; color: #fff; background: var(--accent); border-color: transparent; }
 .compose-post:disabled { background: var(--glass); color: var(--text-3, rgb(255 255 255 / .35)); }
 .compose-sheet .compose-area { display: grid; grid-template-columns: 40px 1fr; column-gap: 12px; margin-top: 6px; }
 .compose-sheet .compose-area > * { grid-column: 2; }
