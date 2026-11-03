@@ -12,6 +12,12 @@ object ShareActionAvailability {
     val ready: Set<ShareAction> = setOf(
         ShareAction.HIGHLIGHT,
         ShareAction.UPLOAD,
+        // Lane A (phase 2).
+        ShareAction.ARTICLE_CLIP,
+        ShareAction.RECIPE,
+        ShareAction.CALENDAR,
+        ShareAction.STATUS,
+        ShareAction.LABEL,
     )
 
     fun isReady(action: ShareAction): Boolean = action in ready

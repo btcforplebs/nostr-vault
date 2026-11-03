@@ -13,20 +13,25 @@ import javax.inject.Singleton
 @Singleton
 class SharePortalRouter @Inject constructor(
     val highlight: HighlightShareHandler,
+    val articleClip: ArticleClipShareHandler,
+    val recipe: RecipeShareHandler,
+    val calendar: CalendarShareHandler,
+    val status: StatusShareHandler,
+    val label: LabelShareHandler,
 ) {
     fun handler(action: ShareAction): ShareHandler = when (action) {
         ShareAction.HIGHLIGHT -> highlight
         ShareAction.UPLOAD -> UploadShareHandler
         ShareAction.BOOKMARK -> BookmarkShareHandler
         ShareAction.PRIVATE_COPY -> PrivateCopyShareHandler
-        ShareAction.ARTICLE_CLIP -> ArticleClipShareHandler
+        ShareAction.ARTICLE_CLIP -> articleClip
         ShareAction.MEDIA_POST -> MediaPostShareHandler
-        ShareAction.RECIPE -> RecipeShareHandler
+        ShareAction.RECIPE -> recipe
         ShareAction.PROFILE -> ProfileShareHandler
         ShareAction.PAY -> PayShareHandler
         ShareAction.DM -> DMShareHandler
-        ShareAction.STATUS -> StatusShareHandler
-        ShareAction.CALENDAR -> CalendarShareHandler
-        ShareAction.LABEL -> LabelShareHandler
+        ShareAction.STATUS -> status
+        ShareAction.CALENDAR -> calendar
+        ShareAction.LABEL -> label
     }
 }
