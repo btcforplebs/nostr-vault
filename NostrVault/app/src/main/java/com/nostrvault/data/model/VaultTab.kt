@@ -67,6 +67,7 @@ enum class VaultMode(val displayName: String) {
     MEDIA("Media"),
     LIKES("Likes"),
     ZAPS("Zaps"),
+    BOOKMARKS("Bookmarks"),
     FOLLOWERS("Followers");
 
     /** The note scope this mode shows; null for modes that aren't a notes list. */
@@ -84,6 +85,7 @@ enum class VaultMode(val displayName: String) {
             NOTES, ARTICLES, HIGHLIGHTS -> VaultViewMode.NOTES
             LIKES -> VaultViewMode.LIKES
             ZAPS -> VaultViewMode.ZAPS
+            BOOKMARKS -> VaultViewMode.BOOKMARKS
             FOLLOWERS -> VaultViewMode.FOLLOWERS
             MEDIA, ACTIVITY -> null
         }
@@ -130,6 +132,7 @@ enum class VaultMode(val displayName: String) {
             showsMedia -> MEDIA
             viewMode == VaultViewMode.LIKES -> LIKES
             viewMode == VaultViewMode.ZAPS -> ZAPS
+            viewMode == VaultViewMode.BOOKMARKS -> BOOKMARKS
             viewMode == VaultViewMode.FOLLOWERS -> FOLLOWERS
             else -> when (scope) {
                 VaultNoteScope.NOTES -> NOTES
@@ -177,7 +180,7 @@ object VaultDots {
         VaultViewMode.NOTES -> VaultNoteScope.NOTES.kinds(noteKinds)
         VaultViewMode.LIKES -> setOf(7)
         VaultViewMode.ZAPS -> setOf(9735)
-        VaultViewMode.FOLLOWERS -> emptySet()
+        VaultViewMode.FOLLOWERS, VaultViewMode.BOOKMARKS -> emptySet()
     }
 
     /**

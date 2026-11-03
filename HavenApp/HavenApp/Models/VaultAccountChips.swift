@@ -12,7 +12,7 @@ enum VaultAccountChip: Hashable {
 /// The Vault pages, as the account row sees them (the app's ViewMode, kept
 /// free of app types for MediaLogicTests).
 enum VaultAccountPage {
-    case activity, notes, media, likes, zaps, followers
+    case activity, notes, media, likes, zaps, bookmarks, followers
 }
 
 /// A Vault line and the account it is for. Two accounts can each have a line
@@ -41,9 +41,9 @@ enum VaultAccountChips {
 
     /// Whether a page shows the chips (Logen 11-02): the Vault list and
     /// Notes, Likes, Zaps and Followers, each filtering what it shows. Media
-    /// shows none.
+    /// shows none, nor Bookmarks: it is the active account's list only.
     static func pageShowsChips(_ page: VaultAccountPage) -> Bool {
-        page != .media
+        page != .media && page != .bookmarks
     }
 
     /// The posts `account` liked or zapped (kind 7 it signed, zap receipts

@@ -114,7 +114,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
 
         when (currentMode) {
             // Followers come from the relay's follower ledger, not these events.
-            VaultViewMode.FOLLOWERS -> Unit
+            VaultViewMode.FOLLOWERS, VaultViewMode.BOOKMARKS -> Unit
             VaultViewMode.NOTES -> {
                 val currentFilter = _contentFilter.value
                 val scopeKinds = _noteScope.value.kinds(RELAY_TAB_NOTE_KINDS)

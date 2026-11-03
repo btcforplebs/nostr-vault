@@ -75,7 +75,7 @@ enum VaultMode: String, CaseIterable {
     /// "Vault": everything that came in, in one list, like a notifications
     /// page. The tab opens on it.
     case activity
-    case notes, articles, highlights, media, likes, zaps, followers
+    case notes, articles, highlights, media, likes, zaps, bookmarks, followers
 
     var title: String { self == .activity ? "Vault" : rawValue.capitalized }
 
@@ -88,6 +88,7 @@ enum VaultMode: String, CaseIterable {
         case .media: return "photo.on.rectangle"
         case .likes: return "heart.fill"
         case .zaps: return "bolt.fill"
+        case .bookmarks: return "bookmark.fill"
         case .followers: return "person.2.fill"
         }
     }
@@ -112,6 +113,7 @@ enum VaultMode: String, CaseIterable {
         case .highlights: NotificationCenter.default.post(name: .havenOpenRelayNotes, object: VaultNoteScope.highlights)
         case .likes: NotificationCenter.default.post(name: .havenOpenRelayLikes, object: nil)
         case .zaps: NotificationCenter.default.post(name: .havenOpenRelayZaps, object: nil)
+        case .bookmarks: NotificationCenter.default.post(name: .havenOpenRelayBookmarks, object: nil)
         case .followers: NotificationCenter.default.post(name: .havenOpenRelayFollowers, object: nil)
         case .media: break
         }

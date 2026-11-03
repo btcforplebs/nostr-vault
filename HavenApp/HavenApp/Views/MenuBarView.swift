@@ -153,6 +153,7 @@ struct MenuBarView: View {
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in
             selectedTab = .notes
         }
+        .modifier(OnOpenBookmarksMode { selectedTab = .notes })
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in
             selectedTab = .notes
         }

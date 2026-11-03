@@ -85,6 +85,7 @@ object NotificationTarget {
         VaultViewMode.LIKES -> VaultMode.LIKES
         VaultViewMode.ZAPS -> VaultMode.ZAPS
         VaultViewMode.FOLLOWERS -> VaultMode.FOLLOWERS
+        VaultViewMode.BOOKMARKS -> VaultMode.BOOKMARKS
         VaultViewMode.NOTES -> when (VaultNoteScope.forKind(kind)) {
             VaultNoteScope.NOTES -> VaultMode.NOTES
             VaultNoteScope.ARTICLES -> VaultMode.ARTICLES

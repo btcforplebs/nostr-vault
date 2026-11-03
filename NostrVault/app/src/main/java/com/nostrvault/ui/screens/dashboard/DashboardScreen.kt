@@ -139,6 +139,8 @@ private fun RowScope.RelayFilters(
                 viewModel.setFollowersFilter(VaultFollowersFilter.ALL)
             }
         }
+        // Bookmarks has no filters.
+        VaultViewMode.BOOKMARKS -> Unit
     }
 }
 
@@ -323,7 +325,7 @@ fun DashboardScreen(
             VaultViewMode.NOTES -> displayNotes.map { it.id }
             VaultViewMode.LIKES -> displayLikedNotes.map { it.id }
             VaultViewMode.ZAPS -> displayZappedNotes.map { it.id }
-            VaultViewMode.FOLLOWERS -> emptyList()
+            VaultViewMode.FOLLOWERS, VaultViewMode.BOOKMARKS -> emptyList()
         }
     }
 
@@ -340,6 +342,7 @@ fun DashboardScreen(
             VaultViewMode.ZAPS -> viewModel.displayZappedNotes.value.size.let { it to (it >= viewModel.pageSize) }
             VaultViewMode.FOLLOWERS ->
                 (viewModel.followerSnapshot.value?.entries(viewModel.followersFilter.value)?.size ?: 0) to false
+            VaultViewMode.BOOKMARKS -> 0 to false
         }
         filterNote.show(countNote(choice.icon, choice.name, count, capped, choice.empty))
     }
@@ -447,7 +450,7 @@ fun DashboardScreen(
             VaultViewMode.NOTES -> displayNotes
             VaultViewMode.LIKES -> displayLikedNotes
             VaultViewMode.ZAPS -> displayZappedNotes
-            VaultViewMode.FOLLOWERS -> emptyList()
+            VaultViewMode.FOLLOWERS, VaultViewMode.BOOKMARKS -> emptyList()
         }
         val quotedIds = remember(visibleNotes) {
             visibleNotes.flatMap { it.quotedEventIds }.distinct()
@@ -536,6 +539,13 @@ fun DashboardScreen(
                     onReportNote = reportNote,
                     onBlockAuthor = blockAuthor,
                 )
+                VaultViewMode.BOOKMARKS -> com.nostrvault.ui.screens.vault.BookmarksContent(
+                    padding = padding,
+                    listState = listState,
+                    onOpenNote = openNote,
+                    onOpenArticle = openArticle,
+                    onOpenProfile = onProfileClick,
+                )
                 VaultViewMode.FOLLOWERS -> FollowersContent(
                     snapshot = followerSnapshot,
                     filter = followersFilter,
@@ -573,5 +583,5 @@ private fun focusShownNotes(viewModel: DashboardViewModel): List<FeedNote> =
         VaultViewMode.NOTES -> viewModel.displayNotes.value
         VaultViewMode.LIKES -> viewModel.displayLikedNotes.value
         VaultViewMode.ZAPS -> viewModel.displayZappedNotes.value
-        VaultViewMode.FOLLOWERS -> emptyList()
+        VaultViewMode.FOLLOWERS, VaultViewMode.BOOKMARKS -> emptyList()
     }

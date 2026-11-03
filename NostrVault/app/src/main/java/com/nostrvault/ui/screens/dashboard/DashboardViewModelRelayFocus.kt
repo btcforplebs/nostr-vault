@@ -48,6 +48,8 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.LOAD_MOR
                 if (_viewMode.value != VaultViewMode.FOLLOWERS) setViewMode(VaultViewMode.FOLLOWERS)
                 return // a list, not an event: nothing to fetch
             }
+            // No notification points at Bookmarks.
+            VaultViewMode.BOOKMARKS -> return
         }
         fetchFocusEventIfMissing(request.eventId)
     }

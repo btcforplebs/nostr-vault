@@ -10,6 +10,8 @@ enum ViewMode {
     case media
     case likes
     case zaps
+    /// The account's kind 10003 (BookmarksView), Logen 2026-11-03.
+    case bookmarks
     case followers
 }
 
@@ -22,6 +24,7 @@ extension ViewMode {
         case .media: return .media
         case .likes: return .likes
         case .zaps: return .zaps
+        case .bookmarks: return .bookmarks
         case .followers: return .followers
         }
     }

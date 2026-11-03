@@ -240,6 +240,8 @@ struct VaultView: View {
             case .new: return "New Followers"
             case .all: return "All Followers"
             }
+        case .bookmarks:
+            return ""
         }
     }
 
@@ -519,6 +521,7 @@ struct VaultView: View {
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in
             withAnimation(Motion.toggle) { viewMode = .zaps }
         }
+        .modifier(OpensBookmarksMode(viewMode: $viewMode))
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in
             withAnimation(Motion.toggle) { viewMode = .followers }
         }

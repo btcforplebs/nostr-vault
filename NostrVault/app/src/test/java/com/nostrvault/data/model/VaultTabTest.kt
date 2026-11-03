@@ -60,11 +60,11 @@ class VaultTabTest {
 
     @Test fun `the menu lists the modes in order, Vault first, and zaps only hides likes`() {
         assertEquals(
-            listOf("Vault", "Notes", "Articles", "Highlights", "Media", "Likes", "Zaps", "Followers"),
+            listOf("Vault", "Notes", "Articles", "Highlights", "Media", "Likes", "Zaps", "Bookmarks", "Followers"),
             VaultMode.menu(zapsOnly = false).map { it.displayName },
         )
         assertFalse(VaultMode.LIKES in VaultMode.menu(zapsOnly = true))
-        assertEquals(7, VaultMode.menu(zapsOnly = true).size)
+        assertEquals(8, VaultMode.menu(zapsOnly = true).size)
     }
 
     @Test fun `the pill names what the tab shows`() {
@@ -74,6 +74,8 @@ class VaultTabTest {
         assertEquals(VaultMode.NOTES, VaultMode.of(false, VaultViewMode.NOTES, VaultNoteScope.NOTES))
         // A scope left over from Articles doesn't rename Zaps.
         assertEquals(VaultMode.ZAPS, VaultMode.of(false, VaultViewMode.ZAPS, VaultNoteScope.ARTICLES))
+        // Bookmarks is a Vault type beside Zaps (Logen 2026-11-03).
+        assertEquals(VaultMode.BOOKMARKS, VaultMode.of(false, VaultViewMode.BOOKMARKS, VaultNoteScope.ARTICLES))
     }
 
     @Test fun `each mode maps back to its list and scope`() {

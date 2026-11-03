@@ -15,34 +15,31 @@ struct BookmarksView: View {
     @State private var reading: ArticleRoute?
 
     var body: some View {
-        List {
+        // A Vault mode (VaultMode.bookmarks): it sits in the Vault's own
+        // scroll view, so a stack rather than a List.
+        LazyVStack(alignment: .leading, spacing: 12) {
             if loading && events.isEmpty {
                 HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Reading your bookmarks…").foregroundColor(.secondary) }
             } else if bookmarks.publicEntries.isEmpty && privateEntries.isEmpty {
                 Text("No bookmarks yet. Use Bookmark in a note's ••• menu to keep it here.")
                     .foregroundColor(.secondary)
             }
-            if !bookmarks.publicEntries.isEmpty {
-                Section("Bookmarks") {
-                    ForEach(bookmarks.publicEntries, id: \.self) { entry in
-                        row(entry, removable: true)
-                    }
-                }
+            ForEach(bookmarks.publicEntries, id: \.self) { entry in
+                row(entry, removable: true)
             }
             if !privateEntries.isEmpty {
-                Section {
-                    ForEach(privateEntries, id: \.self) { entry in
-                        row(entry, removable: false)
-                    }
-                } header: {
-                    Text("Private bookmarks")
-                } footer: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Private bookmarks").font(.appSystem(size: 13, weight: .semibold)).foregroundColor(.secondary)
                     Text("Only you can see these. They are shown here as they are; change them in the app that made them.")
+                        .font(.appCaption).foregroundColor(.secondary)
+                }
+                .padding(.top, 8)
+                ForEach(privateEntries, id: \.self) { entry in
+                    row(entry, removable: false)
                 }
             }
         }
-        .navigationTitle("Bookmarks")
-        .refreshable { await load(force: true) }
+        .padding(.horizontal, 16)
         .task(id: configService.config.activeAccountNpub) { await load(force: true) }
         .onChange(of: bookmarks.list?.id) { _, _ in Task { await loadEvents() } }
         .sheet(item: $reading) { route in

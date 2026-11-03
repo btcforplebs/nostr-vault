@@ -130,15 +130,6 @@ internal fun NavGraphBuilder.tabRoutes(
         )
     }
 
-    composable(Screen.Bookmarks.route) {
-        com.nostrvault.ui.screens.vault.BookmarksScreen(
-            onBack = { navController.popBackStack() },
-            onOpenNote = { id -> navController.navigate(Screen.NoteDetail.createRoute(id)) },
-            onOpenArticle = { id -> navController.navigate(Screen.ArticleReader.createRoute(id)) },
-            onOpenProfile = { pk -> navController.navigate(Screen.Profile.createRoute(pk)) },
-        )
-    }
-
     composable(Screen.DMInbox.route) {
         DMInboxScreen(
             onConversationClick = { pubkey ->

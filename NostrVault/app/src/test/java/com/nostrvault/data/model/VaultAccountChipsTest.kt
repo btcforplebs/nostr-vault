@@ -96,5 +96,7 @@ class VaultAccountChipsTest {
         // The Vault list has its own row; Media has none.
         assertFalse(VaultAccountChips.pageShowsChipRow(VaultMode.ACTIVITY))
         assertFalse(VaultAccountChips.pageShowsChipRow(VaultMode.MEDIA))
+        // Bookmarks is the active account's list only.
+        assertFalse(VaultAccountChips.pageShowsChipRow(VaultMode.BOOKMARKS))
     }
 }

@@ -19,6 +19,7 @@ extension VaultView {
         case .activity: return .activity
         case .likes: return .likes
         case .zaps: return .zaps
+        case .bookmarks: return .bookmarks
         case .followers: return .followers
         default:
             switch noteScope {
@@ -97,6 +98,9 @@ extension VaultView {
             IconFilterButton(icon: "bolt.fill", tooltip: "Zaps", isSelected: viewMode == .zaps, color: .havenPurple) {
                 withAnimation(Motion.toggle) { viewMode = .zaps }
             }
+            IconFilterButton(icon: "bookmark.fill", tooltip: "Bookmarks", isSelected: viewMode == .bookmarks, color: .havenPurple) {
+                withAnimation(Motion.toggle) { viewMode = .bookmarks }
+            }
             IconFilterButton(icon: "person.2.fill", tooltip: "Followers", isSelected: viewMode == .followers, color: .havenPurple) {
                 withAnimation(Motion.toggle) { viewMode = .followers }
             }
@@ -111,9 +115,6 @@ extension VaultView {
                 }
             }
             .accessibilityValue(hasNewFollowers ? "New followers" : "")
-            #if os(macOS)
-            VaultBookmarksButton()
-            #endif
         }
     }
 
@@ -140,7 +141,6 @@ extension VaultView {
     private func trailingPill(buttonWidth: CGFloat, spacing: CGFloat) -> some View {
         HStack(spacing: spacing) {
             VaultMessagesButton()
-            VaultBookmarksButton()
             if viewMode != .media {
                 Divider().frame(height: 20).padding(.horizontal, 2)
                 trailingFilters(spacing: spacing)
@@ -175,7 +175,7 @@ extension VaultView {
             case .followers:
                 filterButton(.followers(.new), "sparkles", "New", followersFilter == .new) { followersFilter = .new }
                 filterButton(.followers(.all), "person.3.fill", "All", followersFilter == .all) { followersFilter = .all }
-            case .media:
+            case .media, .bookmarks:
                 EmptyView()
             }
         }
@@ -278,6 +278,12 @@ extension VaultView {
         }
     }
 
+    var bookmarksButton: some View {
+        ModeButton(title: "Bookmarks", icon: "bookmark.fill", isSelected: viewMode == .bookmarks, hasNotification: false) {
+            withAnimation(Motion.toggle) { viewMode = .bookmarks }
+        }
+    }
+
     var followersButton: some View {
         ModeButton(title: "Followers", icon: "person.2.fill", isSelected: viewMode == .followers, hasNotification: hasNewFollowers) {
             withAnimation(Motion.toggle) { viewMode = .followers }
@@ -291,6 +297,7 @@ extension VaultView {
                 likesButton
             }
             zapsButton
+            bookmarksButton
             followersButton
             #if os(iOS)
             // Add compact toggle on mobile
