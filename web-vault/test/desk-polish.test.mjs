@@ -39,3 +39,19 @@ test("a compact row's photo opens full size on a wide window, and the thread on 
   assert.match(to, /e\.stopPropagation\(\); setOpen\(true\)/)
   assert.match(to, /<MediaLightbox items=\{lightboxItems\(media, note\.tags\)\}/)
 })
+
+// Logen 2026-11-03: the web desktop takes its cues from the iPad. The top bar goes; the sections are a slim icon rail
+// down the left (BottomTabBar's vertical sidebar), and the Feed keeps the phone's floating bubbles, no bar behind them.
+test("the desktop sections are a slim left rail in the iPad's order, and the Feed's toolbar floats", () => {
+  const side = src("desktop/Sidebar.jsx")
+  const order = side.match(/const SECTIONS = \[(.*)\]$/m)[1]
+  assert.deepEqual([...order.matchAll(/\["(\w+)"/g)].map(m => m[1]), ["feed", "search", "messages", "wot", "vault", "profile"])
+  assert.match(side, /<span class="side-gap" aria-hidden="true" \/>\s*\{row\("settings", "Settings", "g ,"\)\}/, "Settings at the foot")
+  const css = src("styles/desktop.css")
+  assert.match(css, /^\.desk-app \{[^}]*--rail-w: 68px;/m, "the iPad rail's width (BottomTabBar.railWidth)")
+  assert.match(css, /^\.desk-side \{[^}]*flex-direction: column;[^}]*width: var\(--rail-w\);[^}]*height: 100dvh;/m)
+  assert.match(css, /^\.desk-left \{ display: flex; min-width: 0;/m, "rail and page side by side, not a bar over the page")
+  assert.match(css, /^\.desk-app \.screen-head\.feed-head \{[^}]*border-bottom: 0;/m)
+  assert.match(css, /relay-host:not\(\[hidden\]\) \{[^}]*top: 0;[^}]*left: var\(--rail-w\);/, "the Dashboard lies beside the rail")
+  assert.match(css, /^\.desk-full \.wot-myweb-button \{ position: absolute;/m, "My Web stays in the WoT column, off Your space")
+})

@@ -1,7 +1,8 @@
-/* The desktop layout, 760px and up (src/desktop). Two columns (Logen, 2026-11-02): on the left the app as on the iPhone,
-   its sections in a bar on top and one page at a time under it; on the right, from 1024px, "Your space" (space.css).
-   Each part scrolls on its own; the page itself never scrolls. */
-.desk-app { --bar-h: 56px; --dock-w: 0px; height: 100dvh; overflow: hidden; overflow: clip; }
+/* The desktop layout, 760px and up (src/desktop), laid out like the iPad in landscape (Logen, 2026-11-03): a slim icon
+   rail down the left edge (Sidebar.jsx, BottomTabBar's vertical sidebar), the app as on the iPhone in the middle, one
+   page at a time, and on the right, from 1024px, "Your space" (space.css). Each part scrolls on its own; the page
+   itself never scrolls. --bar-h is the height of Your space's header and the column toolbars' row. */
+.desk-app { --bar-h: 56px; --rail-w: 68px; --dock-w: 0px; height: 100dvh; overflow: hidden; overflow: clip; }
 /* Two classes so it beats app.css's .app, which loads later: the phone's room for its tab bar (144px) made the page
    144px taller than the window, and a focus or scrollIntoView near the bottom scrolled the whole layout up under the
    window's top edge, bar and all. overflow: clip (not hidden) also means nothing can scroll this box. */
@@ -9,39 +10,44 @@
 .desk-app:has(.desk.space) { --dock-w: 380px; }
 .desk-app:has(.desk.space.folded) { --dock-w: 56px; }
 .desk { display: grid; grid-template-columns: minmax(0, 1fr) var(--dock-w); height: 100dvh; }
-.desk-left { display: flex; flex-direction: column; min-width: 0; min-height: 0; container: left / inline-size; }
+.desk-left { display: flex; min-width: 0; min-height: 0; container: left / inline-size; }
 
-/* The sections bar: the iPad sidebar's rows laid in a line (Sidebar.jsx). Names show once the column has room for
-   them; until then icons, with the names in their tooltips. Settings, Learn and Docs are icons only. */
-.desk-side { position: relative; z-index: 20; display: flex; align-items: center; gap: 2px; height: var(--bar-h); flex: none;
-  padding: 0 12px; border-bottom: 1px solid var(--hair); background: var(--bg); }
-.desk-side hr { display: none; }
-.side-row { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; min-width: 40px; padding: 0 10px;
-  border-radius: 10px; color: var(--text-2); font: var(--t-sub); font-weight: 500; white-space: nowrap; }
-.side-row:hover { background: var(--s2); color: var(--text); }
-.side-row.on { background: var(--accent-pale); color: var(--accent-light); font-weight: 600; }
+/* The rail: the iPad's slim sidebar (BottomTabBar.sidebar, 68pt): black, a hairline seam on its right, the sections
+   as an icon with its name under it, the account and New Post on top, Settings, Learn, Docs and the vault's dot at
+   the foot. The names are small, as under the iPhone's tab icons; the shortcut is in each tooltip. */
+.desk-side { position: relative; z-index: 20; display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none;
+  width: var(--rail-w); height: 100dvh; padding: 14px 0 10px; box-sizing: border-box; overflow-y: auto; overflow-x: hidden;
+  border-right: 1px solid var(--hair); background: var(--bg); }
+.desk-side hr { width: 32px; margin: 4px 0; border: 0; border-top: 1px solid var(--hair); }
+.side-gap { flex: 1; min-height: 8px; }
+.side-row { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; flex: none;
+  width: 58px; min-height: 52px; padding: 4px 0; box-sizing: border-box; border-radius: 12px; color: var(--text-2); white-space: nowrap; }
+.side-row:hover { background: var(--s1); color: var(--text); }
+.side-row.on { background: none; color: var(--accent); }
+.side-row.on .side-icon { color: var(--accent); }
 .side-row svg { flex: none; }
 .side-icon { position: relative; display: flex; flex: none; }
-.desk-side .side-label { display: none; }
-@container left (min-width: 920px) {
-  .desk-side .side-row:not([href="#/settings"], [href="/#about"], [href="/docs/"]) .side-label { display: inline; }
-}
-.desk-side a[href="#/settings"] { margin-left: auto; }
-/* Unread messages: a dot on the icon (iPadSidebarView's count shows in the tooltip). */
-.side-dot { position: absolute; top: -2px; right: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--danger);
+.desk-side .side-label { font: 600 10px/1.1 var(--font); letter-spacing: .01em; }
+/* Learn and Docs: icons only, a little smaller, under Settings. */
+.desk-side a[href="/#about"], .desk-side a[href="/docs/"] { min-height: 40px; }
+.desk-side a[href="/#about"] .side-label, .desk-side a[href="/docs/"] .side-label { display: none; }
+/* Unread messages or Vault news: a dot on the icon; the count is in the tooltip and the label read aloud. */
+.side-dot { position: absolute; top: -2px; right: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--danger);
   box-shadow: 0 0 0 2px var(--bg); }
-.desk-side .side-post { order: 99; margin-left: 6px; padding: 0 16px; border-radius: 999px; background: var(--accent-grad); color: #1a0d03; font-weight: 700; }
-.desk-side .side-post .side-label { display: inline; }
-.desk-side .side-post:hover { background: var(--accent-grad); color: #1a0d03; filter: brightness(1.08); }
-.side-post.off { background: var(--s2); color: var(--text-3); cursor: not-allowed; }
+/* New Post: the one filled button, round, under the account (the iPad's floating Post, held in the rail). */
+.desk-side .side-post { width: 44px; min-height: 44px; height: 44px; margin: 6px 0 2px; padding: 0; border-radius: 50%; background: var(--accent-grad);
+  color: #fff; box-shadow: 0 4px 10px rgb(230 115 38 / .3); }
+.desk-side .side-post .side-label { display: none; }
+.desk-side .side-post:hover { background: var(--accent-grad); color: #fff; filter: brightness(1.08); }
+.side-post.off { background: var(--s2); color: var(--text-3); box-shadow: none; cursor: not-allowed; }
 .side-post.off:hover { background: var(--s2); color: var(--text-3); filter: none; }
 
-.side-account { position: relative; margin-right: 6px; }
+.side-account { position: relative; flex: none; }
 .side-account-btn { display: flex; align-items: center; padding: 2px; border-radius: 50%; border: 0; background: none; }
 .side-account-btn:hover { background: var(--s2); }
 .side-account-btn:active:not(:disabled) { transform: none; }
 .side-account .side-label { display: none; }
-.side-pop { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: 220px; display: grid; padding: 6px;
+.side-pop { position: fixed; z-index: 30; top: 12px; left: calc(var(--rail-w) + 6px); min-width: 220px; display: grid; padding: 6px;
   background: var(--s2); border: 1px solid var(--strong); border-radius: 12px; box-shadow: 0 12px 32px rgb(0 0 0 / .6); }
 .side-pop [role=menuitem] { display: flex; align-items: center; min-height: 36px; padding: 0 12px; border-radius: 8px; border: 0;
   background: none; color: var(--text); font: var(--t-sub); text-align: left; justify-content: flex-start; }
@@ -57,13 +63,14 @@
 .side-pop-error { margin: 4px 12px; color: var(--danger); font: var(--t-foot); }
 
 /* The vault's status: a dot that opens the Dashboard; its count and Restart are in the Dashboard itself. */
-.side-foot { display: flex; align-items: center; margin-left: 4px; }
-.side-relay { display: grid; place-items: center; width: 32px; height: 40px; border-radius: 10px; }
+.side-foot { display: flex; flex-direction: column; align-items: center; flex: none; }
+.side-foot .side-label { display: none; }
+.side-relay { display: grid; place-items: center; width: 40px; height: 32px; border-radius: 10px; }
 .side-relay:hover { background: var(--s2); }
 .side-relay .dot { width: 8px; height: 8px; flex: none; }
 .dot.booting { background: var(--booting); }
 
-/* The page under the bar. */
+/* The page beside the rail. */
 .desk-main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .desk-split { display: grid; grid-template-columns: minmax(0, 1fr); height: 100%; }
 .desk-list, .desk-detail { min-width: 0; min-height: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; }
@@ -109,11 +116,12 @@
 .desk-full { position: relative; height: 100%; overflow: hidden; }
 .desk-full .screen.wot { height: 100%; }
 /* Held in the WoT page's own column, so it never lands on Your space beside it. */
-.desk-full .wot-card { position: absolute; left: auto; right: 16px; top: 68px; bottom: auto; transform: none; width: 360px; max-height: calc(100dvh - var(--bar-h) - 84px); overflow-y: auto; }
-.desk-full .wot-myweb-button { right: 24px; bottom: 20px; }
+.desk-full .wot-card { position: absolute; left: auto; right: 16px; top: 68px; bottom: auto; transform: none; width: 360px; max-height: calc(100dvh - 84px); overflow-y: auto; }
+/* In the WoT page's column too, not fixed to the window, where it landed on Your space. */
+.desk-full .wot-myweb-button { position: absolute; right: 24px; bottom: 20px; }
 
 /* The Dashboard (main.jsx keeps the relay screen mounted outside the shell): laid over the left column's page. */
-.desk-app .relay-host:not([hidden]) { position: fixed; z-index: 4; top: var(--bar-h); bottom: 0; right: var(--dock-w); left: 0; overflow-y: auto; background: var(--bg); }
+.desk-app .relay-host:not([hidden]) { position: fixed; z-index: 4; top: 0; bottom: 0; right: var(--dock-w); left: var(--rail-w); overflow-y: auto; background: var(--bg); }
 .desk-app .relay-host .screen { max-width: 760px; }
 
 /* Vault modes as a segmented header (B1). Icons only when the column is narrow. */
@@ -186,6 +194,10 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 .desk-app .screen-head .vault-pill-btn { width: 32px; height: 32px; background: var(--s1); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .desk-app .screen-head .layout-button { margin-left: 0; }
 .desk-app .screen-head .layout-button + button { margin-left: 0; }
+/* The Feed keeps the iPhone's and iPad's floating bubbles (feeds.css): the Following pill and the toggles capsule over
+   the posts under a fade, with no bar or hairline behind them (Logen, 2026-11-03). */
+.desk-app .screen-head.feed-head { min-height: 60px; padding-top: 10px; border-bottom: 0; -webkit-backdrop-filter: none; backdrop-filter: none;
+  background: linear-gradient(to bottom, var(--bg) 40%, color-mix(in srgb, var(--bg) 55%, transparent)); }
 .desk-detail-head { min-height: 52px; padding: 8px 12px 8px var(--gutter); background: rgb(0 0 0 / .82); }
 .desk-crumb { padding: 10px var(--gutter); background: rgb(0 0 0 / .82); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   border-bottom: 1px solid var(--hair); }
@@ -226,16 +238,7 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 .desk-side, .desk-list, .desk-detail, .desk-app .relay-host, .desk-compose {
   scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / .18) transparent; }
 
-/* Sidebar: black like the iPad's on OLED, a hairline seam, one 12px inset for the account, rows and footer, and
-   New Post as the one filled button. */
-.desk-side { background: var(--bg); }
-.side-row:hover { background: var(--s1); }
-.side-account-btn { padding: 6px; }
 .side-account-btn:hover { background: var(--s1); }
-.side-post { margin: 2px 0 6px; background: var(--accent-grad); color: #fff; font-weight: 700; }
-.side-post:hover { background: var(--accent-grad); color: #fff; filter: brightness(1.08); }
-.side-post.off { background: var(--s1); }
-.side-foot { padding: 10px 6px 4px; }
 .desk-thread .screen { padding-top: 10px; }
 
 /* Dashboard: the toolbar spans the area and the cards tile, two across at 1440, three at 1920, instead of one 760px
