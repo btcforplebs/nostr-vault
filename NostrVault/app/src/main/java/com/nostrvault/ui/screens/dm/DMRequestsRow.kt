@@ -13,31 +13,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.theme.*
 
-/**
- * The one row above the inbox that holds messages from people outside your
- * Web of Trust you have never written to. iOS: the Requests row in DMInboxView.
- */
-@Composable
-internal fun DMRequestsRow(count: Int, onClick: () -> Unit) {
-    val colors = LocalNostrVaultColors.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(SecondaryGroupedBg)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-    ) {
-        Icon(NostrVaultIcons.DMs, contentDescription = null, tint = colors.primary, modifier = Modifier.size(22.dp))
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text("Requests ($count)", color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            Text("From people outside your Web of Trust", color = SecondaryText, fontSize = 12.sp)
-        }
-        Icon(NostrVaultIcons.Navigate, contentDescription = null, tint = TertiaryText, modifier = Modifier.size(18.dp))
-    }
-}
-
 /** Heads the Requests list, with the way back to the inbox. */
 @Composable
 internal fun DMRequestsHeader(onBack: () -> Unit) {
