@@ -183,6 +183,35 @@
         <!-- Widget settings (Quick Actions slots, Feed source/density/avatars,
              Mosaic layout). Exported because the launcher starts it with
              APPWIDGET_CONFIGURE; it can only change widget settings. -->
+        <!-- Share Portal: links, text, PDFs and calendar files from any app's
+             share sheet, and "Highlight" in any app's text-selection menu.
+             Exported, so everything it receives is untrusted; it only queues
+             a share intent and never publishes (docs/SHARE_PORTAL_CONTRACT.md).
+             Photos and videos stay on MainActivity until phase 3. -->
+        <activity
+            android:name=".ui.screens.shareportal.SharePortalActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:launchMode="standard"
+            android:label="Nostr Vault"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode|density|keyboard|fontScale|locale|layoutDirection"
+            android:theme="@style/Theme.NostrVault.SharePortal">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="text/calendar" />
+            </intent-filter>
+            <intent-filter android:label="Highlight in Nostr Vault">
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".widget.WidgetConfigActivity"
             android:exported="true"

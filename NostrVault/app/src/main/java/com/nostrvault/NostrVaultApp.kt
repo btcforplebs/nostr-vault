@@ -40,6 +40,9 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
     lateinit var configStore: com.nostrvault.data.local.ConfigStore
 
     @Inject
+    lateinit var shareAccountsPublisher: com.nostrvault.service.shareportal.ShareAccountsPublisher
+
+    @Inject
     lateinit var deletedPostsStore: com.nostrvault.service.deleted.DeletedPostsStore
 
     override fun onCreate() {
@@ -70,6 +73,8 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
             com.nostrvault.data.gif.GifCache.sweep(cacheDir)
         }
         profilePicturePrefetcher.start(applicationScope)
+        // The share sheet's "post as" line reads this, never the config with the keys.
+        shareAccountsPublisher.start(applicationScope)
         // Widgets hear the relay start and stop, not only its 30 s tick.
         com.nostrvault.widget.WidgetPublisher.watchRelay(this, applicationScope)
         applicationScope.launch {

@@ -38,7 +38,12 @@ final class ShareModel: ObservableObject {
                 if await Self.copyToInbox(provider) { added += 1 }
             }
             let failed = providers.count - added
-            if added > 0 { await Self.notifyReady() }
+            if added > 0 {
+                // The Share Portal's `upload` action. Its files stay in
+                // NVShareInbox, so the app's upload path is the same one.
+                Self.queueUploadIntent(count: added)
+                await Self.notifyReady()
+            }
             phase = failed == 0 ? .added(added) : .failed(added: added, failed: failed)
             if failed == 0 {
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
@@ -87,6 +92,10 @@ final class ShareModel: ObservableObject {
                 continuation.resume(returning: ok)
             }
         }
+    }
+
+    nonisolated private static func queueUploadIntent(count: Int) {
+        try? NVShareQueue.shared?.add(NVShareIntent(action: .upload, form: ["count": String(count)]))
     }
 
     /// One notification for everything waiting, replaced on each share. If

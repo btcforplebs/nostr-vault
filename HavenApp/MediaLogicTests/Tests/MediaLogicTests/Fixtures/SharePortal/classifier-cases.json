@@ -1,0 +1,526 @@
+{
+ "cases": [
+  {
+   "name": "safari selection and url",
+   "input": {
+    "url": "https://example.com/post",
+    "title": "A post",
+    "selection": "The part worth keeping."
+   },
+   "expect": [
+    "highlight",
+    "bookmark",
+    "article_clip",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "url only (chrome on iOS)",
+   "input": {
+    "url": "https://example.com/post"
+   },
+   "expect": [
+    "bookmark",
+    "article_clip",
+    "highlight",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "android chrome: title and url in text",
+   "input": {
+    "text": "Great read https://example.com/a?b=1",
+    "title": "Great read"
+   },
+   "expect": [
+    "bookmark",
+    "article_clip",
+    "highlight",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "text that is only a url",
+   "input": {
+    "text": "  https://example.com/a  "
+   },
+   "expect": [
+    "bookmark",
+    "article_clip",
+    "highlight",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "selected text, no url (android PROCESS_TEXT)",
+   "input": {
+    "selection": "Words from another app"
+   },
+   "expect": [
+    "highlight"
+   ]
+  },
+  {
+   "name": "plain text, no url",
+   "input": {
+    "text": "Just some words"
+   },
+   "expect": [
+    "highlight",
+    "dm"
+   ]
+  },
+  {
+   "name": "blank selection does not rank highlight first",
+   "input": {
+    "url": "https://example.com/",
+    "selection": "   \n "
+   },
+   "expect": [
+    "bookmark",
+    "article_clip",
+    "highlight",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "bolt11 invoice",
+   "input": {
+    "text": "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu"
+   },
+   "expect": [
+    "pay",
+    "highlight",
+    "dm"
+   ]
+  },
+  {
+   "name": "bolt11 with lightning: prefix, uppercase",
+   "input": {
+    "text": "LIGHTNING:LNBC2500U1PVJLUEZPP5QQQSYQCYQ5RQWZQFQQQSYQCYQ5RQWZQFQQQSYQCYQ5RQWZQFQYPQDQ5XYSXXATSYP3K7ENXV4JSXQZPU"
+   },
+   "expect": [
+    "pay",
+    "highlight",
+    "dm"
+   ]
+  },
+  {
+   "name": "lnurl",
+   "input": {
+    "text": "lnurl1dp68gurn8ghj7um9wfmxjcm99e3k7mf0v9cxj0m385ekvcenxc6r2c35xvukxefcv5mkvv34x5ekzd3ev56nyd3hxqurzepexejxxepnxscrvwfnv9nxzcn9xq6xyefhvgcxxcmyxymnserxfq5fns"
+   },
+   "expect": [
+    "pay",
+    "highlight",
+    "dm"
+   ]
+  },
+  {
+   "name": "lightning address with prefix",
+   "input": {
+    "text": "lightning:satoshi@getalby.com"
+   },
+   "expect": [
+    "pay",
+    "highlight",
+    "dm"
+   ]
+  },
+  {
+   "name": "bare lightning address",
+   "input": {
+    "text": " satoshi@getalby.com "
+   },
+   "expect": [
+    "pay",
+    "highlight",
+    "dm"
+   ]
+  },
+  {
+   "name": "address inside a sentence is not pay",
+   "input": {
+    "text": "mail me at satoshi@getalby.com please"
+   },
+   "expect": [
+    "highlight",
+    "dm"
+   ]
+  },
+  {
+   "name": "too-short lnbc word is not pay",
+   "input": {
+    "text": "lnbcfoo"
+   },
+   "expect": [
+    "highlight",
+    "dm"
+   ]
+  },
+  {
+   "name": "lnbc inside a longer word is not pay",
+   "input": {
+    "text": "xlnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyq"
+   },
+   "expect": [
+    "highlight",
+    "dm"
+   ]
+  },
+  {
+   "name": "npub in text",
+   "input": {
+    "text": "follow nostr:npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce"
+   },
+   "expect": [
+    "profile",
+    "highlight",
+    "dm"
+   ]
+  },
+  {
+   "name": "nprofile in text",
+   "input": {
+    "text": "nprofile1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8"
+   },
+   "expect": [
+    "profile",
+    "highlight",
+    "dm"
+   ]
+  },
+  {
+   "name": "njump profile url",
+   "input": {
+    "url": "https://njump.me/npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce"
+   },
+   "expect": [
+    "profile",
+    "bookmark",
+    "article_clip",
+    "highlight",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "nostrvault.app profile link",
+   "input": {
+    "url": "https://nostrvault.app/p/npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce"
+   },
+   "expect": [
+    "profile",
+    "bookmark",
+    "article_clip",
+    "highlight",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "ics file",
+   "input": {
+    "files": [
+     {
+      "mime": "text/calendar",
+      "name": "invite.ics"
+     }
+    ]
+   },
+   "expect": [
+    "calendar",
+    "dm"
+   ]
+  },
+  {
+   "name": "ics by name only",
+   "input": {
+    "files": [
+     {
+      "mime": "application/octet-stream",
+      "name": "Party.ICS"
+     }
+    ]
+   },
+   "expect": [
+    "calendar",
+    "dm"
+   ]
+  },
+  {
+   "name": "page with an Event",
+   "input": {
+    "url": "https://example.com/meetup",
+    "ld_types": [
+     "Event"
+    ]
+   },
+   "expect": [
+    "calendar",
+    "bookmark",
+    "article_clip",
+    "highlight",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "recipe page with a selection",
+   "input": {
+    "url": "https://example.com/soup",
+    "selection": "Simmer for an hour.",
+    "ld_types": [
+     "WebPage",
+     "Recipe"
+    ]
+   },
+   "expect": [
+    "highlight",
+    "recipe",
+    "bookmark",
+    "article_clip",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "spotify track",
+   "input": {
+    "url": "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC"
+   },
+   "expect": [
+    "status",
+    "bookmark",
+    "article_clip",
+    "highlight",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "youtube with www",
+   "input": {
+    "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+   },
+   "expect": [
+    "status",
+    "bookmark",
+    "article_clip",
+    "highlight",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "youtube mobile host",
+   "input": {
+    "url": "https://m.youtube.com/watch?v=dQw4w9WgXcQ"
+   },
+   "expect": [
+    "status",
+    "bookmark",
+    "article_clip",
+    "highlight",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "youtu.be short link in text",
+   "input": {
+    "text": "https://youtu.be/dQw4w9WgXcQ"
+   },
+   "expect": [
+    "status",
+    "bookmark",
+    "article_clip",
+    "highlight",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "bandcamp subdomain",
+   "input": {
+    "url": "https://artist.bandcamp.com/album/x"
+   },
+   "expect": [
+    "status",
+    "bookmark",
+    "article_clip",
+    "highlight",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "uppercase scheme and host",
+   "input": {
+    "url": "HTTPS://Open.Spotify.com/track/x"
+   },
+   "expect": [
+    "status",
+    "bookmark",
+    "article_clip",
+    "highlight",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "lookalike host is not a music service",
+   "input": {
+    "url": "https://notyoutube.com/watch"
+   },
+   "expect": [
+    "bookmark",
+    "article_clip",
+    "highlight",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "bandcamp.com itself is not a band page",
+   "input": {
+    "url": "https://bandcamp.com/discover"
+   },
+   "expect": [
+    "bookmark",
+    "article_clip",
+    "highlight",
+    "private_copy",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "two photos",
+   "input": {
+    "files": [
+     {
+      "mime": "image/jpeg",
+      "name": "a.jpg"
+     },
+     {
+      "mime": "image/heic",
+      "name": "b.heic"
+     }
+    ]
+   },
+   "expect": [
+    "upload",
+    "media_post"
+   ]
+  },
+  {
+   "name": "photo and video",
+   "input": {
+    "files": [
+     {
+      "mime": "image/png",
+      "name": "a.png"
+     },
+     {
+      "mime": "video/quicktime",
+      "name": "b.mov"
+     }
+    ]
+   },
+   "expect": [
+    "upload",
+    "media_post"
+   ]
+  },
+  {
+   "name": "pdf",
+   "input": {
+    "files": [
+     {
+      "mime": "application/pdf",
+      "name": "paper.pdf"
+     }
+    ]
+   },
+   "expect": [
+    "private_copy",
+    "dm"
+   ]
+  },
+  {
+   "name": "pdf from a page",
+   "input": {
+    "url": "https://example.com/paper",
+    "files": [
+     {
+      "mime": "application/pdf",
+      "name": "paper.pdf"
+     }
+    ]
+   },
+   "expect": [
+    "private_copy",
+    "bookmark",
+    "article_clip",
+    "highlight",
+    "dm",
+    "label"
+   ]
+  },
+  {
+   "name": "nothing",
+   "input": {},
+   "expect": []
+  },
+  {
+   "name": "javascript url is not a web url",
+   "input": {
+    "url": "javascript:alert(1)"
+   },
+   "expect": []
+  },
+  {
+   "name": "ftp url is not a web url",
+   "input": {
+    "url": "ftp://example.com/file"
+   },
+   "expect": []
+  },
+  {
+   "name": "unknown file only",
+   "input": {
+    "files": [
+     {
+      "mime": "application/zip",
+      "name": "a.zip"
+     }
+    ]
+   },
+   "expect": [
+    "dm"
+   ]
+  }
+ ]
+}

@@ -112,6 +112,9 @@ sealed class Screen(val route: String) {
     data object LogViewer : Screen("log_viewer")
     data object RelayActivity : Screen("relay_activity")
 
+    /** Review card for what another app shared (`nostrvault://shareportal`). */
+    data object SharePortalReview : Screen("share_portal")
+
     // Setup
     data object SetupWizard : Screen("setup")
 

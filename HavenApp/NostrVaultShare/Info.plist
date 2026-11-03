@@ -20,14 +20,29 @@
 	<dict>
 		<key>NSExtensionAttributes</key>
 		<dict>
-			<!-- Photos and videos only, like Android's share target. -->
+			<!-- Share Portal (docs/SHARE_PORTAL_CONTRACT.md): photos and videos as
+			     before, plus a web page, a link, text and a few files (PDF, .ics).
+			     Explicit keys only: App Review rejects TRUEPREDICATE. -->
 			<key>NSExtensionActivationRule</key>
 			<dict>
 				<key>NSExtensionActivationSupportsImageWithMaxCount</key>
 				<integer>20</integer>
 				<key>NSExtensionActivationSupportsMovieWithMaxCount</key>
 				<integer>20</integer>
+				<key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
+				<integer>1</integer>
+				<key>NSExtensionActivationSupportsWebPageWithMaxCount</key>
+				<integer>1</integer>
+				<key>NSExtensionActivationSupportsText</key>
+				<true/>
+				<key>NSExtensionActivationSupportsFileWithMaxCount</key>
+				<integer>5</integer>
 			</dict>
+			<!-- Safari runs this in the page and passes the selection, title and
+			     JSON-LD types (Input/SharePreprocess.js). Other browsers send only
+			     the URL. -->
+			<key>NSExtensionJavaScriptPreprocessingFile</key>
+			<string>SharePreprocess</string>
 		</dict>
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.share-services</string>

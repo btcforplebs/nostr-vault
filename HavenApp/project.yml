@@ -59,6 +59,7 @@ targets:
       - path: HavenApp/App/AppDelegate.swift
       # Shared code
       - path: HavenApp/Models
+      - path: HavenApp/SharePortalKit
       - path: HavenApp/Services
         excludes:
           - "haven.dylib"
@@ -166,6 +167,7 @@ targets:
           - "Info.plist"
       # Shared code
       - path: HavenApp/Models
+      - path: HavenApp/SharePortalKit
       - path: HavenApp/Services
         excludes:
           - "haven.dylib"
@@ -295,7 +297,10 @@ targets:
         excludes:
           - "Info.plist"
       # Same rule as the widgets: Shared/ only, never Services/ or Views/.
+      # Plus the Share Portal's envelope, queue and classifier, which link no
+      # signer, relay or database code (and stay out of the widgets).
       - path: HavenApp/Shared
+      - path: HavenApp/SharePortalKit
       - path: Resources/Assets.xcassets
 
     settings:

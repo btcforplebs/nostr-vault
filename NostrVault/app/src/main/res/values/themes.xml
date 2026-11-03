@@ -12,4 +12,15 @@
         <!-- windowLightNavigationBar is API 27+ and already defaults to false,
              so it's omitted rather than split into a values-v27 variant. -->
     </style>
+
+    <!-- The share sheet's activity: see-through, so only its bottom sheet shows
+         over the app that shared. -->
+    <style name="Theme.NostrVault.SharePortal" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
 </resources>

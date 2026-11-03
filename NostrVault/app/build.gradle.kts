@@ -100,6 +100,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // The share portal's JSON fixtures are shared with the Swift tests
+    // (docs/SHARE_PORTAL_CONTRACT.md): one copy, read by both.
+    sourceSets.getByName("test").resources.srcDir("../../HavenApp/MediaLogicTests/Tests/MediaLogicTests/Fixtures/SharePortal")
+
     testOptions {
         unitTests {
             // android.util.Log throws "not mocked" by default, which fails any

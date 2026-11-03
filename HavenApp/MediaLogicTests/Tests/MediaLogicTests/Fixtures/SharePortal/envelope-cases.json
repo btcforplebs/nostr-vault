@@ -1,0 +1,708 @@
+{
+ "valid": [
+  {
+   "name": "full highlight",
+   "json": {
+    "v": 1,
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/page.pdf",
+      "bytes": 123456
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   },
+   "expect": {
+    "action": "highlight",
+    "files": 1,
+    "form_keys": [
+     "comment",
+     "passage"
+    ],
+    "url": "https://example.com/post"
+   }
+  },
+  {
+   "name": "minimal upload",
+   "json": {
+    "v": 1,
+    "id": "abc-123",
+    "created_at": 1,
+    "action": "upload"
+   },
+   "expect": {
+    "action": "upload",
+    "files": 0,
+    "form_keys": [],
+    "url": null
+   }
+  },
+  {
+   "name": "unknown extra keys are ignored",
+   "json": {
+    "v": 1,
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/page.pdf",
+      "bytes": 123456
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    },
+    "extra": {
+     "x": 1
+    }
+   },
+   "expect": {
+    "action": "highlight",
+    "files": 1,
+    "form_keys": [
+     "comment",
+     "passage"
+    ],
+    "url": "https://example.com/post"
+   }
+  }
+ ],
+ "invalid": [
+  {
+   "name": "version 2",
+   "json": {
+    "v": 2,
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/page.pdf",
+      "bytes": 123456
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "version missing",
+   "json": {
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/page.pdf",
+      "bytes": 123456
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "unknown action",
+   "json": {
+    "v": 1,
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "zap",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/page.pdf",
+      "bytes": 123456
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "action missing",
+   "json": {
+    "v": 1,
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/page.pdf",
+      "bytes": 123456
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "id with a slash",
+   "json": {
+    "v": 1,
+    "id": "../etc",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/page.pdf",
+      "bytes": 123456
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "id with a dot",
+   "json": {
+    "v": 1,
+    "id": "a.b",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/page.pdf",
+      "bytes": 123456
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "empty id",
+   "json": {
+    "v": 1,
+    "id": "",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/page.pdf",
+      "bytes": 123456
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "id too long",
+   "json": {
+    "v": 1,
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/page.pdf",
+      "bytes": 123456
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "created_at as a string",
+   "json": {
+    "v": 1,
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": "1730000000",
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/page.pdf",
+      "bytes": 123456
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "file path names another intent",
+   "json": {
+    "v": 1,
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/other/page.pdf",
+      "bytes": 1
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "file path climbs out",
+   "json": {
+    "v": 1,
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/../../x",
+      "bytes": 1
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "file name is ..",
+   "json": {
+    "v": 1,
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "..",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/..",
+      "bytes": 1
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "file name with a slash",
+   "json": {
+    "v": 1,
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "a/b.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/a/b.pdf",
+      "bytes": 1
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "hidden file name",
+   "json": {
+    "v": 1,
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": ".partial-x",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/.partial-x",
+      "bytes": 1
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "file name with a backslash",
+   "json": {
+    "v": 1,
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "a\\b.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/a\\b.pdf",
+      "bytes": 1
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "form value is a number",
+   "json": {
+    "v": 1,
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/page.pdf",
+      "bytes": 123456
+     }
+    ],
+    "form": {
+     "passage": 3
+    }
+   }
+  },
+  {
+   "name": "form is a list",
+   "json": {
+    "v": 1,
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/page.pdf",
+      "bytes": 123456
+     }
+    ],
+    "form": [
+     "a"
+    ]
+   }
+  },
+  {
+   "name": "source is a string",
+   "json": {
+    "v": 1,
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": 1730000000,
+    "account": "npub1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+    "action": "highlight",
+    "source": "https://example.com",
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/page.pdf",
+      "bytes": 123456
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "account is not an npub",
+   "json": {
+    "v": 1,
+    "id": "6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10",
+    "created_at": 1730000000,
+    "account": "nsec1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+    "action": "highlight",
+    "source": {
+     "url": "https://example.com/post",
+     "title": "A post",
+     "text": "",
+     "selection": "The part worth keeping.",
+     "app": "com.apple.mobilesafari",
+     "ld_types": [
+      "Article"
+     ]
+    },
+    "files": [
+     {
+      "name": "page.pdf",
+      "mime": "application/pdf",
+      "path": "files/6F1C2A4E-0B7D-4C1E-9F3A-2B8C5D7E9A10/page.pdf",
+      "bytes": 123456
+     }
+    ],
+    "form": {
+     "passage": "The part worth keeping.",
+     "comment": ""
+    }
+   }
+  },
+  {
+   "name": "not an object",
+   "json": [
+    "v",
+    1
+   ]
+  }
+ ]
+}

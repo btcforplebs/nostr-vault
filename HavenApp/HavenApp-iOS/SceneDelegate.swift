@@ -157,6 +157,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 NVDeepLinkRouter.handle(NVDeepLink.shareInbox.url)
             }
         }
+        // Same for the Share Portal (highlights, links, …): claim what the
+        // extension queued and open its review card. Claiming is a move, so a
+        // notification tap routing here too cannot act on a share twice.
+        if NVShareQueue.shared?.hasPending == true {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                NVDeepLinkRouter.handle(NVDeepLink.sharePortal.url)
+            }
+        }
+        // The share sheet's "post as" list.
+        Task { @MainActor in SharePortalAccounts.publish() }
 
         // Show the in-app banner (not a system push) for relay activity while visible.
         LocalNotificationService.shared.appInForeground = true
