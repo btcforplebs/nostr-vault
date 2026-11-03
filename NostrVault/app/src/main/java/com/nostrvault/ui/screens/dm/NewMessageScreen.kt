@@ -230,7 +230,8 @@ fun NewMessageScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("New Message") },
+                // Read out, not drawn, as in Messages (Logen c2bba1de).
+                title = { com.nostrvault.ui.components.HiddenTitle("New Message") },
                 navigationIcon = {
                     TextButton(onClick = onBack) {
                         Text("Cancel", color = colors.primary)

@@ -130,14 +130,15 @@ fun ModeComposeScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
+                    // Read out, not drawn, so Cancel and Publish have room (Logen c2bba1de).
+                    com.nostrvault.ui.components.HiddenTitle(
                         when (kind) {
                             ModeComposerKind.DIVINE -> "New diVine"
                             ModeComposerKind.ARTICLE -> "New article"
                             ModeComposerKind.RECIPE -> "New recipe"
                             ModeComposerKind.LISTING -> "Sell something"
                             ModeComposerKind.POLL -> "New poll"
-                        }
+                        },
                     )
                 },
                 navigationIcon = {
