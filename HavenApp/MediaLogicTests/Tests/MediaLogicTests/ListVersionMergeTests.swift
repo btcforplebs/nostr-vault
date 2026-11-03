@@ -71,7 +71,9 @@ final class ListVersionMergeTests: XCTestCase {
         let rows = ListVersionMerge.build(current: cur, picked: [old], all: [cur, old])
         XCTAssertEqual(rows.map { $0.tag[1] }, [p(1), p(2), p(3)])
         XCTAssertEqual(rows[0].tag, ["p", p(1), "wss://now"])
-        XCTAssertEqual(rows.map(\.status), [.current, .current, .back], "a short list brings everything back ticked")
+        XCTAssertEqual(rows.map(\.status), [.current, .current, .removed])
+        XCTAssertTrue(rows[2].ticked, "a short list brings everything back ticked")
+        XCTAssertEqual(rows[2].at, 30, "with the date it went, for the Review line")
     }
 
     func testLaterRemoveVersusWipe() async {
@@ -195,17 +197,19 @@ final class ListVersionMergeTests: XCTestCase {
     }
 
     /// Small list: 3 relays down to 1, and a 4-entry bookmark list edited to
-    /// 3, both bring everything back ticked.
+    /// 3, both bring everything back ticked, still dated by the version that
+    /// dropped them (Review: "You removed this <date>", Tron 11-03).
     func testHalSmallList() async {
         let r3 = await open(v(10050, [["relay", "wss://a"], ["relay", "wss://b"], ["relay", "wss://c"]], at: 10))
         let r1 = await open(v(10050, [["relay", "wss://a"]], at: 20))
         var rows = ListVersionMerge.build(current: r1, picked: [r3], all: [r1, r3])
-        XCTAssertEqual(rows.filter { $0.status == .back && $0.ticked }.count, 2)
+        XCTAssertEqual(rows.filter { $0.status == .removed && $0.ticked && $0.at == 20 }.count, 2)
         let b4 = await open(v(10003, (1...4).map { ["e", p($0)] }, at: 10))
         let b3 = await open(v(10003, (1...3).map { ["e", p($0)] }, at: 20))
         rows = ListVersionMerge.build(current: b3, picked: [b4], all: [b3, b4])
         let x = rows.first { $0.tag[1] == p(4) }!
-        XCTAssertEqual(x.status, .back); XCTAssertTrue(x.ticked)
+        XCTAssertEqual(x.status, .removed); XCTAssertTrue(x.ticked); XCTAssertEqual(x.at, 20)
+        XCTAssertEqual(ListVersionMerge.summary(kind: 10003, rows: rows).leftOut, 0, "ticked, so not counted as left out")
     }
 
     /// Gap: past the vault's newest 20 it may have let versions go, so a step
