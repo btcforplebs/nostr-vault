@@ -1,7 +1,10 @@
-import Foundation
+import SwiftUI
 
-/// Now-playing status (kind 30315): lane C. Public; the card must say so.
-/// Phase 1 stub: the review card says "Not ready yet".
+/// Status (§6.4): NIP-38 "what I'm playing", public, expires on its own.
 struct StatusShareHandler: SharePortalHandler {
     let action = NVShareAction.status
+
+    func review(_ intent: NVShareIntent, close: @escaping () -> Void) -> AnyView {
+        AnyView(StatusReviewView(intent: intent, close: close))
+    }
 }

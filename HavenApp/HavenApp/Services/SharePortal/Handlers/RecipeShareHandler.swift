@@ -1,7 +1,10 @@
-import Foundation
+import SwiftUI
 
-/// Recipe pre-fill: lane A (kind 30023 + recipe t tags).
-/// Phase 1 stub: the review card says "Not ready yet".
+/// Recipe (§6.2): the page's JSON-LD Recipe saved as a local recipe draft. Nothing is published.
 struct RecipeShareHandler: SharePortalHandler {
     let action = NVShareAction.recipe
+
+    func review(_ intent: NVShareIntent, close: @escaping () -> Void) -> AnyView {
+        AnyView(RecipeReviewView(intent: intent, close: close))
+    }
 }

@@ -1,0 +1,614 @@
+{
+ "clip": [
+  {
+   "name": "title, url and selection",
+   "input": {
+    "title": "A Post",
+    "url": "https://example.com/post",
+    "selection": "First line.\n\nSecond line."
+   },
+   "expect": {
+    "title": "A Post",
+    "body": "> First line.\n>\n> Second line.\n\nSource: [A Post](https://example.com/post)"
+   }
+  },
+  {
+   "name": "no selection",
+   "input": {
+    "title": "A Post",
+    "url": "https://example.com/post",
+    "selection": null
+   },
+   "expect": {
+    "title": "A Post",
+    "body": "Source: [A Post](https://example.com/post)"
+   }
+  },
+  {
+   "name": "no title falls back to host",
+   "input": {
+    "title": "  ",
+    "url": "https://www.Example.com/x",
+    "selection": "Quote"
+   },
+   "expect": {
+    "title": "www.example.com",
+    "body": "> Quote\n\nSource: [www.example.com](https://www.Example.com/x)"
+   }
+  },
+  {
+   "name": "brackets and parens are escaped",
+   "input": {
+    "title": "Big [news] \\ today",
+    "url": "https://e.com/a (b)/c",
+    "selection": null
+   },
+   "expect": {
+    "title": "Big [news] \\ today",
+    "body": "Source: [Big \\[news\\] \\\\ today](https://e.com/a%20%28b%29/c)"
+   }
+  },
+  {
+   "name": "no url, text only",
+   "input": {
+    "title": null,
+    "url": null,
+    "selection": "Just words"
+   },
+   "expect": {
+    "title": "Clipped link",
+    "body": "> Just words"
+   }
+  }
+ ],
+ "duration": [
+  {
+   "in": "PT1H30M",
+   "out": "1 h 30 min"
+  },
+  {
+   "in": "PT45M",
+   "out": "45 min"
+  },
+  {
+   "in": "PT2H",
+   "out": "2 h"
+  },
+  {
+   "in": "P1DT2H",
+   "out": "26 h"
+  },
+  {
+   "in": "PT0M",
+   "out": ""
+  },
+  {
+   "in": "PT30M15S",
+   "out": "30 min"
+  },
+  {
+   "in": "about an hour",
+   "out": "about an hour"
+  },
+  {
+   "in": "PT1.5H",
+   "out": "PT1.5H"
+  }
+ ],
+ "recipe": [
+  {
+   "name": "graph, sections, entities",
+   "html": "<html><head><script type=\"application/ld+json\">{\"@context\":\"https://schema.org\",\"@graph\":[{\"@type\":\"WebPage\",\"name\":\"x\"},{\"@type\":[\"Recipe\",\"NewsArticle\"],\"name\":\"Tomato &amp; Basil Soup\",\"description\":\"<p>A <b>quick</b>   soup.</p>\",\"prepTime\":\"PT15M\",\"cookTime\":\"PT1H\",\"recipeYield\":[\"4 servings\",\"4\"],\"recipeIngredient\":[\"2 lbs tomatoes\",\"1 cup basil &nbsp;leaves\"],\"recipeInstructions\":[{\"@type\":\"HowToSection\",\"name\":\"Prep\",\"itemListElement\":[{\"@type\":\"HowToStep\",\"text\":\"Chop the tomatoes.\"}]},{\"@type\":\"HowToStep\",\"name\":\"Simmer\",\"text\":\"Simmer for an hour.\"},\"Blend.\"],\"recipeCategory\":\"Soup, Dinner\",\"recipeCuisine\":[\"Italian\",\"soup\"]}]}</script></head></html>",
+   "page_title": "Page title",
+   "url": "https://e.com/soup",
+   "expect": {
+    "title": "Tomato & Basil Soup",
+    "summary": "A quick soup.",
+    "prepTime": "15 min",
+    "cookTime": "1 h",
+    "servings": "4 servings",
+    "ingredients": "2 lbs tomatoes\n1 cup basil leaves",
+    "directions": "Chop the tomatoes.\nSimmer for an hour.\nBlend.",
+    "categories": "Soup, Dinner, Italian",
+    "body": "Source: [Tomato & Basil Soup](https://e.com/soup)"
+   }
+  },
+  {
+   "name": "bad block skipped, string steps, number yield",
+   "html": "<SCRIPT TYPE='application/ld+json'>not json</SCRIPT><script type=\"application/ld+json\">[{\"@type\":\"Recipe\",\"name\":\"Bread\",\"recipeYield\":2,\"recipeInstructions\":\"Mix.\\nKnead.\\n\\nBake &#8212; 40 min.\"}]</script>",
+   "page_title": "Bread page",
+   "url": "https://e.com/bread",
+   "expect": {
+    "title": "Bread",
+    "summary": "",
+    "prepTime": "",
+    "cookTime": "",
+    "servings": "2",
+    "ingredients": "",
+    "directions": "Mix.\nKnead.\nBake — 40 min.",
+    "categories": "",
+    "body": "Source: [Bread](https://e.com/bread)"
+   }
+  },
+  {
+   "name": "no recipe on the page",
+   "html": "<html><script type=\"application/ld+json\">{\"@type\":\"Article\",\"name\":\"Not a recipe\"}</script></html>",
+   "page_title": "Just a page",
+   "url": "https://e.com/page",
+   "expect": {
+    "title": "Just a page",
+    "summary": "",
+    "prepTime": "",
+    "cookTime": "",
+    "servings": "",
+    "ingredients": "",
+    "directions": "",
+    "categories": "",
+    "body": "Source: [Just a page](https://e.com/page)"
+   }
+  }
+ ],
+ "ics": [
+  {
+   "name": "tzid, escapes, folded line",
+   "ics": "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Team\\, lunch\r\nDTSTART;TZID=America/New_York:20261105T120000\r\nDTEND;TZID=America/New_York:20261105T133000\r\nLOCATION:Cafe\\; upstairs\r\nDESCRIPTION:Line one\\nline t\r\n wo\r\nURL:https://e.com/lunch\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+   "default_tz": "UTC",
+   "expect": {
+    "title": "Team, lunch",
+    "description": "Line one\nline two",
+    "location": "Cafe; upstairs",
+    "url": "https://e.com/lunch",
+    "all_day": false,
+    "start": 1793898000,
+    "end": 1793903400,
+    "tzid": "America/New_York"
+   }
+  },
+  {
+   "name": "all-day, no end",
+   "ics": "BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Holiday\nDTSTART;VALUE=DATE:20261224\nEND:VEVENT\nEND:VCALENDAR\n",
+   "default_tz": "UTC",
+   "expect": {
+    "title": "Holiday",
+    "description": "",
+    "location": "",
+    "url": "",
+    "all_day": true,
+    "start": "2026-12-24",
+    "end": "2026-12-25",
+    "tzid": null
+   }
+  },
+  {
+   "name": "utc, first event only",
+   "ics": "BEGIN:VEVENT\nSUMMARY:Call\nDTSTART:20261106T150000Z\nDTEND:20261106T153000Z\nEND:VEVENT\nBEGIN:VEVENT\nSUMMARY:Second event ignored\nDTSTART:20261107T150000Z\nEND:VEVENT\n",
+   "default_tz": "UTC",
+   "expect": {
+    "title": "Call",
+    "description": "",
+    "location": "",
+    "url": "",
+    "all_day": false,
+    "start": 1793977200,
+    "end": 1793979000,
+    "tzid": null
+   }
+  },
+  {
+   "name": "floating time uses the default zone",
+   "ics": "BEGIN:VEVENT\nSUMMARY:Floating\nDTSTART:20261108T090000\nEND:VEVENT\n",
+   "default_tz": "Europe/Berlin",
+   "expect": {
+    "title": "Floating",
+    "description": "",
+    "location": "",
+    "url": "",
+    "all_day": false,
+    "start": 1794124800,
+    "end": null,
+    "tzid": null
+   }
+  },
+  {
+   "name": "multi-day all-day",
+   "ics": "BEGIN:VEVENT\nSUMMARY:Trip\nDTSTART:20261201\nDTEND:20261204\nEND:VEVENT\n",
+   "default_tz": "UTC",
+   "expect": {
+    "title": "Trip",
+    "description": "",
+    "location": "",
+    "url": "",
+    "all_day": true,
+    "start": "2026-12-01",
+    "end": "2026-12-04",
+    "tzid": null
+   }
+  },
+  {
+   "name": "repeated property: the first counts",
+   "ics": "BEGIN:VEVENT\nSUMMARY:First\nSUMMARY:Second\nDTSTART:20261109\nDTEND;VALUE=DATE:20261110\nDTEND:20261111\nEND:VEVENT\n",
+   "default_tz": "UTC",
+   "expect": {
+    "title": "First",
+    "description": "",
+    "location": "",
+    "url": "",
+    "all_day": true,
+    "start": "2026-11-09",
+    "end": "2026-11-10",
+    "tzid": null
+   }
+  }
+ ],
+ "event_ld": [
+  {
+   "name": "place with postal address",
+   "html": "<script type=\"application/ld+json\">{\"@type\":\"MusicEvent\",\"name\":\"not this\"}</script><script type=\"application/ld+json\">{\"@context\":\"https://schema.org\",\"@type\":\"Event\",\"name\":\"Meetup &amp; Pizza\",\"startDate\":\"2026-11-10T18:30:00-05:00\",\"endDate\":\"2026-11-10T21:00:00-05:00\",\"location\":{\"@type\":\"Place\",\"name\":\"Hall\",\"address\":{\"@type\":\"PostalAddress\",\"streetAddress\":\"1 Main St\",\"addressLocality\":\"Chillicothe\",\"addressRegion\":\"OH\"}},\"description\":\"Bring a friend.\",\"url\":\"https://e.com/meetup\"}</script>",
+   "expect": {
+    "title": "Meetup & Pizza",
+    "description": "Bring a friend.",
+    "location": "Hall, 1 Main St, Chillicothe, OH",
+    "url": "https://e.com/meetup",
+    "all_day": false,
+    "start": 1794353400,
+    "end": 1794362400,
+    "tzid": null
+   }
+  },
+  {
+   "name": "all-day in a graph",
+   "html": "<script type=\"application/ld+json\">{\"@graph\":[{\"@type\":\"Event\",\"name\":\"Fair\",\"startDate\":\"2026-07-04\",\"location\":\"Town square\"}]}</script>",
+   "expect": {
+    "title": "Fair",
+    "description": "",
+    "location": "Town square",
+    "url": "",
+    "all_day": true,
+    "start": "2026-07-04",
+    "end": "2026-07-05",
+    "tzid": null
+   }
+  },
+  {
+   "name": "no event",
+   "html": "<p>nothing</p>",
+   "expect": {
+    "title": "",
+    "description": "",
+    "location": "",
+    "url": "",
+    "all_day": false,
+    "start": null,
+    "end": null,
+    "tzid": null
+   }
+  }
+ ],
+ "calendar_tags": [
+  {
+   "name": "tags: tzid, escapes, folded line",
+   "event": {
+    "title": "Team, lunch",
+    "description": "Line one\nline two",
+    "location": "Cafe; upstairs",
+    "url": "https://e.com/lunch",
+    "all_day": false,
+    "start": 1793898000,
+    "end": 1793903400,
+    "tzid": "America/New_York"
+   },
+   "d": "fixed-d",
+   "expect": {
+    "kind": 31923,
+    "tags": [
+     [
+      "d",
+      "fixed-d"
+     ],
+     [
+      "title",
+      "Team, lunch"
+     ],
+     [
+      "start",
+      "1793898000"
+     ],
+     [
+      "end",
+      "1793903400"
+     ],
+     [
+      "start_tzid",
+      "America/New_York"
+     ],
+     [
+      "end_tzid",
+      "America/New_York"
+     ],
+     [
+      "location",
+      "Cafe; upstairs"
+     ],
+     [
+      "r",
+      "https://e.com/lunch"
+     ],
+     [
+      "alt",
+      "Calendar event: Team, lunch"
+     ]
+    ],
+    "content": "Line one\nline two"
+   }
+  },
+  {
+   "name": "tags: all-day, no end",
+   "event": {
+    "title": "Holiday",
+    "description": "",
+    "location": "",
+    "url": "",
+    "all_day": true,
+    "start": "2026-12-24",
+    "end": "2026-12-25",
+    "tzid": null
+   },
+   "d": "fixed-d",
+   "expect": {
+    "kind": 31922,
+    "tags": [
+     [
+      "d",
+      "fixed-d"
+     ],
+     [
+      "title",
+      "Holiday"
+     ],
+     [
+      "start",
+      "2026-12-24"
+     ],
+     [
+      "end",
+      "2026-12-25"
+     ],
+     [
+      "alt",
+      "Calendar event: Holiday"
+     ]
+    ],
+    "content": ""
+   }
+  },
+  {
+   "name": "tags: utc, first event only",
+   "event": {
+    "title": "Call",
+    "description": "",
+    "location": "",
+    "url": "",
+    "all_day": false,
+    "start": 1793977200,
+    "end": 1793979000,
+    "tzid": null
+   },
+   "d": "fixed-d",
+   "expect": {
+    "kind": 31923,
+    "tags": [
+     [
+      "d",
+      "fixed-d"
+     ],
+     [
+      "title",
+      "Call"
+     ],
+     [
+      "start",
+      "1793977200"
+     ],
+     [
+      "end",
+      "1793979000"
+     ],
+     [
+      "alt",
+      "Calendar event: Call"
+     ]
+    ],
+    "content": ""
+   }
+  },
+  {
+   "name": "tags: place with postal address",
+   "event": {
+    "title": "Meetup & Pizza",
+    "description": "Bring a friend.",
+    "location": "Hall, 1 Main St, Chillicothe, OH",
+    "url": "https://e.com/meetup",
+    "all_day": false,
+    "start": 1794353400,
+    "end": 1794362400,
+    "tzid": null
+   },
+   "d": "fixed-d",
+   "expect": {
+    "kind": 31923,
+    "tags": [
+     [
+      "d",
+      "fixed-d"
+     ],
+     [
+      "title",
+      "Meetup & Pizza"
+     ],
+     [
+      "start",
+      "1794353400"
+     ],
+     [
+      "end",
+      "1794362400"
+     ],
+     [
+      "location",
+      "Hall, 1 Main St, Chillicothe, OH"
+     ],
+     [
+      "r",
+      "https://e.com/meetup"
+     ],
+     [
+      "alt",
+      "Calendar event: Meetup & Pizza"
+     ]
+    ],
+    "content": "Bring a friend."
+   }
+  },
+  {
+   "name": "tags: all-day in a graph",
+   "event": {
+    "title": "Fair",
+    "description": "",
+    "location": "Town square",
+    "url": "",
+    "all_day": true,
+    "start": "2026-07-04",
+    "end": "2026-07-05",
+    "tzid": null
+   },
+   "d": "fixed-d",
+   "expect": {
+    "kind": 31922,
+    "tags": [
+     [
+      "d",
+      "fixed-d"
+     ],
+     [
+      "title",
+      "Fair"
+     ],
+     [
+      "start",
+      "2026-07-04"
+     ],
+     [
+      "end",
+      "2026-07-05"
+     ],
+     [
+      "location",
+      "Town square"
+     ],
+     [
+      "alt",
+      "Calendar event: Fair"
+     ]
+    ],
+    "content": ""
+   }
+  }
+ ],
+ "status_tags": [
+  {
+   "name": "with url",
+   "text": " Song - Artist ",
+   "url": "https://open.spotify.com/track/x",
+   "expiration": 1730003600,
+   "expect": {
+    "kind": 30315,
+    "content": "Song - Artist",
+    "tags": [
+     [
+      "d",
+      "music"
+     ],
+     [
+      "r",
+      "https://open.spotify.com/track/x"
+     ],
+     [
+      "expiration",
+      "1730003600"
+     ],
+     [
+      "alt",
+      "Status: Song - Artist"
+     ]
+    ]
+   }
+  }
+ ],
+ "label_tags": [
+  {
+   "name": "scam",
+   "label": "scam",
+   "url": "https://bad.example/x",
+   "comment": " Fake shop ",
+   "expect": {
+    "kind": 1985,
+    "content": "Fake shop",
+    "tags": [
+     [
+      "L",
+      "app.nostrvault.link"
+     ],
+     [
+      "l",
+      "scam",
+      "app.nostrvault.link"
+     ],
+     [
+      "r",
+      "https://bad.example/x"
+     ],
+     [
+      "alt",
+      "Label: scam for https://bad.example/x"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "good",
+   "label": "good",
+   "url": "https://bad.example/x",
+   "comment": "",
+   "expect": {
+    "kind": 1985,
+    "content": "",
+    "tags": [
+     [
+      "L",
+      "app.nostrvault.link"
+     ],
+     [
+      "l",
+      "good",
+      "app.nostrvault.link"
+     ],
+     [
+      "r",
+      "https://bad.example/x"
+     ],
+     [
+      "alt",
+      "Label: good for https://bad.example/x"
+     ]
+    ]
+   }
+  }
+ ],
+ "labels": [
+  "spam",
+  "scam",
+  "nsfw",
+  "good"
+ ],
+ "label_namespace": "app.nostrvault.link"
+}
