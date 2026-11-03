@@ -272,6 +272,7 @@ fun NostrVaultNavHost(
                 settingsRoutes(navController, nostrService)
                 vaultRoutes(navController, logStore, feedService, unreadDMsState)
                 mediaRoutes(navController, configState)
+                sharePortalRoutes(navController)
             }
         }
 

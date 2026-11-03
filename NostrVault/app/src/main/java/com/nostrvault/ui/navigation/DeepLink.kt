@@ -109,6 +109,8 @@ object DeepLinkRouter {
             "relay" -> DeepLinkTarget(Screen.Dashboard.route)
             "media" -> DeepLinkTarget(Screen.Dashboard.route, vaultMedia = true)
             "wallet" -> DeepLinkTarget(Screen.Wallet.route)
+            // The share sheet's Open now: the review card for what it queued.
+            "shareportal" -> DeepLinkTarget(Screen.SharePortalReview.route)
             "note" -> segments.getOrNull(1)?.let { noteRoute(it, decoder) }
             "profile" -> segments.getOrNull(1)?.let { profileRoute(it, decoder) }
             // The /p/ page's "Open in Nostr Vault" button.

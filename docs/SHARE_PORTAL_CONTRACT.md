@@ -44,7 +44,7 @@ tests for it: the Swift tests (`MediaLogicTests`) and the Kotlin tests
 | `files[]` | max 20. `name` has no `/`, `\`, no leading `.`, not `..`; `path` must equal `files/<id>/<name>` |
 | `form` | flat string → string map, max 32 keys, keys 1–64 chars, values capped at 20,000 chars |
 
-Limits (UTF-16 / Kotlin `String.length` units; longer values are cut, not rejected):
+Limits (UTF-16 / Kotlin `String.length` units; longer values are cut, not rejected, and a cut that would split a surrogate pair lands one unit short):
 `url` 4,096 · `title` 1,000 · `text` 100,000 · `selection` 10,000 · `app` 200.
 
 Actions (`action` raw values): `highlight`, `bookmark`, `private_copy`,
@@ -85,8 +85,9 @@ the queue until the app claims it.
 1. **Web URL** = `url` if it is `http(s)://`, else the first `http(s)://…` run
    in `text` (ends at whitespace or `<>"`).
 2. Signals, each checked over `url` + `text` + `selection`:
-   - **pay**: a bolt11 (`lnbc…`, `lntb…`, `lntbs…`, `lnbcrt…`, 20+ more
-     bech32 chars) or `lnurl1…` as a whole word, case-insensitive, optional
+   - **pay**: a bolt11 (`lnbc…`, `lntb…`, `lntbs…`, `lnbcrt…`, then 20+ more
+     `[0-9a-z]`, which allows the `1` separator and amount digits) or `lnurl1…`
+     (20+ more `[0-9a-z]`) as a whole word, case-insensitive, optional
      `lightning:` before it; or the trimmed `text` is exactly a lightning
      address (`name@domain.tld`, optional `lightning:`).
    - **profile**: `npub1` + 58 bech32 chars, or `nprofile1` + 20+ bech32 chars.
