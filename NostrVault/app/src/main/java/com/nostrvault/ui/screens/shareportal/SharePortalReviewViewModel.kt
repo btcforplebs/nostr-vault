@@ -73,6 +73,25 @@ class SharePortalReviewViewModel @Inject constructor(
         viewModelScope.launch { configStore.switchActiveAccount(npub) }
     }
 
+    /** The claimed copy of one of [intent]'s files. */
+    fun claimedFile(intent: ShareIntent, file: com.nostrvault.shareportal.ShareFile) = queue.claimedFile(intent, file)
+
+    /**
+     * Runs one lane A publish or save off the card: [work] returns the toast
+     * to show and closes the card, or an error to show and keeps it.
+     */
+    fun runAction(intent: ShareIntent, work: suspend () -> LaneAResult) {
+        if (_busy.value) return
+        _busy.value = true
+        viewModelScope.launch {
+            when (val r = runCatching { work() }.getOrElse { LaneAResult.Failed("Something went wrong") }) {
+                is LaneAResult.Done -> { notificationManager.showToast(r.message); dismiss(intent) }
+                is LaneAResult.Failed -> notificationManager.showError(r.message)
+            }
+            _busy.value = false
+        }
+    }
+
     fun publishHighlight(intent: ShareIntent, passage: String, comment: String) {
         if (_busy.value) return
         _busy.value = true

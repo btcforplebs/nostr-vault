@@ -5,6 +5,7 @@ import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.exp
+import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -638,8 +639,25 @@ data class Quat(val w: Double, val x: Double, val y: Double, val z: Double) {
  */
 class GlobeCamera {
     var orientation = Quat.IDENTITY
-    /** Angular velocity after a flick, radians a second. */
+    /**
+     * Angular velocity a flick leaves on top of the drift, radians a second.
+     * It dies away into the drift, so a throw glides straight into the slow
+     * turn with no stop between.
+     */
     var spin = Vec3.ZERO
+    /**
+     * The idle drift's own turn about the upright axis, radians a second,
+     * signed. It eases toward [DRIFT_SPEED] the way the last throw went, and
+     * back to nothing when the globe is set to hold still or goes to sleep.
+     */
+    var drift = 0.0
+    /** Which way the drift turns: the way the last sideways throw went. */
+    var driftWay = 1.0
+    /**
+     * Frame-clock time of the last let-go. Letting go starts the drift at
+     * once; any other touch (a pinch, a fly-to) waits [DRIFT_AFTER].
+     */
+    var lastRelease = Double.NEGATIVE_INFINITY
     var zoom = 1.0
     var zoomTarget = 1.0
     /** Where a fly-to is turning; null when not flying. */
@@ -654,6 +672,11 @@ class GlobeCamera {
      * `GlobeCamera.keepsDrifting`.
      */
     var keepsDrifting = false
+    /**
+     * False: the globe holds still once a throw has glided out (iOS
+     * `GlobeCamera.drifts`, its spin switch). Android has no switch yet.
+     */
+    var drifts = true
 
     companion object {
         val ZOOM_RANGE = 0.8..2.4
@@ -683,16 +706,31 @@ class GlobeCamera {
         /** Idle this long and it stops: the frame clock can sleep. Not on a globe that [keepsDrifting]. */
         const val SLEEP_AFTER = 20.0
         const val DRIFT_SPEED = 0.05
-        /** How fast a flick dies away, per second. */
-        const val SPIN_DECAY = 2.4
+        /**
+         * How a flick dies away into the drift: a drag that grows with speed
+         * (per second) plus a steady brake (radians a second, each second). The
+         * brake makes a gentle let-go settle in about half a second while a
+         * hard throw still glides for two, and lands at an exact moment
+         * instead of creeping in forever. iOS `spinDecay`, `spinBrake`.
+         */
+        const val SPIN_DECAY = 1.0
+        const val SPIN_BRAKE = 0.4
+        /**
+         * How fast the drift eases in or out, per second, when nothing carried
+         * it there (the first drift after a fly-to, or the drift going to sleep).
+         */
+        const val DRIFT_EASE = 1.2
         /** Radians the globe turns per dp a finger moves. */
         const val DRAG_TURN = 0.005
         /** Spin per dp-a-second of release speed. */
         const val FLICK_TURN = 0.003
-        /** Slower than this at release is letting go, not a flick: no spin. */
-        const val FLICK_FLOOR = 350.0
+        /**
+         * Sideways faster than this at release sets which way the drift turns;
+         * slower (a straight up or down throw) keeps the way it had.
+         */
+        const val WAY_FLOOR = 20.0
         /** A flick never spins faster than this, radians a second. */
-        const val MAX_SPIN = 2.5
+        const val MAX_SPIN = 4.0
         /** A frame slower than this counts as this long, so a hitch can't fling it. */
         const val MAX_STEP = 1.0 / 20
 
@@ -716,25 +754,37 @@ class GlobeCamera {
         orientation = (turn * orientation).normalized()
         flyTarget = null
         spin = Vec3.ZERO
+        drift = 0.0
         touch(now)
     }
 
-    /** Let go at [vx], [vy] dp a second: keep turning that way. */
+    /**
+     * Let go at [vx], [vy] dp a second: keep turning at exactly that speed,
+     * then slow smoothly into the drift the way it was thrown. No floor: a
+     * gentle let-go eases into the drift, it never stops dead (Logen 11/03).
+     */
     fun flick(vx: Double, vy: Double, now: Double, reduceMotion: Boolean) {
-        val speed = sqrt(vx * vx + vy * vy)
-        spin = if (reduceMotion || speed <= FLICK_FLOOR) {
-            Vec3.ZERO
-        } else {
-            val rate = speed * FLICK_TURN
-            val scale = FLICK_TURN * min(1.0, MAX_SPIN / rate)
-            Vec3(vy * scale, vx * scale, 0.0)
-        }
         touch(now)
+        if (reduceMotion) {
+            spin = Vec3.ZERO
+            drift = 0.0
+            return
+        }
+        lastRelease = now
+        if (abs(vx) > WAY_FLOOR) driftWay = if (vx > 0) 1.0 else -1.0
+        var v = Vec3(vy, vx, 0.0) * FLICK_TURN
+        val rate = v.length
+        if (rate > MAX_SPIN) v = v * (MAX_SPIN / rate)
+        // The release speed is the whole turn: the drift it ends in, plus a
+        // spin that dies away. With spinning off it just dies away.
+        drift = if (drifts) driftWay * DRIFT_SPEED else 0.0
+        spin = v + Vec3(0.0, -drift, 0.0)
     }
 
     fun fly(target: Quat, now: Double) {
         flyTarget = target
         spin = Vec3.ZERO
+        drift = 0.0
         zoomTarget = 1.0
         touch(now)
     }
@@ -755,21 +805,31 @@ class GlobeCamera {
                 flyTarget = null
             }
         } else if (!dragging && !reduceMotion) {
+            // The exact turn while each part eases over this step, not
+            // speed × dt: summed per frame, that drifts with the frame rate.
+            var turn = Vec3.ZERO
             val speed = spin.length
-            if (speed > 0.0005) {
-                // The exact turn while the spin decays over this step, not
-                // speed × dt: summed per frame, that drifts with the frame rate.
-                val decay = exp(-dt * SPIN_DECAY)
-                val angle = speed * (1 - decay) / SPIN_DECAY
-                orientation = (Quat.angle(angle, spin / speed) * orientation).normalized()
-                spin = spin * decay
-            } else {
-                spin = Vec3.ZERO
+            if (speed > 0) {
+                // Speed falls as dv/dt = -k·v - b: exact over the step, and
+                // it reaches nothing at a set time rather than creeping.
+                val k = SPIN_DECAY
+                val floor = SPIN_BRAKE / k
+                val stopsIn = ln((speed + floor) / floor) / k
+                val t = min(dt, stopsIn)
+                val decay = exp(-k * t)
+                val angle = (speed + floor) * (1 - decay) / k - floor * t
+                turn += spin / speed * angle
+                spin = if (t >= stopsIn - 1e-9) Vec3.ZERO else spin * (((speed + floor) * decay - floor) / speed)
             }
-            val idle = now - lastTouch
-            if (idle > DRIFT_AFTER && (keepsDrifting || idle < SLEEP_AFTER)) {
-                orientation = (Quat.angle(DRIFT_SPEED * dt, Y_AXIS) * orientation).normalized()
+            val target = if (driftsNow(now)) driftWay * DRIFT_SPEED else 0.0
+            if (drift != target || target != 0.0) {
+                val ease = exp(-dt * DRIFT_EASE)
+                turn += Vec3(0.0, target * dt + (drift - target) * (1 - ease) / DRIFT_EASE, 0.0)
+                drift = target + (drift - target) * ease
+                if (abs(drift - target) < 0.0005) drift = target
             }
+            val angle = turn.length
+            if (angle > 0) orientation = (Quat.angle(angle, turn / angle) * orientation).normalized()
         }
         if (reduceMotion || abs(zoomTarget - zoom) < 0.0005) {
             zoom = zoomTarget
@@ -788,6 +848,17 @@ class GlobeCamera {
 
     fun wantsFrames(now: Double, reduceMotion: Boolean): Boolean {
         if (dragging || flyTarget != null || !spin.isZero || zoom != zoomTarget) return true
-        return !reduceMotion && (keepsDrifting || now - lastTouch < SLEEP_AFTER)
+        if (reduceMotion) return false
+        return drift != 0.0 || (drifts && (keepsDrifting || now - lastTouch < SLEEP_AFTER))
+    }
+
+    /**
+     * Whether the idle drift should be turning now: right after a let-go, or
+     * once untouched for [DRIFT_AFTER], until the clock may sleep.
+     */
+    private fun driftsNow(now: Double): Boolean {
+        val idle = now - lastTouch
+        val started = lastRelease >= lastTouch || idle > DRIFT_AFTER
+        return drifts && started && (keepsDrifting || idle < SLEEP_AFTER)
     }
 }

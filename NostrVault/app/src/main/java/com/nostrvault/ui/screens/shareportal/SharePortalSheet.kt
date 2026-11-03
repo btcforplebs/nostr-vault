@@ -35,7 +35,11 @@ internal fun SharePortalSheet(
             Text("Nostr Vault", style = MaterialTheme.typography.titleMedium, color = colors.primary)
             when (val phase = model.phase) {
                 SharePortalSheetModel.Phase.Loading -> CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
-                SharePortalSheetModel.Phase.Pick -> ActionList(model)
+                SharePortalSheetModel.Phase.Pick -> ActionList(model) { action ->
+                    // Only Highlight has a form here; the rest are finished on the app's review card.
+                    if (action == ShareAction.HIGHLIGHT) model.pick(action)
+                    else model.intent(action, emptyMap())?.let { model.sending(); onSend(it) }
+                }
                 is SharePortalSheetModel.Phase.Form -> when (phase.action) {
                     ShareAction.HIGHLIGHT -> HighlightShareForm(
                         url = model.read?.input?.let { it.url ?: com.nostrvault.shareportal.ShareClassifier.webUrl(it) },
@@ -68,7 +72,7 @@ internal fun SharePortalSheet(
 }
 
 @Composable
-private fun ActionList(model: SharePortalSheetModel) {
+private fun ActionList(model: SharePortalSheetModel, onPick: (ShareAction) -> Unit) {
     if (model.actions.isEmpty()) {
         Text("Nothing here Nostr Vault can use yet.", color = SecondaryText)
         return
@@ -81,7 +85,7 @@ private fun ActionList(model: SharePortalSheetModel) {
         Surface(
             color = Surface2,
             shape = MaterialTheme.shapes.medium,
-            modifier = Modifier.fillMaxWidth().clickable { model.pick(action) },
+            modifier = Modifier.fillMaxWidth().clickable { onPick(action) },
         ) {
             Text(label(action), Modifier.padding(16.dp))
         }
