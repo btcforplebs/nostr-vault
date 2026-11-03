@@ -5,10 +5,10 @@ import Combine
 
 /// The iPad's right-hand column in landscape, after the web's desktop
 /// "Your space": Live Vault, the Vault list's lines in fixed rows that never
-/// jump. Lines that arrive after it was drawn wait behind an "N new" pill;
-/// tapping the pill draws them and marks the Vault seen, as a look at the
-/// Vault list does. A row opens what it's about on the left. Folds to a
-/// thin strip with the unread count; the choice is kept per account.
+/// jump. Lines that arrive after it was drawn go on top by themselves, no
+/// tap; if you are reading further down, the row you're on stays put. A row
+/// opens what it's about on the left. Folds to a thin strip with the unread
+/// count; the choice is kept per account.
 struct LiveVaultColumn: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
@@ -21,19 +21,20 @@ struct LiveVaultColumn: View {
     @State private var seenAt: Int64 = 0
     @State private var folded = false
     @State private var buildGen = 0
+    /// The row at the top of the list's view, kept while lines come in.
+    @State private var topId: String?
 
     private var owner: String { configService.activeAccountHexPubkey.lowercased() }
 
-    private var split: (rows: [VaultActivity], held: [VaultActivity]) {
-        guard let shot else { return (Array(lines.prefix(LiveVault.maxRows)), []) }
-        return LiveVault.split(lines, shot)
+    private var rows: [VaultActivity] {
+        guard let shot else { return Array(lines.prefix(LiveVault.maxRows)) }
+        return LiveVault.split(lines, shot).rows
     }
 
     private var unreadCount: Int { seenAt > 0 ? lines.filter { $0.createdAt > seenAt }.count : 0 }
 
     var body: some View {
-        let (rows, held) = split
-        let pill = LiveVault.pillCount(unread: unreadCount, held: held.count)
+        let rows = self.rows
         Group {
             if folded {
                 foldedStrip(count: unreadCount)
@@ -43,7 +44,7 @@ struct LiveVaultColumn: View {
                     // The web's panel: a card with its own header; the
                     // list inside scrolls, the header stays.
                     VStack(spacing: 0) {
-                        header(rows: rows, pill: pill)
+                        header(rows: rows)
                         Divider().opacity(0.6)
                         list(rows)
                     }
@@ -83,6 +84,7 @@ struct LiveVaultColumn: View {
             folded = UserDefaults.standard.bool(forKey: LiveVault.foldedKey(hex))
             shot = nil
             lines = []
+            topId = nil
             readSeen()
             rebuild()
         }
@@ -134,7 +136,7 @@ struct LiveVaultColumn: View {
         }
     }
 
-    private func header(rows: [VaultActivity], pill: Int) -> some View {
+    private func header(rows: [VaultActivity]) -> some View {
         let (faces, more) = LiveVault.faces(unreadCount > 0 ? Array(lines.prefix(unreadCount)) : rows)
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
@@ -166,17 +168,6 @@ struct LiveVaultColumn: View {
                         .foregroundColor(.secondary)
                 }
                 Spacer()
-                if pill > 0 {
-                    Button(action: showNew) {
-                        Text("\(pill) new")
-                            .font(.appSystem(size: 13, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
-                            .background(Capsule().fill(Color.havenPurple))
-                    }
-                    .buttonStyle(.plain)
-                }
             }
         }
         .padding(.horizontal, 12)
@@ -205,7 +196,10 @@ struct LiveVaultColumn: View {
                         Divider().padding(.leading, 12)
                     }
                 }
+                .scrollTargetLayout()
             }
+            // Lines put on top keep the row in view where it is.
+            .scrollPosition(id: $topId, anchor: .top)
         }
     }
 
@@ -242,14 +236,6 @@ struct LiveVaultColumn: View {
     private func setFolded(_ value: Bool) {
         folded = value
         UserDefaults.standard.set(value, forKey: LiveVault.foldedKey(owner))
-    }
-
-    /// The pill: draw the waiting lines and mark the Vault seen.
-    private func showNew() {
-        shot = LiveVault.snapshot(lines)
-        let now = Date().timeIntervalSince1970
-        AccountUnreadStore.shared.markVaultSeen(hex: owner, at: now)
-        seenAt = Int64(now)
     }
 
     private func readSeen() {
@@ -306,8 +292,15 @@ struct LiveVaultColumn: View {
             let shown = Array(built.lazy.filter { !(zapsOnly && $0.kind == .reaction) }.prefix(LiveVault.maxRows * 3))
             await MainActor.run {
                 guard gen == buildGen else { return }
+                // At the top (or not scrolled yet), the new lines show;
+                // lower down, the row being read stays where it is.
+                let atTop = topId == nil || topId == rows.first?.id
                 if lines != shown { lines = shown }
-                if shot == nil, !shown.isEmpty { shot = LiveVault.snapshot(shown) }
+                if !shown.isEmpty {
+                    let next = LiveVault.place(shown, shot)
+                    if next != shot { shot = next }
+                }
+                if atTop, let first = rows.first?.id, first != topId { topId = first }
                 nostrService.fetchMissingProfiles(for: Array(Set(shown.prefix(LiveVault.maxRows).flatMap { $0.actors.prefix(2) })))
             }
         }

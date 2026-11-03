@@ -138,7 +138,89 @@ npub, display name and picture URL only. No key, no signer kind.
 - The share surface never publishes. Every action ends on a review card in the
   app with an explicit button.
 
-## 6. Lane D: Pay or zap, Send privately
+## 6. Lane A actions (phase 2)
+
+Article clip, Recipe, Calendar, Status and Label. All five queue straight from
+the share sheet with no form (`form` is `{}`), and the app does the rest. The
+pure parts below are tested on both platforms against
+`Fixtures/SharePortal/lane-a-cases.json`.
+
+### 6.1 Article clip → article draft (nothing is published)
+
+Saved to the composer drafts (`ComposerDraft`, kind `article`) of the intent's
+account. Quote + link, never a copy of the page:
+
+- `title` = trimmed `source.title`, else the URL's host, else `"Clipped link"`.
+- `body` = the quote, a blank line, then the source line. The quote is the
+  trimmed selection with every line prefixed `> ` (an empty line becomes `>`);
+  no selection means no quote and no blank line.
+- source line = `Source: [<label>](<url>)`. `<label>` is the title with `\`,
+  `[` and `]` escaped by a backslash; `<url>` has ` ` → `%20`, `(` → `%28`,
+  `)` → `%29`. No web URL means no source line.
+
+### 6.2 Recipe → recipe draft (nothing is published)
+
+The app fetches the page (GET, 3 MB cap, 15 s timeout, `text/html` only),
+takes every `<script … type="application/ld+json" …>…</script>` block
+(case-insensitive), parses each as JSON, and walks arrays and `@graph` (depth
+≤ 4) for the first object whose `@type` is or contains `Recipe`. From it:
+
+| Draft field | From |
+|---|---|
+| `title` | `name`, else the share's title |
+| `summary` | `description` |
+| `prepTime`, `cookTime` | `prepTime`, `cookTime` ISO 8601 durations with whole numbers: `PT1H30M` → `1 h 30 min`, `PT45M` → `45 min`, `PT2H` → `2 h`, `P1DT2H` → `26 h`, `PT0M` → empty; seconds dropped; anything else (`PT1.5H`, free text) kept as given, trimmed |
+| `servings` | `recipeYield`: a string, a number, or the first of a list |
+| `ingredients` | `recipeIngredient` list, one per line |
+| `directions` | `recipeInstructions`: a string (split on newlines), a list of strings, `HowToStep` (`text`, else `name`), or `HowToSection` (its `itemListElement`, flattened), one step per line |
+| `categories` | `recipeCategory` then `recipeCuisine` (string or list), comma-split, trimmed, de-duplicated case-insensitively, joined `", "` |
+| `body` | the source line from 6.1 (label = recipe name) |
+
+Every text value: HTML tags removed, entities `&amp; &lt; &gt; &quot; &#39;
+&apos; &nbsp; &#NNN; &#xHH;` decoded, whitespace runs collapsed to one space,
+trimmed (directions/ingredients per line). No Recipe found → a recipe draft
+with only `title` and `body`.
+
+### 6.3 Calendar → NIP-52 event (published only on the review card's tap)
+
+Input: the first `.ics` file (first `VEVENT`), else a JSON-LD `Event` from the
+fetched page (same walk as 6.2), else an empty form.
+
+ICS: unfold lines (a CRLF or LF followed by a space or tab joins, dropping that
+one character); `NAME;PARAMS:VALUE`; text values unescape `\n` `\N` → newline,
+`\,` `\;` `\\`. `SUMMARY` → title, `DESCRIPTION`, `LOCATION`, `URL`.
+`DTSTART`/`DTEND`: 8 digits or `VALUE=DATE` → all-day date `YYYY-MM-DD`;
+`YYYYMMDDTHHMMSSZ` → UTC instant; with `TZID=<zone>` → that zone's wall time
+(tzid kept); no `Z` and no `TZID` → the default zone given to the parser
+(tzid not kept). An all-day event with no `DTEND` ends the next day. A `DTEND` of the other shape (date vs time) is ignored. Only the first property of each name counts. ICS text is not HTML-cleaned.
+
+JSON-LD Event (text values cleaned as in 6.2; `@type` must be exactly `Event` or a list holding it, so `MusicEvent` does not match): `name`, `description`, `url`; `startDate`/`endDate` of 10
+chars `YYYY-MM-DD` → all-day, else ISO 8601 with offset or `Z` → instant;
+`location` a string, or a `Place`'s `name` plus its `address` (a string, or a
+`PostalAddress`'s `streetAddress, addressLocality, addressRegion,
+postalCode, addressCountry`, non-empty ones joined `", "`), joined `", "`.
+
+Tags (content = description), given a `d` value:
+- all-day → kind **31922**: `d`, `title`, `start` (`YYYY-MM-DD`), `end` (if
+  any), `location` (if any), `r` url (if any), `alt` `Calendar event: <title>`.
+- timed → kind **31923**: `d`, `title`, `start` (unix seconds), `end` (if
+  any), `start_tzid` and `end_tzid` (if a tzid), `location`, `r`, `alt`.
+
+### 6.4 Status → NIP-38 (public; the card says so)
+
+Kind **30315**, content = the status text (default: the share's title, else
+the URL), tags `["d","music"]`, `["r", url]`, `["expiration", "<unix>"]`,
+`["alt", "Status: <text>"]`. Expiry choices on the card: 30 min, 1 h
+(default), 4 h.
+
+### 6.5 Label → NIP-32 (public; the card says so)
+
+Kind **1985**, namespace **`app.nostrvault.link`**, labels **`spam`, `scam`,
+`nsfw`, `good`** only. Tags `["L","app.nostrvault.link"]`,
+`["l", <label>, "app.nostrvault.link"]`, `["r", url]`,
+`["alt", "Label: <label> for <url>"]`; content = an optional comment.
+
+## 7. Lane D: Pay or zap, Send privately
 
 **Pay target.** `PayShareTarget.find(url, text, selection)` (`SharePortalKit/PayShareTarget.swift`,
 `shareportal/PayShareTarget.kt`) uses the classifier's own pay patterns: the

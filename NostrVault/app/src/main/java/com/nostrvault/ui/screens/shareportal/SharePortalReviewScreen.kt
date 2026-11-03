@@ -68,6 +68,7 @@ private fun ReviewCard(intent: ShareIntent, busy: Boolean, active: String, viewM
             onPublish = { passage, comment -> viewModel.publishHighlight(intent, passage, comment) },
             onDismiss = { viewModel.dismiss(intent) },
         )
+        handler.isReady && intent.action in LaneAReviewActions -> LaneAReview(intent, busy, active, viewModel)
         intent.action == ShareAction.PAY && handler.isReady -> PayReviewContent(
             intent = intent,
             needsSwitch = intent.account != null && intent.account != active,
