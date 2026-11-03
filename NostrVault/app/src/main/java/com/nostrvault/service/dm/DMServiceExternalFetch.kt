@@ -32,10 +32,9 @@ import com.nostrvault.service.DMService.Companion.TAG
             // pull-to-refresh queried zero relays and nothing ever loaded.
             val configured = ownDMInboxRelays(ownerHex)
             val read = configStore.config.value.readRelays
-            val allRelays = (configured + dmRelays + inboxRelays + read)
-                .distinct()
-                .filter { !it.contains("localhost") && !it.contains("127.0.0.1") }
-                .take(EXTERNAL_FETCH_MAX_RELAYS)
+            // DM inbox relays first, so a long Read list can't push them past the cap
+            // (iOS #1506). Every relay here is the account's own, so each may get an AUTH.
+            val allRelays = DMReadAuth.fetchRelays(listOf(configured, dmRelays, inboxRelays, read), EXTERNAL_FETCH_MAX_RELAYS)
 
             if (allRelays.isEmpty()) return@launch
 
@@ -52,14 +51,19 @@ import com.nostrvault.service.DMService.Companion.TAG
                     try {
                         val client = WebSocketClient(url = relayUrl, scope = scope)
                         val subId = "dm-ext-${UUID.randomUUID().toString().take(8)}"
+                        val auth = DMReadAuthLink(relayUrl, ownerHex, DMReadAuth.mayAuth(ownerHex, relayUrl))
 
                         // Cancelled after the pass: a collector never ends by itself, and
                         // left running it held this pass open (externalFetchRunning) for good.
                         val collector = launch {
                             client.messages.collect { msg ->
                                 if (switchGeneration != generation) return@collect
-                                launch(Dispatchers.Default) {
-                                    handleExternalDmMessage(msg, generation)
+                                if (msg.startsWith("[\"EVENT\"")) {
+                                    launch(Dispatchers.Default) {
+                                        handleExternalDmMessage(msg, generation)
+                                    }
+                                } else {
+                                    routeReadAuthFrame(msg, auth, client)
                                 }
                             }
                         }
@@ -74,17 +78,19 @@ import com.nostrvault.service.DMService.Companion.TAG
                             // A limit, so a relay holding a flood of wraps can't
                             // send all of them every pass; the live sockets cover the rest.
                             val nip17Filter = """{"kinds":[1059],"#p":["$ownerHex"],"since":$wrapSince,"limit":$EXTERNAL_FETCH_LIMIT}"""
-                            client.send("[\"REQ\",\"$subId-17\",$nip17Filter]")
+                            sendReadReq(client, auth, "$subId-17", nip17Filter)
 
                             // NIP-04 incoming (kind 4)
                             val nip04InFilter = """{"kinds":[4],"#p":["$ownerHex"],"since":$since,"limit":$EXTERNAL_FETCH_LIMIT}"""
-                            client.send("[\"REQ\",\"$subId-04in\",$nip04InFilter]")
+                            sendReadReq(client, auth, "$subId-04in", nip04InFilter)
 
                             // NIP-04 outgoing (kind 4)
                             val nip04OutFilter = """{"kinds":[4],"authors":["$ownerHex"],"since":$since,"limit":$EXTERNAL_FETCH_LIMIT}"""
-                            client.send("[\"REQ\",\"$subId-04out\",$nip04OutFilter]")
+                            sendReadReq(client, auth, "$subId-04out", nip04OutFilter)
 
                             delay(10_000)
+                            // A relay that asked for AUTH gets 10 s more, once.
+                            if (auth.mayExtend()) delay(10_000)
                         } finally {
                             client.disconnect()
                             collector.cancel()
@@ -114,7 +120,9 @@ import com.nostrvault.service.DMService.Companion.TAG
         val ownerHex = nostrService.activeHexPubkey
         val dir = configStore.config.value.appSupportDir ?: return
         if (ownerHex.isBlank() || backfillRunning) return
-        val marker = File(dir, "dm_backfill_v1_${ownerHex.take(16)}")
+        // v2: v1 ran before the read answered AUTH, so wraps kept only on relays
+        // that hand them out after AUTH (damus, nostr.wine) were never fetched.
+        val marker = File(dir, "dm_backfill_v2_${ownerHex.take(16)}")
         if (marker.exists()) return
         backfillRunning = true
         val generation = switchGeneration
@@ -133,28 +141,40 @@ import com.nostrvault.service.DMService.Companion.TAG
                     relays.map { url ->
                         launch {
                             val client = WebSocketClient(url = url, scope = this, autoReconnect = false)
+                            // Every relay here is your own (10002 + DM inbox).
+                            val auth = DMReadAuthLink(url, ownerHex, DMReadAuth.mayAuth(ownerHex, url))
                             try {
-                                withTimeoutOrNull(12_000) {
-                                    val subId = "bf-${UUID.randomUUID().toString().take(6)}"
-                                    val done = CompletableDeferred<Unit>()
-                                    val collector = launch {
-                                        client.messages.collect { msg ->
-                                            if (switchGeneration != generation) return@collect
-                                            if (msg.startsWith("[\"EOSE\"") || msg.startsWith("[\"CLOSED\"")) {
-                                                done.complete(Unit)
-                                            } else {
-                                                handleExternalDmMessage(msg, generation)
-                                            }
+                                val subId = "bf-${UUID.randomUUID().toString().take(6)}"
+                                val done = CompletableDeferred<Unit>()
+                                val collector = launch {
+                                    client.messages.collect { msg ->
+                                        if (switchGeneration != generation) return@collect
+                                        if (msg.startsWith("[\"EVENT\"")) {
+                                            handleExternalDmMessage(msg, generation)
+                                            return@collect
+                                        }
+                                        routeReadAuthFrame(msg, auth, client)
+                                        // A CLOSED being answered with AUTH isn't the end: the REQ
+                                        // goes again once the relay lets us in. Nor is one that came
+                                        // before the relay's challenge: the timer ends that wait.
+                                        if (msg.startsWith("[\"EOSE\"") ||
+                                            (msg.startsWith("[\"CLOSED\"") && !auth.isAuthenticating &&
+                                                !auth.isAwaitingChallenge && !auth.resentRecently)
+                                        ) {
+                                            done.complete(Unit)
                                         }
                                     }
-                                    launch {
-                                        client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
-                                        client.send("""["REQ","$subId",{"kinds":[1059],"#p":["$ownerHex"],"limit":1000}]""")
-                                    }
-                                    client.connect()
-                                    done.await()
-                                    collector.cancel()
                                 }
+                                launch {
+                                    client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
+                                    sendReadReq(client, auth, subId, """{"kinds":[1059],"#p":["$ownerHex"],"limit":1000}""")
+                                }
+                                client.connect()
+                                // 12 s, and 10 s more once when the relay asked for AUTH.
+                                if (withTimeoutOrNull(12_000) { done.await() } == null && auth.mayExtend()) {
+                                    withTimeoutOrNull(10_000) { done.await() }
+                                }
+                                collector.cancel()
                             } finally {
                                 client.disconnect()
                             }
@@ -168,6 +188,66 @@ import com.nostrvault.service.DMService.Companion.TAG
                 backfillRunning = false
             }
         }
+    }
+
+    /** Sends a REQ and remembers it, so it can be sent again after AUTH. */
+    private fun DMService.sendReadReq(client: WebSocketClient, auth: DMReadAuthLink, subId: String, filter: String) {
+        val req = "[\"REQ\",\"$subId\",$filter]"
+        auth.sent(subId, req)
+        client.send(req)
+    }
+
+    /**
+     * AUTH, CLOSED and OK from a DM-reading relay go to its NIP-42 answer
+     * ([DMReadAuth]): sign a kind 22242 as the account being read (key, bunker
+     * or Amber, through [NostrService.signEventAsync]), send it, and once the
+     * relay accepts it ask again.
+     */
+    private fun DMService.routeReadAuthFrame(message: String, auth: DMReadAuthLink, client: WebSocketClient) {
+        val frame = runCatching { json.parseToJsonElement(message).jsonArray }.getOrNull() ?: return
+        if (auth.account != nostrService.activeHexPubkey) return
+        applyReadAuth(auth.receive(frame), auth, client)
+    }
+
+    private fun DMService.applyReadAuth(step: DMReadAuth.Step, auth: DMReadAuthLink, client: WebSocketClient) {
+        when (step) {
+            DMReadAuth.Step.None -> Unit
+            is DMReadAuth.Step.Sign -> scope.launch(Dispatchers.IO) {
+                val signed = signReadAuth(auth.url, step.challenge, auth.account)
+                if (signed == null) {
+                    applyReadAuth(auth.signFailed(), auth, client)
+                } else {
+                    auth.authSent(signed.id)
+                    client.send("[\"AUTH\",${serializeEvent(signed)}]")
+                }
+            }
+            is DMReadAuth.Step.Resend -> {
+                Log.d(TAG, "DM read AUTH accepted by ${auth.url}: asking again (${step.reqs.size})")
+                auth.markResent()
+                step.reqs.forEach { client.send(it) }
+            }
+            is DMReadAuth.Step.GiveUp -> {
+                Log.d(TAG, "DM read AUTH given up for ${auth.url}: ${step.why}")
+                DMReadAuth.giveUp(auth.account, auth.url)
+            }
+        }
+    }
+
+    /**
+     * A kind 22242 for [url] signed as [account], or null when the signer won't
+     * sign or the active account is no longer [account] (proving the wrong
+     * identity would tie two accounts together for the relay).
+     */
+    private suspend fun DMService.signReadAuth(url: String, challenge: String, account: String): NostrEvent? {
+        if (account.isEmpty() || nostrService.activeHexPubkey != account) return null
+        val auth = runCatching {
+            nostrService.signEventAsync(
+                kind = 22242, content = "",
+                tags = listOf(listOf("relay", url), listOf("challenge", challenge)),
+            )
+        }.getOrNull() ?: return null
+        if (auth.pubkey != account || nostrService.activeHexPubkey != account) return null
+        return auth
     }
 
     private suspend fun DMService.handleExternalDmMessage(message: String, generation: Int) {
