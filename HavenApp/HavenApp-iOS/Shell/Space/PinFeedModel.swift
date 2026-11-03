@@ -27,7 +27,7 @@ final class PinFeedModel: ObservableObject {
 
     static let pageSize = 60
     static let maxAuthors = 500
-    /// Above this your web filters what the relay sends instead of going in the REQ (relays cap message size).
+    /// Authors a relay pin's REQ carries at most (relays cap message size).
     static let maxTrustAuthors = 500
 
     init(source: Source) { self.source = source }
@@ -56,9 +56,23 @@ final class PinFeedModel: ObservableObject {
             title = URL(string: url)?.host ?? url
             // With the shield on, ask the relay for your web's notes: its
             // newest page from everyone would rarely hold any of them.
-            let trust = FeedService.shared.globalTrustSet()
+            // Your follows and you always count: before your web has loaded
+            // the trusted set can be empty, which would show no one.
+            let trust = FeedService.shared.globalTrustSet().map { set -> Set<String> in
+                var all = set.union(FeedService.shared.followedPubkeys)
+                let me = ConfigService.shared.activeAccountHexPubkey.lowercased()
+                if !me.isEmpty { all.insert(me) }
+                return all
+            }
             var filter: [String: Any] = ["kinds": [1], "limit": Self.pageSize]
-            if let trust, !trust.isEmpty, trust.count <= Self.maxTrustAuthors { filter["authors"] = Array(trust) }
+            if let trust, !trust.isEmpty {
+                // Your follows (and you) first, then the rest of your web, up to the cap.
+                let me = ConfigService.shared.activeAccountHexPubkey.lowercased()
+                var first = FeedService.shared.followedPubkeys
+                if !me.isEmpty { first.append(me) }
+                let firstSet = Set(first)
+                filter["authors"] = Array((first + trust.filter { !firstSet.contains($0) }).prefix(Self.maxTrustAuthors))
+            }
             subscribe(filter: filter, relays: [url], authors: nil, trust: trust, gen: gen)
         case .list(let kind, let owner, let d):
             Task {
