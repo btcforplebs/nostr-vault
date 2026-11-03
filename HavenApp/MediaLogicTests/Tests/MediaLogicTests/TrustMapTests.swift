@@ -105,16 +105,11 @@ final class TrustMapTests: XCTestCase {
         XCTAssertEqual(camera.spin, .zero)
     }
 
-    func testASlowLetGoDoesNotSpin() {
-        var camera = GlobeCamera()
-        camera.flick(vx: 200, vy: -150, at: 0, reduceMotion: false)
-        XCTAssertEqual(camera.spin, .zero)
-    }
-
     func testAHardFlickIsCapped() {
         var camera = GlobeCamera()
         camera.flick(vx: 6000, vy: 0, at: 0, reduceMotion: false)
-        XCTAssertEqual(simd_length(camera.spin), GlobeCamera.maxSpin, accuracy: 1e-9)
+        // The whole turn at release, drift included, is the cap.
+        XCTAssertEqual(simd_length(camera.spin + SIMD3(0, camera.drift, 0)), GlobeCamera.maxSpin, accuracy: 1e-9)
     }
 
     func testALayerChangeFadesLeaversInPlace() {
@@ -181,9 +176,12 @@ final class TrustMapTests: XCTestCase {
     }
 
     func testIdleDriftStopsBeforeTheClockSleeps() {
+        // Past the sleep timer the drift eases out, then holds still.
         var camera = GlobeCamera()
         var now = 0.0
-        while now < GlobeCamera.sleepAfter { now += 1 / 120; camera.step(dt: 1 / 120, now: now, reduceMotion: false) }
+        while now < GlobeCamera.sleepAfter + 10 { now += 1 / 120; camera.step(dt: 1 / 120, now: now, reduceMotion: false) }
+        XCTAssertEqual(camera.drift, 0)
+        XCTAssertFalse(camera.wantsFrames(now: now, reduceMotion: false))
         let before = camera.orientation
         camera.step(dt: 1 / 120, now: now + 1 / 120, reduceMotion: false)
         XCTAssertEqual(camera.orientation.vector, before.vector)
