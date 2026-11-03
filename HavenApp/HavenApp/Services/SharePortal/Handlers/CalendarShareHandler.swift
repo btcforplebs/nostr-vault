@@ -1,7 +1,10 @@
-import Foundation
+import SwiftUI
 
-/// Event to calendar (NIP-52): lane A.
-/// Phase 1 stub: the review card says "Not ready yet".
+/// Calendar (§6.3): an .ics file or the page's JSON-LD Event, reviewed and published as NIP-52 (31922/31923).
 struct CalendarShareHandler: SharePortalHandler {
     let action = NVShareAction.calendar
+
+    func review(_ intent: NVShareIntent, close: @escaping () -> Void) -> AnyView {
+        AnyView(CalendarReviewView(intent: intent, close: close))
+    }
 }

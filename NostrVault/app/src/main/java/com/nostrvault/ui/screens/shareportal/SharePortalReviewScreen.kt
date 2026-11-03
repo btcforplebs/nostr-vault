@@ -68,6 +68,7 @@ private fun ReviewCard(intent: ShareIntent, busy: Boolean, active: String, viewM
             onPublish = { passage, comment -> viewModel.publishHighlight(intent, passage, comment) },
             onDismiss = { viewModel.dismiss(intent) },
         )
+        handler.isReady && intent.action in LaneAReviewActions -> LaneAReview(intent, busy, active, viewModel)
         else -> {
             Text(label(intent.action), style = MaterialTheme.typography.titleMedium)
             Text(handler.notReadyMessage, color = SecondaryText)

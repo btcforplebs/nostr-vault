@@ -1,7 +1,10 @@
-import Foundation
+import SwiftUI
 
-/// Flag a link (NIP-32 kind 1985): lane C. Labels and namespace are Logen's pick.
-/// Phase 1 stub: the review card says "Not ready yet".
+/// Label (§6.5): NIP-32 label on a link in our namespace; public.
 struct LabelShareHandler: SharePortalHandler {
     let action = NVShareAction.label
+
+    func review(_ intent: NVShareIntent, close: @escaping () -> Void) -> AnyView {
+        AnyView(LabelReviewView(intent: intent, close: close))
+    }
 }

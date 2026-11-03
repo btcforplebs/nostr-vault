@@ -8,7 +8,11 @@ import Foundation
 // nothing else in SharePortalKit. Android twin: ShareActionAvailability.kt.
 
 enum NVShareActionAvailability {
-    static let ready: Set<NVShareAction> = [.highlight, .upload]
+    static let ready: Set<NVShareAction> = [
+        .highlight, .upload,
+        // Lane A (phase 2)
+        .articleClip, .recipe, .calendar, .status, .label,
+    ]
 
     static func offered(_ ranked: [NVShareAction]) -> [NVShareAction] {
         ranked.filter { ready.contains($0) }
