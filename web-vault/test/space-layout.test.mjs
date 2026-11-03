@@ -2,7 +2,9 @@
 // the saved shape a later vault sync shares with the iPad.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { defaultLayout, normalize, shownPanels, hiddenPanels, setOn, setOpen, moveBy, moveBefore, sameLayout, readLayout, writeLayout, LAYOUT_V, SYNC_D } from "../src/desktop/space/space-layout.js"
+import { defaultLayout, normalize, shownPanels, hiddenPanels, setOn, setOpen, moveBy, moveBefore, sameLayout, readLayout, writeLayout, LAYOUT_V, SYNC_D, setRail, resetPanels } from "../src/desktop/space/space-layout.js"
+import { defaultRail } from "../src/desktop/rail/rail-favs.js"
+import { PANEL_IDS } from "../src/desktop/space/panel-ids.js"
 import { readFileSync } from "node:fs"
 import { accountKeys } from "../src/haven/vault.js"
 
@@ -14,17 +16,30 @@ test("the panel ids are the ones the iPad shares, in the default order", () => {
   // panels.js pulls in the panels' JSX, so its ids are read from its text.
   const src = readFileSync(new URL("../src/desktop/space/panels.js", import.meta.url), "utf8")
   assert.deepEqual([...src.matchAll(/\{ id: "([^"]+)"/g)].map(m => m[1]), IDS)
+  assert.deepEqual(PANEL_IDS, IDS)
   assert.equal(SYNC_D, "nostr-vault-space-layout")
 })
 
-test("the default layout: every panel, in order, shown and open", () => {
-  assert.deepEqual(defaultLayout(IDS), { v: LAYOUT_V, at: 0, panels: IDS.map(id => ({ id, on: true, open: true })) })
+test("the default layout: every panel, in order, shown and open, and the rail's default sections", () => {
+  assert.deepEqual(defaultLayout(IDS), { v: LAYOUT_V, at: 0, panels: IDS.map(id => ({ id, on: true, open: true })), rail: defaultRail() })
+})
+
+test("the rail rides in the same layout: kept through normalize, and an edit of it moves `at`", () => {
+  const rail = [{ type: "section", id: "feed" }, { type: "hashtag", tag: "nostr" }]
+  const l = normalize({ at: 5, panels: [], rail }, IDS)
+  assert.deepEqual(l.rail, rail)
+  const next = setRail(l, [...rail, { type: "relay", url: "wss://nos.lol" }], 9)
+  assert.equal(next.at, 9)
+  assert.deepEqual(next.panels, l.panels)
+  assert.equal(setRail(l, l.rail), l)
+  // Resetting Your space's panels keeps the rail.
+  assert.deepEqual(resetPanels(next, IDS, 10).rail, next.rail)
 })
 
 test("normalize: junk is the default; bad entries and repeats drop out; flags default to on/open", () => {
   for (const bad of [null, "x", 3, {}, { panels: "no" }]) assert.deepEqual(normalize(bad, IDS), defaultLayout(IDS))
   const l = normalize({ v: 1, at: 50, panels: [{ id: "messages", on: false }, null, { id: "" }, { id: 7 }, { id: "messages" }, { id: "live-vault", open: false }, { id: "wot-mini" }] }, IDS)
-  assert.deepEqual(l, { v: 1, at: 50, panels: [{ id: "messages", on: false, open: true }, { id: "live-vault", on: true, open: false }, { id: "wot-mini", on: true, open: true }] })
+  assert.deepEqual(l, { v: 1, at: 50, panels: [{ id: "messages", on: false, open: true }, { id: "live-vault", on: true, open: false }, { id: "wot-mini", on: true, open: true }], rail: defaultRail() })
 })
 
 test("normalize: an id from a newer app is kept but not drawn; a panel added later goes in at its place, shown", () => {

@@ -121,28 +121,69 @@ export function tagChoice(hash = "") {
   return tag ? { mode: "hashtag", tag } : null
 }
 
+// Two feeds that are not in the picker, opened from a link (the desktop rail's favourites, desktop/rail/rail-favs.js):
+// one relay's notes ("relay", `relay` its address) and a people list's notes ("list", `list` = "<author>:<d>", with
+// `authors` once the list is read, net/list-feed.js). Both are strangers' notes, held in memory like Global's.
+export const LINK_PARAMS = ["tag", "feed", "relay", "list"]
+const HEX = /^[0-9a-f]{64}$/
+
+/** The relay address in "?relay=", kept as typed when it is ws(s)://; "" otherwise. */
+const relayParam = v => (/^wss?:\/\/[^\s/]+/i.test(String(v ?? "").trim()) ? String(v).trim().replace(/\/+$/, "") : "")
+
+/**
+ * The feed an address asks for: "?tag=" a hashtag (tagChoice), "?feed=<id>" a picker feed by its id (one of `feedIds`),
+ * "?relay=<wss://…>" a relay's notes, "?list=<author>:<d>" a people list's. null when it asks for none.
+ */
+export function linkChoice(hash = "", feedIds = FEEDS.map(f => f.id)) {
+  const t = tagChoice(hash)
+  if (t) return t
+  const i = hash.indexOf("?")
+  const q = new URLSearchParams(i < 0 ? "" : hash.slice(i + 1))
+  const feed = q.get("feed")
+  if (feed && feedIds.includes(feed)) return { mode: feed, tag: "" }
+  const relay = relayParam(q.get("relay"))
+  if (relay) return { mode: "relay", tag: "", relay, label: relay.replace(/^wss?:\/\//, "").replace(/^relay\./, "") }
+  const list = q.get("list") ?? ""
+  const j = list.indexOf(":")
+  if (j > 0 && HEX.test(list.slice(0, j)) && list.length > j + 1) return { mode: "list", tag: "", list, authors: null, label: list.slice(j + 1) }
+  return null
+}
+
+/** The relays a stranger feed is read from: a relay feed's own relay, else the user's read relays. */
+export const feedRelays = (choice, relays) => (choice.mode === "relay" && choice.relay ? [choice.relay] : relays)
+
 /** The relay filter for a stranger feed, or null when there is nothing to ask for (Hashtag with no tag). */
 export function feedFilter({ mode, tag, scope }, { limit = 100, until } = {}) {
   const page = { limit, ...(until ? { until } : {}) }
   if (mode === "global" || (mode === "media" && scope === "global")) return { kinds: FEED_KINDS, ...page }
   if (mode === "hashtag") return tag ? { kinds: [1], "#t": [tag], ...page } : null
+  if (mode === "relay") return { kinds: FEED_KINDS, ...page }
   return null
+}
+
+/** The filters for a list feed's page: its people's notes, in REQs of 250. None until the list is read. */
+const listFilters = (choice, page = {}) => {
+  const out = [], a = choice.authors ?? []
+  for (let i = 0; i < a.length; i += 250) out.push({ kinds: FEED_KINDS, authors: a.slice(i, i + 250), ...page })
+  return out
 }
 
 /** One page of a stranger feed from the network, newest first, once each. Nothing is stored. Global takes `trust`
  *  (readers/trust.js globalTrust): it asks once for trusted authors and once open, as the iPhone does, and keeps only
  *  what Global shows (global-trust.js); no trust shows nothing. `query` is for tests. */
 export async function fetchStrangerFeed(choice, relays, { limit = 100, until, trust = null, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
-  const filter = feedFilter(choice, { limit, until })
+  const page = { limit, ...(until ? { until } : {}) }
+  const filter = choice.mode === "list" ? listFilters(choice, page)[0] : feedFilter(choice, { limit, until })
   if (!filter) return []
   const global = globalLike(choice)
   if (global && !trust?.size) return []
-  const filters = global ? trustedFilters(filter, trust) : [filter]
-  const evs = (await Promise.all(filters.map(f => query(uniq(relays), f, { maxWait: 8000 })))).flat()
+  const filters = global ? trustedFilters(filter, trust) : choice.mode === "list" ? listFilters(choice, page) : [filter]
+  const evs = (await Promise.all(filters.map(f => query(uniq(feedRelays(choice, relays)), f, { maxWait: 8000 })))).flat()
   const byId = new Map()
   for (const ev of evs) if (ev?.id && filter.kinds.includes(ev.kind) && !byId.has(ev.id)) byId.set(ev.id, ev)
   const notes = [...byId.values()].sort((a, b) => b.created_at - a.created_at)
-  return global ? filterGlobal(notes, trust) : notes
+  // A list read in several REQs can bring back more than a page: keep the newest page.
+  return global ? filterGlobal(notes, trust) : choice.mode === "list" ? notes.slice(0, limit) : notes
 }
 
 /** What a stranger feed keeps open for its New posts pill (net/feed-live.js watchLive), or [] when nothing can come:
@@ -151,6 +192,8 @@ export async function fetchStrangerFeed(choice, relays, { limit = 100, until, tr
 export function liveFilters(choice, { trust = null, network = null } = {}) {
   if (globalLike(choice)) return trust?.size ? trustedFilters({ kinds: FEED_KINDS }, trust) : []
   if (choice.mode === "hashtag") return choice.tag ? [{ kinds: [1], "#t": [choice.tag] }] : []
+  if (choice.mode === "relay") return choice.relay ? [{ kinds: FEED_KINDS }] : []
+  if (choice.mode === "list") return listFilters(choice)
   if (choice.mode === "discovery") {
     const out = []
     for (let i = 0; i < (network?.length ?? 0); i += 250) out.push({ kinds: FEED_KINDS, authors: network.slice(i, i + 250) })
@@ -165,6 +208,8 @@ export function liveKeeps(choice, ev, { trust = null, network = null } = {}) {
   if (globalLike(choice)) return !!trust && FEED_KINDS.includes(ev.kind) && filterGlobal([ev], trust).length === 1
   if (choice.mode === "hashtag") return ev.kind === 1 && (ev.tags ?? []).some(t => t[0] === "t" && String(t[1]).toLowerCase() === choice.tag)
   if (choice.mode === "discovery") return FEED_KINDS.includes(ev.kind) && !!network?.includes(ev.pubkey)
+  if (choice.mode === "relay") return FEED_KINDS.includes(ev.kind)
+  if (choice.mode === "list") return FEED_KINDS.includes(ev.kind) && !!choice.authors?.includes(ev.pubkey)
   return false
 }
 
@@ -193,6 +238,7 @@ export function noteAuthors(notes) {
 
 // Stranger feeds already loaded this session, by feed, so switching back shows them at once. Memory only.
 const held = new Map()
-export const feedKey = ({ mode, tag, scope }) => (mode === "hashtag" ? `hashtag:${tag}` : mode === "media" && scope === "global" ? "media:global" : mode)
+export const feedKey = ({ mode, tag, scope, relay, list, authors }) => (mode === "hashtag" ? `hashtag:${tag}` : mode === "media" && scope === "global" ? "media:global"
+  : mode === "relay" ? `relay:${relay}` : mode === "list" ? `list:${list}:${authors ? authors.length : "?"}` : mode)
 export const heldNotes = choice => held.get(feedKey(choice)) ?? null
 export const holdNotes = (choice, notes) => { held.set(feedKey(choice), notes) }

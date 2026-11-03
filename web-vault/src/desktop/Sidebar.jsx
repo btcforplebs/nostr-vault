@@ -1,6 +1,8 @@
 // The desktop's sections as the iPad's slim rail down the left edge (Logen, 2026-11-03: the web takes its cues from the
-// iPad; the top bar it had since 2026-11-02 is gone). Top to bottom: the account, New Post, then Feed, Search,
-// Messages, WoT, Vault and Profile, each an icon with its name under it (BottomTabBar's vertical sidebar), and at the
+// iPad; the top bar it had since 2026-11-02 is gone). Top to bottom: the account picture (a tap lists the accounts on
+// this browser, one more tap switches), New Post, then the favourites: Feed, Search, Messages, WoT, Vault and Profile
+// by default, each an icon with its name under it (BottomTabBar's vertical sidebar), plus whatever the user pinned
+// and in the user's order (rail/rail-favs.js, edited in rail/RailEdit.jsx, synced with Your space's layout). At the
 // foot Settings, Learn, Docs and the vault's status dot. desktop.css lays it out.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
@@ -15,11 +17,16 @@ import { Icon, ICON } from "./icons.jsx"
 import { methodLabel } from "../screens/SignInScreen.jsx"
 import { loadAccounts } from "../session.js"
 import { switchAccount } from "../signer/accounts.js"
+import { fetchProfiles } from "../net/profiles.js"
+import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
+import { useLayout } from "./space/layout-store.js"
+import { shownFavs, favKey } from "./rail/rail-favs.js"
+import { FavRow, FEED_IDS } from "./rail/RailFavs.jsx"
+import { RailEdit } from "./rail/RailEdit.jsx"
 
 export { Icon, ICON } from "./icons.jsx"
 
-// Tod 2026-11-03 (Logen): Feed, Search, Messages, WoT, Vault, Profile; Settings at the foot.
-const SECTIONS = [["feed", "Feed", "g f"], ["search", "Search", "/"], ["messages", "Messages", "g m"], ["wot", "WoT", "g w"], ["vault", "Vault", "g v"], ["profile", "Profile", "g p"]]
+const PIN = "M9 4h6l-1 6 3 3H7l3-3zM12 13v7"
 
 export function Sidebar({ ctx, side, rail }) {
   const readOnly = ctx.signer?.readOnly
@@ -34,6 +41,14 @@ export function Sidebar({ ctx, side, rail }) {
       {badge > 0 && !rail && <span class="side-badge" aria-hidden="true">{badgeCount(badge)}</span>}
     </a>
   )
+  const [layout, change] = useLayout(ctx.session.pubkey)
+  const [editing, setEditing] = useState(false)
+  const favs = shownFavs(layout.rail, FEED_IDS)
+  // Pinned people's names and faces.
+  const people = favs.filter(f => f.type === "person").map(f => f.pubkey).join()
+  useEffect(() => {
+    if (people) fetchProfiles(ctx.vault, people.split(","), uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])).catch(() => {})
+  }, [people])
   return (
     <nav class="desk-side" aria-label="Sections">
       <AccountButton ctx={ctx} rail={rail} />
@@ -41,7 +56,13 @@ export function Sidebar({ ctx, side, rail }) {
         ? <span class="side-row side-post off" aria-disabled="true" title={`New Post. ${READ_ONLY_SHORT}`}><Icon d={ICON.post} /><span class="side-label">New Post</span></span>
         : <a class="side-row side-post" href="#/compose" title={rail ? "New Post (n)" : "n"} aria-label={rail ? "New Post" : undefined}><Icon d={ICON.post} /><span class="side-label">New Post</span></a>}
       <hr />
-      {SECTIONS.map(([id, label, keys]) => row(id, label, keys, id === "messages" ? unread : id === "vault" ? vaultNew : 0))}
+      {favs.map(f => <FavRow key={favKey(f)} fav={f} on={f.type === "section" && side === f.id}
+        badge={f.type === "section" ? (f.id === "messages" ? unread : f.id === "vault" ? vaultNew : 0) : 0} />)}
+      <button type="button" class={editing ? "side-row side-edit-btn on" : "side-row side-edit-btn"} aria-expanded={editing}
+        title="Pin, reorder or take off what's on the rail" aria-label="Edit the rail" onClick={() => setEditing(!editing)}>
+        <span class="side-icon"><Icon d={PIN} size={18} /></span><span class="side-label">Edit</span>
+      </button>
+      {editing && <RailEdit ctx={ctx} layout={layout} change={change} onClose={() => setEditing(false)} />}
       <span class="side-gap" aria-hidden="true" />
       {row("settings", "Settings", "g ,")}
       <HelpRows rail={rail} />
@@ -92,7 +113,7 @@ function AccountButton({ ctx, rail }) {
       {open && (
         <div class="side-pop" role="menu" onClick={e => { if (e.target.closest("[role=menuitem]")) setOpen(false) }}>
           <SwitchRows ctx={ctx} />
-          <a role="menuitem" href="#/accounts">Accounts</a>
+          <a role="menuitem" href="#/accounts">Add or manage accounts</a>
           <a role="menuitem" href="#/wallet">Wallet</a>
           <hr />
           <button role="menuitem" type="button" class="danger" onClick={() => resetBrowser(ctx)}>Sign out</button>
@@ -102,19 +123,20 @@ function AccountButton({ ctx, rail }) {
   )
 }
 
-/** The other accounts on this browser, as the iPhone's Switch Account menu; picking one reloads into it. None with one
- *  account. */
+/** The accounts on this browser, as the iPhone's Switch Account menu: the one signed in ticked, a tap on another
+ *  reloads into it. */
 function SwitchRows({ ctx }) {
   const [err, setErr] = useState("")
   const accounts = loadAccounts()
-  if (accounts.length < 2) return null
+  // Signed in with no saved account list (a read-only look): just this one.
+  if (!accounts.some(a => a.pubkey === ctx.session.pubkey)) accounts.unshift({ pubkey: ctx.session.pubkey })
   const go = async (e, account) => {
     e.stopPropagation() // keep the menu open: a switch reloads, a refused one shows why here
     setErr("")
     try { await switchAccount({ account, vault: ctx.vault, signer: ctx.signer }) } catch (x) { setErr(String(x?.message ?? x)) }
   }
   return (<>
-    <p class="side-pop-title" aria-hidden="true">Switch Account</p>
+    <p class="side-pop-title" aria-hidden="true">{accounts.length > 1 ? "Switch Account" : "Account"}</p>
     {accounts.map(a => a.pubkey === ctx.session.pubkey
       ? <span key={a.pubkey} role="menuitemradio" aria-checked="true" class="side-switch on"><Avatar pubkey={a.pubkey} size={22} /><SwitchName account={a} /></span>
       : <button key={a.pubkey} role="menuitemradio" aria-checked="false" type="button" class="side-switch" onClick={e => go(e, a)}><Avatar pubkey={a.pubkey} size={22} /><SwitchName account={a} /></button>)}

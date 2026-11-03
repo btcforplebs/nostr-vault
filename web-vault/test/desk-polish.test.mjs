@@ -44,8 +44,9 @@ test("a compact row's photo opens full size on a wide window, and the thread on 
 // down the left (BottomTabBar's vertical sidebar), and the Feed keeps the phone's floating bubbles, no bar behind them.
 test("the desktop sections are a slim left rail in the iPad's order, and the Feed's toolbar floats", () => {
   const side = src("desktop/Sidebar.jsx")
-  const order = side.match(/const SECTIONS = \[(.*)\]$/m)[1]
-  assert.deepEqual([...order.matchAll(/\["(\w+)"/g)].map(m => m[1]), ["feed", "search", "messages", "wot", "vault", "profile"])
+  // The rail's default favourites (rail/rail-favs.js), in Tod's order.
+  const order = src("desktop/rail/rail-favs.js").match(/export const SECTION_IDS = \[(.*)\]$/m)[1]
+  assert.deepEqual([...order.matchAll(/"(\w+)"/g)].map(m => m[1]), ["feed", "search", "messages", "wot", "vault", "profile"])
   assert.match(side, /<span class="side-gap" aria-hidden="true" \/>\s*\{row\("settings", "Settings", "g ,"\)\}/, "Settings at the foot")
   const css = src("styles/desktop.css")
   assert.match(css, /^\.desk-app \{[^}]*--rail-w: 68px;/m, "the iPad rail's width (BottomTabBar.railWidth)")

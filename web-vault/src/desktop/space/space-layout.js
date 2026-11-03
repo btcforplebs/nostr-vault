@@ -3,17 +3,20 @@
 //
 // The saved shape is the one a later sync puts in the user's own vault (one NIP-78 app-data event, kind 30078, `d`
 // SYNC_D, the JSON NIP-44 encrypted to self, the way the wallet backup is kept), so the iPad and the web can share it:
-//   { v: 1, at: <unix seconds of the last edit>, panels: [{ id, on, open }, ...] }
-// The array's order is the order on screen. `at` lets the newest edit win between devices. A panel id this app does
+//   { v: 1, at: <unix seconds of the last edit>, panels: [{ id, on, open }, ...], rail: [favourite, ...] }
+// The panels' order is the order on screen. `rail` is the left rail's favourites (rail/rail-favs.js), kept here so one
+// saved layout carries both. `at` lets the newest edit win between devices. A panel id this app does
 // not know (from a newer app) is kept where it is, so it survives a round trip, and is not drawn. A panel this app has
 // that the layout does not name (added after the layout was saved) goes in at its place in panels.js, shown.
+
+import { defaultRail, normalizeRail } from "../rail/rail-favs.js"
 
 export const LAYOUT_V = 1
 /** The NIP-78 `d` the synced layout will use. */
 export const SYNC_D = "nostr-vault-space-layout"
 
 /** The layout before any edit: every panel, in panels.js's order, shown and open. */
-export const defaultLayout = (ids, at = 0) => ({ v: LAYOUT_V, at, panels: ids.map(id => ({ id, on: true, open: true })) })
+export const defaultLayout = (ids, at = 0) => ({ v: LAYOUT_V, at, panels: ids.map(id => ({ id, on: true, open: true })), rail: defaultRail() })
 
 /**
  * Any saved value -> a clean layout against the panel ids this app has. Bad entries and repeats drop out; unknown ids
@@ -34,7 +37,7 @@ export function normalize(saved, ids) {
     const at = before ? panels.findIndex(p => p.id === before) + 1 : 0
     panels.splice(at, 0, { id, on: true, open: true })
   })
-  return { v: LAYOUT_V, at: Number.isFinite(saved.at) ? saved.at : 0, panels }
+  return { v: LAYOUT_V, at: Number.isFinite(saved.at) ? saved.at : 0, panels, rail: normalizeRail(saved.rail) }
 }
 
 const now = () => Math.floor(Date.now() / 1000)
@@ -44,6 +47,9 @@ const edit = (layout, panels, at) => ({ ...layout, at: at ?? now(), panels })
 export const shownPanels = (layout, ids) => layout.panels.filter(p => p.on && ids.includes(p.id))
 /** The known panels taken off, for "+ add", in panels.js's order. */
 export const hiddenPanels = (layout, ids) => ids.filter(id => layout.panels.some(p => p.id === id && !p.on))
+
+/** Reset Your space's panels (the rail stays as it is). */
+export const resetPanels = (layout, ids, at) => edit(layout, defaultLayout(ids).panels, at)
 
 /** Show or hide a panel. A panel shown again goes back where it was. */
 export const setOn = (layout, id, on, at) => edit(layout, layout.panels.map(p => (p.id === id ? { ...p, on } : p)), at)
@@ -76,7 +82,10 @@ export function moveBefore(layout, id, beforeId, at) {
   return panels.every((p, k) => p === layout.panels[k]) ? layout : edit(layout, panels, at)
 }
 
-/** Whether two layouts draw the same (the `at` aside). */
+/** Replace the rail's favourites. */
+export const setRail = (layout, rail, at) => (rail === layout.rail ? layout : { ...layout, at: at ?? now(), rail })
+
+/** Whether two layouts draw the same panels (the `at` and the rail aside). */
 export const sameLayout = (a, b) => JSON.stringify(a.panels) === JSON.stringify(b.panels)
 
 // Kept per account in this browser until the sync lands. The key ends in ":<pubkey>", so signing out wipes it with
