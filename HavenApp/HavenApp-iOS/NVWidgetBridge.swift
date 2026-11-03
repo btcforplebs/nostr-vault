@@ -278,6 +278,8 @@ enum NVDeepLinkRouter {
             }
         case .shareInbox:
             ShareInboxTrigger.open()
+        case .sharePortal:
+            SharePortalInbox.shared.claim()
         case .wallet:
             center.post(name: .havenOpenWallet, object: nil)
         }

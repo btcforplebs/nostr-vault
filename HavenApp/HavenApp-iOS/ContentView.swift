@@ -121,6 +121,8 @@ struct ContentView: View {
                               pendingMentionNoteId: $pendingMentionNoteId,
                               pendingProfilePubkey: $pendingProfilePubkey))
         .modifier(IPadCommandKeys(selectedTab: $selectedTab))
+        // Share Portal: review what the share sheet queued (Views/SharePortal).
+        .modifier(SharePortalPresenter())
         .sheet(isPresented: $showingDMInbox) {
             NavigationStack {
                 DMInboxView(openConversation: dmInboxConversation)
