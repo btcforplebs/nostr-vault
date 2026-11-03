@@ -57,12 +57,32 @@ export function remuteLine(r) {
   return parts.length ? `This mutes again: ${parts.join(", ")}.` : ""
 }
 
-/** The left-out lines under the confirm: what the user removed later, and what can't be told either way. */
-export function leftOutLines({ leftOut = 0, unsure = 0 }) {
+/** The left-out lines under the confirm: what the user removed later, and what can't be told either way.
+ *  `browserKept`: the vault is this browser's own (not a box), which keeps only the list copies it opened, so edits
+ *  other apps made in between may be missing and a drop between two of its copies can't be pinned on the user
+ *  (Tron, PR 1595). */
+export function leftOutLines({ leftOut = 0, unsure = 0 }, { browserKept = false } = {}) {
   const out = []
-  if (leftOut) out.push(`${num(leftOut)} you removed yourself later ${leftOut === 1 ? "stays" : "stay"} out.`)
-  if (unsure) out.push(`${num(unsure)} ${unsure === 1 ? "stays" : "stay"} out because the versions in between weren't all kept or couldn't be opened, so it can't be told whether you removed ${unsure === 1 ? "it" : "them"}. Tap Review to add ${unsure === 1 ? "it" : "them"}.`)
+  const them = n => n === 1 ? "it" : "them"
+  if (leftOut && browserKept) out.push(`${num(leftOut)} that may have been removed later ${leftOut === 1 ? "stays" : "stay"} out. This browser keeps only the copies of your list it opened, so it can't tell if you removed ${them(leftOut)}. Tap Review to add ${them(leftOut)}.`)
+  else if (leftOut) out.push(`${num(leftOut)} you removed yourself later ${leftOut === 1 ? "stays" : "stay"} out.`)
+  if (unsure) out.push(`${num(unsure)} ${unsure === 1 ? "stays" : "stay"} out because the versions in between weren't all kept or couldn't be opened, so it can't be told whether you removed ${them(unsure)}. Tap Review to add ${them(unsure)}.`)
   return out
+}
+
+/** A Review row's note. `date` formats a unix time. A drop between two copies this browser kept says "Can't tell"
+ *  rather than "You removed this" (see leftOutLines); still unticked either way. */
+export function rowNote(row, date, { browserKept = false } = {}) {
+  if (row.status === "lost") return `Lost ${date(row.at)}`
+  if (row.status === "removed") return browserKept ? `Can't tell if you removed this, gone ${date(row.at)}` : `You removed this ${date(row.at)}`
+  if (row.status === "unsure") return `Gone ${date(row.at)}, can't tell why`
+  return ""
+}
+
+/** Whether the confirm shows NIP44_NOTE: the list now is NIP-04 and the save carries private entries (a merge with
+ *  none writes no encrypted part, so there is nothing to say). */
+export function showsNip44Note(kind, current, rows, isNip04) {
+  return kind !== 3 && !!current && isNip04(current.ev.content ?? "") && rows.some(r => r.ticked && r.private)
 }
 
 /** Said when the list now is NIP-04: the merge saves it with NIP-44, as every app's merge does (Logen 2026-11-03). */

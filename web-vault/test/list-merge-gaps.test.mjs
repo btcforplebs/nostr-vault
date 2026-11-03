@@ -4,6 +4,7 @@
 //  5 10002 marker            6 unpicked in-between    7 re-read changes current   8 step drain 40→20→10→5
 //  9 the wipe flag on a drain step                    10 a removal just before a wipe goes with the wipe
 //  11 NIP-44 always, and the 64 KB cap                12 the mute line counts every type
+//  15 (web only) wording when this browser keeps the vault, and the NIP-44 note only with private entries
 // Throwaway keys; nothing is published.
 import test from "node:test"
 import assert from "node:assert/strict"
@@ -13,7 +14,8 @@ import * as nip04 from "nostr-tools/nip04"
 import { openVersion, buildMerge, mergeSummary, mergedTags, wasWipe, VAULT_KEEP } from "../src/net/list-version-merge.js"
 import { saveMerged } from "../src/net/list-merge-save.js"
 import { ListNotSaved } from "../src/net/list-edit.js"
-import { remuteLine, leftOutLines } from "../src/net/list-version-labels.js"
+import { remuteLine, leftOutLines, rowNote, showsNip44Note } from "../src/net/list-version-labels.js"
+import { isNip04 } from "../src/net/blocks.js"
 
 const SK = generateSecretKey(), ME = getPublicKey(SK)
 const KEY = nip44.v2.utils.getConversationKey(SK, ME)
@@ -206,4 +208,30 @@ test("14 gap bridged by a wipe: the step to a relay-only version that wiped H is
   const [v1, v2, v3] = await opened([follows(range(1, 20), 10), follows([1, 2], 20, ["relays"]), follows([1, 2], 30)])
   const rows = buildMerge({ current: v3, picked: [v1], all: [v3, v2, v1] })
   assert.deepEqual([rowOf(rows, 5).status, rowOf(rows, 5).ticked, rowOf(rows, 5).at], ["lost", true, 20])
+})
+
+test("15 web: a drop between two copies this browser kept says can't tell; the NIP-44 note needs private entries", async () => {
+  // The browser's vault keeps only the copies it opened, so edits other apps made in between may be missing (Tron,
+  // PR 1595). The judging is the same on every app (removed, unticked); only the words change.
+  const [a1, a2] = await opened([follows(range(1, 20), 10), follows(range(6, 20), 20)])
+  const rows = buildMerge({ current: a2, picked: [a1], all: [a2, a1] })
+  const r1 = rowOf(rows, 1), date = at => `t${at}`
+  assert.deepEqual([r1.status, r1.ticked], ["removed", false])
+  assert.equal(rowNote(r1, date, { browserKept: true }), "Can't tell if you removed this, gone t20")
+  assert.equal(rowNote(r1, date), "You removed this t20") // a box vault keeps every version published to it
+  const sum = mergeSummary(3, rows)
+  assert.equal(leftOutLines(sum, { browserKept: true }).join(" "),
+    "5 that may have been removed later stay out. This browser keeps only the copies of your list it opened, so it can't tell if you removed them. Tap Review to add them.")
+  assert.equal(leftOutLines(sum).join(" "), "5 you removed yourself later stay out.")
+  // NIP-44 note: a NIP-04 mute list now, merged with an older public-only version, saves no private part: no note.
+  const both = c => isNip04(c) ? nip04.decrypt(SK, ME, c) : open(c)
+  const [m1, m2] = await Promise.all([ev(10000, [["p", P(1)], ["p", P(2)]], 10), ev(10000, [["p", P(2)]], 20, await nip04.encrypt(SK, ME, "[]"))].map(e => openVersion(e, both)))
+  const pub = buildMerge({ current: m2, picked: [m1], all: [m2, m1] })
+  assert.equal(pub.some(r => r.private), false)
+  assert.equal(showsNip44Note(10000, m2, pub, isNip04), false)
+  // A ticked private entry in the save: the note shows. Unticked again: it doesn't.
+  const priv = pub.map(r => r.tag[1] === P(1) ? { ...r, private: true } : r)
+  assert.equal(showsNip44Note(10000, m2, priv, isNip04), true)
+  assert.equal(showsNip44Note(10000, m2, priv.map(r => ({ ...r, ticked: false })), isNip04), false)
+  assert.equal(showsNip44Note(3, m2, priv, isNip04), false)
 })

@@ -13,7 +13,7 @@ import { latestList, ListNotSaved } from "../net/list-edit.js"
 import { decrypterFor, showBlockList, isNip04 } from "../net/blocks.js"
 import { findVersions, listOverview } from "../net/list-versions.js"
 import { saveMerged } from "../net/list-merge-save.js"
-import { clientName, countLine, changeLine, changeTitles, mergeExplainer, saveLine, remuteLine, leftOutLines, NIP44_NOTE } from "../net/list-version-labels.js"
+import { clientName, countLine, changeLine, changeTitles, mergeExplainer, saveLine, remuteLine, leftOutLines, rowNote, showsNip44Note, NIP44_NOTE } from "../net/list-version-labels.js"
 import {
   MERGE_KINDS, mergeKind, openVersion, openForMerge, unread, pickProblem, deltaOf, wasWipe, buildMerge, mergedTags, mergeSummary,
 } from "../net/list-version-merge.js"
@@ -194,9 +194,9 @@ function SaveConfirm({ ctx, kind, name, current, rows, review, onReview, onCance
       <p class="small">{saveLine(kind, name, sum)}</p>
       <PeoplePeek title={titles.back} rows={backRows} />
       <PeoplePeek title={titles.gone} rows={goneRows} />
-      {leftOutLines(sum).map(line => <p key={line} class="muted small">{line}</p>)}
+      {leftOutLines(sum, { browserKept: !ctx.vault?.box }).map(line => <p key={line} class="muted small">{line}</p>)}
       {remuteLine(sum.remutes) && <p class="small">{remuteLine(sum.remutes)}</p>}
-      {sum.total > 0 && current && kind !== 3 && isNip04(current.ev.content ?? "") && <p class="muted small">{NIP44_NOTE}</p>}
+      {showsNip44Note(kind, current, rows, isNip04) && <p class="muted small">{NIP44_NOTE}</p>}
       {sum.removed > 0 && <label class="small"><input type="checkbox" checked={shrinkOk} onChange={e => setShrinkOk(e.currentTarget.checked)} /> {kind === 3 ? `Yes, unfollow ${sum.removed}.` : `Yes, take ${entries(sum.removed)} out of the list I have now.`}</label>}
       <div class="row">
         <button class="primary" disabled={busy || nothing || !sum.total || (sum.removed > 0 && !shrinkOk)} onClick={save} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save"}</button>
@@ -217,7 +217,7 @@ function MergeView({ ctx, kind, name, rows, setRows, onBack, children }) {
   const section = (label, list, id, note) => list.length > 0 && (
     <section class="settings-group">
       <div class="section-label">{label} ({list.length})</div>
-      {(showAll[id] ? list : list.slice(0, SHOW)).map(r => <EntryRow key={r.key} row={r} onTick={() => tick(r.key)} />)}
+      {(showAll[id] ? list : list.slice(0, SHOW)).map(r => <EntryRow key={r.key} row={r} browserKept={!ctx.vault?.box} onTick={() => tick(r.key)} />)}
       {list.length > SHOW && !showAll[id] && <div class="settings-note"><button class="small" onClick={() => setShowAll(s => ({ ...s, [id]: true }))}>Show all {list.length}</button></div>}
       <p class="settings-note muted small">{note}</p>
     </section>
@@ -226,16 +226,15 @@ function MergeView({ ctx, kind, name, rows, setRows, onBack, children }) {
     <>
       <div class="settings-note"><button class="small" onClick={onBack}>‹ {name} versions</button></div>
       {children}
-      {section(titles.back, back, "back", "Ones you removed yourself, or that can't be told, are left unticked; tick them to bring them back.")}
+      {section(titles.back, back, "back", "Ones that may have been removed on purpose are left unticked; tick them to bring them back.")}
       {section(titles.kept, now, "now", kind === 3 ? "Untick someone to unfollow them." : "Untick an entry to take it out.")}
     </>
   )
 }
 
-function EntryRow({ row, onTick }) {
+function EntryRow({ row, browserKept, onTick }) {
   const [t0, v] = row.tag
-  const label = row.status === "lost" ? `Lost ${short(row.at)}` : row.status === "removed" ? `You removed this ${short(row.at)}`
-    : row.status === "unsure" ? `Gone ${short(row.at)}, can't tell why` : ""
+  const label = rowNote(row, short, { browserKept })
   return (
     <label class="person-row">
       <input type="checkbox" checked={row.ticked} onChange={onTick} aria-label={`Keep ${v}`} />
