@@ -4,7 +4,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import {
   RADIUS, direction, layout, outerFaces, pictured, OUTER_FACES, OUTER_CANDIDATES, newCamera, moving, drag, flick, zoomBy, zoomNow, flyTo, facing, home, step, projector, unit, outline,
-  faceShown, faceRadius, dotLight, seatFade, seats, hit, IDENTITY, ZOOM_MIN, ZOOM_MAX, MAX_SPIN, FACE_FULL, FACE_GONE,
+  faceShown, faceRadius, dotLight, seatFade, seats, hit, IDENTITY, ZOOM_MIN, ZOOM_MAX, MAX_SPIN, FLICK_TURN, SPIN_DECAY, SPIN_BRAKE, FACE_FULL, FACE_GONE,
   layerFaceCandidates, LAYER_FACES, LAYER_CANDIDATES, RING_FACES, STAR, starAlpha,
 } from "../src/net/wot-globe.js"
 
@@ -69,7 +69,7 @@ test("near is bigger and in front; the follows' sphere fits just inside a phone'
   assert.equal(projector({ ...newCamera(), zoom: ZOOM_MAX }, W, H)([0, 0, RADIUS.further]), null)
 })
 
-test("a flick keeps spinning, slows and stops; its spin is capped; a slow let-go or reduced motion doesn't spin", () => {
+test("a flick keeps spinning, slows and stops; its spin is capped; reduced motion doesn't spin", () => {
   let c = flick(drag(newCamera(), 10, 0), 2000, 0)
   assert.ok(moving(c))
   const q0 = c.q
@@ -78,8 +78,37 @@ test("a flick keeps spinning, slows and stops; its spin is capped; a slow let-go
   c = settle(c)
   assert.ok(!moving(c), "it stops")
   assert.ok(Math.hypot(...flick(newCamera(), 1e6, 1e6).spin) <= MAX_SPIN + 1e-9)
-  assert.ok(!moving(flick(newCamera(), 200, 0)))
+  assert.ok(!moving(flick(newCamera(), 0, 0)), "held still, then let go: nothing to carry")
   assert.ok(!moving(flick(newCamera(), 2000, 0, true)))
+})
+
+// Seconds until a spin settles, stepping at 60 Hz.
+const glideTime = c => { let n = 0; for (; n < 2000 && moving(c); n++) c = step(c, 1 / 60); return n / 60 }
+
+test("let-go keeps the throw's exact speed, never stops dead, and slows smoothly to a stop (Ted 1c81ede0c)", () => {
+  // The release speed is the turn: no floor, so a gentle 200 pt/s let-go glides instead of stopping dead.
+  for (const [vx, vy] of [[200, 0], [0, -150], [1000, 300]]) {
+    assert.deepEqual(flick(newCamera(), vx, vy).spin, [vy * FLICK_TURN, vx * FLICK_TURN, 0])
+  }
+  // Speed only ever falls, frame to frame, until it lands on nothing.
+  let c = flick(newCamera(), 1500, 0), prev = Infinity
+  for (let i = 0; i < 2000 && moving(c); i++) {
+    const s = Math.hypot(...c.spin)
+    assert.ok(s < prev, `frame ${i}: ${s} after ${prev}`)
+    prev = s; c = step(c, 1 / 60)
+  }
+  assert.deepEqual(c.spin, [0, 0, 0])
+  // A gentle let-go settles in about half a second, a hard throw glides for about two, and both land at a set time.
+  const gentle = glideTime(flick(newCamera(), 100, 0)), hard = glideTime(flick(newCamera(), 1e6, 0))
+  assert.ok(gentle > 0 && gentle < 0.6, `gentle ${gentle}`)
+  assert.ok(hard > 1.5 && hard < 3, `hard ${hard}`)
+  // The turn over the glide is the closed form: (v + b/k)(1 - e^-kT)/k - (b/k)T with T the stop time.
+  const v = 1000 * FLICK_TURN, f = SPIN_BRAKE / SPIN_DECAY, T = Math.log((v + f) / f) / SPIN_DECAY
+  const want = (v + f) * (1 - Math.exp(-SPIN_DECAY * T)) / SPIN_DECAY - f * T
+  const got = settle(flick(newCamera(), 1000, 0)).q // about the upright axis: q = [cos(a/2), 0, sin(a/2), 0]
+  assert.ok(Math.abs(2 * Math.atan2(got[2], got[0]) - want) < 1e-9, `${2 * Math.atan2(got[2], got[0])} vs ${want}`)
+  // A touch mid-glide stops it under the finger.
+  assert.deepEqual(drag(step(flick(newCamera(), 1500, 0), 1 / 60), 0, 0).spin, [0, 0, 0])
 })
 
 test("the same flick turns the globe the same at 60 and 120 frames a second", () => {
