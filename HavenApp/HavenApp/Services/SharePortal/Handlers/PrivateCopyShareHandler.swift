@@ -187,10 +187,10 @@ enum PrivateCopyStore {
     }
 
     /// Empties the record (same slot, no key) and deletes the sealed blob.
-    static func delete(_ item: PrivateCopyItem, lockedTo lock: PostingAccount.Lock) async throws {
+    /// Needs the opened record: it names the blob, and a key wiped without
+    /// its blob would leave an encrypted file nothing can find again.
+    static func delete(_ item: PrivateCopyItem, record: PrivateCopyRecord.Record, lockedTo lock: PostingAccount.Lock) async throws {
         try await keep(content: "", tags: PrivateCopyRecord.clearedTags(id: item.id), lock: lock)
-        if let x = item.record?.x {
-            _ = await BlossomService(configService: ConfigService.shared, nostrService: NostrService.shared).deleteFromLocal(sha256: x)
-        }
+        _ = await BlossomService(configService: ConfigService.shared, nostrService: NostrService.shared).deleteFromLocal(sha256: record.x)
     }
 }

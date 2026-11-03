@@ -63,9 +63,7 @@ struct PrivateCopiesView: View {
         .buttonStyle(.plain)
         .disabled(busy != nil)
         .swipeActions {
-            if item.record != nil {
-                Button("Delete", role: .destructive) { confirmDelete = item }
-            }
+            Button("Delete", role: .destructive) { confirmDelete = item }
         }
     }
 
@@ -117,10 +115,19 @@ struct PrivateCopiesView: View {
         let lock = ModePostPublisher.lockAccount(configService: config)
         guard !lock.hex.isEmpty else { return }
         busy = item.id
+        error = nil
+        let me = hex
         Task {
             defer { busy = nil }
+            // Unlock first (asks a remote signer): the record names the blob.
+            var record = item.record
+            if record == nil { record = await PrivateCopyStore.readRecord(item, me: me) }
+            guard let record, me == hex else {
+                error = "Couldn't unlock it, so nothing was deleted."
+                return
+            }
             do {
-                try await PrivateCopyStore.delete(item, lockedTo: lock)
+                try await PrivateCopyStore.delete(item, record: record, lockedTo: lock)
                 items?.removeAll { $0.id == item.id }
             } catch {
                 self.error = error.localizedDescription

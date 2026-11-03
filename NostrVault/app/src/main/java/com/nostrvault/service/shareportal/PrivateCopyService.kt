@@ -111,18 +111,24 @@ class PrivateCopyService @Inject constructor(
         val blob = localBlob(record.x)?.takeIf { it.length() <= PrivateCopyRecord.MAX_BYTES + 16L }?.readBytes()
             ?: return@withContext null
         val plain = runCatching { PrivateCopyRecord.open(blob, record) }.getOrNull() ?: return@withContext null
-        val dir = File(context.cacheDir, "exports/private-copies").apply { deleteRecursively(); mkdirs() }
+        val dir = openedDir(context).apply { deleteRecursively(); mkdirs() }
         File(dir, record.name).apply { writeBytes(plain) }
     }
 
+    /** Takes every decrypted file [open] wrote back off the disk. */
+    fun clearOpened() { clearOpened(context) }
+
     /** Takes [event]'s copy off: the record slot emptied on /private, the sealed blob deleted. Null on success. */
     suspend fun delete(event: NostrEvent, record: PrivateCopyRecord.Record?, lock: PostingAccount.Lock): String? {
+        // Without the record the blob's hash is unknown, so the blob could
+        // never be found again: refuse rather than wipe only the key.
+        if (record == null) return "Unlock it first, so its encrypted file can be removed too."
         val id = PrivateCopyRecord.id(event.kind, event.tags) ?: return "That isn't a private copy."
         val url = privateUrl() ?: return NO_VAULT
         if (lock.hex.isEmpty() || nostrService.activeHexPubkey != lock.hex || event.pubkey != lock.hex) return ACCOUNT_CHANGED
         val cleared = sign("", PrivateCopyRecord.clearedTags(id), lock) ?: return "Couldn't sign with this account."
         if (!VaultSocket.publish(url, cleared, { signAuth(url, it) })) return "Your vault didn't answer. Nothing was deleted."
-        record?.let { withContext(Dispatchers.IO) { blossomService.deleteFromLocal(it.x) } }
+        withContext(Dispatchers.IO) { blossomService.deleteFromLocal(record.x) }
         return null
     }
 
@@ -206,6 +212,12 @@ class PrivateCopyService @Inject constructor(
     }
 
     companion object {
+        /** Where opened (decrypted) copies are written for the viewer. */
+        fun openedDir(context: Context) = File(context.cacheDir, "exports/private-copies")
+
+        /** Called when the list goes away and at app start: no decrypted file outlives its viewing. */
+        fun clearOpened(context: Context) { openedDir(context).deleteRecursively() }
+
         const val ACCOUNT_CHANGED = "The account changed. Nothing was saved; try again."
         const val NO_VAULT = "Your vault isn't running on this device, so there's nowhere private to keep it."
         const val TOO_BIG = "Too big for a private copy (100 MB at most)."

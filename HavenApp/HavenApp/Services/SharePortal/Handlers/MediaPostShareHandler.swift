@@ -45,6 +45,8 @@ extension MediaPostShareHandler {
         var media: [MediaPostShareTags.Media] = []
         for (index, entry) in files.enumerated() {
             step(.uploading(done: index, of: files.count))
+            // Uploads are signed by the active account: stop if it moved off the lock.
+            guard NostrService.shared.activeHexPubkey == lock.hex else { throw ModePostPublisher.PublishError.accountChanged }
             media.append(try await upload(entry.url, mime: entry.file.mime))
         }
         step(.signing)
@@ -71,6 +73,22 @@ extension MediaPostShareHandler {
             converted = jpeg
             fileURL = jpeg
             type = "image/jpeg"
+        } else {
+            // MediaPrivacy picks images and videos by file extension, and a
+            // shared name like "Trip to St. Louis" has the wrong one: the
+            // location would go up untouched (Tron, #1619). Upload a copy
+            // named by its type; a type with no known extension is refused.
+            guard let ext = UTType(mimeType: type)?.preferredFilenameExtension,
+                  UTType(filenameExtension: ext).map({ $0.conforms(to: .image) || $0.conforms(to: .movie) || $0.conforms(to: .video) }) == true
+            else {
+                throw ModePostPublisher.PublishError.upload("Couldn't tell what kind of file this is, so it wasn't posted.")
+            }
+            let named = FileManager.default.temporaryDirectory.appendingPathComponent("share-\(UUID().uuidString).\(ext)")
+            do { try FileManager.default.copyItem(at: url, to: named) } catch {
+                throw ModePostPublisher.PublishError.upload("Couldn't read the file to upload.")
+            }
+            converted = named
+            fileURL = named
         }
         let blob = try await ModePostPublisher.upload(fileURL: fileURL, mimeType: type, configService: ConfigService.shared,
                                                       nostrService: NostrService.shared)

@@ -41,6 +41,8 @@ internal fun PrivateCopiesScreen(onBack: () -> Unit, viewModel: PrivateCopiesVie
     val context = LocalContext.current
     var confirm by remember { mutableStateOf<PrivateCopiesViewModel.Row?>(null) }
     LaunchedEffect(Unit) { viewModel.load() }
+    // A decrypted copy lives only while this list is up (iOS: until Quick Look closes).
+    DisposableEffect(Unit) { onDispose { viewModel.clearOpened() } }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("Back") }
@@ -167,8 +169,17 @@ class PrivateCopiesViewModel @Inject constructor(
         else show(file)
     }
 
+    fun clearOpened() { service.clearOpened() }
+
     fun delete(row: Row) = running(row) {
-        val problem = service.delete(row.event, row.record, nostrService.lockPostingAccount())
+        // The record names the blob: unlock it first (asks the signer), or nothing is deleted.
+        val record = row.record ?: service.read(row.event, silentOnly = false)
+        if (record == null) {
+            replace(row.copy(failed = true))
+            _state.value = _state.value.copy(message = "Couldn't unlock it, so nothing was deleted. Unlock it, then delete.")
+            return@running
+        }
+        val problem = service.delete(row.event, record, nostrService.lockPostingAccount())
         if (problem != null) _state.value = _state.value.copy(message = problem)
         else _state.value = _state.value.copy(rows = _state.value.rows.filterNot { it.event.id == row.event.id })
     }

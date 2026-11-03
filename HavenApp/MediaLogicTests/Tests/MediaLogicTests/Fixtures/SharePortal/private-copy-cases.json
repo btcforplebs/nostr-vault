@@ -187,5 +187,17 @@
     "true"
    ]
   ]
- }
+ },
+ "open_tag_fails": [
+  {
+   "note": "wrong nonce",
+   "record": "{\"alg\": \"aes-256-gcm\", \"key\": \"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\", \"mime\": \"application/pdf\", \"name\": \"page.pdf\", \"nonce\": \"a0a1a2a3a4a5a6a7a8a9aaac\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"saved_at\": 1730000000, \"size\": 18, \"source\": \"https://example.com/a\", \"title\": \"A page\", \"v\": 1, \"x\": \"f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08\"}",
+   "blob_hex": "8e7d10412aeb72cd0b13e6a7625aa3b100d5afec6c155834dc2654902c3f6f54e454"
+  },
+  {
+   "note": "wrong key",
+   "record": "{\"alg\": \"aes-256-gcm\", \"key\": \"010102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\", \"mime\": \"application/pdf\", \"name\": \"page.pdf\", \"nonce\": \"a0a1a2a3a4a5a6a7a8a9aaab\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"saved_at\": 1730000000, \"size\": 18, \"source\": \"https://example.com/a\", \"title\": \"A page\", \"v\": 1, \"x\": \"f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08\"}",
+   "blob_hex": "8e7d10412aeb72cd0b13e6a7625aa3b100d5afec6c155834dc2654902c3f6f54e454"
+  }
+ ]
 }

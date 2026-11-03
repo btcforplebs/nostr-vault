@@ -162,6 +162,22 @@ class SharePortalMediaFixtureTest {
         }
     }
 
+    /** The right blob under a wrong key or nonce: the GCM tag must refuse it, not a hash check. */
+    @Test
+    fun `open refuses a wrong key or nonce`() {
+        val cases = copy["open_tag_fails"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(2, cases.size)
+        for (c in cases) {
+            val record = assertNotNullAnd(PrivateCopyRecord.decode(c.s("record")!!))
+            try {
+                PrivateCopyRecord.open(hex(c.s("blob_hex")!!), record)
+                fail("${c.s("note")}: opened")
+            } catch (e: PrivateCopyRecord.OpenException) {
+                assertEquals(c.s("note"), "doesn't open", e.message)
+            }
+        }
+    }
+
     @Test
     fun `event ids and tags`() {
         for (c in copy["events"]!!.jsonArray.map { it.jsonObject }) {

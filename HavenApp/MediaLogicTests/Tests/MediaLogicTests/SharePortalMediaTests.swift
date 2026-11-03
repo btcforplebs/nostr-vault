@@ -130,6 +130,20 @@ final class SharePortalMediaTests: XCTestCase {
         }
     }
 
+    /// The right blob (hash matches) under a wrong key or nonce: the GCM
+    /// tag must refuse it.
+    func testOpenRefusesWrongKeyOrNonce() throws {
+        let cases = try XCTUnwrap(fixture("private-copy-cases")["open_tag_fails"] as? [[String: Any]])
+        XCTAssertEqual(cases.count, 2)
+        for c in cases {
+            let note = c["note"] as? String ?? "?"
+            let record = try XCTUnwrap(PrivateCopyRecord.decode(c["record"] as? String ?? ""), note)
+            XCTAssertThrowsError(try PrivateCopyRecord.open(try hex(c["blob_hex"] as? String ?? ""), record: record), note) { error in
+                XCTAssertFalse(error is PrivateCopyRecord.OpenError, "\(note): must fail in GCM, not on a hash check")
+            }
+        }
+    }
+
     func testEventFixtures_privateCopy() throws {
         let f = try fixture("private-copy-cases")
         for c in try XCTUnwrap(f["events"] as? [[String: Any]]) {
