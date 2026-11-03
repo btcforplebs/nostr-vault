@@ -258,7 +258,9 @@ enum ListVersionMerge {
     /// `all` is every version found; `vault` the ids of the ones the vault
     /// keeps, newest first (nil: all of them). For an entry not in the list
     /// now, with H the newest version holding it and N the one after:
-    ///  - no N, a relay list, or H read and under `shortList`: back, ticked;
+    ///  - no N: back, ticked;
+    ///  - a relay list, or H read and under `shortList`: removed but ticked,
+    ///    `at` = N's date, so Review still says when it went (Tron, 11-03);
     ///  - H or a newer version with its private part unread: can't tell
     ///    (it may hold the entry privately), left out;
     ///  - H or N not among the vault's newest `vaultKeep`: the vault may
@@ -306,7 +308,7 @@ enum ListVersionMerge {
             let held = timeline[h], next = timeline[h - 1]
             rows[i].at = next.version.createdAt
             if relayKinds.contains(kind) || (held.entries.count < shortList && !held.unread) {
-                rows[i].status = .back
+                rows[i].status = .removed
             } else if newerUnread || held.unread {
                 rows[i].status = .unsure
                 rows[i].ticked = false
@@ -324,7 +326,6 @@ enum ListVersionMerge {
                 rows[i].status = .removed
                 rows[i].ticked = false
             }
-            if rows[i].status == .back { rows[i].at = 0 }
         }
         return rows
     }

@@ -207,7 +207,9 @@ private struct ListMergeReview: View {
         let titles = ListVersionWording.titles(kind)
         Form {
             section(titles.back, rows.indices.filter { rows[$0].status != .current },
-                    footer: "Ones you removed yourself, and ones we can't tell about, are left unticked; tick them to bring them back.")
+                    footer: ListVersionMerge.relayKinds.contains(kind)
+                        ? "Everything an older relay list held comes back ticked; untick what you don't want back."
+                        : "In a list of \(ListVersionMerge.shortList) or more, ones you removed yourself, and ones we can't tell about, are left unticked; tick them to bring them back.")
             section(titles.stays, rows.indices.filter { rows[$0].status == .current },
                     footer: kind == 3 ? "Untick someone to unfollow them." : "Untick an entry to take it out.")
         }
