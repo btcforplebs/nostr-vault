@@ -217,14 +217,16 @@ struct DMInboxView: View {
 
     @ViewBuilder
     private var dmContentList: some View {
-        if isSearching {
+        // iPad two-pane searches inside its left column (twoPaneView), so a
+        // picked hit opens in the right pane.
+        if isSearching && !usesTwoPane {
             DMSearchResultsList(
                 hits: DMSearchHits.find(searchText, inbox: dmService.visibleConversations,
                                         requests: dmService.requestConversations,
                                         profiles: nostrService.profiles),
                 query: searchText,
                 selection: usesTwoPane ? $selectedConversation : nil)
-        } else if dmService.visibleConversations.isEmpty && dmService.requestConversations.isEmpty {
+        } else if dmService.visibleConversations.isEmpty && !(usesTwoPane && (showingRequestsInPane || isSearching)) {
             GeometryReader { geometry in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 20) {
@@ -257,6 +259,21 @@ struct DMInboxView: View {
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
                                 .lineSpacing(2)
+                        }
+
+                        // Requests left the list for the tray: an empty inbox
+                        // must still say when some are waiting there.
+                        let waiting = dmService.requestConversations.count
+                        if waiting > 0 {
+                            Button {
+                                if usesTwoPane { showingRequestsInPane = true } else { showingRequests = true }
+                            } label: {
+                                Label(waiting == 1 ? "1 request is waiting" : "\(waiting) requests are waiting",
+                                      systemImage: "tray")
+                                    .font(.appSystem(size: 15, weight: .semibold))
+                                    .foregroundColor(.havenPurple)
+                            }
+                            .buttonStyle(.plain)
                         }
 
                         Spacer()
@@ -300,22 +317,34 @@ struct DMRequestsView: View {
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
     @StateObject private var dmService = DMService.shared
+    /// Search within Requests only (web parity, #1600).
+    @State private var searchText = ""
+
+    /// Every request, or the ones matching the search with their matched words.
+    private var shown: [DMSearchHit] {
+        if DMSearch.normalizedQuery(searchText).isEmpty {
+            return dmService.requestConversations.map { DMSearchHit(conversation: $0, isRequest: true, excerpt: nil) }
+        }
+        return DMSearchHits.find(searchText, inbox: [], requests: dmService.requestConversations,
+                                 profiles: nostrService.profiles)
+    }
 
     var body: some View {
+        let shown = shown
         List {
             Section {
-                if dmService.requestConversations.isEmpty {
-                    Text("No requests right now.")
+                if shown.isEmpty {
+                    Text(dmService.requestConversations.isEmpty ? "No requests right now." : "No requests match “\(searchText)”.")
                         .font(.appSystem(size: 15))
                         .foregroundColor(.secondary)
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                 }
-                ForEach(dmService.requestConversations) { conversation in
-                    NavigationLink(destination: DMThreadView(counterpartyPubkey: conversation.id)
+                ForEach(shown) { hit in
+                    NavigationLink(destination: DMThreadView(counterpartyPubkey: hit.id)
                         .environmentObject(nostrService)
                         .environmentObject(configService)) {
-                        ConversationRow(conversation: conversation, nostrService: nostrService)
+                        ConversationRow(conversation: hit.conversation, nostrService: nostrService, preview: hit.excerpt)
                     }
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     .listRowBackground(Color.platformSecondaryGroupedBackground)
@@ -331,6 +360,7 @@ struct DMRequestsView: View {
         .scrollContentBackground(.hidden)
         .background(Color.platformWindowBackground.ignoresSafeArea())
         .navigationTitle("Requests")
+        .searchable(text: $searchText, prompt: "Search requests")
     }
 }
 
@@ -347,35 +377,46 @@ extension DMInboxView {
     /// so picking one on their behalf would clear an unread they haven't seen.
     var twoPaneView: some View {
         HStack(spacing: 0) {
-            // The tray swaps this column between the inbox and Requests.
-            List(selection: $selectedConversation) {
-                Section {
-                    ForEach(showingRequestsInPane ? dmService.requestConversations : dmService.visibleConversations) { conversation in
-                        ConversationRow(conversation: conversation, nostrService: nostrService)
-                            .tag(conversation.id)
-                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                            .listRowSeparator(.hidden)
-                    }
-                } header: {
-                    if showingRequestsInPane {
-                        Text("Requests").font(.appSystem(size: 13, weight: .semibold))
-                    }
-                } footer: {
-                    if showingRequestsInPane {
-                        Text(dmService.requestConversations.isEmpty
-                             ? "No requests right now."
-                             : "These people are outside your Web of Trust, so their messages never notify you. Reply to move a conversation to your inbox.")
-                            .font(.appSystem(size: 13))
-                            .foregroundColor(.secondary)
+            // The tray swaps this column between the inbox and Requests;
+            // a search fills it with hits from both.
+            if isSearching {
+                DMSearchResultsList(
+                    hits: DMSearchHits.find(searchText, inbox: dmService.visibleConversations,
+                                            requests: dmService.requestConversations,
+                                            profiles: nostrService.profiles),
+                    query: searchText,
+                    selection: $selectedConversation)
+                .frame(width: DMInboxMetrics.listWidth)
+            } else {
+                List(selection: $selectedConversation) {
+                    Section {
+                        ForEach(showingRequestsInPane ? dmService.requestConversations : dmService.visibleConversations) { conversation in
+                            ConversationRow(conversation: conversation, nostrService: nostrService)
+                                .tag(conversation.id)
+                                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                                .listRowSeparator(.hidden)
+                        }
+                    } header: {
+                        if showingRequestsInPane {
+                            Text("Requests").font(.appSystem(size: 13, weight: .semibold))
+                        }
+                    } footer: {
+                        if showingRequestsInPane {
+                            Text(dmService.requestConversations.isEmpty
+                                 ? "No requests right now."
+                                 : "These people are outside your Web of Trust, so their messages never notify you. Reply to move a conversation to your inbox.")
+                                .font(.appSystem(size: 13))
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .refreshable {
+                    dmService.refresh()
+                }
+                .frame(width: DMInboxMetrics.listWidth)
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .refreshable {
-                dmService.refresh()
-            }
-            .frame(width: DMInboxMetrics.listWidth)
 
             Divider()
 
