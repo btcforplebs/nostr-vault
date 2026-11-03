@@ -11,6 +11,8 @@ import { keepSnapshot, snapshotStore } from "./follow-backup.js"
 import { mergeKind, hasPrivate } from "./list-version-merge.js"
 
 const now = () => Math.floor(Date.now() / 1000)
+/** The most NIP-44 v2 encrypts in one message. Merge always writes NIP-44, also over a NIP-04 list (Logen 2026-11-03). */
+export const NIP44_MAX = 65535
 /** Only the NIP-01 fields: a version found by list-versions.js carries `from`, and Haven refuses an envelope with
  *  fields it doesn't know (it never answers that EVENT). */
 const nip01 = ({ id, pubkey, created_at, kind, tags, content, sig }) => ({ id, pubkey, created_at, kind, tags, content, sig })
@@ -61,6 +63,9 @@ export async function saveMerged(ctx, kind, { base, baseOpened = false, tags, pr
   if (kind === 3) content = base?.content ?? ""
   else if (privateTags.length) {
     if (!ctx.signer.crypto?.encrypt) throw new Error("Not saved: this sign-in can't encrypt your private entries.")
+    // NIP-44 seals at most 65,535 bytes; say so rather than pass on the signer's bare error.
+    if (new TextEncoder().encode(JSON.stringify(privateTags)).length > NIP44_MAX)
+      throw new Error("Not saved: the private entries are too many for one encrypted list (NIP-44 holds 64 KB). Untick some in Review. Nothing was changed.")
     content = await ctx.signer.crypto.encrypt(me, JSON.stringify(privateTags))
   }
   const created_at = Math.max(now(), (base?.created_at ?? 0) + 1)
