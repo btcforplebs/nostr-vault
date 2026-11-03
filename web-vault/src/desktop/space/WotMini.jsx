@@ -16,7 +16,7 @@ import { newInWeb, readKept, writeKept, mapped, loadingText, vouchText, globePoi
 import { Icon } from "../Sidebar.jsx"
 import "../../styles/wot-mini.css"
 
-export function WotMini({ ctx }) {
+export function WotMini({ ctx, open = true, tools = null }) {
   const me = ctx.session.pubkey
   const follows = useMemo(() => ctx.account.follows.filter(pk => pk !== me), [ctx.account.follows, me])
   const key = `${me}:${follows.length}:${follows[0] ?? ""}:${follows.at(-1) ?? ""}`
@@ -67,10 +67,12 @@ export function WotMini({ ctx }) {
     : !ready ? `${loadingText(have, follows.length)}…`
     : null
   return (
-    <section class="sp-panel wot-mini" aria-label="Web of Trust">
+    <section class={open ? "sp-panel wot-mini" : "sp-panel wot-mini closed"} aria-label="Web of Trust">
       <header class="sp-head">
         <span class="sp-icon"><Icon d={WOT_GLOBE} size={15} /></span>
         <h3>Web of Trust</h3>
+        {!open && fresh.length > 0 && <span class="sp-count" role="img" aria-label={`${fresh.length} new in your web`}>{fresh.length}</span>}
+        {tools}
       </header>
       <div class="wm-top">
         <a class="wm-globe-link" href="#/wot" title="Open your web of trust"><MiniGlobe points={points} /></a>

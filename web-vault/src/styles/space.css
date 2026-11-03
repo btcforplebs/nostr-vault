@@ -18,8 +18,8 @@
 .sp-icon { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: var(--accent-pale); color: var(--accent-light); }
 .sp-live { display: inline-flex; align-items: center; gap: 5px; font: 600 10px var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--accent-light); }
 .sp-pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgb(230 115 38 / .25); }
-.sp-new { min-height: 24px; padding: 0 10px; border: 0; border-radius: 999px; background: var(--accent-grad); color: #1a0d03; font: 700 12px var(--font); }
-.sp-new:hover { filter: brightness(1.08); }
+.sp-count { min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 999px; background: var(--accent);
+  color: #1a0d03; font: 700 11px/20px var(--font); text-align: center; }
 
 .sp-faces { display: flex; align-items: center; flex: none; margin: 0 12px; padding: 2px 0 10px; border-bottom: 1px solid var(--hair); }
 .sp-faces .avatar { box-shadow: 0 0 0 2px var(--s1); }
@@ -28,7 +28,9 @@
 .sp-faces-text { margin-left: auto; font: var(--t-foot); color: var(--text-2); }
 
 /* Rows: one height each, whatever loads into them later (a name, a face), so nothing moves under the pointer. */
-.sp-rows { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; margin: 0; padding: 4px 0; }
+/* position: the rows' offsetTop is from the list, so LiveVault.jsx can hold the row you are on while lines come in on top
+   (it does that itself, so the browser's own scroll anchoring is off). */
+.sp-rows { position: relative; overflow-anchor: none; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; margin: 0; padding: 4px 0; }
 .sp-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; align-items: center; height: 58px; padding: 0 12px;
   color: var(--text); text-decoration: none; }
 .sp-row:hover { background: var(--s2); }
@@ -52,3 +54,39 @@
 .sp-mini:hover { background: var(--s2); }
 .sp-mini-badge { position: absolute; top: -5px; right: -6px; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 999px;
   background: var(--accent); color: #1a0d03; font: 700 10px/18px var(--font); text-align: center; box-shadow: 0 0 0 2px #050403; }
+
+/* Collapsed: the header alone (with its count). Editing collapses every panel, so they are easy to drag. */
+.sp-panel.closed > :not(.sp-head) { display: none; }
+.sp-panel.live-vault.closed { min-height: 0; }
+.sp-fold { width: 28px; min-width: 28px; height: 28px; min-height: 28px; margin-right: -4px; }
+.sp-fold svg { transition: transform .15s; }
+.sp-fold.closed svg { transform: rotate(-90deg); }
+
+/* Editing (SpaceEdit.jsx). */
+.sp-done { min-height: 30px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--accent-grad); color: #1a0d03; font: 700 13px var(--font); }
+.sp-done:hover { filter: brightness(1.08); }
+.sp-edit-hint { margin: 0 2px; color: var(--text-2); font: var(--t-foot); }
+.sp-tools { display: inline-flex; align-items: center; gap: 2px; margin-right: -4px; }
+.sp-tools .sp-btn { width: 28px; min-width: 28px; height: 28px; min-height: 28px; }
+.sp-tools .sp-btn:disabled { opacity: .3; background: none; }
+.sp-tools .sp-off:hover { color: #ff6b5e; }
+.sp-grip { display: inline-grid; place-items: center; width: 24px; height: 28px; color: var(--text-3); cursor: grab; }
+.space-dock.editing .sp-slot { cursor: grab; }
+.space-dock.editing .sp-panel { border-style: dashed; }
+/* A slot is a box only while editing (to drag and to draw the drop line); otherwise it is not there, so the panels
+   share the column's height as they always have. */
+.sp-slot { position: relative; display: flex; flex-direction: column; flex: none; }
+.space-dock:not(.editing) .sp-slot { display: contents; }
+.sp-slot.drop-before::before, .sp-slot.drop-after::after { content: ""; position: absolute; left: 8px; right: 8px; height: 3px;
+  border-radius: 3px; background: var(--accent); }
+.sp-slot.drop-before::before { top: -8px; }
+.sp-slot.drop-after::after { bottom: -8px; }
+.sp-add { display: grid; gap: 6px; }
+.sp-add h4 { margin: 4px 2px 0; font: 600 12px var(--font); letter-spacing: .04em; text-transform: uppercase; color: var(--text-3); }
+.sp-add-row { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border: 1px dashed var(--hair); border-radius: 12px;
+  background: none; color: var(--text); font: 600 14px var(--font); text-align: left; }
+.sp-add-row:hover { border-color: var(--accent-line); background: var(--s1); }
+.sp-add-row svg { color: var(--accent-light); }
+.sp-link { padding: 0; border: 0; background: none; color: var(--accent-light); font: inherit; text-decoration: underline; cursor: pointer; }
+.sp-reset { justify-self: start; margin: 4px 2px; font: 600 12px var(--font); }
+.sp-nothing { margin: 8px 4px; color: var(--text-2); font: var(--t-foot); }
