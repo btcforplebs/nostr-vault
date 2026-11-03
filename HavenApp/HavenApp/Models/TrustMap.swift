@@ -554,8 +554,19 @@ extension TrustMap {
 
 struct GlobeCamera {
     var orientation = simd_quatd(angle: 0, axis: SIMD3(0, 1, 0))
-    /// Angular velocity after a flick, radians a second.
+    /// Angular velocity a flick leaves on top of the drift, radians a
+    /// second. It dies away into the drift, so a throw glides straight into
+    /// the slow turn with no stop between.
     var spin = SIMD3<Double>(repeating: 0)
+    /// The idle drift's own turn about the upright axis, radians a second,
+    /// signed. It eases toward `driftSpeed` the way the last throw went, and
+    /// back to nothing when the globe is set to hold still or goes to sleep.
+    var drift = 0.0
+    /// Which way the drift turns: the way the last sideways throw went.
+    var driftWay = 1.0
+    /// Frame-clock time of the last let-go. Letting go starts the drift at
+    /// once; any other touch (a pinch, a fly-to) waits `driftAfter`.
+    var lastRelease: TimeInterval = -.infinity
     var zoom = 1.0
     var zoomTarget = 1.0
     /// Where a fly-to is turning; nil when not flying.
@@ -596,16 +607,25 @@ struct GlobeCamera {
     /// globe that `keepsDrifting`.
     static let sleepAfter: TimeInterval = 20
     static let driftSpeed = 0.05
-    /// How fast a flick dies away, per second.
-    static let spinDecay = 2.4
+    /// How a flick dies away into the drift: a drag that grows with speed
+    /// (per second) plus a steady brake (radians a second, each second). The
+    /// brake is what makes a gentle let-go settle in about half a second
+    /// while a hard throw still glides for two, and lands at an exact moment
+    /// instead of creeping in forever.
+    static let spinDecay = 1.0
+    static let spinBrake = 0.4
+    /// How fast the drift eases in or out, per second, when nothing carried
+    /// it there (the first drift after a fly-to, or turning spin off).
+    static let driftEase = 1.2
     /// Radians the globe turns per point a finger moves.
     static let dragTurn = 0.005
     /// Spin per point-a-second of release speed.
     static let flickTurn = 0.003
-    /// Slower than this at release is letting go, not a flick: no spin.
-    static let flickFloor = 350.0
+    /// Sideways faster than this at release sets which way the drift turns;
+    /// slower (a straight up or down throw) keeps the way it had.
+    static let wayFloor = 20.0
     /// A flick never spins faster than this, radians a second.
-    static let maxSpin = 2.5
+    static let maxSpin = 4.0
     /// A frame slower than this counts as this long, so a hitch can't fling it.
     static let maxStep: TimeInterval = 1.0 / 20
 
@@ -624,27 +644,35 @@ struct GlobeCamera {
         orientation = simd_normalize(turn * orientation)
         flyTarget = nil
         spin = .zero
+        drift = 0
         touch(at: now)
     }
 
-    /// Let go at `vx`, `vy` points a second: keep turning that way.
+    /// Let go at `vx`, `vy` points a second: keep turning at exactly that
+    /// speed, then slow smoothly into the drift the way it was thrown. No
+    /// floor: a gentle let-go eases into the drift, it never stops dead.
     mutating func flick(vx: Double, vy: Double, at now: TimeInterval, reduceMotion: Bool) {
-        let speed = (vx * vx + vy * vy).squareRoot()
-        guard !reduceMotion, speed > Self.flickFloor else {
+        touch(at: now)
+        guard !reduceMotion else {
             spin = .zero
-            touch(at: now)
+            drift = 0
             return
         }
+        lastRelease = now
+        if abs(vx) > Self.wayFloor { driftWay = vx > 0 ? 1 : -1 }
         var v = SIMD3(vy, vx, 0) * Self.flickTurn
         let rate = simd_length(v)
         if rate > Self.maxSpin { v *= Self.maxSpin / rate }
-        spin = v
-        touch(at: now)
+        // The release speed is the whole turn: the drift it ends in, plus a
+        // spin that dies away. With spinning off it just dies away.
+        drift = drifts ? driftWay * Self.driftSpeed : 0
+        spin = v - SIMD3(0, drift, 0)
     }
 
     mutating func fly(to target: simd_quatd, at now: TimeInterval) {
         flyTarget = target
         spin = .zero
+        drift = 0
         zoomTarget = 1
         touch(at: now)
     }
@@ -662,20 +690,35 @@ struct GlobeCamera {
                 flyTarget = nil
             }
         } else if !dragging && !reduceMotion {
+            // The exact turn while each part eases over this step, not
+            // speed × dt: summed per frame, that drifts with the frame rate.
+            var turn = SIMD3<Double>(repeating: 0)
             let speed = simd_length(spin)
-            if speed > 0.0005 {
-                // The exact turn while the spin decays over this step, not
-                // speed × dt: summed per frame, that drifts with the frame rate.
-                let decay = exp(-dt * Self.spinDecay)
-                let angle = speed * (1 - decay) / Self.spinDecay
-                orientation = simd_normalize(simd_quatd(angle: angle, axis: spin / speed) * orientation)
-                spin *= decay
-            } else {
-                spin = .zero
+            if speed > 0 {
+                // Speed falls as dv/dt = -k·v - b: exact over the step, and
+                // it reaches nothing at a set time rather than creeping.
+                let k = Self.spinDecay, floor = Self.spinBrake / k
+                let stopsIn = log((speed + floor) / floor) / k
+                let t = min(dt, stopsIn)
+                let decay = exp(-k * t)
+                let angle = (speed + floor) * (1 - decay) / k - floor * t
+                turn += spin / speed * angle
+                if t >= stopsIn - 1e-9 {
+                    spin = .zero
+                } else {
+                    spin *= ((speed + floor) * decay - floor) / speed
+                }
             }
-            let idle = now - lastTouch
-            if drifts && idle > Self.driftAfter && (keepsDrifting || idle < Self.sleepAfter) {
-                orientation = simd_normalize(simd_quatd(angle: Self.driftSpeed * dt, axis: SIMD3(0, 1, 0)) * orientation)
+            let target = driftsNow(at: now) ? driftWay * Self.driftSpeed : 0
+            if drift != target || target != 0 {
+                let ease = exp(-dt * Self.driftEase)
+                turn.y += target * dt + (drift - target) * (1 - ease) / Self.driftEase
+                drift = target + (drift - target) * ease
+                if abs(drift - target) < 0.0005 { drift = target }
+            }
+            let angle = simd_length(turn)
+            if angle > 0 {
+                orientation = simd_normalize(simd_quatd(angle: angle, axis: turn / angle) * orientation)
             }
         }
         if reduceMotion || abs(zoomTarget - zoom) < 0.0005 {
@@ -689,6 +732,15 @@ struct GlobeCamera {
     /// keep the frame clock running. False is the cue to let it sleep.
     func wantsFrames(now: TimeInterval, reduceMotion: Bool) -> Bool {
         if dragging || flyTarget != nil || spin != .zero || zoom != zoomTarget { return true }
-        return !reduceMotion && drifts && (keepsDrifting || now - lastTouch < Self.sleepAfter)
+        if reduceMotion { return false }
+        return drift != 0 || (drifts && (keepsDrifting || now - lastTouch < Self.sleepAfter))
+    }
+
+    /// Whether the idle drift should be turning now: right after a let-go,
+    /// or once untouched for `driftAfter`, until the clock may sleep.
+    private func driftsNow(at now: TimeInterval) -> Bool {
+        let idle = now - lastTouch
+        let started = lastRelease >= lastTouch || idle > Self.driftAfter
+        return drifts && started && (keepsDrifting || idle < Self.sleepAfter)
     }
 }
