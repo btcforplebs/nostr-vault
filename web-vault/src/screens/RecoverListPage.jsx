@@ -10,12 +10,12 @@ import { READ_ONLY } from "../signer/readonly.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { latestList, ListNotSaved } from "../net/list-edit.js"
-import { decrypterFor, showBlockList } from "../net/blocks.js"
+import { decrypterFor, showBlockList, isNip04 } from "../net/blocks.js"
 import { findVersions, listOverview } from "../net/list-versions.js"
 import { saveMerged } from "../net/list-merge-save.js"
-import { clientName, countLine, changeLine, changeTitles, mergeExplainer, saveLine } from "../net/list-version-labels.js"
+import { clientName, countLine, changeLine, changeTitles, mergeExplainer, saveLine, remuteLine, leftOutLines, NIP44_NOTE } from "../net/list-version-labels.js"
 import {
-  MERGE_KINDS, mergeKind, openVersion, openForMerge, unread, pickProblem, deltaOf, shrank, buildMerge, mergedTags, mergeSummary,
+  MERGE_KINDS, mergeKind, openVersion, openForMerge, unread, pickProblem, deltaOf, wasWipe, buildMerge, mergedTags, mergeSummary,
 } from "../net/list-version-merge.js"
 
 const day = at => new Date(at * 1000).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
@@ -130,8 +130,8 @@ function ListVersions({ ctx, kind, onBack }) {
       </div>
       <section class="settings-group">
         {!others.length && <p class="settings-note muted small">No older version of this list was found yet. Your vault keeps one each time the list changes.</p>}
-        {current && <VersionRow kind={kind} v={current} older={olderOf(current)} now />}
-        {others.map(v => <VersionRow key={v.ev.id} kind={kind} v={v} older={olderOf(v)} picked={picked.has(v.ev.id)} onToggle={() => toggle(v.ev.id)} />)}
+        {current && <VersionRow kind={kind} v={current} older={olderOf(current)} wipe={wasWipe(timeline, timeline.indexOf(current))} now />}
+        {others.map(v => <VersionRow key={v.ev.id} kind={kind} v={v} older={olderOf(v)} wipe={wasWipe(timeline, timeline.indexOf(v))} picked={picked.has(v.ev.id)} onToggle={() => toggle(v.ev.id)} />)}
       </section>
       {readOnly ? <p class="settings-note muted small">{READ_ONLY}</p> : others.length > 0 && (rows ? confirm : (
         <div class="settings-note">
@@ -147,9 +147,8 @@ const Back = ({ name, onBack }) => <div class="settings-note"><button class="sma
 
 /** One version: the app that saved it and when, how many entries, what it changed against the one before it, and a
  *  flag when that change was a wipe. `now`: the list as it is, shown first and not tickable. */
-function VersionRow({ kind, v, older, now, picked, onToggle }) {
+function VersionRow({ kind, v, older, wipe, now, picked, onToggle }) {
   const problem = now ? "" : pickProblem(v)
-  const wipe = older && shrank(older.ev, v.ev)
   const count = countLine(kind, v.entries.size) + (unread(v) ? " + private" : "")
   return (
     <label class="settings-row static relay-edit-row">
@@ -175,7 +174,6 @@ function SaveConfirm({ ctx, kind, name, current, rows, review, onReview, onCance
   const backRows = rows.filter(r => r.status !== "current" && r.ticked)
   const goneRows = rows.filter(r => r.status === "current" && !r.ticked)
   useEffect(() => { fetchPeople(ctx, rows) }, [rows])
-  const leftOut = rows.filter(r => r.status === "removed" && !r.ticked).length
   useEffect(() => setShrinkOk(false), [sum.removed])
   const save = async () => {
     setBusy(true); setMsg("")
@@ -196,13 +194,14 @@ function SaveConfirm({ ctx, kind, name, current, rows, review, onReview, onCance
       <p class="small">{saveLine(kind, name, sum)}</p>
       <PeoplePeek title={titles.back} rows={backRows} />
       <PeoplePeek title={titles.gone} rows={goneRows} />
-      {leftOut > 0 && <p class="muted small">{leftOut} you removed yourself later {leftOut === 1 ? "stays" : "stay"} out.</p>}
-      {sum.remutes > 0 && <p class="small">This mutes {sum.remutes} {sum.remutes === 1 ? "person" : "people"} again.</p>}
+      {leftOutLines(sum).map(line => <p key={line} class="muted small">{line}</p>)}
+      {remuteLine(sum.remutes) && <p class="small">{remuteLine(sum.remutes)}</p>}
+      {sum.total > 0 && current && kind !== 3 && isNip04(current.ev.content ?? "") && <p class="muted small">{NIP44_NOTE}</p>}
       {sum.removed > 0 && <label class="small"><input type="checkbox" checked={shrinkOk} onChange={e => setShrinkOk(e.currentTarget.checked)} /> {kind === 3 ? `Yes, unfollow ${sum.removed}.` : `Yes, take ${entries(sum.removed)} out of the list I have now.`}</label>}
       <div class="row">
         <button class="primary" disabled={busy || nothing || !sum.total || (sum.removed > 0 && !shrinkOk)} onClick={save} aria-busy={busy || undefined}>{busy ? "Saving…" : "Save"}</button>
         <button disabled={busy} onClick={onCancel}>Cancel</button>
-        {!review && !nothing && <button class="small link" disabled={busy} onClick={onReview}>Review</button>}
+        {!review && (!nothing || sum.leftOut + sum.unsure > 0) && <button class="small link" disabled={busy} onClick={onReview}>Review</button>}
       </div>
       {msg && <p class="muted small">{msg}</p>}
     </div>
@@ -227,7 +226,7 @@ function MergeView({ ctx, kind, name, rows, setRows, onBack, children }) {
     <>
       <div class="settings-note"><button class="small" onClick={onBack}>‹ {name} versions</button></div>
       {children}
-      {section(titles.back, back, "back", "Ones you removed yourself are left unticked; tick them to bring them back.")}
+      {section(titles.back, back, "back", "Ones you removed yourself, or that can't be told, are left unticked; tick them to bring them back.")}
       {section(titles.kept, now, "now", kind === 3 ? "Untick someone to unfollow them." : "Untick an entry to take it out.")}
     </>
   )
@@ -235,7 +234,8 @@ function MergeView({ ctx, kind, name, rows, setRows, onBack, children }) {
 
 function EntryRow({ row, onTick }) {
   const [t0, v] = row.tag
-  const label = row.status === "lost" ? `Lost ${short(row.at)}` : row.status === "removed" ? `You removed this ${short(row.at)}` : ""
+  const label = row.status === "lost" ? `Lost ${short(row.at)}` : row.status === "removed" ? `You removed this ${short(row.at)}`
+    : row.status === "unsure" ? `Gone ${short(row.at)}, can't tell why` : ""
   return (
     <label class="person-row">
       <input type="checkbox" checked={row.ticked} onChange={onTick} aria-label={`Keep ${v}`} />

@@ -44,3 +44,26 @@ export function saveLine(kind, name, sum) {
   return `Saves your ${name.toLowerCase()} as ${entries(sum.total)}: ${sum.added} back${sum.removed ? `, ${sum.removed} taken out` : ""}.`
     + " Signed by you; the list you have now stays in your vault's history."
 }
+
+const count = (n, one, many) => `${num(n)} ${n === 1 ? one : many}`
+
+/** What a mute merge mutes again, every type (Hal's point 11): "This mutes again: 3 people, 2 words, 1 hashtag,
+ *  1 thread." "" when nothing. `r` = mergeSummary's remutes. */
+export function remuteLine(r) {
+  const parts = [
+    r.people && count(r.people, "person", "people"), r.words && count(r.words, "word", "words"),
+    r.hashtags && count(r.hashtags, "hashtag", "hashtags"), r.threads && count(r.threads, "thread", "threads"),
+  ].filter(Boolean)
+  return parts.length ? `This mutes again: ${parts.join(", ")}.` : ""
+}
+
+/** The left-out lines under the confirm: what the user removed later, and what can't be told either way. */
+export function leftOutLines({ leftOut = 0, unsure = 0 }) {
+  const out = []
+  if (leftOut) out.push(`${num(leftOut)} you removed yourself later ${leftOut === 1 ? "stays" : "stay"} out.`)
+  if (unsure) out.push(`${num(unsure)} ${unsure === 1 ? "stays" : "stay"} out because the versions in between weren't all kept or couldn't be opened, so it can't be told whether you removed ${unsure === 1 ? "it" : "them"}. Tap Review to add ${unsure === 1 ? "it" : "them"}.`)
+  return out
+}
+
+/** Said when the list now is NIP-04: the merge saves it with NIP-44, as every app's merge does (Logen 2026-11-03). */
+export const NIP44_NOTE = "Your private entries are saved with NIP-44, the newer encryption. An app that only reads the older kind won't see them."

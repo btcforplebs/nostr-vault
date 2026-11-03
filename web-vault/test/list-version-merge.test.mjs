@@ -13,7 +13,8 @@ import {
 const SK = generateSecretKey(), ME = getPublicKey(SK)
 const KEY = nip44.v2.utils.getConversationKey(SK, ME)
 const P = n => n.toString(16).padStart(64, "0")
-const ev = (kind, tags, created_at, content = "") => finalizeEvent({ kind, created_at, tags, content }, SK)
+// Found in the vault: its versions have no hole between them (unbroken), so a step can be judged.
+const ev = (kind, tags, created_at, content = "") => ({ ...finalizeEvent({ kind, created_at, tags, content }, SK), from: ["vault"] })
 const enc = tags => nip44.v2.encrypt(JSON.stringify(tags), KEY)
 const open = c => nip44.v2.decrypt(c, KEY)
 const follows = (ns, at, extra = []) => ev(3, [...ns.map(n => ["p", P(n)]), ...extra], at, '{"relays":"keep"}')
@@ -66,25 +67,25 @@ test("merge: current always in, each entry once, current form wins, delta per ve
   const rows = buildMerge({ current: cur, picked: [old], all: [cur, old] })
   assert.deepEqual(rows.map(r => r.tag[1]), [P(1), P(2), P(3), P(4)], "current order first, then what comes back")
   assert.equal(rows[0].tag[2], undefined, "the current list's own tag for 1 (its first p tag) is kept, not the old hint")
-  assert.deepEqual(rows.map(r => r.status), ["current", "current", "removed", "removed"])
+  assert.deepEqual(rows.map(r => r.status), ["current", "current", "back", "back"], "a short list: everything goes back ticked (Hal's point 2)")
 })
 
 test("a later remove: an ordinary edit comes back unticked, a wipe comes back ticked", async () => {
-  const many = Array.from({ length: 12 }, (_, i) => i + 1)
-  const v1 = await openVersion(follows([...many, 99], 10), open) // had 99
-  const v2 = await openVersion(follows(many, 20), open) // user unfollowed 99: an edit
-  const v3 = await openVersion(follows([1], 30), open) // a wipe: 12 -> 1
-  const rows = buildMerge({ current: v3, picked: [v1, v2], all: [v3, v2, v1] })
+  const n = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i)
+  const v1 = await openVersion(follows(n(1, 30), 10), open)
+  const v2 = await openVersion(follows(n(1, 12), 20), open) // a wipe: 30 -> 12
+  const v3 = await openVersion(follows(n(2, 12), 30), open) // then the user unfollowed 1: an edit
+  const rows = buildMerge({ current: v3, picked: [v1], all: [v3, v2, v1] })
   const by = Object.fromEntries(rows.map(r => [r.tag[1], r]))
-  assert.equal(by[P(99)].status, "removed")
-  assert.equal(by[P(99)].ticked, false, "unfollowed on purpose: not brought back unless ticked")
-  assert.equal(by[P(99)].at, 20)
-  assert.equal(by[P(5)].status, "lost")
-  assert.equal(by[P(5)].ticked, true)
-  assert.equal(by[P(5)].at, 30)
-  assert.equal(by[P(1)].status, "current")
+  assert.equal(by[P(1)].status, "removed")
+  assert.equal(by[P(1)].ticked, false, "unfollowed on purpose after the wipe: not brought back unless ticked")
+  assert.equal(by[P(1)].at, 30)
+  assert.equal(by[P(20)].status, "lost")
+  assert.equal(by[P(20)].ticked, true)
+  assert.equal(by[P(20)].at, 20)
+  assert.equal(by[P(5)].status, "current")
   const sum = mergeSummary(3, rows)
-  assert.deepEqual(sum, { total: 12, added: 11, removed: 0, remutes: 0 })
+  assert.deepEqual(sum, { total: 29, added: 18, removed: 0, leftOut: 1, unsure: 0, remutes: { people: 0, words: 0, hashtags: 0, threads: 0 } })
 })
 
 test("no current list: what comes back is ticked", async () => {
@@ -92,7 +93,8 @@ test("no current list: what comes back is ticked", async () => {
   const v2 = await openVersion(follows([2, 3], 20), open)
   const rows = buildMerge({ current: null, picked: [v1, v2], all: [v2, v1] })
   const p1 = rows.find(r => r.tag[1] === P(1))
-  assert.equal(p1.status, "removed", "v2 dropped 1 in an edit")
+  assert.equal(p1.status, "back", "v2 dropped 1 from a short list: offered back")
+  assert.equal(p1.ticked, true)
   assert.equal(rows.find(r => r.tag[1] === P(3)).status, "back")
 })
 
@@ -105,17 +107,19 @@ test("private in any merged version stays private, and goes in the private tags"
   const { tags, privateTags } = mergedTags(rows, cur)
   assert.deepEqual(tags, [["t", "nsfw"]])
   assert.deepEqual(privateTags.map(t => t[1]).sort(), [P(1), P(2), "x"].sort())
-  assert.equal(mergeSummary(10000, rows).remutes, 1, "P(2) is muted again: said before Save")
+  assert.deepEqual(mergeSummary(10000, rows).remutes, { people: 1, words: 0, hashtags: 1, threads: 0 }, "P(2) and #nsfw are muted again: said before Save")
 })
 
-test("an unopenable older private part makes the next version's removal unknown, not a removal", async () => {
-  const v1 = await openVersion(ev(10000, [], 10, enc([["p", P(7)]])), open)
-  const v2 = await openVersion(ev(10000, [["p", P(1)]], 20, "garbage"), open)
-  const cur = await openVersion(ev(10000, [["p", P(1)], ["p", P(2)]], 30), open)
+test("an unopenable in-between private part: can't tell, so it stays out (Lazarus, Logen 2026-11-03)", async () => {
+  const many = Array.from({ length: 10 }, (_, i) => ["p", P(100 + i)])
+  const v1 = await openVersion(ev(10000, many, 10, enc([["p", P(7)]])), open)
+  const v2 = await openVersion(ev(10000, many, 20, "garbage"), open)
+  const cur = await openVersion(ev(10000, [...many, ["p", P(2)]], 30), open)
   const rows = buildMerge({ current: cur, picked: [v1], all: [cur, v2, v1] })
   const r = rows.find(x => x.tag[1] === P(7))
-  assert.equal(r.status, "back")
-  assert.equal(r.ticked, true)
+  assert.equal(r.status, "unsure")
+  assert.equal(r.ticked, false)
+  assert.equal(r.private, true, "and if ticked, it goes back private")
 })
 
 test("tags: the current list's own tags kept first, unticked rows dropped", async () => {
@@ -128,7 +132,7 @@ test("tags: the current list's own tags kept first, unticked rows dropped", asyn
   const { tags, privateTags } = mergedTags(rows, cur)
   assert.deepEqual(tags, [["client", "x"], ["server", "https://a.example"], ["server", "https://c.example"]])
   assert.deepEqual(privateTags, [])
-  assert.deepEqual(mergeSummary(10063, rows), { total: 2, added: 1, removed: 1, remutes: 0 })
+  assert.deepEqual(mergeSummary(10063, rows), { total: 2, added: 1, removed: 1, leftOut: 0, unsure: 0, remutes: { people: 0, words: 0, hashtags: 0, threads: 0 } })
 })
 
 test("one summary line per version", async () => {
@@ -175,10 +179,11 @@ test("an unmute in a newer locked version stays out once Merge opens it (Tron, P
   const { openForMerge } = await import("../src/net/list-version-merge.js")
   let asked = 0
   const counting = c => { asked++; return open(c) }
-  const v0 = await openVersion(ev(10000, [], 5, enc([["p", P(8)]])), undefined)
-  const v1 = await openVersion(ev(10000, [["p", P(5)]], 10), undefined)
-  const v2 = await openVersion(ev(10000, [["p", P(6)]], 20, enc([["word", "y"]])), undefined) // unmuted P(5)
-  const cur = await openVersion(ev(10000, [["p", P(6)]], 30, enc([["word", "y"]])), counting)
+  const F = Array.from({ length: 10 }, (_, k) => ["p", P(200 + k)]) // not a short list
+  const v0 = await openVersion(ev(10000, [...F], 5, enc([["p", P(8)]])), undefined)
+  const v1 = await openVersion(ev(10000, [...F, ["p", P(5)]], 10), undefined)
+  const v2 = await openVersion(ev(10000, [...F, ["p", P(6)]], 20, enc([["word", "y"]])), undefined) // unmuted P(5)
+  const cur = await openVersion(ev(10000, [...F, ["p", P(6)]], 30, enc([["word", "y"]])), counting)
   asked = 0
   const all = await openForMerge([cur, v2, v1, v0], [v1], counting)
   assert.equal(asked, 1, "only the locked version newer than the oldest picked one is opened")
@@ -188,6 +193,8 @@ test("an unmute in a newer locked version stays out once Merge opens it (Tron, P
   assert.equal(x.status, "removed")
   assert.equal(x.ticked, false)
   assert.equal(x.private, false)
-  // Without opening it, the same merge can't tell: it would come back (the case Tron found).
-  assert.equal(buildMerge({ current: cur, picked: [v1], all: [cur, v2, v1, v0] }).find(r => r.tag[1] === P(5)).status, "back")
+  // Without opening it, the same merge can't tell: it stays out (Tron found it came back; Lazarus leaves it out).
+  const blind = buildMerge({ current: cur, picked: [v1], all: [cur, v2, v1, v0] }).find(r => r.tag[1] === P(5))
+  assert.equal(blind.status, "unsure")
+  assert.equal(blind.ticked, false)
 })
