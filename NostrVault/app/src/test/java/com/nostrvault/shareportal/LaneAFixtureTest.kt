@@ -137,7 +137,7 @@ class LaneAFixtureTest {
 
     @Test fun laneAActionsAreOffered() {
         val laneA = listOf(ShareAction.ARTICLE_CLIP, ShareAction.RECIPE, ShareAction.CALENDAR, ShareAction.STATUS, ShareAction.LABEL)
-        assertEquals(laneA, ShareActionAvailability.available(laneA + ShareAction.PAY + ShareAction.DM))
+        assertEquals(laneA, ShareActionAvailability.available(laneA))
     }
 
     @Test fun statusExpiryChoicesDefaultToAnHour() {

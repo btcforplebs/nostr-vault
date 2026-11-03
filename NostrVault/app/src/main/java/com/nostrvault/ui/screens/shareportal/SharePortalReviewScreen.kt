@@ -84,6 +84,19 @@ private fun ReviewCard(intent: ShareIntent, busy: Boolean, active: String, viewM
         )
         handler.isReady && intent.action in LaneAReviewActions -> LaneAReview(intent, busy, active, viewModel)
         handler.isReady && intent.action in LaneCReviewActions -> LaneCReview(intent, active, viewModel)
+        intent.action == ShareAction.PAY && handler.isReady -> PayReviewContent(
+            intent = intent,
+            needsSwitch = intent.account != null && intent.account != active,
+            onSwitchAccount = viewModel::switchAccount,
+            onDismiss = { viewModel.dismiss(intent) },
+        )
+        intent.action == ShareAction.DM && handler.isReady -> DMReviewContent(
+            intent = intent,
+            needsSwitch = intent.account != null && intent.account != active,
+            onSwitchAccount = viewModel::switchAccount,
+            onSent = { viewModel.dismiss(intent) },
+            onDismiss = { viewModel.dismiss(intent) },
+        )
         else -> {
             Text(label(intent.action), style = MaterialTheme.typography.titleMedium)
             Text(handler.notReadyMessage, color = SecondaryText)

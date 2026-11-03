@@ -45,7 +45,7 @@ final class SharePortalModel: ObservableObject {
 
     func pick(_ action: NVShareAction) {
         switch action {
-        case .highlight: phase = .form(.highlight)
+        case .highlight, .pay, .dm: phase = .form(action)
         default: queue(action, form: [:])
         }
     }

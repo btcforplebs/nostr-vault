@@ -12,6 +12,8 @@ enum NVShareActionAvailability {
         .highlight, .upload,
         // Lane A (phase 2)
         .articleClip, .recipe, .calendar, .status, .label,
+        // Lane D (phase 2)
+        .pay, .dm,
     ]
 
     static func offered(_ ranked: [NVShareAction]) -> [NVShareAction] {

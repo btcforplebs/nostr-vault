@@ -18,6 +18,9 @@ object ShareActionAvailability {
         ShareAction.CALENDAR,
         ShareAction.STATUS,
         ShareAction.LABEL,
+        // Lane D (phase 2).
+        ShareAction.PAY,
+        ShareAction.DM,
     )
 
     fun isReady(action: ShareAction): Boolean = action in ready
