@@ -156,6 +156,9 @@ a.settings-row:hover { background: var(--s2); }
 /* Vault mode menu: New (iPhone VaultModePill newModes). */
 .vault-new { margin-left: auto; padding: 2px 6px; border-radius: 999px; background: var(--accent-pale); color: var(--accent); font: 700 10px/1.2 var(--font); letter-spacing: .04em; text-transform: uppercase; }
 .vault-menu-list [role=menuitem].on .vault-new { margin-left: 8px; }
+/* Messages' unread count in the Vault menu (VaultPagesMenu.jsx). */
+.vault-count { margin-left: auto; min-width: 18px; padding: 1px 6px; border-radius: 999px; background: var(--danger); color: #fff; font: 700 11px/1.4 var(--font); text-align: center; font-variant-numeric: tabular-nums; }
+.vault-menu-list [role=menuitem].on .vault-count { margin-left: 8px; }
 .vault-new-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
 .vault-modes button { position: relative; }
 
