@@ -248,7 +248,8 @@ struct ComposeView: View {
             #if os(iOS)
             .modifier(PastesClipboardImage(action: handlePasteFromClipboard))
             #endif
-            .navigationTitle(effectiveReplyTo != nil ? "Reply" : effectiveQuoteTo != nil ? "Quote" : "New Note")
+            // Cancel, Drafts, Preview and Post fill the bar: no title text (Reply/Quote/New Note stay for VoiceOver).
+            .quietNavigationTitle(effectiveReplyTo != nil ? "Reply" : effectiveQuoteTo != nil ? "Quote" : "New Note")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
