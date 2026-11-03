@@ -28,6 +28,12 @@ enum ProfileShareTarget {
         return out
     }
 
+    /// `npub1abcdefgh…uvwxyz`: shown under the name, so a copycat with the
+    /// same name doesn't look identical (Tron, #1617).
+    static func shortNpub(_ npub: String) -> String {
+        npub.count > 20 ? "\(npub.prefix(12))…\(npub.suffix(6))" : npub
+    }
+
     /// The hex pubkeys those identifiers name, each once, in the same order.
     static func pubkeys(url: String?, text: String?, selection: String?) -> [String] {
         var out: [String] = []

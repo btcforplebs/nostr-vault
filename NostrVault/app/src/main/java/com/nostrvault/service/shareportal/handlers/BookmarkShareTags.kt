@@ -53,6 +53,10 @@ object BookmarkShareTags {
         }
     }
 
+    /** Whether a private part is sealed again with NIP-04: when the list's part already is (an `?iv=` in it), as the
+     *  mute list path keeps it, so an app that only reads NIP-04 still sees it. Otherwise NIP-44. */
+    fun sealsAsNip04(existingContent: String): Boolean = existingContent.contains("?iv=")
+
     fun json(tags: List<List<String>>): String = buildJsonArray {
         for (t in tags) add(buildJsonArray { for (v in t) add(v) })
     }.toString()

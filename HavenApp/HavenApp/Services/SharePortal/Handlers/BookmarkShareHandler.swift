@@ -6,7 +6,8 @@ import SwiftUI
 /// `NostrService.publishBookmark`), never a list of its own: the newest list
 /// the account's relays agree on is fetched at the tap, only this one `r` tag
 /// is added, and a private part this device can't open is never written
-/// over. Private entries are NIP-44 encrypted to the account itself. Tron
+/// over. Private entries are encrypted to the account itself: NIP-44, or
+/// NIP-04 when the list's private part already is (as the mute list path). Tron
 /// review (private bookmarks). Twin: BookmarkShareHandler.kt.
 struct BookmarkShareHandler: SharePortalHandler {
     let action = NVShareAction.bookmark
@@ -66,8 +67,9 @@ extension BookmarkShareHandler {
             case .publicTags(let next):
                 return (next, content)
             case .privateTags(let next):
-                // NIP-44 to self, as every app's list merge saves a private part.
-                guard let sealed = try? await MuteListStore.encryptToSelf(BookmarkShareTags.json(next), me: hex, nip04: false) else {
+                // To self, in the scheme the part already uses (NIP-44 for a new one), as the mute list path.
+                let nip04 = BookmarkShareTags.sealsAsNip04(existingContent: content)
+                guard let sealed = try? await MuteListStore.encryptToSelf(BookmarkShareTags.json(next), me: hex, nip04: nip04) else {
                     result = .failed("Your signer couldn't encrypt the private bookmark, so nothing was changed.")
                     return (tags, content)
                 }

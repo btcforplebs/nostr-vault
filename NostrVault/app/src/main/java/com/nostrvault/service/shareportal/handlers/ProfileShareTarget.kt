@@ -27,6 +27,9 @@ object ProfileShareTarget {
         return out
     }
 
+    /** `npub1abcdefgh…uvwxyz`: shown under the name, so a copycat with the same name doesn't look identical (Tron, #1617). */
+    fun shortNpub(npub: String): String = if (npub.length > 20) "${npub.take(12)}…${npub.takeLast(6)}" else npub
+
     /** The hex pubkeys those identifiers name, each once, in the same order; [decode] is the NIP-19 decoder. */
     fun pubkeys(url: String?, text: String?, selection: String?, decode: (String) -> String?): List<String> =
         identifiers(url, text, selection)

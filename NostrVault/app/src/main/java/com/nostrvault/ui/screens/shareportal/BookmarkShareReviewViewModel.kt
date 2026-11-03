@@ -43,6 +43,8 @@ class BookmarkShareReviewViewModel @Inject constructor(
                 }
                 BookmarkShareHandler.Outcome.AlreadyPublic -> { notificationManager.showToast("Already in your bookmarks"); onDone() }
                 BookmarkShareHandler.Outcome.AlreadyPrivate -> { notificationManager.showToast("Already in your private bookmarks"); onDone() }
+                BookmarkShareHandler.Outcome.MayStillGoOut -> _message.value =
+                    "Your signer hasn't answered yet, so this may still go out. Check Bookmarks before saving it again."
                 is BookmarkShareHandler.Outcome.Failed -> _message.value = "Not saved: ${outcome.why ?: "your relays didn't answer"}."
             }
         }

@@ -42,8 +42,9 @@ internal suspend fun NostrService.publishSharedBookmarkImpl(
             BookmarkShareTags.Change.AlreadyPrivate -> { why = Outcome.AlreadyPrivate; null }
             is BookmarkShareTags.Change.PublicTags -> change.tags to content
             is BookmarkShareTags.Change.PrivateTags -> {
-                // NIP-44 to self, as every app's list merge saves a private part.
-                val sealed = runCatching { encryptOwnList(author, BookmarkShareTags.json(change.tags), nip04 = false) }.getOrNull()
+                // To self, in the scheme the part already uses (NIP-44 for a new one), as the mute list path.
+                val nip04 = BookmarkShareTags.sealsAsNip04(content)
+                val sealed = runCatching { encryptOwnList(author, BookmarkShareTags.json(change.tags), nip04 = nip04) }.getOrNull()
                     ?: run {
                         why = Outcome.Failed("your signer couldn't encrypt the private bookmark, so nothing was changed")
                         return@publishMergedList null
@@ -52,5 +53,6 @@ internal suspend fun NostrService.publishSharedBookmarkImpl(
             }
         }
     }
-    return withTimeoutOrNull(60_000) { done.await() } ?: Outcome.Failed(null)
+    // An outside signer (Amber, a bunker) can still sign after this, so a timeout is not "not saved" (Tron, #1617).
+    return withTimeoutOrNull(60_000) { done.await() } ?: Outcome.MayStillGoOut
 }
