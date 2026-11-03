@@ -10,8 +10,24 @@ import Foundation
 enum ListVersionMerge {
     /// The lists that can be merged. Not kind 0 (a profile is fields, not
     /// entries), not the relay list (only Settings › Relays saves a 10002,
-    /// Logen 2026-10-31), not the addressable sets (Lazarus leaves them out).
+    /// Logen 2026-10-31; kept by Tod 2026-11-03), not the addressable sets
+    /// (Lazarus leaves them out). Were 10002 added, `build` already keeps the
+    /// current version's read/write marker (its key is `r` + the address).
     static let kinds: [Int] = [3, 10000, 10003, 10063, 10050, 10006, 10007, 10015, 10001, 10004, 10030]
+
+    /// Relay and server lists: whatever an old version held comes back ticked
+    /// (Hal's review: 3 relays down to 1 is never "deliberate" by count).
+    /// Same five on web and Android.
+    static let relayKinds: Set<Int> = [10002, 10050, 10006, 10007, 10063]
+    /// A list under this many entries brings everything back ticked: by count
+    /// alone a small list's edit and its wipe look the same.
+    static let shortList = 10
+    /// The vault keeps every version among the newest this many
+    /// (haven-go listHistoryKeep); older ones only around a wipe, so a step
+    /// between two of them may hide versions it let go.
+    static let vaultKeep = 20
+    /// Versions before a new one it is measured against (haven-go shrinkLookback).
+    static let lookback = 5
 
     static func canMerge(_ kind: Int) -> Bool { kinds.contains(kind) }
 
@@ -29,7 +45,7 @@ enum ListVersionMerge {
         case 10000: return "muted entry"
         case 10003: return "bookmark"
         case 10063: return "server"
-        case 10050, 10006, 10007: return "relay"
+        case 10002, 10050, 10006, 10007: return "relay"
         case 10015: return "interest"
         case 10001: return "pinned note"
         case 10004: return "community"
@@ -65,7 +81,7 @@ enum ListVersionMerge {
         return "\(scheme)://\(host.lowercased())\(port)\(path)\(query)"
     }
 
-    private static let urlTags: [Int: String] = [10050: "relay", 10006: "relay", 10007: "relay", 10063: "server"]
+    private static let urlTags: [Int: String] = [10002: "r", 10050: "relay", 10006: "relay", 10007: "relay", 10063: "server"]
     private static let lowered: Set<String> = ["p", "e", "t", "word"]
 
     /// One entry's identity: tag name and value (a rewritten relay hint or
@@ -158,7 +174,10 @@ enum ListVersionMerge {
 
     // MARK: The merge
 
-    enum Status: Equatable { case current, lost, removed, back }
+    /// `unsure`: whether the person took it out can't be told (a gap in the
+    /// vault's history, or a newer version whose private part wasn't read);
+    /// it stays out unless ticked in Review (Logen 2026-11-03, as Lazarus).
+    enum Status: Equatable { case current, lost, removed, back, unsure }
 
     struct Row: Identifiable, Equatable {
         let key: String
@@ -184,17 +203,78 @@ enum ListVersionMerge {
         return out
     }
 
+    // MARK: Judging a step
+
+    /// Whether `b`, a version after `a`, looks like a wipe of it, by which
+    /// entries went rather than by size (Hal's review: a stale copy of the
+    /// same size is a clobber too): it empties `a`, or keeps fewer than half
+    /// of a list of `ListShrinkRule.minItems` or more. An encrypted part
+    /// either side couldn't read still counts by length, as the vault does.
+    static func shrank(_ a: Opened, _ b: Opened) -> Bool {
+        let n = a.entries.count
+        let kept = a.entries.keys.filter { b.entries[$0] != nil }.count
+        if n > 0 && b.entries.isEmpty && !b.unread { return true }
+        if n >= ListShrinkRule.minItems && kept * 2 < n { return true }
+        if (a.unread || b.unread) && ListShrinkRule.encryptedKinds.contains(a.version.kind) {
+            let oldLen = a.version.content.count, newLen = b.version.content.count
+            if oldLen > 0 && newLen == 0 { return true }
+            if oldLen >= ListShrinkRule.minContent && newLen * 2 < oldLen { return true }
+        }
+        return false
+    }
+
+    /// Whether the entry `key`, held by `timeline[i]` (newest first) and gone
+    /// from `timeline[i - 1]` on, went in a wipe: some version O at or up to
+    /// `lookback` before i that held it was shrunk by some version V from
+    /// i - 1 on, O and V at most `lookback` apart, with no version between
+    /// them already shrinking O (that one was the wipe; edits after it are
+    /// the person's). A list drained 40 -> 20 -> 10 -> 5 loses P(30), P(15)
+    /// and P(8). Only over `ok` versions: a gap or an unread part stops the
+    /// window. Same as web `wipeOf` and Android. -> the wipe, or nil.
+    static func wipeOf(_ timeline: [Opened], _ i: Int, key: String, ok: (Opened) -> Bool) -> Opened? {
+        var memo: [Int: Bool] = [:]
+        func wiped(_ o: Int, _ w: Int) -> Bool {
+            let k = o * timeline.count + w
+            if let hit = memo[k] { return hit }
+            let r = shrank(timeline[o], timeline[w]); memo[k] = r; return r
+        }
+        var o = i
+        while o < timeline.count, o - i < lookback, ok(timeline[o]) {
+            defer { o += 1 }
+            guard timeline[o].entries[key] != nil else { continue }
+            var w = i - 1
+            while w >= 0, o - w <= lookback, ok(timeline[w]) {
+                defer { w -= 1 }
+                guard wiped(o, w) else { continue }
+                if !((w + 1)..<o).contains(where: { wiped(o, $0) }) { return timeline[w] }
+            }
+        }
+        return nil
+    }
+
+    // MARK: The merge
+
     /// Every entry of `current` and of each `picked` version, each once.
-    /// `all` is every version found, to tell what happened to an entry after
-    /// the newest version that held it: in the list now (ticked); lost to a
-    /// wipe (ticked); removed in an ordinary edit (unticked, the person took
-    /// it out); no later version known (ticked). A row is private when any
-    /// version holds it privately, or a newer unread version might: hiding a
-    /// public entry loses nothing, publishing a hidden one can't be undone.
-    /// Order: the list now's, then what comes back, newest version first.
-    static func build(current: Opened?, picked: [Opened], all: [Opened]) -> [Row] {
+    /// `all` is every version found; `vault` the ids of the ones the vault
+    /// keeps, newest first (nil: all of them). For an entry not in the list
+    /// now, with H the newest version holding it and N the one after:
+    ///  - no N, a relay list, or H read and under `shortList`: back, ticked;
+    ///  - H or a newer version with its private part unread: can't tell
+    ///    (it may hold the entry privately), left out;
+    ///  - H or N not among the vault's newest `vaultKeep`: the vault may
+    ///    have let versions between them go; lost if N shrank H (the vault
+    ///    pins a wipe with the version before it), else can't tell;
+    ///  - a wipe took it (`wipeOf`, step drains too): lost, ticked;
+    ///  - else removed in an edit: left out, the person took it out.
+    /// A row is private when any version holds it privately, or a newer
+    /// unread version might: hiding a public entry loses nothing, publishing
+    /// a hidden one can't be undone. Order: the list now's, then what comes
+    /// back, newest version first.
+    static func build(current: Opened?, picked: [Opened], all: [Opened], vault: [String]? = nil) -> [Row] {
         let sources = (current.map { [$0] } ?? []) + picked.filter { $0.id != current?.id }.sorted(by: newerFirst)
         let timeline = all.sorted(by: newerFirst)
+        let vaultOrder = vault ?? timeline.map(\.id)
+        let recent = Set(vaultOrder.prefix(vaultKeep))
         var rows: [Row] = []
         var index: [String: Int] = [:]
         for o in sources {
@@ -208,13 +288,14 @@ enum ListVersionMerge {
                 }
             }
         }
+        let kind = current?.version.kind ?? picked.first?.version.kind ?? 0
         for i in rows.indices {
             let key = rows[i].key
             let holder = timeline.firstIndex { $0.entries[key] != nil }
+            let newerUnread = timeline.prefix(holder ?? timeline.count).contains { $0.version.kind != 3 && $0.unread }
             if all.contains(where: { $0.entries[key]?.isPrivate == true }) {
                 rows[i].isPrivate = true
-            } else if current?.entries[key] == nil,
-                      timeline.prefix(holder ?? timeline.count).contains(where: { $0.version.kind != 3 && $0.unread }) {
+            } else if current?.entries[key] == nil, newerUnread {
                 rows[i].isPrivate = true
             }
             if current?.entries[key] != nil {
@@ -222,17 +303,28 @@ enum ListVersionMerge {
                 continue
             }
             guard let h = holder, h > 0 else { rows[i].status = .back; continue }
-            let next = timeline[h - 1]
-            if ListShrinkRule.shrank(timeline[h].version, next.version) {
+            let held = timeline[h], next = timeline[h - 1]
+            rows[i].at = next.version.createdAt
+            if relayKinds.contains(kind) || (held.entries.count < shortList && !held.unread) {
+                rows[i].status = .back
+            } else if newerUnread || held.unread {
+                rows[i].status = .unsure
+                rows[i].ticked = false
+            } else if !recent.contains(held.id) || !recent.contains(next.id) {
+                if shrank(held, next) {
+                    rows[i].status = .lost
+                } else {
+                    rows[i].status = .unsure
+                    rows[i].ticked = false
+                }
+            } else if let wipe = wipeOf(timeline, h, key: key, ok: { recent.contains($0.id) && !$0.unread }) {
                 rows[i].status = .lost
-                rows[i].at = next.version.createdAt
-            } else if next.unread && rows[i].isPrivate {
-                rows[i].status = .back // whether it still held it isn't known
+                rows[i].at = wipe.version.createdAt
             } else {
                 rows[i].status = .removed
-                rows[i].at = next.version.createdAt
                 rows[i].ticked = false
             }
+            if rows[i].status == .back { rows[i].at = 0 }
         }
         return rows
     }
@@ -249,20 +341,49 @@ enum ListVersionMerge {
         return (tags, privateTags)
     }
 
+    /// What a mute list mutes again, by what it is.
+    struct Remutes: Equatable {
+        var people = 0, words = 0, hashtags = 0, threads = 0
+        var isEmpty: Bool { people + words + hashtags + threads == 0 }
+
+        /// "3 people, 2 words, 1 hashtag, 1 thread".
+        var line: String {
+            func part(_ n: Int, _ one: String, _ many: String) -> String? { n == 0 ? nil : "\(n) \(n == 1 ? one : many)" }
+            return [part(people, "person", "people"), part(words, "word", "words"),
+                    part(hashtags, "hashtag", "hashtags"), part(threads, "thread", "threads")]
+                .compactMap { $0 }.joined(separator: ", ")
+        }
+    }
+
     struct Summary: Equatable {
         let total: Int
         let added: Int
         let removed: Int
         let leftOut: Int
-        let remutes: Int
+        /// Left out because it can't be told whether the person took them out.
+        let unsure: Int
+        let remutes: Remutes
     }
 
     static func summary(kind: Int, rows: [Row]) -> Summary {
         let ticked = rows.filter(\.ticked)
         let added = ticked.filter { $0.status != .current }
+        var remutes = Remutes()
+        if kind == 10000 {
+            for r in added {
+                switch r.tag.first {
+                case "p": remutes.people += 1
+                case "word": remutes.words += 1
+                case "t": remutes.hashtags += 1
+                case "e": remutes.threads += 1
+                default: break
+                }
+            }
+        }
         return Summary(total: ticked.count, added: added.count,
                        removed: rows.filter { $0.status == .current && !$0.ticked }.count,
                        leftOut: rows.filter { $0.status == .removed && !$0.ticked }.count,
-                       remutes: kind == 10000 ? added.filter { $0.tag.first == "p" }.count : 0)
+                       unsure: rows.filter { $0.status == .unsure && !$0.ticked }.count,
+                       remutes: remutes)
     }
 }
