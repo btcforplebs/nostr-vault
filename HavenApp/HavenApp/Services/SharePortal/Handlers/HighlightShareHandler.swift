@@ -24,8 +24,7 @@ extension HighlightShareHandler {
     static func publish(_ intent: NVShareIntent, passage: String, comment: String) async throws {
         let npub = account(for: intent)
         guard let hex = Bech32.decode(npub)?.hexString else { throw ModePostPublisher.PublishError.signing }
-        let tags = HighlightShareTags.tags(url: intent.source.url, passage: passage,
-                                           selection: intent.source.selection, comment: comment)
+        let tags = HighlightShareTags.tags(url: intent.source.url, passage: passage, comment: comment)
         _ = try await ModePostPublisher.publish(kind: HighlightShareTags.kind,
                                                 content: passage.trimmingCharacters(in: .whitespacesAndNewlines),
                                                 tags: tags, nostrService: NostrService.shared,

@@ -88,8 +88,13 @@ struct ShareInputReader {
             guard let s = results[key] as? String, !s.isEmpty else { return nil }
             return NVShareLimits.cap(s, cap)
         }
-        let canonical = str("canonical", NVShareLimits.url)
         let url = str("url", NVShareLimits.url)
+        // A page may name any canonical URL. Only take it on the page's own
+        // host, or one page could make the highlight's source tag name
+        // another site (Tron, PR 1610).
+        let canonical = str("canonical", NVShareLimits.url).flatMap { c in
+            NVShareClassifier.sameHost(c, url) ? c : nil
+        }
         let types = (results["ld_types"] as? [Any] ?? []).compactMap { $0 as? String }
         return Page(
             url: [canonical, url].compactMap { $0 }.first { isWeb($0) },

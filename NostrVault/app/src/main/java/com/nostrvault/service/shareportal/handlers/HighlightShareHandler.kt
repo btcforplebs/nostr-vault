@@ -1,6 +1,7 @@
 package com.nostrvault.service.shareportal.handlers
 
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.service.NostrService
 import com.nostrvault.shareportal.ShareAction
 import com.nostrvault.shareportal.ShareClassifier
@@ -50,11 +51,22 @@ class HighlightShareHandler @Inject constructor(
     suspend fun publish(intent: ShareIntent, passage: String, comment: String): Outcome {
         if (passage.isBlank()) return Outcome.Empty
         if (needsAccountSwitch(intent)) return Outcome.WrongAccount
-        val tags = HighlightShareTags.tags(sourceUrl(intent), intent.source.selection, passage, comment)
-        val event = runCatching {
+        val tags = HighlightShareTags.tags(sourceUrl(intent), passage, comment)
+        // Locked to the account, like iOS's lockedTo: a switch while the
+        // signer is busy throws instead of posting as someone else.
+        val npub = intent.account ?: configStore.config.value.activeOrOwnerNpub()
+        val hex = nostrService.npubToHex(npub) ?: return Outcome.NotSigned
+        val lock = PostingAccount.Lock(npub = npub, hex = hex)
+        val event = try {
             // A literal kind: UserListSignGuardTest flags a signer whose kind is a variable.
-            nostrService.signEventAsync(kind = 9802, content = passage.trim(), tags = tags)
-        }.getOrNull() ?: return Outcome.NotSigned
+            nostrService.signEventAsync(kind = 9802, content = passage.trim(), tags = tags, lockedTo = lock)
+        } catch (e: PostingAccount.AccountChangedException) {
+            return Outcome.WrongAccount
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        } ?: return Outcome.NotSigned
         nostrService.postEvent(event)
         return Outcome.Published
     }

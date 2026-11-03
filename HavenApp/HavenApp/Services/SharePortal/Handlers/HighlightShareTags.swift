@@ -5,20 +5,19 @@ import Foundation
 /// the same list.
 ///
 /// - `r` names the page, marked `source` (NIP-84: the thing highlighted).
-/// - `context` is the shared selection, sent only when the person trimmed the
-///   passage out of it.
+/// - No `context` tag: the review card says "Delete what you don't want to
+///   keep", so text the person deleted must not go out behind their back.
+///   Phase 2 may add it only if the card shows it with a way to turn it off.
 /// - `comment` makes it a quote highlight.
 enum HighlightShareTags {
     static let kind = 9802
 
-    static func tags(url: String?, passage: String, selection: String?, comment: String) -> [[String]] {
+    static func tags(url: String?, passage: String, comment: String) -> [[String]] {
         var out: [[String]] = []
         let p = passage.trimmingCharacters(in: .whitespacesAndNewlines)
         if let url = url?.trimmingCharacters(in: .whitespacesAndNewlines), isWeb(url) {
             out.append(["r", url, "source"])
         }
-        let context = selection?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !context.isEmpty, context != p { out.append(["context", context]) }
         let c = comment.trimmingCharacters(in: .whitespacesAndNewlines)
         if !c.isEmpty { out.append(["comment", c]) }
         out.append(["alt", "Highlight: \"\(p)\""])

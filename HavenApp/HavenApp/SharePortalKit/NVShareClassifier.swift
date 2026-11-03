@@ -102,6 +102,13 @@ enum NVShareClassifier {
         return musicHosts.contains(host) || host.hasSuffix(".bandcamp.com")
     }
 
+    /// True when both are URLs on the same host. Safari's canonical URL is
+    /// only taken when it is on the page's own host.
+    static func sameHost(_ a: String, _ b: String?) -> Bool {
+        guard let b, let ha = host(of: a), let hb = host(of: b) else { return false }
+        return ha == hb
+    }
+
     /// The lowercase host of an http(s) URL, parsed by hand so Swift and
     /// Kotlin agree on odd input (no userinfo, port or IPv6 handling needed
     /// for a host-list match).

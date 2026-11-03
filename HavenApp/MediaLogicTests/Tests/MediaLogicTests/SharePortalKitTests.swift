@@ -134,20 +134,32 @@ final class SharePortalKitTests: XCTestCase {
     // MARK: Highlight tags
 
     func testHighlightTagsFromAPage() {
-        let tags = HighlightShareTags.tags(url: "https://example.com/a", passage: " keep ",
-                                           selection: "please keep this", comment: " nice ")
+        let tags = HighlightShareTags.tags(url: "https://example.com/a", passage: " keep ", comment: " nice ")
         XCTAssertEqual(tags, [
             ["r", "https://example.com/a", "source"],
-            ["context", "please keep this"],
             ["comment", "nice"],
             ["alt", "Highlight: \"keep\""],
         ])
     }
 
+    /// Tron, PR 1610: text deleted from the passage must not ride along.
+    func testDeletedSelectionTextIsNotPublished() {
+        let tags = HighlightShareTags.tags(url: "https://e.com", passage: "the quick brown fox jumps.", comment: "")
+        XCTAssertFalse(tags.joined().contains { $0.contains("4471") })
+        XCTAssertFalse(tags.contains { $0.first == "context" })
+    }
+
+    func testCanonicalMustBeOnThePagesHost() {
+        XCTAssertTrue(NVShareClassifier.sameHost("https://example.com/canon", "https://EXAMPLE.com/a?x=1"))
+        XCTAssertFalse(NVShareClassifier.sameHost("https://evil.com/x", "https://example.com/a"))
+        XCTAssertFalse(NVShareClassifier.sameHost("https://example.com.evil.com/", "https://example.com/"))
+        XCTAssertFalse(NVShareClassifier.sameHost("https://example.com/", nil))
+    }
+
     func testHighlightTagsUntrimmedNoCommentNoURL() {
-        XCTAssertEqual(HighlightShareTags.tags(url: nil, passage: "all of it", selection: "all of it", comment: ""),
+        XCTAssertEqual(HighlightShareTags.tags(url: nil, passage: "all of it", comment: ""),
                        [["alt", "Highlight: \"all of it\""]])
-        XCTAssertEqual(HighlightShareTags.tags(url: "javascript:x", passage: "p", selection: nil, comment: ""),
+        XCTAssertEqual(HighlightShareTags.tags(url: "javascript:x", passage: "p", comment: ""),
                        [["alt", "Highlight: \"p\""]])
     }
 }

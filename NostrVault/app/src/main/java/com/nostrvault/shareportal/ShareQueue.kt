@@ -61,6 +61,9 @@ class ShareQueue(private val queueDir: File, private val claimedDir: File) {
      * this call won. Anything that does not decode, or whose id does not match
      * its file name, is deleted with its files and never shown.
      */
+    /** How old a staged files folder with no intent must be before [sweepOrphanFiles] deletes it. */
+    var orphanAgeMs: Long = 60 * 60 * 1000L
+
     fun claimAll(): List<ShareIntent> {
         claimedDir.mkdirs()
         val won = mutableListOf<ShareIntent>()
@@ -79,7 +82,23 @@ class ShareQueue(private val queueDir: File, private val claimedDir: File) {
             val intent = readClaimed(id)
             if (intent == null) finish(id) else won += intent
         }
+        sweepOrphanFiles()
         return won
+    }
+
+    /**
+     * Files staged for a share whose JSON never got written (the share sheet
+     * was killed before Send) would otherwise stay in `files/<id>` for good.
+     * A folder with no `<id>.json` and older than [orphanAgeMs] is deleted;
+     * the age keeps a share being written right now safe (Tron, PR 1610).
+     */
+    fun sweepOrphanFiles(now: Long = System.currentTimeMillis()) {
+        val dirs = File(queueDir, "files").listFiles() ?: return
+        for (dir in dirs) {
+            if (File(queueDir, "${dir.name}.json").exists()) continue
+            if (now - dir.lastModified() < orphanAgeMs) continue
+            dir.deleteRecursively()
+        }
     }
 
     /** Every claimed intent not yet finished, oldest first. Broken ones are removed. */

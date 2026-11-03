@@ -43,6 +43,22 @@ class ShareQueueTest {
         assertEquals(emptyList<ShareIntent>(), q.claimed())
     }
 
+    /** Tron, PR 1610: files staged by a share sheet that died before Send. */
+    @Test fun orphanStagedFilesAreSweptOnClaimButFreshOnesAreKept() {
+        val q = queue()
+        q.stageFile("dead", "big.mp4")!!.writeText("x")
+        q.stageFile("writing", "page.pdf")!!.writeText("y")
+        q.stageFile("kept", "a.pdf")!!.writeText("z")
+        val f = ShareFile("a.pdf", "application/pdf", ShareIntent.filePath("kept", "a.pdf"), 1)
+        assertTrue(q.commit(intent("kept", files = listOf(f))))
+        val dead = File(tmp.root, "queue/files/dead")
+        dead.setLastModified(System.currentTimeMillis() - 2 * 60 * 60 * 1000L)
+        q.claimAll()
+        assertFalse(dead.exists())
+        assertTrue("a share being written now is left alone", File(tmp.root, "queue/files/writing").exists())
+        assertEquals(listOf("kept"), q.claimed().map { it.id })
+    }
+
     @Test fun aPartialWriteIsNeverPending() {
         val dir = File(tmp.root, "queue").apply { mkdirs() }
         File(dir, ".partial-x.json").writeText(intent("x").encode())
