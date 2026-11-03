@@ -29,8 +29,6 @@ struct MenuBarView: View {
     /// The DM inbox is a sheet on this view, not on ProfileView, for the same
     /// reason iOS presents it from ContentView: a notification route has to be
     /// able to open it without depending on which tab happens to be mounted.
-    @State private var showingDMInbox = false
-    @State private var dmInboxConversation: String?
     /// macOS has no navigation stack around the feed and vault, so a
     /// `NavigationLink(value:)` inside a note row has nothing to push onto and the
     /// click is swallowed — quoted notes and parent previews did nothing at all.
@@ -131,12 +129,6 @@ struct MenuBarView: View {
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
-        .sheet(isPresented: $showingDMInbox) {
-            DMInboxView(openConversation: dmInboxConversation)
-                .environmentObject(nostrService)
-                .environmentObject(configService)
-                .frame(minWidth: 480, minHeight: 500)
-        }
         // Your own profile, opened from a note or a list: the tab, where editing is.
         .onReceive(NotificationCenter.default.publisher(for: .havenShowMyProfileTab)) { _ in
             selectedTab = .profile
@@ -164,12 +156,9 @@ struct MenuBarView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenDMInbox)) { note in
-            // Matches iOS: the profile tab comes up behind the inbox, so
-            // dismissing the sheet leaves you somewhere related rather than on
-            // whatever tab you happened to be on when the message arrived.
-            selectedTab = .profile
-            dmInboxConversation = note.object as? String
-            showingDMInbox = true
+            // Messages is a Vault page, as on iOS: the Vault tab, on its inbox.
+            selectedTab = .notes
+            DMInboxRoute.shared.open(note.object as? String)
         }
         .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
             // Clear the pending-compose flag before the tab guard, not after.

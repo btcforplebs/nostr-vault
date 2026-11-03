@@ -176,6 +176,7 @@ extension VaultView {
             withAnimation(Motion.toggle) { viewMode = .zaps }
         }
         .modifier(OpensBookmarksMode(viewMode: $viewMode))
+        .modifier(OpensMessagesMode(viewMode: $viewMode))
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in
             withAnimation(Motion.toggle) { viewMode = .followers }
         }

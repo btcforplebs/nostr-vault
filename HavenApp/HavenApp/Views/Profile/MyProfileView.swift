@@ -39,7 +39,6 @@ struct MyProfileView: View {
     @State private var unsavedDraft: [String: String]?
     @State private var showingCompose = false
     @State private var showingSettings = false
-    @State private var showingDMInbox = false
     @State private var showingLightning = false
     @State private var showingTrustWeb = false
     @State private var showingShare = false
@@ -96,9 +95,6 @@ struct MyProfileView: View {
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
-        #if os(macOS)
-        .sheet(isPresented: $showingDMInbox) { dmInboxSheet }
-        #endif
         #if os(iOS)
         .sheet(isPresented: $showingSettings) { settingsSheet }
         .overlay(alignment: .bottomTrailing) { if canSign { postButton } }
@@ -208,7 +204,6 @@ struct MyProfileView: View {
         MyProfileToolbar(
             isOwner: isOwner,
             onWallet: { showingLightning = true },
-            onMessages: { showingDMInbox = true },
             onSettings: {
                 #if os(iOS)
                 if horizontalSizeClass == .regular {
@@ -245,14 +240,6 @@ struct MyProfileView: View {
         #endif
     }
 
-    #if os(macOS)
-    private var dmInboxSheet: some View {
-        DMInboxView()
-            .environmentObject(nostrService)
-            .environmentObject(configService)
-            .frame(minWidth: 480, minHeight: 500)
-    }
-    #endif
 
     #if os(iOS)
     private var settingsSheet: some View {
@@ -307,14 +294,12 @@ struct MyProfileView: View {
     }
 }
 
-/// Wallet (owner only) on the left; settings on the right (messages live in
-/// the Vault tab's right pill). The Mac has no settings button here (it has
-/// its own Settings) and gets messages and a refresh button, since nothing
-/// there pulls to refresh.
+/// Wallet (owner only) on the left; settings on the right (messages are a
+/// Vault page). The Mac has no settings button here (it has its own
+/// Settings) and gets a refresh button, since nothing there pulls to refresh.
 private struct MyProfileToolbar: ViewModifier {
     let isOwner: Bool
     let onWallet: () -> Void
-    let onMessages: () -> Void
     let onSettings: () -> Void
     let onRefresh: () -> Void
 
@@ -362,32 +347,8 @@ private struct MyProfileToolbar: ViewModifier {
                     .help("Lightning")
                 }
             }
-            ToolbarItem(placement: .automatic) {
-                Button(action: onMessages) {
-                    Image(systemName: "bubble.right.fill")
-                        .foregroundColor(.havenPurple)
-                        .overlay(alignment: .topTrailing) { UnreadDMDot() }
-                }
-                .help("Messages")
-            }
         }
         #endif
     }
 }
 
-#if os(macOS)
-/// The Messages button's unread dot. Its own view, so DM traffic redraws the
-/// dot and not the profile under it.
-private struct UnreadDMDot: View {
-    @ObservedObject private var dmService = DMService.shared
-
-    var body: some View {
-        if dmService.totalUnreadCount > 0 {
-            Circle()
-                .fill(.red)
-                .frame(width: 7, height: 7)
-                .offset(x: 2, y: -2)
-        }
-    }
-}
-#endif

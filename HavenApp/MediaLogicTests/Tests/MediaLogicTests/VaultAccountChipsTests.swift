@@ -100,6 +100,7 @@ final class VaultAccountChipsTests: XCTestCase {
         }
         XCTAssertFalse(VaultAccountChips.pageShowsChips(.media))
         XCTAssertFalse(VaultAccountChips.pageShowsChips(.bookmarks), "the active account's list only")
+        XCTAssertFalse(VaultAccountChips.pageShowsChips(.messages), "the active account's inbox only")
     }
 
     func testGivenTargetsAreTheAccountsOwnLikesAndZaps() {
