@@ -113,12 +113,16 @@ function qFromTo(a, b) {
 }
 
 /**
- * The camera, as GlobeCamera: a drag turns the globe under the finger, a flick keeps it spinning and slowing, the wheel
+ * The camera, as GlobeCamera: a drag turns the globe under the finger, a flick glides on and slows to a stop, the wheel
  * or a pinch zooms, and home glides back to the start. Plain objects, so tests can drive it. No idle drift: the web
  * draws nothing while the globe is still.
  */
 export const DISTANCE = 4.2, ZOOM_MIN = 0.8, ZOOM_MAX = 2.4
-export const DRAG_TURN = 0.005, FLICK_TURN = 0.003, FLICK_FLOOR = 350, MAX_SPIN = 2.5, SPIN_DECAY = 2.4, MAX_STEP = 1 / 20
+export const DRAG_TURN = 0.005, FLICK_TURN = 0.003, MAX_SPIN = 4, MAX_STEP = 1 / 20
+/** How a flick dies away (GlobeCamera, Ted 1c81ede0c): a drag that grows with speed (per second) plus a steady brake
+ *  (radians a second, each second). The brake settles a gentle let-go in about half a second while a hard throw still
+ *  glides for two, and lands at an exact moment instead of creeping in forever. */
+export const SPIN_DECAY = 1.0, SPIN_BRAKE = 0.4
 
 export const newCamera = () => ({ q: IDENTITY, spin: [0, 0, 0], zoom: 1, zoomTarget: 1, target: null, dragging: false })
 export const moving = cam => cam.dragging || cam.target !== null || cam.spin.some(v => v !== 0) || cam.zoom !== cam.zoomTarget
@@ -129,10 +133,10 @@ export function drag(cam, dx, dy) {
   return { ...cam, q: qNorm(qMul(turn, cam.q)), target: null, spin: [0, 0, 0] }
 }
 
-/** Let go at `vx`, `vy` points a second: keep turning that way, unless it was just letting go or motion is reduced. */
+/** Let go at `vx`, `vy` points a second: keep turning at exactly that speed, then slow smoothly to a stop. No floor: a
+ *  gentle let-go glides a little, it never stops dead (Logen 2026-11-03, the iPad's flick). Reduced motion: no spin. */
 export function flick(cam, vx, vy, reduceMotion = false) {
-  const speed = Math.hypot(vx, vy)
-  if (reduceMotion || speed <= FLICK_FLOOR) return { ...cam, spin: [0, 0, 0] }
+  if (reduceMotion) return { ...cam, spin: [0, 0, 0] }
   let v = [vy * FLICK_TURN, vx * FLICK_TURN, 0]
   const rate = Math.hypot(...v)
   if (rate > MAX_SPIN) v = v.map(c => c * MAX_SPIN / rate)
@@ -167,11 +171,15 @@ export function step(cam, dt, reduceMotion = false) {
     if (reduceMotion || Math.abs(qDot(q, target)) > 0.99999) { q = target; target = null }
   } else if (!cam.dragging) {
     const speed = Math.hypot(...spin)
-    if (speed > 0.0005 && !reduceMotion) {
-      // The exact turn while the spin decays over this step, so it turns the same at 60 and 120 Hz.
-      const decay = Math.exp(-dt * SPIN_DECAY)
-      q = qNorm(qMul(qAxis(speed * (1 - decay) / SPIN_DECAY, spin), q))
-      spin = spin.map(v => v * decay)
+    if (speed > 0 && !reduceMotion) {
+      // Speed falls as dv/dt = -k·v - b: the exact turn over this step, so it turns the same at 60 and 120 Hz, and it
+      // reaches nothing at a set time rather than creeping.
+      const k = SPIN_DECAY, floor = SPIN_BRAKE / k
+      const stopsIn = Math.log((speed + floor) / floor) / k
+      const t = Math.min(dt, stopsIn), decay = Math.exp(-k * t)
+      q = qNorm(qMul(qAxis((speed + floor) * (1 - decay) / k - floor * t, spin), q))
+      if (t >= stopsIn - 1e-9) spin = [0, 0, 0]
+      else { const f = ((speed + floor) * decay - floor) / speed; spin = spin.map(v => v * f) }
     } else spin = [0, 0, 0]
   }
   zoom = reduceMotion || Math.abs(cam.zoomTarget - zoom) < 0.0005 ? cam.zoomTarget : zoom + (cam.zoomTarget - zoom) * (1 - Math.exp(-dt * 7))
