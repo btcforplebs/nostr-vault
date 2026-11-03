@@ -69,49 +69,10 @@ extension FeedView {
             if let note = new.note(changedFrom: old) { toolbarNote.show(note) }
         }
         #if os(iOS)
-        // The phone's bar on iPad too. In the landscape two-pane layout the
-        // list column has its own stack, so this bar sits over the feed only.
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                ChromeMorphCapsule(alignment: .leading, isEnabled: isCompactWidth) {
-                    feedLeadingToolbar
-                }
-            }
-            .hidingSharedToolbarBackground()
-
-            ToolbarItem(placement: .navigationBarTrailing) {
-                ChromeMorphCapsule(alignment: .trailing, isEnabled: isCompactWidth) {
-                    ZStack(alignment: .trailing) {
-                        ChromeFold(anchor: .trailing, isEnabled: isCompactWidth) {
-                            // Width only: the pill's vertical padding makes it
-                            // taller than the bar's proposal, which must not
-                            // demote the row to the menu.
-                            ViewThatFits(in: .horizontal) {
-                                feedTrailingToolbarInline
-                                feedTrailingToolbarMenu
-                            }
-                            .padding(.horizontal, 3)
-                        }
-                        // The lone layout button fades in as the full row
-                        // fades out, centred in the circle the pill folds to.
-                        // Feeds without layouts get the filter menu there
-                        // instead, so the circle is never empty.
-                        if isCompactWidth && feedService.feedMode != .reels {
-                            ChromeFold(anchor: .trailing, inverted: true) {
-                                if currentFeedHasLayouts {
-                                    layoutModeButton
-                                        .padding(.horizontal, 4)
-                                } else {
-                                    feedTrailingToolbarMenu
-                                }
-                            }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                .tutorialAnchor(TutorialContent.feedToolbar)
-            }
-            .hidingSharedToolbarBackground()
+        .feedTopBar(floating: noteDetailSelection != nil) {
+            feedLeadingBarItem
+        } trailing: {
+            feedTrailingBarItem
         }
         #endif
         .onAppear {

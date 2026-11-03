@@ -47,7 +47,10 @@ struct BottomTabBar: View {
             expandedContent
             Spacer(minLength: 0)
         }
-        .padding(.top, 20)
+        // Below the window's close/minimise/resize buttons when the app runs
+        // windowed: they sit in the top-left corner, over the first item.
+        .padding(.top, 20 + windowControlsInset)
+        .background(WindowControlsInsetReader(inset: $windowControlsInset))
         .frame(width: Self.railWidth)
         .frame(maxHeight: .infinity)
         .background(Color.platformWindowBackground.ignoresSafeArea())
@@ -58,6 +61,9 @@ struct BottomTabBar: View {
                 .ignoresSafeArea()
         }
     }
+
+    /// How far the window controls reach below the top safe area.
+    @State private var windowControlsInset: CGFloat = 0
 
     /// Width of the iPad landscape rail.
     static let railWidth: CGFloat = 68
@@ -380,5 +386,42 @@ private struct BottomTabBarFold<Expanded: View, Collapsed: View>: View {
 
     private func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat {
         a + (b - a) * t
+    }
+}
+
+/// Reports how far below the top safe area content must start to clear the
+/// window controls (iPadOS 26 windowed apps); 0 when there are none.
+private struct WindowControlsInsetReader: UIViewRepresentable {
+    @Binding var inset: CGFloat
+
+    func makeUIView(context: Context) -> Probe {
+        let view = Probe()
+        view.isUserInteractionEnabled = false
+        view.onChange = { value in
+            DispatchQueue.main.async { if inset != value { inset = value } }
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: Probe, context: Context) {}
+
+    final class Probe: UIView {
+        var onChange: ((CGFloat) -> Void)?
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            report()
+        }
+
+        override func safeAreaInsetsDidChange() {
+            super.safeAreaInsetsDidChange()
+            report()
+        }
+
+        private func report() {
+            guard #available(iOS 26.0, *) else { return }
+            let adapted = edgeInsets(for: .safeArea(cornerAdaptation: .vertical)).top
+            onChange?(max(0, (adapted - safeAreaInsets.top).rounded()))
+        }
     }
 }

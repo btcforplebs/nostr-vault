@@ -1,7 +1,7 @@
 // The Live Vault panel's rules (src/desktop/space/live-vault.js) and its fold key's sign-out wipe.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { snapshot, splitShown, topFaces, pillCount, rowText, readFolded, writeFolded, MAX_ROWS } from "../src/desktop/space/live-vault.js"
+import { snapshot, splitShown, topFaces, place, sameShot, rowText, readFolded, writeFolded, MAX_ROWS } from "../src/desktop/space/live-vault.js"
 import { accountKeys } from "../src/haven/vault.js"
 
 const line = (id, at, actors = ["a"]) => ({ id, created_at: at, actors })
@@ -45,10 +45,27 @@ test("faces on top: newest first, once each, the rest counted", () => {
   assert.deepEqual(topFaces([]), { faces: [], more: 0 })
 })
 
-test("the pill counts unread lines, else the ones held back", () => {
-  assert.equal(pillCount(3, 1), 3)
-  assert.equal(pillCount(0, 2), 2)
-  assert.equal(pillCount(0, 0), 0)
+test("new lines go on top by themselves; drawn rows keep their slots (no pill)", () => {
+  const shown = snapshot([line("a", 100), line("b", 90)])
+  const later = [line("n", 130), line("m", 120), line("b", 110, ["bob", "a"]), line("a", 100), line("late", 95)]
+  const next = place(later, shown)
+  assert.deepEqual(next, { ids: ["n", "m", "a", "b", "late"], top: 130 })
+  const { rows, held } = splitShown(later, next)
+  assert.deepEqual(rows.map(r => r.id), ["n", "m", "a", "b", "late"])
+  assert.deepEqual(held, [])
+  assert.deepEqual(place([line("x", 5)], null), snapshot([line("x", 5)]))
+})
+
+test("place keeps MAX_ROWS and never moves the newest moment back", () => {
+  const old = Array.from({ length: MAX_ROWS }, (_, i) => line(`o${i}`, 500 - i))
+  const next = place([line("new", 600), ...old], snapshot(old))
+  assert.equal(next.ids.length, MAX_ROWS)
+  assert.equal(next.ids[0], "new")
+  assert.equal(next.ids.at(-1), `o${MAX_ROWS - 2}`)
+  assert.equal(place([line("o1", 499)], next).top, 600)
+  assert.ok(sameShot(next, { ...next, ids: [...next.ids] }))
+  assert.ok(!sameShot(next, null))
+  assert.ok(!sameShot(next, { ...next, top: 1 }))
 })
 
 test("row text: short @npub for people, note links left out", () => {

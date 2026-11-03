@@ -89,7 +89,7 @@ class ServerListPublishOnlyOnSaveTest {
         assertTrue("merges with them", impl.contains("servers, servers, home, drop, macs, myDevices = config.fipsPeers"))
         assertTrue("clears what it dropped", impl.contains("serverListDropMesh = it.serverListDropMesh - drop.toSet()"))
         assertTrue("on posting", impl.contains("onPosted = cleared"))
-        val merged = src.substringAfter("private fun NostrService.publishMergedList").substringBefore("\n    }\n")
+        val merged = src.substringAfter("fun NostrService.publishMergedList(").substringBefore("\n    }\n")
         assertTrue("onPosted after the post", merged.indexOf("onPosted()") > merged.indexOf("postEvent(event)"))
         val vm = File("src/main/java/com/nostrvault/ui/screens/settings/fipsmesh/FipsMeshViewModel.kt").readText()
         assertTrue("My Devices records them", vm.contains("serverListDropMesh = com.nostrvault.service.serverListDropsAfter(before, it)"))

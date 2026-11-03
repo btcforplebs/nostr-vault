@@ -408,3 +408,99 @@ private extension FeedLayoutMode {
         }
     }
 }
+
+#if os(iOS)
+extension FeedView {
+    /// The feed picker pill, left of the top bar.
+    var feedLeadingBarItem: some View {
+        ChromeMorphCapsule(alignment: .leading, isEnabled: isCompactWidth) {
+            feedLeadingToolbar
+        }
+    }
+
+    /// The filter and layout pill, right of the top bar.
+    var feedTrailingBarItem: some View {
+        ChromeMorphCapsule(alignment: .trailing, isEnabled: isCompactWidth) {
+            ZStack(alignment: .trailing) {
+                ChromeFold(anchor: .trailing, isEnabled: isCompactWidth) {
+                    // Width only: the pill's vertical padding makes it
+                    // taller than the bar's proposal, which must not
+                    // demote the row to the menu.
+                    ViewThatFits(in: .horizontal) {
+                        feedTrailingToolbarInline
+                        feedTrailingToolbarMenu
+                    }
+                    .padding(.horizontal, 3)
+                }
+                // The lone layout button fades in as the full row
+                // fades out, centred in the circle the pill folds to.
+                // Feeds without layouts get the filter menu there
+                // instead, so the circle is never empty.
+                if isCompactWidth && feedService.feedMode != .reels {
+                    ChromeFold(anchor: .trailing, inverted: true) {
+                        if currentFeedHasLayouts {
+                            layoutModeButton
+                                .padding(.horizontal, 4)
+                        } else {
+                            feedTrailingToolbarMenu
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .tutorialAnchor(TutorialContent.feedToolbar)
+    }
+}
+
+/// Height of the iPad's top row: the feed's floating pills on the left and
+/// the Your space bar on the right share it, so both halves line up.
+enum PadTopBar {
+    static let height: CGFloat = 52
+}
+
+extension View {
+    /// The feed's top bar. On the iPhone its pills sit in the navigation
+    /// bar. On the iPad (`floating`) they float over the feed in a bar of
+    /// our own: iPadOS 26.2+ paints a backdrop behind the system bar (a grey
+    /// strip and a dark band) that the hidden toolbar background does not
+    /// remove, and the clear glass turned into grey slabs over it.
+    @ViewBuilder
+    func feedTopBar<Leading: View, Trailing: View>(
+        floating: Bool,
+        @ViewBuilder leading: () -> Leading,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        if floating {
+            let bar = HStack(spacing: 12) {
+                leading()
+                Spacer(minLength: 0)
+                trailing()
+            }
+            .padding(.horizontal, 16)
+            .frame(height: PadTopBar.height)
+            self
+                .toolbar(.hidden, for: .navigationBar)
+                .floatingTopBar { bar }
+        } else {
+            self.toolbar {
+                ToolbarItem(placement: .navigationBarLeading) { leading() }
+                    .hidingSharedToolbarBackground()
+                ToolbarItem(placement: .navigationBarTrailing) { trailing() }
+                    .hidingSharedToolbarBackground()
+            }
+        }
+    }
+
+    /// A bar the content scrolls under, with the soft scroll edge the
+    /// system bar gives.
+    @ViewBuilder
+    fileprivate func floatingTopBar<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {
+        if #available(iOS 26.0, *) {
+            self.safeAreaBar(edge: .top, spacing: 0, content: bar)
+        } else {
+            self.safeAreaInset(edge: .top, spacing: 0, content: bar)
+        }
+    }
+}
+#endif

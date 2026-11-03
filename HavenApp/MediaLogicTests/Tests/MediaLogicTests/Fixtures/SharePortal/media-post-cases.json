@@ -1,0 +1,301 @@
+{
+ "shape": [
+  {
+   "mimes": [],
+   "problem": "nothing"
+  },
+  {
+   "mimes": [
+    "image/jpeg"
+   ],
+   "shape": "pictures"
+  },
+  {
+   "mimes": [
+    "image/jpeg",
+    "image/png"
+   ],
+   "shape": "pictures"
+  },
+  {
+   "mimes": [
+    "video/mp4"
+   ],
+   "shape": "video"
+  },
+  {
+   "mimes": [
+    "video/mp4",
+    "image/jpeg"
+   ],
+   "problem": "mixed"
+  },
+  {
+   "mimes": [
+    "video/mp4",
+    "video/quicktime"
+   ],
+   "problem": "too_many_videos"
+  },
+  {
+   "mimes": [
+    "application/pdf"
+   ],
+   "problem": "not_media"
+  },
+  {
+   "mimes": [
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg",
+    "image/jpeg"
+   ],
+   "problem": "too_many_pictures"
+  },
+  {
+   "mimes": [
+    "IMAGE/JPEG"
+   ],
+   "shape": "pictures"
+  }
+ ],
+ "needs_jpeg": [
+  [
+   "image/heic",
+   true
+  ],
+  [
+   "image/heif",
+   true
+  ],
+  [
+   "image/tiff",
+   true
+  ],
+  [
+   "image/jpeg",
+   false
+  ],
+  [
+   "IMAGE/PNG",
+   false
+  ],
+  [
+   "image/webp",
+   false
+  ],
+  [
+   "video/mp4",
+   false
+  ]
+ ],
+ "events": [
+  {
+   "note": "two pictures, caption with hashtag",
+   "shape": "pictures",
+   "title": "",
+   "caption": "Beach day #sand\n",
+   "published_at": 1730000000,
+   "media": [
+    {
+     "url": "https://b.example/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
+     "mime": "image/jpeg",
+     "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "width": 4032,
+     "height": 3024,
+     "bytes": 2048000,
+     "alt": "Two kids\non sand"
+    },
+    {
+     "url": "https://b.example/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.png",
+     "mime": "image/png",
+     "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+   ],
+   "kind": 20,
+   "content": "Beach day #sand",
+   "tags": [
+    [
+     "imeta",
+     "url https://b.example/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
+     "m image/jpeg",
+     "x aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "dim 4032x3024",
+     "size 2048000",
+     "alt Two kids on sand"
+    ],
+    [
+     "imeta",
+     "url https://b.example/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.png",
+     "m image/png",
+     "x bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
+    [
+     "m",
+     "image/jpeg"
+    ],
+    [
+     "m",
+     "image/png"
+    ],
+    [
+     "x",
+     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    [
+     "x",
+     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
+    [
+     "t",
+     "sand"
+    ],
+    [
+     "alt",
+     "2 pictures: Beach day #sand"
+    ]
+   ]
+  },
+  {
+   "note": "one picture with title",
+   "shape": "pictures",
+   "title": " Sunset ",
+   "caption": "",
+   "published_at": 1730000000,
+   "media": [
+    {
+     "url": "https://b.example/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
+     "mime": "image/jpeg",
+     "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+   ],
+   "kind": 20,
+   "content": "",
+   "tags": [
+    [
+     "title",
+     "Sunset"
+    ],
+    [
+     "imeta",
+     "url https://b.example/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
+     "m image/jpeg",
+     "x aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    [
+     "m",
+     "image/jpeg"
+    ],
+    [
+     "x",
+     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    [
+     "alt",
+     "A picture: Sunset"
+    ]
+   ]
+  },
+  {
+   "note": "landscape video, title from caption",
+   "shape": "video",
+   "title": "",
+   "caption": "Waves at dusk\nshot on the pier",
+   "published_at": 1730000123,
+   "media": [
+    {
+     "url": "https://b.example/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mov",
+     "mime": "video/quicktime",
+     "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "width": 1920,
+     "height": 1080,
+     "bytes": 9000000,
+     "duration": 12.5
+    }
+   ],
+   "kind": 21,
+   "content": "Waves at dusk\nshot on the pier",
+   "tags": [
+    [
+     "title",
+     "Waves at dusk"
+    ],
+    [
+     "published_at",
+     "1730000123"
+    ],
+    [
+     "imeta",
+     "url https://b.example/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mov",
+     "m video/quicktime",
+     "x aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "dim 1920x1080",
+     "size 9000000",
+     "duration 12.5"
+    ],
+    [
+     "alt",
+     "A video: Waves at dusk shot on the pier"
+    ]
+   ]
+  },
+  {
+   "note": "portrait video, no caption",
+   "shape": "video",
+   "title": "",
+   "caption": "",
+   "published_at": 1730000123,
+   "media": [
+    {
+     "url": "https://b.example/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4",
+     "mime": "video/mp4",
+     "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "width": 1080,
+     "height": 1920,
+     "duration": 7
+    }
+   ],
+   "kind": 22,
+   "content": "",
+   "tags": [
+    [
+     "title",
+     "Video"
+    ],
+    [
+     "published_at",
+     "1730000123"
+    ],
+    [
+     "imeta",
+     "url https://b.example/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4",
+     "m video/mp4",
+     "x aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "dim 1080x1920",
+     "duration 7"
+    ],
+    [
+     "alt",
+     "A video"
+    ]
+   ]
+  }
+ ]
+}

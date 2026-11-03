@@ -1,0 +1,203 @@
+{
+ "seal": [
+  {
+   "note": "text",
+   "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+   "nonce": "a0a1a2a3a4a5a6a7a8a9aaab",
+   "plain_hex": "68656c6c6f207072697661746520636f7079",
+   "blob_hex": "8e7d10412aeb72cd0b13e6a7625aa3b100d5afec6c155834dc2654902c3f6f54e454",
+   "x": "f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08",
+   "ox": "4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d"
+  },
+  {
+   "note": "empty file",
+   "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+   "nonce": "a0a1a2a3a4a5a6a7a8a9aaab",
+   "plain_hex": "",
+   "blob_hex": "5c699625af4b93a0f8220a2a6119c5d0",
+   "x": "c1dba412309d42710810e1a32cea91e90b01f0557d1b7d82a5c08a88ff54ff44",
+   "ox": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+ ],
+ "records": [
+  {
+   "note": "good",
+   "json": "{\"alg\": \"aes-256-gcm\", \"key\": \"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\", \"mime\": \"application/pdf\", \"name\": \"page.pdf\", \"nonce\": \"a0a1a2a3a4a5a6a7a8a9aaab\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"saved_at\": 1730000000, \"size\": 18, \"source\": \"https://example.com/a\", \"title\": \"A page\", \"v\": 1, \"x\": \"f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08\"}",
+   "valid": true
+  },
+  {
+   "note": "no source or title",
+   "json": "{\"alg\": \"aes-256-gcm\", \"key\": \"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\", \"mime\": \"application/pdf\", \"name\": \"page.pdf\", \"nonce\": \"a0a1a2a3a4a5a6a7a8a9aaab\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"saved_at\": 1730000000, \"size\": 18, \"v\": 1, \"x\": \"f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08\"}",
+   "valid": true
+  },
+  {
+   "note": "wrong version",
+   "json": "{\"alg\": \"aes-256-gcm\", \"key\": \"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\", \"mime\": \"application/pdf\", \"name\": \"page.pdf\", \"nonce\": \"a0a1a2a3a4a5a6a7a8a9aaab\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"saved_at\": 1730000000, \"size\": 18, \"source\": \"https://example.com/a\", \"title\": \"A page\", \"v\": 2, \"x\": \"f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08\"}",
+   "valid": false
+  },
+  {
+   "note": "other algorithm",
+   "json": "{\"alg\": \"aes-128-gcm\", \"key\": \"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\", \"mime\": \"application/pdf\", \"name\": \"page.pdf\", \"nonce\": \"a0a1a2a3a4a5a6a7a8a9aaab\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"saved_at\": 1730000000, \"size\": 18, \"source\": \"https://example.com/a\", \"title\": \"A page\", \"v\": 1, \"x\": \"f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08\"}",
+   "valid": false
+  },
+  {
+   "note": "short key",
+   "json": "{\"alg\": \"aes-256-gcm\", \"key\": \"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e\", \"mime\": \"application/pdf\", \"name\": \"page.pdf\", \"nonce\": \"a0a1a2a3a4a5a6a7a8a9aaab\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"saved_at\": 1730000000, \"size\": 18, \"source\": \"https://example.com/a\", \"title\": \"A page\", \"v\": 1, \"x\": \"f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08\"}",
+   "valid": false
+  },
+  {
+   "note": "non-hex nonce",
+   "json": "{\"alg\": \"aes-256-gcm\", \"key\": \"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\", \"mime\": \"application/pdf\", \"name\": \"page.pdf\", \"nonce\": \"zza1a2a3a4a5a6a7a8a9aaab\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"saved_at\": 1730000000, \"size\": 18, \"source\": \"https://example.com/a\", \"title\": \"A page\", \"v\": 1, \"x\": \"f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08\"}",
+   "valid": false
+  },
+  {
+   "note": "path in name",
+   "json": "{\"alg\": \"aes-256-gcm\", \"key\": \"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\", \"mime\": \"application/pdf\", \"name\": \"../page.pdf\", \"nonce\": \"a0a1a2a3a4a5a6a7a8a9aaab\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"saved_at\": 1730000000, \"size\": 18, \"source\": \"https://example.com/a\", \"title\": \"A page\", \"v\": 1, \"x\": \"f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08\"}",
+   "valid": false
+  },
+  {
+   "note": "hidden name",
+   "json": "{\"alg\": \"aes-256-gcm\", \"key\": \"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\", \"mime\": \"application/pdf\", \"name\": \".page.pdf\", \"nonce\": \"a0a1a2a3a4a5a6a7a8a9aaab\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"saved_at\": 1730000000, \"size\": 18, \"source\": \"https://example.com/a\", \"title\": \"A page\", \"v\": 1, \"x\": \"f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08\"}",
+   "valid": false
+  },
+  {
+   "note": "no x",
+   "json": "{\"alg\": \"aes-256-gcm\", \"key\": \"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\", \"mime\": \"application/pdf\", \"name\": \"page.pdf\", \"nonce\": \"a0a1a2a3a4a5a6a7a8a9aaab\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"saved_at\": 1730000000, \"size\": 18, \"source\": \"https://example.com/a\", \"title\": \"A page\", \"v\": 1}",
+   "valid": false
+  },
+  {
+   "note": "too big",
+   "json": "{\"alg\": \"aes-256-gcm\", \"key\": \"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\", \"mime\": \"application/pdf\", \"name\": \"page.pdf\", \"nonce\": \"a0a1a2a3a4a5a6a7a8a9aaab\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"saved_at\": 1730000000, \"size\": 100000001, \"source\": \"https://example.com/a\", \"title\": \"A page\", \"v\": 1, \"x\": \"f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08\"}",
+   "valid": false
+  },
+  {
+   "note": "negative size",
+   "json": "{\"alg\": \"aes-256-gcm\", \"key\": \"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\", \"mime\": \"application/pdf\", \"name\": \"page.pdf\", \"nonce\": \"a0a1a2a3a4a5a6a7a8a9aaab\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"saved_at\": 1730000000, \"size\": -1, \"source\": \"https://example.com/a\", \"title\": \"A page\", \"v\": 1, \"x\": \"f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08\"}",
+   "valid": false
+  },
+  {
+   "note": "no saved_at",
+   "json": "{\"alg\": \"aes-256-gcm\", \"key\": \"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\", \"mime\": \"application/pdf\", \"name\": \"page.pdf\", \"nonce\": \"a0a1a2a3a4a5a6a7a8a9aaab\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"size\": 18, \"source\": \"https://example.com/a\", \"title\": \"A page\", \"v\": 1, \"x\": \"f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08\"}",
+   "valid": false
+  },
+  {
+   "note": "not json",
+   "json": "nope",
+   "valid": false
+  }
+ ],
+ "open": [
+  {
+   "note": "right blob",
+   "blob_hex": "8e7d10412aeb72cd0b13e6a7625aa3b100d5afec6c155834dc2654902c3f6f54e454",
+   "ok": true,
+   "plain_hex": "68656c6c6f207072697661746520636f7079"
+  },
+  {
+   "note": "one byte flipped",
+   "blob_hex": "8f7d10412aeb72cd0b13e6a7625aa3b100d5afec6c155834dc2654902c3f6f54e454",
+   "ok": false
+  }
+ ],
+ "open_record": "{\"alg\": \"aes-256-gcm\", \"key\": \"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\", \"mime\": \"application/pdf\", \"name\": \"page.pdf\", \"nonce\": \"a0a1a2a3a4a5a6a7a8a9aaab\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"saved_at\": 1730000000, \"size\": 18, \"source\": \"https://example.com/a\", \"title\": \"A page\", \"v\": 1, \"x\": \"f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08\"}",
+ "events": [
+  {
+   "note": "ours",
+   "kind": 30078,
+   "tags": [
+    [
+     "d",
+     "nv-private-copy:abc-123"
+    ],
+    [
+     "client",
+     "Nostr Vault"
+    ]
+   ],
+   "id": "abc-123"
+  },
+  {
+   "note": "nwc backup",
+   "kind": 30078,
+   "tags": [
+    [
+     "d",
+     "nwc-wallet-backup"
+    ]
+   ],
+   "id": null
+  },
+  {
+   "note": "other kind",
+   "kind": 30001,
+   "tags": [
+    [
+     "d",
+     "nv-private-copy:abc"
+    ]
+   ],
+   "id": null
+  },
+  {
+   "note": "bad id",
+   "kind": 30078,
+   "tags": [
+    [
+     "d",
+     "nv-private-copy:a/b"
+    ]
+   ],
+   "id": null
+  },
+  {
+   "note": "empty id",
+   "kind": 30078,
+   "tags": [
+    [
+     "d",
+     "nv-private-copy:"
+    ]
+   ],
+   "id": null
+  }
+ ],
+ "tags": {
+  "id": "abc-123",
+  "saved": [
+   [
+    "d",
+    "nv-private-copy:abc-123"
+   ],
+   [
+    "client",
+    "Nostr Vault"
+   ],
+   [
+    "encryption",
+    "nip44"
+   ]
+  ],
+  "cleared": [
+   [
+    "d",
+    "nv-private-copy:abc-123"
+   ],
+   [
+    "deleted",
+    "true"
+   ]
+  ]
+ },
+ "open_tag_fails": [
+  {
+   "note": "wrong nonce",
+   "record": "{\"alg\": \"aes-256-gcm\", \"key\": \"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\", \"mime\": \"application/pdf\", \"name\": \"page.pdf\", \"nonce\": \"a0a1a2a3a4a5a6a7a8a9aaac\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"saved_at\": 1730000000, \"size\": 18, \"source\": \"https://example.com/a\", \"title\": \"A page\", \"v\": 1, \"x\": \"f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08\"}",
+   "blob_hex": "8e7d10412aeb72cd0b13e6a7625aa3b100d5afec6c155834dc2654902c3f6f54e454"
+  },
+  {
+   "note": "wrong key",
+   "record": "{\"alg\": \"aes-256-gcm\", \"key\": \"010102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\", \"mime\": \"application/pdf\", \"name\": \"page.pdf\", \"nonce\": \"a0a1a2a3a4a5a6a7a8a9aaab\", \"ox\": \"4681496be15a5282581cf2eae64934c6882f25b3af5df785ad91d836c50f8c3d\", \"saved_at\": 1730000000, \"size\": 18, \"source\": \"https://example.com/a\", \"title\": \"A page\", \"v\": 1, \"x\": \"f1e9e766926dcbc55f6e2096cfd748e86efeb34091de187bd4337d9508dbbf08\"}",
+   "blob_hex": "8e7d10412aeb72cd0b13e6a7625aa3b100d5afec6c155834dc2654902c3f6f54e454"
+  }
+ ]
+}

@@ -353,7 +353,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
      * the account's own relays answered, or none was found and not every relay
      * answered, since publishing then could overwrite a list this device never saw.
      */
-    private fun NostrService.publishMergedList(
+    internal fun NostrService.publishMergedList(
         kind: Int,
         author: String,
         forceOwner: Boolean,
@@ -363,7 +363,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         onSigned: (NostrEvent) -> Unit = {},
         onUnchanged: (base: NostrEvent?) -> Unit = {},
         onNotSigned: () -> Unit = {},
-        build: (NostrEvent?) -> Pair<List<List<String>>, String>?,
+        build: suspend (NostrEvent?) -> Pair<List<List<String>>, String>?,
     ) {
         if (author.isBlank()) return
         // An active-account list is locked before the lookup, which can wait 6 s: a switch in that time would

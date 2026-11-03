@@ -92,6 +92,8 @@ test("a face's title says how many of your follows vouch for them", () => {
 test("the dock draws the panels from the registry, WoT mini between Live Vault and Messages", () => {
   const src = f => readFileSync(new URL(`../src/desktop/space/${f}`, import.meta.url), "utf8")
   assert.match(src("panels.js"), /live-vault[\s\S]*wot-mini[\s\S]*messages/)
-  assert.match(src("SpaceDock.jsx"), /PANELS\.map\(\(\{ id, Panel \}\) => <Panel key=\{id\} ctx=\{ctx\} \/>\)/)
+  // In the user's order (space-layout.js), over the registry's panels.
+  assert.match(src("SpaceDock.jsx"), /new Map\(PANELS\.map\(p => \[p\.id, p\]\)\)/)
+  assert.match(src("SpaceDock.jsx"), /shownPanels\(layout, PANEL_IDS\)[\s\S]*<Panel ctx=\{ctx\} open=\{open && !editing\} tools=\{tools\} \/>/)
   assert.match(src("WotMini.jsx"), /href=\{`#\/wot\/\$\{pk\}`\}/, "a face opens their card in the left column")
 })
