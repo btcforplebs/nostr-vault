@@ -82,6 +82,7 @@ extension VaultView {
             case .zaps: viewMode = .zaps
             case .bookmarks: viewMode = .bookmarks
             case .followers: viewMode = .followers
+            case .messages: viewMode = .messages
             case .media: break
             }
             VaultSection.shared.showsMedia = false
@@ -147,7 +148,7 @@ extension VaultView {
             notificationBaseline[9735] = events.filter { $0.kind == 9735 }.count
         case .followers:
             markFollowersSeen()
-        case .media, .bookmarks:
+        case .media, .bookmarks, .messages:
             break
         }
     }
@@ -667,6 +668,7 @@ extension VaultView {
         case .zaps: return "Zaps"
         case .bookmarks: return "Bookmarks"
         case .followers: return "Followers"
+        case .messages: return "Messages"
         }
     }
 }

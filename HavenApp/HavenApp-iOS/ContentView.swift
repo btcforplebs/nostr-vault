@@ -12,8 +12,6 @@ struct ContentView: View {
     @StateObject private var feedService = FeedService.shared
 
     @State private var selectedTab = 0
-    @State private var showingDMInbox = false
-    @State private var dmInboxConversation: String?
     @State private var pendingMentionNoteId: IdentifiableString?
     @State private var pendingProfilePubkey: IdentifiableString?
 
@@ -85,9 +83,8 @@ struct ContentView: View {
             VaultSection.shared.showsMedia = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenDMInbox)) { note in
-            selectedTab = 4 // Vault tab, whose Messages button opens the inbox
-            dmInboxConversation = note.object as? String
-            showingDMInbox = true
+            selectedTab = 4 // Vault tab: Messages is one of its pages
+            DMInboxRoute.shared.open(note.object as? String)
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenMentions)) { notification in
             selectedTab = 0 // Feed tab
@@ -117,20 +114,12 @@ struct ContentView: View {
             pendingProfilePubkey = nil
         }
         .modifier(OpensRelayTab(selectedTab: $selectedTab))
-        .modifier(OpensWOTTab(selectedTab: $selectedTab, showingDMInbox: $showingDMInbox,
+        .modifier(OpensWOTTab(selectedTab: $selectedTab,
                               pendingMentionNoteId: $pendingMentionNoteId,
                               pendingProfilePubkey: $pendingProfilePubkey))
         .modifier(IPadCommandKeys(selectedTab: $selectedTab))
         // Share Portal: review what the share sheet queued (Views/SharePortal).
         .modifier(SharePortalPresenter())
-        .sheet(isPresented: $showingDMInbox) {
-            NavigationStack {
-                DMInboxView(openConversation: dmInboxConversation)
-                    .environmentObject(NostrService.shared)
-                    .environmentObject(ConfigService.shared)
-            }
-            .dmInboxSheetSizing()
-        }
         .sheet(item: $pendingMentionNoteId) { noteId in
             NoteDetailViewWrapper(noteId: noteId.id, onDismiss: { pendingMentionNoteId = nil })
                 .environmentObject(NostrService.shared)
@@ -150,7 +139,6 @@ extension ContentView {
     fileprivate func clearCoversForNotificationNote() {
         guard NotificationOpen.pending != nil else { return }
         selectedTab = 0
-        showingDMInbox = false
         pendingMentionNoteId = nil
         pendingProfilePubkey = nil
     }
@@ -229,14 +217,12 @@ private struct IPadCommandKeys: ViewModifier {
 /// sheets this view opened put away (the globe and profiles close themselves).
 private struct OpensWOTTab: ViewModifier {
     @Binding var selectedTab: Int
-    @Binding var showingDMInbox: Bool
     @Binding var pendingMentionNoteId: IdentifiableString?
     @Binding var pendingProfilePubkey: IdentifiableString?
 
     func body(content: Content) -> some View {
         content.onReceive(NotificationCenter.default.publisher(for: .havenOpenWOT)) { _ in
             selectedTab = 3
-            showingDMInbox = false
             pendingMentionNoteId = nil
             pendingProfilePubkey = nil
         }

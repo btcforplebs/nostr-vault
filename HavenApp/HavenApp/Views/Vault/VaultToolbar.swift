@@ -21,6 +21,7 @@ extension VaultView {
         case .zaps: return .zaps
         case .bookmarks: return .bookmarks
         case .followers: return .followers
+        case .messages: return .messages
         default:
             switch noteScope {
             case .notes: return .notes
@@ -115,7 +116,27 @@ extension VaultView {
                 }
             }
             .accessibilityValue(hasNewFollowers ? "New followers" : "")
+            messagesIconButton
         }
+    }
+
+    /// Messages in the Mac's icon row: a page like the others, red-dotted
+    /// while a message is unread.
+    private var messagesIconButton: some View {
+        let unread = DMService.shared.totalUnreadCount
+        return IconFilterButton(icon: VaultMode.messages.symbol, tooltip: "Messages", isSelected: viewMode == .messages, color: .havenPurple) {
+            withAnimation(Motion.toggle) { viewMode = .messages }
+        }
+        .overlay(alignment: .topTrailing) {
+            if unread > 0 {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 8, height: 8)
+                    .offset(x: -5, y: 6)
+                    .allowsHitTesting(false)
+            }
+        }
+        .accessibilityValue(unread > 0 ? "\(unread) unread" : "")
     }
 
     // MARK: - Trailing Toolbar (inline)
@@ -125,27 +146,29 @@ extension VaultView {
     // to mean "my notes only" under Notes but "on my notes" under Likes and
     // Zaps. Whitelisted notes already show in All, and the phone has no
     // layout switch (`rowLayoutMode`).
-    /// The right pill: Messages, a line, then this mode's filters as bare
-    /// icons, then search at the right end. A filter tap says what it picked
-    /// in the note under the bar.
-    /// On a narrow phone (an SE in Articles has ✉️ and five filters) the
-    /// buttons narrow before the bar would fold the pill into "•••".
+    /// The right pill: this mode's filters as bare icons, then search at the
+    /// right end. A filter tap says what it picked in the note under the bar.
+    /// On a narrow phone (an SE in Articles has five filters) the buttons
+    /// narrow before the bar would fold the pill into "•••". Messages is a
+    /// page in the mode pill, not a button here; on that page the inbox puts
+    /// its own buttons in the bar.
+    @ViewBuilder
     var trailingToolbarInline: some View {
-        ViewThatFits(in: .horizontal) {
-            trailingPill(buttonWidth: 36, spacing: 4)
-            trailingPill(buttonWidth: 30, spacing: 0)
-            trailingPill(buttonWidth: 26, spacing: 0)
+        if viewMode != .messages {
+            ViewThatFits(in: .horizontal) {
+                trailingPill(buttonWidth: 36, spacing: 4)
+                trailingPill(buttonWidth: 30, spacing: 0)
+                trailingPill(buttonWidth: 26, spacing: 0)
+            }
         }
     }
 
     private func trailingPill(buttonWidth: CGFloat, spacing: CGFloat) -> some View {
         HStack(spacing: spacing) {
-            VaultMessagesButton()
             if viewMode != .media {
-                Divider().frame(height: 20).padding(.horizontal, 2)
                 trailingFilters(spacing: spacing)
+                Divider().frame(height: 20).padding(.horizontal, 2)
             }
-            Divider().frame(height: 20).padding(.horizontal, 2)
             searchToggleButton
         }
         .environment(\.filterButtonWidth, buttonWidth)
@@ -175,7 +198,7 @@ extension VaultView {
             case .followers:
                 filterButton(.followers(.new), "sparkles", "New", followersFilter == .new) { followersFilter = .new }
                 filterButton(.followers(.all), "person.3.fill", "All", followersFilter == .all) { followersFilter = .all }
-            case .media, .bookmarks:
+            case .media, .bookmarks, .messages:
                 EmptyView()
             }
         }
@@ -290,6 +313,13 @@ extension VaultView {
         }
     }
 
+    var messagesButton: some View {
+        ModeButton(title: "Messages", icon: VaultMode.messages.symbol, isSelected: viewMode == .messages,
+                   hasNotification: DMService.shared.totalUnreadCount > 0) {
+            withAnimation(Motion.toggle) { viewMode = .messages }
+        }
+    }
+
     var modeView: some View {
         HStack(spacing: 4) {
             notesButton
@@ -299,6 +329,7 @@ extension VaultView {
             zapsButton
             bookmarksButton
             followersButton
+            messagesButton
             #if os(iOS)
             // Add compact toggle on mobile
             if UIDevice.current.userInterfaceIdiom == .phone {

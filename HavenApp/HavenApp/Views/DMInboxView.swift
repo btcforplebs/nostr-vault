@@ -1,16 +1,17 @@
 import SwiftUI
 
+/// The inbox: the Vault's Messages page (VaultMode.messages), never a sheet.
+/// On iOS it sits in the Vault's navigation stack and its bar, beside the
+/// Vault's mode pill; the Mac's Vault has no stack, so there it brings one.
+/// A conversation asked for (a tapped notification, Your space) comes
+/// through `DMInboxRoute`.
 struct DMInboxView: View {
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
     @StateObject private var dmService = DMService.shared
-    @Environment(\.dismiss) private var dismiss
-
-    /// A conversation to open on arrival — set when a DM notification is tapped.
-    var openConversation: String? = nil
+    @ObservedObject private var route = DMInboxRoute.shared
 
     @State private var openedConversation: String?
-    @State private var didOpenConversation = false
     /// The conversation open in the right pane of the iPad's two-pane inbox.
     @State private var selectedConversation: String?
     @State private var showingDMThread = false
@@ -58,7 +59,14 @@ struct DMInboxView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        #if os(iOS)
+        inbox
+        #else
+        NavigationStack { inbox }
+        #endif
+    }
+
+    private var inbox: some View {
             dmContentView
             .searchable(text: $searchText, prompt: "Search names and messages")
             .navigationDestination(isPresented: $showingRequests) {
@@ -83,26 +91,16 @@ struct DMInboxView: View {
                     .environmentObject(nostrService)
                     .environmentObject(configService)
             }
-            .onAppear {
-                // Once: the root reappears every time the thread is popped.
-                guard !didOpenConversation else { return }
-                didOpenConversation = true
-                if let openConversation { open(openConversation) }
-            }
-            // A notification tapped while the inbox is already open.
-            .onReceive(NotificationCenter.default.publisher(for: .havenOpenDMInbox)) { note in
-                if let peer = note.object as? String { open(peer) }
+            // A conversation asked for: on arrival, or while already open.
+            .onChange(of: route.request, initial: true) { _, _ in
+                if let peer = route.takePeer() { open(peer) }
             }
             #if os(iOS)
-            // Close, the tray, mark-all-read and compose fill the bar: no title text.
+            // The Vault's mode pill, the tray, mark-all-read and compose fill
+            // the bar: no title text.
             .quietNavigationTitle(String(localized: "dm.inbox.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(String(localized: "dm.inbox.close")) {
-                        dismiss()
-                    }
-                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: 16) {
                         requestsButton
@@ -130,12 +128,6 @@ struct DMInboxView: View {
             #else
             .navigationTitle(String(localized: "dm.inbox.title"))
             .toolbar {
-                // The sheet has no title bar and macOS has no swipe-to-dismiss: without
-                // this the inbox could only be closed by quitting the window.
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "dm.inbox.close")) { dismiss() }
-                        .keyboardShortcut(.cancelAction)
-                }
                 ToolbarItem(placement: .automatic) {
                     HStack(spacing: 12) {
                         // macOS has no pull-to-refresh, so `.refreshable` on the
@@ -176,7 +168,6 @@ struct DMInboxView: View {
                     .frame(minWidth: 400, minHeight: 350)
             }
             #endif
-        }
     }
 
     // MARK: - DM Content
@@ -437,24 +428,6 @@ extension DMInboxView {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Color.platformWindowBackground.ignoresSafeArea())
-    }
-}
-
-extension View {
-    /// The DM inbox sheet. On iPad the default form sheet is too narrow for the
-    /// two-pane inbox; a page-sized sheet gives it the room. iPhone sheets are
-    /// full width either way, so this changes nothing there.
-    @ViewBuilder
-    func dmInboxSheetSizing() -> some View {
-        #if os(iOS)
-        if #available(iOS 18.0, *) {
-            self.presentationSizing(.page)
-        } else {
-            self
-        }
-        #else
-        self
-        #endif
     }
 }
 

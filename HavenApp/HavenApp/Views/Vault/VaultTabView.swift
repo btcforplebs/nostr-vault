@@ -76,6 +76,9 @@ enum VaultMode: String, CaseIterable {
     /// page. The tab opens on it.
     case activity
     case notes, articles, highlights, media, likes, zaps, bookmarks, followers
+    /// The inbox, as a page of its own (Logen 2026-11-03): no toolbar
+    /// envelope, no sheet. Last, so the tab's hold menu has it on top.
+    case messages
 
     var title: String { self == .activity ? "Vault" : rawValue.capitalized }
 
@@ -90,6 +93,7 @@ enum VaultMode: String, CaseIterable {
         case .zaps: return "bolt.fill"
         case .bookmarks: return "bookmark.fill"
         case .followers: return "person.2.fill"
+        case .messages: return "envelope.fill"
         }
     }
 
@@ -105,6 +109,7 @@ enum VaultMode: String, CaseIterable {
         }
     }
 
+    @MainActor
     func select() {
         switch self {
         case .activity: NotificationCenter.default.post(name: .havenOpenRelayActivity, object: nil)
@@ -115,6 +120,7 @@ enum VaultMode: String, CaseIterable {
         case .zaps: NotificationCenter.default.post(name: .havenOpenRelayZaps, object: nil)
         case .bookmarks: NotificationCenter.default.post(name: .havenOpenRelayBookmarks, object: nil)
         case .followers: NotificationCenter.default.post(name: .havenOpenRelayFollowers, object: nil)
+        case .messages: DMInboxRoute.shared.open(nil)
         case .media: break
         }
         withAnimation(Motion.toggle) { VaultSection.shared.showsMedia = self == .media }
@@ -128,11 +134,17 @@ struct VaultModePill: View {
     let mode: VaultMode
     var zapsOnly = false
     @ObservedObject private var section = VaultSection.shared
+    @ObservedObject private var dmService = DMService.shared
     @EnvironmentObject var relayManager: RelayProcessManager
 
     /// Modes with something new since you last looked: the relay half's own
-    /// dots, and what others sent that lit the Vault tab's dot.
-    private var newModes: Set<VaultMode> { section.newModes.union(relayManager.newActivityModes) }
+    /// dots, what others sent that lit the Vault tab's dot, and Messages
+    /// while one is unread.
+    private var newModes: Set<VaultMode> {
+        var modes = section.newModes.union(relayManager.newActivityModes)
+        if dmService.totalUnreadCount > 0 { modes.insert(.messages) }
+        return modes
+    }
 
     private var modes: [VaultMode] {
         VaultMode.allCases.filter { !(zapsOnly && $0 == .likes) }
@@ -147,7 +159,12 @@ struct VaultModePill: View {
                 ForEach(modes, id: \.self) { m in
                     Label {
                         Text(m.title)
-                        if newModes.contains(m) { Text("New") }
+                        // Messages says how many; the other pages only that something is new.
+                        if m == .messages, dmService.totalUnreadCount > 0 {
+                            Text("\(dmService.totalUnreadCount) unread")
+                        } else if newModes.contains(m) {
+                            Text("New")
+                        }
                     } icon: {
                         Image(systemName: m.symbol)
                     }
@@ -186,42 +203,38 @@ struct VaultModePill: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Vault: \(mode.title)")
         .accessibilityValue(hasNewElsewhere ? "New activity" : "")
-        .accessibilityHint("Switch between everything new, notes, articles, highlights, media, likes, zaps and followers, or open the Vault Dashboard")
+        .accessibilityHint("Switch between everything new, notes, articles, highlights, media, likes, zaps, bookmarks, followers and messages, or open the Vault Dashboard")
     }
 }
 
-/// The envelope at the front of the Vault tab's right pill: opens the
-/// inbox, with a red dot while a message is unread. Private messages never
-/// show in the Vault list itself; this is their door.
-struct VaultMessagesButton: View {
-    @ObservedObject private var dmService = DMService.shared
-    @Environment(\.filterButtonWidth) private var width
+/// Opens the Messages page of the Vault, on `peer`'s conversation when one is
+/// given: notifications, the widget, Your space and the menus all come here.
+/// The request waits until the Vault and its inbox are built to take it.
+@MainActor
+final class DMInboxRoute: ObservableObject {
+    static let shared = DMInboxRoute()
+    /// Bumped per request; the Vault switches to Messages when it changes.
+    @Published private(set) var request = 0
+    private var peer: String?
 
-    var body: some View {
-        let unread = dmService.totalUnreadCount
-        Button {
-            NotificationCenter.default.post(name: .havenOpenDMInbox, object: nil)
-        } label: {
-            Image(systemName: "envelope")
-                .font(.appSystem(size: 15, weight: .semibold))
-                .foregroundColor(.secondary)
-                .frame(width: width, height: 36)
-                .overlay(alignment: .topTrailing) {
-                    if unread > 0 {
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 8, height: 8)
-                            .offset(x: -5, y: 6)
-                            .transition(.scale.combined(with: .opacity))
-                    }
-                }
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Messages")
-        .accessibilityValue(unread > 0 ? "\(unread) unread" : "")
-        #if os(macOS)
-        .help("Messages")
-        #endif
+    func open(_ peer: String?) {
+        self.peer = peer
+        request &+= 1
+        withAnimation(Motion.toggle) { VaultSection.shared.showsMedia = false }
+    }
+
+    private var handledRequest = 0
+
+    /// True once per request: the Vault that takes it switches to Messages.
+    func takeRequest() -> Bool {
+        guard request != handledRequest else { return false }
+        handledRequest = request
+        return true
+    }
+
+    /// The conversation to open, once.
+    func takePeer() -> String? {
+        defer { peer = nil }
+        return peer
     }
 }

@@ -13,6 +13,8 @@ enum ViewMode {
     /// The account's kind 10003 (BookmarksView), Logen 2026-11-03.
     case bookmarks
     case followers
+    /// The inbox (DMInboxView), a Vault page of its own, Logen 2026-11-03.
+    case messages
 }
 
 extension ViewMode {
@@ -26,6 +28,7 @@ extension ViewMode {
         case .zaps: return .zaps
         case .bookmarks: return .bookmarks
         case .followers: return .followers
+        case .messages: return .messages
         }
     }
 }

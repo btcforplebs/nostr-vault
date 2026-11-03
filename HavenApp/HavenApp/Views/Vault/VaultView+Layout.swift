@@ -12,6 +12,10 @@ extension VaultView {
         ZStack {
             Color.platformWindowBackground.ignoresSafeArea()
 
+            // Messages is a page of its own: the inbox, in this stack and bar.
+            if viewMode == .messages {
+                DMInboxView()
+            } else {
             ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
@@ -46,8 +50,11 @@ extension VaultView {
                 }
             }
             }
+            }
         }
         .overlay(alignment: .bottomTrailing) {
+            // The inbox has its own compose button in the bar.
+            if viewMode != .messages {
             ChromeFold(anchor: .bottomTrailing) {
                 Button(action: { showingRelayDashboard = true }) {
                     HStack(spacing: 6) {
@@ -69,6 +76,7 @@ extension VaultView {
                 // Shares the row above the tab bar with the music mini player.
                 .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
+            }
             }
         }
         #else
@@ -109,6 +117,10 @@ extension VaultView {
 
                         Divider()
 
+                        if viewMode == .messages {
+                            DMInboxView()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
                         ScrollView {
                             listContent
 
@@ -127,6 +139,7 @@ extension VaultView {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         // Feeds the filter-note bubble in the banner stack.
                         .filterNoteHost(filterNote)
+                        }
                     }
                     .clipped()
                 } else {
@@ -146,6 +159,10 @@ extension VaultView {
 
             Divider()
 
+            if viewMode == .messages {
+                DMInboxView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
             ScrollView {
                 VStack(spacing: 0) {
                     listContent
@@ -168,6 +185,7 @@ extension VaultView {
             .scrollDirectionTracking(feedService: feedService)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .filterNoteHost(filterNote)
+            }
         }
         #if os(iOS)
         .overlay(alignment: .bottomTrailing) {
