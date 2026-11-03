@@ -194,7 +194,7 @@ function SaveConfirm({ ctx, kind, name, current, rows, review, onReview, onCance
       <p class="small">{saveLine(kind, name, sum)}</p>
       <PeoplePeek title={titles.back} rows={backRows} />
       <PeoplePeek title={titles.gone} rows={goneRows} />
-      {leftOutLines(sum).map(line => <p key={line} class="muted small">{line}</p>)}
+      {leftOutLines(sum, { box: !!ctx.vault?.box }).map(line => <p key={line} class="muted small">{line}</p>)}
       {remuteLine(sum.remutes) && <p class="small">{remuteLine(sum.remutes)}</p>}
       {needsNip44Note(kind, current?.ev.content, rows) && <p class="muted small">{NIP44_NOTE}</p>}
       {sum.removed > 0 && <label class="small"><input type="checkbox" checked={shrinkOk} onChange={e => setShrinkOk(e.currentTarget.checked)} /> {kind === 3 ? `Yes, unfollow ${sum.removed}.` : `Yes, take ${entries(sum.removed)} out of the list I have now.`}</label>}
@@ -217,7 +217,7 @@ function MergeView({ ctx, kind, name, rows, setRows, onBack, children }) {
   const section = (label, list, id, note) => list.length > 0 && (
     <section class="settings-group">
       <div class="section-label">{label} ({list.length})</div>
-      {(showAll[id] ? list : list.slice(0, SHOW)).map(r => <EntryRow key={r.key} row={r} onTick={() => tick(r.key)} />)}
+      {(showAll[id] ? list : list.slice(0, SHOW)).map(r => <EntryRow key={r.key} row={r} box={!!ctx.vault?.box} onTick={() => tick(r.key)} />)}
       {list.length > SHOW && !showAll[id] && <div class="settings-note"><button class="small" onClick={() => setShowAll(s => ({ ...s, [id]: true }))}>Show all {list.length}</button></div>}
       <p class="settings-note muted small">{note}</p>
     </section>
@@ -232,9 +232,9 @@ function MergeView({ ctx, kind, name, rows, setRows, onBack, children }) {
   )
 }
 
-function EntryRow({ row, onTick }) {
+function EntryRow({ row, box, onTick }) {
   const [t0, v] = row.tag
-  const label = entryNote(row, short)
+  const label = entryNote(row, short, { box })
   return (
     <label class="person-row">
       <input type="checkbox" checked={row.ticked} onChange={onTick} aria-label={`Keep ${v}`} />

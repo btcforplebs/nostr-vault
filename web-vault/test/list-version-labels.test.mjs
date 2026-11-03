@@ -51,6 +51,12 @@ test("an ordinary-edit drop isn't claimed as the user's: the browser vault may m
   assert.doesNotMatch(leftOutLines({ leftOut: 2, unsure: 1 }).join(" "), /you removed yourself/)
   const d = at => `d${at}`
   assert.equal(entryNote({ status: "removed", at: 5 }, d), "Dropped d5, can't tell by whom")
+  // Box mode: the box keeps every version published to it, so an ordinary edit there is the user's (Tod 2026-11-03).
+  assert.equal(entryNote({ status: "removed", at: 5 }, d, { box: true }), "You removed this d5")
+  assert.equal(entryNote({ status: "lost", at: 5 }, d, { box: true }), "Lost d5")
+  assert.deepEqual(leftOutLines({ leftOut: 1 }, { box: true }), ["1 you removed yourself later stays out."])
+  assert.equal(leftOutLines({ leftOut: 3, unsure: 1 }, { box: true })[0], "3 you removed yourself later stay out.")
+  assert.match(leftOutLines({ leftOut: 3, unsure: 1 }, { box: true })[1], /^1 stays out because the versions in between/)
   assert.equal(entryNote({ status: "lost", at: 5 }, d), "Lost d5")
   assert.equal(entryNote({ status: "unsure", at: 5 }, d), "Gone d5, can't tell why")
   assert.equal(entryNote({ status: "current", at: 0 }, d), "")
