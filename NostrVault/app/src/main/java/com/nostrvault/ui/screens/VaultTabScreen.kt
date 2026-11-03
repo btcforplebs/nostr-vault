@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -325,8 +326,9 @@ internal val VaultMode.icon: ImageVector
 /**
  * The Vault tab's mode picker, built like the Feed tab's `Following ▾`: the
  * mode's icon with the relay's health dot, its name, and a chevron. The menu
- * lists the modes, then the Vault Dashboard, as the feed menu ends with its
- * dashboard. Lists with something new say "New" in the menu; the bottom
+ * lists the modes, then Messages (a full page, with its unread count; it left
+ * the toolbar, Logen 2026-11-03), then the Vault Dashboard, as the feed menu
+ * ends with its dashboard. Lists with something new say "New" in the menu; the bottom
  * bar's Vault tab carries the dot.
  * Port of iOS VaultModePill.
  */
@@ -340,6 +342,7 @@ internal fun VaultModePill(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val messages = LocalVaultMessages.current
     // The lists' own dots, and what others sent that lit the Vault tab's dot.
     val relayNews by RelayForegroundService.newActivityModes.collectAsState()
     val allNew = newModes + relayNews.filterNot { zapsOnly && it == VaultMode.LIKES }
@@ -386,6 +389,35 @@ internal fun VaultModePill(
                         // "Vault" is the tab's own list, not one of the relay
                         // half's; every other pick leaves it.
                         if (m == VaultMode.ACTIVITY) VaultSection.showActivity() else onSelect(m)
+                    },
+                )
+            }
+            if (messages != null) {
+                val badge = messages.badge
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Messages", fontWeight = FontWeight.Normal)
+                            if (badge != null) {
+                                Text(
+                                    badge,
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier
+                                        .background(ErrorRed, CircleShape)
+                                        .padding(horizontal = 6.dp, vertical = 1.dp),
+                                )
+                            }
+                        }
+                    },
+                    leadingIcon = { Icon(NostrVaultIcons.Messages, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    modifier = Modifier.semantics {
+                        contentDescription = if (badge != null) "Messages, ${messages.unread} unread" else "Messages"
+                    },
+                    onClick = {
+                        expanded = false
+                        messages.open()
                     },
                 )
             }

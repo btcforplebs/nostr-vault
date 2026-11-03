@@ -42,8 +42,6 @@ import com.nostrvault.tutorials.tutorialAnchor
 import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
 import com.nostrvault.service.*
 import com.nostrvault.ui.components.GlassPill
-import com.nostrvault.ui.components.LocalVaultMessages
-import com.nostrvault.ui.components.VaultMessagesButton
 import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.ScrollCondenseEffect
 import com.nostrvault.ui.components.chromeFab
@@ -226,19 +224,8 @@ fun MediaGalleryScreen(
 
                     Spacer(Modifier.weight(1f))
 
-                    // Type + sort + layout toggle + upload. In the Vault tab,
-                    // Messages leads, as on every Vault mode.
+                    // Type + sort + layout toggle + upload.
                     GlassPill {
-                        LocalVaultMessages.current?.let { messages ->
-                            VaultMessagesButton(messages)
-                            Box(
-                                Modifier
-                                    .padding(horizontal = 2.dp)
-                                    .width(1.dp)
-                                    .height(20.dp)
-                                    .background(Color.White.copy(alpha = 0.18f)),
-                            )
-                        }
                         MediaTypeMenu(selection = typeSelection, onSelect = onTypeTap)
                         Box {
                             IconButton(
