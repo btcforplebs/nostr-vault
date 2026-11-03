@@ -16,6 +16,7 @@ extension Notification.Name {
     static let havenOpenMentions = Notification.Name("OpenMentions")
     /// Posted when the user taps a zap notification — opens relay page zaps section.
     static let havenOpenRelayZaps = Notification.Name("com.haven.openRelayZaps")
+    static let havenOpenRelayBookmarks = Notification.Name("com.haven.openRelayBookmarks")
     /// Posted to navigate to wallet.
     static let havenOpenWallet = Notification.Name("OpenWallet")
     /// The Profile tab was tapped while showing: back to the top, fetched fresh.

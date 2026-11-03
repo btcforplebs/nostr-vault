@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import androidx.compose.material.icons.filled.Bookmark
 import kotlinx.coroutines.flow.filterNotNull
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -200,7 +201,7 @@ fun VaultTabScreen(
         if (activeTutorial == TutorialID.POCKET_RELAY && !showDashboard) openDashboard()
     }
 
-    val messages = VaultMessages(unread = unreadDMs, open = { onNavigate(Screen.DMInbox) }, openBookmarks = { onNavigate(Screen.Bookmarks) })
+    val messages = VaultMessages(unread = unreadDMs, open = { onNavigate(Screen.DMInbox) })
     // The Vault's search (iOS VaultSearchBar): over the Vault list and the
     // relay's lists, not Media. Kept across a note or profile it opens.
     var searchOpen by rememberSaveable { mutableStateOf(false) }
@@ -317,6 +318,7 @@ internal val VaultMode.icon: ImageVector
         VaultMode.MEDIA -> NostrVaultIcons.TabMedia
         VaultMode.LIKES -> NostrVaultIcons.HeartFilled
         VaultMode.ZAPS -> NostrVaultIcons.Zap
+        VaultMode.BOOKMARKS -> androidx.compose.material.icons.Icons.Filled.Bookmark
         VaultMode.FOLLOWERS -> NostrVaultIcons.People
     }
 

@@ -14,14 +14,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -44,11 +38,9 @@ import com.nostrvault.service.BookmarkService
 import com.nostrvault.service.NostrEvent
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.components.VaultNoteCard
-import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryGroupedBg
 import com.nostrvault.ui.theme.SecondaryText
-import com.nostrvault.ui.theme.WindowBackground
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
@@ -65,14 +57,14 @@ class BookmarksViewModel @Inject constructor(
 }
 
 /**
- * Vault > Bookmarks: the active account's kind 10003, newest first. Notes and articles bookmarked in any app;
- * the private ones (encrypted in the list) are shown read-only. Bookmark sets (30003) are not in v1.
- * Twin of iOS `BookmarksView`.
+ * Vault > Bookmarks, a Vault mode beside Zaps (Logen 2026-11-03): the active account's kind 10003, newest first.
+ * Notes and articles bookmarked in any app; the private ones (encrypted in the list) are shown read-only.
+ * Bookmark sets (30003) are not in v1. Twin of iOS `BookmarksView`.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BookmarksScreen(
-    onBack: () -> Unit,
+fun BookmarksContent(
+    padding: PaddingValues,
+    listState: androidx.compose.foundation.lazy.LazyListState,
     onOpenNote: (String) -> Unit,
     onOpenArticle: (String) -> Unit,
     onOpenProfile: (String) -> Unit,
@@ -101,24 +93,11 @@ fun BookmarksScreen(
         loading = false
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Bookmarks") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(NostrVaultIcons.Back, contentDescription = "Back") } },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = WindowBackground,
-                    titleContentColor = PrimaryText,
-                    navigationIconContentColor = PrimaryText,
-                ),
-            )
-        },
-        containerColor = WindowBackground,
-    ) { padding ->
-        LazyColumn(
+    LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(
                 top = padding.calculateTopPadding() + 8.dp,
-                bottom = padding.calculateBottomPadding() + 16.dp,
+                bottom = padding.calculateBottomPadding() + 88.dp,
                 start = 12.dp,
                 end = 12.dp,
             ),
@@ -155,7 +134,6 @@ fun BookmarksScreen(
                 }
             }
         }
-    }
 }
 
 @Composable

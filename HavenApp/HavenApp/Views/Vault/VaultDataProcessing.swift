@@ -80,6 +80,7 @@ extension VaultView {
                 if target != .articles { recipesOnly = false }
             case .likes: viewMode = .likes
             case .zaps: viewMode = .zaps
+            case .bookmarks: viewMode = .bookmarks
             case .followers: viewMode = .followers
             case .media: break
             }
@@ -146,7 +147,7 @@ extension VaultView {
             notificationBaseline[9735] = events.filter { $0.kind == 9735 }.count
         case .followers:
             markFollowersSeen()
-        case .media:
+        case .media, .bookmarks:
             break
         }
     }
@@ -664,6 +665,7 @@ extension VaultView {
         case .media: return "Media"
         case .likes: return "Likes"
         case .zaps: return "Zaps"
+        case .bookmarks: return "Bookmarks"
         case .followers: return "Followers"
         }
     }

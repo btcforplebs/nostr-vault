@@ -11,8 +11,6 @@ sealed class Screen(val route: String) {
     /** The Web of Trust globe centred on you (iOS WOTTabView). */
     data object WOT : Screen("wot")
     data object DMInbox : Screen("dm_inbox")
-    /** Vault > Bookmarks (kind 10003). */
-    data object Bookmarks : Screen("vault/bookmarks")
     data object Profile : Screen("profile/{pubkey}") {
         fun createRoute(pubkey: String) = "profile/$pubkey"
     }

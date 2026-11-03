@@ -8,6 +8,8 @@ enum class VaultViewMode(val displayName: String) {
     NOTES("Notes"),
     LIKES("Likes"),
     ZAPS("Zaps"),
+    /** The account's kind 10003 (BookmarksContent), Logen 2026-11-03. */
+    BOOKMARKS("Bookmarks"),
     FOLLOWERS("Followers"),
 }
 

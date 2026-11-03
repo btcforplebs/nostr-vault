@@ -26,6 +26,8 @@ extension VaultView {
                         likesList
                     } else if viewMode == .zaps {
                         zapsList
+                    } else if viewMode == .bookmarks {
+                        BookmarksView()
                     } else if viewMode == .followers {
                         followersList
                     }
