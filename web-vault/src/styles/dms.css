@@ -1,5 +1,18 @@
 /* Messages (iPhone DMInboxView / DMThreadView): conversation rows, then a thread of bubbles with a field at the bottom. */
-.dm-head-actions { display: inline-flex; gap: 8px; }
+.dm-head-actions { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
+/* The Requests tray at the top right (MessagesTools.jsx), its count on a badge. */
+.dm-requests-btn { position: relative; display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 999px;
+  color: var(--text); background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
+.dm-requests-btn:hover { color: var(--accent-light); }
+.dm-requests-badge { position: absolute; top: -4px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 999px;
+  background: var(--accent); color: #1a0d03; font: 700 10px/18px var(--font); text-align: center; }
+/* The search: on this device only (net/dm-search.js). */
+.dm-search { display: flex; align-items: center; gap: 8px; margin: 0 var(--gutter) 12px; padding: 0 14px; min-height: 40px; border-radius: 999px;
+  background: var(--s1); border: 1px solid var(--hair); color: var(--text-3); }
+.dm-search:focus-within { border-color: var(--accent-line); }
+.dm-search input { flex: 1; min-width: 0; min-height: 38px; padding: 0; border: 0; background: none; color: var(--text); font: var(--t-body); }
+.dm-search input:focus { outline: none; }
+.dm-search input::placeholder { color: var(--text-3); }
 .dm-new { display: flex; gap: 8px; margin: 0 var(--gutter) 12px; }
 .dm-people { margin: -8px var(--gutter) 12px; }
 .dm-new input, .dm-compose textarea { flex: 1; min-width: 0; font: var(--t-body); min-height: 44px; padding: 0 14px; border-radius: 999px;

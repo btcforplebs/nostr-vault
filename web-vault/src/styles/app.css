@@ -29,6 +29,14 @@ button.small { min-height: 34px; padding: 0 14px; font: var(--t-foot); font-weig
   padding: max(8px, env(safe-area-inset-top)) var(--gutter) 8px; margin-top: calc(-1 * max(12px, env(safe-area-inset-top))); }
 .screen-head h2 { margin: 0; font: var(--t-headline); padding: 8px 16px; border-radius: 999px;
   background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
+.screen-head > .button.small, .screen-head > button.small { flex: none; white-space: nowrap; }
+/* A title never wraps into the buttons beside it: it shortens with an ellipsis instead (Logen, 2026-11-03). */
+.screen-head > h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The empty span that balanced a back button took the title's room on a phone and made it wrap or shorten: it goes,
+   and the title sits by the back button. */
+.screen-head > span:empty { display: none; }
+.screen-head:has(> span:empty) > h2 { margin-right: auto; }
+.screen-head > h2.sr-only { padding: 0; border: 0; }
 .screen-head button.small { background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
 .status-line { padding: 0 var(--gutter) 10px; font: var(--t-foot); color: var(--text-3); }
 .empty { padding: 48px var(--gutter); text-align: center; color: var(--text-2); font: var(--t-sub); }

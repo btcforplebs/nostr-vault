@@ -206,15 +206,13 @@ fun ComposeNoteScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
+                    // Drafts, Preview and Post need the room (Logen c2bba1de): read out, not drawn.
+                    com.nostrvault.ui.components.HiddenTitle(
                         when {
                             viewModel.isReply -> "Reply"
                             viewModel.isQuote -> "Quote"
                             else -> "New Note"
                         },
-                        // Preview and Post sit beside it: on a narrow phone the title gives way.
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     )
                 },
                 navigationIcon = {

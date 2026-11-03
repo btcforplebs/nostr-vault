@@ -36,7 +36,7 @@ private const val SHOW = 200
 
 /**
  * Review: the merged entries, each with a tick, the confirm card on top. Only
- * behind the confirm card's Review. Ones removed on purpose come unticked.
+ * behind the confirm card's Review. Ones removed on purpose, and ones that can't be told, come unticked.
  * Web twin: RecoverListPage.jsx MergeView.
  */
 @Composable
@@ -81,7 +81,7 @@ internal fun ListMergeReview(
             modifier = Modifier.fillMaxSize(),
         ) {
             item(key = "confirm") { confirm() }
-            section(ListVersionText.willAdd(kind), back, "back", "Ones you removed yourself are left unticked; tick them to bring them back.")
+            section(ListVersionText.willAdd(kind), back, "back", ListVersionText.BACK_NOTE)
             section(ListVersionText.stillIn(kind), now, "now", if (kind == 3) "Untick someone to unfollow them." else "Untick an entry to take it out.")
         }
     }
@@ -89,11 +89,7 @@ internal fun ListMergeReview(
 
 @Composable
 private fun EntryRow(row: ListVersionMerge.Row, known: Map<String, FeedProfile>, onTick: () -> Unit) {
-    val label = when (row.status) {
-        ListVersionMerge.Status.LOST -> "Lost ${ListBackupFormat.day(row.at)}"
-        ListVersionMerge.Status.REMOVED -> "You removed this ${ListBackupFormat.day(row.at)}"
-        else -> ""
-    }
+    val label = ListVersionText.entryNote(row)
     ListRow(onClick = onTick) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = row.ticked, onCheckedChange = { onTick() })

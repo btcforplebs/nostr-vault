@@ -1,8 +1,9 @@
 // Messages: the user's conversations, newest first (iPhone DMInboxView). Read from Haven's /chat and the relays
 // through net/dms.js; the text is decrypted in memory only. Blocked people's conversations are left out. Unread
 // conversations are bold with a count, as on the iPhone (net/dm-read.js). People outside the user's Web of Trust
-// whom the user never wrote to wait under Requests (net/dm-trust.js, the iPhone's DMTrust): one "Requests (N)" row
-// here opens them at #/messages/requests, and they never count towards an unread badge.
+// whom the user never wrote to wait under Requests (net/dm-trust.js, the iPhone's DMTrust): the tray button at the top
+// right opens them at #/messages/requests, and they never count towards an unread badge. The search runs on this
+// device only (MessagesTools.jsx, net/dm-search.js). The title is for screen readers only, so the buttons have room.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { decode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
@@ -17,6 +18,8 @@ import { forgetDeclinedAuth, getAuthProblems, onAuthProblems } from "../net/dm-r
 import { conversations, extraRelays, ownDmRelays, needResync, RELAY_CACHE_MS, loadedRecently, forgetUnopened, getMessages, lastPreview, loadMessages, onMessages, openMore, claimResync, onResyncNeeded, watchMessages } from "../net/dms.js"
 import { SkeletonList } from "../components/Loading.jsx"
 import { hiddenFromUnread, useDmTrust } from "../components/useDmTrust.js"
+import { searchChats } from "../net/dm-search.js"
+import { RequestsButton, MessagesSearch, searchName } from "./MessagesTools.jsx"
 import { splitConversations } from "../net/dm-trust.js"
 
 // The people strip under "New message" is the composer's @mention picker; its styles come with it.
@@ -165,7 +168,10 @@ export function MessagesScreen({ ctx }) {
   const me = ctx.session.pubkey
   const { inbox, requests } = splitConversations(conversations(messages, blocked), messages, me, trusted)
   const showRequests = isRequestsHash()
-  const list = showRequests ? requests : inbox
+  const [query, setQuery] = useState("")
+  useEffect(() => setQuery(""), [showRequests]) // a search is for the list it was typed over
+  const all = showRequests ? requests : inbox
+  const list = searchChats(all, messages, query, searchName)
   const inboxPeers = new Set(inbox.map(c => c.peer))
   // Only a name is looked up: a key (whole or mistyped) or an address would tell the search relays who you mean to write to.
   const showPeople = people && peopleQuery(to)
@@ -173,8 +179,8 @@ export function MessagesScreen({ ctx }) {
 
   useEffect(() => {
     const relays = uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])
-    fetchProfiles(ctx.vault, list.map(c => c.peer), relays).catch(() => {})
-  }, [list.map(c => c.peer).join()])
+    fetchProfiles(ctx.vault, all.map(c => c.peer), relays).catch(() => {})
+  }, [all.map(c => c.peer).join()])
 
   const open = e => {
     e.preventDefault()
@@ -186,12 +192,13 @@ export function MessagesScreen({ ctx }) {
 
   return (
     <main class="screen">
-      <header class="screen-head">
-        <h2>{showRequests ? "Requests" : "Messages"}</h2>
+      <header class="screen-head dm-head">
+        {showRequests && <a class="small button" href="#/messages">‹ Messages</a>}
+        <h2 class={showRequests ? undefined : "sr-only"}>{showRequests ? "Requests" : "Messages"}</h2>
         <span class="dm-head-actions">
-          {showRequests && <a class="small button" href="#/messages">Messages</a>}
           {!showRequests && total > 0 && <button type="button" class="small" onClick={() => markRead(me, [...messages.values()].filter(m => inboxPeers.has(m.peer)))}>Mark all read</button>}
           {!note && <button type="button" class="small" onClick={refresh} disabled={syncing} aria-busy={syncing || undefined} aria-label="Refresh messages">{syncing ? "Refreshing…" : "Refresh"}</button>}
+          {!showRequests && <RequestsButton count={requests.length} />}
         </span>
       </header>
       {note && <div class="status-line">Your messages can't be read here ({note}).</div>}
@@ -213,15 +220,16 @@ export function MessagesScreen({ ctx }) {
         </div>
       )}
       {err && <div class="status-line error">{err}</div>}
+      {all.length > 0 && <MessagesSearch value={query} onInput={setQuery} label={showRequests ? "Search requests" : "Search messages"} />}
       {showRequests && <p class="status-line muted small">From people outside your Web of Trust. Replying moves a conversation to Messages.</p>}
-      {!loaded && !list.length ? <>
+      {!loaded && !all.length ? <>
           {ctx.session.method === "nip46" && <p class="status-line">Your signer may ask you to approve.</p>}
           <SkeletonList rowClass="dm-row" avatar={44} label="Opening your messages…" />
         </>
-        // DMInboxView shows its empty state only when both lists are empty: with Requests waiting, the Requests row is it.
-        : !list.length ? (note ? null : showRequests ? <div class="empty"><strong>No Requests</strong></div> : requests.length ? null : (
+        : query && all.length && !list.length ? <div class="empty"><strong>No matches</strong><p class="small">Nothing in your {showRequests ? "requests" : "messages"} matches “{query.trim()}”.</p></div>
+        : !list.length ? (note ? null : showRequests ? <div class="empty"><strong>No Requests</strong></div> : (
           // DMInboxView's empty state; the web composer is the "New message to" box above, not a button.
-          <div class="empty"><strong>No Messages Yet</strong><p class="small">Start an encrypted conversation<br />with New message above</p></div>
+          <div class="empty"><strong>No Messages Yet</strong><p class="small">{requests.length ? <>Start an encrypted conversation with New message above.<br />Requests from people outside your Web of Trust are behind the tray at the top.</> : <>Start an encrypted conversation<br />with New message above</>}</p></div>
         ))
         : list.map(c => { const unread = counts.get(c.peer) ?? 0; return (
           <a key={c.peer} class={unread ? "dm-row unread" : "dm-row"} href={`#/dm/${c.peer}`} aria-label={unread ? `${unread} unread` : undefined}>
@@ -231,20 +239,12 @@ export function MessagesScreen({ ctx }) {
             <span class="dm-row-text">
               <span class="dm-row-head"><AuthorName pubkey={c.peer} /><time class="note-time dm-time" datetime={new Date(c.last.at * 1000).toISOString()}>{ago(c.last.at)}</time></span>
               <span class="dm-row-foot">
-                <span class="dm-row-last">{c.last.from === ctx.session.pubkey ? "You: " : ""}{lastPreview(c.last.content)}</span>
+                <span class="dm-row-last">{(c.hit ?? c.last).from === ctx.session.pubkey ? "You: " : ""}{lastPreview((c.hit ?? c.last).content)}</span>
                 {unread > 1 && <span class="dm-unread">{unread > 99 ? "99+" : unread}</span>}
               </span>
             </span>
           </a>
         ) })}
-      {/* DMInboxView's Requests row: an inbox glyph, the iPhone's words, the count on the right. */}
-      {!showRequests && requests.length > 0 && (
-        <a class="dm-row dm-requests" href="#/messages/requests" aria-label={`Requests, ${requests.length}`}>
-          <span class="dm-requests-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></svg></span>
-          <span class="dm-row-text"><span class="dm-row-head"><span class="author-name">Requests</span><span class="dm-requests-count">{requests.length}</span></span>
-            <span class="dm-row-last">From people outside your Web of Trust</span></span>
-        </a>
-      )}
       {showRequests && list.length > 0 && <p class="status-line muted small">These people are outside your Web of Trust, so their messages never notify you. Reply to move a conversation to your inbox.</p>}
     </main>
   )

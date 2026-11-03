@@ -85,6 +85,45 @@ internal object ListVersionText {
         return "Saves your follows: you follow $added again$off."
     }
 
+    /** What a mute merge mutes again, every type: "This mutes again: 3 people, 2 words, 1 hashtag, 1 thread." "" when nothing. */
+    fun remuteLine(r: ListVersionMerge.Remutes): String {
+        fun part(n: Int, one: String, many: String) = if (n == 0) null else "$n ${if (n == 1) one else many}"
+        val parts = listOfNotNull(
+            part(r.people, "person", "people"), part(r.words, "word", "words"),
+            part(r.hashtags, "hashtag", "hashtags"), part(r.threads, "thread", "threads"),
+        )
+        return if (parts.isEmpty()) "" else "This mutes again: ${parts.joinToString(", ")}."
+    }
+
+    /**
+     * The left-out lines under the confirm: what the person removed later, and what can't be judged.
+     * The vault on this phone keeps every version published to it, so an ordinary edit is the
+     * person's (web box mode, Tod 2026-11-03).
+     */
+    fun leftOutLines(sum: ListVersionMerge.Summary): List<String> = buildList {
+        val l = sum.leftOut
+        val u = sum.unsure
+        if (l > 0) add("$l you removed yourself later ${if (l == 1) "stays" else "stay"} out.")
+        if (u > 0) {
+            val it = if (u == 1) "it" else "them"
+            add("$u ${if (u == 1) "stays" else "stay"} out because the versions in between weren't all kept or couldn't be opened, so it can't be told whether you removed $it. Tap Review to add $it.")
+        }
+    }
+
+    /** A Review row's note: when and how it left the list; "" for one in the list now or with no later version. */
+    fun entryNote(row: ListVersionMerge.Row): String = when (row.status) {
+        ListVersionMerge.Status.LOST -> "Lost ${ListBackupFormat.day(row.at)}"
+        ListVersionMerge.Status.REMOVED -> "You removed this ${ListBackupFormat.day(row.at)}"
+        ListVersionMerge.Status.UNSURE -> "Gone ${ListBackupFormat.day(row.at)}, can't tell why"
+        else -> ""
+    }
+
+    /** Review's note under what comes back. */
+    const val BACK_NOTE = "Ones you removed yourself, or that can't be told, are left unticked; tick them to bring them back."
+
+    /** Said when the merge saves private entries over a NIP-04 list (ListMergeSave.needsNip44Note). */
+    const val NIP44_NOTE = "Your private entries are saved with NIP-44, the newer encryption. An app that only reads the older kind won't see them."
+
     /** The person an entry key ("p\u0000<hex>") or tag (["p", hex]) names, lowercased hex, or null. */
     fun personKey(key: String): String? {
         val parts = key.split('\u0000', limit = 2)

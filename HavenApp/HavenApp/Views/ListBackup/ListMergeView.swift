@@ -13,6 +13,9 @@ struct ListMergeView: View {
 
     @State private var current: ListVersionMerge.Opened?
     @State private var versions: [ListVersionMerge.Opened] = []
+    /// The ids of the versions the vault keeps, newest first (a current found
+    /// only on relays isn't one): a step outside its newest 20 can't be told.
+    @State private var vaultIDs: [String] = []
     @State private var picked: Set<String> = []
     @State private var rows: [ListVersionMerge.Row]?
     @State private var loading = true
@@ -104,14 +107,19 @@ struct ListMergeView: View {
             let back = rows.filter { $0.ticked && $0.status != .current }
             if !back.isEmpty {
                 Text("\(ListVersionWording.titles(kind).back) (\(back.count))").font(.appCaption).foregroundColor(.secondary)
-                ForEach(back.prefix(5)) { r in ListEntryLabel(key: r.key) }
-                if back.count > 5 { Text("and \(back.count - 5) more, all in Review").font(.appCaption).foregroundColor(.secondary) }
+                // A short list shows every row: they're few, and all came back ticked.
+                let shown = back.count < ListVersionMerge.shortList ? back.count : 5
+                ForEach(back.prefix(shown)) { r in ListEntryLabel(key: r.key) }
+                if back.count > shown { Text("and \(back.count - shown) more, all in Review").font(.appCaption).foregroundColor(.secondary) }
             }
             if sum.leftOut > 0 {
                 Text("\(sum.leftOut) you removed yourself later \(sum.leftOut == 1 ? "stays" : "stay") out.").foregroundColor(.secondary)
             }
-            if sum.remutes > 0 {
-                Text("This mutes \(sum.remutes) \(sum.remutes == 1 ? "person" : "people") again.").foregroundColor(.orange)
+            if sum.unsure > 0 {
+                Text("\(sum.unsure) we can't tell about \(sum.unsure == 1 ? "stays" : "stay") out; tick \(sum.unsure == 1 ? "it" : "them") in Review.").foregroundColor(.secondary)
+            }
+            if !sum.remutes.isEmpty {
+                Text("This mutes again: \(sum.remutes.line).").foregroundColor(.orange)
             }
             if sum.removed > 0 {
                 Toggle("Yes, take \(entries(sum.removed)) out of the list I have now.", isOn: $shrinkOK)
@@ -142,6 +150,7 @@ struct ListMergeView: View {
         case .failure(let error): problem = error.message
         case .success(let event):
             var all = kept
+            vaultIDs = kept.sorted(by: ListHistory.newerFirst).map(\.id)
             if let event, !all.contains(where: { $0.id == event.id }) { all.insert(ListVersion(event), at: 0) }
             var opened: [ListVersionMerge.Opened] = []
             for v in all { opened.append(await ListVersionMerge.open(v, decrypt: v.id == event?.id ? decrypt(v.pubkey) : nil)) }
@@ -167,7 +176,7 @@ struct ListMergeView: View {
         let me = current?.version.pubkey ?? chosen.first?.version.pubkey ?? ""
         versions = await ListVersionMerge.openForMerge(versions, picked: chosen, decrypt: decrypt(me))
         shrinkOK = false
-        rows = ListVersionMerge.build(current: current, picked: chosen, all: versions)
+        rows = ListVersionMerge.build(current: current, picked: chosen, all: versions, vault: vaultIDs)
         ListEntryLabel.loadPeople((rows ?? []).filter { $0.status != .current }.map(\.key))
     }
 
@@ -198,7 +207,7 @@ private struct ListMergeReview: View {
         let titles = ListVersionWording.titles(kind)
         Form {
             section(titles.back, rows.indices.filter { rows[$0].status != .current },
-                    footer: "Ones you removed yourself are left unticked; tick them to bring them back.")
+                    footer: "Ones you removed yourself, and ones we can't tell about, are left unticked; tick them to bring them back.")
             section(titles.stays, rows.indices.filter { rows[$0].status == .current },
                     footer: kind == 3 ? "Untick someone to unfollow them." : "Untick an entry to take it out.")
         }
@@ -228,6 +237,7 @@ private struct ListMergeReview: View {
         var parts: [String] = []
         if r.status == .lost { parts.append("Lost \(when)") }
         if r.status == .removed { parts.append("You removed this \(when)") }
+        if r.status == .unsure { parts.append("Can't tell if you removed this") }
         if r.isPrivate { parts.append("Private") }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }

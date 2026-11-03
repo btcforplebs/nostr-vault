@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -199,7 +200,15 @@ private fun DMInboxList(
     val showingRequests by viewModel.showingRequests.collectAsState()
     // Back out of Requests once the last one has been answered or blocked.
     val inRequests = showingRequests && requests.isNotEmpty()
-    val conversations = if (inRequests) requests else inbox
+    // Search reads both lists, already in memory; nothing leaves the device.
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val searchingNow = searching && query.isNotBlank()
+    val conversations = when {
+        searchingNow -> DMInboxSearch.filter(inbox + requests, query, viewModel::profileFor)
+        inRequests -> requests
+        else -> inbox
+    }
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val pendingDecrypt by viewModel.pendingDecryptCount.collectAsState()
     val decryptBlocked by viewModel.decryptBlocked.collectAsState()
@@ -210,39 +219,22 @@ private fun DMInboxList(
     GlassScaffold(
         modifier = modifier,
         toolbar = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-            ) {
-                // Leading pill: title
-                GlassPill {
-                    Text(
-                        text = "Messages",
-                        color = PrimaryText,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                    )
-                }
-
-                Spacer(Modifier.weight(1f))
-
-                // Trailing pill: compose new message
-                GlassPill {
-                    IconButton(onClick = { viewModel.markAllAsRead() }, modifier = Modifier.size(40.dp)) {
-                        Icon(NostrVaultIcons.MarkAllRead, "Mark all read", tint = colors.primary, modifier = Modifier.size(25.dp))
-                    }
-                    IconButton(onClick = onNewMessage, modifier = Modifier.size(40.dp)) {
-                        Icon(NostrVaultIcons.Edit, "New Message", tint = colors.primary, modifier = Modifier.size(25.dp))
-                    }
-                }
-            }
+            DMInboxToolbar(
+                requestCount = requests.size,
+                inRequests = inRequests,
+                searching = searching,
+                onToggleRequests = { viewModel.showRequests(!inRequests) },
+                onToggleSearch = {
+                    searching = !searching
+                    if (!searching) query = ""
+                },
+                onMarkAllRead = { viewModel.markAllAsRead() },
+                onNewMessage = onNewMessage,
+            )
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
+            if (searching) DMInboxSearchField(query) { query = it }
             // iOS: messages the signer hasn't opened yet, in a banner above the list.
             // A normal drain shows nothing, as on iOS (the old "Decrypting N" pill is gone on purpose).
             if ((decryptBlocked || retrying) && pendingDecrypt > 0) {
@@ -259,6 +251,13 @@ private fun DMInboxList(
                     // A watch-only account has no key here, so the inbox can
                     // only ever be empty: say that instead of "no messages yet".
                     DMUnavailableNotice(blocked)
+                } else if (searchingNow && conversations.isEmpty()) {
+                    Text(
+                        "No names or messages match \u201C${query.trim()}\u201D.",
+                        color = SecondaryText,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    )
                 } else if (conversations.isEmpty() && requests.isEmpty()) {
                     DMInboxEmptyState()
                 } else {
@@ -266,10 +265,9 @@ private fun DMInboxList(
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        if (inRequests) {
+                        // Requests opens from the tray in the header (Logen c2bba1de); this heads its list.
+                        if (inRequests && !searchingNow) {
                             item(key = "requests-header") { DMRequestsHeader { viewModel.showRequests(false) } }
-                        } else if (requests.isNotEmpty()) {
-                            item(key = "requests-row") { DMRequestsRow(requests.size) { viewModel.showRequests(true) } }
                         }
                         items(
                             items = conversations,

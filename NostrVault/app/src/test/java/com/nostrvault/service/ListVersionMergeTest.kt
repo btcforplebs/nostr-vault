@@ -107,26 +107,29 @@ class ListVersionMergeTest {
         assertEquals("current order first, then what comes back", listOf(p(1), p(2), p(3), p(4)), rows.map { it.tag[1] })
         assertEquals("the current list's own tag for 1 (its first p tag) is kept, not the old hint", 2, rows[0].tag.size)
         assertEquals(
-            listOf(ListVersionMerge.Status.CURRENT, ListVersionMerge.Status.CURRENT, ListVersionMerge.Status.REMOVED, ListVersionMerge.Status.REMOVED),
+            "a short list: everything goes back ticked (Hal's point 2)",
+            listOf(ListVersionMerge.Status.CURRENT, ListVersionMerge.Status.CURRENT, ListVersionMerge.Status.BACK, ListVersionMerge.Status.BACK),
             rows.map { it.status },
         )
     }
 
     @Test
     fun `a later remove - an ordinary edit comes back unticked, a wipe comes back ticked`() = runTest {
-        val many = (1..12).toList()
-        val v1 = opened(follows(many + 99, 10)) // had 99
-        val v2 = opened(follows(many, 20)) // unfollowed 99: an edit
-        val v3 = opened(follows(listOf(1), 30)) // a wipe: 12 -> 1
-        val rows = ListVersionMerge.buildMerge(v3, listOf(v1, v2), listOf(v3, v2, v1))
-        assertEquals(ListVersionMerge.Status.REMOVED, rows.of(p(99)).status)
-        assertFalse("unfollowed on purpose: not brought back unless ticked", rows.of(p(99)).ticked)
-        assertEquals(20L, rows.of(p(99)).at)
-        assertEquals(ListVersionMerge.Status.LOST, rows.of(p(5)).status)
-        assertTrue(rows.of(p(5)).ticked)
-        assertEquals(30L, rows.of(p(5)).at)
-        assertEquals(ListVersionMerge.Status.CURRENT, rows.of(p(1)).status)
-        assertEquals(ListVersionMerge.Summary(total = 12, added = 11, removed = 0, remutes = 0), ListVersionMerge.mergeSummary(3, rows))
+        val v1 = opened(follows((1..30).toList(), 10))
+        val v2 = opened(follows((1..12).toList(), 20)) // a wipe: 30 -> 12
+        val v3 = opened(follows((2..12).toList(), 30)) // then the person unfollowed 1: an edit
+        val rows = ListVersionMerge.buildMerge(v3, listOf(v1), listOf(v3, v2, v1))
+        assertEquals(ListVersionMerge.Status.REMOVED, rows.of(p(1)).status)
+        assertFalse("unfollowed on purpose after the wipe: not brought back unless ticked", rows.of(p(1)).ticked)
+        assertEquals(30L, rows.of(p(1)).at)
+        assertEquals(ListVersionMerge.Status.LOST, rows.of(p(20)).status)
+        assertTrue(rows.of(p(20)).ticked)
+        assertEquals(20L, rows.of(p(20)).at)
+        assertEquals(ListVersionMerge.Status.CURRENT, rows.of(p(5)).status)
+        assertEquals(
+            ListVersionMerge.Summary(total = 29, added = 18, removed = 0, leftOut = 1, unsure = 0, remutes = ListVersionMerge.Remutes()),
+            ListVersionMerge.mergeSummary(3, rows),
+        )
     }
 
     @Test
@@ -134,7 +137,8 @@ class ListVersionMergeTest {
         val v1 = opened(follows(listOf(1, 2), 10))
         val v2 = opened(follows(listOf(2, 3), 20))
         val rows = ListVersionMerge.buildMerge(null, listOf(v1, v2), listOf(v2, v1))
-        assertEquals("v2 dropped 1 in an edit", ListVersionMerge.Status.REMOVED, rows.of(p(1)).status)
+        assertEquals("v2 dropped 1 from a short list: offered back", ListVersionMerge.Status.BACK, rows.of(p(1)).status)
+        assertTrue(rows.of(p(1)).ticked)
         assertEquals(ListVersionMerge.Status.BACK, rows.of(p(3)).status)
     }
 
@@ -147,17 +151,19 @@ class ListVersionMergeTest {
         val (tags, privateTags) = ListVersionMerge.mergedTags(rows, cur)
         assertEquals(listOf(listOf("t", "nsfw")), tags)
         assertEquals(listOf(p(1), p(2), "x").sorted(), privateTags.map { it[1] }.sorted())
-        assertEquals("P(2) is muted again: said before Save", 1, ListVersionMerge.mergeSummary(10000, rows).remutes)
+        assertEquals("P(2) and #nsfw are muted again: said before Save", ListVersionMerge.Remutes(people = 1, hashtags = 1), ListVersionMerge.mergeSummary(10000, rows).remutes)
     }
 
     @Test
-    fun `an unopenable older private part makes the next version's removal unknown, not a removal`() = runTest {
-        val v1 = opened(ev(10000, emptyList(), 10, enc(listOf(listOf("p", p(7))))))
-        val v2 = opened(ev(10000, listOf(listOf("p", p(1))), 20, "garbage"))
-        val cur = opened(ev(10000, listOf(listOf("p", p(1)), listOf("p", p(2))), 30))
+    fun `an unopenable in-between private part - can't tell, so it stays out`() = runTest {
+        val many = (0 until 10).map { listOf("p", p(100 + it)) }
+        val v1 = opened(ev(10000, many, 10, enc(listOf(listOf("p", p(7))))))
+        val v2 = opened(ev(10000, many, 20, "garbage"))
+        val cur = opened(ev(10000, many + listOf(listOf("p", p(2))), 30))
         val r = ListVersionMerge.buildMerge(cur, listOf(v1), listOf(cur, v2, v1)).of(p(7))
-        assertEquals(ListVersionMerge.Status.BACK, r.status)
-        assertTrue(r.ticked)
+        assertEquals(ListVersionMerge.Status.UNSURE, r.status)
+        assertFalse(r.ticked)
+        assertTrue("and if ticked, it goes back private", r.private)
     }
 
     @Test
@@ -176,7 +182,10 @@ class ListVersionMergeTest {
         val (tags, privateTags) = ListVersionMerge.mergedTags(rows, cur)
         assertEquals(listOf(listOf("client", "x"), listOf("server", "https://a.example"), listOf("server", "https://c.example")), tags)
         assertEquals(emptyList<List<String>>(), privateTags)
-        assertEquals(ListVersionMerge.Summary(total = 2, added = 1, removed = 1, remutes = 0), ListVersionMerge.mergeSummary(10063, rows))
+        assertEquals(
+            ListVersionMerge.Summary(total = 2, added = 1, removed = 1, leftOut = 0, unsure = 0, remutes = ListVersionMerge.Remutes()),
+            ListVersionMerge.mergeSummary(10063, rows),
+        )
     }
 
     @Test
@@ -226,10 +235,11 @@ class ListVersionMergeTest {
         var asked = 0
         val counting = ListVersionMerge.Opener.With { asked++; dec(it) }
         val later = ListVersionMerge.Opener.Later
-        val v0 = opened(ev(10000, emptyList(), 5, enc(listOf(listOf("p", p(8))))), later)
-        val v1 = opened(ev(10000, listOf(listOf("p", p(5))), 10), later)
-        val v2 = opened(ev(10000, listOf(listOf("p", p(6))), 20, enc(listOf(listOf("word", "y")))), later) // unmuted P(5)
-        val cur = opened(ev(10000, listOf(listOf("p", p(6))), 30, enc(listOf(listOf("word", "y")))), counting)
+        val f = (0 until 10).map { listOf("p", p(200 + it)) } // not a short list
+        val v0 = opened(ev(10000, f, 5, enc(listOf(listOf("p", p(8))))), later)
+        val v1 = opened(ev(10000, f + listOf(listOf("p", p(5))), 10), later)
+        val v2 = opened(ev(10000, f + listOf(listOf("p", p(6))), 20, enc(listOf(listOf("word", "y")))), later) // unmuted P(5)
+        val cur = opened(ev(10000, f + listOf(listOf("p", p(6))), 30, enc(listOf(listOf("word", "y")))), counting)
         asked = 0
         val all = ListVersionMerge.openForMerge(listOf(cur, v2, v1, v0), listOf(v1), counting)
         assertEquals("only the locked version newer than the oldest picked one is opened", 1, asked)
@@ -238,8 +248,10 @@ class ListVersionMergeTest {
         assertEquals(ListVersionMerge.Status.REMOVED, x.status)
         assertFalse(x.ticked)
         assertFalse(x.private)
-        // Without opening it, the same merge can't tell: it would come back.
-        assertEquals(ListVersionMerge.Status.BACK, ListVersionMerge.buildMerge(cur, listOf(v1), listOf(cur, v2, v1, v0)).of(p(5)).status)
+        // Without opening it, the same merge can't tell: it stays out (Lazarus leaves it out).
+        val blind = ListVersionMerge.buildMerge(cur, listOf(v1), listOf(cur, v2, v1, v0)).of(p(5))
+        assertEquals(ListVersionMerge.Status.UNSURE, blind.status)
+        assertFalse(blind.ticked)
     }
 
     @Test
