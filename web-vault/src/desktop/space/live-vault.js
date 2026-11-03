@@ -1,13 +1,14 @@
 // The Live Vault panel's rules (no styles, so tests can import it). The panel draws the Vault list's lines
 // (net/notify-watch.js vaultLines) beside whatever is open, and keeps still while you read it: lines that arrive after
-// it was drawn wait behind its "N new" pill, and a line that changes in place (a like that gained a face) keeps its slot.
+// it was drawn go on top by themselves (no pill, Logen 2026-11-03), and a line that changes in place (a like that gained
+// a face) keeps its slot. Twin of the iPad's LiveVault.swift.
 
 /** Rows the panel draws at most. */
 export const MAX_ROWS = 30
 /** Faces at the top of the panel. */
 export const TOP_FACES = 5
 
-/** What the panel shows, taken when it is first drawn and when the pill is clicked, never in between: the ids of the
+/** What the panel shows, taken when it is first drawn and moved on by `place` as lines come in: the ids of the
  *  first MAX_ROWS of `lines` (newest first) and the newest moment among them (`now` when there are none). */
 export const snapshot = (lines, now = Math.floor(Date.now() / 1000)) =>
   ({ ids: lines.slice(0, MAX_ROWS).map(r => r.id), top: lines[0]?.created_at ?? now })
@@ -16,7 +17,7 @@ export const snapshot = (lines, now = Math.floor(Date.now() / 1000)) =>
  * `lines` (newest first) against the snapshot on screen -> { rows, held }.
  * `rows`: the snapshot's lines in the order they were drawn, each in its latest form (a line gone from `lines`, blocked
  * or deleted, drops out), then lines older than its newest that came in late, below them, up to MAX_ROWS. Nothing
- * already drawn moves. `held`: lines newer than the snapshot, for the pill.
+ * already drawn moves. `held`: lines newer than the snapshot, not drawn yet.
  */
 export function splitShown(lines, { ids, top }) {
   const byId = new Map(lines.map(r => [r.id, r]))
@@ -39,8 +40,16 @@ export function topFaces(lines, n = TOP_FACES) {
 /** What the faces on top stand for: "84 people since you looked", "12 people lately" (the "+79" alone said nothing). */
 export const facesText = (people, news) => `${people.toLocaleString()} ${people === 1 ? "person" : "people"} ${news ? "since you looked" : "lately"}`
 
-/** The pill's count: lines newer than the last look, else the ones waiting to be drawn; 0 hides it. */
-export const pillCount = (unread, held) => (unread > 0 ? unread : held)
+/** The snapshot after `lines` came in: lines newer than it go on top, newest first; every line already drawn (late
+ *  older ones included) keeps its order below them. No snapshot yet takes a fresh one. */
+export function place(lines, shown) {
+  if (!shown) return snapshot(lines)
+  const { rows, held } = splitShown(lines, shown)
+  return { ids: [...held, ...rows].slice(0, MAX_ROWS).map(r => r.id), top: Math.max(shown.top, held[0]?.created_at ?? shown.top) }
+}
+
+/** Whether two snapshots are the same. */
+export const sameShot = (a, b) => a === b || (!!a && !!b && a.top === b.top && a.ids.length === b.ids.length && a.ids.every((id, i) => id === b.ids[i]))
 
 /** A line's text on one row: `nostr:` people as a short @npub, links to notes left out, spaces folded. */
 export const rowText = (s = "") =>

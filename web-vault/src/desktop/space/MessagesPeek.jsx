@@ -19,7 +19,7 @@ import { peekRows, peekOpen } from "./messages-peek.js"
 import { Icon, ICON } from "../Sidebar.jsx"
 import "../../styles/messages-peek.css"
 
-export function MessagesPeek({ ctx }) {
+export function MessagesPeek({ ctx, open: shown = true, tools = null }) {
   const me = ctx.session.pubkey
   const [, setTick] = useState(0)
   useEffect(() => onRead(() => setTick(t => t + 1)), [])
@@ -36,11 +36,12 @@ export function MessagesPeek({ ctx }) {
     fetchProfiles(ctx.vault, peers.split(","), relays).catch(() => {})
   }, [peers])
   return (
-    <section class="sp-panel msg-peek" aria-label="Messages">
+    <section class={shown ? "sp-panel msg-peek" : "sp-panel msg-peek closed"} aria-label="Messages">
       <header class="sp-head">
         <span class="sp-icon"><Icon d={ICON.messages} size={15} /></span>
         <h3>Messages</h3>
         {waiting > 0 && <span class="mp-count" role="img" aria-label={`${waiting} unread ${waiting === 1 ? "chat" : "chats"}`}>{badgeCount(waiting)}</span>}
+        {tools}
       </header>
       <ul class="sp-rows">
         {!open ? <li class="sp-empty">{state.note ? `Your messages can't be read here (${state.note}).` : "Reading your messages…"}</li>

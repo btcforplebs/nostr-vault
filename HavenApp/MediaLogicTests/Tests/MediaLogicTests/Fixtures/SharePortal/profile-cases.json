@@ -1,0 +1,117 @@
+{
+ "_note": "ProfileShareTarget: the npub/nprofile identifiers in a share (url, then text, then selection, each once) and the pubkeys they decode to. Read by HavenApp MediaLogicTests and Android shareportal tests.",
+ "cases": [
+  {
+   "name": "bare npub in text",
+   "source": {
+    "text": "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg"
+   },
+   "identifiers": [
+    "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg"
+   ],
+   "pubkeys": [
+    "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e"
+   ]
+  },
+  {
+   "name": "nostrvault.app profile link",
+   "source": {
+    "url": "https://nostrvault.app/p/npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg"
+   },
+   "identifiers": [
+    "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg"
+   ],
+   "pubkeys": [
+    "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e"
+   ]
+  },
+  {
+   "name": "njump nprofile link",
+   "source": {
+    "url": "https://njump.me/nprofile1qqsrhuxx8l9ex335q7he0f09aej04zpazpl0ne2cgukyawd24mayt8gpp4mhxue69uhhytnc9e3k7mgpz4mhxue69uhkg6nzv9ejuumpv34kytnrdaksjlyr9p"
+   },
+   "identifiers": [
+    "nprofile1qqsrhuxx8l9ex335q7he0f09aej04zpazpl0ne2cgukyawd24mayt8gpp4mhxue69uhhytnc9e3k7mgpz4mhxue69uhkg6nzv9ejuumpv34kytnrdaksjlyr9p"
+   ],
+   "pubkeys": [
+    "3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d"
+   ]
+  },
+  {
+   "name": "nostr: uri",
+   "source": {
+    "text": "follow nostr:npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg please"
+   },
+   "identifiers": [
+    "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg"
+   ],
+   "pubkeys": [
+    "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e"
+   ]
+  },
+  {
+   "name": "url first, then text, each once",
+   "source": {
+    "url": "https://njump.me/nprofile1qqsrhuxx8l9ex335q7he0f09aej04zpazpl0ne2cgukyawd24mayt8gpp4mhxue69uhhytnc9e3k7mgpz4mhxue69uhkg6nzv9ejuumpv34kytnrdaksjlyr9p",
+    "text": "by npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg and npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg"
+   },
+   "identifiers": [
+    "nprofile1qqsrhuxx8l9ex335q7he0f09aej04zpazpl0ne2cgukyawd24mayt8gpp4mhxue69uhhytnc9e3k7mgpz4mhxue69uhkg6nzv9ejuumpv34kytnrdaksjlyr9p",
+    "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg"
+   ],
+   "pubkeys": [
+    "3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d",
+    "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e"
+   ]
+  },
+  {
+   "name": "selection last",
+   "source": {
+    "text": "see nprofile1qqsrhuxx8l9ex335q7he0f09aej04zpazpl0ne2cgukyawd24mayt8gpp4mhxue69uhhytnc9e3k7mgpz4mhxue69uhkg6nzv9ejuumpv34kytnrdaksjlyr9p",
+    "selection": "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg"
+   },
+   "identifiers": [
+    "nprofile1qqsrhuxx8l9ex335q7he0f09aej04zpazpl0ne2cgukyawd24mayt8gpp4mhxue69uhhytnc9e3k7mgpz4mhxue69uhkg6nzv9ejuumpv34kytnrdaksjlyr9p",
+    "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg"
+   ],
+   "pubkeys": [
+    "3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d",
+    "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e"
+   ]
+  },
+  {
+   "name": "broken checksum names nobody",
+   "source": {
+    "text": "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptq"
+   },
+   "identifiers": [
+    "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptq"
+   ],
+   "pubkeys": []
+  },
+  {
+   "name": "part of a longer word is not one",
+   "source": {
+    "text": "xnpub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptgx"
+   },
+   "identifiers": [],
+   "pubkeys": []
+  },
+  {
+   "name": "too short",
+   "source": {
+    "text": "npub1abc"
+   },
+   "identifiers": [],
+   "pubkeys": []
+  },
+  {
+   "name": "nothing",
+   "source": {
+    "url": "https://example.com/"
+   },
+   "identifiers": [],
+   "pubkeys": []
+  }
+ ]
+}
