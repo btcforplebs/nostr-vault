@@ -233,22 +233,8 @@ import com.nostrvault.service.DMService.Companion.TAG
         }
     }
 
-    /**
-     * A kind 22242 for [url] signed as [account], or null when the signer won't
-     * sign or the active account is no longer [account] (proving the wrong
-     * identity would tie two accounts together for the relay).
-     */
-    private suspend fun DMService.signReadAuth(url: String, challenge: String, account: String): NostrEvent? {
-        if (account.isEmpty() || nostrService.activeHexPubkey != account) return null
-        val auth = runCatching {
-            nostrService.signEventAsync(
-                kind = 22242, content = "",
-                tags = listOf(listOf("relay", url), listOf("challenge", challenge)),
-            )
-        }.getOrNull() ?: return null
-        if (auth.pubkey != account || nostrService.activeHexPubkey != account) return null
-        return auth
-    }
+    private suspend fun DMService.signReadAuth(url: String, challenge: String, account: String): NostrEvent? =
+        signDmReadAuth(nostrService, url, challenge, account)
 
     private suspend fun DMService.handleExternalDmMessage(message: String, generation: Int) {
         try {
@@ -338,3 +324,31 @@ import com.nostrvault.service.DMService.Companion.TAG
             client.connect()
         }
     }
+
+/**
+ * A kind 22242 for [url] signed as [account], or null when the signer won't
+ * sign or the active account is no longer [account] (proving the wrong
+ * identity would tie two accounts together for the relay).
+ *
+ * Always silentOnly: this AUTH runs on foreground and pull-to-refresh, with
+ * nobody asking for it, so it must never open Amber's approval screen. A
+ * signer that can't sign silently gets null, and the relay is given up on for
+ * the session (DMReadAuth.signFailed). DMReadAuthSignTest pins this.
+ */
+internal suspend fun signDmReadAuth(
+    nostrService: NostrService,
+    url: String,
+    challenge: String,
+    account: String,
+): NostrEvent? {
+    if (account.isEmpty() || nostrService.activeHexPubkey != account) return null
+    val auth = runCatching {
+        nostrService.signEventAsync(
+            kind = 22242, content = "",
+            tags = listOf(listOf("relay", url), listOf("challenge", challenge)),
+            silentOnly = true,
+        )
+    }.getOrNull() ?: return null
+    if (auth.pubkey != account || nostrService.activeHexPubkey != account) return null
+    return auth
+}
