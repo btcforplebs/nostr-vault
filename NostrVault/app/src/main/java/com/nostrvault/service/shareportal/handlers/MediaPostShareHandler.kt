@@ -2,5 +2,12 @@ package com.nostrvault.service.shareportal.handlers
 
 import com.nostrvault.shareportal.ShareAction
 
-/** Phase 1 stub: the review card says "Not ready yet". Twin: MediaPostShareHandler.swift. */
-object MediaPostShareHandler : StubShareHandler(ShareAction.MEDIA_POST)
+/**
+ * Picture or video post (NIP-68 / NIP-71): the review card
+ * (MediaPostReviewContent) uploads and publishes through
+ * MediaPostSharePublisher. Twin: MediaPostShareHandler.swift.
+ */
+object MediaPostShareHandler : ShareHandler {
+    override val action = ShareAction.MEDIA_POST
+    override val isReady = true
+}
