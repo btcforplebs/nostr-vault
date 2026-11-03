@@ -25,6 +25,7 @@ import com.nostrvault.shareportal.ShareIntent
 import com.nostrvault.shareportal.ShareQueue
 import com.nostrvault.ui.components.ProseKeyboardOptions
 import com.nostrvault.ui.theme.SecondaryText
+import com.nostrvault.ui.notification.NotificationManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -116,6 +117,7 @@ class MediaPostReviewViewModel @Inject constructor(
     @ApplicationContext context: Context,
     private val publisher: MediaPostSharePublisher,
     private val nostrService: NostrService,
+    private val notificationManager: NotificationManager,
 ) : ViewModel() {
     private val queue = ShareQueue.forApp(context)
 
@@ -144,6 +146,7 @@ class MediaPostReviewViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 publisher.publish(files, title, caption, lock) { _status.value = it }
+                notificationManager.showToast("Posted")
                 onDone()
             } catch (e: MediaPostSharePublisher.PublishException) {
                 _error.value = e.message
