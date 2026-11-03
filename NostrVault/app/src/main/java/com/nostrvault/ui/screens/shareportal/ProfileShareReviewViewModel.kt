@@ -28,6 +28,7 @@ class ProfileShareReviewViewModel @Inject constructor(
         if (it.isNotEmpty()) nostrService.fetchMissingProfiles(it)
     }
 
+    fun npub(hex: String): String? = nostrService.hexToNpub(hex)
     fun activeHex(): String = configStore.activeAccountHexPubkey.value
     fun canSign(): Boolean = !nostrService.isReadOnlyAccount()
     fun isBlocked(hex: String): Boolean = feedService.isBlocked(hex)

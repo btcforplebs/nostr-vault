@@ -56,6 +56,11 @@ enum BookmarkShareTags {
         return out
     }
 
+    /// Whether a private part is sealed again with NIP-04: when the list's
+    /// part already is (an `?iv=` in it), as the mute list path keeps it, so
+    /// an app that only reads NIP-04 still sees it. Otherwise NIP-44.
+    static func sealsAsNip04(existingContent: String) -> Bool { existingContent.contains("?iv=") }
+
     static func json(_ tags: [[String]]) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: tags, options: [.withoutEscapingSlashes]) else { return "[]" }
         return String(decoding: data, as: UTF8.self)

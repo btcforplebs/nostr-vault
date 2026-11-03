@@ -36,6 +36,18 @@ final class SharePortalLaneCTests: XCTestCase {
                        Array(many.prefix(ProfileShareTarget.maxIdentifiers)))
     }
 
+    func testShortNpubShowsBothEnds() {
+        let npub = "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg"
+        XCTAssertEqual(ProfileShareTarget.shortNpub(npub), "npub10elfcs4…zvjptg")
+        XCTAssertEqual(ProfileShareTarget.shortNpub("npub1short"), "npub1short")
+    }
+
+    func testPrivatePartKeepsItsScheme() {
+        XCTAssertTrue(BookmarkShareTags.sealsAsNip04(existingContent: "c2VjcmV0?iv=aXY="), "a NIP-04 part stays NIP-04, as the mute path")
+        XCTAssertFalse(BookmarkShareTags.sealsAsNip04(existingContent: "AqH2…nip44"), "NIP-44 stays NIP-44")
+        XCTAssertFalse(BookmarkShareTags.sealsAsNip04(existingContent: ""), "a new private part is NIP-44")
+    }
+
     func testBookmarkURLFixtures() throws {
         let urls = try XCTUnwrap(fixture("bookmark-cases")["urls"] as? [[String: Any]])
         for u in urls {

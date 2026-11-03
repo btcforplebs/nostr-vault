@@ -38,6 +38,12 @@ struct ProfileShareReviewView: View {
                         }
                     }
                     Text(ProfileShareHandler.displayName(person)).font(.headline)
+                    if let npub = Bech32.hexToData(person).flatMap({ Bech32.encode(hrp: "npub", data: $0) }) {
+                        Text(ProfileShareTarget.shortNpub(npub))
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
                     if let about = nostr.profiles[person]?.about, !about.isEmpty {
                         Text(about).font(.footnote).foregroundStyle(.secondary).lineLimit(3)
                     }

@@ -44,6 +44,26 @@ class SharePortalLaneCTest {
         assertEquals(many.take(ProfileShareTarget.MAX_IDENTIFIERS), ProfileShareTarget.identifiers(null, many.joinToString(" "), null))
     }
 
+    @Test fun shortNpubShowsBothEnds() {
+        val npub = "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg"
+        assertEquals("npub10elfcs4…zvjptg", ProfileShareTarget.shortNpub(npub))
+        assertEquals("npub1short", ProfileShareTarget.shortNpub("npub1short"))
+    }
+
+    @Test fun privatePartKeepsItsScheme() {
+        assertTrue("a NIP-04 part stays NIP-04, as the mute path", BookmarkShareTags.sealsAsNip04("c2VjcmV0?iv=aXY="))
+        assertFalse("NIP-44 stays NIP-44", BookmarkShareTags.sealsAsNip04("AqH2…nip44"))
+        assertFalse("a new private part is NIP-44", BookmarkShareTags.sealsAsNip04(""))
+    }
+
+    /** A signer that answers after the 60 s wait may still sign: the card must not say "not saved". */
+    @Test fun aLateSignerIsNotNotSaved() {
+        val src = java.io.File("src/main/java/com/nostrvault/service/nostr/NostrServiceBookmarkShare.kt").readText()
+        assertTrue(src.contains("withTimeoutOrNull(60_000) { done.await() } ?: Outcome.MayStillGoOut"))
+        val vm = java.io.File("src/main/java/com/nostrvault/ui/screens/shareportal/BookmarkShareReviewViewModel.kt").readText()
+        assertTrue(vm.contains("may still go out"))
+    }
+
     @Test fun bookmarkUrlFixtures() {
         for (u in ShareFixtures.load("bookmark-cases.json")["urls"]!!.jsonArray.map { it.jsonObject }) {
             assertEquals(u.toString(), u.str("url"), BookmarkShareTags.url(u.str("raw")))

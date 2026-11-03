@@ -4,7 +4,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import com.nostrvault.service.shareportal.handlers.ProfileShareTarget
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.nostrvault.shareportal.ShareIntent
@@ -48,6 +50,10 @@ internal fun ProfileShareReviewContent(
                 }
             }
             Text(name(person), style = MaterialTheme.typography.titleLarge)
+            viewModel.npub(person)?.let {
+                Text(ProfileShareTarget.shortNpub(it), color = SecondaryText, fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.bodySmall)
+            }
             profiles[person]?.about?.takeIf { it.isNotBlank() }?.let {
                 Text(it, color = SecondaryText, maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
