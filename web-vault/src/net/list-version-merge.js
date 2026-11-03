@@ -203,7 +203,8 @@ function wipeOf(timeline, i, key, ok, memo) {
  * The merge: every entry of `current` and of each version in `picked`, each once, as rows to tick. `all` is every
  * version found (opened), for working out what happened to an entry after the newest of them that held it:
  * - "current": in the list now, ticked;
- * - "back": no later version is known, or the list was short or a relay list then (anything goes back), ticked;
+ * - "back": no later version is known (`at` 0), or the list was short or a relay list then (anything goes back),
+ *   ticked, `at` = when it left;
  * - "lost": a wipe took it (wipeOf), ticked, `at` = when;
  * - "removed": an ordinary edit took it, so the user did: unticked, `at` = when;
  * - "unsure": the step that dropped it can't be judged (a gap between the versions not bridged by a wipe, or any newer version unread): unticked,
@@ -242,8 +243,12 @@ export function buildMerge({ current, picked, all }) {
     // The newest version holding it (of all found, picked or not), then the one that replaced that.
     const i = timeline.findIndex(v => v.entries.has(row.key))
     const held = timeline[i], next = i > 0 ? timeline[i - 1] : null
-    if (!next || RELAY_KINDS.has(held.ev.kind) || (held.entries.size < SHORT && !unread(held))) {
-      Object.assign(row, { status: "back", at: 0, ticked: true }); continue
+    if (!next) { Object.assign(row, { status: "back", at: 0, ticked: true }); continue }
+    // A relay list, or a short one: it comes back ticked, but keeps when it left, so Review still says "You removed
+    // this <date>" (Tron note 1 on #1595, Logen 2026-11-03). Emptied in that step: a wipe, said as one.
+    if (RELAY_KINDS.has(held.ev.kind) || (held.entries.size < SHORT && !unread(held))) {
+      const status = !unread(next) && wipedBy(held, next) ? "lost" : "back"
+      Object.assign(row, { status, at: next.ev.created_at, ticked: true }); continue
     }
     const unsure = () => Object.assign(row, { status: "unsure", at: next.ev.created_at, ticked: false })
     // Any newer version with its private part unread may still hold it privately: can't tell (strict, all three apps).
