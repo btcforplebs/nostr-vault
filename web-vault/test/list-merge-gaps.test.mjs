@@ -13,7 +13,7 @@ import * as nip04 from "nostr-tools/nip04"
 import { openVersion, buildMerge, mergeSummary, mergedTags, wasWipe, VAULT_KEEP } from "../src/net/list-version-merge.js"
 import { saveMerged } from "../src/net/list-merge-save.js"
 import { ListNotSaved } from "../src/net/list-edit.js"
-import { remuteLine, leftOutLines } from "../src/net/list-version-labels.js"
+import { remuteLine, leftOutLines, entryNote } from "../src/net/list-version-labels.js"
 
 const SK = generateSecretKey(), ME = getPublicKey(SK)
 const KEY = nip44.v2.utils.getConversationKey(SK, ME)
@@ -57,7 +57,20 @@ test("3 small list and relay lists: everything an old version had goes back tick
   const [r1, r2] = await opened([ev(10050, urls, 10), ev(10050, urls.slice(1), 20)])
   const relays = buildMerge({ current: r2, picked: [r1], all: [r2, r1] })
   const r = relays.find(x => x.tag[1] === "wss://r1.example")
-  assert.deepEqual([r.status, r.ticked], ["back", true])
+  assert.deepEqual([r.status, r.ticked, r.at], ["back", true, 20])
+  // Ticked, but Review still says when it went (Tron note 1 on #1595): a dropped DM relay, a dropped short-list entry.
+  const date = t => `t${t}`
+  assert.equal(entryNote(r, date, { box: true }), "You removed this t20")
+  assert.equal(entryNote(r, date), "Dropped t20, can't tell by whom")
+  assert.deepEqual([rowOf(small, 5).at, entryNote(rowOf(small, 5), date, { box: true })], [20, "You removed this t20"])
+  // No later version: nothing to date, no line.
+  const [n1] = await opened([follows([1, 2], 10)])
+  const none = buildMerge({ current: null, picked: [n1], all: [n1] })
+  assert.deepEqual([rowOf(none, 1).status, rowOf(none, 1).at, entryNote(rowOf(none, 1), date, { box: true })], ["back", 0, ""])
+  // A short list emptied in one step is a wipe, not "you removed": lost, still ticked.
+  const [e1, e2] = await opened([follows([1, 2, 3], 10), follows([], 20)])
+  const emptied = rowOf(buildMerge({ current: e2, picked: [e1], all: [e2, e1] }), 1)
+  assert.deepEqual([emptied.status, emptied.ticked, emptied.at, entryNote(emptied, date, { box: true })], ["lost", true, 20, "Lost t20"])
   // Blocked relays across a gap too: relay lists don't wait on the gap rule.
   const [b1, b2, b3] = await opened([ev(10006, [["relay", "wss://x.example"]], 10, "", ["relays"]), ev(10006, [["relay", "wss://y.example"]], 20, "", ["relays"]), ev(10006, [["relay", "wss://y.example"]], 30)])
   assert.equal(buildMerge({ current: b3, picked: [b1], all: [b3, b2, b1] }).find(x => x.tag[1] === "wss://x.example").status, "back")

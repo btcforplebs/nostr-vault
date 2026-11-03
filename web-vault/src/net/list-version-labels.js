@@ -75,11 +75,12 @@ export function leftOutLines({ leftOut = 0, unsure = 0 }, { box = false } = {}) 
 export const needsNip44Note = (kind, currentContent, rows) =>
   kind !== 3 && /\?iv=/.test(currentContent ?? "") && rows.some(r => r.ticked && r.private)
 
-/** A Review row's note: when and how it left the list. "" for one in the list now or with no later version.
+/** A Review row's note: when and how it left the list. "" for one in the list now or with no later version. A row
+ *  back ticked from a relay or short list (`at` set) gets the removed line too (Tron note 1 on #1595).
  *  `box`: as leftOutLines; a box saw every version, so an ordinary edit there is "You removed this". */
 export function entryNote(row, date, { box = false } = {}) {
   if (row.status === "lost") return `Lost ${date(row.at)}`
-  if (row.status === "removed") return box ? `You removed this ${date(row.at)}` : `Dropped ${date(row.at)}, can't tell by whom`
+  if (row.status === "removed" || (row.status === "back" && row.at)) return box ? `You removed this ${date(row.at)}` : `Dropped ${date(row.at)}, can't tell by whom`
   if (row.status === "unsure") return `Gone ${date(row.at)}, can't tell why`
   return ""
 }
