@@ -28,18 +28,32 @@ export function EmptyFollowing({ onRefresh }) {
   </div>
 }
 
+/** What a list scrolls in: on the desktop layout its pane (desktop.css .desk-list: the page itself never scrolls
+ *  there), else null for the window, as on the phone. `el`: any element inside the list. */
+export const feedScroller = el => el?.closest?.(".desk-list") ?? null
+/** How far `pane` (feedScroller) is scrolled; the window's scrollY when it is null. */
+export const scrollTopOf = pane => (pane ? pane.scrollTop : globalThis.scrollY ?? 0)
+/** Back to the top of `pane` (feedScroller), or of the window when it is null. */
+export const scrollToTop = (pane, behavior = "smooth") => (pane ?? globalThis).scrollTo?.({ top: 0, behavior })
+
 /** Held-back new notes. Small (a count) once the feed is scrolled, as the iPhone's folds when you scroll.
  *  `text`: the label for a count, when what is held isn't posts (the Vault tab's "3 new"). */
 export function NewPostsPill({ count, onShow, text = n => `${n} New ${n === 1 ? "Post" : "Posts"}` }) {
-  const [scrolled, setScrolled] = useState(() => (globalThis.scrollY ?? 0) > 200)
+  const ref = useRef(null)
+  const [scrolled, setScrolled] = useState(false)
+  const showing = count > 0
+  // The list's own scroll: the desktop's pane, else the window (feedScroller).
   useEffect(() => {
-    const on = () => setScrolled(scrollY > 200)
-    addEventListener("scroll", on, { passive: true })
-    return () => removeEventListener("scroll", on)
-  }, [])
-  if (!count) return null
+    if (!showing) return
+    const pane = feedScroller(ref.current), target = pane ?? globalThis
+    const on = () => setScrolled(scrollTopOf(pane) > 200)
+    on()
+    target.addEventListener?.("scroll", on, { passive: true })
+    return () => target.removeEventListener?.("scroll", on)
+  }, [showing])
+  if (!showing) return null
   const n = count > 99 && scrolled ? "99+" : count
-  return <button type="button" class={`new-posts${scrolled ? " small" : ""}`} onClick={onShow} aria-label={`${text(count)}, tap to load`}>
+  return <button ref={ref} type="button" class={`new-posts${scrolled ? " small" : ""}`} onClick={onShow} aria-label={`${text(count)}, tap to load`}>
     <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
     {scrolled ? n : text(count)}
   </button>

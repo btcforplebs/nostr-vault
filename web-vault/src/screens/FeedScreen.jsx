@@ -24,7 +24,7 @@ import { READERS } from "../readers/index.js"
 import { withParam } from "../desktop/routes.js"
 import { hasLayouts, loadLayout, nextLayout, saveLayout } from "../net/feed-layout.js"
 import { applyFilters, loadFilters, newerNotes, saveFilters } from "../net/feed-filters.js"
-import { EmptyFollowing, NewPostsPill, OlderButton, PullIndicator, SkeletonRows, usePullToRefresh } from "../components/FeedExtras.jsx"
+import { EmptyFollowing, NewPostsPill, OlderButton, PullIndicator, SkeletonRows, usePullToRefresh, feedScroller, scrollTopOf, scrollToTop } from "../components/FeedExtras.jsx"
 
 if (import.meta.env) import("../styles/feeds.css")
 
@@ -170,24 +170,29 @@ export function FeedScreen({ ctx }) {
   // in (the iPhone's). A dropped subscription opens again and syncs what it missed.
   const notesNow = useRef(notes)
   notesNow.current = notes
+  // The Feed's <main>, to find what it scrolls in: its pane on the desktop layout, the window on the phone
+  // (FeedExtras feedScroller). Auto-load and the pill read that, not always the window (desktop, Logen 2026-11-03).
+  const screen = useRef(null)
   useEffect(() => {
     if (!following || !follows.length) return
-    const show = async () => {
+    // `batch`, `unsaved`: notes Haven didn't save (net/feed-live.js), shown from memory beside what /feed has.
+    const show = async (batch = [], { unsaved = false } = {}) => {
       if (!notesNow.current) return // the first read is still coming and will have them
-      const fresh = newerNotes(notesNow.current, await readFeed(vault, follows, { limit: PAGE }))
+      const read = await readFeed(vault, follows, { limit: PAGE }).catch(e => { if (unsaved) return []; throw e })
+      const fresh = newerNotes(notesNow.current, unsaved ? [...batch.filter(b => !read.some(r => r.id === b.id)), ...read] : read)
       if (!fresh.length) return
-      if (filters.autoLoad && scrollY < 80 && !feedPostOpen()) setNotes(prev => [...fresh, ...(prev ?? [])])
+      if (filters.autoLoad && scrollTopOf(feedScroller(screen.current)) < 80 && !feedPostOpen()) setNotes(prev => [...fresh, ...(prev ?? [])])
       else setPending(fresh)
     }
     const catchUp = async () => {
       if (!navigator.onLine) return
       try { await syncFeed(vault, follows, relays, {}); markSynced(me, follows); await show() } catch {}
     }
-    const close = watchFollowing({ vault, follows, relays, onNotes: () => show().catch(() => {}), onReopen: catchUp })
+    const close = watchFollowing({ vault, follows, relays, onNotes: (evs, o) => show(evs, o).catch(() => {}), onReopen: catchUp })
     globalThis.addEventListener?.("online", catchUp)
     return () => { close(); globalThis.removeEventListener?.("online", catchUp) }
   }, [following, follows.length, filters.autoLoad])
-  const showPending = () => { setNotes(prev => [...pending, ...(prev ?? [])]); setPending([]); scrollTo({ top: 0, behavior: "smooth" }) }
+  const showPending = () => { setNotes(prev => [...pending, ...(prev ?? [])]); setPending([]); scrollToTop(feedScroller(screen.current)) }
 
   // New posts on Global, Hashtag and Discover: their filters stay open from the first page on (the iPhone keeps its feed
   // REQ open) and what comes in waits behind the pill. Nothing is saved.
@@ -237,7 +242,7 @@ export function FeedScreen({ ctx }) {
     holdNotes(choice, all)
     setStrange(all)
     setStrangePending([])
-    scrollTo({ top: 0, behavior: "smooth" })
+    scrollToTop(feedScroller(screen.current))
   }
 
   // Global, Hashtag and Popular. Each load is for one feed: once the picker has moved on, a late answer is dropped.
@@ -300,7 +305,7 @@ export function FeedScreen({ ctx }) {
   const toggles = Reader || !hasLayouts(choice.mode) ? []
     : [following && "autoLoad", "reposts", !global && !threaded && "replies"].filter(Boolean)
   return (
-    <main class="screen">
+    <main class="screen" ref={screen}>
       <header class="screen-head feed-head">
         <FeedModeMenu feeds={visibleFeeds(FEEDS, menu)} choice={choice} onPick={pick} onEdit={() => setEditing(true)} />
         <FeedToolbar layout={!Reader && hasLayouts(choice.mode) ? layout : null} onCycleLayout={cycleLayout}

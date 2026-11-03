@@ -84,3 +84,30 @@ test("no follows opens nothing", () => {
   watchFollowing({ vault: r.vault, follows: [], relays: ["wss://a"], onNotes() {}, subscribe: r.subscribe })
   assert.equal(r.subs.length, 0)
 })
+
+test("a batch Haven didn't save is still handed on, marked unsaved, and a later copy is taken again", async () => {
+  const r = rig(), got = []
+  let fail = true
+  r.vault.feed.event = async ev => { if (fail) throw new Error("haven: no answer to EVENT in 15000 ms"); r.saved.push(ev); return { ok: true } }
+  watchFollowing({ vault: r.vault, follows, relays: [], since: 0, onNotes: (evs, o) => got.push([evs.map(e => e.id), o ?? null]), subscribe: r.subscribe, setTimer: r.setTimer, clearTimer: r.clearTimer })
+  const on = r.subs[0].params.onevent
+  on({ id: "1", pubkey: follows[0], kind: 1, created_at: 5 })
+  await r.run()
+  assert.deepEqual(got, [[["1"], { unsaved: true }]], "shown from memory, not dropped")
+  fail = false
+  on({ id: "1", pubkey: follows[0], kind: 1, created_at: 5 }) // another relay's copy, or the reopen's
+  await r.run()
+  assert.deepEqual(r.saved.map(e => e.id), ["1"], "not stuck in seen: the next copy is saved")
+  assert.deepEqual(got[1], [["1"], null])
+})
+
+test("an onNotes that throws doesn't stop the next batch", async () => {
+  const r = rig(), got = []
+  let first = true
+  watchFollowing({ vault: r.vault, follows, relays: [], since: 0, onNotes: evs => { got.push(evs[0].id); if (first) { first = false; throw new Error("x") } }, subscribe: r.subscribe, setTimer: r.setTimer, clearTimer: r.clearTimer })
+  r.subs[0].params.onevent({ id: "1", pubkey: follows[0], kind: 1, created_at: 5 })
+  await r.run()
+  r.subs[0].params.onevent({ id: "2", pubkey: follows[0], kind: 1, created_at: 6 })
+  await r.run()
+  assert.deepEqual(got, ["1", "2"])
+})

@@ -13,7 +13,8 @@ const AUTHORS_PER_REQ = 250
 
 /**
  * Keeps `filters` open on `relays` (one REQ each), each from `since`. Each event `keep` accepts, once, joins a batch;
- * `save(evs)` (optional) stores a batch and says how many were new; `onNotes(evs)` gets each batch with something new.
+ * `save(evs)` (optional) stores a batch and says how many were new; `onNotes(evs)` gets each batch with something new;
+ * a batch `save` threw on comes as `onNotes(evs, { unsaved: true })`.
  * `onReopen()`: every REQ dropped and has been opened again from about now, so whatever came in between needs fetching.
  * -> close()
  */
@@ -27,10 +28,16 @@ export function watchLive({ filters, relays, keep = () => true, save = null, onN
     const evs = batch
     batch = []
     if (stopped || !evs.length) return
-    try {
-      const n = save ? await save(evs) : evs.length
-      if (n && !stopped) onNotes(evs)
-    } catch {}
+    let n
+    try { n = save ? await save(evs) : evs.length } catch {
+      // The save failed (Haven runs on the page's thread and can stall: "no answer to EVENT in 15000 ms", Logen
+      // 2026-11-03). The batch is still handed on, marked unsaved so the caller shows it from memory, and its ids
+      // leave `seen`, so a later copy (another relay, the reopen) is taken and saved.
+      for (const ev of evs) seen.delete(ev.id)
+      n = 0
+      if (!stopped) try { onNotes(evs, { unsaved: true }) } catch {}
+    }
+    if (n && !stopped) try { onNotes(evs) } catch {}
   }
   const take = ev => {
     if (stopped || !ev?.id || seen.has(ev.id) || !keep(ev)) return
