@@ -116,7 +116,7 @@ struct LiveVaultColumn: View {
     private var spaceBar: some View {
         HStack {
             Text("Your space")
-                .font(.appSystem(size: 16, weight: .bold))
+                .font(.appSystem(size: 17, weight: .bold))
             Spacer()
             Button { setFolded(true) } label: {
                 Image(systemName: "sidebar.right")
@@ -130,10 +130,10 @@ struct LiveVaultColumn: View {
         }
         .padding(.leading, 18)
         .padding(.trailing, 10)
-        .frame(height: 52)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
-        }
+        // The feed's floating pills' row: same height from the same top, so
+        // the title sits level with them. No rule under it; the feed's half
+        // has none.
+        .frame(height: PadTopBar.height)
     }
 
     private func header(rows: [VaultActivity]) -> some View {
