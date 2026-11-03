@@ -167,8 +167,11 @@ class ListBackupService @Inject constructor(
         val why: String,
         /** Newest first, the current one included. */
         val versions: List<ListVersionMerge.Opened>,
-        /** The versions the vault keeps with no hole between them ([ListVersionMerge.unbroken]); a current found only on relays isn't one. */
-        val vault: Set<String> = emptySet(),
+        /**
+         * The versions the vault keeps with no hole between them ([ListVersionMerge.unbroken]); a current found only on relays isn't one.
+         * No default: empty means "nothing unbroken", unlike [ListVersionMerge.buildMerge]'s null ("all").
+         */
+        val vault: Set<String>,
     )
 
     /**
@@ -177,7 +180,7 @@ class ListBackupService @Inject constructor(
      */
     suspend fun mergeStart(key: ListHistory.Key): MergeStart {
         val kept = _groups.value[key].orEmpty()
-        val ref = kept.firstOrNull() ?: return MergeStart(null, false, "No versions of this list are kept yet.", emptyList())
+        val ref = kept.firstOrNull() ?: return MergeStart(null, false, "No versions of this list are kept yet.", emptyList(), vault = emptySet())
         val found = currentList(ref)
         val now = found.getOrNull()?.let(ListVersion::of)
         val all = (listOfNotNull(now) + kept).distinctBy { it.id }.sortedWith(ListHistory.newerFirst)
