@@ -116,7 +116,14 @@ struct iPhoneTabView: View {
             GeometryReader { geo in
                 Color.clear
                     .onAppear { tabBarHeight = geo.size.height; buttonRow.update(chromeHeight: geo.size.height) }
-                    .onDisappear { tabBarHeight = 0; buttonRow.update(chromeHeight: 0) }
+                    // The dock moves between the root band and the keyboard
+                    // inset (two copies); the old copy leaves after the new
+                    // one has measured. Only zero when no dock is shown, or
+                    // the height sticks at 0 (buttons behind the bar, no
+                    // PiP band, a second mini player on Feed).
+                    .onDisappear {
+                        if dockPlacement == .none { tabBarHeight = 0; buttonRow.update(chromeHeight: 0) }
+                    }
                     .onChange(of: geo.size.height) { _, height in
                         tabBarHeight = height
                         buttonRow.update(chromeHeight: height)
