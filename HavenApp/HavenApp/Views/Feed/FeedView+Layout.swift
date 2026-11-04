@@ -104,7 +104,7 @@ extension FeedView {
 
     /// Topmost note on screen. In threaded layout a card is identified by its
     /// root; the first of its notes the flat feed also holds stands in for it.
-    private func topVisibleNoteId() -> String? {
+    func topVisibleNoteId() -> String? {
         if isThreadedModeActive {
             return feedThreads.first { visibleRows.ids.contains($0.rootId) }?.rootId
         }
@@ -114,7 +114,7 @@ extension FeedView {
     /// The row that shows `noteId` in the layout now active: the thread card
     /// that contains it, or the note itself (or, coming from a thread card,
     /// its first note in the flat feed).
-    private func rowId(showing noteId: String) -> String? {
+    func rowId(showing noteId: String) -> String? {
         if isThreadedModeActive {
             return feedThreads.first { thread in
                 thread.rootId == noteId || thread.entries.contains { $0.note.id == noteId }

@@ -338,10 +338,18 @@ extension FeedView {
     func scheduleAutoLoad(delay: Double) {
         autoLoadWork?.cancel()
         let work = DispatchWorkItem { [self] in
-            guard !feedService.pendingNotes.isEmpty,
-                  configService.config.autoLoadNewPosts,
-                  isAtTop, expandedNoteId == nil else { return }
+            guard FeedStayPut.autoLoads(enabled: configService.config.autoLoadNewPosts,
+                                        waiting: feedService.pendingNotes.count,
+                                        isLoading: feedService.isLoadingFeed,
+                                        postOpen: expandedNoteId != nil) else { return }
+            // Below the top, the post being read stays put while the new
+            // ones go in above it (the layout switch's anchor, FeedView+Layout).
+            let reading = FeedStayPut.keepsReading(isAtTop: isAtTop) ? topVisibleNoteId() : nil
             feedService.applyPendingNotes()
+            if let reading, let row = rowId(showing: reading) {
+                pendingLayoutAnimation = nil
+                pendingLayoutAnchor = row
+            }
         }
         autoLoadWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
