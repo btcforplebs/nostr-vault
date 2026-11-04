@@ -92,7 +92,7 @@ test("only versions the vault doesn't hold are filed, in /lists only; the outbox
   const older = [follows(40, T + 700), follows(10, T + 600), mutes(T + 500)]
   const v = vault({ current: [cur], kept: [kept] })
   const r = relays({ "wss://hist": relay([cur, kept, ...older]) })
-  const res = await importListHistory({ session: { pubkey: me }, vault: v, account: {} }, { relays: ["wss://hist"], kinds: [3, 10000], ask: r.ask })
+  const res = await importListHistory({ session: { pubkey: me }, vault: v, account: {} }, { history: true, relays: ["wss://hist"], kinds: [3, 10000], ask: r.ask })
   assert.deepEqual(v.filed.map(e => e.id).sort(), older.map(e => e.id).sort())
   assert.equal(v.outboxWrites.length, 0, "never the outbox: an old version never becomes the current list")
   assert.deepEqual(res, { found: 3, byKind: { 3: 2, 10000: 1 }, answered: 1, asked: 1, refused: 0, skipped: false })
@@ -103,8 +103,8 @@ test("a version Haven refuses isn't counted as found; one it already has isn't e
   const v = vault({ refuse: ev => (ev.id === a.id ? "invalid: dated ahead of this vault's clock" : null) })
   const r = relays({ "wss://hist": relay([a, b]) })
   const ctx = { session: { pubkey: me }, vault: v, account: {} }
-  assert.deepEqual(await importListHistory(ctx, { relays: ["wss://hist"], kinds: [3], ask: r.ask }), { found: 1, byKind: { 3: 1 }, answered: 1, asked: 1, refused: 1, skipped: false })
-  const again = await importListHistory(ctx, { relays: ["wss://hist"], kinds: [3], ask: r.ask })
+  assert.deepEqual(await importListHistory(ctx, { history: true, relays: ["wss://hist"], kinds: [3], ask: r.ask }), { found: 1, byKind: { 3: 1 }, answered: 1, asked: 1, refused: 1, skipped: false })
+  const again = await importListHistory(ctx, { history: true, relays: ["wss://hist"], kinds: [3], ask: r.ask })
   assert.equal(again.found, 0, "a second run finds nothing new")
 })
 
@@ -135,7 +135,7 @@ test("Skip ends the scan at once, keeps what was found so far and files it", asy
     return { events: [], answered: true }
   }
   const skip = new AbortController()
-  const run = importListHistory({ session: { pubkey: me }, vault: v, account: {} }, { relays: ["wss://fast", "wss://slow"], kinds: [3, 10000], ask, signal: skip.signal })
+  const run = importListHistory({ session: { pubkey: me }, vault: v, account: {} }, { history: true, relays: ["wss://fast", "wss://slow"], kinds: [3, 10000], ask, signal: skip.signal })
   await new Promise(r => setTimeout(r, 20))
   skip.abort()
   const res = await run // without waiting for the slow relay
@@ -157,4 +157,22 @@ test("the Import notes choice: off by default, the agreed words, and a Skip whil
   assert.match(dash, /importListHistory\(ctx, \{ history: historyRelays, signal: skip\.current\.signal/)
   assert.match(keep, /Also look for older versions of my lists on history relays \(\$\{hosts\}\)\. They will see your IP asked\. Adds about a minute\./)
   assert.match(keep, /importing\?\.skippable && onSkip[\s\S]*>Skip</)
+})
+
+// Logen 2026-11-04 09:42Z: unticked, the list search doesn't run at all, the user's own relays included (the apps'
+// rule). Ticked, it runs as before.
+test("unticked: no relay is asked, the user's own included, and the vault isn't read or written", async () => {
+  let asked = 0, read = 0
+  const v = vault({})
+  const watched = { ...v, lists: { ...v.lists, query: async (...a) => { read++; return v.lists.query(...a) } } }
+  const ask = async () => { asked++; return { events: [], answered: true } }
+  const account = { relays: { read: ["wss://own-read"], write: ["wss://own-write"] } }
+  const res = await importListHistory({ session: { pubkey: me }, vault: watched, account }, { history: false, ask })
+  assert.equal(asked, 0, "no relay asked")
+  assert.equal(read, 0, "the vault's list history isn't read")
+  assert.equal(v.filed.length, 0)
+  assert.equal(res.off, true)
+  assert.equal(historyLine(res), "", "the import's line says nothing about lists")
+  const ticked = await importListHistory({ session: { pubkey: me }, vault: v, account }, { history: true, ask, kinds: [3] })
+  assert.ok(asked > 0 && ticked.asked >= 2, "ticked, the own relays are asked again")
 })

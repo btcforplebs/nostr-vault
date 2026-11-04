@@ -9,8 +9,9 @@
 // relay with a per-relay timeout; every event's signature, author and kind checked before it counts or moves a paging
 // cursor; a full page asks again with `until` at the oldest one it returned; deduplicated by id. Each relay's outcome
 // is kept: only an EOSE counts as an answer. No relay is answered AUTH (the pool has no auth handler), so the history
-// relays aren't told the account itself is asking. The history relays are the user's choice, off by default (Logen
-// 2026-11-04: they see the IP that asks, and they add about a minute), and the scan can be skipped while it runs:
+// relays aren't told the account itself is asking. The whole list search is the user's choice, off by default
+// (Logen 2026-11-04: the history relays see the IP that asks and add about a minute; 09:42Z: unticked, the user's own
+// relays aren't asked for older versions either, the rule the apps keep). The scan can be skipped while it runs:
 // what was found so far is kept and filed.
 import { askRelay } from "./follows.js"
 import { ownVersion, byNewest, keptVersions } from "./list-versions.js"
@@ -78,13 +79,18 @@ export async function scanListHistory({ pubkey, relays, kinds = HISTORY_KINDS, a
   return { versions: [...byId.values()].sort(byNewest), outcomes, skipped: !!signal?.aborted }
 }
 
+/** Nothing was looked for: the box under Import notes was unticked. */
+export const LIST_SEARCH_OFF = Object.freeze({ found: 0, byKind: {}, answered: 0, asked: 0, refused: 0, skipped: false, off: true })
+
 /**
  * Scan the relays and file every version the vault doesn't hold yet in its list history. The vault's own copies
- * (the outbox's current lists and the history it kept) aren't counted or sent again. `history`: also ask the archival
- * relays (the user's tick). `signal`: Skip; what was found by then is still filed. -> { found (versions filed now),
- * byKind: { kind: n }, answered, asked, refused, skipped }. `ask`, `relays`: for tests.
+ * (the outbox's current lists and the history it kept) aren't counted or sent again. `history`: the user's tick.
+ * Unticked, nothing is asked anywhere, the user's own relays included (LIST_SEARCH_OFF); ticked, the own relays, the
+ * defaults and the archival set. `signal`: Skip; what was found by then is still filed. -> { found (versions filed
+ * now), byKind: { kind: n }, answered, asked, refused, skipped }. `ask`, `relays`: for tests.
  */
 export async function importListHistory(ctx, { history = false, relays = scanRelays(ctx.account, { history }), kinds = HISTORY_KINDS, ask = askRelay, onProgress, signal } = {}) {
+  if (!history) return LIST_SEARCH_OFF
   const me = ctx.session.pubkey
   const filter = { kinds, authors: [me] }
   // This read also AUTHs the /lists connection, which a write needs.
@@ -109,7 +115,8 @@ export async function importListHistory(ctx, { history = false, relays = scanRel
 }
 
 /** The line Import notes ends with: a plain count. */
-export function historyLine({ found, answered, skipped = false }) {
+export function historyLine({ found, answered, skipped = false, off = false }) {
+  if (off) return ""
   if (skipped) return found ? `Skipped the rest of the search: kept ${found.toLocaleString()} older ${found === 1 ? "version" : "versions"} of your lists found so far. See them in Settings › Recover a List.`
     : "Skipped looking for older versions of your lists."
   if (!answered) return "Couldn't reach the relays to look for older versions of your lists."
