@@ -134,7 +134,7 @@ extension FeedService {
             // now and apply only this tap's change to it (Logen 2026-10-31).
             let config = ConfigService.shared.config
             let lookup = await NostrService.shared.lookupNewestReplaceable(
-                kind: 3, for: owner, alsoAsk: Array(config.readRelays.prefix(3)) + RelayDraft.indexers, skipAhead: true)
+                kind: 3, for: owner, alsoAsk: ListMerge.editLookupAsk(readRelays: config.readRelays), skipAhead: true)
             guard owner == ConfigService.shared.activeAccountHexPubkey else { fail(nil); return }
             let base: (tags: [[String]], content: String, createdAt: Int64)
             let held = Self.lastSignedContactList[owner]

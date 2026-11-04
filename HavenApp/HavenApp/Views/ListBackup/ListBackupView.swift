@@ -43,7 +43,9 @@ struct ListBackupView: View {
         return VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(ListBackupFormat.title(key))
-                if ListHistory.latestWipe(versions) != nil {
+                // The dashboard banner's rule too, so a list drained in steps
+                // carries the triangle the banner warns about.
+                if ListHistory.latestWipe(versions) != nil || service.alarms.contains(where: { $0.key == key }) {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
                         .accessibilityLabel("Wiped")
                 }

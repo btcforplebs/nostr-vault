@@ -395,6 +395,7 @@
 		3854C69EF48C912BFB7753C0 /* SearchView+EmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4168C64C489FA112F2FA740A /* SearchView+EmptyState.swift */; };
 		3877DB61986138E75C58F99E /* ImportNotesStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71AB0175468D57FB7435B690 /* ImportNotesStep.swift */; };
 		38875C80C09B8D99F90E8510 /* ListWipeAlarmRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 695189082F11554D2BAC80B1 /* ListWipeAlarmRule.swift */; };
+		11CE8D28FFB027C091016BEA /* RelayDrainWait.swift in Sources */ = {isa = PBXBuildFile; fileRef = 775082DEF13D10334A887390 /* RelayDrainWait.swift */; };
 		38A30CDB22B8B94F2B59688A /* ZoomSwipeWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E23194264AA64ADEF638EDF8 /* ZoomSwipeWatch.swift */; };
 		38CA6F090B09B24A5CB3AFAC /* SupportedMediaFormats.swift in Sources */ = {isa = PBXBuildFile; fileRef = B18859E95D1E981CB5491E8F /* SupportedMediaFormats.swift */; };
 		3905E1DE7916209A3982F2B8 /* QuotedNoteSkeleton.swift in Sources */ = {isa = PBXBuildFile; fileRef = E13000616CA698B02FE82B9A /* QuotedNoteSkeleton.swift */; };
@@ -1015,6 +1016,7 @@
 		90C3C712CB8B0009CB8C3047 /* NotificationNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC0F366EF1C957EF41DE12C /* NotificationNames.swift */; };
 		90F6EA86D01434820283305D /* FeedMediaViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B38B2E43D8E128440FC8402E /* FeedMediaViewer.swift */; };
 		914A79C57CDF69917C27C92D /* ListWipeAlarmRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 695189082F11554D2BAC80B1 /* ListWipeAlarmRule.swift */; };
+		AA2A78F7F68644C457E3EAE5 /* RelayDrainWait.swift in Sources */ = {isa = PBXBuildFile; fileRef = 775082DEF13D10334A887390 /* RelayDrainWait.swift */; };
 		9157ACB85192A360E8EFA7E7 /* ListingDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB07D1CAEE1E5FBF436D7371 /* ListingDraft.swift */; };
 		9168F800ACC6452E701E9459 /* ComposeView+Preview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ED3CD37EE652596EC7982D0 /* ComposeView+Preview.swift */; };
 		9184E1F83695DECDCF056AD5 /* NIP10Thread.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFA1340FD03E8DB6CA418503 /* NIP10Thread.swift */; };
@@ -2265,6 +2267,7 @@
 		68F6A51F203F8AE84E266FB5 /* WalletLightningTab+Actions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WalletLightningTab+Actions.swift"; sourceTree = "<group>"; };
 		6904793B4B9F38D1A474FBBD /* PayShareHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayShareHandler.swift; sourceTree = "<group>"; };
 		695189082F11554D2BAC80B1 /* ListWipeAlarmRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListWipeAlarmRule.swift; sourceTree = "<group>"; };
+		775082DEF13D10334A887390 /* RelayDrainWait.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayDrainWait.swift; sourceTree = "<group>"; };
 		6986294C2B9AC5332FFCB4DB /* AddAccountSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddAccountSheetView.swift; sourceTree = "<group>"; };
 		69FCE89FDCC4D758B3B2AE81 /* NVShareIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVShareIntent.swift; sourceTree = "<group>"; };
 		6A63F6F2329E7E843153FEFD /* MediaPostReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPostReviewView.swift; sourceTree = "<group>"; };
@@ -3790,6 +3793,7 @@
 				36FE1EDB1B925C1F07EA87C2 /* ListVersionMerge.swift */,
 				0006A2B10762A75E950F4478 /* ListVersionWording.swift */,
 				695189082F11554D2BAC80B1 /* ListWipeAlarmRule.swift */,
+				775082DEF13D10334A887390 /* RelayDrainWait.swift */,
 				A26B400CA78D02446D6677B0 /* ListWipeAlarmWording.swift */,
 				A21B9BEF9DAADA51C5B8C4D3 /* LiveChat.swift */,
 				D23E2F257E6BF9573B8CA257 /* LiveChatMedia.swift */,
@@ -4996,6 +5000,7 @@
 				5F172222B930A59ECAC79406 /* ListVersionWording.swift in Sources */,
 				B6931233F4DAF171DEE682AC /* ListVersionsView.swift in Sources */,
 				38875C80C09B8D99F90E8510 /* ListWipeAlarmRule.swift in Sources */,
+				11CE8D28FFB027C091016BEA /* RelayDrainWait.swift in Sources */,
 				EF565B60A48C7873DE253A50 /* ListWipeAlarmWording.swift in Sources */,
 				716EC6224D41452E63FF1F02 /* ListWipeBanner.swift in Sources */,
 				1AEBBB148ACA1D8A09E4810F /* ListWipeWatcher.swift in Sources */,
@@ -5921,6 +5926,7 @@
 				8BCE165B756B95023138B820 /* ListVersionWording.swift in Sources */,
 				EE673F959E9E8AD4892E87D4 /* ListVersionsView.swift in Sources */,
 				914A79C57CDF69917C27C92D /* ListWipeAlarmRule.swift in Sources */,
+				AA2A78F7F68644C457E3EAE5 /* RelayDrainWait.swift in Sources */,
 				25A9B88F6613E3C34DB04DB6 /* ListWipeAlarmWording.swift in Sources */,
 				8217A68A299058B3D965F847 /* ListWipeBanner.swift in Sources */,
 				0C3BF9591CCDEA505F4C47E3 /* ListWipeWatcher.swift in Sources */,

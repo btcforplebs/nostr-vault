@@ -348,4 +348,28 @@ final class ListMergeTests: XCTestCase {
                                        encrypt: { _, _ in "v2:not base64!" })
         XCTAssertEqual(unreadable, .failed)
     }
+
+    /// A one-relay account (Merge Test 2026-11-04: its 10002 names only primal,
+    /// which became its only read relay too) asks the indexers as well, so its
+    /// own relay and an indexer answering is a base. Before, only primal was
+    /// asked and Merge said "Not enough of your relays answered" forever.
+    func testOneRelayAccountGetsASecondAnswerFromAnIndexer() {
+        let ask = ListMerge.editLookupAsk(readRelays: ["wss://relay.primal.net"])
+        XCTAssertEqual(ask, ["wss://relay.primal.net"] + RelayDraft.indexers)
+        let own = ["wss://relay.primal.net"]
+        let asked = Set(own + ask).count
+        let answered = ReplaceableLookup(event: 100 as Int64, asked: asked, answered: 2,
+                                         answeredBy: ["wss://relay.primal.net", "wss://purplepag.es"], from: ["wss://relay.primal.net"])
+        guard case .list(let base) = ListMerge.editBase(answered, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("one-relay account can't merge") }
+        XCTAssertEqual(base, 100)
+        // Only its own relay answering is still not enough (Logen 2026-11-02 13:21Z).
+        let alone = ReplaceableLookup(event: 100 as Int64, asked: asked, answered: 1,
+                                      answeredBy: ["wss://relay.primal.net"], from: ["wss://relay.primal.net"])
+        guard case .unknown = ListMerge.editBase(alone, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("a single answer was enough") }
+    }
+
+    func testEditLookupAskKeepsThreeReadRelaysAndDropsRepeats() {
+        let ask = ListMerge.editLookupAsk(readRelays: ["wss://a.example", "wss://PURPLEPAG.es/", "wss://b.example", "wss://c.example"])
+        XCTAssertEqual(ask, ["wss://a.example", "wss://PURPLEPAG.es/", "wss://b.example", "wss://user.kindpag.es"])
+    }
 }

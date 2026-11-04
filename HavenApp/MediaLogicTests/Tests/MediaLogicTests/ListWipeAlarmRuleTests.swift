@@ -42,4 +42,24 @@ final class ListWipeAlarmRuleTests: XCTestCase {
         }
         XCTAssertGreaterThan(alarms, 8, "positive control: the fixtures do raise alarms")
     }
+
+    private func follows(_ id: String, _ people: [Int]) -> ListVersion {
+        ListVersion(id: id, pubkey: "pk", kind: 3, createdAt: 0,
+                    tags: people.map { ["p", String(format: "%064x", $0)] }, content: "")
+    }
+
+    /// The Merge Test history: 40, 40 with 5 swapped, then halved to 20, 10, 5.
+    /// No single step halves the list, so ListShrinkRule.shrank flagged none
+    /// while the banner warned "went from 40 to 5 in steps". The steps the
+    /// alarm rule calls a drain are flagged now.
+    func testListDrainedInHalvesIsFlagged() {
+        let swapped = Array(0..<35) + Array(40..<45)
+        let v = [follows("5", Array(0..<5)), follows("10", Array(swapped.prefix(10))), follows("20", Array(swapped.prefix(20))),
+                 follows("40b", swapped), follows("40a", Array(0..<40))]
+        XCTAssertNotNil(ListWipeAlarmRule.alarm(v, own: [], dismissed: []))
+        XCTAssertFalse(zip(v.dropFirst(), v).contains { ListShrinkRule.shrank($0, $1) }, "no single step halves it")
+        XCTAssertEqual(ListWipeAlarmRule.flagged(v, own: []), ["5", "10"])
+        XCTAssertEqual(ListWipeAlarmRule.flagged(v, own: ["5"]), ["10"], "a version Nostr Vault signed is never flagged")
+        XCTAssertEqual(ListWipeAlarmRule.flagged([follows("41", Array(0..<41)), follows("40", Array(0..<40))], own: []), [], "growth isn't a wipe")
+    }
 }
