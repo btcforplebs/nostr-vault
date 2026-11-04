@@ -75,15 +75,44 @@ test("a photo goes to the first server that takes it, signed by the account, the
   }
   const up = await uploadPhoto(file, { ctx: ctxFor(), servers: ["https://down.example", "https://liar.example", "https://good.example"], fetch })
   assert.deepEqual(up, { url: `https://good.example/${sha}.png`, sha256: sha, mime: "image/png", size: 4, server: "https://good.example" })
-  assert.deepEqual(calls.map(c => c.url), ["https://down.example/upload", "https://liar.example/upload", "https://good.example/upload"])
-  const auth = decodeAuth(calls[2].init.headers.Authorization)
-  assert.equal(calls[2].init.method, "PUT")
+  // Each server is asked first (BUD-06 HEAD, which these answer as they would a PUT: none refuses), then sent the file.
+  const puts = calls.filter(c => c.init.method === "PUT")
+  assert.deepEqual(puts.map(c => c.url), ["https://down.example/upload", "https://liar.example/upload", "https://good.example/upload"])
+  assert.equal(calls.filter(c => c.init.method === "HEAD").length, 3)
+  const auth = decodeAuth(puts[2].init.headers.Authorization)
+  assert.equal(puts[2].init.method, "PUT")
   assert.equal(auth.kind, 24242)
   assert.equal(auth.pubkey, pk(me))
   assert.ok(verifyEvent(auth))
   assert.deepEqual(auth.tags.find(t => t[0] === "x"), ["x", sha])
   // One signature for every server tried.
   assert.equal(new Set(calls.map(c => c.init.headers.Authorization)).size, 1)
+})
+
+test("BUD-06: a server that refuses at the pre-check is never sent the file, and its reason is shown", async () => {
+  const sha = await sha256Hex(new Uint8Array([1, 2, 3, 4]))
+  const calls = []
+  const fetch = async (url, init) => {
+    calls.push({ url, method: init.method, headers: init.headers })
+    if (url.startsWith("https://strict.example") && init.method === "HEAD") return fail(413, "max 1 KB here")
+    if (url.startsWith("https://old.example") && init.method === "HEAD") return fail(404, "")
+    return ok({ url: `https://old.example/${sha}.png`, sha256: sha, type: "image/png" })
+  }
+  const up = await uploadPhoto(photo(), { ctx: ctxFor(), servers: ["https://strict.example", "https://old.example"], fetch })
+  assert.equal(up.server, "https://old.example", "a server with no HEAD /upload still gets the upload")
+  assert.deepEqual(calls.map(c => `${c.method} ${c.url}`), ["HEAD https://strict.example/upload", "HEAD https://old.example/upload", "PUT https://old.example/upload"])
+  assert.equal(calls[0].headers["X-SHA-256"], sha)
+  assert.equal(calls[0].headers["X-Content-Length"], "4")
+  assert.equal(calls[0].headers["X-Content-Type"], "image/png")
+  await assert.rejects(uploadPhoto(photo(), { ctx: ctxFor(), servers: ["https://strict.example"], fetch }),
+    /No media server took it\. strict\.example: too large \(0\.0 MB\), max 1 KB here/)
+})
+
+test("BUD-06: only a real no stops an upload; a pre-check that can't run goes ahead", async () => {
+  const { precheckAllows, precheck } = await import("../src/net/upload.js")
+  for (const s of [200, 204, 404, 405, 408, 429, 500, 503, undefined]) assert.ok(precheckAllows(s), String(s))
+  for (const s of [400, 401, 402, 403, 413, 415]) assert.ok(!precheckAllows(s), String(s))
+  assert.equal(await precheck("https://x.example", { sha256: "a", size: 1, mime: "image/png", auth: "Nostr x", fetch: () => Promise.reject(new TypeError("CORS")) }), "")
 })
 
 test("no server took it: every reason is in the error", async () => {

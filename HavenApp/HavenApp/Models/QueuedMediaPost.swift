@@ -52,6 +52,8 @@ struct QueuedMediaPost: Codable, Identifiable, Equatable {
     /// The HTTP code with which every mirror refused the file on the last
     /// try. Set, the post no longer retries by itself (`MediaPostRetry`).
     var refusedStatus: Int?
+    /// The server's own words with that no (`X-Reason`), when it gave any.
+    var refusedReason: String?
 
     /// Attachments still waiting for an outside server.
     var pendingMedia: [Media] { media.filter { $0.url == nil } }

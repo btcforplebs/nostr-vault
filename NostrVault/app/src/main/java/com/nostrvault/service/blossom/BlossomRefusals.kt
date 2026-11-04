@@ -10,14 +10,21 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object BlossomRefusals {
     private val bySha = ConcurrentHashMap<String, ConcurrentHashMap<String, Int>>()
+    /** The words a server gave with its no (BUD-01 `X-Reason`), by blob and server. */
+    private val reasonsBySha = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
 
-    fun record(sha256: String, server: String, status: Int) {
+    fun record(sha256: String, server: String, status: Int, reason: String? = null) {
         bySha.getOrPut(sha256) { ConcurrentHashMap() }[server] = status
+        reason?.trim()?.takeIf { it.isNotEmpty() }?.let { reasonsBySha.getOrPut(sha256) { ConcurrentHashMap() }[server] = it }
     }
 
     fun clear(sha256: String) {
         bySha.remove(sha256)
+        reasonsBySha.remove(sha256)
     }
+
+    /** The reasons recorded for [sha256] since the last [clear], and forget them. Read before [take]. */
+    fun takeReasons(sha256: String): Map<String, String> = reasonsBySha.remove(sha256)?.toMap().orEmpty()
 
     /** What was recorded for [sha256] since the last [clear], and forget it. */
     fun take(sha256: String): Map<String, Int> = bySha.remove(sha256)?.toMap().orEmpty()

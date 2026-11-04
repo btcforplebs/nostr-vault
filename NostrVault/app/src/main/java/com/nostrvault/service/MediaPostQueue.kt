@@ -216,10 +216,14 @@ class MediaPostQueue @Inject constructor(
             BlossomRefusals.clear(sha256)
             val url = blossomService.hostWaitingBlob(sha256, item.mimeType ?: "application/octet-stream", signAs = mediaLock)
             if (url == null) {
+                val reasons = BlossomRefusals.takeReasons(sha256)
                 val statuses = BlossomRefusals.take(sha256)
                 val mirrors = configStore.config.value.activeBlossomMirrors
                 if (MediaPostRetry.allRefused(mirrors, statuses)) {
-                    post = post.copy(refusedStatus = mirrors.firstNotNullOfOrNull { statuses[it] })
+                    post = post.copy(
+                        refusedStatus = mirrors.firstNotNullOfOrNull { statuses[it] },
+                        refusedReason = mirrors.firstNotNullOfOrNull { reasons[it] },
+                    )
                     log("waiting post ${id.take(8)}: every media server refused the file ($statuses) — stopped, waiting for you", Log.WARN)
                 } else if (post.needsUser) {
                     log("waiting post ${id.take(8)}: stopped after ${post.attempts} tries — waiting for you", Log.WARN)

@@ -87,6 +87,13 @@ import com.nostrvault.service.BlossomService.UploadSource
         // hammer an external signer (Amber) and can fail under concurrency.
         val auth = authHeader ?: createAuthHeader("upload", sha256)
 
+        // BUD-06: ask an outside server first whether it takes this file, so a
+        // refusal (too big, wrong type, not allowed) costs no upload (NDK check
+        // step 3). The on-device vault always takes it.
+        if (!useLocal && !uploadPreflight(client, serverUrl, sha256, contentType, source.byteCount(), auth)) {
+            return@withContext null
+        }
+
         var lastError: Exception? = null
         repeat(MAX_UPLOAD_RETRIES) { attempt ->
             try {
@@ -117,7 +124,7 @@ import com.nostrvault.service.BlossomService.UploadSource
                 val errorBody = response.body?.string()?.take(500) ?: ""
                 Log.w(TAG, "Mirror $serverUrl returned HTTP ${response.code}: $errorBody")
                 lastError = IOException("HTTP ${response.code}: $errorBody")
-                BlossomRefusals.record(sha256, serverUrl, response.code)
+                BlossomRefusals.record(sha256, serverUrl, response.code, response.header("X-Reason"))
                 // The server refuses this file (too big, payment, forbidden):
                 // sending all of it again gets the same answer.
                 if (com.nostrvault.data.model.MediaPostRetry.isPermanentRefusal(response.code)) {

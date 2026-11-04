@@ -40,6 +40,14 @@ enum MediaPostRetry {
 }
 
 extension QueuedMediaPost {
+    /// What the Media servers page says about a post every server refused:
+    /// the HTTP code and, when the server gave one, its own reason.
+    var refusalLine: String? {
+        guard let status = refusedStatus else { return nil }
+        let why = refusedReason.map { ": \($0)" } ?? ""
+        return "Your media servers refused this file (HTTP \(status)\(why)). Change servers below, then tap Try sending now."
+    }
+
     /// The post stopped trying by itself and waits for the user.
     var needsUser: Bool {
         refusedStatus != nil || attempts >= MediaPostRetry.maxAutomaticAttempts
@@ -61,5 +69,6 @@ extension QueuedMediaPost {
     mutating func resetForUserRetry() {
         attempts = 0
         refusedStatus = nil
+        refusedReason = nil
     }
 }

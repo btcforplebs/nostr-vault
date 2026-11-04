@@ -67,13 +67,13 @@ fun QueuedMediaPost.waitsForWifi(metered: Boolean): Boolean =
     metered && pendingMedia.sumOf { it.byteCount ?: (MediaPostRetry.CELLULAR_LIMIT_BYTES + 1) } > MediaPostRetry.CELLULAR_LIMIT_BYTES
 
 /** The user asked to send it again: a fresh start, as if just queued. */
-fun QueuedMediaPost.resetForUserRetry(): QueuedMediaPost = copy(attempts = 0, refusedStatus = null)
+fun QueuedMediaPost.resetForUserRetry(): QueuedMediaPost = copy(attempts = 0, refusedStatus = null, refusedReason = null)
 
 /** Why a waiting post no longer sends itself, in words for Settings → Media Servers. */
 object WaitingPostStopReason {
     fun of(post: QueuedMediaPost): String? = when {
         post.refusedStatus != null ->
-            "Stopped: every media server refused this file (HTTP ${post.refusedStatus}). Try sending now, or add another server."
+            "Stopped: every media server refused this file (HTTP ${post.refusedStatus}${post.refusedReason?.let { ": $it" }.orEmpty()}). Try sending now, or add another server."
         post.attempts >= MediaPostRetry.MAX_AUTOMATIC_ATTEMPTS ->
             "Stopped after ${post.attempts} tries. Try sending now when a server is back."
         else -> null
