@@ -8,6 +8,10 @@ struct RevealKeySheetView: View {
 
     @State private var password = ""
     @State private var revealedNsec: String? = nil
+    /// The ncryptsec this device keeps for the account, handed over as it is
+    /// (LockedKeyExport.kept); nil for an old plaintext key, which the user
+    /// locks with a new password instead (Tron, PR 1658).
+    @State private var keptLockedKey: String? = nil
     @State private var errorMessage: String? = nil
     @State private var copied = false
 
@@ -68,7 +72,7 @@ struct RevealKeySheetView: View {
             Spacer()
         }
         .background(Color.platformSecondaryGroupedBackground)
-        .frame(width: 480, height: revealedNsec != nil ? 280 : 220)
+        .frame(width: 480, height: revealedNsec != nil ? 460 : 220)
         #else
         NavigationStack {
             Form {
@@ -164,6 +168,8 @@ struct RevealKeySheetView: View {
             Text("Keep this key safe. Anyone with your nsec has full control of your Nostr identity.")
                 .font(.appCaption2)
                 .foregroundColor(.orange)
+
+            LockedKeyCopyButton(kept: keptLockedKey, nsec: nsec)
         }
     }
 
@@ -176,8 +182,10 @@ struct RevealKeySheetView: View {
 
         do {
             let nsec: String
+            let stored: String
             if isOwner {
                 nsec = try configService.config.getDecryptedNsec(password: password)
+                stored = configService.config.ownerNcryptsec
             } else {
                 guard let ncryptsec = configService.config.accountCredentials[npub],
                       !ncryptsec.isEmpty else {
@@ -185,8 +193,12 @@ struct RevealKeySheetView: View {
                     return
                 }
                 nsec = try NIP49Service.decrypt(ncryptsec: ncryptsec, password: password)
+                stored = ncryptsec
             }
             revealedNsec = nsec
+            // Never lock with the reveal field: a plaintext owner key reveals for
+            // any password, so it was never checked (Tron, PR 1658).
+            keptLockedKey = LockedKeyExport.kept(stored)
         } catch {
             errorMessage = "Incorrect password or decryption failed"
         }
@@ -203,6 +215,7 @@ struct RevealKeySheetView: View {
 
     private func performDismiss() {
         revealedNsec = nil
+        keptLockedKey = nil
         password = ""
         errorMessage = nil
 

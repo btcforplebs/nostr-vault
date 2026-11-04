@@ -22,7 +22,8 @@ export const MIN_PASSWORD = 8
 
 export const LOCKED = "This browser can't open your key on its own any more (its site data was partly cleared). Type your password to unlock it."
 /** The stored ncryptsec is missing or isn't one NIP-49 can open: no password will work, so the screens don't ask again. */
-// The web app has no nsec sign-in (signer/readonly.js turns one away), so every line about the saved key says where it works.
+// The web app has no nsec sign-in (signer/readonly.js turns one away; a locked ncryptsec signs in, lockedKeySession), so
+// every line about the saved key says where it works.
 export const SAVED_KEY_USE = 'To use this account again, add the secret key you saved to a Nostr browser extension and choose "I already use Nostr", or import it in the Nostr Vault app.'
 export const DAMAGED = `The key kept in this browser is missing or damaged, so no password can open it. Sign out first. ${SAVED_KEY_USE}`
 export const WRONG_PASSWORD = "Wrong password. Try again."
@@ -52,6 +53,30 @@ export async function localSession(sk, password, { keyStore, logn = 16 } = {}) {
   const pubkey = checkedPubkey(getPublicKey(sk))
   return { method: "local", pubkey, ncryptsec: ncryptsecOf(sk, password, logn), skSealed: await seal(bytesToHex(sk), keyStore) }
 }
+
+/** What the user is doing when a plain-http page can't keep the key (keyring.js insecure). */
+export const SIGNING_IN = "Signing in with a locked key"
+
+/**
+ * Sign-in with a password-locked key (NIP-49 ncryptsec) made by Nostr Vault or any other app (NDK check step 4, Logen
+ * 2026-11-04): the password opens it once, here, and the session keeps that same ncryptsec (the copy the user can take
+ * away again, under the same password) and the key sealed for this browser, as a key made here is kept. The secret key
+ * never leaves this function in the clear. Throws NOT_LOCKED_KEY for anything that isn't a NIP-49 key this page can
+ * open, WRONG_PASSWORD when the password doesn't open it.
+ */
+export async function lockedKeySession(ncryptsec, password, { keyStore } = {}) {
+  assertCanSeal(SIGNING_IN)
+  const locked = (ncryptsec ?? "").trim().toLowerCase()
+  if (!wellFormed(locked)) throw new Error(NOT_LOCKED_KEY)
+  let sk
+  try { sk = ncryptsecOpen(locked, password ?? "") } catch { throw new Error(WRONG_PASSWORD) }
+  try {
+    const pubkey = checkedPubkey(getPublicKey(sk))
+    return { method: "local", pubkey, ncryptsec: locked, skSealed: await seal(bytesToHex(sk), keyStore) }
+  } finally { sk.fill(0) }
+}
+
+export const NOT_LOCKED_KEY = "That isn't a locked key. It starts with ncryptsec1 (NIP-49)."
 
 /** The password opens the ncryptsec and the key is sealed again for this browser -> the session to save. Throws
  *  WRONG_PASSWORD for a wrong password and DAMAGED when the stored key can't be opened at all. */
