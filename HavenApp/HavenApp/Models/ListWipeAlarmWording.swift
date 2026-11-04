@@ -10,6 +10,9 @@ enum ListWipeAlarmWording {
 
     /// "changed by Amethyst" / "changed by an app that didn't name itself".
     static func byLine(_ alarm: ListWipeAlarmRule.Alarm) -> String {
+        // A name claiming to be us on a version this device didn't sign must
+        // not read like your own edit (Tron, #1635).
+        if alarm.claimsNostrVault { return "changed by an app calling itself Nostr Vault. This device didn't make that change" }
         if let client = alarm.client { return "changed by \(client)" }
         return "changed by an app that didn't name itself"
     }

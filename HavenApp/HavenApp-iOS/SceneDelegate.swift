@@ -147,6 +147,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Refresh what the widgets read. Rate limited inside the bridge, since
         // scene activation fires more often than the data meaningfully changes.
         Task { @MainActor in NVWidgetBridge.publish() }
+        // A list another app clobbered while we were away (docs/LIST_WIPE_ALARM.md).
+        Task { @MainActor in ListWipeWatcher.shared.appCameForward() }
 
         // Something was shared to Nostr Vault while it was in the background:
         // opening the app finishes the upload, notification tapped or not.

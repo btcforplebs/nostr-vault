@@ -12,6 +12,7 @@ final class ListWipeAlarmRuleTests: XCTestCase {
         XCTAssertEqual(rule["alarm_min_items"], ListWipeAlarmRule.minItems)
         XCTAssertEqual(rule["min_items"], ListShrinkRule.minItems)
         XCTAssertEqual(rule["min_content"], ListShrinkRule.minContent)
+        XCTAssertEqual(rule["history"], ListWipeAlarmRule.history)
         let cases = try XCTUnwrap(root["cases"] as? [[String: Any]])
         XCTAssertGreaterThan(cases.count, 20)
         var alarms = 0
@@ -37,6 +38,7 @@ final class ListWipeAlarmRuleTests: XCTestCase {
             XCTAssertEqual(a.to, e["to"] as? Int, name)
             XCTAssertEqual(a.lost, e["lost"] as? Int, name)
             XCTAssertEqual(a.client, e["client"] as? String, name)
+            XCTAssertEqual(a.claimsNostrVault, e["claims_nostr_vault"] as? Bool, name)
         }
         XCTAssertGreaterThan(alarms, 8, "positive control: the fixtures do raise alarms")
     }

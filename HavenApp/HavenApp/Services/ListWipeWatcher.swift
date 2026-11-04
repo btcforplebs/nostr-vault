@@ -44,15 +44,46 @@ final class ListWipeWatcher {
         return out
     }
 
+    /// The app came to the front: check every account's lists, which catches
+    /// a clobber that synced in while it was away (the vault skips the marker
+    /// for old versions). Banner for all, notification only for recent ones.
+    func appCameForward() {
+        guard ConfigService.shared.config.hasCompletedSetup, task == nil else { return }
+        for hex in ConfigService.shared.allAccountHexes {
+            pending[hex, default: []].formUnion(ListShrinkRule.protectedKinds)
+        }
+        task = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            let work = pending
+            pending = [:]
+            task = nil
+            for (author, kinds) in work { await check(author: author, kinds: kinds) }
+        }
+    }
+
+    /// Only a change this recent is announced; older alarms show as the banner.
+    static let notifyWithin: TimeInterval = 48 * 3600
+
     private func check(author: String, kinds: Set<Int>) async {
         let filter: [String: Any] = ["authors": [author], "kinds": Array(kinds).sorted(), "limit": 1000]
-        guard let found = await VaultSocket.query(path: "/lists", filter: filter) else { return }
+        guard var found = await VaultSocket.query(path: "/lists", filter: filter) else { return }
+        // At the limit the relay cut the oldest: ask one kind at a time, as
+        // ListBackupService does.
+        if found.count >= 1000 {
+            var all: [NostrEvent] = []
+            for kind in kinds.sorted() {
+                guard let some = await VaultSocket.query(path: "/lists", filter: ["authors": [author], "kinds": [kind], "limit": 1000]) else { return }
+                all += some
+            }
+            found = all
+        }
         let groups = ListHistory.group(found.map(ListVersion.init), author: author)
         let own = OwnListEdits.ids(), dismissed = ListBackupService.dismissedIDs()
         var notified = Set(UserDefaults.standard.stringArray(forKey: Self.notifiedKey) ?? [])
         var any = false
         for (key, versions) in groups {
             guard let alarm = ListWipeAlarmRule.alarm(versions, own: own, dismissed: dismissed),
+                  Date().timeIntervalSince1970 - TimeInterval(alarm.after.createdAt) < Self.notifyWithin,
                   notified.insert(alarm.after.id).inserted else { continue }
             any = true
             await notify(alarm, key: key, author: author)

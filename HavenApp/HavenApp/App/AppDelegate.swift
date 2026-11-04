@@ -154,6 +154,8 @@ class AppDelegate: NSObject, ObservableObject {
                 // beside the sidebar's Vault row (ReturnPillManager).
                 ReturnPillManager.shared.beginReturn()
                 FeedService.shared.resumeFeed()
+                // A list another app clobbered while we were away (docs/LIST_WIPE_ALARM.md).
+                ListWipeWatcher.shared.appCameForward()
                 NetworkSyncService.shared.start()
                 RelayProcessManager.shared.enterForeground()
                 NostrService.shared.enterForeground()
