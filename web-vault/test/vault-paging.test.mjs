@@ -20,7 +20,7 @@ registerHooks({
     return { format: "module", source: code, shortCircuit: true }
   },
 })
-const { FIRST_ROWS, MORE_ROWS } = await import("../src/components/PagedList.jsx")
+const { FIRST_ROWS, MORE_ROWS, windowRows, rowKey } = await import("../src/components/PagedList.jsx")
 const screen = readFileSync(new URL("../src/screens/VaultScreen.jsx", import.meta.url), "utf8")
 
 const ME = "a".repeat(64), THEM = "b".repeat(64)
@@ -94,4 +94,33 @@ test("a follow keeps the list it replaced and the new one in Following Backup", 
   assert.equal(m.size, 3)
   const broken = { all: async () => { throw new Error("no idb") }, put: async () => {}, remove: async () => {} }
   assert.equal(await keepFollowChange(me, before, after, broken), false)
+})
+
+test("rows going in above the drawn ones grow the window, so the rows below stay drawn (their photos keep loading)", () => {
+  const row = n => ({ id: `r${n}` })
+  const list = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => row(to - i)) // newest first
+  const was = { shown: 100, first: null, extra: 0 }
+  let items = list(1, 300)
+  assert.equal(windowRows(items, 100, was), 100, "the first draw")
+  const lastDrawn = rowKey(items[99])
+  items = [...list(301, 305), ...items] // five new posts on top
+  const n = windowRows(items, 100, was)
+  assert.equal(n, 105)
+  assert.ok(items.slice(0, n).some(it => rowKey(it) === lastDrawn), "the row that was last drawn is still drawn")
+  items = [...list(306, 306), ...items]
+  assert.equal(windowRows(items, 100, was), 106, "each arrival adds its rows")
+  assert.equal(windowRows(items, 100, was), 106, "a redraw with nothing new keeps it")
+  assert.equal(windowRows(items, 150, was), 156, "paging on (+50) keeps the rows put in above")
+})
+
+test("another list, a filter, or a reset window starts again at the caller's count", () => {
+  const was = { shown: 100, first: null, extra: 0 }
+  const a = Array.from({ length: 200 }, (_, i) => ({ id: `a${i}` })), b = Array.from({ length: 200 }, (_, i) => ({ url: `https://x/${i}` }))
+  windowRows(a, 100, was)
+  assert.equal(windowRows([{ id: "new" }, ...a], 100, was), 101)
+  assert.equal(windowRows(b, 100, was), 100, "a different list: its first drawn row isn't there")
+  windowRows([{ url: "https://x/new" }, ...b], 100, was)
+  assert.equal(windowRows([{ url: "https://x/new" }, ...b], 50, was), 50, "the caller shrank the window: back to it")
+  assert.equal(rowKey({ pubkey: "p" }), "p", "followers rows are told apart by pubkey")
+  assert.equal(windowRows([], 100, { shown: 100, first: null, extra: 0 }), 100)
 })
