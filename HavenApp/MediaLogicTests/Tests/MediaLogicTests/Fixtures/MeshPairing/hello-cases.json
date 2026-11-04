@@ -1,0 +1,1098 @@
+{
+ "rule": {
+  "hello_kind": 21195,
+  "code_lifetime": 180,
+  "scan_window": 180,
+  "ack_window": 360,
+  "hello_skew": 180
+ },
+ "builders": [
+  {
+   "kind": "hello",
+   "args": {
+    "s": "MfL-vrRY_QiUhuVK2cwvQQ",
+    "n": "  Logen's iPhone 🐝 ",
+    "r": "phone",
+    "o": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "t": 1793800000
+   },
+   "expect": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone 🐝\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800000}"
+  },
+  {
+   "kind": "hello",
+   "args": {
+    "s": "MfL-vrRY_QiUhuVK2cwvQQ",
+    "n": "",
+    "r": "mac",
+    "o": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "t": 1793800000
+   },
+   "expect": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"r\":\"mac\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800000}"
+  },
+  {
+   "kind": "ack",
+   "args": {
+    "d": "16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7",
+    "w": false
+   },
+   "expect": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}"
+  },
+  {
+   "kind": "ack",
+   "args": {
+    "d": "16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7",
+    "w": true
+   },
+   "expect": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\",\"w\":true}"
+  }
+ ],
+ "cases": [
+  {
+   "name": "happy path: hello, then B's QR",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800040,
+     "expect": "confirm"
+    }
+   ]
+  },
+  {
+   "name": "Accept without scanning",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "accept",
+     "now": 1793800040,
+     "expect": "confirm"
+    }
+   ]
+  },
+  {
+   "name": "the same hello twice (a relay resend) is ignored",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800015,
+     "expect": "ignoreDuplicate"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800040,
+     "expect": "confirm"
+    }
+   ]
+  },
+  {
+   "name": "a second sender aborts [Tron 3]",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "hello",
+     "sender": "887376ae55c4d26ebc358cbbc6469e3c2133f176d5d49b993384152652460451",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Not yours\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "abort"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800040,
+     "expect": "abort"
+    }
+   ]
+  },
+  {
+   "name": "the same sender with other content aborts [Tron 3]",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"mac\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "abort"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800040,
+     "expect": "abort"
+    }
+   ]
+  },
+  {
+   "name": "a second hello after the camera window still aborts",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "hello",
+     "sender": "887376ae55c4d26ebc358cbbc6469e3c2133f176d5d49b993384152652460451",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800300}",
+     "now": 1793800300,
+     "expect": "abort"
+    }
+   ]
+  },
+  {
+   "name": "wrong secret is ignored, then the right one opens the camera",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"aXzl9gE699WN8cQtSpIT3w\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "ignore:wrongSecret"
+    },
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800040,
+     "expect": "confirm"
+    }
+   ]
+  },
+  {
+   "name": "a hello after 3 minutes is expired",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800181}",
+     "now": 1793800181,
+     "expect": "expired"
+    }
+   ]
+  },
+  {
+   "name": "a hello at exactly 3 minutes still opens",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800180}",
+     "now": 1793800180,
+     "expect": "camera"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800200,
+     "expect": "confirm"
+    }
+   ]
+  },
+  {
+   "name": "a hello whose own time is stale is ignored",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793799600}",
+     "now": 1793800012,
+     "expect": "ignore:stale"
+    },
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    }
+   ]
+  },
+  {
+   "name": "a hello from the future is ignored",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800400}",
+     "now": 1793800012,
+     "expect": "ignore:stale"
+    }
+   ]
+  },
+  {
+   "name": "a hello from another account is refused and does not abort",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "887376ae55c4d26ebc358cbbc6469e3c2133f176d5d49b993384152652460451",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1mfvctm9654sq6qqasdg6g27z0ms2yj9udt30w50eztsqjuv6sd3qzesed5\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "refuse:otherOwner"
+    },
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800040,
+     "expect": "confirm"
+    }
+   ]
+  },
+  {
+   "name": "a hello from another account on this device asks to switch",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "refuse:switchTo"
+    }
+   ]
+  },
+  {
+   "name": "a hello signed by this device's own key is ignored",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "ignore:ownAddress"
+    }
+   ]
+  },
+  {
+   "name": "garbage content is ignored",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "not json",
+     "now": 1793800012,
+     "expect": "ignore:notHello"
+    },
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":2}",
+     "now": 1793800012,
+     "expect": "ignore:notHello"
+    },
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    }
+   ]
+  },
+  {
+   "name": "an ack is not a hello",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"0000000000000000000000000000000000000000000000000000000000000000\"}",
+     "now": 1793800012,
+     "expect": "ignore:notHello"
+    },
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    }
+   ]
+  },
+  {
+   "name": "a hello with an unknown role is ignored",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"fridge\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "ignore:notHello"
+    }
+   ]
+  },
+  {
+   "name": "a hello with a name over 40 is ignored",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\": 1, \"s\": \"MfL-vrRY_QiUhuVK2cwvQQ\", \"n\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"r\": \"phone\", \"o\": \"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\", \"t\": 1793800010}",
+     "now": 1793800012,
+     "expect": "ignore:notHello"
+    }
+   ]
+  },
+  {
+   "name": "B's QR before any hello is not ready",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800040,
+     "expect": "reject:notReady"
+    },
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800040,
+     "expect": "confirm"
+    }
+   ]
+  },
+  {
+   "name": "B's QR from another device is refused",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub13pehdtj4cnfxa0p43jauv3578ssn8utk6h2fhxfnss2jv5jxq3gsc0696a&n=x&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800040,
+     "expect": "reject:notTheDevice"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800040,
+     "expect": "confirm"
+    }
+   ]
+  },
+  {
+   "name": "B's QR with the wrong echo is refused",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=x&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=aXzl9gE699WN8cQtSpIT3w",
+     "now": 1793800040,
+     "expect": "reject:echoMismatch"
+    }
+   ]
+  },
+  {
+   "name": "B's QR with another role than the hello is refused",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800040,
+     "expect": "reject:notTheDevice"
+    }
+   ]
+  },
+  {
+   "name": "scanning A-type code (a secret, not an echo) is refused",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=x&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800040,
+     "expect": "reject:notTheirCode"
+    }
+   ]
+  },
+  {
+   "name": "an unreadable second QR says why",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "qr",
+     "uri": "hello there",
+     "now": 1793800040,
+     "expect": "refuse:notPairing"
+    }
+   ]
+  },
+  {
+   "name": "scanning this device's own code is refused",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800040,
+     "expect": "refuse:ownAddress"
+    }
+   ]
+  },
+  {
+   "name": "B's QR after the scan window is expired",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800193,
+     "expect": "expired"
+    }
+   ]
+  },
+  {
+   "name": "after linking, the code is spent",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800040,
+     "expect": "confirm"
+    },
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800050,
+     "expect": "expired"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800051,
+     "expect": "expired"
+    },
+    {
+     "op": "accept",
+     "now": 1793800052,
+     "expect": "expired"
+    }
+   ]
+  },
+  {
+   "name": "after an abort, nothing links",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "camera"
+    },
+    {
+     "op": "hello",
+     "sender": "887376ae55c4d26ebc358cbbc6469e3c2133f176d5d49b993384152652460451",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800012,
+     "expect": "abort"
+    },
+    {
+     "op": "qr",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "now": 1793800040,
+     "expect": "abort"
+    },
+    {
+     "op": "accept",
+     "now": 1793800040,
+     "expect": "abort"
+    }
+   ]
+  },
+  {
+   "name": "after expiry, a later hello is still expired",
+   "side": "shower",
+   "secret": "MfL-vrRY_QiUhuVK2cwvQQ",
+   "created_at": 1793800000,
+   "own_mesh": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "steps": [
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800200}",
+     "now": 1793800200,
+     "expect": "expired"
+    },
+    {
+     "op": "hello",
+     "sender": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800201}",
+     "now": 1793800201,
+     "expect": "expired"
+    }
+   ]
+  },
+  {
+   "name": "ack after a scan links",
+   "side": "joiner",
+   "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "scanned_at": 1793800010,
+   "steps": [
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "now": 1793800040,
+     "expect": "linked"
+    }
+   ]
+  },
+  {
+   "name": "a second ack is a duplicate",
+   "side": "joiner",
+   "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "scanned_at": 1793800010,
+   "steps": [
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "now": 1793800040,
+     "expect": "linked"
+    },
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "now": 1793800041,
+     "expect": "ignoreDuplicate"
+    }
+   ]
+  },
+  {
+   "name": "Accept path: ack first, then this side's own tap [Tron 2]",
+   "side": "joiner",
+   "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "scanned_at": 1793800010,
+   "steps": [
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\",\"w\":true}",
+     "now": 1793800040,
+     "expect": "waitWords"
+    },
+    {
+     "op": "words",
+     "expect": "linked"
+    }
+   ]
+  },
+  {
+   "name": "Accept path: own tap first, then the ack",
+   "side": "joiner",
+   "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "scanned_at": 1793800010,
+   "steps": [
+    {
+     "op": "words",
+     "expect": "waitAck"
+    },
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\",\"w\":true}",
+     "now": 1793800040,
+     "expect": "linked"
+    }
+   ]
+  },
+  {
+   "name": "an ack from another key is ignored",
+   "side": "joiner",
+   "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "scanned_at": 1793800010,
+   "steps": [
+    {
+     "op": "ack",
+     "sender": "887376ae55c4d26ebc358cbbc6469e3c2133f176d5d49b993384152652460451",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "now": 1793800040,
+     "expect": "ignore:wrongSender"
+    },
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "now": 1793800040,
+     "expect": "linked"
+    }
+   ]
+  },
+  {
+   "name": "an ack with A and B swapped is ignored [Tron 2]",
+   "side": "joiner",
+   "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "scanned_at": 1793800010,
+   "steps": [
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"bd59290552984a3ce31644a2f3e5e8cb9dce5f9df8311ed02713ad4e5241efe0\"}",
+     "now": 1793800040,
+     "expect": "ignore:badDigest"
+    },
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "now": 1793800040,
+     "expect": "linked"
+    }
+   ]
+  },
+  {
+   "name": "an ack for another secret is ignored [Tron 2]",
+   "side": "joiner",
+   "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "scanned_at": 1793800010,
+   "steps": [
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"adb302ae56256477ce63860fcebb47029ef9544d712c318580acac782953142f\"}",
+     "now": 1793800040,
+     "expect": "ignore:badDigest"
+    }
+   ]
+  },
+  {
+   "name": "a hello is not an ack",
+   "side": "joiner",
+   "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "scanned_at": 1793800010,
+   "steps": [
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"s\":\"MfL-vrRY_QiUhuVK2cwvQQ\",\"n\":\"Logen's iPhone\",\"r\":\"phone\",\"o\":\"npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj\",\"t\":1793800010}",
+     "now": 1793800040,
+     "expect": "ignore:notAck"
+    }
+   ]
+  },
+  {
+   "name": "an ack with an upper-case digest is not read",
+   "side": "joiner",
+   "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "scanned_at": 1793800010,
+   "steps": [
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330BFCFF08BC831FB22950D3942D08FC108565D9E866BD226B505008FB37B7\"}",
+     "now": 1793800040,
+     "expect": "ignore:notAck"
+    }
+   ]
+  },
+  {
+   "name": "an ack after 6 minutes is expired",
+   "side": "joiner",
+   "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "scanned_at": 1793800010,
+   "steps": [
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "now": 1793800371,
+     "expect": "expired"
+    },
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "now": 1793800372,
+     "expect": "expired"
+    }
+   ]
+  },
+  {
+   "name": "an ack at exactly 6 minutes links",
+   "side": "joiner",
+   "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "scanned_at": 1793800010,
+   "steps": [
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "now": 1793800370,
+     "expect": "linked"
+    }
+   ]
+  }
+ ]
+}
