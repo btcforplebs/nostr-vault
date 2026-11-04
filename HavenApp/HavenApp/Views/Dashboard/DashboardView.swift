@@ -9,6 +9,9 @@ struct DashboardView: View {
     @ObservedObject var mirrorService = MirrorService.shared
 
     @State private var isPreparingImport = false
+    /// Moving in also looks for older list versions on history relays only
+    /// when ticked (ListHistoryScan).
+    @State private var lookForOldLists = false
     @State var statusAnimate = false
     @State var didCopyAddress = false
     @State private var showingKindBreakdown = false
@@ -283,7 +286,7 @@ struct DashboardView: View {
             LazyVGrid(columns: columns, spacing: 10) {
                 ActionButton(icon: "arrow.down.circle", title: "Import Notes", isLoading: isPreparingImport || relayManager.isImporting) {
                     isPreparingImport = true
-                    relayManager.importNotes(config: configService.config)
+                    relayManager.importNotes(config: configService.config, listHistory: lookForOldLists)
                 }
                 .disabled(isPreparingImport || relayManager.isImporting)
 
@@ -309,6 +312,12 @@ struct DashboardView: View {
                     }
                 }
                 #endif
+            }
+
+            if relayManager.isImporting || relayManager.listHistoryNote != nil {
+                ListHistoryScanStatus()
+            } else {
+                ListHistoryOptInToggle(isOn: $lookForOldLists)
             }
 
             // The wide layout left these live while the relay was stopped, and

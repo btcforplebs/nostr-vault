@@ -103,6 +103,19 @@ type historyScanResult struct {
 // listHistoryOptInEnv: "1" when the user ticked the history scan for this import.
 const listHistoryOptInEnv = "HAVEN_IMPORT_LIST_HISTORY"
 
+// historyScanStatus: "" (no scan this import), historyScanRunning, or the
+// scan's closing line. For hosts that poll (Android: the import log keeps only
+// the latest line, so the scan's lines can be missed); iOS reads stdout.
+var historyScanStatus atomic.Value
+
+const historyScanRunning = "scanning"
+
+// ListHistoryScanStatus: see historyScanStatus.
+func ListHistoryScanStatus() string {
+	s, _ := historyScanStatus.Load().(string)
+	return s
+}
+
 // historyScanStop cancels the scan that is running, if any.
 var historyScanStop atomic.Pointer[context.CancelFunc]
 
@@ -210,8 +223,10 @@ func scanListHistory(ctx context.Context, relays, owners []string, kinds []int) 
 // carries on either way.
 func importListHistory(ctx context.Context) historyScanResult {
 	if os.Getenv(listHistoryOptInEnv) != "1" {
+		historyScanStatus.Store("")
 		return historyScanResult{}
 	}
+	historyScanStatus.Store(historyScanRunning)
 	log.Println("📜 looking for older versions of your lists")
 	scanCtx, stop := context.WithCancel(ctx)
 	historyScanStop.Store(&stop)
@@ -235,6 +250,7 @@ func importListHistory(ctx context.Context) historyScanResult {
 			res.Found++
 		}
 	}
+	historyScanStatus.Store(historyScanLine(res))
 	log.Println("📜 " + historyScanLine(res))
 	return res
 }

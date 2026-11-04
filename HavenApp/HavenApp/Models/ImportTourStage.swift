@@ -31,6 +31,9 @@ struct ImportTourStage: Equatable {
             } else {
                 self = ImportTourStage(text: "Saving your notes…", step: 2)
             }
+        } else if statusMessage.hasPrefix("Looking for older versions") {
+            // The list history scan, ticked in the relay check (ListHistoryScan).
+            self = ImportTourStage(text: "Looking for older versions of your lists…", step: 2)
         } else if statusMessage.hasPrefix("Importing tagged notes") {
             self = ImportTourStage(text: "Saving replies and mentions of you…", step: 3)
         } else if statusMessage.contains("Web of Trust") {

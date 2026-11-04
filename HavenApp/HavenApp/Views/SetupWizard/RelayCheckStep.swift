@@ -10,14 +10,16 @@ import SwiftUI
 struct RelayCheckStep: View {
     @EnvironmentObject var configService: ConfigService
     let npub: String
-    /// Their own picked relays, for this import only.
-    let onStart: (_ ownRelays: [String]) -> Void
+    /// Their own picked relays, for this import only. `listHistory`: they
+    /// ticked the look for older list versions (ListHistoryScan; off unless ticked).
+    let onStart: (_ ownRelays: [String], _ listHistory: Bool) -> Void
 
     @State private var rows: [RelayCheck.Row] = []
     @State private var isChecking = true
     @State private var editing = false
     @State private var newRelay = ""
     @State private var started = false
+    @State private var lookForOldLists = false
 
     private var pubkey: String { Bech32.decode(npub)?.hexString ?? "" }
     private var onCount: Int { rows.filter(\.isOn).count }
@@ -49,6 +51,10 @@ struct RelayCheckStep: View {
             if editing {
                 addRow
             }
+
+            ListHistoryOptInToggle(isOn: $lookForOldLists, textColor: WizardColors.textSecondary)
+                .tint(WizardColors.accentPrimary)
+                .padding(.horizontal, 4)
 
             WizardPrimaryButton(title: "Start import", action: start, disabled: isChecking || onCount == 0)
 
@@ -177,6 +183,6 @@ struct RelayCheckStep: View {
         let picks = RelayCheck.splitPicks(rows, defaults: HavenConfig().importSeedRelays)
         if !picks.fixed.isEmpty { configService.config.importSeedRelays = picks.fixed }
         configService.save()
-        onStart(picks.own)
+        onStart(picks.own, lookForOldLists)
     }
 }

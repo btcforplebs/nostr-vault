@@ -33,6 +33,9 @@ struct ImportNotesStep: View {
     /// Their own servers (kind 10002 write relays), read for this import
     /// only: never saved or published.
     @State private var ownRelays: [String] = []
+    /// "Also look for older versions of my lists on history relays": off
+    /// unless ticked (ListHistoryScan).
+    @State private var lookForOldLists = false
 
     var body: some View {
         VStack(spacing: 24) {
@@ -104,7 +107,7 @@ struct ImportNotesStep: View {
         .alert(String(localized: "setup.import.alert.portConflict"), isPresented: $relayManager.isPortConflict) {
             Button(String(localized: "setup.import.alert.retry")) {
                 relayManager.isPortConflict = false
-                relayManager.importNotes(config: configService.config, alsoFrom: ownRelays)
+                relayManager.importNotes(config: configService.config, alsoFrom: ownRelays, listHistory: lookForOldLists)
             }
             Button(String(localized: "setup.action.cancel"), role: .cancel) {
                 relayManager.isPortConflict = false
@@ -148,6 +151,8 @@ struct ImportNotesStep: View {
                             .foregroundColor(WizardColors.textMuted)
                             .lineLimit(2)
                     }
+
+                    ListHistoryScanStatus(textColor: WizardColors.textSecondary, accent: WizardColors.accentPrimary)
 
                     if relayManager.importCompleted {
                         WizardPrimaryButton(title: String(localized: "setup.action.continue"), action: onContinue)
@@ -193,6 +198,11 @@ struct ImportNotesStep: View {
                     ownRelaysNote
                         .frame(minHeight: 80, maxHeight: 120)
                         .cornerRadius(8)
+
+                    Divider().background(WizardColors.borderSubtle)
+
+                    ListHistoryOptInToggle(isOn: $lookForOldLists, textColor: WizardColors.textSecondary)
+                        .tint(WizardColors.accentPrimary)
                 }
                 .padding(16)
                 .background(WizardColors.bgCard)
@@ -201,7 +211,7 @@ struct ImportNotesStep: View {
 
                 WizardPrimaryButton(title: String(localized: "setup.import.action")) {
                     configService.save()
-                    relayManager.importNotes(config: configService.config, alsoFrom: ownRelays)
+                    relayManager.importNotes(config: configService.config, alsoFrom: ownRelays, listHistory: lookForOldLists)
                 }
             }
         }

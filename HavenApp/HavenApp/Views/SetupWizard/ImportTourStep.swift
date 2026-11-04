@@ -14,6 +14,8 @@ struct ImportTourStep: View {
     /// Their own servers picked in the relay check, read for this import
     /// only (not saved).
     var alsoFrom: [String] = []
+    /// Also look for older versions of their lists (ticked in the relay check).
+    var listHistory = false
     /// `keptRunning`: they left with the import still going.
     let onEnter: (_ keptRunning: Bool) -> Void
 
@@ -46,6 +48,7 @@ struct ImportTourStep: View {
                 .font(.appSystem(size: isIOSDevice ? 24 : 28, weight: .semibold))
                 .foregroundColor(WizardColors.textPrimary)
             progressHeader
+            ListHistoryScanStatus(textColor: WizardColors.textSecondary, accent: WizardColors.accentPrimary, showsLooking: false)
             card
             if done && index < lastIndex {
                 doneBar
@@ -246,7 +249,7 @@ struct ImportTourStep: View {
         guard !relayManager.isImporting else { return }
         configService.config.importStartDate = Self.importStartDate
         configService.save()
-        relayManager.importNotes(config: configService.config, alsoFrom: alsoFrom)
+        relayManager.importNotes(config: configService.config, alsoFrom: alsoFrom, listHistory: listHistory)
     }
 
     /// Seeing every lesson card finishes the tour (and covers Vault and

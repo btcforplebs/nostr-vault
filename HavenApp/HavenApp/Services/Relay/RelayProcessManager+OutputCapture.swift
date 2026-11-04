@@ -204,8 +204,15 @@ extension RelayProcessManager {
             if let status = batch.importStatusMessage {
                 importStatusMessage = status
             }
+            if let scanning = batch.listHistoryScanning {
+                listHistoryScanning = scanning
+            }
+            if let note = batch.listHistoryNote {
+                listHistoryNote = note
+            }
             if batch.stopImporting {
                 isImporting = false
+                listHistoryScanning = false
                 importCompleted = true
             }
         }

@@ -152,8 +152,12 @@ func TestImportListHistoryAsksNothingUnlessTicked(t *testing.T) {
 	for _, v := range []string{"", "0", "true"} {
 		t.Setenv(listHistoryOptInEnv, v)
 		r := withFakeHistoryRelays(t, map[string][]*nostr.Event{"wss://hist.nostr.land": nil})
+		historyScanStatus.Store("Found 3 older versions of your lists.") // a last import's line
 		if res := importListHistory(context.Background()); res != (historyScanResult{}) || len(r.asked) != 0 {
 			t.Fatalf("%q: result %+v, %d asks", v, res, len(r.asked))
+		}
+		if s := ListHistoryScanStatus(); s != "" {
+			t.Fatalf("%q: status %q, want none", v, s)
 		}
 	}
 }
@@ -183,6 +187,9 @@ func TestSkipKeepsWhatTheScanFoundSoFar(t *testing.T) {
 		first := later == 1
 		mu.Unlock()
 		if first {
+			if s := ListHistoryScanStatus(); s != historyScanRunning {
+				t.Errorf("status while scanning: %q", s)
+			}
 			if !SkipListHistoryScan() {
 				t.Error("no scan to skip")
 			}
@@ -201,6 +208,9 @@ func TestSkipKeepsWhatTheScanFoundSoFar(t *testing.T) {
 	}
 	if SkipListHistoryScan() {
 		t.Fatal("a finished scan can still be skipped")
+	}
+	if s := ListHistoryScanStatus(); s != "Found 2 older versions of your lists." {
+		t.Fatalf("status after: %q", s)
 	}
 	if later > len(historyScanKinds) {
 		t.Fatalf("kept asking after Skip: %d", later)

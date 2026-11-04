@@ -106,11 +106,11 @@ func runImport(ctx context.Context) {
 		wot.Initialize(ctx, wotModel, gate)
 	}
 
+	// Older versions of the owner's lists, for Recover a List (list_history_scan.go), when the user ticked it.
+	// First, so its Skip shows while they are still watching; the notes take minutes after it.
+	importListHistory(ctx)
 	log.Println("📦 importing notes")
 	importOwnerNotes(ctx)
-	// Older versions of the owner's lists, for Recover a List (list_history_scan.go). Before the tagged notes,
-	// whose end the apps read as the import's end, so the count is shown with it.
-	importListHistory(ctx)
 	importTaggedNotes(ctx)
 }
 

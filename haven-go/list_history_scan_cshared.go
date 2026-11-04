@@ -15,3 +15,11 @@ func SkipListHistoryScanC() C.int {
 	}
 	return 0
 }
+
+// ListHistoryScanStatusC: "" (no scan this import), "scanning", or the scan's
+// closing line ("Found 12 older versions of your lists.").
+//
+//export ListHistoryScanStatusC
+func ListHistoryScanStatusC() *C.char {
+	return C.CString(ListHistoryScanStatus())
+}
