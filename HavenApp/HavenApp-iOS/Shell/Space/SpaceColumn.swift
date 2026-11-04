@@ -4,13 +4,14 @@ import SwiftUI
 /// space": the user's widgets (My devices, Live now, On this day) in the
 /// order they chose, each collapsible to its header, all on one screen. Edit moves, removes and
 /// adds them; the layout is the account's (`SpaceLayoutStore`), synced with
-/// the web. The whole column folds to a thin strip with Live Vault's unread
-/// count; that choice stays on this device, per account.
+/// the web. The whole column folds to a thin strip with Live now's
+/// count of live streams; that choice stays on this device, per account.
 struct SpaceColumn: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @ObservedObject private var store = SpaceLayoutStore.shared
     @ObservedObject private var dmService = DMService.shared
+    @ObservedObject private var feedService = FeedService.shared
     @StateObject private var liveVault = LiveVaultModel()
     @StateObject private var liveNow = LiveNowModel()
     @State private var folded = false
@@ -25,7 +26,7 @@ struct SpaceColumn: View {
     var body: some View {
         Group {
             if folded {
-                foldedStrip(count: liveVault.unreadCount)
+                foldedStrip(count: liveNow.streams.count)
             } else {
                 VStack(spacing: 0) {
                     spaceBar
@@ -55,11 +56,25 @@ struct SpaceColumn: View {
             folded = UserDefaults.standard.bool(forKey: LiveVault.foldedKey(hex))
             editing = false
             liveVault.attach(hex)
-            liveNow.attach(hex)
+        }
+        // Live now runs while its panel is open or the column is folded (the
+        // strip shows its count); the column owns it, so the fold's swap of
+        // panel for strip can't stop it.
+        .onChange(of: "\(owner)|\(liveNowWanted)", initial: true) { _, _ in
+            liveNow.attach(owner)
+            if liveNowWanted { liveNow.start() } else { liveNow.stop() }
+        }
+        // The follow list can arrive after Live now first looked: look again.
+        .onChange(of: feedService.followedPubkeys.isEmpty) { _, empty in
+            if !empty && liveNowWanted { liveNow.refresh() }
         }
         .onChange(of: relayReady, initial: true) { _, ready in
             if ready { liveVault.startFetchIfIdle() }
         }
+    }
+
+    private var liveNowWanted: Bool {
+        folded || (!editing && store.layout.shownPanels(ids).contains { $0.id == LiveNow.panelId && $0.open })
     }
 
     private var relayReady: Bool { relayManager.isRunning && !relayManager.isBooting }
@@ -217,7 +232,7 @@ struct SpaceColumn: View {
                 Image(systemName: "sidebar.left")
                     .font(.appSystem(size: 16, weight: .semibold))
                     .foregroundColor(.secondary)
-                Image(systemName: VaultMode.activity.symbol)
+                Image(systemName: Self.info(LiveNow.panelId).symbol)
                     .font(.appSystem(size: 18))
                     .foregroundColor(.havenPurple)
                 if let badge = AccountUnread.badge(count) {
@@ -236,7 +251,7 @@ struct SpaceColumn: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(count > 0 ? "Open Your space, \(count) new" : "Open Your space")
+        .accessibilityLabel(count > 0 ? "Open Your space, \(count) live now" : "Open Your space")
     }
 
     private func setFolded(_ value: Bool) {
