@@ -67,6 +67,64 @@ struct iPhoneTabView: View {
     /// dock) and "Your space" right of it.
     private var showsSpace: Bool { usesNoteSplit && isLandscape }
 
+    private var dockPlacement: DockInset.Placement {
+        DockInset.placement(dockShown: !hidesChromeForKeyboard && !showsSpace, keyboardUp: keyboardUp)
+    }
+
+    private var rootDockInset: CGFloat {
+        DockInset.rootBottom(placement: dockPlacement, dockHeight: tabBarHeight)
+    }
+
+    /// The music mini player rides above the tab bar on every tab. Measured
+    /// together, so screens inset for both.
+    @ViewBuilder
+    private var dock: some View {
+        VStack(spacing: 6) {
+            // Leaves room on the right for the screen's floating button
+            // (Post, Blossom, Relay), which drops level with it.
+            // Folds away with the floating button as the bar shrinks;
+            // the folded bar carries a small now-playing button instead.
+            // Faded rather than removed, so the inset never relayouts.
+            ChromeFold(anchor: .bottomLeading) {
+                MiniPlayerBar()
+            }
+            .padding(.leading, 12)
+            .padding(.trailing, max(12, buttonRow.reservedWidth))
+            BottomTabBar(
+                selectedTab: $selectedTab,
+                searchPath: $searchPath,
+                profilePath: $profilePath,
+                mediaPath: $mediaPath,
+                relayPath: $relayPath,
+                configService: configService,
+                relayManager: relayManager,
+                nostrService: nostrService,
+                dmService: dmService,
+                feedService: feedService
+            )
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { tabBarOnlyHeight = geo.size.height }
+                        .onChange(of: geo.size.height) { _, height in tabBarOnlyHeight = height }
+                }
+            )
+        }
+        .onChange(of: tabBarOnlyHeight) { _, _ in syncButtonRow() }
+        .onAppear { syncButtonRow() }
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { tabBarHeight = geo.size.height; buttonRow.update(chromeHeight: geo.size.height) }
+                    .onDisappear { tabBarHeight = 0; buttonRow.update(chromeHeight: 0) }
+                    .onChange(of: geo.size.height) { _, height in
+                        tabBarHeight = height
+                        buttonRow.update(chromeHeight: height)
+                    }
+            }
+        )
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             if showsSpace {
@@ -180,57 +238,20 @@ struct iPhoneTabView: View {
         .tint(.havenPurple)
         .toolbar(.hidden, for: .tabBar)
         .environment(\.floatingTabBarHeight, tabBarHeight)
+        // The dock's band is safe area on the window's root view controller,
+        // so picture-in-picture keeps clear of it (DockSafeAreaInset); the dock
+        // is drawn in that band. While typing it rides above the keyboard as a
+        // SwiftUI inset, as before. Hidden while typing on Search, so results
+        // get the space, and on the iPad landscape rail.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            // The music mini player rides above the tab bar on every tab.
-            // Measured together, so screens inset for both.
-            // Hidden while typing on Search, so results get the space.
-            if !hidesChromeForKeyboard && !showsSpace {
-            VStack(spacing: 6) {
-                // Leaves room on the right for the screen's floating button
-                // (Post, Blossom, Relay), which drops level with it.
-                // Folds away with the floating button as the bar shrinks;
-                // the folded bar carries a small now-playing button instead.
-                // Faded rather than removed, so the inset never relayouts.
-                ChromeFold(anchor: .bottomLeading) {
-                    MiniPlayerBar()
-                }
-                .padding(.leading, 12)
-                .padding(.trailing, max(12, buttonRow.reservedWidth))
-                BottomTabBar(
-                    selectedTab: $selectedTab,
-                    searchPath: $searchPath,
-                    profilePath: $profilePath,
-                    mediaPath: $mediaPath,
-                    relayPath: $relayPath,
-                    configService: configService,
-                    relayManager: relayManager,
-                    nostrService: nostrService,
-                    dmService: dmService,
-                    feedService: feedService
-                )
-                .background(
-                    GeometryReader { geo in
-                        Color.clear
-                            .onAppear { tabBarOnlyHeight = geo.size.height }
-                            .onChange(of: geo.size.height) { _, height in tabBarOnlyHeight = height }
-                    }
-                )
-            }
-            .onChange(of: tabBarOnlyHeight) { _, _ in syncButtonRow() }
-            .onAppear { syncButtonRow() }
-            .background(
-                GeometryReader { geo in
-                    Color.clear
-                        .onAppear { tabBarHeight = geo.size.height; buttonRow.update(chromeHeight: geo.size.height) }
-                        .onDisappear { tabBarHeight = 0; buttonRow.update(chromeHeight: 0) }
-                        .onChange(of: geo.size.height) { _, height in
-                            tabBarHeight = height
-                            buttonRow.update(chromeHeight: height)
-                        }
-                }
-            )
+            if dockPlacement == .swiftUIInset { dock }
+        }
+        .overlay(alignment: .bottom) {
+            if dockPlacement == .rootBand {
+                dock.offset(y: rootDockInset)
             }
         }
+        .background(DockSafeAreaInset(bottom: rootDockInset))
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             keyboardUp = true
         }
