@@ -1,10 +1,11 @@
 // The Feed, with the picker (net/feeds.js). Following and Media are rendered only from Haven /feed; the network fills
 // /feed in the background. Global, Hashtag and Popular come from the network into memory only: strangers' notes never
 // go into /feed.
-import { useEffect, useRef, useState } from "preact/hooks"
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks"
 import { FeedRows, rootFetcher } from "../components/FeedRows.jsx"
 import { MediaGrid } from "../components/MediaGrid.jsx"
 import { feedPostOpen, useFeedSpot } from "../components/feed-tap.js"
+import { AT_TOP_PX, holdSpot, readingSpot } from "../components/feed-stay.js"
 import { FeedModeMenu, FeedToolbar } from "../components/FeedPickerMenu.jsx"
 import { EditFeeds } from "../components/EditFeeds.jsx"
 import { readFeed, syncFeed, FEED_KINDS } from "../net/sync.js"
@@ -176,13 +177,21 @@ export function FeedScreen({ ctx }) {
     return more.length
   })
   // While the Feed is on screen, the follows' new notes arrive live (net/feed-live.js), are saved to /feed and wait
-  // behind the pill: the list never moves under the reader. With Auto-load on and the feed at the top, they go straight
-  // in (the iPhone's). A dropped subscription opens again and syncs what it missed.
+  // behind the pill: the list never moves under the reader. With Auto-load on they go straight in (the iPhone's); below
+  // the top the post being read is held at its height (components/feed-stay.js, Logen 2026-11-04). A dropped
+  // subscription opens again and syncs what it missed.
   const notesNow = useRef(notes)
   notesNow.current = notes
   // The Feed's <main>, to find what it scrolls in: its pane on the desktop layout, the window on the phone
   // (FeedExtras feedScroller). Auto-load and the pill read that, not always the window (desktop, Logen 2026-11-03).
   const screen = useRef(null)
+  // The post being read when new notes went in below the top: held at its height once they are drawn.
+  const stay = useRef(null)
+  useLayoutEffect(() => {
+    const spot = stay.current
+    stay.current = null
+    if (spot) holdSpot(screen.current, feedScroller(screen.current), spot)
+  }, [notes])
   useEffect(() => {
     if (!following || !follows.length) return
     // `batch`, `unsaved`: notes Haven didn't save (net/feed-live.js), shown from memory beside what /feed has.
@@ -191,8 +200,11 @@ export function FeedScreen({ ctx }) {
       const read = await readFeed(vault, follows, { limit: PAGE }).catch(e => { if (unsaved) return []; throw e })
       const fresh = newerNotes(notesNow.current, unsaved ? [...batch.filter(b => !read.some(r => r.id === b.id)), ...read] : read)
       if (!fresh.length) return
-      if (filters.autoLoad && scrollTopOf(feedScroller(screen.current)) < 80 && !feedPostOpen()) setNotes(prev => [...fresh, ...(prev ?? [])])
-      else setPending(fresh)
+      if (filters.autoLoad && !feedPostOpen()) {
+        const pane = feedScroller(screen.current)
+        stay.current = scrollTopOf(pane) < AT_TOP_PX ? null : readingSpot(screen.current, pane)
+        setNotes(prev => [...fresh, ...(prev ?? [])])
+      } else setPending(fresh)
     }
     const catchUp = async () => {
       if (!navigator.onLine) return
