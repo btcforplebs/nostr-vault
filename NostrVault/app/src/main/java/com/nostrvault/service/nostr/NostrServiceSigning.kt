@@ -301,6 +301,8 @@ internal fun isReadOnlySigning(signingMode: String, hasLocalKey: Boolean): Boole
         if (lockedTo != null) requireStillPostingAs(lockedTo, eventPubkey = null)
         val event = signEventRouted(kind, content, tags, forceOwner, silentOnly, notBefore)
         if (lockedTo != null && event != null) requireStillPostingAs(lockedTo, eventPubkey = event.pubkey)
+        // A list this app signed is the owner's own edit: no wipe alarm for it.
+        if (event != null) com.nostrvault.service.OwnListEdits.record(event.kind, event.id)
         return event
     }
 

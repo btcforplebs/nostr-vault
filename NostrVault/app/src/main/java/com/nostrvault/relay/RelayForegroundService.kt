@@ -311,6 +311,7 @@ class RelayForegroundService : Service() {
         fun localNotifier(): com.nostrvault.service.LocalNotificationService
         fun accountUnread(): com.nostrvault.data.local.AccountUnreadStore
         fun fipsMeshManager(): com.nostrvault.fips.FipsMeshManager
+        fun listWipeWatcher(): com.nostrvault.service.ListWipeWatcher
     }
 
     // ── Lifecycle state machine (replaces bare `relayStarted` boolean) ──
@@ -373,11 +374,20 @@ class RelayForegroundService : Service() {
         localNotifier.ensureChannel()
         // The same markers count each account's new notifications for the switcher.
         val accountUnread = EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java).accountUnread()
+        // The vault's list-version nudge is the wipe alarm's (ListWipeWatcher): never an
+        // inbox notification, never an unread count.
+        val listWipeWatcher = EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java).listWipeWatcher()
         logStore.notifySink = { line ->
-            localNotifier.onLogLine(line)
-            accountUnread.onLogLine(line)
+            if (com.nostrvault.service.ListWipeWatcher.isMarker(line)) {
+                listWipeWatcher.onLogLine(line)
+            } else {
+                localNotifier.onLogLine(line)
+                accountUnread.onLogLine(line)
+            }
         }
-        logStore.quietKinds = accountUnread::ownAccountOnlyKinds
+        logStore.quietKinds = { markers ->
+            accountUnread.ownAccountOnlyKinds(markers.filterNot(com.nostrvault.service.ListWipeWatcher::isMarker))
+        }
         logStore.startPolling(serviceScope)
         val mesh = EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java).fipsMeshManager()
         serviceScope.launch {

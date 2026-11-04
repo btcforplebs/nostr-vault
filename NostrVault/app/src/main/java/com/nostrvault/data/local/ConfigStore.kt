@@ -17,6 +17,8 @@ import com.nostrvault.service.ContactManager
 import com.nostrvault.service.FreshAccountKeys
 import com.nostrvault.service.InterestListService
 import com.nostrvault.service.ListMerge
+import com.nostrvault.service.ListWipeWatcher
+import com.nostrvault.service.OwnListEdits
 import com.nostrvault.service.NIP46Service
 import com.nostrvault.service.SignerRouting
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -542,6 +544,9 @@ internal fun forgetListState(filesDir: File, clearPrefs: (String) -> Unit) {
     File(filesDir, ListMerge.BASES_FILE).delete()
     clearPrefs(InterestListService.PREFS_NAME)
     clearPrefs(FreshAccountKeys.PREFS)
+    // The wipe alarm's own-edit and already-notified ledgers go with the lists.
+    clearPrefs(OwnListEdits.PREFS)
+    clearPrefs(ListWipeWatcher.PREFS)
 }
 
 /** Whether the active account moving from [previous] to [current] is a switch. */

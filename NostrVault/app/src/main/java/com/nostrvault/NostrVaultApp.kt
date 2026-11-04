@@ -45,10 +45,14 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
     @Inject
     lateinit var deletedPostsStore: com.nostrvault.service.deleted.DeletedPostsStore
 
+    @Inject
+    lateinit var listWipeWatcher: com.nostrvault.service.ListWipeWatcher
+
     override fun onCreate() {
         warmUpOffMain()
         super.onCreate()
         ProfileRepository.init(this)
+        com.nostrvault.service.OwnListEdits.init(this)
         com.nostrvault.data.local.DeletedNotesStore.init(this)
         com.nostrvault.service.deleted.DeletedPostsStore.shared = deletedPostsStore
         com.nostrvault.service.music.MusicPlayer.init(this)
@@ -66,6 +70,8 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
                     runCatching { com.nostrvault.relay.HavenBridge.setAppForeground(on) }
                 }
                 if (!on) trimGoMemory()
+                // A list another app clobbered while we were away (docs/LIST_WIPE_ALARM.md).
+                if (on) listWipeWatcher.onForeground()
             },
         )
         // GIFs downloaded for "Save to my Blossom" that a crash left behind.

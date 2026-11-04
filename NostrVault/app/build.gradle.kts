@@ -103,6 +103,8 @@ android {
     // The share portal's JSON fixtures are shared with the Swift tests
     // (docs/SHARE_PORTAL_CONTRACT.md): one copy, read by both.
     sourceSets.getByName("test").resources.srcDir("../../HavenApp/MediaLogicTests/Tests/MediaLogicTests/Fixtures/SharePortal")
+    // The list wipe alarm's cases, shared the same way (docs/LIST_WIPE_ALARM.md).
+    sourceSets.getByName("test").resources.srcDir("../../HavenApp/MediaLogicTests/Tests/MediaLogicTests/Fixtures/ListAlarm")
 
     testOptions {
         unitTests {

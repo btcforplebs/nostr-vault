@@ -209,13 +209,13 @@ class ConfigStoreSaveTest {
 
         // The next 10063 / 10006 / 10015 edit starts from the network's copy, not this phone's.
         assertFalse(bases.exists())
-        assertEquals(listOf("interest_lists", "fresh_account_keys"), clearedPrefs)
+        assertEquals(listOf("interest_lists", "fresh_account_keys", "own_list_edits", "list_wipe_alarm"), clearedPrefs)
     }
 
     @Test
     fun `forgetting list state with nothing saved yet is fine`() {
         val cleared = mutableListOf<String>()
         forgetListState(filesDir) { cleared += it }
-        assertEquals(listOf("interest_lists", "fresh_account_keys"), cleared)
+        assertEquals(listOf("interest_lists", "fresh_account_keys", "own_list_edits", "list_wipe_alarm"), cleared)
     }
 }
