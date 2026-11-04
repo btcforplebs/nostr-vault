@@ -12,6 +12,7 @@ import { fetchProfiles, getProfile, onProfiles } from "../net/profiles.js"
 import { followLists } from "../net/wot.js"
 import { latestList } from "../net/list-edit.js"
 import { followedTags, interests, pickedNotes, reactedIds, recommendedPeople, vouchesFrom } from "../net/for-you.js"
+import { SearchLiveNow, useLiveNow } from "./SearchLiveNow.jsx"
 import "../styles/search-for-you.css"
 
 const FEED_SAMPLE = 300 // the newest notes on hand that Trending and Active are counted from
@@ -31,8 +32,9 @@ export function SearchStart({ ctx, recent, onPick, onClearRecent, onProfile, blo
   const active = activePosters(notes, ctx.session.pubkey, blocked)
   const forYou = useForYou(ctx, notes, blocked)
   const hasForYou = forYou.people.length || forYou.topics.length || forYou.notes.length
+  const liveStreams = useLiveNow(ctx, blocked)
 
-  if (!recent.length && !hasForYou && !trending.length && !active.length) return (
+  if (!liveStreams.length && !recent.length && !hasForYou && !trending.length && !active.length) return (
     <div class="empty">
       <p><b>Search</b></p>
       <p>Find users, notes, hashtags and links<br />Or paste a note1 or nevent1 ID</p>
@@ -40,6 +42,7 @@ export function SearchStart({ ctx, recent, onPick, onClearRecent, onProfile, blo
   )
   return (
     <>
+      <SearchLiveNow ctx={ctx} streams={liveStreams} />
       {recent.length > 0 && <>
         <div class="vault-search-head section-label"><span>Recent</span><button type="button" class="link" onClick={onClearRecent}>Clear</button></div>
         <div class="chips">{recent.map(q => <button key={q} type="button" class="chip recent" onClick={() => onPick(q)}><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2" /></svg>{q}</button>)}</div>
