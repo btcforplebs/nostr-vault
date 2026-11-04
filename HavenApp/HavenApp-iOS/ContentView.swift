@@ -114,6 +114,7 @@ struct ContentView: View {
             pendingProfilePubkey = nil
         }
         .modifier(OpensRelayTab(selectedTab: $selectedTab))
+        .modifier(OpensLiveStream())
         .modifier(OpensWOTTab(selectedTab: $selectedTab,
                               pendingMentionNoteId: $pendingMentionNoteId,
                               pendingProfilePubkey: $pendingProfilePubkey))
@@ -226,6 +227,31 @@ private struct OpensWOTTab: ViewModifier {
             pendingMentionNoteId = nil
             pendingProfilePubkey = nil
         }
+    }
+}
+
+/// A Live now widget tap: the stream's player over whatever tab is up, as
+/// Your space's Live now panel opens it.
+private struct OpensLiveStream: ViewModifier {
+    @State private var playing: LiveStream?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenLiveStream)) { note in
+                guard let stream = note.object as? LiveStream else { return }
+                if let current = playing, current.id != stream.id {
+                    // Swap rather than stack: dismiss, then present the new one.
+                    playing = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { playing = stream }
+                } else {
+                    playing = stream
+                }
+            }
+            .sheet(item: $playing) { stream in
+                LiveStreamPlayerView(stream: stream)
+                    .environmentObject(NostrService.shared)
+                    .environmentObject(ConfigService.shared)
+            }
     }
 }
 

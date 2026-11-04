@@ -31,6 +31,8 @@ enum NVWidgetBridge {
 
         NVZapsTodayCounter.refresh()
         let snapshot = buildSnapshot()
+        // Before the reload below, so Live now asks with today's follow list.
+        NVLiveNowStore.save(liveHandoff())
         guard NVSharedStore.save(snapshot) else { return }
         WidgetCenter.shared.reloadAllTimelines()
         publishThumbnails(for: snapshot.media)
@@ -76,6 +78,17 @@ enum NVWidgetBridge {
     }
 
     private static let processStart = Date()
+
+    /// Who Live now looks for. Not the streams themselves: those start and end
+    /// while the app is closed, so the widget asks the relays on its own.
+    private static func liveHandoff() -> NVLiveHandoff {
+        let feed = FeedService.shared
+        return NVLiveHandoff(generatedAt: Date(),
+                             follows: feed.followedPubkeys,
+                             followListIsKnown: feed.followListIsKnown,
+                             blocked: Array(ConfigService.shared.activeAccountBlockedHexPubkeys),
+                             relays: LiveFeedService.relayURLs.map(\.absoluteString))
+    }
 
     /// Mosaic's tiles, newest first.
     ///
@@ -249,6 +262,14 @@ enum NVDeepLinkRouter {
     @discardableResult
     static func handle(_ url: URL) -> Bool {
         if let nostr = NostrURI(url: url) { return open(nostr) }
+        // Live now: the stream event rides in the link, so the player opens
+        // at once (OpensLiveStream in ContentView presents it).
+        if let event = NVLiveLink.parse(url) {
+            guard let stream = LiveStream(id: event.id, pubkey: event.pubkey,
+                                          createdAt: event.createdAt, tags: event.tags) else { return false }
+            NotificationCenter.default.post(name: .havenOpenLiveStream, object: stream)
+            return true
+        }
         guard let link = NVDeepLink(url: url) else { return false }
         let center = NotificationCenter.default
 
