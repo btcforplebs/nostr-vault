@@ -64,3 +64,9 @@ test("the desktop Vault capsule stays out of Your space", () => {
   assert.match(css, /^\.vault-status\.desk \{ right: calc\(var\(--dock-w, 0px\) \+ 24px\); bottom: 20px; \}/m)
   assert.match(src("styles/desktop.css"), /\.desk-app:has\(\.desk\.space\) \{ --dock-w: 380px; \}/, "--dock-w is Your space's width")
 })
+
+test("Your space: only Live Vault gives way; every other panel keeps its height (900px-tall window, Logen 2026-11-04)", () => {
+  const css = src("styles/space.css")
+  assert.match(css, /^\.sp-panel:not\(\.live-vault\) \{ flex-shrink: 0; \}/m)
+  assert.match(css, /\.sp-panels \{[^}]*overflow-y: auto;/, "past that the column scrolls")
+})
