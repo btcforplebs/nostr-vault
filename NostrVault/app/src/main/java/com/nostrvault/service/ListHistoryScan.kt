@@ -3,7 +3,8 @@ package com.nostrvault.service
 /**
  * Moving in's look for older versions of the owner's lists (haven-go
  * list_history_scan.go): the switch the app sets and what it reports. The
- * user ticks it (off by default, Logen 2026-11-04); what it finds goes to the
+ * switch is on by default and the user can turn it off (Logen 2026-11-04 14:34Z);
+ * what it finds goes to the
  * vault's import store, where Recover a List sees it. Never published.
  * Twin of iOS `ListHistoryScan.swift`.
  */
@@ -14,9 +15,16 @@ object ListHistoryScan {
     /** haven-go listHistoryAccountEnv: the hex pubkey of the account moving in, the only one asked about (Tron, PR 1641). */
     const val ACCOUNT_ENV = "HAVEN_IMPORT_LIST_HISTORY_ACCOUNT"
 
-    /** The checkbox, word for word (Logen 2026-11-04). */
-    const val OPT_IN_LABEL =
-        "Also look for older versions of my lists on history relays (hist.nostr.land, relay.ditto.pub). They will see your IP asked. Adds about a minute."
+    /** The option's title, word for word (Logen 2026-11-04 14:34Z, same on every platform). */
+    const val OPT_IN_TITLE = "Look up and back up my lists"
+
+    /** The small line under it; [LAZARUS_WORD] links to [LAZARUS_URL] (opens in the browser). */
+    const val OPT_IN_NOTE = "Finds older versions on Lazarus history relays"
+    const val LAZARUS_WORD = "Lazarus"
+    const val LAZARUS_URL = "https://github.com/dmnyc/lazarus"
+
+    /** On unless the person turns it off (Logen 2026-11-04 14:34Z; was off). Off skips every history relay. */
+    const val DEFAULT_ON = true
 
     const val LOOKING = "Looking for older versions of your lists…"
 

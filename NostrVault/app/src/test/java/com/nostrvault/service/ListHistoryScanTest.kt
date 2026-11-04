@@ -61,10 +61,11 @@ class ListHistoryScanTest {
 
     @Test
     fun labelIsLogensWordingAndMatchesGo() {
-        assertEquals(
-            "Also look for older versions of my lists on history relays (hist.nostr.land, relay.ditto.pub). They will see your IP asked. Adds about a minute.",
-            ListHistoryScan.OPT_IN_LABEL,
-        )
+        assertEquals("Look up and back up my lists", ListHistoryScan.OPT_IN_TITLE)
+        assertEquals("Finds older versions on Lazarus history relays", ListHistoryScan.OPT_IN_NOTE)
+        assertEquals("https://github.com/dmnyc/lazarus", ListHistoryScan.LAZARUS_URL)
+        assertTrue("the note links its own word", ListHistoryScan.OPT_IN_NOTE.contains(ListHistoryScan.LAZARUS_WORD))
+        assertTrue("on by default (Logen 2026-11-04 14:34Z)", ListHistoryScan.DEFAULT_ON)
         assertEquals("HAVEN_IMPORT_LIST_HISTORY", ListHistoryScan.OPT_IN_ENV)
         assertEquals("HAVEN_IMPORT_LIST_HISTORY_ACCOUNT", ListHistoryScan.ACCOUNT_ENV)
         assertEquals("imported", ListHistoryScan.IMPORTED_FILTER_VALUE)
