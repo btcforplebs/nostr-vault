@@ -11,7 +11,7 @@
 // is kept: only an EOSE counts as an answer. No relay is answered AUTH (the pool has no auth handler), so the history
 // relays aren't told the account itself is asking.
 import { askRelay } from "./follows.js"
-import { ownVersion, byNewest } from "./list-versions.js"
+import { ownVersion, byNewest, keptVersions } from "./list-versions.js"
 import { MERGE_KINDS } from "./list-version-merge.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./pool.js"
 import { storeEvent } from "./backup.js"
@@ -74,7 +74,7 @@ export async function importListHistory(ctx, { relays = scanRelays(ctx.account),
   const filter = { kinds, authors: [me] }
   // This read also AUTHs the /lists connection, which a write needs.
   const [kept, current] = await Promise.all([
-    ctx.vault.lists.query(filter).catch(() => []),
+    keptVersions(ctx.vault.lists, filter).catch(() => []),
     ctx.vault.outbox.query(filter).catch(() => []),
   ])
   const have = new Set([...kept, ...current].map(ev => ev.id))

@@ -33,18 +33,36 @@ func withImportStore(t *testing.T, open func(string) DBBackend) {
 	t.Cleanup(func() { listsImportDB = prev })
 }
 
-// served: what /lists answers for one list, newest first (both stores).
-func (f *listHistoryFixture) served(kind int) []string {
+// read: what /lists answers for one list, newest first. imported: the filter asks for the imported versions.
+func (f *listHistoryFixture) read(kind int, imported bool) []*nostr.Event {
 	f.t.Helper()
-	ch, err := queryListHistory(f.ctx, listsDB, nostr.Filter{Authors: []string{f.pk}, Kinds: []int{kind}})
+	flt := nostr.Filter{Authors: []string{f.pk}, Kinds: []int{kind}}
+	if imported {
+		flt.Tags = nostr.TagMap{"v": {"imported"}}
+	}
+	ch, err := queryListHistory(f.ctx, listsDB, flt)
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	var ids []string
+	var evs []*nostr.Event
 	for ev := range ch {
-		ids = append(ids, ev.ID)
+		evs = append(evs, ev)
+	}
+	return evs
+}
+
+func eventIDs(evs []*nostr.Event) []string {
+	ids := make([]string, len(evs))
+	for i, ev := range evs {
+		ids[i] = ev.ID
 	}
 	return ids
+}
+
+// served: what Recover a List gets for one list, newest first: the plain read and the imported read together.
+func (f *listHistoryFixture) served(kind int) []string {
+	f.t.Helper()
+	return eventIDs(mergeVersions(f.read(kind, false), f.read(kind, true)))
 }
 
 func (f *listHistoryFixture) importIDs(kind int) []string {
@@ -151,6 +169,36 @@ func TestListHistoryImportIsFiledApart(t *testing.T) {
 			want := []string{current.ID, old[0].ID, old[1].ID, old[2].ID}
 			if got := f.served(10003); strings.Join(got, ",") != strings.Join(want, ",") {
 				t.Fatalf("/lists served %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// Tron, PR 1637: the wipe alarm the apps run reads /lists with a plain filter, so a plain read serves only the
+// versions the vault filed itself. A filter with {"#v": ["imported"]} gets the imported ones, and only those.
+func TestListHistoryImportedServedOnlyWhenAsked(t *testing.T) {
+	for name, open := range historyBackends(t) {
+		t.Run(name, func(t *testing.T) {
+			f, file := importFixture(t, open)
+			current := f.bookmarks(10, 60)
+			f.publish(current)
+			old := f.bookmarks(200, 10) // a big list, cut on purpose long ago
+			file(old)
+			if got := eventIDs(f.read(10003, false)); len(got) != 1 || got[0] != current.ID {
+				t.Fatalf("a plain read served %v, want only the vault's own %s", got, current.ID)
+			}
+			if got := eventIDs(f.read(10003, true)); len(got) != 1 || got[0] != old.ID {
+				t.Fatalf("an imported read served %v, want only %s", got, old.ID)
+			}
+			// No author or kind named: all of the owners' lists, still split the same way.
+			ch, err := queryListHistory(f.ctx, listsDB, nostr.Filter{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for ev := range ch {
+				if ev.ID == old.ID {
+					t.Fatal("an open plain read served an imported version")
+				}
 			}
 		})
 	}
