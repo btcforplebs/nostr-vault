@@ -14,7 +14,7 @@ struct ImportTourStep: View {
     /// Their own servers picked in the relay check, read for this import
     /// only (not saved).
     var alsoFrom: [String] = []
-    /// Also look for older versions of their lists (ticked in the relay check).
+    /// Also look for older versions of their lists (the relay check's switch).
     var listHistory = false
     /// `keptRunning`: they left with the import still going.
     let onEnter: (_ keptRunning: Bool) -> Void

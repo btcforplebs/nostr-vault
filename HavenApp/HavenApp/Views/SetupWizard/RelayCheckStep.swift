@@ -19,7 +19,7 @@ struct RelayCheckStep: View {
     @State private var editing = false
     @State private var newRelay = ""
     @State private var started = false
-    @State private var lookForOldLists = false
+    @State private var lookForOldLists = ListHistoryScan.defaultOn
 
     private var pubkey: String { Bech32.decode(npub)?.hexString ?? "" }
     private var onCount: Int { rows.filter(\.isOn).count }

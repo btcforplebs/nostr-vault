@@ -47,8 +47,8 @@ extension RelayProcessManager {
     
     /// `alsoFrom`: relays read for this import only, on top of
     /// `config.importSeedRelays`; not saved (setup's own-servers read).
-    /// `listHistory`: the user ticked "Also look for older versions of my
-    /// lists on history relays" (off by default; haven-go list_history_scan.go).
+    /// `listHistory`: "Look up and back up my lists" was on (the switch's
+    /// default; haven-go list_history_scan.go).
     func importNotes(config: HavenConfig, alsoFrom: [String] = [], listHistory: Bool = false) {
         logStore.append(LogEntry(timestamp: Date(), level: "DEBUG", message: "importNotes called. Current State: \(state), isRunning: \(isRunning)"))
         

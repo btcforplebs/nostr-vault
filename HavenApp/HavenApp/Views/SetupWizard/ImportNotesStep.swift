@@ -33,9 +33,8 @@ struct ImportNotesStep: View {
     /// Their own servers (kind 10002 write relays), read for this import
     /// only: never saved or published.
     @State private var ownRelays: [String] = []
-    /// "Also look for older versions of my lists on history relays": off
-    /// unless ticked (ListHistoryScan).
-    @State private var lookForOldLists = false
+    /// "Look up and back up my lists": on unless switched off (ListHistoryScan).
+    @State private var lookForOldLists = ListHistoryScan.defaultOn
 
     var body: some View {
         VStack(spacing: 24) {
