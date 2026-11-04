@@ -1,0 +1,809 @@
+{
+ "rule": {
+  "name_max": 40,
+  "roles": [
+   "phone",
+   "mac",
+   "homeVault",
+   "browser"
+  ]
+ },
+ "parse": [
+  {
+   "name": "A's QR reads",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "payload": {
+     "mesh": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+     "mesh_hex": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "name": "Logen's Mac",
+     "role": "mac",
+     "owner": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+     "owner_hex": "cef79d7f9277c4ed115d48f4bce797427c35c67a222afef50122797e71fa324a",
+     "secret": "MfL-vrRY_QiUhuVK2cwvQQ"
+    }
+   }
+  },
+  {
+   "name": "B's QR reads",
+   "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "payload": {
+     "mesh": "npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl",
+     "mesh_hex": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "name": "Logen's iPhone",
+     "role": "phone",
+     "owner": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+     "owner_hex": "cef79d7f9277c4ed115d48f4bce797427c35c67a222afef50122797e71fa324a",
+     "echo": "MfL-vrRY_QiUhuVK2cwvQQ",
+     "b_secret": "I6gzynJZJM1ulPlrxycaJg"
+    }
+   }
+  },
+  {
+   "name": "no name is fine",
+   "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "payload": {
+     "mesh": "npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl",
+     "mesh_hex": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "name": "",
+     "role": "phone",
+     "owner": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+     "owner_hex": "cef79d7f9277c4ed115d48f4bce797427c35c67a222afef50122797e71fa324a",
+     "echo": "MfL-vrRY_QiUhuVK2cwvQQ",
+     "b_secret": "I6gzynJZJM1ulPlrxycaJg"
+    }
+   }
+  },
+  {
+   "name": "name with spaces, emoji and a quote round-trips",
+   "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Tess%27s%20%20iPad%20%F0%9F%90%9D%20%26%20co&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "payload": {
+     "mesh": "npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl",
+     "mesh_hex": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+     "name": "Tess's  iPad 🐝 & co",
+     "role": "phone",
+     "owner": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+     "owner_hex": "cef79d7f9277c4ed115d48f4bce797427c35c67a222afef50122797e71fa324a",
+     "secret": "MfL-vrRY_QiUhuVK2cwvQQ"
+    }
+   }
+  },
+  {
+   "name": "upper-case scheme and npub read",
+   "uri": "NVPAIR:v1?m=NPUB172F8DNSJT3TR99LG7CHRQTZANC3ANRUG44AAQN6Q73NU8GM3WV9QTNN58A&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "payload": {
+     "mesh": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+     "mesh_hex": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "name": "",
+     "role": "mac",
+     "owner": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+     "owner_hex": "cef79d7f9277c4ed115d48f4bce797427c35c67a222afef50122797e71fa324a",
+     "secret": "MfL-vrRY_QiUhuVK2cwvQQ"
+    }
+   }
+  },
+  {
+   "name": "surrounding whitespace is ignored",
+   "uri": "  nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=homeVault&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ\n",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "payload": {
+     "mesh": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+     "mesh_hex": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "name": "x",
+     "role": "homeVault",
+     "owner": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+     "owner_hex": "cef79d7f9277c4ed115d48f4bce797427c35c67a222afef50122797e71fa324a",
+     "secret": "MfL-vrRY_QiUhuVK2cwvQQ"
+    }
+   }
+  },
+  {
+   "name": "unknown extra fields are ignored",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=browser&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ&z=later",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "payload": {
+     "mesh": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+     "mesh_hex": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "name": "x",
+     "role": "browser",
+     "owner": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+     "owner_hex": "cef79d7f9277c4ed115d48f4bce797427c35c67a222afef50122797e71fa324a",
+     "secret": "MfL-vrRY_QiUhuVK2cwvQQ"
+    }
+   }
+  },
+  {
+   "name": "a plain npub is not a pairing code",
+   "uri": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "notPairing"
+   }
+  },
+  {
+   "name": "a web link is not a pairing code",
+   "uri": "https://nostrvault.app/relay/#owner=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "notPairing"
+   }
+  },
+  {
+   "name": "v2 is refused",
+   "uri": "nvpair:v2?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "unsupportedVersion"
+   }
+  },
+  {
+   "name": "no version is refused",
+   "uri": "nvpair:?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "unsupportedVersion"
+   }
+  },
+  {
+   "name": "m not an npub",
+   "uri": "nvpair:v1?m=npub1notanaddress&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "badAddress"
+   }
+  },
+  {
+   "name": "m with a bad checksum",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58q&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "badAddress"
+   }
+  },
+  {
+   "name": "m an nsec-shaped string",
+   "uri": "nvpair:v1?m=nsec172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "badAddress"
+   }
+  },
+  {
+   "name": "m missing",
+   "uri": "nvpair:v1?r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "badAddress"
+   }
+  },
+  {
+   "name": "unknown role",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=fridge&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "unknownRole"
+   }
+  },
+  {
+   "name": "Android's home_vault spelling is not the wire role",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=home_vault&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "unknownRole"
+   }
+  },
+  {
+   "name": "missing role",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "unknownRole"
+   }
+  },
+  {
+   "name": "missing owner",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&r=mac&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "missingOwner"
+   }
+  },
+  {
+   "name": "owner not an npub",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=mac&o=bob&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "missingOwner"
+   }
+  },
+  {
+   "name": "neither s nor e",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "badCode"
+   }
+  },
+  {
+   "name": "both s and e",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ&e=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "badCode"
+   }
+  },
+  {
+   "name": "B's code without b [Tron, PR 1700]",
+   "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "badCode"
+   }
+  },
+  {
+   "name": "A's code with a b",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "badCode"
+   }
+  },
+  {
+   "name": "B's code with a bad b",
+   "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=x&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "badCode"
+   }
+  },
+  {
+   "name": "secret too short",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwv",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "badCode"
+   }
+  },
+  {
+   "name": "secret with padding",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ==",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "badCode"
+   }
+  },
+  {
+   "name": "secret in standard base64 alphabet",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=+/L-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "badCode"
+   }
+  },
+  {
+   "name": "secret not canonical (spare bits set)",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQR",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "badCode"
+   }
+  },
+  {
+   "name": "name over 40 code points",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "nameTooLong"
+   }
+  },
+  {
+   "name": "name of exactly 40 emoji is fine",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "payload": {
+     "mesh": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+     "mesh_hex": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "name": "🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝",
+     "role": "mac",
+     "owner": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+     "owner_hex": "cef79d7f9277c4ed115d48f4bce797427c35c67a222afef50122797e71fa324a",
+     "secret": "MfL-vrRY_QiUhuVK2cwvQQ"
+    }
+   }
+  },
+  {
+   "name": "bad percent escape",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=%ZZ&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "malformed"
+   }
+  },
+  {
+   "name": "percent escape that is not UTF-8",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=%FF&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "malformed"
+   }
+  },
+  {
+   "name": "a field twice",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ&r=phone",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "malformed"
+   }
+  },
+  {
+   "name": "a field with no =",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ&junk",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "malformed"
+   }
+  },
+  {
+   "name": "this device's own address",
+   "uri": "nvpair:v1?m=npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7&n=me&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "ownAddress"
+   }
+  },
+  {
+   "name": "own address in upper case is still own",
+   "uri": "nvpair:v1?m=NPUB1874P08M9S77LXH47V7XEG8X22QKLNNL57PGKRZLFG9CUJQP6EFYQS75QQ7&n=me&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "ownAddress"
+   }
+  },
+  {
+   "name": "own address check is skipped with no own address",
+   "uri": "nvpair:v1?m=npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7&n=me&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": null,
+   "expect": {
+    "payload": {
+     "mesh": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+     "mesh_hex": "3faa179f6587bdf35ebe678d941cca502df9cff4f051618be94171c9003aca48",
+     "name": "me",
+     "role": "phone",
+     "owner": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+     "owner_hex": "cef79d7f9277c4ed115d48f4bce797427c35c67a222afef50122797e71fa324a",
+     "secret": "MfL-vrRY_QiUhuVK2cwvQQ"
+    }
+   }
+  }
+ ],
+ "build": [
+  {
+   "name": "A's code",
+   "args": {
+    "m": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+    "n": "Logen's Mac",
+    "r": "mac",
+    "o": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "s": "MfL-vrRY_QiUhuVK2cwvQQ"
+   },
+   "expect": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ"
+  },
+  {
+   "name": "B's code",
+   "args": {
+    "m": "npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl",
+    "n": "Logen's iPhone",
+    "r": "phone",
+    "o": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "e": "MfL-vrRY_QiUhuVK2cwvQQ",
+    "b": "I6gzynJZJM1ulPlrxycaJg"
+   },
+   "expect": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg"
+  },
+  {
+   "name": "no name leaves n out",
+   "args": {
+    "m": "npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl",
+    "n": "   ",
+    "r": "browser",
+    "o": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "e": "MfL-vrRY_QiUhuVK2cwvQQ",
+    "b": "I6gzynJZJM1ulPlrxycaJg"
+   },
+   "expect": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&r=browser&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg"
+  },
+  {
+   "name": "long name is cut to 40 code points",
+   "args": {
+    "m": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+    "n": "🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝🐝",
+    "r": "homeVault",
+    "o": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "s": "MfL-vrRY_QiUhuVK2cwvQQ"
+   },
+   "expect": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D%F0%9F%90%9D&r=homeVault&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ"
+  },
+  {
+   "name": "reserved characters are escaped",
+   "args": {
+    "m": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+    "n": " a&b=c?d/e#f%g+h ",
+    "r": "mac",
+    "o": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "s": "MfL-vrRY_QiUhuVK2cwvQQ"
+   },
+   "expect": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=a%26b%3Dc%3Fd%2Fe%23f%25g%2Bh&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ"
+  }
+ ],
+ "owner": [
+  {
+   "name": "matches the active account",
+   "owner": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "expect": "ok"
+  },
+  {
+   "name": "matches in another case",
+   "owner": "NPUB1EMME6LUJWLZW6Y2AFR6TEEUHGF7RT3N6YG40AAGPYFUHUU06XF9Q6Z30YJ",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj"
+   ],
+   "expect": "ok"
+  },
+  {
+   "name": "matches another account on this device",
+   "owner": "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "expect": "switchTo:npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+  },
+  {
+   "name": "matches no account",
+   "owner": "npub1mfvctm9654sq6qqasdg6g27z0ms2yj9udt30w50eztsqjuv6sd3qzesed5",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "expect": "otherOwner"
+  },
+  {
+   "name": "no active account, one matches",
+   "owner": "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth",
+   "active": null,
+   "accounts": [
+    "npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+   ],
+   "expect": "switchTo:npub1d3lkmjhu0mml5fy8tny0sqc55ggm9jsevx40pvurwlstvx9a7hpspnlmth"
+  },
+  {
+   "name": "no accounts at all",
+   "owner": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "active": null,
+   "accounts": [],
+   "expect": "otherOwner"
+  },
+  {
+   "name": "owner not an npub",
+   "owner": "npub1nope",
+   "active": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
+   "accounts": [
+    "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj"
+   ],
+   "expect": "otherOwner"
+  }
+ ],
+ "role": [
+  {
+   "name": "a new device is added",
+   "npub": "npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl",
+   "role": "phone",
+   "existing": [
+    {
+     "npub": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+     "role": "mac"
+    },
+    {
+     "npub": "npub13pehdtj4cnfxa0p43jauv3578ssn8utk6h2fhxfnss2jv5jxq3gsc0696a",
+     "role": "phone"
+    }
+   ],
+   "expect": "add"
+  },
+  {
+   "name": "the same device, same role, is already linked",
+   "npub": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+   "role": "mac",
+   "existing": [
+    {
+     "npub": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+     "role": "mac"
+    },
+    {
+     "npub": "npub13pehdtj4cnfxa0p43jauv3578ssn8utk6h2fhxfnss2jv5jxq3gsc0696a",
+     "role": "phone"
+    }
+   ],
+   "expect": "alreadyLinked"
+  },
+  {
+   "name": "the same device under another role is refused",
+   "npub": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+   "role": "homeVault",
+   "existing": [
+    {
+     "npub": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+     "role": "mac"
+    },
+    {
+     "npub": "npub13pehdtj4cnfxa0p43jauv3578ssn8utk6h2fhxfnss2jv5jxq3gsc0696a",
+     "role": "phone"
+    }
+   ],
+   "expect": "refuseOtherRole:mac"
+  },
+  {
+   "name": "a phone claimed as the Mac is refused",
+   "npub": "npub13pehdtj4cnfxa0p43jauv3578ssn8utk6h2fhxfnss2jv5jxq3gsc0696a",
+   "role": "mac",
+   "existing": [
+    {
+     "npub": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+     "role": "mac"
+    },
+    {
+     "npub": "npub13pehdtj4cnfxa0p43jauv3578ssn8utk6h2fhxfnss2jv5jxq3gsc0696a",
+     "role": "phone"
+    }
+   ],
+   "expect": "refuseOtherRole:phone"
+  },
+  {
+   "name": "case does not matter",
+   "npub": "NPUB172F8DNSJT3TR99LG7CHRQTZANC3ANRUG44AAQN6Q73NU8GM3WV9QTNN58A",
+   "role": "mac",
+   "existing": [
+    {
+     "npub": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+     "role": "mac"
+    },
+    {
+     "npub": "npub13pehdtj4cnfxa0p43jauv3578ssn8utk6h2fhxfnss2jv5jxq3gsc0696a",
+     "role": "phone"
+    }
+   ],
+   "expect": "alreadyLinked"
+  }
+ ],
+ "texts": [
+  {
+   "kind": "confirm",
+   "role": "phone",
+   "name": "Logen's Mac",
+   "setup": false,
+   "expect": "Add Logen's Mac as another of your phones."
+  },
+  {
+   "kind": "confirm",
+   "role": "phone",
+   "name": "  ",
+   "setup": false,
+   "expect": "Add this device as another of your phones."
+  },
+  {
+   "kind": "confirm",
+   "role": "phone",
+   "name": "",
+   "setup": false,
+   "expect": "Add this device as another of your phones."
+  },
+  {
+   "kind": "confirm",
+   "role": "mac",
+   "name": "Logen's Mac",
+   "setup": false,
+   "expect": "Add Logen's Mac as your Mac: your vault syncs to it and it keeps a full copy."
+  },
+  {
+   "kind": "confirm",
+   "role": "mac",
+   "name": "  ",
+   "setup": false,
+   "expect": "Add this device as your Mac: your vault syncs to it and it keeps a full copy."
+  },
+  {
+   "kind": "confirm",
+   "role": "mac",
+   "name": "",
+   "setup": false,
+   "expect": "Add this device as your Mac: your vault syncs to it and it keeps a full copy."
+  },
+  {
+   "kind": "confirm",
+   "role": "homeVault",
+   "name": "Logen's Mac",
+   "setup": false,
+   "expect": "Add Logen's Mac as your home vault: your new posts and media are sent to it."
+  },
+  {
+   "kind": "confirm",
+   "role": "homeVault",
+   "name": "  ",
+   "setup": false,
+   "expect": "Add this device as your home vault: your new posts and media are sent to it."
+  },
+  {
+   "kind": "confirm",
+   "role": "homeVault",
+   "name": "",
+   "setup": false,
+   "expect": "Add this device as your home vault: your new posts and media are sent to it."
+  },
+  {
+   "kind": "confirm",
+   "role": "browser",
+   "name": "Logen's Mac",
+   "setup": false,
+   "expect": "Add Logen's Mac as your browser vault: it gets your new notes while it's open."
+  },
+  {
+   "kind": "confirm",
+   "role": "browser",
+   "name": "  ",
+   "setup": false,
+   "expect": "Add this device as your browser vault: it gets your new notes while it's open."
+  },
+  {
+   "kind": "confirm",
+   "role": "browser",
+   "name": "",
+   "setup": false,
+   "expect": "Add this device as your browser vault: it gets your new notes while it's open."
+  },
+  {
+   "kind": "confirm",
+   "role": "phone",
+   "name": "Logen's iPhone",
+   "setup": true,
+   "expect": "Add Logen's iPhone as another of your devices: your vault copies between them."
+  },
+  {
+   "kind": "confirm",
+   "role": "mac",
+   "name": "",
+   "setup": true,
+   "expect": "Add this device as another of your devices: your vault copies between them."
+  },
+  {
+   "kind": "refusal",
+   "code": "notPairing",
+   "expect": "That isn't a Nostr Vault pairing code."
+  },
+  {
+   "kind": "refusal",
+   "code": "unsupportedVersion",
+   "expect": "That code is from a newer Nostr Vault. Update this app and try again."
+  },
+  {
+   "kind": "refusal",
+   "code": "malformed",
+   "expect": "That code didn't read correctly. Try scanning again."
+  },
+  {
+   "kind": "refusal",
+   "code": "badAddress",
+   "expect": "That code didn't read correctly. Try scanning again."
+  },
+  {
+   "kind": "refusal",
+   "code": "missingOwner",
+   "expect": "That code didn't read correctly. Try scanning again."
+  },
+  {
+   "kind": "refusal",
+   "code": "badCode",
+   "expect": "That code didn't read correctly. Try scanning again."
+  },
+  {
+   "kind": "refusal",
+   "code": "nameTooLong",
+   "expect": "That code didn't read correctly. Try scanning again."
+  },
+  {
+   "kind": "refusal",
+   "code": "unknownRole",
+   "expect": "This version can't link that kind of device. Update this app and try again."
+  },
+  {
+   "kind": "refusal",
+   "code": "ownAddress",
+   "expect": "That's this device's own code."
+  },
+  {
+   "kind": "refusal",
+   "code": "otherOwner",
+   "expect": "That device belongs to another account. Only your own devices can be linked."
+  },
+  {
+   "kind": "refusal",
+   "code": "alreadyLinked",
+   "expect": "Already linked."
+  },
+  {
+   "kind": "refusal",
+   "code": "expired",
+   "expect": "This code has expired. Show a new one."
+  },
+  {
+   "kind": "refusal",
+   "code": "abort",
+   "expect": "Another device tried to use this code. Start again, and only show your code to your own device."
+  },
+  {
+   "kind": "refusal",
+   "code": "switchTo",
+   "account_name": "Tess",
+   "expect": "This is Tess's device. Switch to Tess first."
+  },
+  {
+   "kind": "refusal",
+   "code": "switchTo",
+   "account_name": "",
+   "expect": "This is that account's device. Switch to that account first."
+  },
+  {
+   "kind": "refusal",
+   "code": "refuseOtherRole",
+   "role": "phone",
+   "expect": "This device is already added as your phone. Remove it in Mesh settings first."
+  },
+  {
+   "kind": "refusal",
+   "code": "refuseOtherRole",
+   "role": "mac",
+   "expect": "This device is already added as your Mac. Remove it in Mesh settings first."
+  },
+  {
+   "kind": "refusal",
+   "code": "refuseOtherRole",
+   "role": "homeVault",
+   "expect": "This device is already added as your home vault. Remove it in Mesh settings first."
+  },
+  {
+   "kind": "refusal",
+   "code": "refuseOtherRole",
+   "role": "browser",
+   "expect": "This device is already added as your browser vault. Remove it in Mesh settings first."
+  },
+  {
+   "kind": "short",
+   "npub": "npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a",
+   "expect": "npub172f…n58a"
+  },
+  {
+   "kind": "short",
+   "npub": "npub1short",
+   "expect": "npub1short"
+  }
+ ]
+}
