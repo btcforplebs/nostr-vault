@@ -12,6 +12,8 @@ struct NativeVideoPlayer: NSViewRepresentable {
         let view = AVPlayerView()
         view.player = player
         view.controlsStyle = .floating
+        // The Mac's own PiP button in the controls (PiP plan lane B).
+        view.allowsPictureInPicturePlayback = true
         return view
     }
 

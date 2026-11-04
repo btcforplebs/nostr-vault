@@ -134,7 +134,11 @@ struct FeedMediaView: View {
                     onAspectRatio: { ratio in if ratio > 0 { videoAspectRatio = ratio } }
                 )
                 .aspectRatio(thumbnailRatio, contentMode: isThumbnail && !fitsThumbnail ? .fill : .fit)
+                .onTapGestureIfSome(openViewer)
             } else {
+                // Its own body tap opens the viewer (onTap). A container tap here
+                // was high priority and took the taps meant for its mute and PiP
+                // buttons, opening the viewer instead (PiP plan lane B).
                 InlineFeedVideoPlayer(
                     url: url,
                     onTap: openViewer,
@@ -148,7 +152,6 @@ struct FeedMediaView: View {
         .frame(maxWidth: fitsThumbnail ? nil : .infinity)
         .frame(maxHeight: fitsThumbnail ? nil : isThumbnail ? .infinity : videoHeightCap)
         .mediaFrame(isThumbnail: isThumbnail)
-        .onTapGestureIfSome(openViewer)
         .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
     }
 

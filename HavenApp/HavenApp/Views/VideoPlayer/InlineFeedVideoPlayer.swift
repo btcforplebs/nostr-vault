@@ -66,6 +66,8 @@ struct InlineFeedVideoPlayer: View {
     @Environment(\.meshMediaNote) private var meshNote
     @State private var meshPhase: MeshMediaPhase = .loading
     @State private var meshFile: URL? = nil
+    /// The inline layer, for the PiP button (PiPManager.startInline).
+    @State private var playerLayer: AVPlayerLayer? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -91,7 +93,10 @@ struct InlineFeedVideoPlayer: View {
                 } else if let player = player {
                     ZStack {
                         if cache.activeFullScreenURL != url {
-                            InlinePlayerLayer(player: player)
+                            InlinePlayerLayer(player: player, onLayerReady: { layer in
+                                // Handed over from makeUIView: stored after the view update.
+                                DispatchQueue.main.async { playerLayer = layer }
+                            })
                                 .frame(width: geo.size.width, height: geo.size.height)
                                 .allowsHitTesting(false) // Let touches fall through natively for seamless swiping and tapping!
                                 .onReceive(player.publisher(for: \.timeControlStatus)) { status in
@@ -152,8 +157,20 @@ struct InlineFeedVideoPlayer: View {
                 // Bottom controls: mute button + scrubber
                 VStack(spacing: 0) {
                     Spacer()
-                    HStack {
+                    HStack(spacing: 0) {
                         Spacer()
+                        if PiPRules.showsButton(supported: PiPManager.isSupported), player != nil, playerLayer != nil {
+                            Button(action: startPiP) {
+                                Image(systemName: "pip.enter")
+                                    .font(.appSystem(size: 14, weight: .medium))
+                                    .foregroundColor(.white)
+                                    .padding(8)
+                                    .background(Circle().fill(Color.black.opacity(0.6)))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Picture in Picture")
+                            .padding(.vertical, 8)
+                        }
                         Button(action: toggleMute) {
                             Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                                 .font(.appSystem(size: 14, weight: .medium))
@@ -196,7 +213,8 @@ struct InlineFeedVideoPlayer: View {
             .onDisappear {
                 deferredSetup?.cancel()
                 deferredSetup = nil
-                if VideoPlayerCache.shared.activeFullScreenURL != url {
+                // In picture-in-picture it plays on in its window.
+                if VideoPlayerCache.shared.activeFullScreenURL != url && !PiPManager.shared.isShowing(url) {
                     player?.pause()
                     isPlaying = false
                     isReadyToPlay = false
@@ -210,6 +228,13 @@ struct InlineFeedVideoPlayer: View {
                 }
             }
         }
+    }
+
+    /// The PiP button: this video in picture-in-picture, with sound.
+    private func startPiP() {
+        guard let player, let playerLayer else { return }
+        isMuted = false
+        PiPManager.shared.startInline(layer: playerLayer, url: url, player: player)
     }
 
     private func toggleMute() {
