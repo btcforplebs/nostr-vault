@@ -58,32 +58,17 @@ class ListBackupService @Inject constructor(
     /** Reads every kept version for the active account from the vault. */
     suspend fun load() {
         val hex = configStore.activeAccountHexPubkey.value
-        val config = configStore.config.value
-        if (hex.isEmpty() || config.useExternalRelay || !RelayForegroundService.readyForConnections.value) {
+        if (hex.isEmpty() || !vaultReady()) {
             _state.value = State.UNAVAILABLE
             return
         }
-        val url = config.localRelayURL("lists") ?: run { _state.value = State.UNAVAILABLE; return }
         if (author != hex) {
             _groups.value = emptyMap()
             events = emptyMap()
         }
         author = hex
         _state.value = State.LOADING
-        val filter = "{\"authors\":[\"$hex\"],\"kinds\":${ListShrinkRule.protectedKinds},\"limit\":1000}"
-        var found = runCatching { VaultSocket.query(url, filter, { signAuth(url, it) }) }.getOrNull()
-        // At the limit the relay cut the oldest, which may be a pinned list from before a wipe:
-        // ask again one kind at a time (Tron, PR 1568).
-        if (found != null && found.size >= 1000) {
-            val all = mutableListOf<NostrEvent>()
-            for (kind in ListShrinkRule.protectedKinds) {
-                val one = "{\"authors\":[\"$hex\"],\"kinds\":[$kind],\"limit\":1000}"
-                val some = runCatching { VaultSocket.query(url, one, { signAuth(url, it) }) }.getOrNull()
-                if (some == null) { found = null; break }
-                all += some
-            }
-            if (found != null) found = all
-        }
+        val found = fetch(hex)
         if (configStore.activeAccountHexPubkey.value != hex) return
         if (found == null) {
             _state.value = State.UNAVAILABLE
@@ -94,15 +79,49 @@ class ListBackupService @Inject constructor(
         _state.value = State.LOADED
     }
 
-    /** Wipes the newest version of a list made that the person hasn't dismissed, newest first. */
-    fun wipes(groups: Map<ListHistory.Key, List<ListVersion>>, dismissed: Set<String>): List<Pair<ListHistory.Key, ListHistory.Wipe>> =
-        groups.mapNotNull { (key, versions) ->
-            ListHistory.latestWipe(versions)?.takeIf { ListHistory.worthABanner(it) && it.after.id !in dismissed }?.let { key to it }
-        }.sortedByDescending { it.second.after.createdAt }
+    private fun vaultReady(): Boolean =
+        !configStore.config.value.useExternalRelay && RelayForegroundService.readyForConnections.value
 
-    /** "Keep the new list": this wipe is not shown again. */
-    fun dismiss(wipe: ListHistory.Wipe) {
-        _dismissed.update { it + wipe.after.id }
+    /**
+     * Every kept version of [hex]'s lists, grouped, for the wipe alarm
+     * ([ListWipeWatcher]): any account this vault serves, not only the active
+     * one. Null when the vault can't be read. Leaves the banner's state alone.
+     */
+    suspend fun versionsOf(hex: String): Map<ListHistory.Key, List<ListVersion>>? {
+        if (hex.isEmpty() || !vaultReady()) return null
+        val found = fetch(hex) ?: return null
+        return ListHistory.group(found.map(ListVersion::of), hex)
+    }
+
+    /** Every version the vault keeps for [hex], or null when it can't be read. */
+    private suspend fun fetch(hex: String): List<NostrEvent>? {
+        val url = configStore.config.value.localRelayURL("lists") ?: return null
+        val filter = "{\"authors\":[\"$hex\"],\"kinds\":${ListShrinkRule.protectedKinds},\"limit\":1000}"
+        var found = runCatching { VaultSocket.query(url, filter, { signAuth(url, it) }) }.getOrNull()
+        // At the limit the relay cut the oldest, which may be a pinned list from before a wipe:
+        // ask again one kind at a time (Tron, PR 1568).
+        if (found != null && found.size >= 1000) {
+            val all = mutableListOf<NostrEvent>()
+            for (kind in ListShrinkRule.protectedKinds) {
+                val one = "{\"authors\":[\"$hex\"],\"kinds\":[$kind],\"limit\":1000}"
+                val some = runCatching { VaultSocket.query(url, one, { signAuth(url, it) }) }.getOrNull() ?: return null
+                all += some
+            }
+            found = all
+        }
+        return found
+    }
+
+    /**
+     * The wipe alarms for the lists in [groups] the person hasn't dismissed, newest first
+     * ([ListWipeAlarmRule]; versions this app signed never alarm).
+     */
+    fun wipes(groups: Map<ListHistory.Key, List<ListVersion>>, dismissed: Set<String>): List<Pair<ListHistory.Key, ListWipeAlarmRule.Alarm>> =
+        ListWipeAlarmRule.alarms(groups, OwnListEdits.ids(), dismissed)
+
+    /** "Keep the new list": this alarm is not shown again. */
+    fun dismiss(alarm: ListWipeAlarmRule.Alarm) {
+        _dismissed.update { it + alarm.after.id }
         prefs.edit().putStringSet(DISMISSED, _dismissed.value).apply()
     }
 

@@ -7,6 +7,7 @@ import com.nostrvault.service.ListBackupService
 import com.nostrvault.service.ListHistory
 import com.nostrvault.service.ListVersion
 import com.nostrvault.service.ListVersionMerge
+import com.nostrvault.service.ListWipeAlarmRule
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -24,8 +25,8 @@ class ListBackupViewModel @Inject constructor(
     val state: StateFlow<ListBackupService.State> = service.state
     val groups: StateFlow<Map<ListHistory.Key, List<ListVersion>>> = service.groups
 
-    /** Wipes not yet dismissed, newest first. */
-    val wipes: StateFlow<List<Pair<ListHistory.Key, ListHistory.Wipe>>> =
+    /** Wipe alarms not yet dismissed, newest first ([com.nostrvault.service.ListWipeAlarmRule]). */
+    val wipes: StateFlow<List<Pair<ListHistory.Key, ListWipeAlarmRule.Alarm>>> =
         combine(service.groups, service.dismissed) { g, d -> service.wipes(g, d) }
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -34,7 +35,7 @@ class ListBackupViewModel @Inject constructor(
 
     fun load() { viewModelScope.launch { service.load() } }
 
-    fun dismiss(wipe: ListHistory.Wipe) = service.dismiss(wipe)
+    fun dismiss(alarm: ListWipeAlarmRule.Alarm) = service.dismiss(alarm)
 
     suspend fun preview(old: ListVersion) = service.preview(old)
 
