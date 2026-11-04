@@ -5,7 +5,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import {
-  MODES, FILTERS, defaultFilter, isMode, imagesOf, previewOf, activityRows, activityFilter, notesFor, articlesFor, isRecipe,
+  MODES, FILTERS, CLEARABLE, nextFilter, validFilter, defaultFilter, isMode, imagesOf, previewOf, activityRows, activityFilter, notesFor, articlesFor, isRecipe,
   highlightsFor, highlightSource, mediaFor, likesFor, zapsFor, zapSender, followersOf, followersFilter, followersSeenAt, markFollowersSeen,
   readOwn, readInbound, fetchOwnExtras, fetchVault, INBOUND_KINDS,
 } from "../src/net/vault-lists.js"
@@ -24,8 +24,8 @@ test("modes and filters are the phone's, in its order, each with a default", () 
   assert.deepEqual(MODES.map(m => m.id), ["activity", "notes", "articles", "highlights", "media", "likes", "zaps", "followers"])
   assert.equal(MODES[0].title, "Vault")
   for (const m of MODES) assert.equal(typeof defaultFilter(m.id), "string")
-  assert.equal(defaultFilter("media"), "all")
-  assert.deepEqual(FILTERS.media.map(f => f.id), ["all", "photos", "videos", "gifs", "notes"])
+  assert.equal(defaultFilter("media"), "", "no filter on is All media")
+  assert.deepEqual(FILTERS.media.map(f => f.id), ["photos", "videos", "gifs", "notes"])
   assert.equal(FILTERS.likes.map(f => f.title).join(", "), "Likes received, Likes given")
   assert.ok(isMode("notes") && !isMode("dashboard") && !isMode(undefined))
 })
@@ -253,4 +253,53 @@ test("a Vault fetch that fails is reported once the rest are in, and does not ho
   const err = await fetchVault({}, "me", [], { fetchers, on: { lists: l => seen.push(l) } })
   assert.equal(err?.message, "no relay")
   assert.deepEqual(seen, [["list"]])
+})
+
+// Logen 2026-11-04 (RESEARCH/NV_TOOLBAR_FILTER_AUDIT.md): All is never a button, the lit filter clears; Notes @, the
+// Articles/Highlights @ and ? are gone; Outside moves to the Vault page's ···; Recipes is a radio; two up front at most.
+test("the filter trim: no All button, the lit one clears, two up front, extras in ···", () => {
+  const ids = m => FILTERS[m].map(f => f.id)
+  assert.deepEqual(ids("activity"), ["mentions", "outside"])
+  assert.deepEqual(ids("notes"), ["mine"])
+  assert.deepEqual(ids("articles"), ["mine", "recipes"])
+  assert.deepEqual(ids("highlights"), ["mine"])
+  for (const m of Object.keys(FILTERS)) {
+    assert.ok(!FILTERS[m].some(f => f.id === "all" && CLEARABLE.has(m)), `${m}: no All button`)
+    assert.ok(!FILTERS[m].some(f => f.id === "tagged"), `${m}: no Mentions filter but the Vault page's`)
+    const upFront = FILTERS[m].filter(f => !f.more && !f.group).length + (FILTERS[m].some(f => f.group) ? 1 : 0)
+    assert.ok(upFront <= 2, `${m}: ${upFront} up front`)
+  }
+  assert.ok(FILTERS.activity.find(f => f.id === "outside").more, "Outside sits in the Vault page's ···")
+  assert.ok(FILTERS.media.find(f => f.id === "notes").more, "In your notes sits in Media's ···")
+  for (const m of ["activity", "notes", "articles", "highlights", "media"]) assert.equal(defaultFilter(m), "")
+  assert.equal(defaultFilter("likes"), "received")
+  assert.equal(defaultFilter("followers"), "new")
+  assert.equal(nextFilter("notes", "mine", "mine"), "", "the lit one, tapped again: All")
+  assert.equal(nextFilter("notes", "", "mine"), "mine")
+  assert.equal(nextFilter("articles", "mine", "recipes"), "recipes", "a radio: Recipes replaces Yours")
+  assert.equal(nextFilter("likes", "received", "received"), "received", "Likes keeps one of its two on")
+  assert.equal(validFilter("notes", "tagged"), "", "a filter kept from before the trim falls back")
+  assert.equal(validFilter("media", "all"), "")
+  assert.equal(validFilter("followers", "all"), "all")
+})
+
+test("Articles: Yours is your own only; Recipes takes yours and the ones tagging you", () => {
+  const own = [ev(30023, ME, [["t", "zapcooking"]]), ev(30023, ME)]
+  const tagging = [ev(30023, ALICE, [["t", "nostrcooking"], ["p", ME]])]
+  assert.deepEqual(articlesFor(own, tagging, ME, "mine").map(e => e.pubkey), [ME, ME])
+  const recipes = articlesFor(own, tagging, ME, "recipes")
+  assert.equal(recipes.length, 2)
+  assert.ok(recipes.every(isRecipe))
+  assert.equal(articlesFor(own, tagging, ME, "").length, 3)
+})
+
+test("Outside your web: only what tags you from outside your network; the plain list still leaves it out", () => {
+  const trusted = new Set([ALICE])
+  const inbound = [ev(1, ALICE, [["p", ME]], "from my web"), ev(1, BOB, [["p", ME]], "from outside"), ev(1, BOB, [], "not tagging me"),
+    ev(7, BOB, [["e", "f".repeat(64)], ["p", ME]], "+")]
+  const plain = activityRows(inbound, ME, { trusted })
+  assert.deepEqual(plain.map(r => r.actors[0]), [ALICE])
+  const outside = activityRows(inbound, ME, { trusted, outside: true })
+  assert.deepEqual(outside.map(r => [r.actors[0], r.preview]), [[BOB, "from outside"]])
+  assert.deepEqual(activityRows(inbound, ME, { trusted: new Set(), outside: true }), [], "no web yet: nobody is outside")
 })
