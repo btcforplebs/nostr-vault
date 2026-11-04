@@ -33,6 +33,11 @@ data class DeepLinkTarget(
     val overTab: String? = null,
     /** With [overTab] on the Vault tab: the list it shows behind [route]. */
     val behindFocus: RelayFocusRequest? = null,
+    /**
+     * A Live now widget's stream (`nostrvault://live/<address>`): the player
+     * opens over [route] with the copy the widget drew from.
+     */
+    val liveAddress: String? = null,
 )
 
 /**
@@ -111,12 +116,25 @@ object DeepLinkRouter {
             "wallet" -> DeepLinkTarget(Screen.Wallet.route)
             // The share sheet's Open now: the review card for what it queued.
             "shareportal" -> DeepLinkTarget(Screen.SharePortalReview.route)
+            "live" -> segments.getOrNull(1)?.let(::liveTarget)
             "note" -> segments.getOrNull(1)?.let { noteRoute(it, decoder) }
             "profile" -> segments.getOrNull(1)?.let { profileRoute(it, decoder) }
             // The /p/ page's "Open in Nostr Vault" button.
             "p" -> segments.getOrNull(1)?.let { profileRoute(it, decoder) }
             else -> null
         }
+    }
+
+    /**
+     * A stream address, percent-encoded by the widget since its `d` tag is
+     * free text. Only a well-formed kind 30311 address passes; the player
+     * looks it up in the widget's own copy, so nothing else is trusted.
+     */
+    private fun liveTarget(encoded: String): DeepLinkTarget? {
+        val address = runCatching { java.net.URLDecoder.decode(encoded, "UTF-8") }.getOrNull() ?: return null
+        val parts = address.split(':', limit = 3)
+        if (parts.size != 3 || parts[0] != "30311" || !isHex64(parts[1]) || parts[2].isEmpty()) return null
+        return DeepLinkTarget(Screen.Feed.route, liveAddress = address)
     }
 
     private fun fromEntity(entity: String, decoder: NostrEntityDecoder): DeepLinkTarget? {

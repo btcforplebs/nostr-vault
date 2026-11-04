@@ -88,7 +88,7 @@ class WidgetPublisher @Inject constructor(
             }
         }
 
-        private suspend fun redraw(context: Context) {
+        internal suspend fun redraw(context: Context) {
             runCatching {
                 VaultPulseWidget().updateAll(context)
                 VaultGlanceWidget().updateAll(context)
@@ -96,6 +96,8 @@ class WidgetPublisher @Inject constructor(
                 MosaicWidget().updateAll(context)
                 // The DMs tile carries the unread badge.
                 QuickActionsWidget().updateAll(context)
+                LiveNowWidget().updateAll(context)
+                OnThisDayWidget().updateAll(context)
             }.onFailure { Log.w(TAG, "widget redraw failed: ${it.message}") }
         }
     }
@@ -147,9 +149,15 @@ class WidgetPublisher @Inject constructor(
                 .flowOn(Dispatchers.IO)
                 .collect { fresh ->
                     val changed = WidgetSnapshotStore.update(context) { current ->
-                        // Keep the relay half (the service writes it) and the
-                        // zap count (its own collector below).
-                        fresh.copy(relay = current.relay, zapsToday = current.zapsToday)
+                        // Keep the relay half (the service writes it), the
+                        // zap count (its own collector below), and Live now /
+                        // On this day (HomeWidgetRefresher).
+                        fresh.copy(
+                            relay = current.relay,
+                            zapsToday = current.zapsToday,
+                            live = current.live,
+                            onThisDay = current.onThisDay,
+                        )
                     }
                     if (changed) redraw(context)
                 }

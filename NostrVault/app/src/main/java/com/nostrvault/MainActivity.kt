@@ -32,6 +32,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.launch
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.fips.FipsMeshManager
 import com.nostrvault.relay.LogStore
@@ -90,6 +92,7 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var mediaUploadManager: MediaUploadManager
     @Inject lateinit var mediaPostQueue: MediaPostQueue
     @Inject lateinit var widgetPublisher: WidgetPublisher
+    @Inject lateinit var homeWidgetRefresher: com.nostrvault.widget.HomeWidgetRefresher
     @Inject lateinit var relayImportService: com.nostrvault.service.RelayImportService
     @Inject lateinit var fipsMeshManager: FipsMeshManager
 
@@ -134,6 +137,11 @@ class MainActivity : FragmentActivity() {
         // Home-screen widgets draw from a snapshot on disk; this keeps it
         // current for as long as the app is alive.
         widgetPublisher.start(lifecycleScope)
+        // Live now and On this day fetch only while the app is in front;
+        // closed, each widget asks on the launcher's own update period.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) { homeWidgetRefresher.runWhileOpen() }
+        }
 
         setContent {
             val config by configStore.config.collectAsState()

@@ -274,6 +274,30 @@
                 android:resource="@xml/widget_feed_info" />
         </receiver>
 
+        <receiver
+            android:name=".widget.LiveNowReceiver"
+            android:exported="true"
+            android:label="@string/widget_live_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_live_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.OnThisDayReceiver"
+            android:exported="true"
+            android:label="@string/widget_on_this_day_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_on_this_day_info" />
+        </receiver>
+
         <!-- ML Kit (Translate post) brings Google's datatransport, which
              uploads ML Kit usage logs through its CCT backend. Removing the
              backend's registration leaves the runtime with nowhere to send

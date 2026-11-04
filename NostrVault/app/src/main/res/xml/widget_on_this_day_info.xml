@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Small (2x2) shows one, medium (4x2) up to three. The 30-minute update
+     is the refresh budget with the app closed; the provider asks once when
+     its half of the snapshot is stale. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:description="@string/widget_on_this_day_description"
+    android:previewLayout="@layout/widget_loading"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen" />
