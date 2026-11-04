@@ -60,15 +60,22 @@ struct AppearanceSettingsView: View {
 
             #if os(iOS)
             Section {
-                Toggle(isOn: $configService.config.disableTabBarAnimation) {
+                // On by default (Logen 2026-11-04). Stored as its opposite,
+                // disableTabBarAnimation, so nobody's choice changes.
+                Toggle(isOn: Binding(
+                    get: { !configService.config.disableTabBarAnimation },
+                    set: { configService.config.disableTabBarAnimation = !$0 }
+                )) {
                     Label {
-                        Text("Keep Tab Bar Full Size").settingInfo(.displayTabBarAnimation)
+                        Text("Collapse Menu on Scroll").settingInfo(.displayTabBarAnimation)
                     } icon: {
                         Image(systemName: "rectangle.bottombar.fill")
                     }
                 }
-                .onChange(of: configService.config.disableTabBarAnimation) { _, _ in
+                .accessibilityIdentifier("appearance.collapseMenuOnScroll")
+                .onChange(of: configService.config.disableTabBarAnimation) { _, keepOpen in
                     configService.save()
+                    if keepOpen { ChromeCollapse.shared.reset() }
                 }
             } header: {
                 Text("Tab Bar")
