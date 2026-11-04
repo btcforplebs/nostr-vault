@@ -9,7 +9,9 @@
 // relay with a per-relay timeout; every event's signature, author and kind checked before it counts or moves a paging
 // cursor; a full page asks again with `until` at the oldest one it returned; deduplicated by id. Each relay's outcome
 // is kept: only an EOSE counts as an answer. No relay is answered AUTH (the pool has no auth handler), so the history
-// relays aren't told the account itself is asking.
+// relays aren't told the account itself is asking. The history relays are the user's choice, off by default (Logen
+// 2026-11-04: they see the IP that asks, and they add about a minute), and the scan can be skipped while it runs:
+// what was found so far is kept and filed.
 import { askRelay } from "./follows.js"
 import { ownVersion, byNewest, keptVersions } from "./list-versions.js"
 import { MERGE_KINDS } from "./list-version-merge.js"
@@ -27,15 +29,26 @@ export const ASK_MS = 6000
 
 const now = () => Math.floor(Date.now() / 1000)
 
-/** The relays a scan asks: the user's own (read and write), the defaults and the archival set, each once. */
-export const scanRelays = account => uniq([...(account?.relays?.read ?? []), ...(account?.relays?.write ?? []), ...DEFAULT_RELAYS, ...PROFILE_RELAYS, ...HISTORY_RELAYS])
+/** The relays a scan asks: the user's own (read and write) and the defaults, each once, plus the archival set only
+ *  when the user ticked it (`history`). */
+export const scanRelays = (account, { history = false } = {}) =>
+  uniq([...(account?.relays?.read ?? []), ...(account?.relays?.write ?? []), ...DEFAULT_RELAYS, ...PROFILE_RELAYS, ...(history ? HISTORY_RELAYS : [])])
+
+/** `p`, or an empty not-answered reply as soon as `signal` aborts (a Skip doesn't wait on a slow relay). */
+const orSkip = (p, signal) => !signal ? p : signal.aborted ? Promise.resolve(SKIPPED) : new Promise(resolve => {
+  const stop = () => resolve(SKIPPED)
+  signal.addEventListener("abort", stop, { once: true })
+  p.then(r => { signal.removeEventListener("abort", stop); resolve(r) }, () => { signal.removeEventListener("abort", stop); resolve({ events: [], answered: false }) })
+})
+const SKIPPED = { events: [], answered: false, skipped: true }
 
 /**
  * Every valid version of each of `kinds` the relays hold for `pubkey`. -> { versions: [event] (newest first, each
- * once), outcomes: Map(url -> "answered" | "failed") }. A relay counts as answered when it sent EOSE for at least one
- * request; one that never did failed. `ask(url, filter, ms)`: follows.js askRelay, for tests.
+ * once), outcomes: Map(url -> "answered" | "failed" | "skipped"), skipped }. A relay counts as answered when it sent
+ * EOSE for at least one request; one that never did failed. `signal` (an AbortSignal, the Skip button) ends the scan
+ * at once with what it found so far. `ask(url, filter, ms)`: follows.js askRelay, for tests.
  */
-export async function scanListHistory({ pubkey, relays, kinds = HISTORY_KINDS, ask = askRelay, at = now(), onProgress = () => {} }) {
+export async function scanListHistory({ pubkey, relays, kinds = HISTORY_KINDS, ask = askRelay, at = now(), onProgress = () => {}, signal }) {
   const byId = new Map()
   const outcomes = new Map()
   let done = 0
@@ -43,11 +56,12 @@ export async function scanListHistory({ pubkey, relays, kinds = HISTORY_KINDS, a
   await Promise.all(relays.map(async url => {
     let answered = false
     for (const kind of kinds) {
+      if (signal?.aborted) break
       let until
       for (let page = 0; page < MAX_PAGES; page++) {
         const filter = { kinds: [kind], authors: [pubkey], limit: PAGE, ...(until !== undefined ? { until } : {}) }
-        const r = await ask(url, filter, ASK_MS).catch(() => ({ events: [], answered: false }))
-        if (!r.answered) break
+        const r = await orSkip(ask(url, filter, ASK_MS).catch(() => ({ events: [], answered: false })), signal)
+        if (r.skipped || !r.answered) break
         answered = true
         // Relays are untrusted: only the account's own, validly signed copies of this kind count.
         const valid = (r.events ?? []).filter(ev => ownVersion(ev, pubkey, kind, at))
@@ -57,19 +71,20 @@ export async function scanListHistory({ pubkey, relays, kinds = HISTORY_KINDS, a
         if (until !== undefined && oldest >= until) break // nothing older: exhausted
         until = oldest // inclusive, so the next page repeats it; the id map drops the repeat
       }
-      onProgress({ done: ++done, total, found: byId.size })
+      if (!signal?.aborted) onProgress({ done: ++done, total, found: byId.size })
     }
-    outcomes.set(url, answered ? "answered" : "failed")
+    outcomes.set(url, answered ? "answered" : signal?.aborted ? "skipped" : "failed")
   }))
-  return { versions: [...byId.values()].sort(byNewest), outcomes }
+  return { versions: [...byId.values()].sort(byNewest), outcomes, skipped: !!signal?.aborted }
 }
 
 /**
  * Scan the relays and file every version the vault doesn't hold yet in its list history. The vault's own copies
- * (the outbox's current lists and the history it kept) aren't counted or sent again. -> { found (versions filed now),
- * byKind: { kind: n }, answered, asked, refused }. `ask`, `relays`: for tests.
+ * (the outbox's current lists and the history it kept) aren't counted or sent again. `history`: also ask the archival
+ * relays (the user's tick). `signal`: Skip; what was found by then is still filed. -> { found (versions filed now),
+ * byKind: { kind: n }, answered, asked, refused, skipped }. `ask`, `relays`: for tests.
  */
-export async function importListHistory(ctx, { relays = scanRelays(ctx.account), kinds = HISTORY_KINDS, ask = askRelay, onProgress } = {}) {
+export async function importListHistory(ctx, { history = false, relays = scanRelays(ctx.account, { history }), kinds = HISTORY_KINDS, ask = askRelay, onProgress, signal } = {}) {
   const me = ctx.session.pubkey
   const filter = { kinds, authors: [me] }
   // This read also AUTHs the /lists connection, which a write needs.
@@ -78,7 +93,7 @@ export async function importListHistory(ctx, { relays = scanRelays(ctx.account),
     ctx.vault.outbox.query(filter).catch(() => []),
   ])
   const have = new Set([...kept, ...current].map(ev => ev.id))
-  const { versions, outcomes } = await scanListHistory({ pubkey: me, relays, kinds, ask, onProgress })
+  const { versions, outcomes, skipped } = await scanListHistory({ pubkey: me, relays, kinds, ask, onProgress, signal })
   const store = storeEvent(ctx.vault.lists)
   const byKind = {}
   let found = 0, refused = 0
@@ -90,11 +105,13 @@ export async function importListHistory(ctx, { relays = scanRelays(ctx.account),
     else if (!/^duplicate:/.test(r.message ?? "")) refused++
   }
   const answered = [...outcomes.values()].filter(o => o === "answered").length
-  return { found, byKind, answered, asked: relays.length, refused }
+  return { found, byKind, answered, asked: relays.length, refused, skipped }
 }
 
 /** The line Import notes ends with: a plain count. */
-export function historyLine({ found, answered }) {
+export function historyLine({ found, answered, skipped = false }) {
+  if (skipped) return found ? `Skipped the rest of the search: kept ${found.toLocaleString()} older ${found === 1 ? "version" : "versions"} of your lists found so far. See them in Settings › Recover a List.`
+    : "Skipped looking for older versions of your lists."
   if (!answered) return "Couldn't reach the relays to look for older versions of your lists."
   if (!found) return "No older versions of your lists found."
   return `Found ${found.toLocaleString()} older ${found === 1 ? "version" : "versions"} of your lists. See them in Settings › Recover a List.`

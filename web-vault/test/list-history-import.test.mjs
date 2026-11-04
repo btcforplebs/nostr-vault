@@ -20,10 +20,14 @@ const relay = events => (filter) => {
 }
 const relays = map => { const asked = []; return { asked, ask: async (url, filter) => { asked.push({ url, filter }); const r = map[url]; return r ? r(filter) : { events: [], answered: false } } } }
 
-test("the scan asks the user's relays, the defaults and the archival set; kinds: follows, mutes, relays and Recover's", () => {
-  const urls = scanRelays({ relays: { read: ["wss://mine.example"], write: ["wss://mine.example", "wss://out.example"] } })
-  for (const u of ["wss://mine.example", "wss://out.example", ...HISTORY_RELAYS]) assert.ok(urls.includes(u), u)
-  assert.equal(new Set(urls).size, urls.length)
+test("the scan asks the user's relays and the defaults, the archival set only when ticked; kinds: follows, mutes, relays and Recover's", () => {
+  const account = { relays: { read: ["wss://mine.example"], write: ["wss://mine.example", "wss://out.example"] } }
+  const urls = scanRelays(account)
+  for (const u of ["wss://mine.example", "wss://out.example"]) assert.ok(urls.includes(u), u)
+  for (const u of HISTORY_RELAYS) assert.ok(!urls.includes(u), `${u}: off unless the user ticks it (Logen 2026-11-04)`)
+  const ticked = scanRelays(account, { history: true })
+  for (const u of HISTORY_RELAYS) assert.ok(ticked.includes(u), u)
+  assert.equal(new Set(ticked).size, ticked.length)
   assert.deepEqual(HISTORY_RELAYS, ["wss://hist.nostr.land", "wss://relay.ditto.pub"])
   for (const k of [3, 10000, 10002, 10003, 10063]) assert.ok(HISTORY_KINDS.includes(k), String(k))
   assert.ok(!HISTORY_KINDS.includes(0), "a profile isn't a list")
@@ -91,7 +95,7 @@ test("only versions the vault doesn't hold are filed, in /lists only; the outbox
   const res = await importListHistory({ session: { pubkey: me }, vault: v, account: {} }, { relays: ["wss://hist"], kinds: [3, 10000], ask: r.ask })
   assert.deepEqual(v.filed.map(e => e.id).sort(), older.map(e => e.id).sort())
   assert.equal(v.outboxWrites.length, 0, "never the outbox: an old version never becomes the current list")
-  assert.deepEqual(res, { found: 3, byKind: { 3: 2, 10000: 1 }, answered: 1, asked: 1, refused: 0 })
+  assert.deepEqual(res, { found: 3, byKind: { 3: 2, 10000: 1 }, answered: 1, asked: 1, refused: 0, skipped: false })
 })
 
 test("a version Haven refuses isn't counted as found; one it already has isn't either", async () => {
@@ -99,7 +103,7 @@ test("a version Haven refuses isn't counted as found; one it already has isn't e
   const v = vault({ refuse: ev => (ev.id === a.id ? "invalid: dated ahead of this vault's clock" : null) })
   const r = relays({ "wss://hist": relay([a, b]) })
   const ctx = { session: { pubkey: me }, vault: v, account: {} }
-  assert.deepEqual(await importListHistory(ctx, { relays: ["wss://hist"], kinds: [3], ask: r.ask }), { found: 1, byKind: { 3: 1 }, answered: 1, asked: 1, refused: 1 })
+  assert.deepEqual(await importListHistory(ctx, { relays: ["wss://hist"], kinds: [3], ask: r.ask }), { found: 1, byKind: { 3: 1 }, answered: 1, asked: 1, refused: 1, skipped: false })
   const again = await importListHistory(ctx, { relays: ["wss://hist"], kinds: [3], ask: r.ask })
   assert.equal(again.found, 0, "a second run finds nothing new")
 })
@@ -115,4 +119,42 @@ test("the plain count", () => {
   assert.equal(historyLine({ found: 1, answered: 3 }), "Found 1 older version of your lists. See them in Settings › Recover a List.")
   assert.equal(historyLine({ found: 0, answered: 3 }), "No older versions of your lists found.")
   assert.equal(historyLine({ found: 0, answered: 0 }), "Couldn't reach the relays to look for older versions of your lists.")
+  assert.equal(historyLine({ found: 2, answered: 1, skipped: true }), "Skipped the rest of the search: kept 2 older versions of your lists found so far. See them in Settings › Recover a List.")
+  assert.equal(historyLine({ found: 0, answered: 0, skipped: true }), "Skipped looking for older versions of your lists.")
+})
+
+// Logen 2026-11-04: the scan can be skipped while it runs; what it found so far is kept and filed, and the import ends.
+test("Skip ends the scan at once, keeps what was found so far and files it", async () => {
+  const a = follows(5, T + 1), b = follows(6, T + 2)
+  const v = vault({})
+  let release
+  const slow = new Promise(r => { release = r })
+  const ask = async (url, filter) => {
+    if (url === "wss://fast") return filter.kinds[0] === 3 ? { events: [a, b], answered: true } : { events: [], answered: true }
+    await slow // a history relay that takes its time
+    return { events: [], answered: true }
+  }
+  const skip = new AbortController()
+  const run = importListHistory({ session: { pubkey: me }, vault: v, account: {} }, { relays: ["wss://fast", "wss://slow"], kinds: [3, 10000], ask, signal: skip.signal })
+  await new Promise(r => setTimeout(r, 20))
+  skip.abort()
+  const res = await run // without waiting for the slow relay
+  assert.equal(res.skipped, true)
+  assert.equal(res.found, 2)
+  assert.deepEqual(v.filed.map(e => e.id).sort(), [a.id, b.id].sort())
+  release()
+  const pre = new AbortController(); pre.abort()
+  const none = await scanListHistory({ pubkey: me, relays: ["wss://fast"], kinds: [3], ask, signal: pre.signal })
+  assert.deepEqual(none.versions, [])
+  assert.equal(none.outcomes.get("wss://fast"), "skipped")
+})
+
+test("the Import notes choice: off by default, the agreed words, and a Skip while the list search runs", async () => {
+  const { readFileSync } = await import("node:fs")
+  const src = f => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8")
+  const dash = src("screens/VaultDashboard.jsx"), keep = src("components/dashboard/KeepFullSection.jsx")
+  assert.match(dash, /const \[historyRelays, setHistoryRelays\] = useState\(false\)/)
+  assert.match(dash, /importListHistory\(ctx, \{ history: historyRelays, signal: skip\.current\.signal/)
+  assert.match(keep, /Also look for older versions of my lists on history relays \(\$\{hosts\}\)\. They will see your IP asked\. Adds about a minute\./)
+  assert.match(keep, /importing\?\.skippable && onSkip[\s\S]*>Skip</)
 })

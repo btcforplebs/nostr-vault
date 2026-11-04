@@ -3,7 +3,7 @@
 // Keep it full, Vault settings, Relay activity, Advanced. What a browser can't do is left out (an address and port,
 // Start and Stop, Sync with Vault on Mac, clearing the media cache, publishing a relay list, Import media).
 // Opened by "?sheet=dashboard" on any address (openDashboard), so Back closes it and the links in it leave it.
-import { useEffect, useState } from "preact/hooks"
+import { useEffect, useRef, useState } from "preact/hooks"
 import { StatusCard } from "../components/dashboard/StatusCard.jsx"
 import { SafetySection } from "../components/dashboard/SafetySection.jsx"
 import { ListWipeBanner } from "../components/dashboard/ListWipeBanner.jsx"
@@ -38,6 +38,10 @@ export function VaultDashboard({ ctx }) {
   const { vault, session, account } = ctx
   const me = session.pubkey
   const [view, setView] = useState("dashboard") // or "activity" (View All)
+  // Import notes: also ask the history relays (the user's tick, off each time the sheet opens), and the Skip button's
+  // signal for the list scan.
+  const [historyRelays, setHistoryRelays] = useState(false)
+  const skip = useRef(null)
   const { blocked } = useBlocks(ctx)
   const trusted = useDmTrust(ctx)
   const [history, setHistory] = useState(() => readHistory(me))
@@ -104,10 +108,12 @@ export function VaultDashboard({ ctx }) {
       onProgress: p => setJobs(j => ({ ...j, importing: { progress: p.progress, text: `${p.empty ? "Looking through" : "Found"} notes from ${p.from}... (${p.found} found)` } })) })
     // Moving in also brings back older versions of the user's lists (net/list-history-import.js): filed in the vault's
     // list history for Recover a List, never published, never made the current list.
-    setJobs(j => ({ ...j, importing: { progress: 1, text: "Looking for older versions of your lists..." } }))
-    const lists = await importListHistory(ctx, {
-      onProgress: p => setJobs(j => ({ ...j, importing: { progress: p.done / p.total, text: `Looking for older versions of your lists... (${p.found} found)` } })),
-    }).catch(() => ({ found: 0, answered: 0 }))
+    // The history relays only when ticked. Skip ends the scan; what it found by then is still filed, and the import ends.
+    skip.current = new AbortController()
+    setJobs(j => ({ ...j, importing: { progress: 1, text: "Looking for older versions of your lists...", skippable: true } }))
+    const lists = await importListHistory(ctx, { history: historyRelays, signal: skip.current.signal,
+      onProgress: p => setJobs(j => ({ ...j, importing: { progress: p.done / p.total, text: `Looking for older versions of your lists... (${p.found} found)`, skippable: true } })),
+    }).catch(() => ({ found: 0, answered: 0 })).finally(() => { skip.current = null })
     markRan(me, "notesImport")
     setJobs(j => ({ ...j, status: { text: `Import Complete! ${found} found, ${stored} new. ${historyLine(lists)}` } }))
     count().catch(() => {})
@@ -135,7 +141,8 @@ export function VaultDashboard({ ctx }) {
             <ReachSection trusted={trusted.size} blocked={blocked.size} />
             <ContentsSection {...counts} usage={storage.usage} kept={storage.kept} media={media} onRetry={look} />
             <KeepFullSection startDate={IMPORT_START_DATE} history={history} importing={jobs.importing} mediaBusy={jobs.media} exportBusy={jobs.export}
-              status={jobs.status} onImport={importNotes} onMedia={mediaFile} onExport={exportFile} />
+              status={jobs.status} onImport={importNotes} onMedia={mediaFile} onExport={exportFile}
+              historyRelays={historyRelays} onHistoryRelays={setHistoryRelays} onSkip={() => skip.current?.abort()} />
             <SettingsSection relays={relayCount} mediaServers={servers} />
             <ActivitySection items={items} onViewAll={() => setView("activity")} />
             <AdvancedSection startedInMs={startedInMs} />

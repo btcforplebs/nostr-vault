@@ -93,3 +93,7 @@
 .list-wipe-card { border: 1px solid rgba(255, 159, 10, 0.45); background: rgba(255, 159, 10, 0.1); border-radius: 12px; padding: 12px 14px; }
 .list-wipe-line { margin: 0 0 4px; font-weight: 600; }
 .list-wipe-actions { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+/* Import notes' history-relays choice (KeepFullSection): a tick and its sentence, under the Import row. */
+.dash-check { align-items: flex-start; gap: 10px; min-height: 0; padding-top: 0; font: 13px/1.4 var(--font); color: var(--text-2); cursor: pointer; }
+.dash-check input { flex: none; width: 18px; height: 18px; margin: 1px 0 0 32px; accent-color: var(--accent); }
+.dash-check:has(input:disabled) { opacity: .6; cursor: default; }
