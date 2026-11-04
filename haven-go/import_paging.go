@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 
@@ -147,13 +148,22 @@ func fetchPaged(ctx context.Context, relays []string, filter nostr.Filter, maxPa
 					return
 				}
 				evs, eose := importPage(ctx, url, f)
+				// Only a real note counts (Tron, PR 1663): its id is the hash
+				// of its content and its signature holds. Checked before it
+				// can count as new, or a relay sending made-up notes under
+				// the owner's key keeps a lane paging (and its maps growing)
+				// to the backstop. Outside the lock: it's the costly part.
+				evs = slices.DeleteFunc(slices.Clone(evs), func(ev *nostr.Event) bool {
+					if ev == nil || !filter.Matches(ev) || !ev.CheckID() {
+						return true
+					}
+					ok, _ := ev.CheckSignature()
+					return !ok
+				})
 				fresh, matched := 0, 0
 				var oldest nostr.Timestamp
 				mu.Lock()
 				for _, ev := range evs {
-					if ev == nil || !filter.Matches(ev) {
-						continue
-					}
 					matched++
 					if oldest == 0 || ev.CreatedAt < oldest {
 						oldest = ev.CreatedAt

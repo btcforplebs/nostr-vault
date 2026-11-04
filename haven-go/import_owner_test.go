@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -453,5 +454,139 @@ func TestNegsyncReportsWhichListedNotesAreMissing(t *testing.T) {
 	}
 	if len(stats.Missing) != 1 || stats.Missing[0] != notes[7].ID {
 		t.Fatalf("missing %v, want exactly the refused note", stats.Missing)
+	}
+}
+
+// Tron's PR 1663 must-fix 1: a kind 5 arriving through negentropy while its
+// target arrives on a paged lane must never leave the target stored. The
+// deletion check and the store are one locked step on every lane.
+func TestMoveInDeletionOnOneLaneTargetOnAnotherNeverBothStored(t *testing.T) {
+	owner, db := moveInSetup(t, 30, "wss://neg.example", "wss://paged.example")
+	const n = 1500
+	targets := spread(t, owner, n, time.Second)
+	deletions := make([]nostr.Event, n)
+	for i, ev := range targets {
+		deletions[i] = owner.sign(t, nostr.Event{Kind: nostr.KindDeletion, CreatedAt: ev.CreatedAt + 1, Tags: nostr.Tags{{"e", ev.ID}}})
+	}
+	prevSync, prevSup := importNegSync, importNegSupported
+	importNegSupported = func(_ context.Context, url string) bool { return url == "wss://neg.example" }
+	importNegSync = func(ctx context.Context, store nostr.RelayStore, _ string, _ nostr.Filter) (negsync.Stats, error) {
+		for _, d := range deletions {
+			_ = store.Publish(ctx, d)
+		}
+		return negsync.Stats{RemoteOnly: n, Downloaded: n}, nil
+	}
+	t.Cleanup(func() { importNegSync, importNegSupported = prevSync, prevSup })
+	// The paged lane hands over the targets, one per page, as the deletions arrive.
+	var mu sync.Mutex
+	next := 0
+	prev := importPage
+	importPage = func(_ context.Context, url string, f nostr.Filter) ([]*nostr.Event, bool) {
+		if url != "wss://paged.example" || len(f.IDs) > 0 {
+			return nil, true
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if next >= n {
+			return nil, true
+		}
+		page := targets[next:min(next+25, n)]
+		next += len(page)
+		return page, true
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	importOwnerNotes(context.Background())
+
+	kept := 0
+	for _, ev := range targets {
+		if stored(t, db, ev.ID) {
+			kept++
+		}
+	}
+	if kept != 0 {
+		t.Fatalf("%d of %d deleted notes stayed in the vault beside their deletion", kept, n)
+	}
+}
+
+// Tron's PR 1663 must-fix 2: a relay sending made-up notes under the owner's
+// key (bad id or signature) can't keep a lane paging: they never count as new.
+func TestMoveInForgedNotesDoNotDriveTheLane(t *testing.T) {
+	noNegentropy(t)
+	owner, db := moveInSetup(t, 30, "wss://hostile.example")
+	asks := 0
+	prev := importPage
+	importPage = func(_ context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
+		asks++
+		page := make([]*nostr.Event, 0, 500)
+		for i := 0; i < 500; i++ {
+			at := nostr.Now() - nostr.Timestamp(asks*1000+i)
+			if f.Until != nil && at > *f.Until {
+				at = *f.Until - nostr.Timestamp(i)
+			}
+			ev := &nostr.Event{PubKey: owner.pk, Kind: nostr.KindTextNote, CreatedAt: at, Content: fmt.Sprint(asks, i), Tags: nostr.Tags{}}
+			ev.ID = ev.GetID() // a real id, but never signed
+			page = append(page, ev)
+		}
+		return page, true
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	importOwnerNotes(context.Background())
+
+	if count(t, db, owner.pk) != 0 {
+		t.Fatal("stored an unsigned note")
+	}
+	// The lane's first page has nothing real in it: done. The relay answered
+	// (EOSE), so it isn't re-read by window either.
+	if asks > 2 {
+		t.Fatalf("forged notes drove %d requests", asks)
+	}
+}
+
+// A relay that trickles real notes can't hold the import: its lane stops at
+// importLaneDeadline and it is read window by window.
+func TestMoveInTricklingRelayCannotHoldTheLane(t *testing.T) {
+	noNegentropy(t)
+	owner, db := moveInSetup(t, 30, "wss://trickle.example")
+	prevDeadline := importLaneDeadline
+	importLaneDeadline = 300 * time.Millisecond
+	t.Cleanup(func() { importLaneDeadline = prevDeadline })
+	notes := spread(t, owner, 400, time.Hour)
+	var mu sync.Mutex
+	prev := importPage
+	importPage = func(ctx context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
+		if f.Until == nil || *f.Until-*f.Since > 30*24*3600 {
+			// The lane: one note a page, slowly, for as long as it's asked.
+			select {
+			case <-time.After(50 * time.Millisecond):
+			case <-ctx.Done():
+				return nil, false
+			}
+			// Always one more real note, just older than asked: it never ends.
+			at := nostr.Now()
+			if f.Until != nil {
+				at = *f.Until - 1
+			}
+			ev := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, CreatedAt: at, Content: "trickle"})
+			return []*nostr.Event{&ev}, false
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		return (&pagingRelay{held: notes}).answer(f)
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	done := make(chan struct{})
+	go func() { importOwnerNotes(context.Background()); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("a trickling relay held the import")
+	}
+	for _, ev := range notes {
+		if !stored(t, db, ev.ID) {
+			t.Fatal("a note only the window walk could reach is missing")
+		}
 	}
 }

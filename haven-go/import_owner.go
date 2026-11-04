@@ -48,6 +48,12 @@ import (
 // past it is read by paging instead. Shorter in tests.
 var importNegTimeout = 3 * time.Minute
 
+// importLaneDeadline: one relay's whole-history lane. Each page ends when the
+// relay goes quiet, but one that trickles a real note every few seconds keeps
+// pages open for good (Tron, PR 1663); past this its lane stops and the relay
+// is read window by window, where every window ends. Shorter in tests.
+var importLaneDeadline = 15 * time.Minute
+
 const (
 	// importLaneMaxPages: a whole-history lane's backstop, 2M notes at 500 a
 	// page; a lane that reaches it is re-read window by window.
@@ -92,6 +98,11 @@ func verifiedOwnerNote(ev *nostr.Event) bool {
 // note check.
 type importNegStore struct {
 	outbox *outboxNegStore
+	// lock: the import's one store lock, shared with the paged lanes' keep.
+	// The deletion check and the store must be one step: a kind 5 arriving
+	// on one lane while its target arrives on another could otherwise both
+	// pass the check, leaving the note beside its own deletion (Tron, PR 1663).
+	lock *sync.Mutex
 }
 
 func (s *importNegStore) QuerySync(ctx context.Context, f nostr.Filter) ([]*nostr.Event, error) {
@@ -108,6 +119,10 @@ func (s *importNegStore) QueryEvents(ctx context.Context, f nostr.Filter) (chan 
 func (s *importNegStore) Publish(ctx context.Context, ev nostr.Event) error {
 	if !verifiedOwnerNote(&ev) {
 		return fmt.Errorf("not a verified owner note: %s", ev.ID)
+	}
+	if s.lock != nil {
+		s.lock.Lock()
+		defer s.lock.Unlock()
 	}
 	// A lane may store the same note a moment earlier: that is no failure.
 	if err := s.outbox.Publish(ctx, ev); err != nil && !errors.Is(err, eventstore.ErrDupEvent) {
@@ -188,12 +203,12 @@ func importOwnerNotes(ctx context.Context) {
 	var keepMu sync.Mutex
 	failed := 0
 	keep := func(ev *nostr.Event) bool {
-		keepMu.Lock()
-		defer keepMu.Unlock()
 		if !verifiedOwnerNote(ev) {
 			slog.Debug("🚫 skipping a note that failed the check", "id", ev.ID)
 			return false
 		}
+		keepMu.Lock()
+		defer keepMu.Unlock()
 		if isBlacklisted(ev.PubKey) {
 			slog.Debug("🚫 skipping event from blacklisted pubkey", "pubkey", ev.PubKey, "id", ev.ID)
 			return false
@@ -240,7 +255,7 @@ func importOwnerNotes(ctx context.Context) {
 					log.Printf("📦 Imported %d notes from %s to %s (%s, %s)", n, from, today, url, how)
 				}
 			}
-			negStore := &importNegStore{outbox: &outboxNegStore{outbox: wdb, advance: func(nostr.Timestamp) { stored.Add(1) }}}
+			negStore := &importNegStore{outbox: &outboxNegStore{outbox: wdb, advance: func(nostr.Timestamp) { stored.Add(1) }}, lock: &keepMu}
 			synced := false
 			runsafe.Run("importOwnerNotes.negentropy", func() { synced = importOwnerNegentropy(ctx, url, filter, negStore) })
 			if synced || ctx.Err() != nil {
@@ -248,15 +263,21 @@ func importOwnerNotes(ctx context.Context) {
 				return
 			}
 			var res windowResult
+			lctx, cancel := context.WithTimeout(ctx, importLaneDeadline)
+			defer cancel()
 			runsafe.Run("importOwnerNotes.lane", func() {
-				res = fetchPaged(ctx, []string{url}, filter, importLaneMaxPages, func(ev *nostr.Event) {
+				res = fetchPaged(lctx, []string{url}, filter, importLaneMaxPages, func(ev *nostr.Event) {
 					if keep(ev) {
 						stored.Add(1)
 					}
 				})
 			})
 			report("paged")
-			if len(res.Short) > 0 || len(res.Silent) > 0 {
+			overran := lctx.Err() != nil && ctx.Err() == nil
+			if overran {
+				log.Printf("⚠️ %s still sending after %s; reading it window by window", url, importLaneDeadline)
+			}
+			if overran || len(res.Short) > 0 || len(res.Silent) > 0 {
 				mu.Lock()
 				redo = append(redo, url)
 				mu.Unlock()
