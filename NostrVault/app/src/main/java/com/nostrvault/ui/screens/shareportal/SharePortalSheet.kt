@@ -54,8 +54,11 @@ internal fun SharePortalSheet(
                         initialPassage = model.read?.input?.let { it.selection ?: it.text }.orEmpty(),
                         accountLine = accountLine(model),
                         onBack = model::back,
-                        onSend = { passage, comment ->
-                            model.intent(ShareAction.HIGHLIGHT, mapOf("passage" to passage, "comment" to comment))?.let {
+                        onSend = { passage, comment, pageLink ->
+                            val form = buildMap {
+                                put("passage", passage); put("comment", comment); pageLink?.let { put("pageLink", it) }
+                            }
+                            model.intent(ShareAction.HIGHLIGHT, form)?.let {
                                 model.sending(); onSend(it)
                             }
                         },
