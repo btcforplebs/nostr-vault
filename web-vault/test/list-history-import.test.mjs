@@ -157,7 +157,7 @@ test("the Import notes choice: on by default, the agreed words, and a Skip while
   assert.match(keep, /export const HISTORY_DEFAULT_ON = true/)
   assert.match(dash, /importListHistory\(ctx, \{ history: historyRelays, signal: skip\.current\.signal/)
   assert.match(keep, /export const HISTORY_CHOICE = "Look up and back up my lists"/)
-  assert.match(keep, /export const HISTORY_DETAIL = \["Finds older versions on ", "Lazarus", " history relays"\]/)
+  assert.match(keep, /export const HISTORY_DETAIL = \["Finds older versions using ", "Lazarus", " spec"\]/)
   assert.match(keep, /export const LAZARUS_URL = "https:\/\/github\.com\/dmnyc\/lazarus"/)
   assert.match(keep, /<a href=\{LAZARUS_URL\} target="_blank" rel="noopener noreferrer">/)
   assert.match(keep, /importing\?\.skippable && onSkip[\s\S]*>Skip</)

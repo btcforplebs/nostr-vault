@@ -52,7 +52,7 @@ final class ListHistoryScanTests: XCTestCase {
 
     func testLabelIsLogensWording() {
         XCTAssertEqual(ListHistoryScan.optInLabel, "Look up and back up my lists")
-        XCTAssertEqual(ListHistoryScan.optInDetail, "Finds older versions on Lazarus history relays")
+        XCTAssertEqual(ListHistoryScan.optInDetail, "Finds older versions using Lazarus spec")
         XCTAssertEqual(ListHistoryScan.optInDetailLink, "Lazarus")
         XCTAssertEqual(ListHistoryScan.lazarusURL.absoluteString, "https://github.com/dmnyc/lazarus")
         XCTAssertEqual(ListHistoryScan.optInEnv, "HAVEN_IMPORT_LIST_HISTORY")
