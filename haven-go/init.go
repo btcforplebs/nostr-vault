@@ -134,7 +134,7 @@ func newDBBackend(path string) DBBackend {
 }
 
 func initDBs() error {
-	return GranularInitDBs([]string{"private", "chat", "outbox", "inbox", "blossom", "feed", "lists"})
+	return GranularInitDBs([]string{"private", "chat", "outbox", "inbox", "blossom", "feed", "lists", "listsimport"})
 }
 
 // dbMu guards the dbs map and per-DB global assignment against
@@ -192,6 +192,8 @@ func GranularInitDBs(names []string) error {
 			feedDB = db
 		case "lists":
 			listsDB = db
+		case "listsimport":
+			listsImportDB = db
 		}
 	}
 

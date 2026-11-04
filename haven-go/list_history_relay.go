@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"time"
 
@@ -30,10 +29,11 @@ func initListsRelay() *khatru.Relay {
 	rl.RejectFilter = append(rl.RejectFilter, meshNoQueries, policies.MustAuth, MustBeWhitelistedToQuery)
 	rl.RejectCountFilter = append(rl.RejectCountFilter, meshNoQueries, policies.MustAuth, MustBeWhitelistedToQuery)
 	rl.RejectEvent = append(rl.RejectEvent, rejectListHistoryWrite)
-	// An accepted version (an older one a moving-in import found on the relays, Lazarus) is filed in the history
-	// store only: never the outbox, so it never becomes the current list, is never blasted and never uploaded.
+	// An accepted version (an older one a moving-in import found on the relays, Lazarus) is filed in the import store
+	// (list_history_import.go): never the outbox, so it never becomes the current list, is never blasted and never
+	// uploaded; and never the vault's own history, so it can't change what the vault keeps there.
 	rl.ReplaceEvent = append(rl.ReplaceEvent, func(ctx context.Context, evt *nostr.Event) error {
-		return fileImportedVersion(ctx, listsDB, evt)
+		return fileImportedVersion(ctx, evt)
 	})
 	rl.QueryEvents = append(rl.QueryEvents, func(ctx context.Context, f nostr.Filter) (chan *nostr.Event, error) {
 		return queryListHistory(ctx, listsDB, f)
@@ -43,47 +43,6 @@ func initListsRelay() *khatru.Relay {
 		renderFallbackPage(w, rl.Info.Name, rl.Info.Description, getWSScheme(config.RelayURL)+config.RelayURL+"/lists")
 	})
 	return rl
-}
-
-// listHistoryImportMax: an import files versions without trimming (see
-// fileImportedVersion) until one list holds this many; then it trims.
-const listHistoryImportMax = 500
-
-// fileImportedVersion keeps evt in the history store, once per id, without
-// trimming. An import files many versions one at a time, and retention decided
-// one at a time lets go the copy from before a wipe before the wipe itself has
-// arrived (it is then neither among the newest nor pinned by a drain). The next
-// version that reaches the outbox trims the whole list at once
-// (recordListVersion); a list that reaches listHistoryImportMax is trimmed now.
-func fileImportedVersion(ctx context.Context, store DBBackend, evt *nostr.Event) error {
-	if store == nil {
-		return errDBClosing
-	}
-	listHistoryMu.Lock()
-	defer listHistoryMu.Unlock()
-	versions, err := listVersions(ctx, store, evt.PubKey, evt.Kind, evt.Tags.GetD())
-	if err != nil {
-		return err
-	}
-	for _, v := range versions {
-		if v.ID == evt.ID {
-			return nil
-		}
-	}
-	if err := store.SaveEvent(ctx, evt); err != nil {
-		return err
-	}
-	if len(versions)+1 < listHistoryImportMax {
-		return nil
-	}
-	versions = append(versions, evt)
-	sortNewestFirst(versions)
-	for _, gone := range listHistoryToDrop(versions) {
-		if err := store.DeleteEvent(ctx, gone); err != nil {
-			slog.Warn("list history: trim failed", "id", gone.ID, "err", err)
-		}
-	}
-	return nil
 }
 
 // listHistoryImportSkew: a version dated this far ahead of the vault's clock
@@ -157,6 +116,12 @@ func queryListHistory(ctx context.Context, store DBBackend, f nostr.Filter) (cha
 			evs, err := allListVersions(ctx, store, author, kind)
 			if err != nil {
 				continue
+			}
+			// The versions an import filed are served with the vault's own (list_history_import.go).
+			if store == listsDB && listsImportDB != nil {
+				if more, err := allListVersions(ctx, listsImportDB, author, kind); err == nil {
+					evs = mergeVersions(evs, more)
+				}
 			}
 			for _, ev := range evs {
 				if listHistoryMatches(f, ev) {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -10,13 +11,77 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 )
 
-// Moving in pulls the user's older list versions from history relays (Lazarus) into the vault's list history
-// (Logen 2026-11-04). /lists takes exactly that write: one of this vault's apps (AUTHed as a whitelisted key, as a
-// read is) filing a protected list signed by one of this vault's accounts. The version goes to the history store
-// only, never the outbox.
+// Moving in pulls the user's older list versions from history relays (Lazarus; Logen 2026-11-04). /lists takes
+// exactly that write: one of this vault's apps (AUTHed as a whitelisted key, as a read is) filing a protected list
+// signed by one of this vault's accounts. The version goes to the import store (list_history_import.go): never the
+// outbox, never the vault's own history. /lists serves both.
 
 func authedAs(pk string) context.Context {
 	return context.WithValue(context.Background(), 0, &khatru.WebSocket{AuthedPublicKey: pk})
+}
+
+// withImportStore opens the import store beside the fixture's history store.
+func withImportStore(t *testing.T, open func(string) DBBackend) {
+	t.Helper()
+	db := open("listsimport")
+	if err := db.Init(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(db.Close)
+	prev := listsImportDB
+	listsImportDB = db
+	t.Cleanup(func() { listsImportDB = prev })
+}
+
+// served: what /lists answers for one list, newest first (both stores).
+func (f *listHistoryFixture) served(kind int) []string {
+	f.t.Helper()
+	ch, err := queryListHistory(f.ctx, listsDB, nostr.Filter{Authors: []string{f.pk}, Kinds: []int{kind}})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	var ids []string
+	for ev := range ch {
+		ids = append(ids, ev.ID)
+	}
+	return ids
+}
+
+func (f *listHistoryFixture) importIDs(kind int) []string {
+	f.t.Helper()
+	vs, err := listVersions(f.ctx, listsImportDB, f.pk, kind, "")
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	ids := make([]string, len(vs))
+	for i, v := range vs {
+		ids[i] = v.ID
+	}
+	return ids
+}
+
+func importFixture(t *testing.T, open func(string) DBBackend) (*listHistoryFixture, func(*nostr.Event)) {
+	f := newListHistoryFixture(t, open)
+	withImportStore(t, open)
+	rl := initListsRelay()
+	if len(rl.ReplaceEvent) != 1 {
+		t.Fatalf("want one replace hook, got %d", len(rl.ReplaceEvent))
+	}
+	return f, func(ev *nostr.Event) {
+		t.Helper()
+		if err := rl.ReplaceEvent[0](authedAs(f.pk), ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func has(ids []string, id string) bool {
+	for _, x := range ids {
+		if x == id {
+			return true
+		}
+	}
+	return false
 }
 
 func TestListHistoryWritePolicy(t *testing.T) {
@@ -36,15 +101,15 @@ func TestListHistoryWritePolicy(t *testing.T) {
 				name   string
 				ctx    context.Context
 				ev     *nostr.Event
-				reject string // "" = accepted; else a substring of the reason
+				reject string // "" = accepted; else the reason's prefix
 			}{
 				{"no auth", context.Background(), mine, "auth-required"},
 				{"authed as a stranger", authedAs(otherPk), mine, "restricted"},
 				{"not an account of this vault", authedAs(f.pk), theirs, "restricted"},
-				{"the browser vault's device key", authedAs(device), mine, ""},
 				{"not a list", authedAs(f.pk), note, "blocked"},
 				{"dated ahead", authedAs(f.pk), ahead, "invalid"},
 				{"over the mesh", meshCtx(), mine, "restricted"},
+				{"the browser vault's device key", authedAs(device), mine, ""},
 				{"the owner's own list", authedAs(f.pk), mine, ""},
 			}
 			for _, c := range cases {
@@ -60,95 +125,159 @@ func TestListHistoryWritePolicy(t *testing.T) {
 	}
 }
 
-// An accepted older version lands in history only: the outbox, the current list, is untouched.
-func TestListHistoryWriteFilesHistoryOnly(t *testing.T) {
+// An imported version goes to the import store only: the outbox (the current list) and the vault's own history are
+// untouched, and /lists serves both stores, newest first, each version once.
+func TestListHistoryImportIsFiledApart(t *testing.T) {
 	for name, open := range historyBackends(t) {
 		t.Run(name, func(t *testing.T) {
-			f := newListHistoryFixture(t, open)
+			f, file := importFixture(t, open)
 			current := f.bookmarks(10, 60)
 			f.publish(current)
-			rl := initListsRelay()
-			if len(rl.ReplaceEvent) != 1 {
-				t.Fatalf("want one replace hook, got %d", len(rl.ReplaceEvent))
-			}
-			// Newest first, as the app files them.
 			old := []*nostr.Event{f.bookmarks(12, 40), f.bookmarks(11, 20), f.bookmarks(2, 10)}
 			for _, ev := range old {
-				if err := rl.ReplaceEvent[0](authedAs(f.pk), ev); err != nil {
-					t.Fatal(err)
-				}
+				file(ev)
 			}
-			// The same version twice is one version.
-			if err := rl.ReplaceEvent[0](authedAs(f.pk), old[0]); err != nil {
-				t.Fatal(err)
+			file(old[0])  // the same version twice is one
+			file(current) // one the vault already holds isn't filed again
+			if got := f.versionIDs(10003, ""); len(got) != 1 || got[0] != current.ID {
+				t.Fatalf("the vault's own history changed: %v", got)
 			}
-			got := f.versionIDs(10003, "")
-			want := []string{current.ID, old[0].ID, old[1].ID, old[2].ID}
-			if strings.Join(got, ",") != strings.Join(want, ",") {
-				t.Fatalf("history %v, want %v", got, want)
+			if got := f.importIDs(10003); len(got) != 3 {
+				t.Fatalf("import store holds %v", got)
 			}
 			if out := outboxCopies(t, f.outbox, f.pk, 10003); len(out) != 1 || out[0] != current.ID {
 				t.Fatalf("the outbox changed: %v", out)
 			}
+			want := []string{current.ID, old[0].ID, old[1].ID, old[2].ID}
+			if got := f.served(10003); strings.Join(got, ",") != strings.Join(want, ",") {
+				t.Fatalf("/lists served %v, want %v", got, want)
+			}
 		})
 	}
 }
 
-// Filed versions aren't trimmed one at a time (that would let the copy from before a wipe go before the wipe
-// arrived); the next version that reaches the outbox trims the whole list at once: the newest listHistoryKeep, plus
-// what a wipe pins, here a full list from far past the newest 20.
-func TestListHistoryImportThenTrimKeepsTheCopyBeforeAWipe(t *testing.T) {
+// Tron's PR 1637 must-fix: an import must never make the vault let go of a version it was keeping. The vault holds
+// a full list, its wipe and 25 edits since (the full one pinned); an import files a slow drain 39..2 dated between
+// them; the next edit trims. The full copy must still be there.
+func TestListHistoryImportNeverErodesAPin(t *testing.T) {
 	for name, open := range historyBackends(t) {
 		t.Run(name, func(t *testing.T) {
-			f := newListHistoryFixture(t, open)
-			rl := initListsRelay()
-			full := f.bookmarks(40, 0) // the list before it was wiped
-			wiped := f.bookmarks(1, 1) // the wipe
-			var after []*nostr.Event   // 30 small edits since
-			for i := 0; i < 30; i++ {
-				after = append(after, f.bookmarksFrom(100+i, 2, 2+i))
+			f, file := importFixture(t, open)
+			full := f.bookmarks(40, 0)
+			wiped := f.bookmarks(1, 100)
+			f.publish(full, wiped)
+			for i := 0; i < 25; i++ {
+				f.publish(f.bookmarksFrom(200+i, 2, 101+i))
 			}
-			// Newest first, as the app files them.
-			all := append([]*nostr.Event{}, after...)
-			for i, j := 0, len(all)-1; i < j; i, j = i+1, j-1 {
-				all[i], all[j] = all[j], all[i]
+			f.mustKeep(full, "before import")
+			for n := 39; n >= 2; n-- {
+				file(f.bookmarks(n, 40-n))
 			}
-			all = append(all, wiped, full)
-			for _, ev := range all {
-				if err := rl.ReplaceEvent[0](authedAs(f.pk), ev); err != nil {
-					t.Fatal(err)
+			// What the vault's own history would hold after the next edit had there been no import.
+			own, err := listVersions(f.ctx, f.history, f.pk, 10003, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			next := f.bookmarksFrom(200, 3, 130)
+			want := map[string]bool{}
+			all := mergeVersions(own, []*nostr.Event{next})
+			drop := map[string]bool{}
+			for _, d := range listHistoryToDrop(all) {
+				drop[d.ID] = true
+			}
+			for _, v := range all {
+				if !drop[v.ID] {
+					want[v.ID] = true
 				}
 			}
-			if got := f.versionIDs(10003, ""); len(got) != len(all) {
-				t.Fatalf("filed %d, history holds %d: an import trimmed", len(all), len(got))
+			f.publish(next)
+			f.mustKeep(full, "after import + next edit")
+			after := f.versionIDs(10003, "")
+			if len(after) != len(want) {
+				t.Fatalf("the vault's own history holds %d, without the import it would hold %d", len(after), len(want))
 			}
-			// The user's next edit reaches the outbox: the list is trimmed once, over everything.
-			f.publish(f.bookmarksFrom(100, 3, 40))
-			got := f.versionIDs(10003, "")
-			has := map[string]bool{}
-			for _, id := range got {
-				has[id] = true
+			for _, id := range after {
+				if !want[id] {
+					t.Fatal("the vault's own history differs from what it holds without an import")
+				}
 			}
-			if !has[full.ID] || !has[wiped.ID] {
-				t.Fatalf("the copy from before the wipe (or the wipe) was let go: %d kept", len(got))
-			}
-			if len(got) > listHistoryKeep+3 {
-				t.Fatalf("kept %d, more than the newest %d and a drain's pins", len(got), listHistoryKeep)
+			if !has(f.served(10003), full.ID) {
+				t.Fatal("/lists no longer serves the pre-wipe copy")
 			}
 		})
 	}
 }
 
-// An import can't grow one list without end: at listHistoryImportMax it trims.
+// Imported versions are trimmed against everything at the next edit, and only imported ones are deleted; an
+// imported copy from before a wipe (a pin of the whole list) stays.
+func TestListHistoryImportKeepsAnImportedPreWipeCopy(t *testing.T) {
+	for name, open := range historyBackends(t) {
+		t.Run(name, func(t *testing.T) {
+			f, file := importFixture(t, open)
+			full := f.bookmarks(40, 0) // the list before it was wiped, known only to a history relay
+			wiped := f.bookmarks(1, 1)
+			var edits []*nostr.Event
+			for i := 0; i < 30; i++ {
+				edits = append(edits, f.bookmarksFrom(100+i, 2, 2+i))
+			}
+			// The vault itself only ever saw the 30 edits since.
+			f.publish(edits...)
+			own := f.versionIDs(10003, "")
+			// Newest first, as the app files them.
+			file(wiped)
+			file(full)
+			if got := len(f.importIDs(10003)); got != 2 {
+				t.Fatalf("import store holds %d, want 2 (not trimmed as they arrive)", got)
+			}
+			f.publish(f.bookmarksFrom(100, 3, 40))
+			served := f.served(10003)
+			if !has(served, full.ID) || !has(served, wiped.ID) {
+				t.Fatalf("the imported pre-wipe copy (or its wipe) was let go: %d served", len(served))
+			}
+			if after := f.versionIDs(10003, ""); has(after, full.ID) || has(after, wiped.ID) {
+				t.Fatal("an imported version reached the vault's own history")
+			}
+			_ = own
+		})
+	}
+}
+
+// An import can't grow one list without end: at listHistoryImportMax it trims (imported versions only).
 func TestListHistoryImportIsBounded(t *testing.T) {
-	f := newListHistoryFixture(t, historyBackends(t)[fallbackBackendName])
-	rl := initListsRelay()
+	f, file := importFixture(t, historyBackends(t)[fallbackBackendName])
+	current := f.bookmarks(3, 10_000)
+	f.publish(current)
 	for i := 0; i < listHistoryImportMax+5; i++ {
-		if err := rl.ReplaceEvent[0](authedAs(f.pk), f.bookmarksFrom(i, 1, -i)); err != nil {
+		file(f.bookmarksFrom(i, 1, -i))
+	}
+	if got := len(f.importIDs(10003)); got >= listHistoryImportMax {
+		t.Fatalf("import store holds %d versions after an import of %d", got, listHistoryImportMax+5)
+	}
+	if !has(f.versionIDs(10003, ""), current.ID) {
+		t.Fatal("an import trim reached the vault's own history")
+	}
+}
+
+// A backup restore of the import store keeps every version (not one per list, as a plain store would).
+func TestListHistoryImportSurvivesABackupRestore(t *testing.T) {
+	f, file := importFixture(t, historyBackends(t)[fallbackBackendName])
+	evs := []*nostr.Event{f.bookmarks(5, 1), f.bookmarks(4, 2), f.bookmarks(3, 3)}
+	for _, ev := range evs {
+		file(ev)
+	}
+	var buf bytes.Buffer
+	if err := exportDB(f.ctx, listsImportDB, &buf); err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range evs {
+		if err := listsImportDB.DeleteEvent(f.ctx, ev); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if got := len(f.versionIDs(10003, "")); got >= listHistoryImportMax {
-		t.Fatalf("history holds %d versions after an import of %d", got, listHistoryImportMax+5)
+	if err := importDB(f.ctx, listsImportDB, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(f.importIDs(10003)); got != 3 {
+		t.Fatalf("restored %d of 3 imported versions", got)
 	}
 }
