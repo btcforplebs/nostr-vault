@@ -69,6 +69,9 @@ extension FeedView {
             if let note = new.note(changedFrom: old) { toolbarNote.show(note) }
         }
         #if os(iOS)
+        // No dark scroll-edge band behind the top pills (iOS 26+): the
+        // pills carry their own glass, the band read as a black bar.
+        .hidingTopScrollEdge()
         .feedTopBar(floating: noteDetailSelection != nil) {
             feedLeadingBarItem
         } trailing: {
