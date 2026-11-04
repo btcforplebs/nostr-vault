@@ -33,13 +33,13 @@ struct FillYourFeedOverlay: View {
                 .padding(.horizontal, 16)
                 .frame(maxHeight: .infinity, alignment: cardAlignment)
                 .padding(.top, 12)
-                .padding(.bottom, tabBarHeight + 90)
+                .padding(.bottom, buttonRow.clearing(tabBarHeight) + 90)
             if guide.meterShowing {
                 meterArea
                     .padding(.horizontal, 16)
                     // On Post's row: Post rises above the open meter, and the
                     // pill sits beside Post on the leading edge.
-                    .padding(.bottom, tabBarHeight > 0 ? buttonRow.buttonBottom : 20)
+                    .padding(.bottom, tabBarHeight > 0 ? buttonRow.buttonBottom - buttonRow.band : 20)
                     .frame(maxHeight: .infinity, alignment: .bottom)
             }
         }

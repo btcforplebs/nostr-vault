@@ -30,8 +30,35 @@ final class FloatingButtonRow: ObservableObject {
     /// The tab bar and the mini player above it, together; 0 where there is
     /// no iPhone tab bar. The return pill sits on top of this.
     @Published private(set) var chromeHeight: CGFloat = 0
+    /// The part of the dock already inside the screens' bottom safe area
+    /// (the root's band, for picture-in-picture; `DockClearance`). Anything
+    /// placed from that edge takes it off, or it sits a whole dock too high.
+    @Published private(set) var band: CGFloat = 0
 
     private var widths: [UUID: CGFloat] = [:]
+    private var keyboardUp = false
+    private var keyboardObservers: [NSObjectProtocol] = []
+
+    init() {
+        #if os(iOS)
+        // The dock leaves the root's safe area while the keyboard is up
+        // (`DockInset.placement`), on the same notifications the dock uses.
+        let center = NotificationCenter.default
+        keyboardObservers = [
+            center.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setKeyboardUp(true) }
+            },
+            center.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setKeyboardUp(false) }
+            },
+        ]
+        #endif
+    }
+
+    /// What is left of `height` (the dock, or part of it) to clear by hand.
+    func clearing(_ height: CGFloat) -> CGFloat {
+        DockClearance.remaining(height, band: band)
+    }
 
     func report(_ id: UUID, width: CGFloat?) {
         widths[id] = width
@@ -48,6 +75,17 @@ final class FloatingButtonRow: ObservableObject {
 
     func update(chromeHeight: CGFloat) {
         if self.chromeHeight != chromeHeight { self.chromeHeight = chromeHeight }
+        updateBand()
+    }
+
+    private func setKeyboardUp(_ up: Bool) {
+        keyboardUp = up
+        updateBand()
+    }
+
+    private func updateBand() {
+        let band = DockClearance.band(dockHeight: chromeHeight, keyboardUp: keyboardUp)
+        if self.band != band { self.band = band }
     }
 
     func setLift(_ lift: CGFloat) {
@@ -77,7 +115,9 @@ struct FloatingButtonSlot: ViewModifier {
             )
             .onDisappear { row.report(id, width: nil) }
             .padding(.trailing, FloatingButtonRow.trailingInset)
-            .padding(.bottom, sharesRow ? row.buttonBottom + row.lift : 20)
+            // From the safe area's bottom, which already holds the dock's
+            // band; level with the mini player either way.
+            .padding(.bottom, sharesRow ? row.buttonBottom + row.lift - row.band : 20)
             .animation(Motion.chrome, value: row.buttonBottom)
             .animation(Motion.chrome, value: row.lift)
     }

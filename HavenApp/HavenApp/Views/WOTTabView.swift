@@ -7,6 +7,7 @@ import SwiftUI
 struct WOTTabView: View {
     @EnvironmentObject var configService: ConfigService
     @Environment(\.floatingTabBarHeight) private var tabBarHeight
+    @ObservedObject private var buttonRow = FloatingButtonRow.shared
     @ObservedObject private var tutorialCenter = TutorialCenter.shared
 
     private var me: String { configService.activeAccountHexPubkey }
@@ -15,9 +16,10 @@ struct WOTTabView: View {
         NavigationStack {
             TrustWebView(author: me, path: Self.startingPath(me), isWOTTab: true)
                 // Cards and pills sit above the floating tab bar; the globe
-                // itself runs under it.
+                // itself runs under it. Only what the safe area doesn't
+                // already hold.
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    Color.clear.frame(height: tabBarHeight)
+                    Color.clear.frame(height: buttonRow.clearing(tabBarHeight))
                 }
         }
         // This tab stays alive: a new account draws a new globe. The globe

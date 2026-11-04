@@ -37,6 +37,7 @@ struct ArticleReaderView: View {
     @State private var blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
     @AppStorage(PostButtons.storageKey) private var postButtons = ""
     @Environment(\.floatingTabBarHeight) private var tabBarHeight
+    @ObservedObject private var buttonRow = FloatingButtonRow.shared
 
     private var metadata: LongFormMetadata { note.longFormMetadata }
     private var profile: FeedProfile? { nostrService.profiles[note.pubkey] }
@@ -119,8 +120,9 @@ struct ArticleReaderView: View {
             }
             .padding(20)
             // The iPhone's tab bar floats over the reader; without this the
-            // bottom action bar sits under it and can't be tapped.
-            .padding(.bottom, tabBarHeight)
+            // bottom action bar sits under it and can't be tapped. Only what
+            // the safe area doesn't already hold.
+            .padding(.bottom, buttonRow.clearing(tabBarHeight))
             .frame(maxWidth: 720, alignment: .leading)
             .frame(maxWidth: .infinity)
         }

@@ -367,6 +367,7 @@
 		33B89FEBDE540FBD83B1B9A6 /* PayShareTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 416B07CDA62A24909D60F23A /* PayShareTarget.swift */; };
 		33C3DBA932813117EFD2AB23 /* OwnerSessionWarmup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27B80920656E134E7FCE4717 /* OwnerSessionWarmup.swift */; };
 		33DA43E5719FACF70AA4594B /* ListMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6F8180BFCF4A2CA360DD6D /* ListMerge.swift */; };
+		33DC6E222AE0280108199AAA /* DockClearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476EF8F1B938508F9475B764 /* DockClearance.swift */; };
 		33FB11641B10605267049EB9 /* MediaPostReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A63F6F2329E7E843153FEFD /* MediaPostReviewView.swift */; };
 		342880AF34B3F04FD307BDCB /* GlobeSpace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CFB0B9F42290F34B8AD6C57 /* GlobeSpace.swift */; };
 		346E57283E62BF450CDC1B58 /* MediaGalleryGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7689F0347B5A29E25E0CE62 /* MediaGalleryGrid.swift */; };
@@ -1111,6 +1112,7 @@
 		9D74848925393F3A0BA89DBC /* RelayMatrixView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A236C874DC2ACEF2B73EF2 /* RelayMatrixView.swift */; };
 		9D8C4B533215C3CB63C3E7E8 /* FilterButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE65F95458326DF0C43FCEAC /* FilterButton.swift */; };
 		9DBA13DB50ECFF3FFF4832F8 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7B2365D506330BA6CF87F8 /* AppearanceSettingsView.swift */; };
+		9DE20CBAB1CAEB1EBD083BCA /* DockClearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476EF8F1B938508F9475B764 /* DockClearance.swift */; };
 		9E3289AFD61B61080FB5B2FD /* RetryableAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8495489F7284415840FE673 /* RetryableAsyncImage.swift */; };
 		9E4140F7B92C109F37813CC1 /* NVZapsTodayCounter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F3A25C07796E884E71CB032 /* NVZapsTodayCounter.swift */; };
 		9E595137C38D1492B73EA14C /* NostrService+Profiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AD2777B6DB059131373523E /* NostrService+Profiles.swift */; };
@@ -2131,6 +2133,7 @@
 		46A74F76189F907327A5125A /* WhatsInsideSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatsInsideSheet.swift; sourceTree = "<group>"; };
 		47192F4794DB3DF64A802E30 /* LiveFeedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveFeedViews.swift; sourceTree = "<group>"; };
 		4757A74E31DFBA866003FD73 /* ActionButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionButton.swift; sourceTree = "<group>"; };
+		476EF8F1B938508F9475B764 /* DockClearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockClearance.swift; sourceTree = "<group>"; };
 		47E52CADA44AC55958A69E64 /* MessageComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageComposerView.swift; sourceTree = "<group>"; };
 		48195BBEE6772A2281169446 /* LabelReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelReviewView.swift; sourceTree = "<group>"; };
 		481ECF959698CE2F1D0E1582 /* RecipeFeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeFeedService.swift; sourceTree = "<group>"; };
@@ -3755,6 +3758,7 @@
 				CF8F05DC86428629E19AEEA3 /* DMReadAuth.swift */,
 				981FAE57C3F293056913DDA7 /* DMSearch.swift */,
 				1682A24F97C40C3570CB32C1 /* DMTrust.swift */,
+				476EF8F1B938508F9475B764 /* DockClearance.swift */,
 				59E8B88393BC807874308374 /* DockInset.swift */,
 				F67FCE8523F6E6F9E436C4E2 /* DraftReplyParent.swift */,
 				75FAB177AF921AAA9A805C44 /* EmojiCatalog.swift */,
@@ -4804,6 +4808,7 @@
 				F77339F2E80B3F9EFF01B473 /* DeletedPostsStore.swift in Sources */,
 				55297482FC513EA6FB0BA212 /* DestructiveConfirmation.swift in Sources */,
 				04A3F321E28FCCB4CC224283 /* DivineComposeView.swift in Sources */,
+				9DE20CBAB1CAEB1EBD083BCA /* DockClearance.swift in Sources */,
 				56306706B175F8D4376071C5 /* DockHoldMenu.swift in Sources */,
 				8C6567E64873C61D0FF6E801 /* DockInset.swift in Sources */,
 				CDF7CFA6912E6CE991DD11BA /* DockSafeAreaInset.swift in Sources */,
@@ -5735,6 +5740,7 @@
 				6F923A9D7824CDB7C70FB597 /* DeletedPostsStore.swift in Sources */,
 				93F72291B6A98E1F385A65CA /* DestructiveConfirmation.swift in Sources */,
 				DCE772251391A5A6446A595C /* DivineComposeView.swift in Sources */,
+				33DC6E222AE0280108199AAA /* DockClearance.swift in Sources */,
 				BF5F617A740BAB43FADD3BAD /* DockInset.swift in Sources */,
 				AF751CC952382B08B77E1EED /* DraftPickerView.swift in Sources */,
 				BF2FC4F96D9D2FFEACF5CD89 /* DraftReplyParent.swift in Sources */,
