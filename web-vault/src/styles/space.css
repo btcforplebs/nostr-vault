@@ -1,5 +1,5 @@
 /* "Your space" (src/desktop/space): the desktop layout's right-hand column of pinned panels, from 1024px. */
-.space-dock { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100dvh; border-left: 1px solid var(--hair);
+.space-dock { display: flex; min-width: 0; min-height: 0; height: 100dvh; border-left: 1px solid var(--hair);
   background: linear-gradient(180deg, rgb(230 115 38 / .06), transparent 240px), #050403; }
 .sp-top { display: flex; align-items: center; gap: 6px; flex: none; height: var(--bar-h); padding: 0 10px 0 18px; border-bottom: 1px solid var(--hair); }
 .sp-top h2 { margin: 0 auto 0 0; font: 700 16px/1.2 var(--font); }
@@ -50,8 +50,20 @@
 .sp-foot { flex: none; padding: 10px 14px; border-top: 1px solid var(--hair); color: var(--accent-light); font: 600 12px var(--font); text-decoration: none; }
 .sp-foot:hover { text-decoration: underline; }
 
-/* Folded: a strip with the way back and the Vault's count. */
-.space-dock.folded { align-items: center; gap: 8px; padding-top: 11px; background: #050403; }
+/* The column beside the rail: its bar and panels. */
+.sp-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+/* The icon rail (SpaceDock.jsx): always on the right edge, open or folded. Dashboard on top, one icon per panel. */
+.sp-rail { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: none; width: 56px; padding-top: 8px; border-left: 1px solid var(--hair); }
+.sp-rail-rule { width: 24px; height: 1px; margin: 4px 0; background: var(--hair); }
+.sp-rail-btn { position: relative; display: grid; place-items: center; width: 40px; min-width: 40px; height: 40px; min-height: 40px; padding: 0;
+  border: 0; border-radius: 10px; background: none; color: var(--text-2); }
+.sp-rail-btn:hover { background: var(--s2); color: var(--text); }
+.sp-rail-btn.open { background: var(--accent-pale); color: var(--accent-light); }
+/* One panel opened from the rail fills the column. */
+.sp-panels.sp-only > .sp-panel { flex: 1; max-height: none; }
+/* Folded: the rail alone. */
+.space-dock.folded { background: #050403; }
+.space-dock.folded .sp-rail { border-left: 0; }
 .sp-mini { position: relative; display: grid; place-items: center; width: 40px; min-width: 40px; height: 40px; min-height: 40px; padding: 0;
   border: 0; border-radius: 11px; background: var(--s1); color: var(--accent-light); }
 .sp-mini:hover { background: var(--s2); }

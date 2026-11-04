@@ -7,7 +7,7 @@
    144px taller than the window, and a focus or scrollIntoView near the bottom scrolled the whole layout up under the
    window's top edge, bar and all. overflow: clip (not hidden) also means nothing can scroll this box. */
 .app.desk-app { padding-bottom: 0; }
-.desk-app:has(.desk.space) { --dock-w: 380px; }
+.desk-app:has(.desk.space) { --dock-w: 436px; } /* 380px of panels + Your space's 56px icon rail */
 .desk-app:has(.desk.space.folded) { --dock-w: 56px; }
 .desk { display: grid; grid-template-columns: minmax(0, 1fr) var(--dock-w); height: 100dvh; }
 .desk-left { display: flex; min-width: 0; min-height: 0; container: left / inline-size; }
