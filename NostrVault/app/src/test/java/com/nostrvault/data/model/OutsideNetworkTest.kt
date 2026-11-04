@@ -27,9 +27,12 @@ class OutsideNetworkTest {
         assertFalse(outside(listed, trusted))
     }
 
-    /** Before the graph loads nothing moves out of All. */
+    /** Before the graph loads it fails closed like Global (TrustGate, Logen 2026-11-04): strangers are outside, you and the whitelist are not. */
     @Test
-    fun emptyGraphCountsNobodyAsOutside() {
-        assertFalse(outside(stranger, trusted = emptySet()))
+    fun emptyGraphFailsClosed() {
+        assertTrue(outside(stranger, trusted = emptySet()))
+        assertTrue(outside(friend, trusted = emptySet()))
+        assertFalse(outside(owner, trusted = emptySet()))
+        assertFalse(outside(listed, trusted = emptySet()))
     }
 }

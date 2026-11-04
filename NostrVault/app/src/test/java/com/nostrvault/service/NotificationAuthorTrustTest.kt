@@ -18,8 +18,13 @@ class NotificationAuthorTrustTest {
     }
 
     @Test
-    fun `graph not loaded, own events, gift wraps, summary and zaps are not held back`() {
-        assertTrue(LocalNotificationService.authorMayNotify("stranger", "reply", emptySet(), emptySet()))
+    fun `graph not loaded fails closed, own events still notify`() {
+        assertFalse(LocalNotificationService.authorMayNotify("stranger", "reply", emptySet(), emptySet()))
+        assertTrue(LocalNotificationService.authorMayNotify("me", "reply", emptySet(), setOf("me")))
+    }
+
+    @Test
+    fun `own events, gift wraps, summary and zaps are not held back`() {
         assertTrue(LocalNotificationService.authorMayNotify("me", "repost", trusted, setOf("me")))
         assertTrue(LocalNotificationService.authorMayNotify("throwaway", "giftwrap", trusted, emptySet()))
         assertTrue(LocalNotificationService.authorMayNotify("", "summary", trusted, emptySet()))

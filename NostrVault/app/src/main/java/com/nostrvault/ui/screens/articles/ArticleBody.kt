@@ -44,6 +44,9 @@ internal fun ArticleBody(
     tally: ArticleTally,
     onOpenComment: (ArticleEngagementEvent) -> Unit,
     gatedArticles: com.nostrvault.service.GatedArticleService? = null,
+    outsideCount: Int = 0,
+    showOutside: Boolean = false,
+    onToggleOutside: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val gated = remember(note.id, note.tags) { com.nostrvault.data.model.GatedArticle.from(note) }
@@ -202,6 +205,18 @@ internal fun ArticleBody(
                     )
                 }
             }
+        }
+        // Comments and highlights from outside your web (TrustGate).
+        if (outsideCount > 0) {
+            Spacer(Modifier.height(12.dp))
+            com.nostrvault.ui.components.OutsideWebFoldRow(
+                count = outsideCount,
+                expanded = showOutside,
+                accent = colors.primary,
+                onToggle = onToggleOutside,
+                noun = "comment or highlight",
+                plural = "comments and highlights",
+            )
         }
         Spacer(Modifier.height(48.dp))
     }

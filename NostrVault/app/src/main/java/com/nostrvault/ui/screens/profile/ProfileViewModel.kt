@@ -8,6 +8,8 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.NoteStats
+import com.nostrvault.data.model.TrustGate
+import com.nostrvault.service.FeedFilterEngine
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
@@ -230,9 +232,23 @@ class ProfileViewModel @Inject constructor(
     /** The default zap amount from Wallet settings, in sats (iOS `defaultZapSats`). */
     val defaultZapSats: Int get() = configStore.config.value.defaultZapAmount.coerceAtLeast(1)
 
+    /**
+     * Tagged lists other people's notes, so it passes the block list and the
+     * web of trust like replies do ([TrustGate]): strangers and blocked
+     * people are left out, you always show. Fails closed on an empty web.
+     */
+    private val shownTagged: Flow<List<FeedNote>> = combine(
+        _taggedNotes,
+        feedService.trustGateSet,
+        configStore.config.map { feedService.blockedHexForActiveAccount() }.distinctUntilChanged(),
+    ) { tagged, trusted, blocked ->
+        val always = setOf(nostrService.activeHexPubkey).filter { it.isNotEmpty() }.toSet()
+        tagged.filter { !FeedFilterEngine.involvesBlocked(it, blocked) && TrustGate.allows(it.pubkey, trusted, always) }
+    }
+
     val filteredNotes: StateFlow<List<FeedNote>> = combine(
         _profileNotes,
-        _taggedNotes,
+        shownTagged,
         _selectedSection,
     ) { notes, tagged, section -> sectionNotes(section, notes, tagged) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -255,7 +271,7 @@ class ProfileViewModel @Inject constructor(
 
     val counts: StateFlow<ProfileCounts> = combine(
         _profileNotes,
-        _taggedNotes,
+        shownTagged,
     ) { notes, tagged ->
         ProfileCounts(
             notes = notes.count { !it.isReply && !it.isProfileRepost },

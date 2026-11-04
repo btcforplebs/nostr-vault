@@ -120,7 +120,8 @@ object FeedFilterEngine {
                     // built yet", and admitting everyone then hands the open
                     // firehose to exactly the people who never chose it.
                     // "Everyone" (opted into behind a warning) skips the graph.
-                    if (globalRequiresTrust && note.pubkey !in wotPubkeys) return@filter false
+                    // A repost passes only when the reposter is trusted too (TrustGate).
+                    if (globalRequiresTrust && (note.pubkey !in wotPubkeys || (note.repostedBy != null && note.repostedBy !in wotPubkeys))) return@filter false
                     // Global is top-level posts only, whatever the Replies
                     // switch says (iOS filterFeedNotes).
                     if (note.isReply) return@filter false
@@ -197,8 +198,12 @@ object FeedFilterEngine {
             // FeedFilterEngine.filterMediaNotes). Following media is already scoped
             // to followed authors by the subscription, so it shows all media here —
             // gating it on wotPubkeys (often empty in Following mode) hid everything.
-            // "Everyone" lifts it, as on iOS (#133).
-            if (isGlobalMedia && globalRequiresTrust && wotPubkeys.isNotEmpty() && note.pubkey !in wotPubkeys) return@filter false
+            // "Everyone" lifts it, as on iOS (#133). Fails closed like Global:
+            // an empty web (not built yet) shows nobody's media, not everyone's.
+            // A repost needs the reposter trusted too (TrustGate).
+            if (isGlobalMedia && globalRequiresTrust &&
+                (note.pubkey !in wotPubkeys || (note.repostedBy != null && note.repostedBy !in wotPubkeys))
+            ) return@filter false
             if (note.mediaURLs.isEmpty()) return@filter false
             if (note.isNoise) return@filter false
             true

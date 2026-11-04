@@ -41,10 +41,11 @@ enum class VaultContentFilter(val displayName: String) {
         /**
          * Whether a note tagging you comes from outside your network. The one
          * rule shared by the Notes filter and a notification tap's routing.
-         * An empty graph (not built yet) counts nobody as outside.
+         * Fails closed like Global ([TrustGate]): with an empty graph (not
+         * built yet) everyone but you and the whitelist counts as outside.
          */
         fun isOutside(author: String, owner: String, whitelist: Set<String>, trusted: Set<String>): Boolean =
-            author != owner && author !in whitelist && trusted.isNotEmpty() && author !in trusted
+            author != owner && author !in whitelist && author !in trusted
     }
 }
 

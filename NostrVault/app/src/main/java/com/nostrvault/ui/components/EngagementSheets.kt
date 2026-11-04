@@ -8,6 +8,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.lazy.LazyListScope
+import com.nostrvault.data.model.TrustGate
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,7 +42,14 @@ fun ReactorsSheet(
     profiles: Map<String, FeedProfile>,
     onProfileClick: (String) -> Unit,
     onDismiss: () -> Unit,
+    /** [TrustGate]: null = everyone shows (shield on Everyone or no web asked). */
+    trusted: Set<String>? = null,
+    /** Always shown: you and the note's author. */
+    always: Set<String> = emptySet(),
+    /** Blocked people never show. */
+    blocked: Set<String> = emptySet(),
 ) {
+    val gated = rememberGated(reactions, trusted, always, blocked) { it.pubkey }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = SecondaryGroupedBg,
@@ -57,7 +70,7 @@ fun ReactorsSheet(
             )
             Spacer(Modifier.height(16.dp))
 
-            if (reactions.isEmpty()) {
+            if (gated.all.isEmpty()) {
                 Text(
                     text = "No reactions yet",
                     color = SecondaryText,
@@ -70,7 +83,8 @@ fun ReactorsSheet(
                 LazyColumn(
                     modifier = Modifier.heightIn(max = 400.dp),
                 ) {
-                    items(reactions, key = { it.id }) { reaction ->
+                    gatedFold(gated, "reaction", "reactions")
+                    items(gated.shown, key = { it.id }) { reaction ->
                         val profile = profiles[reaction.pubkey]
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -116,7 +130,14 @@ fun ZappersSheet(
     profiles: Map<String, FeedProfile>,
     onProfileClick: (String) -> Unit,
     onDismiss: () -> Unit,
+    /** [TrustGate]: null = everyone shows (shield on Everyone or no web asked). */
+    trusted: Set<String>? = null,
+    /** Always shown: you and the note's author. */
+    always: Set<String> = emptySet(),
+    /** Blocked people never show. */
+    blocked: Set<String> = emptySet(),
 ) {
+    val gated = rememberGated(zaps, trusted, always, blocked) { it.zapperPubkey }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = SecondaryGroupedBg,
@@ -137,7 +158,7 @@ fun ZappersSheet(
             )
             Spacer(Modifier.height(16.dp))
 
-            if (zaps.isEmpty()) {
+            if (gated.all.isEmpty()) {
                 Text(
                     text = "No zaps yet",
                     color = SecondaryText,
@@ -150,7 +171,8 @@ fun ZappersSheet(
                 LazyColumn(
                     modifier = Modifier.heightIn(max = 400.dp),
                 ) {
-                    items(zaps, key = { it.id }) { zap ->
+                    gatedFold(gated, "zap", "zaps")
+                    items(gated.shown, key = { it.id }) { zap ->
                         val profile = profiles[zap.zapperPubkey]
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -212,7 +234,14 @@ fun RepostersSheet(
     /** The same list of people serves quotes too ("Quoted By", iOS QuotersListView). */
     title: String = "Reposts",
     emptyText: String = "No reposts yet",
+    /** [TrustGate]: null = everyone shows (shield on Everyone or no web asked). */
+    trusted: Set<String>? = null,
+    /** Always shown: you and the note's author. */
+    always: Set<String> = emptySet(),
+    /** Blocked people never show. */
+    blocked: Set<String> = emptySet(),
 ) {
+    val gated = rememberGated(reposts, trusted, always, blocked) { it.pubkey }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = SecondaryGroupedBg,
@@ -233,7 +262,7 @@ fun RepostersSheet(
             )
             Spacer(Modifier.height(16.dp))
 
-            if (reposts.isEmpty()) {
+            if (gated.all.isEmpty()) {
                 Text(
                     text = emptyText,
                     color = SecondaryText,
@@ -246,7 +275,8 @@ fun RepostersSheet(
                 LazyColumn(
                     modifier = Modifier.heightIn(max = 400.dp),
                 ) {
-                    items(reposts, key = { it.id }) { repost ->
+                    gatedFold(gated, "repost", "reposts")
+                    items(gated.shown, key = { it.id }) { repost ->
                         val profile = profiles[repost.pubkey]
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -275,6 +305,42 @@ fun RepostersSheet(
                 }
             }
         }
+    }
+}
+
+/** A sheet's people after blocks, split for the "Outside your web" fold. */
+private class GatedList<T>(val all: List<T>, val inside: List<T>, val outside: List<T>, val expanded: Boolean, val toggle: () -> Unit) {
+    val shown: List<T> get() = if (expanded) all else inside
+}
+
+@Composable
+private fun <T> rememberGated(
+    items: List<T>,
+    trusted: Set<String>?,
+    always: Set<String>,
+    blocked: Set<String>,
+    author: (T) -> String,
+): GatedList<T> {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val (all, split) = remember(items, trusted, always, blocked) {
+        val unblocked = if (blocked.isEmpty()) items else items.filter { author(it) !in blocked }
+        unblocked to TrustGate.split(unblocked, trusted, always, author)
+    }
+    return GatedList(all, split.first, split.second, expanded) { expanded = !expanded }
+}
+
+/** The fold row at the top of a sheet's list, when anyone is outside your web. */
+private fun <T> LazyListScope.gatedFold(gated: GatedList<T>, noun: String, plural: String) {
+    if (gated.outside.isEmpty()) return
+    item(key = "outside_fold") {
+        OutsideWebFoldRow(
+            count = gated.outside.size,
+            expanded = gated.expanded,
+            accent = LocalNostrVaultColors.current.primary,
+            onToggle = gated.toggle,
+            noun = noun,
+            plural = plural,
+        )
     }
 }
 

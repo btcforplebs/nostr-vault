@@ -103,7 +103,8 @@ class LocalNotificationService @Inject constructor(
 
         /**
          * Only people in your Web of Trust (or follows) notify. [trusted] empty
-         * means the graph has not loaded, and then nobody is held back. Gift
+         * means the graph has not loaded: like Global it fails closed, and only
+         * your own accounts get through ([TrustGate]). Gift
          * wraps carry a throwaway author and the catch-up summary carries none,
          * so they are not judged here. A zap marker's author is the lightning
          * service that signed the receipt, not the zapper; the relay already
@@ -114,8 +115,7 @@ class LocalNotificationService @Inject constructor(
          */
         fun authorMayNotify(author: String, type: String, trusted: Set<String>, own: Set<String>): Boolean {
             if (author.isEmpty() || type == "giftwrap" || type == "summary" || type == "zap" || type == "follow") return true
-            if (trusted.isEmpty() || author in own) return true
-            return author in trusted
+            return author in own || author in trusted
         }
 
         /**

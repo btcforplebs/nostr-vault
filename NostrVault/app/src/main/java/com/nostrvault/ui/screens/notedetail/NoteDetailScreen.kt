@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.nostrvault.ui.components.OutsideWebFoldRow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -129,6 +131,9 @@ fun NoteDetailScreen(
     var reportTarget by remember { mutableStateOf<FeedNote?>(null) }
 
     val blockedPubkeys by viewModel.blockedPubkeys.collectAsState()
+    val trustedPubkeys by viewModel.trustedPubkeys.collectAsState()
+    // Replies from outside your web stay folded until opened (TrustGate).
+    var showOutsideReplies by rememberSaveable(noteId) { mutableStateOf(false) }
 
     // Derive focused note, parents, and direct replies from focusedNoteId
     val focusedNote = remember(focusedNoteId, note, allReplies) {
@@ -195,12 +200,27 @@ fun NoteDetailScreen(
             },
         )
     }
-    // The placeholder takes the opened note's replies and quotes with it.
-    val visibleReplies = if (showsBlockedPlaceholder) emptyList() else threadReplies
-    val shownResponses = remember(otherResponses, blockedPubkeys, showsBlockedPlaceholder) {
-        if (showsBlockedPlaceholder) emptyList()
-        else BlockedPeople.visibleNotes(otherResponses, blockedPubkeys) { it.pubkey }
+    // Strangers' replies, and everything under them, fold under "Outside
+    // your web" (TrustGate): you, the note's author and the one you are
+    // reading always show.
+    val threadAlways = remember(note?.pubkey, focusedNote?.pubkey) {
+        setOfNotNull(viewModel.activeHexPubkey.ifEmpty { null }, note?.pubkey, focusedNote?.pubkey)
     }
+    val (insideReplies, outsideReplies) = remember(threadReplies, trustedPubkeys, threadAlways) {
+        TrustGate.splitThread(threadReplies, trustedPubkeys, threadAlways)
+    }
+    // The placeholder takes the opened note's replies and quotes with it.
+    val visibleReplies = when {
+        showsBlockedPlaceholder -> emptyList()
+        showOutsideReplies -> threadReplies
+        else -> insideReplies
+    }
+    val (insideResponses, outsideResponses) = remember(otherResponses, blockedPubkeys, showsBlockedPlaceholder, trustedPubkeys, threadAlways) {
+        if (showsBlockedPlaceholder) emptyList<FeedNote>() to emptyList()
+        else TrustGate.split(BlockedPeople.visibleNotes(otherResponses, blockedPubkeys) { it.pubkey }, trustedPubkeys, threadAlways) { it.pubkey }
+    }
+    val shownResponses = if (showOutsideReplies) insideResponses + outsideResponses else insideResponses
+    val outsideCount = if (showsBlockedPlaceholder) 0 else outsideReplies.size + outsideResponses.size
 
     val directReplies = remember(replyTargetId, visibleReplies) {
         visibleReplies.filter { it.parentEventId == replyTargetId }.sortedBy { it.createdAt }
@@ -579,6 +599,8 @@ fun NoteDetailScreen(
                     item(key = "replies_loading") {
                         InlineLoadingRow(text = "Loading replies…", color = colors.primary, verticalPadding = 24.dp)
                     }
+                } else if (directReplies.isEmpty() && outsideCount > 0) {
+                    // Every reply so far is from outside your web: just the fold.
                 } else if (directReplies.isEmpty()) {
                     item(key = "replies_empty") {
                         Text(
@@ -655,6 +677,18 @@ fun NoteDetailScreen(
                     )
                 }
 
+                // ── Outside your web (TrustGate fold) ───────────
+                if (outsideCount > 0) {
+                    item(key = "outside_fold") {
+                        OutsideWebFoldRow(
+                            count = outsideCount,
+                            expanded = showOutsideReplies,
+                            accent = colors.primary,
+                            onToggle = { showOutsideReplies = !showOutsideReplies },
+                        )
+                    }
+                }
+
                 // ── Quotes & highlights (below the fold) ─────────
                 if (shownResponses.isNotEmpty()) {
                     item(key = "other_header") {
@@ -699,24 +733,34 @@ fun NoteDetailScreen(
             LaunchedEffect(target) { details?.let(viewModel::fetchEngagementProfiles) }
         }
         val dismiss = { engagementSheet = null }
+        val sheetAlways = threadAlways + listOfNotNull(target.noteId?.let { viewModel.findNote(it)?.pubkey })
         when (target.kind) {
             EngagementSheetKind.REACTIONS -> ReactorsSheet(
                 reactions = details?.reactions ?: emptyList(),
                 profiles = profiles,
                 onProfileClick = onProfileClick,
                 onDismiss = dismiss,
+                trusted = trustedPubkeys,
+                always = sheetAlways,
+                blocked = blockedPubkeys,
             )
             EngagementSheetKind.ZAPS -> ZappersSheet(
                 zaps = details?.zaps ?: emptyList(),
                 profiles = profiles,
                 onProfileClick = onProfileClick,
                 onDismiss = dismiss,
+                trusted = trustedPubkeys,
+                always = sheetAlways,
+                blocked = blockedPubkeys,
             )
             EngagementSheetKind.REPOSTS -> RepostersSheet(
                 reposts = details?.reposts ?: emptyList(),
                 profiles = profiles,
                 onProfileClick = onProfileClick,
                 onDismiss = dismiss,
+                trusted = trustedPubkeys,
+                always = sheetAlways,
+                blocked = blockedPubkeys,
             )
         }
     }

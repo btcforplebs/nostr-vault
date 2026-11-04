@@ -46,6 +46,8 @@ import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.LiveStream
+import com.nostrvault.data.model.TrustGate
+import com.nostrvault.ui.components.OutsideWebFoldRow
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.LiveChatService
 import com.nostrvault.service.LiveFeedService
@@ -120,8 +122,16 @@ fun LiveStreamScreen(
     // Muting publishes the mute list, so it asks first.
     var muting by remember { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
+    val trusted by viewModel.trusted.collectAsState()
+    // Chat from outside your web folds (TrustGate); the host and you always show.
+    var showOutsideChat by rememberSaveable(stream?.address) { mutableStateOf(false) }
     // Muted chatters drop out of the room as soon as they are muted.
-    val shownMessages = remember(messages, blocked) { messages.filter { it.pubkey !in blocked } }
+    val unblockedChat = remember(messages, blocked) { messages.filter { it.pubkey !in blocked } }
+    val (insideChat, outsideChat) = remember(unblockedChat, trusted, stream?.hostPubkey) {
+        val always = setOfNotNull(stream?.hostPubkey, viewModel.myPubkey.ifEmpty { null })
+        TrustGate.split(unblockedChat, trusted, always) { it.pubkey }
+    }
+    val shownMessages = if (showOutsideChat) unblockedChat else insideChat
 
     // Chat is joined for exactly as long as this screen is up.
     DisposableEffect(stream?.address) {
@@ -483,6 +493,17 @@ fun LiveStreamScreen(
             }
 
             HorizontalDivider(color = colors.primary.copy(alpha = 0.12f))
+
+            if (outsideChat.isNotEmpty()) {
+                OutsideWebFoldRow(
+                    count = outsideChat.size,
+                    expanded = showOutsideChat,
+                    accent = colors.primary,
+                    onToggle = { showOutsideChat = !showOutsideChat },
+                    noun = "message",
+                    plural = "messages",
+                )
+            }
 
             LiveChat(
                 messages = shownMessages,
