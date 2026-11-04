@@ -26,6 +26,26 @@ enum NVDeepLink: String {
 
     var url: URL { URL(string: "nostrvault://\(rawValue)")! }
 
+    /// `nostrvault://note/<hex id>`: opens one note (On this day widget).
+    /// Not `nostr:`, which another installed client could claim.
+    static func noteURL(_ id: String) -> URL? {
+        guard isEventID(id) else { return nil }
+        return URL(string: "nostrvault://note/\(id.lowercased())")
+    }
+
+    /// The hex event id in a `nostrvault://note/<id>` link, or nil.
+    static func noteID(from url: URL) -> String? {
+        guard url.scheme == "nostrvault" else { return nil }
+        var parts = url.path.split(separator: "/").map(String.init)
+        if let host = url.host, !host.isEmpty { parts.insert(host, at: 0) }
+        guard parts.count == 2, parts[0] == "note", isEventID(parts[1]) else { return nil }
+        return parts[1].lowercased()
+    }
+
+    private static func isEventID(_ s: String) -> Bool {
+        s.count == 64 && s.allSatisfy { $0.isHexDigit }
+    }
+
     init?(url: URL) {
         guard url.scheme == "nostrvault" else { return nil }
         // nostrvault://feed  -> host "feed"

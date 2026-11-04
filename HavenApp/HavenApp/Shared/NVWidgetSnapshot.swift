@@ -27,6 +27,9 @@ struct NVWidgetSnapshot: Codable, Equatable {
     var wallet: Wallet
     var media: [MediaTile]
     var unreadDMCount: Int
+    /// Your own notes from this date 1 and 2 years ago (On this day widget).
+    /// Nil until the app has read them, and in snapshots from older builds.
+    var onThisDay: NVOnThisDaySnapshot? = nil
 
     static let empty = NVWidgetSnapshot(
         generatedAt: .distantPast,
