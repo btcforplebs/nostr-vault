@@ -20,6 +20,9 @@ struct VaultDashboardView: View {
 
     @State private var macSync: RelayConfiguration.MacSyncStatus?
     @State private var isPreparingImport = false
+    /// Moving in also looks for older list versions on history relays only
+    /// when ticked (ListHistoryScan).
+    @State private var lookForOldLists = false
     @State private var didCopyAddress = false
     @State private var haloPulse = false
     @State private var showingFullActivity = false
@@ -456,10 +459,20 @@ struct VaultDashboardView: View {
             ) {
                 RowButton(title: "Import", isLoading: isPreparingImport || relayManager.isImporting) {
                     isPreparingImport = true
-                    relayManager.importNotes(config: config)
+                    relayManager.importNotes(config: config, listHistory: lookForOldLists)
                 }
                 .disabled(isPreparingImport || relayManager.isImporting || !actionsEnabled)
             }
+            Group {
+                if relayManager.isImporting || relayManager.listHistoryNote != nil {
+                    ListHistoryScanStatus()
+                } else {
+                    ListHistoryOptInToggle(isOn: $lookForOldLists)
+                }
+            }
+            .padding(.leading, 56)
+            .padding(.trailing, 14)
+            .padding(.bottom, 10)
             DashboardDivider()
             DashboardRow(
                 icon: "photo.on.rectangle.angled",

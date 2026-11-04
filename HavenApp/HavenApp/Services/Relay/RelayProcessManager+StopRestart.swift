@@ -131,7 +131,9 @@ extension RelayProcessManager {
             pendingImportConfig = nil
             let alsoFrom = pendingImportAlsoFrom
             pendingImportAlsoFrom = []
-            importNotes(config: importConfig, alsoFrom: alsoFrom)
+            let listHistory = pendingImportListHistory
+            pendingImportListHistory = false
+            importNotes(config: importConfig, alsoFrom: alsoFrom, listHistory: listHistory)
         }
     }
     

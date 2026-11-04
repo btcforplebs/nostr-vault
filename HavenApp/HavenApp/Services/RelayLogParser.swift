@@ -75,6 +75,10 @@ enum RelayLogParser {
         /// lists reached the vault. Never a notification or an unread count
         /// of their own; ListWipeWatcher runs the wipe-alarm rule on them.
         var listVersionMarkers: [String] = []
+        /// Moving in's list history scan started (true) or ended (false).
+        var listHistoryScanning: Bool?
+        /// The scan's closing count line.
+        var listHistoryNote: String?
     }
 
     // Cached regex patterns for boot/import status parsing
@@ -109,6 +113,7 @@ enum RelayLogParser {
     /// Extract state changes from a single log line.
     /// Pure string parsing — no MainActor, no UI dependencies.
     static func collectStateChanges(from line: String, into batch: inout BatchedStateUpdate) {
+        if ListHistoryScan.collect(from: line, into: &batch) { return }
         // Import state
         if line.contains("connected successfully") {
             batch.importProgress = 0.1

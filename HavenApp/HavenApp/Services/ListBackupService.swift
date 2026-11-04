@@ -23,48 +23,65 @@ final class ListBackupService: ObservableObject {
         dismissed = Set(UserDefaults.standard.stringArray(forKey: Self.dismissedKey) ?? [])
     }
 
-    /// Reads every kept version for the active account from the vault.
+    /// Reads every kept version for the active account from the vault: its
+    /// own, then the ones a moving-in import filed (`ListHistoryScan`).
     func load() async {
         let config = ConfigService.shared.config
         let npub = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
         guard let hex = Bech32.decode(npub)?.hexString else { state = .unavailable; return }
-        if author != hex { groups = [:]; events = [:] }
+        if author != hex { groups = [:]; events = [:]; importedIDs = [] }
         author = hex
         state = .loading
-        let filter: [String: Any] = ["authors": [hex], "kinds": ListShrinkRule.protectedKinds, "limit": 1000]
-        guard var found = await VaultSocket.query(path: "/lists", filter: filter), author == hex else {
+        guard let own = await read(hex, imported: false), author == hex else {
             if author == hex { state = .unavailable }
             return
         }
-        // At the limit the relay cut the oldest, which may be a pinned list
-        // from before a wipe: ask again one kind at a time (Tron, PR 1568).
-        if found.count >= 1000 {
-            var all: [NostrEvent] = []
-            for kind in ListShrinkRule.protectedKinds {
-                guard let some = await VaultSocket.query(path: "/lists", filter: ["authors": [hex], "kinds": [kind], "limit": 1000]),
-                      author == hex else {
-                    if author == hex { state = .unavailable }
-                    return
-                }
-                all += some
-            }
-            found = all
-        }
+        // No answer for the imported ones (an older vault): only the own.
+        let imported = await read(hex, imported: true) ?? []
+        guard author == hex else { return }
+        let ownIDs = Set(own.map(\.id))
+        importedIDs = Set(imported.map(\.id)).subtracting(ownIDs)
+        let found = own + imported.filter { importedIDs.contains($0.id) }
         events = Dictionary(found.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         groups = ListHistory.group(found.map(ListVersion.init), author: hex)
         state = .loaded
     }
 
+    /// The ids of the versions an import filed: shown in the List backups
+    /// screens, never judged by the wipe alarm (Tron, PR 1637/1639).
+    private(set) var importedIDs: Set<String> = []
+
+    /// One /lists read: the vault's own versions, or (`imported`) the ones an
+    /// import filed (haven-go wantsImported). nil when the vault didn't answer.
+    private func read(_ hex: String, imported: Bool) async -> [NostrEvent]? {
+        func filter(_ kinds: [Int]) -> [String: Any] {
+            var f: [String: Any] = ["authors": [hex], "kinds": kinds, "limit": 1000]
+            if imported { f["#v"] = [ListHistoryScan.importedFilterValue] }
+            return f
+        }
+        guard let found = await VaultSocket.query(path: "/lists", filter: filter(ListShrinkRule.protectedKinds)) else { return nil }
+        // At the limit the relay cut the oldest, which may be a pinned list
+        // from before a wipe: ask again one kind at a time (Tron, PR 1568).
+        guard found.count >= 1000 else { return found }
+        var all: [NostrEvent] = []
+        for kind in ListShrinkRule.protectedKinds {
+            guard let some = await VaultSocket.query(path: "/lists", filter: filter([kind])) else { return nil }
+            all += some
+        }
+        return all
+    }
+
     /// Lists in a fixed order: by kind, then name.
     var keys: [ListHistory.Key] { groups.keys.sorted() }
 
-    /// Wipe alarms the newest version of each list raises
+    /// Wipe alarms the newest version of each list the vault filed itself raises
     /// (ListWipeAlarmRule: a wipe, a swap or a drain, not by Nostr Vault on
     /// this device) that the person hasn't dismissed, newest first.
     var alarms: [(key: ListHistory.Key, alarm: ListWipeAlarmRule.Alarm)] {
         let own = OwnListEdits.ids()
+        let imported = importedIDs
         return groups.compactMap { key, versions in
-            ListWipeAlarmRule.alarm(versions, own: own, dismissed: dismissed).map { (key, $0) }
+            ListWipeAlarmRule.alarm(ListHistoryScan.alarmInput(versions, imported: imported), own: own, dismissed: dismissed).map { (key, $0) }
         }
         .sorted { $0.alarm.after.createdAt > $1.alarm.after.createdAt }
     }
@@ -80,8 +97,11 @@ final class ListBackupService: ObservableObject {
         Set(UserDefaults.standard.stringArray(forKey: dismissedKey) ?? [])
     }
 
+    /// The versions of `v`'s list the vault filed itself, newest first: what
+    /// a restore or merge counts as held (an imported copy is not the vault's
+    /// undo copy; web keepUndoCopy reads the same way).
     func vaultEvents(for v: ListVersion) -> [NostrEvent] {
-        (groups[ListHistory.Key(kind: v.kind, d: v.d)] ?? []).compactMap { events[$0.id] }
+        (groups[ListHistory.Key(kind: v.kind, d: v.d)] ?? []).filter { !importedIDs.contains($0.id) }.compactMap { events[$0.id] }
     }
 
     /// What restoring `old` would bring back and take away, against the

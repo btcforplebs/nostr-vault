@@ -150,7 +150,8 @@ struct ListMergeView: View {
         case .failure(let error): problem = error.message
         case .success(let event):
             var all = kept
-            vaultIDs = kept.sorted(by: ListHistory.newerFirst).map(\.id)
+            // Only the vault's own run has no holes; an imported one may (web unbroken()).
+            vaultIDs = kept.filter { !service.importedIDs.contains($0.id) }.sorted(by: ListHistory.newerFirst).map(\.id)
             if let event, !all.contains(where: { $0.id == event.id }) { all.insert(ListVersion(event), at: 0) }
             var opened: [ListVersionMerge.Opened] = []
             for v in all { opened.append(await ListVersionMerge.open(v, decrypt: v.id == event?.id ? decrypt(v.pubkey) : nil)) }

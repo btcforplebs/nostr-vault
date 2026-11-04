@@ -33,32 +33,39 @@ const listHistoryImportMax = 500
 // fileImportedVersion keeps evt in the import store, once per id: not when the
 // vault's own history already holds it.
 func fileImportedVersion(ctx context.Context, evt *nostr.Event) error {
+	_, err := fileImportedVersionAdded(ctx, evt)
+	return err
+}
+
+// fileImportedVersionAdded is fileImportedVersion, also saying whether evt was
+// new (false when either store already held that version).
+func fileImportedVersionAdded(ctx context.Context, evt *nostr.Event) (bool, error) {
 	if listsImportDB == nil || listsDB == nil {
-		return errDBClosing
+		return false, errDBClosing
 	}
 	listHistoryMu.Lock()
 	defer listHistoryMu.Unlock()
 	d := evt.Tags.GetD()
 	own, err := listVersions(ctx, listsDB, evt.PubKey, evt.Kind, d)
 	if err != nil {
-		return err
+		return false, err
 	}
 	imported, err := listVersions(ctx, listsImportDB, evt.PubKey, evt.Kind, d)
 	if err != nil {
-		return err
+		return false, err
 	}
 	for _, v := range append(own, imported...) {
 		if v.ID == evt.ID {
-			return nil
+			return false, nil
 		}
 	}
 	if err := listsImportDB.SaveEvent(ctx, evt); err != nil {
-		return err
+		return false, err
 	}
 	if len(imported)+1 >= listHistoryImportMax {
 		trimImportedLocked(ctx, evt.PubKey, evt.Kind, d)
 	}
-	return nil
+	return true, nil
 }
 
 // trimImportedLocked deletes the imported versions of one list that the

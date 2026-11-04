@@ -85,6 +85,7 @@ struct SetupWizardView: View {
     /// Their own relays picked in the relay check: the import reads them,
     /// nothing saves them.
     @State private var importOwnRelays: [String] = []
+    @State private var importListHistory = false
 
     // Error state
     @State private var setupError: String?
@@ -339,12 +340,13 @@ struct SetupWizardView: View {
                 onNo: { answerBackupQuestion(.no) }
             )
         case 14:
-            RelayCheckStep(npub: npub) { own in
+            RelayCheckStep(npub: npub) { own, listHistory in
                 importOwnRelays = own
+                importListHistory = listHistory
                 goForward()
             }
         case 13:
-            ImportTourStep(isReadOnly: useNostrIsReadOnly, alsoFrom: importOwnRelays) { _ in
+            ImportTourStep(isReadOnly: useNostrIsReadOnly, alsoFrom: importOwnRelays, listHistory: importListHistory) { _ in
                 // Kept running or not, the import carries on in
                 // RelayProcessManager; startRelay waits for it.
                 saveAndComplete()

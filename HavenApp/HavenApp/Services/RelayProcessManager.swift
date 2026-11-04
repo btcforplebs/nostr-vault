@@ -35,6 +35,12 @@ class RelayProcessManager: ObservableObject {
     @Published var bootStatusMessage: String = ""
     @Published var importStatusMessage: String = ""
     @Published var importProgress: Double = 0.0
+    /// Moving in is looking for older versions of the owner's lists on
+    /// history relays (haven-go list_history_scan.go); Skip shows meanwhile.
+    @Published var listHistoryScanning = false
+    /// That scan's plain count ("Found 12 older versions of your lists."),
+    /// shown when the import ends. nil when it didn't run.
+    @Published var listHistoryNote: String?
     
     /// Feed connections should wait until relay is fully ready.
     /// Set `true` 3 seconds after relay reaches `.running` state.
@@ -73,6 +79,8 @@ class RelayProcessManager: ObservableObject {
     var pendingImportConfig: HavenConfig?
     /// Import-only extra relays waiting on a stop (see `importNotes`).
     var pendingImportAlsoFrom: [String] = []
+    /// The history-scan choice waiting on a stop (see `importNotes`).
+    var pendingImportListHistory = false
     @Published var startDate: Date?
     
     // Auto-fix locks

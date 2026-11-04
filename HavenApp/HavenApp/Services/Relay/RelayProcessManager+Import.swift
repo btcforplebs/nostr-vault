@@ -16,6 +16,7 @@ extension RelayProcessManager {
         isImporting = false
         DispatchQueue.main.async {
             self.isImporting = false
+            self.listHistoryScanning = false
             self.importProgress = 0.0
             self.importStatusMessage = "Import cancelled"
             self.pendingImportConfig = nil
@@ -46,7 +47,9 @@ extension RelayProcessManager {
     
     /// `alsoFrom`: relays read for this import only, on top of
     /// `config.importSeedRelays`; not saved (setup's own-servers read).
-    func importNotes(config: HavenConfig, alsoFrom: [String] = []) {
+    /// `listHistory`: the user ticked "Also look for older versions of my
+    /// lists on history relays" (off by default; haven-go list_history_scan.go).
+    func importNotes(config: HavenConfig, alsoFrom: [String] = [], listHistory: Bool = false) {
         logStore.append(LogEntry(timestamp: Date(), level: "DEBUG", message: "importNotes called. Current State: \(state), isRunning: \(isRunning)"))
         
         // Strict guard: Must be idle and NOT running
@@ -55,6 +58,7 @@ extension RelayProcessManager {
                 logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Stopping running relay to start import..."))
                 self.pendingImportConfig = config
                 self.pendingImportAlsoFrom = alsoFrom
+                self.pendingImportListHistory = listHistory
                 stopRelay()
             } else {
                 logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot start import: current state is \(state) (running: \(isRunning))"))
@@ -91,7 +95,14 @@ extension RelayProcessManager {
         let envContent = generateMinimalEnv(config: config)
         try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
 
-        let configEnv = generateEnvDictionary(config: config)
+        var configEnv = generateEnvDictionary(config: config)
+        // Always set: the Go side keeps the process environment between imports.
+        configEnv[ListHistoryScan.optInEnv] = listHistory ? "1" : "0"
+        // Only the account moving in: never the device's other accounts.
+        let movingIn = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
+        configEnv[ListHistoryScan.accountEnv] = listHistory ? (Bech32.decode(movingIn)?.hexString ?? "") : ""
+        listHistoryScanning = false
+        listHistoryNote = nil
         for (key, value) in configEnv {
             setenv(key, value, 1)
             if let cKey = strdup(key), let cValue = strdup(value) {
@@ -129,7 +140,15 @@ extension RelayProcessManager {
         }
     }
     
+    /// Moving in's Skip: stop the list history scan, keep what it found; the
+    /// import carries on.
+    func skipListHistoryScan() {
+        listHistoryScanning = false
+        DispatchQueue.global().async { _ = SkipListHistoryScanC() }
+    }
+
     private func importCompletedSuccessfully() {
+        self.listHistoryScanning = false
         self.isImporting = false
         self.importProgress = 1.0
         self.importStatusMessage = "Import Complete!"
