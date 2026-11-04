@@ -590,3 +590,80 @@ func TestMoveInTricklingRelayCannotHoldTheLane(t *testing.T) {
 		}
 	}
 }
+
+// A relay that sends a note and then goes quiet without EOSE, window after
+// window (nostr-pub.wellorder.net, 2026-11-04), costs an idle wait each time;
+// it is dropped after importSilentWindows such windows instead of being walked
+// through every window of the history.
+func TestMoveInQuietRelayIsDroppedAfterAFewWindows(t *testing.T) {
+	noNegentropy(t)
+	owner, _ := moveInSetup(t, 730, "wss://quiet.example")
+	var mu sync.Mutex
+	windows := map[nostr.Timestamp]bool{}
+	sent := map[nostr.Timestamp]bool{}
+	prev := importPage
+	importPage = func(_ context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		if f.Since == nil {
+			return nil, false // the whole-history lane: silent, so it is re-read by window
+		}
+		windows[*f.Since] = true
+		if sent[*f.Since] {
+			return nil, false
+		}
+		sent[*f.Since] = true
+		ev := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, CreatedAt: *f.Since + 1, Content: "one note, then quiet"})
+		return []*nostr.Event{&ev}, false
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	importOwnerNotes(context.Background())
+
+	if len(windows) != importSilentWindows {
+		t.Fatalf("a quiet relay was walked through %d windows, want %d", len(windows), importSilentWindows)
+	}
+}
+
+// A relay that answers every window, but slowly, can't hold the walk past
+// importWalkDeadline: it stops with what it has.
+func TestOwnerWindowWalkStopsAtItsDeadline(t *testing.T) {
+	noNegentropy(t)
+	owner, _ := moveInSetup(t, 3650, "wss://slow.example")
+	savedDeadline := importWalkDeadline
+	importWalkDeadline = 300 * time.Millisecond
+	t.Cleanup(func() { importWalkDeadline = savedDeadline })
+	var mu sync.Mutex
+	asked := 0
+	prev := importPage
+	importPage = func(ctx context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
+		mu.Lock()
+		asked++
+		mu.Unlock()
+		select {
+		case <-time.After(50 * time.Millisecond):
+		case <-ctx.Done():
+			return nil, false
+		}
+		if f.Until != nil && *f.Until <= *f.Since+1 {
+			return nil, true
+		}
+		ev := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, CreatedAt: *f.Since + 1, Content: "slow but answers"})
+		return []*nostr.Event{&ev}, true
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	start := time.Now()
+	got := importOwnerWindows(context.Background(), []string{"wss://slow.example"}, time.Now().AddDate(0, 0, -3650), []string{owner.pk}, func(*nostr.Event) bool { return true })
+	took := time.Since(start)
+
+	if took > 2*time.Second {
+		t.Fatalf("the walk took %s, past its %s deadline", took, importWalkDeadline)
+	}
+	if got == 0 {
+		t.Fatal("positive control: the walk stored nothing before its deadline")
+	}
+	if got >= 365 {
+		t.Fatalf("the walk stored %d notes: it read all ~365 windows, the deadline did nothing", got)
+	}
+}
