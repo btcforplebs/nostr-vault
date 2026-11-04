@@ -52,7 +52,7 @@ internal enum class EngagementSheetKind { REACTIONS, ZAPS, REPOSTS }
 internal data class EngagementSheetTarget(val kind: EngagementSheetKind, val noteId: String?)
 
 /**
- * Under a parent or reply in the thread when thread stats are on: a hairline,
+ * Inside a parent or reply card in the thread, under its actions: a hairline,
  * then emoji pills (three, then "+N"), zap sats and reposts, each pill opening
  * its list. iOS ThreadNoteEngagementRow. Draws nothing for a note with none.
  */
@@ -65,7 +65,7 @@ internal fun ThreadNoteEngagementRow(
     val zapsOnly = LocalZapsOnlyMode.current
     val row = remember(details, zapsOnly) { EngagementSummary.threadRow(details, zapsOnly) }
     if (row.isEmpty) return
-    Column(modifier = modifier.padding(horizontal = 12.dp)) {
+    Column(modifier = modifier) {
         HorizontalDivider(
             color = SecondaryText.copy(alpha = 0.1f),
             thickness = 0.5.dp,

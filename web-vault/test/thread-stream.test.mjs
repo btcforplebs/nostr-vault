@@ -221,3 +221,28 @@ test("a stranger's reply folds under \"outside your web\"; the reply opened from
   assert.doesNotMatch(el.textContent, /from outside your web/, "the opened one isn't folded")
   render(null, el)
 })
+
+test("every note carries its reactions inside its own card, asked for in one request for the whole thread (Logen 2026-11-04)", async t => {
+  Object.defineProperty(globalThis.navigator, "onLine", { value: false, configurable: true })
+  stubRelays(t, {})
+  const replies = Array.from({ length: 3 }, (_, i) => replyTo(root, i))
+  const fan = generateSecretKey()
+  const like = (note, emoji) => finalizeEvent({ kind: 7, created_at: now, tags: [["e", note.id], ["p", note.pubkey]], content: emoji }, fan)
+  const reactions = [like(root, "🔥"), ...replies.map(r => like(r, "🤙"))]
+  const asks = []
+  pool.querySync = async (_relays, f) => { asks.push(f); return reactions.filter(e => matches(f, e)) }
+  const ctx = { vault: { feed: feedOf([root, ...replies]) }, account: { follows, relays: { read: ["wss://fast.example"] } } }
+  const el = document.createElement("div")
+  render(h(ThreadScreen, { ctx, id: root.id }), el)
+  const cls = n => n.attributes?.class ?? ""
+  const all = (n, out = []) => { out.push(n); n.childNodes.forEach(c => all(c, out)); return out }
+  const summaries = () => all(el).filter(n => cls(n).split(" ").includes("reaction-summary"))
+  await until(() => summaries().length === 4, "a summary for the root and each reply")
+  for (const s of summaries()) assert.equal(s.parentNode.localName, "article", "inside the note's own card, not a row under it")
+  assert.match(el.textContent, /🔥 1/)
+  assert.equal((el.textContent.match(/🤙 1/g) ?? []).length, 3)
+  const reactionAsks = asks.filter(f => f.kinds?.includes(7))
+  assert.equal(reactionAsks.length, 1, "one request for the thread's reactions, not one per note")
+  assert.deepEqual(new Set(reactionAsks[0]["#e"]), new Set([root.id, ...replies.map(r => r.id)]))
+  render(null, el)
+})

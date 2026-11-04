@@ -64,7 +64,6 @@ fun NoteDetailScreen(
     val isLoadingReplies by viewModel.isLoadingReplies.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val engagementDetails by viewModel.engagementDetails.collectAsState()
-    val expandedEngagement by viewModel.expandedEngagement.collectAsState()
     val perNoteEngagement by viewModel.perNoteEngagement.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
     val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
@@ -406,9 +405,6 @@ fun NoteDetailScreen(
                             modifier = Modifier.size(25.dp),
                         )
                     }
-                    // Thread stats toggle. While on it says "Stats": an icon
-                    // alone gave no hint what it had switched on (iOS #325).
-                    ThreadStatsToggle(isOn = expandedEngagement, onClick = viewModel::toggleExpandedEngagement)
                     // Reply and Broadcast would act on the blocked note behind
                     // the placeholder, so they go with it (iOS 1d38f8be).
                     if (!showsBlockedPlaceholder) {
@@ -534,17 +530,17 @@ fun NoteDetailScreen(
                             onBlock = { blockTarget = parent },
                             onDelete = { deleteTarget = parent },
                             onLongPressLike = { emojiTargetNote = parent },
+                            // Its stats inside the card, under the actions (the hero's are in the hero card).
+                            footer = if (parent.id == focusedNoteId) null else perNoteEngagement[parent.id]?.let { details ->
+                                {
+                                    ThreadNoteEngagementRow(
+                                        details = details,
+                                        onClick = { kind -> engagementSheet = EngagementSheetTarget(kind, parent.id) },
+                                    )
+                                }
+                            },
                             modifier = Modifier.padding(horizontal = ThreadSideInset),
                         )
-                        if (expandedEngagement && parent.id != focusedNoteId) {
-                            perNoteEngagement[parent.id]?.let { details ->
-                                ThreadNoteEngagementRow(
-                                    details = details,
-                                    onClick = { kind -> engagementSheet = EngagementSheetTarget(kind, parent.id) },
-                                    modifier = Modifier.padding(horizontal = ThreadSideInset),
-                                )
-                            }
-                        }
                         // iOS stacks parent cards 12pt apart, no connector line.
                         Spacer(Modifier.height(12.dp))
                     }
@@ -652,7 +648,6 @@ fun NoteDetailScreen(
                         focusedNoteId = focusedNoteId,
                         themeColor = colors.primary,
                         viewModel = viewModel,
-                        expandedEngagement = expandedEngagement,
                         perNoteEngagement = perNoteEngagement,
                         profiles = profiles,
                         quotedNotesCache = quotedNotesCache,
