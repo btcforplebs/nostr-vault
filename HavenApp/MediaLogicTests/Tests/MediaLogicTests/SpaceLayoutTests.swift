@@ -127,6 +127,19 @@ final class SpaceLayoutTests: XCTestCase {
         XCTAssertTrue(reset.panels.allSatisfy { $0.on && $0.open })
     }
 
+    /// The iPad column draws only its three widgets out of the account's six; up
+    /// and down move among those three and never swap with a panel it hides.
+    func testMovingAmongASubsetSkipsPanelsThatScreenHides() {
+        let all = ["live-vault", "wot-mini", "messages", "my-devices", "live-now", "on-this-day"]
+        let pad = ["my-devices", "live-now", "on-this-day"]
+        let layout = SpaceLayout.defaultLayout(panelIds: all)
+        XCTAssertEqual(layout.movingPanel("my-devices", by: -1, ids: pad, at: 1), layout, "already the iPad's top")
+        XCTAssertNotEqual(layout.movingPanel("my-devices", by: -1, ids: all, at: 1), layout, "with all six it would swap with Messages")
+        let moved = layout.movingPanel("on-this-day", by: -1, ids: pad, at: 2)
+        XCTAssertEqual(moved.shownPanels(pad).map(\.id), ["my-devices", "on-this-day", "live-now"])
+        XCTAssertEqual(moved.shownPanels(all).prefix(3).map(\.id), ["live-vault", "wot-mini", "messages"], "the web's panels untouched")
+    }
+
     func testNewerAtWinsAndATieKeepsTheDevice() {
         let local = SpaceLayout.defaultLayout(panelIds: panelIds, at: 100)
         XCTAssertTrue(SpaceLayout.remoteWins(remote: .defaultLayout(panelIds: panelIds, at: 101), local: local))

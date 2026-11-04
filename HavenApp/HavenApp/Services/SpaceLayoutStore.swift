@@ -95,8 +95,10 @@ final class SpaceLayoutStore: ObservableObject {
         edit { $0.settingPanel(id, on: on, open: open, at: $1) }
     }
 
-    func movePanel(_ id: String, by delta: Int) {
-        edit { $0.movingPanel(id, by: delta, ids: Self.panelIds, at: $1) }
+    /// `ids`: the panels this screen draws, so up and down never swap with one
+    /// it doesn't show.
+    func movePanel(_ id: String, by delta: Int, ids: [String] = panelIds) {
+        edit { $0.movingPanel(id, by: delta, ids: ids, at: $1) }
     }
 
     func resetPanels() { edit { $0.resettingPanels(panelIds: Self.panelIds, at: $1) } }
