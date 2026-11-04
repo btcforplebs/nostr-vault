@@ -8,3 +8,10 @@
 .ln-badge { padding: 1px 6px; border-radius: 999px; background: #ff3b30; color: #fff; font: 800 10px/16px var(--font); letter-spacing: .04em; }
 .ln-more { padding-top: 6px; }
 .sp-panel.live-now { flex-shrink: 0; }
+
+/* Live now at the top of Search (screens/SearchLiveNow.jsx): Search's own person rows, with the red ring and badge. */
+.search-live-dot { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #ff3b30; vertical-align: 1px; }
+.search-live-row { cursor: pointer; }
+.search-live-row .person-names { flex: 1; }
+.search-live-row .avatar { box-shadow: 0 0 0 2px #ff3b30; }
+.search-live-more { padding-top: 0; text-transform: none; letter-spacing: 0; }
