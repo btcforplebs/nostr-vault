@@ -24,6 +24,8 @@ final class MuteListStore {
     private var started = false
 
     private static let defaultsKey = "muteListEvents"
+    /// Saves the stored events in the order they were taken, off the lock.
+    private static let saveQueue = DispatchQueue(label: "com.haven.mute-list-save")
     /// `privatePubkeys` runs on every tab bar redraw: the npub is decoded once.
     private static let accountHexMemo = NpubHexMemo()
     /// A list dated this far ahead is not taken: it would outrank every real one.
@@ -121,7 +123,15 @@ final class MuteListStore {
                 || (event.created_at == current!.created_at && event.id != current!.id && event.id < current!.id))
         if newer {
             events[hex] = event
-            if let data = try? JSONEncoder().encode(events) { UserDefaults.standard.set(data, forKey: Self.defaultsKey) }
+            // Written off the lock: setting UserDefaults posts its change
+            // notification on this thread, SwiftUI's observer then waits for
+            // the render lock, and a render on the main thread waits for this
+            // lock (list(forHex:) in the tab bar). That froze a fresh keyed
+            // launch for good (Lazarus re-shoot 2026-11-04). The queue keeps
+            // the writes in lock order.
+            if let data = try? JSONEncoder().encode(events) {
+                Self.saveQueue.async { UserDefaults.standard.set(data, forKey: Self.defaultsKey) }
+            }
         }
         let retry = !newer && current?.id == event.id && !(lists[hex]?.privateNote.isEmpty ?? true)
         let isActive = hex == activeHex
