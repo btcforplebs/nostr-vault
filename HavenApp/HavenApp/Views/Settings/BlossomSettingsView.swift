@@ -11,9 +11,7 @@ struct BlossomSettingsView: View {
     @State private var newMirrorURL = ""
     
     private func waitingLine(_ post: QueuedMediaPost) -> String {
-        if let status = post.refusedStatus {
-            return "Your media servers refused this file (HTTP \(status)). Change servers below, then tap Try sending now."
-        }
+        if let line = post.refusalLine { return line }
         if post.needsUser {
             return "Stopped trying after \(post.attempts) tries. Tap Try sending now."
         }

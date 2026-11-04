@@ -65,6 +65,27 @@ export const megabytes = n => `${(n / 1e6).toFixed(n < 1e7 ? 1 : 0)} MB`
 
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
 
+/** BUD-06: whether an answer to `HEAD /upload` lets the upload go ahead. Only a real "not this file" (too big, wrong
+ *  type, not allowed) stops it; no such route (404/405) or no answer now (5xx, 408, 429) gets the upload anyway, as on
+ *  iPhone/Mac and Android (NDK check step 3, Logen 2026-11-04). */
+export const precheckAllows = status => typeof status !== "number" || (status >= 200 && status < 300) ||
+  status === 404 || status === 405 || status === 408 || status === 429 || status >= 500
+
+/** Asks `server` whether it takes this file before sending it. -> "" to go ahead, else its refusal in words (refusal()).
+ *  A pre-check that fails to run (network, CORS) goes ahead: the upload itself will say. */
+export async function precheck(server, { sha256, size, mime, auth, fetch, signal }) {
+  try {
+    const res = await fetch(`${server}/upload`, {
+      method: "HEAD", signal,
+      headers: { Authorization: auth, "X-SHA-256": sha256, "X-Content-Length": String(size), "X-Content-Type": mime },
+    })
+    return precheckAllows(res?.status) ? "" : refusal(res, size)
+  } catch (e) {
+    if (e?.name === "AbortError") throw e
+    return ""
+  }
+}
+
 /**
  * Hash, sign and upload one photo or video to the first server that takes it. -> { url, sha256, mime, size, server };
  * throws with every server's reason when none did. A server whose answer names another hash, or none, is not used.
@@ -89,6 +110,8 @@ export async function uploadPhoto(file, { ctx, servers, fetch, signal, onProgres
     stopped()
     try {
       onProgress?.(0)
+      const no = await precheck(server, { sha256, size: bytes.length, mime, auth, signal, fetch: fetch ?? ((u, o) => globalThis.fetch(u, o)) })
+      if (no) { errors.push(`${hostOf(server)}: ${no}`); continue }
       const res = await put(`${server}/upload`, { method: "PUT", headers: { Authorization: auth, "Content-Type": mime }, body: bytes })
       if (!res.ok) { errors.push(`${hostOf(server)}: ${refusal(res, bytes.length)}`); continue }
       const d = await res.json()

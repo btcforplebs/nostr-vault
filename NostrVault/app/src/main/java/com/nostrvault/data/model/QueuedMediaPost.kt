@@ -54,6 +54,8 @@ data class QueuedMediaPost(
      * Set, the post no longer retries by itself ([MediaPostRetry]).
      */
     val refusedStatus: Int? = null,
+    /** The server's own words with that no (`X-Reason`), when it gave any. */
+    val refusedReason: String? = null,
 ) {
     @Serializable
     data class Media(

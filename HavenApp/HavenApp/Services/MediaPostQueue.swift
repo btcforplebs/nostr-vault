@@ -138,10 +138,12 @@ final class MediaPostQueue: ObservableObject {
                 sha256: sha256,
                 contentType: post.media[index].mimeType ?? "application/octet-stream"
             ) else {
+                let reasons = BlossomRefusals.shared.takeReasons(sha256: sha256)
                 let statuses = BlossomRefusals.shared.take(sha256: sha256)
                 let mirrors = ConfigService.shared.config.activeBlossomMirrors
                 if MediaPostRetry.allRefused(mirrors: mirrors, statuses: statuses) {
                     post.refusedStatus = mirrors.compactMap { statuses[$0] }.first
+                    post.refusedReason = mirrors.compactMap { reasons[$0] }.first
                     log("waiting post \(id.prefix(8)): every media server refused the file (\(statuses)) — stopped, waiting for you", level: "WARN")
                 } else if post.needsUser {
                     log("waiting post \(id.prefix(8)): stopped after \(post.attempts) tries — waiting for you", level: "WARN")
