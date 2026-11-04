@@ -30,6 +30,9 @@ enum NVWidgetBridge {
         lastPublished = Date()
 
         NVZapsTodayCounter.refresh()
+        NVOnThisDayLoader.refreshIfNeeded(owner: ConfigService.shared.activeAccountHexPubkey.lowercased()) {
+            publish(force: true)
+        }
         let snapshot = buildSnapshot()
         // Before the reload below, so Live now asks with today's follow list.
         NVLiveNowStore.save(liveHandoff())
@@ -73,7 +76,8 @@ enum NVWidgetBridge {
                 zapsDayStart: zaps?.dayStart
             ),
             media: mediaTiles(recent: recent, me: me),
-            unreadDMCount: DMService.shared.totalUnreadCount
+            unreadDMCount: DMService.shared.totalUnreadCount,
+            onThisDay: NVOnThisDayLoader.snapshot(owner: me.lowercased())
         )
     }
 
@@ -268,6 +272,10 @@ enum NVDeepLinkRouter {
             guard let stream = LiveStream(id: event.id, pubkey: event.pubkey,
                                           createdAt: event.createdAt, tags: event.tags) else { return false }
             NotificationCenter.default.post(name: .havenOpenLiveStream, object: stream)
+            return true
+        }
+        if let noteID = NVDeepLink.noteID(from: url) {
+            NotificationCenter.default.post(name: .havenOpenNote, object: noteID)
             return true
         }
         guard let link = NVDeepLink(url: url) else { return false }

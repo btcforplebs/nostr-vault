@@ -1,0 +1,1 @@
+../../../HavenApp/Shared/NVWidgetSnapshot.swift

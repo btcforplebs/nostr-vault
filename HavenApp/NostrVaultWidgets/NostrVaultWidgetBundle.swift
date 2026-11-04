@@ -9,5 +9,6 @@ struct NostrVaultWidgetBundle: WidgetBundle {
         MosaicWidget()
         LockScreenWidget()
         LiveNowWidget()
+        OnThisDayWidget()
     }
 }
