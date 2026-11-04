@@ -1,6 +1,7 @@
 // Vault › Media (iPhone MediaGalleryView): your files on your Blossom servers, filtered to Photos, Videos or GIFs and
 // sorted Newest first (by day), Oldest first (by day) or by Media type, as the iPhone's MediaSortOption. Every tile
-// says how many of your servers hold it. A tile opens the file with Copy link, the servers that hold it, Copy to the servers missing
+// says how many of your servers hold it. A tile opens the file with Copy link, the servers that hold it, the notes on your
+// vault that use it ("Posted in N notes", net/media-notes.js: the phone's swipe up), Copy to the servers missing
 // it, and Delete from mirrors (every media server, any other that listed it and the server in its link, after asking). "In your notes" keeps the pictures your notes carry.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
@@ -11,6 +12,10 @@ import { BlossomUpload } from "./BlossomUpload.jsx"
 import { listBlobs, deleteBlob, deleteTargets, mirrorBlob, outcome, byDay, TYPE_FILTERS } from "../net/blossom-gallery.js"
 import { SkeletonGrid, Waiting } from "../components/Loading.jsx"
 import { BlossomThumb } from "../components/BlossomThumb.jsx"
+import { Avatar } from "../components/Avatar.jsx"
+import { useProfile } from "../components/useProfile.js"
+import { ago } from "../components/time.js"
+import { vaultNotesUsing, notePreview } from "../net/media-notes.js"
 if (import.meta.env) import("../styles/blossom.css")
 
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
@@ -193,6 +198,7 @@ function Viewer({ ctx, blob, servers, order = [], onStep, onClose, onDeleted, on
         <div class="blossom-servers">
           {servers.map(s => <div key={s} class="small"><span class={blob.servers.includes(s) ? "ok" : "missing"}>{blob.servers.includes(s) ? "✓" : "–"}</span> {hostOf(s)}</div>)}
         </div>
+        <PostedIn vault={ctx.vault} blob={blob} onOpen={onClose} />
         <div class="row">
           <button class="small" disabled={!!busy} onClick={copy}>Copy link</button>
           <a class="button small" href={blob.url} target="_blank" rel="noopener noreferrer">Open</a>
@@ -210,5 +216,38 @@ function Viewer({ ctx, blob, servers, order = [], onStep, onClose, onDeleted, on
         <button class="small" onClick={onClose}>Close</button>
       </div>
     </dialog>
+  )
+}
+
+/** "Posted in N notes": every note on the vault that uses the file (net/media-notes.js), newest first. A row opens
+ *  the note. The phone's media viewer shows the same list on a swipe up. */
+export function PostedIn({ vault, blob, onOpen }) {
+  const [notes, setNotes] = useState(null)
+  useEffect(() => {
+    let live = true
+    setNotes(null)
+    vaultNotesUsing(vault, blob).then(n => { if (live) setNotes(n) }, () => { if (live) setNotes([]) })
+    return () => { live = false }
+  }, [blob.sha256, blob.url])
+  if (notes === null) return <p class="muted small blossom-notes-head">Looking for notes that use it…</p>
+  if (!notes.length) return <p class="muted small blossom-notes-head">No note on your vault uses this file.</p>
+  return (
+    <div class="blossom-notes">
+      <div class="small blossom-notes-head">Posted in {notes.length === 1 ? "1 note" : `${notes.length} notes`}</div>
+      {notes.map(n => <PostedRow key={n.id} note={n} onOpen={onOpen} />)}
+    </div>
+  )
+}
+
+function PostedRow({ note, onOpen }) {
+  const p = useProfile(note.pubkey)
+  return (
+    <a class="blossom-note" href={`#/thread/${note.id}`} onClick={() => onOpen?.()}>
+      <Avatar pubkey={note.pubkey} size={28} />
+      <span class="blossom-note-text">
+        <span class="small"><b>{p?.display_name || p?.name || note.pubkey.slice(0, 8)}</b> <span class="muted">· {ago(note.created_at)}</span></span>
+        <span class="muted small blossom-note-preview">{notePreview(note.content)}</span>
+      </span>
+    </a>
   )
 }
