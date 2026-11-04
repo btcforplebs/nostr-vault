@@ -23,8 +23,15 @@ const short = at => new Date(at * 1000).toLocaleDateString(undefined, { month: "
 const entries = n => `${n} entr${n === 1 ? "y" : "ies"}`
 const SHOW = 200
 
+/** The list the address names (`#/settings/recover-list?kind=3`, the wipe alarm's Recover), if it can be merged. */
+export function kindFromHash(hash = globalThis.location?.hash ?? "") {
+  const i = hash.indexOf("?")
+  const k = Number(new URLSearchParams(i < 0 ? "" : hash.slice(i + 1)).get("kind"))
+  return Number.isInteger(k) && mergeKind(k) ? k : null
+}
+
 export function RecoverListPage({ ctx }) {
-  const [kind, setKind] = useState(null)
+  const [kind, setKind] = useState(kindFromHash)
   const [overview, setOverview] = useState(null)
   useEffect(() => { listOverview(ctx).then(setOverview, () => setOverview([])) }, [ctx.session.pubkey])
   if (kind) return <ListVersions ctx={ctx} kind={kind} onBack={() => setKind(null)} />
