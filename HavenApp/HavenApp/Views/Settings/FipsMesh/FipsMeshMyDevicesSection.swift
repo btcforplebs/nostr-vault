@@ -33,7 +33,7 @@ struct FipsMeshMyDevicesSection: View {
         } header: {
             Text("My Devices")
         } footer: {
-            Text("Your home vaults, phones and browser vault, in one list. These are the devices this phone reaches over the mesh.")
+            Text(MyDevicesStatus.header)
         }
     }
 
@@ -64,18 +64,19 @@ struct FipsMeshDeviceRow: View {
                 Text(device.role.label)
                     .font(.appCaption)
                     .foregroundColor(.secondary)
-            }
-            Spacer()
-            if let inReach {
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(inReach ? Color.havenOnline : Color.gray)
-                        .frame(width: 7, height: 7)
-                    Text(inReach ? "In reach" : "Not in reach")
-                        .font(.appCaption)
-                        .foregroundColor(.secondary)
+                // Under the role: the sharing line is too long for the row's end.
+                if let inReach {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(inReach ? Color.havenOnline : Color.gray)
+                            .frame(width: 7, height: 7)
+                        Text(inReach ? MyDevicesStatus.sharingLine : "Not in reach")
+                            .font(.appCaption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
+            Spacer()
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)

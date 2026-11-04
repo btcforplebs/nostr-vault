@@ -175,9 +175,9 @@ private fun MyDevicesSection(devices: List<MyDevice>, running: Boolean, onOpen: 
     val now = System.currentTimeMillis() / 1000
     // The address is hidden only once a device is listed (MeshEnginePlan): say so while none is (Tron, #1025).
     val footer = if (devices.isEmpty()) {
-        "Your home vaults, phones and browser vault, in one list. Until you add one, anyone on the mesh can learn this phone's address."
+        MyDevicesRules.MESH_HEADER + " Until you add one, anyone on the mesh can learn this phone's address."
     } else {
-        "Your home vaults, phones and browser vault, in one list. Only the addresses here can reach this phone's vault or learn its address."
+        MyDevicesRules.MESH_HEADER + " Only the addresses here can reach this phone's vault or learn its address."
     }
     MeshSection("My Devices", footer = footer) {
         devices.forEach { d ->
@@ -187,8 +187,8 @@ private fun MyDevicesSection(devices: List<MyDevice>, running: Boolean, onOpen: 
                 Column(Modifier.weight(1f)) {
                     Text(d.title, color = PrimaryText, fontSize = 16.sp, maxLines = 1)
                     Text(d.role.label, color = SecondaryText, fontSize = 13.sp)
+                    StatusDot(MyDevicesRules.rowText(d.inReach, d.lastSeen, now), d.inReach && running)
                 }
-                StatusDot(if (d.inReach) "In reach" else MyDevicesRules.lastSeenText(d.lastSeen, false, now), d.inReach && running)
                 Icon(NostrVaultIcons.Navigate, contentDescription = null, tint = SecondaryText, modifier = Modifier.size(20.dp))
             }
             MeshDivider()

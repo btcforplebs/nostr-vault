@@ -133,6 +133,22 @@ object MyDevicesRules {
         return labels.map { byNpub.getValue(it.npub) } + reached.filter { r -> labels.none { it.npub == r } }.map { byNpub.getValue(it) }
     }
 
+    /**
+     * Above My Devices: being on the mesh means your posts and media can be
+     * fetched from that device, not just that it is linked (Logen,
+     * 2026-11-04). iOS MyDevicesStatus.header.
+     */
+    const val MESH_HEADER = "Devices on your mesh share your posts and media with people who can reach them."
+    /** A device that is on the mesh (iOS MyDevicesStatus.sharingLine). */
+    const val SHARING_LINE = "On the mesh · sharing your posts and media"
+
+    /** A My Devices row: on the mesh, or offline and when it last shared ("Offline · last shared 3 d ago"). */
+    fun rowText(inReach: Boolean, lastSeen: Long, now: Long): String = when {
+        inReach -> SHARING_LINE
+        lastSeen <= 0 -> "Offline"
+        else -> "Offline · last shared " + lastSeenText(lastSeen, false, now).replaceFirstChar { it.lowercase() }
+    }
+
     /** "Now", "5 min ago", "2 h ago", "3 d ago", "Never". */
     fun lastSeenText(lastSeen: Long, inReach: Boolean, now: Long): String {
         if (inReach) return "Now"

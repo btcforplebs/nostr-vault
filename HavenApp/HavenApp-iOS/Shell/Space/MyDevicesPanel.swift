@@ -22,6 +22,10 @@ struct MyDevicesPanel: View {
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
+                Text(MyDevicesStatus.header)
+                    .font(.appSystem(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 ForEach(devices) { device in row(device) }
                 if model.checking && !model.checked {
                     Text("Checking the mesh…").font(.appSystem(size: 12)).foregroundColor(.secondary)
@@ -66,7 +70,7 @@ struct MyDevicesPanel: View {
                 Text(MyDevicesStatus.line(s))
                     .font(.appSystem(size: 12))
                     .foregroundColor(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
             Spacer(minLength: 0)
         }
