@@ -15,7 +15,8 @@ struct FullScreenVideoPlayer: View {
     var onPiPStart: (() -> Void)? = nil
     /// Someone else's player to show — the mini player's, for a live stream
     /// popped out of it. Its sound and audio session stay theirs: nothing is
-    /// started, muted or handed back here, and PiP stays off.
+    /// started, muted or handed back here. PiP works on it too, and closing
+    /// PiP leaves it playing (PiPRules).
     var sharedPlayer: AVPlayer? = nil
     /// Play on a shared player, which its owner rejoins the broadcast for.
     var onSharedResume: (() -> Void)? = nil
@@ -30,9 +31,7 @@ struct FullScreenVideoPlayer: View {
     @State private var tappedNote = MeshMediaTap.note
     @State private var meshPhase: MeshMediaPhase = .loading
     @State private var meshFile: URL? = nil
-    #if os(iOS)
     @ObservedObject private var pipManager = PiPManager.shared
-    #endif
 
     var body: some View {
         ZStack {
@@ -51,9 +50,7 @@ struct FullScreenVideoPlayer: View {
                 }
             } else if let player = player {
                 InlinePlayerLayer(player: player, videoGravity: .resizeAspect, onLayerReady: { layer in
-                    #if os(iOS)
-                    if sharedPlayer == nil { PiPManager.shared.attach(layer: layer, url: url) }
-                    #endif
+                    PiPManager.shared.attach(layer: layer, url: url, shared: sharedPlayer != nil)
                 }, keepsPlayingInBackground: sharedPlayer != nil)
                 .allowsHitTesting(false)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -90,21 +87,17 @@ struct FullScreenVideoPlayer: View {
             if showControls { scheduleAutoHide() }
         }
         .onAppear {
+            // Opening a new video full-screen takes over from any running PiP
+            if PiPManager.shared.isPiPActive && PiPManager.shared.activeURL != url {
+                PiPManager.shared.stop()
+            }
+            PiPManager.shared.onPiPWillStart = { onPiPStart?() }
             if let sharedPlayer {
                 player = sharedPlayer
                 scheduleAutoHide()
                 return
             }
-            #if os(iOS)
-            // Opening a new video full-screen takes over from any running PiP
-            if PiPManager.shared.isPiPActive && PiPManager.shared.activeURL != url {
-                PiPManager.shared.stop()
-            }
-            #endif
             VideoPlayerCache.shared.activeFullScreenURL = url
-            #if os(iOS)
-            PiPManager.shared.onPiPWillStart = { onPiPStart?() }
-            #endif
             setupPlayer()
             scheduleAutoHide()
         }
@@ -125,9 +118,12 @@ struct FullScreenVideoPlayer: View {
                 // Muted here, the mini player would carry on silent.
                 player?.isMuted = false
                 player = nil
+                if !PiPManager.shared.isShowing(url) {
+                    PiPManager.shared.detach(url: url)
+                    PiPManager.shared.onPiPWillStart = nil
+                }
                 return
             }
-            #if os(iOS)
             if PiPManager.shared.isPiPActive && PiPManager.shared.activeURL == url {
                 // PiP owns playback now — leave the player, audio session, and
                 // activeFullScreenURL to PiPManager's teardown when PiP ends.
@@ -136,7 +132,6 @@ struct FullScreenVideoPlayer: View {
             }
             PiPManager.shared.detach(url: url)
             PiPManager.shared.onPiPWillStart = nil
-            #endif
             VideoPlayerCache.shared.activeFullScreenURL = nil
             // Restore standard inline muted play
             player?.isMuted = true
@@ -153,14 +148,11 @@ struct FullScreenVideoPlayer: View {
         VideoPlaybackService.shared.rejoinLive(player, sourceURL: url)
     }
 
-    /// Non-nil only when PiP can actually start right now.
+    /// Non-nil when this device can do PiP; a tap before the player is ready
+    /// starts PiP as soon as it is (PiPManager.start).
     private var pipAction: (() -> Void)? {
-        #if os(iOS)
-        guard sharedPlayer == nil, pipManager.isPiPPossible else { return nil }
+        guard PiPRules.showsButton(supported: PiPManager.isSupported) else { return nil }
         return { PiPManager.shared.start() }
-        #else
-        return nil
-        #endif
     }
 
     private func scheduleAutoHide() {
