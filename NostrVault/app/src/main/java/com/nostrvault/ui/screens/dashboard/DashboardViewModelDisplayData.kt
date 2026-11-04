@@ -73,6 +73,8 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
     private suspend fun DashboardViewModel.rebuildDisplayData(gen: Int) = withContext(Dispatchers.Default) {
         val currentMode = _viewMode.value
         val events = allEventsMutex.withLock { allEvents.toList() }
+        // The media viewer's swipe up reads the vault's notes from here (VaultEventsBridge).
+        com.nostrvault.data.model.VaultEventsBridge.events = events
         val owner = nostrService.activeHexPubkey
         val whitelist = resolveWhitelistedHexPubkeys()
         val trusted = feedService.relayTabTrustedPubkeys()

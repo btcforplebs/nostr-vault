@@ -84,7 +84,10 @@ internal fun MediaFeedGrid(
                 mediaCount = note.mediaURLs.size,
                 sourceKey = MediaSourceKey(zoomOrigin, index),
                 author = note.pubkey,
-                onTap = { FullScreenMediaRouter.open(gridUrls, index, zoomOrigin, authors = notes.map { it.pubkey }) },
+                onTap = {
+                    FullScreenMediaRouter.open(gridUrls, index, zoomOrigin, authors = notes.map { it.pubkey },
+                        noteIds = notes.map { it.id }, onOpenNote = onNoteClick)
+                },
                 onLongPress = { onNoteClick(note.id) },
             )
         }

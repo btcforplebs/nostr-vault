@@ -70,6 +70,9 @@ internal fun FullScreenMediaPager(
     origin: Long? = null,
     copyLink: Boolean = false,
     authors: List<String?> = emptyList(),
+    /** Each page's note: swipe up (or the grabber) opens it. Empty: up closes too. */
+    noteIds: List<String?> = emptyList(),
+    onOpenNote: ((String) -> Unit)? = null,
     viewModel: FeedMediaMirrorViewModel = hiltViewModel(),
 ) {
     val mirrorState by viewModel.state.collectAsState()
@@ -178,6 +181,13 @@ internal fun FullScreenMediaPager(
 
     BackHandler(onBack = close)
 
+    val currentNoteId = noteIds.getOrNull(pagerState.currentPage)
+    val openCurrentNote: () -> Unit = {
+        val id = currentNoteId
+        close()
+        if (id != null) onOpenNote?.invoke(id)
+    }
+
     // Drag-to-dismiss, fed by the page's ZoomableBox (photo, video or audio).
     val onVerticalDrag: (Float) -> Unit = { deltaY ->
         if (currentScale <= 1.05f && !closing) {
@@ -188,6 +198,9 @@ internal fun FullScreenMediaPager(
     val onVerticalDragEnd: () -> Unit = {
         if (closing) {
             // The close animation owns the offset now.
+        } else if (accumulatedDragY < -dismissThresholdPx && currentNoteId != null && onOpenNote != null) {
+            // Up: the note that posted it opens as the viewer goes.
+            openCurrentNote()
         } else if (abs(accumulatedDragY) > dismissThresholdPx) {
             close()
         } else {
@@ -407,6 +420,19 @@ internal fun FullScreenMediaPager(
                     onConfirm = { confirm(deletePosts = false) },
                     onConfirmWithPosts = { confirm(deletePosts = true) },
                     onDismiss = { pendingDelete = null },
+                )
+            }
+
+            // The swipe up's grabber: the note that posted it (the Feed grid's pages).
+            if (currentNoteId != null && onOpenNote != null && !isInPiP && !showDeleteBar) {
+                com.nostrvault.ui.screens.MediaNoteGrabber(
+                    "Note",
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = if (urls.size > 1) 44.dp else 20.dp)
+                        .graphicsLayer { alpha = overlayAlpha * shown },
+                    onClick = openCurrentNote,
                 )
             }
 

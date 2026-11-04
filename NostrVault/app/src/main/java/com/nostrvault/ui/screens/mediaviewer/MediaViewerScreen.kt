@@ -69,6 +69,9 @@ fun MediaViewerScreen(
     // Hide all viewer chrome while the activity is shown in a PiP window
     val isInPiP by VideoPiPBridge.isInPiP.collectAsState()
     var showMirrorSheet by remember { mutableStateOf(false) }
+    // The swipe up: every note on the vault that uses the file on screen.
+    var showNotesSheet by remember { mutableStateOf(false) }
+    val profiles by viewModel.profiles.collectAsState()
     var pendingDelete by remember { mutableStateOf<DeleteScope?>(null) }
 
     if (items.isEmpty()) {
@@ -123,8 +126,12 @@ fun MediaViewerScreen(
         }
     }
     val onVerticalDragEnd: () -> Unit = {
-        if (abs(accumulatedDragY) > dismissThresholdPx) {
+        // Down closes; up lists the notes that use the file.
+        if (accumulatedDragY > dismissThresholdPx) {
             onBack()
+        } else if (accumulatedDragY < -dismissThresholdPx) {
+            scope.launch { dragOffsetY.animateTo(0f, Motion.snapBack()) }
+            showNotesSheet = true
         } else {
             scope.launch { dragOffsetY.animateTo(0f, Motion.snapBack()) }
         }
@@ -254,11 +261,6 @@ fun MediaViewerScreen(
                 .padding(8.dp)
                 .graphicsLayer { alpha = overlayAlpha },
         ) {
-            if (menuItem?.noteId != null) {
-                IconButton(onClick = { onNoteClick(menuItem.noteId) }) {
-                    Icon(NostrVaultIcons.Document, contentDescription = "View Note", tint = Color.White)
-                }
-            }
             IconButton(onClick = { menuItem?.let { viewModel.saveToGallery(it) } }) {
                 Icon(NostrVaultIcons.Import, contentDescription = "Save to gallery", tint = Color.White)
             }
@@ -305,6 +307,7 @@ fun MediaViewerScreen(
                 .padding(bottom = 4.dp)
                 .graphicsLayer { alpha = overlayAlpha },
         ) {
+            MediaNoteGrabber("Notes", modifier = Modifier.padding(bottom = 6.dp)) { showNotesSheet = true }
             if (currentItem != null && source != null) {
                 MediaSourceRow(
                     source = source,
@@ -381,6 +384,17 @@ fun MediaViewerScreen(
             } else {
                 Spacer(Modifier.height(8.dp))
             }
+        }
+
+        if (showNotesSheet) {
+            val item = items.getOrNull(pagerState.currentPage)
+            val notes = remember(item) { item?.let { viewModel.notesUsing(it) } ?: emptyList() }
+            MediaNotesSheet(
+                notes = notes,
+                profiles = profiles,
+                onOpen = { id -> showNotesSheet = false; onNoteClick(id) },
+                onDismiss = { showNotesSheet = false },
+            )
         }
 
         if (showMirrorSheet && currentItem != null) {
