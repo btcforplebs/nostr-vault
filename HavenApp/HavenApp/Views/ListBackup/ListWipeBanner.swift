@@ -45,7 +45,9 @@ struct ListWipeBanner: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(ListWipeAlarmWording.headline(alarm, key: key, day: day))
                         .font(.appSystem(size: 15, weight: .semibold))
-                    Text("Your vault kept the list from before. Recover it, or merge it with the new one. If you made this change yourself, keep the new list.")
+                    Text(alarm.claimsNostrVault
+                         ? "Your vault kept the list from before. Recover it, or merge it with the new one."
+                         : "Your vault kept the list from before. Recover it, or merge it with the new one. If you made this change yourself, keep the new list.")
                         .font(.appSubheadline)
                         .foregroundColor(.secondary)
                 }
