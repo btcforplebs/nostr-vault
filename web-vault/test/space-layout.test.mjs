@@ -11,7 +11,7 @@ import { accountKeys } from "../src/haven/vault.js"
 
 const IDS = ["live-vault", "wot-mini", "messages"]
 // The panels the app ships (panels.js, panel-ids.js); the layout rules below run on IDS.
-const SHIPPED = [...IDS, "my-devices", "live-now"]
+const SHIPPED = [...IDS, "my-devices", "live-now", "on-this-day"]
 const ids = l => l.panels.map(p => p.id)
 const store = () => { const m = new Map(); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k), key: i => [...m.keys()][i] ?? null, get length() { return m.size } } }
 

@@ -157,6 +157,7 @@ struct SpaceColumn: View {
                     .scrollBounceBehavior(.basedOnSize)
                     .frame(maxHeight: 320)
             case "my-devices": MyDevicesPanel()
+            case "on-this-day": OnThisDayPanel()
             default: EmptyView()
             }
         }
@@ -196,6 +197,7 @@ struct SpaceColumn: View {
         case "messages": return ("Messages", "bubble.left.and.bubble.right")
         case "my-devices": return ("My devices", "laptopcomputer.and.iphone")
         case LiveNow.panelId: return ("Live now", "dot.radiowaves.left.and.right")
+        case "on-this-day": return ("On this day", "clock.arrow.circlepath")
         default: return (id, "square")
         }
     }
