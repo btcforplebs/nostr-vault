@@ -383,6 +383,20 @@ object HavenBridge {
     external fun getImportLog(): String?
 
     /**
+     * Moving in's Skip: stops the list history scan; what it found so far is
+     * kept and the import carries on. True when a scan was running.
+     * Maps to Go: SkipListHistoryScanC()
+     */
+    external fun skipListHistoryScan(): Boolean
+
+    /**
+     * "" (no scan this import), "scanning", or the scan's closing line
+     * ([com.nostrvault.service.ListHistoryScan.status]).
+     * Maps to Go: ListHistoryScanStatusC()
+     */
+    external fun listHistoryScanStatus(): String?
+
+    /**
      * Poll the next "🔔NOTIFY|..." marker line from the dedicated, non-lossy
      * notification queue. Returns one line per call (consumed on read), or null
      * when the queue is empty. Drained by [LogStore] to raise local notifications.

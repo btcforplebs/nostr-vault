@@ -41,8 +41,6 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.nostrvault.service.ListBackupService
 import com.nostrvault.service.ListHistory
-import com.nostrvault.service.ListWipeAlarmRule
-import com.nostrvault.service.OwnListEdits
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryGroupedBg
@@ -113,7 +111,7 @@ fun ListBackupScreen(onBack: () -> Unit, viewModel: ListBackupViewModel = hiltVi
                     ListRow(onClick = { open = key }) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(ListBackupFormat.title(key), color = PrimaryText, fontSize = 16.sp)
-                            if (ListWipeAlarmRule.alarm(versions, OwnListEdits.ids(), emptySet()) != null) {
+                            if (viewModel.wiped(versions)) {
                                 Spacer(Modifier.width(6.dp))
                                 Icon(Icons.Filled.Warning, contentDescription = "Wiped", tint = Color(0xFFFF9500), modifier = Modifier.size(16.dp))
                             }

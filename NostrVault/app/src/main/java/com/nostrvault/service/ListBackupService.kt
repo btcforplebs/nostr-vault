@@ -44,6 +44,10 @@ class ListBackupService @Inject constructor(
     val dismissed: StateFlow<Set<String>> = _dismissed.asStateFlow()
 
     @Volatile private var events: Map<String, NostrEvent> = emptyMap()
+
+    /** The ids of the versions an import filed ([ListHistoryScan]): shown, never judged by the wipe alarm. */
+    private val _importedIds = MutableStateFlow<Set<String>>(emptySet())
+    val importedIds: StateFlow<Set<String>> = _importedIds.asStateFlow()
     @Volatile private var author = ""
 
     private suspend fun signAuth(url: String, challenge: String): NostrEvent? = runCatching {
@@ -65,15 +69,22 @@ class ListBackupService @Inject constructor(
         if (author != hex) {
             _groups.value = emptyMap()
             events = emptyMap()
+            _importedIds.value = emptySet()
         }
         author = hex
         _state.value = State.LOADING
-        val found = fetch(hex)
+        val own = fetch(hex)
+        // No answer for the imported ones (an older vault): only the own.
+        val imported = if (own != null) fetch(hex, imported = true).orEmpty() else emptyList()
         if (configStore.activeAccountHexPubkey.value != hex) return
-        if (found == null) {
+        if (own == null) {
             _state.value = State.UNAVAILABLE
             return
         }
+        val ownIds = own.mapTo(HashSet()) { it.id }
+        val importedOnly = imported.filter { it.id !in ownIds }
+        val found = own + importedOnly
+        _importedIds.value = importedOnly.mapTo(HashSet()) { it.id }
         events = found.associateBy { it.id }
         _groups.value = ListHistory.group(found.map(ListVersion::of), hex)
         _state.value = State.LOADED
@@ -93,17 +104,21 @@ class ListBackupService @Inject constructor(
         return ListHistory.group(found.map(ListVersion::of), hex)
     }
 
-    /** Every version the vault keeps for [hex], or null when it can't be read. */
-    private suspend fun fetch(hex: String): List<NostrEvent>? {
+    /**
+     * Every version the vault filed itself for [hex] or, with [imported], every one a moving-in import
+     * filed (haven-go wantsImported); null when it can't be read.
+     */
+    private suspend fun fetch(hex: String, imported: Boolean = false): List<NostrEvent>? {
         val url = configStore.config.value.localRelayURL("lists") ?: return null
-        val filter = "{\"authors\":[\"$hex\"],\"kinds\":${ListShrinkRule.protectedKinds},\"limit\":1000}"
+        val tag = if (imported) ",\"#v\":[\"${ListHistoryScan.IMPORTED_FILTER_VALUE}\"]" else ""
+        val filter = "{\"authors\":[\"$hex\"],\"kinds\":${ListShrinkRule.protectedKinds},\"limit\":1000$tag}"
         var found = runCatching { VaultSocket.query(url, filter, { signAuth(url, it) }) }.getOrNull()
         // At the limit the relay cut the oldest, which may be a pinned list from before a wipe:
         // ask again one kind at a time (Tron, PR 1568).
         if (found != null && found.size >= 1000) {
             val all = mutableListOf<NostrEvent>()
             for (kind in ListShrinkRule.protectedKinds) {
-                val one = "{\"authors\":[\"$hex\"],\"kinds\":[$kind],\"limit\":1000}"
+                val one = "{\"authors\":[\"$hex\"],\"kinds\":[$kind],\"limit\":1000$tag}"
                 val some = runCatching { VaultSocket.query(url, one, { signAuth(url, it) }) }.getOrNull() ?: return null
                 all += some
             }
@@ -114,10 +129,21 @@ class ListBackupService @Inject constructor(
 
     /**
      * The wipe alarms for the lists in [groups] the person hasn't dismissed, newest first
-     * ([ListWipeAlarmRule]; versions this app signed never alarm).
+     * ([ListWipeAlarmRule]; versions this app signed never alarm). Only the versions the vault
+     * filed itself are judged, never the [imported] ones (Tron, PR 1639).
      */
-    fun wipes(groups: Map<ListHistory.Key, List<ListVersion>>, dismissed: Set<String>): List<Pair<ListHistory.Key, ListWipeAlarmRule.Alarm>> =
-        ListWipeAlarmRule.alarms(groups, OwnListEdits.ids(), dismissed)
+    fun wipes(
+        groups: Map<ListHistory.Key, List<ListVersion>>,
+        dismissed: Set<String>,
+        imported: Set<String> = _importedIds.value,
+    ): List<Pair<ListHistory.Key, ListWipeAlarmRule.Alarm>> =
+        ListWipeAlarmRule.alarms(ListHistoryScan.alarmInput(groups, imported), OwnListEdits.ids(), dismissed)
+
+    /** Whether [versions] of one list raise a wipe alarm, judging only the vault's own (the list row's mark). */
+    fun wiped(versions: List<ListVersion>): Boolean {
+        val imported = _importedIds.value
+        return ListWipeAlarmRule.alarm(versions.filterNot { it.id in imported }, OwnListEdits.ids(), emptySet()) != null
+    }
 
     /** "Keep the new list": this alarm is not shown again. */
     fun dismiss(alarm: ListWipeAlarmRule.Alarm) {
@@ -125,8 +151,14 @@ class ListBackupService @Inject constructor(
         prefs.edit().putStringSet(DISMISSED, _dismissed.value).apply()
     }
 
-    private fun vaultEvents(v: ListVersion): List<NostrEvent> =
-        _groups.value[ListHistory.Key(v.kind, v.d)].orEmpty().mapNotNull { events[it.id] }
+    /**
+     * The versions of [v]'s list the vault filed itself, newest first: what a restore or merge counts as
+     * held (an imported copy is not the vault's undo copy; web keepUndoCopy reads the same way).
+     */
+    private fun vaultEvents(v: ListVersion): List<NostrEvent> {
+        val imported = _importedIds.value
+        return _groups.value[ListHistory.Key(v.kind, v.d)].orEmpty().filterNot { it.id in imported }.mapNotNull { events[it.id] }
+    }
 
     /**
      * The newest copy of [old]'s list from the account's own relays and the
@@ -210,7 +242,8 @@ class ListBackupService @Inject constructor(
             checked = found.isSuccess,
             why = found.exceptionOrNull()?.message.orEmpty(),
             versions = versions,
-            vault = ListVersionMerge.unbroken(kept),
+            // Only the vault's own run has no holes; an imported one may (web unbroken()).
+            vault = ListVersionMerge.unbroken(kept.filterNot { it.id in _importedIds.value }),
         )
     }
 

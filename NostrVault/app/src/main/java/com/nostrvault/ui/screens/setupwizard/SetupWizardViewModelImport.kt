@@ -64,6 +64,8 @@ import java.net.URL
                     for ((key, value) in envDict) {
                         HavenBridge.setEnv(key, value)
                     }
+                    // This older import step has no checkbox: never scan list history from here.
+                    HavenBridge.setEnv(com.nostrvault.service.ListHistoryScan.OPT_IN_ENV, "0")
 
                     // Write seed relays JSON and set env to ABSOLUTE path
                     val seedRelaysFile = File(relayDataDir, "relays_import.json")

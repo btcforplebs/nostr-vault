@@ -107,6 +107,8 @@ extern char* GetNotifyLogC(void);
 extern char* GetLogLinesC(void);
 extern int ActiveConnectionsC(void);
 extern int RelayDrainingC(void);
+extern int SkipListHistoryScanC(void);
+extern char* ListHistoryScanStatusC(void);
 
 // Helper: Convert Go C.CString result to jstring (and free the C memory)
 static jstring goStringToJstring(JNIEnv *env, char *goStr) {
@@ -565,6 +567,17 @@ Java_com_nostrvault_relay_HavenBridge_getFollowersNative(JNIEnv *env, jobject th
 JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_getImportLog(JNIEnv *env, jobject thiz) {
     return goStringToJstring(env, GetImportLogC());
+}
+
+// Moving in's list history scan (haven-go list_history_scan.go).
+JNIEXPORT jboolean JNICALL
+Java_com_nostrvault_relay_HavenBridge_skipListHistoryScan(JNIEnv *env, jobject thiz) {
+    return SkipListHistoryScanC() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_listHistoryScanStatus(JNIEnv *env, jobject thiz) {
+    return goStringToJstring(env, ListHistoryScanStatusC());
 }
 
 JNIEXPORT jstring JNICALL

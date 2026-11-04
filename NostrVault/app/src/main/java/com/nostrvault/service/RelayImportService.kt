@@ -65,6 +65,14 @@ class RelayImportService @Inject constructor(
     private val _importCompleted = MutableStateFlow(false)
     val importCompleted: StateFlow<Boolean> = _importCompleted.asStateFlow()
 
+    /** Moving in is looking for older list versions ([ListHistoryScan]); Skip shows meanwhile. */
+    private val _listHistoryScanning = MutableStateFlow(false)
+    val listHistoryScanning: StateFlow<Boolean> = _listHistoryScanning.asStateFlow()
+
+    /** That scan's plain count, shown when it ends; null when it didn't run. */
+    private val _listHistoryNote = MutableStateFlow<String?>(null)
+    val listHistoryNote: StateFlow<String?> = _listHistoryNote.asStateFlow()
+
     // ── Export state ─────────────────────────────────────────────
 
     private val _isExporting = MutableStateFlow(false)
@@ -85,8 +93,10 @@ class RelayImportService @Inject constructor(
     /**
      * Import notes from seed relays. Stops the running relay, starts it
      * in import mode, polls for progress, then restarts normally.
+     * [listHistory]: the user ticked "Also look for older versions of my
+     * lists on history relays" ([ListHistoryScan]; off unless ticked).
      */
-    fun importNotes() {
+    fun importNotes(listHistory: Boolean = false) {
         if (_isImporting.value || _isExporting.value) return
         if (configStore.config.value.useExternalRelay) {
             _importStatusMessage.value = EXTERNAL_RELAY_IMPORT_MESSAGE
@@ -98,6 +108,9 @@ class RelayImportService @Inject constructor(
             _importProgress.value = 0f
             _importStatusMessage.value = "Preparing import..."
             _importCompleted.value = false
+            _listHistoryScanning.value = false
+            _listHistoryNote.value = null
+            scanSkipped = false
             // Keeps the process alive if the app goes to the background.
             ImportForegroundService.start(context)
 
@@ -115,6 +128,10 @@ class RelayImportService @Inject constructor(
                 inputs.env.forEach { (key, value) ->
                     HavenBridge.setEnv(key, value)
                 }
+                // Always set: Go keeps the process environment between imports.
+                HavenBridge.setEnv(ListHistoryScan.OPT_IN_ENV, if (listHistory) "1" else "0")
+                // Only the account moving in: never the device's other accounts.
+                HavenBridge.setEnv(ListHistoryScan.ACCOUNT_ENV, if (listHistory) configStore.activeAccountHexPubkey.value else "")
                 // The env above names the relay lists by bare filename, which
                 // Go can't open from the app's working directory, and on a
                 // first-run import (setup) the files don't exist yet.
@@ -135,6 +152,7 @@ class RelayImportService @Inject constructor(
 
                     pollJob.cancel()
                 }
+                pollListHistoryScan()
 
                 _importProgress.value = 1f
                 _importStatusMessage.value = "Import completed"
@@ -150,6 +168,7 @@ class RelayImportService @Inject constructor(
                 _importStatusMessage.value = "Import failed: ${e.message}"
             } finally {
                 _isImporting.value = false
+                _listHistoryScanning.value = false
                 ImportForegroundService.stop(context)
                 // 4. Restart relay in normal mode
                 _importStatusMessage.value = "Restarting relay..."
@@ -304,6 +323,35 @@ class RelayImportService @Inject constructor(
 
     // ── Internal ─────────────────────────────────────────────────
 
+    /** Moving in's Skip: stop the list history scan, keep what it found; the import carries on. */
+    @Volatile private var scanSkipped = false
+
+    fun skipListHistoryScan() {
+        scanSkipped = true
+        _listHistoryScanning.value = false
+        scope.launch(Dispatchers.IO) { runCatching { HavenBridge.skipListHistoryScan() } }
+    }
+
+    /** The import log keeps only the latest line, so the scan's state is asked for directly. */
+    private suspend fun pollListHistoryScan() {
+        val raw = withContext(Dispatchers.IO) {
+            if (HavenBridge.isLoaded) runCatching { HavenBridge.listHistoryScanStatus() }.getOrNull() else null
+        }
+        when (val s = ListHistoryScan.status(raw)) {
+            ListHistoryScan.Status.None -> Unit
+            ListHistoryScan.Status.Running -> {
+                if (!scanSkipped) _listHistoryScanning.value = true
+                _importStatusMessage.value = ListHistoryScan.LOOKING
+            }
+            is ListHistoryScan.Status.Done -> {
+                _listHistoryScanning.value = false
+                _listHistoryNote.value = ListHistoryScan.note(s.line)
+                // The notes come next: say so, rather than leaving the scan's line up.
+                if (_importStatusMessage.value == ListHistoryScan.LOOKING) _importStatusMessage.value = ListHistoryScan.NOTES_NEXT
+            }
+        }
+    }
+
     private suspend fun pollImportProgress() {
         while (true) {
             try {
@@ -327,6 +375,7 @@ class RelayImportService @Inject constructor(
                         _importStatusMessage.value = statusMsg
                     }
                 }
+                pollListHistoryScan()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

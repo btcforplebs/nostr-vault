@@ -28,6 +28,9 @@ data class ImportTourStage(
             statusMessage.startsWith("Found notes") ->
                 month(statusMessage)?.let { ImportTourStage("Saving your notes from $it…", 2) }
                     ?: ImportTourStage("Saving your notes…", 2)
+            // The list history scan, ticked in the relay check (ListHistoryScan).
+            statusMessage.startsWith("Looking for older versions") ->
+                ImportTourStage("Looking for older versions of your lists…", 2)
             statusMessage.startsWith("Importing tagged notes") ->
                 ImportTourStage("Saving replies and mentions of you…", 3)
             statusMessage.contains("Web of Trust") -> ImportTourStage("Finding the people you follow…", 1)

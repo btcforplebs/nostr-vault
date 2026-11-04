@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.setup.ImportTourStage
+import com.nostrvault.ui.components.ListHistoryScanStatus
 import com.nostrvault.tutorials.TutorialContent
 import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.PrimaryText
@@ -116,6 +117,7 @@ internal fun ImportTourStep(viewModel: SetupWizardViewModel, onComplete: () -> U
                 trackColor = WizardBgElevated,
                 modifier = Modifier.fillMaxWidth(),
             )
+            ListHistoryScanStatus(viewModel.relayImportService, textColor = SecondaryText, accent = WizardAccent, showsLooking = false)
         }
         Spacer(Modifier.height(16.dp))
 

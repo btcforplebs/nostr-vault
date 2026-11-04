@@ -27,7 +27,7 @@ class ListBackupViewModel @Inject constructor(
 
     /** Wipe alarms not yet dismissed, newest first ([com.nostrvault.service.ListWipeAlarmRule]). */
     val wipes: StateFlow<List<Pair<ListHistory.Key, ListWipeAlarmRule.Alarm>>> =
-        combine(service.groups, service.dismissed) { g, d -> service.wipes(g, d) }
+        combine(service.groups, service.dismissed, service.importedIds) { g, d, i -> service.wipes(g, d, i) }
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** Changes with the active account, so pages reload for it. */
@@ -36,6 +36,9 @@ class ListBackupViewModel @Inject constructor(
     fun load() { viewModelScope.launch { service.load() } }
 
     fun dismiss(alarm: ListWipeAlarmRule.Alarm) = service.dismiss(alarm)
+
+    /** The list row's wipe mark: the vault's own versions only. */
+    fun wiped(versions: List<ListVersion>) = service.wiped(versions)
 
     suspend fun preview(old: ListVersion) = service.preview(old)
 
