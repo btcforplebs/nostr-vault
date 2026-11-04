@@ -12,7 +12,7 @@ final class SpaceLayoutStore: ObservableObject {
     /// The sections the iPad rail has, in the format's default order.
     static let railSections = ["feed", "search", "profile", "wot", "vault"]
     /// Your space's panels on the iPad, in the default order. Same ids as the web's panels.js.
-    static let panelIds = ["live-vault", "wot-mini", "messages", "my-devices", LiveNow.panelId]
+    static let panelIds = ["live-vault", "wot-mini", "messages", "my-devices", LiveNow.panelId, "on-this-day"]
 
     @Published private(set) var layout: SpaceLayout = .defaultLayout(panelIds: SpaceLayoutStore.panelIds)
 

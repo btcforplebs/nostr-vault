@@ -7,6 +7,7 @@ import { WotMini } from "./WotMini.jsx"
 import { MessagesPeek } from "./MessagesPeek.jsx"
 import { MyDevices } from "./MyDevices.jsx"
 import { LiveNow } from "./LiveNow.jsx"
+import { OnThisDay } from "./OnThisDay.jsx"
 
 export const PANELS = [
   { id: "live-vault", name: "Live Vault", Panel: LiveVault },
@@ -14,5 +15,6 @@ export const PANELS = [
   { id: "messages", name: "Messages", Panel: MessagesPeek },
   { id: "my-devices", name: "My devices", Panel: MyDevices },
   { id: "live-now", name: "Live now", Panel: LiveNow },
+  { id: "on-this-day", name: "On this day", Panel: OnThisDay },
 ]
 export { PANEL_IDS } from "./panel-ids.js"

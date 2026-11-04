@@ -1,0 +1,7 @@
+/* On this day (desktop/space/OnThisDay.jsx): a year label, then that day's notes, two lines each. */
+.otd-year { padding: 8px 14px 2px; color: var(--accent-light); font: 600 12px var(--font); }
+.otd-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 6px 14px;
+  color: var(--text); text-decoration: none; font: var(--t-foot); }
+.otd-row:hover { background: var(--s2); }
+.otd-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.otd-row time { font: var(--t-cap); color: var(--text-3); padding-top: 2px; }
