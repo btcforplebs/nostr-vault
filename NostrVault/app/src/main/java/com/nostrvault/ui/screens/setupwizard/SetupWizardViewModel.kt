@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -222,6 +223,10 @@ class SetupWizardViewModel @Inject constructor(
 
     internal val _useNostrConfirm = MutableStateFlow("")
     val useNostrConfirm = _useNostrConfirm.asStateFlow()
+
+    /** "Also look for older versions of my lists on history relays", on the relay check; off unless ticked. */
+    internal val _importListHistory = MutableStateFlow(false)
+    val importListHistory: StateFlow<Boolean> = _importListHistory.asStateFlow()
 
     internal val _relayRows = MutableStateFlow<List<RelayCheck.Row>>(emptyList())
     val relayRows = _relayRows.asStateFlow()

@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -54,6 +55,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.nostrvault.data.model.WotRefreshProgress
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.ui.components.ListHistoryOptInRow
+import com.nostrvault.ui.components.ListHistoryScanStatus
 import com.nostrvault.relay.LogStore
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.tutorials.TutorialContent
@@ -105,6 +108,8 @@ internal fun VaultDashboardContent(
     val hasLocalKey by viewModel.hasLocalKey.collectAsState()
     val startedAt by viewModel.relayStartedAt.collectAsState()
     val isImporting by vaultViewModel.isImporting.collectAsState()
+    /** Moving in also looks for older list versions on history relays only when ticked (ListHistoryScan). */
+    var lookForOldLists by rememberSaveable { mutableStateOf(false) }
     val importProgress by vaultViewModel.importProgress.collectAsState()
     val importStatus by vaultViewModel.importStatusMessage.collectAsState()
     val importCompleted by vaultViewModel.importCompleted.collectAsState()
@@ -304,8 +309,15 @@ internal fun VaultDashboardContent(
                     title = "Import",
                     isLoading = isImporting,
                     enabled = !isImporting && actionsEnabled,
-                    onClick = { vaultViewModel.importNotes() },
+                    onClick = { vaultViewModel.importNotes(listHistory = lookForOldLists) },
                 )
+            }
+            val scanNote by vaultViewModel.relayImportService.listHistoryNote.collectAsState()
+            val scanRowModifier = Modifier.padding(start = 56.dp, end = 14.dp, bottom = 10.dp)
+            if (isImporting || scanNote != null) {
+                ListHistoryScanStatus(vaultViewModel.relayImportService, modifier = scanRowModifier)
+            } else {
+                ListHistoryOptInRow(checked = lookForOldLists, onCheckedChange = { lookForOldLists = it }, modifier = scanRowModifier)
             }
             DashDivider()
             DashRow(

@@ -101,7 +101,7 @@ import kotlinx.coroutines.launch
         // 10-day windows, each waiting on every relay, so two more years cost
         // minutes for everyone. Older notes can be pulled from Settings → Import.
         configStore.update { it.copy(importStartDate = IMPORT_TOUR_START_DATE) }
-        relayImportService.importNotes()
+        relayImportService.importNotes(listHistory = _importListHistory.value)
         viewModelScope.launch {
             relayImportService.isImporting.first { it }
             relayImportService.isImporting.first { !it }

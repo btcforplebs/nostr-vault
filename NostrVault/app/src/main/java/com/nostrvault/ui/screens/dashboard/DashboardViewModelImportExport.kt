@@ -31,7 +31,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
         }
     }
 
-    fun DashboardViewModel.importNotes() { relayImportService.importNotes() }
+    fun DashboardViewModel.importNotes(listHistory: Boolean = false) { relayImportService.importNotes(listHistory) }
 
     fun DashboardViewModel.exportJsonl(context: android.content.Context) {
         if (_isExportingJsonl.value || _isExportingMedia.value) return

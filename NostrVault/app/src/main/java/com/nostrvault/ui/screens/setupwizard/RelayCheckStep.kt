@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.setup.RelayCheck
+import com.nostrvault.ui.components.ListHistoryOptInRow
 import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
@@ -127,7 +128,16 @@ internal fun RelayCheckStep(viewModel: SetupWizardViewModel) {
             Text(it, color = ErrorRed, fontSize = 13.sp, textAlign = TextAlign.Center)
         }
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(16.dp))
+        val lookForOldLists by viewModel.importListHistory.collectAsState()
+        ListHistoryOptInRow(
+            checked = lookForOldLists,
+            onCheckedChange = { viewModel._importListHistory.value = it },
+            textColor = SecondaryText,
+            accent = WizardAccent,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        Spacer(Modifier.height(16.dp))
         WizardPrimaryButton(
             text = "Start import",
             enabled = !isChecking && onCount > 0,
