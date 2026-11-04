@@ -33,4 +33,17 @@ final class NotifyMarkerParserTests: XCTestCase {
             "2026/10/14 10:00:00 blasted event to 12 relays",
         ]), [])
     }
+
+    /// The wipe alarm's nudge (docs/LIST_WIPE_ALARM.md) goes to its own
+    /// list, never to the notification or unread path.
+    func testListVersionMarkerIsKeptApart() {
+        var batch = RelayLogParser.BatchedStateUpdate()
+        let line = "2026/11/04 02:00:00 🔔NOTIFY|type=listversion|kind=3|author=abc|id=def|recipient=abc|preview="
+        RelayLogParser.collectStateChanges(from: line, into: &batch)
+        RelayLogParser.collectStateChanges(from: "🔔NOTIFY|type=mention|kind=1|author=x|id=y|recipient=z|preview=hi", into: &batch)
+        XCTAssertEqual(batch.listVersionMarkers, ["type=listversion|kind=3|author=abc|id=def|recipient=abc|preview="])
+        XCTAssertEqual(batch.notifyMarkers.count, 1)
+        XCTAssertTrue(batch.notifyMarkers[0].hasPrefix("type=mention"))
+        XCTAssertTrue(batch.inboxActivityKinds.isEmpty)
+    }
 }

@@ -178,6 +178,7 @@ extension RelayProcessManager {
                 || batch.stopBooting || batch.stopImporting
                 || batch.eventsStoredDelta != 0
                 || !batch.notifyMarkers.isEmpty
+                || !batch.listVersionMarkers.isEmpty
             if hasCritical {
                 Task { @MainActor in
                     self.applyBatchedUpdate(batch)
@@ -282,6 +283,10 @@ extension RelayProcessManager {
         // Each account's count in the account switcher.
         if let listRules {
             AccountUnreadStore.shared.record(markers: batch.notifyMarkers, rules: listRules)
+        }
+        // A new version of one of your lists: the wipe alarm checks it.
+        if !batch.listVersionMarkers.isEmpty {
+            ListWipeWatcher.shared.listVersionsArrived(batch.listVersionMarkers)
         }
     }
 
