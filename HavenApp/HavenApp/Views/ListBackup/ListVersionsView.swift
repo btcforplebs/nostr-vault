@@ -28,8 +28,9 @@ struct ListVersionsView: View {
                 }
             }
             Section {
+                let flagged = ListWipeAlarmRule.flagged(versions, own: OwnListEdits.ids())
                 ForEach(Array(versions.enumerated()), id: \.element.id) { index, version in
-                    Button { if index > 0 { restoring = version } } label: { row(version, index: index) }
+                    Button { if index > 0 { restoring = version } } label: { row(version, index: index, flagged: flagged) }
                         .buttonStyle(.plain)
                         .disabled(index == 0)
                 }
@@ -66,9 +67,9 @@ struct ListVersionsView: View {
         .contentShape(Rectangle())
     }
 
-    private func row(_ version: ListVersion, index: Int) -> some View {
+    private func row(_ version: ListVersion, index: Int, flagged: Set<String>) -> some View {
         let older = index + 1 < versions.count ? versions[index + 1] : nil
-        let wiped = older.map { ListShrinkRule.shrank($0, version) } ?? false
+        let wiped = flagged.contains(version.id) || (older.map { ListShrinkRule.shrank($0, version) } ?? false)
         return HStack {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {

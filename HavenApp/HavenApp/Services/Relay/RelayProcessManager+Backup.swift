@@ -54,11 +54,29 @@ extension RelayProcessManager {
         captureOutput(in: relayDataDir)
     }
 
+    /// Waits while the Go side's last stopped relay cycle is still shutting
+    /// down (`RelayDrainingC`): StopRelayC returns after 2 s and hands
+    /// stragglers to a reaper, and until they finish Go refuses every backup,
+    /// restore and start. A second Import in one session met exactly that
+    /// ("restore refused: the last relay cycle is still shutting down") and
+    /// left the vault stopped. Same wait and bound as Android
+    /// RelayDrainState. -> whether it finished.
+    func waitForRelayDrain(maxWait: TimeInterval = RelayDrainWait.maxWait) async -> Bool {
+        await RelayDrainWait.wait(maxWait: maxWait, isDraining: { RelayDrainingC() == 1 },
+                                  sleep: { try? await Task.sleep(nanoseconds: $0) })
+    }
+
     func runBackupExport(config: HavenConfig, outputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
         enqueueLifecycle { [weak self] in
             guard let self else { return }
             let wasRunning = self.isRunning
             if wasRunning { await self.performStop() }
+            guard await self.waitForRelayDrain() else {
+                self.addLog("Backup not made: the last relay run is still shutting down", level: "ERROR")
+                completion(false)
+                if wasRunning { await self.performStart(config: config, isRetry: true) }
+                return
+            }
             // Relay is confirmed down; any leftover LOCK is stale.
             self.performClearDatabaseLocks(at: ConfigService.shared.relayDataDir)
             self.prepareEnvForBackup(config: config)
@@ -99,6 +117,12 @@ extension RelayProcessManager {
             guard let self else { return }
             let wasRunning = self.isRunning
             if wasRunning { await self.performStop() }
+            guard await self.waitForRelayDrain() else {
+                self.addLog("Restore not started: the last relay run is still shutting down", level: "ERROR")
+                completion(1)
+                if wasRunning { await self.performStart(config: config, isRetry: true) }
+                return
+            }
             self.performClearDatabaseLocks(at: ConfigService.shared.relayDataDir)
             self.prepareEnvForBackup(config: config)
 

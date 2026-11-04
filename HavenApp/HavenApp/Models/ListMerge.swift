@@ -137,6 +137,17 @@ enum ListMerge {
         return (published ?? []).filter { !unusable($0) && seen.insert(relayKey($0)).inserted }
     }
 
+    /// Where an edit looks for the newest copy of a list besides the
+    /// account's own relays: the first three read relays and the indexers.
+    /// An account whose kind 10002 names one relay (often also its only read
+    /// relay) then still gets the second answer `ownMajority` asks for: its
+    /// own relay and an indexer (Logen 2026-11-02 13:21Z). Without the
+    /// indexers Merge said "Not enough of your relays answered" forever.
+    static func editLookupAsk(readRelays: [String]) -> [String] {
+        var seen = Set<String>()
+        return (Array(readRelays.prefix(3)) + RelayDraft.indexers).filter { seen.insert(relayKey($0)).inserted }
+    }
+
     /// The created_at for an edit of a list dated `base`: now, or one second
     /// after the base when the base is ahead (a phone clock behind the other
     /// app's), so relays keep the edit. editBase never picks a base dated

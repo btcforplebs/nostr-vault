@@ -56,6 +56,20 @@ enum ListWipeAlarmRule {
         return nil
     }
 
+    /// The versions among the newest `history` that this rule calls a
+    /// clobber (a wipe, a swap or a step of a drain), skipping the ones Nostr
+    /// Vault signed (`own`). List backups flags these, so a list drained in
+    /// halves (40 -> 20 -> 10 -> 5), where no single step halves it, is
+    /// flagged where the banner says it was (ListShrinkRule.shrank alone
+    /// flagged none).
+    static func flagged(_ newestFirst: [ListVersion], own: Set<String>) -> Set<String> {
+        var ids = Set<String>()
+        for k in 0..<min(history, newestFirst.count) where !own.contains(newestFirst[k].id) {
+            if judge(newestFirst, k, own: own) != nil { ids.insert(newestFirst[k].id) }
+        }
+        return ids
+    }
+
     /// The alarm `newestFirst[k]` raises against the versions before it.
     static func judge(_ v: [ListVersion], _ k: Int, own: Set<String>) -> Alarm? {
         guard k + 1 < v.count else { return nil }

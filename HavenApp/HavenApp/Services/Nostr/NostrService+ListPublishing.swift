@@ -95,7 +95,7 @@ extension NostrService {
     func publishMergedList(kind: Int, author: String, signAsNpub: String?, skipIfUnchanged: Bool = false,
                            build: (NostrEvent?) async -> (tags: [[String]], content: String)) async -> NostrEvent? {
         guard !author.isEmpty else { return nil }
-        let alsoAsk = Array(ConfigService.shared.config.readRelays.prefix(3))
+        let alsoAsk = ListMerge.editLookupAsk(readRelays: ConfigService.shared.config.readRelays)
         let lookup = await lookupNewestReplaceable(kind: kind, for: author, alsoAsk: alsoAsk, skipAhead: true)
         // The newest list, or "none" only when the relays agree there is none:
         // one relay saying none may just not hold it (Logen 2026-10-31).

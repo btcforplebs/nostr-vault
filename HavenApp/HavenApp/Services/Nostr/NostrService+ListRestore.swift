@@ -35,7 +35,7 @@ extension NostrService {
     /// (ListMerge.editBase): nil when there is none anywhere; an error when
     /// it can't be known, so nothing is published over a list never seen.
     func currentList(like old: ListVersion, vaultNewest: NostrEvent?) async -> Result<NostrEvent?, ListRestoreError> {
-        let alsoAsk = Array(ConfigService.shared.config.readRelays.prefix(3))
+        let alsoAsk = ListMerge.editLookupAsk(readRelays: ConfigService.shared.config.readRelays)
         let lookup = await lookupNewestReplaceable(kind: old.kind, for: old.pubkey, alsoAsk: alsoAsk,
                                                    dTag: old.kind >= 30000 ? old.d : nil,
                                                    skipAhead: true)
