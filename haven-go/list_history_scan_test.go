@@ -113,6 +113,7 @@ func TestImportListHistoryFilesOnlyNewVersions(t *testing.T) {
 	open := historyBackends(t)[fallbackBackendName]
 	f := newListHistoryFixture(t, open)
 	withImportStore(t, open)
+	t.Setenv(listHistoryAccountEnv, f.pk)
 	current := f.bookmarks(10, 60)
 	f.publish(current)
 	old := []*nostr.Event{f.bookmarks(12, 40), f.bookmarks(11, 20)}
@@ -149,6 +150,8 @@ func TestImportListHistoryFilesOnlyNewVersions(t *testing.T) {
 
 // The user chooses (Logen 2026-11-04): with the box unticked no relay is asked and nothing is filed or logged.
 func TestImportListHistoryAsksNothingUnlessTicked(t *testing.T) {
+	f := newListHistoryFixture(t, historyBackends(t)[fallbackBackendName])
+	t.Setenv(listHistoryAccountEnv, f.pk)
 	for _, v := range []string{"", "0", "true"} {
 		t.Setenv(listHistoryOptInEnv, v)
 		r := withFakeHistoryRelays(t, map[string][]*nostr.Event{"wss://hist.nostr.land": nil})
@@ -162,12 +165,61 @@ func TestImportListHistoryAsksNothingUnlessTicked(t *testing.T) {
 	}
 }
 
+// Tron, PR 1641: only the account moving in is asked for. The vault's other accounts are never named to a history
+// relay (they would be linked by the one IP asking), and with no account, or one that isn't this vault's, nothing
+// is asked at all.
+func TestImportListHistoryAsksOnlyTheAccountMovingIn(t *testing.T) {
+	t.Setenv(listHistoryOptInEnv, "1")
+	open := historyBackends(t)[fallbackBackendName]
+	f := newListHistoryFixture(t, open)
+	withImportStore(t, open)
+	alt, _ := nostr.GetPublicKey(nostr.GeneratePrivateKey())
+	stranger, _ := nostr.GetPublicKey(nostr.GeneratePrivateKey())
+	config.WhitelistedPubKeys[alt] = struct{}{}
+	prevSeeds := config.ImportSeedRelays
+	config.ImportSeedRelays = []string{"wss://mine.example"}
+	t.Cleanup(func() { config.ImportSeedRelays = prevSeeds })
+
+	t.Setenv(listHistoryAccountEnv, f.pk)
+	r := withFakeHistoryRelays(t, map[string][]*nostr.Event{"wss://mine.example": nil, "wss://hist.nostr.land": nil, "wss://relay.ditto.pub": nil})
+	importListHistory(context.Background())
+	if len(r.asked) == 0 {
+		t.Fatal("nothing asked for the account moving in")
+	}
+	for _, q := range r.asked {
+		if len(q.Authors) != 1 || q.Authors[0] != f.pk {
+			t.Fatalf("asked for %v, want only %s", q.Authors, f.pk)
+		}
+	}
+
+	for _, who := range []string{"", stranger, "not-a-key", strings.ToUpper(alt)[:10]} {
+		t.Setenv(listHistoryAccountEnv, who)
+		r := withFakeHistoryRelays(t, map[string][]*nostr.Event{"wss://hist.nostr.land": nil})
+		if res := importListHistory(context.Background()); res != (historyScanResult{}) || len(r.asked) != 0 {
+			t.Fatalf("account %q: result %+v, %d asks", who, res, len(r.asked))
+		}
+	}
+	// Upper case or padded is still the account.
+	t.Setenv(listHistoryAccountEnv, " "+strings.ToUpper(alt)+" ")
+	r = withFakeHistoryRelays(t, map[string][]*nostr.Event{"wss://hist.nostr.land": nil})
+	importListHistory(context.Background())
+	if len(r.asked) == 0 {
+		t.Fatal("nothing asked for the upper-case account")
+	}
+	for _, q := range r.asked {
+		if q.Authors[0] != alt {
+			t.Fatalf("asked for %v, want %s", q.Authors, alt)
+		}
+	}
+}
+
 // Skip stops the scan; what it found before is still filed, and the import goes on (the parent context is live).
 func TestSkipKeepsWhatTheScanFoundSoFar(t *testing.T) {
 	t.Setenv(listHistoryOptInEnv, "1")
 	open := historyBackends(t)[fallbackBackendName]
 	f := newListHistoryFixture(t, open)
 	withImportStore(t, open)
+	t.Setenv(listHistoryAccountEnv, f.pk)
 	prevSeeds := config.ImportSeedRelays
 	config.ImportSeedRelays = nil
 	t.Cleanup(func() { config.ImportSeedRelays = prevSeeds })

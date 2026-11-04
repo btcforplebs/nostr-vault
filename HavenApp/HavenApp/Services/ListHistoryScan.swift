@@ -7,6 +7,9 @@ import Foundation
 enum ListHistoryScan {
     /// haven-go listHistoryOptInEnv: "1" runs the scan for this import.
     static let optInEnv = "HAVEN_IMPORT_LIST_HISTORY"
+    /// haven-go listHistoryAccountEnv: the hex pubkey of the account moving
+    /// in, the only one the history relays are asked about (Tron, PR 1641).
+    static let accountEnv = "HAVEN_IMPORT_LIST_HISTORY_ACCOUNT"
 
     /// The checkbox, word for word (Logen 2026-11-04).
     static let optInLabel = "Also look for older versions of my lists on history relays (hist.nostr.land, relay.ditto.pub). They will see your IP asked. Adds about a minute."

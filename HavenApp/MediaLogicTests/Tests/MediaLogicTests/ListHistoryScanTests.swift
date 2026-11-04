@@ -49,6 +49,7 @@ final class ListHistoryScanTests: XCTestCase {
     func testLabelIsLogensWording() {
         XCTAssertEqual(ListHistoryScan.optInLabel, "Also look for older versions of my lists on history relays (hist.nostr.land, relay.ditto.pub). They will see your IP asked. Adds about a minute.")
         XCTAssertEqual(ListHistoryScan.optInEnv, "HAVEN_IMPORT_LIST_HISTORY")
+        XCTAssertEqual(ListHistoryScan.accountEnv, "HAVEN_IMPORT_LIST_HISTORY_ACCOUNT")
     }
 }
 

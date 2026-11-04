@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -102,6 +103,23 @@ type historyScanResult struct {
 
 // listHistoryOptInEnv: "1" when the user ticked the history scan for this import.
 const listHistoryOptInEnv = "HAVEN_IMPORT_LIST_HISTORY"
+
+// listHistoryAccountEnv: the hex pubkey of the account whose Moving in ticked
+// the scan. The only key the history relays are asked about.
+const listHistoryAccountEnv = "HAVEN_IMPORT_LIST_HISTORY_ACCOUNT"
+
+// scanAccount: listHistoryAccountEnv when it names one of this vault's
+// accounts, else "" (no scan).
+func scanAccount() string {
+	pk := strings.ToLower(strings.TrimSpace(os.Getenv(listHistoryAccountEnv)))
+	if !nostr.IsValidPublicKey(pk) {
+		return ""
+	}
+	if _, ok := config.WhitelistedPubKeys[pk]; !ok {
+		return ""
+	}
+	return pk
+}
 
 // historyScanStatus: "" (no scan this import), historyScanRunning, or the
 // scan's closing line. For hosts that poll (Android: the import log keeps only
@@ -221,8 +239,13 @@ func scanListHistory(ctx context.Context, relays, owners []string, kinds []int) 
 // lists on history relays" checkbox, off by default). SkipListHistoryScan
 // stops it early and the versions found so far are still filed; the import
 // carries on either way.
+//
+// Only the account moving in is asked for (listHistoryAccountEnv), never the
+// vault's other accounts: the history relays get no AUTH but see the IP, and
+// several keys asked together from one IP would link them (Tron, PR 1641).
 func importListHistory(ctx context.Context) historyScanResult {
-	if os.Getenv(listHistoryOptInEnv) != "1" {
+	account := scanAccount()
+	if os.Getenv(listHistoryOptInEnv) != "1" || account == "" {
 		historyScanStatus.Store("")
 		return historyScanResult{}
 	}
@@ -234,11 +257,7 @@ func importListHistory(ctx context.Context) historyScanResult {
 		historyScanStop.Store(nil)
 		stop()
 	}()
-	owners := make([]string, 0, len(config.WhitelistedPubKeys))
-	for pk := range config.WhitelistedPubKeys {
-		owners = append(owners, pk)
-	}
-	sort.Strings(owners)
+	owners := []string{account}
 	relays := uniqueRelays(append(append([]string{}, importRelays()...), historyRelays...))
 	versions, answered := scanListHistory(scanCtx, relays, owners, historyScanKinds)
 	res := historyScanResult{Answered: answered, Asked: len(relays), Skipped: scanCtx.Err() != nil && ctx.Err() == nil}

@@ -98,6 +98,9 @@ extension RelayProcessManager {
         var configEnv = generateEnvDictionary(config: config)
         // Always set: the Go side keeps the process environment between imports.
         configEnv[ListHistoryScan.optInEnv] = listHistory ? "1" : "0"
+        // Only the account moving in: never the device's other accounts.
+        let movingIn = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
+        configEnv[ListHistoryScan.accountEnv] = listHistory ? (Bech32.decode(movingIn)?.hexString ?? "") : ""
         listHistoryScanning = false
         listHistoryNote = nil
         for (key, value) in configEnv {
