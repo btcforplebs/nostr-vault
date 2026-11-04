@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import UIKit
 
@@ -41,6 +42,10 @@ struct NoteSplitPane<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     @StateObject private var selection = NoteDetailSelection()
+    /// Counts account switches. One subscription for the pane's life: an
+    /// `.onReceive` of the computed publisher is re-made on every redraw, and
+    /// the switch's own redraws dropped its delivery, so the note stayed open.
+    @StateObject private var accountSwitches = AccountSwitchCounter()
 
     /// Width of the list column, dragged by the reader and remembered across
     /// launches.
@@ -119,6 +124,15 @@ struct NoteSplitPane<Content: View>: View {
         }
         .onChange(of: selection.noteId) { _, id in
             if id != nil { setDetailHidden(false) }
+        }
+        // A note opened under the previous account would otherwise stay open
+        // and redraw for the new one (iPad account switch, Tim 11-04: ~62 ms
+        // per switch, and the longest hangs). Closed at once, no slide.
+        .onChange(of: accountSwitches.count) { _, _ in
+            guard !selection.isEmpty else { return }
+            var cut = Transaction()
+            cut.disablesAnimations = true
+            withTransaction(cut) { selection.clear() }
         }
     }
 
@@ -230,5 +244,18 @@ struct NoteSplitPane<Content: View>: View {
                 description: Text(emptyMessage)
             )
         }
+    }
+}
+
+/// Bumps `count` on each switch of the active account, so a view can react
+/// with `.onChange` and redraw only then (not on every config change).
+@MainActor
+final class AccountSwitchCounter: ObservableObject {
+    @Published private(set) var count = 0
+    private var subscription: AnyCancellable?
+
+    init() {
+        subscription = ConfigService.shared.activeAccountSwitches
+            .sink { [weak self] _ in self?.count += 1 }
     }
 }
