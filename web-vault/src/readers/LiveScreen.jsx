@@ -11,6 +11,7 @@ import { fetchProfiles, getProfile } from "../net/profiles.js"
 import { Scopes } from "./ArticlesScreen.jsx"
 import { EmptyState } from "./EmptyState.jsx"
 import { attachHls, playMode } from "./hls.js"
+import { PipButton } from "../components/PipButton.jsx"
 import { PlayerBar } from "./PlayerBar.jsx"
 import { liveAt, playLive, stop } from "./player.js"
 import { LIVE_SCOPES, fetchStreams, loadScope, saveScope, startScope, streamLink } from "./live.js"
@@ -162,6 +163,12 @@ export function LiveVideo({ stream: s, link, mode: forced }) {
       <span>This browser can't play the stream here. Watch it on zap.stream ›</span>
     </a>
   )
-  return <video ref={ref} class="live-video" src={mode === "native" ? s.streaming : undefined} poster={s.image ?? undefined} controls autoplay playsinline />
+  // The PiP button floats it over other tabs and apps (PiP plan lane D).
+  return (
+    <div class="live-video-wrap">
+      <video ref={ref} class="live-video" src={mode === "native" ? s.streaming : undefined} poster={s.image ?? undefined} controls autoplay playsinline />
+      <PipButton target={ref} />
+    </div>
+  )
 }
 
