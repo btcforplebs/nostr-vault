@@ -115,4 +115,16 @@ extension FeedView {
         }
         .aspectRatio(1, contentMode: .fill)
     }
+
+    /// The grid viewer's swipe up (or its grabber, or ↑): the note that
+    /// posted the media on screen opens, after the viewer closes.
+    func openGridMediaNote() {
+        let id = selectedGridMediaNoteId
+        withAnimation(Motion.dismiss) {
+            gridMediaViewer = nil
+            galleryDragOffset = .zero
+        }
+        guard let id else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showingNoteId = id }
+    }
 }

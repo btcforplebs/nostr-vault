@@ -200,11 +200,14 @@ extension FeedView {
                             }
                         }
                         .onEnded { gesture in
-                            if abs(galleryDragOffset.height) > 120 {
+                            // Down closes; up opens the note that posted it.
+                            if galleryDragOffset.height > 120 {
                                 withAnimation(Motion.dismiss) {
                                     gridMediaViewer = nil
                                     galleryDragOffset = .zero
                                 }
+                            } else if galleryDragOffset.height < -120 {
+                                openGridMediaNote()
                             } else {
                                 withAnimation(Motion.snapBack) {
                                     galleryDragOffset = .zero
@@ -212,8 +215,19 @@ extension FeedView {
                             }
                         }
                 )
+                VStack {
+                    Spacer()
+                    MediaViewerNoteGrabber(title: "Note") { openGridMediaNote() }
+                        .padding(.bottom, 34)
+                        .opacity(max(0, 1.0 - (abs(galleryDragOffset.height) / 100.0)))
+                }
             }
             .ignoresSafeArea()
+            // The Mac and an iPad keyboard: ↑ is the swipe up.
+            .onKeyPress(.upArrow) {
+                openGridMediaNote()
+                return .handled
+            }
             .onDisappear {
                 selectedGridMediaNoteId = nil
             }

@@ -85,6 +85,8 @@ struct MediaGalleryView: View {
     #endif
 
     @State var dragOffset: CGSize = .zero
+    /// The viewer's swipe up: the notes on the vault that use the file.
+    @State var showingMediaNotes = false
 
     // Blossom dashboard
     @State var showingBlossomMediaList = false
