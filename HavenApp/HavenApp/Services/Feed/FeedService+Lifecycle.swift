@@ -59,16 +59,21 @@ extension FeedService {
         // running across account switches by design.
 
         // 3. Cancel in-flight loading flags + timers so the new flow isn't blocked.
-        isLoadingContacts = false
+        // Each @Published write sends a change notice even when the value is
+        // the same, and every one redraws the whole feed: only write a flag
+        // that actually changes (iPad account switch, Tim 11-04: ~27 ms each).
+        if isLoadingContacts { isLoadingContacts = false }
         // The new account's list is unknown until its own load answers, and a
         // tap queued under the previous account must not reach this one.
-        contactListConfirmed = false
+        if contactListConfirmed { contactListConfirmed = false }
         pendingFollowActions.removeAll()
-        FollowNotificationManager.shared.clearPending()
-        isLoadingExtendedNetwork = false
+        if FollowNotificationManager.shared.notifications.contains(where: { $0.pubkey != nil }) {
+            FollowNotificationManager.shared.clearPending()
+        }
+        if isLoadingExtendedNetwork { isLoadingExtendedNetwork = false }
         extendedNetworkComputedAt = nil
-        isLoadingFeed = false
-        isSyncing = false
+        if isLoadingFeed { isLoadingFeed = false }
+        if isSyncing { isSyncing = false }
         contactLoadingTimeout?.invalidate()
         feedLoadingTimeout?.invalidate()
         extendedNetworkTimeout?.invalidate()
