@@ -9,6 +9,15 @@ import { snapshotStore } from "./follow-backup.js"
 import { MERGE_KINDS } from "./list-version-merge.js"
 
 const now = () => Math.floor(Date.now() / 1000)
+
+/** The /lists filter key for the versions a moving-in import filed (haven-go list_history_relay.go wantsImported). A
+ *  plain read gets only the versions the vault filed itself, which is all the wipe alarm judges (Tron, PR 1637); a
+ *  read with this key gets the imported ones alone. */
+export const IMPORTED = { "#v": ["imported"] }
+
+/** Every version /lists keeps of `filter`: the vault's own and the imported. */
+export const keptVersions = (lists, filter) =>
+  lists ? Promise.all([lists.query(filter), lists.query({ ...filter, ...IMPORTED })]).then(a => a.flat()) : Promise.resolve([])
 const pick = ({ id, pubkey, created_at, kind, tags, content, sig }) => ({ id, pubkey, created_at, kind, tags, content, sig })
 
 /** The user's own copy of `kind`: signed by them (checked on a fresh copy: verifyEvent trusts a flag an object may
@@ -23,14 +32,16 @@ export function ownVersion(ev, me, kind, at = now()) {
 export const byNewest = (a, b) => b.created_at - a.created_at || (a.id < b.id ? -1 : 1)
 
 /**
- * Every version of `kind` found, newest first, each once, with where it was found (`from`: "vault", "browser",
- * "relays"). `sources` replaces the readers, for tests. -> [{ ...event, from: [..] }]
+ * Every version of `kind` found, newest first, each once, with where it was found (`from`: "vault", "imported",
+ * "browser", "relays"). `sources` replaces the readers, for tests. -> [{ ...event, from: [..] }]
  */
 export async function findVersions(ctx, kind, { sources, at = now() } = {}) {
   const me = ctx.session.pubkey
   const filter = { kinds: [kind], authors: [me] }
   const read = sources ?? {
     vault: () => Promise.all([ctx.vault.lists?.query(filter) ?? [], ctx.vault.outbox.query(filter)]).then(a => a.flat()),
+    // Not "vault": an imported run may have holes, so it never counts as unbroken (list-version-merge.js).
+    imported: () => ctx.vault.lists?.query({ ...filter, ...IMPORTED }) ?? [],
     browser: () => (kind === 3 ? snapshotStore(me).all() : []),
     relays: () => pool.querySync(uniq([...ctx.account.relays.read, ...ctx.account.relays.write, ...PROFILE_RELAYS]), { ...filter, limit: 50 }, { maxWait: 8000 }),
   }
@@ -54,7 +65,7 @@ export async function findVersions(ctx, kind, { sources, at = now() } = {}) {
 export async function listOverview(ctx, { at = now() } = {}) {
   const me = ctx.session.pubkey
   const kinds = MERGE_KINDS.map(k => k.kind)
-  const evs = await (ctx.vault.lists?.query({ kinds, authors: [me] }) ?? Promise.resolve([])).catch(() => [])
+  const evs = await keptVersions(ctx.vault.lists, { kinds, authors: [me] }).catch(() => [])
   return MERGE_KINDS.map(({ kind, name }) => {
     const mine = evs.filter(e => ownVersion(e, me, kind, at))
     return { kind, name, versions: new Set(mine.map(e => e.id)).size, newest: mine.reduce((n, e) => Math.max(n, e.created_at), 0) }

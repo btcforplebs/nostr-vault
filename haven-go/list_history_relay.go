@@ -113,15 +113,19 @@ func queryListHistory(ctx context.Context, store DBBackend, f nostr.Filter) (cha
 			if !isProtectedListKind(kind) {
 				continue
 			}
-			evs, err := allListVersions(ctx, store, author, kind)
-			if err != nil {
+			from := store
+			// The versions an import filed (list_history_import.go) are served only to a filter that asks for
+			// them, and then alone: the wipe alarm the apps run over a plain /lists read judges only versions
+			// the vault filed itself, so an old clobber found on the relays is not a new wipe (Tron, PR 1637).
+			if store == listsDB && wantsImported(f) {
+				from = listsImportDB
+			}
+			if from == nil {
 				continue
 			}
-			// The versions an import filed are served with the vault's own (list_history_import.go).
-			if store == listsDB && listsImportDB != nil {
-				if more, err := allListVersions(ctx, listsImportDB, author, kind); err == nil {
-					evs = mergeVersions(evs, more)
-				}
+			evs, err := allListVersions(ctx, from, author, kind)
+			if err != nil {
+				continue
 			}
 			for _, ev := range evs {
 				if listHistoryMatches(f, ev) {
@@ -145,6 +149,22 @@ func queryListHistory(ctx context.Context, store DBBackend, f nostr.Filter) (cha
 		}
 	}()
 	return out, nil
+}
+
+// listHistoryImportedTag, listHistoryImportedValue: a /lists filter with
+// {"#v": ["imported"]} gets the imported versions instead of the vault's own.
+const (
+	listHistoryImportedTag   = "v"
+	listHistoryImportedValue = "imported"
+)
+
+func wantsImported(f nostr.Filter) bool {
+	for _, v := range f.Tags[listHistoryImportedTag] {
+		if v == listHistoryImportedValue {
+			return true
+		}
+	}
+	return false
 }
 
 // allListVersions is listVersions for every d of an addressable kind.
