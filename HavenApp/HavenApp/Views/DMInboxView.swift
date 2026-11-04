@@ -52,8 +52,7 @@ struct DMInboxView: View {
 
     /// The tray in the top-right: Requests pushed, or swapped into the iPad's left pane.
     private var requestsButton: some View {
-        DMRequestsButton(count: dmService.requestConversations.count,
-                         isActive: usesTwoPane && showingRequestsInPane) {
+        DMRequestsButton(isActive: usesTwoPane && showingRequestsInPane) {
             if usesTwoPane { showingRequestsInPane.toggle() } else { showingRequests = true }
         }
     }
@@ -141,7 +140,7 @@ struct DMInboxView: View {
                         .help(String(localized: "dm.inbox.refresh"))
                         .keyboardShortcut("r", modifiers: .command)
 
-                        DMRequestsButton(count: dmService.requestConversations.count, size: 15) {
+                        DMRequestsButton(size: 15) {
                             showingRequests = true
                         }
 
@@ -254,13 +253,12 @@ struct DMInboxView: View {
 
                         // Requests left the list for the tray: an empty inbox
                         // must still say when some are waiting there.
-                        let waiting = dmService.requestConversations.count
-                        if waiting > 0 {
+                        // No count (Logen, 2026-11-04): requests carry no number anywhere.
+                        if !dmService.requestConversations.isEmpty {
                             Button {
                                 if usesTwoPane { showingRequestsInPane = true } else { showingRequests = true }
                             } label: {
-                                Label(waiting == 1 ? "1 request is waiting" : "\(waiting) requests are waiting",
-                                      systemImage: "tray")
+                                Label("Requests are waiting", systemImage: "tray")
                                     .font(.appSystem(size: 15, weight: .semibold))
                                     .foregroundColor(.havenPurple)
                             }

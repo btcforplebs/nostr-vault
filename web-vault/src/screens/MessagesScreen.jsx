@@ -200,7 +200,7 @@ export function MessagesScreen({ ctx, vaultMenu = false }) {
         <h2 class={showRequests ? undefined : "sr-only"}>{showRequests ? "Requests" : "Messages"}</h2>
         <span class="dm-head-actions">
           {!showRequests && total > 0 && <button type="button" class="small" onClick={() => markRead(me, [...messages.values()].filter(m => inboxPeers.has(m.peer)))}>Mark all read</button>}
-          {!showRequests && <RequestsButton count={requests.length} />}
+          {!showRequests && <RequestsButton />}
         </span>
       </header>
       {note && <div class="status-line">Your messages can't be read here ({note}).</div>}
