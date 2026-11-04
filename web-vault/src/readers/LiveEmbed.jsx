@@ -26,7 +26,7 @@ export function LiveEmbed({ stream, now = Math.floor(Date.now() / 1000) }) {
 }
 
 /** The player over everything, as the iPhone's sheet; Esc or Back closes it, Minimize keeps the sound playing. */
-function LiveSheet({ ctx, stream, onClose }) {
+export function LiveSheet({ ctx, stream, onClose }) {
   useEffect(() => {
     const key = e => { if (e.key === "Escape") onClose() }
     const overflow = document.body.style.overflow

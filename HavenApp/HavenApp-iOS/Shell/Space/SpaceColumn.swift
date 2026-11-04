@@ -12,6 +12,7 @@ struct SpaceColumn: View {
     @ObservedObject private var store = SpaceLayoutStore.shared
     @ObservedObject private var dmService = DMService.shared
     @StateObject private var liveVault = LiveVaultModel()
+    @StateObject private var liveNow = LiveNowModel()
     @State private var folded = false
     @State private var editing = false
 
@@ -51,6 +52,7 @@ struct SpaceColumn: View {
             folded = UserDefaults.standard.bool(forKey: LiveVault.foldedKey(hex))
             editing = false
             liveVault.attach(hex)
+            liveNow.attach(hex)
         }
         .onChange(of: relayReady, initial: true) { _, ready in
             if ready { liveVault.startFetchIfIdle() }
@@ -136,7 +138,8 @@ struct SpaceColumn: View {
             title: info.title,
             symbol: info.symbol,
             count: panel.id == "live-vault" ? liveVault.unreadCount
-                : panel.id == "messages" ? dmService.totalUnreadCount : 0,
+                : panel.id == "messages" ? dmService.totalUnreadCount
+                : panel.id == LiveNow.panelId ? liveNow.streams.count : 0,
             open: panel.open,
             editing: editing,
             canMoveUp: index > 0,
@@ -148,6 +151,7 @@ struct SpaceColumn: View {
             switch panel.id {
             case "live-vault": LiveVaultPanel(model: liveVault)
             case "wot-mini": WotMiniPanel()
+            case LiveNow.panelId: LiveNowPanel(model: liveNow)
             case "messages":
                 ScrollView { MessagesPeekPanel() }
                     .scrollBounceBehavior(.basedOnSize)
@@ -191,6 +195,7 @@ struct SpaceColumn: View {
         case "wot-mini": return ("Web of Trust", TrustMap.Layer.everyone.symbolName)
         case "messages": return ("Messages", "bubble.left.and.bubble.right")
         case "my-devices": return ("My devices", "laptopcomputer.and.iphone")
+        case LiveNow.panelId: return ("Live now", "dot.radiowaves.left.and.right")
         default: return (id, "square")
         }
     }
