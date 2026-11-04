@@ -27,6 +27,9 @@ object FullScreenMediaRouter {
         val copyLink: Boolean = false,
         /** Each photo's note author, by index: whose vault a photo whose URL fails is read from over the mesh. */
         val authors: List<String?> = emptyList(),
+        /** Each photo's note, by index: swipe up opens it (Logen 11-04). Empty: up closes, as down does. */
+        val noteIds: List<String?> = emptyList(),
+        val onOpenNote: ((String) -> Unit)? = null,
     )
 
     private val _request = MutableStateFlow<Request?>(null)
@@ -46,9 +49,11 @@ object FullScreenMediaRouter {
         origin: Long? = null,
         copyLink: Boolean = false,
         authors: List<String?> = emptyList(),
+        noteIds: List<String?> = emptyList(),
+        onOpenNote: ((String) -> Unit)? = null,
     ) {
         if (urls.isEmpty()) return
-        _request.value = Request(urls, initialIndex, origin, copyLink, authors)
+        _request.value = Request(urls, initialIndex, origin, copyLink, authors, noteIds, onOpenNote)
         _position.value = origin?.let { MediaSourceKey(it, initialIndex) }
     }
 
@@ -83,6 +88,8 @@ fun FullScreenMediaHost() {
                 origin = it.origin,
                 copyLink = it.copyLink,
                 authors = it.authors,
+                noteIds = it.noteIds,
+                onOpenNote = it.onOpenNote,
                 onDismiss = FullScreenMediaRouter::dismiss,
             )
         }

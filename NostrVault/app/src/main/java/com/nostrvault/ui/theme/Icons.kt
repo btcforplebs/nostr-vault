@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Construction
 import androidx.compose.material.icons.filled.ContentCopy
@@ -275,6 +276,7 @@ object NostrVaultIcons {
     /** The Vault tab's Highlights list (NIP-84). */
     val Highlights: ImageVector = Icons.Filled.BorderColor   // highlighter
     val ChevronDown: ImageVector = Icons.Filled.KeyboardArrowDown // chevron.down
+    val ChevronUp: ImageVector = Icons.Filled.KeyboardArrowUp     // chevron.up
     val MarkAllRead: ImageVector = Icons.Filled.DoneAll      // checkmark.circle
     val Browse: ImageVector = Icons.Filled.Explore           // magnifyingglass.circle
     val GridLayout: ImageVector = Icons.Filled.GridView      // square.grid.2x2

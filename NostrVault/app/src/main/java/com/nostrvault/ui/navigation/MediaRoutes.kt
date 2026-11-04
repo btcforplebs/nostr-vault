@@ -25,6 +25,11 @@ internal fun NavGraphBuilder.mediaRoutes(
         MediaViewerScreen(
             initialIndex = index,
             onBack = { navController.popBackStack() },
+            // The swipe-up sheet's row: the viewer goes, the note opens.
+            onNoteClick = { id ->
+                navController.popBackStack()
+                navController.navigate(Screen.NoteDetail.createRoute(id))
+            },
             autoplayVideos = config.autoplayVideos,
         )
     }
