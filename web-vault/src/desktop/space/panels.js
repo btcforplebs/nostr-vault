@@ -5,10 +5,12 @@
 import { LiveVault } from "./LiveVault.jsx"
 import { WotMini } from "./WotMini.jsx"
 import { MessagesPeek } from "./MessagesPeek.jsx"
+import { MyDevices } from "./MyDevices.jsx"
 
 export const PANELS = [
   { id: "live-vault", name: "Live Vault", Panel: LiveVault },
   { id: "wot-mini", name: "Web of Trust", Panel: WotMini },
   { id: "messages", name: "Messages", Panel: MessagesPeek },
+  { id: "my-devices", name: "My devices", Panel: MyDevices },
 ]
 export { PANEL_IDS } from "./panel-ids.js"

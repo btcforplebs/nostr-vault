@@ -1,0 +1,288 @@
+{
+ "rule": {
+  "d": "fips-overlay-v1",
+  "skew": 600,
+  "fallback_ttl": 3600
+ },
+ "now": 1793800000,
+ "cases": [
+  {
+   "name": "connected wins over everything",
+   "adverts": [],
+   "connected": true,
+   "checked": false,
+   "expect": {
+    "state": "connected",
+    "last_seen": 1793800000
+   }
+  },
+  {
+   "name": "fresh advert is online",
+   "adverts": [
+    {
+     "created_at": 1793799880,
+     "tags": [
+      [
+       "d",
+       "fips-overlay-v1"
+      ],
+      [
+       "expiration",
+       "1793803480"
+      ]
+     ]
+    }
+   ],
+   "connected": false,
+   "checked": true,
+   "expect": {
+    "state": "online",
+    "last_seen": 1793799880
+   }
+  },
+  {
+   "name": "expired advert is offline, last seen kept",
+   "adverts": [
+    {
+     "created_at": 1793795000,
+     "tags": [
+      [
+       "d",
+       "fips-overlay-v1"
+      ],
+      [
+       "expiration",
+       "1793798600"
+      ]
+     ]
+    }
+   ],
+   "connected": false,
+   "checked": true,
+   "expect": {
+    "state": "offline",
+    "last_seen": 1793795000
+   }
+  },
+  {
+   "name": "newest of several counts",
+   "adverts": [
+    {
+     "created_at": 1793791000,
+     "tags": [
+      [
+       "d",
+       "fips-overlay-v1"
+      ],
+      [
+       "expiration",
+       "1793794600"
+      ]
+     ]
+    },
+    {
+     "created_at": 1793799800,
+     "tags": [
+      [
+       "d",
+       "fips-overlay-v1"
+      ],
+      [
+       "expiration",
+       "1793803400"
+      ]
+     ]
+    },
+    {
+     "created_at": 1793796000,
+     "tags": [
+      [
+       "d",
+       "fips-overlay-v1"
+      ],
+      [
+       "expiration",
+       "1793799600"
+      ]
+     ]
+    }
+   ],
+   "connected": false,
+   "checked": true,
+   "expect": {
+    "state": "online",
+    "last_seen": 1793799800
+   }
+  },
+  {
+   "name": "no advert is unknown",
+   "adverts": [],
+   "connected": false,
+   "checked": true,
+   "expect": {
+    "state": "unknown",
+    "last_seen": null
+   }
+  },
+  {
+   "name": "relays not reached is unchecked",
+   "adverts": [
+    {
+     "created_at": 1793799940,
+     "tags": [
+      [
+       "d",
+       "fips-overlay-v1"
+      ],
+      [
+       "expiration",
+       "1793803540"
+      ]
+     ]
+    }
+   ],
+   "connected": false,
+   "checked": false,
+   "expect": {
+    "state": "unchecked",
+    "last_seen": null
+   }
+  },
+  {
+   "name": "another d tag is not a mesh advert",
+   "adverts": [
+    {
+     "created_at": 1793799940,
+     "tags": [
+      [
+       "d",
+       "other"
+      ],
+      [
+       "expiration",
+       "1793803540"
+      ]
+     ]
+    }
+   ],
+   "connected": false,
+   "checked": true,
+   "expect": {
+    "state": "unknown",
+    "last_seen": null
+   }
+  },
+  {
+   "name": "no expiration: online within an hour",
+   "adverts": [
+    {
+     "created_at": 1793798200,
+     "tags": [
+      [
+       "d",
+       "fips-overlay-v1"
+      ]
+     ]
+    }
+   ],
+   "connected": false,
+   "checked": true,
+   "expect": {
+    "state": "online",
+    "last_seen": 1793798200
+   }
+  },
+  {
+   "name": "no expiration: offline after an hour",
+   "adverts": [
+    {
+     "created_at": 1793796300,
+     "tags": [
+      [
+       "d",
+       "fips-overlay-v1"
+      ]
+     ]
+    }
+   ],
+   "connected": false,
+   "checked": true,
+   "expect": {
+    "state": "offline",
+    "last_seen": 1793796300
+   }
+  },
+  {
+   "name": "bad expiration falls back to the hour",
+   "adverts": [
+    {
+     "created_at": 1793799900,
+     "tags": [
+      [
+       "d",
+       "fips-overlay-v1"
+      ],
+      [
+       "expiration",
+       "soon"
+      ]
+     ]
+    }
+   ],
+   "connected": false,
+   "checked": true,
+   "expect": {
+    "state": "online",
+    "last_seen": 1793799900
+   }
+  },
+  {
+   "name": "advert from the far future is ignored",
+   "adverts": [
+    {
+     "created_at": 1793805000,
+     "tags": [
+      [
+       "d",
+       "fips-overlay-v1"
+      ],
+      [
+       "expiration",
+       "1793808600"
+      ]
+     ]
+    }
+   ],
+   "connected": false,
+   "checked": true,
+   "expect": {
+    "state": "unknown",
+    "last_seen": null
+   }
+  },
+  {
+   "name": "small clock skew is fine",
+   "adverts": [
+    {
+     "created_at": 1793800300,
+     "tags": [
+      [
+       "d",
+       "fips-overlay-v1"
+      ],
+      [
+       "expiration",
+       "1793803900"
+      ]
+     ]
+    }
+   ],
+   "connected": false,
+   "checked": true,
+   "expect": {
+    "state": "online",
+    "last_seen": 1793800300
+   }
+  }
+ ]
+}

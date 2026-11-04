@@ -10,14 +10,16 @@ import { readFileSync } from "node:fs"
 import { accountKeys } from "../src/haven/vault.js"
 
 const IDS = ["live-vault", "wot-mini", "messages"]
+// The panels the app ships (panels.js, panel-ids.js); the layout rules below run on IDS.
+const SHIPPED = [...IDS, "my-devices"]
 const ids = l => l.panels.map(p => p.id)
 const store = () => { const m = new Map(); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k), key: i => [...m.keys()][i] ?? null, get length() { return m.size } } }
 
 test("the panel ids are the ones the iPad shares, in the default order", () => {
   // panels.js pulls in the panels' JSX, so its ids are read from its text.
   const src = readFileSync(new URL("../src/desktop/space/panels.js", import.meta.url), "utf8")
-  assert.deepEqual([...src.matchAll(/\{ id: "([^"]+)"/g)].map(m => m[1]), IDS)
-  assert.deepEqual(PANEL_IDS, IDS)
+  assert.deepEqual([...src.matchAll(/\{ id: "([^"]+)"/g)].map(m => m[1]), SHIPPED)
+  assert.deepEqual(PANEL_IDS, SHIPPED)
   assert.equal(SYNC_D, "nostr-vault-space-layout")
 })
 
