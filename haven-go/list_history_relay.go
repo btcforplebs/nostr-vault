@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/fiatjaf/khatru"
 	"github.com/fiatjaf/khatru/policies"
@@ -28,6 +29,12 @@ func initListsRelay() *khatru.Relay {
 	rl.RejectFilter = append(rl.RejectFilter, meshNoQueries, policies.MustAuth, MustBeWhitelistedToQuery)
 	rl.RejectCountFilter = append(rl.RejectCountFilter, meshNoQueries, policies.MustAuth, MustBeWhitelistedToQuery)
 	rl.RejectEvent = append(rl.RejectEvent, rejectListHistoryWrite)
+	// An accepted version (an older one a moving-in import found on the relays, Lazarus) is filed in the import store
+	// (list_history_import.go): never the outbox, so it never becomes the current list, is never blasted and never
+	// uploaded; and never the vault's own history, so it can't change what the vault keeps there.
+	rl.ReplaceEvent = append(rl.ReplaceEvent, func(ctx context.Context, evt *nostr.Event) error {
+		return fileImportedVersion(ctx, evt)
+	})
 	rl.QueryEvents = append(rl.QueryEvents, func(ctx context.Context, f nostr.Filter) (chan *nostr.Event, error) {
 		return queryListHistory(ctx, listsDB, f)
 	})
@@ -38,10 +45,41 @@ func initListsRelay() *khatru.Relay {
 	return rl
 }
 
+// listHistoryImportSkew: a version dated this far ahead of the vault's clock
+// is refused, so one bad clock can't pose as the newest version (the apps'
+// MAX_SKEW).
+const listHistoryImportSkew = 15 * time.Minute
+
 // rejectListHistoryWrite: history is filed by the vault itself as lists
-// arrive at the outbox; nothing is written here.
-func rejectListHistoryWrite(context.Context, *nostr.Event) (bool, string) {
-	return true, "blocked: list history is read-only; publish lists to the main relay"
+// arrive at the outbox. The one write it takes (Logen 2026-11-04, moving in
+// pulls old lists from history relays): one of this vault's own apps (AUTHed
+// as a whitelisted key) filing a version of a protected list signed by one of
+// this vault's accounts, found on the relays. The signature is checked before this runs (khatru);
+// nothing else is written here, and nothing here reaches the outbox.
+func rejectListHistoryWrite(ctx context.Context, evt *nostr.Event) (bool, string) {
+	if isMeshConn(ctx) {
+		return true, "restricted: no list history over the mesh"
+	}
+	if evt == nil || !isProtectedListKind(evt.Kind) {
+		return true, "blocked: list history keeps only lists; publish other events to the main relay"
+	}
+	// The same gate as reading /lists: an AUTHed whitelisted key (the browser
+	// vault AUTHs with its device key, not the user's). The event itself must
+	// be signed by one of this vault's accounts.
+	authed := khatru.GetAuthed(ctx)
+	if authed == "" {
+		return true, "auth-required: only this vault's own apps can file list history"
+	}
+	if _, ok := config.WhitelistedPubKeys[authed]; !ok {
+		return true, "restricted: only this vault's own apps can file list history"
+	}
+	if _, owner := config.WhitelistedPubKeys[evt.PubKey]; !owner {
+		return true, "restricted: list history is kept only for this vault's accounts"
+	}
+	if time.Unix(int64(evt.CreatedAt), 0).After(time.Now().Add(listHistoryImportSkew)) {
+		return true, "invalid: dated ahead of this vault's clock"
+	}
+	return false, ""
 }
 
 // queryListHistory answers a REQ from the history store. Only owner
@@ -78,6 +116,12 @@ func queryListHistory(ctx context.Context, store DBBackend, f nostr.Filter) (cha
 			evs, err := allListVersions(ctx, store, author, kind)
 			if err != nil {
 				continue
+			}
+			// The versions an import filed are served with the vault's own (list_history_import.go).
+			if store == listsDB && listsImportDB != nil {
+				if more, err := allListVersions(ctx, listsImportDB, author, kind); err == nil {
+					evs = mergeVersions(evs, more)
+				}
 			}
 			for _, ev := range evs {
 				if listHistoryMatches(f, ev) {

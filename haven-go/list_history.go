@@ -170,6 +170,10 @@ func recordListVersionAdded(ctx context.Context, store DBBackend, evt *nostr.Eve
 			slog.Warn("list history: trim failed", "id", gone.ID, "err", err)
 		}
 	}
+	// What an import filed for this list is trimmed now too, against everything (list_history_import.go).
+	if store == listsDB {
+		trimImportedLocked(ctx, evt.PubKey, evt.Kind, evt.Tags.GetD())
+	}
 	return true, nil
 }
 

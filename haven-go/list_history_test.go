@@ -293,7 +293,7 @@ func TestListsRelayServesVersions(t *testing.T) {
 	})
 }
 
-// /lists is read-only, needs owner auth and refuses mesh connections.
+// /lists takes no write without owner auth (list_history_import_test.go has the one it takes), needs owner auth to read and refuses mesh connections.
 func TestListsRelayIsOwnerOnlyAndReadOnly(t *testing.T) {
 	config = Config{WhitelistedPubKeys: map[string]struct{}{hexid('0'): {}}}
 	rl := initListsRelay()

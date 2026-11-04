@@ -54,7 +54,8 @@ export async function startVault({ pubkey, log = () => {} }) {
   })
   const open = route => routeClient(haven, route, sk)
   // /inbox holds what others sent the user (replies, likes, zaps…): the Vault tab reads it and fills it from the relays.
-  // /lists is read-only: every version of the user's lists Haven kept (Settings › Recover a List).
+  // /lists: every version of the user's lists Haven kept (Settings › Recover a List). Its one write is an older
+  // version the import found on the relays, filed in history only (net/list-history-import.js).
   return { haven, owners, outbox: open("/"), feed: open("/feed"), inbox: open("/inbox"), lists: open("/lists"), loadMs, startMs: Date.now() - t0 - loadMs }
 }
 
@@ -92,10 +93,11 @@ export const streamClosed = e => e?.message === "haven stream closed"
 // pubkey, /relay/ uses "relay"), and they may still hold old notes, DMs and files. Never "haven:relay:<route>":
 // /relay/ is the same origin, so its stores are in this IndexedDB too. Never another account's either:
 // "haven:<other pubkey>:<route>". The list is the fallback for browsers without indexedDB.databases() (Firefox < 126).
-// "blobs" is not a route: it holds Blossom's files themselves (haven-go/blobfs_wasm.go). Nor is "drafts": Compose's
+// "listsimport" is not a route either: it holds the list versions an import filed, served through /lists
+// (haven-go list_history_import.go). "blobs" is not a route: it holds Blossom's files themselves (haven-go/blobfs_wasm.go). Nor is "drafts": Compose's
 // unsent notes (ComposeScreen idbDrafts), nor "wallet": the NWC connection (net/wallet.js). Both only ever under the
 // pubkey, named like the routes so this wipe takes them.
-const ROUTES = ["private", "chat", "outbox", "inbox", "blossom", "feed", "lists", "blobs"]
+const ROUTES = ["private", "chat", "outbox", "inbox", "blossom", "feed", "lists", "listsimport", "blobs"]
 const PAGE_STORES = ["drafts", "wallet", "deleted", "followbackup", "wotlists"]
 export async function storeNames(pubkey, idb = indexedDB) {
   const known = [...ROUTES.flatMap(r => [`haven:${pubkey}:${r}`, `haven:${r}`]), ...PAGE_STORES.map(s => `haven:${pubkey}:${s}`)]

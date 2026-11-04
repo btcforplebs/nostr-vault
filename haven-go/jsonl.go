@@ -215,6 +215,18 @@ func importDB(ctx context.Context, db DBBackend, r io.Reader) error {
 			}
 			continue
 		}
+		// So do the versions an import filed (list_history_import.go).
+		if listsImportDB != nil && db == listsImportDB {
+			if isOwnerList(&event) {
+				if err := fileImportedVersion(ctx, &event); err != nil {
+					return err
+				}
+				count++
+			} else {
+				skipped++
+			}
+			continue
+		}
 		if isUserList(&event) {
 			if err := db.ReplaceEvent(ctx, &event); err != nil {
 				if errors.Is(err, errFutureEvent) {
