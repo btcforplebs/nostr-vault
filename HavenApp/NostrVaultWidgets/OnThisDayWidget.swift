@@ -53,7 +53,7 @@ struct OnThisDayView: View {
                 if rows.isEmpty {
                     Text(entry.snapshot.onThisDay == nil ? "Reading your vault…" : "Nothing from this day in past years.")
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.6))
                     Spacer(minLength: 0)
                 } else if family == .systemSmall {
                     small(rows[0])
@@ -90,7 +90,7 @@ struct OnThisDayView: View {
             if rows.count > 1 {
                 Text("+\(rows.count - 1) more")
                     .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.5))
             }
         }
     }
@@ -114,7 +114,7 @@ struct OnThisDayView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Text(row.note.createdAt, style: .time)
                             .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.white.opacity(0.5))
                     }
                 }
             }

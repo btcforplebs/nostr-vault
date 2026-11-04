@@ -6,11 +6,13 @@ import Foundation
 // date 1 and 2 years ago, read from their own vault (VaultSocket, never a
 // relay) with Your space's rules (OnThisDay), kept for the day and handed to
 // NVWidgetBridge. Read once per owner per day; a read that fails (the vault
-// is not up yet) is tried again on the next publish.
+// is not up yet) is tried again on the next publish, and an empty one after
+// `emptyRetry` (the first import may still be filling the vault).
 
 @MainActor
 enum NVOnThisDayLoader {
-    private static var current: (key: String, snapshot: NVOnThisDaySnapshot)?
+    private static var current: (key: String, snapshot: NVOnThisDaySnapshot, readAt: Date)?
+    static let emptyRetry: TimeInterval = 15 * 60
     private static var loadingKey: String?
 
     private static func key(owner: String, day: Date) -> String {
@@ -28,13 +30,18 @@ enum NVOnThisDayLoader {
     static func refreshIfNeeded(owner: String, done: @escaping @MainActor () -> Void) {
         let day = Calendar.current.startOfDay(for: Date())
         let k = key(owner: owner, day: day)
-        guard !owner.isEmpty, current?.key != k, loadingKey != k else { return }
+        guard !owner.isEmpty, loadingKey != k else { return }
+        if let current, current.key == k {
+            let empty = current.snapshot.years.allSatisfy { $0.notes.isEmpty }
+            guard empty, Date().timeIntervalSince(current.readAt) >= emptyRetry else { return }
+        }
         loadingKey = k
         Task { @MainActor in
             defer { if loadingKey == k { loadingKey = nil } }
             guard let read = await read(owner: owner, day: day) else { return }
-            current = (k, read)
-            done()
+            let changed = current?.key != k || current?.snapshot != read
+            current = (k, read, Date())
+            if changed { done() }
         }
     }
 
