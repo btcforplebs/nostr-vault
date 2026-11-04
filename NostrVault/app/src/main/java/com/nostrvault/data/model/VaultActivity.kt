@@ -106,6 +106,10 @@ data class VaultActivity(
          * you, [isOutside] drops replies from outside your network (the Notes
          * list hides those too). [follows] come from the follower ledger;
          * those on one day (in [zone]) fold into one line.
+         *
+         * [outsideOnly]: just the posts that tag you from outside your network,
+         * the ones the list leaves out (the Vault page's ··· "Outside your
+         * web", Logen 2026-11-04). No likes, zaps, reposts or follows.
          */
         fun build(
             events: List<Event>,
@@ -116,6 +120,7 @@ data class VaultActivity(
             isOutside: (String) -> Boolean = { false },
             zone: ZoneId = ZoneId.systemDefault(),
             now: Long = nowSeconds(),
+            outsideOnly: Boolean = false,
         ): List<VaultActivity> {
             if (owner.isEmpty()) return emptyList()
 
@@ -148,6 +153,8 @@ data class VaultActivity(
             // Newest first, so each fold's actor list comes out newest first.
             for (event in events.sortedByDescending { it.createdAt }) {
                 if (event.pubkey == owner || isFuture(event.createdAt, now) || !seen.add(event.id)) continue
+
+                if (outsideOnly && (event.kind == REACTION_KIND || event.kind == ZAP_KIND || event.kind in REPOST_KINDS)) continue
 
                 if (event.kind == REACTION_KIND) {
                     if (isBlocked(event.pubkey)) continue
@@ -195,7 +202,7 @@ data class VaultActivity(
                 }
 
                 val tagsYou = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == owner }
-                if (!tagsYou || isOutside(event.pubkey)) continue
+                if (!tagsYou || isOutside(event.pubkey) != outsideOnly) continue
 
                 val kind = when (event.kind) {
                     VaultNoteScope.ARTICLE_KIND -> Kind.ARTICLE
@@ -225,7 +232,7 @@ data class VaultActivity(
             }
 
             // Follows on one day fold into one line, like a notifications page.
-            val followLines = follows
+            val followLines = if (outsideOnly) emptyList() else follows
                 .filter { it.pubkey != owner && !isBlocked(it.pubkey) }
                 .groupBy { Instant.ofEpochSecond(it.at).atZone(zone).toLocalDate() }
                 .map { (day, list) ->

@@ -178,6 +178,13 @@ class VaultActivityViewModel @Inject constructor(
     /** Every line, newest first; the list shows the first [shown]. */
     val lines: StateFlow<List<VaultActivity>> = _lines.asStateFlow()
 
+    private val _outsideLines = MutableStateFlow<List<VaultActivity>>(emptyList())
+    /**
+     * What [lines] leaves out: posts tagging you from outside your network,
+     * newest first (··· › Outside your web). This account only.
+     */
+    val outsideLines: StateFlow<List<VaultActivity>> = _outsideLines.asStateFlow()
+
     private val _shown = MutableStateFlow(FIRST_SHOW)
     val shown: StateFlow<Int> = _shown.asStateFlow()
 
@@ -267,6 +274,7 @@ class VaultActivityViewModel @Inject constructor(
                 eventsMutex.withLock { events.clear() }
                 noOlder = false
                 _lines.value = emptyList()
+                _outsideLines.value = emptyList()
                 _shown.value = FIRST_SHOW
                 _hasLoadedOnce.value = false
                 _unreadSince.value = Long.MAX_VALUE
@@ -417,9 +425,20 @@ class VaultActivityViewModel @Inject constructor(
             isBlocked = { it in blocked || quietOwn(it, owner) },
             isOutside = { VaultContentFilter.isOutside(it, owner, whitelist, trusted) },
         )
+        val outside = VaultActivity.build(
+            events = snapshot,
+            owner = owner,
+            noteKinds = VaultMode.RELAY_TAB_NOTE_KINDS,
+            isBlocked = { it in blocked || quietOwn(it, owner) },
+            isOutside = { VaultContentFilter.isOutside(it, owner, whitelist, trusted) },
+            outsideOnly = true,
+        )
         if (gen != generation) return@withContext
         _lines.value = lines
-        nostrService.fetchMissingProfiles(lines.take(_shown.value + SHOW_STEP).flatMap { it.actors.take(6) }.distinct())
+        _outsideLines.value = outside
+        nostrService.fetchMissingProfiles(
+            (lines.take(_shown.value + SHOW_STEP) + outside.take(_shown.value)).flatMap { it.actors.take(6) }.distinct(),
+        )
     }
 
     /**
@@ -615,13 +634,17 @@ internal fun VaultActivityScreen(
     val profiles by activity.profiles.collectAsState()
     val relayStatus by RelayForegroundService.relayStatus.collectAsState()
     val bootStatus by activity.relayBootStatus.collectAsState()
-    // All, or only replies, mentions and quotes (the right pill's @).
+    // All, or only replies, mentions and quotes (the right pill's @; tap it
+    // again for All). [outside]: ··· › Outside your web, what All leaves out.
     var filter by rememberSaveable { mutableStateOf(VaultActivityFilter.ALL) }
+    var outside by rememberSaveable { mutableStateOf(false) }
+    val outsideAll by activity.outsideLines.collectAsState()
     // In Zaps Only mode, likes are hidden.
-    val lines = remember(all, shownCount, zapsOnly, filter) {
+    val lines = remember(all, outsideAll, shownCount, zapsOnly, filter, outside) {
         // Filtered before the page cap, so a page of likes doesn't hide the
         // mentions behind it.
-        all.filter { filter.includes(it.kind) && !(zapsOnly && it.kind == VaultActivity.Kind.REACTION) }.take(shownCount)
+        if (outside) outsideAll.take(shownCount)
+        else all.filter { filter.includes(it.kind) && !(zapsOnly && it.kind == VaultActivity.Kind.REACTION) }.take(shownCount)
     }
     // More than one account: "All · <acct> · <acct>" chips widen the list.
     val accountHexes by activity.accountHexes.collectAsState()
@@ -634,8 +657,9 @@ internal fun VaultActivityScreen(
     val unreadCounts by activity.accountUnreadState.collectAsState()
     val chips = remember(accountHexes, activeHex) { VaultAccountChips.chips(accountHexes, activeHex) }
     val currentChip = VaultAccountChips.resolve(pickedChip, accountHexes, activeHex)
-    val others = !VaultAccountChips.isDefault(currentChip, activeHex)
-    val rows: List<VaultAccountLine> = remember(lines, all, otherLines, currentChip, accountHexes, activeHex, shownCount, zapsOnly, filter) {
+    // Outside your web is this account's alone: the chips don't widen it.
+    val others = !outside && !VaultAccountChips.isDefault(currentChip, activeHex)
+    val rows: List<VaultAccountLine> = remember(lines, all, otherLines, currentChip, accountHexes, activeHex, shownCount, zapsOnly, filter, others) {
         if (!others) {
             lines.map { VaultAccountLine(activeHex, it) }
         } else {
@@ -647,15 +671,21 @@ internal fun VaultActivityScreen(
         }
     }
     val filterNote = rememberFilterNoteState()
-    fun pick(next: VaultActivityFilter) {
-        val shownAfter = if (next != filter) activity.filterChanged() else shownCount
+    fun pick(next: VaultActivityFilter, toOutside: Boolean = false) {
+        val changed = next != filter || toOutside != outside
+        val shownAfter = if (changed) activity.filterChanged() else shownCount
         filter = next
-        val matching = all.count { next.includes(it.kind) && !(zapsOnly && it.kind == VaultActivity.Kind.REACTION) }
+        outside = toOutside
+        val matching = if (toOutside) outsideAll.size
+        else all.count { next.includes(it.kind) && !(zapsOnly && it.kind == VaultActivity.Kind.REACTION) }
         val count = minOf(matching, shownAfter)
         val capped = matching > shownAfter
         filterNote.show(
-            if (next == VaultActivityFilter.MENTIONS) countNote(NostrVaultIcons.At, "Mentions", count, capped, "No mentions yet")
-            else countNote(NostrVaultIcons.Layers, "Everything", count, capped, "Nothing new yet"),
+            when {
+                toOutside -> countNote(NostrVaultIcons.OutsideNetwork, "Outside your web", count, capped, "Nothing from outside your web")
+                next == VaultActivityFilter.MENTIONS -> countNote(NostrVaultIcons.At, "Mentions", count, capped, "No mentions yet")
+                else -> countNote(NostrVaultIcons.Layers, "Everything", count, capped, "Nothing new yet")
+            },
         )
     }
     val listState = rememberLazyListState()
@@ -700,19 +730,19 @@ internal fun VaultActivityScreen(
                         modifier = Modifier.tutorialAnchor(TutorialContent.VAULT_MODES),
                     )
                     Spacer(Modifier.weight(1f))
-                    // Messages | All · @, as bare icons; the note says what a tap picked.
+                    // Search · @ · ···, as bare icons; the note says what a tap
+                    // picked. No All button: All is nothing lit (Logen 2026-11-04).
                     VaultRightPill {
-                        IconFilterButton(
-                            icon = NostrVaultIcons.Layers,
-                            contentDescription = "All",
-                            isSelected = filter == VaultActivityFilter.ALL,
-                            onClick = { pick(VaultActivityFilter.ALL) },
-                        )
+                        val mentions = filter == VaultActivityFilter.MENTIONS && !outside
                         IconFilterButton(
                             icon = NostrVaultIcons.At,
                             contentDescription = "Mentions",
-                            isSelected = filter == VaultActivityFilter.MENTIONS,
-                            onClick = { pick(VaultActivityFilter.MENTIONS) },
+                            isSelected = mentions,
+                            onClick = { pick(if (mentions) VaultActivityFilter.ALL else VaultActivityFilter.MENTIONS) },
+                        )
+                        VaultActivityMore(
+                            outside = outside,
+                            onOutside = { pick(VaultActivityFilter.ALL, toOutside = !outside) },
                         )
                     }
                 }
@@ -783,11 +813,21 @@ internal fun VaultActivityScreen(
                 ) {
                     Icon(NostrVaultIcons.Activity, contentDescription = null, tint = colors.primary, modifier = Modifier.size(48.dp))
                     Spacer(Modifier.height(16.dp))
-                    Text(if (filter == VaultActivityFilter.MENTIONS) "No mentions yet" else "Nothing new yet", color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        when {
+                            outside -> "Nothing from outside your web"
+                            filter == VaultActivityFilter.MENTIONS -> "No mentions yet"
+                            else -> "Nothing new yet"
+                        },
+                        color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                    )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        if (filter == VaultActivityFilter.MENTIONS) "Replies, mentions and quotes land here"
-                        else "Replies, likes, zaps and new followers land here",
+                        when {
+                            outside -> "Posts that tag you from people outside your web of trust land here"
+                            filter == VaultActivityFilter.MENTIONS -> "Replies, mentions and quotes land here"
+                            else -> "Replies, likes, zaps and new followers land here"
+                        },
                         color = SecondaryText, fontSize = 13.sp,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -998,4 +1038,35 @@ private fun readablePreview(preview: String, name: (String) -> String): String {
         }
         pubkey?.let { "@" + name(it) }
     }.joinToString(" ")
+}
+
+/**
+ * The Vault page's ···: Outside your web, the posts tagging you from people
+ * outside your web of trust that the list leaves out. It moved here from the
+ * Notes toolbar's person-with-? (toolbar audit, Logen 2026-11-04).
+ */
+@Composable
+private fun VaultActivityMore(outside: Boolean, onOutside: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconFilterButton(
+            icon = NostrVaultIcons.More,
+            contentDescription = "More filters",
+            isSelected = outside,
+            onClick = { open = true },
+        )
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            androidx.compose.material3.DropdownMenuItem(
+                text = { Text("Outside your web") },
+                leadingIcon = { Icon(NostrVaultIcons.OutsideNetwork, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                trailingIcon = if (outside) {
+                    { Icon(NostrVaultIcons.Check, contentDescription = "On", modifier = Modifier.size(16.dp)) }
+                } else null,
+                onClick = {
+                    open = false
+                    onOutside()
+                },
+            )
+        }
+    }
 }

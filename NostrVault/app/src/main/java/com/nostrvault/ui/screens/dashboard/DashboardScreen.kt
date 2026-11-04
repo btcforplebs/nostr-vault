@@ -58,9 +58,38 @@ internal data class RelayFilterChoice(
 )
 
 /**
- * The trailing pill's filters for [viewMode], as bare icons. Notes: All · Mine ·
- * Mentions · Outside. Likes and Zaps: Received · Given. Followers: New · All.
- * [onPicked] gets each tap, and whether it changed the list.
+ * Notes, Articles and Highlights filters (Logen 2026-11-04, toolbar audit):
+ * no All button, All is the list with nothing lit, and tapping the lit filter
+ * again goes back to it. Articles' Recipes is a radio beside Mine, as on the
+ * web, not a toggle that stacks with it. Mentions and Outside left these
+ * pages: the Vault page has @, and "Outside your web" is in its ··· menu.
+ */
+internal object NotesFilterPick {
+    enum class Tap { MINE, RECIPES }
+
+    data class State(val filter: VaultContentFilter, val recipesOnly: Boolean) {
+        /** The one filter lit, or null for All. */
+        val lit: Tap? get() = when {
+            recipesOnly -> Tap.RECIPES
+            filter == VaultContentFilter.MINE -> Tap.MINE
+            else -> null
+        }
+    }
+
+    /** The filters after a tap on [tap]. */
+    fun after(now: State, tap: Tap): State =
+        if (now.lit == tap) State(VaultContentFilter.ALL, false)
+        else when (tap) {
+            Tap.MINE -> State(VaultContentFilter.MINE, false)
+            Tap.RECIPES -> State(VaultContentFilter.ALL, true)
+        }
+}
+
+/**
+ * The trailing pill's filters for [viewMode], as bare icons. Notes and
+ * Highlights: Mine. Articles: Mine · Recipes. Likes and Zaps: Received ·
+ * Given. Followers: New · All. [onPicked] gets each tap, and whether it
+ * changed the list.
  */
 @Composable
 private fun RowScope.RelayFilters(
@@ -88,31 +117,28 @@ private fun RowScope.RelayFilters(
         )
     when (viewMode) {
         VaultViewMode.NOTES -> {
-            filter(RelayFilterChoice(NostrVaultIcons.Layers, "All $things", "No $things yet"), "All", contentFilter == VaultContentFilter.ALL) {
-                viewModel.setContentFilter(VaultContentFilter.ALL)
-            }
-            filter(RelayFilterChoice(NostrVaultIcons.Profile, "Your $things", "None of your $things yet"), "Mine", contentFilter == VaultContentFilter.MINE) {
-                viewModel.setContentFilter(VaultContentFilter.MINE)
-            }
-            filter(RelayFilterChoice(NostrVaultIcons.At, "Mentions", "No mentions yet"), "Mentions", contentFilter == VaultContentFilter.TAGGED) {
-                viewModel.setContentFilter(VaultContentFilter.TAGGED)
-            }
-            filter(RelayFilterChoice(NostrVaultIcons.OutsideNetwork, "From outside your network", "No replies from outside"), "Replies from outside your network", contentFilter == VaultContentFilter.OUTSIDE) {
-                viewModel.setContentFilter(VaultContentFilter.OUTSIDE)
-            }
-            // Articles only: just the recipes (zapcooking / nostrcooking tags).
-            if (noteScope == VaultNoteScope.ARTICLES) {
-                val recipes = RelayFilterChoice(NostrVaultIcons.Recipes, "Recipes", "No recipes yet")
+            val now = NotesFilterPick.State(contentFilter, noteScope == VaultNoteScope.ARTICLES && recipesOnly)
+            val all = RelayFilterChoice(NostrVaultIcons.Layers, "All $things", "No $things yet")
+            @Composable
+            fun pick(tap: NotesFilterPick.Tap, choice: RelayFilterChoice, tooltip: String) {
+                val lit = now.lit == tap
                 IconFilterButton(
-                    icon = recipes.icon,
-                    contentDescription = "Recipes only",
-                    isSelected = recipesOnly,
+                    icon = choice.icon,
+                    contentDescription = tooltip,
+                    isSelected = lit,
                     onClick = {
-                        viewModel.toggleRecipesOnly()
-                        // Turning it off says so; turning it on counts.
-                        onPicked(if (recipesOnly) recipes.copy(waitsForList = false, name = "") else recipes, true)
+                        val next = NotesFilterPick.after(now, tap)
+                        if (next.recipesOnly != now.recipesOnly) viewModel.toggleRecipesOnly()
+                        if (next.filter != now.filter) viewModel.setContentFilter(next.filter)
+                        // Tapped again: back to All, and the note says so.
+                        onPicked(if (lit) all else choice, true)
                     },
                 )
+            }
+            pick(NotesFilterPick.Tap.MINE, RelayFilterChoice(NostrVaultIcons.Profile, "Your $things", "None of your $things yet"), "Mine")
+            // Articles only: just the recipes (zapcooking / nostrcooking tags).
+            if (noteScope == VaultNoteScope.ARTICLES) {
+                pick(NotesFilterPick.Tap.RECIPES, RelayFilterChoice(NostrVaultIcons.Recipes, "Recipes", "No recipes yet"), "Recipes only")
             }
         }
         VaultViewMode.LIKES -> {
@@ -353,7 +379,6 @@ fun DashboardScreen(
     LaunchedEffect(viewMode) { pendingFilter = null }
     val onFilterPicked: (RelayFilterChoice, Boolean) -> Unit = { choice, changed ->
         when {
-            choice.name.isEmpty() -> { pendingFilter = null; filterNote.show(FilterNote.off("Recipes")) }
             changed && choice.waitsForList -> {
                 pendingFilter = choice
                 noteCoroutines.launch {
