@@ -40,16 +40,22 @@ enum FollowersFilter {
     case all
 }
 
-/// The "Vault" list's filters: everything, or only what you might answer.
+/// The "Vault" list's filters: everything, only what you might answer, or
+/// what tagged you from outside your web (Logen 11-04: the Notes "?" filter
+/// moved here, into the pill's ··· menu; All lists none of it).
 enum ActivityFilter {
     case all
     /// Replies, mentions and quotes.
     case mentions
+    /// Posts that tag you from people outside your Web of Trust: the lines
+    /// All leaves out. Built with `VaultActivity.build(outsideOnly:)`.
+    case outside
 
     func includes(_ kind: VaultActivity.Kind) -> Bool {
         switch self {
         case .all: return true
         case .mentions: return kind == .reply || kind == .mention || kind == .quote
+        case .outside: return kind == .reply || kind == .mention || kind == .quote || kind == .article || kind == .highlight
         }
     }
 }
@@ -109,7 +115,7 @@ enum VaultFilterChoice: Equatable {
         case .activity(.all), .notes(.all), .notes(.whitelist): return "square.stack"
         case .activity(.mentions), .notes(.tagged): return "at"
         case .notes(.mine): return "person.fill"
-        case .notes(.outside): return "person.crop.circle.badge.questionmark"
+        case .notes(.outside), .activity(.outside): return "person.crop.circle.badge.questionmark"
         case .recipes: return "fork.knife"
         case .likes(.onMyNotes), .zaps(.onMyNotes): return "tray.and.arrow.down.fill"
         case .likes(.myLikes), .zaps(.myZaps): return "tray.and.arrow.up.fill"
@@ -136,7 +142,7 @@ enum VaultFilterChoice: Equatable {
         case .notes(.all): return "All \(things)"
         case .notes(.whitelist): return "Whitelisted"
         case .notes(.mine): return "Your \(things)"
-        case .notes(.outside): return "From outside your network"
+        case .notes(.outside), .activity(.outside): return "Outside your web"
         case .recipes: return "Recipes only"
         case .likes(.onMyNotes): return "Likes received"
         case .likes(.myLikes): return "Likes given"

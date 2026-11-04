@@ -53,6 +53,41 @@ final class VaultActivityTests: XCTestCase {
                             isBlocked: isBlocked, isOutside: isOutside)
     }
 
+    /// "Outside your web" (the Vault pill's ···): what All leaves out, and nothing else.
+    func testOutsideOnlyListsThePostsTaggingYouFromOutsideYourWeb() {
+        let events = [
+            event("post", me, at: 100),
+            event("inReply", ann, at: 110, tags: [["e", "post"], ["p", me]]),
+            event("outReply", cat, at: 120, tags: [["e", "post"], ["p", me]]),
+            event("outMention", cat, at: 125, tags: [["p", me]]),
+            event("outArticle", cat, kind: 30023, at: 126, tags: [["p", me]]),
+            // Likes, reposts and zaps from outside are not "posts that tag you".
+            event("outLike", cat, kind: 7, at: 130, tags: [["e", "post"], ["p", me]]),
+            event("outRepost", cat, kind: 6, at: 131, tags: [["e", "post"], ["p", me]]),
+            zapReceipt("outZap", from: cat, on: "post", sats: 21, at: 132),
+            // Blocked stays blocked.
+            event("blockedOut", bob, at: 140, tags: [["p", me]]),
+        ]
+        let outside = VaultActivity.build(events: events, owner: me, noteKinds: noteKinds,
+                                          follows: [(pubkey: cat, at: 150)],
+                                          isBlocked: { $0 == self.bob },
+                                          isOutside: { $0 == self.cat || $0 == self.bob }, outsideOnly: true)
+        XCTAssertEqual(outside.map(\.id), ["outArticle", "outMention", "outReply"])
+        XCTAssertEqual(outside.map(\.kind), [.article, .mention, .reply])
+        // The same events in All: the outside posts are gone, the rest stays.
+        let all = VaultActivity.build(events: events, owner: me, noteKinds: noteKinds,
+                                      isBlocked: { $0 == self.bob }, isOutside: { $0 == self.cat || $0 == self.bob })
+        XCTAssertFalse(all.contains { ["outReply", "outMention", "outArticle"].contains($0.id) })
+        XCTAssertTrue(all.contains { $0.id == "inReply" })
+    }
+
+    func testOutsideFilterKeepsOnlyPostKinds() {
+        XCTAssertTrue(ActivityFilter.outside.includes(.reply))
+        XCTAssertTrue(ActivityFilter.outside.includes(.highlight))
+        XCTAssertFalse(ActivityFilter.outside.includes(.reaction))
+        XCTAssertFalse(ActivityFilter.outside.includes(.follow))
+    }
+
     func testLikesOnOnePostFoldIntoOneLineNewestActorFirst() {
         let lines = build([
             event("post", me, at: 100, content: "my   post\ntext"),
