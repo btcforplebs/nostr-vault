@@ -9,6 +9,9 @@
 .sp-panels { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 12px; overflow-y: auto; overscroll-behavior: contain; }
 /* On a short window the panels scroll in the column instead of Live Vault being squeezed to its header. */
 .sp-panel.live-vault { min-height: 220px; }
+/* Every other panel keeps its own height; Live Vault (down to its 220px) is the one that gives way, and past that the
+   column scrolls. Widgets that could shrink were squeezed to a few pixels in a 900px-tall window (Logen, 2026-11-04). */
+.sp-panel:not(.live-vault) { flex-shrink: 0; }
 
 /* A panel: a card with its own header; the list inside scrolls, the header stays. */
 .sp-panel { display: flex; flex-direction: column; min-height: 0; max-height: 100%; border-radius: 14px; background: var(--s1);
