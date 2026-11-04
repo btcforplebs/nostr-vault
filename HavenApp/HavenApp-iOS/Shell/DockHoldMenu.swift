@@ -132,7 +132,7 @@ struct DockHoldButton<Label: View>: View {
             downAt = Date()
             // Warm the Taptic Engine now, so the open buzz lands on the frame
             // the menu appears instead of a beat later.
-            let open = UIImpactFeedbackGenerator(style: .light)
+            let open = UIImpactFeedbackGenerator(style: .medium)
             open.prepare()
             openHaptic = open
             let tick = UISelectionFeedbackGenerator()
