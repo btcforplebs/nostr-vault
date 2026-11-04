@@ -355,7 +355,10 @@ extension FeedView {
                 .softTopScrollEdge()
                 .onChange(of: feedService.isLoadingFeed) { _, isLoading in
                     if !isLoading && feedService.shouldScrollToTopOnLoad {
+                        // Always cleared, so a leftover never fires later; the
+                        // jump only when the reader is still at the top (FeedStayPut).
                         feedService.shouldScrollToTopOnLoad = false
+                        guard FeedStayPut.scrollsToTopAfterLoad(isAtTop: isAtTop) else { return }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                             withAnimation(Motion.scrollJump) {
                                 proxy.scrollTo("top", anchor: .top)
@@ -364,13 +367,13 @@ extension FeedView {
                     }
                 }
                 .onChange(of: feedService.visiblePendingCount) { _, count in
-                    // Auto-apply pending notes when autoLoad is on, but only
-                    // if the user is at the top of the feed to avoid disrupting
-                    // their scroll position. Debounced to prevent duplicate calls.
-                    // Not while a tapped post is open: posts added above
-                    // would push it off the landing line.
-                    if count > 0 && configService.config.autoLoadNewPosts && !feedService.isLoadingFeed && isAtTop
-                        && expandedNoteId == nil {
+                    // Auto-apply pending notes when autoLoad is on, wherever
+                    // the reader is: below the top they stay on the post they
+                    // were reading (scheduleAutoLoad). Debounced to prevent
+                    // duplicate calls. Not while a tapped post is open: posts
+                    // added above would push it off the landing line.
+                    if FeedStayPut.autoLoads(enabled: configService.config.autoLoadNewPosts, waiting: count,
+                                             isLoading: feedService.isLoadingFeed, postOpen: expandedNoteId != nil) {
                         scheduleAutoLoad(delay: 1.5)
                     }
                 }

@@ -42,6 +42,7 @@
 		04FF7D29EAC7225938E74E1F /* RelayCounter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 215B39AD61BD36B556EF716A /* RelayCounter.swift */; };
 		0503E16608673524E6FB14EC /* VaultSearchBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89481C18D3B08E23CC1A680F /* VaultSearchBar.swift */; };
 		0528D3D2C617FEA7936C6D07 /* HighlightInlineBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FC58BB54728488999244E19 /* HighlightInlineBody.swift */; };
+		05481E2CFD4F82F52DBA68FF /* FeedStayPut.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5975F176A8F8E22B12351028 /* FeedStayPut.swift */; };
 		0550886023E5A566CEFD6FC3 /* AnimatedImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FBC15E9329FDE2D78ED1BD1 /* AnimatedImage.swift */; };
 		0557B421D566C5250C0E8FF8 /* SetupReferral.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CB3928B13EED1E152C1D081 /* SetupReferral.swift */; };
 		0563BE2D8A71E6E2A6C83922 /* MenuBarStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 325A99A7D646C515AB620EE5 /* MenuBarStatusView.swift */; };
@@ -494,6 +495,7 @@
 		49B398D8EBB079F9E572F716 /* NoteDetailView+EngagementPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7018F50A59F15809E36371C9 /* NoteDetailView+EngagementPanel.swift */; };
 		49E3ACA459EED308EC02379E /* RelayProcessManager+MimeDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5467C5412FB74901660F13 /* RelayProcessManager+MimeDetection.swift */; };
 		4A017D78CCF991A696CD3199 /* MusicFeedState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81C57462038DBEB1BF287B09 /* MusicFeedState.swift */; };
+		4A7D96C141ED7B314641743D /* FeedStayPut.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5975F176A8F8E22B12351028 /* FeedStayPut.swift */; };
 		4A9359EE17E8A4A68E7A3A50 /* NWCService+Balance.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5847FCB8D5923D4758DFB15 /* NWCService+Balance.swift */; };
 		4AB3638041686375872C0D3B /* FeedView+EmptyStates.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3C196064FDD02127CFA047C /* FeedView+EmptyStates.swift */; };
 		4B042BA6B8B79242CE57173C /* PollComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B5E1DFD8D4BF82783CEDFDD /* PollComposeView.swift */; };
@@ -2190,6 +2192,7 @@
 		58DD627BE3CD8F7939B4F325 /* SellerListingsLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SellerListingsLoader.swift; sourceTree = "<group>"; };
 		5947F392DFBF2A9CC90CEB91 /* MusicArtistPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicArtistPage.swift; sourceTree = "<group>"; };
 		59494D0AE391C3191D48D603 /* ListHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListHistory.swift; sourceTree = "<group>"; };
+		5975F176A8F8E22B12351028 /* FeedStayPut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedStayPut.swift; sourceTree = "<group>"; };
 		59F6845B323C2C85A306A8D6 /* HavenConfig+Secrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HavenConfig+Secrets.swift"; sourceTree = "<group>"; };
 		5A07682D0C53235ABE03E3EF /* DashboardView+ImportSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DashboardView+ImportSections.swift"; sourceTree = "<group>"; };
 		5A45C528A229C534E4FCA016 /* SearchRecommendations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchRecommendations.swift; sourceTree = "<group>"; };
@@ -3734,6 +3737,7 @@
 				03CA3570ED08E58BCFE90E28 /* FeedOutboxPlan.swift */,
 				FB04FF5ECC6BE85A9D783C18 /* FeedProfile.swift */,
 				D1C54EC3846583043C553DC3 /* FeedSpeedPolicy.swift */,
+				5975F176A8F8E22B12351028 /* FeedStayPut.swift */,
 				935F68EC9A7EBD1E570211CF /* FeedThreadGrouping.swift */,
 				A65E47EAB300A4D76EE4F262 /* FeedVideoShape.swift */,
 				093D54B83D57F902ED44E397 /* FillYourFeedGuide.swift */,
@@ -4834,6 +4838,7 @@
 				5E779E545DA5566174AE5AF6 /* FeedServiceTypes.swift in Sources */,
 				51159D6D70A1ECF17FCEF895 /* FeedSettingsView.swift in Sources */,
 				205B7AE7E638FDB0FA24F3D5 /* FeedSpeedPolicy.swift in Sources */,
+				05481E2CFD4F82F52DBA68FF /* FeedStayPut.swift in Sources */,
 				2CB176ED82313ACA85A8AE44 /* FeedThreadCard.swift in Sources */,
 				60135B288D01F67F43BF7E6B /* FeedThreadGrouping.swift in Sources */,
 				0C9DE6ADE24831CB3EB91BE9 /* FeedVideoShape.swift in Sources */,
@@ -5753,6 +5758,7 @@
 				DC564055F17E779B59E55881 /* FeedServiceTypes.swift in Sources */,
 				845E3413FEF16395FC4AB6EC /* FeedSettingsView.swift in Sources */,
 				570308960C6A8DD9B9C7DE4E /* FeedSpeedPolicy.swift in Sources */,
+				4A7D96C141ED7B314641743D /* FeedStayPut.swift in Sources */,
 				F7E4D75941ED6FAE9AF5480E /* FeedThreadCard.swift in Sources */,
 				E9B017046B79DE70C07E4574 /* FeedThreadGrouping.swift in Sources */,
 				A32BE09A005360A1730BB3D1 /* FeedVideoShape.swift in Sources */,
