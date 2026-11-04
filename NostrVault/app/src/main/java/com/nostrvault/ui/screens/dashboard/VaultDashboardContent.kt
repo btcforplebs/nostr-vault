@@ -108,8 +108,8 @@ internal fun VaultDashboardContent(
     val hasLocalKey by viewModel.hasLocalKey.collectAsState()
     val startedAt by viewModel.relayStartedAt.collectAsState()
     val isImporting by vaultViewModel.isImporting.collectAsState()
-    /** Moving in also looks for older list versions on history relays only when ticked (ListHistoryScan). */
-    var lookForOldLists by rememberSaveable { mutableStateOf(false) }
+    /** Moving in also looks up older list versions on the Lazarus history relays unless turned off (ListHistoryScan). */
+    var lookForOldLists by rememberSaveable { mutableStateOf(com.nostrvault.service.ListHistoryScan.DEFAULT_ON) }
     val importProgress by vaultViewModel.importProgress.collectAsState()
     val importStatus by vaultViewModel.importStatusMessage.collectAsState()
     val importCompleted by vaultViewModel.importCompleted.collectAsState()

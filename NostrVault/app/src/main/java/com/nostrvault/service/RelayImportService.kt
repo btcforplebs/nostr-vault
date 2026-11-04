@@ -93,8 +93,8 @@ class RelayImportService @Inject constructor(
     /**
      * Import notes from seed relays. Stops the running relay, starts it
      * in import mode, polls for progress, then restarts normally.
-     * [listHistory]: the user ticked "Also look for older versions of my
-     * lists on history relays" ([ListHistoryScan]; off unless ticked).
+     * [listHistory]: "Look up and back up my lists" is on ([ListHistoryScan];
+     * on by default, off skips every history relay).
      */
     fun importNotes(listHistory: Boolean = false) {
         if (_isImporting.value || _isExporting.value) return

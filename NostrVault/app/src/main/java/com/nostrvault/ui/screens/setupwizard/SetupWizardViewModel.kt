@@ -224,8 +224,8 @@ class SetupWizardViewModel @Inject constructor(
     internal val _useNostrConfirm = MutableStateFlow("")
     val useNostrConfirm = _useNostrConfirm.asStateFlow()
 
-    /** "Also look for older versions of my lists on history relays", on the relay check; off unless ticked. */
-    internal val _importListHistory = MutableStateFlow(false)
+    /** "Look up and back up my lists", on the relay check; on unless turned off ([ListHistoryScan.DEFAULT_ON]). */
+    internal val _importListHistory = MutableStateFlow(com.nostrvault.service.ListHistoryScan.DEFAULT_ON)
     val importListHistory: StateFlow<Boolean> = _importListHistory.asStateFlow()
 
     internal val _relayRows = MutableStateFlow<List<RelayCheck.Row>>(emptyList())
