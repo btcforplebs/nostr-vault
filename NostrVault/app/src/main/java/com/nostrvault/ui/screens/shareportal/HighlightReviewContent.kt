@@ -6,7 +6,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.nostrvault.service.shareportal.handlers.HighlightPageLink
 import com.nostrvault.service.shareportal.handlers.HighlightShareHandler
+import com.nostrvault.ui.screens.shareportal.forms.PageLinkField
 import com.nostrvault.shareportal.ShareIntent
 import com.nostrvault.ui.components.ProseKeyboardOptions
 import com.nostrvault.ui.theme.SecondaryText
@@ -22,12 +24,15 @@ internal fun HighlightReviewContent(
     busy: Boolean,
     needsSwitch: Boolean,
     onSwitchAccount: (String) -> Unit,
-    onPublish: (passage: String, comment: String) -> Unit,
+    /** [pageLink]: the link typed for a share that came without one, else null. */
+    onPublish: (passage: String, comment: String, pageLink: String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var passage by remember(intent.id) { mutableStateOf(handler.initialPassage(intent)) }
     var comment by remember(intent.id) { mutableStateOf(intent.form["comment"].orEmpty()) }
     val url = handler.sourceUrl(intent)
+    var pageLink by remember(intent.id) { mutableStateOf(intent.form["pageLink"].orEmpty()) }
+    val linkCheck = HighlightPageLink.check(pageLink)
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Highlight", style = MaterialTheme.typography.titleMedium)
         (intent.source.title ?: url)?.let { Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis, color = SecondaryText) }
@@ -47,6 +52,7 @@ internal fun HighlightReviewContent(
             maxLines = 4,
             modifier = Modifier.fillMaxWidth(),
         )
+        if (url == null) PageLinkField(pageLink, linkCheck) { pageLink = it }
         Text("Highlights are public.", color = SecondaryText, style = MaterialTheme.typography.bodySmall)
         val wanted = intent.account
         if (wanted != null && needsSwitch) {
@@ -55,8 +61,8 @@ internal fun HighlightReviewContent(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(
-                onClick = { onPublish(passage, comment) },
-                enabled = !busy && passage.isNotBlank() && !needsSwitch,
+                onClick = { onPublish(passage, comment, if (url == null) HighlightPageLink.link(pageLink) else null) },
+                enabled = !busy && passage.isNotBlank() && !needsSwitch && linkCheck != HighlightPageLink.Check.NotALink,
             ) { Text(if (busy) "Publishing…" else "Publish") }
             TextButton(onClick = onDismiss, enabled = !busy) { Text("Dismiss") }
         }

@@ -171,4 +171,28 @@ final class SharePortalKitTests: XCTestCase {
         XCTAssertEqual(HighlightShareTags.tags(url: "javascript:x", passage: "p", comment: ""),
                        [["alt", "Highlight: \"p\""]])
     }
+
+    /// Logen 2026-11-04: Safari's text-menu Share… sends only the words; a typed Page link becomes the r tag.
+    func testHighlightPageLinkReadsATypedAddress() {
+        XCTAssertEqual(HighlightPageLink.check(""), .empty)
+        XCTAssertEqual(HighlightPageLink.check("  \n "), .empty)
+        XCTAssertEqual(HighlightPageLink.check(" https://example.com/a?b=1 "), .link("https://example.com/a?b=1"))
+        XCTAssertEqual(HighlightPageLink.check("HTTP://Example.com"), .link("HTTP://Example.com"))
+        XCTAssertEqual(HighlightPageLink.check("example.com/post"), .link("https://example.com/post"))
+        XCTAssertEqual(HighlightPageLink.check("www.nytimes.com"), .link("https://www.nytimes.com"))
+    }
+
+    func testHighlightPageLinkRefusesWhatIsNotAWebAddress() {
+        for typed in ["hello world", "notalink", "javascript:alert(1)", "ftp://example.com", "//example.com",
+                      "https://", "https://localhost", "example.", "nostr:npub1abc", "https://exa mple.com"] {
+            XCTAssertEqual(HighlightPageLink.check(typed), .notALink, typed)
+            XCTAssertNil(HighlightPageLink.link(typed), typed)
+        }
+    }
+
+    func testTypedPageLinkGoesOutAsTheSourceTag() {
+        let tags = HighlightShareTags.tags(url: HighlightPageLink.link("example.com/a"), passage: "words", comment: "")
+        XCTAssertEqual(tags.first, ["r", "https://example.com/a", "source"])
+        XCTAssertFalse(HighlightShareTags.tags(url: HighlightPageLink.link(""), passage: "words", comment: "").contains { $0.first == "r" })
+    }
 }

@@ -10,6 +10,7 @@ struct HighlightReviewView: View {
     @ObservedObject private var config = ConfigService.shared
     @State private var passage = ""
     @State private var comment = ""
+    @State private var pageLink = ""
     @State private var started = false
     @State private var publishing = false
     @State private var error: String?
@@ -20,8 +21,12 @@ struct HighlightReviewView: View {
     }
     private var isOnDevice: Bool { config.allAccountNpubs.contains(npub) }
     private var isActive: Bool { npub == activeNpub }
+    /// No page came with it (Safari's text-menu Share… sends only the words): the link is typed here or in the sheet.
+    private var arrivedWithoutLink: Bool { intent.source.url == nil }
+    private var linkCheck: HighlightPageLink.Check { HighlightPageLink.check(pageLink) }
     private var canPublish: Bool {
         isOnDevice && isActive && !publishing && !passage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && linkCheck != .notALink
     }
 
     var body: some View {
@@ -44,6 +49,17 @@ struct HighlightReviewView: View {
             Section("Your thoughts (optional)") {
                 TextField("Add a comment", text: $comment, axis: .vertical)
                     .lineLimit(2...5)
+            }
+            if arrivedWithoutLink {
+                Section {
+                    TextField(HighlightPageLink.placeholder, text: $pageLink)
+                        .webAddressEntry()
+                } header: {
+                    Text(HighlightPageLink.label)
+                } footer: {
+                    Text(linkCheck == .notALink ? HighlightPageLink.problem : HighlightPageLink.hint)
+                        .foregroundStyle(linkCheck == .notALink ? Color.red : Color.secondary)
+                }
             }
             accountSection
             if let error {
@@ -69,6 +85,7 @@ struct HighlightReviewView: View {
             started = true
             passage = intent.form["passage"] ?? intent.source.selection ?? ""
             comment = intent.form["comment"] ?? ""
+            pageLink = intent.form["pageLink"] ?? ""
         }
     }
 
@@ -95,14 +112,26 @@ struct HighlightReviewView: View {
         error = nil
         let passage = passage
         let comment = comment
+        let url = intent.source.url ?? HighlightPageLink.link(pageLink)
         Task {
             do {
-                try await HighlightShareHandler.publish(intent, passage: passage, comment: comment)
+                try await HighlightShareHandler.publish(intent, url: url, passage: passage, comment: comment)
                 close()
             } catch {
                 self.error = error.localizedDescription
                 publishing = false
             }
         }
+    }
+}
+
+private extension View {
+    /// A URL keyboard with no capitals or autocorrect on iPhone and iPad; the Mac has neither.
+    @ViewBuilder func webAddressEntry() -> some View {
+        #if os(iOS)
+        keyboardType(.URL).textContentType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+        #else
+        autocorrectionDisabled()
+        #endif
     }
 }

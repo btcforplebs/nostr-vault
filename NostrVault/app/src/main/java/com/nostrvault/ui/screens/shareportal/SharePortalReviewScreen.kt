@@ -73,7 +73,7 @@ private fun ReviewCard(
             busy = busy,
             needsSwitch = intent.account != null && intent.account != active,
             onSwitchAccount = viewModel::switchAccount,
-            onPublish = { passage, comment -> viewModel.publishHighlight(intent, passage, comment) },
+            onPublish = { passage, comment, pageLink -> viewModel.publishHighlight(intent, passage, comment, pageLink) },
             onDismiss = { viewModel.dismiss(intent) },
         )
         intent.action == ShareAction.MEDIA_POST && handler.isReady -> MediaPostReviewContent(

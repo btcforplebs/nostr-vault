@@ -21,10 +21,11 @@ extension HighlightShareHandler {
 
     /// Signs with that account's signer and sends. Locked to the account, so
     /// a switch while the signer is busy cannot post it as someone else.
-    static func publish(_ intent: NVShareIntent, passage: String, comment: String) async throws {
+    /// `url`: the shared page, else the Page link typed for a text-only share.
+    static func publish(_ intent: NVShareIntent, url: String?, passage: String, comment: String) async throws {
         let npub = account(for: intent)
         guard let hex = Bech32.decode(npub)?.hexString else { throw ModePostPublisher.PublishError.signing }
-        let tags = HighlightShareTags.tags(url: intent.source.url, passage: passage, comment: comment)
+        let tags = HighlightShareTags.tags(url: url, passage: passage, comment: comment)
         _ = try await ModePostPublisher.publish(kind: HighlightShareTags.kind,
                                                 content: passage.trimmingCharacters(in: .whitespacesAndNewlines),
                                                 tags: tags, nostrService: NostrService.shared,

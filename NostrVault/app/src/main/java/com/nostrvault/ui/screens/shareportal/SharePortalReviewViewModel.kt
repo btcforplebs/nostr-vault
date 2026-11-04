@@ -92,11 +92,11 @@ class SharePortalReviewViewModel @Inject constructor(
         }
     }
 
-    fun publishHighlight(intent: ShareIntent, passage: String, comment: String) {
+    fun publishHighlight(intent: ShareIntent, passage: String, comment: String, pageLink: String? = null) {
         if (_busy.value) return
         _busy.value = true
         viewModelScope.launch {
-            when (router.highlight.publish(intent, passage, comment)) {
+            when (router.highlight.publish(intent, passage, comment, pageLink)) {
                 HighlightShareHandler.Outcome.Published -> {
                     notificationManager.showToast("Highlight published")
                     dismiss(intent)

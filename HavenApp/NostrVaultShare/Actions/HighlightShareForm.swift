@@ -11,9 +11,15 @@ struct HighlightShareForm: View {
 
     @State private var passage = ""
     @State private var comment = ""
+    @State private var pageLink = ""
     @State private var started = false
 
-    private var canSend: Bool { !passage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// No page came with it (Safari's text-menu Share… sends only the words).
+    private var arrivedWithoutLink: Bool { NVShareClassifier.webURL(of: input) == nil }
+    private var linkCheck: HighlightPageLink.Check { HighlightPageLink.check(pageLink) }
+    private var canSend: Bool {
+        !passage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && linkCheck != .notALink
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -33,6 +39,19 @@ struct HighlightShareForm: View {
             TextField("Your thoughts (optional)", text: $comment, axis: .vertical)
                 .lineLimit(1...4)
                 .textFieldStyle(.roundedBorder)
+            if arrivedWithoutLink {
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField(HighlightPageLink.label, text: $pageLink, prompt: Text(HighlightPageLink.label))
+                        .keyboardType(.URL)
+                        .textContentType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .textFieldStyle(.roundedBorder)
+                    Text(linkCheck == .notALink ? HighlightPageLink.problem : HighlightPageLink.hint)
+                        .font(.caption)
+                        .foregroundStyle(linkCheck == .notALink ? Color.red : Color.secondary)
+                }
+            }
             if accounts.count > 1 {
                 Picker("Post as", selection: $account) {
                     ForEach(accounts, id: \.npub) { a in
@@ -42,7 +61,9 @@ struct HighlightShareForm: View {
                 .pickerStyle(.menu)
             }
             Button {
-                send(["passage": passage, "comment": comment])
+                var form = ["passage": passage, "comment": comment]
+                if arrivedWithoutLink, let link = HighlightPageLink.link(pageLink) { form["pageLink"] = link }
+                send(form)
             } label: {
                 Text("Send to Nostr Vault").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 12)
             }

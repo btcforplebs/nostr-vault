@@ -48,10 +48,11 @@ class HighlightShareHandler @Inject constructor(
         return wanted != configStore.config.value.activeOrOwnerNpub()
     }
 
-    suspend fun publish(intent: ShareIntent, passage: String, comment: String): Outcome {
+    /** [pageLink]: typed for a share that named no page; the share's own page wins. */
+    suspend fun publish(intent: ShareIntent, passage: String, comment: String, pageLink: String? = null): Outcome {
         if (passage.isBlank()) return Outcome.Empty
         if (needsAccountSwitch(intent)) return Outcome.WrongAccount
-        val tags = HighlightShareTags.tags(sourceUrl(intent), passage, comment)
+        val tags = HighlightShareTags.tags(sourceUrl(intent) ?: pageLink?.let(HighlightPageLink::link), passage, comment)
         // Locked to the account, like iOS's lockedTo: a switch while the
         // signer is busy throws instead of posting as someone else.
         val npub = intent.account ?: configStore.config.value.activeOrOwnerNpub()

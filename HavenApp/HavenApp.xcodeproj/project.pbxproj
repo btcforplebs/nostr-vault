@@ -318,6 +318,7 @@
 		2B6C4CD31CFCC63C1AB4AA6D /* DMSearchResultsList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FCAB2E176636514B4B09244 /* DMSearchResultsList.swift */; };
 		2B77B07DB61DF5B33AA051D0 /* LiveAvatarRing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FA4CE891A38A87FEB1B8D90 /* LiveAvatarRing.swift */; };
 		2BBA22EBA6B6216010C79E8B /* NVShareIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69FCE89FDCC4D758B3B2AE81 /* NVShareIntent.swift */; };
+		2BBFA0202A19CFC211D437D4 /* HighlightPageLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66E432CD99DC05DA1799FCF /* HighlightPageLink.swift */; };
 		2BC448FBF2F8B14E77FFFE92 /* OpenInWebButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0E9EC6033EC8D3F3C783BC /* OpenInWebButton.swift */; };
 		2BE5C5E967488912EC919AED /* FeedService+NoteOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D83DCFAA64AE6EE183AAB63 /* FeedService+NoteOperations.swift */; };
 		2C51F38A3C9173B1ECF7A90B /* WotNewcomers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DEFE8FD51A67D177C07A118 /* WotNewcomers.swift */; };
@@ -509,6 +510,7 @@
 		49B398D8EBB079F9E572F716 /* NoteDetailView+EngagementPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7018F50A59F15809E36371C9 /* NoteDetailView+EngagementPanel.swift */; };
 		49E3ACA459EED308EC02379E /* RelayProcessManager+MimeDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5467C5412FB74901660F13 /* RelayProcessManager+MimeDetection.swift */; };
 		4A017D78CCF991A696CD3199 /* MusicFeedState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81C57462038DBEB1BF287B09 /* MusicFeedState.swift */; };
+		4A0B568BF5A5D0E17B28FB74 /* HighlightPageLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66E432CD99DC05DA1799FCF /* HighlightPageLink.swift */; };
 		4A7D96C141ED7B314641743D /* FeedStayPut.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5975F176A8F8E22B12351028 /* FeedStayPut.swift */; };
 		4A9359EE17E8A4A68E7A3A50 /* NWCService+Balance.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5847FCB8D5923D4758DFB15 /* NWCService+Balance.swift */; };
 		4AB3638041686375872C0D3B /* FeedView+EmptyStates.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3C196064FDD02127CFA047C /* FeedView+EmptyStates.swift */; };
@@ -1367,6 +1369,7 @@
 		BBEB6E9E824AA4B887755B8E /* EventBroadcastSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26251868EAC178C0BAF356A8 /* EventBroadcastSheet.swift */; };
 		BC01754B87DBF7DC16BFBA8E /* Wavlake.swift in Sources */ = {isa = PBXBuildFile; fileRef = C91987BAC69FE261893A95BA /* Wavlake.swift */; };
 		BC149F5EF1080D3A330334B6 /* Bolt11.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC971B12438093F727E8967F /* Bolt11.swift */; };
+		BC9069B485D3CCF79BDD4AC7 /* HighlightPageLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66E432CD99DC05DA1799FCF /* HighlightPageLink.swift */; };
 		BD5A27165C17582AFFB599EF /* AvatarThumbnail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0802E590CDCCA7978BB8D2C6 /* AvatarThumbnail.swift */; };
 		BDA2EED14D678BC16890F89F /* BlossomDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3B2353A9CF349D2A6B43DA8 /* BlossomDashboardView.swift */; };
 		BDA363DC95254A47E3D4703E /* HavenConfig+RelayRoles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 327390102914F7A1B1AED7A0 /* HavenConfig+RelayRoles.swift */; };
@@ -2751,6 +2754,7 @@
 		D5F84F499115E83DCA24A989 /* Chime.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = Chime.mp3; sourceTree = "<group>"; };
 		D64F4BC38848968B2A27D261 /* FipsMeshDevices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FipsMeshDevices.swift; sourceTree = "<group>"; };
 		D657C19C2BFB504A4167445B /* NWCService+MakeInvoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NWCService+MakeInvoice.swift"; sourceTree = "<group>"; };
+		D66E432CD99DC05DA1799FCF /* HighlightPageLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightPageLink.swift; sourceTree = "<group>"; };
 		D67ADBC1563448EB3D0AE077 /* VaultDashboardDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultDashboardDetails.swift; sourceTree = "<group>"; };
 		D6E037E60F09160D6697CB3C /* NostrService+ListPublishing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+ListPublishing.swift"; sourceTree = "<group>"; };
 		D6EBFF34B8DB3F06E41013B6 /* VaultTabHoldItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultTabHoldItem.swift; sourceTree = "<group>"; };
@@ -3601,6 +3605,7 @@
 		A1E09A852459A03D2277CC43 /* SharePortalKit */ = {
 			isa = PBXGroup;
 			children = (
+				D66E432CD99DC05DA1799FCF /* HighlightPageLink.swift */,
 				4E610216956FC8C8BE3A4AE2 /* NVShareAccountsSnapshot.swift */,
 				11DACF33881364138C48F3B4 /* NVShareAction+Display.swift */,
 				C2FCF76956407B87D86624D6 /* NVShareActionAvailability.swift */,
@@ -5031,6 +5036,7 @@
 				225093ABEED283C4B64AADFD /* HavenConfig+Signing.swift in Sources */,
 				51ED58D5C396F531FC08B75B /* HavenConfig.swift in Sources */,
 				B6867F1653FCFD96385539FD /* HighlightInlineBody.swift in Sources */,
+				2BBFA0202A19CFC211D437D4 /* HighlightPageLink.swift in Sources */,
 				736F43963312B7938DA0C3E1 /* HighlightReviewView.swift in Sources */,
 				78055CE117852546CF7DB136 /* HighlightRow.swift in Sources */,
 				0BA89AAEA915BB5BBF1C9B4D /* HighlightShareHandler.swift in Sources */,
@@ -5985,6 +5991,7 @@
 				496ABED3BE646E82CB214CDB /* HavenConfig+Signing.swift in Sources */,
 				83352352A3848FB0FE67A278 /* HavenConfig.swift in Sources */,
 				0528D3D2C617FEA7936C6D07 /* HighlightInlineBody.swift in Sources */,
+				4A0B568BF5A5D0E17B28FB74 /* HighlightPageLink.swift in Sources */,
 				8FFD0E5954ACDA85402BB3DA /* HighlightReviewView.swift in Sources */,
 				4D2619B698F0203202D133B6 /* HighlightRow.swift in Sources */,
 				D2D64D67274D804B99E3893D /* HighlightShareHandler.swift in Sources */,
@@ -6562,6 +6569,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F143EE722FF47BC762AF4896 /* DMShareForm.swift in Sources */,
+				BC9069B485D3CCF79BDD4AC7 /* HighlightPageLink.swift in Sources */,
 				CBE1FBD4371F18D0D2C5AF5E /* HighlightShareForm.swift in Sources */,
 				5B07BFDA06391523898B1946 /* NVDeepLink.swift in Sources */,
 				7BF4ECCAF2166AF9161C3117 /* NVLiveNowLogic.swift in Sources */,
