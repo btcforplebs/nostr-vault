@@ -13,6 +13,7 @@ import com.nostrvault.data.model.ArticleTallies
 import com.nostrvault.data.model.ArticleTally
 import com.nostrvault.data.model.ArticleHighlight
 import com.nostrvault.data.model.NIP10Thread
+import com.nostrvault.data.model.TrustGate
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.ZapSendService
 import com.nostrvault.data.model.FeedNote
@@ -96,6 +97,21 @@ class ArticleReaderViewModel @Inject constructor(
     val zappedSats: StateFlow<Long> = _zappedSats.asStateFlow()
 
     val myPubkey: String get() = configStore.activeAccountHexPubkey.value
+
+    // ── Outside your web (TrustGate) ─────────────────────────────────
+
+    /** Null = shield on Everyone; empty = web not loaded, only you and the author pass. */
+    private val trusted: StateFlow<Set<String>?> = feedService.trustGateSet
+        .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.globalTrustSet())
+    /** The article's author: their own comments and highlights always show. */
+    private val articleAuthor = MutableStateFlow("")
+    private val _showOutside = MutableStateFlow(false)
+    /** Whether comments and highlights from outside your web are opened. */
+    val showOutside: StateFlow<Boolean> = _showOutside
+    fun toggleOutside() = _showOutside.update { !it }
+    private val trustAlways: StateFlow<Set<String>> = articleAuthor
+        .map { author -> setOf(author, myPubkey).filter { it.isNotEmpty() }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
     /** Wallet settings' default zap, in sats: where the zap sheet starts. */
     val defaultZapSats: Int get() = configStore.config.value.defaultZapAmount
 
@@ -148,9 +164,13 @@ class ArticleReaderViewModel @Inject constructor(
     /** Everyone's highlights, blocked people's included, so an unblock brings them back. */
     private val _highlights = MutableStateFlow<List<ArticleHighlight>>(emptyList())
     /** Other people's highlights of this article, newest first, blocked people's left out. */
-    val highlights: StateFlow<List<ArticleHighlight>> = combine(_highlights, blockedPubkeys) { found, blocked ->
-        ArticleBlockFilter.visibleHighlights(found, blocked)
-    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    private val splitHighlights: StateFlow<Pair<List<ArticleHighlight>, List<ArticleHighlight>>> =
+        combine(_highlights, blockedPubkeys, trusted, trustAlways) { found, blocked, trust, always ->
+            TrustGate.split(ArticleBlockFilter.visibleHighlights(found, blocked), trust, always) { it.pubkey }
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList<ArticleHighlight>() to emptyList())
+    val highlights: StateFlow<List<ArticleHighlight>> = combine(splitHighlights, _showOutside) { (inside, outside), show ->
+        if (show) (inside + outside).sortedByDescending { it.createdAt } else inside
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /**
      * The article's relay, the feed relays and the author's outbox: where a
@@ -175,6 +195,7 @@ class ArticleReaderViewModel @Inject constructor(
      * whole timeout. A reopened article shows the last result at once.
      */
     fun loadHighlights(note: FeedNote) {
+        articleAuthor.value = note.pubkey
         highlightCache[note.id]?.let { cached -> _highlights.update { if (cached.size >= it.size) cached else it } }
         val coordinate = NIP10Thread.coordinate(note.kind, note.pubkey, note.tags)
         // Each event is checked once, however many snapshots it appears in.
@@ -233,13 +254,27 @@ class ArticleReaderViewModel @Inject constructor(
     private val engagement = MutableStateFlow(Engagement())
 
     /** Counted after blocked people's are taken out, again whenever the block list changes. */
-    val tally: StateFlow<ArticleTally> = combine(engagement, blockedPubkeys) { found, blocked ->
-        tallyShown(found, blocked)
+    val tally: StateFlow<ArticleTally> = combine(engagement, blockedPubkeys, trusted, trustAlways, _showOutside) { found, blocked, trust, always, show ->
+        tallyShown(found, blocked, if (show) null else trust, always)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, ArticleTally())
 
-    private fun tallyShown(found: Engagement, blocked: Set<String>): ArticleTally =
+    /** Comments and highlights from outside your web, folded until opened. */
+    val outsideCount: StateFlow<Int> = combine(engagement, blockedPubkeys, trusted, trustAlways, splitHighlights) { found, blocked, trust, always, hl ->
+        val comments = ArticleBlockFilter.splitComments(ArticleBlockFilter.visibleEvents(found.events, blocked), trust, always).second
+        comments.size + hl.second.size
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
+    private fun tallyShown(
+        found: Engagement,
+        blocked: Set<String>,
+        trust: Set<String>? = trusted.value.takeUnless { _showOutside.value },
+        always: Set<String> = trustAlways.value,
+    ): ArticleTally =
         if (found.events.isEmpty()) ArticleTally()
-        else ArticleTallies.tally(ArticleBlockFilter.visibleEvents(found.events, blocked), found.articleId, found.coordinate)
+        else ArticleTallies.tally(
+            ArticleBlockFilter.splitComments(ArticleBlockFilter.visibleEvents(found.events, blocked), trust, always).first,
+            found.articleId, found.coordinate,
+        )
 
     /**
      * Fetch the article's likes, zaps and comments from the relays highlights
@@ -247,6 +282,7 @@ class ArticleReaderViewModel @Inject constructor(
      * shows the last result at once while the relays are asked again.
      */
     fun loadEngagement(note: FeedNote) {
+        articleAuthor.value = note.pubkey
         val coordinate = NIP10Thread.coordinate(note.kind, note.pubkey, note.tags)
         // Each event is checked once, however many snapshots it appears in.
         val checked = ConcurrentHashMap<String, Optional<ArticleEngagementEvent>>()

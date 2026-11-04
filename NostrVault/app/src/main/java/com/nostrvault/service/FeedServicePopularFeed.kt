@@ -126,7 +126,8 @@ import com.nostrvault.service.FeedService.Companion.THREAD_REPLIES_SETTLE_MS
             if (generation != threadRepliesGeneration) return
             val roots = chunk.toSet()
             val blocked = blockedHexForActiveAccount()
-            val trusted = if (_feedMode.value == FeedMode.GLOBAL) globalTrustSet() else null
+            // Global and Popular: replies pass the web like their posts (TrustGate, Logen 2026-11-04).
+            val trusted = if (_feedMode.value == FeedMode.GLOBAL || _feedMode.value == FeedMode.POPULAR) globalTrustSet() else null
             val known = _feedThreadReplies.value
             val replies = events.mapNotNull { ev ->
                 threadReplyFrom(ev)?.takeIf {

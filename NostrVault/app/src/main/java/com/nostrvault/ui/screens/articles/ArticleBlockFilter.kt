@@ -4,6 +4,7 @@ import com.nostrvault.data.model.ArticleEngagementEvent
 import com.nostrvault.data.model.ArticleHighlight
 import com.nostrvault.data.model.ArticleTallies
 import com.nostrvault.data.model.BlockedPeople
+import com.nostrvault.data.model.TrustGate
 
 /**
  * An article's highlights, likes and comments with blocked people's taken
@@ -21,4 +22,16 @@ object ArticleBlockFilter {
     fun visibleHighlights(highlights: List<ArticleHighlight>, blocked: Set<String>): List<ArticleHighlight> =
         if (blocked.isEmpty()) highlights
         else highlights.filterNot { BlockedPeople.isBlocked(it.pubkey, blocked) }
+
+    /**
+     * Comments split for the "Outside your web" fold ([TrustGate]): likes
+     * and zap receipts always stay in (a like says nothing, a receipt is the
+     * provider's), comments from outside your web go to the second list.
+     */
+    fun splitComments(
+        events: List<ArticleEngagementEvent>,
+        trusted: Set<String>?,
+        always: Set<String>,
+    ): Pair<List<ArticleEngagementEvent>, List<ArticleEngagementEvent>> =
+        events.partition { it.kind == ArticleTallies.REACTION_KIND || it.kind == ArticleTallies.ZAP_RECEIPT_KIND || TrustGate.allows(it.pubkey, trusted, always) }
 }

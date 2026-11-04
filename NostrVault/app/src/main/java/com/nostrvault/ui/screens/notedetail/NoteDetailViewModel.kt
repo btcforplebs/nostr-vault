@@ -124,6 +124,10 @@ class NoteDetailViewModel @Inject constructor(
         .map { feedService.blockedHexForActiveAccount() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.blockedHexForActiveAccount())
 
+    /** Who passes [TrustGate] here: null = shield on Everyone, empty = web not loaded yet (nobody but you and the author). */
+    val trustedPubkeys: StateFlow<Set<String>?> = feedService.trustGateSet
+        .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.globalTrustSet())
+
     val activeHexPubkey: String get() = nostrService.activeHexPubkey
 
     init {

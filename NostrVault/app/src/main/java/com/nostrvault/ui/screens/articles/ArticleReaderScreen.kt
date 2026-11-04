@@ -44,6 +44,8 @@ fun ArticleReaderScreen(
     val profiles by viewModel.profiles.collectAsState()
     val highlights by viewModel.highlights.collectAsState()
     val tally by viewModel.tally.collectAsState()
+    val outsideCount by viewModel.outsideCount.collectAsState()
+    val showOutside by viewModel.showOutside.collectAsState()
     val zappedSats by viewModel.zappedSats.collectAsState()
     // Back from composing a comment: ask again so it shows.
     var resumed by remember { mutableStateOf(0) }
@@ -130,6 +132,9 @@ fun ArticleReaderScreen(
                 tally = tally,
                 onOpenComment = { onNoteClick(viewModel.prepareOpen(it)) },
                 gatedArticles = viewModel.gatedArticles,
+                outsideCount = outsideCount,
+                showOutside = showOutside,
+                onToggleOutside = viewModel::toggleOutside,
                 modifier = Modifier
                     .padding(padding)
                     .verticalScroll(rememberScrollState())

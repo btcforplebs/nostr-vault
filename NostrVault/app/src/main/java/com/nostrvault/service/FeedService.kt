@@ -184,6 +184,18 @@ class FeedService @Inject constructor(
 
     fun globalTrustSet(): Set<String>? = globalTrustSetImpl()
 
+    /**
+     * [globalTrustSet] for [TrustGate] views (replies, comments, chat,
+     * engagement sheets), re-read when the web, your follows or the shield
+     * change, so a reply folds or unfolds as soon as the web loads.
+     */
+    val trustGateSet: Flow<Set<String>?>
+        get() = combine(
+            _wotPubkeys,
+            _followedPubkeys,
+            configStore.config.map { it.globalShowsEveryone }.distinctUntilChanged(),
+        ) { _, _, _ -> globalTrustSet() }.distinctUntilChanged()
+
     internal val _notes = MutableStateFlow<List<FeedNote>>(emptyList())
     val notes: StateFlow<List<FeedNote>> = _notes.asStateFlow()
 

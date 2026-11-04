@@ -66,6 +66,12 @@ class LiveStreamViewModel @Inject constructor(
     }
 
     /** The active account's muted people, so their chat lines disappear as they are muted. */
+    /** Who passes [com.nostrvault.data.model.TrustGate] in chat: null = shield on Everyone, empty = web not loaded. */
+    val trusted: StateFlow<Set<String>?> = feedService.trustGateSet
+        .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.globalTrustSet())
+
+    val myPubkey: String get() = nostrService.activeHexPubkey
+
     val blocked: StateFlow<Set<String>> = configStore.config
         .map { feedService.blockedHexForActiveAccount() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.blockedHexForActiveAccount())

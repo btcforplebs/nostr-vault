@@ -37,10 +37,10 @@ object FeedThreadReplies {
 
     /**
      * Whether a fetched reply is kept: not a blocked person's, not spam, a
-     * real reply into [roots], and, on Global, inside [trusted]. Global's
-     * replies pass the same trust rule as its posts, or a trusted post would
+     * real reply into [roots], and, on Global and Popular, inside [trusted]. Their
+     * replies pass the same trust rule as their posts, or a trusted post would
      * carry the open firehose in underneath it. Null [trusted] is everyone
-     * (Popular, or Global's shield on Everyone); an empty set admits nobody,
+     * (Following, Discover, or the shield on Everyone); an empty set admits nobody,
      * failing closed like the Global feed.
      */
     fun admits(

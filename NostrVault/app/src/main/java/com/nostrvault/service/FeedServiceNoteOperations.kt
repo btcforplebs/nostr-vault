@@ -57,7 +57,8 @@ fun FeedService.removeNote(id: String) {
             feedFilterEngine.filterMediaNotes(
                 notes = pending,
                 blocked = blockedPubkeys,
-                wotPubkeys = _wotPubkeys.value,
+                // The same web the grid uses, or the count said more than appeared.
+                wotPubkeys = myWeb(),
                 isGlobalMedia = _mediaFeedMode.value == MediaFeedMode.GLOBAL,
                 globalRequiresTrust = !config.globalShowsEveryone,
                 authorOf = ::authorOf,
