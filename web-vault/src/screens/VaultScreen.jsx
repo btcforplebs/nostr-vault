@@ -4,7 +4,7 @@
 // (Logen, 2026-11-03): it is a page of its own in the menu. A floating "Vault" capsule, coloured by the app's relay
 // connections, opens the Vault Dashboard sheet (VaultView+Layout; components/VaultButton.jsx, VaultDashboard.jsx).
 // Your own events come from Haven's outbox; what others sent you from Haven's inbox and the relays.
-import { useEffect, useMemo, useRef, useState } from "preact/hooks"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName, NoteCard } from "../components/NoteCard.jsx"
 import { ArticleCard } from "../components/ArticleCard.jsx"
@@ -26,17 +26,20 @@ import { newestByMode, readSeen, writeSeen, markSeen, baseline, newModes } from 
 import {
   MODES, FILTERS, CLEARABLE, ALL_TITLE, isMode, defaultFilter, nextFilter, validFilter, previewOf, highlightSource, followersOf, followersSeenAt, markFollowersSeen,
   readOwn, readInbound, readOlder, fetchVault, READ_PAGE, keepVault, keptVault, sinceKept,
-  readLists, keepLists, mergeLists, itemsFor, peopleOf, newestShown, splitArrivals, heldCount,
+  readLists, keepLists, mergeLists, itemsFor, peopleOf, clampSince,
 } from "../net/vault-lists.js"
 import { PagedList, FIRST_ROWS, MORE_ROWS } from "../components/PagedList.jsx"
 import { SkeletonGrid, SkeletonList } from "../components/Loading.jsx"
-import { NewPostsPill, SkeletonRows } from "../components/FeedExtras.jsx"
+import { SkeletonRows } from "../components/FeedExtras.jsx"
+import { AT_TOP_PX, holdSpot, readingSpot } from "../components/feed-stay.js"
 import { VaultButton } from "../components/VaultButton.jsx"
 import { dashboardHref, openDashboard } from "../net/dashboard-route.js"
 import { ICONS, filterIcon, Icon, Chevron, Menu, MenuItem } from "./vault-ui.jsx"
 import { VaultPagesMenu } from "./VaultPagesMenu.jsx"
 
 const nowSec = () => Math.floor(Date.now() / 1000)
+const VAULT_RECHECK_MS = 60_000 // the list looks for new answers this often while it is on screen
+const MEDIA_RECHECK_MS = 5 * 60_000 // and Media asks the media servers again this often
 const scroller = el => el?.closest(".desk-list") ?? null
 const modeOf = (hash = location.hash) => { const m = /^#\/?vault\/([a-z]+)/.exec(hash)?.[1]; return isMode(m) ? m : null }
 
@@ -68,11 +71,9 @@ export function VaultScreen({ ctx, desk = false }) {
   }
   const inbound = useMemo(() => forged.size ? inboundAll.filter(e => !forged.has(e.id)) : inboundAll, [inboundAll, forged])
   const given = useMemo(() => forged.size ? givenAll.filter(e => !forged.has(e.id)) : givenAll, [givenAll, forged])
-  // Answers newer than the list on screen wait behind the "N new" pill instead of moving its rows
-  // (vault-lists.js splitArrivals). `top`: the newest moment the list showed when drawn; 0 until it is.
-  const [held, setHeld] = useState(() => k?.held ?? { inbound: [], lists: [] })
-  const top = useRef(k?.top ?? 0)
-  const holding = useRef(true) // Refresh shows everything it finds at once: it was asked for
+  // New answers go in on their own, as in other Nostr clients (no pill, no Refresh, Logen 2026-11-04). Below the top
+  // the row being read keeps its height (components/feed-stay.js). The list looks again every VAULT_RECHECK_MS while
+  // it is on screen, and when the page comes back to the front or online.
   const [notes, setNotes] = useState(() => k?.notes ?? new Map())
   const [status, setStatus] = useState("")
   const [loaded, setLoaded] = useState(!!k)
@@ -83,7 +84,7 @@ export function VaultScreen({ ctx, desk = false }) {
   // found it, else when this browser started watching the account (notify-watch.js readSince).
   const unreadSince = useRef(unreadFrom(readSeen(me)?.activity ?? 0, readSince(me)))
   const [searching, setSearching] = useState(false)
-  const [refreshes, setRefreshes] = useState(0) // Refresh also asks the media servers again (BlossomGallery)
+  const [refreshes, setRefreshes] = useState(0) // bumped to have Media ask the media servers again (BlossomGallery)
   // Rows drawn so far, and whether Haven may hold older own or inbox events than those read (the phone's loadMore).
   const [shown, setShown] = useState(() => k && !link ? k.shown : FIRST_ROWS)
   const [older, setOlder] = useState(() => k?.older ?? { own: false, inbound: false })
@@ -91,32 +92,22 @@ export function VaultScreen({ ctx, desk = false }) {
 
   useEffect(() => { const f = () => { const m = modeOf(); if (m) pick(m) }; addEventListener("hashchange", f); return () => removeEventListener("hashchange", f) }, [])
 
-  // A network answer goes in now, or behind the pill once the list is drawn. The first inbound answer on an empty
-  // list is what gets drawn: later ones hold from there.
+  // A network answer goes in now. Scrolled below the top, the row being read is held at its height as it draws.
+  const stay = useRef(null)
   const arrive = (kind, fresh) => {
-    const put = kind === "inbound" ? evs => setInbound(prev => merge(prev, evs)) : evs => setLists(prev => mergeLists(prev, evs, me))
-    if (!holding.current) return put(fresh)
-    const { own: o, lists: l } = keep.current
-    const { now, later } = splitArrivals(kind, fresh, { top: top.current, me, own: o, lists: l, blocked })
-    if (now.length) put(now)
-    if (later.length) setHeld(h => ({ ...h, [kind]: merge(h[kind], later) }))
-    if (!top.current && kind === "inbound") top.current = newestShown(now)
+    if (!fresh?.length) return
+    const el = scroller(root.current)
+    if (!stay.current && (el ? el.scrollTop : scrollY) >= AT_TOP_PX) stay.current = readingSpot(root.current, el, { attr: "data-row-id" })
+    if (kind === "inbound") setInbound(prev => merge(prev, fresh)); else setLists(prev => mergeLists(prev, fresh, me))
   }
-  const showHeld = () => {
-    const h = held
-    setInbound(prev => merge(prev, h.inbound)); setLists(prev => mergeLists(prev, h.lists, me))
-    setHeld({ inbound: [], lists: [] }); setShown(FIRST_ROWS)
-    top.current = Math.max(top.current, newestShown(h.inbound, h.lists))
-    const el = scroller(root.current); if (el) el.scrollTop = 0; else scrollTo(0, 0)
-  }
-  const load = async ({ hold = true } = {}) => {
+  useLayoutEffect(() => {
+    const spot = stay.current
+    stay.current = null
+    if (spot) holdSpot(root.current, scroller(root.current), spot)
+  }, [inboundAll, lists])
+  const load = async () => {
     const [o, i] = await Promise.all([readOwn(vault, me).catch(() => []), readInbound(vault, me)])
-    // Refresh (`hold` false) also lets in what the pill held, and this round's answers go straight in.
-    const h = hold ? null : held
-    setOwn(o); setInbound(h ? merge(i, h.inbound) : i); setLoaded(true); setShown(FIRST_ROWS)
-    if (h) { setLists(prev => mergeLists(prev, h.lists, me)); setHeld({ inbound: [], lists: [] }) }
-    holding.current = hold
-    top.current = hold ? newestShown(i, keep.current.lists) : 0
+    setOwn(o); setInbound(i); setLoaded(true); setShown(FIRST_ROWS)
     setOlder({ own: o.length >= READ_PAGE, inbound: i.length >= READ_PAGE })
     screen(i) // receipts kept before this check existed
     const settled = () => { setFetched(true); setListsFetched(true); setGivenFetched(true); setOwnFetched(true) }
@@ -135,12 +126,13 @@ export function VaultScreen({ ctx, desk = false }) {
     setStatus(err ? `Couldn't reach your relays (${err?.message ?? err})` : "")
     settled()
   }
-  // Back on a kept tab: only what's new since it was left, merged in; the rows drawn and the scroll stay.
+  // Back on a kept tab, and every look after: only what's new since the last one, merged in; the rows drawn and the
+  // scroll stay.
+  const looked = useRef(0)
   const update = async since => {
+    looked.current = nowSec()
     const [o, i] = await Promise.all([readOwn(vault, me).catch(() => []), readInbound(vault, me)])
-    setOwn(prev => merge(prev, o)); setInbound(prev => merge(prev, i))
-    holding.current = true
-    if (!top.current) top.current = newestShown(merge(keep.current.inbound, i), keep.current.lists)
+    setOwn(prev => merge(prev, o)); arrive("inbound", i.filter(e => !keep.current.inbound.some(x => x.id === e.id)))
     if (!navigator.onLine) { setStatus("Offline: showing what this browser's relay holds"); return }
     const err = await fetchVault(vault, me, relays, { trust, since, on: {
       inbound: fresh => arrive("inbound", fresh),
@@ -151,9 +143,27 @@ export function VaultScreen({ ctx, desk = false }) {
     setStatus(err ? `Couldn't reach your relays (${err?.message ?? err})` : "")
   }
   useEffect(() => {
+    looked.current = nowSec()
     if (!k) { load(); return }
     if (!link && k.scrollY) requestAnimationFrame(() => { const el = scroller(root.current); if (el) el.scrollTop = k.scrollY; else scrollTo(0, k.scrollY) })
     update(sinceKept(k))
+  }, [me])
+  // On screen, the list looks again on its own: every VAULT_RECHECK_MS, and when the page is back in front or online.
+  // Media also asks the media servers again, less often (MEDIA_RECHECK_MS).
+  const modeNow = useRef(mode)
+  modeNow.current = mode
+  useEffect(() => {
+    let mediaAt = Date.now()
+    const look = () => {
+      if (document.hidden || !navigator.onLine) return
+      update(clampSince(Math.max(0, looked.current - 60))).catch(() => {})
+      if (modeNow.current === "media" && Date.now() - mediaAt >= MEDIA_RECHECK_MS) { mediaAt = Date.now(); setRefreshes(n => n + 1) }
+    }
+    const t = setInterval(look, VAULT_RECHECK_MS)
+    t.unref?.()
+    const back = () => { if (!document.hidden) look() }
+    addEventListener("online", look); document.addEventListener("visibilitychange", back)
+    return () => { clearInterval(t); removeEventListener("online", look); document.removeEventListener("visibilitychange", back) }
   }, [me])
   // What the tab keeps when it's left. The scroll (the desktop's list column, else the page) is noted as it moves:
   // by the time the screen unmounts, the next one may already have changed it.
@@ -165,8 +175,8 @@ export function VaultScreen({ ctx, desk = false }) {
     on.addEventListener("scroll", f, { passive: true }); return () => on.removeEventListener("scroll", f)
   }, [])
   const keep = useRef()
-  keep.current = { me, mode, filter, own, inbound: inboundAll, lists, given: givenAll, forged, notes, shown, older, held, top: top.current }
-  useEffect(() => () => { const { me: who, ...state } = keep.current; keepVault(who, { ...state, top: top.current, scrollY: scrolled.current }) }, [])
+  keep.current = { me, mode, filter, own, inbound: inboundAll, lists, given: givenAll, forged, notes, shown, older }
+  useEffect(() => () => { const { me: who, ...state } = keep.current; keepVault(who, { ...state, scrollY: scrolled.current }) }, [])
 
   const pick = m => { setMode(m); setFilter(defaultFilter(m)); setShown(FIRST_ROWS) }
   // Tapping the lit filter on a page whose filters can all be off turns it off: All (Logen 2026-11-04).
@@ -219,7 +229,6 @@ export function VaultScreen({ ctx, desk = false }) {
 
   // The current list's rows, sorted once per change of what they're built from, not on every render.
   const items = useMemo(() => itemsFor(mode, filter, { own, inbound, given, followers, me, blocked, seenAt: seenAt.current, trusted: network }), [mode, filter, own, inbound, given, followers, blocked, network])
-  const newCount = useMemo(() => heldCount(held, me, own, blocked), [held, own, blocked])
   // Likes and Zaps rows name the note they were about.
   const wanted = mode === "likes" || mode === "zaps" ? items.map(r => r.noteId).filter(id => id && !notes.has(id)) : []
   useEffect(() => { if (wanted.length) fetchNotes(vault, wanted, relays).then(found => setNotes(prev => new Map([...prev, ...found]))).catch(() => {}) }, [wanted.join()])
@@ -247,7 +256,7 @@ export function VaultScreen({ ctx, desk = false }) {
             {MODES.map(x => <button key={x.id} role="tab" aria-selected={x.id === mode} class={x.id === mode ? "on" : ""} title={fresh.has(x.id) ? `${x.title}: new` : x.title} onClick={() => pick(x.id)}><Icon d={ICONS[x.id]} /><span>{x.title}</span>{fresh.has(x.id) && <span class="vault-new-dot" aria-label="new" />}</button>)}
           </div>
         ) : (
-          <VaultPagesMenu ctx={ctx} current={mode} fresh={fresh} onPick={pick} onRefresh={() => { setRefreshes(n => n + 1); load({ hold: false }) }} />
+          <VaultPagesMenu ctx={ctx} current={mode} fresh={fresh} onPick={pick} />
         )}
         {!desk ? (
           <div class="vault-capsule">
@@ -267,13 +276,11 @@ export function VaultScreen({ ctx, desk = false }) {
             </Menu>
           )}
           <button class="vault-pill-btn" onClick={() => setSearching(!searching)} aria-label="Search your vault" aria-pressed={searching} title="Search your vault"><Icon d={ICONS.search} /></button>
-          <button class="vault-pill-btn" onClick={() => { setRefreshes(n => n + 1); load({ hold: false }) }} aria-label="Refresh" title="Refresh"><Icon d={ICONS.refresh} /></button>
         </div>
         )}
       </header>
       {searching ? <VaultSearch ctx={ctx} onClose={() => setSearching(false)} /> : <>
       <div class="status-line keep">{status}</div>
-      {loaded && newCount > 0 && <NewPostsPill count={newCount} onShow={showHeld} text={n => `${n} new`} />}
       {!loaded ? <VaultSkeleton mode={mode} /> : <List ctx={ctx} mode={mode} filter={filter} items={items} me={me} followers={followers} notes={notes} trusted={trusted} unreadSince={unreadSince.current} refreshes={refreshes} fetched={ready} page={{ shown, onMore, busy: paging, older: older.own || older.inbound }} onFollowers={() => pick("followers")} />}
       </>}
       <VaultButton desk={desk} />
@@ -362,7 +369,7 @@ function List({ ctx, mode, filter, items, me, followers, notes, trusted, unreadS
     case "followers": {
       const list = items
       return list.length
-        ? <>{followers.length > 0 && <div class="section-label">{followers.length} follower{followers.length === 1 ? "" : "s"}</div>}{paged(list, f => <a key={f.pubkey} class="person-row" href={`#/profile/${f.pubkey}`}><Avatar pubkey={f.pubkey} size={40} load={trusted(f.pubkey)} /><span class="person-names"><AuthorName pubkey={f.pubkey} /><span class="person-sub">followed you {ago(f.at)} ago</span></span></a>)}</>
+        ? <>{followers.length > 0 && <div class="section-label">{followers.length} follower{followers.length === 1 ? "" : "s"}</div>}{paged(list, f => <a key={f.pubkey} class="person-row" data-row-id={f.pubkey} href={`#/profile/${f.pubkey}`}><Avatar pubkey={f.pubkey} size={40} load={trusted(f.pubkey)} /><span class="person-names"><AuthorName pubkey={f.pubkey} /><span class="person-sub">followed you {ago(f.at)} ago</span></span></a>)}</>
         : <Empty text={filter === "new" ? "No new followers since you last looked." : "No followers found on your relays yet."} />
     }
     default: return null
@@ -380,7 +387,7 @@ export function ActivityRow({ row, trusted = () => false, unread = false, onFoll
     : row.kind === "follow" && row.actors.length > 1 && onFollowers ? onFollowers
     : row.actors[0] ? () => { location.hash = `#/profile/${row.actors[0]}` } : undefined
   return (
-    <article class={`note notification${unread ? " unread" : ""}${open ? " tappable" : ""}`} onClick={open && (e => { if (!e.target.closest("a, button")) open() })}>
+    <article class={`note notification${unread ? " unread" : ""}${open ? " tappable" : ""}`} data-row-id={row.id} onClick={open && (e => { if (!e.target.closest("a, button")) open() })}>
       <div class="note-head">
         <Faces who={row.actors} trusted={trusted} />
         <time class="note-time" datetime={new Date(row.created_at * 1000).toISOString()}>{ago(row.created_at)}</time>
@@ -416,7 +423,7 @@ function EngagementRow({ row, note, me, trusted = () => false }) {
   const mine = row.who[0] === me
   const open = row.noteId ? () => { location.hash = `#/thread/${row.noteId}` } : undefined
   return (
-    <article class={`note notification ${open ? "tappable" : ""}`} onClick={open && (e => { if (!e.target.closest("a, button")) open() })}>
+    <article class={`note notification ${open ? "tappable" : ""}`} data-row-id={row.id} onClick={open && (e => { if (!e.target.closest("a, button")) open() })}>
       <div class="note-head">
         <Avatar pubkey={row.who[0]} size={32} load={trusted(row.who[0])} />
         <span class="notif-who">{mine ? "You" : <Who who={row.who} />} {row.type === "reaction" ? `liked ${row.emoji !== "❤️" ? row.emoji : ""}`.trim() : "⚡ zapped"}{mine && row.to && <> <AuthorName pubkey={row.to} /></>}{row.type === "zap" && row.sats ? ` ${formatSats(row.sats)} sats` : ""}</span>

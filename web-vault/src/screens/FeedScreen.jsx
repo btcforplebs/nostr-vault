@@ -26,12 +26,14 @@ import { withParam } from "../desktop/routes.js"
 import { resolveList } from "../net/list-feed.js"
 import { hasLayouts, loadLayout, nextLayout, saveLayout } from "../net/feed-layout.js"
 import { applyFilters, loadFilters, newerNotes, saveFilters } from "../net/feed-filters.js"
-import { EmptyFollowing, NewPostsPill, OlderButton, PullIndicator, SkeletonRows, usePullToRefresh, feedScroller, scrollTopOf, scrollToTop } from "../components/FeedExtras.jsx"
+import { EmptyFollowing, OlderButton, PullIndicator, SkeletonRows, usePullToRefresh, feedScroller, scrollTopOf } from "../components/FeedExtras.jsx"
 
 if (import.meta.env) import("../styles/feeds.css")
 
 const PAGE = 100
-const POPULAR_RECHECK_MS = 10 * 60_000 // Popular is ranked again this often while it is on screen, for its pill
+const POPULAR_RECHECK_MS = 10 * 60_000 // Popular is ranked again this often while it is on screen
+const OPEN_RETRY_MS = 1500 // new notes wait while a post is open in place; looked at again this often
+const EMPTY_RETRY_MS = 60_000 // an empty Discover asks its relays again this often while it is on screen
 const MEDIA_PAGE = 300 // most notes have no media, so Media reads more at a time (the iPhone asks for 300)
 const FEEDS = feedList(READERS)
 const FEED_IDS = FEEDS.map(f => f.id)
@@ -200,11 +202,7 @@ export function FeedScreen({ ctx }) {
       const read = await readFeed(vault, follows, { limit: PAGE }).catch(e => { if (unsaved) return []; throw e })
       const fresh = newerNotes(notesNow.current, unsaved ? [...batch.filter(b => !read.some(r => r.id === b.id)), ...read] : read)
       if (!fresh.length) return
-      if (filters.autoLoad && !feedPostOpen()) {
-        const pane = feedScroller(screen.current)
-        stay.current = scrollTopOf(pane) < AT_TOP_PX ? null : readingSpot(screen.current, pane)
-        setNotes(prev => [...fresh, ...(prev ?? [])])
-      } else setPending(fresh)
+      setPending(prev => newerNotes([], [...fresh, ...prev.filter(p => !fresh.some(f => f.id === p.id))]))
     }
     const catchUp = async () => {
       if (!navigator.onLine) return
@@ -213,11 +211,29 @@ export function FeedScreen({ ctx }) {
     const close = watchFollowing({ vault, follows, relays, onNotes: (evs, o) => show(evs, o).catch(() => {}), onReopen: catchUp })
     globalThis.addEventListener?.("online", catchUp)
     return () => { close(); globalThis.removeEventListener?.("online", catchUp) }
-  }, [following, follows.length, filters.autoLoad])
-  const showPending = () => { setNotes(prev => [...pending, ...(prev ?? [])]); setPending([]); scrollToTop(feedScroller(screen.current)) }
+  }, [following, follows.length])
+  // New notes go in on their own, as in other Nostr clients (no pill, Logen 2026-11-04). Below the top the post being
+  // read is held at its height (components/feed-stay.js). While a post is open in place they wait, and go in once it
+  // closes: the open post never moves (the iPhone holds auto-load the same way).
+  const putIn = (fresh, set) => {
+    const pane = feedScroller(screen.current)
+    stay.current = scrollTopOf(pane) < AT_TOP_PX ? null : readingSpot(screen.current, pane)
+    set(fresh)
+  }
+  useEffect(() => {
+    if (!pending.length && !strangePending.length) return
+    let timer = null
+    const tryIn = () => {
+      if (feedPostOpen()) { timer = setTimeout(tryIn, OPEN_RETRY_MS); return }
+      if (following && pending.length) putIn(pending, fresh => { setNotes(prev => [...fresh.filter(f => !prev?.some(n => n.id === f.id)), ...(prev ?? [])]); setPending([]) })
+      else if (!following && strangePending.length) putIn(strangePending, () => showStrangePending())
+    }
+    tryIn()
+    return () => clearTimeout(timer)
+  }, [pending, strangePending, following])
 
   // New posts on Global, Hashtag and Discover: their filters stay open from the first page on (the iPhone keeps its feed
-  // REQ open) and what comes in waits behind the pill. Nothing is saved.
+  // REQ open) and what comes in goes in on its own (putIn above). Nothing is saved.
   const strangeNow = useRef(strange)
   strangeNow.current = strange
   const keyNow = useRef("")
@@ -241,7 +257,7 @@ export function FeedScreen({ ctx }) {
     return () => { live = false; close() }
   }, [feedKey(choice), strange !== null, follows.length])
   // Popular is one ranked page, not a stream: it is ranked again every POPULAR_RECHECK_MS while it is on screen, and
-  // notes that have joined the ranking wait behind the pill; a tap shows the new ranking.
+  // when notes have joined the ranking the new ranking goes in on its own (putIn above).
   useEffect(() => {
     if (!popular || strange === null || !follows.length) return
     const t = setInterval(async () => {
@@ -264,7 +280,6 @@ export function FeedScreen({ ctx }) {
     holdNotes(choice, all)
     setStrange(all)
     setStrangePending([])
-    scrollToTop(feedScroller(screen.current))
   }
 
   // Global, Hashtag and Popular. Each load is for one feed: once the picker has moved on, a late answer is dropped.
@@ -304,7 +319,15 @@ export function FeedScreen({ ctx }) {
     if (!following && strange?.length) fetchProfiles(vault, noteAuthors(strange), account.relays.read, { save: false }).catch(() => {})
   }, [strange, following])
 
-  // Refresh three ways, as on the iPhone: the header button, a pull down from the top, and the Feed tab tapped at the top.
+  // No Refresh button (Logen 2026-11-04): new notes come in on their own. A pull down from the top on the phone and the
+  // Feed tab tapped at the top still look again, as in other Nostr clients.
+  // An empty Discover (no follow lists came back yet) asks again on its own while it is on screen.
+  useEffect(() => {
+    if (!discover || strange === null || strange.length || !follows.length) return
+    const t = setInterval(() => { if (!document.hidden && navigator.onLine) loadStrange(choice) }, EMPTY_RETRY_MS)
+    t.unref?.()
+    return () => clearInterval(t)
+  }, [discover, strange?.length ?? -1, follows.length, feedKey(choice)])
   const refresh = () => (Reader ? null : following ? sync() : loadStrange(choice))
   const refreshNow = useRef(refresh)
   refreshNow.current = refresh
@@ -320,19 +343,19 @@ export function FeedScreen({ ctx }) {
   const list = following ? notes : strange
   const threaded = layout === "threaded" && hasLayouts(choice.mode)
   const shown = list && visibleNotes(media ? list : applyFilters(list, filters, { threaded }), blocked)
-  const newCount = media ? 0 : visibleNotes(applyFilters(following ? pending : strangePending, filters, { threaded }), blocked).length
   const tiles = media && shown && mediaTiles(shown.filter(n => n.kind === 1 || n.kind === 6)) // notes, as the iPhone's grid
   // Back from a thread finds the list where it was left (the phone layout draws the Feed again).
   useFeedSpot(`${feedKey(choice)}:${layout}`, !!shown?.length)
-  // The same toggles the old Feed options menu offered: Auto-load on Following and Media, Replies off on Global and Threaded.
+  // The same toggles the old Feed options menu offered, Auto-load aside (new notes always go in now): Replies off on
+  // Global and Threaded.
   const toggles = Reader || !hasLayouts(choice.mode) ? []
-    : [following && "autoLoad", "reposts", !global && !threaded && "replies"].filter(Boolean)
+    : ["reposts", !global && !threaded && "replies"].filter(Boolean)
   return (
     <main class="screen" ref={screen}>
       <header class="screen-head feed-head">
         <FeedModeMenu feeds={visibleFeeds(FEEDS, menu)} choice={choice} onPick={pick} onEdit={() => setEditing(true)} />
         <FeedToolbar layout={!Reader && hasLayouts(choice.mode) ? layout : null} onCycleLayout={cycleLayout}
-          filters={filters} onFilters={changeFilters} toggles={toggles} onRefresh={Reader ? null : refresh}
+          filters={filters} onFilters={changeFilters} toggles={toggles}
           scope={media ? choice.scope : null} onScope={pickScope} />
       </header>
       {editing && <EditFeeds feeds={FEEDS} menu={menu} onChange={changeMenu} onClose={() => setEditing(false)} />}
@@ -342,9 +365,8 @@ export function FeedScreen({ ctx }) {
       {/* Always there, so the list doesn't move when "Syncing…" comes and goes. */}
       <div class="status-line keep">{status}</div>
       {privateNote && !ctx.signer?.readOnly && <div class="status-line">Your private blocks weren't read ({privateNote}), so those people may still show.</div>}
-      {newCount > 0 && <NewPostsPill count={newCount} onShow={following ? showPending : showStrangePending} />}
       {following
-        ? !follows.length ? account.loaded ? <EmptyFollowing onRefresh={sync} /> : <SkeletonRows label="Loading your follows…" />
+        ? !follows.length ? account.loaded ? <EmptyFollowing /> : <SkeletonRows label="Loading your follows…" />
           : notes === null ? <SkeletonRows label="Opening your vault…" />
           : !notes.length ? syncing ? <SkeletonRows label="Fetching notes from the people you follow…" /> : <p class="empty">No notes saved yet.</p>
           : media ? <Media tiles={tiles} blockedAll={!shown.length} onOlder={older} olderState={olderState} />
@@ -355,8 +377,8 @@ export function FeedScreen({ ctx }) {
           : discover && !follows.length ? account.loaded ? <DiscoverEmpty text="Follow more people on Nostr to build your extended network" />
             : <p class="empty">Loading your follows…</p>
           : strange === null ? navigator.onLine ? <SkeletonRows /> : <p class="empty">This feed needs the network.</p>
-          : !strange.length && discover ? <DiscoverEmpty onRefresh={refresh} text={network.current?.people.length
-              ? "No notes from your extended network on these relays yet." : "No follow lists came back from your relays. Try refreshing."} />
+          : !strange.length && discover ? <DiscoverEmpty text={network.current?.people.length
+              ? "No notes from your extended network on these relays yet." : "No follow lists came back from your relays yet. Asking again…"} />
           : media ? <Media tiles={tiles} blockedAll={!!strange.length && !shown.length}
               onOlder={() => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} olderState={olderState} />
           : !strange.length && choice.mode === "list" && choice.authors && !choice.authors.length ? <p class="empty">This list has no one in it, or it didn't come back from your relays.</p>
@@ -387,14 +409,13 @@ export function Media({ tiles, blockedAll, onOlder, olderState }) {
   </>
 }
 
-/** Discover with nothing to show, as the iPhone's empty state (FeedView+EmptyStates.swift): why, and Refresh when that
- *  can help. */
-function DiscoverEmpty({ text, onRefresh }) {
+/** Discover with nothing to show, as the iPhone's empty state (FeedView+EmptyStates.swift): why. It asks again on its
+ *  own (EMPTY_RETRY_MS), so there is no Refresh. */
+function DiscoverEmpty({ text }) {
   return (
     <div class="discover-empty">
       <strong>No Discovery Feed</strong>
       <p>{text}</p>
-      {onRefresh && <button type="button" class="small" onClick={onRefresh}>Refresh</button>}
     </div>
   )
 }

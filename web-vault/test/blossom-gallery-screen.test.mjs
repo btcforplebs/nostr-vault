@@ -60,9 +60,10 @@ test("every tile shows how many servers hold it; the iPhone's loading and empty 
   assert.match(src, /: why && <p class="muted small">\{why\}<\/p>/)
 })
 
-test("the Vault's Refresh asks the media servers again", () => {
+test("the Vault asks the media servers again on its own while Media is open (no Refresh button)", () => {
   const vault = readFileSync(new URL("../src/screens/VaultScreen.jsx", import.meta.url), "utf8")
-  assert.match(vault, /onClick=\{\(\) => \{ setRefreshes\(n => n \+ 1\); load\(\{ hold: false \}\) \}\}/)
+  assert.match(vault, /if \(modeNow\.current === "media" && Date\.now\(\) - mediaAt >= MEDIA_RECHECK_MS\) \{ mediaAt = Date\.now\(\); setRefreshes\(n => n \+ 1\) \}/)
+  assert.doesNotMatch(vault, /aria-label="Refresh"/)
   assert.match(vault, /<BlossomGallery ctx=\{ctx\} filter=\{filter\} refreshes=\{refreshes\} \/>/)
   assert.match(src, /    load\(\)\n  \}, \[me, refreshes\]\)/)
 })
@@ -96,7 +97,7 @@ test("the delete button says Delete from media servers, names every server it go
   assert.match(src, /If your home vault has a copy, it stays: the web can't delete from it/)
 })
 
-test("opening Media again in the same visit draws the kept list without asking the servers; Refresh or an old list asks", () => {
+test("opening Media again in the same visit draws the kept list without asking the servers; the Vault's own look or an old list asks", () => {
   const now = 1_000_000_000
   assert.equal(needsAsking(undefined, now), true, "nothing kept yet")
   assert.equal(needsAsking({ at: now - 1000 }, now), false, "kept a second ago")
@@ -104,7 +105,7 @@ test("opening Media again in the same visit draws the kept list without asking t
   assert.equal(needsAsking({ at: now - MEDIA_FRESH_MS }, now), true, "five minutes old")
   assert.equal(needsAsking({}, now), true, "no age: ask")
   const src = readFileSync(new URL("../src/screens/BlossomGallery.jsx", import.meta.url), "utf8")
-  // Only entering skips; a Refresh (refreshes changing for the same account) always loads.
+  // Only entering skips; the Vault's own look (refreshes changing for the same account) always loads.
   assert.match(src, /if \(entering && !needsAsking\(shown\.get\(me\)\)\) return\n    load\(\)\n  \}, \[me, refreshes\]\)/)
   assert.match(src, /shown\.set\(me, \{ servers: s, found: \{ \.\.\.r, done: true \}, at: Date\.now\(\) \}\)/)
 })

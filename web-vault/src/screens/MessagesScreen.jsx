@@ -85,7 +85,7 @@ export function useMessages(ctx) {
     addEventListener("online", online)
     return () => { offDropped(); document.removeEventListener("visibilitychange", back); removeEventListener("online", online) }
   }, [])
-  // Refresh looks again without forgetting what was settled: wraps found not to be the user's, and ones refused past
+  // `refresh` (AuthTrouble's Sign in again) looks again without forgetting what was settled: wraps found not to be the user's, and ones refused past
   // MAX_REFUSALS, stay settled, so a routine tap never costs a bunker user a run of prompts. Only "Try again" does.
   // Both also ask again about an inbox whose AUTH was declined; a return to the tab doesn't (dm-read-auth.js).
   const retry = () => { forgetUnopened(); forgetDeclinedAuth(); setRound(r => r + 1) }
@@ -129,7 +129,7 @@ export function BunkerNote({ ctx }) {
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
 
 /** A relay that wanted a sign-in before showing messages and didn't get one (dm-read-auth.js): say which, in our
- *  words, with Refresh to ask again. */
+ *  words, with Sign in again to ask again (the only way it is asked again: a declined sign-in isn't asked on its own). */
 export function AuthTrouble({ refresh }) {
   const [problems, setProblems] = useState(getAuthProblems)
   useEffect(() => onAuthProblems(() => setProblems(getAuthProblems())), [])
@@ -143,7 +143,7 @@ export function AuthTrouble({ refresh }) {
             : `${hostOf(url)} turned down your sign-in, so messages kept there can't be read here. `}
         </span>
       ))}
-      <button type="button" class="small" onClick={refresh}>Refresh</button>
+      <button type="button" class="small" onClick={refresh}>Sign in again</button>
     </div>
   )
 }
@@ -161,7 +161,7 @@ export function SignerTrouble({ trouble, retry }) {
 /** `vaultMenu`: the phone's Messages page, one of the Vault's pages, wears the Vault menu top left (VaultPagesMenu.jsx).
  *  The desktop's Messages column (DesktopShell) doesn't: there Messages is a rail row. */
 export function MessagesScreen({ ctx, vaultMenu = false }) {
-  const { messages, note, trouble, retry, refresh, syncing, more, loaded } = useMessages(ctx)
+  const { messages, note, trouble, retry, refresh, more, loaded } = useMessages(ctx)
   const { blocked } = useBlocks(ctx)
   const [to, setTo] = useState("")
   const [err, setErr] = useState("")
@@ -200,7 +200,6 @@ export function MessagesScreen({ ctx, vaultMenu = false }) {
         <h2 class={showRequests ? undefined : "sr-only"}>{showRequests ? "Requests" : "Messages"}</h2>
         <span class="dm-head-actions">
           {!showRequests && total > 0 && <button type="button" class="small" onClick={() => markRead(me, [...messages.values()].filter(m => inboxPeers.has(m.peer)))}>Mark all read</button>}
-          {!note && <button type="button" class="small" onClick={refresh} disabled={syncing} aria-busy={syncing || undefined} aria-label="Refresh messages">{syncing ? "Refreshing…" : "Refresh"}</button>}
           {!showRequests && <RequestsButton count={requests.length} />}
         </span>
       </header>

@@ -1,6 +1,5 @@
 // The Feed on the desktop layout scrolls in its own pane (desktop.css .desk-list), not the window (Logen, 2026-11-03):
-// FeedExtras feedScroller/scrollTopOf/scrollToTop pick the pane there and the window on the phone, and the
-// "N New Posts" pill folds to its small form from the pane's scroll. Small fake DOM, through Vite's SSR loader for the JSX.
+// FeedExtras feedScroller/scrollTopOf/scrollToTop pick the pane there and the window on the phone. Small fake DOM, through Vite's SSR loader for the JSX.
 import test, { after } from "node:test"
 import assert from "node:assert/strict"
 import { fileURLToPath } from "node:url"
@@ -41,7 +40,7 @@ globalThis.document = {
 const root = fileURLToPath(new URL("..", import.meta.url))
 const vite = await createServer({ root, configFile: false, logLevel: "silent", appType: "custom", server: { middlewareMode: true, hmr: false, ws: false }, oxc: { jsx: { runtime: "automatic", importSource: "preact" } } })
 after(() => vite.close())
-const { NewPostsPill, feedScroller, scrollTopOf, scrollToTop } = await vite.ssrLoadModule("/src/components/FeedExtras.jsx")
+const { feedScroller, scrollTopOf, scrollToTop } = await vite.ssrLoadModule("/src/components/FeedExtras.jsx")
 
 const pane = () => { const p = new Node(1, "div"); p.className = "desk-list"; p.scrollTop = 0; p.calls = []; p.scrollTo = o => p.calls.push(o); return p }
 
@@ -66,36 +65,4 @@ test("scrollTopOf and scrollToTop use the pane when there is one, else the windo
   assert.equal(scrollTopOf(null), 300)
   scrollToTop(null)
   assert.deepEqual(win, [{ top: 0, behavior: "smooth" }])
-})
-
-test("the pill folds to its count from the desktop pane's scroll, not the window's", async () => {
-  const p = pane(), host = p.appendChild(new Node(1, "div"))
-  const winListeners = new Set()
-  globalThis.addEventListener = (t, fn) => t === "scroll" && winListeners.add(fn)
-  globalThis.removeEventListener = (t, fn) => winListeners.delete(fn)
-  globalThis.scrollY = 0
-  await act(() => render(h(NewPostsPill, { count: 3, onShow() {} }), host))
-  assert.equal(host.textContent, "3 New Posts")
-  assert.equal(p.listeners.scroll?.size, 1, "listens on the pane")
-  assert.equal(winListeners.size, 0, "not on the window")
-  p.scrollTop = 900
-  await act(() => p.fire("scroll"))
-  assert.equal(host.textContent, "3", "small once the pane is scrolled")
-  await act(() => render(null, host))
-  assert.equal(p.listeners.scroll.size, 0, "let go when it goes")
-})
-
-test("on the phone the pill still follows the window", async () => {
-  const host = new Node(1, "div")
-  const winListeners = new Set()
-  globalThis.addEventListener = (t, fn) => t === "scroll" && winListeners.add(fn)
-  globalThis.removeEventListener = (t, fn) => winListeners.delete(fn)
-  globalThis.scrollY = 0
-  await act(() => render(h(NewPostsPill, { count: 1, onShow() {} }), host))
-  assert.equal(host.textContent, "1 New Post")
-  assert.equal(winListeners.size, 1)
-  globalThis.scrollY = 500
-  await act(() => { for (const fn of winListeners) fn() })
-  assert.equal(host.textContent, "1")
-  await act(() => render(null, host))
 })

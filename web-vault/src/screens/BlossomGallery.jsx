@@ -80,7 +80,7 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
   useEffect(() => {
     const entering = drawn.current !== me
     drawn.current = me
-    // Opening Media again draws the kept list without asking; Refresh (refreshes) always asks.
+    // Opening Media again draws the kept list without asking; the Vault's own look (refreshes, every few minutes) asks.
     if (entering && !needsAsking(shown.get(me))) return
     load()
   }, [me, refreshes])

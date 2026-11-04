@@ -7,17 +7,19 @@ const PIN_MS = 5000 // held this long at most while the cards above draw (images
 /** Above this many pixels down, the reader is at the top: new notes just go in (the list grows upward). */
 export const AT_TOP_PX = 80
 
-const idOf = el => el.getAttribute?.("data-note-id") ?? el.dataset?.noteId ?? null
+const NOTE = "data-note-id"
+const idOf = (el, attr) => el.getAttribute?.(attr) ?? (attr === NOTE ? el.dataset?.noteId : undefined) ?? null
 
-/** The first post at least partly in view in `root` (the Feed's <main>), and its height: `{ id, top }`, or null.
- *  `pane`: what the list scrolls in (FeedExtras feedScroller), null for the window. */
-export function readingSpot(root, pane) {
+/** The first post at least partly in view in `root` (the Feed's <main>), and its height: `{ id, top, attr }`, or null.
+ *  `pane`: what the list scrolls in (FeedExtras feedScroller), null for the window. `attr`: what marks a row and holds
+ *  its id (the Vault list's rows aren't notes: "data-row-id"). */
+export function readingSpot(root, pane, { attr = NOTE } = {}) {
   const viewTop = pane ? pane.getBoundingClientRect().top : 0
-  for (const el of root?.querySelectorAll?.("[data-note-id]") ?? []) {
-    const id = idOf(el)
+  for (const el of root?.querySelectorAll?.(`[${attr}]`) ?? []) {
+    const id = idOf(el, attr)
     if (!id) continue
     const r = el.getBoundingClientRect()
-    if (r.bottom > viewTop) return { id, top: r.top }
+    if (r.bottom > viewTop) return { id, top: r.top, attr }
   }
   return null
 }
@@ -30,7 +32,7 @@ export const pinDelta = (spot, nowTop) => (Math.abs(nowTop - spot.top) >= 1 ? no
  * scrolls or PIN_MS passes. -> a stop function.
  */
 export function holdSpot(root, pane, spot, { ms = PIN_MS } = {}) {
-  const sel = `[data-note-id="${globalThis.CSS?.escape ? CSS.escape(spot.id) : spot.id}"]`
+  const sel = `[${spot.attr ?? NOTE}="${globalThis.CSS?.escape ? CSS.escape(spot.id) : spot.id}"]`
   const el = root?.querySelector?.(sel)
   if (!el) return () => {}
   const scroller = pane ?? globalThis

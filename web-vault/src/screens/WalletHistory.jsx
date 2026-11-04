@@ -2,6 +2,7 @@
 // as who it came from or went to (their picture with a ⚡) and what it was for, dated "2 hours ago". A zap only counts
 // when it involves you (ZapHistoryService.fits). A wallet that doesn't share history says so.
 import { useEffect, useRef, useState } from "preact/hooks"
+import { useAutoLook } from "../components/auto-look.js"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { actionContext } from "../net/actions.js"
@@ -30,6 +31,7 @@ export function whenText(ts, now = Date.now() / 1000, locale) {
 }
 
 // The key each person's zap service signs receipts with, asked once per person per session.
+const WALLET_RECHECK_MS = 60_000 // the newest payments are looked for this often while the Wallet is in front
 const publishers = new Map()
 function publisherOf(ctx, pubkey) {
   if (!publishers.has(pubkey))
@@ -80,11 +82,20 @@ export function WalletHistory({ wallet, list = listTransactions, me = actionCont
   useEffect(() => { setTxs([]); load(true) }, [wallet.conn])
   // A payment from Send or a zap: reload from the top, so "check History" shows it.
   useEffect(() => onPaid(() => load(true)), [wallet.conn])
+  // No Refresh button (Logen 2026-11-04): the newest page is looked at again on its own and merged over what is
+  // shown, so the older pages already loaded stay.
+  useAutoLook(async () => {
+    if (running.current || unsupported) return
+    const page = await list(wallet.conn, { limit: HISTORY_PAGE, offset: 0 })
+    const fresh = page.filter(t => !txs.some(x => x.id === t.id))
+    if (!fresh.length) return
+    setTxs(prev => mergeTransactions(prev, page))
+    lookup(fresh, me).then(r => setFound(f => ({ details: new Map([...f.details, ...r.details]), posts: new Map([...f.posts, ...r.posts]) }))).catch(() => {})
+  }, { every: WALLET_RECHECK_MS }, [wallet.conn])
 
   return (
     <section class="card wallet-card">
-      <div class="wallet-row"><h3 style="margin: 0; flex: 1">History</h3>
-        {!unsupported && <button type="button" class="small" disabled={busy} onClick={() => load(true)} aria-busy={busy || undefined} aria-label="Refresh history">↻</button>}</div>
+      <div class="wallet-row"><h3 style="margin: 0; flex: 1">History</h3></div>
       {unsupported
         ? <p class="muted small">Your wallet doesn't share its payment history with apps. If it supports it, reconnect the wallet with "transaction history" (list transactions) allowed.</p>
         : err && !txs.length ? <p class="error" role="alert">{err}</p>

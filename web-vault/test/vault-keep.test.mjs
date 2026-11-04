@@ -39,7 +39,7 @@ test("the screen starts from the kept tab and only updates it", () => {
   assert.match(screen, /if \(!k\) \{ load\(\); return \}/)
   assert.match(screen, /update\(sinceKept\(k\)\)/)
   assert.match(screen, /useState\(!!k\)/) // no skeleton on the way back
-  assert.match(screen, /keepVault\(who, \{ \.\.\.state, top: top\.current, scrollY: scrolled\.current \}\)/)
+  assert.match(screen, /keepVault\(who, \{ \.\.\.state, scrollY: scrolled\.current \}\)/)
   // A link to a mode still opens that mode; the tab's dot opens the Vault list, not the list you left.
   assert.match(screen, /link \?\? \(getVaultUnread\(\) > 0 \? "activity" : k\?\.mode \?\? "activity"\)/)
 })

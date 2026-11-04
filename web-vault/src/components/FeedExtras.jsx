@@ -1,6 +1,6 @@
 // The Feed's states and controls around the notes, as on the iPhone: placeholder rows while the first notes load
-// (FeedNoteSkeletonRow), the empty Following state (FeedView+EmptyStates), the "N New Posts" pill (newPostsButton),
-// the Replies / Reposts / Auto-load menu (FeedView+ToolbarMenu), and Older that loads on its own as it scrolls in.
+// (FeedNoteSkeletonRow), the empty Following state (FeedView+EmptyStates), the Replies / Reposts menu
+// (FeedView+ToolbarMenu), and Older that loads on its own as it scrolls in.
 import { useEffect, useRef, useState } from "preact/hooks"
 
 /** `label` says what is loading, for screen readers (and the tests). */
@@ -16,7 +16,7 @@ export function SkeletonRows({ count = 5, label = "Loading notes…" }) {
   </div>
 }
 
-export function EmptyFollowing({ onRefresh }) {
+export function EmptyFollowing() {
   return <div class="feed-empty">
     <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="url(#nv-empty-grad)" stroke-width="1" stroke-linecap="round" aria-hidden="true">
       <defs><linearGradient id="nv-empty-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)" /><stop offset="1" stop-color="var(--accent-light)" /></linearGradient></defs>
@@ -24,7 +24,6 @@ export function EmptyFollowing({ onRefresh }) {
     </svg>
     <h3>No Following Feed</h3>
     <p>Follow npubs on Nostr to see their posts here</p>
-    <button type="button" class="primary" onClick={onRefresh}>↻ Refresh</button>
   </div>
 }
 
@@ -36,31 +35,8 @@ export const scrollTopOf = pane => (pane ? pane.scrollTop : globalThis.scrollY ?
 /** Back to the top of `pane` (feedScroller), or of the window when it is null. */
 export const scrollToTop = (pane, behavior = "smooth") => (pane ?? globalThis).scrollTo?.({ top: 0, behavior })
 
-/** Held-back new notes. Small (a count) once the feed is scrolled, as the iPhone's folds when you scroll.
- *  `text`: the label for a count, when what is held isn't posts (the Vault tab's "3 new"). */
-export function NewPostsPill({ count, onShow, text = n => `${n} New ${n === 1 ? "Post" : "Posts"}` }) {
-  const ref = useRef(null)
-  const [scrolled, setScrolled] = useState(false)
-  const showing = count > 0
-  // The list's own scroll: the desktop's pane, else the window (feedScroller).
-  useEffect(() => {
-    if (!showing) return
-    const pane = feedScroller(ref.current), target = pane ?? globalThis
-    const on = () => setScrolled(scrollTopOf(pane) > 200)
-    on()
-    target.addEventListener?.("scroll", on, { passive: true })
-    return () => target.removeEventListener?.("scroll", on)
-  }, [showing])
-  if (!showing) return null
-  const n = count > 99 && scrolled ? "99+" : count
-  return <button ref={ref} type="button" class={`new-posts${scrolled ? " small" : ""}`} onClick={onShow} aria-label={`${text(count)}, tap to load`}>
-    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
-    {scrolled ? n : text(count)}
-  </button>
-}
-
-/** Auto-load, Reposts, and Replies (not on Global, which has none, as on the iPhone). */
-export function FilterMenu({ filters, onChange, replies = true, autoLoad = true }) {
+/** Reposts and Replies (not on Global, which has none, as on the iPhone). */
+export function FilterMenu({ filters, onChange, replies = true }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   useEffect(() => {
@@ -81,7 +57,6 @@ export function FilterMenu({ filters, onChange, replies = true, autoLoad = true 
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
     </button>
     {open && <div class="feed-filter-menu" role="menu">
-      {autoLoad && item("autoLoad", "Auto-load new posts")}
       {item("reposts", "Reposts")}
       {replies && item("replies", "Replies")}
     </div>}
