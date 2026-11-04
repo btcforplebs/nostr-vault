@@ -1,49 +1,65 @@
 import SwiftUI
 
-/// On the vault dashboard: a list that just lost most of what it held, from
-/// the vault's history. "Your bookmarks went from 240 to 0 on 2 Nov." Restore
-/// asks first (ListRestoreView); "Keep the new list" hides it for good.
-/// Nothing is ever restored on its own.
+/// On the vault dashboard: a list another app just clobbered (wiped, swapped
+/// for other entries, or drained in steps), from the vault's history and
+/// ListWipeAlarmRule. "Your follows went from 412 to 3 on 4 Nov, changed by
+/// Amethyst." Recover asks first (ListRestoreView), Merge opens List
+/// backups › Merge for the kinds it can merge, "Keep the new list" hides it
+/// for good. Nothing is ever restored or published on its own.
 struct ListWipeBanner: View {
     @ObservedObject private var service = ListBackupService.shared
     @ObservedObject private var config = ConfigService.shared
     @State private var restoring: ListVersion?
+    @State private var merging: MergeTarget?
+
+    private struct MergeTarget: Identifiable {
+        let key: ListHistory.Key
+        var id: String { "\(key.kind):\(key.d)" }
+    }
 
     var body: some View {
+        let alarms = service.alarms
         VStack(spacing: 12) {
-            ForEach(service.wipes.prefix(3), id: \.wipe.after.id) { item in
-                card(item.key, item.wipe)
+            ForEach(alarms.prefix(3), id: \.alarm.after.id) { item in
+                card(item.key, item.alarm)
             }
         }
         // Stays in the dashboard's stack while empty, so the load and the
-        // restore sheet outlive the card; the negative padding takes back
-        // the stack's spacing then.
-        .padding(.bottom, service.wipes.isEmpty ? -24 : 0)
+        // sheets outlive the card; the negative padding takes back the
+        // stack's spacing then.
+        .padding(.bottom, alarms.isEmpty ? -24 : 0)
         .task(id: config.config.activeAccountNpub) { await service.load() }
         .sheet(item: $restoring) { old in ListRestoreView(old: old) }
+        .sheet(item: $merging) { target in
+            ListMergeView(key: target.key)
+        }
     }
 
-    private func card(_ key: ListHistory.Key, _ wipe: ListHistory.Wipe) -> some View {
-        let name = ListBackupFormat.title(key)
-        let from = ListShrinkRule.itemCount(wipe.before), to = ListShrinkRule.itemCount(wipe.after)
-        let day = Date(timeIntervalSince1970: TimeInterval(wipe.after.createdAt)).formatted(.dateTime.day().month())
+    private func card(_ key: ListHistory.Key, _ alarm: ListWipeAlarmRule.Alarm) -> some View {
+        let day = Date(timeIntervalSince1970: TimeInterval(alarm.after.createdAt)).formatted(.dateTime.day().month())
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundColor(.orange)
                     .font(.appSystem(size: 18, weight: .semibold))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Your \(name.lowercased()) went from \(from) to \(to) on \(day).")
+                    Text(ListWipeAlarmWording.headline(alarm, key: key, day: day))
                         .font(.appSystem(size: 15, weight: .semibold))
-                    Text("Your vault kept the list from before. Restore it?")
+                    Text(alarm.claimsNostrVault
+                         ? "Your vault kept the list from before. Recover it, or merge it with the new one."
+                         : "Your vault kept the list from before. Recover it, or merge it with the new one. If you made this change yourself, keep the new list.")
                         .font(.appSubheadline)
                         .foregroundColor(.secondary)
                 }
             }
             HStack(spacing: 10) {
-                Button("Restore") { restoring = wipe.before }
+                Button("Recover") { restoring = alarm.before }
                     .buttonStyle(.borderedProminent)
-                Button("Keep the new list") { service.dismiss(wipe) }
+                if ListVersionMerge.canMerge(key.kind) {
+                    Button("Merge") { merging = MergeTarget(key: key) }
+                        .buttonStyle(.bordered)
+                }
+                Button("Keep the new list") { service.dismiss(afterID: alarm.after.id) }
                     .buttonStyle(.bordered)
             }
         }

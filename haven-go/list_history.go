@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"log/slog"
 	"sort"
 	"sync"
@@ -68,9 +69,26 @@ func (l *listHistoryDB) keep(ctx context.Context, evt *nostr.Event) {
 	if !isOwnerList(evt) {
 		return
 	}
-	if err := recordListVersion(ctx, l.history(), evt); err != nil {
+	added, err := recordListVersionAdded(ctx, l.history(), evt)
+	if err != nil {
 		slog.Warn("list history: version not kept", "kind", evt.Kind, "id", evt.ID, "err", err)
+		return
 	}
+	if added {
+		emitListVersionNotify(evt)
+	}
+}
+
+// emitListVersionNotify tells the app a new version of an owner's list was
+// filed, so it can run the wipe-alarm rule on that list now
+// (docs/LIST_WIPE_ALARM.md). The rule lives in the apps; this is only the
+// nudge. Old versions arriving late (an import, a sync) stay silent: an alarm
+// is about a change that just happened.
+func emitListVersionNotify(evt *nostr.Event) {
+	if !isNotifyableAge(evt) {
+		return
+	}
+	log.Printf("🔔NOTIFY|type=listversion|kind=%d|author=%s|id=%s|recipient=%s|preview=", evt.Kind, evt.PubKey, evt.ID, evt.PubKey)
 }
 
 // isOwnerList: a protected list written by an account this vault serves.
@@ -121,22 +139,29 @@ func sortNewestFirst(evs []*nostr.Event) {
 // recordListVersion keeps evt in the history store (once per id) and trims
 // that list.
 func recordListVersion(ctx context.Context, store DBBackend, evt *nostr.Event) error {
+	_, err := recordListVersionAdded(ctx, store, evt)
+	return err
+}
+
+// recordListVersionAdded is recordListVersion, also saying whether evt was
+// new to the history (false when that version was already kept).
+func recordListVersionAdded(ctx context.Context, store DBBackend, evt *nostr.Event) (bool, error) {
 	if store == nil {
-		return errDBClosing
+		return false, errDBClosing
 	}
 	listHistoryMu.Lock()
 	defer listHistoryMu.Unlock()
 	versions, err := listVersions(ctx, store, evt.PubKey, evt.Kind, evt.Tags.GetD())
 	if err != nil {
-		return err
+		return false, err
 	}
 	for _, v := range versions {
 		if v.ID == evt.ID {
-			return nil
+			return false, nil
 		}
 	}
 	if err := store.SaveEvent(ctx, evt); err != nil {
-		return err
+		return false, err
 	}
 	versions = append(versions, evt)
 	sortNewestFirst(versions)
@@ -145,7 +170,7 @@ func recordListVersion(ctx context.Context, store DBBackend, evt *nostr.Event) e
 			slog.Warn("list history: trim failed", "id", gone.ID, "err", err)
 		}
 	}
-	return nil
+	return true, nil
 }
 
 // listHistoryToDrop picks, from one list's versions newest first, the ones

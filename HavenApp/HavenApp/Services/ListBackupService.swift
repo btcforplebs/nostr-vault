@@ -58,21 +58,26 @@ final class ListBackupService: ObservableObject {
     /// Lists in a fixed order: by kind, then name.
     var keys: [ListHistory.Key] { groups.keys.sorted() }
 
-    /// Wipes the newest version of a list made that the person hasn't
-    /// dismissed, newest first.
-    var wipes: [(key: ListHistory.Key, wipe: ListHistory.Wipe)] {
-        groups.compactMap { key, versions in
-            guard let wipe = ListHistory.latestWipe(versions), ListHistory.worthABanner(wipe),
-                  !dismissed.contains(wipe.after.id) else { return nil }
-            return (key, wipe)
+    /// Wipe alarms the newest version of each list raises
+    /// (ListWipeAlarmRule: a wipe, a swap or a drain, not by Nostr Vault on
+    /// this device) that the person hasn't dismissed, newest first.
+    var alarms: [(key: ListHistory.Key, alarm: ListWipeAlarmRule.Alarm)] {
+        let own = OwnListEdits.ids()
+        return groups.compactMap { key, versions in
+            ListWipeAlarmRule.alarm(versions, own: own, dismissed: dismissed).map { (key, $0) }
         }
-        .sorted { $0.wipe.after.createdAt > $1.wipe.after.createdAt }
+        .sorted { $0.alarm.after.createdAt > $1.alarm.after.createdAt }
     }
 
-    /// "Keep the new list": this wipe is not shown again.
-    func dismiss(_ wipe: ListHistory.Wipe) {
-        dismissed.insert(wipe.after.id)
+    /// "Keep the new list": this alarm is not shown again.
+    func dismiss(afterID id: String) {
+        dismissed.insert(id)
         UserDefaults.standard.set(Array(dismissed), forKey: Self.dismissedKey)
+    }
+
+    /// The ids whose alarm the person dismissed, for the watcher.
+    static func dismissedIDs() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: dismissedKey) ?? [])
     }
 
     func vaultEvents(for v: ListVersion) -> [NostrEvent] {

@@ -29,6 +29,13 @@ extension NostrService {
     ///   observed by every subscriber (FeedService/NostrService's own account-switch
     ///   handlers), making a background publish look like a real user-driven switch.
     func signEvent(kind: Int, content: String, tags: [[String]] = [], password: String? = nil, forceOwner: Bool = false, signAsNpub: String? = nil, notBefore: Int64? = nil) -> NostrEvent? {
+        // A list signed here is the owner's own edit: no wipe alarm for it
+        // (docs/LIST_WIPE_ALARM.md).
+        OwnListEdits.noting(signEventLocal(kind: kind, content: content, tags: tags, password: password,
+                                           forceOwner: forceOwner, signAsNpub: signAsNpub, notBefore: notBefore))
+    }
+
+    private func signEventLocal(kind: Int, content: String, tags: [[String]], password: String?, forceOwner: Bool, signAsNpub: String?, notBefore: Int64?) -> NostrEvent? {
         var sk: String?
         let config = ConfigService.shared.config
 
@@ -108,6 +115,11 @@ extension NostrService {
     ///   with a bunker is refused (returns nil): the bunker connection belongs to the
     ///   active account, and a background publish can't switch it.
     func signEventAsync(kind: Int, content: String, tags: [[String]] = [], password: String? = nil, forceOwner: Bool = false, signAsNpub: String? = nil, notBefore: Int64? = nil) async -> NostrEvent? {
+        OwnListEdits.noting(await signEventRouted(kind: kind, content: content, tags: tags, password: password,
+                                                  forceOwner: forceOwner, signAsNpub: signAsNpub, notBefore: notBefore))
+    }
+
+    private func signEventRouted(kind: Int, content: String, tags: [[String]], password: String?, forceOwner: Bool, signAsNpub: String?, notBefore: Int64?) async -> NostrEvent? {
         let config = ConfigService.shared.config
         let mode = config.activeSigningMode()
 

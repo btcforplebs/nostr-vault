@@ -71,6 +71,10 @@ enum RelayLogParser {
         /// Bodies of `🔔NOTIFY|` markers (everything after the prefix) collected
         /// in this batch. Forwarded to LocalNotificationService on the main actor.
         var notifyMarkers: [String] = []
+        /// `type=listversion` markers: a new version of one of the owner's
+        /// lists reached the vault. Never a notification or an unread count
+        /// of their own; ListWipeWatcher runs the wipe-alarm rule on them.
+        var listVersionMarkers: [String] = []
     }
 
     // Cached regex patterns for boot/import status parsing
@@ -210,7 +214,12 @@ enum RelayLogParser {
         // Local notification markers — collect for LocalNotificationService.
         let notifyPrefix = "🔔NOTIFY|"
         if let r = line.range(of: notifyPrefix) {
-            batch.notifyMarkers.append(String(line[r.upperBound...]))
+            let body = String(line[r.upperBound...])
+            if body.hasPrefix("type=listversion|") {
+                batch.listVersionMarkers.append(body)
+            } else {
+                batch.notifyMarkers.append(body)
+            }
         }
 
         // Booting status
