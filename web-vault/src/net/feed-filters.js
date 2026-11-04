@@ -1,11 +1,11 @@
-// The Feed's Replies / Reposts / Auto-load switches (the iPhone's FeedView+ToolbarMenu and FeedFilterEngine), and the
-// new notes a background sync holds back behind the "N New Posts" pill (FeedView+Toolbar newPostsButton). Kept in
-// this browser; the iPhone's defaults: replies and reposts on, auto-load off.
+// The Feed's Replies / Reposts switches (the iPhone's FeedView+ToolbarMenu and FeedFilterEngine), and which of the new
+// notes a sync brings are newer than the ones shown (they go in on their own: no pill, no Auto-load switch, Logen
+// 2026-11-04). Kept in this browser; the iPhone's defaults: replies and reposts on.
 import { replyRefs } from "./thread.js"
 import { commentParent, isRepost, timelineShows } from "./feed-kinds.js"
 
 const KEY = "nv:feed-filters"
-export const FILTER_DEFAULTS = { replies: true, reposts: true, autoLoad: false }
+export const FILTER_DEFAULTS = { replies: true, reposts: true }
 
 export function loadFilters(storage = globalThis.localStorage) {
   let saved = {}

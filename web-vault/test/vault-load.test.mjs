@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs"
 import { generateSecretKey, getPublicKey } from "nostr-tools/pure"
 import {
   eachRelay, fetchInbound, fetchFollowerLists, fetchGivenZaps, compactLists, mergeLists, readLists, keepLists, followersOf,
-  itemsFor, peopleOf, newestShown, splitArrivals, heldCount,
+  itemsFor, peopleOf, newestShown,
 } from "../src/net/vault-lists.js"
 
 const person = () => getPublicKey(generateSecretKey())
@@ -150,20 +150,3 @@ test("the screen asks names once for everyone its rows name, on-screen rows firs
   assert.doesNotMatch(src, /activityRows\(inbound, me\)/, "the old names pass left likers, zappers and follows out")
 })
 
-test("answers newer than the list on screen wait behind the pill; older ones fill in; nothing drawn yet takes all", () => {
-  const old = ev(1, ALICE, [["p", ME]], "old", 100), late = ev(1, BOB, [["p", ME]], "new reply", 900)
-  const top = newestShown([old])
-  assert.equal(top, 100)
-  assert.deepEqual(splitArrivals("inbound", [late], { top: 0, me: ME }), { now: [late], later: [] })
-  const older = ev(1, CAROL, [["p", ME]], "older", 50)
-  assert.deepEqual(splitArrivals("inbound", [late, older], { top, me: ME }), { now: [older], later: [late] })
-  // Nothing it would draw (a like on someone else's note: its last p tag is that note's author): no reason to hold it.
-  const stray = ev(7, BOB, [["e", "9".repeat(64)], ["p", ME], ["p", ALICE]], "+", 950)
-  assert.deepEqual(splitArrivals("inbound", [stray], { top, me: ME, own: mine }).later, [])
-  const lists = compactLists([ev(3, ALICE, [["p", ME]], "", 80)], ME)
-  const fresh = compactLists([ev(3, ALICE, [["p", ME], ["p", BOB]], "", 990), ev(3, CAROL, [["p", ME]], "", 995)], ME)
-  const split = splitArrivals("lists", fresh, { top, me: ME, lists })
-  assert.deepEqual(split.now.map(l => l.pubkey), [ALICE], "an existing follower's edit goes in")
-  assert.deepEqual(split.later.map(l => l.pubkey), [CAROL], "a new follower waits")
-  assert.equal(heldCount({ inbound: [late], lists: split.later }, ME, mine), 2)
-})

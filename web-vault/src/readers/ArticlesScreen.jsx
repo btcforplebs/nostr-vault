@@ -3,6 +3,8 @@
 // cards with image, title, summary, author, date and reading time; a card opens the article with its body rendered
 // and an "Open in YakiHonne" link.
 import { useEffect, useRef, useState } from "preact/hooks"
+import { useAutoLook } from "../components/auto-look.js"
+import { AT_TOP_PX } from "../components/feed-stay.js"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { useBlocks } from "../components/useBlocks.js"
@@ -18,7 +20,7 @@ import { EmptyState } from "./EmptyState.jsx"
 import { copyLink, shareLink, threadLink } from "./share.js"
 import { fanfaresLink, gatedArticle, lockStatus, stripTeaser } from "./gated.js"
 import { useProfile } from "../components/useProfile.js"
-import { SkeletonRows } from "../components/FeedExtras.jsx"
+import { SkeletonRows, feedScroller, scrollTopOf } from "../components/FeedExtras.jsx"
 
 if (import.meta.env) import("./readers.css")
 
@@ -69,18 +71,22 @@ export function ArticlesScreen({ ctx }) {
   )
 }
 
-/** Following / Global capsules and Refresh, under the feed picker. Shared by the reader feeds. */
+/** Following / Global capsules, under the feed picker. Shared by the reader feeds. No Refresh button (Logen
+ *  2026-11-04): `onRefresh` runs on its own every READER_RECHECK_MS while the list is at the top (a look reads its
+ *  first page again, which would drop the older ones scrolled through), and when the page comes back to the front. */
 export function Scopes({ scopes, value, onPick, onRefresh }) {
+  const box = useRef(null)
+  useAutoLook(() => { if (onRefresh && scrollTopOf(feedScroller(box.current)) < AT_TOP_PX) return onRefresh() }, { every: READER_RECHECK_MS, on: !!onRefresh }, [value])
   return (
-    <div class="reader-scopes">
+    <div class="reader-scopes" ref={box}>
       <div class="reader-scope-row" role="tablist" aria-label="Show">
         {scopes.map(s => <button key={s.id} type="button" role="tab" aria-selected={value === s.id} class={value === s.id ? "on" : ""} onClick={() => onPick(s.id)}>{s.label}</button>)}
       </div>
-      {onRefresh && <button type="button" class="small" onClick={onRefresh}>Refresh</button>}
     </div>
   )
 }
 
+const READER_RECHECK_MS = 5 * 60_000
 const dateText = ts => new Date(ts * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
 
 /** One card: hero image, title, a two-line preview, then author · date · minutes · Open in YakiHonne (the iPhone's

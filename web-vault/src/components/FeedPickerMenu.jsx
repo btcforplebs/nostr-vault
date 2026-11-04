@@ -27,15 +27,13 @@ const LAYOUT_ICON = {
   threaded: "M4 5h.01M8 5h12M8 10h.01M12 10h8M8 15h.01M12 15h8M4 20h.01M8 20h12",
 }
 const TOGGLE_ICON = {
-  autoLoad: "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0zM13 7l-4 6h4l-2 4",
   reposts: "M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4",
   replies: "M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.8-.9L3 21l1.9-5.2A8.4 8.4 0 0 1 12 3.5a8.4 8.4 0 0 1 9 8z",
 }
 // Media's scope buttons (FeedView+Toolbar.swift): person.2(.fill) and globe.
 const SCOPE_ICON = { following: FEED_ICON.following, global: FEED_ICON.global }
 const SCOPE_NAME = { following: "Following", global: "Global" }
-const TOGGLE_NAME = { autoLoad: "Auto-load new posts", reposts: "Reposts", replies: "Replies" }
-const REFRESH_ICON = "M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"
+const TOGGLE_NAME = { reposts: "Reposts", replies: "Replies" }
 
 export const Icon = ({ d, size = 18 }) => (
   <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -90,11 +88,11 @@ export function FeedModeMenu({ feeds, choice, onPick, onEdit }) {
 }
 
 /** The right capsule. `layout`: null when this feed has one layout. `toggles`: which filters this feed offers.
- *  `onRefresh`: null for readers. `scope`: Media's "following" | "global", null elsewhere; `onScope(scope)` picks one. */
-export function FeedToolbar({ layout, onCycleLayout, filters, onFilters, toggles = [], onRefresh, scope = null, onScope }) {
+ *  No Refresh: new notes come in on their own. `scope`: Media's "following" | "global", null elsewhere; `onScope(scope)` picks one. */
+export function FeedToolbar({ layout, onCycleLayout, filters, onFilters, toggles = [], scope = null, onScope }) {
   const next = layout && LAYOUT_NAME[nextLayout(layout)]
   const flip = k => onFilters({ ...filters, [k]: !filters[k] })
-  if (!layout && !toggles.length && !onRefresh && !scope) return null
+  if (!layout && !toggles.length && !scope) return null
   return (
     <div class="feed-toolbar" role="toolbar" aria-label="Feed options">
       {scope && ["following", "global"].map(s => (
@@ -115,9 +113,6 @@ export function FeedToolbar({ layout, onCycleLayout, filters, onFilters, toggles
           <Icon d={TOGGLE_ICON[k]} />
         </button>
       ))}
-      {onRefresh && <button type="button" class="feed-tool feed-refresh" title="Refresh" aria-label="Refresh" onClick={onRefresh}>
-        <Icon d={REFRESH_ICON} />
-      </button>}
     </div>
   )
 }

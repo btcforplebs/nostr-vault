@@ -177,12 +177,12 @@ test("two syncs at once (Refresh during the background tick) don't fail on a not
   assert.equal(a + b, 150, "every note saved once, neither sync failed")
 })
 
-test("a follow's new note arrives live, is saved and waits behind the pill; leaving the Feed closes the subscription", async () => {
+test("a follow's new note arrives live, is saved and goes in on its own (no pill); leaving the Feed closes the subscription", async () => {
   const relays = gatedRelays()
   const m = mount({ follows: [], relays: { read: [] }, loaded: false })
   await tick(20)
   m.rerender({ follows, relays: { read: [] }, loaded: true })
-  // The pill listens for scrolls on the window, which this DOM doesn't have: just enough of one, for this test.
+  // Just enough of a window for this DOM (the Feed reads how far it is scrolled).
   const window = { addEventListener() {}, removeEventListener() {}, scrollY: 0 }
   Object.assign(globalThis, window)
   await until(() => relays.pending() === R, "chunk 1 asked")
@@ -198,15 +198,16 @@ test("a follow's new note arrives live, is saved and waits behind the pill; leav
   open[1].params.onevent(fresh)
   open[1].params.onevent(fresh) // a second relay's copy
   open[0].params.onevent({ ...fresh, id: hex(9_999_998), pubkey: hex(9_999) }) // not a follow: dropped
-  for (let i = 0; i < 100 && !/1 New Post(?!s)/.test(text(m.el)); i++) await tick(50) // a batch waits LIVE_BATCH_MS
-  assert.match(text(m.el), /1 New Post(?!s)/)
-  assert.doesNotMatch(text(m.el), /live from a follow/, "held behind the pill, not drawn under the reader")
+  for (let i = 0; i < 100 && !/live from a follow/.test(text(m.el)); i++) await tick(50) // a batch waits LIVE_BATCH_MS
+  assert.match(text(m.el), /live from a follow/, "drawn on its own")
+  assert.equal(text(m.el).match(/live from a follow/g).length, 1, "once, though two relays sent it")
+  assert.doesNotMatch(text(m.el), /New Post/, "no pill")
   render(null, m.el)
   for (const k of Object.keys(window)) delete globalThis[k]
   assert.ok(relays.live.every(s => s.closed), "every live REQ closed")
 })
 
-test("a live note Haven doesn't answer for still waits behind the pill, and a tap shows it", async () => {
+test("a live note Haven doesn't answer for still goes in on its own", async () => {
   const relays = gatedRelays()
   const m = mount({ follows: [], relays: { read: [] }, loaded: false })
   await tick(20)
@@ -223,18 +224,14 @@ test("a live note Haven doesn't answer for still waits behind the pill, and a ta
     m.ctx.vault.feed.event = async () => { throw new Error("haven: no answer to EVENT in 15000 ms") }
     const open = relays.live.filter(s => !s.closed)
     open[0].params.onevent({ id: hex(8_888_888), pubkey: follows[1], kind: 1, created_at: now + 90, tags: [], content: "live while Haven stalls", sig: "" })
-    for (let i = 0; i < 100 && !/1 New Post(?!s)/.test(text(m.el)); i++) await tick(50)
-    assert.match(text(m.el), /1 New Post(?!s)/, "not dropped")
-    const find = (n, pred) => pred(n) ? n : n.childNodes?.map(c => find(c, pred)).find(Boolean)
-    const pill = find(m.el, n => n.attributes?.class?.startsWith("new-posts"))
-    const [type, onClick] = Object.entries(pill.on).find(([k]) => /^click$/i.test(k))
-    onClick.call(pill, { type })
-    await until(() => /live while Haven stalls/.test(text(m.el)), "the unsaved note shown")
+    for (let i = 0; i < 100 && !/live while Haven stalls/.test(text(m.el)); i++) await tick(50) // a batch waits LIVE_BATCH_MS
+    assert.match(text(m.el), /live while Haven stalls/, "the unsaved note shown, not dropped")
+    assert.doesNotMatch(text(m.el), /New Post/, "no pill")
     render(null, m.el)
   } finally { for (const k of Object.keys(window)) delete globalThis[k] }
 })
 
-test("Hashtag's new notes arrive live and wait behind the pill; a tap shows them on top; nothing is saved", async () => {
+test("Hashtag's new notes arrive live and go in on top on their own; nothing is saved", async () => {
   const tagNote = (id, at, content) => ({ id: hex(id), pubkey: hex(70_000 + id), kind: 1, created_at: at, tags: [["t", "bitcoin"]], content, sig: "" })
   pool.ensureRelay = async () => ({})
   pool.querySync = async (_, f) => (f["#t"]?.[0] === "bitcoin" ? [tagNote(1, now - 100, "an older tagged note")] : [])
@@ -252,14 +249,9 @@ test("Hashtag's new notes arrive live and wait behind the pill; a tap shows them
     assert.ok(sub.filter.since >= now - 5 && !sub.filter.limit)
     sub.params.onevent(tagNote(2, now + 30, "a new tagged note"))
     sub.params.onevent({ ...tagNote(3, now + 31, "untagged"), tags: [] }) // a relay that ignored #t: dropped
-    for (let i = 0; i < 100 && !/1 New Post(?!s)/.test(text(m.el)); i++) await tick(50)
-    assert.match(text(m.el), /1 New Post(?!s)/)
-    assert.doesNotMatch(text(m.el), /a new tagged note/)
-    const find = (n, pred) => pred(n) ? n : n.childNodes?.map(c => find(c, pred)).find(Boolean)
-    const pill = find(m.el, n => n.attributes?.class?.startsWith("new-posts"))
-    const [type, onClick] = Object.entries(pill.on).find(([k]) => /^click$/i.test(k))
-    onClick.call(pill, { type }) // preact keys the handler by the event name it registered
-    await until(() => /a new tagged note/.test(text(m.el)), "the new note shown")
+    for (let i = 0; i < 100 && !/a new tagged note/.test(text(m.el)); i++) await tick(50) // a batch waits LIVE_BATCH_MS
+    assert.match(text(m.el), /a new tagged note/, "the new note shown on its own")
+    assert.doesNotMatch(text(m.el), /untagged/, "a relay that ignored #t: dropped")
     assert.ok(text(m.el).indexOf("a new tagged note") < text(m.el).indexOf("an older tagged note"), "on top")
     assert.doesNotMatch(text(m.el), /New Post/)
     assert.deepEqual(await m.ctx.vault.feed.query({ kinds: [1], authors: [hex(70_002)], limit: 5 }), [], "a stranger's note is not saved")

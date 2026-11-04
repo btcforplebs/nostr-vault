@@ -3,6 +3,7 @@
 // Read from the user's read relays; nothing here signs. The note each row is about comes from Haven's outbox
 // (the user's own notes) or the network. Reuses .note / .note-head / .repost-line from app.css.
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
+import { useAutoLook } from "../components/auto-look.js"
 import { Faces, Who } from "../components/ActivityFaces.jsx"
 import { Mention, NoteText } from "../components/NoteText.jsx"
 import { ago } from "../components/time.js"
@@ -21,6 +22,7 @@ import "../styles/notifications.css"
 
 export { Faces, Who, MAX_FACES } from "../components/ActivityFaces.jsx"
 
+const NOTIFY_RECHECK_MS = 60_000 // looked at again this often while the screen is in front
 const PAGE = 100
 
 // What this session last had for each account: a second visit draws it at once and refreshes underneath, as the
@@ -75,7 +77,9 @@ export function NotificationsScreen({ ctx }) {
     fetchProfiles(vault, named, relays).catch(() => {})
   }
 
-  // `quiet`: a return visit refreshing rows already on screen says nothing; a Refresh says so above them.
+  // No Refresh button (Logen 2026-11-04): the screen looks again on its own, quietly (components/auto-look.js).
+  useAutoLook(() => load({ quiet: true }), { every: NOTIFY_RECHECK_MS }, [session.pubkey])
+  // `quiet`: a return visit or a look of its own over rows already on screen says nothing.
   const load = async ({ quiet = false } = {}) => {
     const g = ++gen.current
     if (!navigator.onLine) { setStatus("Offline: notifications need the network"); setEvents(e => e ?? []); return }
@@ -139,7 +143,7 @@ export function NotificationsScreen({ ctx }) {
 
   return (
     <main class="screen">
-      <header class="screen-head"><h2>Notifications</h2><button class="small" onClick={() => load()}>Refresh</button></header>
+      <header class="screen-head"><h2>Notifications</h2></header>
       <div class="segmented" role="tablist" aria-label="Show">
         <button role="tab" aria-selected={filter === "all"} class={filter === "all" ? "on" : ""} onClick={() => setFilter("all")}>All</button>
         <button role="tab" aria-selected={filter === "mentions"} class={filter === "mentions" ? "on" : ""} onClick={() => setFilter("mentions")}>Mentions</button>

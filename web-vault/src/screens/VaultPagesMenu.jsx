@@ -1,6 +1,6 @@
 // The Vault tab's top-left menu (iPhone VaultTabView's mode pill): the Vault's lists, then Messages, a page of its own as
 // Followers is (Logen, 2026-11-03: Messages left the toolbar, so no list wears the envelope any more), then the Vault
-// Dashboard and Refresh. The Vault tab and the Messages page both wear it, so each opens the other. The Messages item
+// Dashboard. The Vault tab and the Messages page both wear it, so each opens the other. The Messages item
 // carries the unread count (useUnreadTotal, the Vault tab's own dot).
 import { MODES } from "../net/vault-lists.js"
 import { openDashboard } from "../net/dashboard-route.js"
@@ -21,9 +21,9 @@ export function pagesMenuText(current, fresh, unread) {
 
 /**
  * `current`: the page open. `onPick(mode)`: a Vault list picked (the Vault tab switches in place); without it the list
- * opens at #/vault/<mode>. `onRefresh`: the page's Refresh, when it has one in the menu.
+ * opens at #/vault/<mode>. No Refresh item: the Vault pages look again on their own (Logen 2026-11-04).
  */
-export function VaultPagesMenu({ ctx, current, fresh = new Set(), onPick, onRefresh }) {
+export function VaultPagesMenu({ ctx, current, fresh = new Set(), onPick }) {
   const unread = useUnreadTotal(ctx)
   const { page, elsewhere, title, count } = pagesMenuText(current, fresh, unread)
   const pick = id => (onPick ? onPick(id) : (location.hash = `#/vault/${id}`))
@@ -36,7 +36,6 @@ export function VaultPagesMenu({ ctx, current, fresh = new Set(), onPick, onRefr
       </MenuItem>
       <hr />
       <MenuItem onClick={openDashboard}><Icon d={ICONS.dashboard} />Vault Dashboard</MenuItem>
-      {onRefresh && <MenuItem onClick={onRefresh}><Icon d={ICONS.refresh} />Refresh</MenuItem>}
     </Menu>
   )
 }

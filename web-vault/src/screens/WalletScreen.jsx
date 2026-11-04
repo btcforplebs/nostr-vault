@@ -2,6 +2,7 @@
 // amount a tap on a zap button sends. The link is a key to the wallet's money: once saved it is never shown again,
 // only which relay it uses and the key the wallet knows this app by (net/wallet.js says how it is kept).
 import { useEffect, useState } from "preact/hooks"
+import { useAutoLook } from "../components/auto-look.js"
 import { npubEncode } from "nostr-tools/nip19"
 import { useWallet } from "../components/ZapButton.jsx"
 import { appKeyOf, connectWallet, disconnectWallet, getBalance, onPaid, setDefaultZap } from "../net/wallet.js"
@@ -78,12 +79,13 @@ export function Connected({ wallet, balanceOf = getBalance }) {
   }
   useEffect(() => { setBalance(null); refresh() }, [wallet.conn])
   useEffect(() => onPaid(refresh), [wallet.conn])
+  // No Refresh button (Logen 2026-11-04): the balance is read again on its own, quietly (no spinner over the number).
+  useAutoLook(async () => { if (!busy) setBalance(await balanceOf(wallet.conn)) }, { every: 60_000 }, [wallet.conn])
   return (
     <section class="card wallet-card wallet-hero" aria-label="Lightning balance">
       <div class="wallet-hero-head">
         <span class="wallet-bolt" aria-hidden="true">⚡</span><span class="wallet-hero-label">LIGHTNING BALANCE</span>
-        {busy ? <Spinner label="Reading the balance" />
-          : <button type="button" class="wallet-refresh" onClick={refresh} aria-label="Refresh balance" title="Refresh">↻</button>}
+        {busy && <Spinner label="Reading the balance" />}
       </div>
       {err ? <p class="error" role="alert">{err}</p>
         : balance !== null ? <p class="wallet-balance"><span class="wallet-sats-big">{Math.floor(balance / 1000).toLocaleString()}</span> <span class="muted">sats</span></p>

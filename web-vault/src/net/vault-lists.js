@@ -539,29 +539,6 @@ export function newestShown(inbound, lists = []) {
   return Math.min(top, nowSec() + FUTURE_SKEW)
 }
 
-/**
- * A network answer, split into what goes into the list now and what waits behind the "N new" pill, so the rows on
- * screen never move under the reader. Held: what is newer than `top` (newestShown when the list was drawn) and
- * would draw a line of its own, or move one up: an inbound event that makes a Vault row, a follower list from
- * someone who wasn't following. Older answers fill in below. `top` 0: nothing drawn yet, all goes in.
- * -> { now, later }
- */
-export function splitArrivals(kind, fresh, { top, me, own = [], lists = [], blocked = new Set() }) {
-  if (!top) return { now: fresh, later: [] }
-  if (kind === "lists") {
-    const following = new Set(followersOf(lists, me).map(f => f.pubkey))
-    const isNew = l => l.tags?.length && l.created_at > top && !following.has(l.pubkey) && !blocked.has(l.pubkey)
-    return { now: fresh.filter(l => !isNew(l)), later: fresh.filter(isNew) }
-  }
-  const later = fresh.filter(e => e.created_at > top)
-  if (!later.length || !activityRows(later, me, { mine: own, blocked }).length) return { now: fresh, later: [] }
-  return { now: fresh.filter(e => e.created_at <= top), later }
-}
-
-/** How many Vault lines the held answers would add, for the pill. */
-export const heldCount = (held, me, own, blocked = new Set()) =>
-  activityRows(held.inbound, me, { mine: own, follows: followersOf(held.lists, me, blocked), blocked }).length
-
 // ---- Coming back to the tab ----
 
 /** The Vault tab as it was left, per account, for as long as this page lives: the phone keeps VaultTabView alive

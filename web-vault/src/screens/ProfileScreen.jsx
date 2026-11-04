@@ -1,7 +1,11 @@
 // The user's profile: the tabs (ProfileTabs.jsx) over their notes, replies and reposts, read from Haven's outbox route
 // after a network backfill into it and paged further back the same way, the notes that tag them, and their articles.
-// Refreshed by its button, or by tapping Profile again while on it (MyProfileView's havenProfileScrollToTop).
-import { useEffect, useState } from "preact/hooks"
+// It looks again on its own while it is at the top (components/auto-look.js: no Refresh button, Logen 2026-11-04), and
+// when Profile is tapped again while on it (MyProfileView's havenProfileScrollToTop).
+import { useEffect, useRef, useState } from "preact/hooks"
+import { feedScroller, scrollTopOf } from "../components/FeedExtras.jsx"
+import { useAutoLook } from "../components/auto-look.js"
+import { AT_TOP_PX } from "../components/feed-stay.js"
 import { ProfileHeader } from "../components/ProfileHeader.jsx"
 import { useBlocks } from "../components/useBlocks.js"
 import { ProfileTabs, useNoteStream } from "./ProfileTabs.jsx"
@@ -17,10 +21,10 @@ import { ShareProfileButton } from "../components/ShareProfile.jsx"
 
 const GEAR = "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"
 const PERSON = "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0"
-const REFRESH = "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"
 const Icon = ({ d, fill }) => <svg viewBox="0 0 24 24" width="18" height="18" fill={fill ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
 // The opening load, as deep as syncOwn's notes; older pages go PERSON_PAGE at a time.
 const OPENING = 300
+const PROFILE_RECHECK_MS = 5 * 60_000 // your notes are looked for again this often while Profile is at the top
 
 export function ProfileScreen({ ctx }) {
   const { vault, account, session } = ctx
@@ -56,9 +60,13 @@ export function ProfileScreen({ ctx }) {
     return () => { live = false }
   }, [round])
   const refresh = e => { e?.preventDefault(); setRound(r => r + 1) }
+  // A look reads the list again from its first page, so only while the reader is at the top: further down it would
+  // drop the pages scrolled through.
+  const screen = useRef(null)
+  useAutoLook(() => { if (scrollTopOf(feedScroller(screen.current)) < AT_TOP_PX && !notes.opening) refresh() }, { every: PROFILE_RECHECK_MS })
 
   // Profile tapped again while on it, from the tab bar or the sidebar: back to the top, and from the top, fetched
-  // fresh, as the iPhone's tab does. The refresh button in the toolbar is its own click.
+  // fresh, as the iPhone's tab does.
   useEffect(() => {
     const again = e => {
       const a = e.target.closest?.('a[href="#/profile"]')
@@ -75,13 +83,12 @@ export function ProfileScreen({ ctx }) {
 
   if (editing) return <EditProfile ctx={ctx} onClose={() => { setEditing(false); scrollTo({ top: 0 }) }} />
   return (
-    <main class="screen">
-      {/* The phone's Profile toolbar: the Wallet on the left, Refresh and Settings on the right, over the banner. */}
+    <main class="screen" ref={screen}>
+      {/* The phone's Profile toolbar: the Wallet on the left, Settings on the right, over the banner. */}
       <header class="screen-head profile-hud">
         <a class="vault-pill-btn hud-accent" href="#/wallet" aria-label="Wallet" title="Wallet"><Icon d="M13 2L4 14h7l-1 8 9-12h-7z" fill /></a>
         <span class="hud-title" aria-hidden="true">Profile</span>
         <div class="vault-right">
-          <a class="vault-pill-btn" href="#/profile" role="button" aria-label="Refresh" title="Refresh" aria-busy={notes.opening || undefined} onClick={refresh}><Icon d={REFRESH} /></a>
           <a class="vault-pill-btn" href="#/settings" aria-label="Settings" title="Settings"><Icon d={GEAR} /></a>
         </div>
       </header>

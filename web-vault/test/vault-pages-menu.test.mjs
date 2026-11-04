@@ -57,12 +57,12 @@ test("the pill names the page open; Messages' count and the dot for news elsewhe
 test("the menu lists the Vault's pages, then Messages, then the Dashboard; a pick opens the page", async () => {
   const host = new Node(1, "div"), picked = []
   const ctx = { session: { pubkey: "a".repeat(64) }, account: { follows: [] }, vault: {} }
-  await act(() => render(h(VaultPagesMenu, { ctx, current: "followers", onPick: id => picked.push(id), onRefresh() {} }), host))
+  await act(() => render(h(VaultPagesMenu, { ctx, current: "followers", onPick: id => picked.push(id) }), host))
   const pill = all(host, n => n.localName === "button" && n.attributes["aria-haspopup"] === "menu")[0]
   assert.match(pill.textContent, /Followers/)
   await act(() => click(pill))
   const items = all(host, n => n.attributes?.role === "menuitem").map(n => n.textContent)
-  assert.deepEqual(items, [...MODES.map(m => m.title), "Messages", "Vault Dashboard", "Refresh"])
+  assert.deepEqual(items, [...MODES.map(m => m.title), "Messages", "Vault Dashboard"], "no Refresh: the pages look again on their own")
   await act(() => click(all(host, n => n.attributes?.role === "menuitem" && n.textContent === "Notes")[0]))
   assert.deepEqual(picked, ["notes"], "a list switches in place on the Vault tab")
   // The menu closes on a pick through its wrapper (a bubbled click this fake DOM doesn't send): open it if it shut.
@@ -81,7 +81,7 @@ test("on the Messages page the menu opens a Vault list at #/vault/<mode>", async
   assert.match(pill.textContent, /Messages/)
   await act(() => click(pill))
   const items = all(host, n => n.attributes?.role === "menuitem").map(n => n.textContent)
-  assert.ok(!items.includes("Refresh"), "Messages keeps its own Refresh button")
+  assert.ok(!items.includes("Refresh"))
   await act(() => click(all(host, n => n.attributes?.role === "menuitem" && n.textContent === "Followers")[0]))
   assert.equal(location.hash, "#/vault/followers")
   await act(() => render(null, host))

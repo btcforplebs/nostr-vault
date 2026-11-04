@@ -31,7 +31,6 @@
 .feed-tool:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
 .feed-tool-divider { width: 1px; height: 20px; margin: 0 2px; background: var(--hair); }
 /* Phones refresh by pulling or by tapping Feed again, as on the iPhone; Refresh stays for a mouse. */
-@media (pointer: coarse) { .feed-refresh { display: none; } }
 
 /* The tag box, under the header when Hashtag is picked. */
 .feed-tag { padding: 0 var(--gutter) 12px; }
@@ -109,10 +108,6 @@
 .feed-empty { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px var(--gutter); text-align: center; }
 .feed-empty h3 { margin: 4px 0 0; font: 700 22px/1.2 var(--font); letter-spacing: .2px; }
 .feed-empty p { margin: 0; color: var(--text-2); font: 13px var(--mono); letter-spacing: .3px; }
-.feed-empty button { margin-top: 8px; }
-.new-posts { position: sticky; top: 12px; z-index: 5; display: flex; align-items: center; gap: 8px; margin: 0 auto 8px; padding: 10px 20px;
-  border: 0; border-radius: 999px; background: var(--accent); color: #fff; font: 700 13px var(--font); box-shadow: 0 4px 8px rgb(0 0 0 / .4); font-variant-numeric: tabular-nums; }
-.new-posts.small { gap: 4px; padding: 5px 10px; font-size: 12px; box-shadow: 0 2px 4px rgb(0 0 0 / .4); }
 .feed-filter { position: relative; margin-left: 8px; }
 .screen-head .feed-filter > button.small { display: inline-flex; align-items: center; }
 .feed-filter-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 200px; padding: 6px; display: flex; flex-direction: column;
