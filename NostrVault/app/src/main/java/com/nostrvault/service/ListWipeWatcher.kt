@@ -52,11 +52,14 @@ class ListWipeWatcher @Inject constructor(
         scope.launch { check(author) }
     }
 
-    /** The app came to the front: check the active account once the vault answers. */
+    /** The app came to the front: check every account on this device once the vault answers. */
     fun onForeground() {
         scope.launch {
             withTimeoutOrNull(30_000) { RelayForegroundService.readyForConnections.first { it } } ?: return@launch
-            check(configStore.activeAccountHexPubkey.value)
+            val accounts = configStore.config.value.allAccountNpubs()
+                .mapNotNull { npub -> runCatching { com.nostrvault.relay.HavenBridge.decodeNpub(npub) }.getOrNull() }
+                .ifEmpty { listOf(configStore.activeAccountHexPubkey.value) }
+            for (hex in accounts.distinct()) check(hex)
         }
     }
 

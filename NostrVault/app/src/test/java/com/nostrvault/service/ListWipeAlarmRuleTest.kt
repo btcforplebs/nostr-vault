@@ -40,8 +40,9 @@ class ListWipeAlarmRuleTest {
         assertEquals(ListWipeAlarmRule.MIN_CONTENT, rule["min_content"]!!.jsonPrimitive.int)
         assertEquals(ListWipeAlarmRule.LOOKBACK, rule["lookback"]!!.jsonPrimitive.int)
         assertEquals(ListWipeAlarmRule.ALARM_MIN_ITEMS, rule["alarm_min_items"]!!.jsonPrimitive.int)
+        assertEquals(ListWipeAlarmRule.HISTORY, rule["history"]!!.jsonPrimitive.int)
         val cases = fixture["cases"]!!.jsonArray
-        assertTrue("the fixture has its cases", cases.size >= 20)
+        assertTrue("the fixture has its cases", cases.size >= 31)
         var alarms = 0
         for (c in cases) {
             val o = c.jsonObject
@@ -67,6 +68,7 @@ class ListWipeAlarmRuleTest {
             assertEquals(name, w["lost"]!!.jsonPrimitive.int, got.lost)
             val client = w["client"]!!.let { if (it is JsonNull) null else it.jsonPrimitive.content }
             assertEquals(name, client, got.client)
+            assertEquals(name, w["claims_nostr_vault"]!!.jsonPrimitive.content.toBoolean(), got.claimsNostrVault)
         }
         assertTrue("the fixture alarms too, not only stays quiet", alarms >= 8)
     }
@@ -110,5 +112,16 @@ class ListWipeAlarmRuleTest {
         val privatePart = ListWipeAlarmRule.Alarm(v("b", 0, "x".repeat(3000), 10000), v("a", 0, "", 10000),
             ListWipeAlarmRule.How.EMPTIED, 0, 0, 0, null)
         assertEquals("The private part of your mutes was emptied on 4 Nov.", ListWipeAlarmText.headline(privatePart, "mutes", "4 Nov"))
+        val impostor = emptied.copy(client = "Nostr Vault", claimsNostrVault = true)
+        assertEquals("Changed by an app calling itself Nostr Vault. This device didn't make that change.",
+            ListWipeAlarmText.changedBy(impostor))
+    }
+
+    @Test
+    fun clientNamesAreCleanedByCodePoint() {
+        assertNull(ListWipeAlarmRule.cleanClient("\u202E\u200B\u0007"))
+        assertEquals("Evil", ListWipeAlarmRule.cleanClient(" \u202EEv\u200Bil\u0000 "))
+        val emoji = "😀".repeat(70)
+        assertEquals(60, ListWipeAlarmRule.cleanClient(emoji)!!.let { it.codePointCount(0, it.length) })
     }
 }

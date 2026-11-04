@@ -19,8 +19,11 @@ object ListWipeAlarmText {
     }
 
     /** "Changed by Amethyst." or the line for an app that didn't name itself. */
-    fun changedBy(a: ListWipeAlarmRule.Alarm): String =
-        a.client?.let { "Changed by $it." } ?: "Changed by an app that didn't name itself."
+    fun changedBy(a: ListWipeAlarmRule.Alarm): String = when {
+        a.claimsNostrVault -> "Changed by an app calling itself Nostr Vault. This device didn't make that change."
+        a.client != null -> "Changed by ${a.client}."
+        else -> "Changed by an app that didn't name itself."
+    }
 
     fun notificationTitle(a: ListWipeAlarmRule.Alarm, name: String): String = when {
         a.how == ListWipeAlarmRule.How.EMPTIED -> "Your $name was emptied"
