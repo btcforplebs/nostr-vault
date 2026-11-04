@@ -8,8 +8,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -38,7 +36,8 @@ import com.nostrvault.ui.theme.SecondaryText
  */
 @Composable
 internal fun DMInboxToolbar(
-    requestCount: Int,
+    /** Requests are waiting: the button shows, with no count on it (Logen, 2026-11-04). */
+    hasRequests: Boolean,
     inRequests: Boolean,
     searching: Boolean,
     onToggleRequests: () -> Unit,
@@ -65,16 +64,14 @@ internal fun DMInboxToolbar(
                     modifier = Modifier.size(24.dp),
                 )
             }
-            if (requestCount > 0 || inRequests) {
+            if (hasRequests || inRequests) {
                 IconButton(onClick = onToggleRequests, modifier = Modifier.size(40.dp)) {
-                    BadgedBox(badge = { if (requestCount > 0) Badge { Text("$requestCount", fontSize = 10.sp) } }) {
-                        Icon(
-                            NostrVaultIcons.Activity,
-                            contentDescription = if (inRequests) "Back to Messages" else "Requests, $requestCount",
-                            tint = if (inRequests) colors.primary else SecondaryText,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
+                    Icon(
+                        NostrVaultIcons.Activity,
+                        contentDescription = if (inRequests) "Back to Messages" else "Requests",
+                        tint = if (inRequests) colors.primary else SecondaryText,
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
             }
             IconButton(onClick = onMarkAllRead, modifier = Modifier.size(40.dp)) {

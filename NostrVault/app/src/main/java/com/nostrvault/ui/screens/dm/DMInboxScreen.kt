@@ -220,7 +220,7 @@ private fun DMInboxList(
         modifier = modifier,
         toolbar = {
             DMInboxToolbar(
-                requestCount = requests.size,
+                hasRequests = requests.isNotEmpty(),
                 inRequests = inRequests,
                 searching = searching,
                 onToggleRequests = { viewModel.showRequests(!inRequests) },

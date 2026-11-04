@@ -48,12 +48,13 @@ test("the search never leaves the page: no relay, fetch or signer in it", () => 
   assert.match(ms, /fetchProfiles\(ctx\.vault, all\.map\(c => c\.peer\), relays\)/, "profile lookups follow the whole list, not the search")
 })
 
-test("Requests is a tray button at the top right with the count, not a row under the list", () => {
+test("Requests is a tray button at the top right with no count, not a row under the list", () => {
   const ms = src("screens/MessagesScreen.jsx"), tools = src("screens/MessagesTools.jsx")
-  assert.match(ms, /\{!showRequests && <RequestsButton count=\{requests\.length\} \/>\}/)
+  assert.match(ms, /\{!showRequests && <RequestsButton \/>\}/)
   assert.doesNotMatch(ms, /class="dm-row dm-requests"/)
   assert.match(tools, /href="#\/messages\/requests"/)
-  assert.match(tools, /aria-label=\{count \? `Requests, \$\{count\}` : "Requests"\}/)
+  assert.match(tools, /aria-label="Requests"/)
+  assert.doesNotMatch(tools + src("styles/dms.css"), /dm-requests-badge|dm-requests-count/, "no count badge on Requests")
   assert.match(src("styles/dms.css"), /\.dm-head-actions \{[^}]*margin-left: auto;/)
 })
 

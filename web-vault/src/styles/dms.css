@@ -4,8 +4,6 @@
 .dm-requests-btn { position: relative; display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 999px;
   color: var(--text); background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
 .dm-requests-btn:hover { color: var(--accent-light); }
-.dm-requests-badge { position: absolute; top: -4px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 999px;
-  background: var(--accent); color: #1a0d03; font: 700 10px/18px var(--font); text-align: center; }
 /* The search: on this device only (net/dm-search.js). */
 .dm-search { display: flex; align-items: center; gap: 8px; margin: 0 var(--gutter) 12px; padding: 0 14px; min-height: 40px; border-radius: 999px;
   background: var(--s1); border: 1px solid var(--hair); color: var(--text-3); }
@@ -79,9 +77,8 @@
 .desk-pane .dm-compose { bottom: 0; margin: 0; padding: 10px var(--gutter) 14px; background: rgb(0 0 0 / .86);
   -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border-top: 1px solid var(--hair); }
 
-/* Requests (DMInboxView): one row under the conversations' head, an inbox glyph in a round tile, the count at the right. */
+/* Requests (DMInboxView): one row under the conversations' head, an inbox glyph in a round tile. */
 .dm-requests-icon { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 999px; background: var(--s2); color: var(--text-2); }
-.dm-requests-count { margin-left: auto; font: var(--t-sub); color: var(--text-2); }
 
 /* The thread's end scrolls to just above the message box (and the phone's tab bar), never under it. */
 .dm-end { scroll-margin-bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 96px + env(safe-area-inset-bottom)); }
