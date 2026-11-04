@@ -2,6 +2,7 @@
 // outbox route, follows' notes to /feed); the screens read only from Haven.
 import { recordOwnList } from "./list-wipe-alarm.js"
 import { verifyEvent } from "nostr-tools/pure"
+import { nip77 } from "nostr-tools"
 import { normalizeURL } from "nostr-tools/utils"
 import { pool, publishRelays, relayLists, uniq } from "./pool.js"
 import { appendClientTag } from "./client-tag.js"
@@ -148,55 +149,256 @@ export async function syncOwn(vault, pubkey, relays, { on, query = (r, f, o) => 
 /** The phone's Import window and default start date: haven-go/import.go importOwnerNotes, HavenConfig.importStartDate. */
 export const IMPORT_WINDOW = 10 * 86400
 export const IMPORT_START_DATE = "2023-01-01"
-/** How many ten-day windows importOwn asks the relays for at once. */
-export const IMPORT_WINDOWS_AT_ONCE = 4
 const day = t => new Date(t * 1000).toISOString().slice(0, 10)
 
+// Moving in's limits, the same as haven-go/import_owner.go and import_paging.go (master a572c1b0).
+/** Asked for per page; a relay that caps lower sends fewer and the paging goes on from its oldest. */
+export const IMPORT_PAGE_LIMIT = 500
+/** A page that hears nothing (no note, no EOSE) for this long ends with what it got; each note restarts it. */
+export const IMPORT_IDLE_MS = 20_000
+/** The most one page may take, however it trickles. */
+export const IMPORT_PAGE_MAX_MS = 2 * 60_000
+/** One relay's whole-history lane: past this it is read window by window instead, where every window ends. */
+export const IMPORT_LANE_DEADLINE_MS = 15 * 60_000
+/** A whole-history lane's backstop (2M notes); a window's is 200. */
+export const IMPORT_LANE_MAX_PAGES = 4000
+export const IMPORT_WINDOW_MAX_PAGES = 200
+/** How long a relay may stay silent after NEG-OPEN before it counts as not speaking NIP-77. */
+export const IMPORT_NEG_OPEN_MS = 8000
+/** One relay's whole negentropy session. */
+export const IMPORT_NEG_TIMEOUT_MS = 3 * 60_000
+/** A relay silent (nothing, no EOSE) for this many windows in a row is dropped. */
+export const IMPORT_SILENT_WINDOWS = 3
+/** A relay found not to speak NIP-77 isn't asked again for a day (haven-go negCapRetryTTL). */
+const NEG_RETRY_MS = 24 * 3600_000
+const negUnsupported = new Map() // normalized url -> ms when it said no
+
 /**
- * The phone's Import: everything the account wrote (no kinds in the filter, as on the phone), from now back to
- * `startDate` (yyyy-mm-dd, UTC), ten days at a time. A relay that caps its answer (its own limit) is asked again
- * below the oldest event it sent, until it reaches the window's start, so a busy window comes back whole.
- * onProgress({ progress 0..1, from: "yyyy-mm-dd", found, stored, empty }) after each window. -> { found, stored }
+ * One page from one relay: what it sent, and whether it ended with EOSE (false: it went quiet, closed or failed).
+ * Ends at EOSE, CLOSED, a full page, IMPORT_PAGE_MAX_MS, or idleMs without a note.
  */
-export async function importOwn(vault, pubkey, relays, { startDate = IMPORT_START_DATE, onProgress = () => {}, maxWait = 8000 } = {}) {
+async function askPage(url, filter, idleMs = IMPORT_IDLE_MS) {
+  let relay
+  try { relay = await pool.ensureRelay(url, { connectionTimeout: 5000 }) } catch { return { events: [], eose: false } }
+  return new Promise(resolve => {
+    const events = []
+    let sub, done = false, idle
+    const finish = eose => {
+      if (done) return
+      done = true
+      clearTimeout(idle); clearTimeout(max)
+      try { sub?.close() } catch {}
+      resolve({ events, eose })
+    }
+    const restart = () => { clearTimeout(idle); idle = setTimeout(() => finish(false), idleMs) }
+    const max = setTimeout(() => finish(false), IMPORT_PAGE_MAX_MS)
+    restart()
+    try {
+      sub = relay.subscribe([filter], {
+        onevent: e => { events.push(e); if (filter.limit && events.length >= filter.limit) finish(true); else restart() },
+        oneose: () => finish(true),
+        onclose: () => finish(false),
+        eoseTimeout: IMPORT_PAGE_MAX_MS,
+      })
+    } catch { finish(false) }
+  })
+}
+
+const UNSUPPORTED_NOTICE = /negentropy|NEG-OPEN|could not parse|unknown message|bad msg/i
+
+/**
+ * NIP-77 against one relay, download only: the ids it holds for `filter` that `have` (the vault's {id, created_at}
+ * for the same filter) lacks. Throws { unsupported } when it says it doesn't speak NIP-77 (with `silent` when it
+ * just didn't answer in time), { refused } on NEG-ERR.
+ */
+async function negentropyNeeds(url, filter, have, { openMs = IMPORT_NEG_OPEN_MS, timeoutMs = IMPORT_NEG_TIMEOUT_MS } = {}) {
+  const relay = await pool.ensureRelay(url, { connectionTimeout: 5000 })
+  const storage = new nip77.NegentropyStorageVector()
+  for (const e of have) storage.insert(e.created_at, e.id)
+  storage.seal()
+  return new Promise((resolve, reject) => {
+    const need = new Set()
+    let answered = false, refused = false, ended = false, sync
+    const prevNotice = relay.onnotice
+    const end = (err, closed) => {
+      if (ended) return
+      ended = true
+      clearTimeout(openT); clearTimeout(allT)
+      relay.onnotice = prevNotice
+      if (!closed) try { sync?.close() } catch {}
+      if (err) reject(err); else resolve([...need])
+    }
+    relay.onnotice = msg => {
+      if (!answered && UNSUPPORTED_NOTICE.test(msg)) end(Object.assign(new Error(`no NIP-77: ${msg}`), { unsupported: true }))
+      prevNotice?.(msg)
+    }
+    const openT = setTimeout(() => { if (!answered) end(Object.assign(new Error("no NIP-77 answer"), { unsupported: true, silent: true })) }, openMs)
+    const allT = setTimeout(() => end(new Error("negentropy timed out")), timeoutMs)
+    try {
+      sync = new nip77.NegentropySync(relay, storage, filter, {
+        onneed: id => need.add(id),
+        onclose: reason => end(refused || reason ? Object.assign(new Error(`negentropy refused: ${reason ?? "NEG-ERR"}`), { refused: true }) : null, true),
+      })
+      const custom = sync.subscription.oncustom
+      sync.subscription.oncustom = data => { answered = true; if (data[0] === "NEG-ERR") refused = true; custom(data) }
+      sync.start().catch(e => end(e))
+    } catch (e) { end(e) }
+  })
+}
+
+/** The network seams, replaced in tests: one page from one relay, and a NIP-77 session's needed ids. */
+export const importNet = { page: askPage, negentropy: negentropyNeeds }
+
+/**
+ * The phone's Import (haven-go/import_owner.go, master a572c1b0): everything the account wrote since `startDate`
+ * (yyyy-mm-dd, UTC), no kinds in the filter. Each relay on its own, all at once, one request in flight each:
+ *  1. a relay that speaks NIP-77 hands over every id the vault lacks in one negentropy session; those notes are
+ *     fetched by id, asked for again once if any don't come, and the relay is paged as in 2 if any still lack;
+ *  2. every other relay pages its whole history newest first (no ten-day windows);
+ *  3. a lane that stops partway, never answers, or runs past IMPORT_LANE_DEADLINE_MS is read the old way, ten days
+ *     at a time, and dropped after IMPORT_SILENT_WINDOWS silent windows.
+ * Download only: nothing is sent to a relay but requests. A note counts only once its id is the hash of its content,
+ * its signature holds and the account wrote it; stores run one batch at a time across every relay, deletions after
+ * the rest of their batch, so a note and its deletion can't both get through Haven's check.
+ * onProgress({ progress 0..1, from: "yyyy-mm-dd", found, stored, empty }). -> { found, stored }
+ */
+export async function importOwn(vault, pubkey, relays, { startDate = IMPORT_START_DATE, onProgress = () => {}, maxWait = IMPORT_IDLE_MS,
+  laneDeadlineMs = IMPORT_LANE_DEADLINE_MS } = {}) {
   const start = Date.parse(`${startDate}T00:00:00Z`) / 1000
   if (!Number.isFinite(start)) throw new Error(`not a date: ${startDate}`)
   await Promise.any(relays.map(url => pool.ensureRelay(url, { connectionTimeout: 5000 }))).catch(() => { throw new Error("no relay reachable") })
   const end = now()
-  const windows = []
-  for (let until = end; until > start; until -= IMPORT_WINDOW) windows.push({ since: Math.max(start, until - IMPORT_WINDOW), until })
   const seen = new Set()
   let found = 0, stored = 0
-  // Each relay is paged on its own: paging on all the relays' answers together stopped as soon as one relay with a
-  // high cap reached the window's start, and a lower-capped relay's older notes in that window were never asked for.
-  const fetchWindow = async ({ since, until }) => (await Promise.all(relays.map(async url => {
-    let n = 0
-    for (let u = until; ;) {
-      const page = await pool.querySync([url], { authors: [pubkey], since, until: u }, { maxWait }).catch(() => [])
-      const evs = page.filter(e => e.pubkey === pubkey && !seen.has(e.id) && seen.add(e.id))
-      n += evs.length
-      found += evs.length
-      const s = await storeAll(vault.outbox, evs)
-      stored += s // not `stored += await`: that reads stored before the await and drops the other windows' counts
-      const oldest = page.reduce((m, e) => Math.min(m, e.created_at), u)
-      if (!page.length || oldest >= u || oldest <= since) break
-      u = oldest
+
+  const real = (e, since, until) => e && e.pubkey === pubkey && e.created_at >= since && (until === undefined || e.created_at <= until) && verifyEvent(e)
+
+  // One store batch at a time across every relay; within a batch, deletions after the rest.
+  let storing = Promise.resolve()
+  const keep = evs => {
+    const fresh = evs.filter(e => !seen.has(e.id) && seen.add(e.id))
+    found += fresh.length
+    if (!fresh.length) return storing
+    const run = storing.then(async () => {
+      stored += await storeAll(vault.outbox, fresh.filter(e => e.kind !== 5))
+      stored += await storeAll(vault.outbox, fresh.filter(e => e.kind === 5))
+    })
+    storing = run.catch(() => {})
+    return run
+  }
+
+  // Progress: each relay's share of the history covered (1 when it's done), averaged; `from` the oldest day reached.
+  const covered = new Map(relays.map(url => [url, 0]))
+  let oldestDay = end
+  const report = (url, reached) => {
+    if (reached !== undefined) {
+      covered.set(url, Math.max(covered.get(url), Math.min(1, (end - Math.max(reached, start)) / Math.max(1, end - start))))
+      if (reached < oldestDay) oldestDay = Math.max(reached, start)
     }
-    return n
-  }))).reduce((a, b) => a + b, 0)
-  // IMPORT_WINDOWS_AT_ONCE windows in flight (one after another took ~10 min back to 2023 for a busy account), with
-  // progress reported in order, newest window first, so the date line only walks back.
-  const counts = []
-  let next = 0, reported = 0
-  const report = () => {
-    for (; reported < windows.length && counts[reported] !== undefined; reported++) {
-      const { since } = windows[reported]
-      onProgress({ progress: Math.min(1, (end - since) / (end - start)), from: day(since), found, stored, empty: !counts[reported] })
+    const progress = [...covered.values()].reduce((a, b) => a + b, 0) / Math.max(1, covered.size)
+    onProgress({ progress, from: day(oldestDay), found, stored, empty: false })
+  }
+
+  // One relay paged from `until` (or now) back to `since`. -> "done" | "short" | "silent" | "overran"
+  const page = async (url, since, until, maxPages, deadline) => {
+    let f = { authors: [pubkey], since, limit: IMPORT_PAGE_LIMIT }
+    if (until !== undefined) f.until = until
+    const mine = new Set()
+    let stepped = false
+    for (let n = 0; ; n++) {
+      if (deadline && Date.now() > deadline) return "overran"
+      if (n === maxPages) return "short"
+      const { events, eose } = await importNet.page(url, f, maxWait)
+      // Checked before a note can count as new, or made-up notes keep a lane paging (Tron, PR 1663).
+      const ok = events.filter(e => real(e, since, f.until))
+      if (!ok.length) return eose ? "done" : n > 0 ? "short" : "silent"
+      const oldest = ok.reduce((m, e) => Math.min(m, e.created_at), Infinity)
+      const fresh = ok.filter(e => !mine.has(e.id) && mine.add(e.id))
+      await keep(fresh)
+      report(url, oldest)
+      let u = oldest // inclusive: notes sharing that second come back and are skipped
+      if (!fresh.length) {
+        if (stepped) return "done"
+        stepped = true
+        u = oldest - 1
+      } else stepped = false
+      if (u < since) return "done"
+      f = { ...f, until: u }
     }
   }
-  await Promise.all(Array.from({ length: IMPORT_WINDOWS_AT_ONCE }, async () => {
-    while (next < windows.length) { const i = next++; counts[i] = await fetchWindow(windows[i]); report() }
+
+  // The vault's own copy of the history, for the negentropy vector: paged, as Haven caps a query.
+  const vaultHave = async () => {
+    const have = new Map()
+    let until
+    for (;;) {
+      const evs = await vault.outbox.query({ authors: [pubkey], since: start, ...(until !== undefined && { until }), limit: 5000 }).catch(() => [])
+      const fresh = evs.filter(e => !have.has(e.id))
+      for (const e of fresh) have.set(e.id, { id: e.id, created_at: e.created_at })
+      if (!fresh.length) break
+      until = evs.reduce((m, e) => Math.min(m, e.created_at), Infinity)
+    }
+    return [...have.values()]
+  }
+  let haveOnce
+  const have = () => (haveOnce ??= vaultHave())
+
+  // Fetch exactly `ids` from one relay; -> the ids it didn't hand over (or that failed the check).
+  const byId = async (url, ids) => {
+    const left = []
+    for (let i = 0; i < ids.length; i += IMPORT_PAGE_LIMIT) {
+      const batch = ids.slice(i, i + IMPORT_PAGE_LIMIT)
+      const want = new Set(batch)
+      const { events } = await importNet.page(url, { ids: batch, limit: batch.length }, maxWait)
+      const ok = events.filter(e => want.has(e.id) && real(e, start))
+      const got = new Set(ok.map(e => e.id))
+      await keep(ok)
+      left.push(...batch.filter(id => !got.has(id)))
+    }
+    return left
+  }
+
+  // NIP-77 for one relay, if it may speak it. -> true when every id it listed is now in hand.
+  const negentropy = async url => {
+    const key = norm(url)
+    if (Date.now() - (negUnsupported.get(key) ?? -Infinity) < NEG_RETRY_MS) return false
+    let need
+    try {
+      need = await importNet.negentropy(url, { authors: [pubkey], since: start }, await have())
+    } catch (e) {
+      // Only a relay that said no is skipped for a day. A silent one may just have been slow to answer while the
+      // page was busy checking another relay's notes (relay.nos.social, live), so it's asked again next time.
+      if (e?.refused || (e?.unsupported && !e.silent)) negUnsupported.set(key, Date.now())
+      return false
+    }
+    let left = await byId(url, need)
+    if (left.length) left = await byId(url, left) // asked once more, as the apps do
+    if (left.length) return false
+    report(url, start)
+    return true
+  }
+
+  const redo = []
+  await Promise.all(relays.map(async url => {
+    if (await negentropy(url)) return
+    const how = await page(url, start, undefined, IMPORT_LANE_MAX_PAGES, Date.now() + laneDeadlineMs)
+    if (how === "done") report(url, start)
+    else redo.push(url)
   }))
+
+  // The old walk, ten days at a time, for the lanes that didn't finish.
+  if (redo.length) {
+    const silent = new Map(redo.map(url => [url, 0]))
+    let left = [...redo]
+    for (let until = end; until > start && left.length; until -= IMPORT_WINDOW) {
+      const since = Math.max(start, until - IMPORT_WINDOW)
+      const hows = await Promise.all(left.map(url => page(url, since, until, IMPORT_WINDOW_MAX_PAGES)))
+      left.forEach((url, i) => silent.set(url, hows[i] === "silent" ? silent.get(url) + 1 : 0))
+      left = left.filter(url => silent.get(url) < IMPORT_SILENT_WINDOWS)
+    }
+    for (const url of redo) report(url, start)
+  }
+  await storing
   return { found, stored }
 }
 
