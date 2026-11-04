@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -430,13 +431,17 @@ func TestSweepDeleteRequests(t *testing.T) {
 func TestImportOwnerNotesAppliesDeleteRequests(t *testing.T) {
 	skipWithoutSockets(t)
 	owner := newTestKey(t)
-	savedCfg, savedDB, savedPool, savedReach := config, outboxDB, pool, reachableImportRelays.Load()
+	savedCfg, savedDB, savedPool, savedReach, savedCaps := config, outboxDB, pool, reachableImportRelays.Load(), negCapsFile
 	t.Cleanup(func() {
-		config, outboxDB, pool = savedCfg, savedDB, savedPool
+		config, outboxDB, pool, negCapsFile = savedCfg, savedDB, savedPool, savedCaps
 		reachableImportRelays.Store(savedReach)
+		resetNegCaps()
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	// The import now tries negentropy first: keep its capability answers out of the package dir.
+	negCapsFile = filepath.Join(t.TempDir(), "negentropy_caps.json")
+	resetNegCaps()
 
 	setupSyncConfig(owner.pk)
 	config.OwnerPubKey = owner.pk
