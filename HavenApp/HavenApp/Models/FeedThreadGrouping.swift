@@ -305,14 +305,36 @@ enum FeedThreadGrouping {
 /// Which replies a thread view shows.
 enum ThreadReplyVisibility {
     /// Every reply under `rootId`, at any depth, except the ones `isHidden`
-    /// drops (blocked people, spam). Everyone else shows, whoever they are:
-    /// replies from outside your web used to be folded behind a button, and
-    /// the thread then read as the author talking to themselves, with the
-    /// author's own answers to a folded reply gone with it.
+    /// drops (blocked people, spam). The thread view folds replies from
+    /// outside your web with `split`.
     static func shown<T>(under rootId: String, in notes: [T],
                          id: (T) -> String, parentId: (T) -> String?,
                          isHidden: (T) -> Bool) -> [T] {
         descendants(of: rootId, in: notes, id: id, parentId: parentId).filter { !isHidden($0) }
+    }
+
+    /// `shown`, with replies from outside your web (`isOutside`) folded
+    /// away: each such reply goes into `outside` together with everything
+    /// under it, so the thread never shows an answer to a reply it hides
+    /// (the author talking to nobody). `outside` keeps the tree order.
+    static func split<T>(under rootId: String, in notes: [T],
+                         id: (T) -> String, parentId: (T) -> String?,
+                         isHidden: (T) -> Bool, isOutside: (T) -> Bool) -> (inside: [T], outside: [T]) {
+        var children: [String: [T]] = [:]
+        for n in notes { if let p = parentId(n) { children[p, default: []].append(n) } }
+        var inside: [T] = [], outside: [T] = []
+        var queue: [(String, Bool)] = [(rootId, false)]
+        var seen: Set<String> = [rootId]
+        while let (next, folded) = queue.popLast() {
+            for child in children[next] ?? [] where seen.insert(id(child)).inserted {
+                let childFolded = folded || isOutside(child)
+                if !isHidden(child) {
+                    if childFolded { outside.append(child) } else { inside.append(child) }
+                }
+                queue.append((id(child), childFolded))
+            }
+        }
+        return (inside, outside)
     }
 
     /// Every note under `rootId`, at any depth, among `notes`.

@@ -14,4 +14,17 @@ enum ArticleBlockFilter {
             return !BlockedPeople.isBlocked(event["pubkey"] as? String ?? "", in: blocked)
         }
     }
+
+    /// Comments, replies and highlights from outside your Web of Trust
+    /// (`TrustGate`, the Global rule) taken out too. Likes and zaps stay:
+    /// they only add to counts. The article's author and you always show.
+    static func trustedEvents(_ events: [[String: Any]], trusted: Set<String>?,
+                              always: Set<String>) -> [[String: Any]] {
+        guard trusted != nil else { return events }
+        let words: Set<Int> = [ArticleEngagement.commentKind, ArticleEngagement.noteKind, ArticleEngagement.highlightKind]
+        return events.filter { event in
+            guard let kind = event["kind"] as? Int, words.contains(kind) else { return true }
+            return TrustGate.allows(event["pubkey"] as? String ?? "", trusted: trusted, always: always)
+        }
+    }
 }
