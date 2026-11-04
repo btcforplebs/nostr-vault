@@ -80,7 +80,7 @@ Each app draws the ones it has.
 
 The `panels` rules are the ones `space-layout.js` already keeps:
 
-- `id`: `live-vault`, `wot-mini`, `messages` (`desktop/space/panels.js`). Ids
+- `id`: `live-vault`, `wot-mini`, `messages`, `my-devices`, `live-now` (`desktop/space/panels.js`). Ids
   are never renamed.
 - `on`: drawn. A panel taken off stays in the array, so shown again it goes
   back where it was. Its live work (fetches, globe) stops while it is off.

@@ -1,0 +1,10 @@
+/* Live now (src/desktop/space/LiveNow.jsx): a "Your space" panel. The card, rows and empty line are space.css's (.sp-*);
+   here only what this panel adds. */
+.ln-icon { color: #ff3b30; }
+.ln-count { min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 999px; background: #ff3b30;
+  color: #fff; font: 700 11px/20px var(--font); text-align: center; }
+.ln-row { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+.ln-row .avatar { box-shadow: 0 0 0 2px #ff3b30; }
+.ln-badge { padding: 1px 6px; border-radius: 999px; background: #ff3b30; color: #fff; font: 800 10px/16px var(--font); letter-spacing: .04em; }
+.ln-more { padding-top: 6px; }
+.sp-panel.live-now { flex-shrink: 0; }
