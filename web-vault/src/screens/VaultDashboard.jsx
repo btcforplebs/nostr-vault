@@ -6,6 +6,7 @@
 import { useEffect, useState } from "preact/hooks"
 import { StatusCard } from "../components/dashboard/StatusCard.jsx"
 import { SafetySection } from "../components/dashboard/SafetySection.jsx"
+import { ListWipeBanner } from "../components/dashboard/ListWipeBanner.jsx"
 import { ReachSection } from "../components/dashboard/ReachSection.jsx"
 import { ContentsSection } from "../components/dashboard/ContentsSection.jsx"
 import { KeepFullSection } from "../components/dashboard/KeepFullSection.jsx"
@@ -122,6 +123,7 @@ export function VaultDashboard({ ctx }) {
         <div class="dash-scroll">
           {view === "activity" ? <ActivityWindow items={items} version={`${APP_VERSION}${APP_COMMIT ? ` · ${APP_COMMIT}` : ""}`} /> : <>
             <StatusCard syncing={syncing} />
+            <ListWipeBanner ctx={ctx} />
             <SafetySection method={session.method} followSavedAt={followSavedAt} backupAt={history.notesBackup} onBackup={exportFile} backupBusy={jobs.export} />
             <ReachSection trusted={trusted.size} blocked={blocked.size} />
             <ContentsSection {...counts} usage={storage.usage} kept={storage.kept} media={media} onRetry={look} />

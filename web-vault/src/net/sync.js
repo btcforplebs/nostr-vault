@@ -1,5 +1,6 @@
 // Network -> in-page Haven. Every event that comes in is written to Haven (the user's own events to the
 // outbox route, follows' notes to /feed); the screens read only from Haven.
+import { recordOwnList } from "./list-wipe-alarm.js"
 import { verifyEvent } from "nostr-tools/pure"
 import { normalizeURL } from "nostr-tools/utils"
 import { pool, publishRelays, relayLists, uniq } from "./pool.js"
@@ -234,6 +235,8 @@ export function checkSigned(event, template, pubkey) {
   const { id, created_at, kind, tags, content, sig } = event
   const copy = { id, pubkey, created_at, kind, tags, content, sig }
   if (!verifyEvent(copy)) throw new Error("Your signer sent back a note with a bad signature, so it wasn't posted.")
+  // A list this browser signed is the owner's own edit: the wipe alarm stays quiet for it (list-wipe-alarm.js).
+  recordOwnList(copy)
   return copy
 }
 

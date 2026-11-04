@@ -87,3 +87,9 @@
 .dash-banner.problem { background: color-mix(in srgb, #ff453a 12%, var(--s1)); }
 .dash-banner span { color: var(--text-2); font: 13px var(--font); }
 .dash-actions { display: flex; gap: 10px; }
+
+/* The list wipe alarm (ListWipeBanner.jsx): orange like the iPhone's. */
+.list-wipe { display: grid; gap: 10px; }
+.list-wipe-card { border: 1px solid rgba(255, 159, 10, 0.45); background: rgba(255, 159, 10, 0.1); border-radius: 12px; padding: 12px 14px; }
+.list-wipe-line { margin: 0 0 4px; font-weight: 600; }
+.list-wipe-actions { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
