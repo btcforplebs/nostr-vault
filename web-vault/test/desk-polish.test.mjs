@@ -56,3 +56,11 @@ test("the desktop sections are a slim left rail in the iPad's order, and the Fee
   assert.match(css, /relay-host:not\(\[hidden\]\) \{[^}]*top: 0;[^}]*left: var\(--rail-w\);/, "the Dashboard lies beside the rail")
   assert.match(css, /^\.desk-full \.wot-myweb-button \{ position: absolute;/m, "My Web stays in the WoT column, off Your space")
 })
+
+// Logen 2026-11-04: the green Vault capsule covered "Open Messages" in Your space at 1440. On desktop it sits left of
+// Your space's column (--dock-w), not at the window's edge.
+test("the desktop Vault capsule stays out of Your space", () => {
+  const css = src("styles/settings.css")
+  assert.match(css, /^\.vault-status\.desk \{ right: calc\(var\(--dock-w, 0px\) \+ 24px\); bottom: 20px; \}/m)
+  assert.match(src("styles/desktop.css"), /\.desk-app:has\(\.desk\.space\) \{ --dock-w: 380px; \}/, "--dock-w is Your space's width")
+})

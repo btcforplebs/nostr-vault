@@ -87,7 +87,9 @@ a.settings-row:hover { background: var(--s2); }
 .vault-status.connecting { --reach: #ffd60a; }
 .vault-status.connected { --reach: #30d158; }
 .vault-status.error { --reach: #ff453a; }
-.vault-status.desk { right: 24px; bottom: 20px; }
+/* Desktop: inside the page's column, left of Your space (--dock-w, desktop.css; 0 when there is none), so it never
+   covers a Your space panel (Logen, 2026-11-04: it sat on Messages' "Open Messages"). */
+.vault-status.desk { right: calc(var(--dock-w, 0px) + 24px); bottom: 20px; }
 
 /* Vault lists. */
 .note.tappable { cursor: pointer; }
