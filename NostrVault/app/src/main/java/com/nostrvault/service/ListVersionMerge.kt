@@ -357,7 +357,15 @@ object ListVersionMerge {
      * [leftOut]: dropped in an ordinary edit and left unticked; [unsure]: can't be told
      * whether the person took them out, left unticked.
      */
-    data class Summary(val total: Int, val added: Int, val removed: Int, val leftOut: Int, val unsure: Int, val remutes: Remutes)
+    data class Summary(val total: Int, val added: Int, val removed: Int, val leftOut: Int, val unsure: Int, val remutes: Remutes) {
+        /**
+         * The Review link shows whenever there is something to look at: what Save changes, and
+         * also what was left out unticked, since the summary's lines send those to Review to tick
+         * ("Nothing to bring back" with 33 unsure had no way in; Logen 2026-11-04). iOS twin:
+         * `ListVersionMerge.Summary.showsReview`.
+         */
+        val showsReview: Boolean get() = added > 0 || removed > 0 || leftOut + unsure > 0
+    }
 
     /** What Save would add and remove, what stays out, and what a mute list would mute again (said before Save). */
     fun mergeSummary(kind: Int, rows: List<Row>): Summary {

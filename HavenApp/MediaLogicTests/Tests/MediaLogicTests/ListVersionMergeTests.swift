@@ -308,4 +308,21 @@ final class ListVersionMergeTests: XCTestCase {
         XCTAssertEqual(m.line, "2 people, 1 word, 1 hashtag, 1 thread")
         XCTAssertTrue(ListVersionMerge.summary(kind: 10003, rows: rows).remutes.isEmpty)
     }
+
+    /// "Nothing to bring back" with entries left out unticked still offers
+    /// Review: the summary's line sends them there to tick (Logen 2026-11-04).
+    func testReviewShowsWhenOnlyLeftOutOrUnsure() {
+        func row(_ n: Int, _ status: ListVersionMerge.Status, ticked: Bool) -> ListVersionMerge.Row {
+            ListVersionMerge.Row(key: p(n), tag: ["p", p(n)], isPrivate: false, status: status, ticked: ticked)
+        }
+        let kept = row(1, .current, ticked: true)
+        XCTAssertFalse(ListVersionMerge.summary(kind: 3, rows: [kept]).showsReview, "nothing changes, nothing left out")
+        let unsure = ListVersionMerge.summary(kind: 3, rows: [kept, row(2, .unsure, ticked: false), row(3, .unsure, ticked: false)])
+        XCTAssertEqual(unsure.added, 0)
+        XCTAssertEqual(unsure.unsure, 2)
+        XCTAssertTrue(unsure.showsReview)
+        XCTAssertTrue(ListVersionMerge.summary(kind: 3, rows: [kept, row(2, .removed, ticked: false)]).showsReview)
+        XCTAssertTrue(ListVersionMerge.summary(kind: 3, rows: [kept, row(2, .lost, ticked: true)]).showsReview)
+        XCTAssertTrue(ListVersionMerge.summary(kind: 3, rows: [row(1, .current, ticked: false)]).showsReview)
+    }
 }
