@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http/httptest"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/fiatjaf/khatru"
 	"github.com/nbd-wtf/go-nostr"
 )
 
@@ -261,4 +264,134 @@ func TestImportOwnerNotesPagesPastARelayCap(t *testing.T) {
 			t.Fatalf("the silent relay held the import %v", took)
 		}
 	})
+}
+
+// Tron's PR 1654 must-fix 2: a relay whose recent notes a faster relay already sent must still page on to the older
+// notes only it holds. Relay a (the newest 20) answers first; relay b holds all 30, ten of them nowhere else.
+func TestWindowPagedSlowRelayStillReachesItsOwnOlderNotes(t *testing.T) {
+	owner := newTestKey(t)
+	held := notesOf(t, owner, 30, 10_000)
+	withPagingRelays(t, map[string]*pagingRelay{
+		"wss://fast.example": {held: held[:20], cap: 10},
+		"wss://slow.example": {held: held, cap: 10},
+	})
+	fastDone := make(chan struct{})
+	inner := importPage
+	importPage = func(ctx context.Context, url string, f nostr.Filter) ([]*nostr.Event, bool) {
+		if url == "wss://slow.example" {
+			<-fastDone
+		}
+		evs, ok := inner(ctx, url, f)
+		if url == "wss://fast.example" && len(evs) == 0 {
+			close(fastDone) // fast has nothing older: let slow start
+		}
+		return evs, ok
+	}
+	t.Cleanup(func() { importPage = inner })
+	res := fetchWindowPaged(context.Background(), []string{"wss://fast.example", "wss://slow.example"}, windowFilter(owner.pk, 0, 10_000), func(*nostr.Event) {})
+	if res.Notes != 30 {
+		t.Fatalf("kept %d, want 30: the slow relay's ten older notes were lost", res.Notes)
+	}
+}
+
+// Tron's PR 1654 must-fix 1, over a real socket: a relay that replays one genuine owner note every 100 ms and never
+// sends EOSE must not hold the window open. Repeats don't restart the idle wait.
+func TestImportPageEndsOnATrickleOfRepeats(t *testing.T) {
+	skipWithoutSockets(t)
+	owner := newTestKey(t)
+	savedPool, savedIdle := pool, importIdleTimeout
+	t.Cleanup(func() { pool, importIdleTimeout = savedPool, savedIdle })
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	pool = nostr.NewSimplePool(ctx)
+	importIdleTimeout = 300 * time.Millisecond
+
+	now := nostr.Now()
+	ev := owner.sign(t, nostr.Event{Kind: 1, CreatedAt: now - 3600, Content: "hi"})
+	rl := khatru.NewRelay()
+	rl.QueryEvents = append(rl.QueryEvents, func(ctx context.Context, _ nostr.Filter) (chan *nostr.Event, error) {
+		ch := make(chan *nostr.Event)
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(100 * time.Millisecond):
+					e := ev
+					select {
+					case ch <- &e:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+		}()
+		return ch, nil
+	})
+	srv := httptest.NewServer(rl)
+	t.Cleanup(srv.Close)
+	url := "ws" + strings.TrimPrefix(srv.URL, "http")
+
+	since := now - 86400
+	done := make(chan windowResult, 1)
+	go func() {
+		done <- fetchWindowPaged(ctx, []string{url}, windowFilter(owner.pk, since, now), func(*nostr.Event) {})
+	}()
+	select {
+	case r := <-done:
+		if r.Notes != 1 {
+			t.Fatalf("result %+v, want the one note once", r)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a relay replaying one note held the window open past 5 s (idle wait 300 ms)")
+	}
+}
+
+// A full page ends the request at once, and the hard per-page limit ends one that trickles new notes forever.
+func TestImportPageHardLimit(t *testing.T) {
+	skipWithoutSockets(t)
+	owner := newTestKey(t)
+	savedPool, savedIdle, savedMax := pool, importIdleTimeout, importPageMax
+	t.Cleanup(func() { pool, importIdleTimeout, importPageMax = savedPool, savedIdle, savedMax })
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	pool = nostr.NewSimplePool(ctx)
+	importIdleTimeout = time.Second
+	importPageMax = 700 * time.Millisecond
+
+	now := nostr.Now()
+	rl := khatru.NewRelay()
+	rl.QueryEvents = append(rl.QueryEvents, func(ctx context.Context, _ nostr.Filter) (chan *nostr.Event, error) {
+		ch := make(chan *nostr.Event)
+		go func() {
+			for i := 0; ; i++ { // a new genuine note every 50 ms, never EOSE
+				e := owner.sign(t, nostr.Event{Kind: 1, CreatedAt: now - nostr.Timestamp(i), Content: fmt.Sprint(i)})
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(50 * time.Millisecond):
+				}
+				select {
+				case ch <- &e:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+		return ch, nil
+	})
+	srv := httptest.NewServer(rl)
+	t.Cleanup(srv.Close)
+	url := "ws" + strings.TrimPrefix(srv.URL, "http")
+
+	start := time.Now()
+	evs, eose := askRelayIdle(ctx, url, nostr.Filter{Authors: []string{owner.pk}, Limit: 500})
+	if took := time.Since(start); took > 2*time.Second || eose || len(evs) == 0 {
+		t.Fatalf("took %v, eose %v, %d notes: want ended by the 700 ms page limit", took, eose, len(evs))
+	}
+	start = time.Now()
+	evs, eose = askRelayIdle(ctx, url, nostr.Filter{Authors: []string{owner.pk}, Limit: 3})
+	if took := time.Since(start); len(evs) != 3 || !eose || took > 500*time.Millisecond {
+		t.Fatalf("took %v, eose %v, %d notes: a full page of 3 should end at once", took, eose, len(evs))
+	}
 }

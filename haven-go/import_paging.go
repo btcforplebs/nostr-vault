@@ -32,18 +32,24 @@ const (
 // importIdleTimeout: importIdleTimeoutDefault; shorter in tests.
 var importIdleTimeout = importIdleTimeoutDefault
 
+// importPageMax: the most one page may take, however it trickles (Tron, PR
+// 1654: a relay replaying one note every 100 ms held a window open for good).
+var importPageMax = 2 * time.Minute
+
 // importPage asks one relay one filter: what it sent, and whether it ended the
 // answer with EOSE (false: it went quiet, closed or failed). Replaced in tests.
 var importPage = askRelayIdle
 
 // askRelayIdle collects a REQ's answer until EOSE, CLOSED, the context ends,
-// or nothing arrives for importIdleTimeout.
+// the page is full (f.Limit notes it asked for), importPageMax passes, or no
+// new note it asked for arrives for importIdleTimeout. Repeats and notes
+// outside the filter neither count nor keep the page open.
 func askRelayIdle(ctx context.Context, url string, f nostr.Filter) ([]*nostr.Event, bool) {
 	relay, err := pool.EnsureRelay(url)
 	if err != nil {
 		return nil, false
 	}
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithTimeout(ctx, importPageMax)
 	defer cancel()
 	sub, err := relay.Subscribe(ctx, nostr.Filters{f})
 	if err != nil {
@@ -53,13 +59,21 @@ func askRelayIdle(ctx context.Context, url string, f nostr.Filter) ([]*nostr.Eve
 	idle := time.NewTimer(importIdleTimeout)
 	defer idle.Stop()
 	var out []*nostr.Event
+	got := map[string]bool{}
 	for {
 		select {
 		case ev, ok := <-sub.Events:
 			if !ok {
 				return out, false
 			}
+			if ev == nil || got[ev.ID] || !f.Matches(ev) {
+				continue
+			}
+			got[ev.ID] = true
 			out = append(out, ev)
+			if f.Limit > 0 && len(out) >= f.Limit {
+				return out, true // a full page: the next one asks from its oldest
+			}
 			if !idle.Stop() {
 				<-idle.C
 			}
@@ -85,7 +99,7 @@ type windowResult struct {
 }
 
 // fetchWindowPaged reads filter (Since..Until) from every relay, each one paged
-// back from Until until a page brings no note not seen before. Each note is
+// back from Until until a page brings nothing it hadn't sent before. Each note is
 // handed to keep once, whichever relay sent it first; keep runs on one
 // goroutine at a time. A note the filter doesn't match is dropped (a relay
 // may send anything).
@@ -102,6 +116,11 @@ func fetchWindowPaged(ctx context.Context, relays []string, filter nostr.Filter,
 			defer wg.Done()
 			f := filter
 			f.Limit = importPageLimit
+			// mine: what this relay has sent, which decides its paging. A note
+			// another relay sent first still counts as new here, or a relay
+			// whose recent notes a faster one already sent would stop before
+			// its older ones (Tron, PR 1654). `seen` only decides hand-over.
+			mine := map[string]bool{}
 			// stepped: the last page brought nothing new and the next one asks
 			// from a second earlier, past notes it can't page through (more in
 			// one second than a page holds, or a relay that keeps sending the
@@ -129,11 +148,15 @@ func fetchWindowPaged(ctx context.Context, relays []string, filter nostr.Filter,
 					if oldest == 0 || ev.CreatedAt < oldest {
 						oldest = ev.CreatedAt
 					}
+					if mine[ev.ID] {
+						continue
+					}
+					mine[ev.ID] = true
+					fresh++
 					if seen[ev.ID] {
 						continue
 					}
 					seen[ev.ID] = true
-					fresh++
 					keep(ev)
 					res.Notes++
 				}
