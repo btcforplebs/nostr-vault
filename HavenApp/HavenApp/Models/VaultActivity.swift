@@ -112,6 +112,21 @@ struct VaultActivity: Identifiable, Equatable {
         let myText = Dictionary(mine.map { ($0.id, preview(of: $0)) }, uniquingKeysWith: { a, _ in a })
         let myImages = Dictionary(mine.map { ($0.id, $0.images) }, uniquingKeysWith: { a, _ in a })
         let myTags = Dictionary(mine.map { ($0.id, $0.tags) }, uniquingKeysWith: { a, _ in a })
+        // Who wrote each event in memory, to tell a note of someone else's
+        // from one of yours that simply hasn't arrived yet.
+        let authorOf = Dictionary(events.map { ($0.id, $0.pubkey) }, uniquingKeysWith: { a, _ in a })
+        // A like or repost on a note that isn't in memory yet still gets its
+        // line when it names you as the note's author (its last `p`, as
+        // NIP-18/25 put the author there), so it doesn't wait on your own
+        // notes, or vanish when the note is older than the ones loaded
+        // (Logen 2026-11-04: Live Vault showed only zaps at first). The line
+        // has the same id it will keep once the note lands, so nothing jumps;
+        // `missingTargets` names the notes to fetch for the preview.
+        func onMyNote(_ target: String, _ tags: [[String]]) -> Bool {
+            if myText[target] != nil { return true }
+            guard authorOf[target] == nil else { return false }
+            return tags.last { $0.count >= 2 && $0[0] == "p" }?[1] == owner
+        }
 
         var singles: [VaultActivity] = []
         // Folded lines, by kind and target: actors newest first.
@@ -141,7 +156,7 @@ struct VaultActivity: Identifiable, Equatable {
 
             if event.kind == reactionKind {
                 guard !isBlocked(event.pubkey),
-                      let target = firstTag("e", in: event.tags), myText[target] != nil else { continue }
+                      let target = firstTag("e", in: event.tags), onMyNote(target, event.tags) else { continue }
                 fold(.reaction, target: target, actor: event.pubkey, at: event.createdAt,
                      emoji: event.content.isEmpty ? "+" : event.content,
                      custom: CustomEmoji.forReaction(content: event.content, tags: event.tags))
@@ -156,7 +171,9 @@ struct VaultActivity: Identifiable, Equatable {
                 // The note comes from the signed request, as the Zaps list reads it.
                 let target = request.flatMap { firstTag("e", in: $0.tags) } ?? firstTag("e", in: event.tags)
                 let comment = (request?.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                if let target, myText[target] != nil, comment.isEmpty {
+                // A receipt is always to you: a note not in memory yet is
+                // yours unless it is known to be someone else's.
+                if let target, comment.isEmpty, myText[target] != nil || authorOf[target] == nil {
                     fold(.zap, target: target, actor: sender, at: event.createdAt, sats: sats)
                 } else {
                     // A zap with words, or on your profile: its own line.
@@ -175,7 +192,7 @@ struct VaultActivity: Identifiable, Equatable {
                   !isBlocked(event.pubkey) else { continue }
 
             if repostKinds.contains(event.kind) {
-                guard let target = firstTag("e", in: event.tags), myText[target] != nil else { continue }
+                guard let target = firstTag("e", in: event.tags), onMyNote(target, event.tags) else { continue }
                 fold(.repost, target: target, actor: event.pubkey, at: event.createdAt)
                 continue
             }
@@ -225,6 +242,18 @@ struct VaultActivity: Identifiable, Equatable {
         return (singles + folded + followLines).sorted {
             $0.createdAt != $1.createdAt ? $0.createdAt > $1.createdAt : $0.id < $1.id
         }
+    }
+
+    /// The notes the lines point at that aren't in memory (`have`): likes,
+    /// reposts and zaps on your notes older than the ones loaded, or not
+    /// loaded yet. Fetched by id, they fill in the lines' previews.
+    static func missingTargets(in lines: [VaultActivity], have: Set<String>) -> [String] {
+        var out: [String] = []
+        for line in lines where line.kind == .reaction || line.kind == .repost || line.kind == .zap {
+            guard let id = line.openId, line.id == "\(line.kind)-\(id)", !have.contains(id), !out.contains(id) else { continue }
+            out.append(id)
+        }
+        return out
     }
 
     // MARK: - Helpers
