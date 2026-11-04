@@ -9,7 +9,8 @@ final class RelayProbe: ObservableObject {
     enum Result: Equatable {
         case probing
         case answered(milliseconds: Int)
-        case unreachable
+        /// Didn't connect or answer; why, in plain words (RelayFailReason).
+        case unreachable(String)
     }
 
     /// Slower than this shows as "slow".
@@ -31,7 +32,7 @@ final class RelayProbe: ObservableObject {
                 // One retry before calling a relay down, so a blip doesn't
                 // put a Remove button in front of anyone.
                 var result = await Self.measure(parsed)
-                if result == .unreachable {
+                if case .unreachable = result {
                     try? await Task.sleep(nanoseconds: 1_500_000_000)
                     result = await Self.measure(parsed)
                 }
@@ -41,7 +42,7 @@ final class RelayProbe: ObservableObject {
     }
 
     var unreachable: [String] {
-        results.compactMap { $0.value == .unreachable ? $0.key : nil }.sorted()
+        results.compactMap { if case .unreachable = $0.value { return $0.key } else { return nil } }.sorted()
     }
 
     nonisolated private static func measure(_ url: URL) async -> Result {
@@ -61,14 +62,14 @@ final class RelayProbe: ObservableObject {
                     _ = try await task.receive()
                     return .answered(milliseconds: Int(Date().timeIntervalSince(start) * 1000))
                 } catch {
-                    return .unreachable
+                    return .unreachable(RelayFailReason.text(response: task.response, error: error))
                 }
             }
             group.addTask {
                 try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                return .unreachable
+                return .unreachable(RelayFailReason.noAnswer(after: timeout))
             }
-            let first = await group.next() ?? .unreachable
+            let first = await group.next() ?? .unreachable(RelayFailReason.noAnswer(after: timeout))
             group.cancelAll()
             task.cancel(with: .goingAway, reason: nil)
             return first

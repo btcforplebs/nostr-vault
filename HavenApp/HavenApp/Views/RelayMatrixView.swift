@@ -501,8 +501,8 @@ struct RelayMatrixView: View {
                 parts.append("slow")
                 tint = .orange
             }
-        case .unreachable:
-            parts.append("not answering")
+        case .unreachable(let why):
+            parts.append(why)
             tint = .red
         case .probing, .none:
             parts.append("…")
@@ -572,7 +572,8 @@ struct RelayMatrixView: View {
     private var visibleFollowSuggestions: [RelayMatrix.FollowSuggestion] {
         let taken = Set(rows.map(\.id) + blocked.map(RelayMatrix.key))
         return followSuggestions.filter {
-            !taken.contains(RelayMatrix.key($0.url)) && probe.result(for: $0.url) != .unreachable
+            if case .unreachable = probe.result(for: $0.url) { return false }
+            return !taken.contains(RelayMatrix.key($0.url))
         }
     }
 
@@ -702,8 +703,9 @@ private struct RelayDetailView: View {
                     }
                     if case .answered(let ms) = result {
                         LabeledContent("Speed from this device", value: "\(ms) ms")
-                    } else if result == .unreachable {
+                    } else if case .unreachable(let why) = result {
                         LabeledContent("Speed from this device", value: "Not answering")
+                        LabeledContent("Why", value: why)
                     }
                 }
                 Section {

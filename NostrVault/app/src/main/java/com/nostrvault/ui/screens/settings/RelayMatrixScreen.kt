@@ -60,7 +60,8 @@ import javax.inject.Inject
 sealed class RelayProbeResult {
     data object Probing : RelayProbeResult()
     data class Answered(val milliseconds: Int) : RelayProbeResult()
-    data object Unreachable : RelayProbeResult()
+    /** Didn't connect or answer; why, in plain words ([RelayFailReason]). */
+    data class Unreachable(val why: String) : RelayProbeResult()
 
     companion object {
         /** Slower than this shows as "slow". */
@@ -254,7 +255,7 @@ class RelayMatrixViewModel @Inject constructor(
             viewModelScope.launch {
                 // One retry before calling a relay down.
                 var result = measure(url)
-                if (result == RelayProbeResult.Unreachable) {
+                if (result is RelayProbeResult.Unreachable) {
                     delay(1_500)
                     result = measure(url)
                 }
@@ -277,20 +278,22 @@ class RelayMatrixViewModel @Inject constructor(
                         answered.complete(System.nanoTime())
                     }
                     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                        answered.completeExceptionally(t)
+                        answered.completeExceptionally(RelayProbeFailure(response?.code, t))
                     }
                 },
             )
         } catch (e: Exception) {
-            return@withContext RelayProbeResult.Unreachable
+            return@withContext RelayProbeResult.Unreachable(RelayFailReason.text(null, e))
         }
+        var why = RelayFailReason.noAnswer(6)
         val end = try {
             withTimeoutOrNull(6_000) { answered.await() }
         } catch (e: Exception) {
+            why = (e as? RelayProbeFailure)?.let { RelayFailReason.text(it.httpStatus, it.cause) } ?: RelayFailReason.text(null, e)
             null
         }
         socket.cancel()
-        if (end == null) RelayProbeResult.Unreachable
+        if (end == null) RelayProbeResult.Unreachable(why)
         else RelayProbeResult.Answered(((end - start) / 1_000_000).toInt())
     }
 
@@ -309,7 +312,7 @@ internal val SlowAmber = ZapOrange
 
 private fun healthColor(result: RelayProbeResult?): Color = when (result) {
     is RelayProbeResult.Answered -> if (result.milliseconds > RelayProbeResult.SLOW_MS) SlowAmber else SuccessGreen
-    RelayProbeResult.Unreachable -> ErrorRed
+    is RelayProbeResult.Unreachable -> ErrorRed
     else -> TertiaryText
 }
 
@@ -335,7 +338,7 @@ fun RelayMatrixScreen(
     val liveRows = rows.filterNot { it.removed }
     // Only the owner's relays: the probe also times suggestions.
     val yours = (listOf(ownRelay) + liveRows.map { it.entry.url }).filter { it.isNotEmpty() }.map(RelayMatrix::key).toSet()
-    val unreachable = results.filterValues { it == RelayProbeResult.Unreachable }.keys.filter { it in yours }.sorted()
+    val unreachable = results.filterValues { it is RelayProbeResult.Unreachable }.keys.filter { it in yours }.sorted()
     val problems = RelayMatrix.problems(lists, cfg.ownHavenDMInboxURL, unreachable)
     val follow by viewModel.follow.collectAsState()
     val refusedCertificates by LocalTls.refused.collectAsState()
@@ -366,7 +369,7 @@ fun RelayMatrixScreen(
     val taken = (liveRows.map { it.entry.key } + cfg.blockedRelays.map(RelayMatrix::key)).toSet()
     // Not added since the page opened, and not down.
     val followSuggestions = follow.suggestions.filter {
-        RelayMatrix.key(it.url) !in taken && results[RelayMatrix.key(it.url)] != RelayProbeResult.Unreachable
+        RelayMatrix.key(it.url) !in taken && results[RelayMatrix.key(it.url)] !is RelayProbeResult.Unreachable
     }
     // A relay already suggested above isn't repeated.
     val fastest = RelayMatrix.fastest(
@@ -862,7 +865,7 @@ private fun subtitle(result: RelayProbeResult?, tags: List<String>): Pair<String
             parts += "${result.milliseconds} ms"
             if (result.milliseconds > RelayProbeResult.SLOW_MS) { parts += "slow"; tint = SlowAmber }
         }
-        RelayProbeResult.Unreachable -> { parts += "not answering"; tint = ErrorRed }
+        is RelayProbeResult.Unreachable -> { parts += result.why; tint = ErrorRed }
         else -> parts += "…"
     }
     return (parts + tags).joinToString(" · ") to tint
@@ -919,7 +922,7 @@ private fun RelayDetail(
         }
         when (result) {
             is RelayProbeResult.Answered -> "${result.milliseconds} ms"
-            RelayProbeResult.Unreachable -> "Not answering"
+            is RelayProbeResult.Unreachable -> "Not answering: ${result.why}"
             else -> null
         }?.let { speed ->
             Row(Modifier.padding(bottom = 12.dp)) {
