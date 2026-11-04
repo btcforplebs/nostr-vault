@@ -49,47 +49,85 @@ export function clobbered(a, b) {
   return false
 }
 
-/**
- * The alarm the newest version raises, or null. `newestFirst`: one list's versions; `own`, `dismissed`: Sets of ids.
- * -> { before, after, how: "emptied"|"drained"|"swapped"|"shrank", from, to, lost, client }
- */
-export function wipeAlarm(newestFirst, own = new Set(), dismissed = new Set()) {
-  const vs = newestFirst
-  if (vs.length < 2) return null
-  const v0 = vs[0]
-  if (own.has(v0.id) || dismissed.has(v0.id)) return null
-  const top = Math.min(RULE.lookback, vs.length - 1)
+/** At most this many of the newest versions are looked through for an alarm that still stands. */
+export const HISTORY = 20
+
+/** Whether `v` holds everything `than` held: every public item, and an encrypted part at least as long. */
+export function holds(v, than) {
+  const iv = items(v)
+  for (const k of items(than)) if (!iv.has(k)) return false
+  if (ENCRYPTED.has(than.kind) && len(v) < len(than)) return false
+  return true
+}
+
+/** A client tag's name as shown: control and format characters removed, trimmed, cut to 60 characters; null when
+ *  nothing is left. */
+export function cleanClient(raw) {
+  if (typeof raw !== "string") return null
+  const t = raw.replace(/[\p{Cc}\p{Cf}]/gu, "").trim()
+  return t ? [...t].slice(0, 60).join("") : null
+}
+
+/** The alarm version `vs[k]` raises against the versions before it, or null. */
+export function judge(vs, k, own = new Set()) {
+  const vk = vs[k]
+  const top = Math.min(k + RULE.lookback, vs.length - 1)
   let trig = null
-  for (let i = 1; i <= top && trig == null; i++) {
-    if (!clobbered(vs[i], v0)) continue
+  for (let i = k + 1; i <= top && trig == null; i++) {
+    if (!clobbered(vs[i], vk)) continue
     let explained = false
-    for (let j = 1; j < i; j++) if (clobbered(vs[i], vs[j])) { explained = true; break }
+    for (let j = k + 1; j < i; j++) if (clobbered(vs[i], vs[j])) { explained = true; break }
     if (!explained) trig = i
   }
   if (trig == null) return null
-  // Offer back the largest version within the lookback that v0 clobbered, never older than the newest one this app
+  // Offer back the largest version within the lookback that vk clobbered, never older than the newest one this app
   // signed (that one is the owner's own choice).
   let stop = top
-  for (let k = 1; k <= top; k++) if (own.has(vs[k].id)) { stop = k; break }
+  for (let m = k + 1; m <= top; m++) if (own.has(vs[m].id)) { stop = m; break }
   let best = null
-  for (let k = 1; k <= stop; k++) {
-    if (!clobbered(vs[k], v0)) continue
-    const n = items(vs[k]).size, bn = best ? items(best).size : -1
-    if (!best || n > bn || (n === bn && len(vs[k]) > len(best))) best = vs[k]
+  for (let m = k + 1; m <= stop; m++) {
+    if (!clobbered(vs[m], vk)) continue
+    const n = items(vs[m]).size, bn = best ? items(best).size : -1
+    if (!best || n > bn || (n === bn && len(vs[m]) > len(best))) best = vs[m]
   }
   if (!best) return null
-  const ib = items(best), i0 = items(v0)
+  const ib = items(best), i0 = items(vk)
   const worth = ib.size >= RULE.alarmMinItems || (ENCRYPTED.has(best.kind) && len(best) >= RULE.minContent)
   if (!worth) return null
   let kept = 0, lost = 0
-  for (const k of ib) { if (i0.has(k)) kept++; else lost++ }
+  for (const x of ib) { if (i0.has(x)) kept++; else lost++ }
   let how
-  if (i0.size === 0 && (!ENCRYPTED.has(best.kind) || len(v0) === 0)) how = "emptied"
-  else if (trig > 1) how = "drained"
+  if (i0.size === 0 && (!ENCRYPTED.has(best.kind) || len(vk) === 0)) how = "emptied"
+  else if (trig > k + 1) how = "drained"
   else if (ib.size >= RULE.minItems && kept * 2 < ib.size && i0.size * 2 >= ib.size) how = "swapped"
   else how = "shrank"
-  const tag = (v0.tags ?? []).find(t => Array.isArray(t) && t.length >= 2 && t[0] === "client" && typeof t[1] === "string" && t[1].trim())
-  return { before: best, after: v0, how, from: ib.size, to: i0.size, lost, client: tag ? tag[1].trim().slice(0, 60) : null }
+  let client = null
+  for (const t of vk.tags ?? []) {
+    if (!Array.isArray(t) || t.length < 2 || t[0] !== "client") continue
+    const c = cleanClient(t[1])
+    if (c) { client = c; break }
+  }
+  const claimsNostrVault = !!client && client.toLowerCase().includes("nostr vault")
+  return { before: best, after: vk, how, from: ib.size, to: i0.size, lost, client, claimsNostrVault }
+}
+
+/**
+ * The alarm that stands, or null: the newest clobber among the newest HISTORY versions (versions this browser signed
+ * are skipped), unless it was dismissed or a newer version holds the list from before again. `newestFirst`: one
+ * list's versions; `own`, `dismissed`: Sets of ids.
+ * -> { before, after, how: "emptied"|"drained"|"swapped"|"shrank", from, to, lost, client, claimsNostrVault }
+ */
+export function wipeAlarm(newestFirst, own = new Set(), dismissed = new Set()) {
+  const vs = newestFirst
+  for (let k = 0; k < Math.min(HISTORY, vs.length); k++) {
+    if (own.has(vs[k].id)) continue
+    const a = judge(vs, k, own)
+    if (!a) continue
+    if (dismissed.has(vs[k].id)) return null
+    for (let j = 0; j < k; j++) if (holds(vs[j], a.before)) return null
+    return a
+  }
+  return null
 }
 
 /** What the user calls each list (iPhone/Mac ListShrinkRule.name). */
@@ -103,7 +141,9 @@ export const listName = kind => NAMES[kind] ?? `list ${kind}`
 /** The banner's line, e.g. "Your follows went from 40 to 0 on 4 Nov, changed by Amethyst." */
 export function alarmLine(alarm, locale) {
   const day = new Date(alarm.after.created_at * 1000).toLocaleDateString(locale, { day: "numeric", month: "short" })
-  const who = alarm.client ? `changed by ${alarm.client}` : "by an app that didn't name itself"
+  const who = alarm.claimsNostrVault
+    ? "changed by an app calling itself Nostr Vault. This device didn't make that change"
+    : alarm.client ? `changed by ${alarm.client}` : "by an app that didn't name itself"
   const name = `Your ${listName(alarm.after.kind)}`
   switch (alarm.how) {
     case "emptied": return `${name} ${alarm.from ? `went from ${alarm.from} to 0` : "lost its private part"} on ${day}, ${who}.`

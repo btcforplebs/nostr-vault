@@ -2,12 +2,13 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { wipeAlarm, alarmsIn, alarmLine, recordOwnList, ownListIds, dismissAlarm, dismissedAlarms, RULE } from "../src/net/list-wipe-alarm.js"
+import { wipeAlarm, alarmsIn, alarmLine, recordOwnList, ownListIds, dismissAlarm, dismissedAlarms, RULE, HISTORY } from "../src/net/list-wipe-alarm.js"
 
 const fx = JSON.parse(readFileSync(new URL("../../HavenApp/MediaLogicTests/Tests/MediaLogicTests/Fixtures/ListAlarm/alarm-cases.json", import.meta.url)))
 
 test("rule constants match the fixtures", () => {
   assert.deepEqual(RULE, { minItems: fx.rule.min_items, minContent: fx.rule.min_content, lookback: fx.rule.lookback, alarmMinItems: fx.rule.alarm_min_items })
+  assert.equal(HISTORY, fx.rule.history)
 })
 
 for (const c of fx.cases) {
@@ -16,7 +17,7 @@ for (const c of fx.cases) {
     if (!c.expect) return assert.equal(got, null)
     assert.ok(got, "expected an alarm")
     assert.deepEqual(
-      { before: got.before.id, after: got.after.id, how: got.how, from: got.from, to: got.to, lost: got.lost, client: got.client },
+      { before: got.before.id, after: got.after.id, how: got.how, from: got.from, to: got.to, lost: got.lost, client: got.client, claims_nostr_vault: got.claimsNostrVault },
       c.expect,
     )
   })
@@ -55,5 +56,7 @@ test("banner wording names the app, or says it didn't name itself", () => {
   const base = { after: { kind: 3, created_at: 1730000000 }, from: 40, to: 0, lost: 40 }
   assert.match(alarmLine({ ...base, how: "emptied", client: "Amethyst" }, "en-GB"), /^Your follows went from 40 to 0 on .+, changed by Amethyst\.$/)
   assert.match(alarmLine({ ...base, how: "emptied", client: null }, "en-GB"), /by an app that didn't name itself\.$/)
+  assert.match(alarmLine({ ...base, how: "emptied", client: "Nostr Vault", claimsNostrVault: true }, "en-GB"),
+    /changed by an app calling itself Nostr Vault\. This device didn't make that change\.$/)
   assert.match(alarmLine({ ...base, how: "swapped", to: 40, lost: 40, client: null }, "en-GB"), /lost 40 of 40 entries .+ swapped for others/)
 })
