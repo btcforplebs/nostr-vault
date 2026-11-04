@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"testing"
@@ -471,4 +472,35 @@ func TestListHistorySecondWipeKeepsTheFirstPin(t *testing.T) {
 			t.Fatalf("%d versions kept, want at most %d", got, listHistoryKeep+6)
 		}
 	})
+}
+
+// The wipe-alarm nudge (docs/LIST_WIPE_ALARM.md): a version new to the
+// history says so through the outbox, once; one arriving late stays silent.
+func TestListVersionNotifyOnlyForNewRecentVersions(t *testing.T) {
+	f := newListHistoryFixture(t, historyBackends(t)[fallbackBackendName])
+	config.NotifyMaxAgeHours = 24
+	var buf strings.Builder
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+
+	fresh := f.bookmarks(3, 0)
+	f.publish(fresh)
+	want := "🔔NOTIFY|type=listversion|kind=10003|author=" + f.pk + "|id=" + fresh.ID + "|recipient=" + f.pk + "|preview="
+	if strings.Count(buf.String(), want) != 1 {
+		t.Fatalf("want one marker for a fresh version, got %q", buf.String())
+	}
+	buf.Reset()
+	f.publish(fresh)
+	if strings.Contains(buf.String(), "type=listversion") {
+		t.Fatalf("the same version again must stay silent: %q", buf.String())
+	}
+	old := signedList(f.t, f.sk, 10003, time.Unix(1_000_000, 0), nostr.Tags{{"t", "x"}})
+	f.publish(old)
+	if strings.Contains(buf.String(), "type=listversion") {
+		t.Fatalf("an old version must stay silent: %q", buf.String())
+	}
+	if ids := f.versionIDs(10003, ""); len(ids) != 2 {
+		t.Fatalf("both versions kept, got %v", ids)
+	}
 }
