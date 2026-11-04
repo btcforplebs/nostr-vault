@@ -302,10 +302,16 @@ func importOwnerNotes(ctx context.Context) {
 	debug.FreeOSMemory()
 }
 
-// importSilentWindows: a relay silent (nothing, no EOSE) for this many
-// windows in a row is dead or refusing, not slow: it is dropped, so it costs
-// a minute at most instead of every window's idle wait.
+// importSilentWindows: a relay silent (nothing, no EOSE) or quiet (some
+// notes, then no EOSE) for this many windows in a row is dropped: each such
+// window costs an idle wait, and ~140 of them held a fresh import with no
+// sign of life for ~45 min (nostr-pub.wellorder.net, 12 mini, 2026-11-04).
 const importSilentWindows = 3
+
+// importWalkDeadline: the most the whole window walk may take, however many
+// relays and windows are left. Past it the walk stops with what it has.
+// Shorter in tests.
+var importWalkDeadline = 15 * time.Minute
 
 // importOwnerWindows is the old walk, 10 days at a time from start, for the
 // relays whose lane didn't finish. Returns how many notes it stored.
@@ -313,6 +319,9 @@ func importOwnerWindows(ctx context.Context, relays []string, start time.Time, o
 	stored := 0
 	silent := map[string]int{}
 	relays = slices.Clone(relays)
+	parent := ctx
+	ctx, cancel := context.WithTimeout(ctx, importWalkDeadline)
+	defer cancel()
 	for begin := start; len(relays) > 0 && !begin.After(time.Now()); begin = begin.Add(240 * time.Hour) {
 		end := begin.Add(240 * time.Hour)
 		s, u := nostr.Timestamp(begin.Unix()), nostr.Timestamp(end.Unix())
@@ -325,6 +334,9 @@ func importOwnerWindows(ctx context.Context, relays []string, start time.Time, o
 			})
 		})
 		if ctx.Err() != nil {
+			if parent.Err() == nil {
+				log.Printf("⚠️ reading %v window by window passed %s; stopped at %s with %d notes", relays, importWalkDeadline, begin.Format(layout), stored)
+			}
 			return stored
 		}
 		if len(res.Short) > 0 {
@@ -332,7 +344,7 @@ func importOwnerWindows(ctx context.Context, relays []string, start time.Time, o
 				len(res.Short), begin.Format(layout), end.Format(layout), res.Short)
 		}
 		for _, url := range relays {
-			if slices.Contains(res.Silent, url) {
+			if slices.Contains(res.Silent, url) || slices.Contains(res.Quiet, url) {
 				silent[url]++
 			} else {
 				silent[url] = 0
@@ -340,7 +352,7 @@ func importOwnerWindows(ctx context.Context, relays []string, start time.Time, o
 		}
 		relays = slices.DeleteFunc(relays, func(url string) bool {
 			if silent[url] >= importSilentWindows {
-				log.Printf("⚠️ %s answered nothing for %d windows in a row; not asking it again", url, importSilentWindows)
+				log.Printf("⚠️ %s answered nothing, or went quiet without finishing, for %d windows in a row; not asking it again", url, importSilentWindows)
 				return true
 			}
 			return false

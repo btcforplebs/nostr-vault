@@ -101,6 +101,11 @@ type windowResult struct {
 	// closed or failed before answering). A whole-history lane re-reads them
 	// window by window: some relays time out on a wide scan but answer 10 days.
 	Silent []string
+	// Quiet: relays that ended some page of this window by going quiet (no
+	// EOSE) instead of answering it, whether or not they sent notes first.
+	// Each such page cost the whole idle wait; the window walk counts them
+	// with Silent (import_owner.go importOwnerWindows).
+	Quiet []string
 }
 
 // fetchWindowPaged reads filter (Since..Until) from every relay, each one paged
@@ -148,6 +153,13 @@ func fetchPaged(ctx context.Context, relays []string, filter nostr.Filter, maxPa
 					return
 				}
 				evs, eose := importPage(ctx, url, f)
+				if !eose && ctx.Err() == nil {
+					mu.Lock()
+					if !slices.Contains(res.Quiet, url) {
+						res.Quiet = append(res.Quiet, url)
+					}
+					mu.Unlock()
+				}
 				// Only a real note counts (Tron, PR 1663): its id is the hash
 				// of its content and its signature holds. Checked before it
 				// can count as new, or a relay sending made-up notes under
