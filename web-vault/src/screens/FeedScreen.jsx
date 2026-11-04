@@ -15,13 +15,14 @@ import { backgroundFill } from "../net/vault-ready.js"
 import { markSynced, syncedRecently } from "../net/feed-synced.js"
 import { visibleNotes } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
-import { feedList, loadMenu, saveMenu, visibleFeeds, PINNED_FEED, loadChoice, tagChoice, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, readsHaven, globalLike, withScope, saveMediaScope, liveFilters, liveKeeps } from "../net/feeds.js"
+import { feedList, loadMenu, saveMenu, visibleFeeds, PINNED_FEED, loadChoice, linkChoice, feedRelays, LINK_PARAMS, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, readsHaven, globalLike, withScope, saveMediaScope, liveFilters, liveKeeps } from "../net/feeds.js"
 import { fetchPopular } from "../net/popular.js"
 import { discoverNetwork, fetchDiscover } from "../net/discover.js"
 import { globalTrust } from "../readers/trust.js"
 import { mediaTiles } from "../net/media.js"
 import { READERS } from "../readers/index.js"
 import { withParam } from "../desktop/routes.js"
+import { resolveList } from "../net/list-feed.js"
 import { hasLayouts, loadLayout, nextLayout, saveLayout } from "../net/feed-layout.js"
 import { applyFilters, loadFilters, newerNotes, saveFilters } from "../net/feed-filters.js"
 import { EmptyFollowing, NewPostsPill, OlderButton, PullIndicator, SkeletonRows, usePullToRefresh, feedScroller, scrollTopOf, scrollToTop } from "../components/FeedExtras.jsx"
@@ -32,11 +33,13 @@ const PAGE = 100
 const POPULAR_RECHECK_MS = 10 * 60_000 // Popular is ranked again this often while it is on screen, for its pill
 const MEDIA_PAGE = 300 // most notes have no media, so Media reads more at a time (the iPhone asks for 300)
 const FEEDS = feedList(READERS)
+const FEED_IDS = FEEDS.map(f => f.id)
 const readerFor = mode => READERS.find(r => r.id === mode)
-// A saved feed that Edit Feeds has since hidden opens Following; a #tag link still opens its tag.
-const pickedChoice = () => withScope(tagChoice(globalThis.location?.hash) ?? loadChoice(globalThis.localStorage, visibleFeeds(FEEDS, loadMenu())))
-// Once the Feed has taken a #tag link's tag, the address drops it: Back and a reload keep the feed the user is on.
-const dropTag = () => history.replaceState(history.state, "", withParam(location.hash, "tag", null))
+// A saved feed that Edit Feeds has since hidden opens Following; a link still opens its feed: a #tag link its tag, a
+// rail favourite its feed, relay or list (net/feeds.js linkChoice).
+const pickedChoice = () => withScope(linkChoice(globalThis.location?.hash, FEED_IDS) ?? loadChoice(globalThis.localStorage, visibleFeeds(FEEDS, loadMenu())))
+// Once the Feed has taken a link's feed, the address drops it: Back and a reload keep the feed the user is on.
+const dropTag = () => history.replaceState(history.state, "", LINK_PARAMS.reduce((h, k) => withParam(h, k, null), location.hash))
 
 export function FeedScreen({ ctx }) {
   const { vault, account } = ctx
@@ -97,10 +100,17 @@ export function FeedScreen({ ctx }) {
     setMenu(m)
     if (choice.mode !== PINNED_FEED && m.hidden.includes(choice.mode)) pick({ mode: PINNED_FEED, tag: choice.tag })
   }
-  // A #tag link (NoteText) opens that tag's feed, from any screen; the Feed may already be up behind it (desktop).
+  // A #tag link (NoteText) opens that tag's feed, from any screen, and a rail favourite its feed, relay or list; the
+  // Feed may already be up behind it (desktop). A list's people are read first, then its notes.
   useEffect(() => {
     if (!globalThis.location) return
-    const take = () => { const c = tagChoice(location.hash); if (c) { pick(c); dropTag() } }
+    const take = () => {
+      const c = linkChoice(location.hash, FEED_IDS)
+      if (!c) return
+      pick(c); dropTag()
+      // Taken only while that list is still the feed shown (a load bumps seq, so the feed's key is what's compared).
+      if (c.mode === "list") resolveList(ctx, c).then(full => { if (keyNow.current === feedKey(c)) pick(full) }).catch(() => {})
+    }
     take()
     addEventListener("hashchange", take)
     return () => removeEventListener("hashchange", take)
@@ -214,7 +224,7 @@ export function FeedScreen({ ctx }) {
       const network = c.mode === "discovery" ? await discoverPeople() : null
       const filters = liveFilters(c, { trust, network })
       if (!live || !filters.length) return
-      close = watchLive({ filters, relays: account.relays.read, keep: ev => liveKeeps(c, ev, { trust, network }), onNotes: evs => holdNew(key, evs) })
+      close = watchLive({ filters, relays: feedRelays(c, account.relays.read), keep: ev => liveKeeps(c, ev, { trust, network }), onNotes: evs => holdNew(key, evs) })
     })().catch(() => {})
     return () => { live = false; close() }
   }, [feedKey(choice), strange !== null, follows.length])
@@ -249,8 +259,9 @@ export function FeedScreen({ ctx }) {
   const loadStrange = async (c, until) => {
     const n = ++seq.current
     if (c.mode === "hashtag" && !c.tag) return setStatus("")
+    if (c.mode === "list" && !c.authors) return setStatus("Reading the list…")
     if ((c.mode === "popular" || globalLike(c) || c.mode === "discovery") && !follows.length) return setStatus("")
-    if (!navigator.onLine) return setStatus(`Offline: ${FEEDS.find(f => f.id === c.mode).label} needs the network`)
+    if (!navigator.onLine) return setStatus(`Offline: ${FEEDS.find(f => f.id === c.mode)?.label ?? c.label ?? "this feed"} needs the network`)
     setStatus(until ? "Fetching older notes…" : c.mode === "popular" ? "Ranking the last day's likes, reposts and zaps…"
       : c.mode === "discovery" && !network.current ? "Finding the people your follows follow…" : "Loading…")
     try {
@@ -336,6 +347,7 @@ export function FeedScreen({ ctx }) {
               ? "No notes from your extended network on these relays yet." : "No follow lists came back from your relays. Try refreshing."} />
           : media ? <Media tiles={tiles} blockedAll={!!strange.length && !shown.length}
               onOlder={() => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} olderState={olderState} />
+          : !strange.length && choice.mode === "list" && choice.authors && !choice.authors.length ? <p class="empty">This list has no one in it, or it didn't come back from your relays.</p>
           : !strange.length ? <p class="empty">{popular ? "Nothing popular in the last day yet: a note needs likes, reposts or zaps from three people your follows follow." : global ? "No notes from your web of trust on these relays yet." : "No notes found."}</p>
           : <Notes shown={shown} memoryOnly layout={layout} keepFeedOrder fetchRoots={rootFetcher(vault, account.relays.read, { save: false })}
               olderState={olderState} onOlder={popular ? null : () => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} />}

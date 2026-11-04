@@ -2,7 +2,7 @@
 // down, take off), the "+ add" list of panels taken off, and the drag-and-drop between panels. They only report what
 // was asked; SpaceDock.jsx changes the layout (space-layout.js).
 import { useState } from "preact/hooks"
-import { Icon, ICON } from "../Sidebar.jsx"
+import { Icon, ICON } from "../icons.jsx"
 
 const UP = "M6 15l6-6 6 6", DOWN = ICON.chevron, OFF = "M6 6l12 12M18 6L6 18", ADD = "M12 5v14M5 12h14"
 const GRIP = "M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"

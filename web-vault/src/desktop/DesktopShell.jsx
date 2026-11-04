@@ -25,6 +25,7 @@ import { noteById } from "./noteIndex.js"
 import { Sidebar } from "./Sidebar.jsx"
 import { SplitPane } from "./SplitPane.jsx"
 import { SpaceDock, useSpaceFolded } from "./space/SpaceDock.jsx"
+import { useLayoutSync } from "./space/layout-store.js"
 import { PeekCard } from "./PeekCard.jsx"
 import { ContextMenu } from "./ContextMenu.jsx"
 import { MagicPasteIcon } from "../components/MagicPasteIcon.jsx"
@@ -44,6 +45,8 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   const parsed = parseHash(composing ? lastList || "#/feed" : hash)
   const view = SPLIT.has(parsed.route) || FULL.has(parsed.route) ? parsed : parseHash("#/feed")
   const [spaceFolded, setSpaceFolded] = useSpaceFolded(me)
+  // The rail's favourites and Your space's panels, kept in the user's own vault (net/space-sync.js).
+  useLayoutSync(ctx)
   const [help, setHelp] = useState(false)
   const space = mode !== "single" // Your space needs the room: from 1024px
   const other = view.route === "profile" && HEX.test(view.arg) && view.arg !== me

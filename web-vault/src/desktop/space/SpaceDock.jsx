@@ -2,12 +2,14 @@
 // left column shows. Folded, it is a thin strip that still shows the Vault's unread count. Folded or open is kept per
 // account in this browser (live-vault.js readFolded). Editable (Logen, 2026-11-03): each panel collapses to its header
 // with its chevron, and Edit lets you drag or move panels up and down, take them off and add them back
-// (space-layout.js, kept per account in this browser; SpaceEdit.jsx draws the edit buttons).
+// (space-layout.js; layout-store.js keeps it in this browser and in the user's vault; SpaceEdit.jsx draws the edit
+// buttons).
 import { useState } from "preact/hooks"
 import { useVaultUnread } from "../../components/useVaultUnread.js"
 import { badgeCount } from "../../components/useUnreadTotal.js"
 import { readFolded, writeFolded } from "./live-vault.js"
-import { readLayout, writeLayout, shownPanels, hiddenPanels, setOn, setOpen, moveBy, moveBefore, defaultLayout, sameLayout } from "./space-layout.js"
+import { shownPanels, hiddenPanels, setOn, setOpen, moveBy, moveBefore, defaultLayout, sameLayout, resetPanels } from "./space-layout.js"
+import { useLayout } from "./layout-store.js"
 import { PANELS, PANEL_IDS } from "./panels.js"
 import { CollapseButton, EditTools, AddPanels, useDragPanels } from "./SpaceEdit.jsx"
 import { Icon, ICON } from "../Sidebar.jsx"
@@ -22,23 +24,9 @@ export function useSpaceFolded(me) {
   return [folded, v => { setFolded(v); writeFolded(me, v) }]
 }
 
-/** [layout, change] for the signed-in account: `change(fn)` applies an edit and keeps it. */
-function useSpaceLayout(me) {
-  const [state, setState] = useState(() => ({ me, layout: readLayout(me, PANEL_IDS) }))
-  // An account switch reads that account's layout.
-  const layout = state.me === me ? state.layout : readLayout(me, PANEL_IDS)
-  const change = fn => {
-    const next = fn(layout)
-    if (next === layout) return
-    writeLayout(me, next)
-    setState({ me, layout: next })
-  }
-  return [layout, change]
-}
-
 export function SpaceDock({ ctx, folded, onFold }) {
   const unread = useVaultUnread()
-  const [layout, change] = useSpaceLayout(ctx.session.pubkey)
+  const [layout, change] = useLayout(ctx.session.pubkey)
   const [editing, setEditing] = useState(false)
   const shown = shownPanels(layout, PANEL_IDS)
   const drag = useDragPanels(shown.map(p => p.id), (id, before) => change(l => moveBefore(l, id, before)))
@@ -80,7 +68,7 @@ export function SpaceDock({ ctx, folded, onFold }) {
         {editing && (
           <AddPanels names={hiddenPanels(layout, PANEL_IDS).map(id => [id, byId.get(id).name])}
             onAdd={id => change(l => setOn(l, id, true))}
-            onReset={isDefault ? null : () => change(() => defaultLayout(PANEL_IDS, Math.floor(Date.now() / 1000)))} />
+            onReset={isDefault ? null : () => change(l => resetPanels(l, PANEL_IDS))} />
         )}
       </div>
     </aside>

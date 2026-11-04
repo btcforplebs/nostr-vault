@@ -17,7 +17,8 @@
    the foot. The names are small, as under the iPhone's tab icons; the shortcut is in each tooltip. */
 .desk-side { position: relative; z-index: 20; display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none;
   width: var(--rail-w); height: 100dvh; padding: 14px 0 10px; box-sizing: border-box; overflow-y: auto; overflow-x: hidden;
-  border-right: 1px solid var(--hair); background: var(--bg); }
+  border-right: 1px solid var(--hair); background: var(--bg); scrollbar-width: none; }
+.desk-side::-webkit-scrollbar { display: none; }
 .desk-side hr { width: 32px; margin: 4px 0; border: 0; border-top: 1px solid var(--hair); }
 .side-gap { flex: 1; min-height: 8px; }
 .side-row { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; flex: none;
@@ -235,7 +236,7 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 .desk-detail .note-text { font: 400 16px/1.5 var(--font); }
 
 /* Thin, dark scrollbars: three columns of default grey bars are the loudest thing on the page otherwise. */
-.desk-side, .desk-list, .desk-detail, .desk-app .relay-host, .desk-compose {
+.desk-list, .desk-detail, .desk-app .relay-host, .desk-compose {
   scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / .18) transparent; }
 
 .side-account-btn:hover { background: var(--s1); }
@@ -280,3 +281,43 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 /* The compact row's photo opens full size on a wide window (desktop/ThumbOpen.jsx): a button that looks like the photo. */
 .condensed-open { padding: 0; border: 0; background: none; min-height: 0; min-width: 0; cursor: zoom-in; }
 .condensed-open:hover img { filter: brightness(1.08); }
+
+/* The rail's favourites (rail/RailFavs.jsx): a pinned feed, person, hashtag, list or relay is a row like a section's,
+   its name cut short under it; Edit opens the rail's editor beside it (rail/RailEdit.jsx). */
+.desk-side .side-fav .side-label { max-width: 58px; overflow: hidden; text-overflow: ellipsis; }
+.desk-side .side-fav .avatar { box-shadow: 0 0 0 1px var(--hair); }
+.desk-side .side-edit-btn { min-height: 44px; border: 0; background: none; font: inherit; cursor: pointer; }
+.desk-side .side-edit-btn.on { color: var(--accent); background: var(--s1); }
+.rail-edit { position: fixed; z-index: 30; top: 12px; bottom: 12px; left: calc(var(--rail-w) + 6px); width: 340px; display: flex; flex-direction: column;
+  gap: 10px; padding: 12px; overflow-y: auto; box-sizing: border-box; background: var(--s1); border: 1px solid var(--strong); border-radius: 14px;
+  box-shadow: 0 16px 40px rgb(0 0 0 / .65); scrollbar-width: thin; }
+.rail-edit-head { display: flex; align-items: center; justify-content: space-between; }
+.rail-edit-head h3 { margin: 0; font: 700 16px var(--font); }
+.rail-edit-hint { margin: 0; color: var(--text-2); font: var(--t-foot); }
+.rail-edit-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.rail-edit-row { position: relative; display: flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 4px 0 8px; border-radius: 10px;
+  background: var(--s2); cursor: grab; }
+.rail-edit-row .sp-btn { width: 28px; min-width: 28px; height: 28px; min-height: 28px; }
+.rail-edit-row .sp-btn:disabled { opacity: .3; background: none; }
+.rail-edit-row .sp-off:hover:not(:disabled) { color: #ff6b5e; }
+.rail-edit-stay { flex: none; width: 28px; }
+.rail-edit-icon { display: grid; place-items: center; width: 28px; color: var(--text-2); }
+.rail-edit-name { flex: 1; min-width: 0; display: grid; font: 600 14px/1.2 var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-edit-kind { color: var(--text-3); font: 500 11px var(--font); }
+.rail-edit-kind:empty { display: none; }
+.rail-edit-row.drop-before::before, .rail-edit-row.drop-after::after { content: ""; position: absolute; left: 6px; right: 6px; height: 3px; border-radius: 3px; background: var(--accent); }
+.rail-edit-row.drop-before::before { top: -4px; }
+.rail-edit-row.drop-after::after { bottom: -4px; }
+.rail-pin { display: grid; gap: 8px; padding-top: 4px; border-top: 1px solid var(--hair); }
+.rail-pin h4 { margin: 6px 2px 0; font: 600 12px var(--font); letter-spacing: .04em; text-transform: uppercase; color: var(--text-3); }
+.rail-pin-row, .rail-pin-matches { display: flex; flex-wrap: wrap; gap: 6px; }
+.rail-pin .sp-add-row { min-height: 34px; padding: 0 10px; gap: 6px; font-size: 13px; }
+.rail-pin .sp-add-row:disabled { opacity: .45; }
+.rail-pin-form { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.rail-pin-form label, .rail-pin-label { color: var(--text-2); font: 600 12px var(--font); }
+.rail-pin-form input, .rail-pin-form select { min-width: 0; min-height: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--hair);
+  background: var(--bg); color: var(--text); font: 14px var(--font); }
+.rail-pin-form button.small { min-height: 34px; padding: 0 12px; }
+.rail-pin-lists { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rail-pin-lists .rail-pin-label { flex: 0 0 100%; }
+.rail-pin-error { margin: 0; color: var(--danger); font: var(--t-foot); }

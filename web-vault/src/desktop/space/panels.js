@@ -11,4 +11,4 @@ export const PANELS = [
   { id: "wot-mini", name: "Web of Trust", Panel: WotMini },
   { id: "messages", name: "Messages", Panel: MessagesPeek },
 ]
-export const PANEL_IDS = PANELS.map(p => p.id)
+export { PANEL_IDS } from "./panel-ids.js"

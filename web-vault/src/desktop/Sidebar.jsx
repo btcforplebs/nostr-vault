@@ -1,6 +1,8 @@
 // The desktop's sections as the iPad's slim rail down the left edge (Logen, 2026-11-03: the web takes its cues from the
-// iPad; the top bar it had since 2026-11-02 is gone). Top to bottom: the account, New Post, then Feed, Search,
-// Messages, WoT, Vault and Profile, each an icon with its name under it (BottomTabBar's vertical sidebar), and at the
+// iPad; the top bar it had since 2026-11-02 is gone). Top to bottom: the account picture (a tap lists the accounts on
+// this browser, one more tap switches), New Post, then the favourites: Feed, Search, Messages, WoT, Vault and Profile
+// by default, each an icon with its name under it (BottomTabBar's vertical sidebar), plus whatever the user pinned
+// and in the user's order (rail/rail-favs.js, edited in rail/RailEdit.jsx, synced with Your space's layout). At the
 // foot Settings, Learn, Docs and the vault's status dot. desktop.css lays it out.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
@@ -11,30 +13,20 @@ import { badgeCount, useUnreadTotal } from "../components/useUnreadTotal.js"
 import { useVaultUnread } from "../components/useVaultUnread.js"
 import { learn } from "../shell.js"
 import { resetBrowser } from "../screens/SettingsScreen.jsx"
-import { WOT_GLOBE } from "../components/wot-glyph.js"
+import { Icon, ICON } from "./icons.jsx"
 import { methodLabel } from "../screens/SignInScreen.jsx"
 import { loadAccounts } from "../session.js"
 import { switchAccount } from "../signer/accounts.js"
+import { fetchProfiles } from "../net/profiles.js"
+import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
+import { useLayout } from "./space/layout-store.js"
+import { shownPins, pinKey } from "./rail/rail-favs.js"
+import { PinRow } from "./rail/RailFavs.jsx"
+import { RailEdit } from "./rail/RailEdit.jsx"
 
-export const ICON = {
-  post: "M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z",
-  messages: "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3 7l9 6 9-6",
-  feed: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M16 4.3a3.5 3.5 0 0 1 0 6.4M18 14.2a6.5 6.5 0 0 1 3.5 5.8",
-  search: "M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM20 20l-4.8-4.8",
-  profile: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0",
-  wot: WOT_GLOBE, // the WoT tab's own globe (Assets WoTTab), filled like the phone's tab bar
-  vault: "M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM12 13.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM12 11v2M4 9h3M4 15h3",
-  settings: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4",
-  chevron: "M6 9l6 6 6-6",
-  learn: "M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z",
-  docs: "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h5",
-}
-export const Icon = ({ d, size = 20 }) => d === WOT_GLOBE
-  ? <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true"><path d={d} /></svg>
-  : <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
+export { Icon, ICON } from "./icons.jsx"
 
-// Tod 2026-11-03 (Logen): Feed, Search, Messages, WoT, Vault, Profile; Settings at the foot.
-const SECTIONS = [["feed", "Feed", "g f"], ["search", "Search", "/"], ["messages", "Messages", "g m"], ["wot", "WoT", "g w"], ["vault", "Vault", "g v"], ["profile", "Profile", "g p"]]
+const PIN = "M9 4h6l-1 6 3 3H7l3-3zM12 13v7"
 
 export function Sidebar({ ctx, side, rail }) {
   const readOnly = ctx.signer?.readOnly
@@ -49,6 +41,14 @@ export function Sidebar({ ctx, side, rail }) {
       {badge > 0 && !rail && <span class="side-badge" aria-hidden="true">{badgeCount(badge)}</span>}
     </a>
   )
+  const [layout, change] = useLayout(ctx.session.pubkey)
+  const [editing, setEditing] = useState(false)
+  const pins = shownPins(layout.pins)
+  // Pinned people's names and faces.
+  const people = pins.filter(p => p.type === "person").map(p => p.p).join()
+  useEffect(() => {
+    if (people) fetchProfiles(ctx.vault, people.split(","), uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])).catch(() => {})
+  }, [people])
   return (
     <nav class="desk-side" aria-label="Sections">
       <AccountButton ctx={ctx} rail={rail} />
@@ -56,7 +56,13 @@ export function Sidebar({ ctx, side, rail }) {
         ? <span class="side-row side-post off" aria-disabled="true" title={`New Post. ${READ_ONLY_SHORT}`}><Icon d={ICON.post} /><span class="side-label">New Post</span></span>
         : <a class="side-row side-post" href="#/compose" title={rail ? "New Post (n)" : "n"} aria-label={rail ? "New Post" : undefined}><Icon d={ICON.post} /><span class="side-label">New Post</span></a>}
       <hr />
-      {SECTIONS.map(([id, label, keys]) => row(id, label, keys, id === "messages" ? unread : id === "vault" ? vaultNew : 0))}
+      {pins.map(p => <PinRow key={pinKey(p)} pin={p} on={p.type === "section" && side === p.id}
+        badge={p.type === "section" ? (p.id === "messages" ? unread : p.id === "vault" ? vaultNew : 0) : 0} />)}
+      <button type="button" class={editing ? "side-row side-edit-btn on" : "side-row side-edit-btn"} aria-expanded={editing}
+        title="Pin, reorder or take off what's on the rail" aria-label="Edit the rail" onClick={() => setEditing(!editing)}>
+        <span class="side-icon"><Icon d={PIN} size={18} /></span><span class="side-label">Edit</span>
+      </button>
+      {editing && <RailEdit ctx={ctx} layout={layout} change={change} onClose={() => setEditing(false)} />}
       <span class="side-gap" aria-hidden="true" />
       {row("settings", "Settings", "g ,")}
       <HelpRows rail={rail} />
@@ -107,7 +113,7 @@ function AccountButton({ ctx, rail }) {
       {open && (
         <div class="side-pop" role="menu" onClick={e => { if (e.target.closest("[role=menuitem]")) setOpen(false) }}>
           <SwitchRows ctx={ctx} />
-          <a role="menuitem" href="#/accounts">Accounts</a>
+          <a role="menuitem" href="#/accounts">Add or manage accounts</a>
           <a role="menuitem" href="#/wallet">Wallet</a>
           <hr />
           <button role="menuitem" type="button" class="danger" onClick={() => resetBrowser(ctx)}>Sign out</button>
@@ -117,19 +123,20 @@ function AccountButton({ ctx, rail }) {
   )
 }
 
-/** The other accounts on this browser, as the iPhone's Switch Account menu; picking one reloads into it. None with one
- *  account. */
+/** The accounts on this browser, as the iPhone's Switch Account menu: the one signed in ticked, a tap on another
+ *  reloads into it. */
 function SwitchRows({ ctx }) {
   const [err, setErr] = useState("")
   const accounts = loadAccounts()
-  if (accounts.length < 2) return null
+  // Signed in with no saved account list (a read-only look): just this one.
+  if (!accounts.some(a => a.pubkey === ctx.session.pubkey)) accounts.unshift({ pubkey: ctx.session.pubkey })
   const go = async (e, account) => {
     e.stopPropagation() // keep the menu open: a switch reloads, a refused one shows why here
     setErr("")
     try { await switchAccount({ account, vault: ctx.vault, signer: ctx.signer }) } catch (x) { setErr(String(x?.message ?? x)) }
   }
   return (<>
-    <p class="side-pop-title" aria-hidden="true">Switch Account</p>
+    <p class="side-pop-title" aria-hidden="true">{accounts.length > 1 ? "Switch Account" : "Account"}</p>
     {accounts.map(a => a.pubkey === ctx.session.pubkey
       ? <span key={a.pubkey} role="menuitemradio" aria-checked="true" class="side-switch on"><Avatar pubkey={a.pubkey} size={22} /><SwitchName account={a} /></span>
       : <button key={a.pubkey} role="menuitemradio" aria-checked="false" type="button" class="side-switch" onClick={e => go(e, a)}><Avatar pubkey={a.pubkey} size={22} /><SwitchName account={a} /></button>)}

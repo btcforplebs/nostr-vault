@@ -17,6 +17,7 @@ export const FEED_ICON = {
   marketplace: "M5 8h14l-1 13H6zM9 8V6a3 3 0 0 1 6 0v2",
   live: "M12 12h.01M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8",
   music: "M9 18V5l11-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM20 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
+  relay: "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01",
 }
 export const LIST_ICON = "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"
 const EDIT_ICON = "M4 6h10M4 12h7M4 18h10M18 5v14M15 16l3 3 3-3M15 8l3-3 3 3" // arrow.up.arrow.down + list
@@ -58,7 +59,8 @@ export function FeedModeMenu({ feeds, choice, onPick, onEdit }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   useDismiss(open, setOpen, ref)
-  const label = choice.mode === "hashtag" && choice.tag ? `#${choice.tag}` : feeds.find(f => f.id === choice.mode)?.label
+  // A relay's or a list's feed (a rail favourite) isn't in the picker: it carries its own name.
+  const label = choice.mode === "hashtag" && choice.tag ? `#${choice.tag}` : feeds.find(f => f.id === choice.mode)?.label ?? choice.label ?? "Feed"
   return (
     <div class="feed-mode-menu" ref={ref}>
       <button type="button" class="feed-mode-pill" aria-haspopup="menu" aria-expanded={open} aria-label={`Feed: ${label}`}
