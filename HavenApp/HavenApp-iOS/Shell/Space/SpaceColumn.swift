@@ -152,6 +152,7 @@ struct SpaceColumn: View {
                 ScrollView { MessagesPeekPanel() }
                     .scrollBounceBehavior(.basedOnSize)
                     .frame(maxHeight: 320)
+            case "my-devices": MyDevicesPanel()
             default: EmptyView()
             }
         }
@@ -189,6 +190,7 @@ struct SpaceColumn: View {
         case "live-vault": return ("Live Vault", VaultMode.activity.symbol)
         case "wot-mini": return ("Web of Trust", TrustMap.Layer.everyone.symbolName)
         case "messages": return ("Messages", "bubble.left.and.bubble.right")
+        case "my-devices": return ("My devices", "laptopcomputer.and.iphone")
         default: return (id, "square")
         }
     }
