@@ -65,6 +65,7 @@ extension FeedNoteRow {
         VStack(alignment: .leading, spacing: 10) {
             // [Existing body content will be extracted here]
             fullLayoutContent
+            if let footer { footer }
         }
         .foregroundColor(Color(red: 1, green: 1, blue: 1))
         .if(!suppressCardStyling) { view in

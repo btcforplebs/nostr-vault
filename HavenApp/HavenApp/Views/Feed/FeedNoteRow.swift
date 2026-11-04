@@ -18,6 +18,9 @@ struct FeedNoteRow: View {
     var layoutMode: NoteLayoutMode = .wide
     var isFocused: Bool = false
     var suppressCardStyling: Bool = false
+    /// Drawn at the bottom of the full layout, inside the card. The thread
+    /// page puts each note's stats here so they never sit under the card.
+    var footer: AnyView? = nil
     /// Lets a caller shrink the avatar without touching anything else about
     /// the full layout — used when this row opens in place inside a thread
     /// card, where the rail and indent already eat into the width a plain

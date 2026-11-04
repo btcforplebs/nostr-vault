@@ -13,8 +13,7 @@ struct ThreadedReplyNode: View {
     @Binding var focusedNoteId: String
     let proxy: ScrollViewProxy
 
-    // Expanded engagement data
-    var expandedEngagement: Bool = false
+    // Per-note stats, shown inside each reply's card
     var perNoteReactions: [String: [NostrEvent]] = [:]
     var perNoteReposts: [String: [NostrEvent]] = [:]
     var perNoteZaps: [String: [NostrEvent]] = [:]
@@ -76,7 +75,6 @@ struct ThreadedReplyNode: View {
                                     onMedia: onMedia,
                                     focusedNoteId: $focusedNoteId,
                                     proxy: proxy,
-                                    expandedEngagement: expandedEngagement,
                                     perNoteReactions: perNoteReactions,
                                     perNoteReposts: perNoteReposts,
                                     perNoteZaps: perNoteZaps
@@ -99,15 +97,13 @@ struct ThreadedReplyNode: View {
         )
 
         // Check if this reply has engagement to show
-        let hasEngagement = expandedEngagement && !isCurrentFocused && (
+        let hasEngagement = !isCurrentFocused && (
             !groupedReactionsForReply(reply.id).isEmpty ||
             zapTotalForReply(reply.id).count > 0 ||
             repostCountForReply(reply.id) > 0
         )
 
         VStack(alignment: .leading, spacing: 0) {
-            parentQuote
-
             FeedNoteRow(
                 note: reply,
                 profile: replyProfile,
@@ -118,26 +114,15 @@ struct ThreadedReplyNode: View {
                 onMedia: onMedia,
                 showParent: false,
                 layoutMode: .wide,
-                isFocused: isCurrentFocused
-            )
-
-            // Expanded engagement for this reply - inside the note box
-            if hasEngagement {
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.1))
-                    .frame(height: 0.5)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
-
-                ThreadNoteEngagementRow(
+                isFocused: isCurrentFocused,
+                // Stats sit inside the reply's own card.
+                footer: hasEngagement ? AnyView(ThreadNoteEngagementRow(
                     reactions: groupedReactionsForReply(reply.id),
                     zapCount: zapTotalForReply(reply.id).count,
                     zapSats: zapTotalForReply(reply.id).sats,
                     repostCount: repostCountForReply(reply.id)
-                )
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
-            }
+                )) : nil
+            )
         }
         .id(reply.id)
         .contentShape(Rectangle())
@@ -146,41 +131,6 @@ struct ThreadedReplyNode: View {
                 focusedNoteId = reply.id
                 proxy.scrollTo(reply.id, anchor: .center)
             }
-        }
-    }
-
-    /// The note this reply answers, from the thread, else the feed's cache.
-    private var parentNote: FeedNote? {
-        guard let id = reply.parentEventId else { return nil }
-        return allNotes.first { $0.id == id } ?? FeedService.shared.findNote(id: id)
-    }
-
-    /// One line over the reply: who it answers and what they said, so a reply
-    /// read on its own (deep in a thread, or past the indent cap) still shows
-    /// what it is about. A parent not loaded yet is asked for.
-    @ViewBuilder
-    private var parentQuote: some View {
-        if let parent = parentNote {
-            let name = nostrService.profiles[parent.pubkey]?.bestName ?? String(parent.pubkey.prefix(8))
-            let text = CondensedText.oneLine(NostrContentFormatter.resolveMentionsPlainText(
-                NostrContentFormatter.stripURLs(parent.mediaURLs + parent.linkURLs, from: parent.content)))
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Image(systemName: "arrow.turn.down.right")
-                    .font(.appSystem(size: 9, weight: .semibold))
-                    .foregroundColor(Color.havenPurple.opacity(0.6))
-                (Text(name).fontWeight(.semibold) + Text(text.isEmpty ? "" : ": " + text))
-                    .font(.appSystem(size: 12, weight: .regular))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 4)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(Text("Replying to \(name): \(text)"))
-        } else if let id = reply.parentEventId {
-            Color.clear.frame(height: 0)
-                .onAppear { FeedService.shared.fetchMissingNote(id: id) }
         }
     }
 
