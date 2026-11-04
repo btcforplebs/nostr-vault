@@ -38,6 +38,8 @@ class MeshPairingSession(
     var hello: MeshPairing.Hello? = null
         private set
     private var helloAt = 0L
+    /** s_B from B's scanned code; null after Accept. */
+    private var bSecret: String? = null
 
     fun receiveHello(sender: String, content: String, now: Long): Outcome {
         when (state) {
@@ -80,6 +82,7 @@ class MeshPairingSession(
         val echo = payload.code as? MeshPairing.Code.Echo ?: return Outcome.Reject("notTheirCode")
         if (echo.value != secret) return Outcome.Reject("echoMismatch")
         if (payload.meshHex != senderHex || payload.role != hello?.role) return Outcome.Reject("notTheDevice")
+        bSecret = echo.bSecret
         return finish()
     }
 
@@ -88,6 +91,19 @@ class MeshPairingSession(
         guardScan(now)?.let { return it }
         return finish()
     }
+
+    /** The ack content to send B once confirmed: it proves the scan (s_B), or says this side used Accept (`w`). */
+    val ack: String?
+        get() {
+            val sender = senderHex
+            if (state != State.Done || sender == null) return null
+            val sb = bSecret
+            return if (sb != null) {
+                MeshPairing.ackDigest(secret, ownMeshHex, sender, sb)?.let { MeshPairing.ackJson(it, false) }
+            } else {
+                MeshPairing.ackDigest(secret, ownMeshHex, sender)?.let { MeshPairing.ackJson(it, true) }
+            }
+        }
 
     private fun guardScan(now: Long): Outcome? = when (state) {
         State.Aborted -> Outcome.Abort
@@ -114,7 +130,8 @@ class MeshPairingJoiner private constructor(
     val a: MeshPairing.Payload,
     val ownMeshHex: String,
     val scannedAt: Long,
-    private val expected: String?,
+    private val expectScan: String?,
+    private val expectWords: String?,
 ) {
     sealed interface Outcome {
         data object Linked : Outcome
@@ -139,7 +156,8 @@ class MeshPairingJoiner private constructor(
         }
         val ack = MeshPairing.parseAck(content) ?: return Outcome.Ignore("notAck")
         if (sender != a.meshHex) return Outcome.Ignore("wrongSender")
-        if (ack.digest != expected) return Outcome.Ignore("badDigest")
+        // Without `w` only the scan digest (with s_B) counts: A can make the other one without reading B's code.
+        if (ack.digest != (if (ack.words) expectWords else expectScan)) return Outcome.Ignore("badDigest")
         if (now - scannedAt > MeshPairing.ACK_WINDOW) {
             state = State.Expired
             return Outcome.Expired
@@ -152,24 +170,33 @@ class MeshPairingJoiner private constructor(
         return Outcome.Linked
     }
 
-    fun confirmWords(): Outcome = when (state) {
-        State.Linked -> Outcome.IgnoreDuplicate
-        State.Expired -> Outcome.Expired
-        State.WaitWords -> {
+    fun confirmWords(now: Long): Outcome = when {
+        state == State.Linked -> Outcome.IgnoreDuplicate
+        state == State.Expired -> Outcome.Expired
+        now - scannedAt > MeshPairing.ACK_WINDOW -> {
+            state = State.Expired
+            Outcome.Expired
+        }
+        state == State.WaitWords -> {
             state = State.Linked
             Outcome.Linked
         }
-        State.Waiting -> {
+        else -> {
             wordsConfirmed = true
             Outcome.WaitAck
         }
     }
 
     companion object {
-        /** Null unless [qrA] is A's code (a secret, not an echo). */
-        fun start(qrA: MeshPairing.Payload, ownMeshHex: String, scannedAt: Long): MeshPairingJoiner? {
+        /** Null unless [qrA] is A's code (a secret, not an echo). [ownSecret] is s_B, the secret in this device's code. */
+        fun start(qrA: MeshPairing.Payload, ownMeshHex: String, ownSecret: String, scannedAt: Long): MeshPairingJoiner? {
             val s = qrA.code as? MeshPairing.Code.Secret ?: return null
-            return MeshPairingJoiner(qrA, ownMeshHex, scannedAt, MeshPairing.ackDigest(s.value, qrA.meshHex, ownMeshHex))
+            if (MeshPairing.secretBytes(ownSecret) == null) return null
+            return MeshPairingJoiner(
+                qrA, ownMeshHex, scannedAt,
+                expectScan = MeshPairing.ackDigest(s.value, qrA.meshHex, ownMeshHex, ownSecret),
+                expectWords = MeshPairing.ackDigest(s.value, qrA.meshHex, ownMeshHex),
+            )
         }
     }
 }

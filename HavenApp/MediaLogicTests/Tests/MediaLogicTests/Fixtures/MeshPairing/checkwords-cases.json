@@ -16,7 +16,9 @@
     "slot",
     "sell"
    ],
-   "ack_digest": "16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7"
+   "ack_digest": "16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7",
+   "b_secret": "I6gzynJZJM1ulPlrxycaJg",
+   "ack_digest_scan": "298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b"
   },
   {
    "a": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
@@ -28,7 +30,9 @@
     "absent",
     "regular"
    ],
-   "ack_digest": "adb302ae56256477ce63860fcebb47029ef9544d712c318580acac782953142f"
+   "ack_digest": "adb302ae56256477ce63860fcebb47029ef9544d712c318580acac782953142f",
+   "b_secret": "I6gzynJZJM1ulPlrxycaJg",
+   "ack_digest_scan": "ac796a865cc60f7a856c096c945ad5e4b638bd1ba64e96970822f281619c29d9"
   },
   {
    "a": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
@@ -40,7 +44,9 @@
     "warfare",
     "try"
    ],
-   "ack_digest": "bd59290552984a3ce31644a2f3e5e8cb9dce5f9df8311ed02713ad4e5241efe0"
+   "ack_digest": "bd59290552984a3ce31644a2f3e5e8cb9dce5f9df8311ed02713ad4e5241efe0",
+   "b_secret": "I6gzynJZJM1ulPlrxycaJg",
+   "ack_digest_scan": "6cf46fc106d7655341bbebb85445c7362e28520cca43738b7ccebe2e4c3c7418"
   },
   {
    "a": "887376ae55c4d26ebc358cbbc6469e3c2133f176d5d49b993384152652460451",
@@ -52,7 +58,9 @@
     "thrive",
     "category"
    ],
-   "ack_digest": "5706d36f631bef7f2014698e234d3ba5940f4e2b37668911ced055bf21950442"
+   "ack_digest": "5706d36f631bef7f2014698e234d3ba5940f4e2b37668911ced055bf21950442",
+   "b_secret": "I6gzynJZJM1ulPlrxycaJg",
+   "ack_digest_scan": "b6044fd8b83f43114e261c42ac893aa59b20bb96c2a5c417a32857d57d4e1c45"
   },
   {
    "a": "0000000000000000000000000000000000000000000000000000000000000000",
@@ -64,7 +72,9 @@
     "reform",
     "fan"
    ],
-   "ack_digest": "cfa02fc7be630c53696a91395a16c13c4c05db39356c2299f79cd045665d9ff5"
+   "ack_digest": "cfa02fc7be630c53696a91395a16c13c4c05db39356c2299f79cd045665d9ff5",
+   "b_secret": "_____________________w",
+   "ack_digest_scan": "73bfc953e2cfea12d214f7c2de07b45183bf6ac973160f01cc8cde782edfb9c0"
   }
  ]
 }

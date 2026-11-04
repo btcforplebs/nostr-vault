@@ -37,6 +37,8 @@ struct MeshPairingSession {
     private(set) var senderHex: String?
     private(set) var hello: MeshPairing.Hello?
     private var helloAt = 0
+    /// s_B from B's scanned code; nil after Accept.
+    private var bSecret: String?
 
     init(secret: String, createdAt: Int, ownMeshHex: String, active: String?, accounts: [String]) {
         self.secret = secret
@@ -85,9 +87,10 @@ struct MeshPairingSession {
         case .failure(let e): return .unreadable(e.refusal)
         case .success(let p): payload = p
         }
-        guard case .echo(let echo) = payload.code else { return .reject(.notTheirCode) }
+        guard case .echo(let echo, let b) = payload.code else { return .reject(.notTheirCode) }
         guard echo == secret else { return .reject(.echoMismatch) }
         guard payload.meshHex == senderHex, payload.role == hello?.role else { return .reject(.notTheDevice) }
+        bSecret = b
         return finish()
     }
 
@@ -95,6 +98,18 @@ struct MeshPairingSession {
     mutating func acceptWithoutScan(now: Int) -> Outcome {
         if let stop = guardScan(now: now) { return stop }
         return finish()
+    }
+
+    /// The ack content to send B once confirmed: it proves the scan (s_B), or
+    /// says this side used Accept (`w`). Nil before `confirm`.
+    var ack: String? {
+        guard state == .done, let senderHex else { return nil }
+        if let bSecret {
+            return MeshPairing.ackDigest(secret: secret, bSecret: bSecret, aHex: ownMeshHex, bHex: senderHex)
+                .map { MeshPairing.ackJSON(digest: $0, words: false) }
+        }
+        return MeshPairing.ackDigest(secret: secret, aHex: ownMeshHex, bHex: senderHex)
+            .map { MeshPairing.ackJSON(digest: $0, words: true) }
     }
 
     private mutating func guardScan(now: Int) -> Outcome? {
@@ -137,17 +152,20 @@ struct MeshPairingJoiner {
     let a: MeshPairing.Payload
     let ownMeshHex: String
     let scannedAt: Int
-    private let expected: String?
+    private let expectScan: String?
+    private let expectWords: String?
     private(set) var state: State = .waiting
     private var wordsConfirmed = false
 
-    /// Nil unless `qrA` is A's code (a secret, not an echo).
-    init?(qrA: MeshPairing.Payload, ownMeshHex: String, scannedAt: Int) {
-        guard case .secret(let s) = qrA.code else { return nil }
+    /// Nil unless `qrA` is A's code (a secret, not an echo). `ownSecret` is
+    /// s_B, the fresh secret in the code this device shows.
+    init?(qrA: MeshPairing.Payload, ownMeshHex: String, ownSecret: String, scannedAt: Int) {
+        guard case .secret(let s) = qrA.code, MeshPairing.secretBytes(ownSecret) != nil else { return nil }
         a = qrA
         self.ownMeshHex = ownMeshHex
         self.scannedAt = scannedAt
-        expected = MeshPairing.ackDigest(secret: s, aHex: qrA.meshHex, bHex: ownMeshHex)
+        expectScan = MeshPairing.ackDigest(secret: s, bSecret: ownSecret, aHex: qrA.meshHex, bHex: ownMeshHex)
+        expectWords = MeshPairing.ackDigest(secret: s, aHex: qrA.meshHex, bHex: ownMeshHex)
     }
 
     /// The device to store once linked.
@@ -161,7 +179,9 @@ struct MeshPairingJoiner {
         }
         guard let ack = MeshPairing.parseAck(content) else { return .ignore(.notAck) }
         guard senderHex == a.meshHex else { return .ignore(.wrongSender) }
-        guard ack.digest == expected else { return .ignore(.badDigest) }
+        // Without `w` only the scan digest (with s_B) counts: A can make the
+        // other one without ever reading B's code (Tron, PR 1700).
+        guard ack.digest == (ack.words ? expectWords : expectScan) else { return .ignore(.badDigest) }
         guard now - scannedAt <= MeshPairing.ackWindow else {
             state = .expired
             return .expired
@@ -174,10 +194,18 @@ struct MeshPairingJoiner {
         return .linked
     }
 
-    mutating func confirmWords() -> Outcome {
+    mutating func confirmWords(now: Int) -> Outcome {
         switch state {
         case .linked: return .ignoreDuplicate
         case .expired: return .expired
+        case .waiting, .waitWords: break
+        }
+        guard now - scannedAt <= MeshPairing.ackWindow else {
+            state = .expired
+            return .expired
+        }
+        switch state {
+        case .linked, .expired: return .expired
         case .waitWords:
             state = .linked
             return .linked

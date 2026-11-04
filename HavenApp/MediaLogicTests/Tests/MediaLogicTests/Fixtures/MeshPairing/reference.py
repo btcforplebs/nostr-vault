@@ -73,11 +73,12 @@ def unpct(s):
 def clean_name(n): return n.strip()[:NAME_MAX] if n else ""   # Python str slices by code point
 
 # ---- the QR ----
-def build(m, n, r, o, s=None, e=None):
+def build(m, n, r, o, s=None, e=None, b=None):
+    """A's code: `s`. B's code: `e` (A's secret, echoed) and `b` (B's own fresh secret)."""
     q = [("m", m)]
     if clean_name(n): q.append(("n", pct(clean_name(n))))
     q += [("r", r), ("o", o)]
-    q.append(("s", s) if s is not None else ("e", e))
+    q += [("s", s)] if s is not None else [("e", e), ("b", b)]
     return "nvpair:v1?" + "&".join(k + "=" + v for k, v in q)
 
 def parse(uri, own=None):
@@ -98,15 +99,16 @@ def parse(uri, own=None):
     if fields.get("r") not in ROLES: return ("refuse", "unknownRole")
     oh = npub_hex(fields.get("o"))
     if oh is None: return ("refuse", "missingOwner")
-    if ("s" in fields) == ("e" in fields): return ("refuse", "badCode")
+    # A's code has s and no b; B's has e and b (Tron, PR 1700: b lets B know A really scanned it).
+    if ("s" in fields) == ("e" in fields) or ("s" in fields) == ("b" in fields): return ("refuse", "badCode")
     code = fields.get("s", fields.get("e"))
-    if unb64_16(code) is None: return ("refuse", "badCode")
+    if unb64_16(code) is None or ("b" in fields and unb64_16(fields["b"]) is None): return ("refuse", "badCode")
     name = fields.get("n", "").strip()
     if len(name) > NAME_MAX: return ("refuse", "nameTooLong")
     if own is not None and npub_hex(own) == mh: return ("refuse", "ownAddress")
     p = {"mesh": npub(mh), "mesh_hex": mh, "name": name, "role": fields["r"], "owner": npub(oh), "owner_hex": oh}
     if "s" in fields: p["secret"] = code
-    else: p["echo"] = code
+    else: p["echo"] = code; p["b_secret"] = fields["b"]
     return ("ok", p)
 
 def owner_check(owner, active, accounts):
@@ -182,8 +184,10 @@ def parse_ack(text):
     if not isinstance(w, bool): return None
     return {"d": dg, "w": w}
 
-def ack_digest(s, ma_hex, mb_hex):
-    return hashlib.sha256(unb64_16(s) + bytes.fromhex(ma_hex) + bytes.fromhex(mb_hex)).hexdigest()
+def ack_digest(s, ma_hex, mb_hex, sb=None):
+    """Scan path: SHA-256(s_A ‖ s_B ‖ m_A ‖ m_B), which only a device that read B's code can make.
+    Accept path (`w`): SHA-256(s_A ‖ m_A ‖ m_B), and B also needs its own words tap."""
+    return hashlib.sha256(unb64_16(s) + (unb64_16(sb) if sb else b"") + bytes.fromhex(ma_hex) + bytes.fromhex(mb_hex)).hexdigest()
 def check_words(ma_hex, mb_hex, s):
     h = hashlib.sha256(bytes.fromhex(ma_hex) + bytes.fromhex(mb_hex) + unb64_16(s)).digest()
     n = int.from_bytes(h[:6], "big") >> 4   # the first 44 bits
@@ -193,7 +197,12 @@ def check_words(ma_hex, mb_hex, s):
 class Session:
     def __init__(self, secret, created_at, own_mesh_hex, active, accounts):
         self.secret, self.created, self.own, self.active, self.accounts = secret, created_at, own_mesh_hex, active, accounts
-        self.state = "waiting"; self.sender = None; self.hello = None; self.hello_at = None
+        self.state = "waiting"; self.sender = None; self.hello = None; self.hello_at = None; self.b_secret = None
+    def ack(self):
+        """The ack content for B once confirmed: proves the scan (s_B), or says Accept (w)."""
+        if self.state != "done": return None
+        if self.b_secret: return ack_json(ack_digest(self.secret, self.own, self.sender, self.b_secret))
+        return ack_json(ack_digest(self.secret, self.own, self.sender), True)
     def receive_hello(self, sender, content, now):
         if self.state in ("done", "expired"): return "expired"
         if self.state == "aborted": return "abort"
@@ -224,7 +233,7 @@ class Session:
         if "secret" in p: return "reject:notTheirCode"
         if p["echo"] != self.secret: return "reject:echoMismatch"
         if p["mesh_hex"] != self.sender or p["role"] != self.hello["r"]: return "reject:notTheDevice"
-        self.state = "done"; return "confirm"
+        self.state = "done"; self.b_secret = p["b_secret"]; return "confirm"
     def accept_without_scan(self, now):
         g = self._guard(now)
         if g: return g
@@ -232,10 +241,12 @@ class Session:
 
 # ---- B's session (scanned A, shows its QR, waits for the ack) ----
 class Joiner:
-    def __init__(self, qr_a, own_mesh_hex, scanned_at):
+    def __init__(self, qr_a, own_mesh_hex, own_secret, scanned_at):
+        """`own_secret`: s_B, the fresh secret in the code B shows."""
         k, p = parse(qr_a, npub(own_mesh_hex)); assert k == "ok" and "secret" in p
         self.a, self.own, self.at = p, own_mesh_hex, scanned_at
-        self.expect = ack_digest(p["secret"], p["mesh_hex"], own_mesh_hex)
+        self.expect_scan = ack_digest(p["secret"], p["mesh_hex"], own_mesh_hex, own_secret)
+        self.expect_words = ack_digest(p["secret"], p["mesh_hex"], own_mesh_hex)
         self.state = "waiting"; self.words = False
     def receive_ack(self, sender, content, now):
         if self.state == "linked": return "ignoreDuplicate"
@@ -243,19 +254,21 @@ class Joiner:
         a = parse_ack(content)
         if a is None: return "ignore:notAck"
         if sender != self.a["mesh_hex"]: return "ignore:wrongSender"
-        if a["d"] != self.expect: return "ignore:badDigest"
+        if a["d"] != (self.expect_words if a["w"] else self.expect_scan): return "ignore:badDigest"
         if now - self.at > ACK_WINDOW: self.state = "expired"; return "expired"
         if a["w"] and not self.words: self.state = "waitWords"; return "waitWords"
         self.state = "linked"; return "linked"
-    def confirm_words(self):
+    def confirm_words(self, now):
         if self.state == "linked": return "ignoreDuplicate"
         if self.state == "expired": return "expired"
+        if now - self.at > ACK_WINDOW: self.state = "expired"; return "expired"
         if self.state == "waitWords": self.state = "linked"; return "linked"
         self.words = True; return "waitAck"
 
 # =================================== fixtures ===================================
 def key(label): return hashlib.sha256(("nv-pairing-fixture:" + label).encode()).hexdigest()
 def sec(label): return b64(hashlib.sha256(("nv-pairing-secret:" + label).encode()).digest()[:16])
+SB, SBX = sec("B"), sec("B-other")
 A, B, C, OWN = key("A-mac"), key("B-iphone"), key("C-stranger"), key("this-device")
 ACC, ACC2, OTHER = key("account-logen-test"), key("account-second"), key("account-stranger")
 nA, nB, nC, nOWN, nACC, nACC2, nOTHER = map(npub, (A, B, C, OWN, ACC, ACC2, OTHER))
@@ -267,8 +280,8 @@ def pc(name, uri, own=nOWN):
     k, v = parse(uri, own)
     parse_cases.append({"name": name, "uri": uri, "own": own, "expect": {"payload": v} if k == "ok" else {"refusal": v}})
 pc("A's QR reads", build(nA, "Logen's Mac", "mac", nACC, s=SA))
-pc("B's QR reads", build(nB, "Logen's iPhone", "phone", nACC, e=SA))
-pc("no name is fine", build(nB, "", "phone", nACC, e=SA))
+pc("B's QR reads", build(nB, "Logen's iPhone", "phone", nACC, e=SA, b=SB))
+pc("no name is fine", build(nB, "", "phone", nACC, e=SA, b=SB))
 pc("name with spaces, emoji and a quote round-trips", build(nB, "Tess's  iPad 🐝 & co", "phone", nACC, s=SA))
 pc("upper-case scheme and npub read", build(nA, "", "mac", nACC, s=SA).replace("nvpair:", "NVPAIR:").replace(nA, nA.upper()))
 pc("surrounding whitespace is ignored", "  " + build(nA, "x", "homeVault", nACC, s=SA) + "\n")
@@ -288,6 +301,9 @@ pc("missing owner", "nvpair:v1?m=" + nA + "&r=mac&s=" + SA)
 pc("owner not an npub", build(nA, "x", "mac", "bob", s=SA))
 pc("neither s nor e", "nvpair:v1?m=" + nA + "&r=mac&o=" + nACC)
 pc("both s and e", build(nA, "x", "mac", nACC, s=SA) + "&e=" + SA)
+pc("B's code without b [Tron, PR 1700]", "nvpair:v1?m=" + nB + "&r=phone&o=" + nACC + "&e=" + SA)
+pc("A's code with a b", build(nA, "x", "mac", nACC, s=SA) + "&b=" + SB)
+pc("B's code with a bad b", build(nB, "x", "phone", nACC, e=SA, b=SB[:-1]))
 pc("secret too short", build(nA, "x", "mac", nACC, s=SA[:-2]))
 pc("secret with padding", build(nA, "x", "mac", nACC, s=SA + "=="))
 pc("secret in standard base64 alphabet", build(nA, "x", "mac", nACC, s="+/" + SA[2:]))
@@ -304,13 +320,13 @@ pc("own address check is skipped with no own address", build(nOWN, "me", "phone"
 
 build_cases = [
     {"name": "A's code", "args": {"m": nA, "n": "Logen's Mac", "r": "mac", "o": nACC, "s": SA}},
-    {"name": "B's code", "args": {"m": nB, "n": "Logen's iPhone", "r": "phone", "o": nACC, "e": SA}},
-    {"name": "no name leaves n out", "args": {"m": nB, "n": "   ", "r": "browser", "o": nACC, "e": SA}},
+    {"name": "B's code", "args": {"m": nB, "n": "Logen's iPhone", "r": "phone", "o": nACC, "e": SA, "b": SB}},
+    {"name": "no name leaves n out", "args": {"m": nB, "n": "   ", "r": "browser", "o": nACC, "e": SA, "b": SB}},
     {"name": "long name is cut to 40 code points", "args": {"m": nA, "n": "🐝" * 50, "r": "homeVault", "o": nACC, "s": SA}},
     {"name": "reserved characters are escaped", "args": {"m": nA, "n": " a&b=c?d/e#f%g+h ", "r": "mac", "o": nACC, "s": SA}},
 ]
 for c in build_cases:
-    a = c["args"]; c["expect"] = build(a["m"], a["n"], a["r"], a["o"], a.get("s"), a.get("e"))
+    a = c["args"]; c["expect"] = build(a["m"], a["n"], a["r"], a["o"], a.get("s"), a.get("e"), a.get("b"))
 
 owner_cases = []
 for name, o, act, accs in [
@@ -354,7 +370,7 @@ with open(os.path.join(HERE, "payload-cases.json"), "w") as f:
 
 # ---- session scripts ----
 def hello(s=SA, n="Logen's iPhone", r="phone", o=nACC, t=T0 + 10): return hello_json(s, n, r, o, t)
-QRB = build(nB, "Logen's iPhone", "phone", nACC, e=SA)
+QRB = build(nB, "Logen's iPhone", "phone", nACC, e=SA, b=SB)
 def a_case(name, steps, secret=SA, active=nACC, accounts=(nACC, nACC2)):
     s = Session(secret, T0, A, active, list(accounts)); out = []
     for st in steps:
@@ -362,7 +378,9 @@ def a_case(name, steps, secret=SA, active=nACC, accounts=(nACC, nACC2)):
         if op == "hello": got = s.receive_hello(st["sender"], st["content"], st["now"])
         elif op == "qr": got = s.accept_qr(st["uri"], st["now"])
         else: got = s.accept_without_scan(st["now"])
-        out.append(dict(st, expect=got))
+        d = dict(st, expect=got)
+        if got == "confirm": d["ack"] = s.ack()
+        out.append(d)
     return {"name": name, "side": "shower", "secret": secret, "created_at": T0, "own_mesh": A, "active": active,
             "accounts": list(accounts), "steps": out}
 H = lambda sender=B, content=None, now=T0 + 12: {"op": "hello", "sender": sender, "content": content or hello(), "now": now}
@@ -388,12 +406,12 @@ hello_cases = [
     a_case("a hello with an unknown role is ignored", [H(content=hello(r="fridge"))]),
     a_case("a hello with a name over 40 is ignored", [H(content=json.dumps({"v": 1, "s": SA, "n": "x" * 41, "r": "phone", "o": nACC, "t": T0 + 10}))]),
     a_case("B's QR before any hello is not ready", [Q(), H(), Q()]),
-    a_case("B's QR from another device is refused", [H(), Q(uri=build(nC, "x", "phone", nACC, e=SA)), Q()]),
-    a_case("B's QR with the wrong echo is refused", [H(), Q(uri=build(nB, "x", "phone", nACC, e=SX))]),
-    a_case("B's QR with another role than the hello is refused", [H(), Q(uri=build(nB, "x", "mac", nACC, e=SA))]),
+    a_case("B's QR from another device is refused", [H(), Q(uri=build(nC, "x", "phone", nACC, e=SA, b=SB)), Q()]),
+    a_case("B's QR with the wrong echo is refused", [H(), Q(uri=build(nB, "x", "phone", nACC, e=SX, b=SB))]),
+    a_case("B's QR with another role than the hello is refused", [H(), Q(uri=build(nB, "x", "mac", nACC, e=SA, b=SB))]),
     a_case("scanning A-type code (a secret, not an echo) is refused", [H(), Q(uri=build(nB, "x", "phone", nACC, s=SA))]),
     a_case("an unreadable second QR says why", [H(), Q(uri="hello there")]),
-    a_case("scanning this device's own code is refused", [H(), Q(uri=build(nA, "x", "mac", nACC, e=SA))]),
+    a_case("scanning this device's own code is refused", [H(), Q(uri=build(nA, "x", "mac", nACC, e=SA, b=SB))]),
     a_case("B's QR after the scan window is expired", [H(), Q(now=T0 + 12 + 181)]),
     a_case("after linking, the code is spent", [H(), Q(), H(now=T0 + 50), Q(now=T0 + 51), W(now=T0 + 52)]),
     a_case("after an abort, nothing links", [H(), H(sender=C), Q(), W()]),
@@ -402,19 +420,25 @@ hello_cases = [
 
 def b_case(name, steps, qr_a=None, scanned_at=T0 + 10):
     qa = qr_a or build(nA, "Logen's Mac", "mac", nACC, s=SA)
-    j = Joiner(qa, B, scanned_at); out = []
+    j = Joiner(qa, B, SB, scanned_at); out = []
     for st in steps:
-        got = j.receive_ack(st["sender"], st["content"], st["now"]) if st["op"] == "ack" else j.confirm_words()
+        got = j.receive_ack(st["sender"], st["content"], st["now"]) if st["op"] == "ack" else j.confirm_words(st["now"])
         out.append(dict(st, expect=got))
-    return {"name": name, "side": "joiner", "qr_a": qa, "own_mesh": B, "scanned_at": scanned_at, "steps": out}
-GOOD = ack_digest(SA, A, B)
+    return {"name": name, "side": "joiner", "qr_a": qa, "own_mesh": B, "own_secret": SB, "scanned_at": scanned_at, "steps": out}
+GOOD = ack_digest(SA, A, B, SB)     # scan path
+WGOOD = ack_digest(SA, A, B)        # Accept path, with w
 K = lambda content=None, sender=A, now=T0 + 40: {"op": "ack", "sender": sender, "content": content or ack_json(GOOD), "now": now}
-WD = {"op": "words"}
+WD = lambda now=T0 + 45: {"op": "words", "now": now}
 hello_cases += [
     b_case("ack after a scan links", [K()]),
     b_case("a second ack is a duplicate", [K(), K(now=T0 + 41)]),
-    b_case("Accept path: ack first, then this side's own tap [Tron 2]", [K(content=ack_json(GOOD, True)), WD]),
-    b_case("Accept path: own tap first, then the ack", [WD, K(content=ack_json(GOOD, True))]),
+    b_case("Accept path: ack first, then this side's own tap [Tron 2]", [K(content=ack_json(WGOOD, True)), WD()]),
+    b_case("Accept path: own tap first, then the ack", [WD(), K(content=ack_json(WGOOD, True))]),
+    b_case("forged scan ack: no w, no s_B (A never read B's code) [Tron, PR 1700]", [K(content=ack_json(WGOOD)), K()]),
+    b_case("scan ack with the wrong s_B is ignored [Tron, PR 1700]", [K(content=ack_json(ack_digest(SA, A, B, SBX))), K()]),
+    b_case("w with the scan digest is ignored", [K(content=ack_json(GOOD, True))]),
+    b_case("the words tap after 6 minutes is expired", [K(content=ack_json(WGOOD, True)), WD(now=T0 + 10 + 361), K(content=ack_json(WGOOD, True), now=T0 + 10 + 362)]),
+    b_case("the words tap at exactly 6 minutes links", [K(content=ack_json(WGOOD, True)), WD(now=T0 + 10 + 360)]),
     b_case("an ack from another key is ignored", [K(sender=C), K()]),
     b_case("an ack with A and B swapped is ignored [Tron 2]", [K(content=ack_json(ack_digest(SA, B, A))), K()]),
     b_case("an ack for another secret is ignored [Tron 2]", [K(content=ack_json(ack_digest(SX, A, B)))]),
@@ -431,16 +455,18 @@ with open(os.path.join(HERE, "hello-cases.json"), "w") as f:
                             {"kind": "hello", "args": {"s": SA, "n": "", "r": "mac", "o": nACC, "t": T0},
                              "expect": hello_json(SA, "", "mac", nACC, T0)},
                             {"kind": "ack", "args": {"d": GOOD, "w": False}, "expect": ack_json(GOOD)},
-                            {"kind": "ack", "args": {"d": GOOD, "w": True}, "expect": ack_json(GOOD, True)}],
+                            {"kind": "ack", "args": {"d": WGOOD, "w": True}, "expect": ack_json(WGOOD, True)}],
                "cases": hello_cases}, f, indent=1, ensure_ascii=False)
     f.write("\n")
 
 cw = []
 for la, lb, ls in [("A-mac", "B-iphone", "A"), ("A-mac", "B-iphone", "other"), ("B-iphone", "A-mac", "A"), ("C-stranger", "B-iphone", "A")]:
     a, b, s = key(la), key(lb), sec(ls)
-    cw.append({"a": a, "b": b, "secret": s, "words": check_words(a, b, s), "ack_digest": ack_digest(s, a, b)})
+    cw.append({"a": a, "b": b, "secret": s, "words": check_words(a, b, s), "ack_digest": ack_digest(s, a, b),
+               "b_secret": SB, "ack_digest_scan": ack_digest(s, a, b, SB)})
 cw.append({"a": "00" * 32, "b": "ff" * 32, "secret": b64(bytes(16)), "words": check_words("00" * 32, "ff" * 32, b64(bytes(16))),
-           "ack_digest": ack_digest(b64(bytes(16)), "00" * 32, "ff" * 32)})
+           "ack_digest": ack_digest(b64(bytes(16)), "00" * 32, "ff" * 32),
+           "b_secret": b64(b"\xff" * 16), "ack_digest_scan": ack_digest(b64(bytes(16)), "00" * 32, "ff" * 32, b64(b"\xff" * 16))})
 with open(os.path.join(HERE, "checkwords-cases.json"), "w") as f:
     json.dump({"rule": {"words": 4, "bits_per_word": 11, "list": "BIP-39 English (words.txt, CRC32 c1dbd296)",
                         "list_sha256": hashlib.sha256(open(os.path.join(HERE, "words.txt"), "rb").read()).hexdigest()},

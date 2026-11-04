@@ -34,7 +34,7 @@ final class MeshPairingTests: XCTestCase {
             XCTAssertEqual(payload.owner, p["owner"] as? String, name)
             XCTAssertEqual(payload.ownerHex, p["owner_hex"] as? String, name)
             if let s = p["secret"] as? String { XCTAssertEqual(payload.code, .secret(s), name) }
-            if let e = p["echo"] as? String { XCTAssertEqual(payload.code, .echo(e), name) }
+            if let e = p["echo"] as? String { XCTAssertEqual(payload.code, .echo(e, bSecret: p["b_secret"] as? String ?? ""), name) }
         }
     }
 
@@ -45,7 +45,7 @@ final class MeshPairingTests: XCTestCase {
         XCTAssertEqual(rule["roles"] as? [String], MeshPairing.wireRoles.map(\.rawValue))
         for c in try XCTUnwrap(fx["build"] as? [[String: Any]]) {
             let a = try XCTUnwrap(c["args"] as? [String: Any])
-            let code: MeshPairing.Code = (a["s"] as? String).map { .secret($0) } ?? .echo(a["e"] as? String ?? "")
+            let code: MeshPairing.Code = (a["s"] as? String).map { .secret($0) } ?? .echo(a["e"] as? String ?? "", bSecret: a["b"] as? String ?? "")
             let uri = MeshPairing.build(mesh: a["m"] as? String ?? "", name: a["n"] as? String ?? "", role: try role(a["r"]),
                                         owner: a["o"] as? String ?? "", code: code)
             XCTAssertEqual(uri, c["expect"] as? String, c["name"] as? String ?? "?")
@@ -135,9 +135,10 @@ final class MeshPairingTests: XCTestCase {
                 let qrA = MeshPairing.parse(c["qr_a"] as? String ?? "", ownMesh: nil)
                 guard case .success(let a) = qrA else { XCTFail(name); continue }
                 var j = try XCTUnwrap(MeshPairingJoiner(qrA: a, ownMeshHex: c["own_mesh"] as? String ?? "",
+                                                        ownSecret: c["own_secret"] as? String ?? "",
                                                         scannedAt: c["scanned_at"] as? Int ?? 0), name)
                 for (i, st) in steps.enumerated() {
-                    let got = st["op"] as? String == "words" ? j.confirmWords()
+                    let got = st["op"] as? String == "words" ? j.confirmWords(now: st["now"] as? Int ?? 0)
                         : j.receiveAck(senderHex: st["sender"] as? String ?? "", content: st["content"] as? String ?? "",
                                        now: st["now"] as? Int ?? 0)
                     XCTAssertEqual(code(got), st["expect"] as? String, "\(name) step \(i)")
@@ -156,6 +157,7 @@ final class MeshPairingTests: XCTestCase {
                 default: got = s.acceptWithoutScan(now: now)
                 }
                 XCTAssertEqual(code(got), st["expect"] as? String, "\(name) step \(i)")
+                if let ack = st["ack"] as? String { XCTAssertEqual(s.ack, ack, "\(name) step \(i) ack") }
             }
         }
     }
@@ -188,6 +190,8 @@ final class MeshPairingTests: XCTestCase {
             let a = c["a"] as? String ?? "", b = c["b"] as? String ?? "", s = c["secret"] as? String ?? ""
             XCTAssertEqual(MeshPairing.checkWords(aHex: a, bHex: b, secret: s), c["words"] as? [String])
             XCTAssertEqual(MeshPairing.ackDigest(secret: s, aHex: a, bHex: b), c["ack_digest"] as? String)
+            XCTAssertEqual(MeshPairing.ackDigest(secret: s, bSecret: c["b_secret"] as? String, aHex: a, bHex: b),
+                           c["ack_digest_scan"] as? String)
         }
     }
 

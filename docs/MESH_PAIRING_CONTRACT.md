@@ -21,7 +21,7 @@ and storing a device belong to each platform's pairing screens, built on top of 
 
 ```
 nvpair:v1?m=<mesh npub>&n=<name>&r=<role>&o=<owner npub>&s=<secret>      A's code
-nvpair:v1?m=<mesh npub>&n=<name>&r=<role>&o=<owner npub>&e=<A's secret>  B's code
+nvpair:v1?m=<mesh npub>&n=<name>&r=<role>&o=<owner npub>&e=<A's secret>&b=<B's secret>  B's code
 ```
 
 - Fields are written in that order. `n` is left out when the name is empty.
@@ -29,6 +29,8 @@ nvpair:v1?m=<mesh npub>&n=<name>&r=<role>&o=<owner npub>&e=<A's secret>  B's cod
 - `r` is the wire role: `phone`, `mac`, `homeVault`, `browser` (iOS `MeshDeviceRole` raw values; Android's stored
   `home_vault` is mapped, never sent).
 - `s`: 16 random bytes, base64url without padding (22 characters), fresh each time the code is shown. `e`: A's `s`.
+  `b`: B's own fresh secret s_B, the same shape. Only a device that read B's code knows s_B, so the scan ack (§3)
+  proves A really scanned B. Without it, the device showing the first code could make the ack alone (Tron, PR 1700).
 - `n`: trimmed, at most **40 Unicode code points** (a builder cuts it, a reader refuses longer). Percent-encoded as
   UTF-8, every byte outside `A-Z a-z 0-9 - . _ ~` written `%XX` in upper case.
 - **No keys in a code, ever**: no nsec, no NWC string.
@@ -43,7 +45,7 @@ Reading, in this order (the first that fails is the answer):
 | `m` is an npub (63 chars, one case, valid checksum, 32 bytes) | `badAddress` |
 | `r` is a wire role | `unknownRole` |
 | `o` is an npub | `missingOwner` |
-| exactly one of `s` / `e`, canonical base64url of 16 bytes | `badCode` |
+| exactly one of `s` / `e`; `b` with `e` and never with `s`; each canonical base64url of 16 bytes | `badCode` |
 | `n` ≤ 40 code points | `nameTooLong` |
 | `m` is not this device's own mesh address | `ownAddress` |
 
@@ -67,12 +69,17 @@ The receiver checks the signature and decrypts first; the session only sees the 
 
 ```
 hello (B → A)  {"v":1,"s":"<A's secret>","n":"<B name>","r":"<B role>","o":"<B owner npub>","t":<unix>}
-ack   (A → B)  {"v":1,"ack":true,"d":"<hex SHA-256(s_A ‖ m_A ‖ m_B)>"}            scanned B's code
-               {"v":1,"ack":true,"d":"<…>","w":true}                               accepted with the check words
+ack   (A → B)  {"v":1,"ack":true,"d":"<hex SHA-256(s_A ‖ s_B ‖ m_A ‖ m_B)>"}          scanned B's code
+               {"v":1,"ack":true,"d":"<hex SHA-256(s_A ‖ m_A ‖ m_B)>","w":true}  accepted with the check words
 ```
 
 - Compact JSON in that key order; `n` left out when empty. `t` is an integer.
-- `s_A` is the 16 secret bytes, `m_A` and `m_B` the 32-byte mesh pubkeys (A showed first). `d` is lower-case hex.
+- `s_A` and `s_B` are the 16 secret bytes, `m_A` and `m_B` the 32-byte mesh pubkeys (A showed first). `d` is
+  lower-case hex. A's session builds the right ack itself (`ack` after `confirm`).
+- B accepts an ack **without** `w` only with the s_B digest. The digest without s_B counts only with `w`, and then B
+  also needs its own words tap. So a device that never read B's code can't link B silently.
+- **Resend a hello byte for byte.** The same sender with a changed hello (even a new `t`) aborts the session (Tron 3),
+  so a platform that resends must keep the first hello's content.
 - `w` (added in phase 0, for Tron 2): A tells B it linked by Accept, not by scanning, so B must also get its own
   "They match" tap before storing. The ack is signed by A's mesh key, which B read from A's code itself.
 
@@ -101,17 +108,18 @@ ack   (A → B)  {"v":1,"ack":true,"d":"<hex SHA-256(s_A ‖ m_A ‖ m_B)>"}    
 | B's code or Accept more than 180 s after the hello | `expired` |
 | B's code checks out / Accept | `confirm` with the hello's name and role; the session is done (the code is spent) |
 
-**B** (`MeshPairingJoiner`): created from A's parsed code and the time it was scanned.
+**B** (`MeshPairingJoiner`): created from A's parsed code, its own s_B and the time it scanned A.
 
 | Event | Outcome |
 |---|---|
 | ack after linking | `ignoreDuplicate` |
 | not an ack (`ack` not `true`, `d` not 64 lower-case hex, `w` not a bool) | `ignore:notAck` |
 | sender ≠ A's mesh key | `ignore:wrongSender` |
-| `d` ≠ SHA-256(s_A ‖ m_A ‖ m_B) | `ignore:badDigest` |
+| no `w` and `d` ≠ SHA-256(s_A ‖ s_B ‖ m_A ‖ m_B), or `w` and `d` ≠ SHA-256(s_A ‖ m_A ‖ m_B) | `ignore:badDigest` |
 | more than 360 s after the scan | `expired` |
 | `w` and B's own tap not yet given | `waitWords` |
 | otherwise | `linked` |
+| B's own "They match" tap, more than 360 s after the scan | `expired` |
 | B's own "They match" tap | `linked` after a `w` ack, else `waitAck` |
 
 Neither side stores anything before its last step: A after `confirm` and the role confirm, B after `linked` and the

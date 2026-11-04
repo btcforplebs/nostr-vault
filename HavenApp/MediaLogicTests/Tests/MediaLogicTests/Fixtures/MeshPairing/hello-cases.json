@@ -32,10 +32,10 @@
   {
    "kind": "ack",
    "args": {
-    "d": "16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7",
+    "d": "298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b",
     "w": false
    },
-   "expect": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}"
+   "expect": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}"
   },
   {
    "kind": "ack",
@@ -68,9 +68,10 @@
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800040,
-     "expect": "confirm"
+     "expect": "confirm",
+     "ack": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}"
     }
    ]
   },
@@ -96,7 +97,8 @@
     {
      "op": "accept",
      "now": 1793800040,
-     "expect": "confirm"
+     "expect": "confirm",
+     "ack": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\",\"w\":true}"
     }
    ]
   },
@@ -128,9 +130,10 @@
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800040,
-     "expect": "confirm"
+     "expect": "confirm",
+     "ack": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}"
     }
    ]
   },
@@ -162,7 +165,7 @@
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800040,
      "expect": "abort"
     }
@@ -196,7 +199,7 @@
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800040,
      "expect": "abort"
     }
@@ -258,9 +261,10 @@
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800040,
-     "expect": "confirm"
+     "expect": "confirm",
+     "ack": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}"
     }
    ]
   },
@@ -306,9 +310,10 @@
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800200,
-     "expect": "confirm"
+     "expect": "confirm",
+     "ack": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}"
     }
    ]
   },
@@ -389,9 +394,10 @@
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800040,
-     "expect": "confirm"
+     "expect": "confirm",
+     "ack": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}"
     }
    ]
   },
@@ -556,7 +562,7 @@
    "steps": [
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800040,
      "expect": "reject:notReady"
     },
@@ -569,9 +575,10 @@
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800040,
-     "expect": "confirm"
+     "expect": "confirm",
+     "ack": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}"
     }
    ]
   },
@@ -596,15 +603,16 @@
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub13pehdtj4cnfxa0p43jauv3578ssn8utk6h2fhxfnss2jv5jxq3gsc0696a&n=x&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub13pehdtj4cnfxa0p43jauv3578ssn8utk6h2fhxfnss2jv5jxq3gsc0696a&n=x&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800040,
      "expect": "reject:notTheDevice"
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800040,
-     "expect": "confirm"
+     "expect": "confirm",
+     "ack": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}"
     }
    ]
   },
@@ -629,7 +637,7 @@
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=x&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=aXzl9gE699WN8cQtSpIT3w",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=x&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=aXzl9gE699WN8cQtSpIT3w&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800040,
      "expect": "reject:echoMismatch"
     }
@@ -656,7 +664,7 @@
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800040,
      "expect": "reject:notTheDevice"
     }
@@ -737,7 +745,7 @@
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800040,
      "expect": "refuse:ownAddress"
     }
@@ -764,7 +772,7 @@
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800193,
      "expect": "expired"
     }
@@ -791,9 +799,10 @@
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800040,
-     "expect": "confirm"
+     "expect": "confirm",
+     "ack": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}"
     },
     {
      "op": "hello",
@@ -804,7 +813,7 @@
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800051,
      "expect": "expired"
     },
@@ -843,7 +852,7 @@
     },
     {
      "op": "qr",
-     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+     "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
      "now": 1793800040,
      "expect": "abort"
     },
@@ -887,12 +896,13 @@
    "side": "joiner",
    "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
    "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "own_secret": "I6gzynJZJM1ulPlrxycaJg",
    "scanned_at": 1793800010,
    "steps": [
     {
      "op": "ack",
      "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
-     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}",
      "now": 1793800040,
      "expect": "linked"
     }
@@ -903,19 +913,20 @@
    "side": "joiner",
    "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
    "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "own_secret": "I6gzynJZJM1ulPlrxycaJg",
    "scanned_at": 1793800010,
    "steps": [
     {
      "op": "ack",
      "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
-     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}",
      "now": 1793800040,
      "expect": "linked"
     },
     {
      "op": "ack",
      "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
-     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}",
      "now": 1793800041,
      "expect": "ignoreDuplicate"
     }
@@ -926,6 +937,7 @@
    "side": "joiner",
    "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
    "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "own_secret": "I6gzynJZJM1ulPlrxycaJg",
    "scanned_at": 1793800010,
    "steps": [
     {
@@ -937,6 +949,7 @@
     },
     {
      "op": "words",
+     "now": 1793800045,
      "expect": "linked"
     }
    ]
@@ -946,10 +959,12 @@
    "side": "joiner",
    "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
    "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "own_secret": "I6gzynJZJM1ulPlrxycaJg",
    "scanned_at": 1793800010,
    "steps": [
     {
      "op": "words",
+     "now": 1793800045,
      "expect": "waitAck"
     },
     {
@@ -962,23 +977,140 @@
    ]
   },
   {
+   "name": "forged scan ack: no w, no s_B (A never read B's code) [Tron, PR 1700]",
+   "side": "joiner",
+   "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "own_secret": "I6gzynJZJM1ulPlrxycaJg",
+   "scanned_at": 1793800010,
+   "steps": [
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "now": 1793800040,
+     "expect": "ignore:badDigest"
+    },
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}",
+     "now": 1793800040,
+     "expect": "linked"
+    }
+   ]
+  },
+  {
+   "name": "scan ack with the wrong s_B is ignored [Tron, PR 1700]",
+   "side": "joiner",
+   "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "own_secret": "I6gzynJZJM1ulPlrxycaJg",
+   "scanned_at": 1793800010,
+   "steps": [
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"5ee1ded1cb1d96aaca80c82e8aa536d959475677aab66fb1483a18af552f7cb0\"}",
+     "now": 1793800040,
+     "expect": "ignore:badDigest"
+    },
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}",
+     "now": 1793800040,
+     "expect": "linked"
+    }
+   ]
+  },
+  {
+   "name": "w with the scan digest is ignored",
+   "side": "joiner",
+   "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "own_secret": "I6gzynJZJM1ulPlrxycaJg",
+   "scanned_at": 1793800010,
+   "steps": [
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\",\"w\":true}",
+     "now": 1793800040,
+     "expect": "ignore:badDigest"
+    }
+   ]
+  },
+  {
+   "name": "the words tap after 6 minutes is expired",
+   "side": "joiner",
+   "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "own_secret": "I6gzynJZJM1ulPlrxycaJg",
+   "scanned_at": 1793800010,
+   "steps": [
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\",\"w\":true}",
+     "now": 1793800040,
+     "expect": "waitWords"
+    },
+    {
+     "op": "words",
+     "now": 1793800371,
+     "expect": "expired"
+    },
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\",\"w\":true}",
+     "now": 1793800372,
+     "expect": "expired"
+    }
+   ]
+  },
+  {
+   "name": "the words tap at exactly 6 minutes links",
+   "side": "joiner",
+   "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "own_secret": "I6gzynJZJM1ulPlrxycaJg",
+   "scanned_at": 1793800010,
+   "steps": [
+    {
+     "op": "ack",
+     "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\",\"w\":true}",
+     "now": 1793800040,
+     "expect": "waitWords"
+    },
+    {
+     "op": "words",
+     "now": 1793800370,
+     "expect": "linked"
+    }
+   ]
+  },
+  {
    "name": "an ack from another key is ignored",
    "side": "joiner",
    "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
    "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "own_secret": "I6gzynJZJM1ulPlrxycaJg",
    "scanned_at": 1793800010,
    "steps": [
     {
      "op": "ack",
      "sender": "887376ae55c4d26ebc358cbbc6469e3c2133f176d5d49b993384152652460451",
-     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}",
      "now": 1793800040,
      "expect": "ignore:wrongSender"
     },
     {
      "op": "ack",
      "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
-     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}",
      "now": 1793800040,
      "expect": "linked"
     }
@@ -989,6 +1121,7 @@
    "side": "joiner",
    "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
    "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "own_secret": "I6gzynJZJM1ulPlrxycaJg",
    "scanned_at": 1793800010,
    "steps": [
     {
@@ -1001,7 +1134,7 @@
     {
      "op": "ack",
      "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
-     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}",
      "now": 1793800040,
      "expect": "linked"
     }
@@ -1012,6 +1145,7 @@
    "side": "joiner",
    "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
    "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "own_secret": "I6gzynJZJM1ulPlrxycaJg",
    "scanned_at": 1793800010,
    "steps": [
     {
@@ -1028,6 +1162,7 @@
    "side": "joiner",
    "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
    "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "own_secret": "I6gzynJZJM1ulPlrxycaJg",
    "scanned_at": 1793800010,
    "steps": [
     {
@@ -1044,12 +1179,13 @@
    "side": "joiner",
    "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
    "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "own_secret": "I6gzynJZJM1ulPlrxycaJg",
    "scanned_at": 1793800010,
    "steps": [
     {
      "op": "ack",
      "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
-     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330BFCFF08BC831FB22950D3942D08FC108565D9E866BD226B505008FB37B7\"}",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"298B176F8C28865262398E4BB8EB8AA8FB9A43E29603D1811B6C193D605DCF2B\"}",
      "now": 1793800040,
      "expect": "ignore:notAck"
     }
@@ -1060,19 +1196,20 @@
    "side": "joiner",
    "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
    "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "own_secret": "I6gzynJZJM1ulPlrxycaJg",
    "scanned_at": 1793800010,
    "steps": [
     {
      "op": "ack",
      "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
-     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}",
      "now": 1793800371,
      "expect": "expired"
     },
     {
      "op": "ack",
      "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
-     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}",
      "now": 1793800372,
      "expect": "expired"
     }
@@ -1083,12 +1220,13 @@
    "side": "joiner",
    "qr_a": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=Logen%27s%20Mac&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ",
    "own_mesh": "963c31c21ae74b33041f73310bc34301c2d448daeeb7a8e48aac663927ce0323",
+   "own_secret": "I6gzynJZJM1ulPlrxycaJg",
    "scanned_at": 1793800010,
    "steps": [
     {
      "op": "ack",
      "sender": "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
-     "content": "{\"v\":1,\"ack\":true,\"d\":\"16330bfcff08bc831fb22950d3942d08fc108565d9e866bd226b505008fb37b7\"}",
+     "content": "{\"v\":1,\"ack\":true,\"d\":\"298b176f8c28865262398e4bb8eb8aa8fb9a43e29603d1811b6c193d605dcf2b\"}",
      "now": 1793800370,
      "expect": "linked"
     }

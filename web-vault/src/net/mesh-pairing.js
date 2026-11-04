@@ -23,17 +23,20 @@ const UNRESERVED = /^[A-Za-z0-9\-._~]$/
 
 // ---- the QR ----
 
-/** `nvpair:v1?…` for this device. Pass `s` (A's secret) or `e` (A's secret, echoed by B). */
-export function build({ m, n = "", r, o, s, e }) {
+/** `nvpair:v1?…` for this device. A's code: `s`. B's code: `e` (A's secret, echoed) and `b` (B's own fresh secret
+ *  s_B; only a device that read B's code knows it, so the scan ack proves the scan: Tron, PR 1700). */
+export function build({ m, n = "", r, o, s, e, b }) {
   const q = [`m=${m}`]
   const name = cleanName(n)
   if (name) q.push(`n=${percentEncode(name)}`)
-  q.push(`r=${r}`, `o=${o}`, s != null ? `s=${s}` : `e=${e}`)
+  q.push(`r=${r}`, `o=${o}`)
+  if (s != null) q.push(`s=${s}`)
+  else q.push(`e=${e}`, `b=${b}`)
   return "nvpair:v1?" + q.join("&")
 }
 
 /** `{ ok: payload }` or `{ refusal }`. `ownMesh` is this device's own mesh npub. A payload is
- *  `{ mesh, meshHex, name, role, owner, ownerHex, secret? | echo? }`. */
+ *  `{ mesh, meshHex, name, role, owner, ownerHex, secret }` (A's) or `{ …, echo, bSecret }` (B's). */
 export function parse(uri, ownMesh = null) {
   const u = typeof uri === "string" ? uri.trim() : ""
   if (u.slice(0, 7).toLowerCase() !== "nvpair:") return { refusal: "notPairing" }
@@ -58,14 +61,16 @@ export function parse(uri, ownMesh = null) {
   if (!ROLES.includes(fields.get("r"))) return { refusal: "unknownRole" }
   const ownerHex = npubHex(fields.get("o"))
   if (!ownerHex) return { refusal: "missingOwner" }
-  const s = fields.get("s"), e = fields.get("e")
-  if ((s == null) === (e == null) || !secretBytes(s ?? e)) return { refusal: "badCode" }
+  // A's code has s and no b; B's has e and b.
+  const s = fields.get("s"), e = fields.get("e"), b = fields.get("b")
+  if ((s == null) === (e == null) || (s == null) !== (b != null)) return { refusal: "badCode" }
+  if (!secretBytes(s ?? e) || (b != null && !secretBytes(b))) return { refusal: "badCode" }
   const name = (fields.get("n") ?? "").trim()
   if ([...name].length > NAME_MAX) return { refusal: "nameTooLong" }
   if (ownMesh != null && npubHex(ownMesh) === meshHex) return { refusal: "ownAddress" }
   const p = { mesh: npubEncode(meshHex), meshHex, name, role: fields.get("r"), owner: npubEncode(ownerHex), ownerHex }
   if (s != null) p.secret = s
-  else p.echo = e
+  else Object.assign(p, { echo: e, bSecret: b })
   return { ok: p }
 }
 
@@ -167,10 +172,14 @@ export function parseAck(text) {
 
 // ---- digests ----
 
-/** hex SHA-256(s_A ‖ m_A ‖ m_B), the ack's proof (Tron 2). */
-export async function ackDigest(secret, aHex, bHex) {
+/** The ack's proof. Scan path (`bSecret` given): hex SHA-256(s_A ‖ s_B ‖ m_A ‖ m_B), which only a device that read
+ *  B's code can make (Tron, PR 1700). Accept path (`w`): hex SHA-256(s_A ‖ m_A ‖ m_B), and B also needs its own words
+ *  tap (Tron 2). */
+export async function ackDigest(secret, aHex, bHex, bSecret = null) {
   const parts = bytesOf(secret, aHex, bHex)
-  return parts ? toHex(await sha256(concat(parts.s, parts.a, parts.b))) : null
+  if (!parts) return null
+  const sb = bSecret == null ? new Uint8Array(0) : secretBytes(bSecret)
+  return sb ? toHex(await sha256(concat(parts.s, sb, parts.a, parts.b))) : null
 }
 
 /** The 4 check words on the Accept path: the first 44 bits of SHA-256(m_A ‖ m_B ‖ s_A), 11 bits a word, BIP-39 English. */

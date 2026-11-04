@@ -27,7 +27,7 @@
   },
   {
    "name": "B's QR reads",
-   "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+   "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
    "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
    "expect": {
     "payload": {
@@ -37,13 +37,14 @@
      "role": "phone",
      "owner": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
      "owner_hex": "cef79d7f9277c4ed115d48f4bce797427c35c67a222afef50122797e71fa324a",
-     "echo": "MfL-vrRY_QiUhuVK2cwvQQ"
+     "echo": "MfL-vrRY_QiUhuVK2cwvQQ",
+     "b_secret": "I6gzynJZJM1ulPlrxycaJg"
     }
    }
   },
   {
    "name": "no name is fine",
-   "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+   "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
    "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
    "expect": {
     "payload": {
@@ -53,7 +54,8 @@
      "role": "phone",
      "owner": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
      "owner_hex": "cef79d7f9277c4ed115d48f4bce797427c35c67a222afef50122797e71fa324a",
-     "echo": "MfL-vrRY_QiUhuVK2cwvQQ"
+     "echo": "MfL-vrRY_QiUhuVK2cwvQQ",
+     "b_secret": "I6gzynJZJM1ulPlrxycaJg"
     }
    }
   },
@@ -242,6 +244,30 @@
    }
   },
   {
+   "name": "B's code without b [Tron, PR 1700]",
+   "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "badCode"
+   }
+  },
+  {
+   "name": "A's code with a b",
+   "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "badCode"
+   }
+  },
+  {
+   "name": "B's code with a bad b",
+   "uri": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=x&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJ",
+   "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
+   "expect": {
+    "refusal": "badCode"
+   }
+  },
+  {
    "name": "secret too short",
    "uri": "nvpair:v1?m=npub172f8dnsjt3tr99lg7chrqtzanc3anrug44aaqn6q73nu8gm3wv9qtnn58a&n=x&r=mac&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&s=MfL-vrRY_QiUhuVK2cwv",
    "own": "npub1874p08m9s77lxh47v7xeg8x22qklnnl57pgkrzlfg9cujqp6efyqs75qq7",
@@ -381,9 +407,10 @@
     "n": "Logen's iPhone",
     "r": "phone",
     "o": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
-    "e": "MfL-vrRY_QiUhuVK2cwvQQ"
+    "e": "MfL-vrRY_QiUhuVK2cwvQQ",
+    "b": "I6gzynJZJM1ulPlrxycaJg"
    },
-   "expect": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ"
+   "expect": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&n=Logen%27s%20iPhone&r=phone&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg"
   },
   {
    "name": "no name leaves n out",
@@ -392,9 +419,10 @@
     "n": "   ",
     "r": "browser",
     "o": "npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj",
-    "e": "MfL-vrRY_QiUhuVK2cwvQQ"
+    "e": "MfL-vrRY_QiUhuVK2cwvQQ",
+    "b": "I6gzynJZJM1ulPlrxycaJg"
    },
-   "expect": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&r=browser&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ"
+   "expect": "nvpair:v1?m=npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl&r=browser&o=npub1emme6lujwlzw6y2afr6teeuhgf7rt3n6yg40aagpyfuhuu06xf9q6z30yj&e=MfL-vrRY_QiUhuVK2cwvQQ&b=I6gzynJZJM1ulPlrxycaJg"
   },
   {
    "name": "long name is cut to 40 code points",

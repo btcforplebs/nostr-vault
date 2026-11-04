@@ -42,8 +42,11 @@ object MeshPairing {
         val value: String
         /** A's code: its one-time secret. */
         data class Secret(override val value: String) : Code
-        /** B's code: A's secret, echoed. */
-        data class Echo(override val value: String) : Code
+        /**
+         * B's code: A's secret, echoed, and B's own fresh secret s_B. Only a device that read B's code knows s_B, so
+         * the scan ack proves the scan (Tron, PR 1700).
+         */
+        data class Echo(override val value: String, val bSecret: String) : Code
     }
 
     data class Payload(
@@ -73,6 +76,7 @@ object MeshPairing {
             is Code.Secret -> "s=${code.value}"
             is Code.Echo -> "e=${code.value}"
         }
+        if (code is Code.Echo) q += "b=${code.bSecret}"
         return "nvpair:v1?" + q.joinToString("&")
     }
 
@@ -99,18 +103,20 @@ object MeshPairing {
         val meshHex = npubHex(fields["m"]) ?: return Parsed.Refused(Refusal.BadAddress)
         val role = roleFromWire(fields["r"]) ?: return Parsed.Refused(Refusal.UnknownRole)
         val ownerHex = npubHex(fields["o"]) ?: return Parsed.Refused(Refusal.MissingOwner)
+        // A's code has s and no b; B's has e and b.
         val s = fields["s"]
         val e = fields["e"]
-        if ((s == null) == (e == null)) return Parsed.Refused(Refusal.BadCode)
+        val b = fields["b"]
+        if ((s == null) == (e == null) || (s == null) != (b != null)) return Parsed.Refused(Refusal.BadCode)
         val raw = s ?: e!!
-        if (secretBytes(raw) == null) return Parsed.Refused(Refusal.BadCode)
+        if (secretBytes(raw) == null || (b != null && secretBytes(b) == null)) return Parsed.Refused(Refusal.BadCode)
         val name = fields["n"].orEmpty().trim()
         if (name.codePointCount(0, name.length) > NAME_MAX) return Parsed.Refused(Refusal.NameTooLong)
         if (ownMesh != null && npubHex(ownMesh) == meshHex) return Parsed.Refused(Refusal.OwnAddress)
         return Parsed.Ok(
             Payload(
                 mesh = npub(meshHex), meshHex = meshHex, name = name, role = role,
-                owner = npub(ownerHex), ownerHex = ownerHex, code = if (s != null) Code.Secret(raw) else Code.Echo(raw),
+                owner = npub(ownerHex), ownerHex = ownerHex, code = if (s != null) Code.Secret(raw) else Code.Echo(raw, b!!),
             ),
         )
     }
@@ -243,12 +249,17 @@ object MeshPairing {
 
     // ---- Digests ----
 
-    /** hex SHA-256(s_A ‖ m_A ‖ m_B), the ack's proof (Tron 2). */
-    fun ackDigest(secret: String, aHex: String, bHex: String): String? {
+    /**
+     * The ack's proof. Scan path ([bSecret] given): hex SHA-256(s_A ‖ s_B ‖ m_A ‖ m_B), which only a device that read
+     * B's code can make (Tron, PR 1700). Accept path (`w`): hex SHA-256(s_A ‖ m_A ‖ m_B), and B also needs its own
+     * words tap (Tron 2).
+     */
+    fun ackDigest(secret: String, aHex: String, bHex: String, bSecret: String? = null): String? {
         val s = secretBytes(secret) ?: return null
         val a = hexBytes(aHex)?.takeIf { it.size == 32 } ?: return null
         val b = hexBytes(bHex)?.takeIf { it.size == 32 } ?: return null
-        return sha256(s + a + b).joinToString("") { "%02x".format(it) }
+        val sb = if (bSecret == null) ByteArray(0) else secretBytes(bSecret) ?: return null
+        return sha256(s + sb + a + b).joinToString("") { "%02x".format(it) }
     }
 
     /** The 4 check words on the Accept path: the first 44 bits of SHA-256(m_A ‖ m_B ‖ s_A), 11 bits a word. */

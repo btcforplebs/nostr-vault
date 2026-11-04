@@ -3,7 +3,7 @@
 // decrypted it with the mesh key. Outcomes are strings: "camera", "ignoreDuplicate", "abort", "expired",
 // "ignore:<why>", "refuse:<why>", "confirm", "reject:<why>" (A); "linked", "waitWords", "waitAck", … (B).
 import { npubEncode } from "nostr-tools/nip19"
-import { ACK_WINDOW, CODE_LIFETIME, HELLO_SKEW, SCAN_WINDOW, ackDigest, ownerCheck, parse, parseAck, parseHello } from "./mesh-pairing.js"
+import { ACK_WINDOW, CODE_LIFETIME, HELLO_SKEW, SCAN_WINDOW, ackDigest, ackJson, ownerCheck, parse, parseAck, parseHello } from "./mesh-pairing.js"
 
 const sameHello = (a, b) => !!a && !!b && a.s === b.s && a.n === b.n && a.r === b.r && a.o === b.o && a.t === b.t
 
@@ -16,6 +16,14 @@ export class PairingSession {
     this.hello = null
     this.helloAt = 0
     this.device = null
+    this.bSecret = null // s_B from B's scanned code; null after Accept
+  }
+
+  /** The ack content to send B once confirmed: it proves the scan (s_B), or says this side used Accept (`w`). */
+  async ack() {
+    if (this.state !== "done") return null
+    if (this.bSecret != null) return ackJson(await ackDigest(this.secret, this.ownMeshHex, this.senderHex, this.bSecret))
+    return ackJson(await ackDigest(this.secret, this.ownMeshHex, this.senderHex), true)
   }
 
   receiveHello(sender, content, now) {
@@ -51,6 +59,7 @@ export class PairingSession {
     if (p.secret != null) return "reject:notTheirCode"
     if (p.echo !== this.secret) return "reject:echoMismatch"
     if (p.meshHex !== this.senderHex || p.role !== this.hello.r) return "reject:notTheDevice"
+    this.bSecret = p.bSecret
     return this.#finish()
   }
 
@@ -79,14 +88,16 @@ export class PairingSession {
 
 /** B's side (it scanned A): waits for A's ack, and on the Accept path for this side's own tap too (Tron 2). */
 export class PairingJoiner {
-  /** Null unless `qrA` (a parse() payload) is A's code. */
-  static async start(qrA, ownMeshHex, scannedAt) {
+  /** Null unless `qrA` (a parse() payload) is A's code. `ownSecret` is s_B, the secret in this device's code. */
+  static async start(qrA, ownMeshHex, ownSecret, scannedAt) {
     if (qrA?.secret == null) return null
-    return new PairingJoiner(qrA, ownMeshHex, scannedAt, await ackDigest(qrA.secret, qrA.meshHex, ownMeshHex))
+    const expectScan = await ackDigest(qrA.secret, qrA.meshHex, ownMeshHex, ownSecret)
+    if (!expectScan) return null
+    return new PairingJoiner(qrA, ownMeshHex, scannedAt, expectScan, await ackDigest(qrA.secret, qrA.meshHex, ownMeshHex))
   }
 
-  constructor(a, ownMeshHex, scannedAt, expected) {
-    Object.assign(this, { a, ownMeshHex, scannedAt, expected })
+  constructor(a, ownMeshHex, scannedAt, expectScan, expectWords) {
+    Object.assign(this, { a, ownMeshHex, scannedAt, expectScan, expectWords })
     this.state = "waiting"
     this.wordsConfirmed = false
   }
@@ -102,7 +113,8 @@ export class PairingJoiner {
     const ack = parseAck(content)
     if (!ack) return "ignore:notAck"
     if (sender !== this.a.meshHex) return "ignore:wrongSender"
-    if (ack.d !== this.expected) return "ignore:badDigest"
+    // Without `w` only the scan digest (with s_B) counts: A can make the other one without reading B's code.
+    if (ack.d !== (ack.w ? this.expectWords : this.expectScan)) return "ignore:badDigest"
     if (now - this.scannedAt > ACK_WINDOW) {
       this.state = "expired"
       return "expired"
@@ -115,9 +127,13 @@ export class PairingJoiner {
     return "linked"
   }
 
-  confirmWords() {
+  confirmWords(now) {
     if (this.state === "linked") return "ignoreDuplicate"
     if (this.state === "expired") return "expired"
+    if (now - this.scannedAt > ACK_WINDOW) {
+      this.state = "expired"
+      return "expired"
+    }
     if (this.state === "waitWords") {
       this.state = "linked"
       return "linked"

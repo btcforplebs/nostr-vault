@@ -27,12 +27,14 @@ enum MeshPairing {
     enum Code: Equatable {
         /// A's code: its one-time secret.
         case secret(String)
-        /// B's code: A's secret, echoed.
-        case echo(String)
+        /// B's code: A's secret, echoed, and B's own fresh secret s_B. Only a
+        /// device that read B's code knows s_B, so the scan ack proves the scan
+        /// (Tron, PR 1700).
+        case echo(String, bSecret: String)
 
         var value: String {
             switch self {
-            case .secret(let s), .echo(let s): return s
+            case .secret(let s), .echo(let s, _): return s
             }
         }
     }
@@ -57,7 +59,9 @@ enum MeshPairing {
         query.append("o=\(owner)")
         switch code {
         case .secret(let s): query.append("s=\(s)")
-        case .echo(let e): query.append("e=\(e)")
+        case .echo(let e, let b):
+            query.append("e=\(e)")
+            query.append("b=\(b)")
         }
         return "nvpair:v1?" + query.joined(separator: "&")
     }
@@ -94,14 +98,16 @@ enum MeshPairing {
             return .failure(.init(.unknownRole))
         }
         guard let ownerHex = npubHex(fields["o"]) else { return .failure(.init(.missingOwner)) }
-        let s = fields["s"], e = fields["e"]
-        guard (s == nil) != (e == nil), let raw = s ?? e, secretBytes(raw) != nil else { return .failure(.init(.badCode)) }
+        // A's code has s and no b; B's has e and b.
+        let s = fields["s"], e = fields["e"], b = fields["b"]
+        guard (s == nil) != (e == nil), (s == nil) == (b != nil), let raw = s ?? e, secretBytes(raw) != nil,
+              b.map({ secretBytes($0) != nil }) ?? true else { return .failure(.init(.badCode)) }
         let name = (fields["n"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard name.unicodeScalars.count <= nameMax else { return .failure(.init(.nameTooLong)) }
         if let ownMesh, npubHex(ownMesh) == meshHex { return .failure(.init(.ownAddress)) }
         return .success(Payload(
             mesh: npub(hex: meshHex), meshHex: meshHex, name: name, role: role,
-            owner: npub(hex: ownerHex), ownerHex: ownerHex, code: s != nil ? .secret(raw) : .echo(raw)
+            owner: npub(hex: ownerHex), ownerHex: ownerHex, code: s != nil ? .secret(raw) : .echo(raw, bSecret: b ?? "")
         ))
     }
 
@@ -256,11 +262,19 @@ enum MeshPairing {
 
     // MARK: Digests
 
-    /// hex SHA-256(s_A ‖ m_A ‖ m_B), the ack's proof (Tron 2).
-    static func ackDigest(secret: String, aHex: String, bHex: String) -> String? {
+    /// The ack's proof. Scan path (`bSecret` given): hex SHA-256(s_A ‖ s_B ‖
+    /// m_A ‖ m_B), which only a device that read B's code can make (Tron, PR
+    /// 1700). Accept path (`w`): hex SHA-256(s_A ‖ m_A ‖ m_B), and B also needs
+    /// its own words tap (Tron 2).
+    static func ackDigest(secret: String, bSecret: String? = nil, aHex: String, bHex: String) -> String? {
         guard let s = secretBytes(secret), let a = Bech32.hexToData(aHex), let b = Bech32.hexToData(bHex),
               a.count == 32, b.count == 32 else { return nil }
-        return SHA256.hash(data: s + a + b).map { String(format: "%02x", $0) }.joined()
+        var sb = Data()
+        if let bSecret {
+            guard let d = secretBytes(bSecret) else { return nil }
+            sb = d
+        }
+        return SHA256.hash(data: s + sb + a + b).map { String(format: "%02x", $0) }.joined()
     }
 
     /// The 4 check words both screens show on the Accept path: the first 44

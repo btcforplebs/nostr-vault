@@ -54,7 +54,7 @@ class MeshPairingTest {
             assertEquals(name, p.str("owner"), payload.owner)
             assertEquals(name, p.str("owner_hex"), payload.ownerHex)
             p.str("secret")?.let { assertEquals(name, MeshPairing.Code.Secret(it), payload.code) }
-            p.str("echo")?.let { assertEquals(name, MeshPairing.Code.Echo(it), payload.code) }
+            p.str("echo")?.let { assertEquals(name, MeshPairing.Code.Echo(it, p.str("b_secret")!!), payload.code) }
         }
     }
 
@@ -65,7 +65,7 @@ class MeshPairingTest {
         assertEquals(rule.strings("roles"), MeshPairing.WIRE_ROLES.map { it.first })
         for (c in fx["build"]!!.jsonArray.map { it.jsonObject }) {
             val a = c["args"]!!.jsonObject
-            val code = a.str("s")?.let { MeshPairing.Code.Secret(it) } ?: MeshPairing.Code.Echo(a.str("e")!!)
+            val code = a.str("s")?.let { MeshPairing.Code.Secret(it) } ?: MeshPairing.Code.Echo(a.str("e")!!, a.str("b")!!)
             val uri = MeshPairing.build(a.str("m")!!, a.str("n")!!, role(a.str("r")), a.str("o")!!, code)
             assertEquals(c.str("name"), c.str("expect"), uri)
             assertTrue(MeshPairing.parse(uri, null) is MeshPairing.Parsed.Ok)
@@ -145,9 +145,9 @@ class MeshPairingTest {
             val steps = c["steps"]!!.jsonArray.map { it.jsonObject }
             if (c.str("side") == "joiner") {
                 val a = (MeshPairing.parse(c.str("qr_a")!!, null) as MeshPairing.Parsed.Ok).payload
-                val j = MeshPairingJoiner.start(a, c.str("own_mesh")!!, c.long("scanned_at"))!!
+                val j = MeshPairingJoiner.start(a, c.str("own_mesh")!!, c.str("own_secret")!!, c.long("scanned_at"))!!
                 steps.forEachIndexed { i, st ->
-                    val got = if (st.str("op") == "words") j.confirmWords() else j.receiveAck(st.str("sender")!!, st.str("content")!!, st.long("now"))
+                    val got = if (st.str("op") == "words") j.confirmWords(st.long("now")) else j.receiveAck(st.str("sender")!!, st.str("content")!!, st.long("now"))
                     assertEquals("$name step $i", st.str("expect"), code(got))
                 }
                 continue
@@ -162,6 +162,7 @@ class MeshPairingTest {
                     else -> s.acceptWithoutScan(now)
                 }
                 assertEquals("$name step $i", st.str("expect"), code(got))
+                st.str("ack")?.let { assertEquals("$name step $i ack", it, s.ack) }
             }
         }
     }
@@ -187,6 +188,7 @@ class MeshPairingTest {
         for (c in fx["cases"]!!.jsonArray.map { it.jsonObject }) {
             assertEquals(c.strings("words"), MeshPairing.checkWords(c.str("a")!!, c.str("b")!!, c.str("secret")!!))
             assertEquals(c.str("ack_digest"), MeshPairing.ackDigest(c.str("secret")!!, c.str("a")!!, c.str("b")!!))
+            assertEquals(c.str("ack_digest_scan"), MeshPairing.ackDigest(c.str("secret")!!, c.str("a")!!, c.str("b")!!, c.str("b_secret")))
         }
     }
 

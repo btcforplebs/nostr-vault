@@ -29,7 +29,7 @@ for (const c of payload.parse) {
     if (c.expect.refusal) return assert.equal(r.refusal, c.expect.refusal)
     const e = c.expect.payload
     assert.deepEqual(r.ok, { mesh: e.mesh, meshHex: e.mesh_hex, name: e.name, role: e.role, owner: e.owner, ownerHex: e.owner_hex,
-      ...(e.secret != null ? { secret: e.secret } : { echo: e.echo }) })
+      ...(e.secret != null ? { secret: e.secret } : { echo: e.echo, bSecret: e.b_secret }) })
   })
 }
 
@@ -64,19 +64,20 @@ test("hello and ack builders", () => {
 for (const c of hello.cases) {
   test(`session (${c.side}): ${c.name}`, async () => {
     if (c.side === "joiner") {
-      const j = await PairingJoiner.start(P.parse(c.qr_a).ok, c.own_mesh, c.scanned_at)
+      const j = await PairingJoiner.start(P.parse(c.qr_a).ok, c.own_mesh, c.own_secret, c.scanned_at)
       c.steps.forEach((st, i) => {
-        const got = st.op === "words" ? j.confirmWords() : j.receiveAck(st.sender, st.content, st.now)
+        const got = st.op === "words" ? j.confirmWords(st.now) : j.receiveAck(st.sender, st.content, st.now)
         assert.equal(got, st.expect, `step ${i}`)
       })
       return
     }
     const s = new PairingSession({ secret: c.secret, createdAt: c.created_at, ownMeshHex: c.own_mesh, active: c.active, accounts: c.accounts })
-    c.steps.forEach((st, i) => {
+    for (const [i, st] of c.steps.entries()) {
       const got = st.op === "hello" ? s.receiveHello(st.sender, st.content, st.now)
         : st.op === "qr" ? s.acceptSecondQR(st.uri, st.now) : s.acceptWithoutScan(st.now)
       assert.equal(got, st.expect, `step ${i}`)
-    })
+      if (st.ack) assert.equal(await s.ack(), st.ack, `step ${i} ack`)
+    }
   })
 }
 
@@ -97,6 +98,7 @@ test("check words and ack digest", async () => {
   for (const c of words.cases) {
     assert.deepEqual(await P.checkWords(c.a, c.b, c.secret), c.words)
     assert.equal(await P.ackDigest(c.secret, c.a, c.b), c.ack_digest)
+    assert.equal(await P.ackDigest(c.secret, c.a, c.b, c.b_secret), c.ack_digest_scan)
   }
 })
 
