@@ -8,7 +8,7 @@ import { monthYear, relative } from "../../net/vault-history.js"
 
 // The words, as the apps have them (ListHistoryScan.swift): a title, then a small line with "Lazarus" linking to its repo.
 export const HISTORY_CHOICE = "Look up and back up my lists"
-export const HISTORY_DETAIL = ["Finds older versions on ", "Lazarus", " history relays"]
+export const HISTORY_DETAIL = ["Finds older versions using ", "Lazarus", " spec"]
 export const LAZARUS_URL = "https://github.com/dmnyc/lazarus"
 export const HISTORY_DEFAULT_ON = true
 

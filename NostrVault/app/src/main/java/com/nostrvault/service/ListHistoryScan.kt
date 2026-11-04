@@ -19,7 +19,7 @@ object ListHistoryScan {
     const val OPT_IN_TITLE = "Look up and back up my lists"
 
     /** The small line under it; [LAZARUS_WORD] links to [LAZARUS_URL] (opens in the browser). */
-    const val OPT_IN_NOTE = "Finds older versions on Lazarus history relays"
+    const val OPT_IN_NOTE = "Finds older versions using Lazarus spec"
     const val LAZARUS_WORD = "Lazarus"
     const val LAZARUS_URL = "https://github.com/dmnyc/lazarus"
 

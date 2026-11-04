@@ -18,9 +18,9 @@ enum ListHistoryScan {
     /// The switch, word for word (Logen 2026-11-04, 14:34Z): title, then a
     /// small line with "Lazarus" linking to its repo.
     static let optInLabel = "Look up and back up my lists"
-    static let optInDetailBefore = "Finds older versions on "
+    static let optInDetailBefore = "Finds older versions using "
     static let optInDetailLink = "Lazarus"
-    static let optInDetailAfter = " history relays"
+    static let optInDetailAfter = " spec"
     static let lazarusURL = URL(string: "https://github.com/dmnyc/lazarus")!
     static var optInDetail: String { optInDetailBefore + optInDetailLink + optInDetailAfter }
 
