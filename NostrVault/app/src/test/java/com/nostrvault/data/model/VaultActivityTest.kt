@@ -280,4 +280,32 @@ class VaultActivityTest {
         val lines = VaultActivity.build(listOf(old, like, reply), me, noteKinds, zone = ZoneOffset.UTC, now = now)
         assertEquals(listOf("x1"), lines.map { it.id })
     }
+
+    /** ··· › Outside your web: exactly what the list leaves out, and nothing else (toolbar audit, 11-04). */
+    @Test
+    fun `outside only lists the posts from outside your web that tag you`() {
+        val mine = event("n1", me, at = 100, content = "my note")
+        val events = listOf(
+            mine,
+            event("r1", ann, at = 200, content = "in web reply", tags = listOf(listOf("e", "n1"), listOf("p", me))),
+            event("r2", cat, at = 300, content = "outside reply", tags = listOf(listOf("e", "n1"), listOf("p", me))),
+            event("m1", cat, at = 310, content = "outside mention", tags = listOf(listOf("p", me))),
+            event("x1", cat, at = 320, content = "outside, not to me"),
+            event("l1", cat, kind = 7, at = 330, content = "+", tags = listOf(listOf("e", "n1"), listOf("p", me))),
+            event("s1", cat, kind = 6, at = 340, tags = listOf(listOf("e", "n1"), listOf("p", me))),
+            event("b1", bob, at = 350, content = "blocked outsider", tags = listOf(listOf("p", me))),
+        )
+        val outside: (String) -> Boolean = { it == cat || it == bob }
+        val follows = listOf(VaultActivity.Follow(cat, 360))
+        val lines = VaultActivity.build(
+            events, me, noteKinds, follows, isBlocked = { it == bob }, isOutside = outside,
+            zone = ZoneOffset.UTC, outsideOnly = true,
+        )
+        assertEquals(listOf("m1", "r2"), lines.map { it.id })
+        assertEquals(listOf(VaultActivity.Kind.MENTION, VaultActivity.Kind.REPLY), lines.map { it.kind })
+        // The list itself still leaves them out.
+        val list = VaultActivity.build(events, me, noteKinds, follows, isBlocked = { it == bob }, isOutside = outside, zone = ZoneOffset.UTC)
+        assertTrue(list.none { it.id == "r2" || it.id == "m1" })
+        assertTrue(list.any { it.id == "r1" })
+    }
 }
