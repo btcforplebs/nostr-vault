@@ -449,6 +449,11 @@ extension FeedView {
             }
             .padding(.vertical, 4)
         }
+        // The bar sizes this item from its widest form (the full row), so
+        // when ViewThatFits falls back to the menu the narrower pill would be
+        // centred in that slot, well in from the edge on a 12 mini. Pin it
+        // to the trailing edge, where the left pill mirrors it.
+        .frame(maxWidth: .infinity, alignment: .trailing)
         .tutorialAnchor(TutorialContent.feedToolbar)
     }
 }

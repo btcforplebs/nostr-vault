@@ -12,3 +12,16 @@ extension ToolbarContent {
         }
     }
 }
+
+extension View {
+    /// Turns off the top scroll-edge effect the system bar draws under its
+    /// items (iOS 26+). The feed's pills have their own glass.
+    @ViewBuilder
+    func hidingTopScrollEdge() -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self.scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            self
+        }
+    }
+}
