@@ -109,6 +109,8 @@ internal fun InlineFeedVideo(
     key: MediaSourceKey,
     url: String,
     modifier: Modifier = Modifier,
+    /** Opens the viewer (the PiP button asks it to go straight into picture-in-picture, PiP plan lane C). */
+    onPiP: (() -> Unit)? = null,
 ) {
     DisposableEffect(key) { onDispose { FeedVideoAutoplay.remove(key) } }
     val isWinner by remember(key) { derivedStateOf { FeedVideoAutoplay.active == key } }
@@ -149,6 +151,7 @@ internal fun InlineFeedVideo(
                     FeedVideoAutoplay.failed.add(url)
                     failed = true
                 },
+                onPiP = onPiP,
             )
         } else {
             PlayBadge(Modifier.align(Alignment.Center))
@@ -169,7 +172,7 @@ private fun PlayBadge(modifier: Modifier) {
 /** The one live player. Leaving composition releases it. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-private fun ActiveInlineVideo(url: String, onFailed: () -> Unit) {
+private fun ActiveInlineVideo(url: String, onFailed: () -> Unit, onPiP: (() -> Unit)? = null) {
     val context = LocalContext.current
     val player = remember(url) { buildInlinePlayer(context, url) }
     var muted by remember(url) { mutableStateOf(true) }
@@ -225,6 +228,9 @@ private fun ActiveInlineVideo(url: String, onFailed: () -> Unit) {
         )
         if (!hasFrame) PlayBadge(Modifier.align(Alignment.Center))
 
+        if (onPiP != null) {
+            VideoPiPChip(onOpenViewer = onPiP, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 44.dp, bottom = 8.dp))
+        }
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier

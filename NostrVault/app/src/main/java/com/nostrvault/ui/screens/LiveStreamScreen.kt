@@ -65,6 +65,8 @@ import com.nostrvault.ui.screens.live.LiveChat
 import com.nostrvault.ui.screens.live.LiveChatMediaButton
 import com.nostrvault.ui.screens.live.LiveFollowButton
 import com.nostrvault.ui.screens.live.LiveFullScreen
+import com.nostrvault.ui.screens.live.LivePiPVideo
+import com.nostrvault.ui.components.VideoPiPBridge
 import com.nostrvault.ui.screens.live.LiveMuteConfirm
 import com.nostrvault.ui.screens.live.LiveShareButton
 import com.nostrvault.ui.screens.live.LiveStreamLeave
@@ -151,6 +153,27 @@ fun LiveStreamScreen(
     // A shared player is the mini player's, which carries on.
     DisposableEffect(ownPlayer) { onDispose { ownPlayer?.release() } }
     val player: Player? = sharedPlayer ?: ownPlayer
+    // Picture-in-picture (PiP plan lane C): the stream registers as the video
+    // now playing, so the PiP button and swiping home put it in a PiP window.
+    // The mini player's stream keeps playing when that window is closed.
+    DisposableEffect(player) {
+        val p = player ?: return@DisposableEffect onDispose {}
+        val sizeListener = object : Player.Listener {
+            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                VideoPiPBridge.updateAspectRatio(videoSize.width, videoSize.height)
+            }
+        }
+        p.addListener(sizeListener)
+        VideoPiPBridge.setActive(p, shared = sharedPlayer != null)
+        onDispose {
+            p.removeListener(sizeListener)
+            VideoPiPBridge.clearActive(p)
+        }
+    }
+    val isInPiP by VideoPiPBridge.isInPiP.collectAsState()
+    val supportsPiP = remember {
+        context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
+    }
     // Popped out of a paused mini player, the stream plays; Play rejoins the
     // broadcast where it is now (LiveRejoinListener in the service).
     LaunchedEffect(sharedPlayer) {
@@ -227,6 +250,11 @@ fun LiveStreamScreen(
     // Only a real key leaves the player: a route is built from it.
     val openProfile: (String) -> Unit = { pk ->
         if (LiveStreamLeave.isPubkey(pk)) leaveFor { LiveStreamLeave.openProfile(pk) }
+    }
+
+    if (isInPiP && player != null) {
+        LivePiPVideo(player)
+        return
     }
 
     if (fullScreen && stream != null && player != null) {
@@ -323,10 +351,34 @@ fun LiveStreamScreen(
                         )
                     }
                 }
+                Row(modifier = Modifier.align(Alignment.TopEnd)) {
+                // Picture-in-picture: the stream floats over other screens and apps.
+                if (supportsPiP) {
+                    IconButton(
+                        onClick = {
+                            focusManager.clearFocus()
+                            VideoPiPBridge.enter(context)
+                        },
+                        modifier = Modifier.padding(6.dp),
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(Color.Black.copy(alpha = 0.45f), CircleShape),
+                        ) {
+                            Icon(
+                                NostrVaultIcons.PictureInPicture,
+                                contentDescription = "Picture in picture",
+                                tint = Color.White,
+                            )
+                        }
+                    }
+                }
                 // Sideways and edge to edge, the chat hidden or over the video.
                 IconButton(
                     onClick = { focusManager.clearFocus(); fullScreen = true },
-                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp),
+                    modifier = Modifier.padding(6.dp),
                 ) {
                     Box(
                         contentAlignment = Alignment.Center,
@@ -340,6 +392,7 @@ fun LiveStreamScreen(
                             tint = Color.White,
                         )
                     }
+                }
                 }
             }
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {

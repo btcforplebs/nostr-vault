@@ -148,6 +148,10 @@ private fun UrlVideoPlayer(
         }
         exoPlayer.addListener(listener)
         VideoPiPBridge.setActive(exoPlayer)
+        // Opened by a feed video's PiP button: straight into PiP.
+        if (VideoPiPBridge.takePiPOnOpen()) {
+            (context.findActivity() as? MainActivity)?.enterVideoPiP()
+        }
         onDispose {
             VideoPiPBridge.clearActive(exoPlayer)
             exoPlayer.removeListener(listener)
