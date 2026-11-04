@@ -9,7 +9,7 @@ import { SafetySection } from "../components/dashboard/SafetySection.jsx"
 import { ListWipeBanner } from "../components/dashboard/ListWipeBanner.jsx"
 import { ReachSection } from "../components/dashboard/ReachSection.jsx"
 import { ContentsSection } from "../components/dashboard/ContentsSection.jsx"
-import { KeepFullSection } from "../components/dashboard/KeepFullSection.jsx"
+import { HISTORY_DEFAULT_ON, KeepFullSection } from "../components/dashboard/KeepFullSection.jsx"
 import { SettingsSection } from "../components/dashboard/SettingsSection.jsx"
 import { ActivitySection, ActivityWindow } from "../components/dashboard/ActivitySection.jsx"
 import { AdvancedSection } from "../components/dashboard/AdvancedSection.jsx"
@@ -40,7 +40,7 @@ export function VaultDashboard({ ctx }) {
   const [view, setView] = useState("dashboard") // or "activity" (View All)
   // Import notes: also ask the history relays (the user's tick, off each time the sheet opens), and the Skip button's
   // signal for the list scan.
-  const [historyRelays, setHistoryRelays] = useState(false)
+  const [historyRelays, setHistoryRelays] = useState(HISTORY_DEFAULT_ON)
   const skip = useRef(null)
   const { blocked } = useBlocks(ctx)
   const trusted = useDmTrust(ctx)
