@@ -10,6 +10,7 @@ import { actionContext } from "../net/actions.js"
 import { WalletReceive } from "./WalletReceive.jsx"
 import { WalletHistory } from "./WalletHistory.jsx"
 import { WalletSend } from "./WalletSend.jsx"
+import { WalletBackup } from "./WalletBackup.jsx"
 import { Spinner, Waiting } from "../components/Loading.jsx"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
@@ -24,6 +25,8 @@ export function WalletScreen() {
         // The iPhone's order (WalletLightningTab): the balance first, then the lightning address (it heads Receive), Receive,
         // Send and History; which wallet is linked, and Disconnect, come after.
         : wallet.status === "ready" ? <><Connected wallet={wallet} /><WalletReceive wallet={wallet} pubkey={actionContext()?.session.pubkey} /><WalletSend wallet={wallet} /><WalletHistory wallet={wallet} /><Linked wallet={wallet} /></> : <Connect />}
+      {/* The wallet saved on the user's Nostr account (WalletBackup.jsx): save this one there, or use the one saved. */}
+      {wallet.status !== "loading" && <WalletBackup wallet={wallet} />}
       {wallet.status !== "loading" && <DefaultZap sats={wallet.defaultSats} />}
     </main>
   )

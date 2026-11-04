@@ -217,3 +217,21 @@ export async function setDefaultZap(sats) {
 
 /** The secret's public key: the identity the wallet knows this app by. Shown so the user can match it in the wallet. */
 export const appKeyOf = conn => getPublicKey(hexToBytes(conn.secret))
+
+/** The link in use, opened from its sealed record, only to save it to the account (nwc-backup.js) when the user asks.
+ *  Never logged; null when no wallet is linked or the record no longer opens. */
+export async function currentWalletUri() {
+  if (current.status !== "ready" || !store) return null
+  const rec = await store.get().catch(() => null)
+  if (!rec?.sealed) return null
+  try { return (await openUri(rec.sealed)).trim() } catch { return null }
+}
+
+/** Whether `uri` is the wallet in use: the same wallet key, relay and secret (a link's other parameters don't change
+ *  which wallet it spends from). */
+export function isCurrentWallet(uri) {
+  if (current.status !== "ready") return false
+  let c
+  try { c = parseWalletUri(uri) } catch { return false }
+  return c.walletPubkey === current.conn.walletPubkey && c.relay === current.conn.relay && c.secret === current.conn.secret
+}
