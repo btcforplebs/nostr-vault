@@ -33,10 +33,7 @@ struct LiveNowPanel: View {
                 }
             }
         }
-        .onAppear { model.start() }
-        .onDisappear { model.stop() }
-        // The follow list can arrive after the panel did: look as soon as it does.
-        .onChange(of: feedService.followedPubkeys.isEmpty) { _, empty in if !empty { model.refresh() } }
+        // SpaceColumn starts and stops `model` (it also feeds the folded strip).
         .sheet(item: $playing) { stream in
             LiveStreamPlayerView(stream: stream)
                 .environmentObject(NostrService.shared)
