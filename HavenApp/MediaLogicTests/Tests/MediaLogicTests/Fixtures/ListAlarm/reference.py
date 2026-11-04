@@ -1,4 +1,4 @@
-import json
+import json, unicodedata
 META={"d","title","name","description","image","alt","client"}
 ENC={10000,10003,30000,30003}
 MIN_ITEMS=10; MIN_CONTENT=1000; LOOKBACK=5; ALARM_MIN=3
@@ -22,35 +22,54 @@ def clobbered(a,b):
         if la>0 and lb==0: return True
         if la>=MIN_CONTENT and lb*2<la: return True
     return False
-def alarm(vs,own,dismissed):
-    if len(vs)<2: return None
-    v0=vs[0]
-    if v0["id"] in own or v0["id"] in dismissed: return None
-    top=min(LOOKBACK,len(vs)-1)
+HISTORY=20
+def holds(v,than):
+    if not items(than)<=items(v): return False
+    if than["kind"] in ENC and len(v["content"])<len(than["content"]): return False
+    return True
+def clean_client(raw):
+    t="".join(ch for ch in raw if unicodedata.category(ch) not in ("Cc","Cf")).strip()
+    return t[:60] if t else None
+def judge(vs,k,own):
+    """The alarm version vs[k] raises against the versions before it, or None."""
+    vk=vs[k]
+    top=min(k+LOOKBACK,len(vs)-1)
     trig=None
-    for i in range(1,top+1):
-        if not clobbered(vs[i],v0): continue
-        if any(clobbered(vs[i],vs[j]) for j in range(1,i)): continue
+    for i in range(k+1,top+1):
+        if not clobbered(vs[i],vk): continue
+        if any(clobbered(vs[i],vs[j]) for j in range(k+1,i)): continue
         trig=i; break
     if trig is None: return None
-    # The list to offer back: the largest version within the lookback that
-    # v0 clobbered, never older than the newest version Nostr Vault signed
-    # (that one is the owner's own choice).
     stop=top
-    for k in range(1,top+1):
-        if vs[k]["id"] in own: stop=k; break
+    for m in range(k+1,top+1):
+        if vs[m]["id"] in own: stop=m; break
     best=None
-    for k in range(1,stop+1):
-        if clobbered(vs[k],v0) and (best is None or len(items(vs[k]))>len(items(best)) or (len(items(vs[k]))==len(items(best)) and len(vs[k]["content"])>len(best["content"]))):
-            best=vs[k]
+    for m in range(k+1,stop+1):
+        if clobbered(vs[m],vk) and (best is None or len(items(vs[m]))>len(items(best)) or (len(items(vs[m]))==len(items(best)) and len(vs[m]["content"])>len(best["content"]))):
+            best=vs[m]
     if best is None: return None
-    b=best; ib=items(b); i0=items(v0)
+    b=best; ib=items(b); i0=items(vk)
     worth=len(ib)>=ALARM_MIN or (b["kind"] in ENC and len(b["content"])>=MIN_CONTENT)
     if not worth: return None
     kept=len(ib&i0)
-    if len(i0)==0 and (b["kind"] not in ENC or len(v0["content"])==0): how="emptied"
-    elif trig>1: how="drained"
+    if len(i0)==0 and (b["kind"] not in ENC or len(vk["content"])==0): how="emptied"
+    elif trig>k+1: how="drained"
     elif len(ib)>=MIN_ITEMS and kept*2<len(ib) and len(i0)*2>=len(ib): how="swapped"
     else: how="shrank"
-    client=next((t[1].strip()[:60] for t in v0["tags"] if len(t)>=2 and t[0]=="client" and t[1].strip()),None)
-    return {"before":b["id"],"after":v0["id"],"how":how,"from":len(ib),"to":len(i0),"lost":len(ib-i0),"client":client}
+    client=next((clean_client(t[1]) for t in vk["tags"] if len(t)>=2 and t[0]=="client" and clean_client(t[1])),None)
+    claims=bool(client) and "nostr vault" in client.lower()
+    return {"before":b["id"],"after":vk["id"],"how":how,"from":len(ib),"to":len(i0),"lost":len(ib-i0),"client":client,"claims_nostr_vault":claims}
+def alarm(vs,own,dismissed):
+    """The newest clobber among the newest HISTORY versions that no newer
+    version undid (by holding the list from before again), not dismissed, not
+    made by Nostr Vault on this device."""
+    for k in range(0,min(HISTORY,len(vs))):
+        vk=vs[k]
+        if vk["id"] in own: continue
+        a=judge(vs,k,own)
+        if a is None: continue
+        if vk["id"] in dismissed: return None
+        before=next(v for v in vs if v["id"]==a["before"])
+        if any(holds(vs[j],before) for j in range(0,k)): return None
+        return a
+    return None
