@@ -1,16 +1,19 @@
 // "Keep it full" (VaultDashboardView keepItFullSection): import your notes, back up your media, export your notes.
 // The phone's Import media is left out: the page has no way to put files into its own vault's Blossom store.
 // Import notes also looks for older versions of the user's lists (net/list-history-import.js); asking the history
-// relays too is the user's tick, off by default (Logen 2026-11-04), and that search can be skipped while it runs.
+// relays too is the user's switch, on by default (Logen 2026-11-04 14:34Z; off asks no relay at all), and that search
+// can be skipped while it runs.
 import { Row, RowButton, Section } from "./parts.jsx"
 import { monthYear, relative } from "../../net/vault-history.js"
-import { HISTORY_RELAYS } from "../../net/list-history-import.js"
 
-const hosts = HISTORY_RELAYS.map(u => u.replace(/^wss?:\/\//, "")).join(", ")
-export const HISTORY_CHOICE = `Also look for older versions of my lists on history relays (${hosts}). They will see your IP asked. Adds about a minute.`
+// The words, as the apps have them (ListHistoryScan.swift): a title, then a small line with "Lazarus" linking to its repo.
+export const HISTORY_CHOICE = "Look up and back up my lists"
+export const HISTORY_DETAIL = ["Finds older versions on ", "Lazarus", " history relays"]
+export const LAZARUS_URL = "https://github.com/dmnyc/lazarus"
+export const HISTORY_DEFAULT_ON = true
 
 export function KeepFullSection({ startDate, history = {}, importing, mediaBusy, exportBusy, status, onImport, onMedia, onExport,
-  historyRelays = false, onHistoryRelays, onSkip }) {
+  historyRelays = HISTORY_DEFAULT_ON, onHistoryRelays, onSkip }) {
   const busy = !!importing || mediaBusy || exportBusy
   return (
     <Section title="Keep it full">
@@ -23,7 +26,11 @@ export function KeepFullSection({ startDate, history = {}, importing, mediaBusy,
       {onHistoryRelays && (
         <label class="dash-row dash-check">
           <input type="checkbox" checked={historyRelays} disabled={!!importing} onChange={e => onHistoryRelays(e.currentTarget.checked)} />
-          <span>{HISTORY_CHOICE}</span>
+          <span class="dash-check-text">
+            <span class="dash-check-title">{HISTORY_CHOICE}</span>
+            {/* A link inside a label is interactive content: clicking it opens the page, it does not flip the box. */}
+            <small>{HISTORY_DETAIL[0]}<a href={LAZARUS_URL} target="_blank" rel="noopener noreferrer">{HISTORY_DETAIL[1]}</a>{HISTORY_DETAIL[2]}</small>
+          </span>
         </label>
       )}
       <Row icon="stack" title="Back up media" detail={history.mediaBackup ? `Last made ${relative(history.mediaBackup)}.` : "Never made."}>

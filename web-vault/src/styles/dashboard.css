@@ -97,3 +97,7 @@
 .dash-check { align-items: flex-start; gap: 10px; min-height: 0; padding-top: 0; font: 13px/1.4 var(--font); color: var(--text-2); cursor: pointer; }
 .dash-check input { flex: none; width: 18px; height: 18px; margin: 1px 0 0 32px; accent-color: var(--accent); }
 .dash-check:has(input:disabled) { opacity: .6; cursor: default; }
+.dash-check-text { display: flex; flex-direction: column; gap: 2px; }
+.dash-check-title { font-size: 14px; font-weight: 500; color: var(--text); }
+.dash-check-text small { font-size: 12px; color: var(--text-2); }
+.dash-check-text a { color: var(--accent); text-decoration: underline; }
