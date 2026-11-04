@@ -242,6 +242,14 @@ fun SearchScreen(
         if (query.length < 2) {
             // Live now asks only while this start page shows.
             SearchLiveNowEffect(liveNowViewModel)
+            // It usually lands after the sections below it, and a LazyColumn
+            // keeps its first item in place when one is added above: at the
+            // top, go back up so the new section shows instead of sitting
+            // just off screen.
+            val liveShown = liveStreams.isNotEmpty()
+            LaunchedEffect(liveShown) {
+                if (liveShown && discoveryListState.firstVisibleItemIndex <= 1) discoveryListState.scrollToItem(0)
+            }
             // Empty state with discovery sections
             val hasDiscovery = liveStreams.isNotEmpty() || recentSearches.isNotEmpty() ||
                 trendingHashtags.isNotEmpty() ||
