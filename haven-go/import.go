@@ -108,6 +108,9 @@ func runImport(ctx context.Context) {
 
 	log.Println("📦 importing notes")
 	importOwnerNotes(ctx)
+	// Older versions of the owner's lists, for Recover a List (list_history_scan.go). Before the tagged notes,
+	// whose end the apps read as the import's end, so the count is shown with it.
+	importListHistory(ctx)
 	importTaggedNotes(ctx)
 }
 
