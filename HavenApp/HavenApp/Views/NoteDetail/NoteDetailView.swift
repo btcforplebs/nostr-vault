@@ -56,7 +56,6 @@ struct NoteDetailView: View {
     @State var showingRepostersSheet = false
 
     // Expanded engagement across all thread notes (initialized from config in onAppear)
-    @State var expandedEngagement = false
     @State var perNoteReactions: [String: [NostrEvent]] = [:]
     @State var perNoteReposts: [String: [NostrEvent]] = [:]
     @State var perNoteZaps: [String: [NostrEvent]] = [:]
@@ -369,24 +368,6 @@ struct NoteDetailView: View {
                         withAnimation(Motion.panel) { condensedReplies.toggle() }
                     }
 
-                    // Stats toggle
-                    IconFilterButton(
-                        icon: expandedEngagement ? "chart.bar.fill" : "chart.bar",
-                        tooltip: "Thread Stats",
-                        isSelected: expandedEngagement,
-                        color: .havenPurple,
-                        label: "Stats"
-                    ) {
-                        withAnimation(Motion.panel) {
-                            expandedEngagement.toggle()
-                        }
-                        configService.config.noteDetailExpandedEngagement = expandedEngagement
-                        configService.save()
-                        if expandedEngagement {
-                            fetchAllThreadEngagement()
-                        }
-                    }
-
                     // Both act on the note shown full size. Behind the
                     // blocked placeholder that is the blocked person's note.
                     if focusedNoteBlockState != .placeholder {
@@ -432,10 +413,7 @@ struct NoteDetailView: View {
             .environmentObject(configService)
         }
         .onAppear {
-            expandedEngagement = configService.config.noteDetailExpandedEngagement
-            if expandedEngagement {
-                fetchAllThreadEngagement()
-            }
+            fetchAllThreadEngagement()
             // Coming back to the page keeps what it already showed; the
             // fetch below adds to it (each list skips ids it already has).
             if focusedNoteId.isEmpty {

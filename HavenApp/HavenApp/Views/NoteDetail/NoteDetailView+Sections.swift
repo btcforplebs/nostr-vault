@@ -97,7 +97,7 @@ extension NoteDetailView {
                     )
 
                     // Check if this parent has engagement to show
-                    let hasEngagement = expandedEngagement && parent.id != focusedNoteId && (
+                    let hasEngagement = parent.id != focusedNoteId && (
                         !groupedReactionsForNote(parent.id).isEmpty ||
                         zapTotalForNote(parent.id).count > 0 ||
                         repostCountForNote(parent.id) > 0
@@ -122,26 +122,15 @@ extension NoteDetailView {
                             },
                             showParent: false,
                             layoutMode: .wide,
-                            isFocused: parent.id == focusedNoteId
-                        )
-
-                        // Expanded engagement for parent notes - inside the note box
-                        if hasEngagement {
-                            Rectangle()
-                                .fill(Color.secondary.opacity(0.1))
-                                .frame(height: 0.5)
-                                .padding(.horizontal, 12)
-                                .padding(.top, 8)
-
-                            ThreadNoteEngagementRow(
+                            isFocused: parent.id == focusedNoteId,
+                            // Stats sit inside the note's own card.
+                            footer: hasEngagement ? AnyView(ThreadNoteEngagementRow(
                                 reactions: groupedReactionsForNote(parent.id),
                                 zapCount: zapTotalForNote(parent.id).count,
                                 zapSats: zapTotalForNote(parent.id).sats,
                                 repostCount: repostCountForNote(parent.id)
-                            )
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 8)
-                        }
+                            )) : nil
+                        )
                     }
                     .id(parent.id)
                     .contentShape(Rectangle())
@@ -368,7 +357,6 @@ extension NoteDetailView {
                         },
                         focusedNoteId: $focusedNoteId,
                         proxy: proxy,
-                        expandedEngagement: expandedEngagement,
                         perNoteReactions: perNoteReactions,
                         perNoteReposts: perNoteReposts,
                         perNoteZaps: perNoteZaps
