@@ -10,7 +10,8 @@ import { listAddress, listName, listPeople, myLists, newestLists, resolveList } 
 import { isLayoutEvent, layoutTemplate, looksSealed, newerLayout, newestEvent, parseLayout, pullLayout, pushLayout, SYNC_KIND, SYNC_TAGS } from "../src/net/space-sync.js"
 import { SYNC_D, defaultLayout, normalize } from "../src/desktop/space/space-layout.js"
 import { PANEL_IDS } from "../src/desktop/space/panel-ids.js"
-import { currentLayout, holding, takeRemote } from "../src/desktop/space/layout-store.js"
+import { changeLayout, currentLayout, holding, startSync, takeRemote } from "../src/desktop/space/layout-store.js"
+import { setOpen, setPins } from "../src/desktop/space/space-layout.js"
 
 const A = "a".repeat(64), B = "b".repeat(64)
 const keys = r => r.map(pinKey)
@@ -210,7 +211,12 @@ test("pull: the newest event opened; none; unreadable kept apart from none", asy
   const stored = [{ id: "e0", kind: 30078, pubkey: A, created_at: 5, tags: [["d", SYNC_D]], content: `${A.slice(0, 4)}${b64(JSON.stringify(layout))}` }]
   const ctx = { session: { pubkey: A }, signer: { crypto }, account: { relays: { write: [], read: [] } }, vault: { outbox: { event: async () => {}, query: async () => stored } } }
   assert.deepEqual(await pullLayout(ctx, { query: async () => [] }), { state: "ok", layout })
-  assert.deepEqual(await pullLayout({ ...ctx, vault: { outbox: { query: async () => [] } } }, { query: async () => [] }), { state: "none" })
+  assert.deepEqual(await pullLayout({ ...ctx, vault: { outbox: { query: async () => [] } } }, { query: async () => [], connected: () => true }), { state: "none" })
+  // Nothing found and no relay up, or the query failed: not knowing, not an empty vault.
+  assert.deepEqual(await pullLayout({ ...ctx, vault: { outbox: { query: async () => [] } } }, { query: async () => [], connected: () => false }), { state: "failed" })
+  assert.deepEqual(await pullLayout({ ...ctx, vault: { outbox: { query: async () => [] } } }, { query: async () => { throw new Error("down") }, connected: () => true }), { state: "failed" })
+  // The in-page vault has it: read fine whatever the relays did.
+  assert.equal((await pullLayout(ctx, { query: async () => [], connected: () => false })).state, "ok")
   assert.deepEqual(await pullLayout({ ...ctx, signer: { crypto: { decrypt: async () => { throw new Error("refused") } } } }, { query: async () => [] }), { state: "unreadable" })
   assert.deepEqual(await pullLayout({ ...ctx, signer: { readOnly: true } }), { state: "none" })
 })
@@ -236,6 +242,62 @@ test("the vault's copy against this browser's: newer taken, equal or older kept,
   currentLayout(other)
   assert.equal(takeRemote(other, { state: "unreadable" }), "held")
   assert.ok(holding(other))
+  // A later read that opens fine lets edits go out again (a declined decrypt prompt doesn't stop sync for the session).
+  assert.equal(takeRemote(other, { state: "ok", layout: { v: 1, at: 3, pins: [], panels: [] } }, { now }), "taken")
+  assert.ok(!holding(other))
+  assert.equal(takeRemote(other, { state: "failed" }), "failed")
+})
+
+// Tron, PR 1628: a fresh browser must not send before the vault's copy is read, nor win with a layout that never had
+// the iPad's pins because its one quick edit is "newer".
+const wait = ms => new Promise(r => setTimeout(r, ms))
+const iPadCopy = { v: 1, at: 100, pins: [{ type: "person", p: A }, { type: "hashtag", t: "bitcoin" }], panels: [] }
+const signedIn = me => ({ session: { pubkey: me }, signer: { crypto: {} } })
+const later = () => { let done; const p = new Promise(r => { done = r }); return [p, done] }
+
+test("an edit before the first read is not sent until the read settles, then goes out on top of the iPad's pins", async () => {
+  const me = "e".repeat(64), pushed = []
+  const [read, answer] = later()
+  const stop = startSync(signedIn(me), { pull: () => read, push: async (c, l) => { pushed.push(l) }, delay: 5, retry: 5, doc: null })
+  changeLayout(me, l => setOpen(l, "messages", false))
+  await wait(30)
+  assert.equal(pushed.length, 0, "nothing goes out while the vault's copy is still being read")
+  assert.ok(holding(me))
+  answer({ state: "ok", layout: iPadCopy })
+  await wait(30)
+  assert.equal(pushed.length, 1, "it goes out once the read has settled")
+  const sent = pushed[0]
+  assert.ok(sent.pins.some(p => p.type === "person" && p.p === A) && sent.pins.some(p => p.t === "bitcoin"), "the iPad's pins are kept")
+  assert.equal(sent.panels.find(p => p.id === "messages").open, false, "and the edit made meanwhile is on top")
+  assert.ok(sent.at > iPadCopy.at)
+  assert.deepEqual(currentLayout(me), sent)
+  stop()
+})
+
+test("a read where no relay answered settles nothing: still no send, and it is tried again", async () => {
+  const me = "f".repeat(64), pushed = [], answers = [{ state: "failed" }, { state: "failed" }, { state: "ok", layout: iPadCopy }]
+  let reads = 0
+  const stop = startSync(signedIn(me), { pull: async () => answers[Math.min(reads++, 2)], push: async (c, l) => { pushed.push(l) }, delay: 5, retry: 5, doc: null })
+  changeLayout(me, l => setPins(l, [...l.pins, { type: "hashtag", t: "mine" }]))
+  await wait(8)
+  assert.equal(pushed.length, 0)
+  await wait(60)
+  assert.equal(reads, 3, "tried again until a relay answered")
+  assert.equal(pushed.length, 1)
+  assert.ok(pushed[0].pins.some(p => p.t === "bitcoin") && pushed[0].pins.some(p => p.t === "mine"), "the iPad's pin and the new one")
+  stop()
+})
+
+test("no layout in the vault yet: edits made meanwhile go out once that is known; read-only never syncs", async () => {
+  const me = "9".repeat(64), pushed = []
+  const stop = startSync(signedIn(me), { pull: async () => { await wait(10); return { state: "none" } }, push: async (c, l) => { pushed.push(l) }, delay: 5, doc: null })
+  changeLayout(me, l => setOpen(l, "wot-mini", false))
+  await wait(40)
+  assert.equal(pushed.length, 1)
+  stop()
+  let pulls = 0
+  startSync({ session: { pubkey: "8".repeat(64) }, signer: { readOnly: true } }, { pull: async () => { pulls++ }, doc: null })()
+  assert.equal(pulls, 0)
 })
 
 test("normalize is the doc's: what the iPad wrote survives a web round trip", () => {

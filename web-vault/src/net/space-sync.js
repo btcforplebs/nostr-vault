@@ -8,7 +8,7 @@
 // publishAction: the user's write relays, then the in-page vault's outbox) and is read back from the outbox and those
 // relays. The newest edit wins, by the layout's own `at` (the moment of the edit), not by when the event was signed.
 import { publishAction } from "./actions.js"
-import { pool, uniq } from "./pool.js"
+import { pool, uniq, publishRelays } from "./pool.js"
 import { SYNC_D } from "../desktop/space/space-layout.js"
 
 export const SYNC_KIND = 30078
@@ -63,21 +63,41 @@ export async function pushLayout(ctx, layout, { publish = publishAction } = {}) 
   return event
 }
 
+/** Whether any of these relays is connected now (nostr-tools' listConnectionStatus, keyed by normalised URL). */
+const anyConnected = urls => {
+  const status = pool.listConnectionStatus?.()
+  if (!status) return true // can't tell: don't call it a failure
+  const norm = u => String(u).trim().replace(/\/+$/, "").toLowerCase()
+  const up = new Set([...status].filter(([, ok]) => ok).map(([u]) => norm(u)))
+  return urls.some(u => up.has(norm(u)))
+}
+
+/** The relays the layout is read from: the ones a send goes to (publishRelays, which falls back to the defaults when
+ *  the user lists no write relays), and the user's read relays. */
+export const syncRelays = ctx => {
+  const { network, local } = publishRelays(ctx.account?.relays?.write ?? [])
+  return uniq([...network, ...local, ...(ctx.account?.relays?.read ?? [])])
+}
+
 /** The newest layout this account saved, from the in-page vault and the user's relays, opened (not yet normalized):
  *  { state: "ok", layout } | { state: "none" } (none saved, or no key to read it) | { state: "unreadable" } (the
- *  signer refused, or the ciphertext or JSON is bad: keep this browser's copy and don't write over it).
- *  `query` is for tests. */
-export async function pullLayout(ctx, { query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+ *  signer refused, or the ciphertext or JSON is bad: keep this browser's copy and don't write over it) |
+ *  { state: "failed" } (nothing in the in-page vault and no relay answered: unknown, so nothing may be sent yet).
+ *  `query` and `connected` are for tests. */
+export async function pullLayout(ctx, { query = (r, f, o) => pool.querySync(r, f, o), connected = anyConnected } = {}) {
   if (!ctx.signer?.crypto) return { state: "none" }
   const me = ctx.session.pubkey
   const filter = { kinds: [SYNC_KIND], authors: [me], "#d": [SYNC_D], limit: 5 }
-  const relays = uniq([...(ctx.account?.relays?.write ?? []), ...(ctx.account?.relays?.read ?? [])])
+  const relays = syncRelays(ctx)
+  let failed = !relays.length
   const [local, net] = await Promise.all([
     ctx.vault?.outbox?.query(filter).catch(() => []) ?? [],
-    relays.length ? query(relays, filter, { maxWait: 6000 }).catch(() => []) : [],
+    relays.length ? query(relays, filter, { maxWait: 6000 }).catch(() => { failed = true; return [] }) : [],
   ])
   const ev = newestEvent([...local, ...net], me)
-  if (!ev) return { state: "none" }
+  // Nothing found: "none" only when a relay actually answered (it is connected, so its EOSE came or it timed out
+  // while up); every relay down or refused is not knowing, not an empty vault.
+  if (!ev) return !failed && connected(relays) ? { state: "none" } : { state: "failed" }
   // Kept in the in-page vault too, so the next look finds it there first.
   if (!local.some(e => e.id === ev.id)) ctx.vault?.outbox?.event(ev).catch(() => {})
   let layout = null
