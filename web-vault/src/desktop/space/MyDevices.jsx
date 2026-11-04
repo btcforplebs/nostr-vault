@@ -2,7 +2,7 @@
 // paired in Who Can Reach You) with whether it is on the mesh and when it last was (my-devices.js). Twin of the iPad's
 // MyDevicesPanel.swift. Reads only.
 import { useEffect, useState } from "preact/hooks"
-import { loadMyDevices, deviceStatus, statusLine, deviceName, REFRESH_MS } from "./my-devices.js"
+import { loadMyDevices, deviceStatus, statusLine, deviceName, REFRESH_MS, MESH_HEADER } from "./my-devices.js"
 import "../../styles/my-devices.css"
 
 export function MyDevices({ ctx, open: shown = true, tools = null }) {
@@ -28,7 +28,7 @@ export function MyDevices({ ctx, open: shown = true, tools = null }) {
       <ul class="sp-rows">
         {!data ? <li class="sp-empty">Checking the mesh…</li>
           : !rows.length ? <li class="sp-empty">No devices yet. Pair a vault in Who Can Reach You, or set up a home vault in Nostr Vault.</li>
-          : rows.map(({ d, s }) => (
+          : [<li key="header" class="sp-empty md-header">{MESH_HEADER}</li>, ...rows.map(({ d, s }) => (
             <li key={d.hex} class="sp-row md-row">
               <span class={`md-dot ${s.state}`} role="img" aria-label={s.state} />
               <span class="sp-row-main">
@@ -36,7 +36,7 @@ export function MyDevices({ ctx, open: shown = true, tools = null }) {
                 <span class="sp-row-text">{statusLine(s, now)}</span>
               </span>
             </li>
-          ))}
+          ))]}
       </ul>
       <a class="sp-foot" href="#/relay">Who Can Reach You ›</a>
     </section>

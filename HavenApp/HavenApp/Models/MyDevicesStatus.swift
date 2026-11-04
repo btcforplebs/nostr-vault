@@ -57,13 +57,20 @@ enum MyDevicesStatus {
         return Status(state: live ? .online : .offline, lastSeen: newest.createdAt)
     }
 
+    /// Above the list (Your space and Settings › Mesh › My Devices): being on
+    /// the mesh means your posts and media can be fetched from that device,
+    /// not just that it is linked (Logen, 2026-11-04).
+    static let header = "Devices on your mesh share your posts and media with people who can reach them."
+    /// A device that is on the mesh.
+    static let sharingLine = "On the mesh · sharing your posts and media"
+
     /// The row's second line.
     static func line(_ status: Status, now: Date = Date()) -> String {
         let ago = status.lastSeen.map { agoText(Date(timeIntervalSince1970: TimeInterval($0)), now: now) }
         switch status.state {
-        case .connected: return "Connected now"
-        case .online: return ago.map { "On the mesh · seen \($0)" } ?? "On the mesh"
-        case .offline: return ago.map { "Offline · last on the mesh \($0)" } ?? "Offline"
+        case .connected: return "Connected now · sharing your posts and media"
+        case .online: return sharingLine
+        case .offline: return ago.map { "Offline · last shared \($0)" } ?? "Offline"
         case .unknown: return "Not seen on the mesh lately"
         case .unchecked: return "Couldn't check the mesh"
         }

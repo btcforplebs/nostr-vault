@@ -44,13 +44,19 @@ export function agoText(at, now) {
   return `${Math.floor(s / 86_400)} d ago`
 }
 
+/** Above the list: being on the mesh means your posts and media can be fetched from that device, not just that it is
+ *  linked (Logen, 2026-11-04). As the iPad words it (MyDevicesStatus.header). */
+export const MESH_HEADER = "Devices on your mesh share your posts and media with people who can reach them."
+/** A device that is on the mesh. */
+export const SHARING_LINE = "On the mesh · sharing your posts and media"
+
 /** The row's second line, as the iPad words it. */
 export function statusLine(status, now) {
   const ago = status.lastSeen != null ? agoText(status.lastSeen, now) : null
   switch (status.state) {
-    case "connected": return "Connected now"
-    case "online": return ago ? `On the mesh · seen ${ago}` : "On the mesh"
-    case "offline": return ago ? `Offline · last on the mesh ${ago}` : "Offline"
+    case "connected": return "Connected now · sharing your posts and media"
+    case "online": return SHARING_LINE
+    case "offline": return ago ? `Offline · last shared ${ago}` : "Offline"
     case "unknown": return "Not seen on the mesh lately"
     default: return "Couldn't check the mesh"
   }

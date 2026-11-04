@@ -28,9 +28,9 @@ final class MyDevicesStatusTests: XCTestCase {
 
     func testLines() {
         let now = Date(timeIntervalSince1970: 1_000_000)
-        XCTAssertEqual(MyDevicesStatus.line(.init(state: .connected, lastSeen: 1_000_000), now: now), "Connected now")
-        XCTAssertEqual(MyDevicesStatus.line(.init(state: .online, lastSeen: 1_000_000 - 720), now: now), "On the mesh · seen 12 min ago")
-        XCTAssertEqual(MyDevicesStatus.line(.init(state: .offline, lastSeen: 1_000_000 - 3 * 86_400), now: now), "Offline · last on the mesh 3 d ago")
+        XCTAssertEqual(MyDevicesStatus.line(.init(state: .connected, lastSeen: 1_000_000), now: now), "Connected now · sharing your posts and media")
+        XCTAssertEqual(MyDevicesStatus.line(.init(state: .online, lastSeen: 1_000_000 - 720), now: now), "On the mesh · sharing your posts and media")
+        XCTAssertEqual(MyDevicesStatus.line(.init(state: .offline, lastSeen: 1_000_000 - 3 * 86_400), now: now), "Offline · last shared 3 d ago")
         XCTAssertEqual(MyDevicesStatus.line(.init(state: .unknown, lastSeen: nil), now: now), "Not seen on the mesh lately")
     }
 }

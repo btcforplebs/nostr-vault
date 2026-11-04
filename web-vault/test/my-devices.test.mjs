@@ -24,9 +24,9 @@ for (const c of fx.cases) {
 
 test("lines read as on the iPad", () => {
   const now = 1_000_000
-  assert.equal(statusLine({ state: "connected", lastSeen: now }, now), "Connected now")
-  assert.equal(statusLine({ state: "online", lastSeen: now - 720 }, now), "On the mesh · seen 12 min ago")
-  assert.equal(statusLine({ state: "offline", lastSeen: now - 3 * 86_400 }, now), "Offline · last on the mesh 3 d ago")
+  assert.equal(statusLine({ state: "connected", lastSeen: now }, now), "Connected now · sharing your posts and media")
+  assert.equal(statusLine({ state: "online", lastSeen: now - 720 }, now), "On the mesh · sharing your posts and media")
+  assert.equal(statusLine({ state: "offline", lastSeen: now - 3 * 86_400 }, now), "Offline · last shared 3 d ago")
   assert.equal(statusLine({ state: "unknown", lastSeen: null }, now), "Not seen on the mesh lately")
   assert.equal(statusLine({ state: "unchecked", lastSeen: null }, now), "Couldn't check the mesh")
 })
