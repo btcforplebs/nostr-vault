@@ -11,8 +11,8 @@
 .thread-capsule-btn:not(:disabled):hover { color: var(--text); }
 .thread-capsule-btn:disabled { opacity: .45; }
 
-/* Under the focused note: one chip of emoji counts, then reposts (❤️ 3 👀 1 · ↻ 1). */
-.reaction-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 14px 12px; padding-top: 10px;
+/* Inside every thread note's card, under its actions: one chip of emoji counts, then reposts (❤️ 3 👀 1 · ↻ 1). */
+.reaction-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; padding-top: 10px; cursor: default;
   border-top: 1px solid var(--hair); }
 .reaction-chip { display: inline-flex; align-items: center; gap: 10px; padding: 5px 10px; border-radius: 10px;
   background: var(--s2); font: 600 13px/1 var(--font); color: var(--text-2); }

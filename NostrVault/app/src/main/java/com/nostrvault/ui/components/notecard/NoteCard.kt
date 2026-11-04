@@ -113,6 +113,8 @@ fun NoteCard(
      * suppressCardStyling).
      */
     suppressCardStyling: Boolean = false,
+    /** Drawn inside the card under the actions: a thread note's stats. */
+    footer: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -573,6 +575,7 @@ fun NoteCard(
                 engagement = engagement,
                 onBroadcast = onBroadcast?.let { broadcast -> { broadcast(note.effectiveEventId) } },
             )
+            footer?.invoke()
         }
         } // Box (focused tint overlay)
     }

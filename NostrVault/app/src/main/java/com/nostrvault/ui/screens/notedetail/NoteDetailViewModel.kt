@@ -109,8 +109,6 @@ class NoteDetailViewModel @Inject constructor(
     val engagementDetails: StateFlow<EngagementDetails?> = _engagementDetails.asStateFlow()
 
     // Thread-wide engagement stats
-    private val _expandedEngagement = MutableStateFlow(configStore.config.value.noteDetailExpandedEngagement)
-    val expandedEngagement: StateFlow<Boolean> = _expandedEngagement.asStateFlow()
 
     // Zap state: transient user-facing messages + in-flight guard
     private val _isZapping = MutableStateFlow(false)
@@ -277,7 +275,8 @@ class NoteDetailViewModel @Inject constructor(
             _isLoadingReplies.value = false
             _isRefreshing.value = false
             fetchMissingThreadProfiles(foundNote)
-            if (_expandedEngagement.value && _perNoteEngagement.value.isEmpty()) {
+            // Every note in the thread carries its stats: one batch fetch for all.
+            if (_perNoteEngagement.value.isEmpty()) {
                 fetchThreadEngagement()
             }
         }
@@ -490,15 +489,6 @@ class NoteDetailViewModel @Inject constructor(
             nostrService.reportEvent(noteId, pubkey, reason, description.ifBlank { null })
             // iOS UGCReportingDialog also blocks the reported user.
             feedService.blockUser(pubkey)
-        }
-    }
-
-    // Thread-wide stats
-    fun toggleExpandedEngagement() {
-        _expandedEngagement.value = !_expandedEngagement.value
-        configStore.update { it.copy(noteDetailExpandedEngagement = _expandedEngagement.value) }
-        if (_expandedEngagement.value && _perNoteEngagement.value.isEmpty()) {
-            fetchThreadEngagement()
         }
     }
 

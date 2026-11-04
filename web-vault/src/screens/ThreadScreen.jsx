@@ -22,6 +22,8 @@ const MAX_INDENT = 4 // deeper replies line up with depth 4, so a long chain sti
 const LOADING = "Loading replies…"
 const REDRAW_MS = 150 // at most one redraw per this while replies stream in
 const PROFILE_BATCH_MS = 250
+const REACTION_BATCH_MS = 400 // notes streaming in are asked for their reactions together, not one request each
+const REACTION_IDS = 100 // note ids per reactions request
 const CHUNK = 30 // replies drawn per frame on a long thread, so the first ones show without waiting for the rest
 
 /** Where the thread for `id` opens, from Haven /feed alone (so offline too). A stored note opens under its root.
@@ -153,6 +155,9 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
   const rows = flattenThread(split.replies)
   const shown = useChunks(rows.length, rows.findIndex(r => r.event.id === id), id)
   const rootBlocked = thread?.root && isBlockedNote(thread.root, blocked)
+  // Every note in the thread carries its own reactions and reposts, inside its card (a hook: before the early return).
+  const reactionsOf = useThreadReactions(ctx, [thread?.root && !rootBlocked ? thread.root.id : null, ...rows.slice(0, shown).map(r => r.event.id),
+    ...(showOutside ? split.outside.map(e => e.id) : [])].filter(Boolean), relays)
   // While the relays are asked, a missing root or an empty reply list may still arrive: placeholders, not "none".
   const syncing = status === LOADING
   // An article opens as the article, with its likes, comments, zaps and highlights, as the iPhone's does.
@@ -160,6 +165,7 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
   // The note that was opened: the root, or the reply tapped further down (the iPhone's focused note).
   const focused = thread && (rows.find(r => r.event.id === id)?.event ?? (thread.root && !rootBlocked ? thread.root : null))
   const readOnly = !!ctx.signer?.readOnly
+  const stats = note => <ReactionSummary ctx={ctx} note={note} events={reactionsOf(note.id)} />
   return (
     <main class="screen thread-screen">
       {/* The iPhone's thread sheet: Done on the left, an action capsule on the right (NoteDetailView toolbar). */}
@@ -176,20 +182,20 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
       {thread === null ? <SkeletonRows count={3} label="Opening the thread…" />
         : <>
             {rootBlocked ? <p class="empty">This note is from someone you blocked.</p>
-              : thread.root ? <Focus on={thread.root.id === focused?.id} summary={<ReactionSummary ctx={ctx} note={thread.root} relays={relays} />}><NoteCard event={thread.root} /></Focus>
+              : thread.root ? <Focus on={thread.root.id === focused?.id}><NoteCard event={thread.root} footer={stats(thread.root)} /></Focus>
               : syncing ? <SkeletonRows count={1} label="Finding the note this thread starts from…" />
               : rootId && <p class="empty">The note this thread starts from wasn't found.</p>}
             {(rows.length > 0 || thread.root) && <h3 class="thread-replies-label">Replies</h3>}
             {rows.slice(0, shown).map(({ event, depth }) => (
               <div key={event.id} style={{ paddingLeft: `${Math.min(depth - 1, MAX_INDENT) * 16}px` }}>
-                <Focus on={event.id === focused?.id} summary={<ReactionSummary ctx={ctx} note={event} relays={relays} />}><NoteCard event={event} /></Focus>
+                <Focus on={event.id === focused?.id}><NoteCard event={event} footer={stats(event)} /></Focus>
               </div>
             ))}
             {split.outside.length > 0 && <button type="button" class="thread-outside-toggle" aria-expanded={showOutside}
               onClick={() => setShowOutside(v => !v)}>
               {showOutside ? "Hide" : "Show"} {split.outside.length} {split.outside.length === 1 ? "reply" : "replies"} from outside your web
             </button>}
-            {showOutside && split.outside.map(event => <div key={event.id} class="thread-outside"><NoteCard event={event} /></div>)}
+            {showOutside && split.outside.map(event => <div key={event.id} class="thread-outside"><NoteCard event={event} footer={stats(event)} /></div>)}
             {!rows.length && !split.outside.length && thread.root && (syncing ? <SkeletonRows count={2} label={LOADING} /> : <p class="empty">No replies yet.</p>)}
             {/* Room under a short thread, so a reply opened near its end can still reach the tap line (NoteDetailView, feeds.css). */}
             {focused && focused.id !== thread.root?.id && <div class="tap-room" aria-hidden="true" />}
@@ -214,12 +220,12 @@ function useChunks(total, focusAt, key) {
   return Math.min(want, total)
 }
 
-// The focused note (the iPhone's orange border and glow, styled as `.note-card.focused` with the note rows), with its
-// reaction summary under it, marked for screen readers. On a phone its top goes on the tap line, 20 px under the bar's
+// The focused note (the iPhone's orange border and glow, styled as `.note-card.focused` with the note rows), marked for
+// screen readers. On a phone its top goes on the tap line, 20 px under the bar's
 // buttons, as the iPhone's note detail lands it: the root and a reply further down alike. It is put back there each
 // time the thread above it grows (replies streaming in, images sizing), until the reader scrolls. The desktop pane
 // scrolls on its own, so there it is only scrolled into view.
-function Focus({ on, children, summary }) {
+function Focus({ on, children }) {
   const el = useRef(null)
   useLayoutEffect(() => {
     const card = el.current
@@ -235,7 +241,7 @@ function Focus({ on, children, summary }) {
     return () => { stop(); grows?.disconnect() }
   }, [on])
   if (!on) return children
-  return <div class="note-card focused" aria-current="true" ref={el}>{children}{summary}</div>
+  return <div class="note-card focused" aria-current="true" ref={el}>{children}</div>
 }
 
 /** The focused note's reactions as chips, as under the iPhone's focused note: each emoji with how many people sent it,
@@ -267,25 +273,57 @@ export function reactionSummary(events, noteId, mine = null) {
   return { reactions, reposts: reposters.size }
 }
 
-/** Read-only: asks the read relays for the note's reactions and reposts once, and draws nothing until some arrive. */
-function ReactionSummary({ ctx, note, relays }) {
-  const [evs, setEvs] = useState(null)
-  const [, redraw] = useState(0)
+/** The thread's reactions and reposts: the ids not yet asked go to the read relays together, at most every
+ *  REACTION_BATCH_MS, so a long thread is a few requests and not one per note. Starts over for a new thread.
+ *  -> reactionsOf(noteId): its events, or null while not answered yet */
+function useThreadReactions(ctx, ids, relays) {
+  const [byNote, setByNote] = useState(() => new Map())
+  const asked = useRef(new Set()), timer = useRef(null), want = useRef(ids), live = useRef(0)
   const { blocked } = useBlocks(ctx)
+  want.current = ids
+  useEffect(() => () => { clearTimeout(timer.current); live.current++ }, [])
+  const key = ids.join()
   useEffect(() => {
-    let live = true
-    setEvs(null)
-    pool.querySync(relays, { kinds: [7, 6], "#e": [note.id], limit: 500 }, { maxWait: 6000 })
-      .then(got => { if (live) setEvs(got.filter(ev => !blocked?.has?.(ev.pubkey))) })
-      .catch(() => {})
-    const off = onActionState(id => { if (id === note.id) redraw(n => n + 1) })
-    return () => { live = false; off() }
-  }, [note.id])
+    if (timer.current || !ids.some(id => !asked.current.has(id))) return
+    const run = live.current
+    timer.current = setTimeout(() => {
+      timer.current = null
+      if (run !== live.current) return
+      const fresh = want.current.filter(id => !asked.current.has(id))
+      fresh.forEach(id => asked.current.add(id))
+      for (let i = 0; i < fresh.length; i += REACTION_IDS) {
+        const batch = fresh.slice(i, i + REACTION_IDS)
+        pool.querySync(relays, { kinds: [7, 6], "#e": batch, limit: Math.min(5000, 500 * batch.length) }, { maxWait: 6000 })
+          .then(got => {
+            if (run !== live.current) return
+            setByNote(prev => {
+              const next = new Map(prev)
+              for (const id of batch) if (!next.has(id)) next.set(id, [])
+              for (const ev of got) {
+                if (blocked?.has?.(ev.pubkey)) continue
+                for (const t of ev.tags ?? []) if (t[0] === "e" && batch.includes(t[1])) next.get(t[1]).push(ev)
+              }
+              return next
+            })
+          })
+          // A failed ask is forgotten, so the next change asks again.
+          .catch(() => batch.forEach(id => asked.current.delete(id)))
+      }
+    }, REACTION_BATCH_MS)
+  }, [key])
+  return id => byNote.get(id) ?? null
+}
+
+/** A note's reactions and reposts as chips, inside its card under the actions. `events` is what the relays had for
+ *  it (null: not answered yet); draws nothing until there is something to show. */
+function ReactionSummary({ ctx, note, events }) {
+  const [, redraw] = useState(0)
+  useEffect(() => onActionState(id => { if (id === note.id) redraw(n => n + 1) }), [note.id])
   const own = myReaction(note.id)
-  const sum = evs || own?.emoji ? reactionSummary(evs ?? [], note.id, own && { pubkey: ctx?.session?.pubkey, ...own }) : null
+  const sum = events || own?.emoji ? reactionSummary(events ?? [], note.id, own && { pubkey: ctx?.session?.pubkey, ...own }) : null
   if (!sum || (!sum.reactions.length && !sum.reposts)) return null
   return (
-    <div class="reaction-summary" aria-label="Reactions">
+    <div class="reaction-summary" aria-label="Reactions" onClick={e => e.stopPropagation()}>
       {sum.reactions.length > 0 && <span class="reaction-chip">
         {sum.reactions.slice(0, 6).map(r => <span key={r.emoji} class="reaction-item"><span class="reaction-emoji">{r.emoji}</span> {r.count}</span>)}
       </span>}

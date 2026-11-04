@@ -178,7 +178,6 @@ internal fun ThreadReplyRowItem(
     focusedNoteId: String,
     themeColor: androidx.compose.ui.graphics.Color,
     viewModel: NoteDetailViewModel,
-    expandedEngagement: Boolean,
     perNoteEngagement: Map<String, EngagementDetails>,
     profiles: Map<String, FeedProfile>,
     /** The screen's quoted-notes cache, read once there rather than per row. */
@@ -259,20 +258,13 @@ internal fun ThreadReplyRowItem(
             onBlock = { onModerateNote(reply, Moderation.BLOCK) },
             onDelete = { onModerateNote(reply, Moderation.DELETE) },
             onLongPressLike = { onLongPressLikeNote(reply) },
+            // Its stats inside the card, under the actions: emoji pills, zap
+            // sats and reposts, each opening its list. The focused one is left
+            // out: the hero card shows it. Data is the thread's one batch fetch.
+            footer = if (isFocusedReply) null else perNoteEngagement[reply.id]?.let { details ->
+                { ThreadNoteEngagementRow(details = details, onClick = { kind -> onEngagementClick(kind, reply.id) }) }
+            },
         )
-
-        // Per-note engagement when thread stats are on: emoji pills, zap
-        // sats and reposts, each opening its list (iOS ThreadNoteEngagementRow).
-        // The focused one is left out, as on iOS: the hero card shows it.
-        // Data is the thread's one batch fetch, nothing per row.
-        if (expandedEngagement && !isFocusedReply) {
-            perNoteEngagement[reply.id]?.let { details ->
-                ThreadNoteEngagementRow(
-                    details = details,
-                    onClick = { kind -> onEngagementClick(kind, reply.id) },
-                )
-            }
-        }
 
         // Collapse deep threads — matches iOS "Show X more replies" pill
         val more = row.collapsedReplies

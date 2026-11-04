@@ -36,8 +36,8 @@ export function AuthorName({ pubkey }) {
  *  (VaultNoteRow), with the iPhone's action row under it: reply, repost, quote, like. A repost's actions act on the
  *  note inside it, zap included. `memoryOnly`: a stranger's note (Global, Hashtag), so quotes and @names inside it
  *  aren't written to Haven /feed. */
-export function NoteCard({ event, memoryOnly = false, showParent = false }) {
-  return <Undeleted ids={gateIds(event)}>{card(event, memoryOnly, showParent)}</Undeleted>
+export function NoteCard({ event, memoryOnly = false, showParent = false, footer = null }) {
+  return <Undeleted ids={gateIds(event)}>{card(event, memoryOnly, showParent, footer)}</Undeleted>
 }
 
 /** Its children, until this account deletes one of `ids` (a post, or the note a repost carries): then nothing, at
@@ -52,8 +52,9 @@ export function Undeleted({ ids, children }) {
   return gone ? null : children
 }
 
-function card(event, memoryOnly, showParent) {
-  if (event.kind === GENERIC_REPOST_KIND) return genericRepost(event, memoryOnly)
+// `footer`: drawn inside the card under the actions (a thread note's reactions).
+function card(event, memoryOnly, showParent, footer) {
+  if (event.kind === GENERIC_REPOST_KIND) return genericRepost(event, memoryOnly, footer)
   if (event.kind === 6) {
     // The embedded note is only as good as whoever reposted it: unsigned or tampered, it is fetched by id instead,
     // so its pubkey never stands in as the author (whose mesh vault a photo would dial).
@@ -68,11 +69,12 @@ function card(event, memoryOnly, showParent) {
           : repostedId(event) ? <FetchedRepost q={{ type: "note", id: repostedId(event), relays: [] }} memoryOnly={memoryOnly} />
           : <div class="note-text muted">Repost of a note not included</div>}
         {target && <NoteActions note={target} />}
+        {footer}
       </article>
     )
   }
   rememberNote(event)
-  return <article class="note note-card" data-note-id={event.id} onClick={openThread(event.id)} onAuxClick={openThread(event.id)}><NoteBody event={event} memoryOnly={memoryOnly} showParent={showParent} /><NoteActions note={event} /></article>
+  return <article class="note note-card" data-note-id={event.id} onClick={openThread(event.id)} onAuxClick={openThread(event.id)}><NoteBody event={event} memoryOnly={memoryOnly} showParent={showParent} /><NoteActions note={event} />{footer}</article>
 }
 
 // Tapping a card opens its thread; a tap on a link, a button or a playing video stays with it. A ⌘/Ctrl-click or a
@@ -93,7 +95,7 @@ const repostLine = event =>
  *  a 6 and draws the original. The embedded copy is used only when its signature checks out (an article, poll or
  *  picture is not a note's text, so an unchecked copy could put words in someone's mouth); else it is fetched by its
  *  e tag or a coordinate. */
-function genericRepost(event, memoryOnly) {
+function genericRepost(event, memoryOnly, footer) {
   const inner = genericRepostInner(event)
   const ref = repostRef(event)
   if (inner) rememberNote(inner)
@@ -104,6 +106,7 @@ function genericRepost(event, memoryOnly) {
       {inner ? <><NoteBody event={inner} memoryOnly={memoryOnly} /><NoteActions note={inner} /></>
         : ref ? <FetchedRepost q={ref} memoryOnly={memoryOnly} kinds={SHOWN_REPOST_KINDS} />
         : <div class="note-text muted">Repost of a post not included</div>}
+      {footer}
     </article>
   )
 }
