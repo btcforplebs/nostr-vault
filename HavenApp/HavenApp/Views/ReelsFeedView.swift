@@ -11,6 +11,7 @@ struct ReelsFeedView: View {
     @ObservedObject var feedService: FeedService
     @EnvironmentObject var nostrService: NostrService
     @Environment(\.floatingTabBarHeight) private var tabBarHeight
+    @ObservedObject private var buttonRow = FloatingButtonRow.shared
 
     let onProfile: (String) -> Void
     let onReply: (FeedNote) -> Void
@@ -97,10 +98,11 @@ struct ReelsFeedView: View {
     }
 
     /// The page draws edge to edge; its chrome clears the status bar, the
-    /// home indicator and the floating tab bar.
+    /// home indicator and the floating tab bar (what of it the safe area
+    /// doesn't already hold).
     private func chromeInsets(_ safeArea: EdgeInsets) -> EdgeInsets {
         var insets = safeArea
-        insets.bottom += tabBarHeight
+        insets.bottom += buttonRow.clearing(tabBarHeight)
         return insets
     }
 

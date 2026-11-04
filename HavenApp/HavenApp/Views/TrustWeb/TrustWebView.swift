@@ -20,6 +20,7 @@ struct TrustWebView: View {
     var isWOTTab = false
     @EnvironmentObject var nostrService: NostrService
     @Environment(\.floatingTabBarHeight) var tabBarHeight
+    @ObservedObject var buttonRow = FloatingButtonRow.shared
 
     /// One globe: who is at the core and what we know about their follows.
     struct Frame {
@@ -167,7 +168,7 @@ struct TrustWebView: View {
                 .overlay(alignment: .bottomTrailing) {
                     // FloatingButtonSlot lifts from the home indicator, as on
                     // the other tabs; this pane is already inset for the bar.
-                    myWebHUD.padding(.bottom, -tabBarHeight)
+                    myWebHUD.padding(.bottom, -buttonRow.clearing(tabBarHeight))
                 }
                 #endif
             } else {
