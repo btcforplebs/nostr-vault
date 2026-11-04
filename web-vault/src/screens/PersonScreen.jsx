@@ -8,6 +8,7 @@ import { ZapButton, useWallet } from "../components/ZapButton.jsx"
 import { MoreMenu, UnblockDialog } from "../components/Moderation.jsx"
 import { ShareProfileButton } from "../components/ShareProfile.jsx"
 import { useBlocks } from "../components/useBlocks.js"
+import { useWebTrust } from "../components/useWebTrust.js"
 import { useProfile } from "../components/useProfile.js"
 import { npubEncode } from "nostr-tools/nip19"
 import { fetchProfiles } from "../net/profiles.js"
@@ -36,6 +37,7 @@ export function PersonScreen({ ctx, pubkey }) {
   const [err, setErr] = useState("")
   const [unblocking, setUnblocking] = useState(false)
   const { blocked } = useBlocks(ctx)
+  const web = useWebTrust(ctx)
   const isBlocked = blocked.has(pubkey)
   const p = useProfile(pubkey)
   const wallet = useWallet()
@@ -143,7 +145,7 @@ export function PersonScreen({ ctx, pubkey }) {
       )}
       {toast && <div class="person-toast" role="status">{toast}</div>}
             {status && !isBlocked && <div class="status-line">{status}</div>}
-      {!isBlocked && <ProfileTabs notes={notes} tagged={tagged} articles={articles} shop={shop} pubkey={pubkey} blocked={blocked} />}
+      {!isBlocked && <ProfileTabs notes={notes} tagged={tagged} articles={articles} shop={shop} pubkey={pubkey} blocked={blocked} inside={web.inside} />}
     </main>
   )
 }

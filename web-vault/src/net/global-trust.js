@@ -7,10 +7,25 @@
 // (globalFeedLanguages). The web has no settings for them, so Global is always the web of trust, in any language.
 import { isReply } from "./feed-filters.js"
 
+/** The author inside a repost (kind 6 or 16): its content's pubkey, else its `p` tag. Null for anything else. */
+export function repostedAuthor(note) {
+  if (note?.kind !== 6 && note?.kind !== 16) return null
+  let pk
+  try { pk = JSON.parse(note.content)?.pubkey } catch {}
+  return pk ?? (note.tags ?? []).find(t => t[0] === "p")?.[1] ?? null
+}
+
+/** Whether a note is from inside `trust`: its author, and for a repost the reposted note's author too, so a trusted
+ *  person reposting a stranger doesn't carry the stranger in (Logen 2026-11-04). */
+export function trustShows(note, trust) {
+  if (!trust?.size || !trust.has(note.pubkey)) return false
+  const inner = repostedAuthor(note)
+  return !inner || trust.has(inner)
+}
+
 /** Whether Global shows this note under `trust` (a Set, or null for no web yet). */
 export function globalShows(note, trust) {
-  if (!trust?.size || !trust.has(note.pubkey)) return false
-  return !isReply(note)
+  return trustShows(note, trust) && !isReply(note)
 }
 
 /** The notes Global shows, in their order. */

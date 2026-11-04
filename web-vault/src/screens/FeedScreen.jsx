@@ -16,7 +16,7 @@ import { backgroundFill } from "../net/vault-ready.js"
 import { markSynced, syncedRecently } from "../net/feed-synced.js"
 import { visibleNotes } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
-import { feedList, loadMenu, saveMenu, visibleFeeds, PINNED_FEED, loadChoice, linkChoice, feedRelays, LINK_PARAMS, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, readsHaven, globalLike, withScope, saveMediaScope, liveFilters, liveKeeps } from "../net/feeds.js"
+import { feedList, loadMenu, saveMenu, visibleFeeds, PINNED_FEED, loadChoice, linkChoice, feedRelays, LINK_PARAMS, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, readsHaven, globalLike, withScope, saveMediaScope, liveFilters, liveKeeps, trustScoped } from "../net/feeds.js"
 import { fetchPopular } from "../net/popular.js"
 import { discoverNetwork, fetchDiscover } from "../net/discover.js"
 import { globalTrust } from "../readers/trust.js"
@@ -248,7 +248,7 @@ export function FeedScreen({ ctx }) {
     const c = choice, key = feedKey(c)
     let close = () => {}, live = true
     ;(async () => {
-      const trust = globalLike(c) ? await globalTrust(me, follows) : null
+      const trust = trustScoped(c) ? await globalTrust(me, follows) : null
       const network = c.mode === "discovery" ? await discoverPeople() : null
       const filters = liveFilters(c, { trust, network })
       if (!live || !filters.length) return
@@ -295,7 +295,7 @@ export function FeedScreen({ ctx }) {
       const page = c.mode === "popular"
         ? (await fetchPopular({ me: ctx.session?.pubkey, follows, relays, vault, blocked })).notes
         : c.mode === "discovery" ? await fetchDiscover(await discoverPeople(), account.relays.read, { until })
-        : await fetchStrangerFeed(c, account.relays.read, { until, limit: c.mode === "media" ? MEDIA_PAGE : PAGE, trust: globalLike(c) ? await globalTrust(ctx.session?.pubkey, follows) : null })
+        : await fetchStrangerFeed(c, account.relays.read, { until, limit: c.mode === "media" ? MEDIA_PAGE : PAGE, trust: trustScoped(c) ? await globalTrust(ctx.session?.pubkey, follows) : null })
       if (n !== seq.current) return
       const all = until ? mergePage(heldNotes(c) ?? [], page) : page
       holdNotes(c, all)

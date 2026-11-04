@@ -9,6 +9,7 @@ import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { Dialog, ReportDialog } from "../components/Moderation.jsx"
 import { useBlocks } from "../components/useBlocks.js"
+import { useWebTrust } from "../components/useWebTrust.js"
 import { useWallet } from "../components/ZapButton.jsx"
 import { fetchProfiles, getProfile } from "../net/profiles.js"
 import { pool } from "../net/pool.js"
@@ -64,8 +65,11 @@ export function useLiveChat(ctx, s) {
     }).catch(() => live && setRows([]))
     return () => { live = false; sub?.close() }
   }, [s.address, blocked.size])
+  // Only people in your web of trust, and the host, speak here (net/web-trust.js). A zap naming nobody still shows.
+  const web = useWebTrust(ctx)
+  const host = [s.host, s.author].filter(Boolean)
   return {
-    rows: rows && rows.filter(r => !(r.who && muted.has(r.who))),
+    rows: rows && rows.filter(r => !(r.who && (muted.has(r.who) || !web.inside(r.who, host)))),
     sent: ev => { store.current?.evs.set(ev.id, ev); store.current?.redraw() },
     mute: pk => setMuted(m => new Set([...m, pk])),
   }

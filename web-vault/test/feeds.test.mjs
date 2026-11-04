@@ -59,9 +59,10 @@ test("a stranger feed comes from the network, newest first, once each, and nothi
     { id: "1", kind: 1, pubkey: A, created_at: 10 },
     { id: "3", kind: 7, pubkey: B, created_at: 40 }, // a relay that ignores kinds
   ]
-  const got = await fetchStrangerFeed({ mode: "hashtag", tag: "art" }, ["wss://r", "wss://r"], { query: async (r, f) => { asked.push([r, f]); return evs } })
+  // Hashtag is read through your web of trust (Logen 2026-11-04): its authors first, then open.
+  const got = await fetchStrangerFeed({ mode: "hashtag", tag: "art" }, ["wss://r", "wss://r"], { trust: new Set([A, B]), query: async (r, f) => { asked.push([r, f]); return evs } })
   assert.deepEqual(got.map(e => e.id), ["2", "1"])
-  assert.deepEqual(asked, [[["wss://r"], { kinds: [1], "#t": ["art"], limit: 100 }]])
+  assert.deepEqual(asked, [[["wss://r"], { kinds: [1], "#t": ["art"], limit: 100, authors: [A, B].sort() }], [["wss://r"], { kinds: [1], "#t": ["art"], limit: 100 }]])
   assert.deepEqual(await fetchStrangerFeed({ mode: "hashtag", tag: "" }, ["wss://r"], { query: async () => assert.fail("no query") }), [])
 })
 

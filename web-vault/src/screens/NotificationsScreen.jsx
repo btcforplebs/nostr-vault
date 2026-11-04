@@ -60,7 +60,7 @@ export function NotificationsScreen({ ctx }) {
   useEffect(() => { if (events) kept.set(session.pubkey, { events, notes, more, trusted }) }, [events, notes, more, trusted, session.pubkey])
 
   // Not awaited by the list: likes, zaps and follows show at once, and notes from outside the follows wait for it.
-  const loadWeb = () => followLists(session.pubkey, account.follows).then(l => setTrusted(trustedWeb(account.follows, l))).catch(() => setTrusted(new Set()))
+  const loadWeb = () => followLists(session.pubkey, account.follows).then(l => setTrusted(trustedWeb(account.follows, l))).catch(() => setTrusted(trustedWeb(account.follows, new Map())))
   useEffect(() => { loadWeb() }, [session.pubkey, account.follows.length])
 
   // The notes rows are about, and the faces, for the events not seen before.

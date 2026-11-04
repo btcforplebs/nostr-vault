@@ -6,6 +6,7 @@ import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { NoteText } from "../components/NoteText.jsx"
 import { useBlocks } from "../components/useBlocks.js"
+import { useWebTrust } from "../components/useWebTrust.js"
 import { ago } from "../components/time.js"
 import { formatSats } from "../net/notifications.js"
 import { fetchPersonLists } from "../net/person.js"
@@ -13,7 +14,7 @@ import { pool } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { receiptTrust } from "../net/zaps.js"
 import { ArticleActionBar } from "./ArticleActions.jsx"
-import { coordinate, engagementFilters, engagementRelays, highlightFilters, shownHighlights, tally, visibleEvents } from "./engagement.js"
+import { coordinate, engagementFilters, engagementRelays, highlightFilters, insideEvents, shownHighlights, tally, visibleEvents } from "./engagement.js"
 
 /** Every event about the article: your read relays first, then the author's write relays as they become known. */
 function useArticleEvents(ctx, article) {
@@ -51,7 +52,8 @@ export function ArticleEngagement({ ctx, article }) {
     })
     return () => { live = false }
   }, [evs, blocked.size])
-  const events = trusted && [...trusted, ...mine.filter(m => !trusted.some(e => e.id === m.id))]
+  const web = useWebTrust(ctx)
+  const events = trusted && insideEvents([...trusted, ...mine.filter(m => !trusted.some(e => e.id === m.id))], pk => web.inside(pk, [article.pubkey]))
   const t = events && tally(events, article.id, coordinate(article))
   return <>
     <ArticleActionBar ctx={ctx} article={article} likers={t?.likers ?? null} comments={t?.commentCount ?? 0}

@@ -7,7 +7,7 @@ import { registerHooks } from "node:module"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils" // Vite 8's own transformer
-import { generateSecretKey, finalizeEvent } from "nostr-tools/pure"
+import { generateSecretKey, finalizeEvent, getPublicKey } from "nostr-tools/pure"
 import { h, render } from "preact"
 import { streamQuery, syncThread } from "../src/net/thread.js"
 import { pool } from "../src/net/pool.js"
@@ -25,6 +25,8 @@ const { ThreadScreen } = await import("../src/screens/ThreadScreen.jsx")
 
 const now = Math.floor(Date.now() / 1000)
 const author = generateSecretKey(), replier = generateSecretKey()
+// The replier is followed, so their replies are inside the web of trust (net/web-trust.js) and show.
+const follows = [getPublicKey(replier)]
 const root = finalizeEvent({ kind: 1, created_at: now - 600, tags: [], content: "the root note" }, author)
 const replyTo = (parent, i) => finalizeEvent({ kind: 1, created_at: now - 500 + i, tags: [["e", root.id, "", "root"], ["e", parent.id, "", "reply"]], content: `reply ${i}` }, replier)
 const matches = (f, e) => (!f.ids || f.ids.includes(e.id)) && (!f.kinds || f.kinds.includes(e.kind)) &&
@@ -172,7 +174,7 @@ test("the screen draws the stored thread at once, then the relays' replies as th
   Object.defineProperty(globalThis.navigator, "onLine", { value: true, configurable: true })
   const fresh = Array.from({ length: 5 }, (_, i) => replyTo(root, i))
   stubRelays(t, { fast: fresh })
-  const ctx = { vault: { feed: feedOf([root]) }, account: { relays: { read: ["wss://fast.example", "wss://stuck.example"] } } }
+  const ctx = { vault: { feed: feedOf([root]) }, account: { follows, relays: { read: ["wss://fast.example", "wss://stuck.example"] } } }
   const el = document.createElement("div")
   render(h(ThreadScreen, { ctx, id: root.id }), el)
   await until(() => /the root note/.test(el.textContent), "the stored root")
@@ -184,7 +186,7 @@ test("a long thread is drawn a chunk at a time, and a reply opened deep in it is
   Object.defineProperty(globalThis.navigator, "onLine", { value: false, configurable: true })
   stubRelays(t, {})
   const replies = Array.from({ length: 120 }, (_, i) => replyTo(root, i))
-  const ctx = { vault: { feed: feedOf([root, ...replies]) }, account: { relays: { read: [] } } }
+  const ctx = { vault: { feed: feedOf([root, ...replies]) }, account: { follows, relays: { read: [] } } }
   const el = document.createElement("div")
   render(h(ThreadScreen, { ctx, id: root.id }), el)
   await until(() => replyRows(el) > 0, "the first replies")
@@ -196,5 +198,26 @@ test("a long thread is drawn a chunk at a time, and a reply opened deep in it is
   render(h(ThreadScreen, { ctx, id: deep.id }), el)
   await until(() => replyRows(el) > 0, "the deep reply's thread")
   assert.match(el.textContent, /reply 100/)
+  render(null, el)
+})
+
+test("a stranger's reply folds under \"outside your web\"; the reply opened from a link still shows (Logen 2026-11-04)", async t => {
+  Object.defineProperty(globalThis.navigator, "onLine", { value: false, configurable: true })
+  stubRelays(t, {})
+  const stranger = generateSecretKey()
+  const mine = replyTo(root, 1)
+  const theirs = finalizeEvent({ kind: 1, created_at: now - 400, tags: [["e", root.id, "", "root"], ["e", root.id, "", "reply"]], content: "a stranger's reply" }, stranger)
+  const underTheirs = finalizeEvent({ kind: 1, created_at: now - 300, tags: [["e", root.id, "", "root"], ["e", theirs.id, "", "reply"]], content: "reply 2" }, replier)
+  const ctx = { vault: { feed: feedOf([root, mine, theirs, underTheirs]) }, account: { follows, relays: { read: [] } } }
+  const el = document.createElement("div")
+  render(h(ThreadScreen, { ctx, id: root.id }), el)
+  await until(() => replyRows(el) === 2, "the follow's replies, the one under the stranger's moved up")
+  assert.doesNotMatch(el.textContent, /a stranger's reply/)
+  assert.match(el.textContent, /Show 1 reply from outside your web/)
+  render(null, el)
+
+  render(h(ThreadScreen, { ctx, id: theirs.id }), el)
+  await until(() => /a stranger's reply/.test(el.textContent), "the opened reply")
+  assert.doesNotMatch(el.textContent, /from outside your web/, "the opened one isn't folded")
   render(null, el)
 })

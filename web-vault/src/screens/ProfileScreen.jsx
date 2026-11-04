@@ -8,6 +8,7 @@ import { useAutoLook } from "../components/auto-look.js"
 import { AT_TOP_PX } from "../components/feed-stay.js"
 import { ProfileHeader } from "../components/ProfileHeader.jsx"
 import { useBlocks } from "../components/useBlocks.js"
+import { useWebTrust } from "../components/useWebTrust.js"
 import { ProfileTabs, useNoteStream } from "./ProfileTabs.jsx"
 import { WotButton } from "./PersonScreen.jsx"
 import { EditProfile } from "./EditProfile.jsx"
@@ -34,6 +35,7 @@ export function ProfileScreen({ ctx }) {
   const [round, setRound] = useState(0) // bumped by a refresh: the streams and articles load again
   const [editing, setEditing] = useState(false)
   const { blocked } = useBlocks(ctx)
+  const web = useWebTrust(ctx)
   const writeRelays = uniq([...account.relays.write, ...DEFAULT_RELAYS])
 
   const notes = useNoteStream(async show => {
@@ -100,7 +102,7 @@ export function ProfileScreen({ ctx }) {
           <ShareProfileButton pubkey={me} own />
         </div>
       </ProfileHeader>
-      <ProfileTabs notes={notes} tagged={tagged} articles={articles} shop={shop} own pubkey={me} blocked={blocked} />
+      <ProfileTabs notes={notes} tagged={tagged} articles={articles} shop={shop} own pubkey={me} blocked={blocked} inside={web.inside} />
     </main>
   )
 }

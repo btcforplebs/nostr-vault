@@ -71,11 +71,11 @@ export function useNoteStream(open, older, deps) {
   return { items, opening, paging, hasMore, loadOlder, reload }
 }
 
-export function ProfileTabs({ notes, tagged, articles, shop, own = false, pubkey, blocked }) {
+export function ProfileTabs({ notes, tagged, articles, shop, own = false, pubkey, blocked, inside }) {
   const [tab, setTab] = useState("notes")
   const [listing, setListing] = useState(null)
   const split = useMemo(() => splitProfileNotes(notes.items), [notes.items])
-  const tags = useMemo(() => taggedNotes(tagged.items, pubkey, blocked), [tagged.items, pubkey, blocked])
+  const tags = useMemo(() => taggedNotes(tagged.items, pubkey, blocked, inside), [tagged.items, pubkey, blocked, inside])
   const arts = useMemo(() => (articles ? latestArticles(articles) : []), [articles])
   const listings = shop ?? []
   const tabs = visibleTabs(arts, listings, own)

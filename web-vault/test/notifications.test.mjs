@@ -294,22 +294,24 @@ test("fetch: with one fast relay of several slow ones, the list shows after firs
   assert.deepEqual(shows, [[a.id]])
 })
 
-test("outside: not you, not whitelisted, not trusted; an empty trusted set counts nobody as outside", async () => {
+test("outside: not you, not whitelisted, not trusted; an empty trusted set fails closed (Logen 2026-11-04)", async () => {
   const { isOutside } = await import("../src/net/notifications.js")
   const trusted = new Set([BOB])
   assert.equal(isOutside(ALICE, ME, new Set(), trusted), true, "the control: a stranger once the graph is in")
   assert.equal(isOutside(ME, ME, new Set(), trusted), false, "the user")
   assert.equal(isOutside(ALICE, ME, new Set([ALICE]), trusted), false, "whitelisted")
   assert.equal(isOutside(BOB, ME, new Set(), trusted), false, "trusted")
-  assert.equal(isOutside(ALICE, ME, new Set(), new Set()), false, "no graph yet")
+  assert.equal(isOutside(ALICE, ME, new Set(), new Set()), true, "no web yet: a stranger is outside")
+  assert.equal(isOutside(ME, ME, new Set(), new Set()), false, "no web yet: the user is not")
 })
 
-test("trusted web: the people the follows' lists name, plus the follows; empty while no list names anyone", async () => {
+test("trusted web: the people the follows' lists name, plus the follows; the follows alone while no list names anyone", async () => {
   const { trustedWeb } = await import("../src/net/notifications.js")
   const lists = new Map([[BOB, { tags: [["p", CAROL], ["p", "nothex"], ["e", N1]] }]])
   assert.deepEqual([...trustedWeb([BOB], lists)].sort(), [BOB, CAROL].sort())
-  assert.equal(trustedWeb([BOB], new Map()).size, 0, "no lists")
-  assert.equal(trustedWeb([BOB], new Map([[BOB, { tags: [] }]])).size, 0, "lists that name nobody")
+  assert.deepEqual([...trustedWeb([BOB], new Map())], [BOB], "no lists: the follows still count")
+  assert.deepEqual([...trustedWeb([BOB], new Map([[BOB, { tags: [] }]]))], [BOB], "lists that name nobody")
+  assert.equal(trustedWeb([], new Map()).size, 0, "no follows: nobody")
 })
 
 test("inside rows: a stranger's reply, mention, quote, article or highlight drops; their likes, reposts, zaps and follows stay", async () => {
@@ -319,7 +321,8 @@ test("inside rows: a stranger's reply, mention, quote, article or highlight drop
   const kept = insideRows(rows, ME, { trusted: new Set([BOB]) })
   assert.deepEqual(kept.filter(r => r.who[0] === ALICE).map(r => r.type), ["reaction", "repost", "zap", "follow"])
   assert.equal(kept.filter(r => r.who[0] === BOB).length, types.length)
-  assert.equal(insideRows(rows, ME).length, rows.length, "no graph: nobody is outside")
+  assert.deepEqual(insideRows(rows, ME).map(r => r.type), ["reaction", "reaction", "repost", "repost", "zap", "zap", "follow", "follow"],
+    "an empty web fails closed: only likes, reposts, zaps and follows stay")
   assert.equal(insideRows(rows, ME, { trusted: new Set([BOB]), whitelist: new Set([ALICE]) }).length, rows.length, "whitelisted")
 })
 

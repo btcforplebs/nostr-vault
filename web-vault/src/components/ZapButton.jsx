@@ -80,7 +80,7 @@ export function ZapButton({ note, pubkey, pickFirst = false }) {
   if (!ctx) return null
   const sats = total?.sats ?? 0
   const trusted = pk => pk === ctx.session.pubkey || ctx.account?.follows?.includes(pk)
-  const list = listing && <ZappersList noteId={id} trusted={trusted} onClose={() => setListing(false)}
+  const list = listing && <ZappersList ctx={ctx} noteId={id} trusted={trusted} onClose={() => setListing(false)}
     onPerson={pk => { setListing(false); location.hash = `#/profile/${pk}` }} />
   if (wallet.status !== "ready" || ctx.signer?.readOnly) { // read-only can't sign the zap request
     if (!sats) return null

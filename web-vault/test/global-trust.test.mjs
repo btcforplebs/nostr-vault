@@ -35,10 +35,12 @@ test("Global shows trusted authors' notes, never a stranger's, never a reply", (
   assert.equal(globalShows(note("5", A, { kind: 1111, tags: [["e", "f".repeat(64)]] }), trust), false)
 })
 
-test("a repost is judged by the reposter (note.pubkey), as on the iPhone", () => {
+test("a repost shows only when the reposter and the reposted note's author are both in the web (Logen 2026-11-04)", () => {
   const boostOfStranger = note("r1", A, { kind: 6, content: JSON.stringify(note("x", S)) })
   const strangerBoostsTrusted = note("r2", S, { kind: 6, content: JSON.stringify(note("y", A)) })
-  assert.deepEqual(filterGlobal([boostOfStranger, strangerBoostsTrusted], trust).map(n => n.id), ["r1"])
+  const boostOfTrusted = note("r3", A, { kind: 6, content: JSON.stringify(note("z", A)) })
+  const bareBoostOfStranger = note("r4", A, { kind: 6, content: "", tags: [["e", "x"], ["p", S]] })
+  assert.deepEqual(filterGlobal([boostOfStranger, strangerBoostsTrusted, boostOfTrusted, bareBoostOfStranger], trust).map(n => n.id), ["r3"])
 })
 
 test("no web yet shows nothing: Global fails closed", () => {
@@ -59,10 +61,12 @@ test("Global asks for trusted authors then open, and keeps only what Global show
   assert.equal(asked[1].authors, undefined)
 })
 
-test("Global with no web asks nothing; Hashtag keeps strangers (the iPhone's Hashtags has no web filter)", async () => {
+test("with no web Global and Hashtag ask nothing; Hashtag and Relay keep only the web's notes, replies too (Logen 2026-11-04)", async () => {
   let asked = 0
-  const query = async () => { asked++; return [note("h1", S, { tags: [["t", "x"]] })] }
+  const query = async () => { asked++; return [note("h1", S, { tags: [["t", "x"]] }), note("h2", A, { tags: [["t", "x"]] }), note("h3", A, { tags: [["t", "x"], ["e", "root", "", "root"]] })] }
   assert.deepEqual(await fetchStrangerFeed({ mode: "global" }, ["wss://r"], { trust: null, query }), [])
+  assert.deepEqual(await fetchStrangerFeed({ mode: "hashtag", tag: "x" }, ["wss://r"], { trust: null, query }), [])
   assert.equal(asked, 0)
-  assert.deepEqual((await fetchStrangerFeed({ mode: "hashtag", tag: "x" }, ["wss://r"], { query })).map(n => n.id), ["h1"])
+  assert.deepEqual((await fetchStrangerFeed({ mode: "hashtag", tag: "x" }, ["wss://r"], { trust, query })).map(n => n.id).sort(), ["h2", "h3"])
+  assert.deepEqual((await fetchStrangerFeed({ mode: "relay", relay: "wss://r" }, ["wss://r"], { trust, query })).map(n => n.id).sort(), ["h2", "h3"])
 })
