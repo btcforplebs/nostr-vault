@@ -97,8 +97,9 @@ extension MediaGalleryView {
 
     /// The full-screen media viewer content for a given item. Contains the
     /// media display (via `MediaItemRenderer`), toolbar buttons (copy link,
-    /// save to photos, delete, mirror status, view note), drag-to-dismiss
-    /// gesture, and left/right navigation via `TabView`.
+    /// save to photos, delete, mirror status), drag down to dismiss, drag up
+    /// (or the grabber, or ↑ on the Mac) for the notes that use the file,
+    /// and left/right navigation via `TabView`.
     @ViewBuilder
     func mediaViewerContent(for item: MediaItem) -> some View {
         ZStack {
@@ -187,26 +188,6 @@ extension MediaGalleryView {
                             }
                         )
 
-                        if let noteId = findNoteId(for: item) {
-                            Button(action: {
-                                withAnimation(Motion.fade) {
-                                    selectedMedia = nil
-                                    dragOffset = .zero
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                    showingNoteId = noteId
-                                }
-                            }) {
-                                Image(systemName: "doc.text")
-                                    .font(.appSystem(size: 16, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .padding(10)
-                                    .background(Color.white.opacity(0.1))
-                                    .cornerRadius(8)
-                            }
-                            .buttonStyle(.plain)
-                        }
-
                         Spacer()
 
                         Button(action: {
@@ -248,11 +229,15 @@ extension MediaGalleryView {
                             }
                         }
                         .onEnded { gesture in
-                            if abs(dragOffset.height) > 120 {
+                            // Down closes; up lists the notes that use the file.
+                            if dragOffset.height > 120 {
                                 withAnimation(Motion.dismiss) {
                                     selectedMedia = nil
                                     dragOffset = .zero
                                 }
+                            } else if dragOffset.height < -120 {
+                                withAnimation(Motion.snapBack) { dragOffset = .zero }
+                                showingMediaNotes = true
                             } else {
                                 withAnimation(Motion.snapBack) {
                                     dragOffset = .zero
@@ -263,12 +248,19 @@ extension MediaGalleryView {
 
                 Spacer()
 
+                MediaViewerNoteGrabber(title: "Notes") { showingMediaNotes = true }
+                    .opacity(max(0, 1.0 - (abs(dragOffset.height) / 100.0)))
+
                 Text(configService.externalShareURL(for: item.url).absoluteString)
                     .font(.appCaption.monospaced())
                     .foregroundColor(.secondary)
                     .padding(.bottom)
                     .opacity(max(0, 1.0 - (abs(dragOffset.height) / 100.0)))
             }
+        }
+        .sheet(isPresented: $showingMediaNotes) {
+            MediaNotesSheet(notes: notesUsing(item)) { openNoteFromViewer($0) }
+                .environmentObject(nostrService)
         }
         .confirmMediaDelete($pendingViewerDelete, hash: extractViewerSHA256(from: item.url)) { scope in
             switch scope {
@@ -312,21 +304,27 @@ extension MediaGalleryView {
 
     // MARK: Note Lookup
 
-    /// Find the Nostr event ID for a media item by matching its URL or blossom
-    /// hash against stored events.
-    func findNoteId(for item: MediaItem) -> String? {
-        let mediaURL = item.url.absoluteString
-        // Try exact URL match first
-        if let event = nostrService.events.first(where: { $0.content.contains(mediaURL) }) {
-            return event.id
+    /// Every note on the vault that uses the file, by URL or sha256, in the
+    /// text or a tag, any author, newest first (`MediaNoteMatch`). Only what
+    /// the vault already holds: no network lookup.
+    func notesUsing(_ item: MediaItem) -> [NostrEvent] {
+        let byId = Dictionary(nostrService.events.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let found = MediaNoteMatch.notes(using: item.url, in: nostrService.events.map {
+            MediaNoteMatch.Note(id: $0.id, kind: $0.kind, createdAt: $0.created_at, content: $0.content, tags: $0.tags)
+        })
+        return found.compactMap { byId[$0.id] }
+    }
+
+    /// A row in the notes sheet: the sheet and the viewer close, then the note opens.
+    func openNoteFromViewer(_ id: String) {
+        showingMediaNotes = false
+        withAnimation(Motion.fade) {
+            selectedMedia = nil
+            dragOffset = .zero
         }
-        // For blossom URLs the displayed URL may differ from the original;
-        // fall back to matching the SHA256 hash embedded in the URL path.
-        let hash = item.url.lastPathComponent
-        if hash.count == 64, hash.allSatisfy({ $0.isHexDigit }) {
-            return nostrService.events.first(where: { $0.content.contains(hash) })?.id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            showingNoteId = id
         }
-        return nil
     }
 
     // MARK: Navigation
@@ -357,7 +355,11 @@ extension MediaGalleryView {
             case 124: // right arrow -- next item in grid
                 navigateMedia(direction: 1)
                 return nil
-            case 53: // escape
+            case 126: // up arrow -- the notes that use the file (the Mac's swipe up)
+                showingMediaNotes = true
+                return nil
+            case 125, 53: // down arrow, escape -- close
+                guard !showingMediaNotes else { return event }
                 withAnimation(Motion.fade) { selectedMedia = nil }
                 return nil
             default:
