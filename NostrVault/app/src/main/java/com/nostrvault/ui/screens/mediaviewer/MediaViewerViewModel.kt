@@ -42,7 +42,7 @@ class MediaViewerViewModel @Inject constructor(
     /** The swipe up: every note on the vault that uses [item], by URL or sha256, any author (MediaNoteMatch). */
     fun notesUsing(item: BlossomMediaItem): List<com.nostrvault.service.NostrEvent> {
         return com.nostrvault.data.model.MediaNoteMatch.notesUsing(
-            nostrService.events, item.displayUrl, item.sha256.lowercase().takeIf { it.length == 64 },
+            com.nostrvault.data.model.VaultEventsBridge.events + nostrService.events, item.displayUrl, item.sha256.lowercase().takeIf { it.length == 64 },
         ).also { found -> nostrService.fetchMissingProfiles(found.map { it.pubkey }.distinct()) }
     }
 

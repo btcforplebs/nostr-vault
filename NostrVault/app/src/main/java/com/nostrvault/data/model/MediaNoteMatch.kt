@@ -35,3 +35,11 @@ object MediaNoteMatch {
             .sortedWith(compareByDescending<NostrEvent> { it.createdAt }.thenBy { it.id })
             .toList()
 }
+
+/**
+ * The vault's events as the Vault tab last read them (DashboardViewModel keeps its own store, apart from
+ * NostrService.events), for the media viewer's swipe up. A snapshot list, replaced on each rebuild.
+ */
+object VaultEventsBridge {
+    @Volatile var events: List<NostrEvent> = emptyList()
+}
