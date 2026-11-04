@@ -52,6 +52,10 @@ final class LiveChatService: ObservableObject {
             "limit": 100
         ]
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+        // Chat from outside your web stays out, like Global (`TrustGate`);
+        // the host, the stream's publisher and you always show. Zaps stay.
+        let trusted = FeedService.shared.globalTrustSet()
+        let always: Set<String> = [stream.hostPubkey, stream.authorPubkey, ConfigService.shared.activeAccountHexPubkey]
 
         for url in relayURLs {
             let client = WebSocketClient()
@@ -67,7 +71,7 @@ final class LiveChatService: ObservableObject {
                 .compactMap { Self.verifiedRow(message: $0, address: address) }
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] row in
-                    self?.handle(row: row, address: address, blocked: blocked)
+                    self?.handle(row: row, address: address, blocked: blocked, trusted: trusted, always: always)
                 }
                 .store(in: &cancellables)
 
@@ -208,11 +212,13 @@ final class LiveChatService: ObservableObject {
                                 verifyRequest: NostrEventVerifier.isValid(json:))
     }
 
-    private func handle(row: LiveChatMessage, address: String, blocked: Set<String>) {
+    private func handle(row: LiveChatMessage, address: String, blocked: Set<String>,
+                        trusted: Set<String>?, always: Set<String>) {
         // A late answer from the stream that was open before.
         guard self.address == address else { return }
         if let author = row.authorPubkey {
             guard !blocked.contains(author), !hidden.contains(author) else { return }
+            guard row.isZap || TrustGate.allows(author, trusted: trusted, always: always) else { return }
         }
         guard collected[row.id] == nil else { return }
         collected[row.id] = row

@@ -125,13 +125,15 @@ extension FeedService {
     /// list) from the local relay and the feed relays. Only signature-checked
     /// events are kept, and only real replies into one of these threads: a
     /// note that merely tags a post would open a stray thread of its own.
-    /// Global's replies pass the same trust rule as its posts, or a trusted
-    /// post would carry the open firehose in underneath it.
+    /// Replies pass the same trust rule as Global's posts (`TrustGate`), in
+    /// Popular too, or a post would carry the open firehose in underneath
+    /// it. The post's own author and you always show.
     func loadFeedThreadReplies(rootIds: [String]) {
         guard feedMode == .popular || feedMode == .global else { return }
-        let trusted = feedMode == .global ? globalTrustSet() : nil
+        let trusted = globalTrustSet()
         let wanted = rootIds.filter { !threadRepliesRequested.contains($0) }
         guard !wanted.isEmpty else { return }
+        let always = Set(wanted.compactMap { findNote(id: $0)?.pubkey } + [ConfigService.shared.activeAccountHexPubkey])
         threadRepliesRequested.formUnion(wanted)
         let generation = threadRepliesGeneration
         let config = ConfigService.shared.config
@@ -150,7 +152,7 @@ extension FeedService {
                     guard let id = ev["id"] as? String, let pubkey = ev["pubkey"] as? String,
                           let content = ev["content"] as? String, let createdAt = ev["created_at"] as? Int64,
                           let kind = ev["kind"] as? Int, let tags = ev["tags"] as? [[String]],
-                          !blocked.contains(pubkey), trusted?.contains(pubkey) ?? true,
+                          !blocked.contains(pubkey), TrustGate.allows(pubkey, trusted: trusted, always: always),
                           !FeedNote.isNoiseOrSpam(content: content, tags: tags)
                     else { return nil }
                     let inThread = NIP10Thread.rootEventId(kind: kind, tags: tags).map(roots.contains)

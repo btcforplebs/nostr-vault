@@ -395,7 +395,9 @@ struct ArticleReaderView: View {
 
     private func showHighlights(_ events: [[String: Any]], replacing: Bool = false) async {
         let articleId = note.id
-        let events = ArticleBlockFilter.visibleEvents(events, blocked: blocked)
+        let events = ArticleBlockFilter.trustedEvents(ArticleBlockFilter.visibleEvents(events, blocked: blocked),
+                                                      trusted: FeedService.shared.globalTrustSet(),
+                                                      always: [note.pubkey, ConfigService.shared.activeAccountHexPubkey])
         let coordinate = coordinate
         let content = note.content
         let (found, placed) = await Task.detached(priority: .userInitiated) { () -> ([ArticleHighlight], [String: [ArticleHighlight]]) in
@@ -469,7 +471,9 @@ struct ArticleReaderView: View {
 
     private func showEngagement(_ events: [[String: Any]], replacing: Bool = false) async {
         let articleId = note.id
-        let events = ArticleBlockFilter.visibleEvents(events, blocked: blocked)
+        let events = ArticleBlockFilter.trustedEvents(ArticleBlockFilter.visibleEvents(events, blocked: blocked),
+                                                      trusted: FeedService.shared.globalTrustSet(),
+                                                      always: [note.pubkey, ConfigService.shared.activeAccountHexPubkey])
         let coordinate = coordinate
         let found = await Task.detached(priority: .userInitiated) { () -> ArticleTally in
             // Spam comments are dropped the same way the thread view drops them.

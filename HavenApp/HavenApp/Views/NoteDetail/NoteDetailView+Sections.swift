@@ -184,7 +184,14 @@ extension NoteDetailView {
     @ViewBuilder
     var otherResponsesSection: some View {
         // Read at draw time, so blocking someone takes their quotes out at once.
-        let shown = BlockedPeople.visibleNotes(otherResponses, blocked: configService.activeAccountBlockedHexPubkeys) { $0.pubkey }
+        let visible = BlockedPeople.visibleNotes(otherResponses, blocked: configService.activeAccountBlockedHexPubkeys) { $0.pubkey }
+        // Quotes from outside your web wait behind the same fold as replies.
+        let split = TrustGate.split(visible, author: \.pubkey, trusted: replyTrustSet, always: replyAlwaysShown)
+        let shown = showsOutsideReplies ? split.inside + split.outside : split.inside
+        if !split.outside.isEmpty && !showsOutsideReplies && shown.isEmpty {
+            outsideWebButton(count: split.outside.count, noun: "quote")
+                .padding(.top, 20)
+        }
         if !shown.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Quotes & highlights")
@@ -193,6 +200,9 @@ extension NoteDetailView {
                 ForEach(shown) { response in
                     OtherResponseCard(note: response, profile: nostrService.profiles[response.pubkey])
                         .padding(.horizontal, 16)
+                }
+                if !split.outside.isEmpty && !showsOutsideReplies {
+                    outsideWebButton(count: split.outside.count, noun: "quote")
                 }
             }
             .padding(.top, 20)
@@ -204,7 +214,9 @@ extension NoteDetailView {
         // four times, each a full scan of up to 10,000 notes, every time the
         // live feed changed.
         let all = allThreadNotes
-        let replies = threadReplies(in: all)
+        let split = threadReplySplit(in: all)
+        let replies = showsOutsideReplies ? split.inside + split.outside : split.inside
+        let outsideCount = showsOutsideReplies ? 0 : split.outside.count
         let context = contextNoteIds
         // What the views draw from: the opened note, the notes above it, and
         // the replies under it that pass `threadReplies`.
@@ -229,6 +241,9 @@ extension NoteDetailView {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
                 .transition(.opacity)
+            } else if currentReplies.isEmpty && outsideCount > 0 {
+                outsideWebButton(count: outsideCount, noun: "reply")
+                    .padding(.vertical, 12)
             } else if currentReplies.isEmpty {
                 Text("No replies yet")
                     .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
@@ -246,8 +261,34 @@ extension NoteDetailView {
                     .padding(.horizontal, 16)
 
                 repliesList(currentReplies, pool: pool, proxy: proxy)
+                if outsideCount > 0 {
+                    outsideWebButton(count: outsideCount, noun: "reply")
+                }
             }
         }
+    }
+
+    /// "N replies from outside your web": opens the fold for this thread's
+    /// replies and quotes alike.
+    func outsideWebButton(count: Int, noun: String) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { showsOutsideReplies = true }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "eye.slash")
+                Text(TrustGate.outsideLabel(count: count, noun: noun))
+                    .font(.appSystem(size: 13, weight: .semibold))
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.down").font(.appSystem(size: 11, weight: .semibold))
+            }
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.12)))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .accessibilityIdentifier("thread.outsideYourWeb")
     }
 
     /// The reply tree. Full: every reply keeps its own card and its own action
