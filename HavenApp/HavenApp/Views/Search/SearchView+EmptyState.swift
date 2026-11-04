@@ -6,6 +6,8 @@ extension SearchView {
     var emptyState: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                SearchLiveNowSection()
+
                 // Recent searches
                 if !recentSearches.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
