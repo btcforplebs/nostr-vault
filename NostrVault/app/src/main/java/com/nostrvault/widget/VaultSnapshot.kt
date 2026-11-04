@@ -32,7 +32,56 @@ data class VaultSnapshot(
     val media: List<MediaTile> = emptyList(),
     /** Zaps received since local midnight (iOS `wallet.zapsReceived24h`). See ZapsTodayCounter. */
     val zapsToday: ZapCount = ZapCount(),
+    /** Live now: streams of people you follow, newest first. See HomeWidgetRefresher. */
+    val live: LiveNow = LiveNow(),
+    /** On this day: your own notes from this date 1 and 2 years ago. See HomeWidgetRefresher. */
+    val onThisDay: OnThisDay = OnThisDay(),
 ) {
+    /**
+     * [checkedAt] is when a relay last answered (0: never), separate from
+     * [updatedAt], which moves on every write of any half of the file.
+     */
+    @Serializable
+    data class LiveNow(
+        val account: String = "",
+        val checkedAt: Long = 0L,
+        val followsSomeone: Boolean = true,
+        val streams: List<LiveItem> = emptyList(),
+    )
+
+    /**
+     * One stream. The event's signer, time and tags are kept whole so a tap
+     * can rebuild the [com.nostrvault.data.model.LiveStream] the player
+     * opens (`nostrvault://live/<address>`), without a refetch.
+     */
+    @Serializable
+    data class LiveItem(
+        val address: String,
+        val host: String,
+        val hostName: String,
+        val hostPicture: String? = null,
+        val title: String,
+        val author: String,
+        val createdAt: Long,
+        val tags: List<List<String>>,
+    )
+
+    /** [dayStart] is the local midnight (epoch seconds) the notes were picked for. */
+    @Serializable
+    data class OnThisDay(
+        val account: String = "",
+        val dayStart: Long = 0L,
+        val notes: List<DayNote> = emptyList(),
+    )
+
+    @Serializable
+    data class DayNote(
+        val id: String,
+        val yearsAgo: Int,
+        val text: String,
+        val createdAt: Long,
+    )
+
     /**
      * A count and the day it belongs to. A widget drawn after midnight shows
      * 0 until the next count, rather than yesterday's number.

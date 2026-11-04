@@ -19,6 +19,7 @@ internal fun PendingDeepLinkEffect(
     // be finished first: navigating away from the wizard would strand a
     // half-configured install with no way back.
     val pendingLink by PendingDeepLink.target.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(pendingLink, isSetupComplete) {
         if (pendingLink == null || !isSetupComplete) return@LaunchedEffect
         val target = PendingDeepLink.consume() ?: return@LaunchedEffect
@@ -33,6 +34,15 @@ internal fun PendingDeepLinkEffect(
                     ?.let { hex -> com.nostrvault.ui.components.AccountSwitchFlash.show(hex) }
             }
         if (target.mediaPaste) PendingMediaPaste.request()
+        // A Live now widget's stream: rebuilt from the copy it drew, so what
+        // plays is what was tapped. Gone from the widget's file (the list
+        // moved on) leaves just the app open.
+        target.liveAddress?.let { address ->
+            com.nostrvault.widget.WidgetSnapshotStore.read(context).live.streams
+                .firstOrNull { it.address == address }
+                ?.let { com.nostrvault.data.model.LiveStream.from(it.author, it.createdAt, it.tags) }
+                ?.let { com.nostrvault.ui.components.LiveStreamRouter.open(it) }
+        }
         // The Vault tab opens on the half the link names: Media for the
         // gallery and Magic Paste, the relay's lists for a post. A tap naming
         // no list (a widget's Relay) keeps the list the tab had, "Vault" or
