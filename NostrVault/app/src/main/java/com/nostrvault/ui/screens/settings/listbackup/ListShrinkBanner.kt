@@ -86,7 +86,8 @@ fun ListShrinkBanner(viewModel: ListBackupViewModel = hiltViewModel()) {
                                     fontSize = 15.sp,
                                 )
                                 Text(
-                                    "${ListWipeAlarmText.changedBy(alarm)} Your vault kept the list from before. If you made this change, keep the new list.",
+                                    "${ListWipeAlarmText.changedBy(alarm)} Your vault kept the list from before." +
+                                        if (alarm.claimsNostrVault) "" else " If you made this change, keep the new list.",
                                     color = SecondaryText,
                                     fontSize = 14.sp,
                                 )
