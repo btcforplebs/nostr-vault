@@ -5,6 +5,7 @@ import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.MuteList
 import com.nostrvault.relay.RelayForegroundService
+import com.nostrvault.relay.vaultAuthRelayTag
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,7 +55,7 @@ class ListBackupService @Inject constructor(
         nostrService.signEventAsync(
             kind = 22242,
             content = "",
-            tags = listOf(listOf("relay", url), listOf("challenge", challenge)),
+            tags = listOf(listOf("relay", configStore.config.value.vaultAuthRelayTag(url)), listOf("challenge", challenge)),
             forceOwner = true,
         )
     }.getOrNull()
