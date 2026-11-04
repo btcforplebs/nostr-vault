@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// The iPad's right-hand column in landscape, after the web's desktop "Your
-/// space": the user's panels (Live Vault, WoT mini, Messages peek) in the
-/// order they chose, each collapsible to its header. Edit moves, removes and
+/// space": the user's widgets (My devices, Live now, On this day) in the
+/// order they chose, each collapsible to its header, all on one screen. Edit moves, removes and
 /// adds them; the layout is the account's (`SpaceLayoutStore`), synced with
 /// the web. The whole column folds to a thin strip with Live Vault's unread
 /// count; that choice stays on this device, per account.
@@ -17,7 +17,10 @@ struct SpaceColumn: View {
     @State private var editing = false
 
     private var owner: String { configService.activeAccountHexPubkey.lowercased() }
-    private var ids: [String] { SpaceLayoutStore.panelIds }
+    /// The iPad draws only these widgets; the account's layout (and the web's
+    /// Your space) keeps the rest, untouched.
+    static let ids = ["my-devices", LiveNow.panelId, "on-this-day"]
+    private var ids: [String] { Self.ids }
 
     var body: some View {
         Group {
@@ -107,9 +110,9 @@ struct SpaceColumn: View {
     private var panels: some View {
         let shown = store.layout.shownPanels(ids)
         let hidden = store.layout.hiddenPanels(ids)
-        // Live Vault takes the slack when it is open; otherwise the panels
-        // sit at the top.
-        let liveVaultFills = !editing && shown.contains { $0.id == "live-vault" && $0.open }
+        // Open panels share the column equally and scroll inside, so every
+        // panel's header stays on one screen; with none open they sit at the top.
+        let anyOpenFills = !editing && shown.contains { $0.open }
         VStack(spacing: 12) {
             if shown.isEmpty && !editing {
                 VStack(spacing: 10) {
@@ -126,7 +129,7 @@ struct SpaceColumn: View {
                 card(panel, index: index, count: shown.count)
             }
             if editing { editFooter(hidden: hidden) }
-            if !liveVaultFills { Spacer(minLength: 0) }
+            if !anyOpenFills { Spacer(minLength: 0) }
         }
         .padding(12)
     }
@@ -134,6 +137,7 @@ struct SpaceColumn: View {
     @ViewBuilder
     private func card(_ panel: SpaceLayout.Panel, index: Int, count: Int) -> some View {
         let info = Self.info(panel.id)
+        let fills = panel.open && !editing
         SpacePanelCard(
             title: info.title,
             symbol: info.symbol,
@@ -145,24 +149,27 @@ struct SpaceColumn: View {
             canMoveUp: index > 0,
             canMoveDown: index < count - 1,
             onToggleOpen: { withAnimation(.easeInOut(duration: 0.2)) { store.setPanel(panel.id, open: !panel.open) } },
-            onMove: { delta in withAnimation(.easeInOut(duration: 0.2)) { store.movePanel(panel.id, by: delta) } },
+            onMove: { delta in withAnimation(.easeInOut(duration: 0.2)) { store.movePanel(panel.id, by: delta, ids: ids) } },
             onHide: { withAnimation(.easeInOut(duration: 0.2)) { store.setPanel(panel.id, on: false) } }
         ) {
-            switch panel.id {
-            case "live-vault": LiveVaultPanel(model: liveVault)
-            case "wot-mini": WotMiniPanel()
-            case LiveNow.panelId: LiveNowPanel(model: liveNow)
-            case "messages":
-                ScrollView { MessagesPeekPanel() }
-                    .scrollBounceBehavior(.basedOnSize)
-                    .frame(maxHeight: 320)
-            case "my-devices": MyDevicesPanel()
-            case "on-this-day": OnThisDayPanel()
-            default: EmptyView()
-            }
+            ScrollView { panelContent(panel.id) }
+                .scrollBounceBehavior(.basedOnSize)
         }
-        .frame(maxHeight: panel.id == "live-vault" && panel.open && !editing ? .infinity : nil)
-        .fixedSize(horizontal: false, vertical: panel.id != "live-vault" || !panel.open || editing)
+        .frame(maxHeight: fills ? .infinity : nil, alignment: .top)
+        .fixedSize(horizontal: false, vertical: !fills)
+    }
+
+    @ViewBuilder
+    private func panelContent(_ id: String) -> some View {
+        switch id {
+        case "live-vault": LiveVaultPanel(model: liveVault)
+        case "wot-mini": WotMiniPanel()
+        case LiveNow.panelId: LiveNowPanel(model: liveNow)
+        case "messages": MessagesPeekPanel()
+        case "my-devices": MyDevicesPanel()
+        case "on-this-day": OnThisDayPanel()
+        default: EmptyView()
+        }
     }
 
     private func editFooter(hidden: [String]) -> some View {
