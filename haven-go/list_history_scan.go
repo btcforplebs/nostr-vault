@@ -235,8 +235,9 @@ func scanListHistory(ctx context.Context, relays, owners []string, kinds []int) 
 // (RelayLogParser listHistoryNote): the 📜 marker and a plain sentence.
 //
 // The user chooses (Logen 2026-11-04): the scan runs only when the app set
-// listHistoryOptInEnv to "1" (Moving in's "Also look for older versions of my
-// lists on history relays" checkbox, off by default). SkipListHistoryScan
+// listHistoryOptInEnv to "1" (Moving in's "Look up and back up my lists"
+// switch, on by default since Logen 2026-11-04 14:34Z; off skips every
+// history relay). SkipListHistoryScan
 // stops it early and the versions found so far are still filed; the import
 // carries on either way.
 //

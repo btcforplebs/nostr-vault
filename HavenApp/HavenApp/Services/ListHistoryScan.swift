@@ -2,8 +2,9 @@ import Foundation
 
 /// Moving in's look for older versions of the owner's lists (haven-go
 /// list_history_scan.go): the switch the app sets, and the log lines it reads.
-/// The user ticks it (off by default, Logen 2026-11-04); what it finds goes
-/// to the vault's import store, where Recover a List sees it. Never published.
+/// On by default (Logen 2026-11-04, 14:34Z); off skips every history relay.
+/// What it finds goes to the vault's import store, where Recover a List sees
+/// it. Never published.
 enum ListHistoryScan {
     /// haven-go listHistoryOptInEnv: "1" runs the scan for this import.
     static let optInEnv = "HAVEN_IMPORT_LIST_HISTORY"
@@ -11,8 +12,17 @@ enum ListHistoryScan {
     /// in, the only one the history relays are asked about (Tron, PR 1641).
     static let accountEnv = "HAVEN_IMPORT_LIST_HISTORY_ACCOUNT"
 
-    /// The checkbox, word for word (Logen 2026-11-04).
-    static let optInLabel = "Also look for older versions of my lists on history relays (hist.nostr.land, relay.ditto.pub). They will see your IP asked. Adds about a minute."
+    /// Every Moving in starts with the scan on (Logen 2026-11-04, 14:34Z).
+    static let defaultOn = true
+
+    /// The switch, word for word (Logen 2026-11-04, 14:34Z): title, then a
+    /// small line with "Lazarus" linking to its repo.
+    static let optInLabel = "Look up and back up my lists"
+    static let optInDetailBefore = "Finds older versions on "
+    static let optInDetailLink = "Lazarus"
+    static let optInDetailAfter = " history relays"
+    static let lazarusURL = URL(string: "https://github.com/dmnyc/lazarus")!
+    static var optInDetail: String { optInDetailBefore + optInDetailLink + optInDetailAfter }
 
     /// The /lists filter `#v` value that asks for the imported versions only.
     static let importedFilterValue = "imported"

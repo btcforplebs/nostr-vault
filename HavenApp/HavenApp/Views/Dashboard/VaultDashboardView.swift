@@ -22,7 +22,7 @@ struct VaultDashboardView: View {
     @State private var isPreparingImport = false
     /// Moving in also looks for older list versions on history relays only
     /// when ticked (ListHistoryScan).
-    @State private var lookForOldLists = false
+    @State private var lookForOldLists = ListHistoryScan.defaultOn
     @State private var didCopyAddress = false
     @State private var haloPulse = false
     @State private var showingFullActivity = false

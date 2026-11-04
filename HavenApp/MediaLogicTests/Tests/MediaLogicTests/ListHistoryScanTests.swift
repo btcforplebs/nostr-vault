@@ -46,8 +46,15 @@ final class ListHistoryScanTests: XCTestCase {
         XCTAssertEqual(stage, ImportTourStage(text: "Looking for older versions of your lists…", step: 2))
     }
 
+    func testOnByDefault() {
+        XCTAssertTrue(ListHistoryScan.defaultOn)
+    }
+
     func testLabelIsLogensWording() {
-        XCTAssertEqual(ListHistoryScan.optInLabel, "Also look for older versions of my lists on history relays (hist.nostr.land, relay.ditto.pub). They will see your IP asked. Adds about a minute.")
+        XCTAssertEqual(ListHistoryScan.optInLabel, "Look up and back up my lists")
+        XCTAssertEqual(ListHistoryScan.optInDetail, "Finds older versions on Lazarus history relays")
+        XCTAssertEqual(ListHistoryScan.optInDetailLink, "Lazarus")
+        XCTAssertEqual(ListHistoryScan.lazarusURL.absoluteString, "https://github.com/dmnyc/lazarus")
         XCTAssertEqual(ListHistoryScan.optInEnv, "HAVEN_IMPORT_LIST_HISTORY")
         XCTAssertEqual(ListHistoryScan.accountEnv, "HAVEN_IMPORT_LIST_HISTORY_ACCOUNT")
     }
