@@ -408,6 +408,17 @@ extension VaultView {
             viewMode = .zaps
             zapsFilter = .onMyNotes
         default:
+            // A reply from outside your network isn't listed under All: it
+            // is on the Vault page's "Outside your web" (the pill's ···).
+            if vaultTabHostsMedia,
+               let author = nostrService.events.first(where: { $0.id == request.eventId })?.pubkey,
+               ContentFilter.isOutside(author: author, owner: nostrService.activeHexPubkey,
+                                       whitelist: configService.whitelistedHexPubkeys,
+                                       trusted: FeedService.shared.relayTabTrustedPubkeys()) {
+                viewMode = .activity
+                activityFilter = .outside
+                break
+            }
             viewMode = .notes
             // Notes in the Vault tab leave out articles and highlights; land
             // on the list that holds the target.
@@ -417,7 +428,7 @@ extension VaultView {
             default: noteScope = .notes
             }
             recipesOnly = false
-            // A reply from outside your network isn't listed under All.
+            // The Mac has no Vault page: its Notes header keeps Outside in ···.
             if let author = nostrService.events.first(where: { $0.id == request.eventId })?.pubkey,
                ContentFilter.isOutside(author: author, owner: nostrService.activeHexPubkey,
                                        whitelist: configService.whitelistedHexPubkeys,
@@ -480,6 +491,10 @@ extension VaultView {
     }
 
         private func focusTargetId(for request: RelayFocusRequest) -> String? {
+        if viewMode == .activity {
+            let lineIds = Set(displayActivity.map(\.id))
+            return focusCandidates(for: request).first(where: lineIds.contains)
+        }
         let shown: [NostrEvent]
         switch viewMode {
         case .likes: shown = displayLikedNotes

@@ -165,11 +165,12 @@ extension VaultView {
 
     private func trailingPill(buttonWidth: CGFloat, spacing: CGFloat) -> some View {
         HStack(spacing: spacing) {
-            if viewMode != .media {
+            if viewMode != .media && viewMode != .bookmarks {
                 trailingFilters(spacing: spacing)
                 Divider().frame(height: 20).padding(.horizontal, 2)
             }
             searchToggleButton
+            if viewMode == .activity { activityMoreMenu }
         }
         .environment(\.filterButtonWidth, buttonWidth)
     }
@@ -178,16 +179,24 @@ extension VaultView {
     func trailingFilters(spacing: CGFloat) -> some View {
         HStack(spacing: spacing) {
             switch viewMode {
+            // No All button (Logen 11-04): All is the list with no filter on,
+            // and tapping the lit filter again turns it off.
             case .activity:
-                filterButton(.activity(.all), "square.stack", "All", activityFilter == .all) { activityFilter = .all }
-                filterButton(.activity(.mentions), "at", "Mentions", activityFilter == .mentions) { activityFilter = .mentions }
+                clearableFilter(.activity(.mentions), "at", "Mentions", activityFilter == .mentions) {
+                    activityFilter = activityFilter == .mentions ? .all : .mentions
+                }
             case .notes:
-                filterButton(.notes(.all), "square.stack", "All", contentFilter == .all) { contentFilter = .all }
-                filterButton(.notes(.mine), "person.fill", "Mine", contentFilter == .mine) { contentFilter = .mine }
-                filterButton(.notes(.tagged), "at", "Mentions", contentFilter == .tagged) { contentFilter = .tagged }
-                filterButton(.notes(.outside), "person.crop.circle.badge.questionmark", "Replies from outside your network", contentFilter == .outside) { contentFilter = .outside }
+                clearableFilter(.notes(.mine), "person.fill", "Mine", contentFilter == .mine && !recipesOnly) {
+                    let on = contentFilter == .mine && !recipesOnly
+                    recipesOnly = false
+                    contentFilter = on ? .all : .mine
+                }
+                // One pick with Mine, as on the web: Recipes only, or Mine.
                 if vaultTabHostsMedia && noteScope == .articles {
-                    filterButton(.recipes, "fork.knife", "Recipes only", recipesOnly) { recipesOnly.toggle() }
+                    clearableFilter(.recipes, "fork.knife", "Recipes only", recipesOnly) {
+                        contentFilter = .all
+                        recipesOnly.toggle()
+                    }
                 }
             case .likes:
                 filterButton(.likes(.onMyNotes), "tray.and.arrow.down.fill", "Received", likesFilter == .onMyNotes) { likesFilter = .onMyNotes }
@@ -214,9 +223,46 @@ extension VaultView {
                               _ isSelected: Bool, _ pick: @escaping () -> Void) -> some View {
         IconFilterButton(icon: icon, tooltip: tooltip, isSelected: isSelected, color: .havenPurple) {
             pick()
-            noteFilterTap(choice, changed: !isSelected || choice == .recipes)
+            noteFilterTap(choice, changed: !isSelected)
         }
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// A filter that is off when not lit: a tap turns it on, a tap on the lit
+    /// one turns it off again, back to the whole list.
+    private func clearableFilter(_ choice: VaultFilterChoice, _ icon: String, _ tooltip: String,
+                                 _ isSelected: Bool, _ toggle: @escaping () -> Void) -> some View {
+        IconFilterButton(icon: icon, tooltip: tooltip, isSelected: isSelected, color: .havenPurple) {
+            toggle()
+            noteFilterToggle(choice, nowOn: !isSelected)
+        }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityHint(isSelected ? "Tap to show everything" : "")
+    }
+
+    /// The Vault page's ···: the filter that doesn't earn a slot up front.
+    /// Lit while it is on.
+    var activityMoreMenu: some View {
+        let outsideOn = activityFilter == .outside
+        return Menu {
+            Button {
+                activityFilter = outsideOn ? .all : .outside
+                noteFilterToggle(.activity(.outside), nowOn: !outsideOn)
+            } label: {
+                Label(VaultFilterChoice.activity(.outside).name(scope: noteScope),
+                      systemImage: outsideOn ? "checkmark" : VaultFilterChoice.activity(.outside).icon)
+            }
+        } label: {
+            Image(systemName: outsideOn ? "ellipsis.circle.fill" : "ellipsis")
+                .font(.appSystem(size: 15, weight: .semibold))
+                .foregroundColor(outsideOn ? .havenPurple : .secondary)
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel("More filters")
+        .accessibilityValue(outsideOn ? "Outside your web" : "")
     }
 
     /// The Mac header's labelled filters: the pick, then the same note.
@@ -230,12 +276,19 @@ extension VaultView {
     /// A filter tap's note: what it shows and that it's on, straight away.
     /// A list rebuilt off the main thread adds its count when it lands, if
     /// the note is still up.
-    func noteFilterTap(_ choice: VaultFilterChoice, changed: Bool) {
-        if choice == .recipes && !recipesOnly {
+    /// A clearable filter's note: on (with its count when the list lands),
+    /// or off.
+    func noteFilterToggle(_ choice: VaultFilterChoice, nowOn: Bool) {
+        guard nowOn else {
             pendingFilterNote = nil
+            updateGeneration += 1
             filterNote.show(.off(choice.name(scope: noteScope), icon: choice.icon))
             return
         }
+        noteFilterTap(choice, changed: true)
+    }
+
+    func noteFilterTap(_ choice: VaultFilterChoice, changed: Bool) {
         guard changed, choice.waitsForList else {
             pendingFilterNote = nil
             filterNote.show(filterNoteText(choice))
@@ -431,23 +484,32 @@ extension VaultView {
             .environment(\.openURL, nostrLinkAction)
     }
 
+    /// The Mac's Notes filters: Mine, then ··· with Outside your web (the
+    /// Mac has no Vault page to hold it). No All: it is the list with no
+    /// filter on, and a tap on the lit one turns it off.
     var filterView: some View {
         HStack(spacing: 2) {
-            FilterButton(title: "All", color: .secondary, isSelected: contentFilter == .all) {
-                tapFilter(.notes(.all), contentFilter == .all) { contentFilter = .all }
+            FilterButton(title: "Mine", icon: "person.fill", color: .havenPurple, isSelected: contentFilter == .mine) {
+                let on = contentFilter == .mine
+                contentFilter = on ? .all : .mine
+                noteFilterToggle(.notes(.mine), nowOn: !on)
             }
-            FilterButton(title: "My Notes", color: .havenPurple, isSelected: contentFilter == .mine) {
-                tapFilter(.notes(.mine), contentFilter == .mine) { contentFilter = .mine }
+            Menu {
+                Button {
+                    let on = contentFilter == .outside
+                    contentFilter = on ? .all : .outside
+                    noteFilterToggle(.notes(.outside), nowOn: !on)
+                } label: {
+                    Label("Outside your web", systemImage: contentFilter == .outside ? "checkmark" : VaultFilterChoice.notes(.outside).icon)
+                }
+            } label: {
+                Image(systemName: contentFilter == .outside ? "ellipsis.circle.fill" : "ellipsis.circle")
+                    .foregroundColor(contentFilter == .outside ? .havenPurple : .secondary)
             }
-            FilterButton(title: "Tagged", color: Color.havenVerified, isSelected: contentFilter == .tagged) {
-                tapFilter(.notes(.tagged), contentFilter == .tagged) { contentFilter = .tagged }
-            }
-            FilterButton(title: "Whitelisted", color: Color.havenVerified.opacity(0.7), isSelected: contentFilter == .whitelist) {
-                tapFilter(.notes(.whitelist), contentFilter == .whitelist) { contentFilter = .whitelist }
-            }
-            FilterButton(title: "Outside Network", color: .orange, isSelected: contentFilter == .outside) {
-                tapFilter(.notes(.outside), contentFilter == .outside) { contentFilter = .outside }
-            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .fixedSize()
+            .help("More filters")
         }
         .padding(4)
         .background(Color.platformTertiaryGroupedBackground)

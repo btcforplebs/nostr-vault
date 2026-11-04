@@ -56,9 +56,13 @@ extension MediaGalleryView {
     @ViewBuilder
     var trailingToolbarInline: some View {
         HStack(spacing: 4) {
-            if inVaultTab { mediaTypeMenu }
-            sortMenu
-            layoutToggleButton
+            // In the Vault tab two up front, the rest in ··· (Logen 11-04).
+            if inVaultTab {
+                mediaTypeMenu
+            } else {
+                sortMenu
+                layoutToggleButton
+            }
             uploadButton
                 .confirmationDialog("Upload Media", isPresented: $showingUploadOptions) {
                     Button("Photos") { photosPickerFilter = .images; showingPhotoPicker = true }
@@ -67,7 +71,28 @@ extension MediaGalleryView {
                     Button("Magic Paste") { handlePasteFromClipboard() }
                     Button("Cancel", role: .cancel) { }
                 }
+            if inVaultTab { mediaMoreMenu }
         }
+    }
+
+    /// The Vault tab's Media ···: sort and layout.
+    var mediaMoreMenu: some View {
+        Menu {
+            Section("Sort by") { sortMenuItems }
+            Button { toggleMediaLayout() } label: {
+                Label(mediaLayoutMode == .grid ? "List View" : "Grid View",
+                      systemImage: mediaLayoutMode == .grid ? "list.bullet" : "square.grid.2x2.fill")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.appSystem(size: 15, weight: .semibold))
+                .foregroundColor(.secondary)
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel("More")
     }
 
     /// In the Vault tab the mode row takes the leading cluster, so the type

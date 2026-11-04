@@ -93,6 +93,9 @@ struct VaultActivity: Identifiable, Equatable {
     /// tab's); `isHidden` drops blocked authors and, for posts that tag you,
     /// replies from outside your network (the Notes list hides those too).
     /// `follows` are (pubkey, unix time) from the follower ledger.
+    /// `outsideOnly` turns it round for the "Outside your web" filter: only
+    /// the posts tagging you whose authors `isOutside` says are outside, and
+    /// no likes, zaps, reposts or follows.
     static func build(
         events: [Event],
         owner: String,
@@ -100,6 +103,7 @@ struct VaultActivity: Identifiable, Equatable {
         follows: [(pubkey: String, at: Int64)] = [],
         isBlocked: (String) -> Bool = { _ in false },
         isOutside: (String) -> Bool = { _ in false },
+        outsideOnly: Bool = false,
         now: Int64 = Int64(Date().timeIntervalSince1970)
     ) -> [VaultActivity] {
         guard !owner.isEmpty else { return [] }
@@ -131,6 +135,9 @@ struct VaultActivity: Identifiable, Equatable {
         for event in events.sorted(by: { $0.createdAt > $1.createdAt }) {
             guard event.pubkey != owner, !isFuture(event.createdAt, now: now),
                   seen.insert(event.id).inserted else { continue }
+            if outsideOnly && (event.kind == reactionKind || event.kind == zapKind || repostKinds.contains(event.kind)) {
+                continue
+            }
 
             if event.kind == reactionKind {
                 guard !isBlocked(event.pubkey),
@@ -174,7 +181,7 @@ struct VaultActivity: Identifiable, Equatable {
             }
 
             guard event.tags.contains(where: { $0.count >= 2 && $0[0] == "p" && $0[1] == owner }),
-                  !isOutside(event.pubkey) else { continue }
+                  isOutside(event.pubkey) == outsideOnly else { continue }
 
             let kind: Kind
             switch event.kind {
@@ -205,7 +212,7 @@ struct VaultActivity: Identifiable, Equatable {
 
         // Follows on one day fold into one line, like a notifications page.
         var followDays: [String: [(pubkey: String, at: Int64)]] = [:]
-        for follow in follows where follow.pubkey != owner && !isBlocked(follow.pubkey) {
+        for follow in follows where !outsideOnly && follow.pubkey != owner && !isBlocked(follow.pubkey) {
             followDays[dayKey(follow.at), default: []].append(follow)
         }
         let followLines = followDays.map { day, list in

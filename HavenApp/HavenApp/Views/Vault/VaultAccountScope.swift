@@ -48,6 +48,9 @@ extension VaultView {
         for hex in VaultAccountChips.accounts(for: currentAccountChip, accounts: vaultAccountHexes) {
             if hex == me {
                 perAccount[hex] = displayActivity
+            } else if activityFilter == .outside {
+                // Outside your web is built for the active account only.
+                perAccount[hex] = []
             } else {
                 perAccount[hex] = (otherAccountActivity[hex] ?? [])
                     .filter { activityFilter.includes($0.kind) && !(zapsOnly && $0.kind == .reaction) }

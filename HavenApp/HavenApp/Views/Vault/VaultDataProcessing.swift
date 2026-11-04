@@ -277,7 +277,8 @@ extension VaultView {
                         blacklist.contains($0) || NotificationPolicy.hidesOwnAccountTag(
                             author: $0, recipient: owner, accounts: ownAccounts, notify: notifyOwn)
                     },
-                    isOutside: { ContentFilter.isOutside(author: $0, owner: owner, whitelist: whitelist, trusted: trusted) }
+                    isOutside: { ContentFilter.isOutside(author: $0, owner: owner, whitelist: whitelist, trusted: trusted) },
+                    outsideOnly: currentActivityFilter == .outside
                 )
                 // Filtered before the page cap, so a page of likes doesn't
                 // hide the mentions behind it.
