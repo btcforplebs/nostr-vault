@@ -40,6 +40,8 @@ internal fun AccountDetail(
     var revealed by remember(npub) { mutableStateOf<String?>(null) }
     var revealError by remember(npub) { mutableStateOf<String?>(null) }
     var askRevealPassword by remember(npub) { mutableStateOf(false) }
+    /** The password typed to reveal the key: it locks the ncryptsec copy (LockedKeyCopyButton). */
+    var revealPassword by remember(npub) { mutableStateOf<String?>(null) }
     var confirmRemoveKey by remember(npub) { mutableStateOf(false) }
     var confirmDisconnectSigner by remember(npub) { mutableStateOf(false) }
     var confirmRemoveAccount by remember(npub) { mutableStateOf(false) }
@@ -70,6 +72,7 @@ internal fun AccountDetail(
                 if (problem == null) {
                     askRevealPassword = false
                     revealed = viewModel.revealNsec(npub)
+                    revealPassword = typed
                 }
                 problem
             },
@@ -208,7 +211,8 @@ internal fun AccountDetail(
                 }
                 revealError?.let { Text(it, color = ErrorRed, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp)) }
             } else {
-                RevealedKey(nsec = revealed!!, onHide = { revealed = null })
+                RevealedKey(nsec = revealed!!, onHide = { revealed = null; revealPassword = null })
+                LockedKeyCopyButton(nsec = revealed!!, password = revealPassword)
             }
             TextButton(onClick = { confirmRemoveKey = true }) {
                 Text("Remove Local Key", color = ErrorRed)

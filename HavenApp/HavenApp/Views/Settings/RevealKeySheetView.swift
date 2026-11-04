@@ -8,6 +8,8 @@ struct RevealKeySheetView: View {
 
     @State private var password = ""
     @State private var revealedNsec: String? = nil
+    /// The same key, locked with the typed password (LockedKeyExport).
+    @State private var lockedKey: String? = nil
     @State private var errorMessage: String? = nil
     @State private var copied = false
 
@@ -68,7 +70,7 @@ struct RevealKeySheetView: View {
             Spacer()
         }
         .background(Color.platformSecondaryGroupedBackground)
-        .frame(width: 480, height: revealedNsec != nil ? 280 : 220)
+        .frame(width: 480, height: revealedNsec != nil ? 360 : 220)
         #else
         NavigationStack {
             Form {
@@ -164,6 +166,10 @@ struct RevealKeySheetView: View {
             Text("Keep this key safe. Anyone with your nsec has full control of your Nostr identity.")
                 .font(.appCaption2)
                 .foregroundColor(.orange)
+
+            if let lockedKey {
+                LockedKeyCopyButton(ncryptsec: lockedKey)
+            }
         }
     }
 
@@ -176,8 +182,10 @@ struct RevealKeySheetView: View {
 
         do {
             let nsec: String
+            let stored: String
             if isOwner {
                 nsec = try configService.config.getDecryptedNsec(password: password)
+                stored = configService.config.ownerNcryptsec
             } else {
                 guard let ncryptsec = configService.config.accountCredentials[npub],
                       !ncryptsec.isEmpty else {
@@ -185,8 +193,10 @@ struct RevealKeySheetView: View {
                     return
                 }
                 nsec = try NIP49Service.decrypt(ncryptsec: ncryptsec, password: password)
+                stored = ncryptsec
             }
             revealedNsec = nsec
+            lockedKey = LockedKeyExport.kept(stored) ?? (try? NIP49Service.encrypt(nsec: nsec, password: password))
         } catch {
             errorMessage = "Incorrect password or decryption failed"
         }
@@ -203,6 +213,7 @@ struct RevealKeySheetView: View {
 
     private func performDismiss() {
         revealedNsec = nil
+        lockedKey = nil
         password = ""
         errorMessage = nil
 

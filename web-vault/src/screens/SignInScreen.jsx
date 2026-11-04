@@ -1,10 +1,12 @@
-// Sign-in: a NIP-07 extension or a NIP-46 bunker. The user's secret key never comes into this page.
+// Sign-in: a NIP-07 extension, a NIP-46 bunker, or a password-locked key (NIP-49 ncryptsec, opened and sealed here,
+// signer/local.js lockedKeySession). The user's secret key in the clear is never typed into this page.
 // The same options add an account on the Accounts screen; accounts this browser already remembers are listed first.
 import { useEffect, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { findExtension, extensionSignIn } from "../signer/nip07.js"
 import { bunkerSignIn } from "../signer/nip46.js"
 import { ReadOnlySignIn } from "../components/ReadOnlySignIn.jsx"
+import { LockedKeySignIn } from "../components/LockedKeySignIn.jsx"
 import { GetExtension } from "../components/GetExtension.jsx"
 import { signerFor } from "../signer/index.js"
 import { checkExtensionAccount } from "../signer/accounts.js"
@@ -98,6 +100,7 @@ export function SignInOptions({ onSignedIn }) {
       <button class={hasExt === false && !showHelp ? "primary" : ""} disabled={!!busy || !bunker.trim()} onClick={run("bunker", () => bunkerSignIn(bunker, pool))} aria-busy={busy === "bunker" || undefined}>
         {busy === "bunker" ? "Approve the connection in your signer…" : "Connect bunker"}
       </button>
+      <LockedKeySignIn disabled={!!busy} onSignedIn={onSignedIn} />
       <ReadOnlySignIn disabled={!!busy} onSignedIn={onSignedIn} />
       <AuthPrompt />
       {err && <p class="error">{err}</p>}
