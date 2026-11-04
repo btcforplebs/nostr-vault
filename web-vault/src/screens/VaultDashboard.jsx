@@ -108,14 +108,15 @@ export function VaultDashboard({ ctx }) {
       onProgress: p => setJobs(j => ({ ...j, importing: { progress: p.progress, text: `${p.empty ? "Looking through" : "Found"} notes from ${p.from}... (${p.found} found)` } })) })
     // Moving in also brings back older versions of the user's lists (net/list-history-import.js): filed in the vault's
     // list history for Recover a List, never published, never made the current list.
-    // The history relays only when ticked. Skip ends the scan; what it found by then is still filed, and the import ends.
+    // Only when ticked (one rule with the apps): unticked, no relay is asked, the user's own included. Skip ends the
+    // scan; what it found by then is still filed, and the import ends.
     skip.current = new AbortController()
-    setJobs(j => ({ ...j, importing: { progress: 1, text: "Looking for older versions of your lists...", skippable: true } }))
+    if (historyRelays) setJobs(j => ({ ...j, importing: { progress: 1, text: "Looking for older versions of your lists...", skippable: true } }))
     const lists = await importListHistory(ctx, { history: historyRelays, signal: skip.current.signal,
       onProgress: p => setJobs(j => ({ ...j, importing: { progress: p.done / p.total, text: `Looking for older versions of your lists... (${p.found} found)`, skippable: true } })),
     }).catch(() => ({ found: 0, answered: 0 })).finally(() => { skip.current = null })
     markRan(me, "notesImport")
-    setJobs(j => ({ ...j, status: { text: `Import Complete! ${found} found, ${stored} new. ${historyLine(lists)}` } }))
+    setJobs(j => ({ ...j, status: { text: `Import Complete! ${found} found, ${stored} new. ${historyLine(lists)}`.trim() } }))
     count().catch(() => {})
   })
 
