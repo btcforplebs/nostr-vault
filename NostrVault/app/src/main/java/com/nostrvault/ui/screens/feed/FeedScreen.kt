@@ -261,12 +261,29 @@ fun FeedScreen(
 
     // Not while a tapped post is on screen: new posts landing on top would
     // push it off the tap line. They apply once it has scrolled away.
+    val rowKeys: () -> List<Any> = { if (isThreaded) feedThreads.map { it.rootId } else notes.map { it.id } }
     FeedAutoApplyEffect(
         viewModel,
+        listState,
         pendingCount = { pendingCount },
         autoLoad = { autoLoad && !openRowShown },
+        isLoading = { isLoadingFeed },
         isAtTop = { isAtTop },
+        rowKeys = rowKeys,
     )
+    // "N new above": rows that went in above the reader since the newest row
+    // they saw at the top. Scrolling up past them counts them down; the top
+    // resets it (FeedStayPut.newAbove).
+    var seenTop by remember { mutableStateOf<Any?>(null) }
+    LaunchedEffect(Unit) {
+        snapshotFlow { if (isAtTop) rowKeys().firstOrNull() else null }
+            .collect { top -> if (top != null) seenTop = top }
+    }
+    val newAbove by remember {
+        derivedStateOf {
+            if (!autoLoad) 0 else FeedStayPut.newAbove(rowKeys(), seenTop, listState.firstVisibleItemIndex)
+        }
+    }
 
     FeedRevealEffect(listState, isThreaded = { isThreaded }, feedThreads = { feedThreads }, notes = { notes }, isAtTop = { isAtTop })
 
@@ -331,8 +348,13 @@ fun FeedScreen(
         isLoadingFeed = isLoadingFeed,
         hasNotes = hasAnyNotes,
     )
-    val showNewPosts = showNewPostsPill && pendingCount > 0 && (!autoLoad || !isAtTop || openRowShown) &&
-        feedMode !in setOf(FeedMode.REELS, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.MUSIC, FeedMode.HASHTAGS)
+    val noteListMode = feedMode !in setOf(FeedMode.REELS, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.MUSIC, FeedMode.HASHTAGS)
+    // With Auto-load on, waiting posts go in by themselves wherever the reader
+    // is; the pill offers them only while a tapped post holds them back.
+    val showNewPosts = showNewPostsPill && pendingCount > 0 && (!autoLoad || openRowShown) && noteListMode
+    // Otherwise, what went in above the reader: tap to go up to it.
+    val showAbove = showNewPostsPill && !showNewPosts && newAbove > 0 && noteListMode
+    val goUpToNew: () -> Unit = { scope.launch { listState.animateScrollToItem(0) } }
     val loadNewPosts: () -> Unit = {
         viewModel.applyPendingNotes()
         viewModel.resortThreads()
@@ -382,8 +404,9 @@ fun FeedScreen(
                 onToggleEngagementStats = viewModel::toggleShowEngagementStats,
                 onEditFeeds = { showFeedMenuEditor = true },
                 onOpenDashboard = onOpenDashboard,
-                newPostsCount = if (showNewPosts) pendingCount else 0,
-                onLoadNewPosts = loadNewPosts,
+                newPostsCount = if (showNewPosts) pendingCount else if (showAbove) newAbove else 0,
+                onLoadNewPosts = if (showNewPosts) loadNewPosts else goUpToNew,
+                newPostsAbove = !showNewPosts && showAbove,
             )
         },
         floatingActionButton = {
@@ -622,6 +645,16 @@ fun FeedScreen(
                     .newPostsFold(),
             ) {
                 NewPostsPill(count = pendingCount, onClick = loadNewPosts)
+            }
+            if (showAbove) FoldBlocked(
+                whenFolded = true,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = padding.calculateTopPadding() + 12.dp)
+                    .zIndex(1f)
+                    .newPostsFold(),
+            ) {
+                NewPostsPill(count = newAbove, onClick = goUpToNew, label = FeedStayPut.aboveLabel(newAbove))
             }
             // Fill your feed: its cards, the meter on Post's row, the profile card.
             val guideFollows by viewModel.feedServiceRef.followedPubkeys.collectAsState()

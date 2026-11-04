@@ -9,6 +9,7 @@ import com.nostrvault.ui.navigation.FeedTabPicker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 // FeedScreen's effects, one per job (iOS FeedView's .task / .onChange handlers). State that an effect reads inside a
@@ -95,31 +96,66 @@ internal fun FeedScrollTrackingEffects(listState: LazyListState, notes: List<Fee
 @Composable
 internal fun FeedAutoApplyEffect(
     viewModel: FeedViewModel,
+    listState: LazyListState,
     pendingCount: () -> Int,
     autoLoad: () -> Boolean,
+    isLoading: () -> Boolean,
     isAtTop: () -> Boolean,
+    /** The keys the list renders, in order (notes, or thread roots). */
+    rowKeys: () -> List<Any>,
 ) {
-    // Auto-apply pending notes when at top with auto-load enabled.
+    // Auto-apply pending notes with auto-load on, wherever the reader is
+    // (FeedStayPut, Logen 2026-11-04). At the top the reveal effect below
+    // scrolls them into view; further down the row being read is held.
     // Uses snapshotFlow so that rapid pendingCount changes don't restart
     // the effect (unlike LaunchedEffect with pendingCount as a key).
     LaunchedEffect(Unit) {
-        snapshotFlow { pendingCount() > 0 && autoLoad() && isAtTop() }
+        snapshotFlow {
+            FeedStayPut.autoLoads(autoLoad(), pendingCount(), isLoading(), postOpen = false) &&
+                !listState.isScrollInProgress
+        }
             .collect { shouldApply ->
-                if (shouldApply) {
-                    // Brief debounce to batch rapid arrivals
-                    delay(150)
-                    // Re-check: the reader may have scrolled away, or opened a
-                    // post (which turns auto-load off), during the debounce.
-                    if (isAtTop() && autoLoad()) {
-                        // The reveal effect below performs the scroll once the
-                        // prepend has actually landed in the list — scrolling
-                        // here (even after a fixed delay) races composition and
-                        // strands the new post above the viewport.
-                        viewModel.applyPendingNotes()
-                    }
+                if (!shouldApply) return@collect
+                // Brief debounce to batch rapid arrivals; longer below the top,
+                // so a reader pausing mid-flick isn't nudged (iOS waits 1.5 s).
+                delay(if (isAtTop()) 150 else 1_000)
+                // Re-check: the reader may have scrolled, or opened a post
+                // (which turns auto-load off), during the debounce.
+                if (!FeedStayPut.autoLoads(autoLoad(), pendingCount(), isLoading(), postOpen = false) ||
+                    listState.isScrollInProgress
+                ) return@collect
+                if (!FeedStayPut.keepsReading(isAtTop())) {
+                    // The reveal effect below performs the scroll once the
+                    // prepend has actually landed in the list — scrolling
+                    // here (even after a fixed delay) races composition and
+                    // strands the new post above the viewport.
+                    viewModel.applyPendingNotes()
+                    return@collect
                 }
+                listState.applyHoldingReadRow(rowKeys) { viewModel.applyPendingNotes() }
             }
     }
+}
+
+/**
+ * Puts new rows in above the reader and keeps the row they were reading where
+ * it was, as a tapped row is held (FeedHeldTap). A keyed LazyColumn anchors
+ * its first row by key on its own, but only within a window of nearby rows: a
+ * big batch would slide the reader. Gives up after 2 s if the rows never
+ * land, or quietly when the row left the list.
+ */
+internal suspend fun LazyListState.applyHoldingReadRow(rowKeys: () -> List<Any>, apply: () -> Unit) {
+    val first = layoutInfo.visibleItemsInfo.firstOrNull()
+    val key = first?.key
+    val oldIndex = firstVisibleItemIndex
+    val offset = firstVisibleItemScrollOffset
+    val before = rowKeys().firstOrNull()
+    apply()
+    if (key == null) return
+    val moved = kotlinx.coroutines.withTimeoutOrNull(2_000) {
+        snapshotFlow { rowKeys() }.first { it.firstOrNull() != before }
+    } ?: return
+    FeedStayPut.heldIndex(moved, key, oldIndex)?.let { requestScrollToItem(it, offset) }
 }
 
 /** Bring prepended posts fully into view when the list is at the top. */

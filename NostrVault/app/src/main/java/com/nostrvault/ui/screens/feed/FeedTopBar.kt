@@ -66,6 +66,8 @@ internal fun FeedTopBar(
     /** Posts are waiting and the floating "New Posts" button is up. */
     newPostsCount: Int,
     onLoadNewPosts: () -> Unit,
+    /** The count is posts already in above the reader (FeedStayPut), not ones waiting. */
+    newPostsAbove: Boolean = false,
 ) {
     val colors = LocalNostrVaultColors.current
     var feedModeExpanded by remember { mutableStateOf(false) }
@@ -182,6 +184,7 @@ internal fun FeedTopBar(
             if (newPostsCount > 0) FoldBlocked(whenFolded = false, modifier = Modifier.chromeReveal()) {
                 NewPostsPill(
                     count = newPostsCount,
+                    label = if (newPostsAbove) FeedStayPut.aboveLabel(newPostsCount) else "$newPostsCount New Posts",
                     compact = true,
                     onClick = onLoadNewPosts,
                 )

@@ -34,6 +34,8 @@ internal fun NewPostsPill(
     modifier: Modifier = Modifier,
     /** The small "↑ N" pill the folded top bar shows in the button's place. */
     compact: Boolean = false,
+    /** The full pill's words; "N New Posts" by default ("N new above" once they went in). */
+    label: String = "$count New Posts",
 ) {
     val colors = LocalNostrVaultColors.current
     // An ambient pill (docs/pills.md): the lane's accent capsule, regular
@@ -51,7 +53,7 @@ internal fun NewPostsPill(
     AnimatedVisibility(visible = !rememberHidesAmbient(), enter = pillEnter, exit = pillExit, modifier = modifier) {
     Box(
         modifier = Modifier
-            .semantics(mergeDescendants = true) { contentDescription = "$count new posts, tap to load" }
+            .semantics(mergeDescendants = true) { contentDescription = if (label == "$count New Posts") "$count new posts, tap to load" else "$label, tap to go up" }
             // The small pill's tap target, without growing the pill.
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(if (compact) 8.dp else 0.dp),
@@ -81,7 +83,7 @@ internal fun NewPostsPill(
             )
             Spacer(Modifier.width(if (compact) 4.dp else 8.dp))
             Text(
-                text = if (compact) (if (count > 99) "99+" else "$count") else "$count New Posts",
+                text = if (compact) (if (count > 99) "99+" else "$count") else label,
                 fontWeight = FontWeight.Bold,
                 fontSize = size.font,
                 color = PillStyle.textColor,
