@@ -134,6 +134,7 @@ internal fun MediaCarousel(
                         key = MediaSourceKey(origin, page),
                         url = url,
                         modifier = Modifier.matchParentSize(),
+                        onPiP = { onMediaClick(page) },
                     )
                 } else if (isVideoUrl(url)) {
                     Icon(
@@ -141,6 +142,10 @@ internal fun MediaCarousel(
                         contentDescription = "Video",
                         tint = Color.White.copy(alpha = 0.85f),
                         modifier = Modifier.size(32.dp),
+                    )
+                    com.nostrvault.ui.components.VideoPiPChip(
+                        onOpenViewer = { onMediaClick(page) },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
                     )
                 }
             }

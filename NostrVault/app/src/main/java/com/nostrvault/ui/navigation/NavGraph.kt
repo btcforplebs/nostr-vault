@@ -127,7 +127,9 @@ fun NostrVaultNavHost(
     val backStack by navController.currentBackStack.collectAsState()
     val selectedTab = selectedTabRoute(backStack.map { it.destination.route })
 
-    val showBottomBar = showsBottomBar(currentRoute)
+    // In picture-in-picture the window shows the video only (PiP plan lane C).
+    val isInPiP by com.nostrvault.ui.components.VideoPiPBridge.isInPiP.collectAsState()
+    val showBottomBar = showsBottomBar(currentRoute) && !isInPiP
 
     // Fixed at first composition, never the live flag (see setupStartRoute).
     val startDestination = remember { setupStartRoute(isSetupComplete) }
@@ -407,7 +409,7 @@ fun NostrVaultNavHost(
         // Folds away with the bar and the floating button; the folded bar
         // carries a small now-playing disc instead (iOS ChromeFold). The fold
         // is read in FoldBlocked, so its flip never recomposes this host.
-        if (showsMiniPlayer(currentRoute)) FoldBlocked(
+        if (showsMiniPlayer(currentRoute) && !isInPiP) FoldBlocked(
             whenFolded = true,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -456,7 +458,7 @@ fun NostrVaultNavHost(
         }
 
         // Zap flights cross the whole window, so they're drawn above it all.
-        ZapFlightStage()
+        if (!isInPiP) ZapFlightStage()
     }
 
     // Account switcher bottom sheet

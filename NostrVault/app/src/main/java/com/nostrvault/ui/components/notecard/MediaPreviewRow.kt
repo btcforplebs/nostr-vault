@@ -193,13 +193,20 @@ private fun SingleMediaPreview(
                 MediaFailedPlaceholder(url = url)
             }
             if (isVideo && autoplay && !failed) {
-                InlineFeedVideo(key = sourceKey, url = url, modifier = Modifier.matchParentSize())
+                InlineFeedVideo(
+                    key = sourceKey, url = url, modifier = Modifier.matchParentSize(),
+                    onPiP = { onMediaClick(url) },
+                )
             } else if (isVideo && !failed) {
                 Icon(
                     imageVector = NostrVaultIcons.PlayCircle,
                     contentDescription = "Video",
                     tint = Color.White.copy(alpha = 0.85f),
                     modifier = Modifier.size(32.dp),
+                )
+                com.nostrvault.ui.components.VideoPiPChip(
+                    onOpenViewer = { onMediaClick(url) },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
                 )
             }
         }
