@@ -49,7 +49,9 @@ fun SearchScreen(
     /** Where a pasted naddr1 opens (the address screen asks the user's relays). */
     onAddressClick: (String) -> Unit = {},
     viewModel: SearchViewModel = hiltViewModel(),
+    liveNowViewModel: SearchLiveNowViewModel = hiltViewModel(),
 ) {
+    val liveStreams by liveNowViewModel.streams.collectAsState()
     val query by viewModel.query.collectAsState()
     val canSign = com.nostrvault.ui.components.rememberCanSign()
     val results by viewModel.results.collectAsState()
@@ -238,8 +240,18 @@ fun SearchScreen(
       // A tap on the background hides the keyboard (iOS onTapGesture); rows keep their own taps.
       Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { hideKeyboard() } }) {
         if (query.length < 2) {
+            // Live now asks only while this start page shows.
+            SearchLiveNowEffect(liveNowViewModel)
+            // It usually lands after the sections below it, and a LazyColumn
+            // keeps its first item in place when one is added above: at the
+            // top, go back up so the new section shows instead of sitting
+            // just off screen.
+            val liveShown = liveStreams.isNotEmpty()
+            LaunchedEffect(liveShown) {
+                if (liveShown && discoveryListState.firstVisibleItemIndex <= 1) discoveryListState.scrollToItem(0)
+            }
             // Empty state with discovery sections
-            val hasDiscovery = recentSearches.isNotEmpty() ||
+            val hasDiscovery = liveStreams.isNotEmpty() || recentSearches.isNotEmpty() ||
                 trendingHashtags.isNotEmpty() ||
                 suggestedProfiles.isNotEmpty() ||
                 namedPeople.isNotEmpty() || topics.isNotEmpty() || pickedNotes.isNotEmpty()
@@ -255,6 +267,10 @@ fun SearchScreen(
                     ),
                     modifier = Modifier.fillMaxSize(),
                 ) {
+                    // Follows who are on air, first.
+                    if (liveStreams.isNotEmpty()) {
+                        item(key = "live-now") { SearchLiveNowSection(liveStreams, profiles) }
+                    }
                     // Recent searches section
                     if (recentSearches.isNotEmpty()) {
                         item {
