@@ -270,6 +270,13 @@ targets:
       # the extension sees. Pulling in Services/ or Views/ would drag the relay,
       # the database and the whole UI into a process with a hard memory ceiling.
       - path: HavenApp/Shared
+      # Live now asks the live relays itself and picks with the app's own
+      # rules (LiveNow.pick). These are pure Foundation, no services.
+      - path: HavenApp/Models/LiveNow.swift
+      - path: HavenApp/Models/LiveStatusBook.swift
+      - path: HavenApp/Models/LiveChat.swift
+      - path: HavenApp/Models/TopicFeedFilter.swift
+      - path: HavenApp/Models/Bolt11.swift
       - path: Resources/Assets.xcassets
 
     settings:

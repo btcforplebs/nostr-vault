@@ -8,5 +8,6 @@ struct NostrVaultWidgetBundle: WidgetBundle {
         QuickActionsWidget()
         MosaicWidget()
         LockScreenWidget()
+        LiveNowWidget()
     }
 }

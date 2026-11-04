@@ -19,6 +19,8 @@ extension Notification.Name {
     static let havenOpenRelayBookmarks = Notification.Name("com.haven.openRelayBookmarks")
     /// Posted to navigate to wallet.
     static let havenOpenWallet = Notification.Name("OpenWallet")
+    /// A Live now widget tap. Object: the `LiveStream` to play.
+    static let havenOpenLiveStream = Notification.Name("OpenLiveStream")
     /// The Profile tab was tapped while showing: back to the top, fetched fresh.
     static let havenProfileScrollToTop = Notification.Name("ProfileScrollToTop")
     /// Switch to the Profile tab (your own profile, opened from elsewhere).
