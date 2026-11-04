@@ -391,7 +391,6 @@ enum RelayConfiguration {
             "IMPORT_START_DATE": config.importStartDate,
             "IMPORT_SEED_RELAYS_FILE": config.importSeedRelaysFile,
             "IMPORT_QUERY_INTERVAL_SECONDS": "600",
-            "IMPORT_OWNER_NOTES_FETCH_TIMEOUT_SECONDS": "300",
             "IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS": "600",
 
             // DM Relays

@@ -151,7 +151,6 @@ object RelayConfiguration {
             "IMPORT_START_DATE" to config.importStartDate,
             "IMPORT_SEED_RELAYS_FILE" to config.importSeedRelaysFile,
             "IMPORT_QUERY_INTERVAL_SECONDS" to "600",
-            "IMPORT_OWNER_NOTES_FETCH_TIMEOUT_SECONDS" to "300",
             "IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS" to "600",
 
             // DM Relays

@@ -441,7 +441,6 @@ func TestImportOwnerNotesAppliesDeleteRequests(t *testing.T) {
 	setupSyncConfig(owner.pk)
 	config.OwnerPubKey = owner.pk
 	config.ImportStartDate = time.Now().AddDate(0, 0, -1).Format(layout)
-	config.ImportOwnerNotesFetchTimeoutSeconds = 5
 	reachableImportRelays.Store(nil)
 	pool = nostr.NewSimplePool(ctx)
 
