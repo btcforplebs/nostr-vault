@@ -111,23 +111,30 @@ private fun LiveNowContent(context: Context, live: VaultSnapshot.LiveNow, avatar
             streams.isEmpty() -> Text(LiveNowRules.emptyLine(live.followsSomeone), style = WidgetTheme.Caption)
             !wide -> SmallStream(context, streams.first(), avatars[streams.first().host])
             else -> streams.take(LiveNowRules.MAX_ROWS).forEachIndexed { i, s ->
-                if (i > 0) Spacer(GlanceModifier.height(8.dp))
+                if (i > 0) Spacer(GlanceModifier.height(10.dp))
                 StreamRow(context, s, avatars[s.host])
             }
         }
     }
 }
 
-/** Small: the newest stream alone, picture over name and a two-line title. */
+/**
+ * Small: the newest stream alone, sat at the bottom of the tile (picture,
+ * name, up to three lines of title) so a tall 2x2 reads as one card rather
+ * than a header with a gap under it.
+ */
 @Composable
 private fun SmallStream(context: Context, stream: VaultSnapshot.LiveItem, avatar: Bitmap?) {
-    Column(modifier = GlanceModifier.fillMaxWidth().clickable(openApp(context, LiveNowRules.destination(stream.address)))) {
+    Column(
+        modifier = GlanceModifier.fillMaxSize().clickable(openApp(context, LiveNowRules.destination(stream.address))),
+        verticalAlignment = Alignment.Bottom,
+    ) {
         if (avatar != null) {
-            Image(ImageProvider(avatar), contentDescription = null, modifier = GlanceModifier.size(40.dp))
-            Spacer(GlanceModifier.height(6.dp))
+            Image(ImageProvider(avatar), contentDescription = null, modifier = GlanceModifier.size(48.dp))
+            Spacer(GlanceModifier.height(8.dp))
         }
-        Text(stream.hostName, maxLines = 1, style = NameStyle)
-        Text(stream.title, maxLines = 2, style = TitleStyle)
+        Text(stream.hostName, maxLines = 1, style = NameStyle.copy(fontSize = 13.sp))
+        Text(stream.title, maxLines = 3, style = TitleStyle)
     }
 }
 
@@ -139,8 +146,8 @@ private fun StreamRow(context: Context, stream: VaultSnapshot.LiveItem, avatar: 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (avatar != null) {
-            Image(ImageProvider(avatar), contentDescription = null, modifier = GlanceModifier.size(28.dp))
-            Spacer(GlanceModifier.width(8.dp))
+            Image(ImageProvider(avatar), contentDescription = null, modifier = GlanceModifier.size(34.dp))
+            Spacer(GlanceModifier.width(10.dp))
         }
         Column(modifier = GlanceModifier.defaultWeight()) {
             Text(stream.hostName, maxLines = 1, style = NameStyle)

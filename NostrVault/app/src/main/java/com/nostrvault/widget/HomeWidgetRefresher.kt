@@ -17,6 +17,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
@@ -57,23 +59,28 @@ class HomeWidgetRefresher @Inject constructor(
      * While the app is in front: Live now every two minutes, On this day
      * whenever what is on file was picked for another day or account. An
      * account switch starts over at once, so neither widget keeps showing
-     * the previous account's list.
+     * the previous account's list; so does the follow list arriving, which
+     * at launch lands after the first pass. A pass that got no answer (the
+     * vault still starting, no network) is tried again after [RETRY_MS].
      */
     suspend fun runWhileOpen() {
-        configStore.activeAccountHexPubkey.collectLatest { me ->
-            if (me.isEmpty()) return@collectLatest
-            while (true) {
-                val snapshot = WidgetSnapshotStore.read(context)
-                val today = ZapsToday.startOfDay(System.currentTimeMillis())
-                if (installed(OnThisDayWidget::class.java) &&
-                    (snapshot.onThisDay.account != me || snapshot.onThisDay.dayStart != today)
-                ) {
-                    refreshOnThisDay()
+        combine(configStore.activeAccountHexPubkey, feedService.followListIsKnown) { me, known -> me to known }
+            .distinctUntilChanged()
+            .collectLatest { (me, _) ->
+                if (me.isEmpty()) return@collectLatest
+                while (true) {
+                    val snapshot = WidgetSnapshotStore.read(context)
+                    val today = ZapsToday.startOfDay(System.currentTimeMillis())
+                    var answered = true
+                    if (installed(OnThisDayWidget::class.java) &&
+                        (snapshot.onThisDay.account != me || snapshot.onThisDay.dayStart != today)
+                    ) {
+                        answered = refreshOnThisDay()
+                    }
+                    if (installed(LiveNowWidget::class.java)) answered = refreshLive() && answered
+                    delay(if (answered) LiveNowRules.REFRESH_MS else RETRY_MS)
                 }
-                if (installed(LiveNowWidget::class.java)) refreshLive()
-                delay(LiveNowRules.REFRESH_MS)
             }
-        }
     }
 
     @Volatile private var lastLiveTry = 0L
@@ -103,25 +110,30 @@ class HomeWidgetRefresher @Inject constructor(
 
     // ── Live now ───────────────────────────────────────────────────────
 
-    suspend fun refreshLive() = liveLock.withLock {
+    /** @return false when nothing answered, so the file was left as it was. */
+    suspend fun refreshLive(): Boolean = liveLock.withLock {
         val me = configStore.activeAccountHexPubkey.value
         // A process the launcher started for the widget has no config loaded:
         // draw what is on file rather than guess an account.
-        if (me.isEmpty()) return@withLock
+        if (me.isEmpty()) return@withLock false
         val config = configStore.config.value
         val follows = feedService.followedPubkeySet().ifEmpty { ownFollows(me) }
         if (follows.isEmpty()) {
+            // "Follow people" only once the list is known to be empty: at
+            // launch it is empty for a moment because it has not loaded yet.
+            if (!feedService.followListIsKnown.value) return@withLock false
             write { it.copy(live = VaultSnapshot.LiveNow(me, System.currentTimeMillis(), followsSomeone = false)) }
-            return@withLock
+            return@withLock true
         }
         val relays = config.activeFeedRelays
-        if (relays.isEmpty()) return@withLock
+        if (relays.isEmpty()) return@withLock false
         val blocked = config.blockedForActiveAccount().mapNotNull { nostrService.npubToHex(it) }.toSet()
 
         var answered = false
         val filters = LiveFeedService.liveRequests("w", follows).map { (_, req) -> filtersOf(req) }.flatten()
         val events = nostrService.queryRawEvents(filters, relays, timeoutMs = LIVE_TIMEOUT_MS, onAnswered = { answered = true })
-        if (!answered && events.isEmpty()) return@withLock
+        Log.d(TAG, "live now: ${events.size} events from ${relays.size} relays, answered=$answered")
+        if (!answered && events.isEmpty()) return@withLock false
         // Each stream with the tags it came from, so a tap can rebuild it.
         val parsed = events.mapNotNull(::streamOf)
         val tagsByStream = parsed.associate { (s, tags) -> (s.address to s.createdAt) to tags }
@@ -143,6 +155,7 @@ class HomeWidgetRefresher @Inject constructor(
             )
         }
         write { it.copy(live = VaultSnapshot.LiveNow(me, now, followsSomeone = true, streams = items)) }
+        true
     }
 
     private fun streamOf(event: JsonObject): Pair<LiveStream, List<List<String>>>? {
@@ -193,11 +206,12 @@ class HomeWidgetRefresher @Inject constructor(
 
     // ── On this day ────────────────────────────────────────────────────
 
-    suspend fun refreshOnThisDay() = dayLock.withLock {
+    /** @return false when the vault did not answer, so the file was left as it was. */
+    suspend fun refreshOnThisDay(): Boolean = dayLock.withLock {
         val me = configStore.activeAccountHexPubkey.value
-        if (me.isEmpty()) return@withLock
+        if (me.isEmpty()) return@withLock false
         // Your own vault only, never an outside relay: these are your notes.
-        val vault = configStore.config.value.nostrURL ?: return@withLock
+        val vault = configStore.config.value.nostrURL ?: return@withLock false
         val now = System.currentTimeMillis()
         val windows = OnThisDayRules.windows(now)
         var answered = false
@@ -207,7 +221,8 @@ class HomeWidgetRefresher @Inject constructor(
             timeoutMs = DAY_TIMEOUT_MS,
             onAnswered = { answered = true },
         )
-        if (!answered && events.isEmpty()) return@withLock
+        Log.d(TAG, "on this day: ${events.size} notes from $vault, answered=$answered")
+        if (!answered && events.isEmpty()) return@withLock false
         val notes = events.mapNotNull(::noteOf)
         val picked = windows.flatMap { w ->
             OnThisDayRules.notes(notes, me, w).map { n ->
@@ -220,6 +235,7 @@ class HomeWidgetRefresher @Inject constructor(
             }
         }
         write { it.copy(onThisDay = VaultSnapshot.OnThisDay(me, ZapsToday.startOfDay(now), picked)) }
+        true
     }
 
     private fun noteOf(event: JsonObject): OnThisDayRules.Note? {
@@ -250,6 +266,8 @@ class HomeWidgetRefresher @Inject constructor(
         private const val TAG = "HomeWidgetRefresher"
         private const val LIVE_TIMEOUT_MS = 12_000L
         private const val DAY_TIMEOUT_MS = 6_000L
+        /** After a pass nothing answered: soon, but not a tight loop. */
+        private const val RETRY_MS = 20_000L
 
         /** Profile indexers, for hosts the app has never drawn. */
         private val PROFILE_RELAYS = listOf("wss://purplepag.es", "wss://user.kindpag.es")

@@ -152,12 +152,25 @@ class HomeWidgetLogicTest {
         assertEquals(listOf("early", "mid", "late"), picked.map { it.id })
     }
 
-    @Test fun `line text drops picture links and names photo-only notes`() {
+    @Test fun `line text drops media links, shortens other links, names media-only notes`() {
         assertEquals("Sunset at the beach", OnThisDayRules.lineText("Sunset  at\nthe beach https://x.example/a.JPG?w=1"))
         assertEquals("Photo", OnThisDayRules.lineText("https://x.example/a.png"))
         assertEquals("Photos", OnThisDayRules.lineText("https://x.example/a.png https://x.example/b.webp"))
+        assertEquals("Video", OnThisDayRules.lineText(" https://blossom.example/f96e.mp4\n"))
         assertEquals("Note", OnThisDayRules.lineText("   "))
-        assertEquals("https://x.example/page", OnThisDayRules.lineText("https://x.example/page"))
+        assertEquals(
+            "bet on it here: predyx.com",
+            OnThisDayRules.lineText("bet on it here: https://www.predyx.com/market/will-the-reduce-data?x=1"),
+        )
+        assertEquals("nostr:npub1abc", OnThisDayRules.lineText("nostr:npub1abc"))
+    }
+
+    @Test fun `a widget alternates years, then lists by year`() {
+        val picked = listOf(1 to listOf("a1", "a2", "a3"), 2 to listOf("b1"))
+        assertEquals(listOf(1 to "a1", 1 to "a2", 2 to "b1"), OnThisDayRules.forWidget(picked, 3))
+        assertEquals(listOf(1 to "a1"), OnThisDayRules.forWidget(picked, 1))
+        assertEquals(listOf(2 to "b1"), OnThisDayRules.forWidget(listOf(1 to emptyList(), 2 to listOf("b1")), 3))
+        assertEquals(emptyList<Pair<Int, String>>(), OnThisDayRules.forWidget(listOf(1 to emptyList<String>()), 3))
     }
 
     @Test fun `years text`() {

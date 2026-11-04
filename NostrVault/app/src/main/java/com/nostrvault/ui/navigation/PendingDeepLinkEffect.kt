@@ -37,6 +37,9 @@ internal fun PendingDeepLinkEffect(
         // A Live now widget's stream: rebuilt from the copy it drew, so what
         // plays is what was tapped. Gone from the widget's file (the list
         // moved on) leaves just the app open.
+        // The player is drawn over the whole app, so a tap that leads anywhere
+        // else (a note from a widget, a notification) would land under it.
+        if (target.liveAddress == null) com.nostrvault.ui.components.LiveStreamRouter.close()
         target.liveAddress?.let { address ->
             com.nostrvault.widget.WidgetSnapshotStore.read(context).live.streams
                 .firstOrNull { it.address == address }

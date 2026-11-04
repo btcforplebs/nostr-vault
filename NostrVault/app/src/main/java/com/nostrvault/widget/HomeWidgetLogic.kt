@@ -134,25 +134,58 @@ object OnThisDayRules {
     fun yearsText(n: Int): String = if (n == 1) "1 year ago" else "$n years ago"
 
     /**
-     * One line for a note: its text without picture links (whitespace
-     * collapsed), or "Photo" / "Photos" when that is all it has.
+     * The notes a widget with [rows] rows draws: one from each year in turn
+     * (so a medium widget shows two years rather than three notes of one),
+     * then listed by year and time. [picked] is per year, oldest first.
+     */
+    fun <T> forWidget(picked: List<Pair<Int, List<T>>>, rows: Int): List<Pair<Int, T>> {
+        val out = mutableListOf<Pair<Int, T>>()
+        var round = 0
+        while (out.size < rows && picked.any { round < it.second.size }) {
+            for ((years, notes) in picked) {
+                if (out.size < rows && round < notes.size) out += years to notes[round]
+            }
+            round++
+        }
+        return out.sortedBy { it.first }
+    }
+
+    /**
+     * One line for a note: its text without picture and video links,
+     * other links cut to their host, whitespace collapsed; "Photo" /
+     * "Photos" / "Video" when media is all it has. (iOS drops picture
+     * links only; a widget row has no room for a raw .mp4 URL either.)
      */
     fun lineText(content: String): String {
         val words = content.split(Regex("\\s+")).filter { it.isNotEmpty() }
-        val pictures = words.filter(::isPicture)
-        val text = words.filterNot(::isPicture).joinToString(" ")
+        val pictures = words.count(::isPicture)
+        val videos = words.count(::isVideo)
+        val text = words.filterNot { isPicture(it) || isVideo(it) }.joinToString(" ") { shortLink(it) }
         if (text.isNotEmpty()) return text
         return when {
-            pictures.size > 1 -> "Photos"
-            pictures.isEmpty() -> "Note"
-            else -> "Photo"
+            pictures > 1 -> "Photos"
+            pictures == 1 -> "Photo"
+            videos > 0 -> "Video"
+            else -> "Note"
         }
     }
 
-    private fun isPicture(word: String): Boolean {
+    /** A link as its host ("beta.predyx.com"); anything else as it is. */
+    private fun shortLink(word: String): String {
+        val lower = word.lowercase()
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) return word
+        val host = word.substringAfter("://").substringBefore('/').substringBefore('?').removePrefix("www.")
+        return host.ifEmpty { word }
+    }
+
+    private fun isVideo(word: String): Boolean = hasExtension(word, listOf("mp4", "mov", "webm", "m4v", "m3u8"))
+
+    private fun isPicture(word: String): Boolean = hasExtension(word, listOf("png", "jpg", "jpeg", "gif", "webp", "avif"))
+
+    private fun hasExtension(word: String, extensions: List<String>): Boolean {
         val lower = word.lowercase()
         if (!lower.startsWith("http://") && !lower.startsWith("https://")) return false
-        val path = lower.substringBefore('?')
-        return listOf("png", "jpg", "jpeg", "gif", "webp", "avif").any { path.endsWith(".$it") }
+        val path = lower.substringBefore('?').substringBefore('#')
+        return extensions.any { path.endsWith(".$it") }
     }
 }

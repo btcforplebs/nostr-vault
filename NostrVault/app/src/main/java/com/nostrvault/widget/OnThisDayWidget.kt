@@ -67,7 +67,8 @@ class OnThisDayReceiver : GlanceAppWidgetReceiver() {
 
 @Composable
 private fun OnThisDayContent(context: Context, day: VaultSnapshot.OnThisDay) {
-    val wide = LocalSize.current.width >= 200.dp
+    val size = LocalSize.current
+    val wide = size.width >= 200.dp
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
@@ -85,13 +86,31 @@ private fun OnThisDayContent(context: Context, day: VaultSnapshot.OnThisDay) {
         when {
             day.dayStart <= 0L -> Text("Open Nostr Vault to look back", style = WidgetTheme.Caption)
             notes.isEmpty() -> Text("Nothing from this day in past years.", style = WidgetTheme.Caption)
-            !wide -> DayRow(context, notes.first(), bodyLines = 4)
-            else -> notes.take(OnThisDayRules.MAX_ROWS).forEachIndexed { i, n ->
-                if (i > 0) Spacer(GlanceModifier.height(7.dp))
-                DayRow(context, n, bodyLines = 1)
+            else -> {
+                val byYear = notes.groupBy { it.yearsAgo }.toList().sortedBy { it.first }
+                val shown = OnThisDayRules.forWidget(byYear, if (wide) OnThisDayRules.MAX_ROWS else 1).map { it.second }
+                val lines = bodyLines(size.height.value, shown.size)
+                shown.forEachIndexed { i, n ->
+                    if (i > 0) Spacer(GlanceModifier.height(ROW_GAP.dp))
+                    DayRow(context, n, lines)
+                }
             }
         }
     }
+}
+
+private const val LINE_DP = 15f
+private const val ROW_GAP = 7f
+
+/**
+ * Body lines per row, from the height the launcher gave: fewer notes get
+ * more of their text, so a tall tile is filled with words, not space.
+ * One line at least, five at most (a sixth line is a paragraph, not a glance).
+ */
+private fun bodyLines(heightDp: Float, rows: Int): Int {
+    if (rows <= 0) return 1
+    val body = heightDp - 24f - 26f - (rows - 1) * ROW_GAP - rows * LINE_DP
+    return (body / (rows * LINE_DP)).toInt().coerceIn(1, 5)
 }
 
 @Composable
