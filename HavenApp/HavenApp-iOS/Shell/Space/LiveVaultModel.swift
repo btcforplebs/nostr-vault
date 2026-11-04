@@ -4,6 +4,13 @@ import Combine
 /// The Live Vault panel's lines: the Vault list's lines in fixed rows that
 /// never jump (`LiveVault`). Kept by `SpaceColumn`, so the folded column and
 /// a collapsed panel still know how many are new.
+///
+/// Logen 2026-11-04 (RESEARCH/NV_LIVE_VAULT_LOAD_ORDER.md): it showed only
+/// zaps at first, the rest late or never. Now it rebuilds on a throttle, not
+/// a debounce that every profile flush restarted; it has the new followers,
+/// as the Vault tab does; it rebuilds when your web of trust changes; and it
+/// fetches the notes that likes, reposts and zaps point at when they aren't
+/// in memory (`VaultActivity.missingTargets`).
 @MainActor
 final class LiveVaultModel: ObservableObject {
     @Published private(set) var lines: [VaultActivity] = []
@@ -16,13 +23,28 @@ final class LiveVaultModel: ObservableObject {
     private var owner = ""
     private var buildGen = 0
     private var cancellables = Set<AnyCancellable>()
+    /// New followers from the relay's ledger, as the Vault tab passes them.
+    private var follows: [(pubkey: String, at: Int64)] = []
+    private var followsTask: Task<Void, Never>?
 
     private var nostrService: NostrService { .shared }
     private var configService: ConfigService { .shared }
 
     init() {
+        // A throttle, not a debounce: events and profile flushes (which each
+        // rebuild's own profile fetch sets off) arrive faster than once a
+        // second while the vault fills, and a debounce restarted on every
+        // one, so the lines waited for a quiet second that didn't come.
         nostrService.eventUpdateSubject
-            .debounce(for: .seconds(1), scheduler: RunLoop.main)
+            .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
+            .sink { [weak self] _ in self?.rebuild() }
+            .store(in: &cancellables)
+        // The outside filter reads your web: rebuild when it arrives or changes.
+        FeedService.shared.$wotPubkeys
+            .map(\.count)
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.rebuild() }
             .store(in: &cancellables)
         AccountUnreadStore.shared.$state
@@ -45,8 +67,28 @@ final class LiveVaultModel: ObservableObject {
         shot = nil
         lines = []
         topId = nil
+        follows = []
         readSeen()
         rebuild()
+        watchFollowers(hex)
+    }
+
+    /// Reads the follower ledger now and every minute, as the Vault tab does
+    /// while it is on screen (`VaultView.pollFollowers`).
+    private func watchFollowers(_ hex: String) {
+        followsTask?.cancel()
+        followsTask = Task { [weak self] in
+            while !Task.isCancelled {
+                let snapshot = await Task.detached(priority: .utility) { FollowerSnapshot.load(owner: hex) }.value
+                guard let self, !Task.isCancelled, self.owner == hex else { return }
+                let news = snapshot?.current.filter(\.isNews).map { (pubkey: $0.pubkey, at: $0.followedAt) } ?? []
+                if news.map(\.pubkey) != self.follows.map(\.pubkey) {
+                    self.follows = news
+                    self.rebuild()
+                }
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
     }
 
     /// The Vault tab's view starts the fetch for these lines, and a tab is
@@ -97,6 +139,7 @@ final class LiveVaultModel: ObservableObject {
         let notifyOwn = configService.config.notifyOwnAccountTags
         let trusted = FeedService.shared.relayTabTrustedPubkeys()
         let zapsOnly = configService.config.zapsOnlyMode
+        let follows = self.follows
         Task.detached(priority: .utility) {
             let built = VaultActivity.build(
                 events: events.filter { $0.pubkey == owner || !mutes.hides(id: $0.id, content: $0.content, tags: $0.tags) }.map {
@@ -105,6 +148,7 @@ final class LiveVaultModel: ObservableObject {
                 },
                 owner: owner,
                 noteKinds: Set(NostrService.relayTabNoteKinds),
+                follows: follows,
                 isBlocked: {
                     blacklist.contains($0) || NotificationPolicy.hidesOwnAccountTag(
                         author: $0, recipient: owner, accounts: ownAccounts, notify: notifyOwn)
@@ -112,6 +156,7 @@ final class LiveVaultModel: ObservableObject {
                 isOutside: { ContentFilter.isOutside(author: $0, owner: owner, whitelist: whitelist, trusted: trusted) }
             )
             let shown = Array(built.lazy.filter { !(zapsOnly && $0.kind == .reaction) }.prefix(LiveVault.maxRows * 3))
+            let have = Set(events.map(\.id))
             await MainActor.run { [weak self] in
                 guard let self, gen == self.buildGen else { return }
                 // At the top (or not scrolled yet), the new lines show;
@@ -124,6 +169,7 @@ final class LiveVaultModel: ObservableObject {
                 }
                 if atTop, let first = self.rows.first?.id, first != self.topId { self.topId = first }
                 self.nostrService.fetchMissingProfiles(for: Array(Set(shown.prefix(LiveVault.maxRows).flatMap { $0.actors.prefix(2) })))
+                ActivityTargetFetcher.shared.fetch(Array(shown.prefix(LiveVault.maxRows)), have: have)
             }
         }
     }

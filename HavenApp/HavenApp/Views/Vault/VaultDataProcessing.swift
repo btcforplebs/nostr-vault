@@ -286,12 +286,16 @@ extension VaultView {
                     .filter { currentActivityFilter.includes($0.kind) && !(zapsOnly && $0.kind == .reaction) }
                     .prefix(currentMaxDisplayed))
                 let missingProfiles = Array(Set(shown.flatMap { $0.actors.prefix(5) }))
+                let have = Set(currentEvents.map(\.id))
                 guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                 await MainActor.run {
                     if self.displayActivity != shown { self.displayActivity = shown }
                     self.activityHasLoadedOnce = true
                     self.displayPass &+= 1
                     self.nostrService.fetchMissingProfiles(for: missingProfiles)
+                    // Likes, reposts and zaps on your notes not in memory:
+                    // their notes, for the previews (VaultActivity.missingTargets).
+                    ActivityTargetFetcher.shared.fetch(shown, have: have)
                 }
             } else if currentMode == .likes {
                 // MARK: - Likes Mode
