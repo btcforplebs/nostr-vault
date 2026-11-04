@@ -34,22 +34,36 @@ export const MODES = [
   { id: "followers", title: "Followers" },
 ]
 
-/** Each mode's filters, named as the phone names them (VaultFilterChoice.name); `pill` is the short form the closed
- *  pill shows when the name is long. The first one is the default. */
+/**
+ * Each mode's filters, named as the phone names them (VaultFilterChoice.name); `pill` is the short form the closed
+ * pill shows when the name is long. Logen 2026-11-04 (RESEARCH/NV_TOOLBAR_FILTER_AUDIT.md): "All" is never a button.
+ * On a page in CLEARABLE, no filter on ("") is All, and tapping the lit filter again turns it off. Likes, Zaps and
+ * Followers keep both of theirs, the first one being the default. At most two up front; `group: "type"` folds into
+ * one type menu (Media), and `more: true` goes in the page's ··· menu.
+ */
 export const FILTERS = {
-  activity: [{ id: "all", title: "Everything", pill: "All" }, { id: "mentions", title: "Mentions" }],
-  notes: [{ id: "all", title: "All notes", pill: "All" }, { id: "mine", title: "Your notes", pill: "Yours" }, { id: "tagged", title: "Mentions" }],
-  articles: [{ id: "all", title: "All articles", pill: "All" }, { id: "recipes", title: "Recipes only", pill: "Recipes" }],
-  highlights: [{ id: "all", title: "All highlights", pill: "All" }, { id: "mine", title: "Your highlights", pill: "Yours" }],
-  // The phone's gallery filters (MediaGalleryToolbar), then the pictures in your notes, which the web showed before.
-  media: [{ id: "all", title: "All media", pill: "All" }, { id: "photos", title: "Photos" }, { id: "videos", title: "Videos" }, { id: "gifs", title: "GIFs" }, { id: "notes", title: "In your notes", pill: "Notes" }],
+  activity: [{ id: "mentions", title: "Mentions" }, { id: "outside", title: "Outside your web", pill: "Outside", more: true }],
+  notes: [{ id: "mine", title: "Your notes", pill: "Yours" }],
+  articles: [{ id: "mine", title: "Your articles", pill: "Yours" }, { id: "recipes", title: "Recipes only", pill: "Recipes" }],
+  highlights: [{ id: "mine", title: "Your highlights", pill: "Yours" }],
+  // The phone's gallery types (MediaGalleryToolbar) as one menu, then the pictures in your notes (web only, in ···).
+  media: [{ id: "photos", title: "Photos", group: "type" }, { id: "videos", title: "Videos", group: "type" }, { id: "gifs", title: "GIFs", group: "type" },
+    { id: "notes", title: "In your notes", pill: "Notes", more: true }],
   likes: [{ id: "received", title: "Likes received", pill: "Received" }, { id: "given", title: "Likes given", pill: "Given" }],
   zaps: [{ id: "received", title: "Zaps received", pill: "Received" }, { id: "given", title: "Zaps given", pill: "Given" }],
   followers: [{ id: "new", title: "Newest followers", pill: "Newest" }, { id: "all", title: "All followers", pill: "All" }],
 }
+/** The pages whose filters can all be off: off is everything ("" ). */
+export const CLEARABLE = new Set(["activity", "notes", "articles", "highlights", "media"])
+/** What a page with no filter on is called, for the closed pill and its spoken label. */
+export const ALL_TITLE = { activity: "Everything", notes: "All notes", articles: "All articles", highlights: "All highlights", media: "All media" }
 
 export const isMode = id => MODES.some(m => m.id === id)
-export const defaultFilter = mode => FILTERS[mode]?.[0]?.id ?? ""
+export const defaultFilter = mode => (CLEARABLE.has(mode) ? "" : FILTERS[mode]?.[0]?.id ?? "")
+/** A filter tapped: on a clearable page, the lit one turns off; otherwise it is picked. */
+export const nextFilter = (mode, current, tapped) => (CLEARABLE.has(mode) && current === tapped ? "" : tapped)
+/** A kept filter still offered for the mode (a filter cut since, "tagged" or "all", falls back to the default). */
+export const validFilter = (mode, id) => ((id === "" && CLEARABLE.has(mode)) || (FILTERS[mode] ?? []).some(f => f.id === id) ? id : defaultFilter(mode))
 
 const tag = (ev, name) => ev.tags.find(t => t[0] === name && t[1])?.[1]
 const lastE = ev => { const es = ev.tags.filter(t => t[0] === "e" && HEX64.test(t[1] ?? "")); return es.length ? es[es.length - 1][1] : null }
@@ -92,7 +106,7 @@ export function previewOf(ev) {
  * -> [{ id, kind, actors: [pubkey], created_at, openId, preview, emojis, sats, images, imagesBy }]; `imagesBy` is whose
  * note the images are from (whose mesh vault MediaImage may ask).
  */
-export function activityRows(inbound, me, { mine = [], follows = [], blocked = new Set(), trusted = new Set() } = {}) {
+export function activityRows(inbound, me, { mine = [], follows = [], blocked = new Set(), trusted = new Set(), outside = false } = {}) {
   const myText = new Map(mine.map(n => [n.id, previewOf(n)]))
   const myImages = new Map(mine.map(n => [n.id, imagesOf(n)]))
   const folds = new Map()
@@ -110,6 +124,10 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
   for (const ev of inbound) {
     if (!ev || seen.has(ev.id) || !Array.isArray(ev.tags)) continue
     seen.add(ev.id)
+    // Outside your web (the Vault page's ··· filter, Logen 2026-11-04): only what tags you from outside your network,
+    // the lines the list otherwise leaves out. Likes, zaps, reposts and follows aren't in it.
+    if (outside && (ev.pubkey === me || blocked.has(ev.pubkey) || !TAGGING_KINDS.includes(ev.kind) || !tagsMe(ev, me)
+      || isMutedNote(ev, blocked) || !isOutside(ev.pubkey, me, new Set(), trusted))) continue
     if (ev.kind === 7) {
       const target = firstE(ev)
       if (ev.pubkey === me || !target || !myText.has(target) || blocked.has(ev.pubkey)) continue
@@ -136,7 +154,7 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
       continue
     }
     if (!TAGGING_KINDS.includes(ev.kind) || !tagsMe(ev, me)) continue
-    if (isMutedNote(ev, blocked) || isOutside(ev.pubkey, me, new Set(), trusted)) continue
+    if (!outside && (isMutedNote(ev, blocked) || isOutside(ev.pubkey, me, new Set(), trusted))) continue
     let kind = "mention"
     if (ev.kind === ARTICLE_KIND) kind = "article"
     else if (ev.kind === HIGHLIGHT_KIND) kind = "highlight"
@@ -159,13 +177,15 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
     const sorted = [...list].sort((a, b) => b.at - a.at)
     return { id: `follow-${d}`, kind: "follow", actors: uniq(sorted.map(f => f.pubkey)), created_at: sorted[0].at, openId: null, preview: "", emojis: [], sats: 0, images: [] }
   })
-  return [...singles, ...folded, ...followLines].sort(byNewest)
+  return [...singles, ...folded, ...(outside ? [] : followLines)].sort(byNewest)
 }
 
-/** The "Vault" list's filters: everything, or only what you might answer (replies, mentions, quotes). */
+/** The "Vault" list's filters: everything, or only what you might answer (replies, mentions, quotes). Outside your
+ *  web is its own list (activityRows `outside`). */
 export const activityFilter = (row, filter) => filter !== "mentions" || ["reply", "mention", "quote"].includes(row.kind)
 
-/** Notes: your own and the ones tagging you, by the phone's Notes filters (ContentFilter all / mine / tagged). */
+/** Notes: your own and the ones tagging you; "mine", your own only (the phone's ContentFilter all / mine). A Mentions
+ *  filter here was the Vault page's again (Logen 2026-11-04); "tagged" still reads, for a caller that kept it. */
 export function notesFor(own, inbound, me, filter, blocked = new Set()) {
   const mine = own.filter(e => NOTE_KINDS.includes(e.kind))
   const tagged = inbound.filter(e => e.kind === 1 && e.pubkey !== me && tagsMe(e, me) && !blocked.has(e.pubkey))
@@ -176,8 +196,12 @@ export function notesFor(own, inbound, me, filter, blocked = new Set()) {
 /** Recipes are articles tagged zapcooking or nostrcooking (the phone's recipesOnly). */
 export const isRecipe = ev => (ev.tags ?? []).some(t => t[0] === "t" && /^(zapcooking|nostrcooking)$/i.test(t[1] ?? ""))
 
+/** Articles: yours and the ones tagging you; "mine", yours only; "recipes", the recipes among them (a radio, not a toggle
+ *  stacked on Yours, Logen 2026-11-04). */
 export function articlesFor(own, inbound, me, filter, blocked = new Set()) {
-  const list = [...own.filter(e => e.kind === ARTICLE_KIND), ...inbound.filter(e => e.kind === ARTICLE_KIND && e.pubkey !== me && tagsMe(e, me) && !blocked.has(e.pubkey))]
+  const yours = own.filter(e => e.kind === ARTICLE_KIND)
+  if (filter === "mine") return dedupe(yours).sort(byNewest)
+  const list = [...yours, ...inbound.filter(e => e.kind === ARTICLE_KIND && e.pubkey !== me && tagsMe(e, me) && !blocked.has(e.pubkey))]
   return dedupe(filter === "recipes" ? list.filter(isRecipe) : list).sort(byNewest)
 }
 
@@ -465,7 +489,7 @@ export function keepLists(me, lists, storage = globalThis.localStorage) {
 /** The rows the current mode and filter show, newest first: built once per change of what they're built from. */
 export function itemsFor(mode, filter, { own = [], inbound = [], given = [], followers = [], me, blocked = new Set(), seenAt = 0, trusted = new Set() }) {
   switch (mode) {
-    case "activity": return activityRows(inbound, me, { mine: own, follows: followers, blocked, trusted }).filter(r => activityFilter(r, filter))
+    case "activity": return activityRows(inbound, me, { mine: own, follows: followers, blocked, trusted, outside: filter === "outside" }).filter(r => activityFilter(r, filter))
     case "notes": return notesFor(own, inbound, me, filter, blocked)
     case "articles": return articlesFor(own, inbound, me, filter, blocked)
     case "highlights": return highlightsFor(own, inbound, me, filter, blocked)

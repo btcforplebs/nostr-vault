@@ -57,6 +57,8 @@ a.settings-row:hover { background: var(--s2); }
 .vault-menu-list { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; min-width: 200px; padding: 6px; display: grid;
   background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); box-shadow: 0 12px 32px rgb(0 0 0 / .6); }
 .vault-menu.right .vault-menu-list { left: auto; right: 0; }
+/* An open menu sits over the list's "N new" pill, which shares the head's layer (both z-index 5). */
+.screen-head.vault-head:has(.vault-menu-list) { z-index: 7; }
 .vault-menu-list hr { border: 0; border-top: 1px solid var(--hair); margin: 6px 0; }
 .vault-menu-list [role=menuitem] { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border: 0; border-radius: 8px;
   background: none; color: var(--text); font: var(--t-sub); text-align: left; white-space: nowrap; }

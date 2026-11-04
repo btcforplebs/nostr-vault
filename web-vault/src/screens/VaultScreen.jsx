@@ -24,7 +24,7 @@ import { VaultSearch } from "./VaultSearch.jsx"
 import { BlossomGallery } from "./BlossomGallery.jsx"
 import { newestByMode, readSeen, writeSeen, markSeen, baseline, newModes } from "../net/vault-new.js"
 import {
-  MODES, FILTERS, isMode, defaultFilter, previewOf, highlightSource, followersOf, followersSeenAt, markFollowersSeen,
+  MODES, FILTERS, CLEARABLE, ALL_TITLE, isMode, defaultFilter, nextFilter, validFilter, previewOf, highlightSource, followersOf, followersSeenAt, markFollowersSeen,
   readOwn, readInbound, readOlder, fetchVault, READ_PAGE, keepVault, keptVault, sinceKept,
   readLists, keepLists, mergeLists, itemsFor, peopleOf, newestShown, splitArrivals, heldCount,
 } from "../net/vault-lists.js"
@@ -51,7 +51,7 @@ export function VaultScreen({ ctx, desk = false }) {
   // The phone opens on "Vault"; "#/vault/notes" opens a list straight from a link. The tab's dot goes to where the
   // news is, not to the list you left (BottomTabBar opensNewActivity).
   const [mode, setMode] = useState(() => link ?? (getVaultUnread() > 0 ? "activity" : k?.mode ?? "activity"))
-  const [filter, setFilter] = useState(() => k && mode === k.mode ? k.filter : defaultFilter(mode))
+  const [filter, setFilter] = useState(() => k && mode === k.mode ? validFilter(mode, k.filter) : defaultFilter(mode))
   const [own, setOwn] = useState(() => k?.own ?? [])
   const [inboundAll, setInbound] = useState(() => k?.inbound ?? [])
   // Kind 3 lists naming the user, cut down (vault-lists.js compactLists) and kept in this browser between visits.
@@ -169,7 +169,8 @@ export function VaultScreen({ ctx, desk = false }) {
   useEffect(() => () => { const { me: who, ...state } = keep.current; keepVault(who, { ...state, top: top.current, scrollY: scrolled.current }) }, [])
 
   const pick = m => { setMode(m); setFilter(defaultFilter(m)); setShown(FIRST_ROWS) }
-  const choose = id => { setFilter(id); setShown(FIRST_ROWS) }
+  // Tapping the lit filter on a page whose filters can all be off turns it off: All (Logen 2026-11-04).
+  const choose = id => { setFilter(nextFilter(mode, filter, id)); setShown(FIRST_ROWS) }
   // The end of the list nears: draw more rows, and once all are drawn read the page before them from Haven.
   const onMore = async atEnd => {
     if (!atEnd) { setShown(n => n + MORE_ROWS); return }
@@ -237,7 +238,7 @@ export function VaultScreen({ ctx, desk = false }) {
   // Anyone can reply, react, zap or follow: only a follow's (or your own) picture host and inline images are fetched.
   const trusted = pk => pk === me || account.follows.includes(pk)
   const filters = FILTERS[mode]
-  const f = filters.find(x => x.id === filter)
+  const f = filters.find(x => x.id === filter) ?? { id: "", title: ALL_TITLE[mode] ?? "All", pill: "All" }
   return (
     <main class="screen vault" ref={root}>
       <header class="screen-head vault-head">
@@ -251,9 +252,7 @@ export function VaultScreen({ ctx, desk = false }) {
         {!desk ? (
           <div class="vault-capsule">
             {filters.length > 0 && <>
-              <div class="vault-capsule-filters" role="group" aria-label={`Filter: ${f?.title}`}>
-                {filters.map(x => <button key={x.id} class={`vault-capsule-btn ${x.id === filter ? "on" : ""}`} aria-pressed={x.id === filter} aria-label={x.title} title={x.title} onClick={() => choose(x.id)}><Icon d={filterIcon(mode, x.id)} size={18} /></button>)}
-              </div>
+              <CapsuleFilters mode={mode} filters={filters} filter={filter} current={f} onChoose={choose} />
               <span class="vault-capsule-line" aria-hidden="true" />
             </>}
             <button class={`vault-capsule-btn ${searching ? "on" : ""}`} onClick={() => setSearching(!searching)} aria-label="Search your vault" aria-pressed={searching} title="Search your vault"><Icon d={ICONS.search} size={18} /></button>
@@ -264,6 +263,7 @@ export function VaultScreen({ ctx, desk = false }) {
           {filters.length > 0 && (
             <Menu label={<><Icon d={ICONS.filter} /><span>{f?.pill ?? f?.title}</span><Chevron /></>} title={`Filter: ${f?.title}`} align="right">
               {filters.map(x => <MenuItem key={x.id} on={x.id === filter} onClick={() => choose(x.id)}>{x.title}</MenuItem>)}
+              {CLEARABLE.has(mode) && filter && <MenuItem on={false} onClick={() => choose(filter)}>Show {f.id ? ALL_TITLE[mode].toLowerCase() : "all"}</MenuItem>}
             </Menu>
           )}
           <button class="vault-pill-btn" onClick={() => setSearching(!searching)} aria-label="Search your vault" aria-pressed={searching} title="Search your vault"><Icon d={ICONS.search} /></button>
@@ -281,6 +281,34 @@ export function VaultScreen({ ctx, desk = false }) {
   )
 }
 
+
+/**
+ * The phone capsule's filters (Logen 2026-11-04): at most two up front as bare icons, lit when on, a tap on the lit one
+ * turning it off where the page allows (vault-lists.js CLEARABLE); Media's types as one menu; extras (Outside your
+ * web, In your notes) in the page's ··· menu.
+ */
+function CapsuleFilters({ mode, filters, filter, current, onChoose }) {
+  const up = filters.filter(x => !x.more && !x.group)
+  const types = filters.filter(x => x.group === "type")
+  const more = filters.filter(x => x.more)
+  const typeOn = types.find(x => x.id === filter)
+  const moreOn = more.find(x => x.id === filter)
+  return (
+    <div class="vault-capsule-filters" role="group" aria-label={`Filter: ${current.title}`}>
+      {types.length > 0 && (
+        <Menu label={<Icon d={typeOn ? filterIcon(mode, typeOn.id) : ICONS.grid} size={18} />} title={`Type: ${typeOn?.title ?? "All media"}`} align="right" pill={`vault-capsule-btn${typeOn ? " on" : ""}`}>
+          {types.map(x => <MenuItem key={x.id} on={x.id === filter} onClick={() => onChoose(x.id)}>{x.title}</MenuItem>)}
+        </Menu>
+      )}
+      {up.map(x => <button key={x.id} class={`vault-capsule-btn ${x.id === filter ? "on" : ""}`} aria-pressed={x.id === filter} aria-label={x.title} title={x.title} onClick={() => onChoose(x.id)}><Icon d={filterIcon(mode, x.id)} size={18} /></button>)}
+      {more.length > 0 && (
+        <Menu label={<Icon d={ICONS.more} size={18} width={3.4} />} title={moreOn ? `More filters: ${moreOn.title}` : "More filters"} align="right" pill={`vault-capsule-btn${moreOn ? " on" : ""}`}>
+          {more.map(x => <MenuItem key={x.id} on={x.id === filter} onClick={() => onChoose(x.id)}>{x.title}</MenuItem>)}
+        </Menu>
+      )}
+    </div>
+  )
+}
 
 /** The list's shape while the relay is read: tiles for media, people rows for followers, cards otherwise. */
 function VaultSkeleton({ mode }) {
@@ -308,7 +336,7 @@ function List({ ctx, mode, filter, items, me, followers, notes, trusted, unreadS
   switch (mode) {
     case "activity": {
       const rows = items
-      return (rows.length || page.older) ? paged(rows, r => <ActivityRow key={r.id} row={r} trusted={trusted} unread={r.created_at > unreadSince} onFollowers={onFollowers} />) : <Empty text={filter === "mentions" ? "No replies, mentions or quotes yet." : "Nothing has come in yet. Replies, likes, zaps, reposts and new followers land here."} />
+      return (rows.length || page.older) ? paged(rows, r => <ActivityRow key={r.id} row={r} trusted={trusted} unread={r.created_at > unreadSince} onFollowers={onFollowers} />) : <Empty text={filter === "outside" ? "Nothing from outside your web tags you. Replies and mentions from people outside it would land here." : filter === "mentions" ? "No replies, mentions or quotes yet." : "Nothing has come in yet. Replies, likes, zaps, reposts and new followers land here."} />
     }
     case "notes": {
       const list = items

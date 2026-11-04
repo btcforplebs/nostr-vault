@@ -26,15 +26,20 @@ export const ICONS = {
   photo: "M4 5h16v14H4zM4 16l5-5 4 4 2-2 5 5M15.5 9.5h.01",
   video: "M4 6h12v12H4zM16 10l5-3v10l-5-3",
   gif: "M4 5h16v14H4zM10 10H8v4h2v-1.5M13 10v4M16.5 14v-4H18M16.5 12H18",
+  // Media's type menu (square.grid.2x2) and a page's ··· menu.
+  grid: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
+  more: "M5 12h.01M12 12h.01M19 12h.01",
+  outside: "M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21a8 8 0 0 1 12.5-6.6M18 15a2 2 0 1 1 2 2v1.5M20 21h.01",
 }
-export const FILTER_ICONS = { all: "stack", mentions: "at", tagged: "at", mine: "person", recipes: "fork", received: "trayIn", given: "trayOut", new: "sparkles", photos: "photo", videos: "video", gifs: "gif", notes: "notes" }
+export const FILTER_ICONS = { all: "stack", mentions: "at", tagged: "at", mine: "person", recipes: "fork", received: "trayIn", given: "trayOut", new: "sparkles", photos: "photo", videos: "video", gifs: "gif", notes: "notes", outside: "outside" }
 export const filterIcon = (mode, id) => ICONS[mode === "followers" && id === "all" ? "followers" : FILTER_ICONS[id]]
 export const Icon = ({ d, size = 16, width = 1.8 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width={width} stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
 
 export const Chevron = () => <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
 
 /** A pill that opens a list under it, closed by a pick, a tap outside or Escape. */
-export function Menu({ label, title, align = "left", children }) {
+/** `pill`: the opener's class (a capsule icon button instead of the labelled pill). */
+export function Menu({ label, title, align = "left", pill = "vault-pill", children }) {
   const [open, setOpen] = useState(false)
   const ref = useRef()
   useEffect(() => {
@@ -46,7 +51,7 @@ export function Menu({ label, title, align = "left", children }) {
   }, [open])
   return (
     <div class={`vault-menu ${align}`} ref={ref} onClick={e => { if (e.target.closest("[role=menuitem]")) setOpen(false) }}>
-      <button class={`vault-pill ${open ? "open" : ""}`} aria-haspopup="menu" aria-expanded={open} aria-label={title} onClick={() => setOpen(!open)}>{label}</button>
+      <button class={`${pill} ${open ? "open" : ""}`} aria-haspopup="menu" aria-expanded={open} aria-label={title} onClick={() => setOpen(!open)}>{label}</button>
       {open && <div class="vault-menu-list" role="menu">{children}</div>}
     </div>
   )
