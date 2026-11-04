@@ -56,7 +56,6 @@ type Config struct {
 	InboxRelayIcon                       string              `json:"inbox_relay_icon"`
 	InboxPullIntervalSeconds             int                 `json:"inbox_pull_interval_seconds"`
 	ImportStartDate                      string              `json:"import_start_date"`
-	ImportOwnerNotesFetchTimeoutSeconds  int                 `json:"import_owned_notes_fetch_timeout_seconds"`
 	ImportTaggedNotesFetchTimeoutSeconds int                 `json:"import_tagged_fetch_timeout_seconds"`
 	ImportSeedRelays                     []string            `json:"import_seed_relays"`
 	DmRelays                             []string            `json:"dm_relays"`
@@ -86,14 +85,14 @@ type Config struct {
 	// this the relay counted kinds the user had switched off in the app into
 	// the catch-up summary: the client filters individual markers by kind, but
 	// a summary is one number and nothing can filter it after the fact.
-	NotifyKinds                          map[int]struct{}    `json:"notify_kinds"`
-	NotifyMaxAgeHours                    int                 `json:"notify_max_age_hours"`
-	FeedSyncEnabled                      bool                `json:"feed_sync_enabled"`
-	FeedSyncWindowDays                   int                 `json:"feed_sync_window_days"`
-	FeedSyncRelays                       []string            `json:"feed_sync_relays"`
-	GoMemLimitMB                         int                 `json:"go_mem_limit_mb"`
-	PopularTallyEnabled                  bool                `json:"popular_tally_enabled"`
-	PopularTallyCachePath                string              `json:"popular_tally_cache_path"`
+	NotifyKinds           map[int]struct{} `json:"notify_kinds"`
+	NotifyMaxAgeHours     int              `json:"notify_max_age_hours"`
+	FeedSyncEnabled       bool             `json:"feed_sync_enabled"`
+	FeedSyncWindowDays    int              `json:"feed_sync_window_days"`
+	FeedSyncRelays        []string         `json:"feed_sync_relays"`
+	GoMemLimitMB          int              `json:"go_mem_limit_mb"`
+	PopularTallyEnabled   bool             `json:"popular_tally_enabled"`
+	PopularTallyCachePath string           `json:"popular_tally_cache_path"`
 }
 
 const relaySoftware = "https://github.com/barrydeen/haven"
@@ -139,7 +138,6 @@ func loadConfig() Config {
 		InboxRelayIcon:                       getEnv("INBOX_RELAY_ICON"),
 		InboxPullIntervalSeconds:             getEnvInt("INBOX_PULL_INTERVAL_SECONDS", 3600),
 		ImportStartDate:                      getEnv("IMPORT_START_DATE"),
-		ImportOwnerNotesFetchTimeoutSeconds:  getEnvInt("IMPORT_OWNER_NOTES_FETCH_TIMEOUT_SECONDS", 60),
 		ImportTaggedNotesFetchTimeoutSeconds: getEnvInt("IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS", 120),
 		ImportSeedRelays:                     getRelayListFromFile(getEnv("IMPORT_SEED_RELAYS_FILE")),
 		DmRelays:                             getRelayListFromFile(getEnvString("DM_RELAYS_FILE", "")),

@@ -136,52 +136,40 @@ func importOwnerNotes(ctx context.Context) {
 			Until:   &endTimestamp,
 		}
 
-		done := make(chan int, 1)
-		timeout := time.Duration(config.ImportOwnerNotesFetchTimeoutSeconds) * time.Second
-		ctx, cancel := context.WithTimeout(ctx, timeout)
-
-		go func() {
-			defer cancel()
-			batchImportedNotes := 0
-
-			// done must be signalled even if the fetch loop panics,
-			// otherwise the select below waits out the full timeout.
-			runsafe.Run("importOwnerNotes.fetch", func() {
-				events := pool.FetchMany(ctx, importRelays(), filter)
-				for ev := range events {
-					if ctx.Err() != nil {
-						break // Stop the loop on timeout
-					}
-					if isBlacklisted(ev.PubKey) {
-						slog.Debug("🚫 skipping event from blacklisted pubkey", "pubkey", ev.PubKey, "id", ev.ID)
-						continue
-					}
-					if isDeleted(ctx, outboxDB, ev.Event) {
-						slog.Debug("🚫 skipping deleted event", "id", ev.ID)
-						continue
-					}
-					applyImportedDeletion(ctx, outboxDB, ev.Event)
-					if err := wdb.Publish(ctx, *ev.Event); err != nil {
-						log.Println("🚫  error importing note", ev.ID, ":", err)
-						nFailedImportNotes++
-					}
-					batchImportedNotes++
+		// Paged until done, each request ending only when its relay goes quiet
+		// (import_paging.go): no relay cap or fixed deadline cuts a window short.
+		var res windowResult
+		batch := 0
+		runsafe.Run("importOwnerNotes.fetch", func() {
+			res = fetchWindowPaged(ctx, importRelays(), filter, func(ev *nostr.Event) {
+				if isBlacklisted(ev.PubKey) {
+					slog.Debug("🚫 skipping event from blacklisted pubkey", "pubkey", ev.PubKey, "id", ev.ID)
+					return
 				}
+				if isDeleted(ctx, outboxDB, ev) {
+					slog.Debug("🚫 skipping deleted event", "id", ev.ID)
+					return
+				}
+				applyImportedDeletion(ctx, outboxDB, ev)
+				if err := wdb.Publish(ctx, *ev); err != nil {
+					log.Println("🚫  error importing note", ev.ID, ":", err)
+					nFailedImportNotes++
+				}
+				batch++
 			})
-			done <- batchImportedNotes
-			close(done)
-		}()
-
-		select {
-		case batchImportedNotes := <-done:
-			ownerImportedNotes += batchImportedNotes
-			if batchImportedNotes == 0 {
-				log.Printf("ℹ️ No notes found for %s to %s", startTime.Format(layout), endTime.Format(layout))
-			} else {
-				log.Printf("📦 Imported %d notes from %s to %s", batchImportedNotes, startTime.Format(layout), endTime.Format(layout))
-			}
-		case <-ctx.Done():
-			log.Printf("🚫 Timeout after %v while importing notes from %s to %s", timeout, startTime.Format(layout), endTime.Format(layout))
+		})
+		if ctx.Err() != nil {
+			return
+		}
+		ownerImportedNotes += batch
+		if batch == 0 {
+			log.Printf("ℹ️ No notes found for %s to %s", startTime.Format(layout), endTime.Format(layout))
+		} else {
+			log.Printf("📦 Imported %d notes from %s to %s", batch, startTime.Format(layout), endTime.Format(layout))
+		}
+		if len(res.Short) > 0 {
+			log.Printf("⚠️ %d relay(s) stopped partway through %s to %s; their older notes there may be missing: %v",
+				len(res.Short), startTime.Format(layout), endTime.Format(layout), res.Short)
 		}
 
 		startTime = startTime.Add(240 * time.Hour)

@@ -124,7 +124,6 @@ func EngineEnv(c Config, vaultDir string) map[string]string {
 		"IMPORT_START_DATE":                         "2023-01-01",
 		"IMPORT_SEED_RELAYS_FILE":                   "relays_import.json",
 		"IMPORT_QUERY_INTERVAL_SECONDS":             "600",
-		"IMPORT_OWNER_NOTES_FETCH_TIMEOUT_SECONDS":  "300",
 		"IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS": "600",
 		"DM_RELAYS_FILE":                            "relays_dm.json",
 		"MAC_RELAY_URL":                             "",
