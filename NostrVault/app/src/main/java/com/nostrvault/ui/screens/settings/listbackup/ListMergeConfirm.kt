@@ -86,7 +86,7 @@ internal fun ListMergeConfirm(
                 },
             ) { Text(if (busy) "Saving…" else "Save") }
             TextButton(enabled = !busy, onClick = onCancel) { Text("Cancel") }
-            if (!review && !nothing) TextButton(enabled = !busy, onClick = onReview) { Text("Review") }
+            if (!review && sum.showsReview) TextButton(enabled = !busy, onClick = onReview) { Text("Review") }
         }
         if (msg.isNotEmpty()) Text(msg, color = Color(0xFFFF9500), fontSize = 13.sp)
     }

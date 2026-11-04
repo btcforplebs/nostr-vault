@@ -128,7 +128,7 @@ struct ListMergeView: View {
                 .disabled(working || nothing || sum.total == 0 || (sum.removed > 0 && !shrinkOK))
             Button("Cancel", role: .cancel) { self.rows = nil }
                 .disabled(working)
-            if !nothing {
+            if sum.showsReview {
                 NavigationLink("Review") {
                     ListMergeReview(kind: kind, rows: Binding(get: { self.rows ?? [] }, set: { self.rows = $0; shrinkOK = false }))
                 }

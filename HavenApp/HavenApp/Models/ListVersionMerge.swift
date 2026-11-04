@@ -364,6 +364,12 @@ enum ListVersionMerge {
         /// Left out because it can't be told whether the person took them out.
         let unsure: Int
         let remutes: Remutes
+
+        /// The Review link shows whenever there is something to look at:
+        /// what Save changes, and also what was left out unticked, since the
+        /// summary's lines send those to Review to tick ("Nothing to bring
+        /// back" with 33 unsure had no way in; Logen 2026-11-04).
+        var showsReview: Bool { added > 0 || removed > 0 || leftOut + unsure > 0 }
     }
 
     static func summary(kind: Int, rows: [Row]) -> Summary {

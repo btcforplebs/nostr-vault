@@ -268,4 +268,20 @@ class ListVersionMergeTest {
         assertEquals(1, asked)
         assertFalse(all.first { it.v.id == same.v.id }.locked)
     }
+
+    /** "Nothing to bring back" with entries left out unticked still offers Review (Logen 2026-11-04). */
+    @Test
+    fun reviewShowsWhenOnlyLeftOutOrUnsure() {
+        fun row(n: Int, status: ListVersionMerge.Status, ticked: Boolean) =
+            ListVersionMerge.Row(key = p(n), tag = listOf("p", p(n)), private = false, status = status, at = 0, ticked = ticked, from = emptyList())
+        val kept = row(1, ListVersionMerge.Status.CURRENT, true)
+        assertFalse("nothing changes, nothing left out", ListVersionMerge.mergeSummary(3, listOf(kept)).showsReview)
+        val unsure = ListVersionMerge.mergeSummary(3, listOf(kept, row(2, ListVersionMerge.Status.UNSURE, false), row(3, ListVersionMerge.Status.UNSURE, false)))
+        assertEquals(0, unsure.added)
+        assertEquals(2, unsure.unsure)
+        assertTrue(unsure.showsReview)
+        assertTrue(ListVersionMerge.mergeSummary(3, listOf(kept, row(2, ListVersionMerge.Status.REMOVED, false))).showsReview)
+        assertTrue(ListVersionMerge.mergeSummary(3, listOf(kept, row(2, ListVersionMerge.Status.LOST, true))).showsReview)
+        assertTrue(ListVersionMerge.mergeSummary(3, listOf(row(1, ListVersionMerge.Status.CURRENT, false))).showsReview)
+    }
 }
