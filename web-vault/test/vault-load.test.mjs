@@ -157,8 +157,8 @@ test("answers newer than the list on screen wait behind the pill; older ones fil
   assert.deepEqual(splitArrivals("inbound", [late], { top: 0, me: ME }), { now: [late], later: [] })
   const older = ev(1, CAROL, [["p", ME]], "older", 50)
   assert.deepEqual(splitArrivals("inbound", [late, older], { top, me: ME }), { now: [older], later: [late] })
-  // Nothing it would draw (a like on a note that isn't loaded): no reason to hold it.
-  const stray = ev(7, BOB, [["e", "9".repeat(64)], ["p", ME]], "+", 950)
+  // Nothing it would draw (a like on someone else's note: its last p tag is that note's author): no reason to hold it.
+  const stray = ev(7, BOB, [["e", "9".repeat(64)], ["p", ME], ["p", ALICE]], "+", 950)
   assert.deepEqual(splitArrivals("inbound", [stray], { top, me: ME, own: mine }).later, [])
   const lists = compactLists([ev(3, ALICE, [["p", ME]], "", 80)], ME)
   const fresh = compactLists([ev(3, ALICE, [["p", ME], ["p", BOB]], "", 990), ev(3, CAROL, [["p", ME]], "", 995)], ME)

@@ -14,6 +14,7 @@ import { VAULT_NS, RELAY_NS, pageStorage } from "../../../web-relay/src/page-sto
 import { clearSession } from "../session.js"
 import { forgetSynced } from "../net/feed-synced.js"
 import { closeShownNotices } from "../net/notify-show.js"
+import { savedOne } from "../net/vault-saved.js"
 
 // Haven's ServiceURL is https://RELAY_HOST/<route>; NIP-42 compares the AUTH relay tag against it as wss.
 const RELAY_HOST = "vault.local"
@@ -79,7 +80,8 @@ export function routeClient(haven, route, sk, name = `ui${route.replace("/", "-"
     }
   }
   return {
-    event: ev => call("event", ev),
+    // Each event Haven accepts is news for whoever reads that route (net/vault-saved.js); a duplicate isn't.
+    event: async ev => { const r = await call("event", ev); if (r?.ok) savedOne(route, ev); return r },
     query: filters => call("query", filters),
     count: filters => call("count", filters),
     close: () => client?.close(),

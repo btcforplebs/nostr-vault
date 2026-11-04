@@ -3,6 +3,7 @@
 // Zaps and Followers, each with the phone's filters. The user's own events come from Haven's outbox. What others
 // sent (replies, mentions, quotes, reposts, likes, zaps, follows) is read from the user's relays and kept in Haven's
 // inbox route when it takes them, so the list still shows after a reload or offline. Nothing here signs.
+import { verifyEvent } from "nostr-tools/pure"
 import { pool, uniq } from "./pool.js"
 import { settleWatch } from "./settle-early.js"
 import { MAX_SKEW } from "./follows.js"
@@ -68,6 +69,13 @@ export const validFilter = (mode, id) => ((id === "" && CLEARABLE.has(mode)) || 
 const tag = (ev, name) => ev.tags.find(t => t[0] === name && t[1])?.[1]
 const lastE = ev => { const es = ev.tags.filter(t => t[0] === "e" && HEX64.test(t[1] ?? "")); return es.length ? es[es.length - 1][1] : null }
 const firstE = ev => ev.tags.find(t => t[0] === "e" && HEX64.test(t[1] ?? ""))?.[1] ?? null
+/** A like or repost of one of the user's notes, by its last `p` tag (NIP-25/NIP-18: the reacted-to note's author), so it
+ *  counts before that note is in Haven: it used to be left out until then, and for older notes never (Logen 2026-11-04). */
+export const onMyNote = (ev, me) => ev.tags.findLast(t => t[0] === "p")?.[1] === me
+/** The note a repost carries in its content, or null. Signed, or it isn't used: the reposter writes that content. */
+const embeddedNote = ev => {
+  try { const n = JSON.parse(ev.content || "null"); return n && typeof n.id === "string" && Array.isArray(n.tags) && verifyEvent(n) ? n : null } catch { return null }
+}
 const tagsMe = (ev, me) => ev.tags.some(t => t[0] === "p" && t[1] === me)
 const byNewest = (a, b) => b.created_at !== a.created_at ? b.created_at - a.created_at : (a.id < b.id ? -1 : 1)
 const dayOf = ts => { const d = new Date(ts * 1000); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}` }
@@ -112,6 +120,7 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
   const folds = new Map()
   const singles = []
   const seen = new Set()
+  const lent = new Map() // a note of yours not in Haven yet, text from a repost that carries it
   const fold = (kind, target, actor, at, { emoji, sats = 0 } = {}) => {
     const key = `${kind}:${target}`
     const f = folds.get(key) ?? { kind, target, actors: [], emojis: [], sats: 0, at: 0 }
@@ -130,7 +139,10 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
       || isMutedNote(ev, blocked) || !isOutside(ev.pubkey, me, new Set(), trusted))) continue
     if (ev.kind === 7) {
       const target = firstE(ev)
-      if (ev.pubkey === me || !target || !myText.has(target) || blocked.has(ev.pubkey)) continue
+      if (ev.pubkey === me || !target || blocked.has(ev.pubkey)) continue
+      // A like of a note Haven doesn't hold yet counts by its p tag, and only from your network (when there is one):
+      // nothing ties it to a note we can see, so a stranger's stays out.
+      if (!myText.has(target) && (!onMyNote(ev, me) || isOutside(ev.pubkey, me, new Set(), trusted))) continue
       fold("like", target, ev.pubkey, ev.created_at, { emoji: reactionEmoji(ev.content) })
       continue
     }
@@ -150,7 +162,9 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
     if (ev.pubkey === me || blocked.has(ev.pubkey)) continue
     if (ev.kind === 6 || ev.kind === 16) {
       const target = firstE(ev)
-      if (target && myText.has(target)) fold("repost", target, ev.pubkey, ev.created_at)
+      const inner = embeddedNote(ev)
+      if (inner?.id === target && inner.pubkey === me && !myText.has(target)) lent.set(target, previewOf(inner))
+      if (target && (myText.has(target) || (onMyNote(ev, me) && !isOutside(ev.pubkey, me, new Set(), trusted)))) fold("repost", target, ev.pubkey, ev.created_at)
       continue
     }
     if (!TAGGING_KINDS.includes(ev.kind) || !tagsMe(ev, me)) continue
@@ -166,7 +180,7 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
     singles.push({ id: ev.id, kind, actors: [ev.pubkey], created_at: ev.created_at, openId: ev.id, preview: previewOf(ev), emojis: [], sats: 0, images: imagesOf(ev), imagesBy: ev.pubkey })
   }
   const folded = [...folds].map(([key, f]) => ({ id: key, kind: f.kind, actors: uniq(f.actors), created_at: f.at, openId: f.target,
-    preview: myText.get(f.target) ?? "", emojis: uniq(f.emojis), sats: f.sats, images: myImages.get(f.target) ?? [], imagesBy: me }))
+    preview: myText.get(f.target) ?? lent.get(f.target) ?? "", emojis: uniq(f.emojis), sats: f.sats, images: myImages.get(f.target) ?? [], imagesBy: me }))
   const days = new Map()
   for (const f of follows) {
     if (f.pubkey === me || blocked.has(f.pubkey)) continue
@@ -298,9 +312,13 @@ export const clampSince = (since, now = nowSec()) => since ? Math.min(since, now
 const untilOf = until => until ? { until } : {}
 const sinceOf = since => since ? { since: clampSince(since) } : {}
 
+const OWN_KINDS = [...NOTE_KINDS, 7, HIGHLIGHT_KIND, ARTICLE_KIND]
+/** Only what can be liked, reposted or zapped: the user's own likes left out, so a page of READ_PAGE reaches further
+ *  back (Logen's newest 500 own events were 36% his likes, 8 days of notes; Live Vault, 2026-11-04). */
+export const OWN_NOTE_KINDS = [...NOTE_KINDS, HIGHLIGHT_KIND, ARTICLE_KIND]
 /** The user's own events the lists draw from, from Haven's outbox: the newest page, or the page before `until`. */
-export async function readOwn(vault, me, { until, limit = READ_PAGE } = {}) {
-  const evs = await vault.outbox.query({ kinds: [...NOTE_KINDS, 7, HIGHLIGHT_KIND, ARTICLE_KIND], authors: [me], limit, ...untilOf(until) })
+export async function readOwn(vault, me, { until, limit = READ_PAGE, kinds = OWN_KINDS } = {}) {
+  const evs = await vault.outbox.query({ kinds, authors: [me], limit, ...untilOf(until) })
   return dedupe(present(evs))
 }
 

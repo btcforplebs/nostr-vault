@@ -76,7 +76,7 @@ test("replies, mentions and quotes are their own lines; what doesn't tag you or 
     ev(1, BOB, [["p", ME]], "a mention"),
     ev(1, CAROL, [["q", N1], ["p", ME]], "quoting you"),
     ev(1, CAROL, [["p", ALICE]], "not for you"),
-    ev(7, ALICE, [["e", "9".repeat(64)], ["p", ME]], "+"), // a like on a note that isn't yours
+    ev(7, ALICE, [["e", "9".repeat(64)], ["p", ME], ["p", BOB]], "+"), // a like on a note that isn't yours (last p: its author, NIP-25)
     ev(6, BOB, [["p", ME]]), // a repost with no target
     ev(1, ME, [["p", ME]], "me tagging me"),
   ]
