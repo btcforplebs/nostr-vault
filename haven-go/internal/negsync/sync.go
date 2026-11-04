@@ -60,6 +60,10 @@ type Stats struct {
 	Downloaded int // events fetched from the relay and published locally
 	Uploaded   int // events pushed from the local store to the relay
 	RemoteOnly int // distinct IDs the relay has that the local vector lacked (Down/Both)
+	// Missing: of those RemoteOnly IDs, the ones the relay didn't send when
+	// asked, or whose event the store refused. A count can't tell: a relay
+	// that sends one note twice and another not at all still adds up.
+	Missing []string
 }
 
 // openTimeout is how long to wait for the relay's first NEG-MSG/NEG-ERR after
@@ -102,9 +106,17 @@ type direction struct {
 // Option configures a Sync/SyncWithVector call.
 type Option func(*options)
 
+func (o options) handshake() time.Duration {
+	if o.openTimeout > 0 {
+		return o.openTimeout
+	}
+	return openTimeout
+}
+
 type options struct {
-	skipUpload func(id string) bool
-	onUploaded func(id string)
+	skipUpload  func(id string) bool
+	onUploaded  func(id string)
+	openTimeout time.Duration
 }
 
 // WithUploadMemo skips uploading events skip() reports as already sent and
@@ -115,6 +127,12 @@ type options struct {
 // memo a Both/Up sync re-sends the identical set forever.
 func WithUploadMemo(skip func(id string) bool, record func(id string)) Option {
 	return func(o *options) { o.skipUpload = skip; o.onUploaded = record }
+}
+
+// WithOpenTimeout replaces openTimeout for this sync: how long a relay may
+// stay silent after NEG-OPEN before it counts as not speaking NIP-77.
+func WithOpenTimeout(d time.Duration) Option {
+	return func(o *options) { o.openTimeout = d }
 }
 
 // LocalVector is a sealed local ID vector, safe to reuse across sequential
@@ -273,6 +291,10 @@ func SyncWithVector(ctx context.Context, store nostr.RelayStore, lv *LocalVector
 	}()
 
 	var downloaded, uploaded, remoteOnly atomic.Int64
+	var (
+		missMu  sync.Mutex
+		missing []string
+	)
 
 	directions := make([]direction, 0, 2)
 	if dir == Up || dir == Both {
@@ -322,13 +344,24 @@ func SyncWithVector(ctx context.Context, store nostr.RelayStore, lv *LocalVector
 					report(fmt.Errorf("error querying source on %s: %w", d.label, err))
 					return
 				}
+				got := make(map[string]bool, len(ids))
 				for evt := range evtch {
 					if err := d.target.Publish(sctx, *evt); err == nil {
 						d.count.Add(1)
+						got[evt.ID] = true
 						if d.record != nil {
 							d.record(evt.ID)
 						}
 					}
+				}
+				if d.label == "down" {
+					missMu.Lock()
+					for _, id := range ids {
+						if !got[id] {
+							missing = append(missing, id)
+						}
+					}
+					missMu.Unlock()
 				}
 			}
 
@@ -391,7 +424,7 @@ func SyncWithVector(ctx context.Context, store nostr.RelayStore, lv *LocalVector
 	case <-firstResp:
 	case <-refusedByNotice:
 		return stats, ErrUnsupported
-	case <-time.After(openTimeout):
+	case <-time.After(o.handshake()):
 		return stats, ErrUnsupported
 	}
 
@@ -407,6 +440,11 @@ func SyncWithVector(ctx context.Context, store nostr.RelayStore, lv *LocalVector
 		werr = ctx.Err()
 	case werr = <-result:
 	case <-done:
+		// Every fetch has finished: the missing list is complete and no
+		// longer written to.
+		missMu.Lock()
+		stats.Missing = missing
+		missMu.Unlock()
 	}
 	stats.Downloaded = int(downloaded.Load())
 	stats.Uploaded = int(uploaded.Load())

@@ -96,6 +96,10 @@ func askRelayIdle(ctx context.Context, url string, f nostr.Filter) ([]*nostr.Eve
 type windowResult struct {
 	Notes int
 	Short []string
+	// Silent: relays whose first page brought nothing and no EOSE (went quiet,
+	// closed or failed before answering). A whole-history lane re-reads them
+	// window by window: some relays time out on a wide scan but answer 10 days.
+	Silent []string
 }
 
 // fetchWindowPaged reads filter (Since..Until) from every relay, each one paged
@@ -104,6 +108,12 @@ type windowResult struct {
 // goroutine at a time. A note the filter doesn't match is dropped (a relay
 // may send anything).
 func fetchWindowPaged(ctx context.Context, relays []string, filter nostr.Filter, keep func(*nostr.Event)) windowResult {
+	return fetchPaged(ctx, relays, filter, importMaxPages, keep)
+}
+
+// fetchPaged is fetchWindowPaged with its own page backstop: Moving in's
+// whole-history lanes (import_owner.go) need more than one window's 200.
+func fetchPaged(ctx context.Context, relays []string, filter nostr.Filter, maxPages int, keep func(*nostr.Event)) windowResult {
 	var (
 		mu   sync.Mutex
 		seen = map[string]bool{}
@@ -130,7 +140,7 @@ func fetchWindowPaged(ctx context.Context, relays []string, filter nostr.Filter,
 				if ctx.Err() != nil {
 					return
 				}
-				if page == importMaxPages {
+				if page == maxPages {
 					mu.Lock()
 					res.Short = append(res.Short, url)
 					mu.Unlock()
@@ -160,9 +170,13 @@ func fetchWindowPaged(ctx context.Context, relays []string, filter nostr.Filter,
 					keep(ev)
 					res.Notes++
 				}
-				if matched == 0 && !eose && page > 0 {
-					// Answered before, now nothing and no EOSE: it may still hold more.
-					res.Short = append(res.Short, url)
+				if matched == 0 && !eose {
+					if page > 0 {
+						// Answered before, now nothing and no EOSE: it may still hold more.
+						res.Short = append(res.Short, url)
+					} else {
+						res.Silent = append(res.Silent, url)
+					}
 				}
 				mu.Unlock()
 				if matched == 0 {

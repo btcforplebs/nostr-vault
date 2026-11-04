@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http/httptest"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -218,11 +219,15 @@ func TestWindowPagedStopsWhenCancelled(t *testing.T) {
 func TestImportOwnerNotesPagesPastARelayCap(t *testing.T) {
 	skipWithoutSockets(t)
 	owner := newTestKey(t)
-	savedCfg, savedDB, savedPool, savedReach, savedIdle := config, outboxDB, pool, reachableImportRelays.Load(), importIdleTimeout
+	savedCfg, savedDB, savedPool, savedReach, savedIdle, savedCaps := config, outboxDB, pool, reachableImportRelays.Load(), importIdleTimeout, negCapsFile
 	t.Cleanup(func() {
-		config, outboxDB, pool, importIdleTimeout = savedCfg, savedDB, savedPool, savedIdle
+		config, outboxDB, pool, importIdleTimeout, negCapsFile = savedCfg, savedDB, savedPool, savedIdle, savedCaps
 		reachableImportRelays.Store(savedReach)
+		resetNegCaps()
 	})
+	// The import tries negentropy first: keep its capability answers out of the package dir.
+	negCapsFile = filepath.Join(t.TempDir(), "negentropy_caps.json")
+	resetNegCaps()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	setupSyncConfig(owner.pk)

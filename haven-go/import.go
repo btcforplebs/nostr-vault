@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"log/slog"
 	"maps"
@@ -112,78 +111,6 @@ func runImport(ctx context.Context) {
 	log.Println("📦 importing notes")
 	importOwnerNotes(ctx)
 	importTaggedNotes(ctx)
-}
-
-func importOwnerNotes(ctx context.Context) {
-	ownerImportedNotes := 0
-	nFailedImportNotes := 0
-	wdb := eventstore.RelayWrapper{Store: outboxDB}
-
-	startTime, err := time.Parse(layout, config.ImportStartDate)
-	if err != nil {
-		fmt.Println("Error parsing start date:", err)
-		return
-	}
-	endTime := startTime.Add(240 * time.Hour)
-
-	for {
-		startTimestamp := nostr.Timestamp(startTime.Unix())
-		endTimestamp := nostr.Timestamp(endTime.Unix())
-
-		filter := nostr.Filter{
-			Authors: slices.Collect(maps.Keys(config.WhitelistedPubKeys)),
-			Since:   &startTimestamp,
-			Until:   &endTimestamp,
-		}
-
-		// Paged until done, each request ending only when its relay goes quiet
-		// (import_paging.go): no relay cap or fixed deadline cuts a window short.
-		var res windowResult
-		batch := 0
-		runsafe.Run("importOwnerNotes.fetch", func() {
-			res = fetchWindowPaged(ctx, importRelays(), filter, func(ev *nostr.Event) {
-				if isBlacklisted(ev.PubKey) {
-					slog.Debug("🚫 skipping event from blacklisted pubkey", "pubkey", ev.PubKey, "id", ev.ID)
-					return
-				}
-				if isDeleted(ctx, outboxDB, ev) {
-					slog.Debug("🚫 skipping deleted event", "id", ev.ID)
-					return
-				}
-				applyImportedDeletion(ctx, outboxDB, ev)
-				if err := wdb.Publish(ctx, *ev); err != nil {
-					log.Println("🚫  error importing note", ev.ID, ":", err)
-					nFailedImportNotes++
-				}
-				batch++
-			})
-		})
-		if ctx.Err() != nil {
-			return
-		}
-		ownerImportedNotes += batch
-		if batch == 0 {
-			log.Printf("ℹ️ No notes found for %s to %s", startTime.Format(layout), endTime.Format(layout))
-		} else {
-			log.Printf("📦 Imported %d notes from %s to %s", batch, startTime.Format(layout), endTime.Format(layout))
-		}
-		if len(res.Short) > 0 {
-			log.Printf("⚠️ %d relay(s) stopped partway through %s to %s; their older notes there may be missing: %v",
-				len(res.Short), startTime.Format(layout), endTime.Format(layout), res.Short)
-		}
-
-		startTime = startTime.Add(240 * time.Hour)
-		endTime = endTime.Add(240 * time.Hour)
-
-		if startTime.After(time.Now()) {
-			log.Println("✅ owner note import complete! Imported", ownerImportedNotes, "notes")
-			break
-		}
-		if nFailedImportNotes > 0 {
-			log.Printf("⚠️ Failed to import %d notes", nFailedImportNotes)
-		}
-	}
-	debug.FreeOSMemory()
 }
 
 func importTaggedNotes(ctx context.Context) {
