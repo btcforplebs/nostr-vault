@@ -15,3 +15,13 @@ final class LockedKeyExportTests: XCTestCase {
         XCTAssertNil(LockedKeyExport.kept("nsec1abc"))
     }
 }
+
+/// Tron, PR 1658: a plaintext owner key reveals for any password, so the copy is locked only with a new password the
+/// user types twice (8 or more), never the reveal field.
+final class LockedKeyNewPasswordTests: XCTestCase {
+    func testNewPasswordRules() {
+        XCTAssertEqual(LockedKeyExport.passwordProblem("x", "x"), "Password must be at least 8 characters")
+        XCTAssertEqual(LockedKeyExport.passwordProblem("longenough", "longenougx"), "Passwords do not match")
+        XCTAssertEqual(LockedKeyExport.passwordProblem("longenough", "longenough"), "")
+    }
+}

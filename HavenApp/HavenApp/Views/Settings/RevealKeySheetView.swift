@@ -8,8 +8,10 @@ struct RevealKeySheetView: View {
 
     @State private var password = ""
     @State private var revealedNsec: String? = nil
-    /// The same key, locked with the typed password (LockedKeyExport).
-    @State private var lockedKey: String? = nil
+    /// The ncryptsec this device keeps for the account, handed over as it is
+    /// (LockedKeyExport.kept); nil for an old plaintext key, which the user
+    /// locks with a new password instead (Tron, PR 1658).
+    @State private var keptLockedKey: String? = nil
     @State private var errorMessage: String? = nil
     @State private var copied = false
 
@@ -70,7 +72,7 @@ struct RevealKeySheetView: View {
             Spacer()
         }
         .background(Color.platformSecondaryGroupedBackground)
-        .frame(width: 480, height: revealedNsec != nil ? 360 : 220)
+        .frame(width: 480, height: revealedNsec != nil ? 460 : 220)
         #else
         NavigationStack {
             Form {
@@ -167,9 +169,7 @@ struct RevealKeySheetView: View {
                 .font(.appCaption2)
                 .foregroundColor(.orange)
 
-            if let lockedKey {
-                LockedKeyCopyButton(ncryptsec: lockedKey)
-            }
+            LockedKeyCopyButton(kept: keptLockedKey, nsec: nsec)
         }
     }
 
@@ -196,7 +196,9 @@ struct RevealKeySheetView: View {
                 stored = ncryptsec
             }
             revealedNsec = nsec
-            lockedKey = LockedKeyExport.kept(stored) ?? (try? NIP49Service.encrypt(nsec: nsec, password: password))
+            // Never lock with the reveal field: a plaintext owner key reveals for
+            // any password, so it was never checked (Tron, PR 1658).
+            keptLockedKey = LockedKeyExport.kept(stored)
         } catch {
             errorMessage = "Incorrect password or decryption failed"
         }
@@ -213,7 +215,7 @@ struct RevealKeySheetView: View {
 
     private func performDismiss() {
         revealedNsec = nil
-        lockedKey = nil
+        keptLockedKey = nil
         password = ""
         errorMessage = nil
 
