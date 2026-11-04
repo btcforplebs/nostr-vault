@@ -4,7 +4,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
-import {
+import { itemsFor,
   MODES, FILTERS, CLEARABLE, nextFilter, validFilter, defaultFilter, isMode, imagesOf, previewOf, activityRows, activityFilter, notesFor, articlesFor, isRecipe,
   highlightsFor, highlightSource, mediaFor, likesFor, zapsFor, zapSender, followersOf, followersFilter, followersSeenAt, markFollowersSeen,
   readOwn, readInbound, fetchOwnExtras, fetchVault, INBOUND_KINDS,
@@ -301,5 +301,18 @@ test("Outside your web: only what tags you from outside your network; the plain 
   assert.deepEqual(plain.map(r => r.actors[0]), [ALICE])
   const outside = activityRows(inbound, ME, { trusted, outside: true })
   assert.deepEqual(outside.map(r => [r.actors[0], r.preview]), [[BOB, "from outside"]])
-  assert.deepEqual(activityRows(inbound, ME, { trusted: new Set(), outside: true }), [], "no web yet: nobody is outside")
+  // Fails closed (Logen 2026-11-04): with no web yet everyone else is outside, so the plain list has no one's notes.
+  assert.deepEqual(activityRows(inbound, ME, { trusted: new Set(), outside: true }).map(r => r.actors[0]).sort(), [ALICE, BOB].sort())
+  assert.deepEqual(activityRows(inbound, ME, { trusted: new Set() }), [])
+  assert.deepEqual(activityRows(inbound, ME, { outside: true }), [], "no network given: nobody is outside")
+})
+
+test("the Notes, Articles and Highlights tabs leave out what tags you from outside your web, as Activity does", () => {
+  const trusted = new Set([ALICE])
+  const inbound = [ev(1, ALICE, [["p", ME]], "from my web"), ev(1, BOB, [["p", ME]], "from outside"),
+    ev(30023, BOB, [["p", ME], ["d", "x"]], "an outside article"), ev(9802, BOB, [["p", ME]], "an outside highlight")]
+  assert.deepEqual(itemsFor("notes", "all", { inbound, me: ME, trusted }).map(e => e.content), ["from my web"])
+  assert.deepEqual(itemsFor("articles", "all", { inbound, me: ME, trusted }), [])
+  assert.deepEqual(itemsFor("highlights", "all", { inbound, me: ME, trusted }), [])
+  assert.equal(itemsFor("notes", "all", { inbound, me: ME, trusted: new Set() }).length, 0, "no web yet: fails closed")
 })

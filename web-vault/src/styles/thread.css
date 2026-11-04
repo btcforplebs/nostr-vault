@@ -23,3 +23,9 @@
 /* The iPhone's plain uppercase section label above the replies. */
 .thread-replies-label { margin: 18px var(--gutter) 10px; font: 600 14px/1.2 var(--font); letter-spacing: .04em;
   text-transform: uppercase; color: var(--text-2); }
+
+/* Replies from outside your web of trust, folded under one row until asked for (net/web-trust.js). */
+.thread-outside-toggle { display: block; margin: 14px var(--gutter) 8px; padding: 10px 0; background: none; border: 0;
+  font: var(--t-foot); color: var(--text-3); cursor: pointer; text-align: left; }
+.thread-outside-toggle:hover { color: var(--text-2); }
+.thread-outside { opacity: .85; }

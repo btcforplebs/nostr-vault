@@ -115,11 +115,12 @@ test("blocked people's likes, reposts and zaps don't count, even when they're tr
 test("a Popular page: engagement in, scored notes out, Haven /feed only read", async () => {
   const now = 1_000_000
   const writes = [], filters = []
+  let n2Author = AUTHOR // in the web (R1 follows them); a stranger's note below
   const vault = { feed: { query: async f => (f.ids.includes(N1) ? [{ id: N1, kind: 1, pubkey: AUTHOR, created_at: now - 60, tags: [], content: "in haven" }] : []), event: async ev => writes.push(ev) } }
   const query = async (r, f) => {
     filters.push(f)
-    if (f.kinds?.[0] === 3) return [{ kind: 3, pubkey: R1, created_at: 1, tags: [["p", R2], ["p", R3]] }]
-    if (f.ids) return [{ id: N2, kind: 1, pubkey: STRANGER, created_at: now - 60, tags: [], content: "from a relay" }, { id: N3, kind: 1, pubkey: STRANGER, created_at: 0, tags: [], content: "not asked for" }]
+    if (f.kinds?.[0] === 3) return [{ kind: 3, pubkey: R1, created_at: 1, tags: [["p", R2], ["p", R3], ["p", AUTHOR]] }]
+    if (f.ids) return [{ id: N2, kind: 1, pubkey: n2Author, created_at: now - 60, tags: [], content: "from a relay" }, { id: N3, kind: 1, pubkey: STRANGER, created_at: 0, tags: [], content: "not asked for" }]
     if (f.authors) return [repost(R1, N2)]
     return [like(R1, N1), like(R2, N1), like(R3, N1), like(R2, N2), like(R3, N2), like(STRANGER, N2)]
   }
@@ -128,9 +129,12 @@ test("a Popular page: engagement in, scored notes out, Haven /feed only read", a
   const blockedRun = await fetchPopular({ me: hex("9"), follows: [R1], relays: ["wss://r"], vault, now, query, blocked: new Set([R3]) })
   assert.deepEqual(blockedRun.notes, [], "a blocked voter's likes don't lift anything over the floor")
   assert.deepEqual(notes.map(n => n.id), [N2, N1], "N2: repost 2 + 1 + 1; N1: 1 + 1 + 1")
-  assert.equal(trusted, 4)
+  assert.equal(trusted, 5)
   assert.ok(filters.some(f => f.since === now - 86400 && !f.authors && f.limit === 5000), "everyone's last day")
   assert.ok(filters.some(f => f.authors?.includes(R1) && f.kinds.join() === "7,6"), "and the follows' own")
   assert.deepEqual(filters.find(f => f.ids).ids, [N2], "N1 came from Haven, only N2 from the relays")
   assert.deepEqual(writes, [], "nothing written to Haven /feed")
+  // The same votes on a stranger's note: it stays out, however well liked (Logen 2026-11-04).
+  n2Author = STRANGER
+  assert.deepEqual((await fetchPopular({ me: hex("9"), follows: [R1], relays: ["wss://r"], vault, now, query })).notes.map(n => n.id), [N1])
 })

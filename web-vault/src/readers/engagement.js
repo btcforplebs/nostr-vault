@@ -39,6 +39,10 @@ export function highlightFilters(id, coord, limit = 200) {
  *  are signed by the recipient's Lightning provider, not the zapper. */
 export const visibleEvents = (evs, blocked) => (blocked?.size ? evs.filter(ev => ev.kind === ZAP_RECEIPT || !blocked.has(ev.pubkey)) : evs)
 
+/** Comments and highlights from outside your web of trust out (net/web-trust.js; `inside(pubkey)`). Likes and zaps
+ *  stay: they are counted, not read. */
+export const insideEvents = (evs, inside) => evs.filter(ev => ![NOTE, COMMENT, HIGHLIGHT].includes(ev.kind) || inside(ev.pubkey))
+
 const names = (value, tagNames, tags) => tags.some(t => t.length >= 2 && tagNames.includes(t[0]) && t[1] === value)
 
 /** Counts what points at this article; a relay may answer a tag filter loosely, so each event is checked.

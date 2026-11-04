@@ -52,8 +52,10 @@ export function splitProfileNotes(events) {
   return { notes, replies, reposts, media: mediaTiles(notes.concat(replies).sort(newestFirst)) }
 }
 
-/** Tagged: notes that tag `pubkey`, never their own (ProfileFeedLoader.rebucket), and none by someone blocked. */
-export const taggedNotes = (events, pubkey, blocked) => events.filter(ev => ev?.kind === 1 && ev.pubkey !== pubkey && !blocked?.has(ev.pubkey))
+/** Tagged: notes that tag `pubkey`, never their own (ProfileFeedLoader.rebucket), none by someone blocked, and none
+ *  from outside your web of trust (`inside(pubkey)`, net/web-trust.js). */
+export const taggedNotes = (events, pubkey, blocked, inside = () => true) =>
+  events.filter(ev => ev?.kind === 1 && ev.pubkey !== pubkey && !blocked?.has(ev.pubkey) && inside(ev.pubkey))
 
 /** Kind 30023s, one per `d` (the newest edit wins), newest first. */
 export function latestArticles(events) {

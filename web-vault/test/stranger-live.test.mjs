@@ -26,11 +26,14 @@ test("Global keeps only what its pages keep", () => {
   assert.equal(liveKeeps({ mode: "global" }, note(T), { trust: null }), false)
 })
 
-test("Hashtag asks for its tag and keeps tagged notes only", () => {
-  assert.deepEqual(liveFilters({ mode: "hashtag", tag: "nostr" }), [{ kinds: [1], "#t": ["nostr"] }])
-  assert.deepEqual(liveFilters({ mode: "hashtag", tag: "" }), [])
-  assert.equal(liveKeeps({ mode: "hashtag", tag: "nostr" }, note(S, { tags: [["t", "Nostr"]] })), true)
-  assert.equal(liveKeeps({ mode: "hashtag", tag: "nostr" }, note(S, { tags: [["t", "bitcoin"]] })), false)
+test("Hashtag asks for its tag through the web of trust and keeps the web's tagged notes only (Logen 2026-11-04)", () => {
+  const trust = new Set([T])
+  assert.deepEqual(liveFilters({ mode: "hashtag", tag: "nostr" }, { trust }), [{ kinds: [1], "#t": ["nostr"], authors: [T] }, { kinds: [1], "#t": ["nostr"] }])
+  assert.deepEqual(liveFilters({ mode: "hashtag", tag: "nostr" }), [], "no web: nothing asked")
+  assert.deepEqual(liveFilters({ mode: "hashtag", tag: "" }, { trust }), [])
+  assert.equal(liveKeeps({ mode: "hashtag", tag: "nostr" }, note(T, { tags: [["t", "Nostr"]] }), { trust }), true)
+  assert.equal(liveKeeps({ mode: "hashtag", tag: "nostr" }, note(S, { tags: [["t", "Nostr"]] }), { trust }), false, "a stranger's")
+  assert.equal(liveKeeps({ mode: "hashtag", tag: "nostr" }, note(T, { tags: [["t", "bitcoin"]] }), { trust }), false)
 })
 
 test("Discover asks for its network in REQs of 250 and keeps only theirs", () => {

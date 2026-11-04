@@ -123,5 +123,6 @@ export async function fetchPopular({ me, follows, relays, vault, blocked = new S
   if (vault) for (const ev of await vault.feed.query({ ids, kinds: [1] }).catch(() => [])) found.set(ev.id, ev)
   const missing = ids.filter(id => !found.has(id))
   if (missing.length) for (const ev of await query(urls, { ids: missing, kinds: [1] }, { maxWait: 8000 })) if (ev?.kind === 1 && missing.includes(ev.id)) found.set(ev.id, ev)
-  return { notes: scoreNotes([...found.values()], t, { now }), trusted: trusted.size }
+  // Only notes by people in the web show: trusted likes can lift a stranger's note, but it stays out (Logen 2026-11-04).
+  return { notes: scoreNotes([...found.values()].filter(n => trusted.has(n.pubkey)), t, { now }), trusted: trusted.size }
 }

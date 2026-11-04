@@ -125,9 +125,12 @@ test("a relay feed reads only that relay; a list feed only its people, newest pa
   const asked = []
   const query = async (relays, f) => { asked.push({ relays, f }); return [{ id: `${relays[0]}-${f.authors?.[0] ?? "x"}`, kind: 1, created_at: asked.length, pubkey: f.authors?.[0] ?? A }] }
   const relay = { mode: "relay", relay: "wss://only.one" }
-  const notes = await fetchStrangerFeed(relay, ["wss://mine"], { query })
-  assert.deepEqual(asked[0].relays, ["wss://only.one"])
-  assert.equal(notes.length, 1)
+  // Read through your web of trust, like Global (Logen 2026-11-04): with no web nothing is asked.
+  assert.deepEqual(await fetchStrangerFeed(relay, ["wss://mine"], { query }), [])
+  assert.equal(asked.length, 0)
+  const notes = await fetchStrangerFeed(relay, ["wss://mine"], { query, trust: new Set([A]) })
+  assert.deepEqual(asked.map(a => a.relays), [["wss://only.one"], ["wss://only.one"]], "the web's authors, then open, that relay only")
+  assert.equal(notes.length, 2)
   assert.deepEqual(await fetchStrangerFeed({ mode: "list", list: "x", authors: null }, ["wss://mine"], { query }), [])
   asked.length = 0
   const people = Array.from({ length: 300 }, (_, i) => i.toString(16).padStart(64, "0"))
@@ -135,7 +138,10 @@ test("a relay feed reads only that relay; a list feed only its people, newest pa
   assert.equal(asked.length, 2, "300 people: two REQs of up to 250")
   assert.equal(listed.length, 1, "kept to one page")
   assert.equal(listed[0].created_at, 2, "the newest")
-  assert.equal(liveFilters(relay).length, 1)
+  assert.equal(liveFilters(relay).length, 0, "no web: nothing kept open")
+  assert.equal(liveFilters(relay, { trust: new Set([A]) }).length, 2, "the web's authors, then open")
+  assert.ok(liveKeeps(relay, { kind: 1, pubkey: A }, { trust: new Set([A]) }))
+  assert.ok(!liveKeeps(relay, { kind: 1, pubkey: B }, { trust: new Set([A]) }), "a stranger's")
   assert.ok(liveKeeps({ mode: "list", authors: [A] }, { kind: 1, pubkey: A }))
   assert.ok(!liveKeeps({ mode: "list", authors: [A] }, { kind: 1, pubkey: B }))
 })

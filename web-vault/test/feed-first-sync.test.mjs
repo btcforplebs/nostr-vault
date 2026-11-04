@@ -231,8 +231,9 @@ test("a live note Haven doesn't answer for still goes in on its own", async () =
   } finally { for (const k of Object.keys(window)) delete globalThis[k] }
 })
 
-test("Hashtag's new notes arrive live and go in on top on their own; nothing is saved", async () => {
-  const tagNote = (id, at, content) => ({ id: hex(id), pubkey: hex(70_000 + id), kind: 1, created_at: at, tags: [["t", "bitcoin"]], content, sig: "" })
+test("Hashtag's new notes arrive live and go in on top on their own; a stranger's stays out; nothing is saved", async () => {
+  // By follows (the web of trust), so Hashtag keeps them (Logen 2026-11-04); hex(70_009) is a stranger.
+  const tagNote = (id, at, content, pubkey = hex(id)) => ({ id: hex(id), pubkey, kind: 1, created_at: at, tags: [["t", "bitcoin"]], content, sig: "" })
   pool.ensureRelay = async () => ({})
   pool.querySync = async (_, f) => (f["#t"]?.[0] === "bitcoin" ? [tagNote(1, now - 100, "an older tagged note")] : [])
   const live = []
@@ -249,12 +250,14 @@ test("Hashtag's new notes arrive live and go in on top on their own; nothing is 
     assert.ok(sub.filter.since >= now - 5 && !sub.filter.limit)
     sub.params.onevent(tagNote(2, now + 30, "a new tagged note"))
     sub.params.onevent({ ...tagNote(3, now + 31, "untagged"), tags: [] }) // a relay that ignored #t: dropped
+    sub.params.onevent(tagNote(9, now + 32, "a stranger's tagged note", hex(70_009)))
     for (let i = 0; i < 100 && !/a new tagged note/.test(text(m.el)); i++) await tick(50) // a batch waits LIVE_BATCH_MS
     assert.match(text(m.el), /a new tagged note/, "the new note shown on its own")
     assert.doesNotMatch(text(m.el), /untagged/, "a relay that ignored #t: dropped")
+    assert.doesNotMatch(text(m.el), /a stranger's tagged note/, "outside the web of trust: dropped")
     assert.ok(text(m.el).indexOf("a new tagged note") < text(m.el).indexOf("an older tagged note"), "on top")
     assert.doesNotMatch(text(m.el), /New Post/)
-    assert.deepEqual(await m.ctx.vault.feed.query({ kinds: [1], authors: [hex(70_002)], limit: 5 }), [], "a stranger's note is not saved")
+    assert.deepEqual(await m.ctx.vault.feed.query({ kinds: [1], authors: [hex(2)], limit: 5 }), [], "a stranger feed's note is not saved")
     render(null, m.el)
     assert.ok(live.every(s => s.closed), "the live REQ closed")
   } finally { for (const k of Object.keys(window)) delete globalThis[k] }

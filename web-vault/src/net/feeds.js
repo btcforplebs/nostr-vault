@@ -4,7 +4,7 @@
 // their notes, stay in memory too: FeedScreen passes `memoryOnly` to their cards and `save: false` to fetchProfiles.
 import { pool, uniq } from "./pool.js"
 import { FEED_KINDS } from "./sync.js"
-import { filterGlobal } from "./global-trust.js"
+import { filterGlobal, trustShows } from "./global-trust.js"
 import { trustedFilters } from "../readers/trust.js"
 
 // The iPhone's FeedMode order (Services/FeedServiceTypes.swift FeedMode). Readers (src/readers) take their place in it.
@@ -93,6 +93,9 @@ export const withScope = (choice, storage = globalThis.localStorage) =>
 export const readsHaven = choice => choice.mode === "following" || (choice.mode === "media" && choice.scope !== "global")
 /** Global, and Media on Global: read from everyone, kept to the web of trust (global-trust.js). */
 export const globalLike = choice => choice.mode === "global" || (choice.mode === "media" && choice.scope === "global")
+/** The stranger feeds read through your web of trust: Global, and Hashtag and Relay like it (only notes by people in
+ *  your web, global-trust.js trustShows; Logen 2026-11-04). They take `trust` and show nothing without it. */
+export const trustScoped = choice => globalLike(choice) || choice.mode === "hashtag" || choice.mode === "relay"
 const KEY = "nv-feed"
 
 /** The last feed picked on this browser: { mode, tag }. Following when nothing (or nothing valid) is saved. */
@@ -177,15 +180,15 @@ export async function fetchStrangerFeed(choice, relays, { limit = 100, until, tr
   const page = { limit, ...(until ? { until } : {}) }
   const filter = choice.mode === "list" ? listFilters(choice, page)[0] : feedFilter(choice, { limit, until })
   if (!filter) return []
-  const global = globalLike(choice)
-  if (global && !trust?.size) return []
-  const filters = global ? trustedFilters(filter, trust) : choice.mode === "list" ? listFilters(choice, page) : [filter]
+  const global = globalLike(choice), scoped = trustScoped(choice)
+  if (scoped && !trust?.size) return []
+  const filters = scoped ? trustedFilters(filter, trust) : choice.mode === "list" ? listFilters(choice, page) : [filter]
   const evs = (await Promise.all(filters.map(f => query(uniq(feedRelays(choice, relays)), f, { maxWait: 8000 })))).flat()
   const byId = new Map()
   for (const ev of evs) if (ev?.id && filter.kinds.includes(ev.kind) && !byId.has(ev.id)) byId.set(ev.id, ev)
   const notes = [...byId.values()].sort((a, b) => b.created_at - a.created_at)
   // A list read in several REQs can bring back more than a page: keep the newest page.
-  return global ? filterGlobal(notes, trust) : choice.mode === "list" ? notes.slice(0, limit) : notes
+  return global ? filterGlobal(notes, trust) : scoped ? notes.filter(n => trustShows(n, trust)) : choice.mode === "list" ? notes.slice(0, limit) : notes
 }
 
 /** What a stranger feed keeps open for its New posts pill (net/feed-live.js watchLive), or [] when nothing can come:
@@ -193,8 +196,8 @@ export async function fetchStrangerFeed(choice, relays, { limit = 100, until, tr
  *  250. Popular is a ranked page, not a stream, so it has none. */
 export function liveFilters(choice, { trust = null, network = null } = {}) {
   if (globalLike(choice)) return trust?.size ? trustedFilters({ kinds: FEED_KINDS }, trust) : []
-  if (choice.mode === "hashtag") return choice.tag ? [{ kinds: [1], "#t": [choice.tag] }] : []
-  if (choice.mode === "relay") return choice.relay ? [{ kinds: FEED_KINDS }] : []
+  if (choice.mode === "hashtag") return choice.tag && trust?.size ? trustedFilters({ kinds: [1], "#t": [choice.tag] }, trust) : []
+  if (choice.mode === "relay") return choice.relay && trust?.size ? trustedFilters({ kinds: FEED_KINDS }, trust) : []
   if (choice.mode === "list") return listFilters(choice)
   if (choice.mode === "discovery") {
     const out = []
@@ -208,9 +211,9 @@ export function liveFilters(choice, { trust = null, network = null } = {}) {
  *  Discover only its network's, Hashtag a kind 1 with the tag. */
 export function liveKeeps(choice, ev, { trust = null, network = null } = {}) {
   if (globalLike(choice)) return !!trust && FEED_KINDS.includes(ev.kind) && filterGlobal([ev], trust).length === 1
-  if (choice.mode === "hashtag") return ev.kind === 1 && (ev.tags ?? []).some(t => t[0] === "t" && String(t[1]).toLowerCase() === choice.tag)
+  if (choice.mode === "hashtag") return ev.kind === 1 && (ev.tags ?? []).some(t => t[0] === "t" && String(t[1]).toLowerCase() === choice.tag) && trustShows(ev, trust)
   if (choice.mode === "discovery") return FEED_KINDS.includes(ev.kind) && !!network?.includes(ev.pubkey)
-  if (choice.mode === "relay") return FEED_KINDS.includes(ev.kind)
+  if (choice.mode === "relay") return FEED_KINDS.includes(ev.kind) && trustShows(ev, trust)
   if (choice.mode === "list") return FEED_KINDS.includes(ev.kind) && !!choice.authors?.includes(ev.pubkey)
   return false
 }

@@ -7,6 +7,8 @@ import { DEFAULT_RELAYS, pool, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { isBlockedNote, visibleReplies } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
+import { useWebTrust } from "../components/useWebTrust.js"
+import { splitOutside } from "../net/web-trust.js"
 import { ArticleReader } from "../readers/ArticlesScreen.jsx"
 import { SkeletonRows } from "../components/FeedExtras.jsx"
 import { compose, myReaction, onActionState } from "../net/actions.js"
@@ -52,6 +54,9 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
   const [status, setStatus] = useState("")
   const extra = useRef([])
   const { blocked } = useBlocks(ctx)
+  const web = useWebTrust(ctx)
+  const [showOutside, setShowOutside] = useState(false)
+  useEffect(() => setShowOutside(false), [id])
 
   // Each run is for one id: once the screen has moved on, `isLive()` is false and the run touches nothing, so a late
   // read or sync for the previous thread can't take over this one's root, extra or status. Reads can also overlap
@@ -140,8 +145,12 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
     if (!profileTimer.current) ask()
   }, [thread])
 
-  // Blocked people's replies are left out when drawn, not when stored, so unblocking brings them back.
-  const rows = thread ? flattenThread(visibleReplies(thread.replies, blocked)) : []
+  // Blocked people's replies are left out when drawn, not when stored, so unblocking brings them back. Replies from
+  // outside your web of trust fold under "Outside your web" (net/web-trust.js); the thread's author and the reply
+  // that was opened always show.
+  const split = thread ? splitOutside(visibleReplies(thread.replies, blocked), pk => web.inside(pk, [thread.root?.pubkey].filter(Boolean)), ev => ev.id === id)
+    : { replies: [], outside: [] }
+  const rows = flattenThread(split.replies)
   const shown = useChunks(rows.length, rows.findIndex(r => r.event.id === id), id)
   const rootBlocked = thread?.root && isBlockedNote(thread.root, blocked)
   // While the relays are asked, a missing root or an empty reply list may still arrive: placeholders, not "none".
@@ -176,7 +185,12 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
                 <Focus on={event.id === focused?.id} summary={<ReactionSummary ctx={ctx} note={event} relays={relays} />}><NoteCard event={event} /></Focus>
               </div>
             ))}
-            {!rows.length && thread.root && (syncing ? <SkeletonRows count={2} label={LOADING} /> : <p class="empty">No replies yet.</p>)}
+            {split.outside.length > 0 && <button type="button" class="thread-outside-toggle" aria-expanded={showOutside}
+              onClick={() => setShowOutside(v => !v)}>
+              {showOutside ? "Hide" : "Show"} {split.outside.length} {split.outside.length === 1 ? "reply" : "replies"} from outside your web
+            </button>}
+            {showOutside && split.outside.map(event => <div key={event.id} class="thread-outside"><NoteCard event={event} /></div>)}
+            {!rows.length && !split.outside.length && thread.root && (syncing ? <SkeletonRows count={2} label={LOADING} /> : <p class="empty">No replies yet.</p>)}
             {/* Room under a short thread, so a reply opened near its end can still reach the tap line (NoteDetailView, feeds.css). */}
             {focused && focused.id !== thread.root?.id && <div class="tap-room" aria-hidden="true" />}
           </>}

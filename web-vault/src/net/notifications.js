@@ -116,18 +116,19 @@ export const filterRows = (rows, filter) => filter === "mentions" ? rows.filter(
 export const NOTE_TYPES = new Set(["reply", "mention", "quote", "article", "highlight"])
 
 /** Whether a note tagging the user comes from outside their network (ContentFilter.isOutside): not the user, not
- *  whitelisted, and not in `trusted`. An empty `trusted` (no graph yet) counts nobody as outside. */
+ *  whitelisted, and not in `trusted`. Fails closed: an empty `trusted` (no web yet) counts everyone else as outside,
+ *  rather than letting every stranger in (Logen 2026-11-04). */
 export const isOutside = (author, owner, whitelist, trusted) =>
-  author !== owner && !whitelist.has(author) && trusted.size > 0 && !trusted.has(author)
+  author !== owner && !whitelist.has(author) && !trusted.has(author)
 
 /**
- * The trusted set (FeedService.feedTrustedPubkeys, TrustMap.web): the graph plus the user's follows, or empty while
- * there is no graph. The web's graph is the people the follows' contact lists name (wot.js followLists).
+ * The trusted set (FeedService.feedTrustedPubkeys, TrustMap.web): the graph plus the user's follows. The web's graph
+ * is the people the follows' contact lists name (wot.js followLists). With no lists back it is the follows alone, so
+ * the follows still count and strangers still don't (isOutside fails closed).
  */
 export function trustedWeb(follows, lists) {
   const graph = new Set()
   for (const ev of lists.values()) for (const t of ev.tags ?? []) if (t[0] === "p" && HEX64.test(t[1] ?? "")) graph.add(t[1])
-  if (!graph.size) return graph
   for (const pk of follows) graph.add(pk)
   return graph
 }

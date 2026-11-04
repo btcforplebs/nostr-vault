@@ -109,12 +109,13 @@ export function previewOf(ev) {
  * `mine` is the user's own notes (for what a like or repost was about); `follows` is [{ pubkey, at }] of people
  * who follow the user; `blocked` is a Set of pubkeys to leave out, and when it is the mute list (blocks.js muteSet)
  * its words, hashtags and threads mute notes too, as the iPhone applies them. `trusted` is the network
- * (notifications.js trustedWeb): a note tagging the user from outside it is left out (VaultTypes isOutside); empty,
- * nobody is outside. Likes, reposts and zaps target the first `e` tag, as the phone reads them.
+ * (notifications.js trustedWeb): a note tagging the user from outside it is left out (VaultTypes isOutside). It fails
+ * closed: an empty set counts everyone else as outside. Null (a caller with no network, the tests) checks nobody. Likes, reposts and zaps target the first `e` tag, as the phone reads them.
  * -> [{ id, kind, actors: [pubkey], created_at, openId, preview, emojis, sats, images, imagesBy }]; `imagesBy` is whose
  * note the images are from (whose mesh vault MediaImage may ask).
  */
-export function activityRows(inbound, me, { mine = [], follows = [], blocked = new Set(), trusted = new Set(), outside = false } = {}) {
+export function activityRows(inbound, me, { mine = [], follows = [], blocked = new Set(), trusted = null, outside = false } = {}) {
+  const out = pk => !!trusted && isOutside(pk, me, new Set(), trusted)
   const myText = new Map(mine.map(n => [n.id, previewOf(n)]))
   const myImages = new Map(mine.map(n => [n.id, imagesOf(n)]))
   const folds = new Map()
@@ -136,13 +137,13 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
     // Outside your web (the Vault page's ··· filter, Logen 2026-11-04): only what tags you from outside your network,
     // the lines the list otherwise leaves out. Likes, zaps, reposts and follows aren't in it.
     if (outside && (ev.pubkey === me || blocked.has(ev.pubkey) || !TAGGING_KINDS.includes(ev.kind) || !tagsMe(ev, me)
-      || isMutedNote(ev, blocked) || !isOutside(ev.pubkey, me, new Set(), trusted))) continue
+      || isMutedNote(ev, blocked) || !out(ev.pubkey))) continue
     if (ev.kind === 7) {
       const target = firstE(ev)
       if (ev.pubkey === me || !target || blocked.has(ev.pubkey)) continue
       // A like of a note Haven doesn't hold yet counts by its p tag, and only from your network (when there is one):
       // nothing ties it to a note we can see, so a stranger's stays out.
-      if (!myText.has(target) && (!onMyNote(ev, me) || isOutside(ev.pubkey, me, new Set(), trusted))) continue
+      if (!myText.has(target) && (!onMyNote(ev, me) || out(ev.pubkey))) continue
       fold("like", target, ev.pubkey, ev.created_at, { emoji: reactionEmoji(ev.content) })
       continue
     }
@@ -164,11 +165,11 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
       const target = firstE(ev)
       const inner = embeddedNote(ev)
       if (inner?.id === target && inner.pubkey === me && !myText.has(target)) lent.set(target, previewOf(inner))
-      if (target && (myText.has(target) || (onMyNote(ev, me) && !isOutside(ev.pubkey, me, new Set(), trusted)))) fold("repost", target, ev.pubkey, ev.created_at)
+      if (target && (myText.has(target) || (onMyNote(ev, me) && !out(ev.pubkey)))) fold("repost", target, ev.pubkey, ev.created_at)
       continue
     }
     if (!TAGGING_KINDS.includes(ev.kind) || !tagsMe(ev, me)) continue
-    if (!outside && (isMutedNote(ev, blocked) || isOutside(ev.pubkey, me, new Set(), trusted))) continue
+    if (!outside && (isMutedNote(ev, blocked) || out(ev.pubkey))) continue
     let kind = "mention"
     if (ev.kind === ARTICLE_KIND) kind = "article"
     else if (ev.kind === HIGHLIGHT_KIND) kind = "highlight"
@@ -198,11 +199,17 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
  *  web is its own list (activityRows `outside`). */
 export const activityFilter = (row, filter) => filter !== "mentions" || ["reply", "mention", "quote"].includes(row.kind)
 
+/** Whether someone else's post tagging you shows in the Notes, Articles and Highlights tabs: inside your network, as
+ *  Activity keeps it (isOutside; `trusted` null: no network check, for callers that have none). Likes and zaps, like
+ *  Activity's, are never dropped as outside. */
+const insideOf = (me, trusted) => (trusted ? pk => !isOutside(pk, me, new Set(), trusted) : () => true)
+
 /** Notes: your own and the ones tagging you; "mine", your own only (the phone's ContentFilter all / mine). A Mentions
  *  filter here was the Vault page's again (Logen 2026-11-04); "tagged" still reads, for a caller that kept it. */
-export function notesFor(own, inbound, me, filter, blocked = new Set()) {
+export function notesFor(own, inbound, me, filter, blocked = new Set(), trusted = null) {
   const mine = own.filter(e => NOTE_KINDS.includes(e.kind))
-  const tagged = inbound.filter(e => e.kind === 1 && e.pubkey !== me && tagsMe(e, me) && !blocked.has(e.pubkey))
+  const inside = insideOf(me, trusted)
+  const tagged = inbound.filter(e => e.kind === 1 && e.pubkey !== me && tagsMe(e, me) && !blocked.has(e.pubkey) && inside(e.pubkey))
   const list = filter === "mine" ? mine : filter === "tagged" ? tagged : [...mine, ...tagged]
   return dedupe(list).sort(byNewest)
 }
@@ -212,17 +219,19 @@ export const isRecipe = ev => (ev.tags ?? []).some(t => t[0] === "t" && /^(zapco
 
 /** Articles: yours and the ones tagging you; "mine", yours only; "recipes", the recipes among them (a radio, not a toggle
  *  stacked on Yours, Logen 2026-11-04). */
-export function articlesFor(own, inbound, me, filter, blocked = new Set()) {
+export function articlesFor(own, inbound, me, filter, blocked = new Set(), trusted = null) {
   const yours = own.filter(e => e.kind === ARTICLE_KIND)
   if (filter === "mine") return dedupe(yours).sort(byNewest)
-  const list = [...yours, ...inbound.filter(e => e.kind === ARTICLE_KIND && e.pubkey !== me && tagsMe(e, me) && !blocked.has(e.pubkey))]
+  const inside = insideOf(me, trusted)
+  const list = [...yours, ...inbound.filter(e => e.kind === ARTICLE_KIND && e.pubkey !== me && tagsMe(e, me) && !blocked.has(e.pubkey) && inside(e.pubkey))]
   return dedupe(filter === "recipes" ? list.filter(isRecipe) : list).sort(byNewest)
 }
 
-export function highlightsFor(own, inbound, me, filter, blocked = new Set()) {
+export function highlightsFor(own, inbound, me, filter, blocked = new Set(), trusted = null) {
   const mine = own.filter(e => e.kind === HIGHLIGHT_KIND)
   if (filter === "mine") return dedupe(mine).sort(byNewest)
-  return dedupe([...mine, ...inbound.filter(e => e.kind === HIGHLIGHT_KIND && e.pubkey !== me && tagsMe(e, me) && !blocked.has(e.pubkey))]).sort(byNewest)
+  const inside = insideOf(me, trusted)
+  return dedupe([...mine, ...inbound.filter(e => e.kind === HIGHLIGHT_KIND && e.pubkey !== me && tagsMe(e, me) && !blocked.has(e.pubkey) && inside(e.pubkey))]).sort(byNewest)
 }
 
 /** What a highlight is from: the `r` link, else the `a` or `e` it points at. */
@@ -505,12 +514,12 @@ export function keepLists(me, lists, storage = globalThis.localStorage) {
 // ---- What the screen draws ----
 
 /** The rows the current mode and filter show, newest first: built once per change of what they're built from. */
-export function itemsFor(mode, filter, { own = [], inbound = [], given = [], followers = [], me, blocked = new Set(), seenAt = 0, trusted = new Set() }) {
+export function itemsFor(mode, filter, { own = [], inbound = [], given = [], followers = [], me, blocked = new Set(), seenAt = 0, trusted = null }) {
   switch (mode) {
     case "activity": return activityRows(inbound, me, { mine: own, follows: followers, blocked, trusted, outside: filter === "outside" }).filter(r => activityFilter(r, filter))
-    case "notes": return notesFor(own, inbound, me, filter, blocked)
-    case "articles": return articlesFor(own, inbound, me, filter, blocked)
-    case "highlights": return highlightsFor(own, inbound, me, filter, blocked)
+    case "notes": return notesFor(own, inbound, me, filter, blocked, trusted)
+    case "articles": return articlesFor(own, inbound, me, filter, blocked, trusted)
+    case "highlights": return highlightsFor(own, inbound, me, filter, blocked, trusted)
     case "media": return filter === "notes" ? mediaFor(own) : []
     case "likes": return likesFor(own, inbound, me, filter, blocked)
     case "zaps": return zapsFor(given, inbound, me, filter, blocked)
