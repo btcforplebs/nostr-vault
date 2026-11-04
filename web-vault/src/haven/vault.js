@@ -54,7 +54,8 @@ export async function startVault({ pubkey, log = () => {} }) {
   })
   const open = route => routeClient(haven, route, sk)
   // /inbox holds what others sent the user (replies, likes, zaps…): the Vault tab reads it and fills it from the relays.
-  // /lists is read-only: every version of the user's lists Haven kept (Settings › Recover a List).
+  // /lists: every version of the user's lists Haven kept (Settings › Recover a List). Its one write is an older
+  // version the import found on the relays, filed in history only (net/list-history-import.js).
   return { haven, owners, outbox: open("/"), feed: open("/feed"), inbox: open("/inbox"), lists: open("/lists"), loadMs, startMs: Date.now() - t0 - loadMs }
 }
 

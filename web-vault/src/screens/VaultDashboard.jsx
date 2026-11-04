@@ -23,6 +23,7 @@ import { snapshotStore } from "../net/follow-backup.js"
 import { mediaServers } from "../net/upload.js"
 import { exportNotes, zip } from "../net/backup.js"
 import { importOwn, IMPORT_START_DATE } from "../net/sync.js"
+import { importListHistory, historyLine } from "../net/list-history-import.js"
 import { ownPostRelays } from "../net/own-relays.js"
 import { saveFile } from "../net/save-file.js"
 import { uniq } from "../net/pool.js"
@@ -101,8 +102,14 @@ export function VaultDashboard({ ctx }) {
     const relays = ownPostRelays(account)
     const { found, stored } = await importOwn(vault, me, relays, { startDate: IMPORT_START_DATE,
       onProgress: p => setJobs(j => ({ ...j, importing: { progress: p.progress, text: `${p.empty ? "Looking through" : "Found"} notes from ${p.from}... (${p.found} found)` } })) })
+    // Moving in also brings back older versions of the user's lists (net/list-history-import.js): filed in the vault's
+    // list history for Recover a List, never published, never made the current list.
+    setJobs(j => ({ ...j, importing: { progress: 1, text: "Looking for older versions of your lists..." } }))
+    const lists = await importListHistory(ctx, {
+      onProgress: p => setJobs(j => ({ ...j, importing: { progress: p.done / p.total, text: `Looking for older versions of your lists... (${p.found} found)` } })),
+    }).catch(() => ({ found: 0, answered: 0 }))
     markRan(me, "notesImport")
-    setJobs(j => ({ ...j, status: { text: `Import Complete! ${found} found, ${stored} new.` } }))
+    setJobs(j => ({ ...j, status: { text: `Import Complete! ${found} found, ${stored} new. ${historyLine(lists)}` } }))
     count().catch(() => {})
   })
 
