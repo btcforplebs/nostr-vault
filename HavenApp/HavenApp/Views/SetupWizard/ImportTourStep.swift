@@ -38,9 +38,16 @@ struct ImportTourStep: View {
     /// The small orange label over each lesson (mockup).
     static let kickers = ["WHY IMPORT", "HOW IT WORKS", "RELAYS", "OPTIONAL", "FEEDS"]
     private var lastIndex: Int { lessons.count }  // the Ready card
-    private var done: Bool { relayManager.importCompleted && !relayManager.isImporting }
+    /// The import ended, however it went (haven-go's IMPORT_RESULT).
+    private var done: Bool { relayManager.importOutcome != nil && !relayManager.isImporting }
+    /// It ended, but not complete: say how instead of "Your notes are home".
+    private var endedShort: ImportResult? {
+        guard done, let outcome = relayManager.importOutcome, !outcome.isComplete else { return nil }
+        return outcome
+    }
     private var stage: ImportTourStage {
-        ImportTourStage(statusMessage: relayManager.importStatusMessage, completed: done)
+        if let endedShort { return ImportTourStage(text: endedShort.summary, step: ImportTourStage.stepCount) }
+        return ImportTourStage(statusMessage: relayManager.importStatusMessage, completed: done)
     }
     /// Nothing started 60 s after the request, or it gave up (ImportStartGate).
     private var couldNotStart: Bool {
@@ -68,7 +75,7 @@ struct ImportTourStep: View {
         .onAppear(perform: startImportOnce)
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now = $0 }
         .onChange(of: done) { _, isDone in
-            if isDone { loadCounts() }
+            if isDone && endedShort == nil { loadCounts() }
         }
     }
 
@@ -79,14 +86,15 @@ struct ImportTourStep: View {
             HStack {
                 Text(stage.text)
                     .font(.appSystem(size: 13, weight: .medium))
-                    .foregroundColor(done ? WizardColors.success : WizardColors.textSecondary)
+                    .foregroundColor(endedShort != nil ? .orange : done ? WizardColors.success : WizardColors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Text("\(stage.step) of \(ImportTourStage.stepCount)")
                     .font(.appSystem(size: 12))
                     .foregroundColor(WizardColors.textMuted)
             }
             ProgressView(value: done ? 1 : max(relayManager.importProgress, 0.02))
-                .tint(done ? WizardColors.success : WizardColors.accentPrimary)
+                .tint(endedShort != nil ? .orange : done ? WizardColors.success : WizardColors.accentPrimary)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Import"))
@@ -179,10 +187,18 @@ struct ImportTourStep: View {
 
     @ViewBuilder
     private var readyCard: some View {
-        Text(done ? "Your notes are home" : "Almost there")
+        Text(endedShort != nil ? "The import ended early" : done ? "Your notes are home" : "Almost there")
             .font(.appSystem(size: 20, weight: .semibold))
             .foregroundColor(WizardColors.textPrimary)
-        if done {
+        if let endedShort {
+            Text(endedShort.summary)
+                .font(.appSystem(size: 15))
+                .foregroundColor(WizardColors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("You can run it again any time from the Vault tab.")
+                .font(.appSystem(size: 13))
+                .foregroundColor(WizardColors.textSecondary)
+        } else if done {
             Text("Everything we found is saved on this device.")
                 .font(.appSystem(size: 15))
                 .foregroundColor(WizardColors.textSecondary)
@@ -234,9 +250,10 @@ struct ImportTourStep: View {
 
     private var doneBar: some View {
         HStack {
-            Label("Import done. Your notes are home.", systemImage: "checkmark.circle.fill")
+            Label(endedShort?.summary ?? "Import done. Your notes are home.",
+                  systemImage: endedShort == nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                 .font(.appSystem(size: 14, weight: .medium))
-                .foregroundColor(WizardColors.success)
+                .foregroundColor(endedShort == nil ? WizardColors.success : .orange)
             Spacer()
             Button("Jump in") { enter(keptRunning: false) }
                 .font(.appSystem(size: 14, weight: .semibold))
@@ -248,7 +265,7 @@ struct ImportTourStep: View {
                 .buttonStyle(.plain)
         }
         .padding(12)
-        .background(WizardColors.success.opacity(0.12))
+        .background((endedShort == nil ? WizardColors.success : Color.orange).opacity(0.12))
         .cornerRadius(12)
     }
 
@@ -257,7 +274,7 @@ struct ImportTourStep: View {
     private func startImportOnce() {
         guard !started else { return }
         started = true
-        if done { loadCounts(); return }
+        if relayManager.importCompleted && !relayManager.isImporting { loadCounts(); return }
         guard !relayManager.isImporting else { return }
         configService.config.importStartDate = Self.importStartDate
         configService.save()

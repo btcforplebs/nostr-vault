@@ -19,11 +19,16 @@ final class OtherVaultCopyTests: XCTestCase {
         XCTAssertEqual(OtherVaultCopy.backStep, VaultBackupQuestion.step)
     }
 
-    func testCopiedSkipsTheRelayImportLikeARestoredBackup() {
+    /// The copy reads only the other vault's public notes, so the normal
+    /// relay import still runs after it (audit 2026-11-05: it used to skip it
+    /// like a restored backup and leave the vault thin).
+    func testCopiedStillRunsTheRelayImport() {
         for path in paths {
-            XCTAssertEqual(OtherVaultCopy.afterCopied(path: path), VaultBackupQuestion.next(after: .restored, path: path))
+            XCTAssertEqual(OtherVaultCopy.afterCopied(path: path), VaultBackupQuestion.next(after: .no, path: path))
+            XCTAssertNotEqual(OtherVaultCopy.afterCopied(path: path), .finish)
         }
-        XCTAssertEqual(OtherVaultCopy.afterCopied(path: .useNostr), .finish)
+        XCTAssertEqual(OtherVaultCopy.afterCopied(path: .useNostr), .step(14))
+        XCTAssertEqual(OtherVaultCopy.startDate, "2020-11-01")
     }
 
     /// A failure lands where "No, import from my relays" goes.
@@ -47,9 +52,10 @@ final class OtherVaultCopyTests: XCTestCase {
     /// copy screens (the small print is the one approved mention).
     func testWords() {
         XCTAssertEqual(OtherVaultCopy.button, "Copy from my other vault")
-        XCTAssertEqual(OtherVaultCopy.smallPrint,
-                       "Your Mac or another device signed in as you. Scan two codes and it copies over the mesh.")
-        let texts = [OtherVaultCopy.button, OtherVaultCopy.fallbackLine,
+        XCTAssertEqual(OtherVaultCopy.smallPrint, "Links your devices, then brings your notes from your relays")
+        XCTAssertEqual(OtherVaultCopy.fallbackLine, "Your other vault was not reached; getting your notes from your relays instead")
+        let texts = [OtherVaultCopy.button, OtherVaultCopy.fallbackLine, OtherVaultCopy.smallPrint,
+                     ImportResult.otherVaultNotReachedLine,
                      OtherVaultCopy.copyingLine(""), OtherVaultCopy.copyingLine("Logen's iPhone"),
                      MeshPairing.roleConfirmText(role: .mac, name: "Mac", setup: true),
                      MeshPairing.roleConfirmText(role: .phone, name: "", setup: true)]

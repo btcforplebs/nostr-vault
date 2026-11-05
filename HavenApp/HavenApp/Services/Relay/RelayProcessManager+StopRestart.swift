@@ -13,6 +13,10 @@ extension RelayProcessManager {
     /// prevents restart storms — rapid stop/start cycling of the embedded Go
     /// relay is what used to corrupt BadgerDB and crash the app.
     func gracefulRestart() async -> Bool {
+        if busyJob == .importing {
+            logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Restart skipped: an import is running; the relay starts when it ends"))
+            return false
+        }
         if let inflight = inFlightRestart {
             return await inflight.value
         }
@@ -69,6 +73,12 @@ extension RelayProcessManager {
     /// case: 2s server shutdown + 2s goroutine drain + DB close), so
     /// waiting honestly cannot hang.
     func performStop() async {
+        // One busy flag: an import owns the databases until it ends, and its
+        // end starts the relay again. Cancel is cancelImport, not a stop.
+        if busyJob == .importing {
+            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Stop refused: an import is running (cancel the import instead)"))
+            return
+        }
         // Must check if running, booting, or importing
         guard self.isRunning || self.isBooting || self.isImporting else {
             self.state = .idle
@@ -126,17 +136,11 @@ extension RelayProcessManager {
         NetworkSyncService.shared.stop()
         #endif
 
-        // If we were stopping to start an import, trigger it now
-        if let importConfig = pendingImportConfig {
-            pendingImportConfig = nil
-            let alsoFrom = pendingImportAlsoFrom
-            pendingImportAlsoFrom = []
-            let listHistory = pendingImportListHistory
-            pendingImportListHistory = false
-            let retries = pendingImportRetries
-            pendingImportRetries = 0
-            requestImport(config: importConfig, alsoFrom: alsoFrom, listHistory: listHistory,
-                          generation: importRequestGeneration, waits: 0, retries: retries)
+        // A stop queued by importNotes (the relay was up): start that import
+        // now. No other stop ever starts one.
+        if let request = queuedImport {
+            queuedImport = nil
+            requestImport(request, generation: importRequestGeneration, waits: 0)
         }
     }
     
@@ -151,6 +155,11 @@ extension RelayProcessManager {
 
         enqueueLifecycle { [weak self] in
             guard let self else { return }
+            // Never clear the LOCKs of databases a running import holds.
+            guard !self.isVaultBusy else {
+                self.logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Force clean refused: the vault is busy (\(self.busyJob?.rawValue ?? ""))"))
+                return
+            }
             await self.performStop()
             self.performClearDatabaseLocks(at: relayDataDir)
             self.isLocked = false

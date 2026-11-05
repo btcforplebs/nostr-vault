@@ -52,8 +52,6 @@ enum RelayLogParser {
     struct BatchedStateUpdate {
         var importProgress: Double?
         var importStatusMessage: String?
-        var importCompleted: Bool = false
-        var stopImporting: Bool = false
         var bootStatusMessage: String?
         var stopBooting: Bool = false
         var stopWotSyncing: Bool = false
@@ -81,8 +79,6 @@ enum RelayLogParser {
         var listHistoryNote: String?
         /// The Go side began an import cycle (ImportStartGate).
         var importEngineStarted = false
-        /// The Go side did not run the import it was asked for.
-        var importRefusal: ImportStartGate.Refusal?
     }
 
     // Cached regex patterns for boot/import status parsing
@@ -123,7 +119,6 @@ enum RelayLogParser {
     /// Pure string parsing — no MainActor, no UI dependencies.
     static func collectStateChanges(from line: String, into batch: inout BatchedStateUpdate) {
         if ImportStartGate.isEngineStart(line) { batch.importEngineStarted = true }
-        if let refusal = ImportStartGate.refusal(in: line) { batch.importRefusal = refusal }
         if ListHistoryScan.collect(from: line, into: &batch) { return }
         // Import state
         if line.contains("connected successfully") {
@@ -165,11 +160,12 @@ enum RelayLogParser {
         } else if line.contains("importing inbox notes") || line.contains("Importing inbox notes") {
             batch.importStatusMessage = "Importing tagged notes..."
             batch.importProgress = 0.85
-        } else if line.contains("subscribing to inbox") || line.contains("tagged import complete") {
-            batch.stopImporting = true
-            batch.importCompleted = true
-            batch.importProgress = 1.0
-            batch.importStatusMessage = "Import Complete!"
+        } else if line.contains("tagged import complete") {
+            // Not the end: only IMPORT_RESULT says how the import went
+            // (ImportResult). "subscribing to inbox" is a normal relay boot
+            // line and says nothing about an import.
+            batch.importProgress = 0.95
+            batch.importStatusMessage = "Tagged notes imported"
         } else if line.contains("imported") && line.contains("tagged notes") {
             if let countMatch = line.components(separatedBy: " ").first(where: { Int($0) != nil }) {
                 batch.importProgress = 0.95
@@ -179,12 +175,7 @@ enum RelayLogParser {
                 batch.importStatusMessage = "Tagged notes imported"
             }
         } else if line.contains("Import complete") || line.contains("import complete") {
-            batch.importProgress = 1.0
-            batch.importStatusMessage = "Import Complete!"
-            if line.contains("tagged import complete") {
-                batch.stopImporting = true
-                batch.importCompleted = true
-            }
+            batch.importProgress = 0.95
         } else if line.contains("No notes found") {
             if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
                 batch.progressDateStr = String(dateStr)

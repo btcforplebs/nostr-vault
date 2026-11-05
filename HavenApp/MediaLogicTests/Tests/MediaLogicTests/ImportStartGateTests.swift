@@ -18,26 +18,15 @@ final class ImportStartGateTests: XCTestCase {
         XCTAssertEqual(ImportStartGate.action(vault: .importing, isRunning: false, isShuttingDown: false), .alreadyImporting)
     }
 
-    /// The exact lines haven-go/cshared.go runImportCycle logs.
-    func testRefusalsFromTheGoSide() {
-        XCTAssertEqual(ImportStartGate.refusal(in: "2026/11/04 23:49:27 🚫 Import refused: relay still shutting down"), .retry)
-        XCTAssertEqual(ImportStartGate.refusal(in: "⚠️ Import ignored: relay already running"), .retry)
-        XCTAssertEqual(ImportStartGate.refusal(in: "🚫 StartRelayC refused: the last relay cycle is still shutting down"), .retry)
-        XCTAssertEqual(ImportStartGate.refusal(in: "🚫 Import aborted: could not connect to any seed relays"), .giveUp)
-        XCTAssertNil(ImportStartGate.refusal(in: "✅ Import completed in C-Shared mode"))
-        XCTAssertNil(ImportStartGate.refusal(in: "📢 subscribing to inbox on 12 relays (import + DM)"))
-    }
-
     func testEngineStartIsTheImportBootOnly() {
         XCTAssertTrue(ImportStartGate.isEngineStart("🚀 HAVEN devel is booting up (C-Shared Import Mode)"))
         XCTAssertFalse(ImportStartGate.isEngineStart("🚀 HAVEN (devel) is booting up (C-Shared Mode) [1/3]"))
     }
 
     func testRetriesAreBounded() {
-        XCTAssertTrue(ImportStartGate.shouldRetry(.retry, retries: 0))
-        XCTAssertTrue(ImportStartGate.shouldRetry(.retry, retries: ImportStartGate.maxRefusedRetries - 1))
-        XCTAssertFalse(ImportStartGate.shouldRetry(.retry, retries: ImportStartGate.maxRefusedRetries))
-        XCTAssertFalse(ImportStartGate.shouldRetry(.giveUp, retries: 0))
+        XCTAssertTrue(ImportStartGate.shouldRetry(retries: 0))
+        XCTAssertTrue(ImportStartGate.shouldRetry(retries: ImportStartGate.maxRefusedRetries - 1))
+        XCTAssertFalse(ImportStartGate.shouldRetry(retries: ImportStartGate.maxRefusedRetries))
     }
 
     func testCouldNotStartAfterSixtySeconds() {

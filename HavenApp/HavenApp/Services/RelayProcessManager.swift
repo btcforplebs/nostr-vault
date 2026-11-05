@@ -6,6 +6,11 @@ import UniformTypeIdentifiers
 import UIKit
 #endif
 
+/// What owns the vault's databases (RelayProcessManager.busyJob).
+enum VaultBusyJob: String {
+    case importing, restoring, backingUp
+}
+
 @MainActor
 class RelayProcessManager: ObservableObject {
     static let shared = RelayProcessManager()
@@ -76,25 +81,27 @@ class RelayProcessManager: ObservableObject {
     // Background log processing
     let logProcessingQueue = DispatchQueue(label: "com.haven.relay.logs", qos: .utility)
     
-    var pendingImportConfig: HavenConfig?
-    /// Import-only extra relays waiting on a stop (see `importNotes`).
-    var pendingImportAlsoFrom: [String] = []
-    /// The history-scan choice waiting on a stop (see `importNotes`).
-    var pendingImportListHistory = false
-    /// Refused starts already retried for the pending import (ImportStartGate).
-    var pendingImportRetries = 0
-    /// Bumped by each `importNotes` call; a held or retried request from an
-    /// older call stands down.
+    /// The relay config to start again when the running import ends.
+    var restartAfterImportConfig: HavenConfig?
+    /// An import waiting on a stop of the running relay (see `importNotes`).
+    /// Only that stop starts it: any other stop never starts an import.
+    var queuedImport: ImportRequest?
+    /// Bumped by each `importNotes` call and by Cancel; a held or retried
+    /// request from an older call stands down.
     var importRequestGeneration = 0
     /// When the current import was asked for, for setup's 60 s "Couldn't start".
     @Published var importRequestedAt: Date?
     /// The Go side logged the import cycle's boot for the current request.
     @Published var importEngineStarted = false
-    /// The current request gave up without an import (refused too often,
-    /// aborted, or never got a settled vault).
+    /// The current request ended without running the import (failed start,
+    /// no relay reachable, or never got a settled vault).
     @Published var importStartFailed = false
-    /// What the Go side said when it did not run the import, if it said so.
-    var importRefusal: ImportStartGate.Refusal?
+    /// How the last import ended (haven-go's IMPORT_RESULT line). nil while
+    /// one is asked for or running, and before the first.
+    @Published var importOutcome: ImportResult?
+    /// The one job that owns the vault's databases right now. Restore,
+    /// backup, stop, force-clean and a second copy refuse while it is set.
+    @Published var busyJob: VaultBusyJob?
     @Published var startDate: Date?
     
     // Auto-fix locks

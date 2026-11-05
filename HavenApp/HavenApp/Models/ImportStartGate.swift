@@ -49,35 +49,19 @@ enum ImportStartGate {
 
     // MARK: Refused starts
 
-    /// What the Go side said when it did not run an import (cshared.go
-    /// runImportCycle). Refused and ignored are worth a retry once the last
-    /// cycle has drained; aborted (no seed relay answered) is not.
-    enum Refusal: Equatable {
-        case retry
-        case giveUp
-    }
-
-    static func refusal(in line: String) -> Refusal? {
-        if line.contains("Import refused") || line.contains("Import ignored") || line.contains("StartRelayC refused") {
-            return .retry
-        }
-        if line.contains("Import aborted") {
-            return .giveUp
-        }
-        return nil
-    }
-
     /// The Go side began the import cycle.
     static func isEngineStart(_ line: String) -> Bool {
         line.contains("is booting up (C-Shared Import Mode)")
     }
 
+    /// A start Go refused (ImportResult.isRetryableStart) is tried this many
+    /// times more, this far apart.
     static let maxRefusedRetries = 3
     static let refusedRetryDelay: TimeInterval = 3
 
     /// `retries`: refused starts already retried for this request.
-    static func shouldRetry(_ refusal: Refusal, retries: Int) -> Bool {
-        refusal == .retry && retries < maxRefusedRetries
+    static func shouldRetry(retries: Int) -> Bool {
+        retries < maxRefusedRetries
     }
 
     // MARK: Setup screen

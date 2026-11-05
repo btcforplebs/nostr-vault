@@ -175,8 +175,8 @@ extension RelayProcessManager {
             // Only dispatch for critical state changes (errors, boot/import completion,
             // or local notification markers which must fire even when UI is hidden).
             let hasCritical = batch.isLocked || batch.isPortConflict
-                || batch.stopBooting || batch.stopImporting
-                || batch.importEngineStarted || batch.importRefusal != nil
+                || batch.stopBooting
+                || batch.importEngineStarted
                 || batch.eventsStoredDelta != 0
                 || !batch.notifyMarkers.isEmpty
                 || !batch.listVersionMarkers.isEmpty
@@ -194,7 +194,6 @@ extension RelayProcessManager {
         // Did the Go side take the import it was asked for? (ImportStartGate)
         if state == .importing {
             if batch.importEngineStarted { importEngineStarted = true }
-            if let refusal = batch.importRefusal { importRefusal = refusal }
         }
         // Import state
         if isImporting {
@@ -215,11 +214,6 @@ extension RelayProcessManager {
             }
             if let note = batch.listHistoryNote {
                 listHistoryNote = note
-            }
-            if batch.stopImporting {
-                isImporting = false
-                listHistoryScanning = false
-                importCompleted = true
             }
         }
 
@@ -317,7 +311,7 @@ extension RelayProcessManager {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         if let currentDate = formatter.date(from: currentDateStr),
-           let pending = pendingImportConfig,
+           let pending = restartAfterImportConfig,
            let start = formatter.date(from: pending.importStartDate) {
             let totalInterval = Date().timeIntervalSince(start)
             let currentInterval = currentDate.timeIntervalSince(start)

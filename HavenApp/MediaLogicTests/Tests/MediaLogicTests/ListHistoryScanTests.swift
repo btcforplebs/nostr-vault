@@ -28,7 +28,6 @@ final class ListHistoryScanTests: XCTestCase {
         let b = parse("2026/11/04 09:01:00 📜 Found 12 older versions of your lists.")
         XCTAssertEqual(b.listHistoryScanning, false)
         XCTAssertEqual(b.listHistoryNote, "Found 12 older versions of your lists.")
-        XCTAssertFalse(b.stopImporting)
         XCTAssertEqual(b.eventsStoredDelta, 0)
         XCTAssertNil(b.importProgress)
         XCTAssertEqual(ImportTourStage(statusMessage: b.importStatusMessage ?? "", completed: false),
