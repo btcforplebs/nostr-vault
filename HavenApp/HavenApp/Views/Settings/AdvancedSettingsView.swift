@@ -4,6 +4,8 @@ struct AdvancedSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @State private var showResetConfirmation = false
+    /// Why Factory Reset deleted nothing (the vault stayed busy).
+    @State private var resetRefused: String?
 
     var body: some View {
         Form {
@@ -56,17 +58,22 @@ struct AdvancedSettingsView: View {
         .alert("Are you sure?", isPresented: $showResetConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Reset Everything", role: .destructive) {
-                relayManager.stopRelay {
-                    Task { @MainActor in
-                        configService.resetApp()
-                        #if canImport(AppKit)
-                        ConfigService.quitApp()
-                        #endif
-                    }
-                }
+                // Waits out a running import or backup before deleting the
+                // vault folder (FactoryResetGate).
+                relayManager.stopForFactoryReset(reset: {
+                    configService.resetApp()
+                    #if canImport(AppKit)
+                    ConfigService.quitApp()
+                    #endif
+                }, refused: { resetRefused = $0 })
             }
         } message: {
             Text(resetConsequence)
+        }
+        .alert("Nothing was reset", isPresented: Binding(get: { resetRefused != nil }, set: { if !$0 { resetRefused = nil } })) {
+            Button("OK", role: .cancel) { resetRefused = nil }
+        } message: {
+            Text(resetRefused ?? "")
         }
     }
 

@@ -174,3 +174,51 @@ extension RelayProcessManager {
         }
     }
 }
+
+extension RelayProcessManager {
+    /// An import running, held, retrying or still letting go of the databases.
+    private var importHoldsVault: Bool {
+        isImporting || busyJob == .importing || state == .importing || queuedImport != nil
+    }
+
+    /// Factory reset's stop (FactoryResetGate). A running import is cancelled
+    /// and waited out, and its end no longer restarts the relay; a backup or
+    /// restore is waited out. Then the relay stops and `reset` runs on the
+    /// lifecycle chain, so nothing opens the vault between the stop and the
+    /// delete. `refused` gets the words when it stayed busy: nothing deleted.
+    func stopForFactoryReset(reset: @escaping @MainActor () -> Void,
+                             refused: @escaping @MainActor (String) -> Void) {
+        Task { @MainActor [weak self] in
+            let started = Date()
+            var cancelSent = false
+            while let self {
+                let otherJob = self.busyJob != nil && self.busyJob != .importing
+                switch FactoryResetGate.action(importRunning: self.importHoldsVault, otherJob: otherJob,
+                                               cancelSent: cancelSent, waited: Date().timeIntervalSince(started)) {
+                case .reset:
+                    self.enqueueLifecycle { [weak self] in
+                        guard let self else { return }
+                        guard !self.importHoldsVault, self.busyJob == nil else {
+                            return refused(FactoryResetGate.busyText)
+                        }
+                        await self.performStop()
+                        reset()
+                    }
+                    return
+                case .cancelImport:
+                    cancelSent = true
+                    self.logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Factory reset: cancelling the running import first"))
+                    // The account is going: its import's end must not start its relay again.
+                    self.restartAfterImportConfig = nil
+                    self.cancelImport()
+                case .wait:
+                    break
+                case .refuse:
+                    self.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Factory reset refused: the vault stayed busy (\(self.busyJob?.rawValue ?? "import"))"))
+                    return refused(FactoryResetGate.busyText)
+                }
+                try? await Task.sleep(nanoseconds: UInt64(FactoryResetGate.pollInterval * 1_000_000_000))
+            }
+        }
+    }
+}
