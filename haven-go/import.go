@@ -741,7 +741,12 @@ type inboxClassification struct {
 	reason    rejectReason // why not accepted (rejectNone when accept)
 	chat      bool         // store in the chat DB (gift wraps) instead of the inbox DB
 	notify    bool         // author isn't the tagged owner — warrants a notification
-	recipient string       // hex pubkey of the whitelisted account this event is tagged for
+	recipient string       // hex pubkey of the whitelisted account this event is tagged for (the first)
+	// recipients: every whitelisted account the event p-tags, in tag order,
+	// each once; recipients[0] == recipient. One reply tagging two of the
+	// owner's accounts is one event for both (Logen 2026-11-05,
+	// RESEARCH/NV_LIVE_VAULT_MULTI_MENTION_ORDER_2026_11_05.md).
+	recipients []string
 }
 
 // classifyInboxEvent applies the blacklist / Web-of-Trust / whitelisted-p-tag
@@ -751,7 +756,7 @@ type inboxClassification struct {
 func classifyInboxEvent(ctx context.Context, ev *nostr.Event) inboxClassification {
 	// A zap you sent: kept so the Relay tab can list it, never notified.
 	if sender := givenZapSender(ev); sender != "" {
-		return inboxClassification{accept: true, recipient: sender}
+		return inboxClassification{accept: true, recipient: sender, recipients: []string{sender}}
 	}
 	trustKey := inboxTrustKey(ev)
 	if isBlacklisted(ev.PubKey) || isBlacklisted(trustKey) {
@@ -766,6 +771,7 @@ func classifyInboxEvent(ctx context.Context, ev *nostr.Event) inboxClassificatio
 			return inboxClassification{reason: rejectNotInWot}
 		}
 	}
+	var recipients []string
 	for tag := range ev.Tags.FindAll("p") {
 		if len(tag) < 2 {
 			continue
@@ -773,16 +779,23 @@ func classifyInboxEvent(ctx context.Context, ev *nostr.Event) inboxClassificatio
 		if _, ok := config.WhitelistedPubKeys[tag[1]]; !ok {
 			continue
 		}
-		return inboxClassification{
-			accept: true,
-			chat:   ev.Kind == nostr.KindGiftWrap,
-			// Skip notifying when the author is tagging themselves (e.g.
-			// replying to their own note) — still imported, just not notified.
-			notify:    trustKey != tag[1],
-			recipient: tag[1],
+		if !slices.Contains(recipients, tag[1]) {
+			recipients = append(recipients, tag[1])
 		}
 	}
-	return inboxClassification{reason: rejectNoWhitelistedPTag}
+	if len(recipients) == 0 {
+		return inboxClassification{reason: rejectNoWhitelistedPTag}
+	}
+	return inboxClassification{
+		accept: true,
+		chat:   ev.Kind == nostr.KindGiftWrap,
+		// Skip notifying when the author is tagging themselves (e.g.
+		// replying to their own note) — still imported, just not notified.
+		// Decided on the first tagged account, as before.
+		notify:     trustKey != recipients[0],
+		recipient:  recipients[0],
+		recipients: recipients,
+	}
 }
 
 // logInboxImport prints the human-readable import line for a stored inbox/chat
@@ -876,9 +889,9 @@ func processInboxEvent(ctx context.Context, ev nostr.RelayEvent, wdbInbox, wdbCh
 	if c.notify && notifyableAge {
 		logInboxImport(ev.Event)
 		if notifier != nil {
-			notifier.maybeNotify(ev.Event, c.recipient)
+			notifier.maybeNotify(ev.Event, c.recipients...)
 		} else {
-			emitInboxNotify(ev.Event, c.recipient)
+			emitInboxNotify(ev.Event, c.recipients...)
 		}
 	}
 }
@@ -887,8 +900,12 @@ func processInboxEvent(ctx context.Context, ev nostr.RelayEvent, wdbInbox, wdbCh
 // imported inbox/chat event so clients (currently the Android app's LogStore)
 // can raise a local system notification without a remote push server. Format:
 //
-//	🔔NOTIFY|type=<t>|kind=<k>|author=<hex>|id=<hex>|recipient=<hex>|preview=<text>
+//	🔔NOTIFY|type=<t>|kind=<k>|author=<hex>|id=<hex>|recipient=<hex>|recipients=<hex>,<hex>|preview=<text>
 //
+// `recipients` names every whitelisted account the event tags, comma-separated,
+// in tag order; `recipient` stays the first of them for parsers that predate it
+// (they ignore keys they don't know). One event is one marker however many of
+// the accounts it tags.
 // `recipient` is the whitelisted account's hex pubkey this event was tagged
 // for — the relay's inbox is shared across every whitelisted account on the
 // device, so clients need this to apply the right account's notification
@@ -934,9 +951,13 @@ func isNotifyableLiveGiftWrap(ev *nostr.Event) bool {
 // `preview` is always the LAST field (it may contain spaces) and is empty for
 // encrypted/opaque kinds (DMs, gift wraps, zaps). Self-filters by kind: kinds
 // that should not notify (e.g. follow lists) produce no line.
-func emitInboxNotify(ev *nostr.Event, recipient string) {
+func emitInboxNotify(ev *nostr.Event, recipients ...string) {
 	if ev == nil {
 		return
+	}
+	recipient := ""
+	if len(recipients) > 0 {
+		recipient = recipients[0]
 	}
 	if !isNotifyableKind(ev.Kind) {
 		return
@@ -972,7 +993,8 @@ func emitInboxNotify(ev *nostr.Event, recipient string) {
 	}
 	// A zap receipt is signed by the lightning service; name the zapper, who
 	// signed the embedded zap request, so the alert reads "<zapper> zapped you".
-	log.Printf("🔔NOTIFY|type=%s|kind=%d|author=%s|id=%s|recipient=%s|preview=%s", typ, ev.Kind, inboxTrustKey(ev), ev.ID, recipient, preview)
+	log.Printf("🔔NOTIFY|type=%s|kind=%d|author=%s|id=%s|recipient=%s|recipients=%s|preview=%s",
+		typ, ev.Kind, inboxTrustKey(ev), ev.ID, recipient, strings.Join(recipients, ","), preview)
 }
 
 // sanitizeNotifyPreview collapses newlines and trims a content string to a short

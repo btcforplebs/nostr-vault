@@ -175,7 +175,7 @@ type batchNotifier struct {
 	suppressed int
 }
 
-func (n *batchNotifier) maybeNotify(ev *nostr.Event, recipient string) {
+func (n *batchNotifier) maybeNotify(ev *nostr.Event, recipients ...string) {
 	if ev == nil {
 		return
 	}
@@ -189,7 +189,7 @@ func (n *batchNotifier) maybeNotify(ev *nostr.Event, recipient string) {
 	defer n.mu.Unlock()
 	if n.emitted < config.NotifyBatchLimit {
 		n.emitted++
-		emitInboxNotify(ev, recipient)
+		emitInboxNotify(ev, recipients...)
 		return
 	}
 	// A gift wrap names no author until the app unlocks it, and every DM the
@@ -420,7 +420,7 @@ func (s *inboxNegStore) Publish(ctx context.Context, ev nostr.Event) error {
 	if c.notify && isNotifyableAge(&ev) {
 		logInboxImport(&ev)
 		if s.notifier != nil {
-			s.notifier.maybeNotify(&ev, c.recipient)
+			s.notifier.maybeNotify(&ev, c.recipients...)
 		}
 	}
 	return nil
