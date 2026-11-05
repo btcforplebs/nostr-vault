@@ -82,6 +82,19 @@ const listeners = new Set()
 
 /** Folded (true) or not, for the parts that swap what can be tapped; changes only at the halfway mark. */
 export function onFoldedChange(fn) { listeners.add(fn); return () => listeners.delete(fn) }
+
+// Settings › Appearance › Collapse Menu on Scroll (iPhone AppearanceSettingsView, Tab Bar; parity N6): on by default,
+// today's behaviour. Off, scrolling leaves the bars full size. Kept in this browser.
+const PREF = "display.collapseMenuOnScroll"
+const prefListeners = new Set()
+export function foldOn(storage = globalThis.localStorage) {
+  try { return storage?.getItem?.(PREF) !== "off" } catch { return true }
+}
+export function setFoldOn(on, storage = globalThis.localStorage) {
+  try { storage?.setItem?.(PREF, on ? "on" : "off") } catch {}
+  prefListeners.forEach(f => f(!!on))
+}
+export function onFoldPref(fn) { prefListeners.add(fn); return () => prefListeners.delete(fn) }
 export function isFolded() { return document.documentElement.dataset.fold === "folded" }
 /** Bars fully back, animated (the folded avatar's tap). */
 export function unfold() { fold?.reset() }
@@ -108,11 +121,14 @@ export function startChromeFold(win = window) {
     return Math.min(Math.max(win.scrollY, 0), max) // Safari's rubber band past either end moves nothing
   }
   const settleLater = () => { clearTimeout(idleTimer); idleTimer = setTimeout(() => tracker.idle(), IDLE_MS) }
-  const onScroll = () => { tracker.onScroll(offset(), performance.now()); if (tracker.phase !== "interacting") settleLater() }
-  const down = e => { if (e.touches?.length > 1) return; clearTimeout(idleTimer); tracker.onTouch(true) }
-  const up = e => { if (e.touches?.length) return; tracker.onTouch(false); settleLater() }
+  // With Collapse Menu on Scroll off, nothing here moves the bars; turning it off shows them at once.
+  let enabled = foldOn(win.localStorage)
+  const offPref = onFoldPref(on => { enabled = on; if (!on) { clearTimeout(idleTimer); tracker.reset() } })
+  const onScroll = () => { if (!enabled) return; tracker.onScroll(offset(), performance.now()); if (tracker.phase !== "interacting") settleLater() }
+  const down = e => { if (!enabled || e.touches?.length > 1) return; clearTimeout(idleTimer); tracker.onTouch(true) }
+  const up = e => { if (!enabled || e.touches?.length) return; tracker.onTouch(false); settleLater() }
   // A mouse wheel or trackpad on a narrow window: each burst of wheel events is one drag.
-  const wheel = () => { if (tracker.phase !== "interacting") tracker.onTouch(true); clearTimeout(idleTimer); idleTimer = setTimeout(() => { tracker.onTouch(false); tracker.idle() }, IDLE_MS) }
+  const wheel = () => { if (!enabled) return; if (tracker.phase !== "interacting") tracker.onTouch(true); clearTimeout(idleTimer); idleTimer = setTimeout(() => { tracker.onTouch(false); tracker.idle() }, IDLE_MS) }
   // A new screen starts with the bars open (BottomTabBar onChange(selectedTab) chrome.reset()).
   const route = () => tracker.reset()
   const opts = { passive: true }
@@ -126,7 +142,7 @@ export function startChromeFold(win = window) {
   root.dataset.fold = "open"
   tracker.onScroll(offset(), performance.now())
   return () => {
-    cancel?.(); clearTimeout(idleTimer)
+    cancel?.(); clearTimeout(idleTimer); offPref()
     win.removeEventListener("scroll", onScroll, opts)
     win.removeEventListener("touchstart", down, opts)
     win.removeEventListener("touchend", up, opts)

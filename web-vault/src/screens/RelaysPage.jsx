@@ -1,9 +1,10 @@
 // Settings › Relays (iPhone RelayMatrixView, Read and Write columns): the account's relay list (NIP-65, kind 10002)
 // with read and write switches per relay, Remove, and Add. Saving signs and publishes the new list. The list draws
-// from Haven's copy or the first relay to answer; editing waits until every relay has been asked (`pending`).
-import { useEffect, useState } from "preact/hooks"
+// from Haven's copy or the first relay to answer; editing waits until every relay has been asked (`pending`). Each
+// relay shows whether it answers from this browser and, if not, why (net/relay-probe.js, the iPhone's RelayProbe).
+import { useEffect, useRef, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
-import { isDead } from "../net/pool.js"
+import { probeRelay, probeLine } from "../net/relay-probe.js"
 import { RelayUrlList } from "./RelayUrlList.jsx"
 import { latestList, publishList, ListNotSaved, relayUrl, relayUrlError, relayEntries, addRelay, setJob, removeRelay, relayTags, relayProblem, sameRows } from "../net/list-edit.js"
 import { SkeletonList } from "../components/Loading.jsx"
@@ -16,10 +17,23 @@ export function RelaysPage({ ctx }) {
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState("")
   const [err, setErr] = useState("")
+  const [probes, setProbes] = useState({}) // url -> { ms } | { why }, absent while probing
+  const asked = useRef(new Set())
 
   const early = ({ event }) => { setLoaded({ event, checked: false, pending: true }); setRows(relayEntries(event)) }
   const load = () => latestList(ctx, 10002, { on: early }).then(r => { setLoaded(r); setRows(relayEntries(r.event)) }).catch(e => { setLoaded({ event: undefined, checked: false }); setErr(String(e?.message ?? e)) })
   useEffect(() => { load() }, [])
+  // Each relay on the page probed once (an added one as it's added), all at once.
+  const urls = rows.map(r => r.url).join(" ")
+  const mounted = useRef(true)
+  useEffect(() => () => { mounted.current = false }, [])
+  useEffect(() => {
+    for (const url of rows.map(r => r.url)) {
+      if (asked.current.has(url)) continue
+      asked.current.add(url)
+      probeRelay(url).then(r => { if (mounted.current) setProbes(p => ({ ...p, [url]: r })) })
+    }
+  }, [urls])
 
   const saved = relayEntries(loaded?.event)
   const dirty = !sameRows(rows, saved)
@@ -52,7 +66,7 @@ export function RelaysPage({ ctx }) {
       {!loaded.event && loaded.checked && <p class="settings-note muted small">No relays yet. Add one below.</p>}
       {rows.map(r => (
         <div key={r.url} class="settings-row static relay-edit-row">
-          <span class="settings-title mono" title={r.url}>{host(r.url)}{isDead(r.url) && <span class="tag">not answering</span>}</span>
+          <RelayName url={r.url} result={probes[r.url]} />
           <span class="settings-tags">
             <Job on={r.read} label="Read" disabled={locked} onClick={() => setRows(setJob(rows, r.url, "read", !r.read))} />
             <Job on={r.write} label="Write" disabled={locked} onClick={() => setRows(setJob(rows, r.url, "write", !r.write))} />
@@ -86,6 +100,18 @@ export function RelaysPage({ ctx }) {
         note="The app won't open a connection to these, even when someone you follow uses them (your bunker's own relay excepted). Published as your blocked relay list (10006)."
         empty="No relays are on your never-connect list." />
     </>
+  )
+}
+
+/** The relay's host, with a dot and a line saying how it answers from this browser (RelayMatrixView: health dot,
+ *  "120 ms", "slow", or why it didn't connect). */
+function RelayName({ url, result }) {
+  const line = probeLine(result)
+  return (
+    <span class="settings-title relay-name" title={url}>
+      <span class="mono">{host(url)}</span>
+      <span class={`relay-probe ${line.tone}`} role="status"><span class="relay-dot" aria-hidden="true" />{line.text}</span>
+    </span>
   )
 }
 

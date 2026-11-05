@@ -238,3 +238,12 @@ button.default-reaction:active { transform: none; }
 .block-someone input { flex: 1; min-width: 0; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--hair); background: var(--s1); color: var(--text); font: var(--t-body); }
 .block-someone button.danger-fill { background: var(--danger); color: #fff; border-color: transparent; }
 .block-someone button.danger-fill:disabled { background: var(--s2); color: var(--text-3); }
+
+/* Settings › Relays: each relay's answer from this browser (RelaysPage.jsx RelayName, net/relay-probe.js). */
+.relay-name { display: grid; gap: 2px; white-space: normal; }
+.relay-name .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.relay-probe { display: inline-flex; align-items: center; gap: 6px; font: var(--t-cap); color: var(--text-3); }
+.relay-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: rgb(255 255 255 / .25); }
+.relay-probe.ok .relay-dot { background: var(--online); }
+.relay-probe.slow { color: #ff9f0a; } .relay-probe.slow .relay-dot { background: #ff9f0a; }
+.relay-probe.down { color: var(--danger); } .relay-probe.down .relay-dot { background: var(--danger); }
