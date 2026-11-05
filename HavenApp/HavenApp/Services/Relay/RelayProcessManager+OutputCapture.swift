@@ -176,6 +176,7 @@ extension RelayProcessManager {
             // or local notification markers which must fire even when UI is hidden).
             let hasCritical = batch.isLocked || batch.isPortConflict
                 || batch.stopBooting || batch.stopImporting
+                || batch.importEngineStarted || batch.importRefusal != nil
                 || batch.eventsStoredDelta != 0
                 || !batch.notifyMarkers.isEmpty
                 || !batch.listVersionMarkers.isEmpty
@@ -190,6 +191,11 @@ extension RelayProcessManager {
 
     /// Apply all accumulated state changes in a single MainActor pass.
     private func applyBatchedUpdate(_ batch: BatchedStateUpdate) {
+        // Did the Go side take the import it was asked for? (ImportStartGate)
+        if state == .importing {
+            if batch.importEngineStarted { importEngineStarted = true }
+            if let refusal = batch.importRefusal { importRefusal = refusal }
+        }
         // Import state
         if isImporting {
             if let dateStr = batch.progressDateStr {

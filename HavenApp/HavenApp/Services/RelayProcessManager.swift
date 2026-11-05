@@ -81,6 +81,20 @@ class RelayProcessManager: ObservableObject {
     var pendingImportAlsoFrom: [String] = []
     /// The history-scan choice waiting on a stop (see `importNotes`).
     var pendingImportListHistory = false
+    /// Refused starts already retried for the pending import (ImportStartGate).
+    var pendingImportRetries = 0
+    /// Bumped by each `importNotes` call; a held or retried request from an
+    /// older call stands down.
+    var importRequestGeneration = 0
+    /// When the current import was asked for, for setup's 60 s "Couldn't start".
+    @Published var importRequestedAt: Date?
+    /// The Go side logged the import cycle's boot for the current request.
+    @Published var importEngineStarted = false
+    /// The current request gave up without an import (refused too often,
+    /// aborted, or never got a settled vault).
+    @Published var importStartFailed = false
+    /// What the Go side said when it did not run the import, if it said so.
+    var importRefusal: ImportStartGate.Refusal?
     @Published var startDate: Date?
     
     // Auto-fix locks
