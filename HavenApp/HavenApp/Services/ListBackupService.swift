@@ -54,21 +54,12 @@ final class ListBackupService: ObservableObject {
     /// One /lists read: the vault's own versions, or (`imported`) the ones an
     /// import filed (haven-go wantsImported). nil when the vault didn't answer.
     private func read(_ hex: String, imported: Bool) async -> [NostrEvent]? {
-        func filter(_ kinds: [Int]) -> [String: Any] {
-            var f: [String: Any] = ["authors": [hex], "kinds": kinds, "limit": 1000]
-            if imported { f["#v"] = [ListHistoryScan.importedFilterValue] }
-            return f
-        }
-        guard let found = await VaultSocket.query(path: "/lists", filter: filter(ListShrinkRule.protectedKinds)) else { return nil }
-        // At the limit the relay cut the oldest, which may be a pinned list
-        // from before a wipe: ask again one kind at a time (Tron, PR 1568).
-        guard found.count >= 1000 else { return found }
-        var all: [NostrEvent] = []
-        for kind in ListShrinkRule.protectedKinds {
-            guard let some = await VaultSocket.query(path: "/lists", filter: filter([kind])) else { return nil }
-            all += some
-        }
-        return all
+        var f: [String: Any] = ["authors": [hex], "kinds": ListShrinkRule.protectedKinds]
+        if imported { f["#v"] = [ListHistoryScan.importedFilterValue] }
+        // At the cap the vault cut the oldest, which may be a pinned list
+        // from before a wipe (Tron, PR 1568): paged until every version is
+        // read, not re-asked once per kind.
+        return await VaultSocket.queryAll(path: "/lists", filter: f)
     }
 
     /// Lists in a fixed order: by kind, then name.

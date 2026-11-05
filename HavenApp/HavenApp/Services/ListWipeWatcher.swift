@@ -44,14 +44,18 @@ final class ListWipeWatcher {
         return out
     }
 
-    /// The app came to the front: check every account's lists, which catches
-    /// a clobber that synced in while it was away (the vault skips the marker
-    /// for old versions). Banner for all, notification only for recent ones.
+    /// The app came to the front: check the active account's lists, which
+    /// catches a clobber that synced in while it was away (the vault skips
+    /// the marker for old versions). Banner for all, notification only for
+    /// recent ones. Only the active account: every account on every
+    /// foreground was a /lists read each, and with a remote signer each read
+    /// cost a login (LogePhone, 2026-11-05). The others are still checked
+    /// when a new version of their lists lands (listVersionsArrived).
     func appCameForward() {
         guard ConfigService.shared.config.hasCompletedSetup, task == nil else { return }
-        for hex in ConfigService.shared.allAccountHexes {
-            pending[hex, default: []].formUnion(ListShrinkRule.protectedKinds)
-        }
+        let active = ConfigService.shared.activeAccountHexPubkey.lowercased()
+        guard !active.isEmpty else { return }
+        pending[active, default: []].formUnion(ListShrinkRule.protectedKinds)
         task = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             let work = pending
@@ -65,18 +69,11 @@ final class ListWipeWatcher {
     static let notifyWithin: TimeInterval = 48 * 3600
 
     private func check(author: String, kinds: Set<Int>) async {
-        let filter: [String: Any] = ["authors": [author], "kinds": Array(kinds).sorted(), "limit": 1000]
-        guard var found = await VaultSocket.query(path: "/lists", filter: filter) else { return }
-        // At the limit the relay cut the oldest: ask one kind at a time, as
-        // ListBackupService does.
-        if found.count >= 1000 {
-            var all: [NostrEvent] = []
-            for kind in kinds.sorted() {
-                guard let some = await VaultSocket.query(path: "/lists", filter: ["authors": [author], "kinds": [kind], "limit": 1000]) else { return }
-                all += some
-            }
-            found = all
-        }
+        // Every version, paged past the vault's cap only when there are
+        // more (it used to re-ask once per kind whenever the first answer
+        // was full).
+        let filter: [String: Any] = ["authors": [author], "kinds": Array(kinds).sorted()]
+        guard let found = await VaultSocket.queryAll(path: "/lists", filter: filter) else { return }
         let groups = ListHistory.group(found.map(ListVersion.init), author: author)
         let own = OwnListEdits.ids(), dismissed = ListBackupService.dismissedIDs()
         var notified = Set(UserDefaults.standard.stringArray(forKey: Self.notifiedKey) ?? [])
