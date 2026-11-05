@@ -265,7 +265,7 @@ class RelayImportService @Inject constructor(
      * StopRelayC -> CloseDBs() actually finishes, so the op waits for Go to say
      * the old run has drained and retries a refusal ([ExclusiveDbOp]).
      *
-     * @param onStatus progress callback ("Stopping relay…", "Restarting relay…").
+     * @param onStatus progress callback ("Stopping your vault…", "Restarting relay…").
      * @param op the Go bridge call; returns 0 on success.
      * @return the op's return code (0 = success).
      */
@@ -277,7 +277,7 @@ class RelayImportService @Inject constructor(
         }
         _vaultOp.value = true
         updateBusy()
-        onStatus("Stopping relay…")
+        onStatus(ExclusiveDbOp.STOPPING_LINE)
         RelayForegroundService.stop(context)
 
         // Re-apply env so the Go op's loadConfig()/initDBs() see the right DB paths.

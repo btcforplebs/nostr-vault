@@ -275,14 +275,12 @@ internal fun restoreFailText(code: Int): String = when (code) {
     // so: with another account active, its own backup is refused too. Same as iOS #1757.
     2 -> NOT_THIS_VAULTS_BACKUP
     com.nostrvault.service.RelayImportService.BUSY_CODE -> com.nostrvault.service.RelayImportService.BUSY_LINE
-    com.nostrvault.service.ExclusiveDbOp.DRAIN_TIMEOUT_CODE -> com.nostrvault.service.ExclusiveDbOp.DRAIN_TIMEOUT_LINE
     else -> "Restore failed (code $code)."
 }
 
 /** What a failed export says. */
 internal fun exportFailText(code: Int): String = when (code) {
     com.nostrvault.service.RelayImportService.BUSY_CODE -> com.nostrvault.service.RelayImportService.BUSY_LINE
-    com.nostrvault.service.ExclusiveDbOp.DRAIN_TIMEOUT_CODE -> com.nostrvault.service.ExclusiveDbOp.DRAIN_TIMEOUT_LINE
     else -> "Export failed (code $code)."
 }
 
