@@ -67,6 +67,9 @@ class AppDelegate: NSObject, ObservableObject {
                 // Starts, or quietly finishes, the Fill your vault guide once the
                 // follow list is known.
                 FillYourVaultCoordinator.shared.start()
+                // The mesh copy v2: resume a cut copy, catch up with linked
+                // devices, keep copy-settings.json in step.
+                MeshCopyV2Service.shared.startWatching()
                 // The Mac's mesh engine, if its switch is on: My Devices reach
                 // the relay port through it, and the relay starts just after.
                 MacFipsMeshService.shared.sync()

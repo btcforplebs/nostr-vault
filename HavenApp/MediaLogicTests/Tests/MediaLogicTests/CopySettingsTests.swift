@@ -71,3 +71,58 @@ final class CopySettingsTests: XCTestCase {
                        ["https://other.example", "fipsmesh://npub1x/blossom", "http://npub1y.fips/"])
     }
 }
+
+/// The build-failing export test (contract §5): a config full of secrets
+/// exports only allowlisted keys and none of the secrets. Positive control:
+/// the same scan finds every secret in the raw config, so a scan that sees
+/// nothing can't pass by accident.
+final class CopySettingsSecretExportTests: XCTestCase {
+    private let secrets = [
+        "nsec1testsecretownerkeyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+        "ncryptsec1testencryptedkeyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+        "nostr+walletconnect://abc?secret=deadbeefcafe",
+        "bunker://signer?secret=topsecretbunker",
+        String(repeating: "ab", count: 32),
+        "s3-secret-key-value-123",
+        "npub1meshdevicethatmuststay",
+    ]
+
+    private func secretConfig() -> HavenConfig {
+        var c = HavenConfig()
+        c.ownerNsec = secrets[0]
+        c.ownerNcryptsec = secrets[1]
+        c.nwcURI = secrets[2]
+        c.nip46BunkerURI = secrets[3]
+        c.nip46Secret = secrets[3]
+        c.nip46ClientSecretKey = secrets[4]
+        c.s3SecretKey = secrets[5]
+        c.meshDevices = [MeshDevice(npub: secrets[6], name: "Phone", role: .phone)]
+        // Allowlisted lists too, so a secret can't hide behind a setting
+        // that should be copied (the mesh server is this device's own).
+        c.blossomMirrors = ["https://blossom.example", "fipsmesh://\(secrets[6])/blossom"]
+        return c
+    }
+
+    private func found(in data: Data) -> [String] {
+        let text = String(decoding: data, as: UTF8.self)
+        return secrets.filter { text.contains($0) }
+    }
+
+    /// Every stored value of the config, as text (the JSON encoding leaves
+    /// some secrets out, so it would be a weaker control).
+    func testRawConfigHoldsEverySecret() {
+        var raw = ""
+        dump(secretConfig(), to: &raw)
+        XCTAssertEqual(found(in: Data(raw.utf8)), secrets)
+    }
+
+    func testExportHoldsOnlyAllowlistedKeysAndNoSecret() throws {
+        let keys = CopySettings.keys(secretConfig())
+        XCTAssertTrue(Set(keys.keys).isSubset(of: Set(CopySettings.allowlist.keys)))
+        let data = try XCTUnwrap(CopySettings.fileData(keys: keys, updatedAt: 1_767_000_000))
+        XCTAssertEqual(found(in: data), [])
+        guard case .success = CopySettings.check(data, now: 1_767_000_000) else {
+            return XCTFail("the export must pass the refuse check")
+        }
+    }
+}

@@ -214,6 +214,9 @@ extension RelayProcessManager {
         if !batch.importJobLines.isEmpty {
             ImportJobsService.shared.handle(batch.importJobLines)
         }
+        if !batch.copyLines.isEmpty {
+            MeshCopyV2Service.shared.handle(batch.copyLines)
+        }
 
         // A start that didn't happen: back to stopped at once, so the
         // controls come back instead of waiting out the boot watchdog.

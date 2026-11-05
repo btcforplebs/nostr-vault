@@ -9,7 +9,7 @@ struct BringItOverStep: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @StateObject private var holder = PairDeviceFlowHolder()
-    @ObservedObject private var jobs = ImportJobsService.shared
+    @ObservedObject private var copy = MeshCopyV2Service.shared
 
     /// Linked and copied (or copying on in the background).
     let onDone: () -> Void
@@ -23,11 +23,10 @@ struct BringItOverStep: View {
     @State private var linkStartedAt: Int?
     @State private var copying = false
     @State private var finished = false
-    /// The copy's setup run was asked for, at this time (its outcome is
-    /// this request's).
-    @State private var requestedAt: Int?
-    /// The other vault's link address, to tell whether setup read it. Never log it.
-    @State private var copyURL: String?
+    /// The copy was asked for, or last moved, at this time (a stall check).
+    @State private var lastMoveAt: Int?
+    /// The copy stopped with a line to show; Continue goes on to the relays.
+    @State private var stopLine: String?
 
     private static var now: Int { Int(Date().timeIntervalSince1970) }
 
@@ -38,9 +37,10 @@ struct BringItOverStep: View {
             Text(OtherVaultCopy.button)
                 .font(.appSystem(size: isIOSDevice ? 24 : 28, weight: .semibold))
                 .foregroundColor(WizardColors.textPrimary)
-            BringItOverContent(flow: flow, other: other, copying: copying, scanning: $scanning,
+            BringItOverContent(flow: flow, other: other, copying: copying, progress: copy.progress,
+                               stopLine: stopLine, scanning: $scanning,
                                scanned: scanned, confirm: confirm, onLinked: startCopy, onFailed: fallBack,
-                               onContinue: done)
+                               onContinue: { stopLine == nil ? done() : fallBack() })
                 .environmentObject(relayManager)
             if !copying {
                 Button(action: relaysInstead) {
@@ -55,6 +55,7 @@ struct BringItOverStep: View {
             }
         }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in watch() }
+        .onChange(of: copy.progress) { _, p in moved(p) }
         #if os(macOS)
         .onAppear { MacFipsMeshService.shared.turnOnForCopy() }
         #endif
@@ -78,65 +79,45 @@ struct BringItOverStep: View {
         holder.flow(configService).roleConfirmed()
     }
 
-    /// Linked: copy from the other device, read through its link like any
-    /// other relay, by first run's setup job (ImportJobs) with the other
-    /// vault as an extra seed. The vault keeps running throughout.
+    /// Linked: PairDeviceFlow has started the copy on this side (B) with the
+    /// engine's copy v2 (MeshCopyV2Service). This only follows it; a second
+    /// start for the same device does nothing. The vault keeps running.
     private func startCopy() {
         guard !copying, let other else { return }
         copying = true
+        lastMoveAt = Self.now
+        configService.config.importStartDate = OtherVaultCopy.startDate
+        configService.save()
         Task {
-            guard let url = await dialOtherVault(other.mesh) else { return fallBack() }
-            configService.config.importStartDate = OtherVaultCopy.startDate
-            configService.save()
-            copyURL = url
-            relayManager.startFirstRun(config: configService.config, alsoFrom: [url])
-            requestedAt = Self.now
+            let result = await copy.start(peer: other.mesh, name: other.name)
+            if !result.isRunning { fallBack() }
         }
     }
 
-    /// Dials the other vault until it answers or `OtherVaultCopy.dialWindow`
-    /// runs out: A starts sharing as the link completes, and its engine
-    /// takes seconds to start and be found (Logen 2026-11-05).
-    private func dialOtherVault(_ meshNpub: String) async -> String? {
-        let startedAt = Self.now
-        while !finished {
-            if let url = await Self.vaultURL(meshNpub) { return url }
-            guard OtherVaultCopy.dialsAgain(startedAt: startedAt, now: Self.now) else { return nil }
-            try? await Task.sleep(nanoseconds: UInt64(OtherVaultCopy.dialRetryEvery) * 1_000_000_000)
+    /// A `COPY` line: done goes on, a stop with words shows them, anything
+    /// else is progress.
+    private func moved(_ p: MeshCopyV2.Progress?) {
+        guard copying, !finished, let p else { return }
+        lastMoveAt = Self.now
+        guard p.isFinished else { return }
+        if p.stage == "done" { return done() }
+        if let line = MeshCopyV2.message(for: p, name: other?.name ?? "") {
+            stopLine = line
+        } else {
+            fallBack()
         }
-        return nil
-    }
-
-    /// The other device's vault as a local ws:// address, or nil. Never log it.
-    private static func vaultURL(_ meshNpub: String) async -> String? {
-        #if os(iOS)
-        return await FipsMeshService.shared.relayWebsocketURL(meshNpub: meshNpub)
-        #else
-        guard let base = await MacFipsMeshService.shared.ingressURL(meshNpub: meshNpub) else { return nil }
-        return HomeVaultLogic.websocketURL(base: base)?.absoluteString
-        #endif
     }
 
     private func watch() {
         guard !finished else { return }
         let now = Self.now
         if copying {
-            // Only the setup job's end decides it: failed, cancelled or the
-            // other vault left unread goes on to the relay import with the
-            // "not reached" line; anything else is done (the relay import
-            // still runs next, OtherVaultCopy.afterCopied).
-            guard let requestedAt else { return }
-            switch jobs.setupStage {
-            case .couldNotFinish:
-                return fallBack()
-            case .finished:
-                let setup = jobs.list?.job(ImportJobs.setup)
-                if let copyURL, ImportJobs.leftUnread(copyURL, in: setup) { return fallBack() }
-                return done()
-            case .starting, .running:
-                // setup takes seconds; no end this long after asking is a stall.
-                if OtherVaultCopy.isStalled(lastProgressAt: requestedAt, now: now) { fallBack() }
-            }
+            // No COPY line this long after the last one is a stall; a stop
+            // with words waits for Continue.
+            guard stopLine == nil, let lastMoveAt else { return }
+            // Dialling and waiting for the relay count as moving.
+            if copy.starting { self.lastMoveAt = now; return }
+            if OtherVaultCopy.isStalled(lastProgressAt: lastMoveAt, now: now) { fallBack() }
         } else if let started = linkStartedAt, OtherVaultCopy.linkTimedOut(startedAt: started, now: now) {
             fallBack()
         }
@@ -168,6 +149,8 @@ private struct BringItOverContent: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     let other: MeshPairing.Payload?
     let copying: Bool
+    let progress: MeshCopyV2.Progress?
+    let stopLine: String?
     @Binding var scanning: Bool
     let scanned: (String) -> String?
     let confirm: () -> Void
@@ -242,14 +225,30 @@ private struct BringItOverContent: View {
                 .font(.appSystem(size: 36))
                 .foregroundColor(WizardColors.success)
             line("Linked ✓ \(otherName)")
-            Text(OtherVaultCopy.copyingLine(other?.name ?? ""))
-                .font(.appSystem(size: 15, weight: .medium))
-                .foregroundColor(WizardColors.textPrimary)
-            ProgressView()
-                .progressViewStyle(.linear)
-                .tint(WizardColors.accentPrimary)
-            // The import's own status line names the account by npub: not here (§5a).
-            line("It carries on if you go ahead now.")
+            if let stopLine {
+                Text(stopLine)
+                    .font(.appSystem(size: 15, weight: .medium))
+                    .foregroundColor(.orange)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                line("Your notes come from your relays instead.")
+            } else {
+                Text(progress.map { MeshCopyV2.stageLine($0, name: other?.name ?? "") }
+                     ?? OtherVaultCopy.copyingLine(other?.name ?? ""))
+                    .font(.appSystem(size: 15, weight: .medium))
+                    .foregroundColor(WizardColors.textPrimary)
+                    .multilineTextAlignment(.center)
+                if let fraction = progress?.fraction {
+                    ProgressView(value: fraction)
+                        .progressViewStyle(.linear)
+                        .tint(WizardColors.accentPrimary)
+                } else {
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                        .tint(WizardColors.accentPrimary)
+                }
+                line("It carries on if you go ahead now.")
+            }
             WizardPrimaryButton(title: "Continue", action: onContinue)
         }
     }

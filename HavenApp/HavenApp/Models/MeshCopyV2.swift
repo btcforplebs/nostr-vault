@@ -175,4 +175,53 @@ enum MeshCopyV2 {
         /// A copy is running (this one, or one already under way).
         var isRunning: Bool { self == .started || self == .busy }
     }
+
+    // MARK: B's own record: what to resume and whom to catch up with
+
+    /// How long a start keeps trying while B's relay comes up (code 3).
+    static let relayWaitWindow = 90
+    static let retryEvery = 3
+    /// A catch-up with one linked device at most this often.
+    static let syncEvery = 15 * 60
+
+    /// Kept in UserDefaults on B. No token, no address: the engine keeps the
+    /// token, and the base is dialled fresh each time.
+    struct Record: Codable, Equatable {
+        /// The copy under way or cut short: its peer, name, and whether the
+        /// next try needs a fresh signed start (the engine dropped its state).
+        struct Pending: Codable, Equatable {
+            var peer: String
+            var name: String
+            var freshStart: Bool
+        }
+        var pending: Pending?
+        /// Peers copied from, with the last catch-up time.
+        var copied: [String: Int] = [:]
+
+        /// A finished `COPY` line from `peer`, applied to the record.
+        mutating func finished(_ p: Progress, peer: String, now: Int) {
+            guard p.isFinished else { return }
+            if p.stage == "done" {
+                pending = nil
+                copied[peer] = now
+                return
+            }
+            switch MeshCopyV2.error(p.error)?.action {
+            case .resumeNextReconnect?, .keepState?, .wait?:
+                pending?.freshStart = false
+            case .restartNextReconnect?, .restart?:
+                pending?.freshStart = true
+            default:
+                // A stop (another owner, no space, an old app) or relays: no retry.
+                pending = nil
+            }
+        }
+
+        /// The linked devices due a catch-up now: copied before, not the one
+        /// a copy is still pending with, and not in the last `syncEvery`.
+        func syncDue(now: Int) -> [String] {
+            copied.filter { peer, last in peer != pending?.peer && now - last >= MeshCopyV2.syncEvery }
+                .keys.sorted()
+        }
+    }
 }

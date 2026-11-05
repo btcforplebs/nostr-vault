@@ -134,6 +134,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             // follow list is known. (HavenApp/App/iOSAppDelegate.swift is not
             // in the iOS target; this file is.)
             FillYourVaultCoordinator.shared.start()
+            // The mesh copy v2: resume a cut copy, catch up with linked
+            // devices, keep copy-settings.json in step.
+            MeshCopyV2Service.shared.startWatching()
             // Kiosk mode comes back on when the app does, if it was on.
             FipsMeshService.shared.resumeWhenActive()
         }
