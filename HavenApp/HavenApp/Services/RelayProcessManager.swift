@@ -86,6 +86,10 @@ class RelayProcessManager: ObservableObject {
     /// An import waiting on a stop of the running relay (see `importNotes`).
     /// Only that stop starts it: any other stop never starts an import.
     var queuedImport: ImportRequest?
+    /// First run (import_jobs.go): the relays setup also reads (their own
+    /// servers, the other vault), set while setup is the way in. Non-nil
+    /// also means the relay starts with HAVEN_FIRST_RUN=1.
+    var firstRunAlsoFrom: [String]?
     /// Bumped by each `importNotes` call and by Cancel; a held or retried
     /// request from an older call stands down.
     var importRequestGeneration = 0

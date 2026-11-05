@@ -9,6 +9,7 @@ struct BringItOverStep: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @StateObject private var holder = PairDeviceFlowHolder()
+    @ObservedObject private var jobs = ImportJobsService.shared
 
     /// Linked and copied (or copying on in the background).
     let onDone: () -> Void
@@ -21,10 +22,12 @@ struct BringItOverStep: View {
     @State private var other: MeshPairing.Payload?
     @State private var linkStartedAt: Int?
     @State private var copying = false
-    @State private var lastProgress: (value: Double, message: String, at: Int)?
     @State private var finished = false
-    /// The copy's import was asked for (its outcome is this request's).
-    @State private var requested = false
+    /// The copy's setup run was asked for, at this time (its outcome is
+    /// this request's).
+    @State private var requestedAt: Int?
+    /// The other vault's link address, to tell whether setup read it. Never log it.
+    @State private var copyURL: String?
 
     private static var now: Int { Int(Date().timeIntervalSince1970) }
 
@@ -76,20 +79,18 @@ struct BringItOverStep: View {
     }
 
     /// Linked: copy from the other device, read through its link like any
-    /// other relay, by the import that setup already runs.
+    /// other relay, by first run's setup job (ImportJobs) with the other
+    /// vault as an extra seed. The vault keeps running throughout.
     private func startCopy() {
         guard !copying, let other else { return }
         copying = true
-        lastProgress = (relayManager.importProgress, relayManager.importStatusMessage, Self.now)
         Task {
             guard let url = await Self.vaultURL(other.mesh) else { return fallBack() }
             configService.config.importStartDate = OtherVaultCopy.startDate
             configService.save()
-            // Refused when an import is already running: a copy can't join it.
-            guard relayManager.importNotes(config: configService.config, alsoFrom: [url], otherVault: url) else {
-                return fallBack()
-            }
-            requested = true
+            copyURL = url
+            relayManager.startFirstRun(config: configService.config, alsoFrom: [url])
+            requestedAt = Self.now
         }
     }
 
@@ -107,22 +108,21 @@ struct BringItOverStep: View {
         guard !finished else { return }
         let now = Self.now
         if copying {
-            // Only haven-go's result line ends it (ImportResult): the other
-            // vault not reached, a failed or a cancelled run goes on to the
-            // relay import with the "not reached" line; anything else is done
-            // (the relay import still runs next, OtherVaultCopy.afterCopied).
-            if requested, !relayManager.isImporting, let outcome = relayManager.importOutcome {
-                switch outcome.status {
-                case .failed, .cancelled: return fallBack()
-                case .partial where outcome.otherVaultNotReached: return fallBack()
-                case .complete, .partial: return done()
-                }
-            }
-            let value = relayManager.importProgress, message = relayManager.importStatusMessage
-            if let last = lastProgress, last.value == value, last.message == message {
-                if OtherVaultCopy.isStalled(lastProgressAt: last.at, now: now) { fallBack() }
-            } else {
-                lastProgress = (value, message, now)
+            // Only the setup job's end decides it: failed, cancelled or the
+            // other vault left unread goes on to the relay import with the
+            // "not reached" line; anything else is done (the relay import
+            // still runs next, OtherVaultCopy.afterCopied).
+            guard let requestedAt else { return }
+            switch jobs.setupStage {
+            case .couldNotFinish:
+                return fallBack()
+            case .finished:
+                let setup = jobs.list?.job(ImportJobs.setup)
+                if let copyURL, ImportJobs.leftUnread(copyURL, in: setup) { return fallBack() }
+                return done()
+            case .starting, .running:
+                // setup takes seconds; no end this long after asking is a stall.
+                if OtherVaultCopy.isStalled(lastProgressAt: requestedAt, now: now) { fallBack() }
             }
         } else if let started = linkStartedAt, OtherVaultCopy.linkTimedOut(startedAt: started, now: now) {
             fallBack()
@@ -232,7 +232,8 @@ private struct BringItOverContent: View {
             Text(OtherVaultCopy.copyingLine(other?.name ?? ""))
                 .font(.appSystem(size: 15, weight: .medium))
                 .foregroundColor(WizardColors.textPrimary)
-            ProgressView(value: max(relayManager.importProgress, 0.02))
+            ProgressView()
+                .progressViewStyle(.linear)
                 .tint(WizardColors.accentPrimary)
             // The import's own status line names the account by npub: not here (§5a).
             line("It carries on if you go ahead now.")

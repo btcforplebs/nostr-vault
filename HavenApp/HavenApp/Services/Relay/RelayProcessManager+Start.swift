@@ -126,7 +126,8 @@ extension RelayProcessManager {
         // the relay reads here can never be missed by the auto-restart.
         let inputs = RelayConfiguration.launchInputs(config: config, relayDataDir: relayDataDir)
 
-        RelayConfiguration.writeImportSeedRelays(config: config, under: relayDataDir)
+        // First run: setup also reads their own servers / the other vault.
+        RelayConfiguration.writeImportSeedRelays(config: config, under: relayDataDir, alsoFrom: firstRunAlsoFrom ?? [])
         
         let blastrRelaysURL = relayDataDir.appendingPathComponent(config.blastrRelaysFile)
         if let data = try? encoder.encode(inputs.blastrRelays) {
@@ -170,6 +171,15 @@ extension RelayProcessManager {
                 free(cKey)
                 free(cValue)
             }
+        }
+
+        // First run keeps the relay to the follows web until the wider web
+        // job runs (import_jobs.go effectiveWotDepth). Always set: the Go
+        // side keeps the process environment between starts.
+        let firstRun = firstRunAlsoFrom != nil ? "1" : "0"
+        setenv(ImportJobs.firstRunEnv, firstRun, 1)
+        ImportJobs.firstRunEnv.withCString { k in
+            firstRun.withCString { v in SetHavenEnvC(UnsafeMutablePointer(mutating: k), UnsafeMutablePointer(mutating: v)) }
         }
 
         // Change working directory so Go creates files in relayDataDir

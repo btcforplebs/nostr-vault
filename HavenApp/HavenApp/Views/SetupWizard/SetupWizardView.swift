@@ -85,7 +85,6 @@ struct SetupWizardView: View {
     /// Their own relays picked in the relay check: the import reads them,
     /// nothing saves them.
     @State private var importOwnRelays: [String] = []
-    @State private var importListHistory = false
 
     /// "Couldn't reach your other device…", over the relay import it fell back to.
     @State private var fallbackNote: String?
@@ -342,15 +341,13 @@ struct SetupWizardView: View {
                 onCopyFromOtherVault: { go(to: OtherVaultCopy.step) }
             )
         case 14:
-            RelayCheckStep(npub: npub) { own, listHistory in
+            RelayCheckStep(npub: npub) { own in
                 importOwnRelays = own
-                importListHistory = listHistory
                 goForward()
             }
         case 13:
-            ImportTourStep(isReadOnly: useNostrIsReadOnly, alsoFrom: importOwnRelays, listHistory: importListHistory) { _ in
-                // Kept running or not, the import carries on in
-                // RelayProcessManager; startRelay waits for it.
+            ImportTourStep(isReadOnly: useNostrIsReadOnly, alsoFrom: importOwnRelays) { _ in
+                // Kept running or not, setup carries on in the running relay.
                 saveAndComplete()
             }
         default:

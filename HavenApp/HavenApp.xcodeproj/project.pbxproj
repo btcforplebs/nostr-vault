@@ -259,6 +259,7 @@
 		22E115AC3B2BA02029B92A36 /* RelaySaveSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B3AD149CCC00D7662019EA1 /* RelaySaveSheet.swift */; };
 		23004E70DDB38018D103B675 /* ProfileShareReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3BAD623C758946DC5D1406 /* ProfileShareReviewView.swift */; };
 		235D949819FB1494455DECFE /* WOTTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87E74FE78BCF7E5FCA1AA9CF /* WOTTabView.swift */; };
+		237F591A8848414C7E5B15E3 /* RelayProcessManager+FirstRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A8787F8C6DC62731C2BC67B /* RelayProcessManager+FirstRun.swift */; };
 		23ABD5A29BBE5B2F598A29F2 /* ProfileSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F58012CD7192B288A68542B7 /* ProfileSection.swift */; };
 		23C61C15E3150332841E0236 /* LiveTrustPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0148FE6656C62C9C703374B7 /* LiveTrustPath.swift */; };
 		24061E0732D3F1D3B3B3650D /* ArticleClipShareHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECB765BB1B85F451DDEABBFF /* ArticleClipShareHandler.swift */; };
@@ -394,6 +395,7 @@
 		34ABB371B2BBB34885D7DF24 /* BlossomService+Delete.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FBEF0271AE2E33206E9750E /* BlossomService+Delete.swift */; };
 		34B784D78D879D90A576B5EB /* TrustWebView+Refresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6686D9EE170F237E3B1A13 /* TrustWebView+Refresh.swift */; };
 		34BF42B63E341849F797B7AB /* VaultExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF57E75767BD80C1504D555C /* VaultExporter.swift */; };
+		34C41476A569E77C44ACA091 /* ImportJobs.swift in Sources */ = {isa = PBXBuildFile; fileRef = B36F8C4ED01D03686DC74BB4 /* ImportJobs.swift */; };
 		34DB01B51DB2A4622046FB56 /* RelayActivityViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 104C14D088ED0825A8996A61 /* RelayActivityViews.swift */; };
 		35108990B103EC071DA3AF0A /* BlossomRefusals.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A3A9D3D2878269C564C1BA /* BlossomRefusals.swift */; };
 		3518B696F35151C1E35FB254 /* StatusReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD3DD7BAC37646182F7C742D /* StatusReviewView.swift */; };
@@ -447,6 +449,7 @@
 		3C87BD1637BAF76B322EA8AE /* HashtagsFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FB986CD40CF9532CA6B250 /* HashtagsFeedViews.swift */; };
 		3C92F74F6D8341C0B3C6101F /* DMService+Reconnect.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5AF9325362206BD88D81991 /* DMService+Reconnect.swift */; };
 		3CA6B95D5AB3AE67033E63D1 /* AppTypeScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = 299FAAEDC2A8F8F9CEBC02E1 /* AppTypeScale.swift */; };
+		3CC354002CB66D6DB8F25448 /* ImportJobs.swift in Sources */ = {isa = PBXBuildFile; fileRef = B36F8C4ED01D03686DC74BB4 /* ImportJobs.swift */; };
 		3CD06862A7872E34C7293253 /* LiveStatusService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 937CB610C3601ECF3B4BBD0E /* LiveStatusService.swift */; };
 		3CF633ADEDF48E775F9E1ABE /* MediaCacheService+Download.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51880D00BCBEDFB44A21F4EC /* MediaCacheService+Download.swift */; };
 		3CFBB615EC10A5F9DDFE6FC0 /* BookmarkMenuItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9C0FA7AC543647A0CA8515 /* BookmarkMenuItem.swift */; };
@@ -792,6 +795,7 @@
 		6AD4F0CC7C12D694B9EEBB13 /* TrustScopeLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 143FB30420F6140DFC7F2A4E /* TrustScopeLock.swift */; };
 		6B1C126C919BE5871E5977CD /* MediaPrivacy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C4C43890E8EB9A15FFAD39A /* MediaPrivacy.swift */; };
 		6B415D28731D3A962FAB0E57 /* NoteDetailViewWrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB55D0A09A0123F9C8A2B32 /* NoteDetailViewWrapper.swift */; };
+		6B5FEA48F3529E68873144F1 /* ImportJobsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AF18504D84D1E58D74B502E /* ImportJobsService.swift */; };
 		6B6C7CB4A88360314C4D9A52 /* EventInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D343EC33764F0FED0D74697A /* EventInspector.swift */; };
 		6B7C1697E43C11DAD27D850A /* NWCService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19B6B870C61AB1313009408E /* NWCService.swift */; };
 		6B8CBB3D7A14336FF2847618 /* NotificationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D4E22D61B152894312A2DB6 /* NotificationPolicy.swift */; };
@@ -825,8 +829,10 @@
 		70C09988B3009E817EE8EC43 /* MediaShareLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70378B160E275AD7443C4260 /* MediaShareLink.swift */; };
 		711BFD75450E7D351ACB2690 /* ProfileActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBFCD52C53864BA74263D0E7 /* ProfileActions.swift */; };
 		71482801ED1C62712D8736A2 /* ReferralSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C696946159C30CCFD23453 /* ReferralSuggestions.swift */; };
+		716B486EF48B2E55ACC41318 /* RelayProcessManager+FirstRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A8787F8C6DC62731C2BC67B /* RelayProcessManager+FirstRun.swift */; };
 		716EC6224D41452E63FF1F02 /* ListWipeBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB6C792713D1D3ECD637AC8F /* ListWipeBanner.swift */; };
 		717CE51E6C949B7D3950ECBF /* IdentifiableString.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68B2994F2A95D651708846D6 /* IdentifiableString.swift */; };
+		71D255EA2645BE844EF521FD /* StillToBringInSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2801D4ACC69F3FF4C1D2C620 /* StillToBringInSection.swift */; };
 		71DE4A482D94D5FC8A9C6B16 /* AuthorQuickMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB285610AE543E6960BEBD1C /* AuthorQuickMenu.swift */; };
 		71E58FDE4D99BD778B9B0842 /* NVShareActionAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2FCF76956407B87D86624D6 /* NVShareActionAvailability.swift */; };
 		71ED54075DC0C0DE0469B00E /* InterestListService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 427E36EC7A40E85FF4710BBD /* InterestListService.swift */; };
@@ -1430,6 +1436,7 @@
 		BB5C8F527ABD9F6C8C1D96CB /* MacRelaySyncStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8152C31E47774D859AE128B /* MacRelaySyncStatusView.swift */; };
 		BB7114AF3CB645592807AD9B /* AddPinSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5810CA0660B7B0631DDB7F4E /* AddPinSheet.swift */; };
 		BBBEE7D2C258592E87853C76 /* TrustCardWebButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8998AD992C68DCAF68A30092 /* TrustCardWebButton.swift */; };
+		BBC3690909AF7ED45D5AF713 /* StillToBringInSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2801D4ACC69F3FF4C1D2C620 /* StillToBringInSection.swift */; };
 		BBCAC24C43564F431E394A02 /* AccountsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 251CF8F576FE6FC7D5A2306B /* AccountsSettingsView.swift */; };
 		BBD8C5A4D3CCA41A25E9B22D /* MirrorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B03DACD65D976F80B315E19 /* MirrorService.swift */; };
 		BBEB6E9E824AA4B887755B8E /* EventBroadcastSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26251868EAC178C0BAF356A8 /* EventBroadcastSheet.swift */; };
@@ -1709,6 +1716,7 @@
 		DF334F134363929C956118D8 /* SidebarTabButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BE56AF7542C25844828CE9F /* SidebarTabButton.swift */; };
 		DF41EBC4F8B4951C81DB7698 /* WalletLightningTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA979A3F7ED54EAB8F501F2E /* WalletLightningTab.swift */; };
 		DF611F7704238D2428B42622 /* VaultContentsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C479523C73672690926ABDA0 /* VaultContentsSection.swift */; };
+		DF7BF9B0DE1B1BF4143E4433 /* ImportJobsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AF18504D84D1E58D74B502E /* ImportJobsService.swift */; };
 		DF8A93DDB4F9F51190A37B84 /* BlockedSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F278E9BCFC93BB667E56D3D /* BlockedSettingsView.swift */; };
 		DFA500676066690C57933ABC /* ShareAccountSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F11ABB72E1624690FAF60C9 /* ShareAccountSection.swift */; };
 		DFABCE1B4E353FFA66402575 /* NVShareAction+Display.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11DACF33881364138C48F3B4 /* NVShareAction+Display.swift */; };
@@ -2163,6 +2171,7 @@
 		27A87225270090D65AC98D48 /* libhaven.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libhaven.a; path = build/libhaven.a; sourceTree = SDKROOT; };
 		27B80920656E134E7FCE4717 /* OwnerSessionWarmup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnerSessionWarmup.swift; sourceTree = "<group>"; };
 		27BB588F35E19129A12047AE /* BottomTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomTabBar.swift; sourceTree = "<group>"; };
+		2801D4ACC69F3FF4C1D2C620 /* StillToBringInSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StillToBringInSection.swift; sourceTree = "<group>"; };
 		288BA92372A8506F03AF9217 /* DMService+ExternalFetch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+ExternalFetch.swift"; sourceTree = "<group>"; };
 		28CDA4D972E3E7E90396580D /* StarterRelayListStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarterRelayListStep.swift; sourceTree = "<group>"; };
 		28E8ADDC3D1ACC497D08EF92 /* PlatformClipboard+Secret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlatformClipboard+Secret.swift"; sourceTree = "<group>"; };
@@ -2228,6 +2237,7 @@
 		388A1E862A24A3FB3C207025 /* OpensBookmarksMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpensBookmarksMode.swift; sourceTree = "<group>"; };
 		38F0A09BAA2ED410A3EAD8AB /* QuickActionsWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionsWidget.swift; sourceTree = "<group>"; };
 		3982820EB3F4CF72F6B5449B /* BlossomService+UploadAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlossomService+UploadAuth.swift"; sourceTree = "<group>"; };
+		3A8787F8C6DC62731C2BC67B /* RelayProcessManager+FirstRun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RelayProcessManager+FirstRun.swift"; sourceTree = "<group>"; };
 		3AB256B302F132F38FBEA3C5 /* ProfilePostsLoadPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilePostsLoadPlan.swift; sourceTree = "<group>"; };
 		3ADBFCE4923AF67D80521F44 /* FipsMeshMyDevicesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FipsMeshMyDevicesSection.swift; sourceTree = "<group>"; };
 		3B9646E91993C4D774E5F139 /* ActivityTargetFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityTargetFetcher.swift; sourceTree = "<group>"; };
@@ -2493,6 +2503,7 @@
 		7A0CC041733ECA113CC8CAFB /* ImportKeySheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportKeySheetView.swift; sourceTree = "<group>"; };
 		7A88BE7DC7382E20346565E4 /* SharePortalAccountSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharePortalAccountSection.swift; sourceTree = "<group>"; };
 		7A927C4C3EB88D75B8E8AF17 /* MusicToolbarButtons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicToolbarButtons.swift; sourceTree = "<group>"; };
+		7AF18504D84D1E58D74B502E /* ImportJobsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportJobsService.swift; sourceTree = "<group>"; };
 		7B4C145BD660E4F7A185A677 /* WalletSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletSettingsView.swift; sourceTree = "<group>"; };
 		7B5E1DFD8D4BF82783CEDFDD /* PollComposeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollComposeView.swift; sourceTree = "<group>"; };
 		7BE7C8BF88EE91C6E05CD3DF /* GlobalFeedEmptyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalFeedEmptyState.swift; sourceTree = "<group>"; };
@@ -2747,6 +2758,7 @@
 		B2C74DEB1B130E9A13A641C5 /* ChromeFold.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeFold.swift; sourceTree = "<group>"; };
 		B2C9495BF4A2CC74326F7221 /* VaultActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultActivity.swift; sourceTree = "<group>"; };
 		B3289606962F2F318E4A7C1D /* LiveNowPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveNowPanel.swift; sourceTree = "<group>"; };
+		B36F8C4ED01D03686DC74BB4 /* ImportJobs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportJobs.swift; sourceTree = "<group>"; };
 		B38B2E43D8E128440FC8402E /* FeedMediaViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedMediaViewer.swift; sourceTree = "<group>"; };
 		B3912DD3B5132A5A7C5402A0 /* ImportTourStage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportTourStage.swift; sourceTree = "<group>"; };
 		B3B2353A9CF349D2A6B43DA8 /* BlossomDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDashboardView.swift; sourceTree = "<group>"; };
@@ -3530,9 +3542,11 @@
 		6D995897138C792E294BDB4D /* Relay */ = {
 			isa = PBXGroup;
 			children = (
+				7AF18504D84D1E58D74B502E /* ImportJobsService.swift */,
 				614245993910AB626DBE345C /* RelayProcessManager+Backup.swift */,
 				5A7F917E54752EF9BA14E7B2 /* RelayProcessManager+BlossomTransfer.swift */,
 				71B83064688F922769785D5B /* RelayProcessManager+Config.swift */,
+				3A8787F8C6DC62731C2BC67B /* RelayProcessManager+FirstRun.swift */,
 				99DEF13CE5C8F624796A5B4F /* RelayProcessManager+Import.swift */,
 				EF5467C5412FB74901660F13 /* RelayProcessManager+MimeDetection.swift */,
 				538FAA70880DB672A5DBA40F /* RelayProcessManager+OutputCapture.swift */,
@@ -3605,6 +3619,7 @@
 				8C52A97A40D28F1C1381665A /* MediaServersPage.swift */,
 				104C14D088ED0825A8996A61 /* RelayActivityViews.swift */,
 				44C2FB3DC49856C08EED41BF /* RestoreBackupRow.swift */,
+				2801D4ACC69F3FF4C1D2C620 /* StillToBringInSection.swift */,
 				99FE7C711DFEEEC008C26586 /* VaultContentsModel.swift */,
 				C479523C73672690926ABDA0 /* VaultContentsSection.swift */,
 				6AB6A0B4CA70E65B86DCFB31 /* VaultDashboardComponents.swift */,
@@ -4012,6 +4027,7 @@
 				F4DFF0F3B08146C008FD0857 /* HomeVaultLogic.swift */,
 				412B53053D0F6CC69B7152AC /* HTMLEntities.swift */,
 				54BCCF618B0F0045B3B8C3EB /* IdentityInput.swift */,
+				B36F8C4ED01D03686DC74BB4 /* ImportJobs.swift */,
 				14CE23F702361A34D4175349 /* ImportResult.swift */,
 				80856F4033F4F17241F65C4D /* ImportStartGate.swift */,
 				B3912DD3B5132A5A7C5402A0 /* ImportTourStage.swift */,
@@ -5233,6 +5249,8 @@
 				AD093FA032369C6ECBD22018 /* IdentityInput.swift in Sources */,
 				DEBCB68FFAD8DAC4173117D3 /* IdentityStepView.swift in Sources */,
 				B5EDBF8CFD00592BD3D73440 /* ImportCouldNotStartButton.swift in Sources */,
+				3CC354002CB66D6DB8F25448 /* ImportJobs.swift in Sources */,
+				6B5FEA48F3529E68873144F1 /* ImportJobsService.swift in Sources */,
 				ECCFB80095D15CF9CB57204E /* ImportKeySheetView.swift in Sources */,
 				3877DB61986138E75C58F99E /* ImportNotesStep.swift in Sources */,
 				D3CDC77D7DE4175436E003E2 /* ImportResult.swift in Sources */,
@@ -5648,6 +5666,7 @@
 				99A65FE4B926A6E1F5B6511F /* RelayProcessManager+Backup.swift in Sources */,
 				E6338FC87334DD4D745AF372 /* RelayProcessManager+BlossomTransfer.swift in Sources */,
 				409BA6B19B2FD431E734C387 /* RelayProcessManager+Config.swift in Sources */,
+				716B486EF48B2E55ACC41318 /* RelayProcessManager+FirstRun.swift in Sources */,
 				C8964A36C8E95821A10803B8 /* RelayProcessManager+Import.swift in Sources */,
 				49E3ACA459EED308EC02379E /* RelayProcessManager+MimeDetection.swift in Sources */,
 				C7D03C3023945D08F50E0FE0 /* RelayProcessManager+OutputCapture.swift in Sources */,
@@ -5723,6 +5742,7 @@
 				3518B696F35151C1E35FB254 /* StatusReviewView.swift in Sources */,
 				7E9AD54AFC01A7B923F0B2B4 /* StatusShareHandler.swift in Sources */,
 				EBDBBCF393BACEC6DCE2E45F /* StatusShareTags.swift in Sources */,
+				71D255EA2645BE844EF521FD /* StillToBringInSection.swift in Sources */,
 				279BE75888336D92427BF1D6 /* SuggestedMediaServers.swift in Sources */,
 				03E743A41AFE1B6043B99DE9 /* SuggestedMediaServersSection.swift in Sources */,
 				6224CB5CF33FB1A934BF1FA8 /* SupportedMediaFormats.swift in Sources */,
@@ -6229,6 +6249,8 @@
 				1EECC33A8227DE8F3B0F06CF /* IdentityInput.swift in Sources */,
 				2681BCA73FE8F40351489EB2 /* IdentityStepView.swift in Sources */,
 				50AE4C0D3AE887BDF760229C /* ImportCouldNotStartButton.swift in Sources */,
+				34C41476A569E77C44ACA091 /* ImportJobs.swift in Sources */,
+				DF7BF9B0DE1B1BF4143E4433 /* ImportJobsService.swift in Sources */,
 				AFD5DDA4AC5DFF61F20F3A03 /* ImportKeySheetView.swift in Sources */,
 				AB2913E05CA7860525171985 /* ImportNotesStep.swift in Sources */,
 				0AAF0DAFED3DE658517E9372 /* ImportResult.swift in Sources */,
@@ -6616,6 +6638,7 @@
 				2485816708BDDE377C753EE0 /* RelayProcessManager+Backup.swift in Sources */,
 				F9F000D1E0842D216B967884 /* RelayProcessManager+BlossomTransfer.swift in Sources */,
 				03E207638E57656AB1312275 /* RelayProcessManager+Config.swift in Sources */,
+				237F591A8848414C7E5B15E3 /* RelayProcessManager+FirstRun.swift in Sources */,
 				8CD108EE31A75D260DAE6884 /* RelayProcessManager+Import.swift in Sources */,
 				613AC454E25815E8143C6724 /* RelayProcessManager+MimeDetection.swift in Sources */,
 				576DA67B5D3E1F93BCB905EA /* RelayProcessManager+OutputCapture.swift in Sources */,
@@ -6688,6 +6711,7 @@
 				582B89583D7C8E04B806B734 /* StatusReviewView.swift in Sources */,
 				B9DD9D1725CAE34690678C52 /* StatusShareHandler.swift in Sources */,
 				09D04B982198099B5A77646F /* StatusShareTags.swift in Sources */,
+				BBC3690909AF7ED45D5AF713 /* StillToBringInSection.swift in Sources */,
 				4E32F63C7DA97AC6ADA36BBB /* SuggestedMediaServers.swift in Sources */,
 				FFEA19EB5659CCFDB4E69ED7 /* SuggestedMediaServersSection.swift in Sources */,
 				38CA6F090B09B24A5CB3AFAC /* SupportedMediaFormats.swift in Sources */,
