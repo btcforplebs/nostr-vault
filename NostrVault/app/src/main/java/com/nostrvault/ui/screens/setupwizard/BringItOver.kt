@@ -4,16 +4,16 @@ import com.nostrvault.fips.DeviceRole
 import com.nostrvault.relay.MacSyncStatus
 
 /**
- * Setup's "Already using Nostr Vault on another device?" (PLANS/NV_TWO_SCAN_PAIRING_PLAN.md §5a, lane E). The pure
- * part: the step's place, its words, and when the copy from the other device counts as stalled. No mesh, FIPS,
- * address or role words on these screens (Logen 2026-11-04). Twin of iOS `BringItOver.swift`.
+ * Setup's "Copy from my other vault" (PLANS/NV_TWO_SCAN_PAIRING_PLAN.md §5a, lane E): the third answer in the import
+ * choice, next to the backup and the relays (Logen 2026-11-05). The pure part: its words, and when the copy from the
+ * other device counts as stalled. The small print is the only line with "mesh" in it; no other mesh, FIPS, address or
+ * role words on these screens. Twin of iOS `BringItOver.swift`.
  */
 object BringItOver {
-    const val QUESTION = "Already using Nostr Vault on another device?"
-    const val YES = "Yes, bring it over"
-    const val YES_DETAIL = "Link this device to it and copy your vault across."
-    const val NO = "No, start fresh"
-    const val NO_DETAIL = "Get your notes from your relays, as usual."
+    /** Logen-approved wording (2026-11-05). */
+    const val COPY = "Copy from my other vault"
+    const val COPY_DETAIL = "Your Mac or another device signed in as you. Scan two codes and it copies over the mesh."
+    const val CANCEL = "Cancel"
     const val SCAN_TITLE = "Scan your other device"
     const val SCAN_BODY = "On your other device, open Vault › Your devices › Add, so it shows a code. Then scan it here."
     const val FALLBACK_LINE = "Couldn't reach your other device; getting your notes from your relays instead"
@@ -33,12 +33,6 @@ object BringItOver {
     fun copyingLine(name: String, posts: Int?): String =
         if (posts == null || posts <= 0) "Copying from $name…"
         else "Copying from $name… ${"%,d".format(posts)} notes so far"
-
-    /** This step sits right after the key (and Who told you), before the backup question. */
-    fun withStep(steps: List<WizardStep>, path: SetupPath, readOnly: Boolean): List<WizardStep> {
-        if (path != SetupPath.USE_NOSTR || readOnly || WizardStep.BACKUP_QUESTION !in steps) return steps
-        return steps.toMutableList().apply { add(indexOf(WizardStep.BACKUP_QUESTION), WizardStep.OTHER_DEVICE) }
-    }
 
     sealed interface Copy {
         data object Going : Copy

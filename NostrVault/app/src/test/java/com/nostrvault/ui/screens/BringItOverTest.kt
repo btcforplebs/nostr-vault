@@ -7,30 +7,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Setup's "Already using Nostr Vault on another device?" (plan §5a): where it sits and when the copy gives up. */
+/** Setup's "Copy from my other vault" (plan §5a): its words and when the copy gives up. */
 class BringItOverTest {
-    private val useNostr = listOf(
-        WizardStep.WELCOME, WizardStep.RELAY_CHOICE, WizardStep.USE_NOSTR_KEY, WizardStep.REFERRER,
-        WizardStep.BACKUP_QUESTION, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR,
-    )
-
-    @Test
-    fun askedAfterTheKeyAndReferrerBeforeTheBackupQuestion() {
-        val steps = BringItOver.withStep(useNostr, SetupPath.USE_NOSTR, readOnly = false)
-        assertEquals(
-            listOf(WizardStep.USE_NOSTR_KEY, WizardStep.REFERRER, WizardStep.OTHER_DEVICE, WizardStep.BACKUP_QUESTION),
-            steps.subList(2, 6),
-        )
-    }
-
-    @Test
-    fun notAskedReadOnlyOrOnOtherPaths() {
-        assertEquals(useNostr, BringItOver.withStep(useNostr, SetupPath.USE_NOSTR, readOnly = true))
-        assertEquals(useNostr, BringItOver.withStep(useNostr, SetupPath.NEW_TO_NOSTR, readOnly = false))
-        val noImport = useNostr - WizardStep.BACKUP_QUESTION
-        assertEquals("no relay import to replace (external relay)", noImport, BringItOver.withStep(noImport, SetupPath.USE_NOSTR, readOnly = false))
-    }
-
     @Test
     fun onlyAMacIsCopiedFrom() {
         assertTrue(BringItOver.copiesFrom(DeviceRole.MAC))
@@ -68,10 +46,16 @@ class BringItOverTest {
     }
 
     @Test
+    fun logensWordsForTheThirdOption() {
+        assertEquals("Copy from my other vault", BringItOver.COPY)
+        assertEquals("Your Mac or another device signed in as you. Scan two codes and it copies over the mesh.", BringItOver.COPY_DETAIL)
+    }
+
+    /** The approved small print is the one line that says "mesh"; nothing else on these screens does. */
+    @Test
     fun noMeshWordsOnTheseScreens() {
         val words = listOf(
-            BringItOver.QUESTION, BringItOver.YES, BringItOver.YES_DETAIL, BringItOver.NO, BringItOver.NO_DETAIL,
-            BringItOver.SCAN_TITLE, BringItOver.SCAN_BODY, BringItOver.FALLBACK_LINE,
+            BringItOver.COPY, BringItOver.CANCEL, BringItOver.SCAN_TITLE, BringItOver.SCAN_BODY, BringItOver.FALLBACK_LINE,
             BringItOver.showCodeTitle("Mac"), BringItOver.showCodeBody("Mac"), BringItOver.linkedLine("Mac"),
             com.nostrvault.fips.MeshPairing.roleConfirmText(DeviceRole.MAC, "Logen's Mac", setup = true),
         )

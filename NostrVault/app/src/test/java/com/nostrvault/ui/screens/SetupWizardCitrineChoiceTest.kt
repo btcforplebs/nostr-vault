@@ -91,7 +91,7 @@ class SetupWizardCitrineChoiceTest {
 
         assertFalse(saved.useExternalRelay)
         assertEquals(
-            listOf(WizardStep.USE_NOSTR_KEY, WizardStep.REFERRER, WizardStep.OTHER_DEVICE, WizardStep.BACKUP_QUESTION, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR),
+            listOf(WizardStep.USE_NOSTR_KEY, WizardStep.REFERRER, WizardStep.BACKUP_QUESTION, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR),
             vm.activeSteps.drop(2),
         )
     }

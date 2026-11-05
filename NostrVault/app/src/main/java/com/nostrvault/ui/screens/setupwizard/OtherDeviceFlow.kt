@@ -34,7 +34,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
@@ -51,15 +50,15 @@ import com.nostrvault.ui.theme.SuccessGreen
 import com.nostrvault.ui.theme.TertiaryText
 
 /**
- * "Already using Nostr Vault on another device?" (§5a), after the key and Who told you, before the backup question.
- * No goes on exactly as before. Yes links this phone to the other device with two scans; anything that doesn't link
- * carries on to the relays with one plain line. No mesh, address or role words here. Twin of iOS `BringItOverStep`.
+ * "Copy from my other vault", once picked in the import choice (§5a): links this phone to the other device with two
+ * scans. Anything that doesn't link carries on to the relays with one plain line; Cancel goes back to the choice. No
+ * mesh, address or role words here. Twin of iOS `BringItOverFlow`.
  */
 @Composable
-internal fun OtherDeviceStep(
+internal fun OtherDeviceFlow(
     wizard: SetupWizardViewModel,
     onComplete: () -> Unit,
-    viewModel: OtherDeviceViewModel = hiltViewModel(),
+    viewModel: OtherDeviceViewModel,
 ) {
     val ui by viewModel.ui.collectAsState()
     val scanner = rememberLauncherForActivityResult(ScanContract()) { result -> viewModel.onScanned(result.contents) }
@@ -74,17 +73,18 @@ internal fun OtherDeviceStep(
         )
     }
     LaunchedEffect(viewModel) { viewModel.openCamera.collect { scan() } }
-    // Didn't link: today's relay setup, as if No had been tapped.
-    LaunchedEffect(ui) { if (ui == OtherDeviceViewModel.Ui.FellBack) wizard.skipOtherDevice() }
+    // Didn't link: today's relay import, as if "No, import from my relays" had been tapped.
+    LaunchedEffect(ui) {
+        if (ui == OtherDeviceViewModel.Ui.FellBack) {
+            viewModel.reset()
+            wizard.answerNoBackup()
+        }
+    }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         when (val s = ui) {
-            OtherDeviceViewModel.Ui.Ask, OtherDeviceViewModel.Ui.FellBack -> {
-                Title(BringItOver.QUESTION)
-                Spacer(Modifier.height(12.dp))
-                Choice(BringItOver.YES, BringItOver.YES_DETAIL, viewModel::yes, Modifier.testTag("setup.otherDevice.yes"))
-                Choice(BringItOver.NO, BringItOver.NO_DETAIL, wizard::skipOtherDevice, Modifier.testTag("setup.otherDevice.no"))
-            }
+            // The import choice draws these; the flow has nothing of its own to show.
+            OtherDeviceViewModel.Ui.Ask, OtherDeviceViewModel.Ui.FellBack -> Unit
             OtherDeviceViewModel.Ui.Starting -> {
                 Title(BringItOver.SCAN_TITLE)
                 CircularProgressIndicator(color = WizardAccent, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
@@ -95,7 +95,7 @@ internal fun OtherDeviceStep(
                 s.note?.let { Note(it) }
                 Spacer(Modifier.height(8.dp))
                 WizardPrimaryButton(text = "Scan its code", onClick = scan)
-                WizardSecondaryButton(text = BringItOver.NO, onClick = viewModel::giveUp)
+                WizardSecondaryButton(text = BringItOver.CANCEL, onClick = viewModel::giveUp)
             }
             is OtherDeviceViewModel.Ui.Confirm -> {
                 Title("Link this device?")
@@ -103,14 +103,14 @@ internal fun OtherDeviceStep(
                 Small(s.shortAddress)
                 Spacer(Modifier.height(8.dp))
                 WizardPrimaryButton(text = "Link", onClick = viewModel::confirm)
-                WizardSecondaryButton(text = BringItOver.NO, onClick = viewModel::giveUp)
+                WizardSecondaryButton(text = BringItOver.CANCEL, onClick = viewModel::giveUp)
             }
             is OtherDeviceViewModel.Ui.ShowMyCode -> {
                 Title(BringItOver.showCodeTitle(s.name))
                 Body(BringItOver.showCodeBody(s.name))
                 Qr(s.uri)
                 Waiting("Waiting for ${s.name}…")
-                WizardSecondaryButton(text = BringItOver.NO, onClick = viewModel::giveUp)
+                WizardSecondaryButton(text = BringItOver.CANCEL, onClick = viewModel::giveUp)
             }
             is OtherDeviceViewModel.Ui.CheckWords -> {
                 Title("Do these words match?")
@@ -137,16 +137,11 @@ internal fun OtherDeviceStep(
                     })
                 } else {
                     Body("Your notes come from your relays next.")
-                    WizardPrimaryButton(text = "Continue", onClick = wizard::skipOtherDevice)
+                    WizardPrimaryButton(text = "Continue", onClick = wizard::answerNoBackup)
                 }
             }
         }
     }
-}
-
-/** No, or anything that didn't link: on to the backup question and the relays. */
-internal fun SetupWizardViewModel.skipOtherDevice() {
-    if (_step.value == WizardStep.OTHER_DEVICE) _step.value = stepAfter(WizardStep.OTHER_DEVICE)
 }
 
 /** Linked a Mac: setup is done; the relay copies from it once it starts, so the relay import and its tour don't run. */
@@ -182,14 +177,6 @@ private fun Waiting(text: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         CircularProgressIndicator(color = WizardAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
         Text(text, color = SecondaryText, fontSize = 14.sp)
-    }
-}
-
-/** One of the two answers: a big button with a line under it. */
-@Composable
-private fun Choice(title: String, detail: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = modifier.fillMaxWidth()) {
-        WizardOptionCard(title = title, subtitle = detail, selected = false, onClick = onClick, modifier = Modifier.fillMaxWidth())
     }
 }
 
