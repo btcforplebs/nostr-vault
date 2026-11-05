@@ -282,38 +282,18 @@ struct MirrorMediaStep: View {
 
     private func importMedia(from url: URL) {
         isSyncing = true
-        guard url.startAccessingSecurityScopedResource() else {
-            syncError = "Permission denied to access the file."
-            showSyncError = true
-            isSyncing = false
-            return
-        }
-        defer { url.stopAccessingSecurityScopedResource() }
-
-        let tempDir = FileManager.default.temporaryDirectory
-        let tempFile = tempDir.appendingPathComponent(url.lastPathComponent)
-
-        do {
-            if FileManager.default.fileExists(atPath: tempFile.path) {
-                try FileManager.default.removeItem(at: tempFile)
-            }
-            try FileManager.default.copyItem(at: url, to: tempFile)
-        } catch {
-            syncError = "Failed to copy media archive: \(error.localizedDescription)"
-            showSyncError = true
-            isSyncing = false
-            return
-        }
-
-        RelayProcessManager.shared.runBlossomImportStrippingExtensions(config: configService.config, inputPath: tempFile.path) { success in
-            try? FileManager.default.removeItem(at: tempFile)
-            Task { @MainActor in
-                isSyncing = false
-                if success {
-                    syncCompleted = true
-                } else {
-                    syncError = "Failed to import media. Check logs for details."
-                    showSyncError = true
+        // Read where it is, no temp copy (#17).
+        ScopedImportFile.read(url) { path, finished in
+            RelayProcessManager.shared.runBlossomImportStrippingExtensions(config: configService.config, inputPath: path) { success in
+                finished()
+                Task { @MainActor in
+                    isSyncing = false
+                    if success {
+                        syncCompleted = true
+                    } else {
+                        syncError = "Failed to import media. Check logs for details."
+                        showSyncError = true
+                    }
                 }
             }
         }

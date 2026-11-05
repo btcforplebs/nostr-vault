@@ -398,7 +398,12 @@ final class PairDeviceFlow: ObservableObject {
         notice = nil
         step = .linked(name: MeshPairing.displayName(device.name), already: already)
         // A keeps resending the ack while this screen is open; B is done.
-        if joiner != nil { stopRelays() }
+        if joiner != nil {
+            stopRelays()
+            // B copies its vault from the device it just linked, on any link
+            // (setup or Settings): the mesh copy v2, contract §2.
+            Task { await MeshCopyV2Service.shared.start(peer: device.npub, name: device.name) }
+        }
         #if os(iOS)
         // A: the device it just linked may copy from it next, and an iPhone
         // only shares its vault in kiosk mode (Logen 2026-11-05).

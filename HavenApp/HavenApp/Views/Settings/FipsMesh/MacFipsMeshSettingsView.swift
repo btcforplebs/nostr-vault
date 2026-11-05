@@ -127,6 +127,7 @@ struct MacFipsMeshSettingsView: View {
                     Button(role: .destructive) {
                         configService.config.meshDevices = MeshDevicesLogic.removing(npub: device.npub, from: configService.config.meshDevices)
                         configService.save()
+                        MeshCopyV2Service.shared.forget(peer: device.npub)
                         mesh.sync()
                     } label: {
                         Image(systemName: "minus.circle")

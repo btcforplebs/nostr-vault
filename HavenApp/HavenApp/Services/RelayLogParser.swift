@@ -86,6 +86,8 @@ enum RelayLogParser {
         var startFailed: String?
         /// `IMPORT_JOB` lines (ImportJobs): a first-run or Vault job moved.
         var importJobLines: [ImportJobs.Line] = []
+        /// `COPY` lines (MeshCopyV2): the mesh vault copy moved.
+        var copyLines: [MeshCopyV2.Progress] = []
     }
 
     /// The `RELAY_START_FAILED|` line (haven-go cshared.go logStartFailed).
@@ -107,6 +109,7 @@ enum RelayLogParser {
             || !batch.notifyMarkers.isEmpty
             || !batch.listVersionMarkers.isEmpty
             || !batch.importJobLines.isEmpty
+            || !batch.copyLines.isEmpty
     }
 
     // Cached regex patterns for boot/import status parsing
@@ -149,6 +152,10 @@ enum RelayLogParser {
         if ImportStartGate.isEngineStart(line) { batch.importEngineStarted = true }
         if let job = ImportJobs.parseLine(line) {
             batch.importJobLines.append(job)
+            return
+        }
+        if let copy = MeshCopyV2.parseLine(line) {
+            batch.copyLines.append(copy)
             return
         }
         if ListHistoryScan.collect(from: line, into: &batch) { return }
