@@ -11,14 +11,10 @@ import com.nostrvault.service.DMService.Companion.TAG
 
     /** Drops one message (a failed send's optimistic copy) from a conversation. */
     internal fun DMService.removeMessageFromConversation(counterparty: String, messageId: String) {
-        val current = _conversations.value.toMutableList()
-        val index = current.indexOfFirst { it.id == counterparty }
-        if (index < 0) return
-        val conv = current[index]
-        val remaining = conv.messages.filterNot { it.id == messageId }
-        if (remaining.size == conv.messages.size) return
-        if (remaining.isEmpty()) current.removeAt(index) else current[index] = conv.copy(messages = remaining)
-        _conversations.value = current
+        val current = _conversations.value
+        val remaining = current.withoutMessage(counterparty, messageId)
+        if (remaining === current) return
+        _conversations.value = remaining
         saveCachedConversations()
     }
 
