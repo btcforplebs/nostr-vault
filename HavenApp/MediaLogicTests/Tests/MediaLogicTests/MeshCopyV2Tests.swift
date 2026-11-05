@@ -87,3 +87,33 @@ final class MeshCopyV2StartAuthTests: XCTestCase {
         XCTAssertNil(MeshCopyV2.startAuthTags(base: base, device: " "))
     }
 }
+
+/// Every silent exit of a copy start or catch-up says why (Logen 2026-11-05).
+final class MeshCopyV2NotStartedTests: XCTestCase {
+    private let peer = "npub1l2h8mt2w5gu4m9a6vv8csnepxe62kxgfkh7lnzyqmyfpucr3ey0se7x2we"
+
+    func testEachReasonNamesThePeerAndWhy() {
+        XCTAssertEqual(MeshCopyV2.NotStarted.alreadyRunning.line(peer: peer),
+                       "Mesh copy: not started with npub1l2h8mt2…: a copy with it is already running")
+        XCTAssertEqual(MeshCopyV2.NotStarted.busyWithAnother.line(peer: peer),
+                       "Mesh copy: catch-up with npub1l2h8mt2… skipped: another copy is running")
+        XCTAssertEqual(MeshCopyV2.NotStarted.noMeshLink(seconds: 90).line(peer: peer),
+                       "Mesh copy: not started with npub1l2h8mt2…: no mesh link to it (no ingress) in 90 s")
+        XCTAssertEqual(MeshCopyV2.NotStarted.notSigned("the owner's signer did not sign").line(peer: peer),
+                       "Mesh copy: not started with npub1l2h8mt2…: the start was not signed (the owner's signer did not sign)")
+    }
+
+    /// Wired: MeshCopyV2Service logs each of them where it used to return quietly.
+    func testTheServiceLogsEverySilentExit() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("HavenApp/Services/Relay/MeshCopyV2Service.swift")
+        let source = try String(contentsOf: url, encoding: .utf8)
+        for reason in ["Self.log(.alreadyRunning, peer: peer)", "Self.log(.busyWithAnother, peer: peer)",
+                       "Self.log(.noMeshLink(seconds: 0), peer: peer)", "Self.log(.notSigned(why), peer: peer)",
+                       "Self.log(.noMeshLink(seconds: Self.now - startedAt), peer: peer)"] {
+            XCTAssertTrue(source.contains(reason), reason)
+        }
+        XCTAssertFalse(source.contains("if fresh, auth == nil { return .failed(-1) }"), "the unsigned start returns silently again")
+    }
+}

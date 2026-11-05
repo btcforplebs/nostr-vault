@@ -213,7 +213,14 @@ final class MacFipsMeshService: ObservableObject {
     /// no dial (`read_anyone`). Can take ~10 s. Never log it: the path holds
     /// the ingress token.
     func ingressURL(meshNpub: String) async -> URL? {
-        guard enabled, runningKey != nil else { return nil }
+        guard enabled else {
+            MeshDiagnostics.log("mesh ingress to \(meshNpub.prefix(12))…: Mesh switch is off")
+            return nil
+        }
+        guard runningKey != nil else {
+            MeshDiagnostics.log("mesh ingress to \(meshNpub.prefix(12))…: mesh engine not running\(lastError.map { " (\($0))" } ?? "")")
+            return nil
+        }
         // After a start or restart in flight, not queued behind other reads.
         let previous = engineOp
         return await Task.detached(priority: .userInitiated) { () -> URL? in
@@ -221,7 +228,7 @@ final class MacFipsMeshService: ObservableObject {
             var out: UnsafeMutablePointer<CChar>?
             let rc = NvFipsIngress(meshNpub, &out)
             guard rc == 0, let out else {
-                print("FipsMesh: ingress to \(meshNpub.prefix(16)) failed (\(rc))")
+                MeshDiagnostics.log("mesh ingress to \(meshNpub.prefix(12))…: dial failed (rc \(rc): peer not connected or no route)")
                 return nil
             }
             defer { NvFipsFreeString(out) }
