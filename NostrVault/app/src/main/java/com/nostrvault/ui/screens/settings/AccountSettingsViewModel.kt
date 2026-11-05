@@ -53,13 +53,21 @@ class AccountSettingsViewModel @Inject constructor(
 
     fun switchTo(npub: String) = viewModelScope.launch { configStore.switchActiveAccount(npub) }
 
-    /** Add a view-only account from an npub (no signing key). */
-    fun addViewOnly(npub: String) {
+    /**
+     * Add a view-only account from an npub (no signing key). Returns what to
+     * tell the user, or null when it was added. An npub that is already the
+     * Vault's account or an added one is left alone: setting it to "local"
+     * took an Amber or bunker account off its signer.
+     */
+    fun addViewOnly(npub: String): String? {
         val clean = npub.trim()
-        if (!clean.startsWith("npub1")) return
+        if (!clean.startsWith("npub1")) return "Enter an npub, nsec or ncryptsec."
+        val cfg = config.value
+        if (clean == cfg.ownerNpub || clean in cfg.accountNpubs) return ALREADY_ADDED
         configStore.addAccount(clean)
         configStore.setSigningMode(clean, "local")
         ensureProfiles(listOf(clean))
+        return null
     }
 
     /** Import a signing account from an nsec. Returns the resulting npub or null. */
@@ -293,3 +301,6 @@ internal fun importKeyProblem(
     is IdentityInput.EncryptedSecretKey -> if (password.isEmpty()) "Enter the password for this key" else null
     else -> "Paste an nsec1… or ncryptsec1… key."
 }
+
+/** Add Account with an npub the app already has (the Vault's own account or an added one). */
+internal const val ALREADY_ADDED = "That account is already added."

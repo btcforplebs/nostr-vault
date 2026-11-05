@@ -81,6 +81,8 @@ private data class ModeLine(val tone: ModeTone, val title: String, val detail: S
 @Composable
 internal fun UseNostrKeyStep(viewModel: SetupWizardViewModel) {
     val raw by viewModel.useNostrInput.collectAsState()
+    // A pasted nsec shows in full in the field.
+    com.nostrvault.ui.components.SecureWindowEffect(com.nostrvault.ui.components.showsSecretKey(raw))
     val password by viewModel.useNostrPassword.collectAsState()
     val confirm by viewModel.useNostrConfirm.collectAsState()
     val error by viewModel.error.collectAsState()

@@ -34,6 +34,8 @@ internal fun AddAccountSection(viewModel: AccountSettingsViewModel) {
         return
     }
 
+    // A pasted nsec shows in full in the field below.
+    com.nostrvault.ui.components.SecureWindowEffect(com.nostrvault.ui.components.showsSecretKey(keyInput))
     Text("Add Account", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
@@ -76,7 +78,10 @@ internal fun AddAccountSection(viewModel: AccountSettingsViewModel) {
                             error = "That password didn't unlock the key."
                         } else { keyInput = ""; keyPassword = ""; expanded = false }
                     }
-                    is IdentityInput.PublicKey -> { viewModel.addViewOnly(addInput.key); keyInput = ""; expanded = false }
+                    is IdentityInput.PublicKey -> {
+                        val problem = viewModel.addViewOnly(addInput.key)
+                        if (problem != null) error = problem else { keyInput = ""; expanded = false }
+                    }
                     else -> error = addAccountProblem(addInput)
                 }
             },

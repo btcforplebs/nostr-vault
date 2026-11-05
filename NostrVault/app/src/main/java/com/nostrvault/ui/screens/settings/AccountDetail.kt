@@ -247,6 +247,8 @@ internal fun AccountDetail(
 @Composable
 private fun RevealedKey(nsec: String, onHide: () -> Unit) {
     val context = LocalContext.current
+    // The revealed nsec: keep it out of screenshots and Recents.
+    com.nostrvault.ui.components.SecureWindowEffect()
     var copied by remember(nsec) { mutableStateOf(false) }
     LaunchedEffect(copied) {
         if (copied) {

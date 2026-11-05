@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.nostrvault.fips.MeshSendTargets
 import com.nostrvault.fips.MyDevicesRules
 import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.LocalNostrVaultColors
@@ -113,10 +114,13 @@ fun FipsMeshDeviceScreen(npub: String, onBack: () -> Unit, viewModel: FipsMeshVi
             }
 
             MeshSection("What It Gets") {
-                MeshSwitchRow("Send new notes", null, d.sendNotes) { on -> viewModel.updateDevice(npub) { it.copy(sendNotes = on) } }
-                MeshDivider()
-                MeshSwitchRow("Send new media", null, d.sendMedia) { on -> viewModel.updateDevice(npub) { it.copy(sendMedia = on) } }
-                MeshDivider()
+                // Only roles that are sent anything (MeshSendTargets): a phone's or browser's switches did nothing.
+                if (MeshSendTargets.receivesSends(d.role)) {
+                    MeshSwitchRow("Send new notes", null, d.sendNotes) { on -> viewModel.updateDevice(npub) { it.copy(sendNotes = on) } }
+                    MeshDivider()
+                    MeshSwitchRow("Send new media", null, d.sendMedia) { on -> viewModel.updateDevice(npub) { it.copy(sendMedia = on) } }
+                    MeshDivider()
+                }
                 MeshValueRow("Last seen", MyDevicesRules.lastSeenText(d.lastSeen, d.inReach && status.running, System.currentTimeMillis() / 1000))
             }
 
