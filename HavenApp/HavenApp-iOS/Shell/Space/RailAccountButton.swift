@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// The account picture at the top of the iPad rail. A tap lists the
-/// accounts on this device; a tap on one switches to it. No hold or slide,
-/// unlike the iPhone dock's avatar.
+/// accounts on this device; a tap on one switches to it. Under them, after a
+/// divider, App settings and Mesh settings, as in the dock's hold menu.
+/// No hold or slide, unlike the iPhone dock's avatar.
 struct RailAccountButton: View {
     @ObservedObject var configService: ConfigService
     @ObservedObject var nostrService: NostrService
@@ -31,7 +32,7 @@ struct RailAccountButton: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Accounts")
         .accessibilityValue(nostrService.profiles[activeHex]?.bestName ?? "")
-        .accessibilityHint("Lists your accounts to switch to")
+        .accessibilityHint("Lists your accounts and settings")
         .popover(isPresented: $showing, arrowEdge: .leading) {
             AccountList(configService: configService, nostrService: nostrService, currentNpub: currentNpub) {
                 showing = false
@@ -58,10 +59,40 @@ private struct AccountList: View {
             ForEach(configService.allAccountNpubs, id: \.self) { npub in
                 row(npub)
             }
+            Divider()
+                .padding(.vertical, 6)
+            ForEach(ProfileMenuSettings.allCases) { page in
+                settingsRow(page)
+            }
         }
         .padding(.bottom, 8)
         .frame(width: 300)
         .presentationCompactAdaptation(.popover)
+    }
+
+    private func settingsRow(_ page: ProfileMenuSettings) -> some View {
+        Button {
+            done()
+            // After the popover has gone: a sheet asked for while it is
+            // still on screen is refused.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                ProfileMenuSheets.shared.open = page
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: page.symbol)
+                    .font(.appSystem(size: 17, weight: .semibold))
+                    .foregroundColor(.havenPurple)
+                    .frame(width: 36)
+                Text(page.title)
+                    .font(.appSystem(size: 15, weight: .semibold))
+                Spacer(minLength: 8)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func row(_ npub: String) -> some View {

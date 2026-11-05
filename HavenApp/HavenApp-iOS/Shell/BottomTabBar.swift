@@ -227,7 +227,7 @@ struct BottomTabBar: View {
             // Music or a minimized live stream: play/pause, left of the avatar.
             CollapsedNowPlayingButton()
 
-            // Profile avatar — tap to expand tab bar, hold to switch account
+            // Profile avatar — tap to expand tab bar, hold for accounts and settings
             accountSwitchButton {
                 chrome.reset()
             } label: {
@@ -358,20 +358,14 @@ struct BottomTabBar: View {
 
     /// The avatar in the bar: a tap runs `primary`; a short hold or a slight
     /// slide opens the accounts in the dock hold menu (`AccountTabHoldItem`),
-    /// the same look and timing as Feed and Vault. With one account there is
-    /// nothing to switch to, so it is a plain button.
-    @ViewBuilder
+    /// the same look and timing as Feed and Vault. The menu ends with App
+    /// settings and Mesh settings, so it opens with one account too.
     private func accountSwitchButton<Content: View>(
         primary: @escaping () -> Void,
         @ViewBuilder label: @escaping () -> Content
     ) -> some View {
-        if configService.allAccountNpubs.count > 1 {
-            AccountTabHoldItem(configService: configService, nostrService: nostrService,
-                               primary: primary, label: label)
-        } else {
-            Button(action: primary, label: label)
-                .buttonStyle(.plain)
-        }
+        AccountTabHoldItem(configService: configService, nostrService: nostrService,
+                           primary: primary, label: label)
     }
 }
 

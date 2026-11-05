@@ -175,6 +175,14 @@ fun NostrVaultNavHost(
             }
         }
     }
+    // The account picture's hold menu: an account, or one of its two settings rows.
+    fun pickFromAccountMenu(id: String) {
+        when (id) {
+            AccountTabPicker.APP_SETTINGS -> navController.navigate(Screen.Settings.route) { launchSingleTop = true }
+            AccountTabPicker.MESH_SETTINGS -> navController.navigate(Screen.MeshSettings.route) { launchSingleTop = true }
+            else -> selectAccount(id)
+        }
+    }
     // A page picked from the Vault tab's hold menu: the tab applies it (its
     // ViewModel owns the lists), now or as soon as it is built.
     fun openVaultMode(mode: com.nostrvault.data.model.VaultMode) {
@@ -385,8 +393,8 @@ fun NostrVaultNavHost(
                     onExpand = { ScrollChrome.expand(scope) },
                     nowPlaying = { com.nostrvault.ui.screens.music.CollapsedNowPlayingButton(musicActions) },
                     onPickVaultMode = { pick -> openVaultPick(pick) },
-                    // As iOS: with one account the picture's hold does nothing.
-                    onPickAccount = if (switchAccounts.size > 1) { npub -> selectAccount(npub) } else null,
+                    // As iOS: the hold menu has the settings rows, so it opens with one account too.
+                    onPickAccount = { id -> pickFromAccountMenu(id) },
                     onPickFeedMode = { mode ->
                         // The feed applies it (its ViewModel owns the mode),
                         // now or as soon as it is back on screen.
@@ -430,8 +438,8 @@ fun NostrVaultNavHost(
         com.nostrvault.ui.components.LiveStreamHost()
 
         // Hold-the-account-picture list: over everything, the bar included.
-        if (showBottomBar && switchAccounts.size > 1) {
-            AccountTabPickerOverlay(accounts = switchAccounts, onPick = { npub -> selectAccount(npub) })
+        if (showBottomBar) {
+            AccountTabPickerOverlay(accounts = switchAccounts, onPick = { id -> pickFromAccountMenu(id) })
         }
         // Hold-the-Vault-tab pages: over everything, the bar included.
         if (showBottomBar) {

@@ -613,9 +613,10 @@ private fun Modifier.combinedClickableCompat(
 ): Modifier = this.combinedClickable(onClick = onClick)
 
 /**
- * The account picture's gesture: with more than one account ([onPickAccount]
- * set) a hold or a slight slide opens the account menu (the dock engine);
- * otherwise a tap and a long press, as before.
+ * The account picture's gesture: with [onPickAccount] set (always, in the
+ * app: the menu has App settings and Mesh settings under the accounts) a hold
+ * or a slight slide opens the account menu (the dock engine); otherwise a tap
+ * and a long press, as before.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

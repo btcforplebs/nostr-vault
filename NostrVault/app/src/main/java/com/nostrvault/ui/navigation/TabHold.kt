@@ -44,13 +44,14 @@ internal sealed class TabHold {
             }
     }
 
-    /** The account picture: hold or slide to pick an account (only with more than one). */
+    /** The account picture: hold or slide to pick an account, App settings or Mesh settings. */
     class Accounts(val onPick: (String) -> Unit) : TabHold() {
         override val isOpen get() = AccountTabPicker.menu.isOpen
         override val isPressed get() = AccountTabPicker.menu.isPressed
         override val shownName: String? get() = null
-        override fun actions(current: () -> TabHold?) = AccountTabPicker.menu.listed.map { npub ->
-            CustomAccessibilityAction("Switch to ${npub.take(12)}…") { (current() as? Accounts)?.onPick?.invoke(npub); true }
+        override fun actions(current: () -> TabHold?) = AccountTabPicker.menu.listed.map { id ->
+            val name = AccountTabPicker.settingsLabel(id) ?: "Switch to ${id.take(12)}…"
+            CustomAccessibilityAction(name) { (current() as? Accounts)?.onPick?.invoke(id); true }
         }
     }
 }
