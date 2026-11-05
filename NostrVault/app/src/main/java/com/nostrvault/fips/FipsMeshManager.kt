@@ -35,6 +35,7 @@ class FipsMeshManager @Inject constructor(
     private val credentialStore: CredentialStore,
     private val configStore: ConfigStore,
     @ApplicationScope private val appScope: CoroutineScope,
+    private val otherVaultLink: OtherVaultLink,
 ) {
 
     private val _status = MutableStateFlow(FipsStatus.stopped)
@@ -150,7 +151,13 @@ class FipsMeshManager @Inject constructor(
         }
 
         val rc = FipsBridge.start(nsec, startOptions())
-        if (rc == 0 && configStore.config.value.fipsShareRelay) offerRelay()
+        if (rc == 0) {
+            // A restart inside the copy window (the link's own My Devices restart among them) keeps the copy share.
+            if (configStore.config.value.fipsShareRelay) offerRelay()
+            else if (OtherVaultCopy.open(copyShareUntil, System.currentTimeMillis())) offerToOwnDevices()
+            // B: the other vault's lasting address comes back with the engine it forwards through.
+            otherVaultLink.restore()
+        }
         if (rc != 0) {
             Log.w(TAG, "FipsBridgeStartWithIdentity failed: $rc")
             _lastError.value = "The mesh endpoint did not start (code $rc)."
@@ -287,6 +294,44 @@ class FipsMeshManager @Inject constructor(
         HavenBridge.setMeshServing(true)
         val rc = FipsBridge.export(port)
         if (rc != 0) Log.w(TAG, "FipsBridgeExport($port) failed: $rc")
+    }
+
+    /** "Copy from my other vault", on A: until when its own devices may read the vault with Share off. */
+    @Volatile private var copyShareUntil = 0L
+
+    private var copyShareEnd: kotlinx.coroutines.Job? = null
+
+    /**
+     * A, after a link: share this vault with its own devices for [OtherVaultCopy.SHARE_WINDOW_MS] even with Share
+     * off, so the device just linked can copy from it (twin of iOS `FipsMeshService.shareForCopy`, #1776). Only the
+     * relay port, for own devices: strangers would get the door, and that stays shut as Share is off. Call it in the
+     * [changeLock] queue, after the link is stored. True when the vault is reachable for the copy (by this or by
+     * Share being on), for the "keep open" line.
+     */
+    suspend fun shareForCopy(): Boolean = withContext(Dispatchers.IO) {
+        val running = FipsBridge.status().running
+        val sharing = configStore.config.value.fipsShareRelay
+        if (!OtherVaultCopy.sharesAfterLink(running, sharing)) return@withContext running
+        copyShareUntil = System.currentTimeMillis() + OtherVaultCopy.SHARE_WINDOW_MS
+        offerToOwnDevices()
+        copyShareEnd?.cancel()
+        copyShareEnd = appScope.launch(Dispatchers.IO) {
+            kotlinx.coroutines.delay(OtherVaultCopy.SHARE_WINDOW_MS)
+            // Withdrawing means dropping the endpoint (no un-export), unless Share was turned on meanwhile.
+            changeLock.withLock {
+                restartKeepingAllowance(onlyIf = {
+                    !configStore.config.value.fipsShareRelay && !OtherVaultCopy.open(copyShareUntil, System.currentTimeMillis())
+                })
+            }
+            refresh()
+        }
+        true
+    }
+
+    /** The relay port for own devices only; the door for strangers stays shut. */
+    private fun offerToOwnDevices() {
+        val rc = FipsBridge.export(MeshEnginePlan.sharePort(configStore.config.value, engineOwnDevices.orEmpty()))
+        if (rc != 0) Log.w(TAG, "FipsBridgeExport for the copy failed: $rc")
     }
 
     /**
