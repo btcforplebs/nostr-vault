@@ -1,45 +1,6 @@
 import SwiftUI
 
-// MARK: - Already using Nostr Vault on another device?
-
-/// Pairing plan §5a: asked right after sign-in. Yes links this device to the
-/// other one and copies the vault across (BringItOverStep); No is today's
-/// setup. No mesh, address or role words here.
-struct OtherDeviceQuestionStep: View {
-    let onYes: () -> Void
-    let onNo: () -> Void
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Spacer().frame(height: 12)
-            Image(systemName: "iphone.and.arrow.forward")
-                .font(.appSystem(size: 40))
-                .foregroundColor(WizardColors.accentPrimary)
-            Text(OtherDeviceQuestion.title)
-                .font(.appSystem(size: isIOSDevice ? 24 : 28, weight: .semibold))
-                .foregroundColor(WizardColors.textPrimary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            Text(OtherDeviceQuestion.yesDetail)
-                .font(.appSystem(size: 15))
-                .foregroundColor(WizardColors.textSecondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer().frame(height: 8)
-            WizardPrimaryButton(title: OtherDeviceQuestion.yes, action: onYes)
-            Button(action: onNo) {
-                Text(OtherDeviceQuestion.no)
-                    .font(.appSystem(size: 15, weight: .semibold))
-                    .foregroundColor(WizardColors.textPrimary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-            }
-            .buttonStyle(.plain)
-        }
-    }
-}
-
-// MARK: - Yes, bring it over
+// MARK: - Copy from my other vault
 
 /// The two scans with this device as B (lane A's PairDeviceFlow, unchanged),
 /// then the copy from the other device with its progress. Anything that
@@ -67,7 +28,7 @@ struct BringItOverStep: View {
         let flow = holder.flow(configService)
         VStack(spacing: 16) {
             Spacer().frame(height: 12)
-            Text(OtherDeviceQuestion.yes)
+            Text(OtherVaultCopy.button)
                 .font(.appSystem(size: isIOSDevice ? 24 : 28, weight: .semibold))
                 .foregroundColor(WizardColors.textPrimary)
             BringItOverContent(flow: flow, other: other, copying: copying, scanning: $scanning,
@@ -127,11 +88,11 @@ struct BringItOverStep: View {
             if relayManager.importCompleted && !relayManager.isImporting { return done() }
             let value = relayManager.importProgress, message = relayManager.importStatusMessage
             if let last = lastProgress, last.value == value, last.message == message {
-                if OtherDeviceQuestion.isStalled(lastProgressAt: last.at, now: now) { fallBack() }
+                if OtherVaultCopy.isStalled(lastProgressAt: last.at, now: now) { fallBack() }
             } else {
                 lastProgress = (value, message, now)
             }
-        } else if let started = linkStartedAt, OtherDeviceQuestion.linkTimedOut(startedAt: started, now: now) {
+        } else if let started = linkStartedAt, OtherVaultCopy.linkTimedOut(startedAt: started, now: now) {
             fallBack()
         }
     }
@@ -228,7 +189,7 @@ private struct BringItOverContent: View {
                 .font(.appSystem(size: 36))
                 .foregroundColor(WizardColors.success)
             line("Linked ✓ \(otherName)")
-            Text(OtherDeviceQuestion.copyingLine(other?.name ?? ""))
+            Text(OtherVaultCopy.copyingLine(other?.name ?? ""))
                 .font(.appSystem(size: 15, weight: .medium))
                 .foregroundColor(WizardColors.textPrimary)
             ProgressView(value: max(relayManager.importProgress, 0.02))

@@ -13,6 +13,8 @@ struct VaultBackupQuestionStep: View {
     let onRestored: () -> Void
     /// No backup: on to the relay import.
     let onNo: () -> Void
+    /// "Copy from my other vault": the two scans, then the copy (OtherVaultCopy).
+    var onCopyFromOtherVault: (() -> Void)?
 
     @State private var showingFileImporter = false
     @State private var isRestoring = false
@@ -69,6 +71,25 @@ struct VaultBackupQuestionStep: View {
                     .font(.appSystem(size: 12))
                     .foregroundColor(WizardColors.textMuted)
                     .multilineTextAlignment(.center)
+                if let onCopyFromOtherVault {
+                    Button(action: onCopyFromOtherVault) {
+                        Text(OtherVaultCopy.button)
+                            .font(.appSystem(size: 15, weight: .semibold))
+                            .foregroundColor(WizardColors.textPrimary)
+                            .frame(maxWidth: isIOSDevice ? .infinity : nil, minHeight: 44)
+                            .padding(.horizontal, isIOSDevice ? 0 : 32)
+                            .background(WizardColors.bgCard)
+                            .cornerRadius(12)
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(WizardColors.borderSubtle, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 8)
+                    Text(OtherVaultCopy.smallPrint)
+                        .font(.appSystem(size: 12))
+                        .foregroundColor(WizardColors.textMuted)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: [.zip],

@@ -1,1 +1,0 @@
-../../../HavenApp/Models/OtherDeviceQuestion.swift
