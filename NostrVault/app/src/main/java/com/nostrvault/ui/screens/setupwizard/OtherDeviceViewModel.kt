@@ -13,8 +13,8 @@ import com.nostrvault.fips.MeshPairingJoiner
 import com.nostrvault.fips.MyDevicesRules
 import com.nostrvault.service.serverListDropsAfter
 import com.nostrvault.ui.screens.pairing.PairDeviceViewModel
-import com.nostrvault.fips.FipsBridge
-import com.nostrvault.relay.RelayConfiguration
+import com.nostrvault.fips.OtherVaultCopy
+import com.nostrvault.fips.OtherVaultLink
 import com.nostrvault.service.ImportResult
 import com.nostrvault.service.RelayImportService
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +51,7 @@ class OtherDeviceViewModel @Inject constructor(
     private val homeVault: HomeVaultSender,
     private val relayImportService: RelayImportService,
     private val firstRunImport: com.nostrvault.service.FirstRunImport,
+    private val otherVaultLink: OtherVaultLink,
     private val notificationManager: NotificationManager,
     @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
@@ -210,23 +211,43 @@ class OtherDeviceViewModel @Inject constructor(
         val name = MeshPairing.displayName(a.name)
         _ui.value = Ui.Copying(name)
         viewModelScope.launch {
-            val url = withContext(Dispatchers.IO) { vaultUrl(a.mesh) } ?: return@launch fallBack()
+            val url = dialOtherVault(a.mesh) ?: return@launch run {
+                otherVaultLink.close()
+                fallBack()
+            }
             configStore.update { it.copy(importStartDate = BringItOver.START_DATE) }
             firstRunImport.otherVault = url
             _ui.value = Ui.Copied
         }
     }
 
-    /** The other device's vault as a local ws:// address over the link, or null. Never logged. */
-    private fun vaultUrl(meshNpub: String): String? {
-        var ingress = FipsBridge.ingress(meshNpub)
-        var waited = 0L
-        while (ingress.error == FipsBridge.ERR_NOT_RUNNING && waited < MESH_WAIT_MS) {
-            Thread.sleep(MESH_POLL_MS)
-            waited += MESH_POLL_MS
-            ingress = FipsBridge.ingress(meshNpub)
+    /**
+     * The other device's vault at its lasting address ([OtherVaultLink]), once it answers: a phone just linked is
+     * often still finding the other one on the mesh, and the link restarts both engines. Dialed every
+     * [OtherVaultCopy.DIAL_RETRY_S] for up to [OtherVaultCopy.DIAL_WINDOW_S] (iOS `dialOtherVault`, #1776), else null.
+     */
+    private suspend fun dialOtherVault(meshNpub: String): String? {
+        val startedAt = now()
+        while (true) {
+            val url = withContext(Dispatchers.IO) { otherVaultLink.open(meshNpub)?.takeIf(::answers) }
+            if (url != null) return url
+            if (!OtherVaultCopy.dialsAgain(startedAt, now())) return null
+            delay(OtherVaultCopy.DIAL_RETRY_S * 1000)
         }
-        return ingress.url?.let(RelayConfiguration::meshWebsocketURL)
+    }
+
+    /** The vault behind [wsUrl] answers its relay info (NIP-11). Never logged: an address on the link. */
+    private fun answers(wsUrl: String): Boolean = runCatching {
+        val request = okhttp3.Request.Builder().url(wsUrl.replaceFirst("ws://", "http://"))
+            .header("Accept", "application/nostr+json").build()
+        probe.newCall(request).execute().use { it.isSuccessful }
+    }.getOrDefault(false)
+
+    private val probe by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .connectTimeout(PROBE_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(PROBE_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
     }
 
     private suspend fun store(own: String?, npub: String, role: DeviceRole, name: String) {
@@ -280,7 +301,6 @@ class OtherDeviceViewModel @Inject constructor(
 
     private companion object {
         fun now() = System.currentTimeMillis() / 1000
-        const val MESH_WAIT_MS = 20_000L
-        const val MESH_POLL_MS = 1_000L
+        const val PROBE_TIMEOUT_S = 8L
     }
 }

@@ -61,7 +61,8 @@ class PairDeviceViewModel @Inject constructor(
         /** B: A linked by Accept, so this side checks the words too (Tron 2). */
         data class CheckWords(val words: List<String>, val shortAddress: String, val name: String, val tapped: Boolean) : Ui
         data class SwitchAccount(val text: String, val npub: String) : Ui
-        data class Linked(val name: String, val already: Boolean = false) : Ui
+        /** [keepOpen]: A shares its vault for the other device's copy, so this device should stay open meanwhile. */
+        data class Linked(val name: String, val already: Boolean = false, val keepOpen: Boolean = false) : Ui
         /** Over: expired, aborted or refused. Nothing was stored. */
         data class Stopped(val text: String) : Ui
     }
@@ -184,6 +185,7 @@ class PairDeviceViewModel @Inject constructor(
                     // Nothing to store; the ack still lets the other side finish.
                     sendAck(s)
                     _ui.value = Ui.Linked(MeshPairing.displayName(o.name), already = true)
+                    appScope.launch { mesh.changeLock.withLock { shareForCopy() } }
                 }
                 MeshPairing.RoleCheck.Add -> {
                     pending = Pending.AddB(o.npub, o.name, o.role)
@@ -233,7 +235,7 @@ class PairDeviceViewModel @Inject constructor(
                 // B stops waiting for the ack 360 s after it scanned, which is no earlier than its hello: past A's
                 // scan window from that hello, don't link this side alone.
                 if (now() - helloAt > MeshPairing.SCAN_WINDOW) return stop(MeshPairing.EXPIRED_TEXT)
-                store(p.npub, p.role, p.name)
+                store(p.npub, p.role, p.name, shareAfter = true)
                 sendAck(s)
                 _ui.value = Ui.Linked(MeshPairing.displayName(p.name))
             }
@@ -331,13 +333,23 @@ class PairDeviceViewModel @Inject constructor(
 
     // ---- Storing: the same add as Mesh settings › Add a device ----
 
-    private fun store(npub: String, role: DeviceRole, name: String) {
+    /** [shareAfter]: A, so the device just linked can copy from this one (after the store's own restart). */
+    private fun store(npub: String, role: DeviceRole, name: String, shareAfter: Boolean = false) {
         val own = ownHex?.let(MeshPairing::npub)
         // In the same queue as Mesh settings, reading the config inside it: a Remove or Mesh off queued before this
         // is finished first and not undone (Tron, #1706).
         appScope.launch {
-            mesh.changeLock.withLock { storeNow(own, npub, role, name) }
+            mesh.changeLock.withLock {
+                storeNow(own, npub, role, name)
+                if (shareAfter) shareForCopy()
+            }
         }
+    }
+
+    /** A, linked: its vault is shared with its own devices for the copy window (Share off too); in the change queue. */
+    private suspend fun shareForCopy() {
+        if (!mesh.shareForCopy()) return
+        (_ui.value as? Ui.Linked)?.let { _ui.value = it.copy(keepOpen = true) }
     }
 
     private suspend fun storeNow(own: String?, npub: String, role: DeviceRole, name: String) {

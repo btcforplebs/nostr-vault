@@ -33,7 +33,7 @@ class FipsMeshIdentityReadTest {
 
     @Test fun `an unreadable mesh key stops the start instead of minting a new address`() = runTest {
         every { CredentialStore.readMeshNsec() } throws javax.crypto.AEADBadTagException("bad tag")
-        val manager = FipsMeshManager(CredentialStore, mockk<ConfigStore>(relaxed = true), CoroutineScope(UnconfinedTestDispatcher()))
+        val manager = FipsMeshManager(CredentialStore, mockk<ConfigStore>(relaxed = true), CoroutineScope(UnconfinedTestDispatcher()), mockk(relaxed = true))
         assertFalse(manager.start(persist = false))
         assertEquals("Could not read the mesh identity.", manager.lastError.value)
         verify(exactly = 0) { FipsBridge.generateNsec() }
@@ -43,7 +43,7 @@ class FipsMeshIdentityReadTest {
     @Test fun `no saved mesh key is minted and saved`() = runTest {
         every { CredentialStore.readMeshNsec() } returns null
         every { CredentialStore.storeMeshNsec(any()) } returns false
-        val manager = FipsMeshManager(CredentialStore, mockk<ConfigStore>(relaxed = true), CoroutineScope(UnconfinedTestDispatcher()))
+        val manager = FipsMeshManager(CredentialStore, mockk<ConfigStore>(relaxed = true), CoroutineScope(UnconfinedTestDispatcher()), mockk(relaxed = true))
         // The save is refused here, so the start stops before the engine; what matters is that a key was minted.
         assertFalse(manager.start(persist = false))
         verify(exactly = 1) { FipsBridge.generateNsec() }

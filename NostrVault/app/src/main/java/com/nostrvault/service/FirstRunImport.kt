@@ -28,6 +28,7 @@ class FirstRunImport @Inject constructor(
     private val jobs: ImportJobService,
     private val configStore: com.nostrvault.data.local.ConfigStore,
     @ApplicationScope private val scope: CoroutineScope,
+    private val otherVaultLink: com.nostrvault.fips.OtherVaultLink,
 ) {
     sealed interface State {
         data object Idle : State
@@ -42,7 +43,10 @@ class FirstRunImport @Inject constructor(
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
 
-    /** The other device's vault (local link address) for "Copy from my other vault": one more seed for `setup`. */
+    /**
+     * The other device's vault for "Copy from my other vault": one more seed for `setup`. Its lasting address
+     * ([com.nostrvault.fips.OtherVaultLink]), so a cut setup or `older_relays` reads it again after a restart.
+     */
     @Volatile
     var otherVault: String? = null
 
@@ -83,6 +87,8 @@ class FirstRunImport @Inject constructor(
                 setup == null -> Unit
                 setup.letsIn -> {
                     dropOtherVaultSeed()
+                    // All read: the address goes. Partial keeps it for older_relays (OtherVaultCopy.KEEP_LINK_MS).
+                    if (otherVault != null && setup.status != ImportJobs.PARTIAL) otherVaultLink.close()
                     _state.value = State.In(partial = setup.status == ImportJobs.PARTIAL, stored = setup.stored)
                     return
                 }
@@ -98,7 +104,7 @@ class FirstRunImport @Inject constructor(
         _state.value = State.Failed(why)
     }
 
-    /** The link address dies with the link: it never stays among the seeds after setup. */
+    /** Never among the seeds after setup: `older_relays` keeps what it still has to read from it. */
     private fun dropOtherVaultSeed() {
         val url = otherVault ?: return
         configStore.update { it.copy(importSeedRelays = it.importSeedRelays - url) }
@@ -109,6 +115,7 @@ class FirstRunImport @Inject constructor(
     fun reset() {
         job?.cancel()
         _state.value = State.Idle
+        if (otherVault != null) otherVaultLink.close()
         otherVault = null
     }
 
