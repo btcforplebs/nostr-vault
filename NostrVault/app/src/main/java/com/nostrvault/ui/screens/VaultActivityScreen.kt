@@ -644,6 +644,21 @@ internal fun VaultActivityScreen(
             VaultAccountChips.merge(perAccount, accountHexes, shownCount)
         }
     }
+    /** A row that tagged several accounts, waiting for "Reply or react as" (VaultAccountPickSheet). */
+    var pickFor by remember { mutableStateOf<VaultAccountLine?>(null) }
+    fun openRow(row: VaultAccountLine, asAccount: String) {
+        pickFor = null
+        row.accounts.forEach { activity.openedLine(it) }
+        activity.openLineAs(asAccount) { onOpenLine(row.line, asAccount != activeHex) }
+    }
+    pickFor?.let { row ->
+        VaultAccountPickSheet(
+            accounts = row.accounts,
+            profiles = profiles,
+            onPick = { hex -> openRow(row, hex) },
+            onDismiss = { pickFor = null },
+        )
+    }
     val filterNote = rememberFilterNoteState()
     fun pick(next: VaultActivityFilter, toOutside: Boolean = false) {
         val changed = next != filter || toOutside != outside
@@ -819,16 +834,17 @@ internal fun VaultActivityScreen(
                 ) {
                     items(rows, key = { if (others) it.key else it.line.id }) { row ->
                         val line = row.line
-                        val isOther = row.account != activeHex
-                        val since = if (isOther) otherUnreadSince[row.account] ?: Long.MAX_VALUE else unreadSince
+                        // New if newer than any of its accounts' seen marks (one row for an event that tagged several).
+                        val sinceOf = { hex: String -> if (hex != activeHex) otherUnreadSince[hex] ?: Long.MAX_VALUE else unreadSince }
                         VaultActivityRow(
                             line = line,
-                            isUnread = line.createdAt > since,
+                            isUnread = row.accounts.any { line.createdAt > sinceOf(it) },
                             profiles = profiles,
-                            account = if (others) row.account else null,
+                            accounts = if (others) row.accounts else emptyList(),
                             onClick = {
-                                activity.openedLine(row.account)
-                                activity.openLineAs(row.account) { onOpenLine(line, isOther) }
+                                // Opening clears it for every account it tagged; several ask which one replies or reacts.
+                                if (row.accounts.size > 1) pickFor = row
+                                else openRow(row, row.account)
                             },
                             modifier = Modifier.padding(horizontal = 16.dp),
                         )

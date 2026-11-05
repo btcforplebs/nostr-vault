@@ -39,9 +39,12 @@ class AccountUnreadStore @Inject constructor(
         // The badge counts nothing the Vault list hides. Judged before the
         // lock: the trust graph lookup has no business inside it.
         val marker = AccountUnread.parseMarker(body) ?: return
-        if (isOwnAccountTag(marker.recipient, marker.author)) return
-        if (!listShows(marker)) return
-        update { it.record(body) }
+        // Each account it tagged counts it once, by that account's own list rules.
+        val counted = marker.recipients.filter { r ->
+            !isOwnAccountTag(r, marker.author) && listShows(marker.copy(recipient = r))
+        }.toSet()
+        if (counted.isEmpty()) return
+        update { it.record(body) { r -> r in counted } }
     }
 
     /**

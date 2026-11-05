@@ -13,11 +13,16 @@ sealed class VaultAccountChip {
 }
 
 /**
- * A Vault line and the account it is for. Two accounts can each have a line
- * with the same id (a day's follows, a like on a post both were tagged in),
- * so the key carries the account.
+ * A Vault line and the accounts it is for. One event that tags several of your accounts (a reply, mention, quote,
+ * article, highlight or a zap with words) is one line for all of them ([VaultAccountChips.isOneEvent]); a folded line
+ * (a post's likes, reposts, a day's follows) stays per account, since each account's is a different set of events.
+ * The key carries the first account, so per-account folds with the same id stay apart. iOS: VaultAccountLine (#1772).
  */
-data class VaultAccountLine(val account: String, val line: VaultActivity) {
+data class VaultAccountLine(val accounts: List<String>, val line: VaultActivity) {
+    constructor(account: String, line: VaultActivity) : this(listOf(account), line)
+
+    /** The first account (switcher order): the line's own when it is for one. */
+    val account: String get() = accounts.firstOrNull().orEmpty()
     val key: String get() = "$account:${line.id}"
 }
 
@@ -81,13 +86,46 @@ object VaultAccountChips {
         chip == VaultAccountChip.Account(active.lowercase())
 
     /**
-     * Each account's lines in one list, newest first, each marked with its
-     * account. Ties go to the account first in [order], then by id, so the
-     * list never shuffles between rebuilds.
+     * Whether the line is one event, the same event for every account it tagged: a reply, mention, quote, article,
+     * highlight, or a zap with its own line. Folded lines ("reaction-", "repost-", "zap-", "follow-") gather
+     * different events per account. iOS: isOneEvent (#1772).
+     */
+    fun isOneEvent(line: VaultActivity): Boolean = when (line.kind) {
+        VaultActivity.Kind.REPLY, VaultActivity.Kind.MENTION, VaultActivity.Kind.QUOTE,
+        VaultActivity.Kind.ARTICLE, VaultActivity.Kind.HIGHLIGHT -> true
+        VaultActivity.Kind.ZAP -> !line.id.startsWith("zap-")
+        VaultActivity.Kind.REACTION, VaultActivity.Kind.REPOST, VaultActivity.Kind.FOLLOW -> false
+    }
+
+    /**
+     * Each account's lines in one list, newest first, each marked with its accounts: one event that tagged several
+     * of them is one line ([isOneEvent]). A shared line's accounts are in switcher order. Ties go to the account
+     * first in [order], then by id, so the list never shuffles between rebuilds.
      */
     fun merge(perAccount: Map<String, List<VaultActivity>>, order: List<String>, limit: Int): List<VaultAccountLine> {
         val rank = unique(order).withIndex().associate { (i, hex) -> hex to i }
-        return perAccount.flatMap { (account, lines) -> lines.map { VaultAccountLine(account.lowercase(), it) } }
+        val accounts = perAccount.keys.map { it.lowercase() }.distinct()
+            .sortedWith(compareBy<String> { rank[it] ?: Int.MAX_VALUE }.thenBy { it })
+        val lines = HashMap<String, MutableList<VaultActivity>>()
+        for ((account, list) in perAccount) lines.getOrPut(account.lowercase()) { mutableListOf() } += list
+        val all = mutableListOf<VaultAccountLine>()
+        val shared = HashMap<String, Int>()
+        for (account in accounts) {
+            for (line in lines[account].orEmpty()) {
+                if (!isOneEvent(line)) {
+                    all += VaultAccountLine(account, line)
+                    continue
+                }
+                val at = shared[line.id]
+                if (at == null) {
+                    shared[line.id] = all.size
+                    all += VaultAccountLine(account, line)
+                } else if (account !in all[at].accounts) {
+                    all[at] = all[at].copy(accounts = all[at].accounts + account)
+                }
+            }
+        }
+        return all
             .sortedWith(
                 compareByDescending<VaultAccountLine> { it.line.createdAt }
                     .thenBy { rank[it.account] ?: Int.MAX_VALUE }

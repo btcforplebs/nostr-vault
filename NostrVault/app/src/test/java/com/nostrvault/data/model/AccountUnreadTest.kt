@@ -137,4 +137,27 @@ class AccountUnreadTest {
         assertEquals("f".repeat(64), m?.author)
         assertEquals(alice to "1", AccountUnread.parse("type=zap|kind=9735|author=x|id=1|recipient=$alice|preview="))
     }
+
+    /** Live Vault §1 (iOS #1772): a reply tagging two of your accounts counts once for each; recipient= is the fallback. */
+    @Test fun recipientsListCountsOncePerTaggedAccount() {
+        val both = "type=reply|kind=1|author=x|id=e1|recipients=$alice,$bob|recipient=$alice|preview=hi"
+        val u = AccountUnread().record(both).record(both)
+        assertEquals(1, u.count(alice))
+        assertEquals(1, u.count(bob))
+        // An older relay names the first only.
+        assertEquals(1, AccountUnread().record("type=reply|kind=1|author=x|id=e2|recipient=$bob|preview=").count(bob))
+        // The store's per-account rules can leave one out.
+        val one = AccountUnread().record(both) { it == bob }
+        assertEquals(0, one.count(alice))
+        assertEquals(1, one.count(bob))
+        assertEquals(listOf(alice, bob), AccountUnread.parseMarker(both)!!.recipients)
+    }
+
+    @Test fun ownAccountOnlyWhenEveryTaggedAccountIsOwnTag() {
+        val marker = "NOTIFY|type=mention|kind=1|author=$alice|id=e3|recipients=$alice,$bob|preview="
+        // alice tagging alice is not an own-account tag; alice tagging bob is.
+        val own = { r: String, a: String -> r != a }
+        assertEquals(emptySet<Int>(), AccountUnread.ownAccountOnlyKinds(listOf(marker), own))
+        assertEquals(setOf(1), AccountUnread.ownAccountOnlyKinds(listOf(marker)) { _, _ -> true })
+    }
 }
