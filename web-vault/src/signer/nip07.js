@@ -14,27 +14,55 @@ export async function extensionSignIn() {
   const ext = await findExtension()
   if (!ext) throw new Error("No Nostr extension found in this browser")
   const pubkey = checkedPubkey(await ext.getPublicKey())
-  return { signer: extensionSigner(), session: { method: "nip07", pubkey } }
+  return { signer: extensionSigner(pubkey), session: { method: "nip07", pubkey } }
 }
 
-export function extensionSigner() {
+export function extensionSigner(pubkey) {
   return {
     method: "nip07",
-    crypto: extensionCrypto(),
+    crypto: extensionCrypto(pubkey),
     signEvent: async t => (await findExtension())?.signEvent(t) ?? Promise.reject(new Error("Nostr extension is gone")),
   }
+}
+
+/** What Messages says when the extension is on another account (signer audit 2026-11-05 #2). */
+export const WRONG_ACCOUNT = "Your extension is signed in as another account. Switch it back to this one to read and send messages."
+const wrongAccount = () => Object.assign(new Error(WRONG_ACCOUNT), { wrongAccount: true })
+
+// Which account the extension is on, asked once per focus: switching it in the extension's own popup takes the page's
+// focus, so coming back asks again. { expected, ok: Promise<boolean> }
+let lastCheck = null
+/** Forget the last answer (on focus, and for tests). */
+export function forgetAccountCheck() { lastCheck = null }
+if (typeof globalThis.addEventListener === "function") {
+  globalThis.addEventListener("focus", forgetAccountCheck)
+  globalThis.document?.addEventListener?.("visibilitychange", () => { if (globalThis.document.visibilityState === "visible") forgetAccountCheck() })
+}
+/** Whether `ext` is on `expected` (once per focus). A getPublicKey that fails isn't cached and fails the call. */
+export function onAccount(ext, expected) {
+  if (!expected) return Promise.resolve(true)
+  if (lastCheck?.expected !== expected) {
+    const ok = Promise.resolve().then(() => ext.getPublicKey()).then(pk => pk === expected)
+    lastCheck = { expected, ok }
+    ok.catch(() => { if (lastCheck?.ok === ok) lastCheck = null })
+  }
+  return lastCheck.ok
 }
 
 /**
  * The extension's NIP-44 and NIP-04 (Messages, the private block list). Each call asks the extension, which may prompt the user.
  * `peer` is the other key of the conversation; for a self-copy it is the user's own pubkey.
  * -> { encrypt(peer, text), decrypt(peer, ciphertext), encrypt04(peer, text), decrypt04(peer, ciphertext) }, each
- *    throwing when the extension is gone or doesn't offer that call.
+ *    throwing when the extension is gone or doesn't offer that call. `expected`: the signed-in account. Before any call
+ *    the extension's account is checked against it (once per focus); on another account every call throws
+ *    `wrongAccount` and nothing is asked: a decrypt there fails, and an encrypt seals to the wrong key (signer audit
+ *    2026-11-05 #2: the saved inbox was deleted, then rewritten under the other account's key).
  */
-export function extensionCrypto() {
+export function extensionCrypto(expected) {
   const call = async (scheme, fn, peer, text) => {
     const ext = await findExtension()
     if (!ext) throw new Error("Nostr extension is gone")
+    if (!(await onAccount(ext, expected))) throw wrongAccount()
     if (typeof ext[scheme]?.[fn] !== "function") throw new Error(`your extension doesn't offer ${scheme.toUpperCase()} ${fn === "encrypt" ? "encryption" : "decryption"}`)
     return ext[scheme][fn](peer, text)
   }
