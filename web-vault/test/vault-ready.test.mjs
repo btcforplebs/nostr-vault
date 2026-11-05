@@ -235,3 +235,23 @@ test("the screen lists every step with its state, an accessible bar, and Open no
   find(tree, n => n.type === "button").props.onClick()
   assert.equal(opened, 1)
 })
+
+test("first run with the setup job: you're in only once setup is done or partial, and its count is the notes step's", async t => {
+  localStorage.m.clear()
+  relays(t)
+  let finish
+  const setupRan = []
+  const setup = c => { setupRan.push(c.session.pubkey); return new Promise(r => { finish = r }) }
+  const steps = {}
+  let opened = false
+  const p = prepareVault({ vault: vault(), pubkey: ME, local: empty, onStep: (id, s) => { steps[id] = { ...steps[id], ...s } }, setup })
+    .then(r => { opened = true; return r })
+  await new Promise(r => setTimeout(r, 100))
+  assert.deepEqual(setupRan, [ME])
+  assert.equal(opened, false, "not in while setup runs")
+  assert.equal(steps.notes.state, "active")
+  finish({ status: "partial", stored: 77, reason: "not_read_yet" })
+  await p
+  assert.equal(opened, true)
+  assert.deepEqual([steps.notes.state, steps.notes.count], ["done", 77])
+})

@@ -63,7 +63,7 @@ function within(p, ms) {
  * its authors' names are stored (or the feed step's limit passes); the steps carry on after it and keep reporting.
  * -> { account as refreshAccount read it back, fresh, filled: settles once every step has ended }
  */
-export async function prepareVault({ vault, pubkey, local, early, log = () => {}, onStep = () => {}, limits = STEP_LIMIT_MS }) {
+export async function prepareVault({ vault, pubkey, local, early, log = () => {}, onStep = () => {}, limits = STEP_LIMIT_MS, setup = null }) {
   // A step that has reported its end stays ended: a slow sync still counting in the background doesn't reopen it.
   const ended = new Set()
   const say = (id, s) => {
@@ -89,7 +89,17 @@ export async function prepareVault({ vault, pubkey, local, early, log = () => {}
   }
 
   const follows = account.follows
-  const notes = run("notes", syncOwn(vault, pubkey, writeRelays).then(n => say("notes", { state: "active", count: n })))
+  // With `setup` (import-jobs.js, the first-run engine shape): your own notes, follows and current lists as the setup
+  // job, with no time limit: you're in once it is done or partial (Logen 2026-11-05). What it couldn't finish is in
+  // the Vault's "Still to bring in". Without it (tests, older callers): the latest of your own notes, as before.
+  const notes = setup
+    ? setup({ vault, session: { pubkey }, account }).then(j => {
+      say("notes", { state: "active", count: j?.stored ?? 0 })
+      say("notes", { state: j?.status === "failed" ? "failed" : "done" })
+      log("prepare", { step: "notes", setup: j?.status, reason: j?.reason })
+    })
+    : run("notes", syncOwn(vault, pubkey, writeRelays).then(n => say("notes", { state: "active", count: n })))
+  if (setup) say("notes", { state: "active" })
   if (!follows.length) {
     say("feed", { state: "done", count: 0 })
     say("profiles", { state: "done" })
@@ -132,6 +142,7 @@ export async function prepareVault({ vault, pubkey, local, early, log = () => {}
     }
   }))))
 
+  if (setup) await notes // in on done or partial (or failed: no relay answered), never before setup ends
   const opening = await within(firstNames, limits.feed)
   log("prepare", { step: "open", state: opening })
   markPrepared(pubkey)

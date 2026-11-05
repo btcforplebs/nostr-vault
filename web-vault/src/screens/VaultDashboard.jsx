@@ -13,6 +13,7 @@ import { HISTORY_DEFAULT_ON, KeepFullSection } from "../components/dashboard/Kee
 import { SettingsSection } from "../components/dashboard/SettingsSection.jsx"
 import { ActivitySection, ActivityWindow } from "../components/dashboard/ActivitySection.jsx"
 import { AdvancedSection } from "../components/dashboard/AdvancedSection.jsx"
+import { StillToBringIn } from "../components/dashboard/StillToBringIn.jsx"
 import { YourDevicesSection } from "../components/dashboard/YourDevicesSection.jsx"
 import { PairDevice } from "./PairDevice.jsx"
 import { useBlocks } from "../components/useBlocks.js"
@@ -148,6 +149,7 @@ export function VaultDashboard({ ctx }) {
             <SafetySection method={session.method} followSavedAt={followSavedAt} backupAt={history.notesBackup} onBackup={exportFile} backupBusy={jobs.export} />
             <ReachSection trusted={trusted.size} blocked={blocked.size} />
             <ContentsSection {...counts} usage={storage.usage} kept={storage.kept} media={media} onRetry={look} me={session.pubkey} />
+            {!vault.box && <StillToBringIn ctx={ctx} />}
             <KeepFullSection startDate={IMPORT_START_DATE} history={history} importing={jobs.importing} mediaBusy={jobs.media} exportBusy={jobs.export}
               status={jobs.status} onImport={importNotes} onMedia={mediaFile} onExport={exportFile}
               historyRelays={historyRelays} onHistoryRelays={setHistoryRelays} onSkip={() => skip.current?.abort()} />

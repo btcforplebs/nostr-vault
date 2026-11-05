@@ -312,8 +312,16 @@ export function importLine({ result, found, stored, failed = 0, cut = [], tagged
 
 const DM_KINDS = new Set([4, 13, 14, 1059, 1060])
 
+/** The importer without the lock, in parts, for the Vault jobs (import-jobs.js), which hold the lock themselves.
+ *  `phases`: { lanes, walk, tagged } (all on by default, as importOwn). `walkFrom`: Map url -> unix seconds a walk
+ *  starts down from (older_relays' cursor); with lanes off, only those relays are walked. `taggedSkip`: relays whose
+ *  tagged lane is already done (replies' cursor). `signal` cuts the run between pages. `onWalk(url, until)`: a window
+ *  read. Adds to the result: lanes { url: { how, oldest } }, walked { url: until reached }, taggedHow { url: how }. */
+export const importParts = (...a) => importOwnUnlocked(...a)
+
 async function importOwnUnlocked(vault, pubkey, relays, { startDate = IMPORT_START_DATE, onProgress = () => {}, maxWait = IMPORT_IDLE_MS,
-  laneDeadlineMs = IMPORT_LANE_DEADLINE_MS } = {}) {
+  laneDeadlineMs = IMPORT_LANE_DEADLINE_MS, phases = {}, walkFrom = null, taggedSkip = new Set(), signal, onWalk = () => {} } = {}) {
+  const P = { lanes: true, walk: true, tagged: true, ...phases }
   const start = Date.parse(`${startDate}T00:00:00Z`) / 1000
   if (!Number.isFinite(start)) throw new Error(`not a date: ${startDate}`)
   await Promise.any(relays.map(url => pool.ensureRelay(url, { connectionTimeout: 5000 }))).catch(() => { throw new Error("no relay reachable") })
@@ -364,9 +372,12 @@ async function importOwnUnlocked(vault, pubkey, relays, { startDate = IMPORT_STA
 
   // Progress: each relay's share of the history covered (1 when it's done), averaged; `from` the oldest day reached.
   const covered = new Map(relays.map(url => [url, 0]))
+  const reached = new Map() // url -> the oldest second its lane got to
   let oldestDay = end
+  const reachedAt = (url, t) => { if (t < (reached.get(url) ?? Infinity)) reached.set(url, t) }
   const report = (url, reached) => {
     if (reached !== undefined) {
+      if (url) reachedAt(url, reached)
       covered.set(url, Math.max(covered.get(url), Math.min(1, (end - Math.max(reached, start)) / Math.max(1, end - start))))
       if (reached < oldestDay) oldestDay = Math.max(reached, start)
     }
@@ -381,6 +392,7 @@ async function importOwnUnlocked(vault, pubkey, relays, { startDate = IMPORT_STA
     const mine = new Set()
     let stepped = false
     for (let n = 0; ; n++) {
+      if (signal?.aborted) return "cut"
       if (deadline && Date.now() > deadline) return "overran"
       if (n === maxPages) return "short"
       const { events, eose } = await importNet.page(url, f, maxWait)
@@ -453,42 +465,53 @@ async function importOwnUnlocked(vault, pubkey, relays, { startDate = IMPORT_STA
     return true
   }
 
+  // Each relay's own lane: NIP-77 where it speaks it, else its whole history paged newest first.
+  const lanes = new Map(), walked = new Map(), taggedHow = new Map()
   const redo = []
-  await Promise.all(relays.map(async url => {
-    if (await negentropy(url)) return
-    const how = await page(url, start, undefined, IMPORT_LANE_MAX_PAGES, Date.now() + laneDeadlineMs)
-    if (how === "done") report(url, start)
-    else redo.push(url)
-  }))
+  if (P.lanes) {
+    await Promise.all(relays.map(async url => {
+      if (await negentropy(url)) { lanes.set(url, { how: "done", oldest: start }); return }
+      const how = await page(url, start, undefined, IMPORT_LANE_MAX_PAGES, Date.now() + laneDeadlineMs)
+      lanes.set(url, { how, oldest: reached.get(url) ?? end })
+      if (how === "done") report(url, start)
+      else redo.push(url)
+    }))
+  } else if (walkFrom) redo.push(...[...walkFrom.keys()])
 
-  // The old walk, ten days at a time, for the lanes that didn't finish. A relay finishes only if every window it was
-  // asked for ended on its own; a dropped one, or a window cut short, leaves it in `cut` (the import is partial).
-  if (redo.length) {
-    const silent = new Map(redo.map(url => [url, 0]))
-    let left = [...redo]
-    for (let until = end; until > start && left.length; until -= IMPORT_WINDOW) {
-      const since = Math.max(start, until - IMPORT_WINDOW)
-      const hows = await Promise.all(left.map(url => page(url, since, until, IMPORT_WINDOW_MAX_PAGES)))
-      left.forEach((url, i) => {
-        silent.set(url, hows[i] === "silent" ? silent.get(url) + 1 : 0)
-        if (hows[i] !== "done") cut.add(url)
-      })
-      left = left.filter(url => silent.get(url) < IMPORT_SILENT_WINDOWS)
-    }
-    for (const url of redo) report(url, start)
-  }
+  // The old walk, ten days at a time, for the lanes that didn't finish (or, for older_relays, from where each relay
+  // was left). A relay finishes only if every window it was asked for ended on its own; a dropped one, or a window cut
+  // short, leaves it in `cut` (the import is partial).
+  if (P.walk && redo.length) {
+    await Promise.all(redo.map(async url => {
+      let silentRow = 0
+      for (let until = walkFrom?.get(url) ?? end; until > start; until -= IMPORT_WINDOW) {
+        if (signal?.aborted) { cut.add(url); return }
+        const since = Math.max(start, until - IMPORT_WINDOW)
+        const how = await page(url, since, until, IMPORT_WINDOW_MAX_PAGES)
+        if (how !== "done") cut.add(url)
+        if (how === "cut") return
+        walked.set(url, since)
+        onWalk(url, since)
+        silentRow = how === "silent" ? silentRow + 1 : 0
+        if (silentRow >= IMPORT_SILENT_WINDOWS) return
+      }
+      report(url, start)
+    }))
+  } else for (const url of redo) cut.add(url)
 
   // Notes that tag you, every relay at once, paged back to the start date (a lane that doesn't finish leaves it cut).
-  await Promise.all(relays.map(async url => {
+  if (P.tagged) await Promise.all(relays.filter(url => !taggedSkip.has(url)).map(async url => {
     const how = await page(url, start, undefined, IMPORT_LANE_MAX_PAGES, Date.now() + laneDeadlineMs,
       { base: { "#p": [pubkey] }, check: tagsMe, put: keepTagged, onPage: () => report() })
+    taggedHow.set(url, how)
     // Only a finished lane is done: a relay that never answered the tagged filter (silent) didn't give its replies
     // and mentions either, so the import can't say complete (it did: Tron, 2026-11-05 first-run plan item 5).
     if (how !== "done") cut.add(url)
   }))
   await keep.drain()
   await keepTagged.drain()
-  const out = { found, stored, failed: tally.failed, cut: [...cut], tagged: { ...tagged } }
+  const out = { found, stored, failed: tally.failed, cut: [...cut], tagged: { ...tagged },
+    lanes: Object.fromEntries(lanes), walked: Object.fromEntries(walked), taggedHow: Object.fromEntries(taggedHow) }
   return { ...out, result: importResult({ relays: relays.length, ...out, found: found + tagged.found, stored: stored + tagged.stored }) }
 }
 

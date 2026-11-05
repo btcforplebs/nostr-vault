@@ -25,6 +25,7 @@ import { SetupBringOver } from "./src/screens/SetupBringOver.jsx"
 import { WelcomeTour } from "./src/components/WelcomeTour.jsx"
 import { NotifyAsk } from "./src/components/NotifyAsk.jsx"
 import { markTourDone, tourDone } from "./src/net/first-run.js"
+import { runAndWait, resumeImportJobs } from "./src/net/import-jobs.js"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { startNavDepth } from "./src/components/nav-depth.js"
 import { ComposeScreen } from "./src/screens/ComposeScreen.jsx"
@@ -179,7 +180,8 @@ function App() {
           setPrepNote(note)
           if (!live) return
         }
-        const { account: ready, fresh } = await prepareVault({ vault: v, pubkey: session.pubkey, local, early, log, onStep: step })
+        const { account: ready, fresh } = await prepareVault({ vault: v, pubkey: session.pubkey, local, early, log, onStep: step,
+          setup: c => runAndWait(c, "setup") })
         if (!live) return
         if (fresh) {
           putProfile(ready.profileEvent)
@@ -253,6 +255,9 @@ function App() {
   if (askOther) return <SetupBringOver pubkey={askOther.pubkey} vault={askOther.vault} liveOwners={askOther.liveOwners} onDone={askOther.done} />
   if (prep) return <VaultReady steps={prep} note={prepNote} onOpen={() => openNow.current ? openNow.current() : setPrep(null)} />
   if (!vault || !account) return <Splash>Starting your relay…</Splash>
+
+  // A Vault job (import-jobs.js) a reload or a closed tab cut is picked up once the account is in, from its cursor.
+  useEffect(() => { if (!BOX && account?.loaded) resumeImportJobs({ vault, session, account }).catch(() => {}) }, [session?.pubkey, !!account?.loaded])
 
   // After a follow or unfollow: the new list is in Haven's outbox, so read the account back and the feed follows it.
   // The account's Never Connect list (kind 10006), from Haven or the network: the pool refuses those relays.
