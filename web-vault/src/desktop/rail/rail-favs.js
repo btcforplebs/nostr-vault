@@ -18,6 +18,11 @@ export const RAIL_SECTIONS = ["feed", "search", "profile", "wot", "vault", "mess
 export const VALUE_FIELD = { section: "id", list: "a", person: "p", hashtag: "t", relay: "url", feed: "id" }
 /** Feed pin ids are the iPhone's FeedMode, lower case; the web calls its Hashtag feed "hashtag". */
 export const feedPinToWeb = id => (id === "hashtags" ? "hashtag" : id)
+/** Feeds the iPhone/iPad pin that the web doesn't have (no diVines or Polls feed here): their pins stay in the synced
+ *  layout for the other devices, but the web neither offers nor draws them, as a click opened the last-used feed
+ *  instead (bug hunt 2026-11-05 #10). Kept in step with net/feeds.js FEEDS + readers/index.js READERS by a test. */
+export const NOT_ON_WEB = new Set(["reels", "polls"])
+export const webHasFeedPin = p => p?.type !== "feed" || !NOT_ON_WEB.has(p.id)
 export const webFeedToPin = id => (id === "hashtag" ? "hashtags" : id)
 /** Most favourites (pins other than sections) the rail keeps. */
 export const MAX_FAVOURITES = 30

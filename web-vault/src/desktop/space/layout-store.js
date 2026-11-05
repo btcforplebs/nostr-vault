@@ -52,9 +52,20 @@ function schedule(me) {
   sync.timer = setTimeout(() => { sync.timer = null; sync.send() }, sync.delay)
 }
 
+/** This browser's saved copy when another tab of it saved an edit since this tab read it: an edit here starts from
+ *  that one instead of writing over it, here and on every device (bug hunt 2026-11-05). */
+function freshest(me) {
+  const mine = currentLayout(me)
+  let stored
+  try { stored = readLayout(me, PANEL_IDS) } catch { return mine }
+  if (!stored || (stored.at ?? 0) < (mine.at ?? 0) || JSON.stringify(stored) === JSON.stringify(mine)) return mine
+  held = { ...held, layout: stored }
+  return stored
+}
+
 /** Apply an edit for `me` (fn: layout -> layout). Unchanged: nothing happens. Changed: kept, drawn, and sent. */
 export function changeLayout(me, fn) {
-  const before = currentLayout(me)
+  const before = freshest(me)
   const next = fn(before)
   if (next === before) return
   if (!held.pulled) held.pending.push(fn)

@@ -545,6 +545,23 @@ export async function publishNote(vault, signer, pubkey, content, writeRelays, t
   return publishKind(vault, signer, pubkey, 1, content, writeRelays, tags)
 }
 
+/** A signed event no relay took, sent again as it is: it is already in Haven, so a retry neither signs a second note
+ *  nor leaves two copies in the vault (bug hunt 2026-11-05 #7). -> publishKind's shape */
+export async function republish(event, writeRelays) {
+  const { network, local: own } = publishRelays(writeRelays)
+  const urls = [...network, ...own]
+  const results = await Promise.allSettled(pool.publish(urls, event))
+  return { event, local: { ok: true, message: "" }, relays: results.map((r, i) => ({ url: urls[i], ok: r.status === "fulfilled", message: r.status === "fulfilled" ? r.value : String(r.reason?.message ?? r.reason), local: i >= network.length })) }
+}
+
+/** Whether `event` (signed, no relay took it) is the post `built` would make: same kind 1, content and tags (the client
+ *  tag publishKind adds aside), so Post sends that one again instead of signing another. */
+export function sameUnsent(event, built) {
+  if (!event || event.kind !== 1 || event.content !== built.content) return false
+  const tags = t => JSON.stringify((t ?? []).filter(x => x[0] !== "client"))
+  return tags(event.tags) === tags(built.tags)
+}
+
 /** publishNote for any kind: an article (30023) or a poll (1068) from Compose goes out the same way. */
 export async function publishKind(vault, signer, pubkey, kind, content, writeRelays, tags = []) {
   const template = { kind, created_at: now(), tags: appendClientTag(tags, kind), content }

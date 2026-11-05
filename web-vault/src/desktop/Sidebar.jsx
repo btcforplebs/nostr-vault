@@ -20,7 +20,7 @@ import { switchAccount } from "../signer/accounts.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { useLayout } from "./space/layout-store.js"
-import { shownPins, pinKey } from "./rail/rail-favs.js"
+import { shownPins, pinKey, webHasFeedPin } from "./rail/rail-favs.js"
 import { PinRow } from "./rail/RailFavs.jsx"
 import { RailEdit } from "./rail/RailEdit.jsx"
 
@@ -56,7 +56,7 @@ export function Sidebar({ ctx, side, rail }) {
         ? <span class="side-row side-post off" aria-disabled="true" title={`New Post. ${READ_ONLY_SHORT}`}><Icon d={ICON.post} /><span class="side-label">New Post</span></span>
         : <a class="side-row side-post" href="#/compose" title={rail ? "New Post (n)" : "n"} aria-label={rail ? "New Post" : undefined}><Icon d={ICON.post} /><span class="side-label">New Post</span></a>}
       <hr />
-      {pins.map(p => <PinRow key={pinKey(p)} pin={p} on={p.type === "section" && side === p.id}
+      {pins.filter(webHasFeedPin).map(p => <PinRow key={pinKey(p)} pin={p} on={p.type === "section" && side === p.id}
         badge={p.type === "section" ? (p.id === "messages" ? unread : p.id === "vault" ? vaultNew : 0) : 0} />)}
       <button type="button" class={editing ? "side-row side-edit-btn on" : "side-row side-edit-btn"} aria-expanded={editing}
         title="Pin, reorder or take off what's on the rail" aria-label="Edit the rail" onClick={() => setEditing(!editing)}>

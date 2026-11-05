@@ -2,6 +2,7 @@
 // it names one profile, so it goes straight there; a pasted note1 / nevent opens that note. The rest mirrors the
 // iPhone's Search tab (Views/Search): the who/when filter, the Hashtags and Links pulled from matching notes, and the
 // Recent list. Read-only; nothing here signs.
+import { accountKey } from "./account-key.js"
 import { decode } from "nostr-tools/nip19"
 import { pool } from "./pool.js"
 
@@ -101,19 +102,19 @@ export function linksIn(notes) {
 }
 
 /** The Recent list: 8 at most, newest first, one per query whatever its case, 2 characters or more. */
-export const RECENT_KEY = "nv.search.recent"
+export const RECENT_KEY = "nv.search.recent" // per account: accountKey
 export function loadRecent(storage) {
-  try { const v = JSON.parse(storage?.getItem(RECENT_KEY) ?? "[]"); return Array.isArray(v) ? v.filter(x => typeof x === "string") : [] } catch { return [] }
+  try { const v = JSON.parse(storage?.getItem(accountKey(RECENT_KEY, storage)) ?? "[]"); return Array.isArray(v) ? v.filter(x => typeof x === "string") : [] } catch { return [] }
 }
 export function saveRecent(storage, query) {
   const q = String(query ?? "").trim()
   const list = loadRecent(storage)
   if (q.length < MIN_QUERY) return list
   const next = [q, ...list.filter(x => x.toLowerCase() !== q.toLowerCase())].slice(0, 8)
-  try { storage?.setItem(RECENT_KEY, JSON.stringify(next)) } catch {}
+  try { storage?.setItem(accountKey(RECENT_KEY, storage), JSON.stringify(next)) } catch {}
   return next
 }
-export function clearRecent(storage) { try { storage?.removeItem(RECENT_KEY) } catch {} return [] }
+export function clearRecent(storage) { try { storage?.removeItem(accountKey(RECENT_KEY, storage)) } catch {} return [] }
 
 /** Trending: the 8 `t` tags used most in the notes on hand (the feed), most used first. */
 export function trendingTags(notes) {
