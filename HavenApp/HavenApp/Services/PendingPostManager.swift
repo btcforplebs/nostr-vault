@@ -62,7 +62,9 @@ class PendingPostManager: ObservableObject {
     /// (green) or none confirmed it after the retries (grey, not red: it was
     /// sent, and a slow relay is not a failed post).
     struct Confirmation: Identifiable, Equatable {
-        enum State: Equatable { case sending, confirmed, unconfirmed }
+        /// `notSent`: the account changed during the countdown, so it was
+        /// not sent as the new one. `draftKept`: a post's draft is still saved.
+        enum State: Equatable { case sending, confirmed, unconfirmed, notSent(draftKept: Bool) }
         let id = UUID()
         let actionType: ActionType
         var state: State
@@ -96,15 +98,20 @@ class PendingPostManager: ObservableObject {
     private var pendingQuoteTo: FeedNote?
     private var pendingDraftId: String?
     private var countdown: Task<Void, Never>?
+    /// What the countdown in flight runs when it ends, and the account it was
+    /// queued under, so a new action can send it at once (`clearPrevious`).
+    private var pendingCompletion: (@MainActor () async -> Void)?
+    private var pendingQueuedAccount = ""
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
         // Cancel any pending post when the active account switches,
         // preventing a post composed under one account from being
         // published under a different account's signing key.
+        // The post is kept as a draft and the user is told it was not sent.
         ConfigService.shared.activeAccountSwitches
             .sink { [weak self] _ in
-                self?.cancel()
+                self?.cancelForAccountSwitch()
             }
             .store(in: &cancellables)
     }
@@ -215,9 +222,25 @@ class PendingPostManager: ObservableObject {
         }
     }
 
+    /// The account changed while an action counted down. It is not sent: a
+    /// repost or delete would be signed by the new account, and a signed post
+    /// would go to the new account's relays. A post's draft stays saved.
+    private func cancelForAccountSwitch() {
+        guard countdown != nil, let type = actionType else { return cancel() }
+        let draftKept = pendingDraftId != nil
+        cancel()
+        let notice = Confirmation(actionType: type, state: .notSent(draftKept: draftKept))
+        withAnimation(Motion.bannerIn) { confirmation = notice }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard self?.confirmation?.id == notice.id else { return }
+            withAnimation(Motion.bannerOut) { self?.confirmation = nil }
+        }
+    }
+
     func cancel() {
         countdown?.cancel()
         countdown = nil
+        pendingCompletion = nil
         endBackgroundTaskIfNeeded()
         if let event = pendingEvent {
             FeedService.shared.removeNote(id: event.id)
@@ -251,6 +274,7 @@ class PendingPostManager: ObservableObject {
         let media = PendingPostEdit.media(fromTags: pendingEvent?.tags ?? [], in: content)
         countdown?.cancel()
         countdown = nil
+        pendingCompletion = nil
         endBackgroundTaskIfNeeded()
         if let event = pendingEvent {
             FeedService.shared.removeNote(id: event.id)
@@ -289,11 +313,23 @@ class PendingPostManager: ObservableObject {
         }
     }
 
+    /// Makes room for a new action. One still counting down is sent now, not
+    /// dropped (`PendingActionFlush`).
     private func clearPrevious() {
+        let flush = pendingCompletion
+        let decision = PendingActionFlush.decide(
+            hasPending: countdown != nil && flush != nil,
+            queuedAccount: pendingQueuedAccount,
+            activeAccount: ConfigService.shared.activeAccountHexPubkey
+        )
         countdown?.cancel()
         countdown = nil
+        pendingCompletion = nil
         endBackgroundTaskIfNeeded()
-        if let event = pendingEvent {
+        if decision == .sendNow, let flush {
+            // Its note stays in the feed: it is being sent.
+            Task { @MainActor in await flush() }
+        } else if let event = pendingEvent {
             FeedService.shared.removeNote(id: event.id)
         }
         pendingEvent = nil
@@ -327,6 +363,8 @@ class PendingPostManager: ObservableObject {
         // that ends in that gap would still sign as the new account; checking
         // the active account here, at the moment it goes out, closes the gap.
         let queuedAccount = ConfigService.shared.activeAccountHexPubkey
+        pendingCompletion = onComplete
+        pendingQueuedAccount = queuedAccount
         countdown = Task { @MainActor in
             while Date() < endTime {
                 try? await Task.sleep(nanoseconds: 100_000_000)
@@ -341,9 +379,11 @@ class PendingPostManager: ObservableObject {
                 return
             }
             guard ConfigService.shared.activeAccountHexPubkey == queuedAccount else {
-                self.cancel()
+                self.cancelForAccountSwitch()
                 return
             }
+            // Committed: a new action must not run it a second time.
+            self.pendingCompletion = nil
             withAnimation(Motion.bannerOut) {
                 self.isShowing = false
                 self.actionType = nil
