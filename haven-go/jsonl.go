@@ -88,8 +88,43 @@ func exportToJSONL(ctx context.Context, relayName, jsonlFileName string) error {
 	return nil
 }
 
+// errNotYourBackup: the zip's own notes (outbox, lists) hold nothing signed
+// by this vault's owner, so it is someone else's backup.
+var errNotYourBackup = errors.New("this backup holds no notes by this account")
+
+// errNothingRestored: the zip held no store this vault knows, or none of its
+// events could go in.
+var errNothingRestored = errors.New("nothing in this backup could be restored")
+
+// importStats counts one restore. stored + dup is what the vault now holds
+// from the backup; skipped are lines refused on purpose (forged, someone
+// else's, deleted, ephemeral); bad are lines that would not parse or store.
+type importStats struct {
+	stored, dup, skipped, bad int
+}
+
+func (a *importStats) add(b importStats) {
+	a.stored += b.stored
+	a.dup += b.dup
+	a.skipped += b.skipped
+	a.bad += b.bad
+}
+
 func importFromZip(ctx context.Context, zipFileName string) error {
 	slog.Info("🛬 starting import", "file", zipFileName)
+
+	// Only the owner's own backup (Setup and Settings alike). The check reads
+	// the zip's outbox and lists, never feed or inbox, which hold other
+	// people's notes by design.
+	if config.OwnerPubKey != "" {
+		ours, err := zipHasEventBy(zipFileName, config.OwnerPubKey)
+		if err != nil {
+			return err
+		}
+		if !ours {
+			return errNotYourBackup
+		}
+	}
 
 	zipFile, err := zip.OpenReader(zipFileName)
 	if err != nil {
@@ -101,6 +136,11 @@ func importFromZip(ctx context.Context, zipFileName string) error {
 		}
 	}()
 
+	// One store failing doesn't stop the others: entry order is random, so
+	// stopping would drop a random set of stores.
+	var total importStats
+	var errs []error
+	known := 0
 	for _, file := range zipFile.File {
 		if !strings.HasSuffix(file.Name, ".jsonl") {
 			slog.Warn("⏭️ skipping unknown file in zip", "file", file.Name)
@@ -112,22 +152,33 @@ func importFromZip(ctx context.Context, zipFileName string) error {
 			slog.Warn("⏭️ skipping file for unknown relay type", "file", file.Name)
 			continue
 		}
+		known++
 
 		slog.Info("📦 importing file to db", "file", file.Name)
 
-		if err := importEntry(ctx, db, file); err != nil {
-			return err
+		st, err := importEntry(ctx, db, file)
+		total.add(st)
+		if err != nil {
+			slog.Error("❌ store not fully restored", "file", file.Name, "error", err)
+			errs = append(errs, err)
 		}
 	}
 
+	slog.Info("📥 restore totals", "stored", total.stored, "duplicates", total.dup, "skipped", total.skipped, "bad", total.bad, "failed_stores", len(errs))
+	if known == 0 || total.stored+total.dup == 0 {
+		return errors.Join(append([]error{errNothingRestored}, errs...)...)
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
 	slog.Info("✅ import complete", "file", zipFileName)
 	return nil
 }
 
-func importEntry(ctx context.Context, db DBBackend, file *zip.File) error {
+func importEntry(ctx context.Context, db DBBackend, file *zip.File) (importStats, error) {
 	rc, err := file.Open()
 	if err != nil {
-		return fmt.Errorf("error opening zip entry %s: %w", file.Name, err)
+		return importStats{}, fmt.Errorf("error opening zip entry %s: %w", file.Name, err)
 	}
 	defer func() {
 		if err := rc.Close(); err != nil {
@@ -135,10 +186,11 @@ func importEntry(ctx context.Context, db DBBackend, file *zip.File) error {
 		}
 	}()
 
-	if err := importDB(ctx, db, rc); err != nil {
-		return fmt.Errorf("error importing %s: %w", file.Name, err)
+	st, err := importDBStats(ctx, db, rc)
+	if err != nil {
+		return st, fmt.Errorf("error importing %s: %w", file.Name, err)
 	}
-	return nil
+	return st, nil
 }
 
 func importFromJSONL(ctx context.Context, relayName, jsonlFileName string) error {
@@ -172,6 +224,13 @@ type zipWriter struct {
 }
 
 func importDB(ctx context.Context, db DBBackend, r io.Reader) error {
+	_, err := importDBStats(ctx, db, r)
+	return err
+}
+
+// importDBStats restores one store's lines. A line that won't parse or store
+// is counted and passed over; only a read error ends the store early.
+func importDBStats(ctx context.Context, db DBBackend, r io.Reader) (importStats, error) {
 	scanner := bufio.NewScanner(r)
 	// Nostr events can be large, increase buffer size if necessary.
 	// Default is 64KB, which might be enough for most events, but let's be safe.
@@ -179,85 +238,180 @@ func importDB(ctx context.Context, db DBBackend, r io.Reader) error {
 	buf := make([]byte, 64*1024)
 	scanner.Buffer(buf, maxCapacity)
 
-	count, skipped := 0, 0
+	var st importStats
+	now := time.Now()
 	for scanner.Scan() {
 		var event nostr.Event
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
-			return err
-		}
-		if !importable(&event, time.Now()) {
-			slog.Warn("⏭️ skipping unsigned, altered or future-dated event", "id", event.ID)
-			skipped++
+			slog.Warn("⏭️ skipping a line that isn't an event", "error", err)
+			st.bad++
 			continue
 		}
+		switch importOne(ctx, db, &event, now) {
+		case importStored:
+			st.stored++
+		case importDup:
+			st.dup++
+		case importSkipped:
+			st.skipped++
+		case importBad:
+			st.bad++
+		}
+	}
 
-		// A backup may hold an older copy of a list than the vault: only the
-		// newest copy of a replaceable kind is kept (ReplaceEvent), the
-		// same rule the relay applies to a live publish.
-		if nostr.IsEphemeralKind(event.Kind) {
-			skipped++
-			continue
+	slog.Info("📥 imported events", "count", st.stored, "duplicates", st.dup, "skipped", st.skipped, "bad", st.bad)
+	return st, scanner.Err()
+}
+
+type importOutcome int
+
+const (
+	importStored importOutcome = iota
+	importDup
+	importSkipped
+	importBad
+)
+
+func importOne(ctx context.Context, db DBBackend, event *nostr.Event, now time.Time) importOutcome {
+	// The blob index (blossom.jsonl) is the relay's own unsigned kind 24242
+	// records (khatru EventStoreBlobIndexWrapper.Keep): checked on their own
+	// terms, not dropped for having no signature.
+	if blossomDB != nil && db == blossomDB {
+		return importBlobRecord(ctx, db, event, now)
+	}
+	if !importable(event, now) {
+		slog.Warn("⏭️ skipping unsigned, altered or future-dated event", "id", event.ID)
+		return importSkipped
+	}
+	if nostr.IsEphemeralKind(event.Kind) {
+		return importSkipped
+	}
+	// The list history keeps every version: replacing would collapse a
+	// restored history to one copy per list.
+	if listsDB != nil && db == listsDB {
+		if !isOwnerList(event) {
+			return importSkipped
 		}
-		// The list history keeps every version: replacing would collapse a
-		// restored history to one copy per list.
-		if listsDB != nil && db == listsDB {
-			if isOwnerList(&event) {
-				if err := recordListVersion(ctx, db, &event); err != nil {
-					if errors.Is(err, errFutureEvent) {
-						skipped++
-						continue
-					}
-					return err
-				}
-				count++
-			} else {
-				skipped++
-			}
-			continue
-		}
-		// So do the versions an import filed (list_history_import.go).
-		if listsImportDB != nil && db == listsImportDB {
-			if isOwnerList(&event) {
-				if err := fileImportedVersion(ctx, &event); err != nil {
-					return err
-				}
-				count++
-			} else {
-				skipped++
-			}
-			continue
-		}
-		if isUserList(&event) {
-			if err := db.ReplaceEvent(ctx, &event); err != nil {
-				if errors.Is(err, errFutureEvent) {
-					skipped++
-					continue
-				}
-				return err
-			}
-			count++
-			continue
-		}
-		if err := db.SaveEvent(ctx, &event); err != nil {
-			if errors.Is(err, eventstore.ErrDupEvent) {
-				slog.Debug("⏭️ skipping duplicate event", "id", event.ID)
-				continue
-			}
+		if err := recordListVersion(ctx, db, event); err != nil {
 			if errors.Is(err, errFutureEvent) {
-				skipped++
-				continue
+				return importSkipped
 			}
-			return err
+			slog.Warn("⏭️ list version not restored", "id", event.ID, "error", err)
+			return importBad
 		}
-		count++
+		return importStored
+	}
+	// So do the versions an import filed (list_history_import.go).
+	if listsImportDB != nil && db == listsImportDB {
+		if !isOwnerList(event) {
+			return importSkipped
+		}
+		if err := fileImportedVersion(ctx, event); err != nil {
+			slog.Warn("⏭️ imported list version not restored", "id", event.ID, "error", err)
+			return importBad
+		}
+		return importStored
+	}
+	if !restoreAccepts(ctx, db, event) {
+		slog.Debug("⏭️ skipping an event this store only takes from the owner", "id", event.ID)
+		return importSkipped
+	}
+	// NIP-09: a deleted event doesn't come back with an old backup.
+	if isDeleted(ctx, db, event) || (outboxDB != nil && db != outboxDB && isDeleted(ctx, outboxDB, event)) {
+		slog.Debug("⏭️ skipping deleted event", "id", event.ID)
+		return importSkipped
 	}
 
-	if err := scanner.Err(); err != nil {
-		return err
+	var err error
+	// A backup may hold an older copy of a list than the vault: only the
+	// newest copy of a replaceable kind is kept (ReplaceEvent), the
+	// same rule the relay applies to a live publish.
+	if isUserList(event) {
+		err = db.ReplaceEvent(ctx, event)
+	} else {
+		err = db.SaveEvent(ctx, event)
 	}
+	switch {
+	case err == nil:
+	case errors.Is(err, eventstore.ErrDupEvent):
+		slog.Debug("⏭️ skipping duplicate event", "id", event.ID)
+		return importDup
+	case errors.Is(err, errFutureEvent):
+		return importSkipped
+	default:
+		slog.Warn("⏭️ event not restored", "id", event.ID, "error", err)
+		return importBad
+	}
+	applyImportedDeletion(ctx, db, event)
+	return importStored
+}
 
-	slog.Info("📥 imported events", "count", count, "skipped", skipped)
-	return nil
+// restoreAccepts: the owner's stores (outbox, private) take only the
+// vault's own keys' events, and the inbox only events for them, as the web
+// restore does (web-vault/src/net/backup.js DATABASES). Feed and chat hold
+// other people's events by design.
+func restoreAccepts(ctx context.Context, db DBBackend, event *nostr.Event) bool {
+	switch {
+	case db == nil:
+		return false
+	case outboxDB != nil && db == outboxDB, privateDB != nil && db == privateDB:
+		_, ok := config.WhitelistedPubKeys[event.PubKey]
+		return ok
+	case inboxDB != nil && db == inboxDB:
+		// The inbox's own write rule: tags one of the vault's keys, or is the
+		// owner's delete request.
+		reject, _ := MustTagWhitelistedPubKey(ctx, event)
+		return !reject
+	}
+	return true
+}
+
+// importBlobRecord restores one blob index record: kind 24242, an id that
+// matches its content, a whitelisted uploader (only they can upload), one
+// 64-hex x tag, and not dated in the future. Kept once per uploader and
+// hash, as Keep does.
+func importBlobRecord(ctx context.Context, db DBBackend, event *nostr.Event, now time.Time) importOutcome {
+	if event.Kind != 24242 || !event.CheckID() || !event.CreatedAt.Time().Before(now.Add(importFutureSlack)) {
+		return importSkipped
+	}
+	if _, ok := config.WhitelistedPubKeys[event.PubKey]; !ok {
+		return importSkipped
+	}
+	x := event.Tags.GetFirst([]string{"x", ""})
+	if x == nil || len(*x) < 2 || !isBlobHash((*x)[1]) {
+		return importSkipped
+	}
+	ch, err := db.QueryEvents(ctx, nostr.Filter{Authors: []string{event.PubKey}, Kinds: []int{24242}, Tags: nostr.TagMap{"x": []string{(*x)[1]}}, Limit: 1})
+	if err != nil {
+		return importBad
+	}
+	exists := false
+	for range ch {
+		exists = true
+	}
+	if exists {
+		return importDup
+	}
+	if err := db.SaveEvent(ctx, event); err != nil {
+		if errors.Is(err, eventstore.ErrDupEvent) {
+			return importDup
+		}
+		slog.Warn("⏭️ blob record not restored", "id", event.ID, "error", err)
+		return importBad
+	}
+	return importStored
+}
+
+func isBlobHash(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // importFutureSlack is how far past now a backup event may be dated. A real
@@ -280,8 +434,14 @@ func importable(ev *nostr.Event, now time.Time) bool {
 	return ev.CreatedAt.Time().Before(now.Add(importFutureSlack))
 }
 
-// zipHasEventBy reports whether a backup zip holds at least one importable
-// event signed by pubkey. Setup uses it to refuse someone else's backup.
+// ownNotesEntries are the zip entries that hold the account's own notes.
+// Feed and inbox are other people's notes by design, so a single note of
+// yours there (a follower's backup) says nothing about whose backup it is.
+var ownNotesEntries = map[string]bool{"outbox.jsonl": true, "lists.jsonl": true}
+
+// zipHasEventBy reports whether a backup zip's own notes (outbox, lists)
+// hold at least one importable event signed by pubkey. Restore uses it to
+// refuse someone else's backup.
 func zipHasEventBy(zipFileName, pubkey string) (bool, error) {
 	zipFile, err := zip.OpenReader(zipFileName)
 	if err != nil {
@@ -291,7 +451,7 @@ func zipHasEventBy(zipFileName, pubkey string) (bool, error) {
 
 	now := time.Now()
 	for _, file := range zipFile.File {
-		if !strings.HasSuffix(file.Name, ".jsonl") {
+		if !ownNotesEntries[file.Name] {
 			continue
 		}
 		found, err := entryHasEventBy(file, pubkey, now)
@@ -317,7 +477,7 @@ func entryHasEventBy(file *zip.File, pubkey string, now time.Time) (bool, error)
 	for scanner.Scan() {
 		var event nostr.Event
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
-			return false, err
+			continue // a bad line is passed over here as in the restore
 		}
 		if event.PubKey == pubkey && importable(&event, now) {
 			return true, nil
@@ -344,6 +504,32 @@ func exportDB(ctx context.Context, db DBBackend, w io.Writer) error {
 		return nil
 	}
 
+	// drainSecond adds every event stamped ts to the buffer (which holds that
+	// second's events so far) and flushes it. The query runs as a negentropy
+	// session, whose cap is the store's large negentropy limit rather than
+	// the REQ cap.
+	drainSecond := func(ts nostr.Timestamp) error {
+		events, err := db.QueryEvents(eventstore.SetNegentropy(ctx), nostr.Filter{Since: &ts, Until: &ts})
+		if err != nil {
+			return err
+		}
+		for event := range events {
+			if event.CreatedAt != ts {
+				continue
+			}
+			pos, found := slices.BinarySearchFunc(eventBuffer, event, func(a, b *nostr.Event) int {
+				return cmp.Compare(a.ID, b.ID)
+			})
+			if !found {
+				eventBuffer = slices.Insert(eventBuffer, pos, event)
+			}
+		}
+		if g, ok := db.(*gatedDB); ok && g.isClosing() {
+			return errDBClosing
+		}
+		return flushBuffer()
+	}
+
 	for {
 		filter := nostr.Filter{
 			Limit: limit,
@@ -359,8 +545,10 @@ func exportDB(ctx context.Context, db DBBackend, w io.Writer) error {
 
 		initialCount := count
 		initialBufferSize := len(eventBuffer)
+		pageHadEvents := false
 
 		for event := range events {
+			pageHadEvents = true
 			if len(eventBuffer) > 0 && event.CreatedAt != eventBuffer[0].CreatedAt {
 				if err := flushBuffer(); err != nil {
 					return err
@@ -396,7 +584,24 @@ func exportDB(ctx context.Context, db DBBackend, w io.Writer) error {
 		}
 
 		if count == initialCount && len(eventBuffer) == initialBufferSize {
-			break
+			if !pageHadEvents {
+				break
+			}
+			// Nothing new, yet the page wasn't empty: the whole page is one
+			// second (at least `limit` events stamped lastTimestamp). Paging by
+			// created_at can't get past it, so read that second on its own,
+			// then step to the second before it (web readAll does the same).
+			if err := drainSecond(lastTimestamp); err != nil {
+				return err
+			}
+			if lastTimestamp == 0 {
+				break
+			}
+			lastTimestamp--
+			if lastTimestamp == 0 {
+				// Until=0 would read as "no until"; a second 0 is drained above.
+				break
+			}
 		}
 	}
 

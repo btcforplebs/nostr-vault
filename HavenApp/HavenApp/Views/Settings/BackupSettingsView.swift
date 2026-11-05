@@ -230,7 +230,7 @@ struct BackupSettingsView: View {
             Task { @MainActor in
                 isImportingJSONL = false
                 try? FileManager.default.removeItem(at: tempFile)
-                statusMessage = success ? "Notes restored successfully!" : "Note restore failed"
+                statusMessage = success ? "Notes restored successfully!" : "Note restore failed. Check that it's this account's own backup."
                 clearStatus()
             }
         }
@@ -317,7 +317,7 @@ struct BackupSettingsView: View {
             Task { @MainActor in
                 isImportingBlossom = false
                 try? FileManager.default.removeItem(at: tempFile)
-                statusMessage = success ? "Media restored successfully!" : "Media restore failed"
+                statusMessage = success ? "Media restored successfully!" : "Media restore failed. No vault media found in that file."
                 clearStatus()
             }
         }

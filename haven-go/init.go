@@ -570,6 +570,9 @@ func initRelays(ctx context.Context) error {
 		}
 	})
 
+	// A write cut off by a kill leaves `<sha>.tmp` behind; it is never served
+	// (load_blob.go), and an old one is cleared here.
+	sweepStaleBlobTemps(time.Now())
 	blossomServer = blossom.New(outboxRelay, getHTTPScheme(config.RelayURL)+config.RelayURL)
 	blossomServer.Store = blossom.EventStoreBlobIndexWrapper{Store: blossomDB, ServiceURL: blossomServer.ServiceURL}
 	blossomServer.StoreBlob = append(blossomServer.StoreBlob, func(ctx context.Context, sha256 string, ext string, body []byte) error {
@@ -604,7 +607,7 @@ func initRelays(ctx context.Context) error {
 	guardDeleteServer(blossomServer)
 	blossomServer.DeleteBlob = append(blossomServer.DeleteBlob, func(ctx context.Context, sha256 string, ext string) error {
 		slog.Debug("deleting blob", "sha256", sha256, "ext", ext)
-		return fs.Remove(config.BlossomPath + sha256)
+		return deleteBlobFiles(sha256)
 	})
 	blossomServer.RejectUpload = append(blossomServer.RejectUpload, func(ctx context.Context, event *nostr.Event, size int, ext string) (bool, string, int) {
 		if _, ok := config.WhitelistedPubKeys[event.PubKey]; ok {

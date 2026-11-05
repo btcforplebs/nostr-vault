@@ -74,6 +74,15 @@ class BlossomFolderIndexTest {
         assertNull(index.file(a, dir))
     }
 
+    @Test fun `a half-written or restoring copy is never counted as stored`() {
+        for (ext in listOf("tmp", "part", "restoring", "download")) File(dir, "$a.$ext").writeText("x")
+        settle()
+        assertNull(index.file(a, dir))
+        File(dir, "$a.jpg").writeText("x")
+        index.invalidate()
+        assertEquals("$a.jpg", index.file(a, dir)?.name)
+    }
+
     @Test fun `invalidate lists again`() {
         settle()
         index.file(a, dir)
