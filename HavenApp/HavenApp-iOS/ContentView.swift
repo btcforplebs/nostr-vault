@@ -25,6 +25,26 @@ struct ContentView: View {
         UINavigationBar.appearance().compactAppearance = appearance
     }
 
+    /// While the vault comes up (or restarts, e.g. right after Jump in), a
+    /// plain line on top instead of what looks like an empty vault.
+    @ViewBuilder private var vaultStartingPill: some View {
+        if ImportJobs.vaultStarting(booting: relayManager.isBooting || relayManager.state == .booting,
+                                    stopping: relayManager.state == .stopping,
+                                    applyingConfig: relayManager.isApplyingConfig) {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(ImportJobs.startingLine)
+                    .font(.appSystem(size: 14, weight: .medium))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial, in: Capsule())
+            .padding(.top, 6)
+            .accessibilityElement(children: .combine)
+            .transition(.opacity)
+        }
+    }
+
     var body: some View {
         Group {
             if !configService.config.hasCompletedSetup {
@@ -36,6 +56,7 @@ struct ContentView: View {
                 // headers. the tab view itself only adds a note beside the
                 // list when an iPad is in landscape.
                 iPhoneTabView(selectedTab: $selectedTab)
+                    .overlay(alignment: .top) { vaultStartingPill }
             }
         }
         // Every scroll view in the app, not just the Feed's: under a top bar
