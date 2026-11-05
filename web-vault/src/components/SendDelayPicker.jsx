@@ -3,6 +3,7 @@
 // the next one.
 import { useState } from "preact/hooks"
 import { SEND_DELAY_CHOICES, sendDelaySeconds, setSendDelaySeconds, sendDelayNote } from "../net/send-delay.js"
+import { SettingInfo } from "./SettingInfo.jsx"
 
 export const choiceLabel = s => (s === 0 ? "Off" : `${s}s`)
 
@@ -12,7 +13,7 @@ export function SendDelayPicker() {
   return (
     <>
       <div class="settings-row static send-delay">
-        <span class="settings-title" id="send-delay-label">Send Delay</span>
+        <span class="settings-title"><span id="send-delay-label">Send Delay</span><SettingInfo topic="post.sendDelay" /></span>
         <div class="seg-pill" role="radiogroup" aria-labelledby="send-delay-label">
           {SEND_DELAY_CHOICES.map(s => (
             <button key={s} type="button" role="radio" aria-checked={seconds === s} class={seconds === s ? "on" : ""} onClick={() => pick(s)}>{choiceLabel(s)}</button>

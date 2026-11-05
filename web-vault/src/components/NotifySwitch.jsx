@@ -3,6 +3,7 @@
 import { useEffect, useState } from "preact/hooks"
 import { notifyOn, onNotifyPref, permission, setNotifyOn, turnOn } from "../net/notify-watch.js"
 import { TYPES, readTypes, setType, onTypes } from "../net/notify-prefs.js"
+import { SettingInfo } from "./SettingInfo.jsx"
 
 const WHY = {
   denied: "This browser blocks notifications for this site. Allow them in the browser's site settings, then turn this on again.",
@@ -26,9 +27,10 @@ export function NotifySwitch() {
   return (
     <>
       <label class="settings-row static notify-switch">
-        <span class="settings-title">Browser notifications</span>
+        <span class="settings-title">Notifications<SettingInfo topic="notify.enable" /></span>
         <input type="checkbox" role="switch" checked={on} onChange={flip} />
       </label>
+      {on && <div class="section-label notify-types-head">Alerts<SettingInfo topic="notify.perAccount" /></div>}
       {on && TYPES.map(t => (
         <label key={t.id} class="settings-row static notify-switch notify-type">
           <span class="settings-title">{t.title}</span>

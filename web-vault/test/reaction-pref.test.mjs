@@ -20,7 +20,7 @@ test("❤️ by default; a picked emoji is kept; anything that isn't one emoji i
   assert.equal(defaultReaction(undefined), DEFAULT_REACTION)
 })
 
-test("Settings has the Reactions row", () => {
-  const src = readFileSync(new URL("../src/screens/SettingsScreen.jsx", import.meta.url), "utf8")
-  assert.match(src, /<div class="section-label">Reactions<\/div>\s*<div class="settings-rows"><DefaultReactionRow \/><\/div>/)
+test("Settings › Appearance has the Reactions row", () => {
+  const src = readFileSync(new URL("../src/screens/settings/AppearancePage.jsx", import.meta.url), "utf8")
+  assert.match(src, /<Section label="Reactions"><DefaultReactionRow \/><\/Section>/)
 })

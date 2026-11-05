@@ -21,6 +21,6 @@ test("autoplay is on by default, as HavenConfig.autoplayVideos, and the switch k
 test("the inline video checks the switch before it plays itself; Settings has the switch under Media", () => {
   const src = f => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8")
   assert.match(src("components/MediaParts.jsx"), /if \(!v \|\| reducedMotion\(\) \|\| !autoplayOn\(\) \|\| !globalThis\.IntersectionObserver\) return/)
-  assert.match(src("screens/SettingsScreen.jsx"), /<div class="section-label">Media<\/div>\s*<div class="settings-rows"><AutoplaySwitch \/><\/div>/)
+  assert.match(src("screens/settings/MediaCachePage.jsx"), /<Section label="Playback"><AutoplaySwitch \/><\/Section>/, "Settings › Media & Cache › Playback, as the iPhone")
   assert.match(src("components/AutoplaySwitch.jsx"), /Autoplay Videos/)
 })
