@@ -1,7 +1,7 @@
 // The Live Vault panel's rules (src/desktop/space/live-vault.js) and its fold key's sign-out wipe.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { snapshot, splitShown, topFaces, place, sameShot, rowText, readFolded, writeFolded, MAX_ROWS } from "../src/desktop/space/live-vault.js"
+import { snapshot, splitShown, topFaces, place, sameShot, rowText, readFolded, writeFolded, inTimeOrder, MAX_ROWS } from "../src/desktop/space/live-vault.js"
 import { accountKeys } from "../src/haven/vault.js"
 
 const line = (id, at, actors = ["a"]) => ({ id, created_at: at, actors })
@@ -17,7 +17,20 @@ test("the rows on screen stay put: new lines wait for the pill", () => {
   assert.deepEqual(held.map(r => r.id), ["c"])
 })
 
-test("older lines that come in late go below, not behind the pill", () => {
+test("older lines that come in late go in by their time, not at the bottom (Logen 2026-11-05)", () => {
+  const shown = snapshot([line("d", 400), line("c", 300), line("b", 200), line("a", 100)])
+  const later = [line("d", 400), line("c", 300), line("late1", 350), line("b", 200), line("late2", 150), line("a", 100), line("oldest", 50), line("new", 900)]
+  const { rows, held } = splitShown(later, shown)
+  assert.deepEqual(rows.map(r => r.id), ["d", "late1", "c", "b", "late2", "a", "oldest"])
+  assert.deepEqual(held.map(r => r.id), ["new"], "newer than the top still waits on top")
+  // And it stays that way once the next line arrives.
+  const next = place(later, shown)
+  assert.deepEqual(next.ids, ["new", "d", "late1", "c", "b", "late2", "a", "oldest"])
+  // Ties keep the drawn line first; drawn lines never reorder among themselves, even one whose time changed.
+  assert.deepEqual(inTimeOrder([line("x", 300), line("y", 999), line("z", 100)], [line("t", 300), line("u", 200)]).map(r => r.id), ["x", "y", "t", "u", "z"])
+})
+
+test("an older line that comes in late is never behind the pill", () => {
   const shown = snapshot([line("b", 20)])
   const { rows, held } = splitShown([line("b", 20), line("old", 5), line("new", 40)], shown)
   assert.deepEqual(rows.map(r => r.id), ["b", "old"])
