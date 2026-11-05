@@ -1,7 +1,7 @@
 // The left rail's pins (Logen, 2026-11-03), in the format docs/SPACE_LAYOUT.md sets for the web and the iPad: the
 // sections, which can move but never go, and the user's favourites beside them (a person, a hashtag, a people list or
 // a relay's feed), in the user's order. No styles, so tests can import it. They are kept in the layout's `pins`
-// (space/space-layout.js), so they sync with Your space through the user's own vault (net/space-sync.js). The iPad's
+// (space/space-layout.js), so they are kept with Your space in this browser (layout-store.js). The iPad's
 // twin is HavenApp/Models/SpaceLayout.swift.
 //
 // A pin is an object with a `type` and that type's value field (docs table):

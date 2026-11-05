@@ -3,14 +3,13 @@
 // desktop/space/layout-store.js). The pin cases are the iPad's SpaceLayoutTests ones.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { defaultPins, favourite, isPinned, MAX_FAVOURITES, movePin, movePinBefore, normalizePins, normalizeRelay, normalizeValue, pin, pinHref, pinKey, RAIL_SECTIONS, relayName, samePins, SECTION_IDS, shownPins, unpin } from "../src/desktop/rail/rail-favs.js"
 import { linkChoice, feedRelays, feedKey, fetchStrangerFeed, liveFilters, liveKeeps } from "../src/net/feeds.js"
 import { listAddress, listName, listPeople, myLists, newestLists, resolveList } from "../src/net/list-feed.js"
-import { isLayoutEvent, layoutTemplate, looksSealed, newerLayout, newestEvent, parseLayout, pullLayout, pushLayout, SYNC_KIND, SYNC_TAGS } from "../src/net/space-sync.js"
 import { SYNC_D, defaultLayout, normalize } from "../src/desktop/space/space-layout.js"
 import { PANEL_IDS } from "../src/desktop/space/panel-ids.js"
-import { changeLayout, currentLayout, holding, startSync, takeRemote } from "../src/desktop/space/layout-store.js"
+import { changeLayout, currentLayout } from "../src/desktop/space/layout-store.js"
 import { setOpen, setPins } from "../src/desktop/space/space-layout.js"
 
 const A = "a".repeat(64), B = "b".repeat(64)
@@ -166,145 +165,17 @@ test("people lists and follow packs: the newest copy of each by address, deleted
   assert.deepEqual(missing.authors, [])
 })
 
-test("the synced layout: one NIP-78 event, the newest created_at read, the newest edit kept", () => {
-  assert.equal(SYNC_KIND, 30078)
-  assert.deepEqual(SYNC_TAGS, [["d", SYNC_D], ["client", "Nostr Vault"], ["encryption", "nip44"]])
-  const t = layoutTemplate("sealed", 7)
-  assert.deepEqual(t, { kind: 30078, created_at: 7, tags: SYNC_TAGS, content: "sealed" })
-  t.tags[0][1] = "changed"
-  assert.equal(SYNC_TAGS[0][1], SYNC_D, "a template's tags are its own copy")
-  const ev = (id, at, pubkey = A, d = SYNC_D) => ({ id, kind: 30078, pubkey, created_at: at, tags: [["d", d]], content: "" })
-  assert.equal(newestEvent([ev("a", 1), ev("b", 3), ev("c", 9, B), ev("d", 9, A, "other")], A).id, "b")
-  assert.ok(isLayoutEvent(ev("a", 1), A) && !isLayoutEvent(ev("a", 1), B))
-  assert.equal(parseLayout("{nope"), null)
-  assert.equal(parseLayout("[1]"), null)
-  const local = { ...defaultLayout(PANEL_IDS), at: 10 }
-  assert.equal(newerLayout(local, { ...local, at: 10 }), local, "equal: the device's copy stays")
-  assert.equal(newerLayout(local, { ...local, at: 9 }), local)
-  assert.equal(newerLayout(local, null), local)
-  assert.equal(newerLayout(local, { ...local, at: 11 }).at, 11)
-  assert.ok(looksSealed("AjF0x+9...", "{\"v\":1}"))
-  assert.ok(!looksSealed("{\"v\":1}", "{\"v\":1}"), "plaintext is never sent")
-  assert.ok(!looksSealed("{\"v\":2}", "{\"v\":1}"), "JSON is never ciphertext")
-  assert.ok(!looksSealed("", "x"))
-})
 
 // A stand-in NIP-44: base64 of the text, so it is neither the plaintext nor JSON.
 const b64 = s => Buffer.from(s).toString("base64")
 const crypto = { encrypt: async (pk, text) => `${pk.slice(0, 4)}${b64(text)}`, decrypt: async (pk, c) => Buffer.from(c.slice(4), "base64").toString() }
 
-test("push seals to your own key and publishes; never plaintext; dropped if the account changed; read-only does nothing", async () => {
-  const sent = []
-  const layout = { ...defaultLayout(PANEL_IDS), at: 42, ipad: { kept: true } }
-  const ctx = { session: { pubkey: A }, signer: { crypto }, account: { relays: { write: [], read: [] } } }
-  const publish = async (c, t) => { sent.push(t); return { event: { ...t, id: "e1" } } }
-  const pushed = await pushLayout(ctx, layout, { publish })
-  assert.equal(sent.length, 1)
-  assert.equal(sent[0].kind, 30078)
-  assert.deepEqual(sent[0].tags, SYNC_TAGS)
-  assert.deepEqual(JSON.parse(await crypto.decrypt(A, sent[0].content)), layout, "the whole layout, unknown keys too")
-  assert.equal(pushed.id, "e1")
-  const leaky = { ...ctx, signer: { crypto: { encrypt: async (pk, text) => text } } }
-  await assert.rejects(pushLayout(leaky, layout, { publish }), /encrypted/)
-  assert.equal(sent.length, 1, "plaintext was not sent")
-  assert.equal(await pushLayout({ ...ctx, stillMe: () => false }, layout, { publish }), null, "another account now: dropped")
-  assert.equal(sent.length, 1)
-  assert.equal(await pushLayout({ ...ctx, signer: { readOnly: true } }, layout, { publish }), null)
-})
 
-test("pull: the newest event opened; none; unreadable kept apart from none", async () => {
-  const layout = { ...defaultLayout(PANEL_IDS), at: 42 }
-  const stored = [{ id: "e0", kind: 30078, pubkey: A, created_at: 5, tags: [["d", SYNC_D]], content: `${A.slice(0, 4)}${b64(JSON.stringify(layout))}` }]
-  const ctx = { session: { pubkey: A }, signer: { crypto }, account: { relays: { write: [], read: [] } }, vault: { outbox: { event: async () => {}, query: async () => stored } } }
-  assert.deepEqual(await pullLayout(ctx, { query: async () => [] }), { state: "ok", layout })
-  assert.deepEqual(await pullLayout({ ...ctx, vault: { outbox: { query: async () => [] } } }, { query: async () => [], connected: () => true }), { state: "none" })
-  // Nothing found and no relay up, or the query failed: not knowing, not an empty vault.
-  assert.deepEqual(await pullLayout({ ...ctx, vault: { outbox: { query: async () => [] } } }, { query: async () => [], connected: () => false }), { state: "failed" })
-  assert.deepEqual(await pullLayout({ ...ctx, vault: { outbox: { query: async () => [] } } }, { query: async () => { throw new Error("down") }, connected: () => true }), { state: "failed" })
-  // The in-page vault has it: read fine whatever the relays did.
-  assert.equal((await pullLayout(ctx, { query: async () => [], connected: () => false })).state, "ok")
-  assert.deepEqual(await pullLayout({ ...ctx, signer: { crypto: { decrypt: async () => { throw new Error("refused") } } } }, { query: async () => [] }), { state: "unreadable" })
-  assert.deepEqual(await pullLayout({ ...ctx, signer: { readOnly: true } }), { state: "none" })
-})
 
-test("the vault's copy against this browser's: newer taken, equal or older kept, newer-format or unreadable held", () => {
-  const me = "c".repeat(64), now = 2_000_000
-  const local = currentLayout(me)
-  assert.equal(takeRemote(me, { state: "none" }), "none")
-  assert.equal(takeRemote(me, { state: "ok", layout: { ...local, at: 0 } }, { now }), "kept")
-  const remote = { v: 1, at: 500, pins: [{ type: "hashtag", t: "x" }], panels: [], ipad: 1 }
-  assert.equal(takeRemote(me, { state: "ok", layout: remote }, { now }), "taken")
-  assert.equal(currentLayout(me).at, 500)
-  assert.equal(currentLayout(me).ipad, 1, "the iPad's keys came with it")
-  assert.ok(currentLayout(me).pins.some(p => p.t === "x"), "and its pins")
-  assert.equal(takeRemote(me, { state: "ok", layout: { ...remote, at: 400 } }, { now }), "kept")
-  assert.equal(takeRemote(me, { state: "ok", layout: { ...remote, at: now + 99_999 } }, { now }), "taken")
-  assert.equal(currentLayout(me).at, now + 900, "a clock far ahead is pulled back to now + 15 min")
-  assert.ok(!holding(me))
-  assert.equal(takeRemote(me, { state: "ok", layout: { v: 2, at: now + 900 + 1 } }, { now }), "held")
-  assert.ok(holding(me), "a newer format: nothing is written over it")
-  assert.equal(currentLayout(me).at, now + 900, "and this browser's copy is unchanged")
-  const other = "d".repeat(64)
-  currentLayout(other)
-  assert.equal(takeRemote(other, { state: "unreadable" }), "held")
-  assert.ok(holding(other))
-  // A later read that opens fine lets edits go out again (a declined decrypt prompt doesn't stop sync for the session).
-  assert.equal(takeRemote(other, { state: "ok", layout: { v: 1, at: 3, pins: [], panels: [] } }, { now }), "taken")
-  assert.ok(!holding(other))
-  assert.equal(takeRemote(other, { state: "failed" }), "failed")
-})
 
-// Tron, PR 1628: a fresh browser must not send before the vault's copy is read, nor win with a layout that never had
-// the iPad's pins because its one quick edit is "newer".
-const wait = ms => new Promise(r => setTimeout(r, ms))
-const iPadCopy = { v: 1, at: 100, pins: [{ type: "person", p: A }, { type: "hashtag", t: "bitcoin" }], panels: [] }
-const signedIn = me => ({ session: { pubkey: me }, signer: { crypto: {} } })
-const later = () => { let done; const p = new Promise(r => { done = r }); return [p, done] }
 
-test("an edit before the first read is not sent until the read settles, then goes out on top of the iPad's pins", async () => {
-  const me = "e".repeat(64), pushed = []
-  const [read, answer] = later()
-  const stop = startSync(signedIn(me), { pull: () => read, push: async (c, l) => { pushed.push(l) }, delay: 5, retry: 5, doc: null })
-  changeLayout(me, l => setOpen(l, "messages", false))
-  await wait(30)
-  assert.equal(pushed.length, 0, "nothing goes out while the vault's copy is still being read")
-  assert.ok(holding(me))
-  answer({ state: "ok", layout: iPadCopy })
-  await wait(30)
-  assert.equal(pushed.length, 1, "it goes out once the read has settled")
-  const sent = pushed[0]
-  assert.ok(sent.pins.some(p => p.type === "person" && p.p === A) && sent.pins.some(p => p.t === "bitcoin"), "the iPad's pins are kept")
-  assert.equal(sent.panels.find(p => p.id === "messages").open, false, "and the edit made meanwhile is on top")
-  assert.ok(sent.at > iPadCopy.at)
-  assert.deepEqual(currentLayout(me), sent)
-  stop()
-})
 
-test("a read where no relay answered settles nothing: still no send, and it is tried again", async () => {
-  const me = "f".repeat(64), pushed = [], answers = [{ state: "failed" }, { state: "failed" }, { state: "ok", layout: iPadCopy }]
-  let reads = 0
-  const stop = startSync(signedIn(me), { pull: async () => answers[Math.min(reads++, 2)], push: async (c, l) => { pushed.push(l) }, delay: 5, retry: 5, doc: null })
-  changeLayout(me, l => setPins(l, [...l.pins, { type: "hashtag", t: "mine" }]))
-  await wait(8)
-  assert.equal(pushed.length, 0)
-  await wait(60)
-  assert.equal(reads, 3, "tried again until a relay answered")
-  assert.equal(pushed.length, 1)
-  assert.ok(pushed[0].pins.some(p => p.t === "bitcoin") && pushed[0].pins.some(p => p.t === "mine"), "the iPad's pin and the new one")
-  stop()
-})
 
-test("no layout in the vault yet: edits made meanwhile go out once that is known; read-only never syncs", async () => {
-  const me = "9".repeat(64), pushed = []
-  const stop = startSync(signedIn(me), { pull: async () => { await wait(10); return { state: "none" } }, push: async (c, l) => { pushed.push(l) }, delay: 5, doc: null })
-  changeLayout(me, l => setOpen(l, "wot-mini", false))
-  await wait(40)
-  assert.equal(pushed.length, 1)
-  stop()
-  let pulls = 0
-  startSync({ session: { pubkey: "8".repeat(64) }, signer: { readOnly: true } }, { pull: async () => { pulls++ }, doc: null })()
-  assert.equal(pulls, 0)
-})
 
 test("normalize is the doc's: what the iPad wrote survives a web round trip", () => {
   const ipad = { v: 1, at: 1793736000, pins: [
@@ -319,11 +190,32 @@ test("normalize is the doc's: what the iPad wrote survives a web round trip", ()
   assert.equal(back.at, ipad.at)
 })
 
-test("the desktop mounts the sync once and the rail and Your space share one layout", () => {
+test("the layout is this browser's only: no NIP-78 (kind 30078) publish, pull, refocus read or retry (Logen 2026-11-05)", () => {
   const src = f => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8")
-  assert.match(src("desktop/DesktopShell.jsx"), /useLayoutSync\(ctx\)/)
   assert.match(src("desktop/Sidebar.jsx"), /useLayout\(ctx\.session\.pubkey\)/)
   assert.match(src("desktop/space/SpaceDock.jsx"), /useLayout\(ctx\.session\.pubkey\)/)
-  assert.match(src("desktop/space/layout-store.js"), /export const PUSH_DELAY_MS = 2000/)
-  assert.match(src("desktop/space/layout-store.js"), /if \(ctx\.signer\?\.readOnly \|\| !ctx\.signer\?\.crypto\) return/)
+  // The code, not the comments (which say what was removed).
+  const store = src("desktop/space/layout-store.js").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+  for (const gone of [/space-sync/, /startSync/, /useLayoutSync/, /pullLayout|pushLayout/, /visibilitychange/, /setTimeout/, /30078/]) assert.doesNotMatch(store, gone)
+  assert.doesNotMatch(src("desktop/DesktopShell.jsx"), /useLayoutSync|space-sync/)
+  assert.ok(!existsSync(new URL("../src/net/space-sync.js", import.meta.url)), "the NIP-78 sync file is gone")
+})
+
+test("an edit is kept in this browser at once and read back; nothing is signed or sent", async () => {
+  const m = new Map()
+  globalThis.localStorage = { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) }
+  const { pool } = await import("../src/net/pool.js")
+  let sent = 0
+  const publish = pool.publish
+  pool.publish = () => { sent++; return [] }
+  try {
+    const me = "c".repeat(64)
+    const before = currentLayout(me)
+    changeLayout(me, l => ({ ...l, at: (l.at ?? 0) + 1, panels: l.panels.map((p, i) => (i === 0 ? { ...p, on: !p.on } : p)) }))
+    await new Promise(r => setTimeout(r, 30))
+    const after = currentLayout(me)
+    assert.notEqual(after.panels[0].on, before.panels[0].on)
+    assert.equal(sent, 0)
+    assert.ok([...m.keys()].some(k => k.endsWith(`:${me}`)), "saved under the account (sign-out forgets it)")
+  } finally { pool.publish = publish }
 })
