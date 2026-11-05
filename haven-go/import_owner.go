@@ -188,7 +188,22 @@ func importFetchIDs(ctx context.Context, url string, ids []string, store *import
 	return left
 }
 
+// importWriteKey marks a context whose outbox writes are Moving in's.
+type importWriteKey struct{}
+
+// isImportWrite: ctx carries Moving in's owner-note writes. The outbox's list
+// history (list_history.go keep) files an owner list arriving this way as an
+// imported version, not into the vault's own history: an old version a seed
+// relay still serves used to land among the vault's own and could trim it,
+// the erosion 5f00485d9 fixed only for the history scan (Tidy import audit,
+// item 11).
+func isImportWrite(ctx context.Context) bool {
+	v, _ := ctx.Value(importWriteKey{}).(bool)
+	return v
+}
+
 func importOwnerNotes(ctx context.Context) {
+	ctx = context.WithValue(ctx, importWriteKey{}, true)
 	startTime, err := time.Parse(layout, config.ImportStartDate)
 	if err != nil {
 		fmt.Println("Error parsing start date:", err)
@@ -237,10 +252,11 @@ func importOwnerNotes(ctx context.Context) {
 	// Each relay on its own: negentropy if it may speak it, else (or if it
 	// didn't hand everything over) its whole history paged newest first.
 	// A slow relay, a silent probe or a long lane only delays its own notes.
+	beginImportRefusalRetries()
 	var (
 		mu    sync.Mutex
 		total int
-		redo  []string // lanes that didn't finish: re-read by window
+		redo  []walkRelay // lanes that didn't finish: re-read by window, from where they stopped
 		wg    sync.WaitGroup
 	)
 	for _, url := range importRelays() {
@@ -264,24 +280,43 @@ func importOwnerNotes(ctx context.Context) {
 				report("negentropy")
 				return
 			}
-			var res windowResult
-			lctx, cancel := context.WithTimeout(ctx, importLaneDeadline)
-			defer cancel()
-			runsafe.Run("importOwnerNotes.lane", func() {
-				res = fetchPaged(lctx, []string{url}, filter, importLaneMaxPages, func(ev *nostr.Event) {
-					if keep(ev) {
-						stored.Add(1)
-					}
+			// A refusal on the negentropy socket bans the relay for every
+			// dial after it: its one retry comes before the lane, not never.
+			if relayBanned(url) {
+				importRetryAfterRefusal(ctx, url)
+			}
+			lane := func() (windowResult, bool) {
+				var res windowResult
+				lctx, cancel := context.WithTimeout(ctx, importLaneDeadline)
+				defer cancel()
+				runsafe.Run("importOwnerNotes.lane", func() {
+					res = fetchPaged(lctx, []string{url}, filter, importLaneMaxPages, func(ev *nostr.Event) {
+						if keep(ev) {
+							stored.Add(1)
+						}
+					})
 				})
-			})
+				return res, lctx.Err() != nil && ctx.Err() == nil
+			}
+			res, overran := lane()
+			if len(res.Silent) > 0 && relayBanned(url) && importRetryAfterRefusal(ctx, url) {
+				res, overran = lane() // refused partway in: asked once more after a pause
+			}
 			report("paged")
-			overran := lctx.Err() != nil && ctx.Err() == nil
 			if overran {
 				log.Printf("⚠️ %s still sending after %s; reading it window by window", url, importLaneDeadline)
 			}
 			if overran || len(res.Short) > 0 || len(res.Silent) > 0 {
+				// The lane read newest first down to its oldest note: only
+				// what is older is left. Starting the walk there (not at the
+				// start date) means a walk cut by its deadline leaves the
+				// oldest stretch unread, never a gap in the middle.
+				w := walkRelay{url: url, top: time.Now(), alive: res.Sent[url] > 0}
+				if o, ok := res.Oldest[url]; ok {
+					w.top = time.Unix(int64(o)+1, 0)
+				}
 				mu.Lock()
-				redo = append(redo, url)
+				redo = append(redo, w)
 				mu.Unlock()
 			}
 		}(url)
@@ -292,9 +327,13 @@ func importOwnerNotes(ctx context.Context) {
 	}
 
 	// A lane that stopped partway, or never answered, is read window by
-	// window, as before.
+	// window, from where it stopped down to the start date.
 	if len(redo) > 0 {
-		log.Printf("⚠️ %d relay(s) did not finish their whole history; reading them window by window: %v", len(redo), redo)
+		names := make([]string, len(redo))
+		for i, w := range redo {
+			names[i] = w.url
+		}
+		log.Printf("⚠️ %d relay(s) did not finish their whole history; reading them window by window: %v", len(redo), names)
 		total += importOwnerWindows(ctx, redo, startTime, owners, func(ev *nostr.Event) bool { return keep(ev) })
 	}
 	if failed > 0 {
@@ -304,11 +343,23 @@ func importOwnerNotes(ctx context.Context) {
 	debug.FreeOSMemory()
 }
 
-// importSilentWindows: a relay silent (nothing, no EOSE) or quiet (some
-// notes, then no EOSE) for this many windows in a row is dropped: each such
-// window costs an idle wait, and ~140 of them held a fresh import with no
+// importSilentWindows: a relay that has sent no note in this import and is
+// silent (nothing, no EOSE) for this many windows in a row is dropped: each
+// such window costs an idle wait, and ~140 of them held a fresh import with no
 // sign of life for ~45 min (nostr-pub.wellorder.net, 12 mini, 2026-11-04).
 const importSilentWindows = 3
+
+// importAliveSilentWindows: the same for a relay that HAS sent notes. One that
+// never ends an answer with EOSE (it goes quiet instead) looks silent in every
+// window it has nothing for; it used to be dropped after 3 such windows with
+// the rest of its history unread (Tidy import audit, item 1). Now it is only
+// dropped after this many in a row, which (windows widening) is years.
+const importAliveSilentWindows = 10
+
+// importQuietIdle: the idle wait for a relay that has sent notes but never
+// sends EOSE. Its notes come at once; the wait is only how long its silence
+// takes to read as "that's all". Shorter in tests.
+var importQuietIdle = 5 * time.Second
 
 // importWalkDeadline: the most the whole window walk may take, however many
 // relays and windows are left. Past it the walk stops with what it has.
@@ -319,32 +370,90 @@ var importWalkDeadline = 15 * time.Minute
 const importWindowStride = 240 * time.Hour
 
 // importMaxStride: the widest window the walk grows to, 160 days. A run of
-// windows every relay answers empty (EOSE, no notes) doubles the next one, so
-// a relay with nothing older (nostr-pub.wellorder.net, 12 mini, 2026-11-05)
-// costs a dozen asks for four years instead of ~140, and its later notes
-// still come: an empty answer is never a reason to stop asking.
+// windows every relay answers empty doubles the next one, so a relay with
+// nothing older (nostr-pub.wellorder.net, 12 mini, 2026-11-05) costs a dozen
+// asks for four years instead of ~140.
 const importMaxStride = 16 * importWindowStride
 
-// importOwnerWindows is the old walk, from start, for the relays whose lane
-// didn't finish: 10 days at a time, wider while every relay answers empty.
-// Each window logs one line ("Imported N notes from X to Y" or "No notes
-// found for X to Y") that the apps' import screens read, so the month on
-// screen is the month being read. Returns how many notes it stored.
-func importOwnerWindows(ctx context.Context, relays []string, start time.Time, owners []string, keep func(*nostr.Event) bool) int {
+// walkRelay: one relay for the window walk. top: where its lane stopped (its
+// oldest note, or now if it sent none); only what is older is read. alive: it
+// has sent notes in this import.
+type walkRelay struct {
+	url   string
+	top   time.Time
+	alive bool
+}
+
+// walkState: one relay's standing in the walk.
+type walkState struct {
+	walkRelay
+	silent  int  // windows in a row with no answer and no note
+	noEOSE  bool // it sent notes and then went quiet instead of EOSE
+	dropped bool
+}
+
+// importOwnerWindows reads, window by window, what the relays' lanes didn't:
+// from the newest place a lane stopped down to start, newest first, so a walk
+// cut by its deadline leaves only the oldest stretch unread (and logs it). A
+// relay is asked only for windows below where its own lane stopped. Windows
+// are 10 days, wider while every relay answers empty. Each window logs one
+// line ("Imported N notes from X to Y" or "No notes found for X to Y") that
+// the apps' import screens read. Returns how many notes it stored.
+func importOwnerWindows(ctx context.Context, relays []walkRelay, start time.Time, owners []string, keep func(*nostr.Event) bool) int {
 	stored := 0
-	silent := map[string]int{}
-	relays = slices.Clone(relays)
+	now := time.Now()
+	states := make([]*walkState, 0, len(relays))
+	end := start
+	for _, r := range relays {
+		if r.top.After(now) {
+			r.top = now
+		}
+		states = append(states, &walkState{walkRelay: r})
+		if r.top.After(end) {
+			end = r.top
+		}
+	}
 	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, importWalkDeadline)
 	defer cancel()
 	stride, maxStride := importWindowStride, importMaxStride
-	for begin := start; len(relays) > 0 && !begin.After(time.Now()); {
-		end := begin.Add(stride)
+	for end.After(start) {
+		begin := end.Add(-stride)
+		if begin.Before(start) {
+			begin = start
+		}
+		var asked []*walkState
+		next := start // the highest top among relays not reached yet
+		for _, st := range states {
+			if st.dropped {
+				continue
+			}
+			if st.top.After(begin) {
+				asked = append(asked, st)
+			} else if st.top.After(next) {
+				next = st.top
+			}
+		}
+		if len(asked) == 0 {
+			if !next.After(start) {
+				break // every relay dropped, or nothing left below its lane
+			}
+			end = next // nothing to read down to the next relay's lane
+			continue
+		}
+		urls := make([]string, len(asked))
+		idle := map[string]time.Duration{}
+		for i, st := range asked {
+			urls[i] = st.url
+			if st.alive && st.noEOSE {
+				idle[st.url] = importQuietIdle
+			}
+		}
 		s, u := nostr.Timestamp(begin.Unix()), nostr.Timestamp(end.Unix())
 		before := stored
 		var res windowResult
 		runsafe.Run("importOwnerNotes.windows", func() {
-			res = fetchWindowPaged(ctx, relays, nostr.Filter{Authors: owners, Since: &s, Until: &u}, func(ev *nostr.Event) {
+			res = fetchWindowPaged(withPageIdle(ctx, idle), urls, nostr.Filter{Authors: owners, Since: &s, Until: &u}, func(ev *nostr.Event) {
 				if keep(ev) {
 					stored++
 				}
@@ -352,11 +461,37 @@ func importOwnerWindows(ctx context.Context, relays []string, start time.Time, o
 		})
 		if ctx.Err() != nil {
 			if parent.Err() == nil {
-				log.Printf("⚠️ reading %v window by window passed %s; stopped at %s with %d notes", relays, importWalkDeadline, begin.Format(layout), stored)
+				log.Printf("⚠️ reading %v window by window passed %s with %d notes; not read: %s to %s", urls, importWalkDeadline, stored, start.Format(layout), end.Format(layout))
 			}
 			return stored
 		}
-		failed := len(res.Silent) > 0 || len(res.Quiet) > 0 || len(res.Short) > 0
+
+		// No answer and no note: a relay that refused us during this import
+		// gets its one retry (the same window again); otherwise it counts.
+		noAnswer := func(st *walkState) bool {
+			return res.Sent[st.url] == 0 && (slices.Contains(res.Silent, st.url) || slices.Contains(res.Quiet, st.url))
+		}
+		retry := false
+		for _, st := range asked {
+			if noAnswer(st) && relayBanned(st.url) && importRetryAfterRefusal(ctx, st.url) {
+				retry = true
+			}
+		}
+		if ctx.Err() != nil {
+			return stored
+		}
+		if retry {
+			continue
+		}
+		// Silence from a relay that never sent a note is a failure (it
+		// stops the window widening); from one that has, it is its way of
+		// saying "nothing here".
+		failed := len(res.Short) > 0
+		for _, st := range asked {
+			if noAnswer(st) && !st.alive {
+				failed = true
+			}
+		}
 		if failed && stride > importWindowStride {
 			// A relay that answers 10 days may time out on a wider range:
 			// read this stretch again 10 days at a time, and never widen
@@ -365,7 +500,7 @@ func importOwnerWindows(ctx context.Context, relays []string, start time.Time, o
 			continue
 		}
 		shown := end
-		if now := time.Now(); shown.After(now) {
+		if shown.After(now) {
 			shown = now
 		}
 		if n := stored - before; n > 0 {
@@ -377,21 +512,32 @@ func importOwnerWindows(ctx context.Context, relays []string, start time.Time, o
 			log.Printf("⚠️ %d relay(s) stopped partway through %s to %s; their older notes there may be missing: %v",
 				len(res.Short), begin.Format(layout), end.Format(layout), res.Short)
 		}
-		for _, url := range relays {
-			if slices.Contains(res.Silent, url) || slices.Contains(res.Quiet, url) {
-				silent[url]++
-			} else {
-				silent[url] = 0
+		for _, st := range asked {
+			switch {
+			case res.Sent[st.url] > 0:
+				st.alive, st.silent = true, 0
+				if slices.Contains(res.Quiet, st.url) {
+					st.noEOSE = true
+				}
+			case noAnswer(st):
+				st.silent++
+			default:
+				st.silent = 0 // an empty answer, with EOSE
+			}
+			limit := importSilentWindows
+			if st.alive {
+				limit = importAliveSilentWindows
+			}
+			if st.silent >= limit {
+				st.dropped = true
+				if st.alive {
+					log.Printf("⚠️ %s sent notes, then nothing for %d windows in a row; not asking it again (before %s not read from it)", st.url, limit, begin.Format(layout))
+				} else {
+					log.Printf("⚠️ %s answered nothing, or went quiet without finishing, for %d windows in a row; not asking it again", st.url, limit)
+				}
 			}
 		}
-		relays = slices.DeleteFunc(relays, func(url string) bool {
-			if silent[url] >= importSilentWindows {
-				log.Printf("⚠️ %s answered nothing, or went quiet without finishing, for %d windows in a row; not asking it again", url, importSilentWindows)
-				return true
-			}
-			return false
-		})
-		begin = end
+		end = begin
 		if res.Notes == 0 && !failed {
 			stride = min(stride*2, maxStride)
 		} else {

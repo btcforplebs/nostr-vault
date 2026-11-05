@@ -555,7 +555,14 @@ func TestMoveInTricklingRelayCannotHoldTheLane(t *testing.T) {
 	prevDeadline := importLaneDeadline
 	importLaneDeadline = 300 * time.Millisecond
 	t.Cleanup(func() { importLaneDeadline = prevDeadline })
-	notes := spread(t, owner, 400, time.Hour)
+	// Held notes start an hour back, below everything the trickle sends:
+	// the lane reads newest first, so the walk starts where it stopped and
+	// reads only what is older (a relay's newest notes come in its lane).
+	notes := make([]*nostr.Event, 400)
+	for i := range notes {
+		ev := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, CreatedAt: nostr.Timestamp(time.Now().Add(-time.Hour - time.Duration(i)*time.Hour).Unix()), Content: "note"})
+		notes[i] = &ev
+	}
 	var mu sync.Mutex
 	prev := importPage
 	importPage = func(ctx context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
@@ -594,24 +601,22 @@ func TestMoveInTricklingRelayCannotHoldTheLane(t *testing.T) {
 	}
 }
 
-// A relay that sends a note and then goes quiet without EOSE, window after
-// window (nostr-pub.wellorder.net, 2026-11-04), costs an idle wait each time;
-// it is dropped after importSilentWindows such windows instead of being walked
-// through every window of the history.
-func TestMoveInQuietRelayIsDroppedAfterAFewWindows(t *testing.T) {
+// A relay that sends notes but never ends an answer with EOSE (it goes quiet
+// instead; nostr-pub.wellorder.net, 2026-11-04) is alive: it is not dropped
+// after a few windows with the rest of its history unread (Tidy import audit,
+// item 1; this test used to assert the drop). Every window's note comes home.
+func TestMoveInQuietRelayThatSendsNotesIsNotDropped(t *testing.T) {
 	noNegentropy(t)
-	owner, _ := moveInSetup(t, 730, "wss://quiet.example")
+	owner, db := moveInSetup(t, 730, "wss://quiet.example")
 	var mu sync.Mutex
-	windows := map[nostr.Timestamp]bool{}
 	sent := map[nostr.Timestamp]bool{}
 	prev := importPage
 	importPage = func(_ context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
 		mu.Lock()
 		defer mu.Unlock()
-		if f.Since == nil {
+		if f.Until == nil {
 			return nil, false // the whole-history lane: silent, so it is re-read by window
 		}
-		windows[*f.Since] = true
 		if sent[*f.Since] {
 			return nil, false
 		}
@@ -623,8 +628,8 @@ func TestMoveInQuietRelayIsDroppedAfterAFewWindows(t *testing.T) {
 
 	importOwnerNotes(context.Background())
 
-	if len(windows) != importSilentWindows {
-		t.Fatalf("a quiet relay was walked through %d windows, want %d", len(windows), importSilentWindows)
+	if got, want := count(t, db, owner.pk), 73; got < want {
+		t.Fatalf("vault has %d notes from a quiet relay with one a window, want all %d windows' (it was dropped)", got, want)
 	}
 }
 
@@ -657,7 +662,7 @@ func TestOwnerWindowWalkStopsAtItsDeadline(t *testing.T) {
 	t.Cleanup(func() { importPage = prev })
 
 	start := time.Now()
-	got := importOwnerWindows(context.Background(), []string{"wss://slow.example"}, time.Now().AddDate(0, 0, -3650), []string{owner.pk}, func(*nostr.Event) bool { return true })
+	got := importOwnerWindows(context.Background(), []walkRelay{{url: "wss://slow.example", top: time.Now()}}, time.Now().AddDate(0, 0, -3650), []string{owner.pk}, func(*nostr.Event) bool { return true })
 	took := time.Since(start)
 
 	if took > 2*time.Second {
@@ -763,5 +768,173 @@ func TestMoveInEmptyLaneIsNotWalked(t *testing.T) {
 
 	if asked != 1 {
 		t.Fatalf("an empty lane was asked %d times, want 1 (no window walk)", asked)
+	}
+}
+
+// A lane that got the newest notes and then stopped: the walk starts where it
+// stopped and reads only what is older, so it never spends its time on what
+// the lane already read, and a walk cut by its deadline can't leave a gap in
+// the middle of the history (Tidy import audit, item 2).
+func TestMoveInWalkStartsWhereTheLaneStopped(t *testing.T) {
+	noNegentropy(t)
+	owner, db := moveInSetup(t, 100, "wss://tired.example")
+	notes := spread(t, owner, 1500, time.Hour) // ~62 days
+	r := &pagingRelay{held: notes}
+	var mu sync.Mutex
+	lanePages, laneDone := 0, false
+	var laneOldest nostr.Timestamp
+	var walkTops []nostr.Timestamp
+	prev := importPage
+	importPage = func(_ context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		if !laneDone {
+			lanePages++
+			if lanePages > 2 {
+				laneDone = true   // everything asked after this is the walk
+				return nil, false // the lane's third page never comes
+			}
+			evs, eose := r.answer(f)
+			for _, ev := range evs {
+				if laneOldest == 0 || ev.CreatedAt < laneOldest {
+					laneOldest = ev.CreatedAt
+				}
+			}
+			return evs, eose
+		}
+		walkTops = append(walkTops, *f.Until)
+		return r.answer(f)
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	importOwnerNotes(context.Background())
+
+	if got := count(t, db, owner.pk); got != 1500 {
+		t.Fatalf("vault has %d of 1500 notes", got)
+	}
+	for _, top := range walkTops {
+		if top > laneOldest+1 {
+			t.Fatalf("the walk asked up to %s, above where the lane stopped (%s): it re-read what the lane had",
+				top.Time().Format(time.RFC3339), laneOldest.Time().Format(time.RFC3339))
+		}
+	}
+	if len(walkTops) == 0 {
+		t.Fatal("positive control: the walk never ran")
+	}
+}
+
+// One rate-limit answer used to ban a relay for 24 h and drop its whole
+// history from the import (Tidy import audit, item 7). A relay that refused
+// us during the import is asked once more after a pause.
+func TestMoveInRateLimitedRelayIsRetriedOnce(t *testing.T) {
+	noNegentropy(t)
+	owner, db := moveInSetup(t, 100, "wss://busy.example")
+	prevBackoff := importRefusalBackoff
+	importRefusalBackoff = 10 * time.Millisecond
+	t.Cleanup(func() {
+		importRefusalBackoff = prevBackoff
+		relayBans.Delete(nostr.NormalizeURL("wss://busy.example"))
+	})
+	notes := spread(t, owner, 300, time.Hour)
+	r := &pagingRelay{held: notes}
+	var mu sync.Mutex
+	refusals := 0
+	prev := importPage
+	importPage = func(_ context.Context, url string, f nostr.Filter) ([]*nostr.Event, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		if relayBanned(url) {
+			return nil, false // what the pool's dial gate does
+		}
+		if refusals == 0 {
+			refusals++
+			noteRelayRefusal(url, errors.New("rate-limited: slow down"))
+			return nil, false
+		}
+		return r.answer(f)
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	importOwnerNotes(context.Background())
+
+	if got := count(t, db, owner.pk); got != 300 {
+		t.Fatalf("vault has %d of 300 notes: one rate-limit answer dropped the relay", got)
+	}
+}
+
+// A second refusal stands: the retry is spent, the relay is dropped and the
+// import ends (it doesn't wait on a relay that keeps saying no).
+func TestMoveInRelayRefusingTwiceIsDropped(t *testing.T) {
+	noNegentropy(t)
+	_, _ = moveInSetup(t, 100, "wss://no.example")
+	prevBackoff := importRefusalBackoff
+	importRefusalBackoff = 10 * time.Millisecond
+	t.Cleanup(func() {
+		importRefusalBackoff = prevBackoff
+		relayBans.Delete(nostr.NormalizeURL("wss://no.example"))
+	})
+	var mu sync.Mutex
+	asked := 0
+	prev := importPage
+	importPage = func(_ context.Context, url string, f nostr.Filter) ([]*nostr.Event, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		if relayBanned(url) {
+			return nil, false
+		}
+		asked++
+		noteRelayRefusal(url, errors.New("rate-limited: slow down"))
+		return nil, false
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	importOwnerNotes(context.Background())
+
+	if asked != 2 {
+		t.Fatalf("a relay refusing every time reached the relay %d times, want 2 (once, then its one retry)", asked)
+	}
+}
+
+// An old version of the owner's list that a seed relay still serves is an
+// imported version: it goes to the import store, never into the vault's own
+// list history, where it could trim what the vault kept (Tidy import audit,
+// item 11; the erosion PR 1637 / 5f00485d9 fixed only for the history scan).
+func TestMoveInOwnerListVersionsAreFiledAsImported(t *testing.T) {
+	noNegentropy(t)
+	owner, inner := moveInSetup(t, 100, "wss://lists.example")
+	history := newTestBackend(t, "lists")
+	if err := history.Init(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(history.Close)
+	withImportStore(t, func(name string) DBBackend { return newTestBackend(t, name) })
+	prevLists := listsDB
+	listsDB = history
+	t.Cleanup(func() { listsDB = prevLists })
+	outboxDB = newListHistoryDB(inner, func() DBBackend { return listsDB })
+
+	now := time.Now()
+	var served []*nostr.Event
+	for i := range 3 {
+		ev := owner.sign(t, nostr.Event{Kind: 10003, CreatedAt: nostr.Timestamp(now.Add(-time.Duration(i+1) * 24 * time.Hour).Unix()), Tags: nostr.Tags{{"e", fmt.Sprintf("%064d", i)}}})
+		served = append(served, &ev)
+	}
+	r := &pagingRelay{held: served}
+	var mu sync.Mutex
+	prev := importPage
+	importPage = func(_ context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		return r.answer(f)
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	importOwnerNotes(context.Background())
+
+	if got := count(t, history, owner.pk); got != 0 {
+		t.Fatalf("the vault's own list history got %d imported versions: an import can trim what it kept", got)
+	}
+	if got := count(t, listsImportDB, owner.pk); got != 3 {
+		t.Fatalf("the import store has %d of the 3 versions served", got)
 	}
 }

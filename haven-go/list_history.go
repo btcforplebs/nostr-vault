@@ -69,6 +69,14 @@ func (l *listHistoryDB) keep(ctx context.Context, evt *nostr.Event) {
 	if !isOwnerList(evt) {
 		return
 	}
+	if isImportWrite(ctx) {
+		// Moving in: an old version a relay served is an imported one,
+		// filed apart so it can't trim the vault's own history (PR 1637).
+		if _, err := fileImportedVersionAdded(ctx, evt); err != nil {
+			slog.Warn("list history: imported version not kept", "kind", evt.Kind, "id", evt.ID, "err", err)
+		}
+		return
+	}
 	added, err := recordListVersionAdded(ctx, l.history(), evt)
 	if err != nil {
 		slog.Warn("list history: version not kept", "kind", evt.Kind, "id", evt.ID, "err", err)

@@ -64,3 +64,29 @@ func TestFeedStoreAcceptsRareKinds(t *testing.T) {
 		}
 	}
 }
+
+// The feed's catch-up used to be one request per round, so a relay's answer
+// cap was taken as the whole round and the watermark moved past what it cut
+// (Tidy import audit, item 8). It is paged now, and says when it read all.
+func TestFeedFallbackPullPagesPastTheCapAndSaysWhenComplete(t *testing.T) {
+	owner := newTestKey(t)
+	held := notesOf(t, owner, 1200, 100_000)
+	since := nostr.Timestamp(0)
+	filter := nostr.Filter{Authors: []string{owner.pk}, Kinds: []int{nostr.KindTextNote}, Since: &since}
+
+	withPagingRelays(t, map[string]*pagingRelay{"wss://capped.example": {held: held, cap: 300}})
+	got := 0
+	if !feedFallbackPull(context.Background(), []string{"wss://capped.example"}, filter, func(*nostr.Event) { got++ }) {
+		t.Fatal("a round that read everything was not complete")
+	}
+	if got != 1200 {
+		t.Fatalf("published %d of 1200: the cap of 300 cut the round", got)
+	}
+
+	// Stops partway (answers, then goes quiet): the round is not complete,
+	// so the watermark stays for the next round to ask again.
+	withPagingRelays(t, map[string]*pagingRelay{"wss://tired.example": {held: held, cap: 300, quiet: 1}})
+	if feedFallbackPull(context.Background(), []string{"wss://tired.example"}, filter, func(*nostr.Event) {}) {
+		t.Fatal("a round cut partway was called complete")
+	}
+}

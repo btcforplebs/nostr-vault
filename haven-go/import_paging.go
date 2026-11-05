@@ -50,6 +50,7 @@ func askRelayIdle(ctx context.Context, url string, f nostr.Filter) ([]*nostr.Eve
 	if err != nil {
 		return nil, false
 	}
+	wait := pageIdle(ctx)
 	ctx, cancel := context.WithTimeout(ctx, importPageMax)
 	defer cancel()
 	sub, err := relay.Subscribe(ctx, nostr.Filters{f})
@@ -57,7 +58,7 @@ func askRelayIdle(ctx context.Context, url string, f nostr.Filter) ([]*nostr.Eve
 		return nil, false
 	}
 	defer sub.Unsub()
-	idle := time.NewTimer(importIdleTimeout)
+	idle := time.NewTimer(wait)
 	defer idle.Stop()
 	var out []*nostr.Event
 	got := map[string]bool{}
@@ -78,7 +79,7 @@ func askRelayIdle(ctx context.Context, url string, f nostr.Filter) ([]*nostr.Eve
 			if !idle.Stop() {
 				<-idle.C
 			}
-			idle.Reset(importIdleTimeout)
+			idle.Reset(wait)
 		case <-sub.EndOfStoredEvents:
 			return out, true
 		case <-sub.ClosedReason:
@@ -89,6 +90,31 @@ func askRelayIdle(ctx context.Context, url string, f nostr.Filter) ([]*nostr.Eve
 			return out, false
 		}
 	}
+}
+
+// pageIdleKey carries per-relay idle waits into fetchPaged (withPageIdle).
+type pageIdleKey struct{}
+
+// pageIdleOneKey carries one relay's idle wait into importPage.
+type pageIdleOneKey struct{}
+
+// withPageIdle: fetchPaged asks the relays in idle with their own idle wait
+// instead of importIdleTimeout. The window walk uses it for a relay that has
+// sent notes but never ends an answer with EOSE: each of its pages ends by
+// going quiet, and the full wait on every one would spend the walk's time.
+func withPageIdle(ctx context.Context, idle map[string]time.Duration) context.Context {
+	if len(idle) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, pageIdleKey{}, idle)
+}
+
+// pageIdle: how long importPage waits for a quiet relay on ctx.
+func pageIdle(ctx context.Context) time.Duration {
+	if d, ok := ctx.Value(pageIdleOneKey{}).(time.Duration); ok && d > 0 {
+		return d
+	}
+	return importIdleTimeout
 }
 
 // windowResult: what reading one window did. Short lists the relays that
@@ -106,6 +132,12 @@ type windowResult struct {
 	// Each such page cost the whole idle wait; the window walk counts them
 	// with Silent (import_owner.go importOwnerWindows).
 	Quiet []string
+	// Sent: per relay, the notes it sent that passed the check (new to this
+	// read or not). A relay that went quiet but sent notes is alive.
+	Sent map[string]int
+	// Oldest: per relay, the oldest created_at among them. A whole-history
+	// lane pages newest first, so this is how far down it got.
+	Oldest map[string]nostr.Timestamp
 }
 
 // fetchWindowPaged reads filter (Since..Until) from every relay, each one paged
@@ -123,13 +155,18 @@ func fetchPaged(ctx context.Context, relays []string, filter nostr.Filter, maxPa
 	var (
 		mu   sync.Mutex
 		seen = map[string]bool{}
-		res  windowResult
+		res  = windowResult{Sent: map[string]int{}, Oldest: map[string]nostr.Timestamp{}}
 		wg   sync.WaitGroup
 	)
+	idles, _ := ctx.Value(pageIdleKey{}).(map[string]time.Duration)
 	for _, url := range relays {
 		wg.Add(1)
 		go func(url string) {
 			defer wg.Done()
+			ctx := ctx
+			if d, ok := idles[url]; ok {
+				ctx = context.WithValue(ctx, pageIdleOneKey{}, d)
+			}
 			f := filter
 			f.Limit = importPageLimit
 			// mine: what this relay has sent, which decides its paging. A note
@@ -177,8 +214,12 @@ func fetchPaged(ctx context.Context, relays []string, filter nostr.Filter, maxPa
 				mu.Lock()
 				for _, ev := range evs {
 					matched++
+					res.Sent[url]++
 					if oldest == 0 || ev.CreatedAt < oldest {
 						oldest = ev.CreatedAt
+					}
+					if o, ok := res.Oldest[url]; !ok || ev.CreatedAt < o {
+						res.Oldest[url] = ev.CreatedAt
 					}
 					if mine[ev.ID] {
 						continue

@@ -122,6 +122,19 @@ func (s *feedNegStore) Publish(ctx context.Context, ev nostr.Event) error {
 	return nil
 }
 
+// feedFallbackPull reads filter from relays, each paged newest first until a
+// page brings nothing older (fetchPaged), handing every note to publish. It
+// used to be one request, so a relay's answer cap (often 500) was counted as
+// the whole round. True when the round read everything: no relay stopped
+// partway, and at least one answered.
+func feedFallbackPull(ctx context.Context, relays []string, filter nostr.Filter, publish func(*nostr.Event)) bool {
+	res := fetchPaged(ctx, relays, filter, importMaxPages, publish)
+	if ctx.Err() != nil {
+		return false
+	}
+	return len(res.Short) == 0 && len(res.Silent) < len(relays)
+}
+
 // ownerFollowSet derives the follow set from the owner's newest kind-3 in the
 // outbox DB (which owner catch-up keeps current across devices).
 func ownerFollowSet(ctx context.Context) map[string]struct{} {
@@ -273,7 +286,10 @@ func syncFeed(ctx context.Context) {
 		for pk := range follows {
 			authors = append(authors, pk)
 		}
-		store := &feedNegStore{feed: wdbFeed, follows: follows, advance: advance}
+		// No per-note advance: a note stored mid-round says nothing about
+		// what is still missing below it. The watermark moves once, at the
+		// end of a round that read everything (feedFallbackPull).
+		store := &feedNegStore{feed: wdbFeed, follows: follows}
 		relays := feedSyncRelays()
 
 		since := windowSince()
@@ -363,23 +379,30 @@ func syncFeed(ctx context.Context) {
 			fsince = since
 		}
 		commonFilter := feedCommonFilter(authors, fsince)
+		complete := true
 		if len(fallback) > 0 && ctx.Err() == nil {
 			log.Println("📚 feed catch-up pull since", time.Unix(int64(fsince), 0).Format(time.RFC3339), "on", len(fallback), "relays")
-			for ev := range pool.FetchMany(ctx, fallback, commonFilter) {
-				if ctx.Err() != nil {
-					return
-				}
-				store.Publish(ctx, *ev.Event)
+			complete = feedFallbackPull(ctx, fallback, commonFilter, func(ev *nostr.Event) { store.Publish(ctx, *ev) })
+			if ctx.Err() != nil {
+				return
 			}
 		}
 
 		pruneFeed(ctx, wdbFeed)
-		// Advance the fallback watermark to the start of this round regardless
-		// of whether anything was cached. Otherwise a quiet round leaves
-		// lastSeenFeed pinned in the past and the next fallback pull re-queries
-		// an ever-widening window (expanding downloads, 100% CPU). Monotonic.
+		// Advance the fallback watermark to the start of this round when the
+		// round read everything, whether or not anything was cached:
+		// otherwise a quiet round leaves lastSeenFeed pinned in the past and
+		// the next fallback pull re-queries an ever-widening window (expanding
+		// downloads, 100% CPU). A round cut short (a relay stopped partway, or
+		// none answered) keeps it, so the next round asks again for what this
+		// one missed (Tidy import audit, item 8); the window's edge (since)
+		// still bounds how far back that can reach. Monotonic.
 		if ctx.Err() == nil {
-			advance(roundStart)
+			if complete {
+				advance(roundStart)
+			} else {
+				log.Println("📚 feed catch-up did not read everything; asking from the same point next round")
+			}
 			if rareDone {
 				lastSeenRare.Store(int64(roundStart))
 			}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -86,6 +87,59 @@ func poolDialGate() nostr.PoolOption {
 		}
 		return nil
 	}, noteRelayRefusal)
+}
+
+// ─── One retry inside an import ─────────────────────────────────────────────
+//
+// One rate-limit answer used to drop a relay's whole history from an import:
+// the 24 h ban made every later dial fail, the lane came back silent and the
+// window walk dropped it in under a second (Tidy import audit, item 7). Inside
+// an import, a relay that refused us during that import is given one more
+// try after a back-off. A second refusal stands.
+
+// importRefusalBackoff: the wait before that one retry. Shorter in tests.
+// 35 s: past the pool's first penalty-box wait (30 s + 2 s) after a failed dial.
+var importRefusalBackoff = 35 * time.Second
+
+var (
+	importRetryMu      sync.Mutex
+	importRetryStarted time.Time           // when the current import began
+	importRetried      = map[string]bool{} // normalized URL → retry spent
+)
+
+// beginImportRefusalRetries starts a new import's retry budget.
+func beginImportRefusalRetries() {
+	importRetryMu.Lock()
+	defer importRetryMu.Unlock()
+	importRetryStarted = time.Now()
+	importRetried = map[string]bool{}
+}
+
+// importRetryAfterRefusal: when url is banned by a refusal it gave during the
+// current import and its retry isn't spent, wait importRefusalBackoff, lift
+// the ban and report true (ask it again). False otherwise, or if ctx ends.
+func importRetryAfterRefusal(ctx context.Context, url string) bool {
+	key := nostr.NormalizeURL(url)
+	v, ok := relayBans.Load(key)
+	if !ok {
+		return false
+	}
+	importRetryMu.Lock()
+	at := v.(time.Time)
+	if importRetryStarted.IsZero() || at.Before(importRetryStarted) || importRetried[key] {
+		importRetryMu.Unlock()
+		return false
+	}
+	importRetried[key] = true
+	importRetryMu.Unlock()
+	slog.Warn("relay refused us during the import; trying it once more after a pause", "relay", key, "wait", importRefusalBackoff)
+	select {
+	case <-time.After(importRefusalBackoff):
+	case <-ctx.Done():
+		return false
+	}
+	relayBans.Delete(key)
+	return true
 }
 
 // ─── Bulk-read exclusions ───────────────────────────────────────────────────
