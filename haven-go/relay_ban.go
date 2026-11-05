@@ -101,18 +101,34 @@ func poolDialGate() nostr.PoolOption {
 // 35 s: past the pool's first penalty-box wait (30 s + 2 s) after a failed dial.
 var importRefusalBackoff = 35 * time.Second
 
+// importRetryWindow: how long one import's retry budget lasts, longer than a
+// whole import (lanes, walk and tagged step, 15 min each at most). An import
+// that starts while one is still in it shares that budget: it used to wipe
+// the list of spent retries, so a relay got a second retry, and a second
+// 35 s pause, for every import started on top (Tron, PR 1721).
+const importRetryWindow = time.Hour
+
 var (
 	importRetryMu      sync.Mutex
-	importRetryStarted time.Time           // when the current import began
-	importRetried      = map[string]bool{} // normalized URL → retry spent
+	importRetryStarted time.Time                // when the current budget began
+	importRetried      = map[string]time.Time{} // normalized URL → when its retry was spent
 )
 
-// beginImportRefusalRetries starts a new import's retry budget.
+// beginImportRefusalRetries starts an import's retry budget, or joins the one
+// still running: spent retries stay spent within importRetryWindow.
 func beginImportRefusalRetries() {
 	importRetryMu.Lock()
 	defer importRetryMu.Unlock()
-	importRetryStarted = time.Now()
-	importRetried = map[string]bool{}
+	now := time.Now()
+	if !importRetryStarted.IsZero() && now.Sub(importRetryStarted) < importRetryWindow {
+		return
+	}
+	importRetryStarted = now
+	for key, at := range importRetried {
+		if now.Sub(at) >= importRetryWindow {
+			delete(importRetried, key)
+		}
+	}
 }
 
 // importRetryAfterRefusal: when url is banned by a refusal it gave during the
@@ -126,11 +142,11 @@ func importRetryAfterRefusal(ctx context.Context, url string) bool {
 	}
 	importRetryMu.Lock()
 	at := v.(time.Time)
-	if importRetryStarted.IsZero() || at.Before(importRetryStarted) || importRetried[key] {
+	if spent, ok := importRetried[key]; importRetryStarted.IsZero() || at.Before(importRetryStarted) || (ok && time.Since(spent) < importRetryWindow) {
 		importRetryMu.Unlock()
 		return false
 	}
-	importRetried[key] = true
+	importRetried[key] = time.Now()
 	importRetryMu.Unlock()
 	slog.Warn("relay refused us during the import; trying it once more after a pause", "relay", seedHost(key), "wait", importRefusalBackoff)
 	select {

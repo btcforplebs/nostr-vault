@@ -24,17 +24,15 @@ import (
 // filter is paged per relay, newest first, the same way as the owner's own
 // notes (fetchPaged), until a page brings nothing older.
 
-// importTaggedDeadline: the most the tagged step may take. A request ends when
-// its relay goes quiet (importIdleTimeout), so this only stops a relay that
-// keeps sending. IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS can raise it; it
-// no longer cuts a paged pull short at its old 120 s default. Shorter in tests.
+// importTaggedDeadline: when the tagged step gives up, ~15 min (Logen
+// 2026-11-05), however IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS is set: its
+// 120 s default cut a paged pull short, and a larger value let one relay that
+// keeps sending hold setup for as long as it liked. A request still ends
+// sooner when its relay goes quiet (importIdleTimeout). Shorter in tests.
 var importTaggedDeadline = 15 * time.Minute
 
 func importTaggedNotes(ctx context.Context) {
 	timeout := importTaggedDeadline
-	if t := time.Duration(config.ImportTaggedNotesFetchTimeoutSeconds) * time.Second; t > timeout {
-		timeout = t
-	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 

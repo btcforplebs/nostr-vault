@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log"
 	"strings"
 	"sync"
@@ -166,5 +167,160 @@ func TestImportResultReadsThePagedImportsLines(t *testing.T) {
 	}
 	if o.tagged == 0 {
 		t.Fatal("the cut tagged step's count was not read")
+	}
+}
+
+// resetImportRetries: a fresh retry budget for this test (beginImportRefusalRetries
+// joins one still inside importRetryWindow, so tests would share it).
+func resetImportRetries(t *testing.T) {
+	t.Helper()
+	clear := func() {
+		importRetryMu.Lock()
+		importRetryStarted = time.Time{}
+		importRetried = map[string]time.Time{}
+		importRetryMu.Unlock()
+	}
+	clear()
+	t.Cleanup(clear)
+}
+
+// taggedFixture: inbox and chat stores, a WoT that lets everyone in, and
+// importPage answering a reply to the owner every `every`, forever.
+func taggedFixture(t *testing.T, every time.Duration) {
+	t.Helper()
+	owner, _ := moveInSetup(t, 10, "wss://tagged.example")
+	wot.MarkReady(wot.NewCycle(), stubWot{allow: true})
+	inbox, chat := newTestBackend(t, "inbox"), newTestBackend(t, "chat")
+	for _, db := range []DBBackend{inbox, chat} {
+		if err := db.Init(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(db.Close)
+	}
+	savedInbox, savedChat := inboxDB, chatDB
+	inboxDB, chatDB = inbox, chat
+	t.Cleanup(func() { inboxDB, chatDB = savedInbox, savedChat })
+	friend := newTestKey(t)
+	var mu sync.Mutex
+	at := nostr.Now()
+	prev := importPage
+	t.Cleanup(func() { importPage = prev })
+	importPage = func(ctx context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
+		select {
+		case <-time.After(every):
+		case <-ctx.Done():
+			return nil, false
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		at--
+		ev := friend.sign(t, nostr.Event{Kind: nostr.KindTextNote, CreatedAt: at, Tags: nostr.Tags{{"p", owner.pk}}, Content: "reply"})
+		return []*nostr.Event{&ev}, true
+	}
+}
+
+// The tagged step gives up at importTaggedDeadline (~15 min, Logen
+// 2026-11-05) whatever IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS says: not
+// at its 120 s default, and not later when it is set higher.
+func TestTaggedStepGivesUpAtItsOwnDeadline(t *testing.T) {
+	taggedFixture(t, 20*time.Millisecond)
+	prevDeadline := importTaggedDeadline
+	t.Cleanup(func() { importTaggedDeadline = prevDeadline })
+
+	// Set lower (the 120 s default, scaled): it doesn't cut the step short.
+	importTaggedDeadline = 600 * time.Millisecond
+	config.ImportTaggedNotesFetchTimeoutSeconds = 0
+	start := time.Now()
+	importTaggedNotes(context.Background())
+	if took := time.Since(start); took < 500*time.Millisecond {
+		t.Fatalf("the tagged step gave up after %s, before its %s deadline: the config value cut it", took, importTaggedDeadline)
+	}
+
+	// Set higher: it doesn't hold the step past its deadline.
+	importTaggedDeadline = 300 * time.Millisecond
+	config.ImportTaggedNotesFetchTimeoutSeconds = 3600
+	bounded, cancel := context.WithTimeout(context.Background(), 5*time.Second) // a regression fails, not hangs
+	defer cancel()
+	start = time.Now()
+	importTaggedNotes(bounded)
+	if took := time.Since(start); took > 2*time.Second {
+		t.Fatalf("the tagged step ran %s, past its %s deadline: the config value held it", took, importTaggedDeadline)
+	}
+}
+
+// Relays that refused us in the same window are retried together: one pause,
+// not one after another (Tron, PR 1721).
+func TestMoveInWalkRetriesRefusedRelaysTogether(t *testing.T) {
+	noNegentropy(t)
+	urls := []string{"wss://r1.example", "wss://r2.example", "wss://r3.example"}
+	owner, db := moveInSetup(t, 30, urls...)
+	resetImportRetries(t)
+	beginImportRefusalRetries()
+	prevBackoff := importRefusalBackoff
+	importRefusalBackoff = 400 * time.Millisecond
+	t.Cleanup(func() {
+		importRefusalBackoff = prevBackoff
+		for _, u := range urls {
+			relayBans.Delete(nostr.NormalizeURL(u))
+		}
+	})
+	note := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, CreatedAt: nostr.Timestamp(time.Now().Add(-48 * time.Hour).Unix()), Content: "in the walk"})
+	var mu sync.Mutex
+	refused := map[string]bool{}
+	prev := importPage
+	importPage = func(_ context.Context, url string, f nostr.Filter) ([]*nostr.Event, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		if relayBanned(url) {
+			return nil, false
+		}
+		if f.Until == nil {
+			return nil, false // the lane: silent, so every relay is walked
+		}
+		if !refused[url] {
+			refused[url] = true
+			noteRelayRefusal(url, errors.New("rate-limited: slow down"))
+			return nil, false
+		}
+		if f.Matches(&note) {
+			return []*nostr.Event{&note}, true
+		}
+		return nil, true
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	start := time.Now()
+	importOwnerNotes(context.Background())
+	took := time.Since(start)
+
+	if got := count(t, db, owner.pk); got != 1 {
+		t.Fatalf("vault has %d of the 1 note: the refused relays were not asked again", got)
+	}
+	if took >= 2*importRefusalBackoff {
+		t.Fatalf("3 refused relays took %s: retried one after another (%s each), not together", took, importRefusalBackoff)
+	}
+}
+
+// An import started while one is running keeps the spent retries: a relay
+// that already had its retry gets no second one (and no second pause).
+func TestSecondImportKeepsTheSpentRetries(t *testing.T) {
+	resetImportRetries(t)
+	prevBackoff := importRefusalBackoff
+	importRefusalBackoff = 10 * time.Millisecond
+	url := "wss://once.example"
+	t.Cleanup(func() {
+		importRefusalBackoff = prevBackoff
+		relayBans.Delete(nostr.NormalizeURL(url))
+	})
+
+	beginImportRefusalRetries()
+	noteRelayRefusal(url, errors.New("rate-limited: slow down"))
+	if !importRetryAfterRefusal(context.Background(), url) {
+		t.Fatal("positive control: the first refusal got no retry")
+	}
+	beginImportRefusalRetries() // a second import starts on top
+	noteRelayRefusal(url, errors.New("rate-limited: slow down"))
+	if importRetryAfterRefusal(context.Background(), url) {
+		t.Fatal("a second import gave a relay a second retry: it reset the spent list")
 	}
 }

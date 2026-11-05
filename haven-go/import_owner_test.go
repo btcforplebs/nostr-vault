@@ -855,6 +855,7 @@ func TestMoveInRateLimitedRelayIsRetriedOnce(t *testing.T) {
 	}
 	t.Cleanup(func() { importPage = prev })
 
+	resetImportRetries(t)
 	beginImportRefusalRetries() // runImport's first step
 	importOwnerNotes(context.Background())
 
@@ -889,6 +890,7 @@ func TestMoveInRelayRefusingTwiceIsDropped(t *testing.T) {
 	}
 	t.Cleanup(func() { importPage = prev })
 
+	resetImportRetries(t)
 	beginImportRefusalRetries() // runImport's first step
 	importOwnerNotes(context.Background())
 
@@ -923,6 +925,7 @@ func TestMoveInRefusalBeforeNotesStartIsRetried(t *testing.T) {
 	}
 	t.Cleanup(func() { importPage = prev })
 
+	resetImportRetries(t)
 	beginImportRefusalRetries()
 	// A 429 during WoT init, before importOwnerNotes runs.
 	noteRelayRefusal("wss://early.example", errors.New("rate-limited: slow down"))
