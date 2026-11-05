@@ -3,6 +3,8 @@ import UserNotifications
 import Combine
 #if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
 #endif
 
 /// Manages local notification permission and per-account notification preferences.
@@ -49,6 +51,78 @@ class PushNotificationService: ObservableObject {
     }
 
     // MARK: - Permission
+
+    private var askTask: Task<Void, Never>?
+
+    /// The one ask, after you're in (NotificationAsk). Safe to call at every
+    /// launch and window appearance: when already answered it only reads the
+    /// answer, and only one wait runs at a time. The first answer sets the
+    /// push switch, which setup no longer turns on before it.
+    func askWhenIn() {
+        guard askTask == nil else { return }
+        askTask = Task { @MainActor [weak self] in
+            defer { self?.askTask = nil }
+            var quietSince: Date?
+            while !Task.isCancelled {
+                let settings = await UNUserNotificationCenter.current().notificationSettings()
+                let undecided = settings.authorizationStatus == .notDetermined
+                let busy = Self.somethingOnScreen
+                if busy || !Self.isInApp { quietSince = nil } else if quietSince == nil { quietSince = Date() }
+                let quietFor = quietSince.map { Date().timeIntervalSince($0) } ?? 0
+                switch NotificationAsk.action(undecided: undecided, inApp: Self.isInApp, busy: busy, quietFor: quietFor) {
+                case .alreadyAnswered:
+                    self?.isRegistered = Self.allows(settings.authorizationStatus)
+                    return
+                case .ask:
+                    let granted = (try? await UNUserNotificationCenter.current()
+                        .requestAuthorization(options: [.alert, .badge, .sound])) ?? false
+                    self?.isRegistered = granted
+                    ConfigService.shared.config.enablePushNotifications = granted
+                    ConfigService.shared.save()
+                    return
+                case .wait:
+                    try? await Task.sleep(nanoseconds: UInt64(NotificationAsk.pollSeconds * 1_000_000_000))
+                }
+            }
+        }
+    }
+
+    /// Launch on the Mac: reads the answer, never prompts. An undecided one
+    /// waits for the main window (askWhenIn, from its appearance).
+    func refreshAnswer() {
+        Task { @MainActor [weak self] in
+            let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+            self?.isRegistered = Self.allows(status)
+        }
+    }
+
+    private static func allows(_ status: UNAuthorizationStatus) -> Bool {
+        #if os(iOS)
+        status == .authorized || status == .provisional || status == .ephemeral
+        #else
+        status == .authorized || status == .provisional
+        #endif
+    }
+
+    /// Setup is done and the app itself is up and in front. On the Mac that
+    /// means its main window (askWhenIn is called as it appears), not the
+    /// setup window or the menu bar panel.
+    private static var isInApp: Bool {
+        guard ConfigService.shared.config.hasCompletedSetup else { return false }
+        #if canImport(UIKit)
+        return UIApplication.shared.applicationState == .active
+        #else
+        return NSApp.isActive && NSApp.windows.contains {
+            $0.isVisible && $0.identifier?.rawValue.contains(MacWindow.mainWindowID) == true
+        }
+        #endif
+    }
+
+    /// A tutorial card or the Fill your feed guide is showing, or held to
+    /// start: the prompt must not land on top of it.
+    private static var somethingOnScreen: Bool {
+        TutorialCenter.shared.active != nil || TutorialCenter.shared.held
+    }
 
     /// Requests local notification authorization only — no APNs/remote registration.
     func requestPermissionAndRegister() {

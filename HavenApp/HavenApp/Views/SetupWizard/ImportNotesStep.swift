@@ -24,12 +24,6 @@ struct ImportNotesStep: View {
     let onSkip: () -> Void
 
     @State private var appeared = false
-    @State private var activeTab = 0 // 0 = Network, 1 = Backup
-    @State private var showingFileImporter = false
-    @State private var isRestoring = false
-    @State private var restoreCompleted = false
-    @State private var restoreError: String?
-    @State private var showRestoreError = false
     /// Their own servers (kind 10002 write relays), read for this import
     /// only: never saved or published.
     @State private var ownRelays: [String] = []
@@ -54,25 +48,8 @@ struct ImportNotesStep: View {
                 .opacity(appeared ? 1 : 0)
                 .animation(WizardAnimations.fadeIn.delay(0.2), value: appeared)
 
-            // Tab bar
-            HStack(spacing: 4) {
-                tabPill(String(localized: "setup.import.tab.network"), isActive: activeTab == 0) { activeTab = 0 }
-                tabPill(String(localized: "setup.import.tab.backup"), isActive: activeTab == 1) { activeTab = 1 }
-            }
-            .padding(3)
-            .background(WizardColors.bgCard)
-            .cornerRadius(10)
-            .opacity(appeared ? 1 : 0)
-            .animation(WizardAnimations.fadeIn.delay(0.25), value: appeared)
-
-            // Tab content
-            Group {
-                if activeTab == 0 {
-                    networkImportContent
-                } else {
-                    backupRestoreContent
-                }
-            }
+            // A backup zip is restored from the Vault tab, not in setup (Logen 2026-11-05).
+            networkImportContent
             .opacity(appeared ? 1 : 0)
             .animation(WizardAnimations.fadeIn.delay(0.3), value: appeared)
 
@@ -84,25 +61,6 @@ struct ImportNotesStep: View {
         .task { await loadOwnRelays() }
         // Importing can run 20+ minutes; don't let the screen dim or lock while it's up.
         .keepsScreenAwake()
-        .fileImporter(
-            isPresented: $showingFileImporter,
-            allowedContentTypes: [.zip, .json],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                restoreBackup(from: url)
-            case .failure(let error):
-                restoreError = error.localizedDescription
-                showRestoreError = true
-            }
-        }
-        .alert(String(localized: "setup.import.alert.restoreFailed"), isPresented: $showRestoreError) {
-            Button(String(localized: "setup.alert.ok"), role: .cancel) {}
-        } message: {
-            Text(restoreError ?? "Unknown error")
-        }
         .alert(String(localized: "setup.import.alert.portConflict"), isPresented: $relayManager.isPortConflict) {
             Button(String(localized: "setup.import.alert.retry")) {
                 relayManager.isPortConflict = false
@@ -217,71 +175,6 @@ struct ImportNotesStep: View {
     }
 
     @ViewBuilder
-    private var backupRestoreContent: some View {
-        VStack(spacing: 14) {
-            if isRestoring {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(WizardColors.accentPrimary)
-                    Text(String(localized: "setup.import.restoring"))
-                        .font(.appSystem(size: 14))
-                        .foregroundColor(WizardColors.textSecondary)
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity)
-                .background(WizardColors.bgCard)
-                .cornerRadius(12)
-            } else if restoreCompleted {
-                HStack(spacing: 10) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(WizardColors.success)
-                        .font(.title2)
-                    Text(String(localized: "setup.import.restoreSuccess"))
-                        .font(.appSystem(size: 15, weight: .medium))
-                        .foregroundColor(WizardColors.textPrimary)
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity)
-                .background(WizardColors.bgCard)
-                .cornerRadius(12)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(WizardColors.success.opacity(0.5), lineWidth: 2))
-
-                WizardPrimaryButton(title: String(localized: "setup.action.continue"), action: onContinue)
-            } else {
-                Button(action: {
-                    #if os(macOS)
-                    NSApp.activate(ignoringOtherApps: true)
-                    #endif
-                    showingFileImporter = true
-                }) {
-                    HStack {
-                        Image(systemName: "doc.zipper")
-                            .font(.title3)
-                        Text(String(localized: "setup.import.chooseBackup"))
-                            .font(.appSystem(size: 15, weight: .medium))
-                    }
-                    .foregroundColor(WizardColors.textSecondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(24)
-                    .background(WizardColors.bgCard)
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [8, 4]))
-                            .foregroundColor(WizardColors.borderSubtle)
-                    )
-                }
-                .buttonStyle(.plain)
-
-                Text(String(localized: "setup.import.backupHint"))
-                    .font(.appSystem(size: 12))
-                    .foregroundColor(WizardColors.textMuted)
-            }
-        }
-    }
-
-    @ViewBuilder
     private var ownRelaysNote: some View {
         if !ownRelays.isEmpty {
             Text("Also reading from your servers: " + ownRelays.map { RelayMatrix.label($0) }.joined(separator: ", "))
@@ -300,18 +193,5 @@ struct ImportNotesStep: View {
             kind: 10002, for: pubkey, alsoAsk: configService.config.importSeedRelays + RelayDraft.indexers
         )
         ownRelays = RelayCheck.ownWriteRelays(relayListTags: list?.tags ?? [])
-    }
-
-    private func restoreBackup(from url: URL) {
-        isRestoring = true
-        VaultBackupRestore.restore(from: url, configService: configService) { error in
-            isRestoring = false
-            if let error {
-                restoreError = error
-                showRestoreError = true
-            } else {
-                restoreCompleted = true
-            }
-        }
     }
 }

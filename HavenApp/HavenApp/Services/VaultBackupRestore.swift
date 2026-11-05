@@ -1,9 +1,9 @@
 import Foundation
 
 /// Restores a Nostr Vault backup file picked by the user into this device's
-/// relay. Shared by setup's Import step and its "Do you have a Vault backup?"
-/// question, so both run the same restore. Only the signing-in key's own
-/// backup is restored (RestoreOwnBackupC), as in Settings › Backup.
+/// relay: the Vault tab's "Restore from a backup" (moved out of setup, Logen
+/// 2026-11-05). Only the vault owner's own backup is restored
+/// (RestoreOwnBackupC), as in Settings › Backup.
 @MainActor
 enum VaultBackupRestore {
     /// Copies the picked file out of its security scope, then restores it.
@@ -44,7 +44,7 @@ enum VaultBackupRestore {
             try? FileManager.default.removeItem(at: tempFile)
             Task { @MainActor in
                 if code == 0 { configService.reload() }
-                completion(VaultBackupQuestion.restoreError(code: code))
+                completion(BackupRestoreCode.error(code: code))
             }
         }
     }

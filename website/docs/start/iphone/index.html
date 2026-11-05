@@ -145,11 +145,12 @@
                 </div>
 
                 <h2 id="pick-a-way-in">Pick a way in</h2>
-                <p>The first screen has two buttons. <span class="ui">What's inside?</span> under them lists what the app does.</p>
+                <p>The first screen asks <strong>New to Nostr?</strong> <span class="ui">What's inside?</span> above the
+                    buttons lists what the app does.</p>
                 <ul>
-                    <li><span class="ui">Create an account</span> if you're new to Nostr. You get a new key, a password for it and a
+                    <li><span class="ui">Yes, create an account</span> if you're new to Nostr. You get a new key, a password for it and a
                         profile.</li>
-                    <li><span class="ui">I already use Nostr</span> if you have an account from another Nostr app. You bring that
+                    <li><span class="ui">No, I already use Nostr</span> if you have an account from another Nostr app. You bring that
                         account, and your old notes come home to your phone.</li>
                 </ul>
 
@@ -190,7 +191,7 @@
 
                 <h2 id="existing">Bring the account you have</h2>
                 <ol class="steps">
-                    <li>Tap <span class="ui">I already use Nostr</span>. The screen asks <strong>Who are you on Nostr?</strong></li>
+                    <li>Tap <span class="ui">No, I already use Nostr</span>. The screen asks <strong>Who are you on Nostr?</strong></li>
                     <li>Paste one of these into the box, or tap the QR icon (<span class="ui">Scan a QR code</span>) to scan one.
                         The app tells you what you'll be able to do:
                         <div class="docs-table-wrap"><table>
@@ -207,9 +208,12 @@
                         </table></div>
                         To use a signer app instead, tap <span class="ui">Use a signer app</span>, then
                         <span class="ui">Sign in with Clave</span>. See <a href="/docs/keys/signers/">Signers</a>.</li>
-                    <li><strong>Do you have a Vault backup?</strong> If you have a backup .zip from Nostr Vault, tap
-                        <span class="ui">Yes, restore my backup</span> and pick it: your notes come back at once and the relay import is
-                        skipped. Otherwise tap <span class="ui">No, import from my relays</span>.</li>
+                    <li><strong>New to Nostr Vault?</strong> Tap <span class="ui">Yes, bring my notes from my relays</span>. If
+                        Nostr Vault is already on another of your devices, tap <span class="ui">Copy from my other vault</span>
+                        and link the two with two scans. If it can't be reached, or you tap
+                        <span class="ui">Lost your other device? We'll bring your notes from relays</span>, your notes come from your
+                        relays. A backup .zip is restored later from the Vault tab
+                        (<span class="ui">Restore from a backup</span>).</li>
                     <li><strong>Checking your relays.</strong> The app looks for your notes on the import relays, and also on the
                         write relays you published yourself (marked <strong>yours</strong>; read for this import only, never saved).
                         When it's done the title says <span class="ui">Ready to import</span>.
@@ -228,10 +232,9 @@
                     altogether. If you do paste it, Nostr Vault keeps it encrypted on this phone only.</p></div>
 
                 <h2 id="who-told-you">Who told you about Nostr Vault?</h2>
-                <p>If you create an account, or bring one you can post with, setup asks <strong>Who told you about Nostr
+                <p>If you create an account, setup asks <strong>Who told you about Nostr
                     Vault?</strong> It comes after the servers step (<strong>Your posts will be shared through these
-                    servers</strong>), or after <strong>Checking your relays</strong>.
-                    Read-only accounts skip it.</p>
+                    servers</strong>). Accounts brought from another Nostr app skip it.</p>
                 <ol class="steps">
                     <li>Tap <span class="ui">Scan their profile code</span>, or paste their profile link or npub. Their link
                         comes from <strong>Share profile</strong>; see <a href="/docs/share-links/profile/">Share your profile</a>.

@@ -40,10 +40,6 @@ final class TutorialCenter: ObservableObject {
     /// bump it: the next tutorial waits for the person's next visit to a
     /// tab, not the screen they just closed one on.
     @Published private(set) var revision = 0
-    /// Runs once, a moment after the next tutorial is finished or skipped.
-    /// Setup uses it to hold the notification permission prompt until the
-    /// first tutorial is out of the way.
-    var onNextClose: (() -> Void)?
 
     init(store: TutorialStore = UserDefaultsTutorialStore()) {
         progress = TutorialProgress(store: store)
@@ -76,28 +72,16 @@ final class TutorialCenter: ObservableObject {
 
     func finish(_ id: TutorialID, account: String) {
         progress.finish(id, account: account)
-        runNextClose()
     }
 
     /// Done without being shown, so the page on screen may start its own.
     func finishQuietly(_ id: TutorialID, account: String) {
         progress.finish(id, account: account)
         revision += 1
-        runNextClose()
     }
 
     func skip(_ id: TutorialID, account: String) {
         progress.skip(id, account: account)
-        runNextClose()
-    }
-
-    private func runNextClose() {
-        guard let action = onNextClose else { return }
-        onNextClose = nil
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1))
-            action()
-        }
     }
 
     func resetAll(account: String) {

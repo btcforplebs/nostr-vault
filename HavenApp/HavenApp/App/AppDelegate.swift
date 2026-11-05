@@ -52,10 +52,9 @@ class AppDelegate: NSObject, ObservableObject {
         if !ConfigService.shared.config.hasCompletedSetup {
             openWelcomeWindow()
         } else {
-            // Same as the iOS AppDelegate: the system only prompts once, so this
-            // is silent after the first answer. It also reaches Macs set up
-            // before setup asked here, whose switch is on with no permission.
-            PushNotificationService.shared.requestPermissionAndRegister()
+            // Reads the answer only. An undecided prompt waits for the main
+            // window (NotificationAsk), never before it.
+            PushNotificationService.shared.refreshAnswer()
 
             // Auto-start relay after the app is fully initialised.
             // Uses a Task with a brief sleep so the SwiftUI scene and

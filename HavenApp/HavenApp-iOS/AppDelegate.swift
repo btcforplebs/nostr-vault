@@ -138,13 +138,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             FipsMeshService.shared.resumeWhenActive()
         }
 
-        // Only request local notification permission if the user has already
-        // completed setup (has an npub). First-time users will be prompted
-        // after the setup wizard finishes. No remote/APNs registration —
-        // notifications are generated on-device from the relay's NOTIFY markers.
+        // The notification prompt never shows here, before any UI: an
+        // undecided one waits until you're in with nothing else on screen
+        // (NotificationAsk); an answered one is only read. First-time users
+        // get it after setup. No remote/APNs registration: notifications are
+        // generated on-device from the relay's NOTIFY markers.
         if ConfigService.shared.config.hasCompletedSetup {
             Task { @MainActor in
-                PushNotificationService.shared.requestPermissionAndRegister()
+                PushNotificationService.shared.askWhenIn()
             }
             Self.scheduleAppRefresh()
 

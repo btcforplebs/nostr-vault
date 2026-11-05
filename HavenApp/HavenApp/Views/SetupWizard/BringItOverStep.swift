@@ -14,6 +14,8 @@ struct BringItOverStep: View {
     let onDone: () -> Void
     /// No link, or the copy stalled: one plain line, then the relay import.
     let onFallback: () -> Void
+    /// "Lost your other device?": the relay import, by choice (no line).
+    let onRelaysInstead: () -> Void
 
     @State private var scanning = false
     @State private var other: MeshPairing.Payload?
@@ -37,6 +39,17 @@ struct BringItOverStep: View {
                                scanned: scanned, confirm: confirm, onLinked: startCopy, onFailed: fallBack,
                                onContinue: done)
                 .environmentObject(relayManager)
+            if !copying {
+                Button(action: relaysInstead) {
+                    Text(OtherVaultCopy.lostDevice)
+                        .font(.appSystem(size: 14, weight: .medium))
+                        .foregroundColor(WizardColors.accentPrimary)
+                        .multilineTextAlignment(.center)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
         }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in watch() }
         #if os(macOS)
@@ -120,6 +133,13 @@ struct BringItOverStep: View {
         guard !finished else { return }
         finished = true
         onDone()
+    }
+
+    private func relaysInstead() {
+        guard !finished else { return }
+        finished = true
+        holder.flow(configService).cancel()
+        onRelaysInstead()
     }
 
     private func fallBack() {

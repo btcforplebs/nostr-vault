@@ -15,8 +15,6 @@ struct BackupSettingsView: View {
     @State private var isExportingBlossom = false
     @State private var isImportingBlossom = false
     @State private var statusMessage = ""
-    static let notThisVaultsBackup = "This backup isn't this vault's. It holds no notes signed by the vault owner's key."
-
     /// A refused restore ("This backup isn't…") is a failure too.
     private var statusFailed: Bool {
         statusMessage.contains("failed") || statusMessage.contains("Failed") || statusMessage.contains("Error")
@@ -239,8 +237,7 @@ struct BackupSettingsView: View {
                 isImportingJSONL = false
                 try? FileManager.default.removeItem(at: tempFile)
                 // Checked against this vault's owner, not the active account.
-                statusMessage = code == 2 ? Self.notThisVaultsBackup
-                    : VaultBackupQuestion.restoreError(code: code) ?? "Notes restored successfully!"
+                statusMessage = BackupRestoreCode.error(code: code) ?? "Notes restored successfully!"
                 clearStatus()
             }
         }
