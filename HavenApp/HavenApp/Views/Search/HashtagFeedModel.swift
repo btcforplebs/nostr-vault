@@ -35,9 +35,11 @@ final class HashtagFeedModel: ObservableObject {
     private var pageClients: [WebSocketClient] = []
     private var pageCancellables = Set<AnyCancellable>()
     private var page = 0
-    /// Fill your feed: no web of trust yet, so the open list is screened
-    /// (`TopicFeedFilter`). Every post lands in `pool`; `fromOthers` is what
-    /// passes. Follow counts come from each author's kind 3.
+    /// Fill your feed: Everyone is still locked (under 5 follows,
+    /// `TrustScopeLock.hashtagsScreened`), so the open list is screened
+    /// (`TopicFeedFilter`). Your follows' posts still go in `fromFollows`;
+    /// every other post lands in `pool`, and `fromOthers` is what passes.
+    /// Follow counts come from each author's kind 3.
     @Published private(set) var screening = false
     private var pool: [FeedNote] = []
     private var followCounts: [String: Int] = [:]
@@ -92,9 +94,9 @@ final class HashtagFeedModel: ObservableObject {
         // Same feed as last time (back from a note): keep the posts so the
         // list, and the scroll position on it, survive; the reopened
         // subscription only adds what is new.
-        // Screened (Fill your feed), follows don't change what's shown: a
-        // follow from the guide must not wipe and reload the list under the
-        // reader (Logen, 2026-10-08).
+        // Screened (Fill your feed), a new follow doesn't wipe and reload the
+        // list under the reader (Logen, 2026-10-08); their new posts go in
+        // the top group from here on.
         let sameFollows = follows == self.follows || (screen && trust == nil)
         let resuming = tags == shownTags && sameFollows && trust == shownTrust
             && !(fromFollows.isEmpty && fromOthers.isEmpty)
@@ -317,7 +319,8 @@ final class HashtagFeedModel: ObservableObject {
     /// An older page's post, kept only if it belongs to the group being paged.
     private func insertOlder(_ note: FeedNote, into section: Section) -> Bool {
         // Same split as `insert`: with the shield off there is one list.
-        let home: Section = shownTrust != nil && follows.contains(note.pubkey) ? .follows : .others
+        let home: Section = TopicFeedFilter.inFollowsGroup(author: note.pubkey, follows: follows,
+                                                           trustScoped: shownTrust != nil, screened: screening) ? .follows : .others
         guard home == section,
               seen.insert(note.id).inserted else { return false }
         if section == .others && screening {
@@ -342,7 +345,8 @@ final class HashtagFeedModel: ObservableObject {
 
     private func insert(_ note: FeedNote) {
         guard seen.insert(note.id).inserted else { return }
-        if shownTrust != nil, follows.contains(note.pubkey) {
+        if TopicFeedFilter.inFollowsGroup(author: note.pubkey, follows: follows,
+                                          trustScoped: shownTrust != nil, screened: screening) {
             Self.insert(note, into: &fromFollows)
         } else if screening {
             // Not shown yet: loading ends when the screen pass says so.

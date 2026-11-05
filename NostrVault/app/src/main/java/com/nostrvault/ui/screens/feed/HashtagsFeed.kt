@@ -110,8 +110,6 @@ class HashtagsFeedViewModel @Inject constructor(
 
     val followedTags: StateFlow<List<String>> = interestListService.hashtags
 
-    override val opensWithoutWebOfTrust: Boolean = true
-
     /** The tag the chips narrow to; null is All. */
     private val _selected = MutableStateFlow<String?>(null)
     val selected: StateFlow<String?> = _selected.asStateFlow()
