@@ -32,5 +32,13 @@ final class NIP46SessionChoiceTests: XCTestCase {
         let recorded = try XCTUnwrap(tail.range(of: "let sessionKey = Self.activeSignerKey()"))
         let queued = try XCTUnwrap(tail.range(of: "signerRequest("))
         XCTAssertLessThan(recorded.lowerBound, queued.lowerBound)
+        // ...and before connecting, so a switch during the connect can't move it.
+        for fn in ["func signEvent(eventJSON: String)", "func nip04Encrypt(", "func nip04Decrypt(", "func nip44Encrypt(", "func nip44Decrypt("] {
+            let start = try XCTUnwrap(source.range(of: fn), fn)
+            let body = source[start.upperBound...]
+            let key = try XCTUnwrap(body.range(of: "let sessionKey = Self.activeSignerKey()"), fn)
+            let connect = try XCTUnwrap(body.range(of: "try await ensureConnected()"), fn)
+            XCTAssertLessThan(key.lowerBound, connect.lowerBound, "\(fn) records its session after connecting")
+        }
     }
 }

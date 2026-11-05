@@ -21,11 +21,12 @@ extension NIP46Service {
         #if DEBUG
         print("NIP46Service: signEvent called, connectionState=\(connectionState.rawValue)")
         #endif
+        // The session this request goes to, so a late failure can never drop
+        // the session of an account switched to while it was waiting. Read
+        // before connecting: a switch during the connect must not move it.
+        let sessionKey = Self.activeSignerKey()
         try await ensureConnected()
         let userAction = Self.isUserAction(eventJSON: eventJSON)
-        // The session this request goes to, so a late failure can never drop
-        // the session of an account switched to while it was waiting.
-        let sessionKey = Self.activeSignerKey()
         do {
             return try await signerRequest(userAction: userAction, queued: Self.waitsInBackgroundQueue(eventJSON: eventJSON)) {
                 // After the queue wait, sign through the session recorded
@@ -101,8 +102,8 @@ extension NIP46Service {
     }
 
     func nip04Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
-        try await ensureConnected()
         let sessionKey = Self.activeSignerKey()
+        try await ensureConnected()
         return try await signerRequest(userAction: false, queued: false) {
             try await self.crypt("nip04_encrypt", recorded: sessionKey, peer: thirdPartyPubkey, text: plaintext) {
                 withCStrings([thirdPartyPubkey, plaintext], { p in NIP46NIP04EncryptC(p[0], p[1]) })
@@ -111,8 +112,8 @@ extension NIP46Service {
     }
 
     func nip04Decrypt(thirdPartyPubkey: String, ciphertext: String) async throws -> String {
-        try await ensureConnected()
         let sessionKey = Self.activeSignerKey()
+        try await ensureConnected()
         return try await signerRequest(userAction: false) {
             try await self.crypt("nip04_decrypt", recorded: sessionKey, peer: thirdPartyPubkey, text: ciphertext) {
                 withCStrings([thirdPartyPubkey, ciphertext], { p in NIP46NIP04DecryptC(p[0], p[1]) })
@@ -121,8 +122,8 @@ extension NIP46Service {
     }
 
     func nip44Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
-        try await ensureConnected()
         let sessionKey = Self.activeSignerKey()
+        try await ensureConnected()
         return try await signerRequest(userAction: false, queued: false) {
             try await self.crypt("nip44_encrypt", recorded: sessionKey, peer: thirdPartyPubkey, text: plaintext) {
                 withCStrings([thirdPartyPubkey, plaintext], { p in NIP46NIP44EncryptC(p[0], p[1]) })
@@ -131,8 +132,8 @@ extension NIP46Service {
     }
 
     func nip44Decrypt(thirdPartyPubkey: String, ciphertext: String) async throws -> String {
-        try await ensureConnected()
         let sessionKey = Self.activeSignerKey()
+        try await ensureConnected()
         return try await signerRequest(userAction: false) {
             try await self.crypt("nip44_decrypt", recorded: sessionKey, peer: thirdPartyPubkey, text: ciphertext) {
                 withCStrings([thirdPartyPubkey, ciphertext], { p in NIP46NIP44DecryptC(p[0], p[1]) })
