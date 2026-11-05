@@ -45,11 +45,15 @@ class DraftService: ObservableObject {
     /// Drafts deleted while relay was offline, with the account each was
     /// deleted as. Applied when relay comes online and that account is active.
     private var pendingDeletes: Set<PendingDraftDelete> = []
+    /// Drafts deleted here, so a relay copy that missed its delete doesn't
+    /// come back (DraftTombstones).
+    private var tombstones = DraftTombstones()
 
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
         loadFromDisk()
+        loadTombstones()
         observeRelayState()
     }
 
@@ -62,6 +66,27 @@ class DraftService: ObservableObject {
         let havenDir = appSupport.appendingPathComponent("Haven", isDirectory: true)
         try? FileManager.default.createDirectory(at: havenDir, withIntermediateDirectories: true)
         return havenDir.appendingPathComponent("drafts.json")
+    }
+
+    private static var tombstonesURL: URL {
+        cacheURL.deletingLastPathComponent().appendingPathComponent("draft_tombstones.json")
+    }
+
+    private func loadTombstones() {
+        guard let data = try? Data(contentsOf: Self.tombstonesURL),
+              let loaded = try? JSONDecoder().decode(DraftTombstones.self, from: data) else { return }
+        tombstones = loaded
+        tombstones.prune(now: Date())
+    }
+
+    private func saveTombstones() {
+        let snapshot = tombstones
+        let url = Self.tombstonesURL
+        DispatchQueue.global(qos: .utility).async {
+            if let data = try? JSONEncoder().encode(snapshot) {
+                try? data.write(to: url, options: .atomic)
+            }
+        }
     }
 
     private func loadFromDisk() {
@@ -188,6 +213,11 @@ class DraftService: ObservableObject {
         taggedPubkeys: [String],
         authorPubkey: String? = nil
     ) -> Draft {
+        // Saving again under a deleted id brings that draft back on purpose.
+        if tombstones.hides(id: draftId, updatedAt: Date()) {
+            tombstones.forget(id: draftId)
+            saveTombstones()
+        }
         // Build tags — mirror the NIP-10 tag logic from ComposeView.postNote()
         var tags: [[String]] = [
             ["d", draftId],
@@ -310,10 +340,18 @@ class DraftService: ObservableObject {
             )
         }
 
+        // A relay copy of a draft deleted here missed its delete: leave it
+        // out, and send the delete again.
+        let (deleted, live) = (relayDrafts.filter { tombstones.hides(id: $0.id, updatedAt: $0.updatedAt) },
+                               relayDrafts.filter { !tombstones.hides(id: $0.id, updatedAt: $0.updatedAt) })
+        for draft in deleted {
+            Task { await self.deleteFromRelay(id: draft.id, as: draft.pubkey) }
+        }
+
         // Merge: keep the newer version of each draft
         var merged: [String: Draft] = [:]
         for draft in drafts { merged[draft.id] = draft }
-        for draft in relayDrafts {
+        for draft in live {
             if let existing = merged[draft.id] {
                 merged[draft.id] = draft.updatedAt >= existing.updatedAt ? draft : existing
             } else {
@@ -331,7 +369,10 @@ class DraftService: ObservableObject {
     func deleteDraft(id draftId: String) async {
         // The account it was deleted as: its own draft, whoever is active later.
         let author = drafts.first(where: { $0.id == draftId })?.pubkey ?? NostrService.shared.activeHexPubkey
-        // Always remove from local state + disk immediately
+        // Always remove from local state + disk immediately, and remember
+        // the delete so the relay copy can't bring it back.
+        tombstones.record(id: draftId, at: Date())
+        saveTombstones()
         drafts.removeAll { $0.id == draftId }
         pendingSaves.removeAll { $0.id == draftId }
         saveToDisk()

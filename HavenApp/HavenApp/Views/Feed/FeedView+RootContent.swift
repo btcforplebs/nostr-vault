@@ -128,11 +128,10 @@ extension FeedView {
         }
         #if !os(iOS)
         // iOS reopens the composer from SceneDelegate, over any open sheet.
-        .onChange(of: pendingManager.editRequest?.id) { _, _ in
-            guard let req = pendingManager.editRequest else { return }
-            composeContext = ComposeContext(replyTo: req.replyTo, quoteTo: req.quoteTo, initialContent: req.content, draftId: req.draftId, media: req.media)
-            pendingManager.editRequest = nil
-        }
+        .onChange(of: pendingManager.editRequest?.id) { _, _ in consumeEditRequest() }
+        // Edit tapped on another tab: MenuBarView switches to Feed, and the
+        // request is waiting when this view appears (onChange won't fire).
+        .onAppear { consumeEditRequest() }
         #endif
         .sheet(isPresented: $showingDashboard) {
             FeedDashboardView(
@@ -256,4 +255,14 @@ extension FeedView {
             .environmentObject(configService)
         }
     }
+
+    #if !os(iOS)
+    /// Opens the composer for a post whose Edit was tapped on the countdown
+    /// pill, once (PendingPostManager.editRequest).
+    func consumeEditRequest() {
+        guard let req = pendingManager.editRequest else { return }
+        composeContext = ComposeContext(replyTo: req.replyTo, quoteTo: req.quoteTo, initialContent: req.content, draftId: req.draftId, media: req.media)
+        pendingManager.editRequest = nil
+    }
+    #endif
 }

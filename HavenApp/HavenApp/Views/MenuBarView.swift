@@ -129,6 +129,18 @@ struct MenuBarView: View {
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
+        #if os(macOS)
+        // Edit on the countdown pill (shown on every tab) reopens the post in
+        // Feed's composer: go to Feed, which takes the request when it
+        // appears. On another tab the post was cancelled and nothing opened.
+        // onReceive, not an observed object: the manager publishes on every
+        // countdown tick, and the whole window needn't redraw for that.
+        .onReceive(PendingPostManager.shared.$editRequest.map { $0?.id }.removeDuplicates()) { id in
+            if PendingPostEdit.switchesToFeed(hasRequest: id != nil, onFeed: selectedTab == .feed) {
+                selectedTab = .feed
+            }
+        }
+        #endif
         // Your own profile, opened from a note or a list: the tab, where editing is.
         .onReceive(NotificationCenter.default.publisher(for: .havenShowMyProfileTab)) { _ in
             selectedTab = .profile

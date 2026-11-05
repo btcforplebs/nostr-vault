@@ -8,6 +8,13 @@ import Foundation
 /// adds the quote line again on Post, posted it twice, and the photos came
 /// back as bare links with no attachment behind them.
 enum PendingPostEdit {
+    /// On the Mac the reopened composer is Feed's, and the countdown pill
+    /// is on every tab: an Edit tapped elsewhere goes to Feed first (it used
+    /// to cancel the post and open nothing).
+    static func switchesToFeed(hasRequest: Bool, onFeed: Bool) -> Bool {
+        hasRequest && !onFeed
+    }
+
     /// A hosted photo or video from the pending post's `imeta` tags.
     struct Media: Equatable {
         let url: String

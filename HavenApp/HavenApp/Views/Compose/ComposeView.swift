@@ -422,7 +422,8 @@ struct ComposeView: View {
                                 selection: $note.selection,
                                 isFocused: $isEditorFocused,
                                 fontSize: ComposeView.editorFontSize,
-                                minHeight: 200
+                                minHeight: 200,
+                                onPasteMedia: isPosting ? nil : { handlePasteFromClipboard() }
                             )
                                 #if os(iOS)
                                 .background(CaretFollower(trigger: "\(content.count)|\(mentionResults.isEmpty)|\(attachments.count)"))

@@ -18,6 +18,9 @@ struct ComposeTextView {
     @Binding var isFocused: Bool
     var fontSize: CGFloat
     var minHeight: CGFloat
+    /// ⌘V with a photo or video on the clipboard (ComposePasteRule): the
+    /// composer attaches it. Mac only; iOS binds ⌘V in PastesClipboardImage.
+    var onPasteMedia: (() -> Void)? = nil
 
     final class Coordinator: NSObject {
         var parent: ComposeTextView
@@ -110,9 +113,24 @@ extension ComposeTextView.Coordinator: UITextViewDelegate {
     func textViewDidEndEditing(_ textView: UITextView) { reportFocus(false) }
 }
 #else
+/// The Mac editor, catching ⌘V when the clipboard holds a photo or video.
+final class ComposeNSTextView: NSTextView {
+    var onPasteMedia: (() -> Void)?
+
+    override func paste(_ sender: Any?) {
+        let types = NSPasteboard.general.types?.map(\.rawValue) ?? []
+        if let onPasteMedia, ComposePasteRule.pastesMedia(types: types) {
+            onPasteMedia()
+            return
+        }
+        super.paste(sender)
+    }
+}
+
 extension ComposeTextView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSTextView {
-        let view = NSTextView()
+        let view = ComposeNSTextView()
+        view.onPasteMedia = onPasteMedia
         view.delegate = context.coordinator
         view.isRichText = false
         view.importsGraphics = false
@@ -133,6 +151,7 @@ extension ComposeTextView: NSViewRepresentable {
     func updateNSView(_ view: NSTextView, context: Context) {
         let coordinator = context.coordinator
         coordinator.parent = self
+        (view as? ComposeNSTextView)?.onPasteMedia = onPasteMedia
         if view.font?.pointSize != fontSize { view.font = .systemFont(ofSize: fontSize) }
         if view.string != text {
             coordinator.applying = true

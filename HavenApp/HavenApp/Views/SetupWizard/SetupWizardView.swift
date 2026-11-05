@@ -713,32 +713,6 @@ struct SetupWizardView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                HStack(spacing: 8) {
-                    Text("pkill -9 haven")
-                        .font(.appSystem(size: 14, weight: .medium, design: .monospaced))
-                        .foregroundColor(WizardColors.textPrimary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .frame(maxWidth: .infinity)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(6)
-
-                    Button(action: {
-                        #if os(macOS)
-                        NSApp.activate(ignoringOtherApps: true)
-                        #endif
-                        PlatformClipboard.copy("pkill -9 haven")
-                    }) {
-                        Image(systemName: "doc.on.doc")
-                            .font(.appSystem(size: 14))
-                            .foregroundColor(WizardColors.textPrimary)
-                            .frame(width: 36, height: 36)
-                            .background(WizardColors.accentPrimary)
-                            .cornerRadius(6)
-                    }
-                    .buttonStyle(.plain)
-                }
-
                 Button(action: {
                     relayManager.showProcessKillAlert = false
                     relayManager.forceCleanAndRestart()
