@@ -143,6 +143,10 @@ type windowResult struct {
 	// Oldest: per relay, the oldest created_at among them. A whole-history
 	// lane pages newest first, so this is how far down it got.
 	Oldest map[string]nostr.Timestamp
+	// Cut: relays whose read ended because ctx did (a deadline, a stop or a
+	// cancel), not because they were done: what is below Oldest (or all of
+	// it, with no Oldest) was not read from them.
+	Cut []string
 }
 
 // fetchWindowPaged reads filter (Since..Until) from every relay, each one paged
@@ -168,6 +172,13 @@ func fetchPaged(ctx context.Context, relays []string, filter nostr.Filter, maxPa
 		wg.Add(1)
 		go func(url string) {
 			defer wg.Done()
+			defer func() {
+				if ctx.Err() != nil {
+					mu.Lock()
+					res.Cut = append(res.Cut, url)
+					mu.Unlock()
+				}
+			}()
 			ctx := ctx
 			if d, ok := idles[url]; ok {
 				ctx = context.WithValue(ctx, pageIdleOneKey{}, d)

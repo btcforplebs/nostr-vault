@@ -288,7 +288,8 @@ func StartRelayC(importMode bool) {
 				cycle.pool,
 				config.WhitelistedPubKeys,
 				config.ImportSeedRelays,
-				config.WotDepth,
+				effectiveWotDepth(), // first run: follows only until the wider_network job runs
+
 				config.WotMinimumFollowers,
 				config.WotFetchTimeoutSeconds,
 				config.WotCachePath,
@@ -329,6 +330,8 @@ func StartRelayC(importMode bool) {
 			cycle.spawn("wot.PeriodicRefresh", func() { wot.PeriodicRefresh(cycle.ctx, config.WotRefreshInterval) })
 			cycle.spawn("wot.RefreshWhileEmpty", func() { wot.RefreshWhileEmpty(cycle.ctx, wot.EmptyGraphRefreshInterval, ownerFollowListStamp) })
 			cycle.spawn("wot.RefreshOnFollowListChange", func() { wot.RefreshOnFollowListChange(cycle.ctx, wot.FollowListCheckInterval, ownerFollowListAt) })
+			// A first-run job cut by the last stop picks up where it was.
+			cycle.spawn("importJobs.resume", func() { resumeImportJobs(cycle.ctx, cycle.spawn) })
 		})
 
 		// Use a fresh ServeMux each cycle so stop/start never panics on
@@ -498,6 +501,33 @@ func runImportCycle() {
 // GetImportResultC returns the last import's IMPORT_RESULT line
 // (import_result.go), or NULL before the first import. The caller frees it.
 //
+// ─── First run + Vault jobs (import_jobs.go) ───────────────────────────────
+// Contract: PLANS/NV_FIRST_RUN_ENTRY_PLAN_2026_11_05.md, "Engine API".
+
+//export ImportJobsC
+func ImportJobsC() *C.char {
+	return C.CString(importJobsJSON())
+}
+
+// RunImportJobC starts a job in the running relay: 0 started, 1 unknown job,
+// 2 busy (a job is running), 3 relay not running.
+//
+//export RunImportJobC
+func RunImportJobC(name *C.char) C.int {
+	c := relayLC.current.Load()
+	if c == nil || c.server == nil {
+		return runRelayNotReady
+	}
+	return C.int(importJobsRunner.run(c.ctx, c.spawn, C.GoString(name), false))
+}
+
+// CancelImportJobC: 0 cancelling, 1 not running.
+//
+//export CancelImportJobC
+func CancelImportJobC(name *C.char) C.int {
+	return C.int(importJobsRunner.cancelJob(C.GoString(name)))
+}
+
 //export GetImportResultC
 func GetImportResultC() *C.char {
 	l, _ := lastImportResult.Load().(string)

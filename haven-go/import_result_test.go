@@ -11,9 +11,16 @@ func TestImportResultCompleteWithCounts(t *testing.T) {
 	o.observe("2026/11/05 02:40:00 ✅ owner note import complete! Imported 1234 notes")
 	o.observe("2026/11/05 02:41:00 📦 imported 56 tagged notes")
 	o.observe("✅ tagged import complete")
-	want := "IMPORT_RESULT status=complete reason=ok owner=1234 tagged=56 relays=2/3 other_vault=none"
+	// wss://c never answered the connect check: never read from, so partial
+	// with its whole range unread (Tron, background risks 9), not complete.
+	want := "IMPORT_RESULT status=partial reason=relays_unreachable owner=1234 tagged=56 relays=2/3 other_vault=none unread=1"
 	if got := o.line(); got != want {
 		t.Fatalf("got %q\nwant %q", got, want)
+	}
+	all := newImportOutcome()
+	all.relaysChecked([]string{"wss://a", "wss://b"}, []string{"wss://a", "wss://b"}, "")
+	if got := all.line(); got != "IMPORT_RESULT status=complete reason=ok owner=0 tagged=0 relays=2/2 other_vault=none unread=0" {
+		t.Fatalf("every seed answered: got %q", got)
 	}
 }
 
@@ -41,13 +48,13 @@ func TestImportResultOtherVault(t *testing.T) {
 	const vault = "ws://127.0.0.1:41234/tok"
 	reached := newImportOutcome()
 	reached.relaysChecked([]string{"wss://a", vault}, []string{"wss://a", vault}, vault)
-	if s, _ := reached.status(); s != "complete" || !strings.HasSuffix(reached.line(), "other_vault=reached") {
+	if s, _ := reached.status(); s != "complete" || !strings.HasSuffix(reached.line(), "other_vault=reached unread=0") {
 		t.Fatalf("reached: %s", reached.line())
 	}
 	missed := newImportOutcome()
 	missed.relaysChecked([]string{"wss://a", vault}, []string{"wss://a"}, vault)
 	s, r := missed.status()
-	if s != "partial" || r != "other_vault_not_reached" || !strings.HasSuffix(missed.line(), "other_vault=not_reached") {
+	if s != "partial" || r != "other_vault_not_reached" || !strings.HasSuffix(missed.line(), "other_vault=not_reached unread=0") {
 		t.Fatalf("missed: %s", missed.line())
 	}
 }
@@ -74,7 +81,7 @@ func TestImportResultNoSeedRelay(t *testing.T) {
 	o := newImportOutcome()
 	o.relaysChecked([]string{"wss://a"}, nil, "")
 	o.fail("no_seed_relay")
-	want := "IMPORT_RESULT status=failed reason=no_seed_relay owner=0 tagged=0 relays=0/1 other_vault=none"
+	want := "IMPORT_RESULT status=failed reason=no_seed_relay owner=0 tagged=0 relays=0/1 other_vault=none unread=1"
 	if got := o.line(); got != want {
 		t.Fatalf("got %q", got)
 	}
