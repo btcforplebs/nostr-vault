@@ -25,7 +25,10 @@ import java.io.File
 data class VaultSnapshot(
     val updatedAt: Long = 0L,
     val relay: RelayStats = RelayStats(),
+    /** Following notes, whatever feed is open. See WidgetFeedRules.feed. */
     val feed: List<SnapshotNote> = emptyList(),
+    /** The account [feed] was picked for: another's is never carried over. */
+    val feedAccount: String = "",
     val mentions: List<SnapshotNote> = emptyList(),
     val unreadDMs: Int = 0,
     /** Mosaic's tiles, newest first. See WidgetPublisher.mediaTiles. */
