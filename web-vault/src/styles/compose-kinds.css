@@ -1,6 +1,8 @@
 /* Compose's other kinds (screens/compose): the Note / Article / Poll chooser under the bar, the article and poll forms.
    The fields read as the iPhone's grouped Form rows: borderless on the sheet, one hairline between. */
 .compose-kinds { margin: 0 var(--gutter) 12px; }
+/* Five kinds fit a 320 px phone: the tabs share the width and may shrink below their padding. */
+.compose-kinds button { min-width: 0; padding-inline: 2px; white-space: nowrap; }
 
 .kind-form { display: flex; flex-direction: column; gap: 10px; padding: 0 var(--gutter) 16px; }
 .kind-form input.kind-title, .kind-form :is(input, textarea).kind-field { width: 100%; box-sizing: border-box; margin: 0; padding: 12px 14px;
