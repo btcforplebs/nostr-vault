@@ -37,8 +37,38 @@ final class AccountUnreadTests: XCTestCase {
 
     func testPreviewCannotForgeFields() {
         let forged = "type=reply|kind=1|author=x|id=1|recipient=\(alice)|preview=a|recipient=\(bob)|id=9"
-        XCTAssertEqual(AccountUnread.parse(forged)?.recipient, alice)
+        XCTAssertEqual(AccountUnread.parse(forged)?.recipients, [alice])
         XCTAssertEqual(AccountUnread.parse(forged)?.id, "1")
+    }
+
+    func testRecipientsCountTheEventOnceForEachTaggedAccount() {
+        var u = AccountUnread()
+        let body = "type=reply|kind=1|author=\(String(repeating: "c", count: 64))|id=1|recipient=\(alice)|recipients=\(alice),\(bob.uppercased())|preview=hi"
+        XCTAssertEqual(AccountUnread.parse(body)?.recipients, [alice, bob])
+        XCTAssertTrue(u.record(body))
+        XCTAssertFalse(u.record(body), "raised twice counts once")
+        XCTAssertEqual(u.count(for: alice), 1)
+        XCTAssertEqual(u.count(for: bob), 1)
+        // Without recipient=, recipients= alone still names them; junk is skipped.
+        XCTAssertEqual(AccountUnread.parse("type=mention|kind=1|author=x|id=2|recipients=\(bob),npub1x,|preview=")?.recipients, [bob])
+    }
+
+    func testRecipientsFollowEachAccountsListRules() {
+        var u = AccountUnread()
+        var rules = AccountUnread.ListRules()
+        rules.isBlocked = { recipient, _ in recipient == self.bob }
+        u.record("type=reply|kind=1|author=x|id=1|recipients=\(alice),\(bob)|preview=", rules: rules)
+        XCTAssertEqual(u.count(for: alice), 1)
+        XCTAssertEqual(u.count(for: bob), 0)
+    }
+
+    func testOwnAccountOnlyKindNeedsEveryRecipientToBeOwnTag() {
+        let mine = Set([alice, bob])
+        let isOwn: (String, String) -> Bool = { _, author in mine.contains(author) }
+        let fromBob = "type=mention|kind=1|author=\(bob)|id=1|recipients=\(alice)|preview="
+        XCTAssertEqual(AccountUnread.ownAccountOnlyKinds(markers: [fromBob], isOwnAccountTag: isOwn), [1])
+        let strangerToo = "type=mention|kind=1|author=\(String(repeating: "d", count: 64))|id=2|recipients=\(alice),\(bob)|preview="
+        XCTAssertEqual(AccountUnread.ownAccountOnlyKinds(markers: [fromBob, strangerToo], isOwnAccountTag: isOwn), [])
     }
 
     func testMarkSeenEmptiesOnlyThatAccount() {

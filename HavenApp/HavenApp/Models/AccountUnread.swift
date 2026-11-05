@@ -5,8 +5,9 @@ import Foundation
 ///
 /// The vault serves every account on the device, and each NOTIFY marker names
 /// the account it is for (`recipient=<hex>`, haven-go import.go
-/// emitInboxNotify). Markers are counted by event id, so a marker raised twice
-/// counts once. Viewing an account's Vault list empties its count, the same
+/// emitInboxNotify), or every one of your accounts it tagged
+/// (`recipients=<hex>,<hex>`). The event counts once for each of them, and a
+/// marker raised twice counts once. Viewing an account's Vault list empties its count, the same
 /// moment that list moves its own "seen" mark (`vaultActivitySeenAt.<hex>`).
 /// Android: AccountUnread.kt.
 struct AccountUnread: Equatable {
@@ -24,21 +25,38 @@ struct AccountUnread: Equatable {
         self.ids = ids
     }
 
-    /// The account and event a marker body (the text after `🔔NOTIFY|`) is
+    /// The accounts and event a marker body (the text after `🔔NOTIFY|`) is
     /// for, or nil when it does not count.
-    static func parse(_ body: String) -> (recipient: String, id: String, type: String, author: String)? {
-        // The preview is last and may hold "|" or "=": cut it off first.
+    static func parse(_ body: String) -> (recipients: [String], id: String, type: String, author: String)? {
+        let fields = fields(of: body)
+        let recipients = recipients(in: fields)
+        guard let type = fields["type"], countedTypes.contains(type),
+              !recipients.isEmpty,
+              let id = fields["id"], !id.isEmpty
+        else { return nil }
+        return (recipients, id, type, fields["author"]?.lowercased() ?? "")
+    }
+
+    /// A marker's fields. The preview is last and may hold "|" or "=", so it
+    /// is cut off first and can't forge one.
+    private static func fields(of body: String) -> [String: String] {
         let head = body.range(of: "|preview=").map { String(body[..<$0.lowerBound]) } ?? body
         var fields: [String: String] = [:]
         for part in head.split(separator: "|") {
             guard let eq = part.firstIndex(of: "=") else { continue }
             fields[String(part[..<eq])] = String(part[part.index(after: eq)...])
         }
-        guard let type = fields["type"], countedTypes.contains(type),
-              let recipient = fields["recipient"]?.lowercased(), isHex64(recipient),
-              let id = fields["id"], !id.isEmpty
-        else { return nil }
-        return (recipient, id, type, fields["author"]?.lowercased() ?? "")
+        return fields
+    }
+
+    /// `recipients=` when the relay names every account it tagged, then
+    /// `recipient=`; each once, hex only.
+    private static func recipients(in fields: [String: String]) -> [String] {
+        let listed = (fields["recipients"] ?? "").split(separator: ",").map { String($0) }
+        var seen = Set<String>()
+        return (listed + [fields["recipient"] ?? ""])
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { isHex64($0) && seen.insert($0).inserted }
     }
 
     /// The inbox kinds in a batch that came in only as one of your accounts
@@ -48,16 +66,16 @@ struct AccountUnread: Equatable {
     static func ownAccountOnlyKinds(markers: [String], isOwnAccountTag: (String, String) -> Bool) -> Set<Int> {
         var own = Set<Int>(), other = Set<Int>()
         for body in markers {
-            let head = body.range(of: "|preview=").map { String(body[..<$0.lowerBound]) } ?? body
-            var fields: [String: String] = [:]
-            for part in head.split(separator: "|") {
-                guard let eq = part.firstIndex(of: "=") else { continue }
-                fields[String(part[..<eq])] = String(part[part.index(after: eq)...])
-            }
+            let fields = fields(of: body)
             guard let kind = fields["kind"].flatMap(Int.init) else { continue }
-            let recipient = fields["recipient"]?.lowercased() ?? ""
             let author = fields["author"]?.lowercased() ?? ""
-            if isOwnAccountTag(recipient, author) { own.insert(kind) } else { other.insert(kind) }
+            // Own-account-only when it is that for every account it tagged.
+            let recipients = recipients(in: fields)
+            if (recipients.isEmpty ? [""] : recipients).allSatisfy({ isOwnAccountTag($0, author) }) {
+                own.insert(kind)
+            } else {
+                other.insert(kind)
+            }
         }
         return own.subtracting(other)
     }
@@ -93,17 +111,21 @@ struct AccountUnread: Equatable {
         static let webGatedTypes: Set<String> = ["reply", "quote", "mention"]
     }
 
-    /// Counts the marker. Returns whether anything changed.
+    /// Counts the marker, once for each account it is for whose list shows
+    /// it. Returns whether anything changed.
     @discardableResult
     mutating func record(_ body: String, rules: ListRules = .showsAll) -> Bool {
-        guard let (recipient, id, type, author) = Self.parse(body),
-              rules.shows(type: type, author: author, recipient: recipient) else { return false }
-        var list = ids[recipient] ?? []
-        guard !list.contains(id) else { return false }
-        list.append(id)
-        if list.count > Self.cap { list.removeFirst(list.count - Self.cap) }
-        ids[recipient] = list
-        return true
+        guard let (recipients, id, type, author) = Self.parse(body) else { return false }
+        var changed = false
+        for recipient in recipients where rules.shows(type: type, author: author, recipient: recipient) {
+            var list = ids[recipient] ?? []
+            guard !list.contains(id) else { continue }
+            list.append(id)
+            if list.count > Self.cap { list.removeFirst(list.count - Self.cap) }
+            ids[recipient] = list
+            changed = true
+        }
+        return changed
     }
 
     /// The account's Vault list was viewed. Returns whether anything changed.

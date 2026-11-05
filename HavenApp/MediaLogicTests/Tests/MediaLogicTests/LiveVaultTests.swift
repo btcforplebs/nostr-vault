@@ -33,6 +33,17 @@ final class LiveVaultTests: XCTestCase {
         XCTAssertTrue(held.isEmpty)
     }
 
+    func testLateOlderLinesGoInTimeOrderNotAtTheBottom() {
+        let shot = LiveVault.snapshot([line("a", at: 100), line("b", at: 90), line("c", at: 80)])
+        let now = [line("a", at: 100), line("late1", at: 95), line("b", at: 90), line("late2", at: 85),
+                   line("c", at: 80), line("tie", at: 80)]
+        let (rows, held) = LiveVault.split(now, shot)
+        XCTAssertEqual(rows.map(\.id), ["a", "late1", "b", "late2", "c", "tie"])
+        XCTAssertTrue(held.isEmpty)
+        // Placed, the column keeps that order.
+        XCTAssertEqual(LiveVault.place(now, shot).ids, ["a", "late1", "b", "late2", "c", "tie"])
+    }
+
     func testFacesAreUniqueNewestFirstWithACountOfTheRest() {
         let lines = [line("1", at: 3, actors: ["a", "b"]), line("2", at: 2, actors: ["b", "c", "d", "e", "f"])]
         let (faces, more) = LiveVault.faces(lines)

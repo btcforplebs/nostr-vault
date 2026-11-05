@@ -15,13 +15,29 @@ enum VaultAccountPage {
     case activity, notes, media, likes, zaps, bookmarks, followers, messages
 }
 
-/// A Vault line and the account it is for. Two accounts can each have a line
-/// with the same id (a day's follows, a like on a post both were tagged in),
-/// so the id carries the account.
+/// A Vault line and the accounts it is for. One event that tags several of
+/// your accounts (a reply, mention, quote or zap with words) is one line for
+/// all of them, its id the event's (Logen 2026-11-05). Folded lines (a day's
+/// follows, likes or reposts on a post) are different events per account, so
+/// each account keeps its own and the id carries the account.
 struct VaultAccountLine: Identifiable, Equatable {
-    let account: String
+    /// In switcher order; never empty.
+    let accounts: [String]
     let line: VaultActivity
-    var id: String { account + ":" + line.id }
+
+    init(account: String, line: VaultActivity) {
+        self.init(accounts: [account], line: line)
+    }
+
+    init(accounts: [String], line: VaultActivity) {
+        self.accounts = accounts
+        self.line = line
+    }
+
+    /// The first account, the one the line opens as unless another is picked.
+    var account: String { accounts.first ?? "" }
+
+    var id: String { VaultAccountChips.isOneEvent(line) ? line.id : account + ":" + line.id }
 }
 
 /// The rules behind the chips: which ones show, which accounts a chip's list
@@ -118,13 +134,49 @@ enum VaultAccountChips {
         chip == .account(active.lowercased())
     }
 
+    /// Whether the line is one event, the same event for every account it
+    /// tagged: a reply, mention, quote, article, highlight, or a zap with its
+    /// own line. Folded lines ("reaction-", "repost-", "zap-", "follow-")
+    /// gather different events per account.
+    static func isOneEvent(_ line: VaultActivity) -> Bool {
+        switch line.kind {
+        case .reply, .mention, .quote, .article, .highlight: return true
+        case .zap: return !line.id.hasPrefix("zap-")
+        case .reaction, .repost, .follow: return false
+        }
+    }
+
     /// Each account's lines in one list, newest first, each marked with its
-    /// account. Ties go to the account first in `order`, then by id, so the
-    /// list never shuffles between rebuilds.
+    /// accounts: one event that tagged several of them is one line. Ties go
+    /// to the account first in `order`, then by id, so the list never
+    /// shuffles between rebuilds.
     static func merge(_ perAccount: [String: [VaultActivity]], order: [String], limit: Int) -> [VaultAccountLine] {
         let rank = Dictionary(unique(order).enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
-        let all = perAccount.flatMap { account, lines in
-            lines.map { VaultAccountLine(account: account.lowercased(), line: $0) }
+        // Accounts in switcher order, so a shared line's first account is the
+        // one first in the switcher.
+        let accounts = perAccount.keys.map { $0.lowercased() }.sorted {
+            let ra = rank[$0] ?? .max, rb = rank[$1] ?? .max
+            return ra != rb ? ra < rb : $0 < $1
+        }
+        var lines: [String: [VaultActivity]] = [:]
+        for (account, list) in perAccount { lines[account.lowercased(), default: []] += list }
+        var all: [VaultAccountLine] = []
+        var shared: [String: Int] = [:]
+        for account in accounts {
+            for line in lines[account] ?? [] {
+                guard isOneEvent(line) else {
+                    all.append(VaultAccountLine(account: account, line: line))
+                    continue
+                }
+                if let i = shared[line.id] {
+                    if !all[i].accounts.contains(account) {
+                        all[i] = VaultAccountLine(accounts: all[i].accounts + [account], line: all[i].line)
+                    }
+                } else {
+                    shared[line.id] = all.count
+                    all.append(VaultAccountLine(account: account, line: line))
+                }
+            }
         }
         let sorted = all.sorted { a, b in
             if a.line.createdAt != b.line.createdAt { return a.line.createdAt > b.line.createdAt }

@@ -48,13 +48,38 @@ final class VaultAccountChipsTests: XCTestCase {
     }
 
     func testSameLineIdInTwoAccountsStaysTwoRows() {
+        let follows = VaultActivity(id: "follow-2026-10-31", kind: .follow, actors: ["x"], createdAt: 100, openId: nil, preview: "")
         let merged = VaultAccountChips.merge(
-            [me: [line("follow-2026-10-31", at: 100)], bob: [line("follow-2026-10-31", at: 100)]],
+            [me: [follows], bob: [follows]],
             order: [me, bob], limit: 10)
         XCTAssertEqual(merged.count, 2)
         XCTAssertEqual(Set(merged.map(\.id)).count, 2)
         // A tie goes to the account first in order, every time.
         XCTAssertEqual(merged.map(\.account), [me, bob])
+    }
+
+    func testOneEventForSeveralAccountsIsOneRowInSwitcherOrder() {
+        let reply = line(String(repeating: "e", count: 64), at: 200)
+        let merged = VaultAccountChips.merge(
+            [cat: [reply], bob: [reply, line("b1", at: 100)], me: [reply]],
+            order: [me, bob, cat], limit: 10)
+        XCTAssertEqual(merged.map(\.line.id), [reply.id, "b1"])
+        XCTAssertEqual(merged[0].accounts, [me, bob, cat])
+        XCTAssertEqual(merged[0].account, me)
+        XCTAssertEqual(merged[0].id, reply.id)
+        XCTAssertEqual(merged[1].accounts, [bob])
+    }
+
+    func testFoldedLinesStayOneRowPerAccount() {
+        for kind in [VaultActivity.Kind.reaction, .repost, .follow] {
+            let folded = VaultActivity(id: "reaction-p1", kind: kind, actors: ["x"], createdAt: 100, openId: "p1", preview: "")
+            let merged = VaultAccountChips.merge([me: [folded], bob: [folded]], order: [me, bob], limit: 10)
+            XCTAssertEqual(merged.map(\.accounts), [[me], [bob]], "\(kind)")
+        }
+        let zapFold = VaultActivity(id: "zap-p1", kind: .zap, actors: ["x"], createdAt: 100, openId: "p1", preview: "")
+        XCTAssertFalse(VaultAccountChips.isOneEvent(zapFold))
+        let zapWithWords = VaultActivity(id: "z1", kind: .zap, actors: ["x"], createdAt: 100, openId: nil, preview: "gm")
+        XCTAssertTrue(VaultAccountChips.isOneEvent(zapWithWords))
     }
 
     func testTieGoesToAccountOrderBeforeId() {
