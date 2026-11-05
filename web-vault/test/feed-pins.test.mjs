@@ -29,10 +29,11 @@ test("pinned once, taken off, and kept through a save and read", () => {
   assert.ok(!isPinned(unpin(pins, "feed:recipes"), f))
 })
 
-test("Your space's Edit offers every feed type but Following, as chips that pin and unpin", () => {
+test("the left rail's Edit offers every feed type but Following, as chips that pin and unpin; Your space doesn't", () => {
+  const rail = readFileSync(new URL("../src/desktop/rail/RailEdit.jsx", import.meta.url), "utf8")
+  assert.match(rail, /<FeedPins pins=\{pins\} onToggle=\{f => edit\(r => \(isPinned\(r, f\) \? unpin\(r, pinKey\(f\)\) : pin\(r, f\)\)\)\} \/>/)
   const dock = readFileSync(new URL("../src/desktop/space/SpaceDock.jsx", import.meta.url), "utf8")
-  assert.match(dock, /\{editing && <FeedPins pins=\{layout\.pins\}/)
-  assert.match(dock, /isPinned\(l\.pins, f\) \? unpin\(l\.pins, pinKey\(f\)\) : pin\(l\.pins, f\)/)
+  assert.doesNotMatch(dock, /FeedPins|Feeds on your rail/, "the right side keeps only its widgets")
   const names = readFileSync(new URL("../src/desktop/rail/RailFavs.jsx", import.meta.url), "utf8")
   assert.doesNotMatch(names.match(/FEED_NAME = \{[^}]*\}/)[0], /following/)
 })

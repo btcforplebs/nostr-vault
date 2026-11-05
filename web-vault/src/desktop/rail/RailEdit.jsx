@@ -7,8 +7,9 @@ import { decode } from "nostr-tools/nip19"
 import { getProfile } from "../../net/profiles.js"
 import { myLists } from "../../net/list-feed.js"
 import { setPins } from "../space/space-layout.js"
-import { defaultPins, favourite, movePin, movePinBefore, pin, pinKey, samePins, shownPins, unpin, MAX_FAVOURITES, isFavourite } from "./rail-favs.js"
-import { KIND_NAME, PinIcon, pinTitle } from "./RailFavs.jsx"
+import { defaultPins, favourite, movePin, movePinBefore, pin, pinKey, samePins, shownPins, unpin, MAX_FAVOURITES, isFavourite, isPinned, feedPinToWeb } from "./rail-favs.js"
+import { KIND_NAME, PinIcon, pinTitle, FEED_NAME } from "./RailFavs.jsx"
+import { FEED_ICON, LIST_ICON } from "../../components/FeedPickerMenu.jsx"
 import { useDragPanels } from "../space/SpaceEdit.jsx"
 import { Icon } from "../icons.jsx"
 
@@ -60,7 +61,7 @@ export function RailEdit({ ctx, layout, change, onClose }) {
         <h3>Your rail</h3>
         <button type="button" class="sp-done" onClick={onClose}>Done</button>
       </header>
-      <p class="rail-edit-hint">Drag or use the arrows to reorder. Pin a person, a hashtag, a list or a relay below.</p>
+      <p class="rail-edit-hint">Drag or use the arrows to reorder. Pin a feed, a person, a hashtag, a list or a relay below.</p>
       <ul class="rail-edit-list">
         {shown.map((p, i) => {
           const k = pinKey(p), name = pinTitle(p, p.type === "person" ? getProfile(p.p) : null)
@@ -78,6 +79,7 @@ export function RailEdit({ ctx, layout, change, onClose }) {
           )
         })}
       </ul>
+      <FeedPins pins={pins} onToggle={f => edit(r => (isPinned(r, f) ? unpin(r, pinKey(f)) : pin(r, f)))} />
       <Pinner ctx={ctx} pins={pins} onPin={f => edit(r => pin(r, f))} />
       {!samePins(pins, defaultPins()) && <button type="button" class="sp-link sp-reset" onClick={() => edit(() => defaultPins())}>Reset the rail</button>}
     </div>
@@ -135,5 +137,27 @@ function Pinner({ ctx, pins, onPin }) {
       </div>
       {err && <p class="rail-pin-error" role="alert">{err}</p>}
     </div>
+  )
+}
+
+/** Feed types the left rail can carry (Logen, 2026-11-05: on the left rail, picked here in its Edit, not in Your space; the iPad's RailEditSheet): a click pins one there as
+ *  { type: "feed", id }, another takes it off. Following is the Feed section itself, so it isn't offered. */
+function FeedPins({ pins, onToggle }) {
+  return (
+    <section class="sp-feed-pins" aria-label="Feeds on your rail">
+      <p class="sp-feed-pins-head">Feeds on your rail</p>
+      <div class="sp-feed-pins-grid">
+        {Object.entries(FEED_NAME).map(([id, name]) => {
+          const f = favourite("feed", id)
+          const on = isPinned(pins, f)
+          return (
+            <button key={id} type="button" class={on ? "sp-feed-pin on" : "sp-feed-pin"} aria-pressed={on}
+              aria-label={on ? `${name} on your rail. Take off` : `Add ${name} to your rail`} onClick={() => onToggle(f)}>
+              <Icon d={on ? "M5 12l5 5 9-10" : FEED_ICON[feedPinToWeb(id)] ?? LIST_ICON} size={14} />{name}
+            </button>
+          )
+        })}
+      </div>
+    </section>
   )
 }
