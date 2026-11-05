@@ -31,6 +31,10 @@ struct HomeVaultItem: Codable, Equatable, Identifiable {
     /// the vault passes it on to (photos through the Mac). Optional: older
     /// queues lack it.
     var server: String? = nil
+    /// Which lane: nil for the home vault (or the Mac, for media); a linked
+    /// phone's mesh npub for that phone (Logen 2026-11-05). Optional: older
+    /// queues lack it and stay the home vault's.
+    var target: String? = nil
 }
 
 enum HomeVaultSendResult: Equatable {
@@ -71,6 +75,40 @@ enum HomeVaultLogic {
 
     /// Where a new item goes: media ahead of every queued note, so a note
     /// never reaches the vault before the media it points at. nil = append.
+    // MARK: Linked phones (Logen 2026-11-05)
+
+    /// The linked phones that get this phone's new notes and media, each on
+    /// its own lane: My Devices' phones, each once, not this phone, and not
+    /// one already sent to as the home vault or the Mac.
+    static func phoneTargets(devices: [MeshDevice], ownNpub: String?, homeVault: String?, mac: String?) -> [String] {
+        var out: [String] = []
+        for device in devices where device.role == .phone {
+            let npub = device.npub
+            guard npub != ownNpub, npub != homeVault, npub != mac, !out.contains(npub) else { continue }
+            out.append(npub)
+        }
+        return out
+    }
+
+    /// Whether an iPhone shares its vault with its own devices while its app
+    /// is open, so its linked phones can send to it: the mesh is on, the app
+    /// is on screen, nothing shares already, and a phone is linked.
+    static func sharesWhileOpen(meshOn: Bool, appActive: Bool, alreadySharing: Bool, linkedPhones: Int) -> Bool {
+        meshOn && appActive && !alreadySharing && linkedPhones > 0
+    }
+
+    /// The same queued send: one kind, one id, one lane.
+    static func sameSend(_ a: HomeVaultItem, _ b: HomeVaultItem) -> Bool {
+        a.kind == b.kind && a.id == b.id && a.target == b.target
+    }
+
+    /// Whether the item's lane has room. Each lane has its own cap, so a
+    /// phone that is never in reach can't stop the home vault's sends (or
+    /// another phone's).
+    static func hasRoom(for item: HomeVaultItem, in queue: [HomeVaultItem], max: Int) -> Bool {
+        queue.lazy.filter { $0.target == item.target }.count < max
+    }
+
     static func insertionIndex(for kind: HomeVaultItem.Kind, in queue: [HomeVaultItem]) -> Int? {
         guard kind == .blob else { return nil }
         return queue.firstIndex(where: { $0.kind == .event })
