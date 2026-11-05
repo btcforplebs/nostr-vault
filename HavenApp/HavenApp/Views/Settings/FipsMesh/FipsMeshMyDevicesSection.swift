@@ -12,6 +12,8 @@ struct FipsMeshMyDevicesSection: View {
     /// Section it went on every row, so with a device listed two sheets fought
     /// over one flag and Add a device closed as it opened (2026-10-21).
     @Binding var showAdd: Bool
+    /// The two-scan pairing (PairDeviceView), the one way to add a device.
+    @Binding var showPair: Bool
     @ObservedObject private var mesh = FipsMeshService.shared
 
     var body: some View {
@@ -24,11 +26,20 @@ struct FipsMeshMyDevicesSection: View {
                 }
             }
             Button {
-                showAdd = true
+                showPair = true
             } label: {
-                Label("Add a device by address", systemImage: "plus.circle.fill")
+                Label("Add a device", systemImage: "plus.circle.fill")
                     .font(.appBody)
                     .foregroundColor(.havenPurple)
+            }
+            // Only for what can't do the two scans yet: a Linux/Pi home
+            // vault box and the browser relay page show just their address.
+            Button {
+                showAdd = true
+            } label: {
+                Text("Add a Linux box or browser relay by address")
+                    .font(.appCaption)
+                    .foregroundColor(.secondary)
             }
         } header: {
             Text("My Devices")

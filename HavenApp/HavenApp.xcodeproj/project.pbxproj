@@ -983,6 +983,7 @@
 		83352352A3848FB0FE67A278 /* HavenConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3056CC16711F7E38B7FE86D /* HavenConfig.swift */; };
 		837C1DBCDECBBDE38000A871 /* TrustPathService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1CBD42B98E57609F77CA5E7 /* TrustPathService.swift */; };
 		838C819BE2CDC266568308E9 /* NIP46Service+Methods.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9953C03BA85F5AE78844A7 /* NIP46Service+Methods.swift */; };
+		83F735BA7188232AFF312FA1 /* MeshSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85C517E5AC5352632A7A05A8 /* MeshSettingsSheet.swift */; };
 		840DED3DB173B14993FF456A /* MirrorMediaStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30F99815B3480ACD67F45648 /* MirrorMediaStep.swift */; };
 		8423CB01B792A11013AA7878 /* NVZapsToday.swift in Sources */ = {isa = PBXBuildFile; fileRef = D358E7C7A4DC7332A585EE35 /* NVZapsToday.swift */; };
 		84455F0B2C4ED20818012AE4 /* ListHistoryOptInToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B47E236ED95FBA8F96006C54 /* ListHistoryOptInToggle.swift */; };
@@ -1265,6 +1266,7 @@
 		A7DD4C3393832614B21FE596 /* SearchView+Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = A52363CAD66E59C0ACEFFD19 /* SearchView+Search.swift */; };
 		A7E99230C359190582FD39E5 /* ComposeView+Uploads.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DC3CF62D154BEFC6898E6F7 /* ComposeView+Uploads.swift */; };
 		A7F02F4C36BA957B1746886E /* PullDownToCloseRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = E02263EA7B83AAC9AB47B12A /* PullDownToCloseRule.swift */; };
+		A82507F9E1F2B2DB90D34610 /* MeshSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85C517E5AC5352632A7A05A8 /* MeshSettingsSheet.swift */; };
 		A82CCB1202EEDEA249599910 /* ProfileSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 494A41895F3CDFE3B0B8080B /* ProfileSupport.swift */; };
 		A83DFA6FA981DF6C2E2E8DF2 /* LiveStreamShare.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3288F6282FAD679EE8536D2 /* LiveStreamShare.swift */; };
 		A865A7B4FC4A543749DFE8A4 /* NVWidgetPrefs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D5B6503859D5F3C563D7E63 /* NVWidgetPrefs.swift */; };
@@ -2525,6 +2527,7 @@
 		8467D80FB6D0127F0F02C82C /* iPhoneTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iPhoneTabView.swift; sourceTree = "<group>"; };
 		848045286D78E78658D43BE3 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		8532ED615B4236C01B42ACEB /* PinFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinFeedView.swift; sourceTree = "<group>"; };
+		85C517E5AC5352632A7A05A8 /* MeshSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshSettingsSheet.swift; sourceTree = "<group>"; };
 		863739F1E447BD3531D8C720 /* HavenApp-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "HavenApp-iOS.entitlements"; sourceTree = "<group>"; };
 		86AC01DAD7028DC8F433F5B5 /* LiveChatRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveChatRowView.swift; sourceTree = "<group>"; };
 		86B6DE9563AEAC1E8BF203EA /* ThreadEngagementQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadEngagementQuery.swift; sourceTree = "<group>"; };
@@ -3864,6 +3867,7 @@
 				6ADB1854DDD7D68150AD6CA7 /* HomeVaultSection.swift */,
 				621A96E074FD92012D0EEB20 /* MacFipsMeshSettingsView.swift */,
 				C2A3F35A589A5F015A971F7D /* MeshQRCode.swift */,
+				85C517E5AC5352632A7A05A8 /* MeshSettingsSheet.swift */,
 			);
 			path = FipsMesh;
 			sourceTree = "<group>";
@@ -5371,6 +5375,7 @@
 				4D7A192E427244EA1BD91C6A /* MeshPairingSession.swift in Sources */,
 				633A064A70E81762D9CBE2AB /* MeshPairingWords.swift in Sources */,
 				B62B5AA48745585EDBCA0CFF /* MeshQRCode.swift in Sources */,
+				83F735BA7188232AFF312FA1 /* MeshSettingsSheet.swift in Sources */,
 				2967EF7A63FDB4431EB3651A /* MessageComposerView.swift in Sources */,
 				E0F1E7C9450B284D7F6D2B66 /* MessagesPeekPanel.swift in Sources */,
 				821F08410D9293030E5DD4A0 /* MiniPlayerBar.swift in Sources */,
@@ -6360,6 +6365,7 @@
 				0BD570F6D40A73E8ADCC7524 /* MeshPairingSession.swift in Sources */,
 				2BDDBF0C57B4BB488711F0E5 /* MeshPairingWords.swift in Sources */,
 				68B6097E7D0D0D915F2C9FAF /* MeshQRCode.swift in Sources */,
+				A82507F9E1F2B2DB90D34610 /* MeshSettingsSheet.swift in Sources */,
 				5686CC2CCACE6E4F7B59F892 /* MessageComposerView.swift in Sources */,
 				AB57B140937B799529F4EB92 /* MiniPlayerBar.swift in Sources */,
 				E61584E6611641986C5662FC /* MirrorMediaStep.swift in Sources */,

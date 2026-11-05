@@ -39,6 +39,9 @@ struct MyProfileView: View {
     @State private var unsavedDraft: [String: String]?
     @State private var showingCompose = false
     @State private var showingSettings = false
+    /// Mesh settings, beside Settings on the Profile tab (moved from the
+    /// Vault tab's dashboard, Logen 2026-11-05).
+    @State private var showingMesh = false
     @State private var showingLightning = false
     @State private var showingTrustWeb = false
     @State private var showingShare = false
@@ -97,6 +100,7 @@ struct MyProfileView: View {
         }
         #if os(iOS)
         .sheet(isPresented: $showingSettings) { settingsSheet }
+        .sheet(isPresented: $showingMesh) { MeshSettingsSheet(onClose: { showingMesh = false }).environmentObject(configService) }
         .overlay(alignment: .bottomTrailing) { if canSign { postButton } }
         .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
             guard (note.object as? Int) == 2, canSign else { return }
@@ -204,6 +208,7 @@ struct MyProfileView: View {
         MyProfileToolbar(
             isOwner: isOwner,
             onWallet: { showingLightning = true },
+            onMesh: { showingMesh = true },
             onSettings: {
                 #if os(iOS)
                 if horizontalSizeClass == .regular {
@@ -300,6 +305,7 @@ struct MyProfileView: View {
 private struct MyProfileToolbar: ViewModifier {
     let isOwner: Bool
     let onWallet: () -> Void
+    let onMesh: () -> Void
     let onSettings: () -> Void
     let onRefresh: () -> Void
 
@@ -317,7 +323,17 @@ private struct MyProfileToolbar: ViewModifier {
                     .accessibilityLabel("Lightning")
                 }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                // Mesh: your devices and the mesh, beside Settings.
+                if isOwner {
+                    Button(action: onMesh) {
+                        Image(systemName: "point.3.filled.connected.trianglepath.dotted")
+                            .font(.appSystem(size: 16, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Mesh")
+                }
                 // Messages moved to the Vault tab's right pill.
                 Button(action: onSettings) {
                     Image(systemName: "gearshape.fill")
