@@ -69,7 +69,10 @@ final class MeshCopyV2Service: ObservableObject {
     /// same peer while one is on does nothing.
     @discardableResult
     func start(peer: String, name: String) async -> MeshCopyV2.StartResult {
-        if current == peer || (starting && record.pending?.peer == peer) { return .busy }
+        if current == peer || (starting && record.pending?.peer == peer) {
+            Self.log(.alreadyRunning, peer: peer)
+            return .busy
+        }
         record.pending = .init(peer: peer, name: name, freshStart: true)
         peerName = name
         progress = nil
@@ -104,7 +107,14 @@ final class MeshCopyV2Service: ObservableObject {
     }
 
     private func sync(peer: String) async {
-        guard !starting, current == nil, let base = await Self.base(peer) else { return }
+        guard !starting, current == nil else {
+            Self.log(.busyWithAnother, peer: peer)
+            return
+        }
+        guard let base = await Self.base(peer) else {
+            Self.log(.noMeshLink(seconds: 0), peer: peer)
+            return
+        }
         let code = MeshCopyV2.StartResult(code: peer.withCString { p in base.withCString { b in CopySyncC(mutating(p), mutating(b)) } })
         if code == .started {
             current = peer
@@ -122,13 +132,19 @@ final class MeshCopyV2Service: ObservableObject {
         }
         let startedAt = Self.now
         var result = MeshCopyV2.StartResult.relayNotRunning
+        // Whether the mesh ever gave a base in the wait (logged if not).
+        var dialled = false
         while Self.now - startedAt < MeshCopyV2.relayWaitWindow {
             if let base = await Self.base(peer) {
+                dialled = true
                 // Signed right before the call: A wants it within 60 s.
-                let auth = fresh ? await Self.signedStart(base: base) : ""
-                if fresh, auth == nil { return .failed(-1) }
+                let signed = fresh ? await Self.signedStart(base: base) : .signed("")
+                guard case .signed(let auth) = signed else {
+                    if case .notSigned(let why) = signed { Self.log(.notSigned(why), peer: peer) }
+                    return .failed(-1)
+                }
                 let code = peer.withCString { p in
-                    base.withCString { b in (auth ?? "").withCString { a in StartCopyFromC(mutating(p), mutating(b), mutating(a)) } }
+                    base.withCString { b in auth.withCString { a in StartCopyFromC(mutating(p), mutating(b), mutating(a)) } }
                 }
                 result = MeshCopyV2.StartResult(code: code)
                 if result != .relayNotRunning { break }
@@ -139,10 +155,19 @@ final class MeshCopyV2Service: ObservableObject {
             current = peer
             // The engine holds the token now: a cut copy resumes without a new proof.
             if record.pending?.peer == peer { record.pending?.freshStart = false }
+        } else if !dialled {
+            Self.log(.noMeshLink(seconds: Self.now - startedAt), peer: peer)
         } else {
             RelayProcessManager.shared.addLog("Mesh copy: not started (\(result))", level: "ERROR")
         }
         return result
+    }
+
+    /// One line in the in-app log and the system log (fips-mesh).
+    private static func log(_ why: MeshCopyV2.NotStarted, peer: String) {
+        let line = why.line(peer: peer)
+        RelayProcessManager.shared.addLog(line, level: why == .alreadyRunning || why == .busyWithAnother ? "INFO" : "ERROR")
+        MeshDiagnostics.log(line)
     }
 
     /// The loopback base this device's mesh gives the peer's own-device
@@ -164,13 +189,19 @@ final class MeshCopyV2Service: ObservableObject {
         #endif
     }
 
-    /// Base64 of the owner's kind 27235 for POST <base>/copy/v2/start.
-    private static func signedStart(base: String) async -> String? {
-        guard let url = URL(string: base), let device = ownMeshNpub(),
-              let tags = MeshCopyV2.startAuthTags(base: url, device: device),
-              let event = await NostrService.shared.signEventAsync(kind: 27235, content: "", tags: tags, forceOwner: true),
-              let json = try? JSONEncoder().encode(event) else { return nil }
-        return json.base64EncodedString()
+    private enum SignedStart { case signed(String), notSigned(String) }
+
+    /// Base64 of the owner's kind 27235 for POST <base>/copy/v2/start, or
+    /// why it couldn't be made.
+    private static func signedStart(base: String) async -> SignedStart {
+        guard let url = URL(string: base) else { return .notSigned("bad base") }
+        guard let device = ownMeshNpub() else { return .notSigned("no mesh key on this device") }
+        guard let tags = MeshCopyV2.startAuthTags(base: url, device: device) else { return .notSigned("no start tags") }
+        guard let event = await NostrService.shared.signEventAsync(kind: 27235, content: "", tags: tags, forceOwner: true) else {
+            return .notSigned("the owner's signer did not sign")
+        }
+        guard let json = try? JSONEncoder().encode(event) else { return .notSigned("could not encode") }
+        return .signed(json.base64EncodedString())
     }
 
     // MARK: Progress (COPY lines from the relay log)

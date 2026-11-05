@@ -508,3 +508,51 @@ private actor Counter {
     private(set) var value = 0
     func bump() { value += 1 }
 }
+
+/// Diagnosis only (Logen 2026-11-05): a mesh read that doesn't come back says
+/// which peer and why, and never the URL (its base holds the ingress token).
+final class MeshMediaRouterLogTests: XCTestCase {
+    private let sha = String(repeating: "a", count: 64)
+    private let vault = "npub1" + String(repeating: "q", count: 58)
+
+    private final class Lines: @unchecked Sendable {
+        private let lock = NSLock()
+        private var all: [String] = []
+        func add(_ s: String) { lock.withLock { all.append(s) } }
+        var lines: [String] { lock.withLock { all } }
+    }
+
+    private func router(ingress: URL?, status: Int?, lines: Lines) -> MeshMediaRouter {
+        let vault = self.vault
+        var t = Date(timeIntervalSince1970: 1_800_000_000)
+        let clock = NSLock()
+        return MeshMediaRouter(.init(
+            mayDial: { _ in true },
+            serverList: { _ in ["fipsmesh://\(vault)/"] },
+            requestServerList: { _ in },
+            ingress: { _ in ingress },
+            get: { _, _ in status.map { MeshMediaRouter.Reply(status: $0, data: Data()) } },
+            now: { clock.withLock { t } },
+            sleep: { d in clock.withLock { t = t.addingTimeInterval(Double(d.components.seconds) + 1) } },
+            log: { lines.add($0) }
+        ))
+    }
+
+    func testAPeerThatNeverConnectsIsLoggedWithItsReason() async {
+        let lines = Lines()
+        let r = router(ingress: nil, status: nil, lines: lines)
+        let data = await r.read(plan: .init(sha256: sha, hostNpub: nil), author: "author")
+        XCTAssertNil(data)
+        XCTAssertTrue(lines.lines.contains { $0.contains("mesh dial to \(vault.prefix(12))") && $0.contains("no ingress") }, "\(lines.lines)")
+        XCTAssertTrue(lines.lines.contains { $0.contains("from \(vault.prefix(12))") && $0.contains("no answer") }, "\(lines.lines)")
+    }
+
+    func testAnErrorStatusIsLoggedAndNoURLEver() async {
+        let lines = Lines()
+        let base = URL(string: "http://127.0.0.1:41234/secret-ingress-token")!
+        let r = router(ingress: base, status: 500, lines: lines)
+        _ = await r.read(plan: .init(sha256: sha, hostNpub: nil), author: "author")
+        XCTAssertTrue(lines.lines.contains { $0.contains("status 500") }, "\(lines.lines)")
+        XCTAssertFalse(lines.lines.contains { $0.contains("secret-ingress-token") || $0.contains("127.0.0.1") }, "a URL reached the log")
+    }
+}

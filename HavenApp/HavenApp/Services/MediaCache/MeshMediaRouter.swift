@@ -37,6 +37,9 @@ actor MeshMediaRouter {
         var get: @Sendable (URL, Int) async -> Reply?
         var now: @Sendable () -> Date = { Date() }
         var sleep: @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
+        /// One diagnosis line per read that didn't come back (peer + reason);
+        /// never a URL (the base holds the ingress token).
+        var log: @Sendable (String) -> Void = { _ in }
     }
 
     /// The most a mesh read keeps. Bigger blobs come from the URL.
@@ -180,6 +183,7 @@ actor MeshMediaRouter {
             guard let reply = await patientGet(npub, sha256: plan.sha256, patience: min(Self.readPatience, left)) else {
                 // The photo left the screen: no further vault is asked.
                 if Task.isCancelled { return nil }
+                deps.log(Self.readFailedLine(npub: npub, sha256: plan.sha256, reason: "no answer (never connected, or the read kept failing)"))
                 continue
             }
             // Honestly missing, or honestly too big (a video): the vault keeps
@@ -189,9 +193,12 @@ actor MeshMediaRouter {
                 if reply.status == 404 || reply.status == 410 || reply.status == 200 {
                     recordMiss(npub, sha256: plan.sha256)
                 }
+                deps.log(Self.readFailedLine(npub: npub, sha256: plan.sha256,
+                                             reason: reply.status == 200 ? "too big for a mesh read" : "status \(reply.status)"))
                 continue
             }
             guard Self.hashMatches(data, sha256: plan.sha256) else {
+                deps.log(Self.readFailedLine(npub: npub, sha256: plan.sha256, reason: "wrong bytes (hash mismatch), vault distrusted"))
                 // Wrong bytes are not a passing fault.
                 distrusted.insert(npub)
                 ingressCache[npub] = nil
@@ -200,6 +207,11 @@ actor MeshMediaRouter {
             return data
         }
         return nil
+    }
+
+    /// "mesh read <hash8> from <npub12>…: <reason>": peer and reason only.
+    static func readFailedLine(npub: String, sha256: String, reason: String) -> String {
+        "mesh read \(sha256.prefix(8)) from \(npub.prefix(12))…: \(reason)"
     }
 
     private func recentlyMissed(_ npub: String, sha256: String) -> Bool {
@@ -269,6 +281,7 @@ actor MeshMediaRouter {
         ingressInFlight[npub] = task
         let base = await task.value
         ingressInFlight[npub] = nil
+        if base == nil { deps.log("mesh dial to \(npub.prefix(12))…: no ingress (mesh off, engine not running, or the peer never connected)") }
         // A vault distrusted while this dial ran stays dropped.
         if !distrusted.contains(npub) { ingressCache[npub] = (base, deps.now()) }
         return base

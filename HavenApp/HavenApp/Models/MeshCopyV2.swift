@@ -180,6 +180,35 @@ enum MeshCopyV2 {
         var isRunning: Bool { self == .started || self == .busy }
     }
 
+    /// Why a start or catch-up did not happen, for the logs (diagnosis
+    /// only: the paths were silent before, Logen 2026-11-05). Peers are
+    /// shown by their first characters; never the base (it holds the token).
+    enum NotStarted: Equatable {
+        /// A copy with this device is already running or being started.
+        case alreadyRunning
+        /// A catch-up wanted while another copy (or its start) is on.
+        case busyWithAnother
+        /// This device's mesh gave no loopback base to the peer (mesh off,
+        /// engine not running, or the peer never connected) for the whole wait.
+        case noMeshLink(seconds: Int)
+        /// The owner's signer did not sign the start (kind 27235).
+        case notSigned(String)
+
+        func line(peer: String) -> String {
+            let who = String(peer.prefix(12))
+            switch self {
+            case .alreadyRunning:
+                return "Mesh copy: not started with \(who)…: a copy with it is already running"
+            case .busyWithAnother:
+                return "Mesh copy: catch-up with \(who)… skipped: another copy is running"
+            case .noMeshLink(let seconds):
+                return "Mesh copy: not started with \(who)…: no mesh link to it (no ingress) in \(seconds) s"
+            case .notSigned(let why):
+                return "Mesh copy: not started with \(who)…: the start was not signed (\(why))"
+            }
+        }
+    }
+
     // MARK: B's own record: what to resume and whom to catch up with
 
     /// How long a start keeps trying while B's relay comes up (code 3).

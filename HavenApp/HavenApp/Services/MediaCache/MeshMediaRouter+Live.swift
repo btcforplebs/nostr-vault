@@ -30,7 +30,8 @@ extension MeshMediaRouter.Dependencies {
                 return await MacFipsMeshService.shared.ingressURL(meshNpub: npub)
                 #endif
             },
-            get: { url, maxBytes in await MeshMediaGet.get(url, maxBytes: maxBytes) }
+            get: { url, maxBytes in await MeshMediaGet.get(url, maxBytes: maxBytes) },
+            log: { line in MeshDiagnostics.log(line) }
         )
     }
 }
