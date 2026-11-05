@@ -11,7 +11,10 @@ export const RESET_ALL_QUESTION = "Reset everything? This deletes every account 
 
 /** This app's settings and marks in localStorage and sessionStorage: "nv-…", "nv:…" and "nv.…" (not /relay/'s
  *  "nv-relay:…") and the iPhone-named keys. */
-export const isAppKey = k => (/^nv[-:.]/.test(k) && !k.startsWith(RELAY_NS)) || /^(post|media|display)\./.test(k)
+// The two settings named outside those patterns (net/post-buttons.js, net/nv-logo.js), so "puts every setting back"
+// holds for them too (bug hunt 2026-11-05).
+const OTHER_SETTINGS = new Set(["postButtons", "hideNostrVaultBadge"])
+export const isAppKey = k => (/^nv[-:.]/.test(k) && !k.startsWith(RELAY_NS)) || /^(post|media|display)\./.test(k) || OTHER_SETTINGS.has(k)
 const KEYRING_DB = "nv-keyring" // signer/keyring.js
 // Other accounts whose removal didn't finish (a store delete timed out, the bunker didn't confirm, or it threw).
 // removeAccount has already dropped them from the account list, so Retry would never see them: it asks again here.

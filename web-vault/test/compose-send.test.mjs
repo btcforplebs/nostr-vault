@@ -484,3 +484,38 @@ for (const [kind, key, saved, fieldOf] of [
     })
   }
 }
+
+test("#7: Post again after no relay took it sends that same note, not a second one", async t => {
+  mock.timers.enable({ apis: ["setInterval", "Date"] })
+  t.after(() => { mock.timers.reset(); relayAnswer = () => Promise.resolve("ok"); history.state = null })
+  local.clear(); local.set(SEND_DELAY_KEY, "0"); backs = 0; history.state = { nvDepth: 2 }
+  relayAnswer = () => Promise.reject(new Error("blocked: test"))
+  const c = await composer()
+  await c.type("try me twice")
+  c.button("Post").click(); await flush()
+  assert.match(c.text(), /No relay took it/)
+  relayAnswer = () => Promise.resolve("ok")
+  c.button("Post").click(); await flush()
+  assert.equal(c.signed.length, 1, "signed once")
+  assert.equal(c.stored.length, 1, "one copy in the vault")
+  assert.equal(c.published.length, 2)
+  assert.equal(c.published[0].e.id, c.published[1].e.id, "the same note went out again")
+  assert.equal(backs, 1, "sent: the composer closes")
+  c.unmount()
+})
+
+test("#7: an edited note after a failed send is a new note", async t => {
+  mock.timers.enable({ apis: ["setInterval", "Date"] })
+  t.after(() => { mock.timers.reset(); relayAnswer = () => Promise.resolve("ok"); history.state = null })
+  local.clear(); local.set(SEND_DELAY_KEY, "0"); backs = 0; history.state = { nvDepth: 2 }
+  relayAnswer = () => Promise.reject(new Error("blocked: test"))
+  const c = await composer()
+  await c.type("first words")
+  c.button("Post").click(); await flush()
+  relayAnswer = () => Promise.resolve("ok")
+  await c.type("first words, edited")
+  c.button("Post").click(); await flush()
+  assert.equal(c.signed.length, 2)
+  assert.notEqual(c.published[0].e.id, c.published[1].e.id)
+  c.unmount()
+})

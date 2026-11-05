@@ -7,7 +7,7 @@
 // (compose/draft-model.js), and a live preview draws the note as the feed will (side by side on a wide screen, a
 // Write / Preview switch on a phone, where the keyboard owns the bottom half).
 import { useCallback, useEffect, useRef, useState } from "preact/hooks"
-import { publishNote } from "../net/sync.js"
+import { publishNote, republish, sameUnsent } from "../net/sync.js"
 import { composeTarget, findNote, quoteOf, replyTags } from "../net/actions.js"
 import { MAX_PHOTOS, imetaTag, mediaServers, uploadPhoto } from "../net/upload.js"
 import { AuthorName } from "../components/NoteCard.jsx"
@@ -22,7 +22,7 @@ import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { PostResult } from "./compose/PostResult.jsx"
 import { canGoBack } from "../components/nav-depth.js"
 import { takeKeyboard } from "./compose/keyboard.js"
-import { draftKey, forgetIfSent, idbDrafts } from "./compose/drafts.js"
+import { draftKey, forgetIfSent, idbDrafts, reachedRelay } from "./compose/drafts.js"
 import { ComposeKinds, composeType } from "./compose/ComposeKinds.jsx"
 import { ArticleCompose } from "./compose/ArticleCompose.jsx"
 import { PollCompose } from "./compose/PollCompose.jsx"
@@ -181,6 +181,7 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
   const [pending, setPending] = useState(null)
   const countdown = useRef(null)
   const [undone, setUndone] = useState(false)
+  const unsent = useRef(null) // the signed note no relay took, sent again as it is when Post is tapped on it again
   const [leaving, setLeaving] = useState(false) // the iPhone's "Save this note as a draft?" on Cancel
   // Leaving the composer mid-countdown is an Undo: the note stays as a draft, nothing is signed.
   useEffect(() => () => countdown.current?.cancel(), [])
@@ -366,7 +367,12 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
   const send = async ({ content, tags }) => {
     setBusy(true)
     try {
-      const sent = await publishNote(ctx.vault, ctx.signer, ctx.session.pubkey, content, ctx.account.relays.write, tags)
+      // The same note again after no relay took it: that signed note is sent again, not a second one (it's already in
+      // this browser's vault).
+      const again = sameUnsent(unsent.current, { content, tags }) ? unsent.current : null
+      const sent = again ? await republish(again, ctx.account.relays.write)
+        : await publishNote(ctx.vault, ctx.signer, ctx.session.pubkey, content, ctx.account.relays.write, tags)
+      unsent.current = reachedRelay(sent) ? null : sent.event
       setResult(sent)
       setMention(null)
       const cleared = await forgetIfSent(sent, { stopSaving: () => setLoaded(null), clear: clearSent, saving, drafts: drafts.current, key })

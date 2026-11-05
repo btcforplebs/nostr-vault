@@ -1,5 +1,6 @@
 // Music from Wavlake's public catalogue API (the iPhone's WavlakeAPI and WavlakeBlockFilter, Models/Wavlake.swift).
 // Wavlake answers with `Access-Control-Allow-Origin: *`, so the page asks it directly. Nothing is stored in Haven.
+import { accountKey } from "../net/account-key.js"
 import { decode } from "nostr-tools/nip19"
 
 export const API = "https://wavlake.com/api/v1/content"
@@ -143,13 +144,13 @@ export async function tracksOnAlbums(albums, get = getJson) {
 
 // --- Your artists and the artists you follow (the iPhone's MusicFeedState recentArtists and followedArtists).
 
-const RECENT_KEY = "nv-music-recent-artists"
+const RECENT_KEY = "nv-music-recent-artists" // per account: accountKey
 export const MAX_RECENT = 20
 
 /** Artists you've played or opened, newest first, saved in this browser. */
 export function loadRecent(storage = globalThis.localStorage) {
   try {
-    const list = JSON.parse(storage?.getItem(RECENT_KEY) ?? "[]")
+    const list = JSON.parse(storage?.getItem(accountKey(RECENT_KEY, storage)) ?? "[]")
     return Array.isArray(list) ? list.filter(a => a && typeof a.id === "string" && typeof a.name === "string") : []
   } catch { return [] }
 }
@@ -161,11 +162,11 @@ export function rememberRecent(a, storage = globalThis.localStorage) {
   const known = list.find(x => x.id === a.id)
   const entry = { id: a.id, name: a.name, art: a.art ?? known?.art ?? null, npub: a.npub ?? known?.npub ?? null }
   const out = [entry, ...list.filter(x => x.id !== a.id)].slice(0, MAX_RECENT)
-  try { storage?.setItem(RECENT_KEY, JSON.stringify(out)) } catch {}
+  try { storage?.setItem(accountKey(RECENT_KEY, storage), JSON.stringify(out)) } catch {}
   rememberArtist(entry)
   return out
 }
-export const clearRecent = (storage = globalThis.localStorage) => storage?.removeItem(RECENT_KEY)
+export const clearRecent = (storage = globalThis.localStorage) => storage?.removeItem(accountKey(RECENT_KEY, storage))
 
 /** The artist a song is by, for Your artists. */
 export const trackArtist = t => (t?.artistId ? { id: t.artistId, name: t.artist, art: t.artistArt, npub: t.artistNpub } : null)

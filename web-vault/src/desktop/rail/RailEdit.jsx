@@ -7,7 +7,7 @@ import { decode } from "nostr-tools/nip19"
 import { getProfile } from "../../net/profiles.js"
 import { myLists } from "../../net/list-feed.js"
 import { setPins } from "../space/space-layout.js"
-import { defaultPins, favourite, movePin, movePinBefore, pin, pinKey, samePins, shownPins, unpin, MAX_FAVOURITES, isFavourite, isPinned, feedPinToWeb } from "./rail-favs.js"
+import { defaultPins, favourite, movePin, movePinBefore, pin, pinKey, samePins, shownPins, unpin, MAX_FAVOURITES, isFavourite, isPinned, feedPinToWeb, webHasFeedPin } from "./rail-favs.js"
 import { KIND_NAME, PinIcon, pinTitle, FEED_NAME } from "./RailFavs.jsx"
 import { FEED_ICON, LIST_ICON } from "../../components/FeedPickerMenu.jsx"
 import { useDragPanels } from "../space/SpaceEdit.jsx"
@@ -147,7 +147,7 @@ function FeedPins({ pins, onToggle }) {
     <section class="sp-feed-pins" aria-label="Feeds on your rail">
       <p class="sp-feed-pins-head">Feeds on your rail</p>
       <div class="sp-feed-pins-grid">
-        {Object.entries(FEED_NAME).map(([id, name]) => {
+        {Object.entries(FEED_NAME).filter(([id]) => webHasFeedPin({ type: "feed", id })).map(([id, name]) => {
           const f = favourite("feed", id)
           const on = isPinned(pins, f)
           return (

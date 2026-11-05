@@ -46,7 +46,10 @@ export const isListHash = hash => SPLIT.has(parseHash(hash).route)
  *  user was on; a thread link opens beside it (cold, with none: beside the Feed). */
 export function deskRedirect(hash, lastList) {
   const { route, arg } = parseHash(hash)
-  if (route === "thread" && HEX.test(arg)) return withParam(lastList && isListHash(lastList) ? lastList : "#/feed", "note", arg)
+  // Messages shows a conversation beside its list, never a note: a note opened from there opens beside the Feed (it
+  // used to become #/messages?note=, which showed nothing; bug hunt 2026-11-05 #8).
+  const beside = lastList && isListHash(lastList) && parseHash(lastList).route !== "messages" ? lastList : "#/feed"
+  if (route === "thread" && HEX.test(arg)) return withParam(beside, "note", arg)
   // Opened from Requests: it stays the list beside the conversation.
   if (route === "dm" && HEX.test(arg)) return withParam(parseHash(lastList ?? "").path === "messages/requests" ? lastList : "#/messages", "dm", arg)
   return null
