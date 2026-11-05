@@ -373,8 +373,11 @@ func StartRelayC(importMode bool) {
 		cycle.addr, cycle.certPath, cycle.keyPath = addr, certPath, keyPath
 		if err := cycle.listenRelay(); err != nil {
 			// e.g. "bind: address already in use" — the host app's log
-			// parser watches for this to surface port conflicts.
+			// parser watches for this to surface port conflicts. The start
+			// fails: carrying on printed "listening at" and the app showed
+			// Online while nothing listened for this vault.
 			log.Printf("🚫 relay HTTP server exited: %v", err)
+			return fmt.Errorf("relay could not listen on %s: %w", addr, err)
 		}
 
 		// Sharing was on before this start (relay restart): reopen the mesh port.
@@ -397,11 +400,23 @@ func StartRelayC(importMode bool) {
 		// The databases still belong to the last cycle; closing them here
 		// would be the very use-after-close this wait prevents.
 		log.Println("🚫 StartRelayC refused:", err)
+		logStartFailed(err)
 	case err != nil:
 		log.Println("🚫", err)
 		// initRelays may have opened some DBs before failing
 		CloseDBs()
+		logStartFailed(err)
 	}
+}
+
+// startFailedMarker starts the one line that says a start did not happen.
+// StartRelayC returns nothing, so the host apps read this line to leave
+// "Booting…" at once instead of waiting out their watchdog with every
+// control disabled (RelayLogParser.startFailed).
+const startFailedMarker = "RELAY_START_FAILED|"
+
+func logStartFailed(err error) {
+	log.Printf("🚫 %s%v", startFailedMarker, err)
 }
 
 // runImportCycle runs a one-shot import under the lifecycle mutex so it

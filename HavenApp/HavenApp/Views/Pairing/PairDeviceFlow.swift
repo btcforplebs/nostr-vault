@@ -197,6 +197,7 @@ final class PairDeviceFlow: ObservableObject {
         if case .refuseOtherRole(let role) = MeshPairing.roleCheck(npub: payload.mesh, role: payload.role, existing: existing) {
             return MeshPairing.otherRoleText(role)
         }
+        if let refusal = storeRefusal(role: payload.role) { return refusal }
         let sB = MeshPairing.newSecret()
         guard let j = MeshPairingJoiner(qrA: payload, ownMeshHex: own.hex, ownSecret: sB, scannedAt: Self.now) else {
             return MeshPairing.unreadable
@@ -212,6 +213,18 @@ final class PairDeviceFlow: ObservableObject {
                             short: MeshPairing.shortAddress(payload.mesh))
         // The hello must go out while A's ack can still reach this side.
         startTicker()
+        return nil
+    }
+
+    /// Why this device couldn't store `role` at the end, asked before either
+    /// side stores or says anything (FipsMeshDevices.add would refuse it).
+    private func storeRefusal(role: MeshDeviceRole) -> String? {
+        #if os(iOS)
+        if MeshPairing.macSetByWebAddress(role: role, macRelayURL: config.config.macRelayURL,
+                                          macRelayMeshNpub: config.config.macRelayMeshNpub) {
+            return MeshPairing.macSetByWebAddressText
+        }
+        #endif
         return nil
     }
 
@@ -257,6 +270,22 @@ final class PairDeviceFlow: ObservableObject {
     // MARK: Both
 
     private func received(_ incoming: MeshPairingHello.Incoming) {
+        switch step {
+        case .linked:
+            // Stored already; A only keeps resending its ack. A late or second
+            // hello used to flip this screen to "expired" and stop the resends.
+            return
+        case .confirmRole where session != nil:
+            // B is chosen. Its byte-identical resends are dropped; any other
+            // hello for this code (another device, or B's changed) is the
+            // two-hellos abort (Tron 3, contract §4), said as such rather
+            // than "expired". Anything else isn't for this code.
+            guard let session, let h = MeshPairing.parseHello(incoming.content), h.secret == session.secret else { return }
+            if incoming.senderHex == session.senderHex, h == session.hello { return }
+            return fail(MeshPairing.abortText)
+        default:
+            break
+        }
         if var session {
             let outcome = session.receiveHello(senderHex: incoming.senderHex, content: incoming.content, now: Self.now)
             self.session = session
@@ -277,6 +306,7 @@ final class PairDeviceFlow: ObservableObject {
             sendAck()
             finish(device, already: true)
         case .add:
+            if let refusal = storeRefusal(role: device.role) { return fail(refusal) }
             pending = device
             step = .confirmRole(text: MeshPairing.roleConfirmText(role: device.role, name: device.name),
                                 short: MeshPairing.shortAddress(device.npub))

@@ -64,6 +64,16 @@ final class MacFipsMeshService: ObservableObject {
         }
     }
 
+    /// "Copy from my other vault" on a Mac: the copy reads the other vault
+    /// through this Mac's mesh link, which only runs with the switch on (off
+    /// by default). The person asked for it by picking Copy, so it goes on
+    /// then, for them only (Logen, 2026-11-05). It used to stay off, the link
+    /// refused (ingressURL), and setup always fell back to the relays.
+    func turnOnForCopy() {
+        guard !enabled else { return }
+        setEnabled(true)
+    }
+
     func setEnabled(_ on: Bool) {
         enabled = on
         UserDefaults.standard.set(on, forKey: Self.enabledKey)

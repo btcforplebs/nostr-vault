@@ -14,6 +14,16 @@ enum MeshPairing {
     static let scanWindow = 180
     /// Seconds B waits for the ack after scanning A.
     static let ackWindow = 360
+    /// The home vault on an iPhone is already set by a web address, so a Mac
+    /// can't be added by its mesh address until that is cleared. Asked before
+    /// a pairing goes ahead: asked only when storing, the phone refused at the
+    /// last step after the Mac had already stored the phone and said Linked.
+    static func macSetByWebAddress(role: MeshDeviceRole, macRelayURL: String, macRelayMeshNpub: String?) -> Bool {
+        role == .mac && !macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && macRelayMeshNpub == nil
+    }
+
+    static let macSetByWebAddressText = "This home vault is set by its web address in Home vault sync. Clear it there first, then add it here."
+
     /// A hello's own time must be this close to now.
     static let helloSkew = 180
     /// A device name, in Unicode code points.

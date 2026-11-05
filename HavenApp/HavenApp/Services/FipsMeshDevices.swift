@@ -42,11 +42,9 @@ enum FipsMeshDevices {
         if let own = FipsMeshService.shared.ownMeshNpub ?? FipsMeshService.meshNpubFromKey(), npub == own {
             return "That is this phone's own address."
         }
-        if role == .mac {
-            let typed = config.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !typed.isEmpty, config.config.macRelayMeshNpub == nil {
-                return "This home vault is set by its web address in Home vault sync. Clear it there first, then add it here."
-            }
+        if MeshPairing.macSetByWebAddress(role: role, macRelayURL: config.config.macRelayURL,
+                                          macRelayMeshNpub: config.config.macRelayMeshNpub) {
+            return MeshPairing.macSetByWebAddressText
         }
         // One address, one role: the same address under another role leaves
         // that role's setting first, so only the new one sends to it.

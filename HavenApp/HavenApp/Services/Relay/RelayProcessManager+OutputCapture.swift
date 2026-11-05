@@ -174,13 +174,7 @@ extension RelayProcessManager {
         } else {
             // Only dispatch for critical state changes (errors, boot/import completion,
             // or local notification markers which must fire even when UI is hidden).
-            let hasCritical = batch.isLocked || batch.isPortConflict
-                || batch.stopBooting
-                || batch.importEngineStarted
-                || batch.eventsStoredDelta != 0
-                || !batch.notifyMarkers.isEmpty
-                || !batch.listVersionMarkers.isEmpty
-            if hasCritical {
+            if RelayLogParser.isCritical(batch) {
                 Task { @MainActor in
                     self.applyBatchedUpdate(batch)
                 }
@@ -215,6 +209,19 @@ extension RelayProcessManager {
             if let note = batch.listHistoryNote {
                 listHistoryNote = note
             }
+        }
+
+        // A start that didn't happen: back to stopped at once, so the
+        // controls come back instead of waiting out the boot watchdog.
+        if let reason = batch.startFailed, state == .booting {
+            state = .idle
+            isRunning = false
+            isBooting = false
+            isWotSyncing = false
+            bootStatusMessage = ""
+            cancelBootWatchdog()
+            endRelayActivity()
+            logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "The vault didn't start: \(reason)"))
         }
 
         // Boot state
@@ -268,8 +275,11 @@ extension RelayProcessManager {
         if !landed.isSubset(of: newActivityModes) {
             newActivityModes.formUnion(landed)
         }
+        // The log lines only say the count moved; the engine knows it. Adding
+        // up deltas drifted (any "disconnected" line counted, and background
+        // batches were dropped).
         if batch.connectionsDelta != 0 {
-            activeConnections = max(0, activeConnections + batch.connectionsDelta)
+            activeConnections = max(0, Int(ActiveConnectionsC()))
         }
 
         // Error states

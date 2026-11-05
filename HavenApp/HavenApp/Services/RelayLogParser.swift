@@ -79,6 +79,31 @@ enum RelayLogParser {
         var listHistoryNote: String?
         /// The Go side began an import cycle (ImportStartGate).
         var importEngineStarted = false
+        /// A start the Go side refused or that failed (its
+        /// `RELAY_START_FAILED|` line), with the reason. StartRelayC returns
+        /// nothing, so without this the app sat on "Booting…" for the whole
+        /// watchdog with every control disabled.
+        var startFailed: String?
+    }
+
+    /// The `RELAY_START_FAILED|` line (haven-go cshared.go logStartFailed).
+    static let startFailedMarker = "RELAY_START_FAILED|"
+
+    /// Whether a batch must be applied even while the app's window isn't up.
+    /// The ones that change what the menu bar shows (Booting, Syncing,
+    /// Online, the connection count, the activity dot) are here: dropping
+    /// them left "Syncing" up for good after a background restart.
+    static func isCritical(_ batch: BatchedStateUpdate) -> Bool {
+        batch.isLocked || batch.isPortConflict
+            || batch.stopBooting
+            || batch.stopWotSyncing
+            || batch.startFailed != nil
+            || batch.importEngineStarted
+            || batch.eventsStoredDelta != 0
+            || batch.connectionsDelta != 0
+            || !batch.inboxActivityKinds.isEmpty
+            || !batch.notifyMarkers.isEmpty
+            || !batch.listVersionMarkers.isEmpty
     }
 
     // Cached regex patterns for boot/import status parsing
@@ -222,6 +247,10 @@ enum RelayLogParser {
             batch.inboxActivityKinds.insert(kind)
         }
 
+        if let r = line.range(of: startFailedMarker) {
+            batch.startFailed = String(line[r.upperBound...]).trimmingCharacters(in: .whitespaces)
+        }
+
         // Local notification markers — collect for LocalNotificationService.
         let notifyPrefix = "🔔NOTIFY|"
         if let r = line.range(of: notifyPrefix) {
@@ -281,7 +310,11 @@ enum RelayLogParser {
             }
         }
 
-        if line.contains("subscribing to inbox") || line.contains("Subscribing to inbox") {
+        // The inbox subscription itself ("📢 subscribing to inbox on N relays",
+        // import.go), which starts only once the Web of Trust is ready. Not
+        // the line before it ("waiting for Web of Trust before subscribing to
+        // inbox"), which ended "Syncing" while the trust graph still built.
+        if lowerLine.contains("subscribing to inbox on") {
             batch.stopWotSyncing = true
         }
 
