@@ -69,8 +69,9 @@ type Record struct {
 	Follower string `json:"follower"`
 	// FirstSeen is our clock when we first saw this pubkey follow the owner.
 	FirstSeen int64 `json:"first_seen"`
-	// FollowedAt is our clock when the current follow began (first follow or
-	// latest return). Equal to FirstSeen until they unfollow and come back.
+	// FollowedAt is when the current follow began (first follow or latest
+	// return): the created_at of the list that carried it, clamped to
+	// [SeededAt, our clock then] (followTime). Not the time we received it.
 	FollowedAt int64 `json:"followed_at"`
 	// UnfollowedAt is our clock when we saw them drop the owner; 0 while following.
 	UnfollowedAt int64 `json:"unfollowed_at,omitempty"`
@@ -166,6 +167,17 @@ func open(appfs afero.Fs, path string, owners []string, now func() time.Time) (*
 	return l, nil
 }
 
+// followTime: when a follow happened, from the list that first carries it.
+// The list's created_at is the latest the follow can have been made; the time
+// the relay happened to receive it is not, and a list arriving late (catch-up
+// after sleep, a sweep, setup, a slow relay) used to be dated "now" and sort
+// above everything newer (Logen 2026-11-05,
+// RESEARCH/NV_LIVE_VAULT_MULTI_MENTION_ORDER_2026_11_05.md). Clamped to
+// [seededAt, now]: never before the ledger began watching, never in the future.
+func followTime(createdAt, seededAt, now int64) int64 {
+	return max(seededAt, min(createdAt, now))
+}
+
 // ObserveList applies one kind-3 list by follower, created at createdAt, to
 // owner's book. tagsOwner says whether the list p-tags the owner; listSize is
 // its p-tag count. Lists older than the newest one already applied are
@@ -187,7 +199,7 @@ func (l *Ledger) ObserveList(owner, follower string, createdAt int64, tagsOwner 
 		if !tagsOwner {
 			return Ignored // a stranger's list without us: nothing to track
 		}
-		r = &Record{Follower: follower, FirstSeen: now, FollowedAt: now, Follows: 1,
+		r = &Record{Follower: follower, FirstSeen: now, FollowedAt: followTime(createdAt, b.SeededAt, now), Follows: 1,
 			ListAt: createdAt, ListSize: listSize, Versions: []int64{createdAt}}
 		b.Followers[follower] = r
 		l.dirty = true
@@ -218,7 +230,7 @@ func (l *Ledger) ObserveList(owner, follower string, createdAt int64, tagsOwner 
 		return Refresh
 	case tagsOwner:
 		r.UnfollowedAt, r.UnfollowListAt = 0, 0
-		r.FollowedAt = now
+		r.FollowedAt = followTime(createdAt, b.SeededAt, now)
 		r.Follows++
 		r.Existing = false
 		return Returning

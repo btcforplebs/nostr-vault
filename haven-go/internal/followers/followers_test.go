@@ -316,3 +316,58 @@ func TestSpamCountsChurn(t *testing.T) {
 		t.Fatal("unknown follower is not spam")
 	}
 }
+
+// A list that reaches the relay late is dated by its own created_at, not by
+// when it arrived: a follow made yesterday and received today must not sort
+// above today's replies (Logen 2026-11-05, Live Vault order).
+func TestFollowedAtIsTheListTimeNotArrival(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	fs := afero.NewMemMapFs()
+	l := openAt(t, fs, &now)
+	seeded := l.owners[owner].SeededAt
+
+	// The follow was published an hour after seeding; the relay sees it a day later.
+	made := seeded + 3600
+	now = now.Add(24 * time.Hour)
+	if got := l.ObserveList(owner, "late", made, true, 50); got != New {
+		t.Fatalf("late list: got %v want New", got)
+	}
+	if r := l.owners[owner].Followers["late"]; r.FollowedAt != made || r.FirstSeen != now.Unix() {
+		t.Fatalf("late: followed_at=%d first_seen=%d, want %d and %d", r.FollowedAt, r.FirstSeen, made, now.Unix())
+	}
+	snap := l.Snapshot(owner, func(string) bool { return false })
+	if len(snap.Followers) != 1 || snap.Followers[0].FollowedAt != made {
+		t.Fatalf("snapshot followed_at = %+v, want %d", snap.Followers, made)
+	}
+
+	// A list dated in the future is clamped to our clock.
+	if got := l.ObserveList(owner, "ahead", now.Unix()+9999, true, 50); got != New {
+		t.Fatalf("future list: got %v want New", got)
+	}
+	if r := l.owners[owner].Followers["ahead"]; r.FollowedAt != now.Unix() {
+		t.Fatalf("future: followed_at=%d want %d", r.FollowedAt, now.Unix())
+	}
+
+	// A return is dated by the list that brought them back, not its arrival.
+	l.ObserveList(owner, "late", made+10, false, 50) // unfollow
+	back := made + 10 + int64(flapWindow/time.Second) + 60
+	now = time.Unix(back, 0).Add(48 * time.Hour)
+	if got := l.ObserveList(owner, "late", back, true, 50); got != Returning {
+		t.Fatalf("return: got %v want Returning", got)
+	}
+	if r := l.owners[owner].Followers["late"]; r.FollowedAt != back {
+		t.Fatalf("return: followed_at=%d want %d", r.FollowedAt, back)
+	}
+}
+
+func TestFollowTimeClamp(t *testing.T) {
+	for _, c := range []struct{ created, seeded, now, want int64 }{
+		{150, 100, 200, 150}, // inside: the list's time
+		{50, 100, 200, 100},  // before the ledger began: never earlier than the seed
+		{300, 100, 200, 200}, // future: never later than now
+	} {
+		if got := followTime(c.created, c.seeded, c.now); got != c.want {
+			t.Errorf("followTime(%d,%d,%d) = %d, want %d", c.created, c.seeded, c.now, got, c.want)
+		}
+	}
+}

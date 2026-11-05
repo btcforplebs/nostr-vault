@@ -448,7 +448,7 @@ func initRelays(ctx context.Context) error {
 		// unrelated bug fix) would light up the dot for every old item.
 		if c := classifyInboxEvent(ctx, event); c.accept && c.notify && isNotifyableAge(event) {
 			logInboxImport(event)
-			emitInboxNotify(event, c.recipient)
+			emitInboxNotify(event, c.recipients...)
 		}
 		return nil
 	})
@@ -682,7 +682,7 @@ func initRelays(ctx context.Context) error {
 		// as constant noise for events that aren't actually news.
 		if c := classifyInboxEvent(ctx, event); c.accept && c.notify && isNotifyableAge(event) {
 			logInboxImport(event)
-			emitInboxNotify(event, c.recipient)
+			emitInboxNotify(event, c.recipients...)
 		}
 		return nil
 	})
