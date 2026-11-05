@@ -112,20 +112,12 @@ class ListBackupService @Inject constructor(
     private suspend fun fetch(hex: String, imported: Boolean = false): List<NostrEvent>? {
         val url = configStore.config.value.localRelayURL("lists") ?: return null
         val tag = if (imported) ",\"#v\":[\"${ListHistoryScan.IMPORTED_FILTER_VALUE}\"]" else ""
-        val filter = "{\"authors\":[\"$hex\"],\"kinds\":${ListShrinkRule.protectedKinds},\"limit\":1000$tag}"
-        var found = runCatching { VaultSocket.query(url, filter, { signAuth(url, it) }) }.getOrNull()
-        // At the limit the relay cut the oldest, which may be a pinned list from before a wipe:
-        // ask again one kind at a time (Tron, PR 1568).
-        if (found != null && found.size >= 1000) {
-            val all = mutableListOf<NostrEvent>()
-            for (kind in ListShrinkRule.protectedKinds) {
-                val one = "{\"authors\":[\"$hex\"],\"kinds\":[$kind],\"limit\":1000$tag}"
-                val some = runCatching { VaultSocket.query(url, one, { signAuth(url, it) }) }.getOrNull() ?: return null
-                all += some
-            }
-            found = all
-        }
-        return found
+        // Every version, newest first, paged with `until` past the vault's 1,000 cap (VaultPaging), on the one
+        // logged-in /lists socket. It replaces a re-ask per kind whenever the first answer hit the cap, which
+        // was one more login per kind (the signer storm, iOS #1739); a pinned list from before a wipe still
+        // comes, on a later page (Tron, PR 1568).
+        val fields = "\"authors\":[\"$hex\"],\"kinds\":${ListShrinkRule.protectedKinds}$tag"
+        return runCatching { VaultSocket.queryAll(url, fields, { signAuth(url, it) }) }.getOrNull()
     }
 
     /**
