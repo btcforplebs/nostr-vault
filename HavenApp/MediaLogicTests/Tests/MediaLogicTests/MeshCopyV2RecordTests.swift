@@ -58,3 +58,22 @@ final class MeshCopyV2RecordTests: XCTestCase {
         XCTAssertEqual(r.syncDue(now: 1000 + MeshCopyV2.syncEvery), ["npub1b"])
     }
 }
+
+/// Remove device: B forgets the peer, so nothing resumes or catches up with it.
+final class MeshCopyV2ForgetTests: XCTestCase {
+    func testForgetDropsPendingAndCatchUp() {
+        var r = MeshCopyV2.Record()
+        r.pending = .init(peer: "npub1gone", name: "Old phone", freshStart: false)
+        r.copied = ["npub1gone": 0, "npub1kept": 0]
+        r.forget("npub1gone")
+        XCTAssertNil(r.pending)
+        XCTAssertEqual(r.syncDue(now: MeshCopyV2.syncEvery), ["npub1kept"])
+    }
+
+    func testForgetLeavesAnotherPeersPending() {
+        var r = MeshCopyV2.Record()
+        r.pending = .init(peer: "npub1kept", name: "", freshStart: true)
+        r.forget("npub1gone")
+        XCTAssertEqual(r.pending?.peer, "npub1kept")
+    }
+}

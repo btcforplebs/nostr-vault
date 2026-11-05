@@ -71,3 +71,19 @@ final class MeshCopyV2Tests: XCTestCase {
         XCTAssertNil(MeshCopyV2.message(for: done, name: "Mac"))
     }
 }
+
+/// The start proof's tags: the fixed path (never the ingress token) and B
+/// naming itself, which A needs to bind, replace and revoke the token.
+final class MeshCopyV2StartAuthTests: XCTestCase {
+    private let base = URL(string: "http://127.0.0.1:41234/secretingresstoken")!
+
+    func testTagsNameTheDeviceAndSignOnlyThePath() throws {
+        let tags = try XCTUnwrap(MeshCopyV2.startAuthTags(base: base, device: "npub1bphone"))
+        XCTAssertEqual(tags, [["u", "http://127.0.0.1:41234/copy/v2/start"], ["method", "POST"], ["device", "npub1bphone"]])
+        XCTAssertFalse(tags.flatMap { $0 }.contains { $0.contains("secretingresstoken") })
+    }
+
+    func testNoDeviceNoProof() {
+        XCTAssertNil(MeshCopyV2.startAuthTags(base: base, device: " "))
+    }
+}

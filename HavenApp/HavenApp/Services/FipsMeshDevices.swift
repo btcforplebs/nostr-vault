@@ -92,6 +92,7 @@ enum FipsMeshDevices {
         let wasListed = !HomeVaultLogic.stillOwnedMeshEntries(previouslyManaged: listedBefore, myDevices: [device.npub]).isEmpty
         config.config.meshDevices = MeshDevicesLogic.removing(npub: device.npub, from: config.config.meshDevices)
         config.save()
+        MeshCopyV2Service.shared.forget(peer: device.npub)
         // The Mac, or an old home vault kept listed as a plain device: unlist
         // it now. A home vault's own setting change already republished.
         if roles.contains(.mac) || (wasListed && roles.isEmpty) { NostrService.shared.publishServerList() }

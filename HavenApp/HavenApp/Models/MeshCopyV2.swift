@@ -155,9 +155,13 @@ enum MeshCopyV2 {
         return "\(scheme)://\(host)\(port)/copy/v2/start"
     }
 
-    static func startAuthTags(base: URL) -> [[String]]? {
-        guard let u = startURL(base: base) else { return nil }
-        return [["u", u], ["method", "POST"]]
+    /// `device`: B's own mesh npub. A binds the token to it, so Remove
+    /// device revokes it and a new start from B replaces it; A refuses a
+    /// start without it (Tron's review of #1788/#1790).
+    static func startAuthTags(base: URL, device: String) -> [[String]]? {
+        let device = device.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let u = startURL(base: base), !device.isEmpty else { return nil }
+        return [["u", u], ["method", "POST"], ["device", device]]
     }
 
     /// StartCopyFromC / CopySyncC: 0 started, 2 busy, 3 relay not running.
@@ -215,6 +219,12 @@ enum MeshCopyV2 {
                 // A stop (another owner, no space, an old app) or relays: no retry.
                 pending = nil
             }
+        }
+
+        /// A device taken out of My Devices: no resume, no catch-up with it.
+        mutating func forget(_ peer: String) {
+            if pending?.peer == peer { pending = nil }
+            copied[peer] = nil
         }
 
         /// The linked devices due a catch-up now: copied before, not the one

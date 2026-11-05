@@ -80,6 +80,13 @@ final class MeshCopyV2Service: ObservableObject {
         _ = CancelCopyC()
     }
 
+    /// Remove device: B stops copying from it and never catches up with it
+    /// again. A running copy with it is stopped (Tron's review of #1790).
+    func forget(peer: String) {
+        if current == peer { cancel() }
+        record.forget(peer)
+    }
+
     /// The pending copy resumes; copied devices get a catch-up when due.
     private func reconnect() {
         guard !starting, current == nil, RelayProcessManager.shared.isRunning else { return }
@@ -144,9 +151,19 @@ final class MeshCopyV2Service: ObservableObject {
         #endif
     }
 
+    /// This device's own mesh npub, the one its engine dials with.
+    private static func ownMeshNpub() -> String? {
+        #if os(iOS)
+        return FipsMeshService.meshNpubFromKey()
+        #else
+        return MacFipsMeshService.meshNpubFromKey()
+        #endif
+    }
+
     /// Base64 of the owner's kind 27235 for POST <base>/copy/v2/start.
     private static func signedStart(base: String) async -> String? {
-        guard let url = URL(string: base), let tags = MeshCopyV2.startAuthTags(base: url),
+        guard let url = URL(string: base), let device = ownMeshNpub(),
+              let tags = MeshCopyV2.startAuthTags(base: url, device: device),
               let event = await NostrService.shared.signEventAsync(kind: 27235, content: "", tags: tags, forceOwner: true),
               let json = try? JSONEncoder().encode(event) else { return nil }
         return json.base64EncodedString()
