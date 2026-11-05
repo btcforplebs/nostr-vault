@@ -26,7 +26,10 @@ const SUB_OUT = new Set(["REQ", "COUNT", "CLOSE"]), SUB_IN = new Set(["EVENT", "
 function boxLinks({ signer, pubkey, Socket = globalThis.WebSocket, loc = globalThis.location } = {}) {
   const idle = new Map() // route -> [link]
   const login = { declined: false }
-  const me = () => (typeof pubkey === "function" ? pubkey() : pubkey) ?? loadSession()?.pubkey ?? null
+  // The signed-in account: given, else the session's. Where there's no localStorage at all (node 24 without
+  // --experimental-webstorage, so CI), loadSession's default would throw: then there's no session to check against.
+  const sessionPubkey = () => { try { return globalThis.localStorage ? loadSession(globalThis.localStorage)?.pubkey ?? null : null } catch { return null } }
+  const me = () => (typeof pubkey === "function" ? pubkey() : pubkey) ?? sessionPubkey()
 
   const sign = async (url, challenge) => {
     if (login.declined) throw new Error(LOGIN_DECLINED)
