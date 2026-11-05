@@ -140,7 +140,7 @@ class RelayImportService @Inject constructor(
         // Written before it starts, cleared when it ends: still here next start = it was killed (ImportResume).
         val nowS = System.currentTimeMillis() / 1000
         val previous = ImportResume.read(context)?.takeIf { it.listHistory == listHistory && it.alsoFrom == alsoFrom && it.otherVault == otherVault }
-        ImportResume.write(context, ImportResume.next(previous, listHistory, alsoFrom, otherVault, nowS))
+        ImportResume.write(context, ImportResume.next(previous, listHistory, alsoFrom, otherVault, nowS, configStore.activeAccountHexPubkey.value))
         importJob = scope.launch {
             var outcome: ImportResult = ImportResult.APP_FAILED
             _importProgress.value = 0f
@@ -245,7 +245,7 @@ class RelayImportService @Inject constructor(
      */
     fun resumeCutImport(): Boolean {
         val cut = ImportResume.read(context) ?: return false
-        if (!ImportResume.shouldResume(cut, System.currentTimeMillis() / 1000, isBusy)) {
+        if (!ImportResume.shouldResume(cut, System.currentTimeMillis() / 1000, isBusy, configStore.activeAccountHexPubkey.value)) {
             if (!isBusy) ImportResume.clear(context)
             return false
         }

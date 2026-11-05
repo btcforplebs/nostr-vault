@@ -264,9 +264,14 @@ private fun BackupRow(
     }
 }
 
+/** iOS BackupSettingsView.notThisVaultsBackup (#1757), word for word. */
+internal const val NOT_THIS_VAULTS_BACKUP = "This backup isn't this vault's. It holds no notes signed by the vault owner's key."
+
 /** What a refused notes restore says (haven-go RestoreOwnBackupC: 2 = holds no notes signed by this account). */
 internal fun restoreFailText(code: Int): String = when (code) {
-    2 -> "This backup isn't yours. It holds no notes signed by your key, so nothing was restored."
+    // Checked against this vault's owner, not the active account (haven-go's config.OwnerPubKey), so the words say
+    // so: with another account active, its own backup is refused too. Same as iOS #1757.
+    2 -> NOT_THIS_VAULTS_BACKUP
     com.nostrvault.service.RelayImportService.BUSY_CODE -> com.nostrvault.service.RelayImportService.BUSY_LINE
     else -> "Restore failed (code $code)."
 }
