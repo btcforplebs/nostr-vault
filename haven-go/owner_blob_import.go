@@ -7,10 +7,13 @@ import (
 	"errors"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
 )
+
+var ownerBlobImportMu sync.Mutex
 
 // importOwnerBlob stores the file at path in this vault's Blossom store as
 // the owner's, the way a signed upload by the owner would: the file under its
@@ -23,7 +26,13 @@ import (
 // so the upload rule for everyone else (init.go RejectUpload: signed by a
 // whitelisted key) is unchanged. The file must hash to sha256, and a type a
 // browser would run (activeBlobTypes) is refused, as on restore.
+//
+// One at a time: the app fetches several files at once, and the same blob
+// linked from two servers would otherwise be written to the same <sha>.tmp
+// by two calls together.
 func importOwnerBlob(ctx context.Context, path, sha256, mimeType string) error {
+	ownerBlobImportMu.Lock()
+	defer ownerBlobImportMu.Unlock()
 	if blossomDB == nil || config.OwnerPubKey == "" {
 		return errors.New("vault media store is not open")
 	}

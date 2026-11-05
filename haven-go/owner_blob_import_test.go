@@ -3,11 +3,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/nbd-wtf/go-nostr"
@@ -94,5 +96,41 @@ func TestImportOwnerBlobRefuses(t *testing.T) {
 	blossomDB = nil
 	if err := importOwnerBlob(context.Background(), path, sha, "image/jpeg"); err == nil {
 		t.Fatal("stored with no vault open")
+	}
+}
+
+// The same blob from two servers at once: both calls succeed, the file is
+// whole and there is one record.
+func TestImportOwnerBlobSameBlobTwiceAtOnce(t *testing.T) {
+	owner, _ := nostr.GetPublicKey(nostr.GeneratePrivateKey())
+	openCopyVault(t, owner)
+	data := bytes.Repeat([]byte("big media chunk "), 1<<16)
+	pathA, sha := ownerBlobFile(t, data)
+	pathB, _ := ownerBlobFile(t, data)
+	var wg sync.WaitGroup
+	errs := make([]error, 8)
+	for i := range errs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			p := pathA
+			if i%2 == 1 {
+				p = pathB
+			}
+			errs[i] = importOwnerBlob(context.Background(), p, sha, "video/mp4")
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("import %d: %v", i, err)
+		}
+	}
+	got, err := os.ReadFile(copyBlobFile(sha))
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("stored file is not whole (%d bytes, %v)", len(got), err)
+	}
+	if n := len(ownerBlobRecords(t, owner, sha)); n != 1 {
+		t.Fatalf("records = %d, want 1", n)
 	}
 }
