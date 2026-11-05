@@ -250,13 +250,13 @@ func importDBStats(ctx context.Context, db DBBackend, r io.Reader) (importStats,
 			continue
 		}
 		switch importOne(ctx, db, &event, now) {
-		case importStored:
+		case restoreStored:
 			st.stored++
-		case importDup:
+		case restoreDup:
 			st.dup++
-		case importSkipped:
+		case restoreSkipped:
 			st.skipped++
-		case importBad:
+		case restoreBad:
 			st.bad++
 		}
 	}
@@ -265,16 +265,16 @@ func importDBStats(ctx context.Context, db DBBackend, r io.Reader) (importStats,
 	return st, scanner.Err()
 }
 
-type importOutcome int
+type restoreOutcome int
 
 const (
-	importStored importOutcome = iota
-	importDup
-	importSkipped
-	importBad
+	restoreStored restoreOutcome = iota
+	restoreDup
+	restoreSkipped
+	restoreBad
 )
 
-func importOne(ctx context.Context, db DBBackend, event *nostr.Event, now time.Time) importOutcome {
+func importOne(ctx context.Context, db DBBackend, event *nostr.Event, now time.Time) restoreOutcome {
 	// The blob index (blossom.jsonl) is the relay's own unsigned kind 24242
 	// records (khatru EventStoreBlobIndexWrapper.Keep): checked on their own
 	// terms, not dropped for having no signature.
@@ -283,45 +283,45 @@ func importOne(ctx context.Context, db DBBackend, event *nostr.Event, now time.T
 	}
 	if !importable(event, now) {
 		slog.Warn("⏭️ skipping unsigned, altered or future-dated event", "id", event.ID)
-		return importSkipped
+		return restoreSkipped
 	}
 	if nostr.IsEphemeralKind(event.Kind) {
-		return importSkipped
+		return restoreSkipped
 	}
 	// The list history keeps every version: replacing would collapse a
 	// restored history to one copy per list.
 	if listsDB != nil && db == listsDB {
 		if !isOwnerList(event) {
-			return importSkipped
+			return restoreSkipped
 		}
 		if err := recordListVersion(ctx, db, event); err != nil {
 			if errors.Is(err, errFutureEvent) {
-				return importSkipped
+				return restoreSkipped
 			}
 			slog.Warn("⏭️ list version not restored", "id", event.ID, "error", err)
-			return importBad
+			return restoreBad
 		}
-		return importStored
+		return restoreStored
 	}
 	// So do the versions an import filed (list_history_import.go).
 	if listsImportDB != nil && db == listsImportDB {
 		if !isOwnerList(event) {
-			return importSkipped
+			return restoreSkipped
 		}
 		if err := fileImportedVersion(ctx, event); err != nil {
 			slog.Warn("⏭️ imported list version not restored", "id", event.ID, "error", err)
-			return importBad
+			return restoreBad
 		}
-		return importStored
+		return restoreStored
 	}
 	if !restoreAccepts(ctx, db, event) {
 		slog.Debug("⏭️ skipping an event this store only takes from the owner", "id", event.ID)
-		return importSkipped
+		return restoreSkipped
 	}
 	// NIP-09: a deleted event doesn't come back with an old backup.
 	if isDeleted(ctx, db, event) || (outboxDB != nil && db != outboxDB && isDeleted(ctx, outboxDB, event)) {
 		slog.Debug("⏭️ skipping deleted event", "id", event.ID)
-		return importSkipped
+		return restoreSkipped
 	}
 
 	var err error
@@ -337,15 +337,15 @@ func importOne(ctx context.Context, db DBBackend, event *nostr.Event, now time.T
 	case err == nil:
 	case errors.Is(err, eventstore.ErrDupEvent):
 		slog.Debug("⏭️ skipping duplicate event", "id", event.ID)
-		return importDup
+		return restoreDup
 	case errors.Is(err, errFutureEvent):
-		return importSkipped
+		return restoreSkipped
 	default:
 		slog.Warn("⏭️ event not restored", "id", event.ID, "error", err)
-		return importBad
+		return restoreBad
 	}
 	applyImportedDeletion(ctx, db, event)
-	return importStored
+	return restoreStored
 }
 
 // restoreAccepts: the owner's stores (outbox, private) take only the
@@ -375,37 +375,37 @@ func restoreAccepts(ctx context.Context, db DBBackend, event *nostr.Event) bool 
 // goes in is rebuilt in Keep's exact shape (x, type, size in that order),
 // because khatru's parseEvent reads Tags[0..2] by position and panics on
 // anything shorter. Kept once per uploader and hash, as Keep does.
-func importBlobRecord(ctx context.Context, db DBBackend, event *nostr.Event, now time.Time) importOutcome {
+func importBlobRecord(ctx context.Context, db DBBackend, event *nostr.Event, now time.Time) restoreOutcome {
 	if event.Kind != 24242 || !event.CheckID() || !event.CreatedAt.Time().Before(now.Add(importFutureSlack)) {
-		return importSkipped
+		return restoreSkipped
 	}
 	if _, ok := config.WhitelistedPubKeys[event.PubKey]; !ok {
-		return importSkipped
+		return restoreSkipped
 	}
 	record, ok := rebuildBlobRecord(event)
 	if !ok {
-		return importSkipped
+		return restoreSkipped
 	}
 	event = record
 	ch, err := db.QueryEvents(ctx, nostr.Filter{Authors: []string{event.PubKey}, Kinds: []int{24242}, Tags: nostr.TagMap{"x": []string{event.Tags[0][1]}}, Limit: 1})
 	if err != nil {
-		return importBad
+		return restoreBad
 	}
 	exists := false
 	for range ch {
 		exists = true
 	}
 	if exists {
-		return importDup
+		return restoreDup
 	}
 	if err := db.SaveEvent(ctx, event); err != nil {
 		if errors.Is(err, eventstore.ErrDupEvent) {
-			return importDup
+			return restoreDup
 		}
 		slog.Warn("⏭️ blob record not restored", "id", event.ID, "error", err)
-		return importBad
+		return restoreBad
 	}
-	return importStored
+	return restoreStored
 }
 
 // rebuildBlobRecord returns the record Keep would have written for the
