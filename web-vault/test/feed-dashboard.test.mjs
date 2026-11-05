@@ -155,7 +155,7 @@ test("attachPopular drops a popular note no relay had", () => {
   assert.deepEqual(attachPopular(s, [{ id: "y", content: "found" }]).popular, [{ id: "y", people: 2, note: { id: "y", content: "found" } }])
 })
 
-test("the sheet's words: vault line, and a tile opens its feed on Following (Reels has no web feed)", async () => {
+test("the sheet's words: vault line, and a tile opens its feed on Following (diVines too, since #17)", async () => {
   const store = new Map()
   globalThis.localStorage = { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: k => store.delete(k) }
   const { openOnFollowing, vaultLine } = await import("../src/components/FeedDashboard.jsx")
@@ -165,9 +165,11 @@ test("the sheet's words: vault line, and a tile opens its feed on Following (Ree
   const picked = []
   for (const f of ["recipes", "polls", "live", "marketplace", "music", "articles"]) assert.equal(openOnFollowing(f, c => picked.push(c.mode)), true)
   assert.deepEqual(picked, ["recipes", "polls", "live", "marketplace", "music", "articles"])
-  assert.equal(openOnFollowing("reels", () => picked.push("reels")), false)
+  assert.equal(openOnFollowing("reels", c => picked.push(c.mode)), true)
+  assert.equal(picked.at(-1), "reels")
   const scopes = [...store].filter(([, v]) => v === "following").map(([k]) => k)
-  assert.equal(scopes.length, 4)
+  assert.equal(scopes.length, 5)
+  assert.ok(scopes.includes("nv-reels-scope"))
 })
 
 test("the feed menu offers Dashboard just above Edit Feeds", async () => {

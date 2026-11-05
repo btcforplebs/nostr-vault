@@ -37,5 +37,5 @@ test("Polls is in the feed picker (a reader with its own icon) and can be pinned
   const src = f => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8")
   assert.match(src("readers/index.js"), /\{ id: "polls", label: "Polls", Screen: PollsScreen \}/)
   assert.match(src("components/FeedPickerMenu.jsx"), /polls: "M5 20V11/)
-  assert.match(src("desktop/rail/rail-favs.js"), /NOT_ON_WEB = new Set\(\["reels"\]\)/)
+  assert.match(src("desktop/rail/rail-favs.js"), /NOT_ON_WEB = new Set\(\[\]\)/)
 })
