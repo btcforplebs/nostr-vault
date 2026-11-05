@@ -1,8 +1,7 @@
 import SwiftUI
 
 /// The iPad's right-hand column in landscape, after the web's desktop "Your
-/// space": the user's widgets (My devices, Live now, On this day) in the
-/// order they chose, each collapsible to its header, all on one screen. Edit moves, removes and
+/// space": the user's widgets (all six the layout has) in the order they chose, each collapsible to its header, all on one screen. Edit moves, removes and
 /// adds them; the layout is the account's (`SpaceLayoutStore`), synced with
 /// the web. A thin icon rail on its right edge is always showing, folded or
 /// not (Logen, 2026-11-04): the dashboard (every widget together) on top,
@@ -23,9 +22,9 @@ struct SpaceColumn: View {
     @State private var selected: String?
 
     private var owner: String { configService.activeAccountHexPubkey.lowercased() }
-    /// The iPad draws only these widgets; the account's layout (and the web's
-    /// Your space) keeps the rest, untouched.
-    static let ids = ["my-devices", LiveNow.panelId, "on-this-day"]
+    /// Every widget the account's layout has, as on the web (Logen,
+    /// 2026-11-05: all six on the rail and in Edit, undoing #1690's three).
+    static let ids = SpaceLayoutStore.panelIds
     private var ids: [String] { Self.ids }
 
     var body: some View {
@@ -229,10 +228,49 @@ struct SpaceColumn: View {
                 .buttonStyle(.plain)
                 .foregroundColor(.havenPurple)
             }
+            feedPins
             Button("Reset to default") { withAnimation(.easeInOut(duration: 0.2)) { store.resetPanels() } }
                 .font(.appSystem(size: 13))
                 .foregroundColor(.secondary)
                 .padding(.top, 4)
+        }
+    }
+
+    /// Feed types the left rail can carry (Logen, 2026-11-05): tap to pin
+    /// one there (`{"type":"feed","id":"music"}`), tap again to take it off.
+    /// Following is the Feed section itself, so it isn't offered.
+    private var feedPins: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Feeds on your rail")
+                .font(.appSystem(size: 13, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.top, 10)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 6, alignment: .leading)], alignment: .leading, spacing: 6) {
+                ForEach(FeedMode.allCases.filter { $0 != .following }, id: \.self) { mode in
+                    let kind = SpaceLayout.Pin.Kind.feed(mode.pinId)
+                    let pinned = store.isPinned(kind)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if pinned, let pin = SpaceLayout.Pin.favourite(kind) {
+                                store.removePin(pin.id)
+                            } else if let pin = SpaceLayout.Pin.favourite(kind) {
+                                store.addPin(pin)
+                            }
+                        }
+                    } label: {
+                        Label(mode.displayName, systemImage: pinned ? "checkmark" : mode.symbolName)
+                            .font(.appSystem(size: 12, weight: .semibold))
+                            .foregroundColor(pinned ? .white : .havenPurple)
+                            .lineLimit(1)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Capsule().fill(pinned ? Color.havenPurple : Color.havenPurple.opacity(0.12)))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(pinned ? "\(mode.displayName) on your rail. Take off" : "Add \(mode.displayName) to your rail")
+                }
+            }
         }
     }
 

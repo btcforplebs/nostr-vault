@@ -55,6 +55,12 @@ that only one side keeps.
 | `person` | `p` | 64-char lowercase hex pubkey | their profile |
 | `hashtag` | `t` | the tag, lowercase, no `#` | the hashtag feed |
 | `relay` | `url` | `wss://` URL, host lowercased, no trailing `/` | that relay's notes |
+| `feed` | `id` | a feed type, lowercase: `discovery`, `global`, `hashtags`, `popular`, `media`, `reels`, `articles`, `recipes`, `marketplace`, `live`, `polls`, `music` | the Feed, switched to that type |
+
+`feed` was added 2026-11-05 (Logen: pin feed types from Your space). It is an
+addition, not a change: an app that predates it keeps the entry where it is
+and doesn't draw it (rule 3 below). A feed type an app doesn't have is kept
+and not drawn the same way.
 
 - `name` (optional, any pin): the label at the time it was pinned, so the rail
   can draw it before the list or profile loads. The live name wins once known.

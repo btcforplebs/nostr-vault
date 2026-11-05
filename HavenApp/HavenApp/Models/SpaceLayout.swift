@@ -33,6 +33,8 @@ struct SpaceLayout: Equatable {
             case person(String)
             case hashtag(String)
             case relay(String)
+            /// A feed type (Music, Recipes, …): `FeedMode`'s raw value, lower case.
+            case feed(String)
             case unknown
         }
 
@@ -47,6 +49,7 @@ struct SpaceLayout: Equatable {
             case "person": return .person(value("p"))
             case "hashtag": return .hashtag(value("t"))
             case "relay": return .relay(value("url"))
+            case "feed": return .feed(value("id"))
             default: return .unknown
             }
         }
@@ -61,7 +64,7 @@ struct SpaceLayout: Equatable {
         var name: String? { raw["name"]?.string }
         var isSection: Bool { if case .section = kind { return true } else { return false } }
 
-        static let valueField = ["section": "id", "list": "a", "person": "p", "hashtag": "t", "relay": "url"]
+        static let valueField = ["section": "id", "list": "a", "person": "p", "hashtag": "t", "relay": "url", "feed": "id"]
 
         static func section(_ id: String) -> Pin { Pin(raw: ["type": .string("section"), "id": .string(id)]) }
 
@@ -73,6 +76,7 @@ struct SpaceLayout: Equatable {
             case .person(let p): entry = ("person", "p", p)
             case .hashtag(let t): entry = ("hashtag", "t", t)
             case .relay(let url): entry = ("relay", "url", url)
+            case .feed(let id): entry = ("feed", "id", id)
             case .section, .unknown: return nil
             }
             guard let value = SpaceLayout.normalisedValue(type: entry.0, entry.2) else { return nil }
@@ -129,6 +133,9 @@ struct SpaceLayout: Equatable {
             return "\(parts[0]):\(pk):\(parts[2])"
         case "relay":
             return normaliseRelay(v)
+        case "feed":
+            let id = v.lowercased()
+            return id.contains(where: \.isWhitespace) ? nil : id
         default:
             return v
         }
