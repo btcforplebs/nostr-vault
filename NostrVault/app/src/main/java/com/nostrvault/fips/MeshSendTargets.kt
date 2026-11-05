@@ -6,9 +6,10 @@ import com.nostrvault.relay.HavenConfig
 internal data class MeshSendTarget(val npub: String, val role: DeviceRole, val notes: Boolean, val media: Boolean)
 
 /**
- * Where [HomeVaultSender] sends: the home vault, then each Mac in My Devices, each with its own Send
- * notes / Send media switches (a home vault with no label gets both). A Mac takes the same owner-signed
- * Blossom upload and EVENT the home vault does. Pure for the tests.
+ * Where [HomeVaultSender] sends: the home vault, then each Mac and each phone in My Devices, each with its
+ * own Send notes / Send media switches (a home vault with no label gets both). A Mac or a linked phone takes
+ * the same owner-signed Blossom upload and EVENT the home vault does: every linked phone gets new photos and
+ * notes (Logen 2026-11-05). Pure for the tests.
  */
 internal object MeshSendTargets {
     fun of(config: HavenConfig): List<MeshSendTarget> {
@@ -18,17 +19,24 @@ internal object MeshSendTargets {
         val home = config.homeVaultNpub?.takeIf { h ->
             config.fipsMesh.devices.none { it.npub == h && !MyDevicesRules.isOwners(it.linkedBy, config.ownerNpub) }
         }
-        val macs = owners
-            .filter { it.role == DeviceRole.MAC && it.npub in config.fipsPeers && it.npub != home && MyDevicesRules.isMeshNpub(it.npub) }
+        val others = owners
+            .filter { receivesSends(it.role) && it.role != DeviceRole.HOME_VAULT }
+            .filter { it.npub in config.fipsPeers && it.npub != home && MyDevicesRules.isMeshNpub(it.npub) }
             .distinctBy { it.npub }
-            .map { MeshSendTarget(it.npub, DeviceRole.MAC, notes = it.sendNotes, media = it.sendMedia) }
+            .map { MeshSendTarget(it.npub, it.role, notes = it.sendNotes, media = it.sendMedia) }
         val homeLabel = home?.let { h -> config.fipsMesh.devices.firstOrNull { it.npub == h } }
         val homeTarget = home?.let { MeshSendTarget(it, DeviceRole.HOME_VAULT, notes = homeLabel?.sendNotes ?: true, media = homeLabel?.sendMedia ?: true) }
-        return listOfNotNull(homeTarget) + macs
+        // Macs before phones: a Mac keeps the full history, so it is the first copy worth having.
+        return listOfNotNull(homeTarget) + others.sortedBy { if (it.role == DeviceRole.MAC) 0 else 1 }
     }
 
-    /** Whether a device in this role is sent anything, so its Send switches mean something. Phones and browsers are not. */
-    fun receivesSends(role: DeviceRole): Boolean = role == DeviceRole.HOME_VAULT || role == DeviceRole.MAC
+    /**
+     * Whether a device in this role is sent anything, so its Send switches mean something. Phones are
+     * (Logen 2026-11-05: every linked phone gets new photos and notes); browsers are not, since a
+     * browser vault only holds what it gets while its page is open.
+     */
+    fun receivesSends(role: DeviceRole): Boolean =
+        role == DeviceRole.HOME_VAULT || role == DeviceRole.MAC || role == DeviceRole.PHONE
 
     /**
      * After queueing one item on each lane: drain if any lane took it, so one full or broken lane
@@ -37,8 +45,16 @@ internal object MeshSendTargets {
     fun afterQueueing(queued: List<Boolean>): Pair<Boolean, Boolean> = queued.any { it } to !queued.all { it }
 
     /** How a target is named in the card's problem line. */
-    fun label(role: DeviceRole): String = if (role == DeviceRole.MAC) "Home vault · full history" else "Home vault · new posts"
+    fun label(role: DeviceRole): String = when (role) {
+        DeviceRole.MAC -> "Home vault · full history"
+        DeviceRole.PHONE -> "Your other phone"
+        else -> "Home vault · new posts"
+    }
 
-    /** The same, mid-sentence: "the home vault", "your Mac". */
-    fun destination(role: DeviceRole): String = if (role == DeviceRole.MAC) "your home vault" else "the home vault"
+    /** The same, mid-sentence: "the home vault", "your Mac", "your other phone". */
+    fun destination(role: DeviceRole): String = when (role) {
+        DeviceRole.MAC -> "your home vault"
+        DeviceRole.PHONE -> "your other phone"
+        else -> "the home vault"
+    }
 }

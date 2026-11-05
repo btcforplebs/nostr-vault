@@ -22,6 +22,7 @@ class MeshSendTargetsTest {
             listOf(
                 MeshSendTarget(kiosk, DeviceRole.HOME_VAULT, notes = true, media = true),
                 MeshSendTarget(mac, DeviceRole.MAC, notes = true, media = false),
+                MeshSendTarget(phone, DeviceRole.PHONE, notes = true, media = true),
             ),
             targets,
         )
@@ -41,7 +42,7 @@ class MeshSendTargetsTest {
     @Test
     fun `only roles that are sent anything have send switches`() {
         assertEquals(
-            listOf(DeviceRole.MAC, DeviceRole.HOME_VAULT),
+            listOf(DeviceRole.MAC, DeviceRole.PHONE, DeviceRole.HOME_VAULT),
             DeviceRole.entries.filter { MeshSendTargets.receivesSends(it) },
         )
     }
@@ -60,9 +61,26 @@ class MeshSendTargetsTest {
         assertEquals(emptyList<MeshSendTarget>(), MeshSendTargets.of(config(listOf(FipsDevice(mac, DeviceRole.MAC)), peers = emptyList())))
     }
 
+    /** Logen 2026-11-05: every linked phone gets new photos and notes, with its own switches. */
     @Test
-    fun `a phone is never a target`() {
-        assertEquals(emptyList<MeshSendTarget>(), MeshSendTargets.of(config(listOf(FipsDevice(phone, DeviceRole.PHONE)))))
+    fun `a linked phone is a target with its own switches`() {
+        assertEquals(
+            listOf(MeshSendTarget(phone, DeviceRole.PHONE, notes = false, media = true)),
+            MeshSendTargets.of(config(listOf(FipsDevice(phone, DeviceRole.PHONE, sendNotes = false)))),
+        )
+        // Taken out of My Devices (not in fipsPeers): its label alone sends nothing.
+        assertEquals(emptyList<MeshSendTarget>(), MeshSendTargets.of(config(listOf(FipsDevice(phone, DeviceRole.PHONE)), peers = emptyList())))
+    }
+
+    @Test
+    fun `a browser vault is never a target`() {
+        assertEquals(emptyList<MeshSendTarget>(), MeshSendTargets.of(config(listOf(FipsDevice(phone, DeviceRole.BROWSER)))))
+    }
+
+    @Test
+    fun `a phone is named as a phone, not as a home vault`() {
+        assertEquals("Your other phone", MeshSendTargets.label(DeviceRole.PHONE))
+        assertEquals("your other phone", MeshSendTargets.destination(DeviceRole.PHONE))
     }
 
     @Test

@@ -84,7 +84,7 @@ class HomeVaultSender @Inject constructor(
 
     private val queue = HomeVaultQueue(File(context.filesDir, "home_vault_queue"))
 
-    /** One queue per Mac in My Devices ([MeshSendTargets]), each sent on its own. */
+    /** One queue per Mac and per linked phone in My Devices ([MeshSendTargets]), each sent on its own. */
     private val macQueues = java.util.concurrent.ConcurrentHashMap<String, HomeVaultQueue>()
     private val macQueueRoot get() = File(filesDir, "mesh_send_queue")
     private fun macQueue(npub: String) = macQueues.getOrPut(npub) { HomeVaultQueue(File(macQueueRoot, npub)) }
@@ -442,12 +442,13 @@ class HomeVaultSender @Inject constructor(
         publish()
     }
 
-    /** A Mac taken out of My Devices: what waited for it has nowhere to go. */
+    /** A Mac or phone taken out of My Devices: what waited for it has nowhere to go. */
     private fun dropRemovedMacQueues(lanes: List<Pair<MeshSendTarget, HomeVaultQueue>>) {
         // Only against a loaded config: before it loads it lists no Mac at all, and every
         // queue would go (Tron, #1025). A loaded one always names its owner.
         if (configStore.config.value.ownerNpub.isBlank() || !ownerIsActive()) return
-        val macs = lanes.filter { it.first.role == DeviceRole.MAC }.map { it.first.npub }.toSet()
+        // Every own-queue lane (Macs and phones), not only Macs: a phone's queue was wiped each pass.
+        val macs = lanes.filter { it.first.role != DeviceRole.HOME_VAULT }.map { it.first.npub }.toSet()
         macQueueRoot.listFiles()?.filter { it.isDirectory && it.name !in macs }?.forEach { dir ->
             macQueues.remove(dir.name)?.clear()
             dir.deleteRecursively()
