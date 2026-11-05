@@ -4,7 +4,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } from "nostr-tools/pure"
-import { listBlobs, deleteBlob, deleteTargets, isHomeNetworkHost, vaultCheckVerdict, mirrorBlob, mediaType, byDay, outcome, blossomAuthTemplate, TYPE_FILTERS, resetListAuth } from "../src/net/blossom-gallery.js"
+import { listBlobs, deleteBlob, deleteTargets, isHomeNetworkHost, vaultCheckVerdict, mirrorBlob, mediaType, byDay, outcome, skippedLine, blossomAuthTemplate, TYPE_FILTERS, resetListAuth } from "../src/net/blossom-gallery.js"
 
 const SK = generateSecretKey(), ME = getPublicKey(SK)
 const signs = []
@@ -175,6 +175,12 @@ test("the vault check: the owner's key is a vault, anything else a mirror, no an
   assert.equal(vaultCheckVerdict(JSON.stringify({ pubkey: ME }), ""), "unknown", "no owner to compare with")
 })
 
+test("a skipped own vault is named in the apps' words", () => {
+  assert.equal(skippedLine([]), "")
+  assert.equal(skippedLine(["b.example"]), "Skipped: b.example (your own vault)")
+  assert.equal(skippedLine(["a.example", "b.example", "c.example"]), "Skipped: a.example, b.example and c.example (your own vaults)")
+})
+
 test("Delete from mirrors asks each server first: the owner's vault under a public name keeps its copy, a silent one gets nothing", async () => {
   // A is a public mirror, B is the owner's Mac reached through its public https name (in the 10063), C doesn't answer
   // the check, D answers with a server error (a tunnel whose vault is down).
@@ -192,7 +198,7 @@ test("Delete from mirrors asks each server first: the owner's vault under a publ
   assert.deepEqual(asked, [A, B, C, D].map(s => [s, "application/nostr+json"]))
   assert.deepEqual(deleted, [`${A}/${H("e")}`], "only the public mirror gets a DELETE")
   assert.deepEqual(r.map(x => [x.server, x.ok, !!x.kept]), [[A, true, false], [B, false, true], [C, false, false], [D, false, false]])
-  assert.match(outcome(r, "Deleted"), /^Deleted on 1 of 3 servers\. c\.example: couldn't check it isn't your vault.* · d\.example: .* Your vault keeps its copy: b\.example\.$/)
+  assert.match(outcome(r, "Deleted"), /^Deleted on 1 of 3 servers\. c\.example: couldn't check it isn't your vault.* · d\.example: .* Skipped: b\.example \(your own vault\)\.$/)
   // Nothing is signed for a server that isn't sent a delete.
   signs.length = 0
   await deleteBlob({ ...blob, servers: [B] , url: `${B}/${H("e")}` }, { ctx, fetch })

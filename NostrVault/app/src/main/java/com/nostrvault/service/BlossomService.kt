@@ -626,11 +626,16 @@ class BlossomService @Inject constructor(
         val failed: List<String> = emptyList(),
         /** What to call a mesh device in [failedHosts] ("Studio Mac"), by its `fipsmesh://` entry. */
         val names: Map<String, String> = emptyMap(),
+        /** Left alone by Delete from mirrors: the owner runs them (NIP-11 pubkey), so their copy stays. */
+        val skipped: List<String> = emptyList(),
     ) {
         val allDeleted: Boolean get() = failed.isEmpty() && deleted.isNotEmpty()
 
         /** Places still holding the file, for the banner ("blossom.primal.net", "Studio Mac"). */
         val failedHosts: List<String> get() = failed.map { names[it] ?: serverHost(it) }
+
+        /** The owner's own vaults the delete left alone ("studio-mac.example.net"). */
+        val skippedHosts: List<String> get() = skipped.map { names[it] ?: serverHost(it) }
     }
 
     /**
@@ -666,14 +671,14 @@ class BlossomService @Inject constructor(
                 // device does not know (another phone's Mac, a tunnel). Its copy stays; a server
                 // that cannot say who runs it is not deleted from either (Tron ship check, 2026-10-31).
                 if (!includeHomeVault) when (serverOwner(mirror, owner)) {
-                    ServerOwner.OWNER -> return@async null
-                    ServerOwner.UNKNOWN -> return@async mirror to false
+                    ServerOwner.OWNER -> return@async Outcome.SKIPPED
+                    ServerOwner.UNKNOWN -> return@async Outcome.LEFT
                     ServerOwner.OTHER -> Unit
                 }
-                mirror to try {
+                val gone = try {
                     val deleteUrl = "${mirror.trimEnd('/')}/$sha256"
                     // A URL whose host can't be named in the token is not sent one: it could be replayed.
-                    if (deleteUrl.toHttpUrlOrNull() == null) return@async mirror to false
+                    if (deleteUrl.toHttpUrlOrNull() == null) return@async Outcome.LEFT
                     val authHeader = createDeleteAuthHeader(sha256, deleteUrl, account)
                     val request = Request.Builder()
                         .url(deleteUrl)
@@ -690,6 +695,7 @@ class BlossomService @Inject constructor(
                     Log.w(TAG, "Delete from $mirror failed: ${e.message}")
                     false
                 }
+                if (gone) Outcome.GONE else Outcome.LEFT
             }
         }
         // One owner signature for every mesh device, covering the DELETE and the HEAD after it.
@@ -702,13 +708,18 @@ class BlossomService @Inject constructor(
         val meshOutcomes = mesh.map { target ->
             async { target.key to (meshAuth.isNotEmpty() && deleteOverMesh(target.npub, sha256, meshAuth)) }
         }
-        val all = outcomes.awaitAll().filterNotNull() + meshOutcomes.awaitAll()
+        val served = mirrors.zip(outcomes.awaitAll())
+        val all = served.filter { it.second != Outcome.SKIPPED }.map { it.first to (it.second == Outcome.GONE) } + meshOutcomes.awaitAll()
         MirrorDeleteResult(
             deleted = all.filter { it.second }.map { it.first },
             failed = all.filterNot { it.second }.map { it.first },
             names = mesh.associate { it.key to it.name },
+            skipped = served.filter { it.second == Outcome.SKIPPED }.map { it.first },
         )
     }
+
+    /** One server's delete: gone (or 404), still there, or the owner's own vault left alone. */
+    private enum class Outcome { GONE, LEFT, SKIPPED }
 
     /** Who runs a Blossom server, as [askServerOwner] reads it. */
     enum class ServerOwner { OWNER, OTHER, UNKNOWN }

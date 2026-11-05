@@ -44,6 +44,29 @@ fun deleteEverywhereLeftover(localDeleted: Boolean, mirrors: BlossomService.Mirr
     return "Still on " + joinPlaces(places)
 }
 
+/**
+ * What a Delete from mirrors says, and whether it is a success. A server left alone because the
+ * owner runs it is named ("Skipped: studio-mac.example.net (your own vault)"), so a delete that
+ * skipped one never reads as plain "Deleted from mirrors". Same words as iOS
+ * `MediaDeleteWording.mirrorsReport` and the web vault's `skippedLine` (blossom-gallery.js).
+ */
+fun mirrorsDeleteMessage(report: BlossomService.MirrorDeleteResult): Pair<String, Boolean> {
+    val skipped = skippedLine(report.skippedHosts)
+    fun withSkipped(text: String) = if (skipped.isEmpty()) text else "$text. $skipped"
+    return when {
+        report.failed.isNotEmpty() -> withSkipped(deleteEverywhereLeftover(localDeleted = true, mirrors = report)!!) to false
+        report.deleted.isNotEmpty() -> withSkipped("Deleted from mirrors") to true
+        else -> withSkipped(DELETE_NO_MIRRORS_MESSAGE) to false
+    }
+}
+
+/** "Skipped: a (your own vault)", "Skipped: a and b (your own vaults)", or "" for none. */
+internal fun skippedLine(hosts: List<String>): String = when (hosts.size) {
+    0 -> ""
+    1 -> "Skipped: ${hosts[0]} (your own vault)"
+    else -> "Skipped: ${joinPlaces(hosts)} (your own vaults)"
+}
+
 /** "a", "a and b", "a, b and c". */
 internal fun joinPlaces(places: List<String>): String = when (places.size) {
     0 -> ""

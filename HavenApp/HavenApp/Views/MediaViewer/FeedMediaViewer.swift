@@ -65,7 +65,14 @@ struct FeedMediaViewer: View {
     enum DeleteStatus {
         case loading
         case success
+        /// Done, with something to say (a skipped own vault).
+        case successNote(String)
         case failed(String)
+
+        var successText: String {
+            if case .successNote(let text) = self { return text }
+            return "Deleted"
+        }
     }
 
     private let logger = Logger(subsystem: "com.bitvora.haven", category: "media-viewer")

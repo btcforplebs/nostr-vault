@@ -21,6 +21,34 @@ final class MediaDeleteWordingTests: XCTestCase {
     }
 }
 
+/// Delete from mirrors names an own vault it left alone (Tron #1783
+/// follow-up 2): it used to be left out, so the banner read "Deleted from
+/// mirrors". Android `mirrorsDeleteMessage` and the web vault say the same.
+final class MirrorsDeleteReportTests: XCTestCase {
+    func testASkippedVaultIsNamedNextToTheDelete() {
+        let r = MediaDeleteWording.mirrorsReport(deleted: ["https://blossom.band"], failedHosts: [],
+                                                 skippedHosts: ["studio-mac.example.net"])
+        XCTAssertEqual(r.text, "Deleted from mirrors. Skipped: studio-mac.example.net (your own vault)")
+        XCTAssertTrue(r.ok)
+    }
+
+    func testOnlyOwnVaultsIsNoMirrorsAndSaysWhy() {
+        let r = MediaDeleteWording.mirrorsReport(deleted: [], failedHosts: [], skippedHosts: ["studio-mac.example.net"])
+        XCTAssertEqual(r.text, "No mirrors to delete from. Skipped: studio-mac.example.net (your own vault)")
+        XCTAssertFalse(r.ok)
+    }
+
+    func testEachOutcome() {
+        XCTAssertEqual(MediaDeleteWording.mirrorsReport(deleted: [], failedHosts: [], skippedHosts: []).text, "No mirrors to delete from")
+        XCTAssertEqual(MediaDeleteWording.mirrorsReport(deleted: ["https://blossom.band"], failedHosts: [], skippedHosts: []).text,
+                       "Deleted from mirrors")
+        let left = MediaDeleteWording.mirrorsReport(deleted: ["https://blossom.band"], failedHosts: ["cdn.example.org"],
+                                                    skippedHosts: ["a.example.net", "b.example.net"])
+        XCTAssertEqual(left.text, "Still on cdn.example.org. Skipped: a.example.net and b.example.net (your own vaults)")
+        XCTAssertFalse(left.ok)
+    }
+}
+
 /// Mesh settings explain where new photos go instead of offering a picker
 /// whose value nothing read (Logen 2026-11-05). The website's home vault help
 /// page carries the same words.

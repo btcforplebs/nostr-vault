@@ -144,10 +144,11 @@ class MediaViewerViewModel @Inject constructor(
         _deleteLeftover.value = null
         viewModelScope.launch {
             val report = withContext(Dispatchers.IO) { blossomService.deleteFromServers(item.sha256, item.displayUrl, includeHomeVault = false) }
+            val (message, ok) = com.nostrvault.service.mirrorsDeleteMessage(report)
             when {
-                report.allDeleted -> notificationManager.showToast("Deleted from mirrors")
-                report.failed.isEmpty() -> notificationManager.showError(com.nostrvault.service.DELETE_NO_MIRRORS_MESSAGE)
-                else -> reportLeftover(deleteEverywhereLeftover(localDeleted = true, mirrors = report)!!, sticky)
+                ok -> notificationManager.showToast(message)
+                report.failed.isEmpty() -> notificationManager.showError(message)
+                else -> reportLeftover(message, sticky)
             }
             checkMirrors(item.sha256)
             onDone()

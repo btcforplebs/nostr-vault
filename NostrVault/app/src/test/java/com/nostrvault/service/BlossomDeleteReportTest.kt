@@ -296,6 +296,41 @@ class BlossomDeleteReportTest {
         // No DELETE went out: it would have failed (no such host) and been listed.
         assertTrue(report.deleted.isEmpty())
         assertTrue(report.failed.isEmpty())
+        // ...and the report says so, rather than leaving it out (Tron #1783 follow-up 2).
+        assertEquals(listOf(otherPhonesMac), report.skipped)
+        assertEquals("No mirrors to delete from. Skipped: studio-mac.example.net (your own vault)", mirrorsDeleteMessage(report).first)
+    }
+
+    @Test
+    fun `a skipped own vault is named next to a mirror the delete was sent to`() = runTest {
+        val otherPhonesMac = "https://studio-mac.example.net"
+        val publicMirror = "https://cdn.example.invalid"
+        val svc = service(emptyList(), published = listOf(otherPhonesMac, publicMirror))
+        svc.serverOwner = { server, _ ->
+            if (server == otherPhonesMac) BlossomService.ServerOwner.OWNER else BlossomService.ServerOwner.OTHER
+        }
+        val report = svc.deleteFromServers(sha, photoUrl = null, includeHomeVault = false)
+        // The public one was sent the delete (no such host, so it is still listed); the Mac was left alone.
+        assertEquals(listOf(publicMirror), report.failed)
+        assertEquals(listOf(otherPhonesMac), report.skipped)
+        assertEquals(
+            "Still on cdn.example.invalid. Skipped: studio-mac.example.net (your own vault)" to false,
+            mirrorsDeleteMessage(report),
+        )
+    }
+
+    @Test
+    fun `the mirrors message for each outcome`() {
+        val none = BlossomService.MirrorDeleteResult()
+        assertEquals(DELETE_NO_MIRRORS_MESSAGE to false, mirrorsDeleteMessage(none))
+        val clean = BlossomService.MirrorDeleteResult(deleted = listOf("https://blossom.band"))
+        assertEquals("Deleted from mirrors" to true, mirrorsDeleteMessage(clean))
+        val left = BlossomService.MirrorDeleteResult(
+            deleted = listOf("https://blossom.band"),
+            failed = listOf("https://cdn.example.org"),
+            skipped = listOf("https://a.example.net", "https://b.example.net"),
+        )
+        assertEquals("Still on cdn.example.org. Skipped: a.example.net and b.example.net (your own vaults)" to false, mirrorsDeleteMessage(left))
     }
 
     @Test

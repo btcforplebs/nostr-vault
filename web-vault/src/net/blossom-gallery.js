@@ -200,13 +200,21 @@ export async function mirrorBlob(blob, servers, { ctx, fetch = globalThis.fetch 
   }))
 }
 
+/** "Skipped: a (your own vault)", "Skipped: a and b (your own vaults)": the owner's vaults a delete left alone. */
+export function skippedLine(hosts) {
+  if (!hosts.length) return ""
+  const list = hosts.length === 1 ? hosts[0] : `${hosts.slice(0, -1).join(", ")} and ${hosts.at(-1)}`
+  return `Skipped: ${list} (your own vault${hosts.length === 1 ? "" : "s"})`
+}
+
 /** "3 of 4 servers" style summary of a delete or mirror, naming the ones that refused. */
 export function outcome(results, verb) {
   const kept = results.filter(r => r.kept).map(r => hostOf(r.server))
   const asked = results.filter(r => !r.kept)
   const ok = asked.filter(r => r.ok).length
   const bad = asked.filter(r => !r.ok).map(r => `${hostOf(r.server)}: ${r.message}`)
-  const keptLine = kept.length ? ` Your vault keeps its copy: ${kept.join(", ")}.` : ""
+  // The same words as the apps' Delete from mirrors ("Skipped: studio-mac.example.net (your own vault)").
+  const keptLine = kept.length ? ` ${skippedLine(kept)}.` : ""
   return `${verb} on ${ok} of ${asked.length} server${asked.length === 1 ? "" : "s"}${bad.length ? `. ${bad.join(" · ")}` : "."}${keptLine}`
 }
 

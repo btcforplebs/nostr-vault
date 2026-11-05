@@ -246,14 +246,13 @@ enum MediaBackupActions {
         // The cloud badges cache each server's answer for the session;
         // ask again so they stop showing the pre-delete count.
         await BlossomBackupStore.shared.refresh(hash: hash, service: service, force: true)
-        if report.allDeleted {
-            ActionToastManager.shared.show(icon: "trash", message: "Deleted from mirrors", tone: .success)
+        let message = report.mirrorsMessage
+        if message.ok {
+            ActionToastManager.shared.show(icon: "trash", message: message.text, tone: .success)
         } else if report.failed.isEmpty {
-            ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: "No mirrors to delete from", tone: .error)
+            ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: message.text, tone: .error)
         } else {
-            ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
-                                           message: "Still on " + ListFormatter.localizedString(byJoining: report.failedHosts),
-                                           tone: .error, seconds: 6)
+            ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: message.text, tone: .error, seconds: 6)
         }
     }
 
