@@ -79,3 +79,92 @@ func TestImportSaysWhenTheOtherVaultIsNotReached(t *testing.T) {
 		t.Fatal("other-vault seeds: LAN yes, public relay no")
 	}
 }
+
+// IMPORT_RESULT (import_result.go) reads its partial reasons from the
+// import's own log lines. These are the lines the paged import really prints
+// now, captured from real runs, not copied by hand.
+func TestImportResultReadsThePagedImportsLines(t *testing.T) {
+	var buf bytes.Buffer
+	prevOut := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(prevOut) })
+	lines := func() []string {
+		defer buf.Reset()
+		return strings.Split(buf.String(), "\n")
+	}
+	reasons := func(ls []string) (*importOutcome, string) {
+		o := newImportOutcome()
+		for _, l := range ls {
+			o.observe(l)
+		}
+		return o, strings.Join(o.partial, ",")
+	}
+
+	// A walk cut by its deadline.
+	owner, _ := moveInSetup(t, 3650, "wss://slow.example")
+	prevDeadline := importWalkDeadline
+	importWalkDeadline = 200 * time.Millisecond
+	t.Cleanup(func() { importWalkDeadline = prevDeadline })
+	prev := importPage
+	t.Cleanup(func() { importPage = prev })
+	importPage = func(ctx context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
+		select {
+		case <-time.After(50 * time.Millisecond):
+		case <-ctx.Done():
+			return nil, false
+		}
+		ev := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, CreatedAt: *f.Since + 1, Content: "slow"})
+		return []*nostr.Event{&ev}, true
+	}
+	importOwnerWindows(context.Background(), []walkRelay{{url: "wss://slow.example", top: time.Now()}}, time.Now().AddDate(0, 0, -3650), []string{owner.pk}, func(*nostr.Event) bool { return true })
+	if _, r := reasons(lines()); !strings.Contains(r, "walk_deadline") {
+		t.Fatalf("a cut walk read as %q, want walk_deadline", r)
+	}
+
+	// A relay that never answers is dropped.
+	importPage = func(context.Context, string, nostr.Filter) ([]*nostr.Event, bool) { return nil, false }
+	noNegentropy(t)
+	importOwnerNotes(context.Background())
+	if _, r := reasons(lines()); !strings.Contains(r, "relay_dropped") {
+		t.Fatalf("a dropped relay read as %q, want relay_dropped", r)
+	}
+
+	// The tagged step cut by its deadline, with its count.
+	wot.MarkReady(wot.NewCycle(), stubWot{allow: true})
+	inbox, chat := newTestBackend(t, "inbox"), newTestBackend(t, "chat")
+	for _, db := range []DBBackend{inbox, chat} {
+		if err := db.Init(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(db.Close)
+	}
+	savedInbox, savedChat := inboxDB, chatDB
+	inboxDB, chatDB = inbox, chat
+	t.Cleanup(func() { inboxDB, chatDB = savedInbox, savedChat })
+	prevTagged := importTaggedDeadline
+	importTaggedDeadline = 300 * time.Millisecond
+	t.Cleanup(func() { importTaggedDeadline = prevTagged })
+	friend := newTestKey(t)
+	var mu sync.Mutex
+	at := nostr.Now()
+	importPage = func(ctx context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
+		select {
+		case <-time.After(40 * time.Millisecond):
+		case <-ctx.Done():
+			return nil, false
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		at--
+		ev := friend.sign(t, nostr.Event{Kind: nostr.KindTextNote, CreatedAt: at, Tags: nostr.Tags{{"p", owner.pk}}, Content: "reply"})
+		return []*nostr.Event{&ev}, true // always one more page
+	}
+	importTaggedNotes(context.Background())
+	o, r := reasons(lines())
+	if !strings.Contains(r, "tagged_timeout") {
+		t.Fatalf("a cut tagged step read as %q, want tagged_timeout", r)
+	}
+	if o.tagged == 0 {
+		t.Fatal("the cut tagged step's count was not read")
+	}
+}

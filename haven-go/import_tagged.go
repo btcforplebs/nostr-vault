@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"log/slog"
 	"maps"
@@ -83,7 +84,7 @@ func importTaggedNotes(ctx context.Context) {
 
 	switch {
 	case ctx.Err() != nil && errors.Is(context.Cause(ctx), context.DeadlineExceeded):
-		log.Println("🚫 Timeout after", timeout, "while importing tagged notes; imported", stored)
+		log.Println("🚫 Timeout after", timeout, "while importing tagged notes;", fmt.Sprintf("imported %d tagged notes", stored))
 	case len(short) > 0:
 		log.Printf("⚠️ %d relay(s) stopped partway through your tagged notes; older ones from them may be missing: %v", len(short), short)
 		log.Println("📦 imported", stored, "tagged notes")

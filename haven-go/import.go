@@ -57,7 +57,7 @@ func ensureImportRelays() bool {
 	log.Println("🧪 Testing import relays")
 	for _, relay := range config.ImportSeedRelays {
 		if _, err := pool.EnsureRelay(relay); err != nil {
-			if otherVaultSeed(relay) {
+			if ov := importOtherVaultRelay(); (ov != "" && nostr.NormalizeURL(ov) == nostr.NormalizeURL(relay)) || otherVaultSeed(relay) {
 				// "Copy from my other vault" adds that vault (over the mesh,
 				// or on the LAN) as one more seed. It used to drop out here
 				// without a word while setup still called the copy done
@@ -88,8 +88,8 @@ func ensureImportRelays() bool {
 	}
 }
 
-// otherVaultSeed: a seed that is another of the user's vaults, never a public
-// relay: on this device (the mesh ingress, ws://127.0.0.1:<port>/<token>),
+// otherVaultSeed: a seed that looks like another of the user's vaults (for an
+// app that doesn't set IMPORT_OTHER_VAULT_RELAY), never a public relay: on this device (the mesh ingress, ws://127.0.0.1:<port>/<token>),
 // on the LAN, or a .local name.
 func otherVaultSeed(relay string) bool {
 	u, err := url.Parse(relay)
