@@ -457,3 +457,49 @@ func TestUnzipCapsSizeAndModes(t *testing.T) {
 		t.Fatalf("%d files left behind by a refused unzip", len(left))
 	}
 }
+
+// #1722 review: a blob record is unsigned, so a backup can hold any tags.
+// khatru reads Tags[0..2] by position, so a short record crashed Get and
+// List (List inside its goroutine, killing the process). What restores is
+// rebuilt in Keep's shape, and an active type (text/html) is refused.
+func TestRestoreRebuildsBlobRecordShape(t *testing.T) {
+	f := newRestoreFixture(t)
+	record := func(tags nostr.Tags) string {
+		ev := &nostr.Event{PubKey: f.pk, Kind: 24242, CreatedAt: nostr.Now(), Tags: tags}
+		ev.ID = ev.GetID()
+		return ev.String() + "\n"
+	}
+	short := strings.Repeat("a1", 32)
+	html := strings.Repeat("b2", 32)
+	shuffled := strings.Repeat("c3", 32)
+	var buf bytes.Buffer
+	buf.WriteString(record(nostr.Tags{{"x", short}}))
+	buf.WriteString(record(nostr.Tags{{"x", html}, {"type", "text/html"}, {"size", "10"}}))
+	buf.WriteString(record(nostr.Tags{{"x", strings.Repeat("d4", 32)}, {"type", "image/png"}, {"size", "ten"}}))
+	buf.WriteString(record(nostr.Tags{{"size", "7"}, {"extra"}, {"type", "image/png"}, {"x", shuffled}}))
+	if _, err := importDBStats(f.ctx, f.blossom, &buf); err != nil {
+		t.Fatal(err)
+	}
+
+	wrap := blossom.EventStoreBlobIndexWrapper{Store: f.blossom, ServiceURL: "http://x"}
+	for _, sha := range []string{short, html, strings.Repeat("d4", 32)} {
+		if got, err := wrap.Get(f.ctx, sha); err != nil || got != nil {
+			t.Fatalf("%s restored as %+v (err %v), want refused", sha[:4], got, err)
+		}
+	}
+	got, err := wrap.Get(f.ctx, shuffled)
+	if err != nil || got == nil || got.Type != "image/png" || got.Size != 7 || got.SHA256 != shuffled {
+		t.Fatalf("shuffled record: %+v err %v, want rebuilt png of 7 bytes", got, err)
+	}
+	ch, err := wrap.List(f.ctx, f.pk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for range ch {
+		n++
+	}
+	if n != 1 {
+		t.Fatalf("List gave %d records, want 1", n)
+	}
+}

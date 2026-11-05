@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -367,9 +369,12 @@ func restoreAccepts(ctx context.Context, db DBBackend, event *nostr.Event) bool 
 }
 
 // importBlobRecord restores one blob index record: kind 24242, an id that
-// matches its content, a whitelisted uploader (only they can upload), one
-// 64-hex x tag, and not dated in the future. Kept once per uploader and
-// hash, as Keep does.
+// matches its content, a whitelisted uploader (only they can upload), a
+// 64-hex x tag, a plain media type, a size, and not dated in the future.
+// The record is unsigned, so the backup only supplies those values: what
+// goes in is rebuilt in Keep's exact shape (x, type, size in that order),
+// because khatru's parseEvent reads Tags[0..2] by position and panics on
+// anything shorter. Kept once per uploader and hash, as Keep does.
 func importBlobRecord(ctx context.Context, db DBBackend, event *nostr.Event, now time.Time) importOutcome {
 	if event.Kind != 24242 || !event.CheckID() || !event.CreatedAt.Time().Before(now.Add(importFutureSlack)) {
 		return importSkipped
@@ -377,11 +382,12 @@ func importBlobRecord(ctx context.Context, db DBBackend, event *nostr.Event, now
 	if _, ok := config.WhitelistedPubKeys[event.PubKey]; !ok {
 		return importSkipped
 	}
-	x := event.Tags.GetFirst([]string{"x", ""})
-	if x == nil || len(*x) < 2 || !isBlobHash((*x)[1]) {
+	record, ok := rebuildBlobRecord(event)
+	if !ok {
 		return importSkipped
 	}
-	ch, err := db.QueryEvents(ctx, nostr.Filter{Authors: []string{event.PubKey}, Kinds: []int{24242}, Tags: nostr.TagMap{"x": []string{(*x)[1]}}, Limit: 1})
+	event = record
+	ch, err := db.QueryEvents(ctx, nostr.Filter{Authors: []string{event.PubKey}, Kinds: []int{24242}, Tags: nostr.TagMap{"x": []string{event.Tags[0][1]}}, Limit: 1})
 	if err != nil {
 		return importBad
 	}
@@ -400,6 +406,84 @@ func importBlobRecord(ctx context.Context, db DBBackend, event *nostr.Event, now
 		return importBad
 	}
 	return importStored
+}
+
+// rebuildBlobRecord returns the record Keep would have written for the
+// x/type/size values in event, or false when one is missing or malformed.
+func rebuildBlobRecord(event *nostr.Event) (*nostr.Event, bool) {
+	value := func(name string) (string, bool) {
+		var found string
+		n := 0
+		for _, tag := range event.Tags {
+			if len(tag) >= 1 && tag[0] == name {
+				if len(tag) != 2 {
+					return "", false
+				}
+				found = tag[1]
+				n++
+			}
+		}
+		return found, n == 1
+	}
+	x, ok := value("x")
+	if !ok || !isBlobHash(x) {
+		return nil, false
+	}
+	mimeType, ok := value("type")
+	if !ok || !isRestorableBlobType(mimeType) {
+		return nil, false
+	}
+	size, ok := value("size")
+	if !ok {
+		return nil, false
+	}
+	n, err := strconv.Atoi(size)
+	if err != nil || n < 0 || strconv.Itoa(n) != size {
+		return nil, false
+	}
+	record := &nostr.Event{
+		PubKey:    event.PubKey,
+		Kind:      24242,
+		Tags:      nostr.Tags{{"x", x}, {"type", mimeType}, {"size", size}},
+		CreatedAt: event.CreatedAt,
+	}
+	record.ID = record.GetID()
+	return record, true
+}
+
+// activeBlobTypes are media types a browser runs as a page or script. The
+// type picks the extension in a blob's URL, which picks the Content-Type it
+// is served with, so a restored record must not turn a stored file into one.
+var activeBlobTypes = map[string]bool{
+	"text/html":              true,
+	"application/xhtml+xml":  true,
+	"image/svg+xml":          true,
+	"text/javascript":        true,
+	"application/javascript": true,
+	"text/xml":               true,
+	"application/xml":        true,
+}
+
+// isRestorableBlobType accepts the types Keep writes: empty, or a plain
+// type/subtype (Keep stores mime.TypeByExtension, which may add a charset)
+// that is not an active document type.
+func isRestorableBlobType(t string) bool {
+	if t == "" {
+		return true
+	}
+	if len(t) > 255 {
+		return false
+	}
+	mediaType, params, err := mime.ParseMediaType(t)
+	if err != nil || !strings.Contains(mediaType, "/") || activeBlobTypes[mediaType] {
+		return false
+	}
+	for k := range params {
+		if k != "charset" {
+			return false
+		}
+	}
+	return true
 }
 
 func isBlobHash(s string) bool {
