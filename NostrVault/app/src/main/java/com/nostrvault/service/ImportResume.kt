@@ -17,6 +17,8 @@ data class CutImport(
     val startedAt: Long = 0,
     /** Runs so far of this import (the first included); a run that keeps getting killed stops being resumed. */
     val runs: Int = 1,
+    /** The account (hex) active when it started: its list history is the one being moved in (Tron, #1758). */
+    val account: String = "",
 )
 
 object ImportResume {
@@ -30,12 +32,18 @@ object ImportResume {
     private val json = Json { ignoreUnknownKeys = true }
 
     /** Whether a found record should run again now. Pure for the tests. */
-    fun shouldResume(cut: CutImport?, nowS: Long, busy: Boolean): Boolean =
-        cut != null && !busy && cut.runs < MAX_RUNS && nowS - cut.startedAt in 0..MAX_AGE_S
+    fun shouldResume(cut: CutImport?, nowS: Long, busy: Boolean, activeAccount: String): Boolean =
+        cut != null && !busy && cut.runs < MAX_RUNS && nowS - cut.startedAt in 0..MAX_AGE_S &&
+            // Another account is active now: the cut run was moving in someone else's lists. Dropped, not resumed.
+            cut.account == activeAccount
 
     /** The record for the next run of [cut], or a new one. */
-    fun next(previous: CutImport?, listHistory: Boolean, alsoFrom: List<String>, otherVault: String?, nowS: Long): CutImport =
-        CutImport(listHistory, alsoFrom, otherVault, previous?.startedAt ?: nowS, (previous?.runs ?: 0) + 1)
+    fun next(
+        previous: CutImport?, listHistory: Boolean, alsoFrom: List<String>, otherVault: String?, nowS: Long, account: String,
+    ): CutImport {
+        val same = previous?.takeIf { it.account == account }
+        return CutImport(listHistory, alsoFrom, otherVault, same?.startedAt ?: nowS, (same?.runs ?: 0) + 1, account)
+    }
 
     internal fun read(context: Context): CutImport? = runCatching {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null)?.let { json.decodeFromString<CutImport>(it) }
