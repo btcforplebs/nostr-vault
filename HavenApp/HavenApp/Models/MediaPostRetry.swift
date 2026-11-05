@@ -37,6 +37,14 @@ enum MediaPostRetry {
             statuses[mirror].map(isPermanentRefusal(status:)) ?? false
         }
     }
+
+    /// The posts to try this round, oldest first: due now and written by the
+    /// active account. Another account's post is skipped, not tried: it used
+    /// to count as a failed try, which ends the round, so one post held for
+    /// another account stopped every post behind it from ever being sent.
+    static func dueIDs(in posts: [QueuedMediaPost], at now: Date, activeAccount: String) -> [String] {
+        posts.filter { $0.accountNpub == activeAccount && $0.isDue(at: now) }.map(\.id)
+    }
 }
 
 extension QueuedMediaPost {

@@ -102,7 +102,7 @@ final class MediaPostQueue: ObservableObject {
     /// oldest first, so they reach relays in the order they were written.
     func retryAll(reason: String) {
         let now = Date()
-        let due = posts.filter { $0.isDue(at: now) }.map(\.id)
+        let due = MediaPostRetry.dueIDs(in: posts, at: now, activeAccount: ConfigService.shared.config.activeAccountNpub)
         guard !due.isEmpty, !isRetrying else { return }
         isRetrying = true
         Task { @MainActor in
@@ -123,6 +123,8 @@ final class MediaPostQueue: ObservableObject {
 
         let config = ConfigService.shared.config
         guard config.activeAccountNpub == post.accountNpub else {
+            // Only reachable if the account changed mid-round; the rest of
+            // the round belongs to the old account too, so stop it.
             log("waiting post \(id.prefix(8)) belongs to another account — holding it until that account is active")
             return false
         }

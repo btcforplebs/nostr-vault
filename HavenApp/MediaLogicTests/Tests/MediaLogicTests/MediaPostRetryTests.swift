@@ -81,3 +81,20 @@ final class MediaPostRetryTests: XCTestCase {
         XCTAssertEqual(p.attempts, 4)
     }
 }
+
+/// A post waiting for another account must not stall the active account's posts.
+final class MediaPostRetryAccountTests: XCTestCase {
+    private func post(_ account: String, _ id: String) -> QueuedMediaPost {
+        var p = QueuedMediaPost(accountNpub: account, body: "gm", media: [], quoteSuffix: nil, baseTags: [])
+        p.id = id
+        p.createdAt = Date(timeIntervalSince1970: 1_800_000_000)
+        return p
+    }
+
+    func testAnotherAccountsPostIsSkippedNotTried() {
+        let posts = [post("npub1a", "a1"), post("npub1b", "b1"), post("npub1a", "a2")]
+        let now = Date(timeIntervalSince1970: 1_800_000_100)
+        XCTAssertEqual(MediaPostRetry.dueIDs(in: posts, at: now, activeAccount: "npub1b"), ["b1"])
+        XCTAssertEqual(MediaPostRetry.dueIDs(in: posts, at: now, activeAccount: "npub1a"), ["a1", "a2"])
+    }
+}
