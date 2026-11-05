@@ -146,7 +146,7 @@ class MediaViewerViewModel @Inject constructor(
             val report = withContext(Dispatchers.IO) { blossomService.deleteFromServers(item.sha256, item.displayUrl, includeHomeVault = false) }
             when {
                 report.allDeleted -> notificationManager.showToast("Deleted from mirrors")
-                report.failed.isEmpty() -> notificationManager.showError("No mirrors to delete from")
+                report.failed.isEmpty() -> notificationManager.showError(com.nostrvault.service.DELETE_NO_MIRRORS_MESSAGE)
                 else -> reportLeftover(deleteEverywhereLeftover(localDeleted = true, mirrors = report)!!, sticky)
             }
             checkMirrors(item.sha256)
@@ -262,14 +262,11 @@ class MediaViewerViewModel @Inject constructor(
                 local.await() to mirrors.await()
             }
             val leftover = deleteEverywhereLeftover(localDeleted = localOk, mirrors = report)
-            if (leftover == null) {
-                notificationManager.showToast("Deleted everywhere")
-            } else {
-                reportLeftover(leftover, sticky)
-                // The cloud badge keeps each server's answer for a day;
-                // ask again so it stops showing the pre-delete count.
-                checkMirrors(item.sha256)
-            }
+            if (leftover == null) notificationManager.showToast("Deleted everywhere")
+            else reportLeftover(leftover, sticky)
+            // The cloud badge keeps each server's answer for a day; ask again after every
+            // delete, a full one too, so it stops showing the pre-delete count (as iOS does).
+            checkMirrors(item.sha256)
             onDone(leftover == null)
         }
     }

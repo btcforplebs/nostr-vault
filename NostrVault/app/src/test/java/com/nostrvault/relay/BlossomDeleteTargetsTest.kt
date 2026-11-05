@@ -62,7 +62,7 @@ class BlossomDeleteTargetsTest {
         val sameMacOtherSpelling = "https://MAC.example.com:443/"
         val ownVaults = listOf(
             "http://192.168.1.20:3355", "https://studio.local", "https://mac.tail1234.ts.net",
-            "http://other-mac.example.com", "http://127.0.0.1:3355", "https://10.0.0.7",
+            "http://127.0.0.1:3355", "https://10.0.0.7",
             "http://npub1abc.fips:3355", "fipsmesh://npub1abc/",
         )
         val targets = config.blossomDeleteTargets(
@@ -71,6 +71,14 @@ class BlossomDeleteTargetsTest {
             includeHomeVault = false,
         )
         assertEquals(listOf("https://blossom.primal.net", "https://cdn.satellite.earth/", "https://nostr.download"), targets)
+    }
+
+    // Mirror delete parity 2026-11-05 #3: a plain-http public host is a target over https, as on
+    // iOS. If it is one of the owner's vaults, deleteFromServers' NIP-11 owner check keeps its copy
+    // (BlossomDeleteReportTest "delete from mirrors keeps a server the owner runs").
+    @Test fun aPlainHttpPublicHostIsAskedOverHttps() {
+        val targets = HavenConfig().blossomDeleteTargets(listOf("http://other-mac.example.com"), null, includeHomeVault = false)
+        assertEquals(listOf("https://other-mac.example.com"), targets)
     }
 
     @Test fun everywhereStillReachesHomeNetworkServers() {

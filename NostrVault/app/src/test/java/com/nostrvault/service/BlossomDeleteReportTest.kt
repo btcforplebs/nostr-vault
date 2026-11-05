@@ -37,6 +37,8 @@ class BlossomDeleteReportTest {
     /** The tags of every token the service asked to have signed. */
     private val signedTags = mutableListOf<List<List<String>>>()
     private val tempDirs = mutableListOf<File>()
+    /** The account each token was locked to (signEventAsync lockedTo). */
+    private val signedAs = mutableListOf<com.nostrvault.data.model.PostingAccount.Lock?>()
 
     init {
         mockkStatic(Base64::class)
@@ -116,8 +118,9 @@ class BlossomDeleteReportTest {
         val signer = mockk<NostrService>(relaxed = true)
         every { signer.ownerHexPubkey } returns "o".repeat(64)
         every { signer.serverLists } returns MutableStateFlow(mapOf("o".repeat(64) to published))
-        coEvery { signer.signEventAsync(any(), any(), any(), any(), any()) } answers {
-            synchronized(signedTags) { signedTags += arg<List<List<String>>>(2) }
+        every { signer.lockPostingAccount() } returns com.nostrvault.data.model.PostingAccount.Lock("npub1owner", "o".repeat(64))
+        coEvery { signer.signEventAsync(any(), any(), any(), any(), any(), any(), any(), any()) } answers {
+            synchronized(signedTags) { signedTags += arg<List<List<String>>>(2); signedAs += arg<com.nostrvault.data.model.PostingAccount.Lock?>(5) }
             NostrEvent(
             id = "e".repeat(64), pubkey = "p".repeat(64), createdAt = 1_700_000_000L,
             kind = 24242, tags = listOf(listOf("t", "delete")), content = "Blossom delete", sig = "s".repeat(128),
@@ -185,6 +188,21 @@ class BlossomDeleteReportTest {
         // servers are loopback, so only the two listed servers are asked here.
         assertEquals(listOf(configured, listed), report.deleted)
         assertTrue(report.allDeleted)
+    }
+
+    @Test
+    fun `an added account's photo is signed by it and uses its own 10063`() = runTest {
+        // Mirror delete parity 2026-11-05 #2: Android signed as the owner and read the owner's
+        // list for every delete outside the composer, so the added account's mirror refused the token.
+        val ownersList = mirror(200); val accountsList = mirror(200)
+        val svc = service(emptyList(), published = listOf(ownersList))
+        val account = com.nostrvault.data.model.PostingAccount.Lock("npub1second", "a".repeat(64))
+        val signer = svc.nostrService
+        every { signer.lockPostingAccount() } returns account
+        every { signer.serverLists } returns MutableStateFlow(mapOf("o".repeat(64) to listOf(ownersList), account.hex to listOf(accountsList)))
+        val report = svc.deleteFromServers(sha, photoUrl = null, includeHomeVault = true)
+        assertEquals(listOf(accountsList), report.deleted)
+        assertEquals(listOf(account), signedAs)
     }
 
     // ── Mesh devices ────────────────────────────────────────────
@@ -310,7 +328,8 @@ class BlossomDeleteReportTest {
         val vault = infoServer(200, """{"name":"outbox","pubkey":"${owner.uppercase()}","software":"https://github.com/barrydeen/haven"}""")
         assertEquals(BlossomService.ServerOwner.OWNER, svc.askServerOwner("$vault/$sha.jpg", owner))
         assertEquals(BlossomService.ServerOwner.OTHER, svc.askServerOwner(vault, "b".repeat(64)))
-        assertEquals(BlossomService.ServerOwner.OTHER, svc.askServerOwner(vault, ""))
+        // No owner to compare with: it may be the vault, so no delete (iOS vaultCheckVerdict).
+        assertEquals(BlossomService.ServerOwner.UNKNOWN, svc.askServerOwner(vault, ""))
     }
 
     @Test

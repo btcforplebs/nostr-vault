@@ -145,7 +145,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
                         refreshCloudBadges(sha)
                         when {
                             report.allDeleted -> onMessage("Deleted from mirrors", ok = true)
-                            report.failed.isEmpty() -> onMessage("No mirrors to delete from", ok = true)
+                            report.failed.isEmpty() -> onMessage(com.nostrvault.service.DELETE_NO_MIRRORS_MESSAGE, ok = false)
                             else -> onMessage(deleteEverywhereLeftover(localDeleted = true, mirrors = report)!!, ok = false)
                         }
                     }

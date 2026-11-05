@@ -57,7 +57,8 @@ internal fun ProfileMediaTile(
     onReport: (String) -> Unit,
     onBlock: (String) -> Unit,
     /** Asks to delete this tile's blob (by hash); only offered on your own Blossom files. */
-    onDelete: (String, com.nostrvault.ui.screens.DeleteScope) -> Unit,
+    /** The tile's hash and photo URL: the delete also asks the server the photo is on. */
+    onDelete: (hash: String, url: String, com.nostrvault.ui.screens.DeleteScope) -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
     val clipboard = LocalClipboardManager.current
@@ -156,7 +157,7 @@ internal fun ProfileMediaTile(
                                 onClick = {
                                     close()
                                     val scope = if (mirrors) com.nostrvault.ui.screens.DeleteScope.MIRRORS else com.nostrvault.ui.screens.DeleteScope.EVERYWHERE
-                                    blossomHashOf(url)?.let { onDelete(it, scope) }
+                                    blossomHashOf(url)?.let { onDelete(it, url, scope) }
                                 },
                             )
                         }
@@ -194,3 +195,13 @@ private val AudioTileBg = Color(0xFF1A1A24)
 /** A `.gif` link, query and fragment aside. */
 internal fun isGifUrl(url: String): Boolean =
     url.substringBefore('#').substringBefore('?').endsWith(".gif", ignoreCase = true)
+
+/**
+ * The item a profile tile's delete runs on. The photo URL goes with the hash, as on iOS
+ * (ProfileContent+Media.swift): with an empty URL the server the photo is on was never asked,
+ * the other mirrors' 404s counted as deleted, and the toast said "Deleted" while it was still up.
+ */
+internal fun profileDeleteItem(hash: String, url: String) = com.nostrvault.ui.screens.BlossomMediaItem(
+    sha256 = hash, displayUrl = url, localFile = null, mimeType = null,
+    size = null, uploaded = null, lastModified = null, isLocal = false,
+)

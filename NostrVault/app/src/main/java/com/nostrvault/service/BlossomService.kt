@@ -646,12 +646,15 @@ class BlossomService @Inject constructor(
         sha256: String,
         photoUrl: String?,
         includeHomeVault: Boolean,
-        /** The account that uploaded it signs the delete (null: the owner). */
+        /** The account that uploaded it signs the delete (null: the account active now). */
         signAs: com.nostrvault.data.model.PostingAccount.Lock? = null,
     ): MirrorDeleteResult = withContext(Dispatchers.IO) {
         val config = configStore.config.value
-        // The signing account's own published servers (kind 10063), not the owner's.
-        val published = nostrService.serverLists.value[signAs?.hex ?: nostrService.ownerHexPubkey].orEmpty()
+        // The active account signs, and its own published servers (kind 10063) are the list, as on
+        // iOS: an added account's photo signed by the owner was refused by its mirror. Locked now,
+        // so a switch mid-delete fails the token instead of signing as the other account.
+        val account = signAs ?: nostrService.lockPostingAccount()
+        val published = nostrService.serverLists.value[account.hex].orEmpty()
         val mirrors = config.blossomDeleteTargets(published, photoUrl, includeHomeVault)
         val mesh = com.nostrvault.fips.MeshDeleteTargets.of(config, includeHomeVault)
         if (mirrors.isEmpty() && mesh.isEmpty()) return@withContext MirrorDeleteResult()
@@ -671,7 +674,7 @@ class BlossomService @Inject constructor(
                     val deleteUrl = "${mirror.trimEnd('/')}/$sha256"
                     // A URL whose host can't be named in the token is not sent one: it could be replayed.
                     if (deleteUrl.toHttpUrlOrNull() == null) return@async mirror to false
-                    val authHeader = createDeleteAuthHeader(sha256, deleteUrl, signAs)
+                    val authHeader = createDeleteAuthHeader(sha256, deleteUrl, account)
                     val request = Request.Builder()
                         .url(deleteUrl)
                         .delete()
@@ -731,15 +734,24 @@ class BlossomService @Inject constructor(
                 when {
                     response.code >= 500 -> ServerOwner.UNKNOWN
                     !response.isSuccessful -> ServerOwner.OTHER
-                    relayInfoPubkey(response.peekBody(64 * 1024).string()).equals(ownerHex.trim(), ignoreCase = true) &&
-                        ownerHex.isNotBlank() -> ServerOwner.OWNER
-                    else -> ServerOwner.OTHER
+                    else -> ownerVerdict(relayInfoPubkey(response.peekBody(64 * 1024).string()), ownerHex)
                 }
             }
         } catch (e: IOException) {
             Log.w(TAG, "Who runs $origin: ${e.message}")
             ServerOwner.UNKNOWN
         }
+    }
+
+    /**
+     * A relay info [pubkey] read against [ownerHex], as iOS `vaultCheckVerdict`: no pubkey is a
+     * public server's page; a pubkey with no owner to compare it to may be the vault, so no delete.
+     */
+    internal fun ownerVerdict(pubkey: String, ownerHex: String): ServerOwner = when {
+        pubkey.isBlank() -> ServerOwner.OTHER
+        ownerHex.isBlank() -> ServerOwner.UNKNOWN
+        pubkey.trim().equals(ownerHex.trim(), ignoreCase = true) -> ServerOwner.OWNER
+        else -> ServerOwner.OTHER
     }
 
     private val ownerProbeClient by lazy { remoteClient.newBuilder().callTimeout(10, TimeUnit.SECONDS).build() }

@@ -44,6 +44,16 @@ internal fun DeleteLeftoverBanner(message: String, onDismiss: () -> Unit, modifi
 }
 
 /**
+ * The confirmation text, word for word iOS `MediaDeleteConfirmation.message`
+ * (DestructiveConfirmation.swift). Android said "This phone and your home
+ * vault keep their copies", so the two apps told the same delete differently.
+ */
+internal fun deleteBlobConfirmBody(scope: DeleteScope): String = when (scope) {
+    DeleteScope.MIRRORS -> "Removes this file from all your media servers. Your vault keeps its copy."
+    DeleteScope.EVERYWHERE -> "Permanently removes this file from your vault and all your media servers. This cannot be undone."
+}
+
+/**
  * Confirmation for a destructive blob delete; shared by the viewer and the Media tab's long-press menu.
  * When [postCount] of your posts use the blob, Delete everywhere also offers [onConfirmWithPosts]
  * ("Delete file and post"), so no post is left showing a dead image. Wording matches iOS
@@ -63,12 +73,12 @@ internal fun DeleteBlobConfirmDialog(
     when (scope) {
         DeleteScope.MIRRORS -> {
             title = "Delete from media servers?"
-            body = "Removes this file from your media servers. This phone and your home vault keep their copies."
+            body = deleteBlobConfirmBody(scope)
             confirmLabel = "Delete from media servers"
         }
         DeleteScope.EVERYWHERE -> {
             title = "Delete everywhere?"
-            body = "Permanently removes this file from this phone, your home vault and your media servers. This cannot be undone."
+            body = deleteBlobConfirmBody(scope)
             confirmLabel = "Delete everywhere"
         }
     }
