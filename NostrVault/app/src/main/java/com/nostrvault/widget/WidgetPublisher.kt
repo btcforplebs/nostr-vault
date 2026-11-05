@@ -4,7 +4,9 @@ import android.content.Context
 import android.util.Log
 import androidx.glance.appwidget.updateAll
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.FeedNote
+import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.DMService
 import com.nostrvault.service.FeedService
@@ -17,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.debounce
@@ -66,7 +69,10 @@ class WidgetPublisher @Inject constructor(
                     relay = VaultSnapshot.RelayStats(
                         running = RelayForegroundService.relayStatus.value ==
                             RelayForegroundService.RelayStatus.RUNNING,
-                        eventsStored = RelayForegroundService.eventsStored.value,
+                        eventsStored = WidgetFeedRules.eventsStored(
+                            fresh = RelayForegroundService.eventsStored.value,
+                            previous = it.relay.eventsStored,
+                        ),
                         connections = RelayForegroundService.connections.value,
                     )
                 )
@@ -103,56 +109,96 @@ class WidgetPublisher @Inject constructor(
     }
 
     /**
+     * The Following feed's authors (your follows plus you), or null while the
+     * follow list has not loaded; and whether Following is the feed open.
+     */
+    private data class Following(val authors: Set<String>?, val open: Boolean)
+
+    /** Mentions of [account] read from your relay's inbox. See [watchInboxMentions]. */
+    private data class InboxMentions(val account: String, val notes: List<VaultSnapshot.SnapshotNote>)
+
+    private val inboxMentions = MutableStateFlow(InboxMentions("", emptyList()))
+
+    /** One publish: the snapshot minus what is merged with the file, plus the feed parts. */
+    private data class Fresh(val snapshot: VaultSnapshot, val me: String, val feed: List<VaultSnapshot.SnapshotNote>, val following: Following)
+
+    /**
      * Collect while [scope] lives. Debounced: the feed changes far faster than
      * a home screen is looked at, and every publish is a file write plus a
      * redraw of every installed widget.
      */
     fun start(scope: CoroutineScope) {
         scope.watchZapsToday()
+        scope.watchInboxMentions()
+        val following = combine(
+            feedService.followedPubkeys,
+            feedService.followListIsKnown,
+            feedService.feedMode,
+        ) { follows, known, mode ->
+            // An empty list before it is known is "not loaded", not "follows nobody".
+            Following(
+                authors = if (follows.isNotEmpty() || known) feedService.feedAuthorSet() else null,
+                open = mode == FeedMode.FOLLOWING,
+            )
+        }
         scope.launch {
             combine(
                 feedService.notes,
                 dmService.totalUnreadCountFlow,
                 nostrService.profiles,
-            ) { notes, unread, profiles ->
+                following,
+                inboxMentions,
+            ) { notes, unread, profiles, follow, inbox ->
                 val me = configStore.activeAccountHexPubkey.value
-                fun snap(note: FeedNote) = VaultSnapshot.SnapshotNote(
-                    id = note.id,
-                    author = note.pubkey,
-                    displayName = profiles[note.pubkey]?.bestName
-                        ?: note.pubkey.take(8),
-                    // Trimmed here rather than at draw time: the snapshot is
-                    // a file the widgets re-read, and a long-form note would
-                    // otherwise sit in it whole. Newlines collapsed: a widget
-                    // row has no paragraph rendering.
-                    text = note.content.replace('\n', ' ').trim().take(200),
-                    createdAt = note.createdAt.time,
-                    authorPicture = profiles[note.pubkey]?.pictureURL?.takeIf { it.isNotBlank() },
+                fun named(n: VaultSnapshot.SnapshotNote) = profiles[n.author]?.let { p ->
+                    n.copy(displayName = p.bestName, authorPicture = p.pictureURL?.takeIf { it.isNotBlank() })
+                } ?: n
+                fun snap(note: FeedNote) = named(
+                    VaultSnapshot.SnapshotNote(
+                        id = note.id,
+                        author = note.pubkey,
+                        displayName = note.pubkey.take(8),
+                        // Trimmed here rather than at draw time: the snapshot
+                        // is a file the widgets re-read.
+                        text = WidgetFeedRules.lineText(note.content),
+                        createdAt = note.createdAt.time,
+                    )
                 )
-                VaultSnapshot(
-                    // Top-level notes only, as on iOS: a reply out of its
-                    // thread reads as an answer to a question the widget
-                    // cannot show.
-                    feed = notes.asSequence().filter { !it.isReply }.take(FEED_ITEMS).map(::snap).toList(),
-                    // Mentions keep replies: a reply to your note is the most
-                    // common way someone mentions you at all.
-                    mentions = notes.take(40)
-                        .filter { isMentionOf(me, it.pubkey, it.tags) }
-                        .take(FEED_ITEMS).map(::snap),
-                    unreadDMs = unread,
+                Fresh(
+                    snapshot = VaultSnapshot(
+                        // Mentions keep replies: a reply to your note is the
+                        // most common way someone mentions you at all. The
+                        // open feed holds only some of them (Following: only
+                        // your follows'), so your inbox is read as well.
+                        mentions = WidgetFeedRules.mentions(
+                            fromFeed = notes.take(40).filter { isMentionOf(me, it.pubkey, it.tags) }.map(::snap),
+                            fromInbox = if (inbox.account == me) inbox.notes.map(::named) else emptyList(),
+                        ),
+                        unreadDMs = unread,
+                    ),
+                    me = me,
+                    feed = follow.authors?.let { WidgetFeedRules.followingNotes(notes, it).map(::snap) }.orEmpty(),
+                    following = follow,
                 )
             }
                 .debounce(2_000)
                 // Media is a directory listing plus a header read per tile —
                 // disk work that has no business on the main thread.
-                .map { it.copy(media = mediaTiles(feedService.notes.value)) }
+                .map { it.copy(snapshot = it.snapshot.copy(media = mediaTiles(feedService.notes.value))) }
                 .flowOn(Dispatchers.IO)
                 .collect { fresh ->
                     val changed = WidgetSnapshotStore.update(context) { current ->
                         // Keep the relay half (the service writes it), the
                         // zap count (its own collector below), and Live now /
                         // On this day (HomeWidgetRefresher).
-                        fresh.copy(
+                        fresh.snapshot.copy(
+                            feed = WidgetFeedRules.feed(
+                                fresh.feed,
+                                fresh.following.authors,
+                                fresh.following.open,
+                                previous = if (current.feedAccount == fresh.me) current.feed else emptyList(),
+                            ),
+                            feedAccount = fresh.me,
                             relay = current.relay,
                             zapsToday = current.zapsToday,
                             live = current.live,
@@ -162,6 +208,32 @@ class WidgetPublisher @Inject constructor(
                     if (changed) redraw(context)
                 }
         }
+    }
+
+    /**
+     * Mentions of you from your relay's inbox, read again whenever something
+     * lands there or the account changes: the open feed only holds mentions
+     * by whoever that feed shows. A read that gets no answer leaves the last
+     * one in place.
+     */
+    private fun CoroutineScope.watchInboxMentions() = launch(Dispatchers.IO) {
+        combine(RelayForegroundService.inboxActivityTick, configStore.activeAccountHexPubkey) { _, me -> me }
+            .onEach { me -> if (inboxMentions.value.account != me) inboxMentions.value = InboxMentions(me, emptyList()) }
+            .debounce(3_000)
+            .collectLatest { me ->
+                if (me.isEmpty()) return@collectLatest
+                val config = configStore.config.value
+                val relays = listOfNotNull(config.localInboxURL, config.nostrURL).distinct()
+                if (relays.isEmpty()) return@collectLatest
+                val filter = """{"kinds":[1],"#p":["$me"],"limit":${WidgetFeedRules.INBOX_LIMIT}}"""
+                var answered = false
+                val events = nostrService.queryRawEvents(listOf(filter), relays, onAnswered = { answered = true })
+                if (!answered && events.isEmpty()) return@collectLatest
+                val blocked = config.blockedForActiveAccount().mapNotNull { nostrService.npubToHex(it) }.toSet()
+                val notes = WidgetFeedRules.inboxMentions(events.filter { HavenBridge.verifyEvent(it.toString()) }, me, blocked)
+                // Only onto the account it was read for.
+                if (configStore.activeAccountHexPubkey.value == me) inboxMentions.value = InboxMentions(me, notes)
+            }
     }
 
     /**

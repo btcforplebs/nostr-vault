@@ -63,6 +63,19 @@ object LiveNowRules {
     fun destination(address: String): String =
         "live/" + java.net.URLEncoder.encode(address, "UTF-8").replace("+", "%20")
 
+    /**
+     * The streams on file that are still on air at [nowSeconds], by the same
+     * test [pick] used ([LiveStream.isOnAirAt]: no `ends` passed, refreshed
+     * within NIP-53's hour). A widget drawn from an old file, when the
+     * refresh could not run, then drops streams that have ended rather than
+     * calling them live.
+     */
+    fun onAir(items: List<VaultSnapshot.LiveItem>, nowSeconds: Long): List<VaultSnapshot.LiveItem> =
+        items.filter { item ->
+            LiveStream.from(item.author, item.createdAt, item.tags)
+                ?.let { it.isPlayableLive && it.isOnAirAt(nowSeconds) } == true
+        }
+
     /** The calm line drawn when nobody is live (iOS `LiveNow.emptyLine`). */
     fun emptyLine(followsSomeone: Boolean): String =
         if (followsSomeone) "Nobody you follow is live right now." else "Follow people to see when they go live."

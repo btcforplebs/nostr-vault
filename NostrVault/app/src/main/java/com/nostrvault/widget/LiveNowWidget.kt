@@ -55,7 +55,9 @@ class LiveNowWidget : GlanceAppWidget() {
             }
             snapshot = WidgetSnapshotStore.read(context)
         }
-        val live = snapshot.live
+        // The file can be hours old when the refresh could not run (a
+        // process with no account loaded): only streams still on air.
+        val live = snapshot.live.let { it.copy(streams = LiveNowRules.onAir(it.streams, System.currentTimeMillis() / 1000)) }
         val avatars = loadAvatars(context, live.streams)
         provideContent { GlanceTheme { LiveNowContent(context, live, avatars) } }
     }

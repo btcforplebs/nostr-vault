@@ -82,8 +82,9 @@ class RelayForegroundService : Service() {
         internal val _relayStatus = MutableStateFlow(RelayStatus.OFFLINE)
         val relayStatus: StateFlow<RelayStatus> = _relayStatus.asStateFlow()
 
-        private val _eventsStored = MutableStateFlow(0)
-        val eventsStored: StateFlow<Int> = _eventsStored.asStateFlow()
+        /** Null until the app has counted since this process started: not a 0 (WidgetFeedRules.eventsStored). */
+        private val _eventsStored = MutableStateFlow<Int?>(null)
+        val eventsStored: StateFlow<Int?> = _eventsStored.asStateFlow()
 
         private val _connections = MutableStateFlow(0)
         val connections: StateFlow<Int> = _connections.asStateFlow()
