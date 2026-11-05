@@ -170,6 +170,7 @@ fun PairDeviceScreen(onBack: () -> Unit, viewModel: PairDeviceViewModel = hiltVi
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                     if (s.already) Body(com.nostrvault.fips.MeshPairing.ALREADY_LINKED_TEXT)
                     if (s.keepOpen) Body(com.nostrvault.fips.OtherVaultCopy.KEEP_OPEN_LINE)
+                    if (s.copy.isNotEmpty()) Body(s.copy)
                     Body("It shows a green dot under Your devices once the two meet on the mesh.", small = true)
                     Primary("Done", onBack)
                 }

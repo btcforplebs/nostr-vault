@@ -328,6 +328,8 @@ class RelayForegroundService : Service() {
         fun fipsMeshManager(): com.nostrvault.fips.FipsMeshManager
         fun listWipeWatcher(): com.nostrvault.service.ListWipeWatcher
         fun importJobService(): com.nostrvault.service.ImportJobService
+        fun meshCopyStarter(): com.nostrvault.fips.MeshCopyStarter
+        fun copySettingsSync(): com.nostrvault.fips.CopySettingsSync
     }
 
     // ── Lifecycle state machine (replaces bare `relayStarted` boolean) ──
@@ -403,7 +405,13 @@ class RelayForegroundService : Service() {
         }
         // An IMPORT_JOB line re-reads the import jobs (the Vault card, first run).
         val importJobs = EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java).importJobService()
-        logStore.lineSink = { line -> importJobs.onLogLine(line) }
+        // A COPY line is the mesh copy's progress; its done may leave the other device's settings to apply.
+        val meshCopy = EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java).meshCopyStarter()
+        val copySettings = EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java).copySettingsSync()
+        logStore.lineSink = { line ->
+            importJobs.onLogLine(line)
+            if (meshCopy.onLogLine(line)?.stage == "done") copySettings.syncNow()
+        }
         logStore.quietKinds = { markers ->
             accountUnread.ownAccountOnlyKinds(markers.filterNot(com.nostrvault.service.ListWipeWatcher::isMarker))
         }

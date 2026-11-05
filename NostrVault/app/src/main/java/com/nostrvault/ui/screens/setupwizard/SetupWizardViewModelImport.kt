@@ -11,6 +11,7 @@ import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.RelayConfiguration
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.ListMerge
+import com.nostrvault.service.PickedZip
 import com.nostrvault.service.syncOwnerServerList
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.Dispatchers
@@ -113,28 +114,29 @@ import java.net.URL
         }
     }
 
-    fun SetupWizardViewModel.restoreFromBackup(zipPath: String) {
+    /** The picked backup, copied off the main thread and gone after the restore (audit #17, [PickedZip]). */
+    fun SetupWizardViewModel.restoreFromBackup(picked: android.net.Uri) {
         if (_isImporting.value) return
         viewModelScope.launch {
             _isImporting.value = true
             _importStatus.value = "Restoring from backup..."
             _importCompleted.value = false
-
-            withContext(Dispatchers.IO) {
-                try {
-                    // Setup only restores the signing-in key's own backup,
-                    // (runOwnBackupRestore).
-                    val result = runOwnBackupRestore(zipPath)
-                    File(zipPath).delete()
-                    if (result == 0) {
-                        _importCompleted.value = true
-                        _importStatus.value = "Restore complete"
-                    } else {
-                        _importStatus.value = VaultBackupQuestion.restoreError(result) ?: "Restore failed"
-                    }
-                } catch (e: Exception) {
-                    _importStatus.value = "Restore failed: ${e.message}"
+            try {
+                // Setup only restores the signing-in key's own backup (runOwnBackupRestore).
+                val result = PickedZip.use(appContext.cacheDir, { appContext.contentResolver.openInputStream(picked) }) { zip ->
+                    withContext(Dispatchers.IO) { runOwnBackupRestore(zip.absolutePath) }
                 }
+                if (result == 0) {
+                    _importCompleted.value = true
+                    _importStatus.value = "Restore complete"
+                } else {
+                    _importStatus.value = VaultBackupQuestion.restoreError(result) ?: "Restore failed"
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _importStatus.value = "Restore failed: ${e.message}"
+            } finally {
                 _isImporting.value = false
             }
         }
@@ -190,29 +192,33 @@ import java.net.URL
         }
     }
 
-    fun SetupWizardViewModel.importMediaArchive(zipPath: String) {
+    /** The picked media backup, copied off the main thread and gone after the import (audit #17, [PickedZip]). */
+    fun SetupWizardViewModel.importMediaArchive(picked: android.net.Uri) {
         if (_isMirroring.value) return
         viewModelScope.launch {
             _isMirroring.value = true
             _mirrorStatus.value = "Extracting media archive..."
             _mirrorCompleted.value = false
-
-            withContext(Dispatchers.IO) {
-                try {
-                    val relayDataDir = File(appContext.filesDir, "relay_data")
-                    val blossomDir = File(relayDataDir, "blossom")
-                    blossomDir.mkdirs()
-                    // Reads iOS and Android media backups alike.
-                    val result = BlossomArchive.import(File(zipPath), blossomDir)
-                    if (result.imported > 0 || result.skipped == 0) {
-                        _mirrorCompleted.value = true
-                        _mirrorStatus.value = "Media import complete"
-                    } else {
-                        _mirrorStatus.value = "Import failed: no media files in this backup"
+            try {
+                val result = PickedZip.use(appContext.cacheDir, { appContext.contentResolver.openInputStream(picked) }) { zip ->
+                    withContext(Dispatchers.IO) {
+                        val blossomDir = File(File(appContext.filesDir, "relay_data"), "blossom")
+                        blossomDir.mkdirs()
+                        // Reads iOS and Android media backups alike.
+                        BlossomArchive.import(zip, blossomDir)
                     }
-                } catch (e: Exception) {
-                    _mirrorStatus.value = "Import failed: ${e.message}"
                 }
+                if (result.imported > 0 || result.skipped == 0) {
+                    _mirrorCompleted.value = true
+                    _mirrorStatus.value = "Media import complete"
+                } else {
+                    _mirrorStatus.value = "Import failed: no media files in this backup"
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _mirrorStatus.value = "Import failed: ${e.message}"
+            } finally {
                 _isMirroring.value = false
             }
         }

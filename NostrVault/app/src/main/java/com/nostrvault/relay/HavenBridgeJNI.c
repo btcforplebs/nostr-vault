@@ -106,6 +106,8 @@ extern char* GetImportLogC(void);
 extern char* GetImportResultC(void);
 extern char* ImportJobsC(void);
 extern int RunImportJobC(char* name);
+extern int StartCopyFromC(char* peer, char* base, char* startAuth);
+extern int CopySyncC(char* peer, char* base);
 extern int CancelImportJobC(char* name);
 extern char* GetNotifyLogC(void);
 extern char* GetLogLinesC(void);
@@ -592,6 +594,29 @@ Java_com_nostrvault_relay_HavenBridge_cancelImportJob(JNIEnv *env, jobject thiz,
     const char *cName = GET_CSTR(env, name);
     int rc = CancelImportJobC((char*)cName);
     REL_CSTR(env, name, cName);
+    return rc;
+}
+
+// Mesh copy v2 (haven-go copyv2_client.go): the copy from an own device, and a catch-up with one.
+JNIEXPORT jint JNICALL
+Java_com_nostrvault_relay_HavenBridge_startCopyFrom(JNIEnv *env, jobject thiz, jstring peer, jstring base, jstring startAuth) {
+    const char *cPeer = GET_CSTR(env, peer);
+    const char *cBase = GET_CSTR(env, base);
+    const char *cAuth = GET_CSTR(env, startAuth);
+    int rc = StartCopyFromC((char*)cPeer, (char*)cBase, (char*)cAuth);
+    REL_CSTR(env, startAuth, cAuth);
+    REL_CSTR(env, base, cBase);
+    REL_CSTR(env, peer, cPeer);
+    return rc;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_nostrvault_relay_HavenBridge_copySync(JNIEnv *env, jobject thiz, jstring peer, jstring base) {
+    const char *cPeer = GET_CSTR(env, peer);
+    const char *cBase = GET_CSTR(env, base);
+    int rc = CopySyncC((char*)cPeer, (char*)cBase);
+    REL_CSTR(env, base, cBase);
+    REL_CSTR(env, peer, cPeer);
     return rc;
 }
 

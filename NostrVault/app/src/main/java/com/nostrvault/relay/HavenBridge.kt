@@ -398,6 +398,16 @@ object HavenBridge {
     external fun cancelImportJob(name: String): Int
 
     /**
+     * StartCopyFromC (docs/MESH_COPY_V2_CONTRACT.md): the mesh copy from the owner's device [peer] (its mesh npub)
+     * through [base]; [startAuth] is base64 of the owner-signed kind 27235 for the start, or "" to resume with the
+     * token the engine holds. 0 started · 2 busy · 3 relay not running. Progress: `COPY` log lines.
+     */
+    external fun startCopyFrom(peer: String, base: String, startAuth: String): Int
+
+    /** CopySyncC: one catch-up with a linked device [peer] through [base]. 0 started · 2 busy · 3 relay not running. */
+    external fun copySync(peer: String, base: String): Int
+
+    /**
      * Moving in's Skip: stops the list history scan; what it found so far is
      * kept and the import carries on. True when a scan was running.
      * Maps to Go: SkipListHistoryScanC()

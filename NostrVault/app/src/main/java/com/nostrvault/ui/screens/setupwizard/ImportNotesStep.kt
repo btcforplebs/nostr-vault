@@ -11,7 +11,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -19,7 +18,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.launch
-import java.io.File
 
 // ══════════════════════════════════════════════════════════════════
 // Step 5: Import Notes
@@ -32,7 +30,6 @@ internal fun ImportNotesStep(viewModel: SetupWizardViewModel) {
     val importStatus by viewModel.importStatus.collectAsState()
     val importCompleted by viewModel.importCompleted.collectAsState()
     val importStartDate by viewModel.importStartDate.collectAsState()
-    val context = LocalContext.current
 
     // Importing can run 20+ minutes; don't let the screen dim or lock while it's up.
     val view = LocalView.current
@@ -49,14 +46,8 @@ internal fun ImportNotesStep(viewModel: SetupWizardViewModel) {
     val backupPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        uri?.let {
-            // Copy to temp file for JNI access
-            val tempFile = File(context.cacheDir, "restore_backup.zip")
-            context.contentResolver.openInputStream(it)?.use { input ->
-                tempFile.outputStream().use { output -> input.copyTo(output) }
-            }
-            viewModel.restoreFromBackup(tempFile.absolutePath)
-        }
+        // Copied for the engine off the main thread, in the view model (audit #17).
+        uri?.let(viewModel::restoreFromBackup)
     }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
