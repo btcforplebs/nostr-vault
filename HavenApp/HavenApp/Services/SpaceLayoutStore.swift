@@ -2,9 +2,9 @@ import Foundation
 import Combine
 
 /// The active account's rail pins and Your space panels (`SpaceLayout`,
-/// docs/SPACE_LAYOUT.md). Drawn from the copy on this device, which every
-/// edit writes at once; synced through the account's own relays as one
-/// NIP-78 event, NIP-44 encrypted to self, 2 s after the last edit.
+/// docs/SPACE_LAYOUT.md). Kept on this device only, per account: every edit
+/// is saved here at once. Nothing is signed, encrypted or sent to relays for
+/// it (the kind 30078 sync was removed, Logen 2026-11-05).
 @MainActor
 final class SpaceLayoutStore: ObservableObject {
     static let shared = SpaceLayoutStore()
@@ -17,16 +17,7 @@ final class SpaceLayoutStore: ObservableObject {
     @Published private(set) var layout: SpaceLayout = .defaultLayout(panelIds: SpaceLayoutStore.panelIds)
 
     private var owner = ""
-    private var publishTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
-    /// A downloaded layout from a newer format: left alone, never written over.
-    private var remoteIsNewerFormat = false
-    /// This device has seen the account's synced layout: opened it, or every
-    /// relay asked confirmed there is none. Until then edits stay on the
-    /// device, so a tap before (or after a failed) read can't overwrite pins
-    /// made on another device. A relay that didn't answer isn't "none".
-    private var syncedBaseKnown = false
-    private var pullTask: Task<Void, Never>?
 
     static func key(_ owner: String) -> String { "nv-space-layout:\(owner)" }
 
@@ -39,39 +30,14 @@ final class SpaceLayoutStore: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] hex in self?.attach(hex) }
             .store(in: &cancellables)
-        // A bunker that finishes connecting can now open the synced layout.
-        NIP46Service.shared.$connectionState
-            .map { $0 == .connected }
-            .removeDuplicates()
-            .filter { $0 }
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.startPull() }
-            .store(in: &cancellables)
     }
 
     // MARK: Account
 
     private func attach(_ hex: String) {
         guard hex != owner else { return }
-        publishTask?.cancel()
-        pullTask?.cancel()
-        pullTask = nil
         owner = hex
-        remoteIsNewerFormat = false
-        syncedBaseKnown = false
         layout = Self.readLocal(hex) ?? .defaultLayout(panelIds: Self.panelIds)
-        startPull()
-    }
-
-    /// Reads the account's synced layout, once at a time.
-    private func startPull() {
-        let account = owner
-        guard !account.isEmpty, pullTask == nil, !syncedBaseKnown else { return }
-        pullTask = Task { [weak self] in
-            await self?.pull(for: account)
-            guard let self, self.owner == account else { return }
-            self.pullTask = nil
-        }
     }
 
     private static func readLocal(_ hex: String) -> SpaceLayout? {
@@ -83,12 +49,11 @@ final class SpaceLayoutStore: ObservableObject {
 
     private var now: Int64 { Int64(Date().timeIntervalSince1970) }
 
-    /// Applies an edit: drawn at once, saved on the device, synced 2 s later.
+    /// Applies an edit: drawn at once and saved on the device.
     func edit(_ change: (SpaceLayout, Int64) -> SpaceLayout?) {
         guard let next = change(layout, now), next != layout else { return }
         layout = next
         saveLocal()
-        schedulePublish()
     }
 
     func setPanel(_ id: String, on: Bool? = nil, open: Bool? = nil) {
@@ -125,102 +90,5 @@ final class SpaceLayoutStore: ObservableObject {
     private func saveLocal() {
         guard !owner.isEmpty else { return }
         UserDefaults.standard.set(layout.encoded(), forKey: Self.key(owner))
-    }
-
-    // MARK: Sync (NIP-78)
-
-    private func schedulePublish() {
-        // Not before this device has seen what is synced: ask again instead.
-        // A read that finds this copy newer publishes it then.
-        guard syncedBaseKnown else { startPull(); return }
-        publishTask?.cancel()
-        let account = owner
-        publishTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard !Task.isCancelled else { return }
-            await self?.push(for: account)
-        }
-    }
-
-    /// Publishes the device's copy, unless the account changed or the event
-    /// on the relays is from a newer format.
-    private func push(for account: String) async {
-        guard account == owner, !account.isEmpty, syncedBaseKnown, !remoteIsNewerFormat else { return }
-        let lock = ModePostPublisher.lockAccount(configService: ConfigService.shared)
-        guard lock.hex.lowercased() == account,
-              let plaintext = String(data: layout.encoded(), encoding: .utf8) else { return }
-        do {
-            let ciphertext = try await SpaceLayoutCrypto.encryptToSelf(plaintext, me: lock.hex)
-            // Never publish anything that is not ciphertext.
-            guard SpaceLayoutCrypto.isCiphertext(ciphertext, plaintext: plaintext),
-                  account == owner else { return }
-            try await ModePostPublisher.publish(kind: 30078, content: ciphertext, tags: SpaceLayoutCrypto.tags,
-                                                nostrService: NostrService.shared, lockedTo: lock)
-        } catch {
-            #if DEBUG
-            print("SpaceLayoutStore: not synced (\(type(of: error)))")
-            #endif
-        }
-    }
-
-    /// Reads the account's synced layout; the newer `at` wins. Marks the
-    /// synced base known only when the event was opened, or every relay
-    /// asked confirmed there is none; otherwise edits stay on the device and
-    /// the next edit asks again.
-    private func pull(for account: String) async {
-        // A bunker still connecting can't decrypt: wait for a later ask.
-        if SpaceLayoutCrypto.usesRemoteSigner, !NIP46Service.shared.isConnected { return }
-        let config = ConfigService.shared.config
-        let lookup = await NostrService.shared.lookupNewestReplaceable(
-            kind: 30078, for: account, alsoAsk: config.readRelays, dTag: SpaceLayout.syncD)
-        guard account == owner, !Task.isCancelled else { return }
-        var plaintext: String?
-        if let event = lookup.event {
-            // Found but not opened (wrong author, empty, decrypt refused or
-            // failed): not "none", so the base stays unknown.
-            guard event.pubkey.lowercased() == account, !event.content.isEmpty,
-                  let opened = try? await SpaceLayoutCrypto.decryptFromSelf(event.content, me: account),
-                  account == owner, !Task.isCancelled else { return }
-            plaintext = opened
-        }
-        let decision = SpaceLayout.syncRead(local: layout, plaintext: plaintext,
-                                            confirmedNone: lookup.event == nil && lookup.confirmedNone,
-                                            sections: Self.railSections, panelIds: Self.panelIds)
-        remoteIsNewerFormat = decision.newerFormat
-        syncedBaseKnown = decision.baseKnown
-        if decision.layout != layout {
-            layout = decision.layout
-            saveLocal()
-        }
-        if decision.publish { schedulePublish() }
-    }
-}
-
-/// NIP-44 to the account's own key, with the local key or its remote signer,
-/// as the wallet backup does (`NWCBackupService`).
-@MainActor
-enum SpaceLayoutCrypto {
-    static let tags: [[String]] = [["d", SpaceLayout.syncD], ["client", "Nostr Vault"], ["encryption", "nip44"]]
-
-    enum CryptoError: Error { case noKey }
-
-    static var usesRemoteSigner: Bool { ConfigService.shared.config.activeSigningMode() == "nip46" }
-
-    static func encryptToSelf(_ plaintext: String, me: String) async throws -> String {
-        if usesRemoteSigner { return try await NIP44Service.encryptAsync(plaintext: plaintext, recipientPubkey: me) }
-        guard let sk = try? DMService.shared.getActivePrivateKey() else { throw CryptoError.noKey }
-        return try NIP44Service.encrypt(plaintext: plaintext, recipientPubkey: me, senderPrivkey: sk)
-    }
-
-    static func decryptFromSelf(_ ciphertext: String, me: String) async throws -> String {
-        if usesRemoteSigner { return try await NIP44Service.decryptAsync(ciphertext: ciphertext, senderPubkey: me) }
-        guard let sk = try? DMService.shared.getActivePrivateKey() else { throw CryptoError.noKey }
-        return try NIP44Service.decrypt(ciphertext: ciphertext, senderPubkey: me, recipientPrivkey: sk)
-    }
-
-    /// Ciphertext is base64 and never holds the layout's own text.
-    static func isCiphertext(_ content: String, plaintext: String) -> Bool {
-        let c = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !c.isEmpty && c != plaintext && !c.contains("{") && Data(base64Encoded: c) != nil
     }
 }
