@@ -127,6 +127,9 @@ pub struct Control {
     /// Sockets the stack holds, listeners included; a leak shows up here.
     sockets: AtomicU64,
     pub counters: Counters,
+    /// Tests: the stack panics at its next turn.
+    #[cfg(test)]
+    panic_next: AtomicBool,
 }
 
 impl Control {
@@ -195,6 +198,32 @@ impl Control {
 
     pub fn socket_count(&self) -> u64 {
         self.sockets.load(Ordering::Relaxed)
+    }
+
+    /// The stack died with everything it held: its loopback listeners went
+    /// with it. Each one is bound again on the same port with the same token,
+    /// so a base URL handed out before (the relay's Mac link, a copy) still
+    /// works; one whose port was taken meanwhile is dropped, and the next
+    /// `connect_port` opens a fresh one.
+    fn after_panic(&self) {
+        self.sockets.store(0, Ordering::Relaxed);
+        self.counters.served_open.store(0, Ordering::Relaxed);
+        self.counters.read_open.store(0, Ordering::Relaxed);
+        self.closed_connects.lock().unwrap().clear();
+        let mut pending = self.new_connects.lock().unwrap();
+        let waiting: Vec<u16> =
+            pending.iter().filter_map(|c| c.listener.local_addr().ok().map(|a| a.port())).collect();
+        self.connect_ports.lock().unwrap().retain(|peer, reader| {
+            if waiting.contains(&reader.port) {
+                return true;
+            }
+            let Ok(listener) = TcpListener::bind(("127.0.0.1", reader.port)) else { return false };
+            if listener.set_nonblocking(true).is_err() {
+                return false;
+            }
+            pending.push(Connect { listener, peer: *peer, token: reader.token });
+            true
+        });
     }
 
     /// Ends `run`: every connection is reset and the thread returns.
@@ -511,7 +540,27 @@ pub fn run_with(
     ctl: &Control,
 ) -> Result<()> {
     let mut dev = ChannelDevice { to_mesh, from_mesh, mtu, rx_queue: VecDeque::new() };
-    let mut iface = Interface::new(Config::new(HardwareAddress::Ip), &mut dev, Instant::now());
+    // A panic in the stack (smoltcp 0.12's sequence underflow, LogePad
+    // 2026-11-05) used to end this thread and leave the mesh dead until the
+    // app restarted. Now the stack starts over on the same channels.
+    let mut restarts: u64 = 0;
+    loop {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_once(&mut dev, my_addr, ctl))) {
+            Ok(done) => return done,
+            Err(_) if ctl.stop.load(Ordering::SeqCst) => return Ok(()),
+            Err(_) => {
+                restarts += 1;
+                eprintln!("fips stack panicked, starting it again (restart {restarts})");
+                ctl.after_panic();
+                // A stack that panics at once every time must not spin.
+                std::thread::sleep(Duration::from_millis((100 * restarts).min(5_000)));
+            }
+        }
+    }
+}
+
+fn run_once(dev: &mut ChannelDevice, my_addr: Ipv6Addr, ctl: &Control) -> Result<()> {
+    let mut iface = Interface::new(Config::new(HardwareAddress::Ip), dev, Instant::now());
     iface.update_ip_addrs(|a| {
         // /8 makes all of fd::/8 on-link; Medium::Ip has no neighbour step.
         let _ = a.push(IpCidr::new(IpAddress::Ipv6(my_addr), 8));
@@ -535,6 +584,10 @@ pub fn run_with(
 
     let mut buf = vec![0u8; 64 * 1024];
     loop {
+        #[cfg(test)]
+        if ctl.panic_next.swap(false, Ordering::SeqCst) {
+            panic!("test: the stack dies");
+        }
         let stopping = ctl.stop.load(Ordering::SeqCst);
         let (serve, generation) = ctl.serve_now();
         if generation != session_gen {
@@ -590,7 +643,7 @@ pub fn run_with(
         }
 
         let now = Instant::now();
-        iface.poll(now, &mut dev, &mut sockets);
+        iface.poll(now, dev, &mut sockets);
         for h in dying.drain(..) {
             sockets.remove(h);
         }
@@ -942,5 +995,186 @@ mod tests {
         }
         let long = format!("GET /{tok} HTTP/1.1\r\nX: {}", "a".repeat(HEAD_MAX));
         assert_eq!(check(&long), Some(Err("head too long")), "no end in sight");
+    }
+
+    /// A queue standing in for the mesh, for driving smoltcp by hand.
+    struct QueueDevice {
+        rx: VecDeque<Vec<u8>>,
+        tx: Vec<Vec<u8>>,
+    }
+    struct QRx(Vec<u8>);
+    struct QTx<'a>(&'a mut Vec<Vec<u8>>);
+    impl RxToken for QRx {
+        fn consume<R, F: FnOnce(&[u8]) -> R>(self, f: F) -> R {
+            f(&self.0)
+        }
+    }
+    impl TxToken for QTx<'_> {
+        fn consume<R, F: FnOnce(&mut [u8]) -> R>(self, len: usize, f: F) -> R {
+            let mut buf = vec![0u8; len];
+            let r = f(&mut buf);
+            self.0.push(buf);
+            r
+        }
+    }
+    impl Device for QueueDevice {
+        type RxToken<'a> = QRx;
+        type TxToken<'a> = QTx<'a>;
+        fn receive(&mut self, _: Instant) -> Option<(QRx, QTx<'_>)> {
+            let pkt = self.rx.pop_front()?;
+            Some((QRx(pkt), QTx(&mut self.tx)))
+        }
+        fn transmit(&mut self, _: Instant) -> Option<QTx<'_>> {
+            Some(QTx(&mut self.tx))
+        }
+        fn capabilities(&self) -> DeviceCapabilities {
+            let mut caps = DeviceCapabilities::default();
+            caps.medium = Medium::Ip;
+            caps.max_transmission_unit = 1280;
+            caps
+        }
+    }
+
+    fn segment(src: Ipv6Addr, dst: Ipv6Addr, repr: &smoltcp::wire::TcpRepr) -> Vec<u8> {
+        use smoltcp::phy::ChecksumCapabilities;
+        use smoltcp::wire::{IpProtocol, Ipv6Packet, Ipv6Repr, TcpPacket};
+        let ip = Ipv6Repr {
+            src_addr: src,
+            dst_addr: dst,
+            next_header: IpProtocol::Tcp,
+            payload_len: repr.buffer_len(),
+            hop_limit: 64,
+        };
+        let mut buf = vec![0u8; ip.buffer_len() + repr.buffer_len()];
+        let mut pkt = Ipv6Packet::new_unchecked(&mut buf);
+        ip.emit(&mut pkt);
+        let mut tcp = TcpPacket::new_unchecked(pkt.payload_mut());
+        repr.emit(&mut tcp, &IpAddress::Ipv6(src), &IpAddress::Ipv6(dst), &ChecksumCapabilities::default());
+        buf
+    }
+
+    /// The last segment the stack sent, as (seq, ack, window).
+    fn last_sent(dev: &QueueDevice) -> (u32, u32, u16) {
+        let p = dev.tx.last().expect("the stack answered");
+        let t = &p[40..];
+        let be = |i: usize| u32::from_be_bytes([t[i], t[i + 1], t[i + 2], t[i + 3]]);
+        (be(4), be(8), u16::from_be_bytes([t[14], t[15]]))
+    }
+
+    /// LogePad 2026-11-05 22:17:37: the mesh thread died on smoltcp 0.12's
+    /// "attempt to subtract sequence numbers with underflow". 0.12 took in any
+    /// bytes that fit the receive buffer, even past the window it last
+    /// advertised (smoltcp f56ed8b fixed that in 0.13). Here the window went
+    /// to zero, the app read the data, and the peer's zero-window probe landed
+    /// before the window update went out: one byte past the advertised edge,
+    /// and the next poll worked out the window as `last_ack + last_win -
+    /// next_ack`, below zero.
+    #[test]
+    fn a_probe_past_a_zero_window_does_not_kill_the_stack() {
+        use smoltcp::wire::{TcpControl, TcpRepr, TcpSeqNumber};
+        let me: Ipv6Addr = "fd00::1".parse().unwrap();
+        let peer: Ipv6Addr = "fd00::2".parse().unwrap();
+        let mut dev = QueueDevice { rx: VecDeque::new(), tx: Vec::new() };
+        let mut iface = Interface::new(Config::new(HardwareAddress::Ip), &mut dev, Instant::from_millis(0));
+        iface.update_ip_addrs(|a| {
+            let _ = a.push(IpCidr::new(IpAddress::Ipv6(me), 8));
+        });
+        let mut sockets = SocketSet::new(vec![]);
+        let mut s = tcp::Socket::new(tcp::SocketBuffer::new(vec![0; 6]), tcp::SocketBuffer::new(vec![0; 64]));
+        // The default 10 ms ACK delay, as on the mesh (new_socket).
+        s.listen(80).unwrap();
+        let h = sockets.add(s);
+        let now = std::cell::Cell::new(0i64);
+        let feed = |iface: &mut Interface, dev: &mut QueueDevice, sockets: &mut SocketSet, pkt: Vec<u8>| {
+            dev.rx.push_back(pkt);
+            now.set(now.get() + 10);
+            iface.poll(Instant::from_millis(now.get()), dev, sockets);
+        };
+        let templ = TcpRepr {
+            src_port: 40000,
+            dst_port: 80,
+            control: TcpControl::None,
+            seq_number: TcpSeqNumber(1000),
+            ack_number: None,
+            window_len: 4096,
+            window_scale: None,
+            max_seg_size: None,
+            sack_permitted: false,
+            sack_ranges: [None, None, None],
+            timestamp: None,
+            payload: &[],
+        };
+        feed(&mut iface, &mut dev, &mut sockets, segment(peer, me, &TcpRepr { control: TcpControl::Syn, ..templ }));
+        let (local_seq, _, _) = last_sent(&dev);
+        let ack = Some(TcpSeqNumber(local_seq as i32) + 1);
+        feed(&mut iface, &mut dev, &mut sockets, segment(peer, me, &TcpRepr { seq_number: TcpSeqNumber(1001), ack_number: ack, ..templ }));
+        feed(
+            &mut iface,
+            &mut dev,
+            &mut sockets,
+            segment(peer, me, &TcpRepr { seq_number: TcpSeqNumber(1001), ack_number: ack, payload: b"abcdef", ..templ }),
+        );
+        now.set(now.get() + 20);
+        iface.poll(Instant::from_millis(now.get()), &mut dev, &mut sockets);
+        assert_eq!(last_sent(&dev).2, 0, "the window is full");
+        let mut got = [0u8; 6];
+        assert_eq!(sockets.get_mut::<tcp::Socket>(h).recv_slice(&mut got).unwrap(), 6);
+        assert_eq!(&got, b"abcdef");
+        // The probe arrives before the stack has polled to say the window is open.
+        feed(
+            &mut iface,
+            &mut dev,
+            &mut sockets,
+            segment(peer, me, &TcpRepr { seq_number: TcpSeqNumber(1007), ack_number: ack, payload: b"g", ..templ }),
+        );
+        let sock = sockets.get_mut::<tcp::Socket>(h);
+        assert_eq!(sock.state(), tcp::State::Established, "the connection lives on");
+        now.set(now.get() + 10);
+        iface.poll(Instant::from_millis(now.get()), &mut dev, &mut sockets);
+    }
+
+    /// The stack dies; it starts over by itself, and the loopback port handed
+    /// out before still reaches the mesh with the same token.
+    #[test]
+    fn a_stack_that_panics_starts_over_on_the_same_ports() {
+        let (to_mesh, mut out) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
+        let (_to_stack, from_mesh) = std::sync::mpsc::channel::<Vec<u8>>();
+        let ctl = Control::new();
+        let c = ctl.clone();
+        let me: Ipv6Addr = "fd00::1".parse().unwrap();
+        let peer: Ipv6Addr = "fd00::2".parse().unwrap();
+        let thread = std::thread::spawn(move || run_with(me, 1280, to_mesh, from_mesh, &c));
+        let before = ctl.connect_port(peer).unwrap();
+        let syn_out = |out: &mut tokio::sync::mpsc::Receiver<Vec<u8>>| {
+            let end = std::time::Instant::now() + Duration::from_secs(5);
+            while std::time::Instant::now() < end {
+                if let Ok(p) = out.try_recv() {
+                    if p.len() >= 54 && p[6] == 6 && p[40 + 13] & 0x02 != 0 {
+                        return true;
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            false
+        };
+        let dial = |port: u16| {
+            let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            s.write_all(format!("GET /{} HTTP/1.1\r\n\r\n", token_hex(&before.token.unwrap())).as_bytes()).unwrap();
+            s
+        };
+        let _a = dial(before.port);
+        assert!(syn_out(&mut out), "the stack dials the mesh before the panic");
+
+        ctl.panic_next.store(true, Ordering::SeqCst);
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(!thread.is_finished(), "the stack thread lives on");
+        let after = ctl.connect_port(peer).unwrap();
+        assert_eq!((after.port, after.token), (before.port, before.token), "the same base URL");
+        while out.try_recv().is_ok() {}
+        let _b = dial(after.port);
+        assert!(syn_out(&mut out), "the stack dials the mesh after the restart");
+
+        ctl.stop();
+        assert!(thread.join().unwrap().is_ok());
     }
 }
