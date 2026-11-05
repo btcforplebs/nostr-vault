@@ -120,4 +120,32 @@ class VaultSessionCoreTest {
         val events = (out.finishes().single().outcome as VaultSessionCore.Outcome.Events).events
         assertEquals("x", events.single()["id"]!!.jsonPrimitive.content)
     }
+
+    @Test
+    fun `a connect that never comes up is dropped on the timeout, and the next request dials again`() {
+        val core = VaultSessionCore()
+        val (token, first) = core.submit("s1", VaultSessionCore.Kind.REQ, "[\"REQ\",\"s1\",{}]")
+        assertTrue(VaultSessionCore.Effect.Connect in first)
+        // The socket failed before anyone saw CONNECTING, so disconnected() never came.
+        val gaveUp = core.timedOut("s1", token)
+        assertTrue(VaultSessionCore.Effect.Disconnect in gaveUp)
+        assertEquals(listOf("s1"), gaveUp.finishes().map { it.key })
+        assertEquals(VaultSessionCore.Link.DOWN, core.link)
+        assertTrue(VaultSessionCore.Effect.Connect in core.submit("s2", VaultSessionCore.Kind.REQ, "[\"REQ\",\"s2\",{}]").second)
+    }
+
+    @Test
+    fun `a challenge handled before CONNECTED is signed once, not again`() {
+        val core = VaultSessionCore()
+        val all = mutableListOf<VaultSessionCore.Effect>()
+        all += core.submit("s1", VaultSessionCore.Kind.REQ, "[\"REQ\",\"s1\",{}]").second
+        all += core.recv("[\"AUTH\",\"c1\"]")
+        all += core.authSigned("auth1", "[\"AUTH\",{\"id\":\"auth1\"}]")
+        all += core.connected()
+        // Held for the login's OK, not sent unauthed.
+        assertEquals(listOf("[\"AUTH\",{\"id\":\"auth1\"}]"), all.sends())
+        all += core.recv("[\"OK\",\"auth1\",true,\"\"]")
+        assertEquals(1, all.signs())
+        assertTrue("[\"REQ\",\"s1\",{}]" in all.sends())
+    }
 }

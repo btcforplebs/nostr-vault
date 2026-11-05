@@ -94,7 +94,8 @@ internal class VaultSessionCore {
 
     fun connected(): List<Effect> {
         link = Link.UP
-        auth = Auth.None
+        // The vault's challenge can be handled before CONNECTED (two collectors): keep that login under way rather
+        // than forget it and sign a second time. Every way down already reset auth, so nothing older is kept.
         heard = 0
         return sendReady()
     }
@@ -126,6 +127,13 @@ internal class VaultSessionCore {
     fun timedOut(key: String, token: Int): List<Effect> {
         val op = ops[key] ?: return emptyList()
         if (op.token != token) return emptyList()
+        // Never sent and still connecting: the connect failed or hangs (a fast failure can go unseen, Tron #1743).
+        // Drop it, so the next request dials again instead of waiting on this socket until the idle close.
+        if (!op.sent && link == Link.CONNECTING) {
+            link = Link.DOWN
+            auth = Auth.None
+            return listOf(Effect.Disconnect) + failAll()
+        }
         // Nothing heard on the socket since this was sent: the socket is dead, not the vault slow.
         if (op.sent && link == Link.UP && op.sentAt == heard) {
             link = Link.DOWN
