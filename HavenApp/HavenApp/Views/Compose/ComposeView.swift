@@ -133,6 +133,8 @@ struct ComposeView: View {
     var initialContent: String = ""
     // Optional: draft ID when restoring a saved draft
     var restoredDraftId: String? = nil
+    /// Edit on a pending post: its hosted photos, reattached on appear.
+    var restoredMedia: [PendingPostEdit.Media] = []
     /// The account this note is for (npub), when it isn't simply whichever is
     /// active: a reply from a note opened as another account. nil = active.
     var postAs: String? = nil
@@ -315,6 +317,7 @@ struct ComposeView: View {
                 if !initialContent.isEmpty {
                     content = convertNostrToMentions(initialContent)
                 }
+                if !restoredMedia.isEmpty && attachments.isEmpty { restoreEditedMedia(restoredMedia) }
                 if let restored = restoredDraftId {
                     draftId = restored
                     // Baseline must match the editor's display form (with @name mentions),

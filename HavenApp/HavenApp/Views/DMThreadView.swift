@@ -319,8 +319,21 @@ struct DMThreadView: View {
                     dmService.visibleConversation = nil
                 }
             }
+            // A message that came while the app was away counts until you are
+            // back on this thread (DMUnreadRule); back, it is read here.
+            .onReceive(NotificationCenter.default.publisher(for: Self.becameActive)) { _ in
+                if dmService.visibleConversation == counterpartyPubkey, (conversation?.unreadCount ?? 0) > 0 {
+                    dmService.markRead(conversationWith: counterpartyPubkey)
+                }
+            }
         }
     }
+
+    #if os(iOS)
+    private static let becameActive = UIApplication.didBecomeActiveNotification
+    #else
+    private static let becameActive = NSApplication.didBecomeActiveNotification
+    #endif
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
         withAnimation {

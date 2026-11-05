@@ -167,7 +167,8 @@ private struct BringItOverContent: View {
         case .start:
             line("On your other device, open Your devices on its dashboard, tap Add and then Show my code.")
             if scanning {
-                PairScanView(title: "Point the camera at your other device's code", validate: scanned) { _ in }
+                PairScanView(title: "Point the camera at your other device's code", validate: scanned,
+                             onCancel: { scanning = false }) { _ in }
             } else {
                 WizardPrimaryButton(title: "Scan its code") { scanning = true }
             }

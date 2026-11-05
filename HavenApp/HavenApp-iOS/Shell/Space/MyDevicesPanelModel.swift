@@ -9,8 +9,8 @@ final class MyDevicesPanelModel: ObservableObject {
     /// The finder relays answered the last look (false: none did, or not asked yet).
     @Published private(set) var checked = false
     @Published private(set) var checking = false
-    private var lastAsked: Set<String> = []
-    private var lastLook: Date = .distantPast
+    /// One look at a time; one asked for meanwhile waits (MyDevicesCheckGate).
+    private var gate = MyDevicesCheckGate()
 
     /// How often the panel looks again while it is on screen.
     static let refreshEvery: TimeInterval = 300
@@ -20,15 +20,21 @@ final class MyDevicesPanelModel: ObservableObject {
     }
 
     /// Asks the finder relays for each device's newest advert. Skips a look
-    /// made in the last minute for the same devices.
+    /// made in the last minute for the same devices. Asked while a look is
+    /// running, it waits for that one and then looks if the devices changed.
     func refresh(_ devices: [MeshDevice], force: Bool = false) async {
         let hexes = Dictionary(devices.compactMap { d in Bech32.decode(d.npub).map { (d.npub, $0.hexString.lowercased()) } },
                                uniquingKeysWith: { a, _ in a })
         let asked = Set(hexes.values)
         guard !asked.isEmpty else { adverts = [:]; checked = true; return }
-        guard force || asked != lastAsked || Date().timeIntervalSince(lastLook) > 60, !checking else { return }
+        var decision = gate.begin(asked: asked, force: force, now: Date())
+        while decision == .wait {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            if Task.isCancelled { return }
+            decision = gate.begin(asked: asked, force: force, now: Date())
+        }
+        guard decision == .look else { return }
         checking = true
-        defer { checking = false }
         let relays = FipsMeshSettings.finderRelays.compactMap(URL.init(string:))
         let filter: [String: Any] = ["kinds": [MyDevicesStatus.kind], "authors": Array(asked),
                                      "#d": [MyDevicesStatus.advertD], "limit": 50]
@@ -45,7 +51,7 @@ final class MyDevicesPanelModel: ObservableObject {
         }
         adverts = byNpub
         checked = answered || !events.isEmpty
-        lastAsked = asked
-        lastLook = Date()
+        checking = false
+        gate.finish(asked: asked, now: Date())
     }
 }

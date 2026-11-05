@@ -76,6 +76,8 @@ class PendingPostManager: ObservableObject {
         /// The saved draft backing the post being edited, so the reopened composer
         /// reuses it instead of leaking an orphan and generating a fresh draft.
         let draftId: String?
+        /// The post's hosted photos, reattached so they are not bare links.
+        var media: [PendingPostEdit.Media] = []
     }
 
     @Published var isShowing = false
@@ -242,9 +244,11 @@ class PendingPostManager: ObservableObject {
     }
 
     func requestEdit() {
-        let content = pendingContent
         let replyTo = pendingReplyTo
         let quoteTo = pendingQuoteTo
+        // The composer adds the quote line again on Post (PendingPostEdit).
+        let content = PendingPostEdit.editableText(pendingContent, quotedNevent: quoteTo?.nevent)
+        let media = PendingPostEdit.media(fromTags: pendingEvent?.tags ?? [], in: content)
         countdown?.cancel()
         countdown = nil
         endBackgroundTaskIfNeeded()
@@ -259,7 +263,7 @@ class PendingPostManager: ObservableObject {
         bannerNoteId = nil
         let draftId = pendingDraftId
         pendingDraftId = nil
-        editRequest = EditRequest(content: content, replyTo: replyTo, quoteTo: quoteTo, draftId: draftId)
+        editRequest = EditRequest(content: content, replyTo: replyTo, quoteTo: quoteTo, draftId: draftId, media: media)
     }
 
     private func beginConfirmation(_ type: ActionType) -> UUID {
@@ -351,17 +355,18 @@ class PendingPostManager: ObservableObject {
     }
 
     #if os(iOS)
-    private var bgTaskId: UIBackgroundTaskIdentifier = .invalid
+    /// Ended by iOS's expiration handler too, so an overstayed broadcast
+    /// gives the time back instead of getting the app killed.
+    private var backgroundTime: BackgroundUploadTime?
 
     private func beginBackgroundTask() {
         endBackgroundTaskIfNeeded()
-        bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "PendingPostBroadcast", expirationHandler: nil)
+        backgroundTime = BackgroundUploadTime(name: "PendingPostBroadcast")
     }
 
     private func endBackgroundTaskIfNeeded() {
-        guard bgTaskId != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(bgTaskId)
-        bgTaskId = .invalid
+        backgroundTime?.end()
+        backgroundTime = nil
     }
     #else
     private func beginBackgroundTask() {}

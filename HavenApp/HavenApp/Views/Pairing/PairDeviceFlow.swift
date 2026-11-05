@@ -210,6 +210,8 @@ final class PairDeviceFlow: ObservableObject {
         // for a device the person didn't mean to add.
         step = .confirmRole(text: MeshPairing.roleConfirmText(role: payload.role, name: payload.name),
                             short: MeshPairing.shortAddress(payload.mesh))
+        // The hello must go out while A's ack can still reach this side.
+        startTicker()
         return nil
     }
 
@@ -281,8 +283,12 @@ final class PairDeviceFlow: ObservableObject {
         }
     }
 
-    /// The person tapped Add on the role confirm.
+    /// The person tapped Add on the role confirm. Past the step's deadline
+    /// (MeshPairingConfirmWindow) it fails rather than store or send.
     func roleConfirmed() {
+        if let left = confirmSecondsLeft(now: Self.now), !MeshPairingConfirmWindow.mayConfirm(secondsLeft: left) {
+            return fail(MeshPairing.expiredText)
+        }
         if session != nil {
             guard let device = pending else { return }
             store(device)
@@ -365,6 +371,17 @@ final class PairDeviceFlow: ObservableObject {
         secondsLeft = nil
     }
 
+    /// Seconds left on the role confirm: A counts from the hello, B from its scan.
+    private func confirmSecondsLeft(now: Int) -> Int? {
+        if session != nil, let helloAt {
+            return MeshPairingConfirmWindow.secondsLeftForA(helloAt: helloAt, now: now)
+        }
+        if session == nil, let joiner {
+            return MeshPairingConfirmWindow.secondsLeftForB(scannedAt: joiner.scannedAt, now: now)
+        }
+        return nil
+    }
+
     /// The window that's running out, so an unanswered code says so on its
     /// own instead of waiting forever.
     private func tick() {
@@ -377,6 +394,8 @@ final class PairDeviceFlow: ObservableObject {
             if let helloAt { left = MeshPairing.scanWindow - (now - helloAt) }
         case .joined:
             if let joiner { left = MeshPairing.ackWindow - (now - joiner.scannedAt) }
+        case .confirmRole:
+            left = confirmSecondsLeft(now: now)
         default:
             left = nil
         }
@@ -455,7 +474,8 @@ private struct PairDeviceSteps: View {
                 Text("\(name) scanned this device. Scan its screen to finish.")
                     .font(.appBody)
                 PairScanView(title: "Point the camera at \(name)'s code",
-                             validate: { MeshPairing.parse($0, ownMesh: nil).failureText }) { flow.scannedTheirCode($0) }
+                             validate: { MeshPairing.parse($0, ownMesh: nil).failureText },
+                             onCancel: { flow.cancel() }) { flow.scannedTheirCode($0) }
                     .id(flow.scanToken)
                 if PairDeviceFlow.offersAccept, !words.isEmpty {
                     Divider()
@@ -488,6 +508,11 @@ private struct PairDeviceSteps: View {
                 Text(short)
                     .font(.appSystem(size: 12, design: .monospaced))
                     .foregroundColor(.secondary)
+                if let secondsLeft = flow.secondsLeft {
+                    Text("Tap Add within \(secondsLeft / 60):\(String(format: "%02d", secondsLeft % 60))")
+                        .font(.appCaption.monospacedDigit())
+                        .foregroundColor(.secondary)
+                }
                 HStack {
                     Button("Cancel", role: .cancel) { flow.cancel() }
                     Spacer()
@@ -535,7 +560,8 @@ private struct ScanFirstCode: View {
     var body: some View {
         if scanning {
             PairScanView(title: "Point the camera at your other device's code",
-                         validate: { flow.scannedFirstCode($0) }) { _ in scanning = false }
+                         validate: { flow.scannedFirstCode($0) },
+                         onCancel: { scanning = false }) { _ in scanning = false }
         } else {
             Button {
                 scanning = true

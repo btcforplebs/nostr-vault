@@ -208,12 +208,12 @@ struct NostrIntroStep: View {
     }
 
     private func copy(_ value: String) {
-        #if os(iOS)
-        UIPasteboard.general.string = value
-        #else
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
-        #endif
+        // The nsec card's copy stays on this device and expires; the npub is public.
+        if value.lowercased().hasPrefix("nsec1") {
+            PlatformClipboard.copySecret(value)
+        } else {
+            PlatformClipboard.copy(value)
+        }
         withAnimation(WizardAnimations.springGentle) { copiedKey = value }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             if copiedKey == value {

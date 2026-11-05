@@ -91,8 +91,12 @@ extension DMService {
                 isFromMe: isFromMe
             )
             // Kept even from a blocked sender (hidden, not lost), but never unread.
-            let unread = BlockedPeople.mayAlert(sender: senderPubkey, isFromMe: isFromMe,
-                                                blocked: ConfigService.shared.activeAccountBlockedHexPubkeys)
+            // Nor into the thread open on screen (DMUnreadRule).
+            let unread = DMUnreadRule.countsAsUnread(
+                mayAlert: BlockedPeople.mayAlert(sender: senderPubkey, isFromMe: isFromMe,
+                                                 blocked: ConfigService.shared.activeAccountBlockedHexPubkeys),
+                conversation: counterpartyPubkey, visibleConversation: visibleConversation,
+                appInForeground: LocalNotificationService.shared.appInForeground)
 
             #if DEBUG
             print("Received DM from \(senderPubkey.prefix(8)): \(content.prefix(50))")

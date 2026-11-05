@@ -247,8 +247,12 @@ extension DMService {
                 isFromMe: isFromMe,
                 isNIP04: true
             )
-            let unread = BlockedPeople.mayAlert(sender: event.pubkey, isFromMe: isFromMe,
-                                                blocked: ConfigService.shared.activeAccountBlockedHexPubkeys)
+            // Nor into the thread open on screen (DMUnreadRule).
+            let unread = DMUnreadRule.countsAsUnread(
+                mayAlert: BlockedPeople.mayAlert(sender: event.pubkey, isFromMe: isFromMe,
+                                                 blocked: ConfigService.shared.activeAccountBlockedHexPubkeys),
+                conversation: counterpartyPubkey, visibleConversation: visibleConversation,
+                appInForeground: LocalNotificationService.shared.appInForeground)
 
             if let idx = conversations.firstIndex(where: { $0.id == counterpartyPubkey }) {
                 guard !conversations[idx].messages.contains(where: { $0.id == event.id }) else { return }

@@ -33,13 +33,13 @@ struct BlockedSettingsView: View {
                         .textFieldStyle(.roundedBorder)
                         .autocorrectionDisabled()
                     Button("Block") {
-                        if searchInput.starts(with: "npub1") {
-                            configService.blockProfile(searchInput.trimmingCharacters(in: .whitespacesAndNewlines))
+                        if let npub = NpubValidation.typedNpub(searchInput) {
+                            configService.blockProfile(npub)
                             searchInput = ""
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!searchInput.starts(with: "npub1"))
+                    .disabled(NpubValidation.typedNpub(searchInput) == nil)
                 }
             } header: {
                 Text("Block Someone").settingInfo(.accountBlocked)
