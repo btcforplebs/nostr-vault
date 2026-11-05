@@ -91,12 +91,16 @@ extension FeedView {
     /// Shows a grouping: ordered by activity, but frozen while the feed is
     /// on screen. A loading feed sorts freely: it is being refilled anyway.
     private func applyThreads(_ built: [FeedThread<FeedNote>], fetchesReplies: Bool) {
-        if fetchesReplies || feedService.isLoadingFeed {
-            feedThreads = built
-            frozenThreadKeys = [:]
-        } else {
-            (feedThreads, frozenThreadKeys) = FeedThreadGrouping.applyFrozenOrder(built, frozenKeys: frozenThreadKeys)
+        let place = {
+            if fetchesReplies || feedService.isLoadingFeed {
+                feedThreads = built
+                frozenThreadKeys = [:]
+            } else {
+                (feedThreads, frozenThreadKeys) = FeedThreadGrouping.applyFrozenOrder(built, frozenKeys: frozenThreadKeys)
+            }
         }
+        // New posts dropping in at the top: the new cards come down with them.
+        if newPostsDropping { withAnimation(Motion.dropIn, place) } else { place() }
         // Ask for every missing root now, in one batch, rather than from
         // each card's onAppear: a fast scroll reaches cards faster than a
         // relay round trip, so each one sat on its loading header.
@@ -342,6 +346,11 @@ extension FeedView {
                                         waiting: feedService.pendingNotes.count,
                                         isLoading: feedService.isLoadingFeed,
                                         postOpen: expandedNoteId != nil) else { return }
+            // At the top the new posts drop in and push the feed down.
+            if FeedStayPut.dropsIn(isAtTop: isAtTop) {
+                dropInPendingNotes()
+                return
+            }
             // Below the top, the post being read stays put while the new
             // ones go in above it (the layout switch's anchor, FeedView+Layout).
             let reading = FeedStayPut.keepsReading(isAtTop: isAtTop) ? topVisibleNoteId() : nil
@@ -353,6 +362,20 @@ extension FeedView {
         }
         autoLoadWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// At the top: the waiting posts drop in from behind the top bar and push
+    /// the feed down. In the threaded layout the cards regroup a moment
+    /// later; `applyThreads` animates that too while the drop-in is armed.
+    func dropInPendingNotes() {
+        newPostsDropWork?.cancel()
+        withAnimation(Motion.dropIn) {
+            newPostsDropping = true
+            feedService.applyPendingNotes()
+        }
+        let work = DispatchWorkItem { newPostsDropping = false }
+        newPostsDropWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + NewPostsDropIn.window, execute: work)
     }
 
     // MARK: - Feed Actions (environment for FeedNoteRow)

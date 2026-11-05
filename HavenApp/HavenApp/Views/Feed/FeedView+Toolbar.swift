@@ -81,6 +81,12 @@ extension FeedView {
     /// Loads the waiting posts, then `scrollToTop`.
     func newPostsButton(compact: Bool, scrollToTop: @escaping () -> Void) -> some View {
         Button(action: {
+            // At the top there is nowhere to jump: the posts drop in.
+            if FeedStayPut.dropsIn(isAtTop: isAtTop) {
+                dropInPendingNotes()
+                resortThreads()
+                return
+            }
             feedService.applyPendingNotes()
             resortThreads()
             scrollToTop()

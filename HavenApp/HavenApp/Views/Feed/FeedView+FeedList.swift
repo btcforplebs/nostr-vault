@@ -227,6 +227,7 @@ extension FeedView {
                             ForEach(feedThreads) { thread in
                                 feedThreadCard(thread, proxy: proxy)
                                 .padding(.horizontal, 12)
+                                .transition(newPostsDropping ? NewPostsDropIn.transition : .opacity)
                                 .onAppear { prefetchAhead(ofThread: thread.rootId) }
                                 .trackFeedVisibility(thread.rootId, in: visibleRows)
                             }
@@ -257,6 +258,7 @@ extension FeedView {
                                     feedNoteRowContent(note: note, profile: profile, rowData: rowData, parentIsNext: parentIsNext, isExpanded: isExpanded, proxy: proxy)
                                 }
                             }
+                            .transition(newPostsDropping ? NewPostsDropIn.transition : .opacity)
                             .onAppear { prefetchAhead(ofNote: note.id) }
                             .trackFeedVisibility(note.id, in: visibleRows)
                             #else
@@ -270,6 +272,7 @@ extension FeedView {
                                     showingNoteId = note.id
                                 }
                             }
+                            .transition(newPostsDropping ? NewPostsDropIn.transition : .opacity)
                             .onAppear { prefetchAhead(ofNote: note.id) }
                             #endif
                         }

@@ -177,6 +177,12 @@ enum Motion {
     /// overshoot is the only part of the motion the eye actually lands on.
     static var scrollJump: Animation { spring(0.45, 0.9) }
 
+    /// New posts dropping in at the top of the feed from behind the top bar,
+    /// pushing the posts below them down. Quick and snappy: a touch less
+    /// damped than `chrome`, so the arrival has a little give, but not the
+    /// bounce of `pop`.
+    static var dropIn: Animation { spring(0.32, 0.8) }
+
     /// A dragged element returning to rest after a gesture that did not commit.
     static var snapBack: Animation { spring(0.32, 0.72) }
 
