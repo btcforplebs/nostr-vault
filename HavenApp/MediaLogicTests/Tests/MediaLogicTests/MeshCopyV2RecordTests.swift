@@ -70,6 +70,28 @@ final class MeshCopyV2ForgetTests: XCTestCase {
         XCTAssertEqual(r.syncDue(now: MeshCopyV2.syncEvery), ["npub1kept"])
     }
 
+    /// Both Remove device sites forget the peer, and forgetting revokes its
+    /// copy tokens in the engine (Tron's must-fix). Positive control: each
+    /// file is found and holds its removal.
+    func testRemoveDeviceRevokesCopyAccess() throws {
+        let app = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("HavenApp")
+        func source(_ path: String) throws -> String {
+            try String(contentsOf: app.appendingPathComponent(path), encoding: .utf8)
+        }
+        for path in ["Services/FipsMeshDevices.swift", "Views/Settings/FipsMesh/MacFipsMeshSettingsView.swift"] {
+            let text = try source(path)
+            XCTAssertTrue(text.contains("MeshDevicesLogic.removing(npub: device.npub"), path)
+            XCTAssertTrue(text.contains("MeshCopyV2Service.shared.forget(peer: device.npub)"), path)
+        }
+        let service = try source("Services/Relay/MeshCopyV2Service.swift")
+        let forget = try XCTUnwrap(service.range(of: "func forget(peer: String) {"))
+        let body = service[forget.upperBound...].prefix(400)
+        XCTAssertTrue(body.contains("RevokeCopyTokensC("), "forget must revoke the device's copy tokens")
+    }
+
     func testForgetLeavesAnotherPeersPending() {
         var r = MeshCopyV2.Record()
         r.pending = .init(peer: "npub1kept", name: "", freshStart: true)

@@ -80,9 +80,13 @@ final class MeshCopyV2Service: ObservableObject {
         _ = CancelCopyC()
     }
 
-    /// Remove device: B stops copying from it and never catches up with it
-    /// again. A running copy with it is stopped (Tron's review of #1790).
+    /// Remove device, both sides (any device can be A or B; Tron's review of
+    /// #1788/#1790). As A: the engine drops that device's copy tokens and the
+    /// copies they could read, on disk too. As B: a running copy with it is
+    /// stopped, and it is never resumed or caught up with again.
     func forget(peer: String) {
+        let revoked = peer.withCString { RevokeCopyTokensC(mutating($0)) }
+        if revoked == 0 { RelayProcessManager.shared.addLog("Mesh copy: a removed device's copy access was revoked") }
         if current == peer { cancel() }
         record.forget(peer)
     }
