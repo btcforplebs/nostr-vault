@@ -44,6 +44,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -78,6 +81,7 @@ class SetupWizardViewModel @Inject constructor(
     internal val relayImportService: RelayImportService,
     internal val statsService: StatsService,
     @ApplicationContext internal val appContext: Context,
+    internal val firstRunImport: com.nostrvault.service.FirstRunImport,
 ) : ViewModel() {
 
     // Navigation
@@ -232,11 +236,21 @@ class SetupWizardViewModel @Inject constructor(
     /** The account the rows were checked for; another key checks again. */
     internal var relayCheckPubkey: String? = null
 
-    /** The import tour runs the app-wide import, so it outlives this screen. */
-    val tourIsImporting = relayImportService.isImporting
-    val tourImportCompleted = relayImportService.importCompleted
-    val tourImportProgress = relayImportService.importProgress
-    val tourImportStatus = relayImportService.importStatusMessage
+    /**
+     * The tour waits on the relay's own `setup` job (FirstRunImport, the new engine), which outlives this screen. In
+     * on done or partial; the old stopped-vault import mode is not used on first run.
+     */
+    val tourIsImporting: StateFlow<Boolean> = firstRunImport.state
+        .map { it == com.nostrvault.service.FirstRunImport.State.Starting || it is com.nostrvault.service.FirstRunImport.State.Bringing }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val tourImportCompleted: StateFlow<Boolean> = firstRunImport.state
+        .map { it is com.nostrvault.service.FirstRunImport.State.In }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    /** No percentage from a job: the bar shows activity, not a made-up fraction. */
+    val tourImportProgress: StateFlow<Float> = MutableStateFlow(-1f)
+    val tourImportStatus: StateFlow<String> = firstRunImport.state
+        .map { com.nostrvault.setup.FirstRunTour.statusLine(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
     /** The Ready card's counts once the import is done: null while counting, then only the real ones ([ReadyCounts]). */
     internal val _tourCounts = MutableStateFlow<com.nostrvault.setup.ReadyCounts?>(null)

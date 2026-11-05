@@ -40,6 +40,7 @@ class SetupWizardNewToVaultTest {
             relayImportService = mockk(relaxed = true),
             statsService = mockk(relaxed = true),
             appContext = mockk(relaxed = true),
+            firstRunImport = mockk(relaxed = true) { io.mockk.every { state } returns kotlinx.coroutines.flow.MutableStateFlow(com.nostrvault.service.FirstRunImport.State.Idle) },
         )
         viewModel.choosePath(SetupPath.USE_NOSTR)
     }

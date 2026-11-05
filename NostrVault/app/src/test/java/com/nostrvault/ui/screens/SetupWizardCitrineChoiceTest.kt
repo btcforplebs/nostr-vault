@@ -54,6 +54,7 @@ class SetupWizardCitrineChoiceTest {
             relayImportService = mockk(relaxed = true),
             statsService = mockk(relaxed = true),
             appContext = appContext,
+            firstRunImport = mockk(relaxed = true) { io.mockk.every { state } returns kotlinx.coroutines.flow.MutableStateFlow(com.nostrvault.service.FirstRunImport.State.Idle) },
         )
     }
 

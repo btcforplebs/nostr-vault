@@ -388,6 +388,15 @@ object HavenBridge {
      */
     external fun getImportResult(): String?
 
+    /** Every import job as JSON (haven-go ImportJobsC); null before the relay has a data dir. Parse with ImportJobs. */
+    external fun importJobs(): String?
+
+    /** RunImportJobC: 0 started · 1 unknown job · 2 busy (a job is running) · 3 relay not running. */
+    external fun runImportJob(name: String): Int
+
+    /** CancelImportJobC: 0 cancelling · 1 not running. */
+    external fun cancelImportJob(name: String): Int
+
     /**
      * Moving in's Skip: stops the list history scan; what it found so far is
      * kept and the import carries on. True when a scan was running.

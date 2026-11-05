@@ -222,6 +222,9 @@ internal fun VaultDashboardContent(
         // A list another app (or this one) just wiped, from the vault's history.
         ListShrinkBanner()
 
+        // ── Still to bring in (the relay's import jobs past setup) ──
+        StillToBringInCard()
+
         // ── Your devices ───────────────────────────────────────
         YourDevicesCard(
             onAddDevice = { onOpenScreen(Screen.PairDevice) },
