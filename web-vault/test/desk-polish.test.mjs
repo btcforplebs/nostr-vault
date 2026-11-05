@@ -46,7 +46,7 @@ test("the desktop sections are a slim left rail in the iPad's order, and the Fee
   const side = src("desktop/Sidebar.jsx")
   // The rail's sections (rail/rail-favs.js), in docs/SPACE_LAYOUT.md's default order; Settings is the foot.
   const order = src("desktop/rail/rail-favs.js").match(/export const RAIL_SECTIONS = \[(.*)\]$/m)[1]
-  assert.deepEqual([...order.matchAll(/"(\w+)"/g)].map(m => m[1]), ["feed", "search", "profile", "wot", "vault", "messages"])
+  assert.deepEqual([...order.matchAll(/"(\w+)"/g)].map(m => m[1]), ["feed", "search", "profile", "wot", "vault", "messages", "notifications"])
   assert.match(side, /<span class="side-gap" aria-hidden="true" \/>\s*\{row\("settings", "Settings", "g ,"\)\}/, "Settings at the foot")
   const css = src("styles/desktop.css")
   assert.match(css, /^\.desk-app \{[^}]*--rail-w: 68px;/m, "the iPad rail's width (BottomTabBar.railWidth)")

@@ -8,7 +8,7 @@ import { pinHref, pinKey, relayName, feedPinToWeb } from "./rail-favs.js"
 import { Icon, ICON } from "../icons.jsx"
 
 // Each drawn section's name and its shortcut (desktop/keys.js), for the tooltips.
-export const SECTION = { feed: ["Feed", "g f"], search: ["Search", "/"], messages: ["Messages", "g m"], wot: ["WoT", "g w"], vault: ["Vault", "g v"], profile: ["Profile", "g p"] }
+export const SECTION = { feed: ["Feed", "g f"], search: ["Search", "/"], messages: ["Messages", "g m"], wot: ["WoT", "g w"], vault: ["Vault", "g v"], profile: ["Profile", "g p"], notifications: ["Notifications", ""] }
 export const KIND_NAME = { person: "Person", hashtag: "Hashtag", list: "List", relay: "Relay", feed: "Feed" }
 
 /** A feed pin's name, as the Feed's picker says it (iPhone FeedMode.displayName). */

@@ -11,11 +11,13 @@ import { ICONS, Icon, Chevron, Menu, MenuItem } from "./vault-ui.jsx"
 export const MESSAGES_PAGE = { id: "messages", title: "Messages", href: "#/messages" }
 /** Bookmarks (kind 10003, BookmarksScreen.jsx), a page of its own too (parity N1). */
 export const BOOKMARKS_PAGE = { id: "bookmarks", title: "Bookmarks", href: "#/bookmarks" }
+/** Notifications (NotificationsScreen.jsx), reached from the Vault on a phone (parity #31). */
+export const NOTIFICATIONS_PAGE = { id: "notifications", title: "Notifications", href: "#/notifications" }
 
 /** What the closed pill and the Messages item say, from the page open (`current`: a Vault mode or "messages"), the
  *  modes with news (`fresh`) and the unread message count. Pure, for the tests. */
 export function pagesMenuText(current, fresh, unread) {
-  const page = current === MESSAGES_PAGE.id ? MESSAGES_PAGE : current === BOOKMARKS_PAGE.id ? BOOKMARKS_PAGE : MODES.find(x => x.id === current) ?? MODES[0]
+  const page = [MESSAGES_PAGE, BOOKMARKS_PAGE, NOTIFICATIONS_PAGE].find(x => x.id === current) ?? MODES.find(x => x.id === current) ?? MODES[0]
   const elsewhere = fresh.size > 0 || (current !== MESSAGES_PAGE.id && unread > 0)
   const title = `Vault: ${page.title}${unread > 0 ? `, ${unread} unread ${unread === 1 ? "message" : "messages"}` : ""}`
   return { page, elsewhere, title, count: unread > 0 ? badgeCount(unread) : null }
@@ -38,6 +40,9 @@ export function VaultPagesMenu({ ctx, current, fresh = new Set(), onPick }) {
       </MenuItem>
       <MenuItem on={current === BOOKMARKS_PAGE.id} onClick={() => { if (current !== BOOKMARKS_PAGE.id) location.hash = BOOKMARKS_PAGE.href }}>
         <Icon d={ICONS.bookmarks} />{BOOKMARKS_PAGE.title}
+      </MenuItem>
+      <MenuItem on={current === NOTIFICATIONS_PAGE.id} onClick={() => { if (current !== NOTIFICATIONS_PAGE.id) location.hash = NOTIFICATIONS_PAGE.href }}>
+        <Icon d={ICONS.bell} />{NOTIFICATIONS_PAGE.title}
       </MenuItem>
       <hr />
       <MenuItem onClick={openDashboard}><Icon d={ICONS.dashboard} />Vault Dashboard</MenuItem>

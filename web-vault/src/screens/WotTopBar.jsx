@@ -81,7 +81,7 @@ export function LayerMenu({ layer, counts, onPick, onRebuild, rebuilding, missin
 }
 
 /** The right capsule: Find someone, then Follow you back (a filter: the people it leaves out go dim). */
-export function WotToolbar({ searchOpen, onSearch, followsBack, onFollowsBack }) {
+export function WotToolbar({ searchOpen, onSearch, followsBack, onFollowsBack, listOpen = false, onList }) {
   return (
     <div class="wot-pill wot-tools" role="toolbar" aria-label="Web of Trust tools">
       <button type="button" class={`wot-tool${searchOpen ? " on" : ""}`} aria-pressed={searchOpen} title="Find someone" aria-label="Find someone" onClick={onSearch}>
@@ -91,6 +91,12 @@ export function WotToolbar({ searchOpen, onSearch, followsBack, onFollowsBack })
       <button type="button" class={`wot-tool${followsBack ? " on" : ""}`} aria-pressed={followsBack} title="Follow you back" aria-label="Follow you back" onClick={onFollowsBack}>
         <WotIcon name="followsBack" />
       </button>
+      {onList && <>
+        <span class="wot-tool-divider" aria-hidden="true" />
+        <button type="button" class={`wot-tool${listOpen ? " on" : ""}`} aria-pressed={listOpen} title="See your web as a list" aria-label="See your web as a list" onClick={onList}>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" /></svg>
+        </button>
+      </>}
     </div>
   )
 }

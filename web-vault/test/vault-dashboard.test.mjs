@@ -116,14 +116,15 @@ test("Who can reach you and Vault settings: the phone's words, no Mac or relay-l
   assert.deepEqual(set.map(x => [x.title, x.value]), [["Relays", "6"], ["Who Can Reach You", "2 hops"], ["Media Servers", "2"]])
 })
 
-test("Keep it full: import notes since its start, media backup and notes export, no Import media", () => {
+test("Keep it full: import notes since its start, media backup and notes export, no Import media (and the page says why)", () => {
   const k = KeepFullSection({ startDate: "2023-01-01", history: {} })
-  const r = rows(k)
+  const r = rows(k).filter(x => x.title)
+  assert.ok(JSON.stringify(k).includes("Import media isn't on the web yet"), "parity #30: said on the page")
   assert.deepEqual(r.map(x => x.title), ["Import notes", "Back up media", "Export notes"])
   assert.equal(r[0].detail, "Since Jan 2023. Never ran.")
   assert.deepEqual(r.slice(1).map(x => x.detail), ["Never made.", "Never made."])
   assert.deepEqual(r.map(x => x.children.props.title), ["Import", "Back up", "Export"])
-  const running = rows(KeepFullSection({ startDate: "2023-01-01", importing: { progress: 0.5, text: "Found notes from 2024-01-01... (3 found)" } }))
+  const running = rows(KeepFullSection({ startDate: "2023-01-01", importing: { progress: 0.5, text: "Found notes from 2024-01-01... (3 found)" } })).filter(x => x.title)
   assert.equal(running[0].progress, 0.5); assert.equal(running[1].children.props.disabled, true, "one job at a time")
 })
 

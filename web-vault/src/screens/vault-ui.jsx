@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "preact/hooks"
 
 export const ICONS = {
   bookmarks: "M6 3h12v18l-6-4-6 4z",
+  bell: "M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0",
   activity: "M3 13h5l1.5 3h5L16 13h5M3 13l2-7h14l2 7v6H3z",
   notes: "M6 3h9l5 5v13H6zM14 3v6h6M9 13h6M9 17h6",
   articles: "M6 3h9l5 5v13H6zM14 3v6h6M9 12h3M9 16h6M14 12h1",

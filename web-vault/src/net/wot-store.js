@@ -45,7 +45,7 @@ export const emptyKept = () => ({ lists: new Map(), misses: new Map(), checkedAt
 const signedInNow = () => globalThis.localStorage ? loadSession(globalThis.localStorage)?.pubkey : undefined
 
 export function wotStore(pubkey, idb = globalThis.indexedDB, signedIn = signedInNow) {
-  if (!idb || !pubkey) return { load: async () => emptyKept(), save: async () => {} }
+  if (!idb || !pubkey) return { load: async () => emptyKept(), save: async () => {}, count: async () => 0, clear: async () => {} }
   if (idb === globalThis.indexedDB && stores.has(pubkey)) return stores.get(pubkey)
   const store = openStore(pubkey, idb, signedIn)
   if (idb === globalThis.indexedDB) stores.set(pubkey, store)
@@ -99,6 +99,15 @@ function openStore(pubkey, idb, signedIn) {
         }
         return { lists, misses, checkedAt: checked }
       } catch { return none() }
+    },
+    /** How many follows' lists (and known misses) are kept: the dashboard's Cache row. 0 when it can't tell. */
+    async count() {
+      try { let n = 0; await tx("readonly", store => { store.count().onsuccess = e => { n = e.target.result ?? 0 } }); return n } catch { return 0 }
+    },
+    /** Empties the kept lists and the last-check time (the dashboard's Clear cache): the next load downloads them
+     *  again. The open connection stays, so this page keeps working. */
+    async clear() {
+      try { await tx("readwrite", (store, meta) => { store.clear(); meta.clear() }) } catch {}
     },
     async save(events, checkedAt, misses = [], missedAt = checkedAt) {
       try {
