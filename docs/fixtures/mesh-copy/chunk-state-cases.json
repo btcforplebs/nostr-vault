@@ -1,0 +1,399 @@
+{
+  "cases": [
+    {
+      "name": "fresh: no state",
+      "manifest": {
+        "v": 2,
+        "id": "adbec2d29fc4cc2d0f84826f715304cb",
+        "state": "ready",
+        "error": "",
+        "owner": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581",
+        "created_at": 1767000000,
+        "progress": {
+          "stores_done": 9,
+          "stores_total": 9,
+          "files_done": 2,
+          "files_total": 2
+        },
+        "counts": {
+          "outbox": 3
+        },
+        "files": {
+          "count": 2,
+          "bytes": 8388608
+        },
+        "settings": "included",
+        "parts": [
+          {
+            "name": "notes",
+            "size": 9000000,
+            "sha256": "3f7adf08de83e643fe6db5e279ce58821ab6504a1d032884f0939d3876035afa",
+            "chunk": 4194304,
+            "chunks": [
+              "23a07a22b926ee7679a427b4c6f9b7c645136f0fbf0a9dfe1809fe21f86e004d",
+              "e38630473598185ab6044117773a2615e334677f44159cc7346b7b8da5bbe422",
+              "1f950d9394d50283e1b608ee9f01bcaee8218b85b2f24bf6848f8b16337f762d"
+            ]
+          },
+          {
+            "name": "media",
+            "size": 8388608,
+            "sha256": "0c2d2f69545a972fe1742cce4cafd87f10212b6a94e4a67224f4197c315c34c6",
+            "chunk": 4194304,
+            "chunks": [
+              "15b1992c75fc136cf648067c2575104a8523cbad59a4e02ced7127bad80b9fe6",
+              "1d52d162e80eb3c70f4236c84e9deff2e6879b449b063020c9c99e151c5992b3"
+            ]
+          }
+        ],
+        "zip_key": "b3e534c4c3d6a38b912312b89ff6b02c0417ccaa81a1cf08e5237126529d5bcc"
+      },
+      "state": null,
+      "expect": {
+        "restart": false,
+        "need": {
+          "notes": [
+            0,
+            1,
+            2
+          ],
+          "media": [
+            0,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "half done",
+      "manifest": {
+        "v": 2,
+        "id": "adbec2d29fc4cc2d0f84826f715304cb",
+        "state": "ready",
+        "error": "",
+        "owner": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581",
+        "created_at": 1767000000,
+        "progress": {
+          "stores_done": 9,
+          "stores_total": 9,
+          "files_done": 2,
+          "files_total": 2
+        },
+        "counts": {
+          "outbox": 3
+        },
+        "files": {
+          "count": 2,
+          "bytes": 8388608
+        },
+        "settings": "included",
+        "parts": [
+          {
+            "name": "notes",
+            "size": 9000000,
+            "sha256": "3f7adf08de83e643fe6db5e279ce58821ab6504a1d032884f0939d3876035afa",
+            "chunk": 4194304,
+            "chunks": [
+              "23a07a22b926ee7679a427b4c6f9b7c645136f0fbf0a9dfe1809fe21f86e004d",
+              "e38630473598185ab6044117773a2615e334677f44159cc7346b7b8da5bbe422",
+              "1f950d9394d50283e1b608ee9f01bcaee8218b85b2f24bf6848f8b16337f762d"
+            ]
+          },
+          {
+            "name": "media",
+            "size": 8388608,
+            "sha256": "0c2d2f69545a972fe1742cce4cafd87f10212b6a94e4a67224f4197c315c34c6",
+            "chunk": 4194304,
+            "chunks": [
+              "15b1992c75fc136cf648067c2575104a8523cbad59a4e02ced7127bad80b9fe6",
+              "1d52d162e80eb3c70f4236c84e9deff2e6879b449b063020c9c99e151c5992b3"
+            ]
+          }
+        ],
+        "zip_key": "b3e534c4c3d6a38b912312b89ff6b02c0417ccaa81a1cf08e5237126529d5bcc"
+      },
+      "state": {
+        "v": 1,
+        "id": "adbec2d29fc4cc2d0f84826f715304cb",
+        "zip_key": "b3e534c4c3d6a38b912312b89ff6b02c0417ccaa81a1cf08e5237126529d5bcc",
+        "done": {
+          "notes": [
+            0,
+            2
+          ],
+          "media": [
+            1
+          ]
+        },
+        "failures": {}
+      },
+      "expect": {
+        "restart": false,
+        "need": {
+          "notes": [
+            1
+          ],
+          "media": [
+            0
+          ]
+        }
+      }
+    },
+    {
+      "name": "everything done",
+      "manifest": {
+        "v": 2,
+        "id": "adbec2d29fc4cc2d0f84826f715304cb",
+        "state": "ready",
+        "error": "",
+        "owner": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581",
+        "created_at": 1767000000,
+        "progress": {
+          "stores_done": 9,
+          "stores_total": 9,
+          "files_done": 2,
+          "files_total": 2
+        },
+        "counts": {
+          "outbox": 3
+        },
+        "files": {
+          "count": 2,
+          "bytes": 8388608
+        },
+        "settings": "included",
+        "parts": [
+          {
+            "name": "notes",
+            "size": 9000000,
+            "sha256": "3f7adf08de83e643fe6db5e279ce58821ab6504a1d032884f0939d3876035afa",
+            "chunk": 4194304,
+            "chunks": [
+              "23a07a22b926ee7679a427b4c6f9b7c645136f0fbf0a9dfe1809fe21f86e004d",
+              "e38630473598185ab6044117773a2615e334677f44159cc7346b7b8da5bbe422",
+              "1f950d9394d50283e1b608ee9f01bcaee8218b85b2f24bf6848f8b16337f762d"
+            ]
+          },
+          {
+            "name": "media",
+            "size": 8388608,
+            "sha256": "0c2d2f69545a972fe1742cce4cafd87f10212b6a94e4a67224f4197c315c34c6",
+            "chunk": 4194304,
+            "chunks": [
+              "15b1992c75fc136cf648067c2575104a8523cbad59a4e02ced7127bad80b9fe6",
+              "1d52d162e80eb3c70f4236c84e9deff2e6879b449b063020c9c99e151c5992b3"
+            ]
+          }
+        ],
+        "zip_key": "b3e534c4c3d6a38b912312b89ff6b02c0417ccaa81a1cf08e5237126529d5bcc"
+      },
+      "state": {
+        "v": 1,
+        "id": "adbec2d29fc4cc2d0f84826f715304cb",
+        "zip_key": "b3e534c4c3d6a38b912312b89ff6b02c0417ccaa81a1cf08e5237126529d5bcc",
+        "done": {
+          "notes": [
+            0,
+            1,
+            2
+          ],
+          "media": [
+            0,
+            1
+          ]
+        },
+        "failures": {}
+      },
+      "expect": {
+        "restart": false,
+        "need": {
+          "notes": [],
+          "media": []
+        }
+      }
+    },
+    {
+      "name": "a rebuilt zip starts over",
+      "manifest": {
+        "v": 2,
+        "id": "adbec2d29fc4cc2d0f84826f715304cb",
+        "state": "ready",
+        "error": "",
+        "owner": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581",
+        "created_at": 1767000000,
+        "progress": {
+          "stores_done": 9,
+          "stores_total": 9,
+          "files_done": 2,
+          "files_total": 2
+        },
+        "counts": {
+          "outbox": 3
+        },
+        "files": {
+          "count": 2,
+          "bytes": 8388608
+        },
+        "settings": "included",
+        "parts": [
+          {
+            "name": "notes",
+            "size": 9000000,
+            "sha256": "80cbd9ad5841905bbe2169dad37712b55c6d575b86be95b2d60607081f9bb0ee",
+            "chunk": 4194304,
+            "chunks": [
+              "7fdb8186d26154926dedbc03aa39fac8ff0a25ec98b2b9bd7d15e8c9347b788a",
+              "a335d3570bf1c5feb87626b81b7eba1357f89a9a47a7f43900190ff3f7ba5b67",
+              "2efa24a2229be1c880b6d1c84086367655ad188fac88dfc3756cad417978150c"
+            ]
+          },
+          {
+            "name": "media",
+            "size": 8388608,
+            "sha256": "0c2d2f69545a972fe1742cce4cafd87f10212b6a94e4a67224f4197c315c34c6",
+            "chunk": 4194304,
+            "chunks": [
+              "15b1992c75fc136cf648067c2575104a8523cbad59a4e02ced7127bad80b9fe6",
+              "1d52d162e80eb3c70f4236c84e9deff2e6879b449b063020c9c99e151c5992b3"
+            ]
+          }
+        ],
+        "zip_key": "ddeaa1b2f3085f1e971b3d2291b8c7b59b926e9f539d125f407a95d0f6e38e91"
+      },
+      "state": {
+        "v": 1,
+        "id": "adbec2d29fc4cc2d0f84826f715304cb",
+        "zip_key": "b3e534c4c3d6a38b912312b89ff6b02c0417ccaa81a1cf08e5237126529d5bcc",
+        "done": {
+          "notes": [
+            0,
+            1,
+            2
+          ],
+          "media": [
+            0,
+            1
+          ]
+        },
+        "failures": {}
+      },
+      "expect": {
+        "restart": true,
+        "need": {
+          "notes": [
+            0,
+            1,
+            2
+          ],
+          "media": [
+            0,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "done indexes outside the part are ignored",
+      "manifest": {
+        "v": 2,
+        "id": "adbec2d29fc4cc2d0f84826f715304cb",
+        "state": "ready",
+        "error": "",
+        "owner": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581",
+        "created_at": 1767000000,
+        "progress": {
+          "stores_done": 9,
+          "stores_total": 9,
+          "files_done": 2,
+          "files_total": 2
+        },
+        "counts": {
+          "outbox": 3
+        },
+        "files": {
+          "count": 2,
+          "bytes": 8388608
+        },
+        "settings": "included",
+        "parts": [
+          {
+            "name": "notes",
+            "size": 9000000,
+            "sha256": "3f7adf08de83e643fe6db5e279ce58821ab6504a1d032884f0939d3876035afa",
+            "chunk": 4194304,
+            "chunks": [
+              "23a07a22b926ee7679a427b4c6f9b7c645136f0fbf0a9dfe1809fe21f86e004d",
+              "e38630473598185ab6044117773a2615e334677f44159cc7346b7b8da5bbe422",
+              "1f950d9394d50283e1b608ee9f01bcaee8218b85b2f24bf6848f8b16337f762d"
+            ]
+          },
+          {
+            "name": "media",
+            "size": 8388608,
+            "sha256": "0c2d2f69545a972fe1742cce4cafd87f10212b6a94e4a67224f4197c315c34c6",
+            "chunk": 4194304,
+            "chunks": [
+              "15b1992c75fc136cf648067c2575104a8523cbad59a4e02ced7127bad80b9fe6",
+              "1d52d162e80eb3c70f4236c84e9deff2e6879b449b063020c9c99e151c5992b3"
+            ]
+          }
+        ],
+        "zip_key": "b3e534c4c3d6a38b912312b89ff6b02c0417ccaa81a1cf08e5237126529d5bcc"
+      },
+      "state": {
+        "v": 1,
+        "id": "adbec2d29fc4cc2d0f84826f715304cb",
+        "zip_key": "b3e534c4c3d6a38b912312b89ff6b02c0417ccaa81a1cf08e5237126529d5bcc",
+        "done": {
+          "notes": [
+            0,
+            1,
+            2,
+            7
+          ],
+          "media": [
+            -1
+          ]
+        },
+        "failures": {}
+      },
+      "expect": {
+        "restart": false,
+        "need": {
+          "notes": [],
+          "media": [
+            0,
+            1
+          ]
+        }
+      }
+    }
+  ],
+  "failures": [
+    {
+      "name": "first bad chunk is fetched again",
+      "before": 0,
+      "expect": {
+        "failures": 1,
+        "stop": false
+      }
+    },
+    {
+      "name": "second bad chunk is fetched again",
+      "before": 1,
+      "expect": {
+        "failures": 2,
+        "stop": false
+      }
+    },
+    {
+      "name": "third bad chunk stops the copy",
+      "before": 2,
+      "expect": {
+        "failures": 3,
+        "stop": true,
+        "error": "hash_mismatch"
+      }
+    }
+  ]
+}

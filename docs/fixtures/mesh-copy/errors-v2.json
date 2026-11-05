@@ -1,0 +1,94 @@
+{
+  "errors": [
+    {
+      "code": "auth_refused",
+      "http": 401,
+      "b": "stop",
+      "line": "Couldn't sign in to {name}"
+    },
+    {
+      "code": "not_owner",
+      "http": 403,
+      "b": "stop",
+      "line": "{name} belongs to another account"
+    },
+    {
+      "code": "not_found",
+      "http": 404,
+      "b": "restart",
+      "line": ""
+    },
+    {
+      "code": "building",
+      "http": 409,
+      "b": "wait",
+      "line": ""
+    },
+    {
+      "code": "range",
+      "http": 416,
+      "b": "refetch",
+      "line": ""
+    },
+    {
+      "code": "no_space",
+      "http": 507,
+      "b": "relays",
+      "line": "{name} is short of space; copying from your relays instead"
+    },
+    {
+      "code": "needs_space",
+      "http": null,
+      "b": "stop",
+      "line": "Needs {need} free, this device has {free}"
+    },
+    {
+      "code": "wrong_owner",
+      "http": null,
+      "b": "stop",
+      "line": "{name} belongs to another account"
+    },
+    {
+      "code": "unsupported_version",
+      "http": null,
+      "b": "stop",
+      "line": "Update this app to copy from {name}"
+    },
+    {
+      "code": "bad_manifest",
+      "http": null,
+      "b": "stop",
+      "line": "{name} sent a copy this app can't read"
+    },
+    {
+      "code": "hash_mismatch",
+      "http": null,
+      "b": "restart_next_reconnect",
+      "line": "The copy from {name} arrived damaged; it starts over next time"
+    },
+    {
+      "code": "unreachable",
+      "http": null,
+      "b": "resume_next_reconnect",
+      "line": "Waiting for {name}"
+    },
+    {
+      "code": "nothing_restored",
+      "http": null,
+      "b": "stop",
+      "line": "Nothing in the copy could be restored"
+    },
+    {
+      "code": "settings_refused",
+      "http": null,
+      "b": "continue",
+      "line": "Settings weren't copied: they held something that must stay on {name}"
+    },
+    {
+      "code": "cancelled",
+      "http": null,
+      "b": "keep_state",
+      "line": "Copy stopped"
+    }
+  ]
+}

@@ -1,0 +1,410 @@
+{
+  "now": 1767000300,
+  "cases": [
+    {
+      "name": "every key, clean",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "feed_layouts": {
+            "following": "cards",
+            "global": "compact"
+          },
+          "zaps_only": false,
+          "auto_load_new_posts": true,
+          "new_posts_pill": true,
+          "wot_depth": 2,
+          "blocked_relays": [
+            "wss://bad.example"
+          ],
+          "dm_relays": [
+            "wss://dm.example"
+          ],
+          "media_servers": [
+            "https://blossom.example"
+          ],
+          "notifications": {
+            "replies": true,
+            "zaps": false
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "empty keys",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {}
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "npub in a relay list is fine",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "blocked_relays": [
+            "wss://relay.example/npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+          ]
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "63 hex digits are fine",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "media_servers": [
+            "https://x.example/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ]
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "nsec in a string",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "dm_relays": [
+            "nsec1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "secret_value"
+      }
+    },
+    {
+      "name": "NSEC1 upper case",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "dm_relays": [
+            "NSEC1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ"
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "secret_value"
+      }
+    },
+    {
+      "name": "ncryptsec in a nested value",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "feed_layouts": {
+            "x": "ncryptsec1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+          }
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "secret_value"
+      }
+    },
+    {
+      "name": "NWC string",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "media_servers": [
+            "nostr+walletconnect://50e721e49c013f00c62cf59f2163542a9d8df02464efeb615d31051b0fddc326?relay=wss://r.example&secret=043a718774c572bd8a25adbeb1bfcd5c0256ae11cecf9f9c3f925d0e52beaf89"
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "secret_value"
+      }
+    },
+    {
+      "name": "bunker string",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "dm_relays": [
+            "bunker://3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d?relay=wss://r.example"
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "secret_value"
+      }
+    },
+    {
+      "name": "64-hex string (a raw key)",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "feed_layouts": {
+            "k": "286457afb9d80056f6f74501e5b698bb5b6bb41bd85b1a6f34502aacc0520764"
+          }
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "secret_value"
+      }
+    },
+    {
+      "name": "64-hex inside a URL",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "media_servers": [
+            "https://x.example/fa2c8cc4f28176bbeed4b736df569a34c79cd3723e9ec42f9674b4d46ac6b8b8"
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "secret_value"
+      }
+    },
+    {
+      "name": "secret in a map key",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "notifications": {
+            "nsec1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq": true
+          }
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "secret_value"
+      }
+    },
+    {
+      "name": "unknown key (mesh key)",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "mesh_nsec": "x"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "unknown_key"
+      }
+    },
+    {
+      "name": "unknown key (my devices)",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "my_devices": []
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "unknown_key"
+      }
+    },
+    {
+      "name": "bool as string",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "zaps_only": "true"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "wot depth out of range",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "wot_depth": 9
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "wot depth not whole",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "wot_depth": 1.5
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "list with a number",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "dm_relays": [
+            "wss://a.example",
+            3
+          ]
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "notifications not bool",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "keys": {
+          "notifications": {
+            "replies": "yes"
+          }
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_type"
+      }
+    },
+    {
+      "name": "v2 file",
+      "settings": {
+        "v": 2,
+        "updated_at": 1767000000,
+        "keys": {
+          "feed_layouts": {
+            "following": "cards",
+            "global": "compact"
+          },
+          "zaps_only": false,
+          "auto_load_new_posts": true,
+          "new_posts_pill": true,
+          "wot_depth": 2,
+          "blocked_relays": [
+            "wss://bad.example"
+          ],
+          "dm_relays": [
+            "wss://dm.example"
+          ],
+          "media_servers": [
+            "https://blossom.example"
+          ],
+          "notifications": {
+            "replies": true,
+            "zaps": false
+          }
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_version"
+      }
+    },
+    {
+      "name": "no updated_at",
+      "settings": {
+        "v": 1,
+        "keys": {}
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_version"
+      }
+    },
+    {
+      "name": "dated 11 minutes ahead",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000960,
+        "keys": {}
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_version"
+      }
+    },
+    {
+      "name": "keys missing",
+      "settings": {
+        "v": 1,
+        "updated_at": 1767000000
+      },
+      "expect": {
+        "ok": false,
+        "reason": "bad_version"
+      }
+    }
+  ],
+  "newest_wins": [
+    {
+      "name": "theirs newer",
+      "mine": 100,
+      "theirs": 200,
+      "expect": "theirs"
+    },
+    {
+      "name": "mine newer",
+      "mine": 200,
+      "theirs": 100,
+      "expect": "mine"
+    },
+    {
+      "name": "tie keeps mine",
+      "mine": 100,
+      "theirs": 100,
+      "expect": "mine"
+    },
+    {
+      "name": "none here",
+      "mine": null,
+      "theirs": 100,
+      "expect": "theirs"
+    },
+    {
+      "name": "none there",
+      "mine": 100,
+      "theirs": null,
+      "expect": "mine"
+    }
+  ]
+}
