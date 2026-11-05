@@ -220,6 +220,13 @@ internal fun VaultDashboardContent(
         // A list another app (or this one) just wiped, from the vault's history.
         ListShrinkBanner()
 
+        // ── Your devices ───────────────────────────────────────
+        YourDevicesCard(
+            onAddDevice = { onOpenScreen(Screen.PairDevice) },
+            // The dashboard opens pages by Screen, not by route: a device opens the Mesh list it sits in.
+            onOpenDevice = { onOpenScreen(Screen.MeshSettings) },
+        )
+
         // ── Is it safe? ────────────────────────────────────────
         val backupAt = history.notesBackup
         DashSection(
@@ -435,6 +442,8 @@ internal fun VaultDashboardContent(
             SettingLink(Icons.Filled.Image, "Media servers", null, onClick = onOpenMediaDetails)
             DashDivider()
             SettingLink(NostrVaultIcons.Logs, "Raw logs", null) { onOpenScreen(Screen.LogViewer) }
+            DashDivider()
+            SettingLink(Icons.Filled.Hub, "Mesh settings", null) { onOpenScreen(Screen.MeshSettings) }
         }
     }
 }

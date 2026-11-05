@@ -180,4 +180,10 @@ internal fun NavGraphBuilder.settingsRoutes(
             onBack = { navController.popBackStack() },
         )
     }
+
+    composable(Screen.PairDevice.route) {
+        com.nostrvault.ui.screens.pairing.PairDeviceScreen(
+            onBack = { navController.popBackStack() },
+        )
+    }
 }
