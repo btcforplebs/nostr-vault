@@ -15,10 +15,12 @@ enum SetupStoredOwnerKey {
             hexKey = NpubValidation.hexSecretKey(fromNsec: plain)
                 ?? (plain.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil ? plain : nil)
         }
+        // Only a proven mismatch clears. If the key or the npub can't be read
+        // (e.g. an npub typo that the lenient form check let through), keep it.
         guard let hexKey, let expected = NpubValidation.hexPubkey(fromNpub: npub.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            return .other
+            return .unreadable
         }
-        guard let pk = withCStrings([hexKey], { p in GetPublicKeyC(p[0]) }) else { return .other }
+        guard let pk = withCStrings([hexKey], { p in GetPublicKeyC(p[0]) }) else { return .unreadable }
         let derived = String(cString: pk)
         free(pk)
         return derived.lowercased() == expected.lowercased() ? .matches : .other
