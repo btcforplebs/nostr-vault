@@ -116,8 +116,8 @@ targets:
         CODE_SIGN_STYLE: Automatic
         "CODE_SIGN_IDENTITY[sdk=macosx*]": "Apple Development"
         ENABLE_USER_SCRIPT_SANDBOXING: NO
-        CURRENT_PROJECT_VERSION: "67"
-        MARKETING_VERSION: "3.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "3.2.0"
 
     preBuildScripts:
       - name: Check GIF Key
@@ -217,8 +217,8 @@ targets:
         GENERATE_INFOPLIST_FILE: false
         HEADER_SEARCH_PATHS: ["$(inherited)", "$(SRCROOT)/build", "$(SRCROOT)/build/ios"]
         TARGETED_DEVICE_FAMILY: "1,2"
-        CURRENT_PROJECT_VERSION: "67"
-        MARKETING_VERSION: "3.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "3.2.0"
 
     preBuildScripts:
       - name: Check GIF Key
@@ -288,8 +288,8 @@ targets:
         GENERATE_INFOPLIST_FILE: false
         CODE_SIGN_ENTITLEMENTS: NostrVaultWidgets/NostrVaultWidgets.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
-        CURRENT_PROJECT_VERSION: "67"
-        MARKETING_VERSION: "3.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "3.2.0"
         SKIP_INSTALL: YES
 
   # ── Share Extension (iOS / iPadOS) ────────────────────────
@@ -319,8 +319,8 @@ targets:
         GENERATE_INFOPLIST_FILE: false
         CODE_SIGN_ENTITLEMENTS: NostrVaultShare/NostrVaultShare.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
-        CURRENT_PROJECT_VERSION: "67"
-        MARKETING_VERSION: "3.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "3.2.0"
         SKIP_INSTALL: YES
 
 schemes:
