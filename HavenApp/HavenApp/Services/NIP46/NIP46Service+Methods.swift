@@ -28,7 +28,16 @@ extension NIP46Service {
         let sessionKey = Self.activeSignerKey()
         do {
             return try await signerRequest(userAction: userAction, queued: Self.waitsInBackgroundQueue(eventJSON: eventJSON)) {
-                try await self.callGo { withCStrings([eventJSON], { p in NIP46SignEventC(p[0]) })}
+                // After the queue wait, sign through the session recorded
+                // above, never whichever is active now: a switch to another
+                // bunker account meanwhile would put this request in front of
+                // that account's signer (signer audit 2026-11-05 #1).
+                switch NIP46SessionChoice.route(recorded: sessionKey) {
+                case .recorded(let key):
+                    return try await self.callGo { withCStrings([key, eventJSON], { p in NIP46SignEventWithC(p[0], p[1]) })}
+                case .active:
+                    return try await self.callGo { withCStrings([eventJSON], { p in NIP46SignEventC(p[0]) })}
+                }
             }
         } catch let error as NIP46Error {
             // Only something the person did (a post, a reaction): background
@@ -93,29 +102,53 @@ extension NIP46Service {
 
     func nip04Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
         try await ensureConnected()
+        let sessionKey = Self.activeSignerKey()
         return try await signerRequest(userAction: false, queued: false) {
-            try await self.callGo { withCStrings([thirdPartyPubkey, plaintext], { p in NIP46NIP04EncryptC(p[0], p[1]) })}
+            try await self.crypt("nip04_encrypt", recorded: sessionKey, peer: thirdPartyPubkey, text: plaintext) {
+                withCStrings([thirdPartyPubkey, plaintext], { p in NIP46NIP04EncryptC(p[0], p[1]) })
+            }
         }
     }
 
     func nip04Decrypt(thirdPartyPubkey: String, ciphertext: String) async throws -> String {
         try await ensureConnected()
+        let sessionKey = Self.activeSignerKey()
         return try await signerRequest(userAction: false) {
-            try await self.callGo { withCStrings([thirdPartyPubkey, ciphertext], { p in NIP46NIP04DecryptC(p[0], p[1]) })}
+            try await self.crypt("nip04_decrypt", recorded: sessionKey, peer: thirdPartyPubkey, text: ciphertext) {
+                withCStrings([thirdPartyPubkey, ciphertext], { p in NIP46NIP04DecryptC(p[0], p[1]) })
+            }
         }
     }
 
     func nip44Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
         try await ensureConnected()
+        let sessionKey = Self.activeSignerKey()
         return try await signerRequest(userAction: false, queued: false) {
-            try await self.callGo { withCStrings([thirdPartyPubkey, plaintext], { p in NIP46NIP44EncryptC(p[0], p[1]) })}
+            try await self.crypt("nip44_encrypt", recorded: sessionKey, peer: thirdPartyPubkey, text: plaintext) {
+                withCStrings([thirdPartyPubkey, plaintext], { p in NIP46NIP44EncryptC(p[0], p[1]) })
+            }
         }
     }
 
     func nip44Decrypt(thirdPartyPubkey: String, ciphertext: String) async throws -> String {
         try await ensureConnected()
+        let sessionKey = Self.activeSignerKey()
         return try await signerRequest(userAction: false) {
-            try await self.callGo { withCStrings([thirdPartyPubkey, ciphertext], { p in NIP46NIP44DecryptC(p[0], p[1]) })}
+            try await self.crypt("nip44_decrypt", recorded: sessionKey, peer: thirdPartyPubkey, text: ciphertext) {
+                withCStrings([thirdPartyPubkey, ciphertext], { p in NIP46NIP44DecryptC(p[0], p[1]) })
+            }
+        }
+    }
+
+    /// One NIP-04/NIP-44 call through the recorded session (NIP46CryptWithC),
+    /// or the active one when none was recorded (NIP46SessionChoice).
+    private func crypt(_ op: String, recorded: String, peer: String, text: String,
+                       active: @escaping @Sendable () -> UnsafeMutablePointer<CChar>?) async throws -> String {
+        switch NIP46SessionChoice.route(recorded: recorded) {
+        case .recorded(let key):
+            return try await callGo { withCStrings([key, op, peer, text], { p in NIP46CryptWithC(p[0], p[1], p[2], p[3]) }) }
+        case .active:
+            return try await callGo(active)
         }
     }
 

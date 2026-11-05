@@ -1621,15 +1621,68 @@ func NIP46SignEventC(eventJSON *C.char) *C.char {
 //
 //export NIP46SignEventWithC
 func NIP46SignEventWithC(signerPubkey *C.char, eventJSON *C.char) *C.char {
-	target := C.GoString(signerPubkey)
-	nip46Mu.RLock()
-	sess := nip46Sessions[target]
-	nip46Mu.RUnlock()
-	if sess == nil || sess.ctx.Err() != nil {
+	sess := nip46SessionFor(C.GoString(signerPubkey))
+	if sess == nil {
 		nip46LastError.Store("disconnected")
 		return nil
 	}
 	return nip46Sign(sess, eventJSON)
+}
+
+// nip46SessionFor is one signer's live session, or nil, whichever session
+// is active. A request queued for account A must reach A's signer even if
+// the person switched to bunker account B while it waited (signer audit
+// 2026-11-05 #1); the active-session calls would send it to B's signer.
+func nip46SessionFor(signerKey string) *nip46Session {
+	if signerKey == "" {
+		return nil
+	}
+	nip46Mu.RLock()
+	sess := nip46Sessions[signerKey]
+	nip46Mu.RUnlock()
+	if sess == nil || sess.client == nil || sess.ctx == nil || sess.ctx.Err() != nil {
+		return nil
+	}
+	return sess
+}
+
+// nip46CryptOps are the NIP-04/NIP-44 calls NIP46CryptWithC can make.
+var nip46CryptOps = map[string]struct {
+	timeout time.Duration
+	call    func(c *nip46.BunkerClient, ctx context.Context, peer, text string) (string, error)
+}{
+	"nip44_encrypt": {60 * time.Second, (*nip46.BunkerClient).NIP44Encrypt},
+	"nip44_decrypt": {30 * time.Second, (*nip46.BunkerClient).NIP44Decrypt},
+	"nip04_encrypt": {60 * time.Second, (*nip46.BunkerClient).NIP04Encrypt},
+	"nip04_decrypt": {30 * time.Second, (*nip46.BunkerClient).NIP04Decrypt},
+}
+
+// NIP46CryptWithC runs one NIP-04/NIP-44 encrypt or decrypt (`op`, a key of
+// nip46CryptOps) through one signer's session, like NIP46SignEventWithC.
+// Never logs in: no live session for that signer means nil.
+//
+//export NIP46CryptWithC
+func NIP46CryptWithC(signerKey *C.char, op *C.char, targetPubkey *C.char, text *C.char) *C.char {
+	nip46LastError.Store("")
+	o, ok := nip46CryptOps[C.GoString(op)]
+	if !ok {
+		nip46LastError.Store("error:unknown op")
+		return nil
+	}
+	sess := nip46SessionFor(C.GoString(signerKey))
+	if sess == nil {
+		nip46LastError.Store("disconnected")
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(sess.ctx, o.timeout)
+	defer cancel()
+	result, err := o.call(sess.client, ctx, C.GoString(targetPubkey), C.GoString(text))
+	if err != nil {
+		slog.Error("NIP46CryptWithC: failed", "op", C.GoString(op), "error", err)
+		recordNIP46Error(ctx, err)
+		return nil
+	}
+	return C.CString(result)
 }
 
 func nip46Sign(sess *nip46Session, eventJSON *C.char) *C.char {
