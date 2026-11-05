@@ -11,4 +11,11 @@ enum RelayFrame {
               let type = json.first as? String else { return nil }
         return (type, json)
     }
+
+    /// The event object of an `EVENT` frame, or nil. `["EVENT","sub"]` has no
+    /// third element, and reading it by index trapped the thread view.
+    static func event(_ message: String) -> [String: Any]? {
+        guard let frame = parse(message), frame.type == "EVENT", frame.json.count >= 3 else { return nil }
+        return frame.json[2] as? [String: Any]
+    }
 }

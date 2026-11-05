@@ -17,4 +17,12 @@ final class RelayFrameTests: XCTestCase {
         XCTAssertEqual(RelayFrame.parse(#"["EOSE","feed-x"]"#)?.type, "EOSE")
         XCTAssertEqual(RelayFrame.parse(#"["NOTICE"]"#)?.json.count, 1)
     }
+
+    /// `["EVENT","sub"]` read `json[2]` unchecked in the thread view.
+    func testAnEventFrameWithoutItsEventIsSkippedNotACrash() {
+        for frame in ["[]", #"["EVENT"]"#, #"["EVENT","sub"]"#, #"["EVENT","sub","x"]"#, #"["EOSE","sub",{}]"#] {
+            XCTAssertNil(RelayFrame.event(frame), frame)
+        }
+        XCTAssertEqual(RelayFrame.event(#"["EVENT","sub",{"id":"a"}]"#)?["id"] as? String, "a")
+    }
 }

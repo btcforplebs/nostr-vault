@@ -61,9 +61,8 @@ extension FeedService {
                 .receive(on: DispatchQueue.main)
                 .sink { msg in
                     guard !finished,
-                          let data = msg.data(using: .utf8),
-                          let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-                          let type = json[0] as? String else { return }
+                          let frame = RelayFrame.parse(msg) else { return }
+                    let type = frame.type, json = frame.json
 
                     if type == "EOSE" {
                         eoseReceived += 1
