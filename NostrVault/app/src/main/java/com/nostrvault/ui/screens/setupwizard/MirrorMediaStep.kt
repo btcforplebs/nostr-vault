@@ -8,14 +8,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.launch
-import java.io.File
 import java.net.URL
 
 // ══════════════════════════════════════════════════════════════════
@@ -29,7 +27,6 @@ internal fun MirrorMediaStep(viewModel: SetupWizardViewModel) {
     val mirrorProgress by viewModel.mirrorProgress.collectAsState()
     val mirrorStatus by viewModel.mirrorStatus.collectAsState()
     val mirrorCompleted by viewModel.mirrorCompleted.collectAsState()
-    val context = LocalContext.current
 
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Server Sync", "Backup")
@@ -38,13 +35,8 @@ internal fun MirrorMediaStep(viewModel: SetupWizardViewModel) {
     val mediaPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        uri?.let {
-            val tempFile = File(context.cacheDir, "media_import.zip")
-            context.contentResolver.openInputStream(it)?.use { input ->
-                tempFile.outputStream().use { output -> input.copyTo(output) }
-            }
-            viewModel.importMediaArchive(tempFile.absolutePath)
-        }
+        // Copied for the engine off the main thread, in the view model (audit #17).
+        uri?.let(viewModel::importMediaArchive)
     }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {

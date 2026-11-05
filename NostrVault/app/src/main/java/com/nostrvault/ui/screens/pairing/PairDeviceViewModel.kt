@@ -8,6 +8,9 @@ import com.nostrvault.di.ApplicationScope
 import com.nostrvault.fips.DeviceRole
 import com.nostrvault.fips.FipsMeshManager
 import com.nostrvault.fips.HomeVaultSender
+import com.nostrvault.fips.MeshCopyClient
+import com.nostrvault.fips.MeshCopyStarter
+import com.nostrvault.fips.MeshCopyV2
 import com.nostrvault.fips.MeshPairing
 import com.nostrvault.fips.MeshPairingHello
 import com.nostrvault.fips.MeshPairingJoiner
@@ -42,6 +45,7 @@ class PairDeviceViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
     private val homeVault: HomeVaultSender,
+    private val copyStarter: MeshCopyStarter,
     @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
@@ -61,8 +65,11 @@ class PairDeviceViewModel @Inject constructor(
         /** B: A linked by Accept, so this side checks the words too (Tron 2). */
         data class CheckWords(val words: List<String>, val shortAddress: String, val name: String, val tapped: Boolean) : Ui
         data class SwitchAccount(val text: String, val npub: String) : Ui
-        /** [keepOpen]: A shares its vault for the other device's copy, so this device should stay open meanwhile. */
-        data class Linked(val name: String, val already: Boolean = false, val keepOpen: Boolean = false) : Ui
+        /**
+         * [keepOpen]: A shares its vault for the other device's copy, so this device should stay open meanwhile.
+         * [copy]: B, the copy from the device just linked (its own line), or empty.
+         */
+        data class Linked(val name: String, val already: Boolean = false, val keepOpen: Boolean = false, val copy: String = "") : Ui
         /** Over: expired, aborted or refused. Nothing was stored. */
         data class Stopped(val text: String) : Ui
     }
@@ -296,8 +303,32 @@ class PairDeviceViewModel @Inject constructor(
 
     private fun linkedB(a: MeshPairing.Payload) {
         store(a.mesh, a.role, a.name)
-        _ui.value = Ui.Linked(MeshPairing.displayName(a.name))
+        val name = MeshPairing.displayName(a.name)
+        _ui.value = Ui.Linked(name)
         stopTicker()
+        copyFrom(a.mesh, name)
+    }
+
+    /**
+     * B: any link starts the copy from the device just linked (docs/MESH_COPY_V2_CONTRACT.md §3), on the app's
+     * scope so it carries on when this screen closes. An other device without the zip copy (404) says nothing: the
+     * pushes and the catch-up carry its notes.
+     */
+    private fun copyFrom(npub: String, name: String) {
+        appScope.launch {
+            val url = copyStarter.dial(npub) ?: return@launch copyLine(MeshCopyV2.errorLine("unreachable", name))
+            when (val r = copyStarter.start(url, name)) {
+                is MeshCopyClient.Result.Ready -> viewModelScope.launch {
+                    copyStarter.progress.collect { l -> l?.let { copyLine(MeshCopyV2.statusText(it, name)) } }
+                }
+                MeshCopyClient.Result.NotServed -> Unit
+                is MeshCopyClient.Result.Failed -> copyLine(r.line)
+            }
+        }
+    }
+
+    private fun copyLine(text: String) {
+        (_ui.value as? Ui.Linked)?.let { _ui.value = it.copy(copy = text) }
     }
 
     private fun sendAck(s: MeshPairingSession) {

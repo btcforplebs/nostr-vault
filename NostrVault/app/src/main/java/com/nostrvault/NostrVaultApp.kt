@@ -48,6 +48,9 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
     @Inject
     lateinit var listWipeWatcher: com.nostrvault.service.ListWipeWatcher
 
+    @Inject
+    lateinit var copySettingsSync: com.nostrvault.fips.CopySettingsSync
+
     override fun onCreate() {
         warmUpOffMain()
         super.onCreate()
@@ -77,10 +80,14 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
         // GIFs downloaded for "Save to my Blossom" that a crash left behind.
         applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             com.nostrvault.data.gif.GifCache.sweep(cacheDir)
+            // Picked backup zips a kill left mid-restore (audit #17).
+            com.nostrvault.service.PickedZip.sweep(cacheDir)
             // Decrypted private copies a crash or a kill left behind.
             com.nostrvault.service.shareportal.PrivateCopyService.clearOpened(this@NostrVaultApp)
         }
         profilePicturePrefetcher.start(applicationScope)
+        // The allowlisted settings file the mesh copy carries and keeps synced (docs/MESH_COPY_V2_CONTRACT.md §5).
+        copySettingsSync.start()
         // The share sheet's "post as" line reads this, never the config with the keys.
         shareAccountsPublisher.start(applicationScope)
         // Widgets hear the relay start and stop, not only its 30 s tick.

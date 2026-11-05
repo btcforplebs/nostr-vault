@@ -13,13 +13,13 @@ import com.nostrvault.fips.MeshPairingJoiner
 import com.nostrvault.fips.MyDevicesRules
 import com.nostrvault.service.serverListDropsAfter
 import com.nostrvault.ui.screens.pairing.PairDeviceViewModel
-import com.nostrvault.fips.OtherVaultCopy
+import com.nostrvault.fips.MeshCopyClient
+import com.nostrvault.fips.MeshCopyStarter
+import com.nostrvault.fips.MeshCopyV2
 import com.nostrvault.fips.OtherVaultLink
 import com.nostrvault.service.ImportResult
 import com.nostrvault.service.RelayImportService
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
 import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.notification.PillTone
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -52,6 +52,7 @@ class OtherDeviceViewModel @Inject constructor(
     private val relayImportService: RelayImportService,
     private val firstRunImport: com.nostrvault.service.FirstRunImport,
     private val otherVaultLink: OtherVaultLink,
+    private val copyStarter: MeshCopyStarter,
     private val notificationManager: NotificationManager,
     @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
@@ -203,51 +204,68 @@ class OtherDeviceViewModel @Inject constructor(
     }
 
     /**
-     * The copy: the other device's vault becomes one more seed for the relay's own `setup` job, read from
-     * [BringItOver.START_DATE] (FirstRunImport, the new engine). Not reached is the engine's to report: the job reads
-     * the relays too, and anything it couldn't read waits in the Vault's "Still to bring in".
+     * The copy (docs/MESH_COPY_V2_CONTRACT.md): the zip copy when the other device serves it, its `COPY` lines as
+     * [Ui.Copying]'s status. An other device without it (404), or a copy that stalls or fails, leaves today's way:
+     * its vault becomes one more seed for the relay's own `setup` job, read from [BringItOver.START_DATE].
      */
     private fun startCopy(a: MeshPairing.Payload) {
         val name = MeshPairing.displayName(a.name)
         _ui.value = Ui.Copying(name)
         viewModelScope.launch {
-            val url = dialOtherVault(a.mesh) ?: return@launch run {
+            val url = copyStarter.dial(a.mesh) ?: return@launch run {
                 otherVaultLink.close()
                 fallBack()
             }
-            configStore.update { it.copy(importStartDate = BringItOver.START_DATE) }
-            firstRunImport.otherVault = url
-            _ui.value = Ui.Copied
+            when (val r = copyStarter.start(url, name)) {
+                is MeshCopyClient.Result.Ready -> if (followCopy(name)) return@launch
+                MeshCopyClient.Result.NotServed -> Unit
+                is MeshCopyClient.Result.Failed -> {
+                    if (r.line.isNotEmpty()) notificationManager.showToast(r.line, PillTone.WARNING)
+                    // Short of space here, or the other device is another account's: no copy from it at all.
+                    if (MeshCopyV2.action(r.code) == MeshCopyV2.Action.STOP && r.code != "auth_refused") {
+                        otherVaultLink.close()
+                        return@launch quietFallBack()
+                    }
+                }
+            }
+            seedFromOtherVault(url)
         }
     }
 
     /**
-     * The other device's vault at its lasting address ([OtherVaultLink]), once it answers: a phone just linked is
-     * often still finding the other one on the mesh, and the link restarts both engines. Dialed every
-     * [OtherVaultCopy.DIAL_RETRY_S] for up to [OtherVaultCopy.DIAL_WINDOW_S] (iOS `dialOtherVault`, #1776), else null.
+     * The engine's copy, line by line: true once it is done (setup goes on; the relay service applies the settings it left). False when it
+     * failed or no line came for [BringItOver.COPY_STALL_S]: the caller reads the other vault the old way.
      */
-    private suspend fun dialOtherVault(meshNpub: String): String? {
-        val startedAt = now()
+    private suspend fun followCopy(name: String): Boolean {
+        var last = now()
+        var seen: MeshCopyV2.Line? = null
         while (true) {
-            val url = withContext(Dispatchers.IO) { otherVaultLink.open(meshNpub)?.takeIf(::answers) }
-            if (url != null) return url
-            if (!OtherVaultCopy.dialsAgain(startedAt, now())) return null
-            delay(OtherVaultCopy.DIAL_RETRY_S * 1000)
+            val l = copyStarter.progress.value
+            if (l != null && l != seen) {
+                seen = l
+                last = now()
+                _ui.value = Ui.Copying(name, MeshCopyV2.statusText(l, name))
+                when (l.stage) {
+                    "done" -> {
+                        if (l.error.isNotEmpty()) notificationManager.showToast(MeshCopyV2.statusText(l, name), PillTone.NEUTRAL)
+                        _ui.value = Ui.Copied
+                        return true
+                    }
+                    "failed" -> {
+                        MeshCopyV2.failedLine(l, name).takeIf { it.isNotEmpty() }?.let { notificationManager.showToast(it, PillTone.WARNING) }
+                        return false
+                    }
+                }
+            }
+            if (BringItOver.isStalled(last, now())) return false
+            delay(1000)
         }
     }
 
-    /** The vault behind [wsUrl] answers its relay info (NIP-11). Never logged: an address on the link. */
-    private fun answers(wsUrl: String): Boolean = runCatching {
-        val request = okhttp3.Request.Builder().url(wsUrl.replaceFirst("ws://", "http://"))
-            .header("Accept", "application/nostr+json").build()
-        probe.newCall(request).execute().use { it.isSuccessful }
-    }.getOrDefault(false)
-
-    private val probe by lazy {
-        okhttp3.OkHttpClient.Builder()
-            .connectTimeout(PROBE_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(PROBE_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)
-            .build()
+    private suspend fun seedFromOtherVault(url: String) {
+        configStore.update { it.copy(importStartDate = BringItOver.START_DATE) }
+        firstRunImport.otherVault = url
+        _ui.value = Ui.Copied
     }
 
     private suspend fun store(own: String?, npub: String, role: DeviceRole, name: String) {
@@ -265,10 +283,16 @@ class OtherDeviceViewModel @Inject constructor(
 
     private fun fallBack() {
         if (_ui.value == Ui.Copied || _ui.value == Ui.FellBack) return
-        stopTicker()
-        hello?.close()
         // One plain line, no error screen (§5a).
         notificationManager.showToast(BringItOver.FALLBACK_LINE, PillTone.NEUTRAL)
+        quietFallBack()
+    }
+
+    /** On to the relays, the copy's own line already shown. */
+    private fun quietFallBack() {
+        if (_ui.value == Ui.Copied || _ui.value == Ui.FellBack) return
+        stopTicker()
+        hello?.close()
         _ui.value = Ui.FellBack
     }
 
@@ -301,6 +325,5 @@ class OtherDeviceViewModel @Inject constructor(
 
     private companion object {
         fun now() = System.currentTimeMillis() / 1000
-        const val PROBE_TIMEOUT_S = 8L
     }
 }
