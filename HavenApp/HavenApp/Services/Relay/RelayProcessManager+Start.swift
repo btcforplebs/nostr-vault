@@ -174,9 +174,10 @@ extension RelayProcessManager {
         }
 
         // First run keeps the relay to the follows web until the wider web
-        // job runs (import_jobs.go effectiveWotDepth). Always set: the Go
-        // side keeps the process environment between starts.
-        let firstRun = firstRunAlsoFrom != nil ? "1" : "0"
+        // job runs (import_jobs.go effectiveWotDepth), from the very first
+        // start before setup is done. Always set: the Go side keeps the
+        // process environment between starts.
+        let firstRun = ImportJobs.firstRunFlag(settingUp: firstRunAlsoFrom != nil, setupDone: config.hasCompletedSetup)
         setenv(ImportJobs.firstRunEnv, firstRun, 1)
         ImportJobs.firstRunEnv.withCString { k in
             firstRun.withCString { v in SetHavenEnvC(UnsafeMutablePointer(mutating: k), UnsafeMutablePointer(mutating: v)) }

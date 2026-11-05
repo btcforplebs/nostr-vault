@@ -17,6 +17,24 @@ enum ImportJobs {
     /// firstRunEnv): keep to the follows web until the wider web is run.
     static let firstRunEnv = "HAVEN_FIRST_RUN"
 
+    /// HAVEN_FIRST_RUN for one relay start. On while setup is the way in, and
+    /// on for ANY start before setup is done: something else (the mesh copy,
+    /// a background wake) can start the relay first, and a plain start then
+    /// built the whole wider web (~4 min, 77k keys on the 12 mini, Ted
+    /// 2026-11-05) before setup could even restart it.
+    static func firstRunFlag(settingUp: Bool, setupDone: Bool) -> String {
+        settingUp || !setupDone ? "1" : "0"
+    }
+
+    /// The vault is coming up, or going down to come straight back (a restart
+    /// after setup or a settings change): say so instead of an empty vault
+    /// (LogePad 2026-11-05, a 61 s restart right after Jump in).
+    static func vaultStarting(booting: Bool, stopping: Bool, applyingConfig: Bool) -> Bool {
+        booting || stopping || applyingConfig
+    }
+
+    static let startingLine = "Starting your vault…"
+
     /// RunImportJobC's answer.
     enum RunResult: Int32 {
         case started = 0, unknownJob = 1, busy = 2, relayNotRunning = 3

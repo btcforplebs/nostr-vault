@@ -25,6 +25,26 @@ struct ContentView: View {
         UINavigationBar.appearance().compactAppearance = appearance
     }
 
+    /// While the vault comes up (or restarts, e.g. right after Jump in), a
+    /// plain line where the empty feed would be (the relay is down, so the
+    /// lists are empty), clear of the headers' buttons.
+    @ViewBuilder private var vaultStartingPill: some View {
+        if ImportJobs.vaultStarting(booting: relayManager.isBooting || relayManager.state == .booting,
+                                    stopping: relayManager.state == .stopping,
+                                    applyingConfig: relayManager.isApplyingConfig) {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(ImportJobs.startingLine)
+                    .font(.appSystem(size: 14, weight: .medium))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial, in: Capsule())
+            .accessibilityElement(children: .combine)
+            .transition(.opacity)
+        }
+    }
+
     var body: some View {
         Group {
             if !configService.config.hasCompletedSetup {
@@ -36,6 +56,7 @@ struct ContentView: View {
                 // headers. the tab view itself only adds a note beside the
                 // list when an iPad is in landscape.
                 iPhoneTabView(selectedTab: $selectedTab)
+                    .overlay { vaultStartingPill }
             }
         }
         // Every scroll view in the app, not just the Feed's: under a top bar

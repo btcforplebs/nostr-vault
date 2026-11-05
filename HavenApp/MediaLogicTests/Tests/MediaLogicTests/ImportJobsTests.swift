@@ -115,4 +115,22 @@ final class ImportJobsTests: XCTestCase {
         XCTAssertEqual(ImportJobs.cardJobs, ["replies", "older_relays", "wider_network", "list_history"])
         XCTAssertFalse(ImportJobs.cardJobs.contains(ImportJobs.setup))
     }
+
+    /// Ted's 12 mini, 2026-11-05: a start before setup was plain, built the
+    /// whole wider web for ~4 min, and only then restarted into setup.
+    func testEveryStartBeforeSetupIsDoneIsAFirstRunStart() {
+        XCTAssertEqual(ImportJobs.firstRunFlag(settingUp: false, setupDone: false), "1", "something else started it first")
+        XCTAssertEqual(ImportJobs.firstRunFlag(settingUp: true, setupDone: false), "1")
+        XCTAssertEqual(ImportJobs.firstRunFlag(settingUp: true, setupDone: true), "1", "setup still the way in")
+        XCTAssertEqual(ImportJobs.firstRunFlag(settingUp: false, setupDone: true), "0", "later starts are normal")
+    }
+
+    /// LogePad, 2026-11-05: a 61 s restart right after Jump in looked like an empty vault.
+    func testTheVaultSaysItIsStartingWhileItBootsOrRestarts() {
+        XCTAssertTrue(ImportJobs.vaultStarting(booting: true, stopping: false, applyingConfig: false))
+        XCTAssertTrue(ImportJobs.vaultStarting(booting: false, stopping: true, applyingConfig: false), "stopping to come back")
+        XCTAssertTrue(ImportJobs.vaultStarting(booting: false, stopping: false, applyingConfig: true), "between stop and start")
+        XCTAssertFalse(ImportJobs.vaultStarting(booting: false, stopping: false, applyingConfig: false), "running: nothing to say")
+        XCTAssertEqual(ImportJobs.startingLine, "Starting your vault…")
+    }
 }
