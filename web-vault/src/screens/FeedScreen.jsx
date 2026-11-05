@@ -8,6 +8,7 @@ import { feedPostOpen, useFeedSpot } from "../components/feed-tap.js"
 import { AT_TOP_PX, holdSpot, readingSpot } from "../components/feed-stay.js"
 import { FeedModeMenu, FeedToolbar } from "../components/FeedPickerMenu.jsx"
 import { EditFeeds } from "../components/EditFeeds.jsx"
+import { FeedDashboard } from "../components/FeedDashboard.jsx"
 import { readFeed, syncFeed, FEED_KINDS } from "../net/sync.js"
 import { watchFollowing, watchLive } from "../net/feed-live.js"
 import { pool, DEFAULT_RELAYS, uniq } from "../net/pool.js"
@@ -104,6 +105,7 @@ export function FeedScreen({ ctx }) {
   // Edit Feeds: the picker's order and hidden feeds. Hiding the feed you're on takes you back to Following.
   const [menu, setMenu] = useState(loadMenu)
   const [editing, setEditing] = useState(false)
+  const [dashboard, setDashboard] = useState(false) // the Feed Dashboard sheet (components/FeedDashboard.jsx)
   const changeMenu = m => {
     saveMenu(m, FEEDS)
     setMenu(m)
@@ -371,7 +373,7 @@ export function FeedScreen({ ctx }) {
   return (
     <main class="screen" ref={screen}>
       <header class="screen-head feed-head">
-        <FeedModeMenu feeds={visibleFeeds(FEEDS, menu)} choice={choice} onPick={pick} onEdit={() => setEditing(true)} />
+        <FeedModeMenu feeds={visibleFeeds(FEEDS, menu)} choice={choice} onPick={pick} onEdit={() => setEditing(true)} onDashboard={() => setDashboard(true)} />
         <FeedToolbar layout={!Reader && hasLayouts(choice.mode) ? layout : null} onCycleLayout={cycleLayout}
           filters={filters} onFilters={changeFilters} toggles={toggles}
           scope={media ? choice.scope : null} onScope={pickScope}
@@ -379,6 +381,7 @@ export function FeedScreen({ ctx }) {
           audience={popular ? audience : null} onAudience={setAudience} ranks={popular ? ranks : null} onRanks={() => setRanks(!ranks)} />
       </header>
       {shieldAsk && <EveryoneShieldDialog ask={shieldAsk} follows={follows} me={ctx.session?.pubkey} onProceed={proceedEveryone} onClose={() => setShieldAsk(null)} />}
+      {dashboard && <FeedDashboard ctx={ctx} blocked={blocked} onPick={pick} onClose={() => setDashboard(false)} />}
       {editing && <EditFeeds feeds={FEEDS} menu={menu} onChange={changeMenu} onClose={() => setEditing(false)} />}
       {choice.mode === "hashtag" && <HashtagBox choice={choice} onPick={pick} />}
       <PullIndicator pull={pull} busy={syncing && pull > 0} />

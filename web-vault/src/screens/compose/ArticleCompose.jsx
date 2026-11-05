@@ -3,11 +3,11 @@
 // account's media servers when it's picked; what isn't published yet is kept as a draft.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { publishKind } from "../../net/sync.js"
-import { mediaServers, uploadPhoto } from "../../net/upload.js"
 import { Markdown } from "../../readers/Markdown.jsx"
 import { Dialog } from "../../components/Moderation.jsx"
 import { PostResult } from "./PostResult.jsx"
 import { ComposeKinds } from "./ComposeKinds.jsx"
+import { CoverPicker, useCover } from "./CoverPicker.jsx"
 import { forgetIfSent, idbDrafts } from "./drafts.js"
 import { LONG_FORM_KIND, articleDraftOf, articleHint, buildArticle, canPublishArticle, hasArticle } from "./article.js"
 
@@ -45,26 +45,8 @@ export function ArticleCompose({ ctx }) {
     saving.current = saving.current.then(() => (hasArticle(a) ? drafts.current.put(DRAFT_KEY, d) : drafts.current.delete(DRAFT_KEY))).catch(() => {})
   }, [a.title, a.summary, a.body, a.cover?.url, loaded])
 
-  // The cover: one photo, uploaded as soon as it's picked. A newer pick wins over one still uploading.
-  const picker = useRef(null)
-  const pickNo = useRef(0)
-  const pickCover = async file => {
-    if (!file || !/^image\//.test(file.type)) return
-    const no = ++pickNo.current
-    const preview = URL.createObjectURL(file)
-    set({ cover: { preview, status: "uploading", file } }); setErr("")
-    try {
-      const up = await uploadPhoto(file, { ctx, servers: await mediaServers(ctx) })
-      if (no === pickNo.current) set({ cover: { ...up, preview, status: "done" } })
-    } catch (e) {
-      if (no === pickNo.current) set({ cover: { preview, status: "failed", file, error: String(e?.message ?? e) } })
-    }
-  }
-  const removeCover = () => {
-    pickNo.current++
-    if (a.cover?.preview?.startsWith("blob:")) URL.revokeObjectURL(a.cover.preview)
-    set({ cover: null })
-  }
+  // The cover: one photo, uploaded as soon as it's picked (CoverPicker.jsx).
+  const covers = useCover(ctx, c => set({ cover: c }), () => setErr(""))
 
   const uploading = a.cover?.status === "uploading"
   const canPost = !busy && !uploading && canPublishArticle(a)
@@ -105,24 +87,7 @@ export function ArticleCompose({ ctx }) {
       </header>
       <ComposeKinds type="article" />
       <form id="article-form" class="kind-form" onSubmit={publish}>
-        <div class={a.cover ? `article-cover has ${a.cover.status}` : "article-cover"}>
-          <button type="button" class="article-cover-pick" disabled={busy} onClick={() => picker.current.click()}
-            aria-label={a.cover ? "Change cover photo" : "Add a cover photo"}>
-            {a.cover
-              ? <img src={a.cover.preview} alt="" />
-              : <span class="article-cover-empty">
-                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="9" cy="10" r="1.6" /><path d="M21 16l-5-5-8 8" /></svg>
-                  Add a cover photo
-                </span>}
-          </button>
-          {uploading && <span class="article-cover-state" role="status">Uploading…</span>}
-          {a.cover?.status === "failed" && <span class="article-cover-state">Didn't upload</span>}
-          {a.cover && !busy && <button type="button" class="article-cover-remove" aria-label="Remove cover photo" onClick={removeCover}>
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
-          </button>}
-          <input ref={picker} type="file" accept="image/*" hidden onChange={e => { pickCover(e.currentTarget.files?.[0]); e.currentTarget.value = "" }} />
-        </div>
-        {a.cover?.status === "failed" && <p class="error small">{a.cover.error} <button type="button" class="small" onClick={() => pickCover(a.cover.file)}>Retry</button></p>}
+        <CoverPicker cover={a.cover} busy={busy} onPick={covers.pick} onRemove={() => covers.remove(a.cover)} />
         <input class="kind-title" type="text" placeholder="Title" aria-label="Title" value={a.title} readOnly={busy}
           onInput={e => set({ title: e.currentTarget.value })} />
         <textarea class="kind-field" rows={2} placeholder="Summary (optional)" aria-label="Summary" value={a.summary} readOnly={busy}

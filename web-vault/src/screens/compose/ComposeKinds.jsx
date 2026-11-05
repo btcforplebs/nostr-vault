@@ -1,10 +1,10 @@
-// What New Post writes: a note, an article, a poll or a highlight. The iPhone picks the composer from the feed you're on
+// What New Post writes: a note, an article, a recipe, a poll or a highlight. The iPhone picks the composer from the feed you're on
 // (Views/FeedActions.swift); the web has one Post button, so the choice sits at the top of the sheet instead.
 // Each kind keeps its own draft, so switching never loses what's written.
 // Vite only: the node tests load this file without a CSS loader.
 if (import.meta.env) import("../../styles/compose-kinds.css")
 
-export const COMPOSE_TYPES = [["note", "Note"], ["article", "Article"], ["poll", "Poll"], ["highlight", "Highlight"]]
+export const COMPOSE_TYPES = [["note", "Note"], ["article", "Article"], ["recipe", "Recipe"], ["poll", "Poll"], ["highlight", "Highlight"]]
 
 const TYPES = new Set(COMPOSE_TYPES.map(([t]) => t))
 
