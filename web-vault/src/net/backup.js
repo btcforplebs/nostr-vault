@@ -100,19 +100,38 @@ export function importNotes(opts) {
   return withImportLock(() => importNotesUnlocked(opts))
 }
 
+/** The apps' words for a backup with no note signed by the key signed in (Android VaultBackupQuestion, iOS). */
+export const NOT_YOURS = "This backup isn't yours. It holds no notes signed by the key you signed in with."
+// The stores that hold only your own notes: a backup of yours has at least one event of yours in one of them
+// (haven-go zipHasEventBy reads outbox and lists; the web keeps no lists database, its drafts are in private).
+const OWN_NOTES = new Set(["outbox", "private"])
+
+/** Whether a .jsonl database holds an event by pubkey; unreadable lines are passed over, as the restore does. */
+export function holdsEventBy(data, pubkey) {
+  for (const line of new TextDecoder().decode(data).split("\n")) {
+    if (!line.includes(pubkey)) continue
+    try { if (JSON.parse(line)?.pubkey === pubkey) return true } catch { /* a bad line */ }
+  }
+  return false
+}
+
 async function importNotesUnlocked({ vault, pubkey, bytes, sk = deviceKey(), onProgress = () => {}, open = openRoute }) {
   const counts = {}
   const dev = getPublicKey(sk)
   const skipped = []
   const failed = []
+  const read = []
   for (const entry of await unzip(bytes)) {
     const name = entry.name.replace(/\.jsonl$/, "")
     // Object.hasOwn: a zip entry named "__proto__.jsonl" or "constructor.jsonl" is just an unknown file.
     if (!entry.name.endsWith(".jsonl") || !Object.hasOwn(DATABASES, name)) { skipped.push(entry.name); continue }
-    onProgress(name)
     // A damaged or oversized database is reported and the rest of the backup still restores.
-    let data
-    try { data = await entry.read() } catch (e) { failed.push(String(e?.message ?? e)); continue }
+    try { read.push({ name, data: await entry.read() }) } catch (e) { failed.push(String(e?.message ?? e)) }
+  }
+  // Someone else's backup is refused before anything is written, as the apps refuse it (haven-go RestoreOwnBackupC).
+  if (read.some(r => OWN_NOTES.has(r.name)) && !read.some(r => OWN_NOTES.has(r.name) && holdsEventBy(r.data, pubkey))) throw new Error(NOT_YOURS)
+  for (const { name, data } of read) {
+    onProgress(name)
     const c = (counts[name] = { stored: 0, refused: 0, bad: 0, failed: 0 })
     const belongs = DATABASES[name].filters(pubkey, dev)
     const client = open(vault, name, sk)

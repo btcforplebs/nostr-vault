@@ -156,3 +156,17 @@ test("a database that can't be opened is reported and the rest of the backup sti
   assert.deepEqual(opened, ["chat"])
   assert.match(r.failed[0], /feed.jsonl .*too large/)
 })
+
+// ---- someone else's backup (Logen, 2026-11-05: web said "Restored: your notes 0") ----
+
+test("a backup with no note signed by this account is refused before anything is written, in the apps' words", async () => {
+  const { NOT_YOURS } = await import("../src/net/backup.js")
+  const theirs = generateSecretKey()
+  const note = finalizeEvent({ kind: 1, created_at: 1700000000, tags: [], content: "theirs" }, theirs)
+  const z = await zip([
+    { name: "outbox.jsonl", data: enc(JSON.stringify(note) + "\nnot json\n") },
+    { name: "feed.jsonl", data: enc(JSON.stringify(note) + "\n") },
+  ])
+  await assert.rejects(importNotes({ vault: null, pubkey: "a".repeat(64), bytes: z, sk: generateSecretKey(), open: () => assert.fail("no route opened") }), { message: NOT_YOURS })
+  assert.equal(NOT_YOURS, "This backup isn't yours. It holds no notes signed by the key you signed in with.")
+})
