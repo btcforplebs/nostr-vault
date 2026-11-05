@@ -203,7 +203,7 @@ fun ProfileScreen(
     var gridReportTarget by remember { mutableStateOf<String?>(null) }
     var gridBlockTarget by remember { mutableStateOf<String?>(null) }
     // Delete from mirrors / everywhere on one of your own files: (blob hash, scope).
-    var gridDelete by remember { mutableStateOf<Pair<String, com.nostrvault.ui.screens.DeleteScope>?>(null) }
+    var gridDelete by remember { mutableStateOf<Pair<com.nostrvault.ui.screens.BlossomMediaItem, com.nostrvault.ui.screens.DeleteScope>?>(null) }
     // Long-press on a profile zap button: choose the amount (iOS ZapSheetContext).
     var zapSheetOpen by remember { mutableStateOf(false) }
     // Edit Profile, over this page; only its Save button saves. Not saveable: the
@@ -555,7 +555,7 @@ fun ProfileScreen(
                                     },
                                     onReport = { gridReportTarget = it },
                                     onBlock = { gridBlockTarget = it },
-                                    onDelete = { hash, scope -> gridDelete = hash to scope },
+                                    onDelete = { hash, url, scope -> gridDelete = profileDeleteItem(hash, url) to scope },
                                 )
                             }
                         }
@@ -680,17 +680,13 @@ fun ProfileScreen(
 
     // Same confirmation as the Vault grid. The tile stays, as on iOS: it
     // belongs to a post, and the post is still up unless that was chosen too.
-    gridDelete?.let { (hash, scope) ->
+    gridDelete?.let { (item, scope) ->
+        val hash = item.sha256
         val postCount = remember(hash, scope) {
             if (scope == com.nostrvault.ui.screens.DeleteScope.EVERYWHERE) mediaActions.postsUsing(hash) else 0
         }
         fun confirm(deletePosts: Boolean) {
             gridDelete = null
-            // The delete calls only read the hash.
-            val item = com.nostrvault.ui.screens.BlossomMediaItem(
-                sha256 = hash, displayUrl = "", localFile = null, mimeType = null,
-                size = null, uploaded = null, lastModified = null, isLocal = false,
-            )
             when (scope) {
                 com.nostrvault.ui.screens.DeleteScope.MIRRORS -> mediaActions.deleteFromMirrors(item)
                 com.nostrvault.ui.screens.DeleteScope.EVERYWHERE ->

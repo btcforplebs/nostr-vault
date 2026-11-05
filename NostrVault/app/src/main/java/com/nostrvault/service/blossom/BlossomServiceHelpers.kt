@@ -17,6 +17,12 @@ fun blossomHashInUrl(url: String): String? {
  */
 const val DELETE_NO_HASH_MESSAGE = "Can't delete: this file's hash could not be read"
 
+/**
+ * Nothing to delete from: no server to target, or each one was the owner's own vault. An error in
+ * every viewer, as on iOS (the feed viewer showed it as a success toast, the gallery as an error).
+ */
+const val DELETE_NO_MIRRORS_MESSAGE = "No mirrors to delete from"
+
 /** A blob hash a delete can use: 64 hex. */
 fun isBlobHash(value: String): Boolean = value.length == 64 && value.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
 

@@ -19,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.nostrvault.fips.FipsMeshSettings
 import com.nostrvault.fips.FipsStatus
 import com.nostrvault.fips.HomeVaultSender
 import com.nostrvault.relay.MacSync
@@ -65,12 +64,11 @@ internal fun homeVaultLine(s: HomeVaultSender.State): String = when {
     else -> "Home vault: nothing to send yet"
 }
 
-/** 5 Share With Others: kiosk mode (this vault on the mesh), who can view, pause after, listing, and where photos go. */
+/** 5 Share With Others: kiosk mode (this vault on the mesh), who can view, pause after, listing, and where new photos are saved. */
 @Composable
 internal fun ShareSection(viewModel: FipsMeshViewModel, status: FipsStatus) {
     val shareRelay by viewModel.shareRelay.collectAsState()
     val serveLimit by viewModel.serveLimit.collectAsState()
-    val settings by viewModel.settings.collectAsState()
     val busy by viewModel.busy.collectAsState()
     MeshSection(
         "Share With Others",
@@ -81,7 +79,7 @@ internal fun ShareSection(viewModel: FipsMeshViewModel, status: FipsStatus) {
         // The library takes the limit at start, so it is fixed while sharing.
         Picker("Pause after", serveLimit, SERVE_LIMITS.map { it to bytesLabel(it) }, enabled = !shareRelay && !busy) { viewModel.setServeLimit(it) }
         MeshDivider()
-        Picker("Photos go to", settings.photosGoTo, PHOTOS_GO_TO) { v -> viewModel.updateSettings { it.copy(photosGoTo = v) } }
+        Text(PHOTOS_ROUTE_LINE, color = SecondaryText, fontSize = 13.sp, modifier = Modifier.padding(vertical = 14.dp))
         if (shareRelay && status.running) {
             MeshDivider()
             val n = status.servedRequests
@@ -91,11 +89,13 @@ internal fun ShareSection(viewModel: FipsMeshViewModel, status: FipsStatus) {
     }
 }
 
-internal val PHOTOS_GO_TO = listOf(
-    FipsMeshSettings.PHOTOS_PUBLIC to "Media servers",
-    FipsMeshSettings.PHOTOS_MAC to "Home vault",
-    FipsMeshSettings.PHOTOS_BOTH to "Both",
-)
+/**
+ * Where a new photo goes, said once instead of a "Photos go to" picker (Logen 2026-11-05):
+ * nothing read the picker's value, and the route is fixed, so it offered a choice that did nothing.
+ */
+internal const val PHOTOS_ROUTE_LINE = "New photos are saved on this device first. If you have a home vault, a copy goes to it " +
+    "over the mesh, and the home vault puts it on your public media server for you. If this device has its own media " +
+    "server, it uploads there itself."
 
 /** A value row that opens a menu of [options], like the iPhone's menu picker. */
 @Composable

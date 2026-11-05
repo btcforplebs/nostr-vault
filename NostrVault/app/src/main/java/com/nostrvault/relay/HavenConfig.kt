@@ -591,7 +591,8 @@ data class HavenConfig(
      *
      * "Delete from mirrors" never targets the owner's own vaults, under any
      * name: the configured Mac, and every server only a home network can reach
-     * (LAN and Tailscale addresses, `.local`, plain http, loopback). The 10063
+     * (LAN and Tailscale addresses, `.local`, loopback). A plain-http public host is
+     * a mirror asked over https, as on iOS ([httpsForPublicHost]). The 10063
      * keeps other devices' entries, so a Mac this phone knows by another name
      * still showed up there and got the delete; if it held the last copy, the
      * photo was gone (Tron ship check, 2026-10-31). A public name for another
@@ -607,7 +608,7 @@ data class HavenConfig(
             (blossomMirrors + published).mapNotNull { blossomUploadServer(it) } +
             listOfNotNull(photoUrl?.let(::blossomOrigin)?.takeUnless(::isLoopbackServer))
         val seen = mutableSetOf<String>()
-        return candidates.mapNotNull { it.trim().takeIf(String::isNotEmpty) }.filter { server ->
+        return candidates.mapNotNull { it.trim().takeIf(String::isNotEmpty)?.let(::httpsForPublicHost) }.filter { server ->
             val origin = blossomOrigin(server) ?: return@filter false
             if (com.nostrvault.fips.FipsHostGuard.isFipsHost(java.net.URI(origin).host)) return@filter false
             if (!includeHomeVault && (key(origin) == homeKey || !com.nostrvault.fips.HomeVaultRules.isPublicServer(origin))) {
@@ -713,6 +714,21 @@ internal fun blossomOrigin(url: String): String? {
 
 private fun isLoopbackServer(origin: String): Boolean =
     java.net.URI(origin).host.trim('[', ']') in setOf("localhost", "127.0.0.1", "::1")
+
+/**
+ * A plain-http server on a public host, as https: deletes go over https, as on iOS
+ * (`BlossomService+Delete` upgrades every non-loopback http mirror). Without it
+ * "Delete from media servers" dropped an http mirror as not public, unasked and
+ * unreported, so the file stayed there. Home-network, loopback and `.fips` hosts
+ * keep http: they are the owner's own vaults.
+ */
+internal fun httpsForPublicHost(server: String): String {
+    if (!server.startsWith("http://", ignoreCase = true)) return server
+    val host = try { java.net.URI(server).host?.lowercase()?.trim('[', ']')?.trimEnd('.') } catch (_: Exception) { null }
+    if (host.isNullOrEmpty() || host in setOf("localhost", "127.0.0.1", "::1", "0.0.0.0")) return server
+    if (host == "fips" || host.endsWith(".fips") || com.nostrvault.relay.DMInbox.isPrivateNetworkHost(host)) return server
+    return "https://" + server.substring("http://".length)
+}
 
 /** One server, however it was typed: no trailing slash, case-insensitive. */
 private fun serverKey(server: String): String = server.trim().trimEnd('/').lowercase()
