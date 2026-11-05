@@ -791,6 +791,12 @@ var blossomExtTypes = map[string]string{
 // can't: MOV/MP4 aren't in http.DetectContentType's table, so without this
 // every video blob whose stored MIME is missing/octet-stream gets served as
 // application/octet-stream — which confuses clients that classify by MIME.
+//
+// Never a type a browser runs as a page or script (activeBlobTypes): the
+// extension in the URL is the requester's choice, not the uploader's, so
+// /<sha>.html of any stored file would otherwise be served as a page on the
+// vault's origin. Those come back as application/octet-stream, and so does a
+// file with no known extension that Go's sniffer would call HTML or XML.
 func blossomContentType(hash string, ext string) string {
 	if ext != "" {
 		lower := strings.ToLower(ext)
@@ -798,7 +804,7 @@ func blossomContentType(hash string, ext string) string {
 			return ct
 		}
 		if ct := mime.TypeByExtension("." + lower); ct != "" {
-			return ct
+			return inertBlobType(ct)
 		}
 	}
 	file, err := fs.Open(config.BlossomPath + hash)
@@ -806,18 +812,35 @@ func blossomContentType(hash string, ext string) string {
 		return ""
 	}
 	defer file.Close()
-	head := make([]byte, 12)
-	if n, _ := io.ReadFull(file, head); n < 12 {
-		return ""
-	}
+	head := make([]byte, 512)
+	n, _ := io.ReadFull(file, head)
+	head = head[:n]
 	// ISO-BMFF container: [size][ftyp][major brand]
-	if bytes.Equal(head[4:8], []byte("ftyp")) {
+	if n >= 12 && bytes.Equal(head[4:8], []byte("ftyp")) {
 		if bytes.Equal(head[8:12], []byte("qt  ")) {
 			return "video/quicktime"
 		}
 		return "video/mp4"
 	}
+	// Left empty, http.ServeContent sniffs the same bytes: decide here
+	// whether that would come out as a page.
+	if inertBlobType(http.DetectContentType(head)) == blobInertType {
+		return blobInertType
+	}
 	return ""
+}
+
+const blobInertType = "application/octet-stream"
+
+// inertBlobType returns ct, or application/octet-stream when ct is a type a
+// browser would run (html, xhtml, svg, js, xml).
+func inertBlobType(ct string) string {
+	mediaType, _, err := mime.ParseMediaType(ct)
+	if err != nil || activeBlobTypes[strings.ToLower(mediaType)] || strings.HasSuffix(strings.ToLower(mediaType), "+xml") ||
+		strings.Contains(strings.ToLower(mediaType), "javascript") || strings.Contains(strings.ToLower(mediaType), "ecmascript") {
+		return blobInertType
+	}
+	return ct
 }
 
 // meshBlobHandler is all a FIPS mesh peer gets: GET or HEAD of one blob.
@@ -876,6 +899,8 @@ func dynamicRelayHandler(w http.ResponseWriter, r *http.Request) {
 			if ct := blossomContentType(m[1], m[2]); ct != "" {
 				w.Header().Set("Content-Type", ct)
 			}
+			// Browsers must not second-guess it into a page either.
+			w.Header().Set("X-Content-Type-Options", "nosniff")
 		}
 	}
 
