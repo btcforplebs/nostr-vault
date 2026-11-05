@@ -55,22 +55,54 @@ extension DMService {
     }
 
     /// Send a NIP-17 encrypted DM (default, recommended)
+    ///
+    /// The message joins the thread only once both gift wraps are signed. It
+    /// used to be added (and saved) before the key was even read, so with no
+    /// usable key, or a remote signer that was offline or timed out, the
+    /// bubble stayed in the thread as sent while nothing went out, and
+    /// sending again added a second copy. Now any of those throws, the
+    /// caller puts the text back, and nothing is left in the thread.
     private func sendNIP17DM(content: String, to recipientHexPubkey: String) async throws {
         let ownHexPubkey = loadedAccountPubkey
         guard !ownHexPubkey.isEmpty else {
             throw NSError(domain: "DMService", code: -1, userInfo: [NSLocalizedDescriptionKey: "No active account loaded"])
         }
+        let generation = self.switchGeneration
 
-        // ── Step 1: Optimistic UI update (instant) ──
-        let optimisticId = UUID().uuidString
+        // ── Step 1: key and both gift wraps (throws on any signer failure) ──
+        let isNIP46 = ConfigService.shared.config.activeSigningMode() == "nip46"
+        let senderPrivkey: String? = isNIP46 ? nil : try getActivePrivateKey()
+        let rumorPTags = [["p", recipientHexPubkey]]
+        async let recipientWrap = NIP17Service.createGiftWrapAsync(
+            content: content,
+            rumorPTags: rumorPTags,
+            giftWrapRecipient: recipientHexPubkey,
+            senderHexPrivkey: senderPrivkey,
+            senderHexPubkey: ownHexPubkey
+        )
+        async let selfWrap = NIP17Service.createGiftWrapAsync(
+            content: content,
+            rumorPTags: rumorPTags,
+            giftWrapRecipient: ownHexPubkey,
+            senderHexPrivkey: senderPrivkey,
+            senderHexPubkey: ownHexPubkey
+        )
+        let (giftWrap, selfGiftWrap) = try await (recipientWrap, selfWrap)
+
+        // Signing can take seconds with a remote signer: an account switched
+        // to meanwhile must not get this message in its threads.
+        guard self.switchGeneration == generation else {
+            throw NSError(domain: "DMService", code: -1, userInfo: [NSLocalizedDescriptionKey: "The account changed before the message was sent"])
+        }
+
+        // ── Step 2: show it ──
         let message = DMMessage(
-            id: optimisticId,
+            id: UUID().uuidString,
             senderPubkey: ownHexPubkey,
             content: content,
             timestamp: Date(),
             isFromMe: true
         )
-
         if let idx = conversations.firstIndex(where: { $0.id == recipientHexPubkey }) {
             conversations[idx].messages.append(message)
         } else {
@@ -84,63 +116,32 @@ extension DMService {
         sortConversations()
         saveConversations()
 
-        // ── Step 2: Background crypto + network I/O ──
-        let isNIP46 = ConfigService.shared.config.activeSigningMode() == "nip46"
-        let senderPrivkey: String? = isNIP46 ? nil : try getActivePrivateKey()
-        let rumorPTags = [["p", recipientHexPubkey]]
-        let generation = self.switchGeneration
+        // Its relay notification must not announce your own message.
+        if sentSelfWrapIds.count > 500 { sentSelfWrapIds.removeAll() }
+        sentSelfWrapIds.insert(selfGiftWrap.id)
 
+        // Publish both to local relay (non-blocking, reuses persistent connection)
+        publishToInbox(giftWrap)
+        publishToInbox(selfGiftWrap)
+
+        // Your own copy goes to your DM inbox list — the same list
+        // every device reads from — never to whichever of your relay
+        // lists a lookup happens to find first. Looking yours up the
+        // way a recipient's is looked up could land on your general
+        // (kind 10002) relays, which no device reads DMs from, so the
+        // message never appeared on your other devices.
+        for relayURL in ownDMInboxRelays() {
+            publishAuthenticated(selfGiftWrap, url: relayURL)
+        }
+
+        // ── Step 3: recipient's relays (lookup in the background) ──
         Task { [weak self] in
             guard let self = self else { return }
-
-            do {
-                // Create both gift wraps concurrently
-                async let recipientWrap = NIP17Service.createGiftWrapAsync(
-                    content: content,
-                    rumorPTags: rumorPTags,
-                    giftWrapRecipient: recipientHexPubkey,
-                    senderHexPrivkey: senderPrivkey,
-                    senderHexPubkey: ownHexPubkey
-                )
-                async let selfWrap = NIP17Service.createGiftWrapAsync(
-                    content: content,
-                    rumorPTags: rumorPTags,
-                    giftWrapRecipient: ownHexPubkey,
-                    senderHexPrivkey: senderPrivkey,
-                    senderHexPubkey: ownHexPubkey
-                )
-
-                let (giftWrap, selfGiftWrap) = try await (recipientWrap, selfWrap)
-
-                guard self.switchGeneration == generation else { return }
-
-                // Its relay notification must not announce your own message.
-                if self.sentSelfWrapIds.count > 500 { self.sentSelfWrapIds.removeAll() }
-                self.sentSelfWrapIds.insert(selfGiftWrap.id)
-
-                // Publish both to local relay (non-blocking, reuses persistent connection)
-                self.publishToInbox(giftWrap)
-                self.publishToInbox(selfGiftWrap)
-
-                // Your own copy goes to your DM inbox list — the same list
-                // every device reads from — never to whichever of your relay
-                // lists a lookup happens to find first. Looking yours up the
-                // way a recipient's is looked up could land on your general
-                // (kind 10002) relays, which no device reads DMs from, so the
-                // message never appeared on your other devices.
-                let ownRelays = self.ownDMInboxRelays()
-                for relayURL in ownRelays {
-                    self.publishAuthenticated(selfGiftWrap, url: relayURL)
-                }
-
-                let rRelays = await self.fetchRecipientDMRelays(recipientHexPubkey)
-                for relayURL in rRelays {
-                    self.publishAuthenticated(giftWrap, url: relayURL)
-                }
-            } catch {
-                #if DEBUG
-                print("DMService: Background DM publish failed: \(error)")
-                #endif
+            // Already signed by the account that wrote it and shown as sent:
+            // it goes out even if the account changes during the lookup.
+            let rRelays = await self.fetchRecipientDMRelays(recipientHexPubkey)
+            for relayURL in rRelays {
+                self.publishAuthenticated(giftWrap, url: relayURL)
             }
         }
     }
@@ -152,6 +153,7 @@ extension DMService {
             throw NSError(domain: "DMService", code: -1, userInfo: [NSLocalizedDescriptionKey: "No active account loaded"])
         }
         let isNIP46 = ConfigService.shared.config.activeSigningMode() == "nip46"
+        let generation = self.switchGeneration
 
         // Encrypt content using NIP-04
         let encryptedContent: String
@@ -166,6 +168,9 @@ extension DMService {
         let tags: [[String]] = [["p", recipientHexPubkey]]
         guard let event = await NostrService.shared.signEventAsync(kind: 4, content: encryptedContent, tags: tags) else {
             throw NSError(domain: "DMService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to sign NIP-04 event"])
+        }
+        guard self.switchGeneration == generation, event.pubkey.lowercased() == ownHexPubkey.lowercased() else {
+            throw NSError(domain: "DMService", code: -1, userInfo: [NSLocalizedDescriptionKey: "The account changed before the message was sent"])
         }
 
         // ── Optimistic UI update (uses real event ID since crypto is already done) ──
@@ -192,11 +197,10 @@ extension DMService {
         saveConversations()
 
         // ── Background network I/O ──
-        let generation = self.switchGeneration
-
+        // No account check here: the event is signed by the account that
+        // wrote it and already shown as sent, so it must go out.
         Task { [weak self] in
             guard let self = self else { return }
-            guard self.switchGeneration == generation else { return }
 
             // Publish to local inbox relay
             if let inboxURL = self.inboxRelayURL()?.absoluteString {

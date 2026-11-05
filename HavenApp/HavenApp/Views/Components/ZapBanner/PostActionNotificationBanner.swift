@@ -58,6 +58,8 @@ struct PostConfirmationPill: View {
         case .sending:     return "\(confirmation.actionType.label)…"
         case .confirmed:   return confirmation.actionType.doneLabel
         case .unconfirmed: return "Not posted. None of your relays took it"
+        case .notSent(let draftKept):
+            return draftKept ? "Not sent: you switched accounts. Kept in Drafts" : "Not sent: you switched accounts"
         }
     }
 
@@ -65,7 +67,7 @@ struct PostConfirmationPill: View {
         switch confirmation.state {
         case .sending:     return .accent
         case .confirmed:   return .success
-        case .unconfirmed: return .error
+        case .unconfirmed, .notSent: return .error
         }
     }
 }

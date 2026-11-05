@@ -172,10 +172,7 @@ struct NoteDetailViewWrapper: View {
     }
 
     private func handleNoteMessage(_ msg: String, client: WebSocketClient) {
-        guard let data = msg.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              let type = json[0] as? String, type == "EVENT",
-              let ev = json[2] as? [String: Any],
+        guard let ev = RelayFrame.event(msg),
               let id = ev["id"] as? String,
               let pubkey = ev["pubkey"] as? String,
               let content = ev["content"] as? String,

@@ -66,9 +66,8 @@ extension NoteDetailView {
     }
 
     private func handleParentMessage(_ msg: String, client: WebSocketClient) {
-        guard let data = msg.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              let type = json[0] as? String else { return }
+        guard let frame = RelayFrame.parse(msg) else { return }
+        let type = frame.type, json = frame.json
 
         if type == "EVENT", json.count >= 3,
            let ev = json[2] as? [String: Any],

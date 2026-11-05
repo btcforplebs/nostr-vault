@@ -7,16 +7,20 @@ import XCTest
 /// come after `removeBunkerConfig`: that call already detaches the active
 /// signer, and its session drop must land before the owner's connect, which
 /// can share the same signer session key.
-/// The settings view pulls in SwiftUI and the whole app and can't be built
-/// here, so this reads its source.
+/// Both remove paths in the settings view call `ConfigService.removeAccount`.
+/// Neither file can be built here (SwiftUI, the whole app), so this reads
+/// their source.
 final class AccountRemovalSwitchTests: XCTestCase {
-    private func settingsSource() throws -> String {
+    private func source(_ path: String) throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("HavenApp/Views/Settings/AccountsSettingsView.swift")
+            .appendingPathComponent("HavenApp/\(path)")
         return try String(contentsOf: url, encoding: .utf8)
     }
+
+    private func settingsSource() throws -> String { try source("Views/Settings/AccountsSettingsView.swift") }
+    private func removeSource() throws -> String { try source("Services/ConfigService+RemoveAccount.swift") }
 
     private func offsets(of needle: String, in source: String) -> [Int] {
         var result: [Int] = []
@@ -29,21 +33,28 @@ final class AccountRemovalSwitchTests: XCTestCase {
     }
 
     func testRemovalNeverClearsTheActiveAccountDirectly() throws {
-        let source = try settingsSource()
-        XCTAssertEqual(offsets(of: "activeAccountNpub = \"\"", in: source), [])
+        XCTAssertEqual(offsets(of: "activeAccountNpub = \"\"", in: try settingsSource()), [])
+        XCTAssertEqual(offsets(of: "activeAccountNpub = \"\"", in: try removeSource()), [])
     }
 
-    /// Both removal paths (swipe-delete and Remove Account) switch away from
-    /// the account only after its bunker config is gone.
-    func testEachRemovalSwitchesAwayAfterDroppingTheSigner() throws {
-        let source = try settingsSource()
-        let switches = offsets(of: "switchActiveAccount(to: nil)", in: source)
-        let removals = offsets(of: "removeBunkerConfig(forNpub:", in: source)
-        XCTAssertEqual(removals.count, 2, "expected the swipe-delete and Remove Account paths")
-        XCTAssertEqual(switches.count, removals.count)
-        for (i, removal) in removals.enumerated() where i < switches.count {
-            XCTAssertGreaterThan(switches[i], removal, "path \(i) switches before dropping the signer")
-            if i + 1 < removals.count { XCTAssertLessThan(switches[i], removals[i + 1]) }
-        }
+    /// Swipe-delete and Remove Account both go through the one removal, so
+    /// neither can leave the account's blocks or settings behind.
+    func testBothRemovePathsUseTheOneRemoval() throws {
+        let settings = try settingsSource()
+        XCTAssertEqual(offsets(of: "configService.removeAccount(npub:", in: settings).count, 2)
+        XCTAssertEqual(offsets(of: "removeBunkerConfig(forNpub:", in: settings), [])
+        XCTAssertEqual(offsets(of: "removeCredential(forNpub:", in: settings), [])
+    }
+
+    /// The removal switches away from the account only after its bunker
+    /// config is gone, drops every per-account entry, and tells the relay.
+    func testTheRemovalSwitchesAwayAfterDroppingTheSigner() throws {
+        let source = try removeSource()
+        let removal = try XCTUnwrap(offsets(of: "removeBunkerConfig(forNpub:", in: source).first)
+        let switchAway = try XCTUnwrap(offsets(of: "switchActiveAccount(to: nil)", in: source).first)
+        XCTAssertGreaterThan(switchAway, removal)
+        let entries = try XCTUnwrap(offsets(of: "removeAccountEntries(npub:", in: source).first)
+        let sync = try XCTUnwrap(offsets(of: "syncBlacklistToRelay()", in: source).first)
+        XCTAssertGreaterThan(sync, entries)
     }
 }

@@ -14,6 +14,7 @@ extension DMService {
         backfillSentCopiesIfNeeded()
 
         let generation = self.switchGeneration
+        externalCatchUp = DMCatchUp(account: ownPubkey, startedAt: Int64(Date().timeIntervalSince1970))
 
         // Your DM inbox relays first: that is where DMs to you (and your
         // sent copies from other devices) are published. The feed's read
@@ -52,7 +53,10 @@ extension DMService {
                     // Discard if account switched since this fetch started
                     DispatchQueue.main.async {
                         guard self.switchGeneration == generation else { return }
-                        self.routeExternalFrame(message, auth: auth, client: client, forAccount: ownPubkey)
+                        let frame = self.routeExternalFrame(message, auth: auth, client: client, forAccount: ownPubkey)
+                        if frame?.0 == "EOSE", self.externalCatchUp?.account == ownPubkey {
+                            self.externalCatchUp?.relayFinished()
+                        }
                     }
                 }
                 .store(in: &cancellables)
@@ -113,7 +117,7 @@ extension DMService {
                                 self?.externalClients.removeAll { $0 === client }
                                 // Update timestamp and tear down injection clients when the last external client disconnects
                                 if self?.externalClients.isEmpty == true {
-                                    self?.lastExternalFetchTimestamp = Int64(Date().timeIntervalSince1970)
+                                    self?.finishExternalCatchUp()
                                     self?.disconnectInjectionClients()
                                 }
                             }
@@ -134,7 +138,7 @@ extension DMService {
                 client.disconnect()
                 self.externalClients.removeAll { $0 === client }
                 if self.externalClients.isEmpty {
-                    self.lastExternalFetchTimestamp = Int64(Date().timeIntervalSince1970)
+                    self.finishExternalCatchUp()
                     self.disconnectInjectionClients()
                 }
             }
@@ -142,6 +146,17 @@ extension DMService {
             client.connect(url: url)
         }
     }
+    /// The last relay of a fetch is done: move that account's mark, if any
+    /// relay finished answering (`DMCatchUp`).
+    private func finishExternalCatchUp() {
+        guard let run = externalCatchUp else { return }
+        externalCatchUp = nil
+        let key = DMCatchUp.key(account: run.account)
+        let previous = Int64(UserDefaults.standard.integer(forKey: key))
+        let next = run.nextMark(previous: previous)
+        if next != previous { UserDefaults.standard.set(Int(next), forKey: key) }
+    }
+
     private func backfillSentCopiesIfNeeded() {
         let ownPubkey = loadedAccountPubkey
         // v2: v1 ran before the read answered AUTH, so wraps kept only on

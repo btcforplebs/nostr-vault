@@ -105,6 +105,8 @@ struct ComposeView: View {
     // Draft-loaded reply/quote context (overrides init-provided values)
     @State var draftReplyTo: FeedNote? = nil
     @State var draftQuoteTo: FeedNote? = nil
+    /// A saved draft was picked: its reply/quote targets win, nil included.
+    @State var draftLoaded = false
 
     /// The editor's text size: 16 points scaled like `Font.appSystem(size: 16)`.
     static var editorFontSize: CGFloat {
@@ -125,10 +127,10 @@ struct ComposeView: View {
     // Optional: for quote posts
     var quoteTo: FeedNote?
 
-    /// Effective reply target: draft-loaded value takes precedence over init-provided value.
-    var effectiveReplyTo: FeedNote? { draftReplyTo ?? replyTo }
-    /// Effective quote target: draft-loaded value takes precedence over init-provided value.
-    var effectiveQuoteTo: FeedNote? { draftQuoteTo ?? quoteTo }
+    /// Effective reply target: once a draft is loaded its value (nil included) wins.
+    var effectiveReplyTo: FeedNote? { ComposerContext.effective(draftLoaded: draftLoaded, draft: draftReplyTo, composer: replyTo) }
+    /// Effective quote target: once a draft is loaded its value (nil included) wins.
+    var effectiveQuoteTo: FeedNote? { ComposerContext.effective(draftLoaded: draftLoaded, draft: draftQuoteTo, composer: quoteTo) }
     // Optional: pre-filled content (used when editing a pending post)
     var initialContent: String = ""
     // Optional: draft ID when restoring a saved draft

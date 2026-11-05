@@ -114,6 +114,7 @@ extension ComposeView {
 
     func loadDraft(_ draft: Draft) {
         draftId = draft.id
+        draftLoaded = true
         content = convertNostrToMentions(draft.content)
         lastSavedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
 

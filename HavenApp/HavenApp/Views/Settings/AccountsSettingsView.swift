@@ -27,21 +27,9 @@ struct AccountsSettingsView: View {
                     accountRow(npub: npub)
                 }
                 .onDelete { indexSet in
-                    for index in indexSet {
-                        guard index > 0 else { continue }
-                        let npub = configService.allAccountNpubs[index]
-                        configService.config.whitelistedNpubs.removeAll { $0.trimmingCharacters(in: .whitespacesAndNewlines) == npub }
-                        configService.removeBunkerConfig(forNpub: npub)
-                        // Switch away only after the bunker config is gone: removeBunkerConfig
-                        // already detaches the active signer, and its session drop must land
-                        // before the owner's connect, which can share the same signer session.
-                        if configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines) == npub {
-                            configService.switchActiveAccount(to: nil)
-                        }
-                        configService.removeCredential(forNpub: npub)
-                        configService.config.accountSigningModes.removeValue(forKey: npub)
-                    }
-                    configService.save()
+                    // Read every npub before removing any: each removal shifts the list.
+                    let npubs = indexSet.filter { $0 > 0 }.map { configService.allAccountNpubs[$0] }
+                    for npub in npubs { configService.removeAccount(npub: npub) }
                 }
             } header: {
                 Text("Accounts").settingInfo(.accountAccounts)
@@ -112,17 +100,7 @@ struct AccountsSettingsView: View {
                     }
                 },
                 onRemoveAccount: {
-                    configService.config.whitelistedNpubs.removeAll { $0.trimmingCharacters(in: .whitespacesAndNewlines) == item.id }
-                    configService.removeBunkerConfig(forNpub: item.id)
-                    // Switch away only after the bunker config is gone: removeBunkerConfig
-                    // already detaches the active signer, and its session drop must land
-                    // before the owner's connect, which can share the same signer session.
-                    if configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines) == item.id {
-                        configService.switchActiveAccount(to: nil)
-                    }
-                    configService.removeCredential(forNpub: item.id)
-                    configService.config.accountSigningModes.removeValue(forKey: item.id)
-                    configService.save()
+                    configService.removeAccount(npub: item.id)
                 }
             )
         }
