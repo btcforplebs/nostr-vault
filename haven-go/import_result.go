@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // One import cycle's outcome, printed as ONE line at its very end so every
@@ -32,6 +33,8 @@ import (
 //   - relays: seed relays that answered the connect check / all seeds.
 //   - other_vault: the paired device read for "Copy from my other vault"
 //     (IMPORT_OTHER_VAULT_RELAY), or none.
+//   - unread: how many relay stretches were not read; each is logged as
+//     IMPORT_UNREAD relay=… from=… to=… why=… (status is then partial).
 //
 // Keys may be added later; parsers must ignore keys they don't know.
 // GetImportResultC returns the same line (without the log timestamp) after
@@ -53,6 +56,11 @@ type importOutcome struct {
 	seeds      int
 	reached    int
 	otherVault string // "none", "reached" or "not_reached"
+	// unread: per relay, the stretches this run could not read (a seed
+	// that failed the connect check, a silent or cut tagged relay, a walk
+	// that stopped). Logged one IMPORT_UNREAD line each; counted in the
+	// result line, so "complete" never hides one.
+	unread []jobRange
 }
 
 // currentImport is the outcome being collected, nil outside an import.
@@ -94,6 +102,18 @@ func (o *importOutcome) relaysChecked(seeds, reachable []string, otherVault stri
 	o.seeds = len(seeds)
 	o.reached = len(reachable)
 	o.mu.Unlock()
+	// A seed that didn't answer the connect check is never read from: the
+	// import is partial, with its whole range unread (Tron, background
+	// risks 9: 3 of 8 seeds used to say complete). The other vault has its
+	// own reason below.
+	from := config.ImportStartDate
+	for _, url := range seeds {
+		if url == otherVault || slices.Contains(reachable, url) {
+			continue
+		}
+		o.cut("relays_unreachable")
+		o.unreadRange(jobRange{Relay: url, From: from, To: time.Now().Format(layout), Why: "unreachable"})
+	}
 	if otherVault == "" {
 		return
 	}
@@ -118,7 +138,7 @@ var (
 // are not changed here) for its counts and for the signs of a cut run.
 func (o *importOutcome) observe(line string) {
 	switch {
-	case strings.Contains(line, importResultMarker):
+	case strings.Contains(line, importResultMarker), strings.Contains(line, importUnreadMarker):
 		return
 	case strings.Contains(line, "failed to init import DBs"):
 		o.fail("db_init")
@@ -169,8 +189,8 @@ func (o *importOutcome) line() string {
 	status, reason := o.status()
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	return fmt.Sprintf("%s status=%s reason=%s owner=%d tagged=%d relays=%d/%d other_vault=%s",
-		importResultMarker, status, reason, o.owner, o.tagged, o.reached, o.seeds, o.otherVault)
+	return fmt.Sprintf("%s status=%s reason=%s owner=%d tagged=%d relays=%d/%d other_vault=%s unread=%d",
+		importResultMarker, status, reason, o.owner, o.tagged, o.reached, o.seeds, o.otherVault, len(o.unread))
 }
 
 // finishImport prints the result line once and stops collecting.
@@ -180,6 +200,19 @@ func (o *importOutcome) finish() {
 	lastImportResult.Store(l)
 	log.Println("📋", l)
 }
+
+// unreadRange records one unread stretch and logs it:
+//
+//	IMPORT_UNREAD relay=<url> from=<yyyy-mm-dd> to=<yyyy-mm-dd> why=<reason>
+func (o *importOutcome) unreadRange(u jobRange) {
+	o.mu.Lock()
+	o.unread = append(o.unread, u)
+	o.mu.Unlock()
+	log.Printf("%s relay=%s from=%s to=%s why=%s", importUnreadMarker, u.Relay, u.From, u.To, u.Why)
+}
+
+// importUnreadMarker starts the line for one unread stretch.
+const importUnreadMarker = "IMPORT_UNREAD"
 
 // observeImportLine feeds a log line to the import being collected, if any.
 func observeImportLine(line string) {

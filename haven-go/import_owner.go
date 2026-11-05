@@ -202,7 +202,22 @@ func isImportWrite(ctx context.Context) bool {
 	return v
 }
 
-func importOwnerNotes(ctx context.Context) {
+// importOwnerNotes is the import cycle's owner step: every relay to the
+// end, the window walk included.
+func importOwnerNotes(ctx context.Context) { importOwnerNotesRun(ctx, true) }
+
+// ownerReport: what one owner-notes run did. redo: the relays whose lane or
+// negentropy didn't finish (with where they stopped); with walk off they are
+// not read here but left for the older_relays job (import_jobs.go).
+type ownerReport struct {
+	stored int
+	failed int
+	redo   []walkRelay
+}
+
+// importOwnerNotesRun runs the owner step; walk says whether the relays that
+// didn't finish are read window by window now or only reported.
+func importOwnerNotesRun(ctx context.Context, walk bool) (rep ownerReport) {
 	ctx = context.WithValue(ctx, importWriteKey{}, true)
 	startTime, err := time.Parse(layout, config.ImportStartDate)
 	if err != nil {
@@ -217,37 +232,9 @@ func importOwnerNotes(ctx context.Context) {
 
 	// keep stores one note from a page, one at a time across every relay:
 	// true when it is new to the vault.
-	var keepMu sync.Mutex
-	failed := 0
-	keep := func(ev *nostr.Event) bool {
-		if !verifiedOwnerNote(ev) {
-			slog.Debug("🚫 skipping a note that failed the check", "id", ev.ID)
-			return false
-		}
-		keepMu.Lock()
-		defer keepMu.Unlock()
-		if isBlacklisted(ev.PubKey) {
-			slog.Debug("🚫 skipping event from blacklisted pubkey", "pubkey", ev.PubKey, "id", ev.ID)
-			return false
-		}
-		if isDuplicate(ctx, wdb, ev) {
-			return false // another relay's lane or negentropy got it first
-		}
-		if isDeleted(ctx, outboxDB, ev) {
-			slog.Debug("🚫 skipping deleted event", "id", ev.ID)
-			return false
-		}
-		applyImportedDeletion(ctx, outboxDB, ev)
-		if err := wdb.Publish(ctx, *ev); err != nil {
-			if errors.Is(err, eventstore.ErrDupEvent) {
-				return false
-			}
-			log.Println("🚫  error importing note", ev.ID, ":", err)
-			failed++
-			return false
-		}
-		return true
-	}
+	keeper := newOwnerKeeper(ctx)
+	keep := keeper.keep
+	keepMu := &keeper.mu
 
 	// Each relay on its own: negentropy if it may speak it, else (or if it
 	// didn't hand everything over) its whole history paged newest first.
@@ -263,6 +250,12 @@ func importOwnerNotes(ctx context.Context) {
 		negEmpty []string
 		wg       sync.WaitGroup
 	)
+	defer func() {
+		mu.Lock()
+		rep.stored, rep.redo = total, slices.Clone(redo)
+		mu.Unlock()
+		rep.failed = keeper.failedCount()
+	}()
 	for _, url := range importRelays() {
 		wg.Add(1)
 		go func(url string) {
@@ -277,7 +270,7 @@ func importOwnerNotes(ctx context.Context) {
 					log.Printf("📦 Imported %d notes from %s to %s (%s, %s)", n, from, today, seedHost(url), how)
 				}
 			}
-			negStore := &importNegStore{outbox: &outboxNegStore{outbox: wdb, advance: func(nostr.Timestamp) { stored.Add(1) }}, lock: &keepMu}
+			negStore := &importNegStore{outbox: &outboxNegStore{outbox: wdb, advance: func(nostr.Timestamp) { stored.Add(1) }}, lock: keepMu}
 			synced := false
 			runsafe.Run("importOwnerNotes.negentropy", func() { synced = importOwnerNegentropy(ctx, url, filter, negStore) })
 			if synced || ctx.Err() != nil {
@@ -358,8 +351,9 @@ func importOwnerNotes(ctx context.Context) {
 	}
 
 	// A lane that stopped partway, or never answered, is read window by
-	// window, from where it stopped down to the start date.
-	if len(redo) > 0 {
+	// window, from where it stopped down to the start date (or, with walk
+	// off, left for the older_relays job).
+	if len(redo) > 0 && walk {
 		names := make([]string, len(redo))
 		for i, w := range redo {
 			names[i] = seedHost(w.url)
@@ -367,11 +361,12 @@ func importOwnerNotes(ctx context.Context) {
 		log.Printf("⚠️ %d relay(s) did not finish their whole history; reading them window by window: %v", len(redo), names)
 		total += importOwnerWindows(ctx, redo, startTime, owners, func(ev *nostr.Event) bool { return keep(ev) })
 	}
-	if failed > 0 {
+	if failed := keeper.failedCount(); failed > 0 {
 		log.Printf("⚠️ Failed to import %d notes", failed)
 	}
 	log.Println("✅ owner note import complete! Imported", total, "notes")
 	debug.FreeOSMemory()
+	return
 }
 
 // importNegEmptyHolds: of urls, the relays that answer a limit:1 ask over
@@ -497,6 +492,55 @@ type walkState struct {
 // line ("Imported N notes from X to Y" or "No notes found for X to Y") that
 // the apps' import screens read. Returns how many notes it stored.
 func importOwnerWindows(ctx context.Context, relays []walkRelay, start time.Time, owners []string, keep func(*nostr.Event) bool) int {
+	rep := &walkReport{}
+	n := importOwnerWindowsReport(ctx, relays, start, owners, keep, rep)
+	if o := currentImport.Load(); o != nil {
+		for _, u := range rep.unread {
+			o.unreadRange(u)
+		}
+	}
+	return n
+}
+
+// walkReport: per relay, what a window walk left unread and where it got to,
+// for the jobs (import_jobs.go): a later run resumes each relay from its top.
+type walkReport struct {
+	unread []jobRange
+	tops   map[string]time.Time // how far down each relay was read; start = all of it
+}
+
+func (w *walkReport) left(url string, from, to time.Time, why string) {
+	if w == nil {
+		return
+	}
+	if to.After(from) {
+		w.unread = append(w.unread, jobRange{Relay: url, From: from.Format(layout), To: to.Format(layout), Why: why})
+	}
+	w.tops[url] = to
+}
+
+// leftAll: every relay not yet dropped stops where the walk stopped.
+func (w *walkReport) leftAll(states []*walkState, start, end time.Time, why string) {
+	if w == nil {
+		return
+	}
+	for _, st := range states {
+		if st.dropped {
+			continue
+		}
+		top := end
+		if st.top.Before(top) {
+			top = st.top
+		}
+		w.left(st.url, start, top, why)
+	}
+}
+
+// importOwnerWindowsReport is importOwnerWindows with a report (nil: none).
+func importOwnerWindowsReport(ctx context.Context, relays []walkRelay, start time.Time, owners []string, keep func(*nostr.Event) bool, report *walkReport) int {
+	if report != nil && report.tops == nil {
+		report.tops = map[string]time.Time{}
+	}
 	stored := 0
 	now := time.Now()
 	var unread unreadSpan
@@ -562,6 +606,9 @@ func importOwnerWindows(ctx context.Context, relays []walkRelay, start time.Time
 			if parent.Err() == nil {
 				log.Printf("⚠️ reading %v window by window passed %s with %d notes; not read: %s to %s", urls, importWalkDeadline, stored, start.Format(layout), end.Format(layout))
 				unread.add(start, end)
+				report.leftAll(states, start, end, "deadline")
+			} else {
+				report.leftAll(states, start, end, "cut")
 			}
 			return stored
 		}
@@ -594,6 +641,11 @@ func importOwnerWindows(ctx context.Context, relays []walkRelay, start time.Time
 		}
 		retries.Wait()
 		if ctx.Err() != nil {
+			why := "cut"
+			if parent.Err() == nil {
+				why = "deadline"
+			}
+			report.leftAll(states, start, end, why)
 			return stored
 		}
 		if retry {
@@ -650,9 +702,11 @@ func importOwnerWindows(ctx context.Context, relays []walkRelay, start time.Time
 				// it was read, from where its lane stopped.
 				if st.alive {
 					unread.add(start, begin)
+					report.left(st.url, start, begin, "silent")
 					log.Printf("⚠️ %s sent notes, then nothing for %d windows in a row; not asking it again (before %s not read from it)", seedHost(st.url), limit, begin.Format(layout))
 				} else {
 					unread.add(start, st.top)
+					report.left(st.url, start, st.top, "silent")
 					log.Printf("⚠️ %s answered nothing, or went quiet without finishing, for %d windows in a row; not asking it again", seedHost(st.url), limit)
 				}
 			}
@@ -664,5 +718,64 @@ func importOwnerWindows(ctx context.Context, relays []walkRelay, start time.Time
 			stride = importWindowStride
 		}
 	}
+	if report != nil {
+		for _, st := range states {
+			if !st.dropped {
+				report.tops[st.url] = start // read all the way down
+			}
+		}
+	}
 	return stored
+}
+
+// ownerKeeper stores the owners' notes from any import step, one at a time
+// (mu is shared with negentropy's store, importNegStore.lock): the deletion
+// check and the store are one step (Tron, PR 1663).
+type ownerKeeper struct {
+	ctx    context.Context
+	mu     sync.Mutex
+	failed int
+}
+
+func newOwnerKeeper(ctx context.Context) *ownerKeeper {
+	return &ownerKeeper{ctx: context.WithValue(ctx, importWriteKey{}, true)}
+}
+
+func (k *ownerKeeper) failedCount() int {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.failed
+}
+
+// keep stores ev if it is a real owner note new to the vault; true if stored.
+func (k *ownerKeeper) keep(ev *nostr.Event) bool {
+	ctx := k.ctx
+	if !verifiedOwnerNote(ev) {
+		slog.Debug("🚫 skipping a note that failed the check", "id", ev.ID)
+		return false
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	wdb := eventstore.RelayWrapper{Store: outboxDB}
+	if isBlacklisted(ev.PubKey) {
+		slog.Debug("🚫 skipping event from blacklisted pubkey", "pubkey", ev.PubKey, "id", ev.ID)
+		return false
+	}
+	if isDuplicate(ctx, wdb, ev) {
+		return false // another relay's lane or negentropy got it first
+	}
+	if isDeleted(ctx, outboxDB, ev) {
+		slog.Debug("🚫 skipping deleted event", "id", ev.ID)
+		return false
+	}
+	applyImportedDeletion(ctx, outboxDB, ev)
+	if err := wdb.Publish(ctx, *ev); err != nil {
+		if errors.Is(err, eventstore.ErrDupEvent) {
+			return false
+		}
+		log.Println("🚫  error importing note", ev.ID, ":", err)
+		k.failed++
+		return false
+	}
+	return true
 }
