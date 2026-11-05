@@ -22,9 +22,10 @@ import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.flow.first
 
 /**
- * Setup wizard for first-run onboarding.
- * Full mode:   Welcome → Path → Account → Relays → Import → Media → Wallet → Complete
- * Browse mode: Welcome → Path → Account → Complete
+ * Setup wizard for first-run onboarding: two questions (PLANS/NV_FIRST_RUN_ENTRY_PLAN_2026_11_05.md).
+ * New to Nostr (Create an account): relay choice → keys → password → profile → Who told you → starter relays → done.
+ * I already use Nostr: relay choice → your key → New to Nostr Vault? → Yes: relay check → import tour;
+ *   No: copy from the other vault (two scans), then the same relay check → import tour.
  * Port of SetupWizardView.swift.
  */
 
@@ -111,7 +112,7 @@ fun SetupWizardScreen(
                     WizardStep.KEY_PASSWORD -> KeyPasswordStep(viewModel)
                     WizardStep.USE_NOSTR_KEY -> UseNostrKeyStep(viewModel)
                     WizardStep.REFERRER -> ReferrerStep(viewModel)
-                    WizardStep.NEW_TO_VAULT -> BackupQuestionStep(viewModel, onComplete)
+                    WizardStep.NEW_TO_VAULT -> NewToVaultStep(viewModel, onComplete)
                     WizardStep.RELAY_CHECK -> RelayCheckStep(viewModel)
                     WizardStep.IMPORT_TOUR -> ImportTourStep(viewModel, onComplete)
                     WizardStep.PROFILE -> ProfileStep(viewModel)
@@ -121,7 +122,6 @@ fun SetupWizardScreen(
                     WizardStep.IMPORT_NOTES -> ImportNotesStep(viewModel)
                     WizardStep.MIRROR_MEDIA -> MirrorMediaStep(viewModel)
                     WizardStep.WALLET -> WalletSetupStep(viewModel)
-                    WizardStep.NOTIFICATIONS -> NotificationsStep(viewModel)
                     WizardStep.COMPLETE -> CompleteStep(
                         setupPath = setupPath,
                         readOnly = viewModel.setupModeNow() == "browse",

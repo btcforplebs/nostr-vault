@@ -123,7 +123,7 @@ import java.net.URL
             withContext(Dispatchers.IO) {
                 try {
                     // Setup only restores the signing-in key's own backup,
-                    // same as the backup question (runOwnBackupRestore).
+                    // (runOwnBackupRestore).
                     val result = runOwnBackupRestore(zipPath)
                     File(zipPath).delete()
                     if (result == 0) {
@@ -230,8 +230,6 @@ import java.net.URL
     }
 
     fun SetupWizardViewModel.skipWallet() { _step.value = stepAfter(WizardStep.WALLET) }
-
-    // ── Notifications ("Stay in the Loop", iOS PushNotificationStep) ──
 
 /** Suggested in setup's media step: a server to sync from. */
 internal const val SUGGESTED_MIRROR_SOURCE = "https://blossom.primal.net"

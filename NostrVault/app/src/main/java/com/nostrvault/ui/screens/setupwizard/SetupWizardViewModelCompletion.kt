@@ -19,24 +19,6 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.net.URL
 
-    /** [enable] is "Enable Notifications" (the caller has asked Android for
-     *  the permission); false is "Not now". Either way setup won't ask again. */
-    fun SetupWizardViewModel.finishNotifications(enable: Boolean, dms: Boolean, zaps: Boolean, mentions: Boolean) {
-        configStore.update {
-            if (enable) {
-                it.copy(
-                    notificationPermissionAsked = true,
-                    pushNotifyDMs = dms,
-                    pushNotifyZaps = zaps,
-                    pushNotifyMentions = mentions,
-                )
-            } else {
-                it.copy(notificationPermissionAsked = true)
-            }
-        }
-        _step.value = stepAfter(WizardStep.NOTIFICATIONS)
-    }
-
     // ── Complete ─────────────────────────────────────────────────
 
     fun SetupWizardViewModel.completeSetup(onComplete: () -> Unit) {
@@ -64,11 +46,10 @@ import java.net.URL
                 } catch (_: Exception) {}
             }
 
-            // New accounts start with notifications on (DMs, replies, mentions
-            // and zaps per PushPrefs' defaults) — otherwise a
-            // first DM arrives silently. Set here rather than as the config
-            // default so existing installs keep whatever they had.
-            configStore.update { it.copy(hasCompletedSetup = true, enablePushNotifications = true) }
+            // Notifications are asked once, by the app, now that setup is done
+            // and the main screen shows (MainActivity, NotificationAsk). Push
+            // stays off until that answer, and is on only if it's yes.
+            configStore.update { it.copy(hasCompletedSetup = true, notificationAskPending = true) }
 
             // Who told you about Nostr Vault: follow them, and whoever of
             // their follows stayed ticked, now that this key is active.

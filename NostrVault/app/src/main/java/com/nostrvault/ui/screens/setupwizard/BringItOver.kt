@@ -3,8 +3,8 @@ package com.nostrvault.ui.screens
 import com.nostrvault.service.ImportResult
 
 /**
- * Setup's "Copy from my other vault" (PLANS/NV_TWO_SCAN_PAIRING_PLAN.md §5a, lane E): the third answer in the import
- * choice, next to the backup and the relays (Logen 2026-11-05). After the two scans this phone imports from the other
+ * Setup's "Copy from my other vault" (PLANS/NV_TWO_SCAN_PAIRING_PLAN.md §5a, lane E): the No to "New to Nostr
+ * Vault?" (PLANS/NV_FIRST_RUN_ENTRY_PLAN_2026_11_05.md). After the two scans this phone imports from the other
  * device (one more seed relay, read over the link) since [START_DATE]; the normal relay import always runs after it,
  * since the copy reads only the other vault's public notes. A link or copy that fails falls back quietly to the relay
  * import. No mesh, FIPS, address or role words on these screens. Twin of iOS `OtherVaultCopy.swift` (#1720).
@@ -14,6 +14,8 @@ object BringItOver {
     const val COPY = "Copy from my other vault"
     const val COPY_DETAIL = "Links your devices, then brings your notes from your relays"
     const val CANCEL = "Cancel"
+    /** The escape while linking: no other device to scan, so the notes come from relays (plan §1). */
+    const val LOST_DEVICE = "Lost your other device? We'll bring your notes from relays"
     const val SCAN_TITLE = "Scan your other device"
     const val SCAN_BODY = "On your other device, open Vault › Your devices › Add, so it shows a code. Then scan it here."
     const val FALLBACK_LINE = "Your other vault was not reached; getting your notes from your relays instead"

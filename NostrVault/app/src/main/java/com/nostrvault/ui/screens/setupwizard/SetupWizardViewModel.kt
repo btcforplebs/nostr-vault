@@ -58,7 +58,7 @@ internal const val IMPORT_TOUR_START_DATE = "2023-01-01"
 
 enum class WizardStep {
     WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, STARTER_RELAYS, USE_NOSTR_KEY, REFERRER, NEW_TO_VAULT, RELAY_CHECK, IMPORT_TOUR,
-    ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, NOTIFICATIONS, COMPLETE
+    ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, COMPLETE
 }
 
 enum class AccountMode { GENERATE, IMPORT, AMBER, REMOTE_SIGNER }
@@ -161,10 +161,6 @@ class SetupWizardViewModel @Inject constructor(
     internal val _importCompleted = MutableStateFlow(false)
     val importCompleted = _importCompleted.asStateFlow()
 
-    // "Do you have a Vault backup?"
-    internal val _backupQuestion = MutableStateFlow<VaultBackupQuestion.State>(VaultBackupQuestion.State.Ask)
-    val backupQuestion = _backupQuestion.asStateFlow()
-
     // Blossom
     // A suggestion to sync from. Saved as an upload server only when the
     // account has no media server list of its own (see startMediaMirror).
@@ -242,8 +238,8 @@ class SetupWizardViewModel @Inject constructor(
     val tourImportProgress = relayImportService.importProgress
     val tourImportStatus = relayImportService.importStatusMessage
 
-    /** Notes, likes and everything, read from the relay once the import is done. */
-    internal val _tourCounts = MutableStateFlow<Triple<Int, Int, Int>?>(null)
+    /** The Ready card's counts once the import is done: null while counting, then only the real ones ([ReadyCounts]). */
+    internal val _tourCounts = MutableStateFlow<com.nostrvault.setup.ReadyCounts?>(null)
     val tourCounts = _tourCounts.asStateFlow()
     /** The account whose import the tour started. */
     internal var importTourPubkey: String? = null
@@ -301,7 +297,7 @@ class SetupWizardViewModel @Inject constructor(
     private val fullSteps = listOf(
         WizardStep.WELCOME, WizardStep.RELAY_CHOICE, WizardStep.ACCOUNT,
         WizardStep.RELAYS, WizardStep.IMPORT_NOTES, WizardStep.MIRROR_MEDIA,
-        WizardStep.WALLET, WizardStep.NOTIFICATIONS, WizardStep.COMPLETE,
+        WizardStep.WALLET, WizardStep.COMPLETE,
     )
 
     /** Steps for browse mode. */
@@ -310,18 +306,21 @@ class SetupWizardViewModel @Inject constructor(
         WizardStep.IMPORT_NOTES, WizardStep.COMPLETE,
     )
 
-    /** Steps for "New to Nostr" mode: keys, password, profile, the servers
-     *  its relay list will name, done. The Fill your feed guide
+    /** Steps for "New to Nostr" mode (the first question's Yes): keys,
+     *  password, profile, ("Who told you", added by withReferrerStep), the
+     *  servers its relay list will name, done. The Fill your feed guide
      *  finds people after setup. */
     private val newUserSteps = listOf(
         WizardStep.WELCOME, WizardStep.RELAY_CHOICE,
         WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD, WizardStep.PROFILE, WizardStep.STARTER_RELAYS, WizardStep.COMPLETE,
     )
 
-    /** Steps for "I already use Nostr": your key, ("Who told you", added by
-     *  withReferrerStep), "Do you have a Vault
-     *  backup?", relay check, import tour. The tour's Enter finishes setup, so
-     *  there's no done screen; a restored backup finishes it at the question. */
+    /** Steps for "I already use Nostr" (the first question's No): your key,
+     *  then the second question, "New to Nostr Vault?". Yes is the relay
+     *  check and the import tour; No copies from the other vault in place of
+     *  the question, then goes on to the same relay check. The tour's Enter
+     *  finishes setup, so there's no done screen. A backup zip is restored
+     *  from Settings › Backup & Restore, not here. */
     private val useNostrSteps = listOf(
         WizardStep.WELCOME, WizardStep.RELAY_CHOICE,
         WizardStep.USE_NOSTR_KEY, WizardStep.NEW_TO_VAULT, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR,
@@ -342,7 +341,6 @@ class SetupWizardViewModel @Inject constructor(
                     else -> fullSteps
                 },
                 _setupPath.value,
-                readOnly = configStore.config.value.setupMode == "browse",
             )
             return if (_useExternalRelay.value) {
                 // No import here, so "I already use Nostr" ends on the done screen.
@@ -386,7 +384,6 @@ class SetupWizardViewModel @Inject constructor(
         _useNostrInput.value = ""
         _useNostrPassword.value = ""
         _useNostrConfirm.value = ""
-        _backupQuestion.value = VaultBackupQuestion.State.Ask
         _error.value = null
         com.nostrvault.setup.ReferrerFollows.clear()
         _setupPath.value = path

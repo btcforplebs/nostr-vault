@@ -41,6 +41,7 @@ class BringItOverTest {
         assertEquals("Your other vault was not reached; getting your notes from your relays instead", BringItOver.FALLBACK_LINE)
         assertEquals("Copying from Logen's Mac…", BringItOver.copyingLine("Logen's Mac"))
         assertEquals("Copying from your other device…", BringItOver.copyingLine("  "))
+        assertEquals("Lost your other device? We'll bring your notes from relays", BringItOver.LOST_DEVICE)
     }
 
     @Test
@@ -48,7 +49,7 @@ class BringItOverTest {
         val words = listOf(
             BringItOver.COPY, BringItOver.COPY_DETAIL, BringItOver.CANCEL, BringItOver.SCAN_TITLE, BringItOver.SCAN_BODY,
             BringItOver.FALLBACK_LINE, BringItOver.showCodeTitle("Mac"), BringItOver.showCodeBody("Mac"),
-            BringItOver.linkedLine("Mac"), BringItOver.copyingLine("Mac"),
+            BringItOver.linkedLine("Mac"), BringItOver.copyingLine("Mac"), BringItOver.LOST_DEVICE,
             com.nostrvault.fips.MeshPairing.roleConfirmText(DeviceRole.MAC, "Logen's Mac", setup = true),
         )
         for (w in words) for (banned in listOf("mesh", "fips", "npub", "address", "role")) {

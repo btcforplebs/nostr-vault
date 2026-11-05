@@ -228,7 +228,7 @@ private fun ReadyCard(
     done: Boolean,
     failed: Boolean,
     outcome: com.nostrvault.service.ImportResult?,
-    counts: Triple<Int, Int, Int>?,
+    counts: com.nostrvault.setup.ReadyCounts?,
     isReadOnly: Boolean,
     onKeepRunning: () -> Unit,
 ) {
@@ -252,12 +252,15 @@ private fun ReadyCard(
         )
     } else if (done) {
         Text("Everything we found is saved on this device.", color = SecondaryText, fontSize = 15.sp)
-        counts?.let { (notes, likes, all) ->
+        // Only real counts; none yet says so instead of a 0 (ReadyCounts).
+        counts?.let { ready ->
             Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                CountTile(notes, "notes", Modifier.weight(1f))
-                CountTile(likes, "likes", Modifier.weight(1f))
-                CountTile(all, "in all", Modifier.weight(1f))
+            if (ready.tiles.isEmpty()) {
+                Text(com.nostrvault.setup.ReadyCounts.NONE_YET, color = SecondaryText, fontSize = 13.sp, lineHeight = 18.sp)
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ready.tiles.forEach { (value, label) -> CountTile(value, label, Modifier.weight(1f)) }
+                }
             }
         }
         if (isReadOnly) {

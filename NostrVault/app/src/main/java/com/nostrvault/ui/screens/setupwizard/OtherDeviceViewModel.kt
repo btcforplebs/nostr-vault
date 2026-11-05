@@ -38,7 +38,7 @@ import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 /**
- * "Copy from my other vault" in setup's import choice (§5a): this new phone plays B. It scans the other device's code, confirms in
+ * "Copy from my other vault" as the No to setup's "New to Nostr Vault?" (§5a): this new phone plays B. It scans the other device's code, confirms in
  * setup words, sends the hello, shows its own code and waits for the ack, on the phase-0 [MeshPairingJoiner] and lane
  * B's [MeshPairingHello]. Anything that doesn't link (no code in 3 minutes, a refusal it can't get past, the ack
  * window running out) ends in [Ui.FellBack], and setup carries on to the relays quietly. Twin of iOS
@@ -177,10 +177,10 @@ class OtherDeviceViewModel @Inject constructor(
         }
     }
 
-    /** Cancel or "They don't match", on any screen of the flow: back to the import choice, nothing stored. */
+    /** Cancel or "They don't match", on any screen of the flow: back to the question, nothing stored. */
     fun giveUp() = reset()
 
-    /** Back to the import choice (also once setup has acted on [Ui.FellBack]). */
+    /** Back to the question (also once setup has acted on [Ui.FellBack]). */
     fun reset() {
         stopTicker()
         hello?.close()

@@ -33,7 +33,9 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.nostrvault.setup.NotificationAsk
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.fips.FipsMeshManager
 import com.nostrvault.relay.LogStore
@@ -96,8 +98,11 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var relayImportService: com.nostrvault.service.RelayImportService
     @Inject lateinit var fipsMeshManager: FipsMeshManager
 
+    /** The one notification question's answer: push on only if allowed (NotificationAsk). */
     private val notificationPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* result ignored */ }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            configStore.update { NotificationAsk.answered(it, granted) }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -109,10 +114,6 @@ class MainActivity : FragmentActivity() {
 
         // Load persisted config so hasCompletedSetup reflects saved state
         configStore.reload()
-
-        // Ask for notification permission (Android 13+) so local notifications for
-        // inbound mentions/DMs/zaps can be shown. No-op on older versions.
-        requestNotificationPermissionIfNeeded()
 
         // Posts waiting for an outside media server: watch the network and
         // retry every minute while any wait. Started right after the config
@@ -181,6 +182,15 @@ class MainActivity : FragmentActivity() {
                     // complete, so a user who just finished the wizard heard no
                     // DMs until they opened the DM tab or reopened the app.
                     dmService.startIfNeeded()
+                }
+            }
+
+            // Notifications are asked once, after setup, with the main
+            // screen showing: never over setup, never cold on a later launch.
+            LaunchedEffect(config.hasCompletedSetup, config.notificationAskPending) {
+                if (config.hasCompletedSetup && config.notificationAskPending) {
+                    delay(NOTIFICATION_ASK_DELAY_MS)
+                    askNotificationsOnce()
                 }
             }
 
@@ -336,22 +346,20 @@ class MainActivity : FragmentActivity() {
     }
 
     /**
-     * Request POST_NOTIFICATIONS on Android 13+ if not already granted. A new
-     * install is asked by setup's "Stay in the Loop" step, not over the first
-     * screen (iOS asks the same way). Setup paths without that step, and
-     * installs from before it, are asked once at the next launch.
+     * Setup's one notification question (NotificationAsk): Android 13+ asks
+     * for POST_NOTIFICATIONS; older versions, or a permission already given,
+     * need no question and switch push on.
      */
-    private fun requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-        val config = configStore.config.value
-        if (!config.hasCompletedSetup || config.notificationPermissionAsked) return
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            return
+    private fun askNotificationsOnce() {
+        val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+        val granted = !needsPermission || ContextCompat.checkSelfPermission(
+            this, Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+        when (NotificationAsk.next(configStore.config.value, needsPermission, granted)) {
+            NotificationAsk.Action.NONE -> Unit
+            NotificationAsk.Action.ALLOWED -> configStore.update { NotificationAsk.answered(it, granted = true) }
+            NotificationAsk.Action.ASK -> notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        configStore.update { it.copy(notificationPermissionAsked = true) }
-        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     /**
@@ -499,3 +507,6 @@ class MainActivity : FragmentActivity() {
         AmberResultBridge.detach()
     }
 }
+
+/** Lets the main screen draw before Android's notification question covers it. */
+private const val NOTIFICATION_ASK_DELAY_MS = 1_000L

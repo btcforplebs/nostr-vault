@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -47,9 +48,10 @@ import com.nostrvault.ui.theme.SuccessGreen
 import com.nostrvault.ui.theme.TertiaryText
 
 /**
- * "Copy from my other vault", once picked in the import choice (§5a): links this phone to the other device with two
- * scans. Anything that doesn't link carries on to the relays with one plain line; Cancel goes back to the choice. No
- * mesh, address or role words here. Twin of iOS `BringItOverFlow`.
+ * "Copy from my other vault", once picked as the No to "New to Nostr Vault?" (§5a): links this phone to the other device with two
+ * scans. Anything that doesn't link carries on to the relays with one plain line; Cancel goes back to the question,
+ * and "Lost your other device?" goes straight on to the relays. No mesh, address or role words here. Twin of iOS
+ * `BringItOverFlow`.
  */
 @Composable
 internal fun OtherDeviceFlow(
@@ -70,23 +72,23 @@ internal fun OtherDeviceFlow(
         )
     }
     LaunchedEffect(viewModel) { viewModel.openCamera.collect { scan() } }
-    // Didn't link: today's relay import, as if "No, import from my relays" had been tapped.
+    // Didn't link: today's relay import, as if "Yes, bring my notes from relays" had been tapped.
     // Copied: the normal relay import still runs next (#1720 twin), so the copy's "done" is cleared first.
     LaunchedEffect(ui) {
         if (ui == OtherDeviceViewModel.Ui.Copied) {
             wizard.relayImportService.dismissImportProgress()
             viewModel.reset()
-            wizard.answerNoBackup()
+            wizard.bringNotesFromRelays()
         }
         if (ui == OtherDeviceViewModel.Ui.FellBack) {
             viewModel.reset()
-            wizard.answerNoBackup()
+            wizard.bringNotesFromRelays()
         }
     }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         when (val s = ui) {
-            // The import choice draws these; the flow has nothing of its own to show.
+            // The question (NewToVaultStep) draws these; the flow has nothing of its own to show.
             OtherDeviceViewModel.Ui.Ask, OtherDeviceViewModel.Ui.FellBack -> Unit
             OtherDeviceViewModel.Ui.Starting -> {
                 Title(BringItOver.SCAN_TITLE)
@@ -99,6 +101,7 @@ internal fun OtherDeviceFlow(
                 Spacer(Modifier.height(8.dp))
                 WizardPrimaryButton(text = "Scan its code", onClick = scan)
                 WizardSecondaryButton(text = BringItOver.CANCEL, onClick = viewModel::giveUp)
+                LostDevice { viewModel.giveUp(); wizard.bringNotesFromRelays() }
             }
             is OtherDeviceViewModel.Ui.Confirm -> {
                 Title("Link this device?")
@@ -107,6 +110,7 @@ internal fun OtherDeviceFlow(
                 Spacer(Modifier.height(8.dp))
                 WizardPrimaryButton(text = "Link", onClick = viewModel::confirm)
                 WizardSecondaryButton(text = BringItOver.CANCEL, onClick = viewModel::giveUp)
+                LostDevice { viewModel.giveUp(); wizard.bringNotesFromRelays() }
             }
             is OtherDeviceViewModel.Ui.ShowMyCode -> {
                 Title(BringItOver.showCodeTitle(s.name))
@@ -114,6 +118,7 @@ internal fun OtherDeviceFlow(
                 Qr(s.uri)
                 Waiting("Waiting for ${s.name}…")
                 WizardSecondaryButton(text = BringItOver.CANCEL, onClick = viewModel::giveUp)
+                LostDevice { viewModel.giveUp(); wizard.bringNotesFromRelays() }
             }
             is OtherDeviceViewModel.Ui.CheckWords -> {
                 Title("Do these words match?")
@@ -138,6 +143,14 @@ internal fun OtherDeviceFlow(
             }
             OtherDeviceViewModel.Ui.Copied -> Unit
         }
+    }
+}
+
+/** The way out for someone whose other device is gone: the relay import instead (plan §1). */
+@Composable
+private fun LostDevice(onClick: () -> Unit) {
+    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth().testTag("setup.lostOtherDevice")) {
+        Text(BringItOver.LOST_DEVICE, color = WizardAccent, fontSize = 14.sp, textAlign = TextAlign.Center)
     }
 }
 

@@ -117,18 +117,20 @@ import kotlinx.coroutines.launch
         }
     }
 
-    /** Real counts for the Ready card, once the relay is back up. */
+    /**
+     * Counts for the Ready card, once the relay is back up. A few quick tries,
+     * then whatever is real ([ReadyCounts]): never a 15 s wait, never a 0.
+     */
     fun SetupWizardViewModel.loadTourCounts() {
         if (_tourCounts.value != null) return
         viewModelScope.launch {
-            // The import restarts the relay when it finishes; give it a moment.
-            for (attempt in 1..10) {
-                statsService.fetchCountsByKind()
+            for (attempt in 1..com.nostrvault.setup.ReadyCounts.TRIES) {
+                runCatching { statsService.fetchCountsByKind() }
                 if (statsService.loadedEventsCount.value > 0) break
-                kotlinx.coroutines.delay(1_500)
+                if (attempt < com.nostrvault.setup.ReadyCounts.TRIES) kotlinx.coroutines.delay(com.nostrvault.setup.ReadyCounts.TRY_GAP_MS)
             }
             val counts = statsService.kindCounts.value
-            _tourCounts.value = Triple(counts[1] ?: 0, counts[7] ?: 0, statsService.loadedEventsCount.value)
+            _tourCounts.value = com.nostrvault.setup.ReadyCounts.from(counts[1] ?: 0, counts[7] ?: 0, statsService.loadedEventsCount.value)
         }
     }
 

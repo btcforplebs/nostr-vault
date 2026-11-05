@@ -22,18 +22,13 @@ fun SetupWizardViewModel.advanceFromReferrer() {
 }
 
 /**
- * The step only where the new account can sign a follow list: Create an
- * account, and I already use Nostr given a key or a signer. A public key
- * alone is read-only, so it never sees the step.
+ * Only on New to Nostr (Logen 2026-11-05): a key made here can sign its first
+ * follow list. Someone who already uses Nostr has their follows already, so
+ * they are never asked.
  */
-internal fun withReferrerStep(steps: List<WizardStep>, path: SetupPath, readOnly: Boolean): List<WizardStep> {
-    val after = when (path) {
-        SetupPath.NEW_TO_NOSTR -> WizardStep.PROFILE
-        SetupPath.USE_NOSTR -> WizardStep.USE_NOSTR_KEY
-        else -> return steps
-    }
-    if (readOnly || after !in steps) return steps
-    return steps.toMutableList().apply { add(indexOf(after) + 1, WizardStep.REFERRER) }
+internal fun withReferrerStep(steps: List<WizardStep>, path: SetupPath): List<WizardStep> {
+    if (path != SetupPath.NEW_TO_NOSTR || WizardStep.PROFILE !in steps) return steps
+    return steps.toMutableList().apply { add(indexOf(WizardStep.PROFILE) + 1, WizardStep.REFERRER) }
 }
 
 @EntryPoint
