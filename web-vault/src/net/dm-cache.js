@@ -54,14 +54,23 @@ export function dmCache(me, crypto, { chunkBytes = CHUNK_BYTES.other, storage = 
   let timer = null
   let writing = Promise.resolve()
   let dirty = false
+  // The signer is on another account (signer audit 2026-11-05 #2): this cache stops. Nothing is opened, saved, or
+  // dropped as unreadable, so the stored inbox is still there, untouched, when the right account is back.
+  let frozen = false
+  const freeze = () => { frozen = true; dirty = false; clearTimeout(timer); timer = null }
 
   const restore = async () => {
     const stored = readStored(storage, me)
-    const opened = await Promise.all(stored.map(ct => Promise.race([crypto.decrypt(me, ct), timeout(wait)]).then(text => {
+    let wrong = false
+    const opened = await Promise.all(stored.map(ct => Promise.race([crypto.decrypt(me, ct), timeout(wait)]).catch(e => {
+      if (e?.wrongAccount) wrong = true
+      throw e
+    }).then(text => {
       const c = JSON.parse(text)
       if (c?.v !== 1 || c.me !== me || !Array.isArray(c.m) || !Array.isArray(c.j)) return null
       return { ct, m: c.m.map(fromRow).filter(Boolean), j: c.j.filter(id => HEX64.test(id ?? "")) }
     }).catch(() => null)))
+    if (wrong) { freeze(); return { messages: [], junk: [] } }
     const good = opened.filter(Boolean)
     // Kept while this was opening (a live message): it goes after what was stored, once.
     const inStore = new Set(good.flatMap(c => [...c.m.map(m => m.id), ...c.j]))
@@ -83,7 +92,7 @@ export function dmCache(me, crypto, { chunkBytes = CHUNK_BYTES.other, storage = 
 
   // Seal what's in `tail`: full chunks become sealed ones, the rest is the new last chunk. One signer request per chunk.
   const write = async () => {
-    if (!dirty || !signedIn()) return
+    if (frozen || !dirty || !signedIn()) return
     dirty = false
     // What `tail` holds now is what this write seals. Anything add() or junk() puts in it while the signer encrypts
     // (seconds through a bunker) is kept after it, for the next write: it used to be dropped (bug hunt 2026-11-05 #6).
@@ -110,7 +119,7 @@ export function dmCache(me, crypto, { chunkBytes = CHUNK_BYTES.other, storage = 
         const keep = chunks.slice(-n)
         try { storage.setItem(cacheKey(me), JSON.stringify({ v: 1, chunks: keep })); sealed = last ? keep.slice(0, -1) : keep; return } catch {} // full: drop the oldest
       }
-    } catch { dirty = true } // the signer didn't encrypt: try with the next change
+    } catch (e) { if (e?.wrongAccount) freeze(); else dirty = true } // the signer didn't encrypt: try with the next change
   }
   const schedule = () => {
     clearTimeout(timer)
@@ -120,16 +129,18 @@ export function dmCache(me, crypto, { chunkBytes = CHUNK_BYTES.other, storage = 
   return {
     me,
     restore,
+    /** True once the signer was found on another account: this cache does nothing more. */
+    get frozen() { return frozen },
     /** Keep an opened message (not a pending or failed bubble). One too big for a chunk isn't kept. */
     add(m) {
-      if (!m?.id || m.pending || m.failed || known.has(m.id) || !HEX64.test(m.id)) return
+      if (frozen || !m?.id || m.pending || m.failed || known.has(m.id) || !HEX64.test(m.id)) return
       const r = row(m)
       if (bytes(chunkText(me, { m: [r], j: [] })) > chunkBytes) return
       known.add(m.id); tail.m.push(r); dirty = true; schedule()
     },
     /** Keep the id of a wrap that isn't the user's, so it isn't asked about again. */
     junk(id) {
-      if (!HEX64.test(id ?? "") || known.has(id)) return
+      if (frozen || !HEX64.test(id ?? "") || known.has(id)) return
       known.add(id); tail.j.push(id); dirty = true; schedule()
     },
     /** For tests: write now. */

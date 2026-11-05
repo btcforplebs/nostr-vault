@@ -5,44 +5,110 @@
 // owner (NV_OWNER), so each AUTH is signed again by the signed-in user's signer for this socket's URL, and the box's
 // OK is handed back under the id the HavenClient is waiting on.
 import { boxRelayUrl } from "./mode.js"
+import { checkSigned } from "../net/sync.js"
+import { loadSession } from "../session.js"
 
 const enc = new TextEncoder(), dec = new TextDecoder()
 
+// Logins (signer audit 2026-11-05 #4): a box socket that has logged in (the box answered its AUTH OK) is kept when its client closes and handed to
+// the next client of that route, so a Vault Dashboard, a backup or a re-opened stream doesn't ask the signer again.
+// A login the user declines is remembered for the page (until retryLogin, or a reload), so polled reads don't
+// re-prompt every few minutes. A signed AUTH that isn't the signed-in account's is never sent.
+export const LOGIN_DECLINED = "You declined to log in to your box, so it wasn't asked again. Reload the page to log in."
+const IDLE_PER_ROUTE = 4
+
+/** The box's sockets for one page: `link(route)` hands out an idle logged-in socket of that route, or a new one. */
+function boxLinks({ signer, pubkey, Socket = globalThis.WebSocket, loc = globalThis.location } = {}) {
+  const idle = new Map() // route -> [link]
+  const login = { declined: false }
+  const me = () => (typeof pubkey === "function" ? pubkey() : pubkey) ?? loadSession()?.pubkey ?? null
+
+  const sign = async (url, challenge) => {
+    if (login.declined) throw new Error(LOGIN_DECLINED)
+    const template = { kind: 22242, created_at: Math.floor(Date.now() / 1000), content: "", tags: [["relay", url], ["challenge", challenge]] }
+    let signed
+    try { signed = await signer.signEvent(template) } catch (e) { login.declined = true; throw e }
+    const who = me()
+    // checkSigned: the event asked for, validly signed, by the signed-in account (not whatever the signer is on).
+    return who ? checkSigned(signed, template, who) : signed
+  }
+
+  const open = route => {
+    const url = boxRelayUrl(route, loc)
+    const ws = new Socket(url)
+    const link = { url, route, ws, user: null, alive: true, renamed: new Map() } // renamed: id the box answers -> id the client waits on
+    link.opened = new Promise((resolve, reject) => {
+      ws.onopen = () => resolve()
+      ws.onerror = () => reject(new Error(`box relay unreachable: ${url}`))
+    })
+    link.opened.catch(() => {})
+    ws.onclose = () => {
+      link.alive = false
+      const list = idle.get(route)
+      if (list) idle.set(route, list.filter(l => l !== link))
+      link.user?.closed()
+    }
+    ws.onmessage = e => {
+      let text = typeof e.data === "string" ? e.data : ""
+      try {
+        const msg = JSON.parse(text)
+        if (msg[0] === "OK" && link.renamed.has(msg[1])) {
+          const id = link.renamed.get(msg[1]); link.renamed.delete(msg[1]); text = JSON.stringify(["OK", id, ...msg.slice(2)])
+          // The box took the login: this socket is worth keeping. It refused it (this account isn't the box's owner):
+          // asking the signer again won't change that, so it isn't asked again either.
+          if (msg[2] === true) link.loggedIn = true
+          else login.declined = true
+        }
+      } catch {}
+      link.user?.data(enc.encode(`${text}\n`))
+    }
+    return link
+  }
+
+  return {
+    login,
+    take(route) {
+      const list = idle.get(route) ?? []
+      let link
+      while ((link = list.pop()) && !link.alive) {}
+      return link ?? open(route)
+    },
+    // A client is done with `link`: an open socket waits for the route's next client, else it is closed.
+    give(link) {
+      link.user = null
+      const list = idle.get(link.route) ?? []
+      if (!link.alive || !link.loggedIn || list.length >= IDLE_PER_ROUTE) { link.alive = false; link.ws.close(); return }
+      idle.set(link.route, [...list, link])
+    },
+    sign,
+    closeAll() { for (const list of idle.values()) for (const l of list) { l.alive = false; l.ws.close() } idle.clear() },
+  }
+}
+
 /**
  * One route's socket as a havenConn: { write(Uint8Array), onData(cb), onClose(cb), close() }.
- * `signer`: the user's ({ signEvent }); `Socket`: WebSocket (injectable for tests).
+ * `signer`: the user's ({ signEvent }); `Socket`: WebSocket (injectable for tests); `links`: the page's boxLinks
+ * (one is made when not given); `pubkey`: the signed-in account (the session's when not given).
  */
-export function boxConn(route, { signer, Socket = globalThis.WebSocket, loc = globalThis.location } = {}) {
-  const url = boxRelayUrl(route, loc)
-  const ws = new Socket(url)
-  let onData = () => {}, closed = false, buf = ""
+export function boxConn(route, { signer, Socket = globalThis.WebSocket, loc = globalThis.location, links, pubkey } = {}) {
+  const pool = links ?? boxLinks({ signer, Socket, loc, pubkey })
+  const link = pool.take(route)
+  const { url, ws } = link
+  let onData = () => {}, done = false, buf = ""
   const closers = []
-  const renamed = new Map() // id the box answers -> id the HavenClient waits on
-  const opened = new Promise((resolve, reject) => {
-    ws.onopen = () => resolve()
-    ws.onerror = () => reject(new Error(`box relay unreachable: ${url}`))
-  })
   let queue = Promise.resolve()
-  const finish = () => { if (closed) return; closed = true; for (const cb of closers) cb() }
-  ws.onclose = finish
-  ws.onmessage = e => {
-    let text = typeof e.data === "string" ? e.data : ""
-    try {
-      const msg = JSON.parse(text)
-      if (msg[0] === "OK" && renamed.has(msg[1])) { const id = renamed.get(msg[1]); renamed.delete(msg[1]); text = JSON.stringify(["OK", id, ...msg.slice(2)]) }
-    } catch {}
-    onData(enc.encode(`${text}\n`))
-  }
+  const finish = () => { if (done) return; done = true; for (const cb of closers) cb() }
+  link.user = { data: b => onData(b), closed: finish }
   const send = async line => {
     let out = line
     const msg = JSON.parse(line)
     if (msg[0] === "AUTH" && msg[1]?.kind === 22242) {
       const challenge = msg[1].tags.find(t => t[0] === "challenge")?.[1]
-      const signed = await signer.signEvent({ kind: 22242, created_at: Math.floor(Date.now() / 1000), content: "", tags: [["relay", url], ["challenge", challenge]] })
-      renamed.set(signed.id, msg[1].id)
+      const signed = await pool.sign(url, challenge)
+      link.renamed.set(signed.id, msg[1].id)
       out = JSON.stringify(["AUTH", signed])
     }
-    await opened
+    await link.opened
     ws.send(out)
   }
   return {
@@ -50,26 +116,30 @@ export function boxConn(route, { signer, Socket = globalThis.WebSocket, loc = gl
     write(bytes) {
       buf += dec.decode(bytes, { stream: true })
       const lines = buf.split("\n"); buf = lines.pop()
-      for (const line of lines.filter(l => l.trim())) queue = queue.then(() => send(line)).catch(() => { ws.close(); finish() })
+      for (const line of lines.filter(l => l.trim())) queue = queue.then(() => send(line)).catch(() => { link.alive = false; ws.close(); finish() })
     },
     onData: cb => { onData = cb },
     onClose: cb => { closers.push(cb) },
-    close: () => { ws.close(); finish() },
+    // The client is done: its socket goes back to the page for the next client of this route (logged in already).
+    close: () => { if (done) return; done = true; pool.give(link); for (const cb of closers) cb() },
   }
 }
 
-/** The box's relay as a `haven`: conn() per route, stop() closes every socket. */
-export function boxHaven({ signer, Socket, loc } = {}) {
+/** The box's relay as a `haven`: conn() per route, stop() closes every socket. retryLogin() asks the signer again
+ *  after a declined login. */
+export function boxHaven({ signer, Socket, loc, pubkey } = {}) {
+  const links = boxLinks({ signer, Socket, loc, pubkey })
   const open = new Set()
   return {
     box: true,
     conn(_name, { route = "/" } = {}) {
-      const c = boxConn(route, { signer, Socket, loc })
+      const c = boxConn(route, { signer, Socket, loc, links })
       open.add(c)
       c.onClose(() => open.delete(c))
       return c
     },
-    async stop() { for (const c of [...open]) c.close() },
+    retryLogin() { links.login.declined = false },
+    async stop() { for (const c of [...open]) c.close(); links.closeAll() },
   }
 }
 

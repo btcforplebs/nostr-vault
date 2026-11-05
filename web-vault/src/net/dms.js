@@ -14,7 +14,7 @@ import * as nip44 from "nostr-tools/nip44"
 import { normalizeURL } from "nostr-tools/utils"
 import { deviceKey, routeClient } from "../haven/vault.js"
 import { pool, DEFAULT_RELAYS, isLoopback, relayLists, uniq } from "./pool.js"
-import { extensionCrypto } from "../signer/nip07.js"
+import { extensionCrypto, WRONG_ACCOUNT } from "../signer/nip07.js"
 import { checkSigned } from "./sync.js"
 import { AUTH_WAIT, LIVE_RETRY, authedSubscribe, forgetDeclinedAuth, queryWithAuth } from "./dm-read-auth.js"
 import { chunkBytesFor, dmCache } from "./dm-cache.js"
@@ -32,7 +32,7 @@ export function cryptoFor(session, { ext, signer } = {}) {
   if (session?.method !== "nip07" && session?.method !== "nip46" && session?.method !== "local") return { reason: "this sign-in can't decrypt" }
   if (ext) return ext
   if (signer?.crypto) return signer.crypto
-  return session.method === "nip07" ? extensionCrypto() : session.method === "local" ? { reason: "your key isn't unlocked" } : { reason: "your bunker isn't connected" }
+  return session.method === "nip07" ? extensionCrypto(session.pubkey) : session.method === "local" ? { reason: "your key isn't unlocked" } : { reason: "your bunker isn't connected" }
 }
 
 /** The kind 14 the other person reads: unsigned, its id computed like any event's. */
@@ -61,11 +61,11 @@ export async function wrapFor(rumor, { signer, crypto, me }, peer, recipient = p
  */
 async function signerCall(f) {
   try { return await f() } catch (e) {
-    if (e?.unreachable || e?.refused) throw e
+    if (e?.unreachable || e?.refused || e?.wrongAccount) throw e
     throw Object.assign(new Error(String(e?.message ?? e)), { refused: true })
   }
 }
-const passOn = e => { if (e?.unreachable || e?.refused) throw e; return null }
+const passOn = e => { if (e?.unreachable || e?.refused || e?.wrongAccount) throw e; return null }
 
 export { dmTime } from "./dm-time.js"
 
@@ -230,11 +230,12 @@ async function take(evs, crypto, me, { limit = Infinity } = {}) {
     asked += batch.length
     const got = await Promise.all(batch.map(ev => (ev.kind === 4 ? openLegacy(ev, crypto, me) : unwrap(ev, crypto, me)).catch(e => ({ failed: e }))))
     if (state.pubkey !== me) return { added, asked }
-    let n = 0, lost = false
+    let n = 0, lost = false, wrong = false
     got.forEach((m, j) => {
       const id = batch[j].id
       if (m?.id) { state.messages.set(m.id, m); refusals.delete(id); kept?.add(m); n++; return }
       if (!m?.failed) { kept?.junk(id); return } // not the user's: stays in `opened`, and is kept as such
+      if (m.failed.wrongAccount) { opened.delete(id); lost = wrong = true; return }
       if (m.failed.unreachable) { opened.delete(id); lost = true; return }
       refused++
       const times = (refusals.get(id) ?? 0) + 1
@@ -244,9 +245,9 @@ async function take(evs, crypto, me, { limit = Infinity } = {}) {
     added += n
     if (lost) {
       for (const ev of now.slice(i + OPEN_BATCH)) opened.delete(ev.id)
-      state = { ...state, trouble: TROUBLE_UNREACHABLE }
+      state = { ...state, trouble: wrong ? WRONG_ACCOUNT : TROUBLE_UNREACHABLE }
       setMore(); changed()
-      return { added, asked, unreachable: true }
+      return { added, asked, unreachable: true, wrongAccount: wrong }
     }
     if (n) { state = { ...state }; changed() }
   }
@@ -320,7 +321,8 @@ async function load({ vault, session, signer }, relays, { crypto, net = pool, wa
   let strikes = 0
   const spend = r => {
     strikes = r.unreachable ? strikes + 1 : 0
-    budget = strikes >= 2 ? 0 : budget - r.asked
+    // The extension on another account: nothing more is asked this load (it would only fail).
+    budget = strikes >= 2 || r.wrongAccount ? 0 : budget - r.asked
   }
   spend(await take(await store.query({ kinds: [1059], "#p": [me] }).catch(() => []), c, me, { limit: budget }))
   // What Haven held is on screen: no skeleton while the relays are asked.
@@ -362,6 +364,8 @@ async function restoreKept(me, c, opts) {
   const k = dmCache(me, c, opts)
   kept = k
   const { messages, junk } = await k.restore()
+  // The extension was on another account: nothing was opened, saved or wiped; the next load tries again.
+  if (k.frozen) { if (kept === k) kept = null; return }
   if (kept !== k || state.pubkey !== me) return
   for (const id of junk) opened.add(id)
   for (const m of messages) { opened.add(m.id); if (!state.messages.has(m.id)) state.messages.set(m.id, m) }
@@ -542,7 +546,7 @@ export async function sendMessage(ctx, peer, text, { crypto, query, chat, publis
     // Both seals at once, as the iPhone makes both wraps concurrently.
     ;[toMe, toThem] = await Promise.all([wrapFor(rumor, env, me), self ? null : wrapFor(rumor, env, peer)])
     if (self) toThem = toMe
-  } catch (e) { return fail(sendError(e?.unreachable ? SEND_FAILED.unreachable : SEND_FAILED.signer), content) }
+  } catch (e) { return fail(sendError(e?.wrongAccount ? WRONG_ACCOUNT : e?.unreachable ? SEND_FAILED.unreachable : SEND_FAILED.signer), content) }
   const send = (urls, ev, to) => {
     const ms = wait ?? (ctx.session.method === "nip46" ? PUBLISH_WAIT.nip46 : PUBLISH_WAIT.other)
     const asked = new Set() // relays that asked for AUTH on this send
