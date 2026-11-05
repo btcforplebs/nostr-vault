@@ -216,29 +216,17 @@ struct BackupSettingsView: View {
         isImportingJSONL = true
         statusMessage = "Restoring notes..."
         
-        // Copy to temp to avoid sandbox issues
-        let tempFile = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("restore-\(UUID().uuidString).zip")
-        
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-        
-        do {
-            try FileManager.default.copyItem(at: url, to: tempFile)
-        } catch {
-            isImportingJSONL = false
-            statusMessage = "Error copying file: \(error.localizedDescription)"
-            clearStatus()
-            return
-        }
-        
-        // Only this vault owner's own backup: someone else's is never merged in.
-        relayManager.runOwnBackupRestore(config: configService.config, inputPath: tempFile.path) { code in
-            Task { @MainActor in
-                isImportingJSONL = false
-                try? FileManager.default.removeItem(at: tempFile)
-                // Checked against this vault's owner, not the active account.
-                statusMessage = BackupRestoreCode.error(code: code) ?? "Notes restored successfully!"
-                clearStatus()
+        // Read where it is, no temp copy (#17).
+        ScopedImportFile.read(url) { path, finished in
+            // Only this vault owner's own backup: someone else's is never merged in.
+            relayManager.runOwnBackupRestore(config: configService.config, inputPath: path) { code in
+                finished()
+                Task { @MainActor in
+                    isImportingJSONL = false
+                    // Checked against this vault's owner, not the active account.
+                    statusMessage = BackupRestoreCode.error(code: code) ?? "Notes restored successfully!"
+                    clearStatus()
+                }
             }
         }
     }
@@ -306,26 +294,15 @@ struct BackupSettingsView: View {
         isImportingBlossom = true
         statusMessage = "Restoring media..."
         
-        let tempFile = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("blossom-restore-\(UUID().uuidString).zip")
-        
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-        
-        do {
-            try FileManager.default.copyItem(at: url, to: tempFile)
-        } catch {
-            isImportingBlossom = false
-            statusMessage = "Error copying file: \(error.localizedDescription)"
-            clearStatus()
-            return
-        }
-        
-        relayManager.runBlossomImportStrippingExtensions(config: configService.config, inputPath: tempFile.path) { success in
-            Task { @MainActor in
-                isImportingBlossom = false
-                try? FileManager.default.removeItem(at: tempFile)
-                statusMessage = success ? "Media restored successfully!" : "Media restore failed. No vault media found in that file."
-                clearStatus()
+        // Read where it is, no temp copy (#17).
+        ScopedImportFile.read(url) { path, finished in
+            relayManager.runBlossomImportStrippingExtensions(config: configService.config, inputPath: path) { success in
+                finished()
+                Task { @MainActor in
+                    isImportingBlossom = false
+                    statusMessage = success ? "Media restored successfully!" : "Media restore failed. No vault media found in that file."
+                    clearStatus()
+                }
             }
         }
     }
