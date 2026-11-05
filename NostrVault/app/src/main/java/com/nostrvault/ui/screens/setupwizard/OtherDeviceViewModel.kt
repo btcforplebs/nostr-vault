@@ -31,7 +31,7 @@ import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 /**
- * The "Yes, bring it over" side of setup (§5a): this new phone plays B. It scans the other device's code, confirms in
+ * "Copy from my other vault" in setup's import choice (§5a): this new phone plays B. It scans the other device's code, confirms in
  * setup words, sends the hello, shows its own code and waits for the ack, on the phase-0 [MeshPairingJoiner] and lane
  * B's [MeshPairingHello]. Anything that doesn't link (no code in 3 minutes, a refusal it can't get past, the ack
  * window running out) ends in [Ui.FellBack], and setup carries on to the relays quietly. Twin of iOS
@@ -73,7 +73,7 @@ class OtherDeviceViewModel @Inject constructor(
     private var ticker: Job? = null
     private var wordsTapped = false
 
-    /** "Yes, bring it over": a mesh key first (quietly), then the camera. */
+    /** "Copy from my other vault": a mesh key first (quietly), then the camera. */
     fun yes() {
         _ui.value = Ui.Starting
         viewModelScope.launch {
@@ -168,8 +168,20 @@ class OtherDeviceViewModel @Inject constructor(
         }
     }
 
-    /** "They don't match", or giving up on any screen: on to the relays. */
-    fun giveUp() = fallBack(quietly = true)
+    /** Cancel or "They don't match", on any screen of the flow: back to the import choice, nothing stored. */
+    fun giveUp() = reset()
+
+    /** Back to the import choice (also once setup has acted on [Ui.FellBack]). */
+    fun reset() {
+        stopTicker()
+        hello?.close()
+        hello = null
+        joiner = null
+        other = null
+        ownHex = null
+        wordsTapped = false
+        _ui.value = Ui.Ask
+    }
 
     private fun linked(a: MeshPairing.Payload) {
         stopTicker()
@@ -191,12 +203,12 @@ class OtherDeviceViewModel @Inject constructor(
     /** Setup finishes with a Mac linked: watch its copy, falling back to the relays if it stalls. */
     fun watchCopy() = copyWatcher.watch(now())
 
-    private fun fallBack(quietly: Boolean = false) {
+    private fun fallBack() {
         if (_ui.value is Ui.Linked || _ui.value == Ui.FellBack) return
         stopTicker()
         hello?.close()
         // One plain line, no error screen (§5a).
-        if (!quietly) notificationManager.showToast(BringItOver.FALLBACK_LINE, PillTone.NEUTRAL)
+        notificationManager.showToast(BringItOver.FALLBACK_LINE, PillTone.NEUTRAL)
         _ui.value = Ui.FellBack
     }
 

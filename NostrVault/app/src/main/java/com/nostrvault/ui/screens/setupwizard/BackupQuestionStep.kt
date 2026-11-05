@@ -29,6 +29,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -49,8 +51,19 @@ import com.nostrvault.ui.theme.TertiaryText
  * relay check as before. Same as iOS `VaultBackupQuestionStep`.
  */
 @Composable
-internal fun BackupQuestionStep(viewModel: SetupWizardViewModel, onComplete: () -> Unit) {
+internal fun BackupQuestionStep(
+    viewModel: SetupWizardViewModel,
+    onComplete: () -> Unit,
+    otherVault: OtherDeviceViewModel = hiltViewModel(),
+) {
     val state by viewModel.backupQuestion.collectAsState()
+    val copying by otherVault.ui.collectAsState()
+    // "Copy from my other vault" picked: its two scans take this step's place until they link, fail or are cancelled.
+    // FellBack draws nothing of its own: the flow only moves setup on to the relays.
+    if (copying != OtherDeviceViewModel.Ui.Ask) {
+        OtherDeviceFlow(viewModel, onComplete, otherVault)
+        if (copying != OtherDeviceViewModel.Ui.FellBack) return
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { viewModel.restoreBackupFromQuestion(it) }
     }
@@ -102,6 +115,24 @@ internal fun BackupQuestionStep(viewModel: SetupWizardViewModel, onComplete: () 
                     Text("No, import from my relays", color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = otherVault::yes,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = WizardBgCard),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, WizardBorderSubtle),
+                    modifier = Modifier.fillMaxWidth().height(52.dp).testTag("setup.copyOtherVault"),
+                ) {
+                    Text(BringItOver.COPY, color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    BringItOver.COPY_DETAIL,
+                    color = TertiaryText,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(16.dp))
                 Text(
                     "Backups are the .zip files from Settings › Backup & Restore.",
                     color = TertiaryText,
