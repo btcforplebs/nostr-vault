@@ -52,6 +52,10 @@ class LogStore @Inject constructor() {
      */
     @Volatile
     var notifySink: ((String) -> Unit)? = null
+
+    /** Every raw log line, as polled (the import jobs re-read their list on `IMPORT_JOB` lines). */
+    @Volatile
+    var lineSink: ((String) -> Unit)? = null
     /**
      * The inbox kinds a poll's NOTIFY markers carried only as one of your
      * accounts tagging another, while that stays quiet: their import lines
@@ -104,6 +108,7 @@ class LogStore @Inject constructor() {
                             markers += notifyLine
                         }
                     }
+                    lineSink?.let { s -> for (l in lines) runCatching { s(l) } }
                     if (lines.isNotEmpty()) {
                         val quiet = runCatching { quietKinds?.invoke(markers) }.getOrNull().orEmpty()
                         applyLines(lines, quiet)

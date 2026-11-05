@@ -104,6 +104,9 @@ extern char* WotRefreshProgressC(void);
 extern char* WotNewcomersC(int from);
 extern char* GetImportLogC(void);
 extern char* GetImportResultC(void);
+extern char* ImportJobsC(void);
+extern int RunImportJobC(char* name);
+extern int CancelImportJobC(char* name);
 extern char* GetNotifyLogC(void);
 extern char* GetLogLinesC(void);
 extern int ActiveConnectionsC(void);
@@ -568,6 +571,28 @@ Java_com_nostrvault_relay_HavenBridge_getFollowersNative(JNIEnv *env, jobject th
 JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_getImportLog(JNIEnv *env, jobject thiz) {
     return goStringToJstring(env, GetImportLogC());
+}
+
+// Import jobs (haven-go import_jobs.go): the list as JSON, and Run/Cancel by name.
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_importJobs(JNIEnv *env, jobject thiz) {
+    return goStringToJstring(env, ImportJobsC());
+}
+
+JNIEXPORT jint JNICALL
+Java_com_nostrvault_relay_HavenBridge_runImportJob(JNIEnv *env, jobject thiz, jstring name) {
+    const char *cName = GET_CSTR(env, name);
+    int rc = RunImportJobC((char*)cName);
+    REL_CSTR(env, name, cName);
+    return rc;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_nostrvault_relay_HavenBridge_cancelImportJob(JNIEnv *env, jobject thiz, jstring name) {
+    const char *cName = GET_CSTR(env, name);
+    int rc = CancelImportJobC((char*)cName);
+    REL_CSTR(env, name, cName);
+    return rc;
 }
 
 // The last import's IMPORT_RESULT line (haven-go import_result.go).

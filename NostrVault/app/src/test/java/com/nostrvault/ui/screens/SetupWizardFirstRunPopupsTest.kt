@@ -55,6 +55,7 @@ class SetupWizardFirstRunPopupsTest {
             relayImportService = mockk(relaxed = true),
             statsService = stats,
             appContext = mockk(relaxed = true),
+            firstRunImport = mockk(relaxed = true) { io.mockk.every { state } returns kotlinx.coroutines.flow.MutableStateFlow(com.nostrvault.service.FirstRunImport.State.Idle) },
         )
     }
 

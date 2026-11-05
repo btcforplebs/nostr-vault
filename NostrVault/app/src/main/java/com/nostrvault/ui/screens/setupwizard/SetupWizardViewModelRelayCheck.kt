@@ -88,32 +88,22 @@ import kotlinx.coroutines.launch
     fun SetupWizardViewModel.startImportTour() {
         val pubkey = HavenBridge.decodeNpub(configStore.config.value.ownerNpub).orEmpty()
         if (pubkey == importTourPubkey) return
-        val sameAccountAgain = importTourPubkey == null
         importTourPubkey = pubkey
         _tourImportFailed.value = false
         _tourOutcome.value = null
         _tourCounts.value = null
-        if (sameAccountAgain && relayImportService.importCompleted.value && !relayImportService.isImporting.value) {
-            loadTourCounts()
-            return
-        }
-        if (relayImportService.isImporting.value) return
-        // Same start as iOS. 2021 was tried there: the import walks history in
-        // 10-day windows, each waiting on every relay, so two more years cost
-        // minutes for everyone. Older notes can be pulled from Settings → Import.
-        configStore.update { it.copy(importStartDate = IMPORT_TOUR_START_DATE) }
-        if (!relayImportService.importNotes(listHistory = _importListHistory.value)) {
-            // Refused (the vault is busy): it never started, so say so rather than wait for nothing.
-            _tourOutcome.value = com.nostrvault.service.ImportResult.APP_FAILED
-            _tourImportFailed.value = true
-            return
-        }
+        // Same start as iOS. A copy from the other vault already set its own, earlier start (BringItOver.START_DATE).
+        if (firstRunImport.otherVault == null) configStore.update { it.copy(importStartDate = IMPORT_TOUR_START_DATE) }
+        // HAVEN_FIRST_RUN + StartRelayC(0) + RunImportJobC("setup"): the relay serves while `setup` runs.
+        firstRunImport.start()
         viewModelScope.launch {
-            relayImportService.isImporting.first { !it }
-            // Only a complete import counts as done; partial, failed and cancelled each say so (#1720 twin).
-            val outcome = relayImportService.importOutcome.value ?: com.nostrvault.service.ImportResult.NO_RESULT
-            _tourOutcome.value = outcome
-            if (!outcome.isComplete) _tourImportFailed.value = true
+            val end = firstRunImport.state.first {
+                it is com.nostrvault.service.FirstRunImport.State.In || it is com.nostrvault.service.FirstRunImport.State.Failed
+            }
+            if (end is com.nostrvault.service.FirstRunImport.State.Failed) {
+                _tourOutcome.value = com.nostrvault.service.ImportResult.APP_FAILED
+                _tourImportFailed.value = true
+            }
         }
     }
 

@@ -50,6 +50,7 @@ class OtherDeviceViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val homeVault: HomeVaultSender,
     private val relayImportService: RelayImportService,
+    private val firstRunImport: com.nostrvault.service.FirstRunImport,
     private val notificationManager: NotificationManager,
     @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
@@ -201,8 +202,9 @@ class OtherDeviceViewModel @Inject constructor(
     }
 
     /**
-     * The copy: an import with the other device's vault as one more seed relay, from [BringItOver.START_DATE]. Only
-     * haven-go's IMPORT_RESULT ends it (#1720 twin); 2 minutes with no progress is a stall.
+     * The copy: the other device's vault becomes one more seed for the relay's own `setup` job, read from
+     * [BringItOver.START_DATE] (FirstRunImport, the new engine). Not reached is the engine's to report: the job reads
+     * the relays too, and anything it couldn't read waits in the Vault's "Still to bring in".
      */
     private fun startCopy(a: MeshPairing.Payload) {
         val name = MeshPairing.displayName(a.name)
@@ -210,29 +212,8 @@ class OtherDeviceViewModel @Inject constructor(
         viewModelScope.launch {
             val url = withContext(Dispatchers.IO) { vaultUrl(a.mesh) } ?: return@launch fallBack()
             configStore.update { it.copy(importStartDate = BringItOver.START_DATE) }
-            // Refused when the vault is busy: a copy never joins a running import (its relay would be dropped).
-            if (!relayImportService.importNotes(alsoFrom = listOf(url), otherVault = url)) return@launch fallBack()
-            var last = relayImportService.importProgress.value to relayImportService.importStatusMessage.value
-            var lastAt = now()
-            relayImportService.isImporting.first { it }
-            while (isActive) {
-                delay(1000)
-                if (!relayImportService.isImporting.value) {
-                    val outcome = relayImportService.importOutcome.value ?: ImportResult.NO_RESULT
-                    return@launch when (BringItOver.after(outcome)) {
-                        BringItOver.Copy.Done -> { _ui.value = Ui.Copied }
-                        else -> fallBack()
-                    }
-                }
-                val current = relayImportService.importProgress.value to relayImportService.importStatusMessage.value
-                (_ui.value as? Ui.Copying)?.let { _ui.value = it.copy(status = current.second) }
-                if (current != last) {
-                    last = current
-                    lastAt = now()
-                } else if (BringItOver.isStalled(lastAt, now())) {
-                    return@launch fallBack()
-                }
-            }
+            firstRunImport.otherVault = url
+            _ui.value = Ui.Copied
         }
     }
 

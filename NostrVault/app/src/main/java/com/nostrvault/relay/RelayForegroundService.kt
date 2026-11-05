@@ -280,7 +280,15 @@ class RelayForegroundService : Service() {
             } ?: Log.w(TAG, "Settings restart did not finish within ${RESTART_AWAIT_TIMEOUT_MS}ms")
         }
 
-        fun start(context: Context) {
+        /**
+         * First run on the import jobs (FirstRunImport): the relay's first start sets HAVEN_FIRST_RUN so it keeps its
+         * web to the follows; [otherVaultRelay] names the other vault among the seeds ("Copy from my other vault").
+         */
+        @Volatile var firstRun = false
+        @Volatile var otherVaultRelay: String? = null
+
+        /** [duringSetup]: first run starts the relay before setup is finished (it serves while `setup` runs). */
+        fun start(context: Context, duringSetup: Boolean = false) {
             if (externalMode) return
             // Never under a running import: this service's StopRelayC on any later destroy would cancel it
             // (Tron's import risks #7). The import starts the relay itself when it ends.
@@ -294,7 +302,7 @@ class RelayForegroundService : Service() {
             val config = EntryPointAccessors
                 .fromApplication(context.applicationContext, BootCompletedReceiver.BootReceiverEntryPoint::class.java)
                 .configStore().config.value
-            if (!config.hasCompletedSetup) {
+            if (!config.hasCompletedSetup && !duringSetup) {
                 Log.i(TAG, "Setup not finished; not starting the relay")
                 return
             }
@@ -319,6 +327,7 @@ class RelayForegroundService : Service() {
         fun accountUnread(): com.nostrvault.data.local.AccountUnreadStore
         fun fipsMeshManager(): com.nostrvault.fips.FipsMeshManager
         fun listWipeWatcher(): com.nostrvault.service.ListWipeWatcher
+        fun importJobService(): com.nostrvault.service.ImportJobService
     }
 
     // ── Lifecycle state machine (replaces bare `relayStarted` boolean) ──
@@ -392,6 +401,9 @@ class RelayForegroundService : Service() {
                 accountUnread.onLogLine(line)
             }
         }
+        // An IMPORT_JOB line re-reads the import jobs (the Vault card, first run).
+        val importJobs = EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java).importJobService()
+        logStore.lineSink = { line -> importJobs.onLogLine(line) }
         logStore.quietKinds = { markers ->
             accountUnread.ownAccountOnlyKinds(markers.filterNot(com.nostrvault.service.ListWipeWatcher::isMarker))
         }

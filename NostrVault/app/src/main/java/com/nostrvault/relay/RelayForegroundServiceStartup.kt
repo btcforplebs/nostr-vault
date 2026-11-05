@@ -219,6 +219,9 @@ import kotlinx.coroutines.withTimeoutOrNull
             for ((key, value) in inputs.env) {
                 HavenBridge.setEnv(key, value)
             }
+            // Before StartRelayC(0) on first run: keep the web to the follows (haven-go firstRunEnv).
+            HavenBridge.setEnv("HAVEN_FIRST_RUN", if (RelayForegroundService.firstRun) "1" else "0")
+            HavenBridge.setEnv(com.nostrvault.service.ImportResult.OTHER_VAULT_ENV, RelayForegroundService.otherVaultRelay.orEmpty())
 
             // Fix file-based env vars: Go uses os.ReadFile with the
             // bare filename, but Android's CWD is NOT the relay data dir.

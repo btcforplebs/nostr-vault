@@ -85,7 +85,7 @@ internal fun ImportTourStep(viewModel: SetupWizardViewModel, onComplete: () -> U
     LaunchedEffect(done) { if (done) viewModel.loadTourCounts() }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Bringing your notes home", color = PrimaryText, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+        Text("Bringing in your notes", color = PrimaryText, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(16.dp))
 
         // Progress
