@@ -68,9 +68,10 @@ final class BlossomDeleteTargetsTests: XCTestCase {
 
         let everywhere = config.blossomDeleteTargets(
             ownerServerList: ["https://mac.example.com/"], photoURL: nil, includeHomeVault: true)
-        // The Mac goes after the owner's servers (Logen, 2026-10-31).
-        XCTAssertEqual(everywhere, ["https://blossom.primal.net", "https://mac.example.com",
-                                    "http://\(meshNpub).fips:\(config.relayPort)"])
+        // The Mac goes after the owner's servers (Logen, 2026-10-31). The
+        // FIPS address is not an HTTP target: Delete everywhere reaches mesh
+        // devices over the mesh (MeshDeleteTargets), never via DNS.
+        XCTAssertEqual(everywhere, ["https://blossom.primal.net", "https://mac.example.com"])
     }
 
     /// The upload rules apply: nostr.build's website maps to its Blossom

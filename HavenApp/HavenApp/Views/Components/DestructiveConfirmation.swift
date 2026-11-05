@@ -120,9 +120,9 @@ extension View {
     }
 }
 
-/// Which copies of a Blossom blob a media delete removes. The wording matches
-/// Android's `DeleteBlobConfirmDialog` (MediaViewerScreen.kt), so both apps
-/// ask the same question before deleting.
+/// Which copies of a Blossom blob a media delete removes. The wording is
+/// `MediaDeleteWording`, the same as Android's `DeleteBlobConfirmDialog`, so
+/// both apps ask the same question before deleting.
 enum MediaDeleteScope: Identifiable {
     case mirrors
     case everywhere
@@ -139,9 +139,9 @@ enum MediaDeleteScope: Identifiable {
     var message: String {
         switch self {
         case .mirrors:
-            return "Removes this file from all your media servers. Your vault keeps its copy."
+            return MediaDeleteWording.mirrors
         case .everywhere:
-            return "Permanently removes this file from your vault and all your media servers. This cannot be undone."
+            return MediaDeleteWording.everywhere
         }
     }
 

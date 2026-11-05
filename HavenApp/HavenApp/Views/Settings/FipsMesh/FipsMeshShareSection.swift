@@ -2,7 +2,8 @@ import SwiftUI
 
 #if os(iOS)
 /// FIPS Mesh → Share With Others: kiosk mode (this vault on the mesh while the
-/// app stays open), what it has served, and where posted photos go. No
+/// app stays open), what it has served, and where new photos go
+/// (`MeshPhotoPath`, no picker). No
 /// "Pause after" limit: kiosk mode runs the engine for My Devices, which
 /// ignores one (own devices uncapped, strangers on fixed caps; #1023).
 /// No listing switch: a phone's own mesh npub is never put in the 10063; the
@@ -35,11 +36,9 @@ struct FipsMeshShareSection: View {
                     .foregroundColor(.red)
             }
 
-            Picker("Photos go to", selection: $configService.config.photoDestination) {
-                ForEach(MeshPhotoDestination.allCases) { destination in
-                    Text(destination.label).tag(destination)
-                }
-            }
+            Text(MeshPhotoPath.explainer)
+                .font(.appCaption)
+                .foregroundColor(.secondary)
         } header: {
             Text("Share With Others")
         } footer: {

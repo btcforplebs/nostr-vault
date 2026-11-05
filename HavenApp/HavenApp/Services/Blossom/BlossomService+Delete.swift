@@ -18,12 +18,14 @@ extension BlossomService {
     struct MirrorDeleteResult {
         var deleted: [String] = []
         var failed: [String] = []
+        /// What to call a mesh device (`fipsmesh://<npub>/`) in the text.
+        var names: [String: String] = [:]
 
         var allDeleted: Bool { failed.isEmpty && !deleted.isEmpty }
 
         /// Hosts still holding the file, for the banner ("blossom.primal.net").
         var failedHosts: [String] {
-            failed.map { URL(string: $0)?.host ?? $0 }
+            failed.map { names[$0] ?? URL(string: $0)?.host ?? $0 }
         }
     }
 
@@ -61,12 +63,30 @@ extension BlossomService {
             let asked = Set(onlyServers.map(HavenConfig.blossomServerKey))
             targets = targets.filter { asked.contains(HavenConfig.blossomServerKey($0)) }
         }
-        guard !targets.isEmpty else {
+        // Delete everywhere reaches the owner's mesh devices over the mesh,
+        // never their `.fips` names over HTTP (`MeshDeleteTargets`).
+        // Alongside the servers: a dial can take ~10 s.
+        async let mesh = onlyServers == nil
+            ? deleteFromMeshDevices(sha256: sha256, includeHomeVault: includeHomeVault)
+            : MirrorDeleteResult()
+        var result = await deleteFromServers(sha256: sha256, targets: targets, ownerHex: ownerHex,
+                                             includeHomeVault: includeHomeVault)
+        let meshResult = await mesh
+        result.deleted += meshResult.deleted
+        result.failed += meshResult.failed
+        result.names.merge(meshResult.names) { first, _ in first }
+        if result.deleted.isEmpty && result.failed.isEmpty {
             logger.warning("No Blossom mirrors configured for deletion")
-            return MirrorDeleteResult()
         }
+        return result
+    }
 
+    /// The HTTP half of `deleteFromMirrorsReport`: one DELETE per server.
+    private func deleteFromServers(sha256: String, targets: [String], ownerHex: String,
+                                   includeHomeVault: Bool) async -> MirrorDeleteResult {
         var result = MirrorDeleteResult()
+        guard !targets.isEmpty else { return result }
+
         var mirrors = targets
         if !includeHomeVault {
             // "Delete from mirrors" must never reach one of the owner's own
