@@ -117,35 +117,6 @@ extension MenuBarView {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    HStack(spacing: 8) {
-                        Text("pkill -9 haven")
-                            .font(.appSystem(size: 14, weight: .medium, design: .monospaced))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(6)
-
-                        Button(action: {
-                            #if os(macOS)
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString("pkill -9 haven", forType: .string)
-                            #else
-                            UIPasteboard.general.string = "pkill -9 haven"
-                            #endif
-                        }) {
-                            Image(systemName: "doc.on.doc")
-                                .font(.appSystem(size: 14))
-                                .foregroundColor(.white)
-                                .frame(width: 36, height: 36)
-                                .background(Color.orange)
-                                .cornerRadius(6)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Copy to clipboard")
-                    }
-
                     Button(action: {
                         relayManager.showProcessKillAlert = false
                         relayManager.forceCleanAndRestart()

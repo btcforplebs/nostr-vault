@@ -33,6 +33,12 @@ extension RelayProcessManager {
 
         // Immediately claim the state so no second call can slip through.
         self.state = .booting
+        // A stop hands its stragglers to a reaper, and Go refuses a start
+        // until they finish: a Restart (stop, then start) right away used to
+        // be refused and sit on "Booting…". Wait it out here, as backup and
+        // restore already do; if it still isn't done, Go's refusal line ends
+        // the boot (RelayLogParser.startFailed).
+        if RelayDrainingC() == 1 { _ = await waitForRelayDrain() }
         #if os(iOS)
         observeForegroundOnce()
         #endif
@@ -198,6 +204,25 @@ extension RelayProcessManager {
         
     }
     
+    /// "Clear Locks Only": clear the LOCK files and start, on the lifecycle
+    /// chain so it can't race a stop or a start. It used to clear off the
+    /// chain and then hit performStart's guard, so the relay stayed down.
+    func clearLocksAndStart(config: HavenConfig) {
+        let relayDataDir = ConfigService.shared.relayDataDir
+        enqueueLifecycle { [weak self] in
+            guard let self else { return }
+            guard !self.isVaultBusy, !self.isRunning, !self.isShuttingDown else {
+                self.logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Locks not cleared: the vault is running or busy"))
+                return
+            }
+            self.performClearDatabaseLocks(at: relayDataDir)
+            self.isLocked = false
+            self.needsLockFix = false
+            self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Database locks cleared."))
+            await self.performStart(config: config, isRetry: true)
+        }
+    }
+
     func clearDatabaseLocks(completion: (@Sendable () -> Void)? = nil) {
         let relayDataDir = ConfigService.shared.relayDataDir
         Task {

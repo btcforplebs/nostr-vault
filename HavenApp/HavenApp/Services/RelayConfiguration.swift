@@ -114,6 +114,34 @@ enum RelayConfiguration {
         return macRelayBaseForStatus(recorded) == macRelayBaseForStatus(macURL)
     }
 
+    /// The dashboard's one line for the Mac row. Only a copy from the Mac set
+    /// now counts (a status left by another Mac says nothing about this one),
+    /// and a copy that failed or stopped says so: it used to read "Last
+    /// synced 2 min ago" for a Mac that was never reached. `relative` formats
+    /// the finish time.
+    static func macSyncRowDetail(_ status: MacSyncStatus?, macURL: String, relative: (Date) -> String) -> String {
+        let url = macURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !url.isEmpty else { return "Not set up. A home vault keeps a copy that's always on." }
+        guard let status, macSyncStatus(status, isFor: url) else { return "Set up. Not synced yet." }
+        let when = (status.finishedAt ?? 0) > 0
+            ? relative(Date(timeIntervalSince1970: TimeInterval(status.finishedAt ?? 0)))
+            : nil
+        switch status.state {
+        case "running":
+            return "Copying from your Mac now."
+        case "done":
+            return when.map { "Copied from your Mac \($0)." } ?? "Set up. Not synced yet."
+        case "incomplete":
+            return when.map { "Last copy didn't finish (\($0)). It tries again next time the app starts." }
+                ?? "Last copy didn't finish. It tries again next time the app starts."
+        case "failed":
+            return when.map { "Couldn't reach your Mac (\($0)). It tries again next time the app starts." }
+                ?? "Couldn't reach your Mac. It tries again next time the app starts."
+        default:
+            return "Set up. Not synced yet."
+        }
+    }
+
     /// What the Mac sync card says once a copy has ended: "Done" with what was
     /// copied, or the reason it stopped. `checked` is the formatted finish time.
     static func macSyncSummary(_ status: MacSyncStatus, checked: String?) -> (headline: String, detail: String) {

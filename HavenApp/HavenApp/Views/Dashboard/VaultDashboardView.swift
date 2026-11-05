@@ -398,9 +398,7 @@ struct VaultDashboardView: View {
     }
 
     private var macSyncDetail: String {
-        guard !config.macRelayURL.isEmpty else { return "Not set up. A home vault keeps a copy that's always on." }
-        guard let finished = macSync?.finishedAt, finished > 0 else { return "Set up. Not synced yet." }
-        return "Last synced \(relative(Date(timeIntervalSince1970: TimeInterval(finished))))."
+        RelayConfiguration.macSyncRowDetail(macSync, macURL: config.macRelayURL, relative: relative)
     }
 
     // MARK: - Who can reach you

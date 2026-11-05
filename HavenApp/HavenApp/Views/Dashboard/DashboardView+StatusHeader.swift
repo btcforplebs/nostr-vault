@@ -302,11 +302,7 @@ extension DashboardView {
 
                         if relayManager.isLocked {
                             Button {
-                                relayManager.clearDatabaseLocks { [relayManager, configService] in
-                                    Task { @MainActor in
-                                        relayManager.startRelay(config: configService.config, isRetry: true)
-                                    }
-                                }
+                                relayManager.clearLocksAndStart(config: configService.config)
                             } label: {
                                 Text("Clear Locks Only")
                                     .font(.appSystem(size: 13, weight: .medium))

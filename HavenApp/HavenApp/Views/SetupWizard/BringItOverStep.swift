@@ -39,6 +39,9 @@ struct BringItOverStep: View {
                 .environmentObject(relayManager)
         }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in watch() }
+        #if os(macOS)
+        .onAppear { MacFipsMeshService.shared.turnOnForCopy() }
+        #endif
         .onDisappear {
             if !copying { flow.cancel() }
         }
