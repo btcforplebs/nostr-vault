@@ -42,7 +42,32 @@ object MeshMediaStatus {
         _phases.update { if (sha256 in it) it - sha256 else it }
     }
 
+    /**
+     * A photo was drawn, from any source: the URL, the disk cache or this
+     * vault. Its "Couldn't reach the owner's vault" no longer holds, so every
+     * view of the same hash drops it. Without this, a photo the mesh missed
+     * once kept the line over it after it loaded (a Vault Media tile,
+     * day-end test 2026-11-05).
+     */
+    fun loaded(data: Any?) {
+        val url = when (data) {
+            is String -> data
+            is java.io.File -> data.path // this vault's own copy: <sha256>.<ext>
+            is android.net.Uri -> data.toString()
+            is okhttp3.HttpUrl -> data.toString()
+            else -> return
+        }
+        FipsMediaRouter.sha256In(url)?.let(::clear)
+    }
+
     /** The phase for a photo [url], by the hash its path names; null when there is nothing to say. */
     fun phaseFor(phases: Map<String, MeshMediaPhase>, url: String?): MeshMediaPhase? =
         url?.let { FipsMediaRouter.sha256In(it) }?.let { phases[it] }
+}
+
+/** Coil's side of [MeshMediaStatus.loaded]: every successful image load clears its hash. */
+object MeshMediaLoadListener : coil.EventListener {
+    override fun onSuccess(request: coil.request.ImageRequest, result: coil.request.SuccessResult) {
+        MeshMediaStatus.loaded(request.data)
+    }
 }
