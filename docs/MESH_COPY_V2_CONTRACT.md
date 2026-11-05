@@ -29,6 +29,12 @@ Logen's picks (2026-11-05), binding:
   - iPhone: the own port, `HAVEN_MESH_OWN_PORT`.
   - Mac, Android and the box: their relay port, which the mesh hands only to My Devices.
 - The **door** (`mesh_door.go`, what strangers reach) never serves it. Any `/copy/` path there is 404.
+- Only requests from **loopback** are answered, which is how the mesh hands the own devices this port. Mac, Android
+  and the box also listen on the LAN (`RELAY_BIND_ADDRESS` defaults to `0.0.0.0`), so a request from any other
+  address is 404. The box's havend forwards to the engine over loopback and names the real client in
+  `X-Forwarded-For`. Every hop named there (and in `X-Real-Ip`) must be loopback too, and any `Forwarded` header
+  is 404.
+- Requests a public tunnel forwarded (Cloudflare headers) are 404.
 - Being on that port is not proof of ownership. Every request is authenticated as in §2.
 
 ## 2. Authentication
@@ -39,6 +45,7 @@ The engine holds no owner key, so B's app signs once and the engine carries the 
 - `["u", <any scheme://host:port>/copy/v2/start]`. The path is checked. The host is not, because A and B name the
   same mesh link by different loopback addresses.
 - `["method","POST"]`.
+- `["device", <B's own mesh npub>]` (npub or 64 hex). A binds the token to it. A proof without it is 401.
 - `created_at` within 60 s of A's clock.
 - The event id is used once. A replay is 401.
 - The pubkey is a whitelisted key of A's vault, and the owner.
@@ -54,11 +61,12 @@ the owner.
   `copy_tokens.json` (0600).
 - Every later `/copy/v2/<id>…` and `/copy/v2/sync/…` request carries `Authorization: Bearer <token>`.
 - A token stops working when:
-  - the owner revokes it (Remove device);
+  - the owner removes B from My Devices on A: the app calls `RevokeCopyTokensC(<B's mesh npub or hex>)`
+    (0 revoked, 1 none held). That drops B's tokens and the copies they could read, on disk too;
+  - B starts again: one token per device, so a new start replaces that device's old token and its copy;
   - it has been unused for 30 days;
   - A's owner changes.
-- A device taken out of My Devices can't reach this port at all.
-- One token per B; a new start replaces B's old token.
+- Removing B on B's side forgets A: no resume, no catch-up.
 
 ## 3. The first copy
 

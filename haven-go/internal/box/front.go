@@ -55,6 +55,9 @@ func isEngineRequest(r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return true // Blossom PUT/DELETE and CORS preflights
 	}
+	if strings.HasPrefix(r.URL.Path, "/copy/v2/") {
+		return true // the mesh vault copy's GETs (manifest, chunks, catch-up)
+	}
 	if blobPath.MatchString(r.URL.Path) {
 		return true
 	}

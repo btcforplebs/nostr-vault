@@ -121,7 +121,7 @@ func zipNames(t *testing.T, path string) map[string]*zip.File {
 // startProof: the owner's NIP-98 for POST /copy/v2/start.
 func startProof(t *testing.T, k testKey, at nostr.Timestamp, path string) string {
 	t.Helper()
-	ev := k.sign(t, nostr.Event{Kind: 27235, CreatedAt: at, Tags: nostr.Tags{{"u", "http://127.0.0.1:9/" + strings.TrimPrefix(path, "/")}, {"method", "POST"}}})
+	ev := k.sign(t, nostr.Event{Kind: 27235, CreatedAt: at, Tags: nostr.Tags{{"u", "http://127.0.0.1:9/" + strings.TrimPrefix(path, "/")}, {"method", "POST"}, {"device", testDevice}}})
 	raw, _ := json.Marshal(ev)
 	return base64.StdEncoding.EncodeToString(raw)
 }
@@ -221,7 +221,7 @@ func TestCopyStartAuth(t *testing.T) {
 		return copyManifest{}, fmt.Errorf("not in this test")
 	})
 	post := func(auth string, hdr map[string]string) int {
-		req := httptest.NewRequest(http.MethodPost, "/copy/v2/start", nil)
+		req := copyReq(http.MethodPost, "/copy/v2/start", nil)
 		if auth != "" {
 			req.Header.Set("Authorization", "Nostr "+auth)
 		}
@@ -252,7 +252,7 @@ func TestCopyStartAuth(t *testing.T) {
 			t.Errorf("%s: %d, want %d", c.name, got, c.want)
 		}
 	}
-	req := httptest.NewRequest(http.MethodGet, "/copy/v2/abc", nil)
+	req := copyReq(http.MethodGet, "/copy/v2/abc", nil)
 	req.Header.Set("Authorization", "Bearer "+strings.Repeat("0", 64))
 	rec := httptest.NewRecorder()
 	s.ServeHTTP(rec, req)
@@ -263,7 +263,7 @@ func TestCopyStartAuth(t *testing.T) {
 
 func TestMeshDoorNeverServesTheCopy(t *testing.T) {
 	for _, path := range []string{"/copy/v2/start", "/copy/v2/abc", "/copy/v2/sync/ids"} {
-		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req := copyReq(http.MethodPost, path, nil)
 		rec := httptest.NewRecorder()
 		meshHandler(rec, req)
 		if rec.Code != http.StatusNotFound {
@@ -274,7 +274,7 @@ func TestMeshDoorNeverServesTheCopy(t *testing.T) {
 	// nothing, even to a well-formed request.
 	s := newTestCopyServer(nil)
 	for _, hdr := range []string{"Cf-Connecting-Ip", "Cf-Ray"} {
-		req := httptest.NewRequest(http.MethodPost, "/copy/v2/start", nil)
+		req := copyReq(http.MethodPost, "/copy/v2/start", nil)
 		req.Header.Set(hdr, "1")
 		rec := httptest.NewRecorder()
 		s.ServeHTTP(rec, req)
@@ -302,14 +302,14 @@ func TestCopyServesWholeChunksOnly(t *testing.T) {
 		m.ZipKey = copyZipKey(m.Parts)
 		return m, err
 	})
-	req := httptest.NewRequest(http.MethodPost, "/copy/v2/start", nil)
+	req := copyReq(http.MethodPost, "/copy/v2/start", nil)
 	req.Header.Set("Authorization", "Nostr "+startProof(t, owner, nostr.Now(), "/copy/v2/start"))
 	rec := httptest.NewRecorder()
 	s.ServeHTTP(rec, req)
 	var started struct{ ID, Token string }
 	_ = json.Unmarshal(rec.Body.Bytes(), &started)
 	get := func(path, rng string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req := copyReq(http.MethodGet, path, nil)
 		req.Header.Set("Authorization", "Bearer "+started.Token)
 		if rng != "" {
 			req.Header.Set("Range", rng)
@@ -340,7 +340,7 @@ func TestCopyServesWholeChunksOnly(t *testing.T) {
 			t.Errorf("%s: %d, want 416", rng, c)
 		}
 	}
-	req = httptest.NewRequest(http.MethodPost, "/copy/v2/"+started.ID+"/done", nil)
+	req = copyReq(http.MethodPost, "/copy/v2/"+started.ID+"/done", nil)
 	req.Header.Set("Authorization", "Bearer "+started.Token)
 	s.ServeHTTP(httptest.NewRecorder(), req)
 	if _, err := os.Stat(filepath.Join(copyCacheDir, started.ID)); !os.IsNotExist(err) {
@@ -720,7 +720,7 @@ func TestCopySyncFilesAreOwnFilesOnly(t *testing.T) {
 	s.tokens = []copyToken{{Hash: copyHashToken(token), Owner: owner.pk, LastUsed: time.Now().Unix()}}
 	s.loaded = true
 	get := func(path string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req := copyReq(http.MethodGet, path, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		rec := httptest.NewRecorder()
 		s.ServeHTTP(rec, req)

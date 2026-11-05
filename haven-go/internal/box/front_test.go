@@ -42,6 +42,8 @@ func TestFrontRouting(t *testing.T) {
 		{"DELETE", "/" + blob, nil, "engine", 200},
 		{"GET", "/list/" + blob, nil, "engine", 200},
 		{"OPTIONS", "/upload", nil, "engine", 200},
+		{"GET", "/copy/v2/" + blob[:32], nil, "engine", 200}, // the mesh copy's manifest, chunks, catch-up
+		{"GET", "/copy/v2/sync/ids", nil, "engine", 200},
 		{"GET", "/", nil, "app", 200},
 		{"GET", "/app.js", nil, "js", 200},
 		{"GET", "/wot/" + blob, nil, "app", 200}, // the app's own route

@@ -552,6 +552,17 @@ func CopySyncC(peer *C.char, base *C.char) C.int {
 	return C.int(startCopySync(c.ctx, c.spawn, C.GoString(peer), C.GoString(base)))
 }
 
+// RevokeCopyTokensC is Remove device on A: the removed device (its mesh npub
+// or hex) can no longer read copies or catch up. 0 revoked, 1 none held.
+//
+//export RevokeCopyTokensC
+func RevokeCopyTokensC(peer *C.char) C.int {
+	if copyV2.revoke(C.GoString(peer)) {
+		return 0
+	}
+	return 1
+}
+
 // CancelCopyC stops a running copy or catch-up; its state is kept for a
 // resume. 0 cancelling, 1 nothing running.
 //

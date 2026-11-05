@@ -202,7 +202,7 @@ func (c *copyClient) start(ctx context.Context, startAuth string) (string, error
 		return "", statusError(resp.StatusCode)
 	}
 	var out struct{ ID, Token, State string }
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&out); err != nil || len(out.Token) != 64 || len(out.ID) != 32 {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&out); err != nil || !copyIsHex(out.Token, 64) || !copyIsHex(out.ID, 32) {
 		return "", copyErr("bad_manifest")
 	}
 	c.token = out.Token
@@ -221,6 +221,10 @@ func (c *copyClient) manifest(ctx context.Context, id string) (copyManifest, err
 		return m, statusError(resp.StatusCode)
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<20)).Decode(&m); err != nil {
+		return m, copyErr("bad_manifest")
+	}
+	// The id names B's state file: only A's own answer for this id is taken.
+	if m.ID != id {
 		return m, copyErr("bad_manifest")
 	}
 	return m, nil
@@ -745,7 +749,7 @@ func startCopyFrom(ctx context.Context, spawn func(string, func()), peer, base, 
 			return rc
 		}
 		if err := c.run(cctx, startAuth); err != nil {
-			slog.Warn("copy from peer stopped", "error", err)
+			slog.Warn("copy from peer stopped", "error", copyErrorCode(err))
 		}
 	})
 }
@@ -754,7 +758,7 @@ func startCopyFrom(ctx context.Context, spawn func(string, func()), peer, base, 
 func startCopySync(ctx context.Context, spawn func(string, func()), peer, base string) int {
 	return copyRuns.begin(ctx, spawn, "copyv2.sync", func(cctx context.Context) {
 		if _, err := newCopyClient(peer, base).sync(cctx); err != nil {
-			slog.Warn("copy catch-up stopped", "error", err)
+			slog.Warn("copy catch-up stopped", "error", copyErrorCode(err))
 		}
 	})
 }

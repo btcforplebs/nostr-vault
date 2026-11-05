@@ -17,7 +17,9 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -27,6 +29,7 @@ import (
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip19"
 )
 
 const (
@@ -62,8 +65,10 @@ type copyJob struct {
 
 // copyToken: a B that may read copies and sync (only its hash is kept).
 type copyToken struct {
-	Hash     string `json:"hash"`
-	Owner    string `json:"owner"`
+	Hash  string `json:"hash"`
+	Owner string `json:"owner"`
+	// Device: B's mesh pubkey (hex), named in the owner's start proof.
+	Device   string `json:"device"`
 	Created  int64  `json:"created"`
 	LastUsed int64  `json:"last_used"`
 }
@@ -108,6 +113,8 @@ func (s *copyServer) bearer(r *http.Request) (string, bool) {
 		return "", false
 	}
 	h := copyHashToken(strings.TrimSpace(raw))
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.loadTokens()
 	now := s.now()
 	for i := range s.tokens {
@@ -128,42 +135,74 @@ func (s *copyServer) bearer(r *http.Request) (string, bool) {
 	return "", false
 }
 
+// copyDevice reads the start proof's ["device", <B's mesh npub or hex>].
+func copyDevice(tags nostr.Tags) string {
+	v := strings.TrimSpace(tagValueOf(tags, "device"))
+	if strings.HasPrefix(v, "npub1") {
+		if prefix, pk, err := nip19.Decode(v); err == nil && prefix == "npub" {
+			v, _ = pk.(string)
+		}
+	}
+	v = strings.ToLower(v)
+	if !copyIsHex(v, 64) {
+		return ""
+	}
+	return v
+}
+
+// copyIsHex: s is exactly n lowercase hex digits.
+func copyIsHex(s string, n int) bool {
+	if len(s) != n {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // checkStart verifies the owner's NIP-98 proof for POST /copy/v2/start.
 // The u tag's path must be /copy/v2/start; its host is not compared (A and B
 // name the same mesh link by different loopback addresses). 401 for no, bad,
 // stale or replayed proof; 403 for a good proof by someone else.
-func (s *copyServer) checkStart(r *http.Request) (int, string) {
+func (s *copyServer) checkStart(r *http.Request) (int, string, string) {
 	header, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Nostr ")
 	if !ok {
-		return http.StatusUnauthorized, "missing Authorization: Nostr header"
+		return http.StatusUnauthorized, "missing Authorization: Nostr header", ""
 	}
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(header))
 	if err != nil {
-		return http.StatusUnauthorized, "authorization is not base64"
+		return http.StatusUnauthorized, "authorization is not base64", ""
 	}
 	var ev nostr.Event
 	if err := json.Unmarshal(raw, &ev); err != nil || ev.Kind != copyAuthKind {
-		return http.StatusUnauthorized, "authorization is not a kind 27235 event"
+		return http.StatusUnauthorized, "authorization is not a kind 27235 event", ""
 	}
 	now := s.now()
 	if at := ev.CreatedAt.Time(); at.Before(now.Add(-copyAuthWindow)) || at.After(now.Add(copyAuthWindow)) {
-		return http.StatusUnauthorized, "authorization is outside the 60 s window"
+		return http.StatusUnauthorized, "authorization is outside the 60 s window", ""
 	}
 	if !ev.CheckID() {
-		return http.StatusUnauthorized, "authorization id does not match its content"
+		return http.StatusUnauthorized, "authorization id does not match its content", ""
 	}
 	if ok, err := ev.CheckSignature(); err != nil || !ok {
-		return http.StatusUnauthorized, "authorization signature is invalid"
+		return http.StatusUnauthorized, "authorization signature is invalid", ""
 	}
 	if !strings.EqualFold(tagValueOf(ev.Tags, "method"), http.MethodPost) {
-		return http.StatusUnauthorized, "authorization is not for POST"
+		return http.StatusUnauthorized, "authorization is not for POST", ""
 	}
 	u, err := url.Parse(tagValueOf(ev.Tags, "u"))
 	if err != nil || !u.IsAbs() || u.Path != "/copy/v2/start" || u.RawQuery != "" {
-		return http.StatusUnauthorized, "authorization is not for /copy/v2/start"
+		return http.StatusUnauthorized, "authorization is not for /copy/v2/start", ""
+	}
+	device := copyDevice(ev.Tags)
+	if device == "" {
+		return http.StatusUnauthorized, "authorization names no device", ""
 	}
 	if config.OwnerPubKey == "" || !strings.EqualFold(ev.PubKey, config.OwnerPubKey) {
-		return http.StatusForbidden, "only the owner may copy this vault"
+		return http.StatusForbidden, "only the owner may copy this vault", ""
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -173,10 +212,10 @@ func (s *copyServer) checkStart(r *http.Request) (int, string) {
 		}
 	}
 	if _, dup := s.seen[ev.ID]; dup {
-		return http.StatusUnauthorized, "authorization was already used"
+		return http.StatusUnauthorized, "authorization was already used", ""
 	}
 	s.seen[ev.ID] = now
-	return 0, ""
+	return 0, "", device
 }
 
 func tagValueOf(tags nostr.Tags, name string) string {
@@ -228,9 +267,78 @@ func copyThroughTunnel(r *http.Request) bool {
 	return r.Header.Get("Cf-Connecting-Ip") != "" || r.Header.Get("Cf-Ray") != ""
 }
 
+// copyFromLoopback: the request came from this machine, which is how the mesh
+// hands the own devices this port (and the iPhone's own port). Mac, Android
+// and the box also listen on the LAN (RELAY_BIND_ADDRESS 0.0.0.0), and a
+// removed device there must not reach the copy. The box's havend forwards to
+// the engine over loopback but names the real client in X-Forwarded-For, so
+// every hop it names must be loopback too.
+func copyFromLoopback(r *http.Request) bool {
+	if !copyLoopbackAddr(r.RemoteAddr) {
+		return false
+	}
+	if r.Header.Get("Forwarded") != "" {
+		return false
+	}
+	for _, v := range append(r.Header.Values("X-Forwarded-For"), r.Header.Values("X-Real-Ip")...) {
+		for _, hop := range strings.Split(v, ",") {
+			if !copyLoopbackAddr(strings.TrimSpace(hop)) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func copyLoopbackAddr(a string) bool {
+	if host, _, err := net.SplitHostPort(a); err == nil {
+		a = host
+	}
+	ip, err := netip.ParseAddr(strings.Trim(a, "[]"))
+	return err == nil && ip.Unmap().IsLoopback()
+}
+
+// revoke drops every token for device (B's mesh npub or hex) and the copies
+// they could read: Remove device. Reports whether any was held.
+func (s *copyServer) revoke(device string) bool {
+	device = copyDevice(nostr.Tags{{"device", device}})
+	if device == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.loadTokens()
+	return s.dropDevice(device)
+}
+
+// dropDevice removes device's tokens and their copies. Caller holds s.mu.
+func (s *copyServer) dropDevice(device string) bool {
+	gone := map[string]bool{}
+	kept := s.tokens[:0]
+	for _, t := range s.tokens {
+		if t.Device == device {
+			gone[t.Hash] = true
+			continue
+		}
+		kept = append(kept, t)
+	}
+	s.tokens = kept
+	if len(gone) == 0 {
+		return false
+	}
+	s.saveTokens()
+	for id, j := range s.jobs {
+		if gone[j.token] {
+			_ = os.RemoveAll(j.dir)
+			delete(s.jobs, id)
+		}
+	}
+	return true
+}
+
 // ServeHTTP is /copy/v2/*.
 func (s *copyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if copyThroughTunnel(r) {
+	if copyThroughTunnel(r) || !copyFromLoopback(r) {
 		http.NotFound(w, r)
 		return
 	}
@@ -247,7 +355,8 @@ func (s *copyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *copyServer) start(w http.ResponseWriter, r *http.Request) {
-	if code, why := s.checkStart(r); code != 0 {
+	code, why, device := s.checkStart(r)
+	if code != 0 {
 		http.Error(w, why, code)
 		return
 	}
@@ -258,15 +367,17 @@ func (s *copyServer) start(w http.ResponseWriter, r *http.Request) {
 	s.loadTokens()
 	s.sweep()
 	now := s.now()
-	// One token per B: a new start replaces nothing on its own (A can't tell
-	// two Bs apart), but tokens idle for 30 days fall away here.
+	// One token per B: a new start replaces that device's old token (and the
+	// copy it could read). Tokens idle for 30 days, from an old owner or
+	// from before tokens named their device fall away here.
+	s.dropDevice(device)
 	kept := s.tokens[:0]
 	for _, t := range s.tokens {
-		if now.Sub(time.Unix(t.LastUsed, 0)) <= copyTokenIdle && t.Owner == config.OwnerPubKey {
+		if now.Sub(time.Unix(t.LastUsed, 0)) <= copyTokenIdle && t.Owner == config.OwnerPubKey && t.Device != "" {
 			kept = append(kept, t)
 		}
 	}
-	s.tokens = append(kept, copyToken{Hash: th, Owner: config.OwnerPubKey, Created: now.Unix(), LastUsed: now.Unix()})
+	s.tokens = append(kept, copyToken{Hash: th, Owner: config.OwnerPubKey, Device: device, Created: now.Unix(), LastUsed: now.Unix()})
 	s.saveTokens()
 	dir := filepath.Join(s.cache(), id)
 	job := &copyJob{manifest: copyManifest{V: 2, ID: id, State: "building", Owner: config.OwnerPubKey, CreatedAt: now.Unix()}, dir: dir, token: th, built: now}
