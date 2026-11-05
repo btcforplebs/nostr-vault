@@ -16,13 +16,14 @@ class MeshDeleteTargetsTest {
         HavenConfig(fipsPeers = peers, homeVaultNpub = home, fipsMesh = FipsMeshSettings(devices = devices))
 
     @Test
-    fun `everywhere asks the home vault and every mac, media switch or not`() {
+    // Linked phones now get the owner's media too (Logen 2026-11-05), so Delete everywhere reaches them.
+    fun `everywhere asks the home vault, every mac and every linked phone, media switch or not`() {
         val c = config(
             listOf(FipsDevice(mac, DeviceRole.MAC, name = "Studio Mac", sendMedia = false), FipsDevice(phone, DeviceRole.PHONE)),
             home = kiosk,
         )
         assertEquals(
-            listOf(MeshDeleteTarget(kiosk, "the home vault"), MeshDeleteTarget(mac, "Studio Mac")),
+            listOf(MeshDeleteTarget(kiosk, "the home vault"), MeshDeleteTarget(mac, "Studio Mac"), MeshDeleteTarget(phone, "your other phone")),
             MeshDeleteTargets.of(c, includeHomeVault = true),
         )
     }

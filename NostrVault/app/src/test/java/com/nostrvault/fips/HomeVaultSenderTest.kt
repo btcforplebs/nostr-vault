@@ -88,6 +88,36 @@ class HomeVaultSenderTest {
         assertEquals(0, s.state.value.waiting)
     }
 
+    /**
+     * Logen 2026-11-05: a linked phone gets the owner's new notes and media, queued until it is
+     * reachable. With a loaded config (owner set) a drain drops queues of removed devices; it used to
+     * keep Macs' only, so a phone's queue would have been wiped on every pass.
+     */
+    @Test
+    fun `a linked phone gets the owner's notes and media and its queue survives a drain`() = runBlocking {
+        val phone = "npub1qyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqs8j9gdm"
+        val context = mockk<Context> { every { filesDir } returns tmp.newFolder() }
+        val config = mockk<ConfigStore>()
+        every { config.config } returns MutableStateFlow(
+            HavenConfig(
+                ownerNpub = "npub1" + "z".repeat(58),
+                fipsPeers = listOf(phone),
+                fipsMesh = FipsMeshSettings(devices = listOf(FipsDevice(phone, DeviceRole.PHONE))),
+            ),
+        )
+        val s = HomeVaultSender(context, config).apply {
+            ownerHex = { "a".repeat(64) }
+            ownerIsActive = { true }
+        }
+        s.offerEvent("e1", "a".repeat(64), "{}")
+        s.awaitWaiting(1)
+        s.offerBlob("b".repeat(64), "image/png", byteArrayOf(1, 2, 3))
+        s.drain()  // the mesh is off in a unit test: both stay queued for the phone
+        s.drain()
+        assertEquals(2, s.state.value.waiting)
+        assertEquals("The mesh is off", s.state.value.lastProblem)
+    }
+
     /** Tron's repro (#1025): a drain before the config loads must not take a Mac's queue for a removed one. */
     @Test
     fun `a drain before the config is loaded keeps every mac queue`() = runBlocking {

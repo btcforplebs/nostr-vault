@@ -10,8 +10,8 @@ internal data class MeshDeleteTarget(val npub: String, val name: String) {
 
 /**
  * Where Delete everywhere goes over the FIPS mesh: the devices [MeshSendTargets] sends the owner's
- * media to (the home vault, then each Mac in My Devices), whatever their Send media switch, since a
- * Mac holds what was uploaded on it too. A Mac with no public address was never reached before: its
+ * media to (the home vault, then each Mac and each linked phone in My Devices), whatever their Send
+ * media switch, since a device holds what was uploaded on it too. A Mac with no public address was never reached before: its
  * copy stayed (Tod, 2026-10-31). "Delete from mirrors" keeps these copies. iOS reaches the same Mac
  * through `HavenConfig.blossomDeleteTargets`' FIPS address. Pure for the tests.
  */
