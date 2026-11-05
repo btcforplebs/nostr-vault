@@ -20,6 +20,9 @@ final class PairDeviceFlow: ObservableObject {
         case joined(qr: String, name: String, words: [String], short: String, needsWordsTap: Bool)
         /// Either side: the role in plain words, before anything is stored.
         case confirmRole(text: String, short: String)
+        /// A pasted plain mesh address (a Linux box, the browser relay page):
+        /// the one-way add, stored on this side only.
+        case byAddress(npub: String)
         case linked(name: String, already: Bool)
         /// Stopped: plain words and a way back.
         case failed(String)
@@ -267,6 +270,48 @@ final class PairDeviceFlow: ObservableObject {
         }
     }
 
+    // MARK: Paste instead
+
+    /// What was pasted on a scan step: the other device's code (the same as
+    /// scanning it), or a plain mesh address for the one-way add. Nil when
+    /// it's taken or the step shows its own notice; else words to show.
+    func pasted(_ text: String) -> String? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.lowercased().hasPrefix("nvpair:") {
+            if case .scanning = step {
+                scannedTheirCode(t)
+                return nil
+            }
+            return scannedFirstCode(t)
+        }
+        guard let npub = HomeVaultLogic.meshNpub(fromInput: t) else {
+            return "That isn't a pairing code or a mesh address."
+        }
+        if let own = loadOwn(), own.npub == npub { return "That is this device's own address." }
+        reset()
+        step = .byAddress(npub: npub)
+        return nil
+    }
+
+    /// The one-way add, for what can't do the two scans: a Linux/Pi box
+    /// (linux/mesh/README.md) or the browser relay page. Nil when stored,
+    /// else why not.
+    func addByAddress(_ npub: String, name: String, role: MeshDeviceRole) -> String? {
+        let device = MeshDevice(npub: npub, name: name.trimmingCharacters(in: .whitespacesAndNewlines), role: role)
+        #if os(iOS)
+        if let error = FipsMeshDevices.add(address: npub, name: device.name, role: role, config: config) { return error }
+        #else
+        if case .refuseOtherRole(let other) = MeshPairing.roleCheck(npub: npub, role: role, existing: existing) {
+            return MeshPairing.otherRoleText(other)
+        }
+        config.config.meshDevices = MeshDevicesLogic.adding(device, to: config.config.meshDevices)
+        config.save()
+        MacFipsMeshService.shared.sync()
+        #endif
+        finish(device, already: false)
+        return nil
+    }
+
     // MARK: Both
 
     private func received(_ incoming: MeshPairingHello.Incoming) {
@@ -496,7 +541,7 @@ private struct PairDeviceSteps: View {
             case .start:
                 start
             case .showing(let qr):
-                PairShowQRView(qr: qr, caption: "On your other device, open Add a device and tap Scan a code.",
+                PairShowQRView(qr: qr, caption: "On your other device, open Add a device and tap Scan a code, or paste this code there.",
                                secondsLeft: flow.secondsLeft)
                 ProgressView("Waiting for it to scan…")
                     .frame(maxWidth: .infinity)
@@ -507,6 +552,7 @@ private struct PairDeviceSteps: View {
                              validate: { MeshPairing.parse($0, ownMesh: nil).failureText },
                              onCancel: { flow.cancel() }) { flow.scannedTheirCode($0) }
                     .id(flow.scanToken)
+                PairPasteField { flow.pasted($0) }
                 if PairDeviceFlow.offersAccept, !words.isEmpty {
                     Divider()
                     PairCheckWordsView(words: words, short: short,
@@ -517,7 +563,7 @@ private struct PairDeviceSteps: View {
                         .frame(maxWidth: .infinity)
                 }
             case .joined(let qr, let name, let words, let short, let needsWordsTap):
-                PairShowQRView(qr: qr, caption: "Now let \(name) scan this code.", secondsLeft: flow.secondsLeft)
+                PairShowQRView(qr: qr, caption: "Now let \(name) scan this code, or paste it there.", secondsLeft: flow.secondsLeft)
                 if !words.isEmpty {
                     PairCheckWordsView(words: words, short: short,
                                        caption: needsWordsTap
@@ -550,6 +596,8 @@ private struct PairDeviceSteps: View {
                         .buttonStyle(.borderedProminent)
                         .tint(.havenPurple)
                 }
+            case .byAddress(let npub):
+                PairByAddressView(npub: npub, flow: flow)
             case .linked(let name, let already):
                 PairLinkedView(name: name, already: already, done: done)
             case .failed(let text):
@@ -579,6 +627,89 @@ private struct PairDeviceSteps: View {
         .buttonStyle(.borderedProminent)
         .tint(.havenPurple)
         ScanFirstCode(flow: flow)
+        PairPasteField { flow.pasted($0) }
+    }
+}
+
+/// "Paste instead", on every scan step: the other device's code as text, or
+/// a plain mesh address (npub1…) for a Linux box or the browser relay page.
+private struct PairPasteField: View {
+    let onPaste: (String) -> String?
+    @State private var text = ""
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Paste instead")
+                .font(.appSystem(size: 13, weight: .semibold))
+            TextField("The other device's code, or a mesh address", text: $text, axis: .vertical)
+                .font(.appSystem(size: 12, design: .monospaced))
+                .lineLimit(1...4)
+                .textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                #endif
+            HStack {
+                Button {
+                    text = PlatformClipboard.getString() ?? ""
+                } label: {
+                    Label("Paste", systemImage: "doc.on.clipboard")
+                }
+                .buttonStyle(.bordered)
+                Spacer()
+                Button("Use") { error = onPaste(text) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.havenPurple)
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if let error {
+                Text(error).font(.appCaption).foregroundColor(.orange)
+            }
+            Text("A Linux box or the browser relay page shows only its mesh address (npub1…). Paste that here to add it.")
+                .font(.appCaption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// The one-way add for a pasted mesh address: what it is and a name.
+private struct PairByAddressView: View {
+    let npub: String
+    @ObservedObject var flow: PairDeviceFlow
+    @State private var role: MeshDeviceRole = .homeVault
+    @State private var name = ""
+    @State private var error: String?
+
+    var body: some View {
+        Text("Add this device by its address. It's added on this side only.")
+            .font(.appBody)
+        Text(MeshPairing.shortAddress(npub))
+            .font(.appSystem(size: 12, design: .monospaced))
+            .foregroundColor(.secondary)
+        Picker("This is", selection: $role) {
+            ForEach(MeshDeviceRole.allCases) { role in
+                Label(role.label, systemImage: role.icon).tag(role)
+            }
+        }
+        .pickerStyle(.menu)
+        .tint(.havenPurple)
+        Text(role.job)
+            .font(.appCaption)
+            .foregroundColor(.secondary)
+        TextField("Name (optional)", text: $name)
+            .textFieldStyle(.roundedBorder)
+        if let error {
+            Text(error).font(.appCaption).foregroundColor(.red)
+        }
+        HStack {
+            Button("Cancel", role: .cancel) { flow.cancel() }
+            Spacer()
+            Button("Add") { error = flow.addByAddress(npub, name: name, role: role) }
+                .buttonStyle(.borderedProminent)
+                .tint(.havenPurple)
+        }
     }
 }
 
