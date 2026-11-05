@@ -180,8 +180,9 @@ extension BlossomService {
             guard let pubkey = item.pubkey,
                   pubkey == ownerPubkey ||
                   whitelistedPubkeys.contains(pubkey) else { continue }
-            // Skip local URLs
+            // Skip local URLs, and host-less ones that can never load
             let host = item.url.host?.lowercased() ?? ""
+            if host.isEmpty { continue }
             if host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" { continue }
 
             // Extract hash from URL to check if already local
