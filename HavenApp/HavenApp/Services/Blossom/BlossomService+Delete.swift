@@ -20,8 +20,20 @@ extension BlossomService {
         var failed: [String] = []
         /// What to call a mesh device (`fipsmesh://<npub>/`) in the text.
         var names: [String: String] = [:]
+        /// Left alone by Delete from mirrors: the owner runs them (NIP-11 pubkey).
+        var skipped: [String] = []
 
         var allDeleted: Bool { failed.isEmpty && !deleted.isEmpty }
+
+        /// The owner's own vaults the delete left alone, for the banner.
+        var skippedHosts: [String] {
+            skipped.map { names[$0] ?? URL(string: $0)?.host ?? $0 }
+        }
+
+        /// The banner text for a Delete from mirrors (`MediaDeleteWording.mirrorsReport`).
+        var mirrorsMessage: (text: String, ok: Bool) {
+            MediaDeleteWording.mirrorsReport(deleted: deleted, failedHosts: failedHosts, skippedHosts: skippedHosts)
+        }
 
         /// Hosts still holding the file, for the banner ("blossom.primal.net").
         var failedHosts: [String] {
@@ -75,7 +87,7 @@ extension BlossomService {
         result.deleted += meshResult.deleted
         result.failed += meshResult.failed
         result.names.merge(meshResult.names) { first, _ in first }
-        if result.deleted.isEmpty && result.failed.isEmpty {
+        if result.deleted.isEmpty && result.failed.isEmpty && result.skipped.isEmpty {
             logger.warning("No Blossom mirrors configured for deletion")
         }
         return result
@@ -96,6 +108,7 @@ extension BlossomService {
             mirrors = targets.filter { verdicts[$0] == .mirror }
             for server in targets where verdicts[server] == .ownVault {
                 logger.info("Skipping \(server): it is one of the owner's vaults")
+                result.skipped.append(server)
             }
             for server in targets where verdicts[server] == .unknown {
                 logger.warning("Not deleting from \(server): couldn't check it isn't a vault")

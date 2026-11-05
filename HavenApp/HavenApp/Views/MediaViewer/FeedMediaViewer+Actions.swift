@@ -180,12 +180,14 @@ extension FeedMediaViewer {
             await BlossomBackupStore.shared.refresh(hash: sha256, service: blossomService, force: true)
             await MainActor.run {
                 withAnimation(Motion.panel) {
-                    if report.allDeleted {
+                    let message = report.mirrorsMessage
+                    if !message.ok {
+                        deleteStatus = .failed(message.text)
+                    } else if report.skipped.isEmpty {
                         deleteStatus = .success
-                    } else if report.failed.isEmpty {
-                        deleteStatus = .failed("No mirrors to delete from")
                     } else {
-                        deleteStatus = .failed("Still on " + ListFormatter.localizedString(byJoining: report.failedHosts))
+                        // Names the vault it left alone ("Deleted from mirrors. Skipped: …").
+                        deleteStatus = .successNote(message.text)
                     }
                     isDeleting = false
                 }
@@ -434,12 +436,14 @@ extension FeedMediaViewer {
                 .background(Capsule().fill(Color.red.opacity(0.85)))
                 .foregroundColor(.white)
 
-            case .success:
+            case .success, .successNote:
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.appSystem(size: 14, weight: .semibold))
-                    Text("Deleted")
+                    Text(status.successText)
                         .font(.appSystem(size: 14, weight: .semibold))
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(3)
                 }
                 .padding(.vertical, 12)
                 .padding(.horizontal, 16)

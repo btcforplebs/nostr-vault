@@ -84,6 +84,19 @@ class MirrorDeleteParityTest {
         verify(timeout = 2_000) { notifications.showError(DELETE_NO_MIRRORS_MESSAGE, any(), any()) }
     }
 
+    // Tron #1783 follow-up 2: a skipped own vault was left out, so the toast read "Deleted from mirrors".
+    @Test
+    fun `both viewers name a skipped own vault`() {
+        val report = BlossomService.MirrorDeleteResult(deleted = listOf("https://cdn.elsewhere.example"), skipped = listOf("https://studio-mac.example.net"))
+        val line = "Deleted from mirrors. Skipped: studio-mac.example.net (your own vault)"
+        // Each waits for its viewer's onDone, so no view model work outlives the test's Main dispatcher.
+        val done = java.util.concurrent.CountDownLatch(2)
+        feedViewer(blossom(report)).delete(item.displayUrl, DeleteScope.MIRRORS, deletePosts = false, onDone = { done.countDown() }, onAllGone = {})
+        galleryViewer(blossom(report)).deleteFromMirrors(item) { done.countDown() }
+        assertTrue(done.await(2, java.util.concurrent.TimeUnit.SECONDS))
+        verify(exactly = 2) { notifications.showToast(line, any()) }
+    }
+
     // #5: after a full Delete everywhere the gallery viewer never re-checked, so badges kept the old count.
     @Test
     fun `badges are re-checked after a full delete everywhere`() {

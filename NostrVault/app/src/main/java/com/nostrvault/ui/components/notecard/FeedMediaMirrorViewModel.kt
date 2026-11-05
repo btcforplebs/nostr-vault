@@ -143,11 +143,8 @@ class FeedMediaMirrorViewModel @Inject constructor(
                     DeleteScope.MIRRORS -> {
                         val report = withContext(Dispatchers.IO) { blossomService.deleteFromServers(sha, url, includeHomeVault = false) }
                         refreshCloudBadges(sha)
-                        when {
-                            report.allDeleted -> onMessage("Deleted from mirrors", ok = true)
-                            report.failed.isEmpty() -> onMessage(com.nostrvault.service.DELETE_NO_MIRRORS_MESSAGE, ok = false)
-                            else -> onMessage(deleteEverywhereLeftover(localDeleted = true, mirrors = report)!!, ok = false)
-                        }
+                        val (message, ok) = com.nostrvault.service.mirrorsDeleteMessage(report)
+                        onMessage(message, ok)
                     }
                     DeleteScope.EVERYWHERE -> {
                         // Posts first: if they can't be deleted (signing failed),
