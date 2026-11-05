@@ -287,6 +287,7 @@
 		2651420088EF5B727526C1E9 /* MediaNotesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 370D303713065845F38D3B0D /* MediaNotesSheet.swift */; };
 		2681BCA73FE8F40351489EB2 /* IdentityStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F37A04D4EB9E1C725671A610 /* IdentityStepView.swift */; };
 		269EE45671392082227B74AB /* NVShareAccountsSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E610216956FC8C8BE3A4AE2 /* NVShareAccountsSnapshot.swift */; };
+		26D6E4497689284EF0A18E6F /* ComposePasteRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7797BEEECFB3B3FB30AB32E0 /* ComposePasteRule.swift */; };
 		26EC34BA41C0258FDC48AAC4 /* FeedActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A85E435417789F6ABE84846C /* FeedActions.swift */; };
 		270AF3B7649E919B87BC94ED /* LiveFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47192F4794DB3DF64A802E30 /* LiveFeedViews.swift */; };
 		2730A44FC8B4A4AC41BF67A3 /* VaultBackupRestore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A6E60029BAE8DFF771BF7B3 /* VaultBackupRestore.swift */; };
@@ -298,6 +299,7 @@
 		27B0DEC7F90981AF0B72CBD4 /* AccountUnread.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADE20F9D5EC5160587318D28 /* AccountUnread.swift */; };
 		27BBFB192439FAD50AEB34EC /* PendingPostManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 665772231EE1D4B0755E95C3 /* PendingPostManager.swift */; };
 		27D88B1AC859C42F7A1AF98E /* EmojiPaletteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B589B40DCA89EA8C175FEF32 /* EmojiPaletteStore.swift */; };
+		27FA266F992CFE9AA907E292 /* DraftTombstones.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC1096A9CAC6ECB80F009AD7 /* DraftTombstones.swift */; };
 		27FA2D5AA1F2368CB224F74F /* ZapValidationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4AF522091B10161BB09ED4 /* ZapValidationService.swift */; };
 		28993FA0FE92AAC3FBC75ECA /* Bech32.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDC11A2762E55A9335AA685B /* Bech32.swift */; };
 		28DAF3915B6FA93CC1C82C4D /* PayShareHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6904793B4B9F38D1A474FBBD /* PayShareHandler.swift */; };
@@ -752,6 +754,7 @@
 		6599E6B809A7C89D83B5765A /* AudioPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7170B65E0299D14E11CEE3D8 /* AudioPlayerView.swift */; };
 		65B4D40289A91E22BFF3FB07 /* CStringArguments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16D3572447C348FFE5B9A499 /* CStringArguments.swift */; };
 		65D02542D0D20BDD4AC2E3B9 /* FeedService+Filtering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98B5891BCE3FFE978646D7D4 /* FeedService+Filtering.swift */; };
+		6640752C7CC0FB1BB452E3DC /* ComposePasteRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7797BEEECFB3B3FB30AB32E0 /* ComposePasteRule.swift */; };
 		6681A5E321C637A4CB1A1991 /* LiveStreamMoreMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = FACD978E3159323F7A6BC06F /* LiveStreamMoreMenu.swift */; };
 		66937AD7973E668D625FDC3A /* VaultView+Content.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DBB01D87B267D0ACA43B8EC /* VaultView+Content.swift */; };
 		66A75D50226A1EAECEA1AAF5 /* FipsMeshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2085F506DCBDFB8AA91C52C5 /* FipsMeshService.swift */; };
@@ -1348,6 +1351,7 @@
 		B269F0CA9A5435B3EA0A9922 /* BlossomDashboardMirrors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD2828F9DD6C5EB7FA5ADE4 /* BlossomDashboardMirrors.swift */; };
 		B274CA36A12F025B5F22264C /* LiveNow.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD9985D2718F64F8D0F52630 /* LiveNow.swift */; };
 		B2889A6B902C69E8612485A8 /* CustomZapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CFC29BEE8A95187513A3787 /* CustomZapSheet.swift */; };
+		B293514D8A3FC0B51C228525 /* DraftTombstones.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC1096A9CAC6ECB80F009AD7 /* DraftTombstones.swift */; };
 		B2945DA33D91B6F720F44B90 /* FloatingButtonRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC11AD03532022248A5C4583 /* FloatingButtonRow.swift */; };
 		B2A9C3976DF6EB497C3B67A7 /* FeedService+Lifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 332F03725477EEBFD25F9939 /* FeedService+Lifecycle.swift */; };
 		B2B6F4E8D6BD8E06FE74A425 /* AvatarImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6558C31748490E315EA4DE8E /* AvatarImageCache.swift */; };
@@ -2456,6 +2460,7 @@
 		76BAFE194F5C54218E6F3555 /* PushNotificationStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationStep.swift; sourceTree = "<group>"; };
 		771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuoteReferenceIDs.swift; sourceTree = "<group>"; };
 		775FD3A0FC8C2289FB4BBFE3 /* DMService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMService.swift; sourceTree = "<group>"; };
+		7797BEEECFB3B3FB30AB32E0 /* ComposePasteRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposePasteRule.swift; sourceTree = "<group>"; };
 		77B0047748F38EBE8344E522 /* ReferrerStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferrerStep.swift; sourceTree = "<group>"; };
 		78169D4B165DB968EC93FBC8 /* NewsDot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewsDot.swift; sourceTree = "<group>"; };
 		78947C68D9C77DF8F43687BF /* MediaNoteMatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaNoteMatch.swift; sourceTree = "<group>"; };
@@ -2755,6 +2760,7 @@
 		BB6C792713D1D3ECD637AC8F /* ListWipeBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListWipeBanner.swift; sourceTree = "<group>"; };
 		BBCC2C40E48A867FA28814D4 /* FeedThreadCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedThreadCard.swift; sourceTree = "<group>"; };
 		BBDF2964207ECC2BFAE27EBA /* LabelPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelPublisher.swift; sourceTree = "<group>"; };
+		BC1096A9CAC6ECB80F009AD7 /* DraftTombstones.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftTombstones.swift; sourceTree = "<group>"; };
 		BC4EA632EECD8DCC87123579 /* MyDevicesPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyDevicesPanel.swift; sourceTree = "<group>"; };
 		BCB3C0E4C43D7B5971396CBC /* MediaCacheService+MemoryCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MediaCacheService+MemoryCache.swift"; sourceTree = "<group>"; };
 		BD189D3728C9702A5C95D0E2 /* ComposeView+Attachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ComposeView+Attachments.swift"; sourceTree = "<group>"; };
@@ -3935,6 +3941,7 @@
 				A252F7C1254A15F107C98037 /* BookmarkList.swift */,
 				702B73F5AC3EE620877BDAB0 /* BunkerURI.swift */,
 				9DA52B454082978B0E4ED6F3 /* ComposeEmoji.swift */,
+				7797BEEECFB3B3FB30AB32E0 /* ComposePasteRule.swift */,
 				FF788B89ACD8B1FE30E03676 /* ComposerContext.swift */,
 				DF5D411E889E67C6FF5E16AF /* ComposerDraft.swift */,
 				5600D540B4446A14A59C8EC0 /* Config */,
@@ -3952,6 +3959,7 @@
 				59E8B88393BC807874308374 /* DockInset.swift */,
 				F67FCE8523F6E6F9E436C4E2 /* DraftReplyParent.swift */,
 				66C02A451295D2B6C9573E95 /* DraftSyncPlan.swift */,
+				BC1096A9CAC6ECB80F009AD7 /* DraftTombstones.swift */,
 				75FAB177AF921AAA9A805C44 /* EmojiCatalog.swift */,
 				9B51A8C730F9E0715F991CD2 /* EmojiListParse.swift */,
 				B217E0E9F1229BFCC97EF224 /* EmojiPalette.swift */,
@@ -4958,6 +4966,7 @@
 				FEE319AB8A13E27C0AB5FDD5 /* CompleteStep.swift in Sources */,
 				066B5DD2AC93FFC0409033CC /* ComposeEmoji.swift in Sources */,
 				371D422FC6B68F43E17557EF /* ComposeNotePreview.swift in Sources */,
+				6640752C7CC0FB1BB452E3DC /* ComposePasteRule.swift in Sources */,
 				9B6AD5F6E50B252F9B39DF80 /* ComposeTextView.swift in Sources */,
 				25890D9712ADB87040AE6DBE /* ComposeView+Attachments.swift in Sources */,
 				BA5DD59B5E2AA4BD7FAF0F75 /* ComposeView+Chrome.swift in Sources */,
@@ -5035,6 +5044,7 @@
 				AC18B76901595FF2EC40783D /* DraftReplyParent.swift in Sources */,
 				A2466D5E5282712286740FE2 /* DraftService.swift in Sources */,
 				82EFE5AEF1F30BE74CE1E2F0 /* DraftSyncPlan.swift in Sources */,
+				B293514D8A3FC0B51C228525 /* DraftTombstones.swift in Sources */,
 				AEB176AE62F974F9A5FCC1CE /* EmojiCatalog.swift in Sources */,
 				2E072D51613DED1FE90740F2 /* EmojiListParse.swift in Sources */,
 				9465FFF264F339A39DD4687F /* EmojiListService.swift in Sources */,
@@ -5950,6 +5960,7 @@
 				0DF424035B9D26CBE9BC903C /* CompleteStep.swift in Sources */,
 				FC9FBBEF4BCCB12F691EAAB8 /* ComposeEmoji.swift in Sources */,
 				0CD9C488A3F2742C4A8739E4 /* ComposeNotePreview.swift in Sources */,
+				26D6E4497689284EF0A18E6F /* ComposePasteRule.swift in Sources */,
 				7EA1A6E71CA81B6A995532CE /* ComposeTextView.swift in Sources */,
 				E1A6DA839447C134482AE8FD /* ComposeView+Attachments.swift in Sources */,
 				B1FB09DF1783A4326584D426 /* ComposeView+Chrome.swift in Sources */,
@@ -6024,6 +6035,7 @@
 				BF2FC4F96D9D2FFEACF5CD89 /* DraftReplyParent.swift in Sources */,
 				E363C397778EDA4BA29B9B7E /* DraftService.swift in Sources */,
 				06B733F76ADDEAA682A456AD /* DraftSyncPlan.swift in Sources */,
+				27FA266F992CFE9AA907E292 /* DraftTombstones.swift in Sources */,
 				4698DB63020E0F7F06082C13 /* EmojiCatalog.swift in Sources */,
 				35F9738EB414D345100C7694 /* EmojiListParse.swift in Sources */,
 				49A25ACE93515D02CCA809C0 /* EmojiListService.swift in Sources */,
