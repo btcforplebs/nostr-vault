@@ -482,7 +482,9 @@ async function importOwnUnlocked(vault, pubkey, relays, { startDate = IMPORT_STA
   await Promise.all(relays.map(async url => {
     const how = await page(url, start, undefined, IMPORT_LANE_MAX_PAGES, Date.now() + laneDeadlineMs,
       { base: { "#p": [pubkey] }, check: tagsMe, put: keepTagged, onPage: () => report() })
-    if (how !== "done" && how !== "silent") cut.add(url)
+    // Only a finished lane is done: a relay that never answered the tagged filter (silent) didn't give its replies
+    // and mentions either, so the import can't say complete (it did: Tron, 2026-11-05 first-run plan item 5).
+    if (how !== "done") cut.add(url)
   }))
   await keep.drain()
   await keepTagged.drain()

@@ -22,6 +22,9 @@ import { setQuoteSource } from "./src/net/quotes.js"
 import { setMeshPeople } from "./src/net/fips-media.js"
 import { GuestApp } from "./src/guest/GuestApp.jsx"
 import { SetupBringOver } from "./src/screens/SetupBringOver.jsx"
+import { WelcomeTour } from "./src/components/WelcomeTour.jsx"
+import { NotifyAsk } from "./src/components/NotifyAsk.jsx"
+import { markTourDone, tourDone } from "./src/net/first-run.js"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { startNavDepth } from "./src/components/nav-depth.js"
 import { ComposeScreen } from "./src/screens/ComposeScreen.jsx"
@@ -124,6 +127,8 @@ function App() {
   // the line it leaves for the steps screen.
   const [askOther, setAskOther] = useState(null)
   const [prepNote, setPrepNote] = useState(null)
+  // A new account's short tour, once, after it's in; the notification question waits until it's closed.
+  const [tour, setTour] = useState(false)
   const openNow = useRef(null)
   // A key made here whose sealed copy this browser can't open any more: the password opens its ncryptsec again.
   const [locked, setLocked] = useState(false)
@@ -156,6 +161,7 @@ function App() {
       log("boot", { loadMs: v.loadMs, startMs: v.startMs, method: session.method })
       setVault(v)
       const madeHere = !!firstEvents
+      if (madeHere && !tourDone(session.pubkey)) setTour(true)
       if (firstEvents) {
         for (const ev of firstEvents) await v.outbox.event(ev).catch(e => log("first-event-error", { kind: ev.kind, err: String(e) }))
         firstEvents = null
@@ -274,6 +280,8 @@ function App() {
       <FloatingPlayer />
       {isDashboardOpen() && <VaultDashboard ctx={ctx} />}
       <AuthPrompt />
+      {tour && <WelcomeTour onDone={() => { markTourDone(session.pubkey); setTour(false) }} />}
+      {!BOX && <NotifyAsk busy={tour} />}
     </div>
   )
 }

@@ -12,6 +12,7 @@ import { putProfile } from "../net/profiles.js"
 import { PersonRow } from "./SearchScreen.jsx"
 import { learn } from "../shell.js"
 import { appDownload } from "../components/get-app.js"
+import { NEW_TO_NOSTR, NEW_TO_NOSTR_NO, NEW_TO_NOSTR_YES } from "../net/first-run.js"
 import "../styles/welcome.css"
 
 const SEARCH = "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"
@@ -45,8 +46,10 @@ export function WelcomeScreen({ onSignIn, onCreate }) {
             <p class="welcome-app-line">{app.line}</p>
           </div>
         )}
-        <button class="welcome-door primary" onClick={onCreate}>Create an account</button>
-        <button class="welcome-door" onClick={onSignIn}>I already use Nostr</button>
+        {/* The first of setup's two questions (net/first-run.js): Yes makes an account, No signs in with yours. */}
+        <p class="welcome-question">{NEW_TO_NOSTR}</p>
+        <button class="welcome-door primary" onClick={onCreate}>{NEW_TO_NOSTR_YES}</button>
+        <button class="welcome-door" onClick={onSignIn}>{NEW_TO_NOSTR_NO}</button>
         {looking ? <Browse /> : <button type="button" class="welcome-look" onClick={() => setLooking(true)}>Just look around</button>}
       </div>
     </main>

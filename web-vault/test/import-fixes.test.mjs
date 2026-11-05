@@ -139,3 +139,12 @@ test("a restore whose writes time out counts them and goes on, under the import 
   assert.deepEqual(r.counts.outbox, { stored: 2, refused: 0, bad: 0, failed: 1 })
   assert.equal(kept.length, 2)
 })
+
+test("a relay that answers your own notes but never the notes that tag you leaves the import partial, not complete", async t => {
+  relays(t, { "wss://a": [note(now - 10)] })
+  const page = importNet.page
+  t.mock.method(importNet, "page", async (url, f) => (f["#p"] ? { events: [], eose: false } : page(url, f)))
+  const r = await importOwn({ outbox: route(), inbox: route() }, me, ["wss://a"], { startDate })
+  assert.deepEqual(r.cut, ["wss://a"])
+  assert.equal(r.result, "partial")
+})
