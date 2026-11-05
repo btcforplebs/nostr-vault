@@ -383,6 +383,12 @@ object HavenBridge {
     external fun getImportLog(): String?
 
     /**
+     * The last import's IMPORT_RESULT line (haven-go import_result.go), read after startRelay(importMode = true)
+     * returns; null before any import. Parse it with [com.nostrvault.service.ImportResult].
+     */
+    external fun getImportResult(): String?
+
+    /**
      * Moving in's Skip: stops the list history scan; what it found so far is
      * kept and the import carries on. True when a scan was running.
      * Maps to Go: SkipListHistoryScanC()

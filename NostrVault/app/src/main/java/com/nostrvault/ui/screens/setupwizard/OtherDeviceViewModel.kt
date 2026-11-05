@@ -13,6 +13,13 @@ import com.nostrvault.fips.MeshPairingJoiner
 import com.nostrvault.fips.MyDevicesRules
 import com.nostrvault.service.serverListDropsAfter
 import com.nostrvault.ui.screens.pairing.PairDeviceViewModel
+import com.nostrvault.fips.FipsBridge
+import com.nostrvault.relay.RelayConfiguration
+import com.nostrvault.service.ImportResult
+import com.nostrvault.service.RelayImportService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.notification.PillTone
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -42,7 +49,7 @@ class OtherDeviceViewModel @Inject constructor(
     private val mesh: FipsMeshManager,
     private val configStore: ConfigStore,
     private val homeVault: HomeVaultSender,
-    private val copyWatcher: BringItOverCopyWatcher,
+    private val relayImportService: RelayImportService,
     private val notificationManager: NotificationManager,
     @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
@@ -54,8 +61,10 @@ class OtherDeviceViewModel @Inject constructor(
         data class Confirm(val text: String, val shortAddress: String) : Ui
         data class ShowMyCode(val uri: String, val name: String) : Ui
         data class CheckWords(val words: List<String>, val shortAddress: String, val name: String, val tapped: Boolean) : Ui
-        /** Linked. [copies]: the other device keeps a full copy this one pulls after setup (a Mac). */
-        data class Linked(val name: String, val copies: Boolean) : Ui
+        /** Linked; importing from the other device now ([status]: the import's own line). */
+        data class Copying(val name: String, val status: String = "") : Ui
+        /** Copied (all or part): setup goes on to the normal relay import. */
+        data object Copied : Ui
         /** Didn't link: setup goes on to the relays with one plain line. */
         data object FellBack : Ui
     }
@@ -188,7 +197,55 @@ class OtherDeviceViewModel @Inject constructor(
         val own = ownHex?.let(MeshPairing::npub)
         // Stored in the same queue as Mesh settings, reading the config inside it (Tron, #1706).
         appScope.launch { mesh.changeLock.withLock { store(own, a.mesh, a.role, a.name) } }
-        _ui.value = Ui.Linked(MeshPairing.displayName(a.name), BringItOver.copiesFrom(a.role))
+        startCopy(a)
+    }
+
+    /**
+     * The copy: an import with the other device's vault as one more seed relay, from [BringItOver.START_DATE]. Only
+     * haven-go's IMPORT_RESULT ends it (#1720 twin); 2 minutes with no progress is a stall.
+     */
+    private fun startCopy(a: MeshPairing.Payload) {
+        val name = MeshPairing.displayName(a.name)
+        _ui.value = Ui.Copying(name)
+        viewModelScope.launch {
+            val url = withContext(Dispatchers.IO) { vaultUrl(a.mesh) } ?: return@launch fallBack()
+            configStore.update { it.copy(importStartDate = BringItOver.START_DATE) }
+            // Refused when the vault is busy: a copy never joins a running import (its relay would be dropped).
+            if (!relayImportService.importNotes(alsoFrom = listOf(url), otherVault = url)) return@launch fallBack()
+            var last = relayImportService.importProgress.value to relayImportService.importStatusMessage.value
+            var lastAt = now()
+            relayImportService.isImporting.first { it }
+            while (isActive) {
+                delay(1000)
+                if (!relayImportService.isImporting.value) {
+                    val outcome = relayImportService.importOutcome.value ?: ImportResult.NO_RESULT
+                    return@launch when (BringItOver.after(outcome)) {
+                        BringItOver.Copy.Done -> { _ui.value = Ui.Copied }
+                        else -> fallBack()
+                    }
+                }
+                val current = relayImportService.importProgress.value to relayImportService.importStatusMessage.value
+                (_ui.value as? Ui.Copying)?.let { _ui.value = it.copy(status = current.second) }
+                if (current != last) {
+                    last = current
+                    lastAt = now()
+                } else if (BringItOver.isStalled(lastAt, now())) {
+                    return@launch fallBack()
+                }
+            }
+        }
+    }
+
+    /** The other device's vault as a local ws:// address over the link, or null. Never logged. */
+    private fun vaultUrl(meshNpub: String): String? {
+        var ingress = FipsBridge.ingress(meshNpub)
+        var waited = 0L
+        while (ingress.error == FipsBridge.ERR_NOT_RUNNING && waited < MESH_WAIT_MS) {
+            Thread.sleep(MESH_POLL_MS)
+            waited += MESH_POLL_MS
+            ingress = FipsBridge.ingress(meshNpub)
+        }
+        return ingress.url?.let(RelayConfiguration::meshWebsocketURL)
     }
 
     private suspend fun store(own: String?, npub: String, role: DeviceRole, name: String) {
@@ -200,11 +257,8 @@ class OtherDeviceViewModel @Inject constructor(
         configStore.updateAsync { it.copy(serverListDropMesh = serverListDropsAfter(before, it)) }
     }
 
-    /** Setup finishes with a Mac linked: watch its copy, falling back to the relays if it stalls. */
-    fun watchCopy() = copyWatcher.watch(now())
-
     private fun fallBack() {
-        if (_ui.value is Ui.Linked || _ui.value == Ui.FellBack) return
+        if (_ui.value == Ui.Copied || _ui.value == Ui.FellBack) return
         stopTicker()
         hello?.close()
         // One plain line, no error screen (§5a).
@@ -241,5 +295,7 @@ class OtherDeviceViewModel @Inject constructor(
 
     private companion object {
         fun now() = System.currentTimeMillis() / 1000
+        const val MESH_WAIT_MS = 20_000L
+        const val MESH_POLL_MS = 1_000L
     }
 }

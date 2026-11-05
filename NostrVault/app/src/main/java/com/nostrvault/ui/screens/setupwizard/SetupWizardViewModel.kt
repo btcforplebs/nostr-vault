@@ -253,6 +253,10 @@ class SetupWizardViewModel @Inject constructor(
     internal val _tourImportFailed = MutableStateFlow(false)
     val tourImportFailed = _tourImportFailed.asStateFlow()
 
+    /** How the tour's import ended (haven-go IMPORT_RESULT), for the Ready card's words; null while it runs. */
+    internal val _tourOutcome = MutableStateFlow<com.nostrvault.service.ImportResult?>(null)
+    val tourOutcome = _tourOutcome.asStateFlow()
+
     init {
         _isAmberAvailable.value = amberSignerService.isAmberInstalled()
         _citrineInstalled.value = runCatching { CitrineDetect.isInstalled(appContext.packageManager) }

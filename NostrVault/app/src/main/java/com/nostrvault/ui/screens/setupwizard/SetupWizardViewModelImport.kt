@@ -98,8 +98,11 @@ import java.net.URL
                     // feeds Go log output to _importStatus while this runs
                     HavenBridge.startRelay(importMode = true)
 
-                    _importCompleted.value = true
-                    _importStatus.value = "Import complete"
+                    // Only haven-go's result line may call it done (#1720 twin).
+                    val outcome = com.nostrvault.service.ImportResult.parse(runCatching { HavenBridge.getImportResult() }.getOrNull())
+                        ?: com.nostrvault.service.ImportResult.NO_RESULT
+                    _importCompleted.value = outcome.isComplete
+                    _importStatus.value = outcome.summary
                 } catch (e: Exception) {
                     _importStatus.value = "Import failed: ${e.message}"
                 }

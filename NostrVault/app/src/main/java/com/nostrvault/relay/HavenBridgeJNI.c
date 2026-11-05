@@ -103,6 +103,7 @@ extern int RefreshWotC(void);
 extern char* WotRefreshProgressC(void);
 extern char* WotNewcomersC(int from);
 extern char* GetImportLogC(void);
+extern char* GetImportResultC(void);
 extern char* GetNotifyLogC(void);
 extern char* GetLogLinesC(void);
 extern int ActiveConnectionsC(void);
@@ -567,6 +568,12 @@ Java_com_nostrvault_relay_HavenBridge_getFollowersNative(JNIEnv *env, jobject th
 JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_getImportLog(JNIEnv *env, jobject thiz) {
     return goStringToJstring(env, GetImportLogC());
+}
+
+// The last import's IMPORT_RESULT line (haven-go import_result.go).
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_getImportResult(JNIEnv *env, jobject thiz) {
+    return goStringToJstring(env, GetImportResultC());
 }
 
 // Moving in's list history scan (haven-go list_history_scan.go).

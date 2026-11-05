@@ -207,14 +207,16 @@ internal fun VaultDashboardContent(
             ),
             syncing = wotSyncing && !isExternal,
             onStart = { RelayForegroundService.start(context) },
-            onStop = { RelayForegroundService.stop(context) },
+            // One busy flag: stop, restart and force-clean never cut an import, backup or restore.
+            onStop = { if (!vaultViewModel.refusedWhileBusy()) RelayForegroundService.stop(context) },
             onRestart = {
+                if (vaultViewModel.refusedWhileBusy()) return@StatusCard
                 RelayForegroundService.stop(context)
                 android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                     RelayForegroundService.start(context)
                 }, 1500)
             },
-            onForceRestart = { RelayForegroundService.forceRestart(context) },
+            onForceRestart = { if (!vaultViewModel.refusedWhileBusy()) RelayForegroundService.forceRestart(context) },
         )
 
         // A list another app (or this one) just wiped, from the vault's history.

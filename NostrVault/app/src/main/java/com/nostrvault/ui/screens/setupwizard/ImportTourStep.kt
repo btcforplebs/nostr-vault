@@ -76,7 +76,8 @@ internal fun ImportTourStep(viewModel: SetupWizardViewModel, onComplete: () -> U
     val done = completed && !isImporting
     // It ran and stopped without finishing: let them in anyway.
     val failed by viewModel.tourImportFailed.collectAsState()
-    val stage = if (failed) ImportTourStage("The import stopped", 1) else ImportTourStage.from(status, done)
+    val outcome by viewModel.tourOutcome.collectAsState()
+    val stage = if (failed) ImportTourStage(tourStoppedTitle(outcome), 1) else ImportTourStage.from(status, done)
     // Kept running or not, the import carries on in RelayImportService.
     val enter = { viewModel.enterFromImportTour(sawEveryCard = index >= lastIndex, onComplete = onComplete) }
 
@@ -143,7 +144,7 @@ internal fun ImportTourStep(viewModel: SetupWizardViewModel, onComplete: () -> U
             } else {
                 Kicker("READY")
                 Spacer(Modifier.height(12.dp))
-                ReadyCard(done, failed, counts, isReadOnly = setupMode == "browse", onKeepRunning = enter)
+                ReadyCard(done, failed, outcome, counts, isReadOnly = setupMode == "browse", onKeepRunning = enter)
             }
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -226,6 +227,7 @@ private fun Pips(count: Int, index: Int) {
 private fun ReadyCard(
     done: Boolean,
     failed: Boolean,
+    outcome: com.nostrvault.service.ImportResult?,
     counts: Triple<Int, Int, Int>?,
     isReadOnly: Boolean,
     onKeepRunning: () -> Unit,
@@ -233,7 +235,7 @@ private fun ReadyCard(
     Text(
         when {
             done -> "Your notes are home"
-            failed -> "The import stopped"
+            failed -> tourStoppedTitle(outcome)
             else -> "Almost there"
         },
         color = PrimaryText,
@@ -243,7 +245,7 @@ private fun ReadyCard(
     Spacer(Modifier.height(12.dp))
     if (failed) {
         Text(
-            "Some of your notes may not be here yet. You can import again any time from Settings → Import.",
+            tourStoppedBody(outcome),
             color = SecondaryText,
             fontSize = 15.sp,
             lineHeight = 21.sp,
@@ -287,5 +289,20 @@ private fun CountTile(value: Int, label: String, modifier: Modifier) {
     ) {
         Text(NumberFormat.getIntegerInstance().format(value), color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Text(label, color = Muted, fontSize = 12.sp)
+    }
+}
+
+/** The Ready card's title once the import ended without finishing: failed says it couldn't start (#1720 twin). */
+internal fun tourStoppedTitle(outcome: com.nostrvault.service.ImportResult?): String = when (outcome?.status) {
+    com.nostrvault.service.ImportResult.Status.FAILED, null -> com.nostrvault.service.ImportResult.COULD_NOT_START
+    com.nostrvault.service.ImportResult.Status.CANCELLED -> com.nostrvault.service.ImportResult.CANCELLED_LINE
+    else -> "Some notes may be missing"
+}
+
+internal fun tourStoppedBody(outcome: com.nostrvault.service.ImportResult?): String {
+    val again = "You can import again any time from Settings → Import."
+    return when (outcome?.status) {
+        com.nostrvault.service.ImportResult.Status.PARTIAL -> "${outcome.summary} $again"
+        else -> "Some of your notes may not be here yet. $again"
     }
 }

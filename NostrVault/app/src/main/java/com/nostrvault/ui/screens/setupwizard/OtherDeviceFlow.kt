@@ -40,9 +40,6 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.journeyapps.barcodescanner.BarcodeEncoder
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
-import com.nostrvault.relay.HavenBridge
-import com.nostrvault.tutorials.TutorialCenter
-import com.nostrvault.tutorials.TutorialID
 import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
@@ -74,7 +71,13 @@ internal fun OtherDeviceFlow(
     }
     LaunchedEffect(viewModel) { viewModel.openCamera.collect { scan() } }
     // Didn't link: today's relay import, as if "No, import from my relays" had been tapped.
+    // Copied: the normal relay import still runs next (#1720 twin), so the copy's "done" is cleared first.
     LaunchedEffect(ui) {
+        if (ui == OtherDeviceViewModel.Ui.Copied) {
+            wizard.relayImportService.dismissImportProgress()
+            viewModel.reset()
+            wizard.answerNoBackup()
+        }
         if (ui == OtherDeviceViewModel.Ui.FellBack) {
             viewModel.reset()
             wizard.answerNoBackup()
@@ -123,32 +126,19 @@ internal fun OtherDeviceFlow(
                     WizardSecondaryButton(text = "They don't match", onClick = viewModel::giveUp)
                 }
             }
-            is OtherDeviceViewModel.Ui.Linked -> {
+            is OtherDeviceViewModel.Ui.Copying -> {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }) {
                     Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = SuccessGreen)
                     Text(BringItOver.linkedLine(s.name), color = PrimaryText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 }
-                if (s.copies) {
-                    Body("Your vault copies from ${s.name} once setup finishes. You can use the app while it does; Vault shows how far it got.")
-                    WizardPrimaryButton(text = "Continue", onClick = {
-                        viewModel.watchCopy()
-                        wizard.finishAfterLink(onComplete)
-                    })
-                } else {
-                    Body("Your notes come from your relays next.")
-                    WizardPrimaryButton(text = "Continue", onClick = wizard::answerNoBackup)
-                }
+                Waiting(BringItOver.copyingLine(s.name))
+                if (s.status.isNotBlank()) Small(s.status)
+                Body("Your notes from your relays come next.")
             }
+            OtherDeviceViewModel.Ui.Copied -> Unit
         }
     }
-}
-
-/** Linked a Mac: setup is done; the relay copies from it once it starts, so the relay import and its tour don't run. */
-internal fun SetupWizardViewModel.finishAfterLink(onComplete: () -> Unit) {
-    val account = HavenBridge.decodeNpub(configStore.config.value.ownerNpub).orEmpty()
-    TutorialCenter.skip(TutorialID.IMPORT_TOUR, account)
-    completeSetup(onComplete)
 }
 
 @Composable
