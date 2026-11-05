@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -304,6 +305,8 @@ data class DockHoldRow(
     val avatar: Pair<String, String?>? = null,
     /** A second, smaller line (an account's short npub); the row grows to 50 dp. */
     val subtitle: String? = null,
+    /** A thin line above this row, as drawn: starts a new group (the account menu's settings). */
+    val dividerAbove: Boolean = false,
 )
 
 /**
@@ -387,8 +390,15 @@ fun <T> DockHoldMenuOverlay(
                         .padding(6.dp),
                 ) {
                     for (item in items.reversed()) {
+                        val spec = row(item)
+                        if (spec.dividerAbove) {
+                            HorizontalDivider(
+                                color = PrimaryText.copy(alpha = 0.15f),
+                                modifier = Modifier.width(210.dp).padding(horizontal = 10.dp, vertical = 3.dp),
+                            )
+                        }
                         DockHoldMenuRow(
-                            spec = row(item),
+                            spec = spec,
                             hovered = menu.hovered == item,
                             onPlaced = { menu.rowPlaced(item, it) },
                             onClick = {

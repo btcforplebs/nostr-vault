@@ -336,6 +336,14 @@ extension MenuBarView {
                                         }
                                     }
                                 }
+                                // Under the accounts (Logen 2026-11-05), as the
+                                // iPhone, iPad and Android menus.
+                                Divider()
+                                Button("App settings") { selectedTab = .settings }
+                                Button("Mesh settings") {
+                                    settingsPaneRequest = .fipsMesh
+                                    selectedTab = .settings
+                                }
                             }
                             
                             // The third copy of "open the main window" lived here as a

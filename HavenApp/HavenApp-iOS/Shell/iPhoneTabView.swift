@@ -270,9 +270,11 @@ struct iPhoneTabView: View {
             }
         }
         .overlay {
-            // The Feed and Vault tabs' hold menus.
+            // The Feed, Vault and account hold menus.
             DockHoldMenuOverlay()
         }
+        // App settings / Mesh settings picked from the account menus.
+        .profileMenuSheets()
         .onChange(of: selectedTab) { _, tab in
             if tab == 0 { feedService.markViewed() }
         }
