@@ -9,7 +9,7 @@ import { ago } from "../components/time.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
-import { dmPrefill, dropFailed, hasLegacy, sendMessage, sendFailure, thread, warmDmRelays } from "../net/dms.js"
+import { dmPrefill, dropFailed, hasLegacy, sendMessage, sendFailure, threadShown, warmDmRelays } from "../net/dms.js"
 import { dmContent, preparePhoto } from "../net/dm-photo.js"
 import { markRead } from "../net/dm-read.js"
 import { mediaServers, uploadPhoto } from "../net/upload.js"
@@ -39,8 +39,8 @@ export function ConversationScreen({ ctx, peer }) {
   // Grows with the text up to five lines, then scrolls (DMThreadView lineLimit(1...5)); back to one line once sent.
   useEffect(() => { const el = field.current; if (el) { el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, fiveLines(el))}px` } }, [text])
   const me = ctx.session.pubkey
-  const rows = thread(messages, peer)
   const isBlocked = blocked.has(peer)
+  const rows = threadShown(messages, peer, { blocked, me })
   const follows = ctx.account.follows.includes(peer)
 
   useEffect(() => { const { text: t, hash } = dmPrefill(); if (t) history.replaceState(history.state, "", hash) }, [])

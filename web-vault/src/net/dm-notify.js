@@ -40,5 +40,6 @@ export function dmNotices(messages, me, { mark, hidden = new Set(), onScreen = n
 }
 
 /** The conversation the user is looking at now, or null. */
+// The phone's address is #/dm/<hex>; the desktop's is the Messages list with ?dm=<hex> (desktop/routes.js deskRedirect).
 export const dmOnScreen = (doc = globalThis.document, hash = globalThis.location?.hash ?? "") =>
-  doc?.visibilityState === "visible" ? (/^#\/?dm\/([0-9a-f]{64})/.exec(hash)?.[1] ?? null) : null
+  doc?.visibilityState === "visible" ? (/^#\/?dm\/([0-9a-f]{64})/.exec(hash)?.[1] ?? /^#\/?messages(?:\/[^?]*)?\?(?:.*&)?dm=([0-9a-f]{64})(?:&|$)/.exec(hash)?.[1] ?? null) : null

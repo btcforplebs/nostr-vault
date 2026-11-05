@@ -8,6 +8,7 @@
 // instead of twice per message.
 // The text is encrypted and decrypted by the signer: a NIP-07 extension's nip44 / nip04, or a NIP-46 bunker's
 // nip44_encrypt / nip44_decrypt / nip04_decrypt (signer/nip46.js bunkerCrypto). The user's key stays with the signer.
+import { dmTime } from "./dm-time.js"
 import { finalizeEvent, generateSecretKey, getEventHash, getPublicKey, verifyEvent } from "nostr-tools/pure"
 import * as nip44 from "nostr-tools/nip44"
 import { normalizeURL } from "nostr-tools/utils"
@@ -66,6 +67,8 @@ async function signerCall(f) {
 }
 const passOn = e => { if (e?.unreachable || e?.refused) throw e; return null }
 
+export { dmTime } from "./dm-time.js"
+
 /**
  * Open a wrap addressed to `me`. -> { id, from, peer, content, at, legacy: false }, or null when it isn't a message
  * for this user: a bad seal signature, a rumor claiming another sender, one that doesn't name the user, a layer that
@@ -82,7 +85,7 @@ export async function unwrap(wrap, crypto, me) {
     // Mine: the other person is the p tag, or me for a note to self. Theirs: a rumor that doesn't name me isn't mine.
     const peer = rumor.pubkey === me ? (pTag(rumor.tags, me) ?? (names ? me : null)) : names ? rumor.pubkey : null
     if (!peer) return null
-    return { id: wrap.id, from: rumor.pubkey, peer, content: rumor.content, at: Number(rumor.created_at) || 0, legacy: false }
+    return { id: wrap.id, from: rumor.pubkey, peer, content: rumor.content, at: dmTime(rumor.created_at), legacy: false }
   } catch (e) { return passOn(e) }
 }
 
@@ -93,7 +96,7 @@ export async function openLegacy(ev, crypto, me) {
     if (ev?.kind !== 4) return null
     const peer = ev.pubkey === me ? pTag(ev.tags, me) : ev.pubkey
     if (!peer || (ev.pubkey !== me && pTag(ev.tags) !== me)) return null
-    return { id: ev.id, from: ev.pubkey, peer, content: await signerCall(() => crypto.decrypt04(peer, ev.content)), at: ev.created_at, legacy: true }
+    return { id: ev.id, from: ev.pubkey, peer, content: await signerCall(() => crypto.decrypt04(peer, ev.content)), at: dmTime(ev.created_at), legacy: true }
   } catch (e) { return passOn(e) }
 }
 
@@ -243,7 +246,7 @@ async function take(evs, crypto, me, { limit = Infinity } = {}) {
       for (const ev of now.slice(i + OPEN_BATCH)) opened.delete(ev.id)
       state = { ...state, trouble: TROUBLE_UNREACHABLE }
       setMore(); changed()
-      return { added, asked }
+      return { added, asked, unreachable: true }
     }
     if (n) { state = { ...state }; changed() }
   }
@@ -311,7 +314,15 @@ async function load({ vault, session, signer }, relays, { crypto, net = pool, wa
   const store = chat ?? chatStore(vault)
   if (!kept && cache) await restoreKept(me, c, { chunkBytes: chunkBytesFor(session.method), ...cache })
   let budget = openLimit(session)
-  budget -= (await take(await store.query({ kinds: [1059], "#p": [me] }).catch(() => []), c, me, { limit: budget })).asked
+  // A signer that stops answering twice in a row ends this load's opening: every further batch would wait out its
+  // timeout (60 s through a bunker) while Try again / Open more queue behind this load, five of them before (bug hunt
+  // 2026-11-05 #9). Once is let go, as a bunker that was waking up answers the next batch.
+  let strikes = 0
+  const spend = r => {
+    strikes = r.unreachable ? strikes + 1 : 0
+    budget = strikes >= 2 ? 0 : budget - r.asked
+  }
+  spend(await take(await store.query({ kinds: [1059], "#p": [me] }).catch(() => []), c, me, { limit: budget }))
   // What Haven held is on screen: no skeleton while the relays are asked.
   if (state.messages.size && !state.loaded) { state = { ...state, loaded: true }; changed() }
   relays = await Promise.resolve(relays).catch(() => [])
@@ -325,7 +336,7 @@ async function load({ vault, session, signer }, relays, { crypto, net = pool, wa
     let turn = Promise.resolve()
     const open = evs => (turn = turn.then(async () => {
       for (const w of evs) if (w.kind === 1059 && !opened.has(w.id) && (await store.event(w).catch(() => ({ ok: false }))).ok) stored++
-      budget -= (await take(evs, c, me, { limit: Math.max(0, budget) })).asked
+      spend(await take(evs, c, me, { limit: Math.max(0, budget) }))
     }))
     const watch = settleWatch(urls.length, () => { if (state.pubkey === me && !state.loaded) { state = { ...state, loaded: true }; changed() } })
     await Promise.all(urls.map(async url => {
@@ -365,6 +376,7 @@ export const WATCH_SINCE = 2 * 86400 + 3600
  *  a wrap, and through a bunker each one is requests (maybe prompts) on the user's signer. */
 export const LIVE_PER_MINUTE = { nip46: 6, other: 30 }
 
+const liveOpened = { me: null, at: [] }
 /** Keep listening for new wraps while a screen is open. `subscribe` and `clock` are for tests. -> close() */
 // The live subscription opens a relay again after it ended (dropped, closed, refused once): dm-read-auth.js LIVE_RETRY.
 export function watchMessages({ vault, session, signer }, relays, { crypto, chat, net = pool, clock = () => Date.now(), retry = LIVE_RETRY,
@@ -374,20 +386,26 @@ export function watchMessages({ vault, session, signer }, relays, { crypto, chat
   if (c.reason || !relays.length) return () => {}
   const store = chat ?? chatStore(vault)
   const perMinute = session.method === "nip46" ? LIVE_PER_MINUTE.nip46 : LIVE_PER_MINUTE.other
-  let recent = [] // when live messages were opened, within the last minute
+  // When live messages were opened, within the last minute: one list for the page, as desktop mounts up to four of
+  // these (list, conversation, peek, notifications) and each had its own budget (bug hunt 2026-11-05).
+  if (liveOpened.me !== me) Object.assign(liveOpened, { me, at: [] })
   const sub = subscribe(uniq(relays), { kinds: [1059, 4], "#p": [me], since: now() - WATCH_SINCE }, {
     onevent: async ev => {
       if (ev.kind === 1059) await store.event(ev).catch(() => {})
       if (!ev?.id || opened.has(ev.id) || state.pubkey !== me) return
       const t = clock()
-      recent = recent.filter(at => t - at < 60_000)
-      if (recent.length >= perMinute) { waiting.set(ev.id, ev); setMore(); changed(); return }
-      recent.push(t)
+      liveOpened.at = liveOpened.at.filter(at => t - at < 60_000)
+      if (liveOpened.at.length >= perMinute) { waiting.set(ev.id, ev); setMore(); changed(); return }
+      liveOpened.at.push(t)
       await take([ev], c, me)
     },
   })
   return () => sub.close()
 }
+
+/** A conversation as its screen draws it: with a blocked person, only the user's own messages (their messages are hidden,
+ *  as the screen says; bug hunt 2026-11-05 #4). */
+export const threadShown = (messages, peer, { blocked = new Set(), me } = {}) => thread(messages, peer).filter(m => !blocked.has(peer) || m.from === me)
 
 /** Conversations, newest first, blocked people left out. -> [{ peer, last, count }] */
 export function conversations(messages, blocked = new Set()) {

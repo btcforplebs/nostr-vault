@@ -9,6 +9,7 @@
 // - Written only while this account is still the signed-in one: a tab still running after another tab signed out
 //   doesn't write it back.
 import { loadSession } from "../session.js"
+import { dmTime } from "./dm-time.js"
 
 const KEY = "nv-dm-cache"
 const HEX64 = /^[0-9a-f]{64}$/
@@ -31,7 +32,7 @@ export const cacheKey = me => `${KEY}:${me}`
 const bytes = s => new TextEncoder().encode(JSON.stringify(s)).length // as it travels in a JSON string
 const row = m => [m.id, m.from, m.peer, m.content, m.at, m.legacy ? 1 : 0]
 const fromRow = r => Array.isArray(r) && HEX64.test(r[0] ?? "") && HEX64.test(r[1] ?? "") && HEX64.test(r[2] ?? "") && typeof r[3] === "string" && Number.isFinite(r[4])
-  ? { id: r[0], from: r[1], peer: r[2], content: r[3], at: r[4], legacy: r[5] === 1 } : null
+  ? { id: r[0], from: r[1], peer: r[2], content: r[3], at: dmTime(r[4]), legacy: r[5] === 1 } : null
 const chunkText = (me, c) => JSON.stringify({ v: 1, me, m: c.m, j: c.j })
 const timeout = ms => new Promise((_, no) => setTimeout(() => no(new Error("timed out")), ms))
 
@@ -84,13 +85,16 @@ export function dmCache(me, crypto, { chunkBytes = CHUNK_BYTES.other, storage = 
   const write = async () => {
     if (!dirty || !signedIn()) return
     dirty = false
+    // What `tail` holds now is what this write seals. Anything add() or junk() puts in it while the signer encrypts
+    // (seconds through a bunker) is kept after it, for the next write: it used to be dropped (bug hunt 2026-11-05 #6).
+    const taken = { m: tail.m.length, j: tail.j.length }
     const full = []
     let cur = { m: [], j: [] }
-    for (const r of tail.m) {
+    for (const r of tail.m.slice(0, taken.m)) {
       if (cur.m.length && bytes(chunkText(me, { m: [...cur.m, r], j: cur.j })) > chunkBytes) { full.push(cur); cur = { m: [], j: [] } }
       cur.m.push(r)
     }
-    for (const id of tail.j) {
+    for (const id of tail.j.slice(0, taken.j)) {
       if (bytes(chunkText(me, { m: cur.m, j: [...cur.j, id] })) > chunkBytes) { full.push(cur); cur = { m: [], j: [] } }
       cur.j.push(id)
     }
@@ -99,7 +103,7 @@ export function dmCache(me, crypto, { chunkBytes = CHUNK_BYTES.other, storage = 
       const last = cur.m.length || cur.j.length ? await crypto.encrypt(me, chunkText(me, cur)) : null
       if (!signedIn()) return
       sealed = [...sealed, ...done].slice(-(MAX_CHUNKS - 1))
-      tail = cur
+      tail = { m: [...cur.m, ...tail.m.slice(taken.m)], j: [...cur.j, ...tail.j.slice(taken.j)] }
       const chunks = last ? [...sealed, last] : sealed
       if (!chunks.length) { storage.removeItem(cacheKey(me)); return }
       for (let n = chunks.length; n >= 1; n--) {
