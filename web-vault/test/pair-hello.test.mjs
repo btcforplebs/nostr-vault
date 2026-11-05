@@ -115,3 +115,16 @@ test("nothing in the store before a link; bad stored data reads as empty", () =>
   s.setItem("nv-vault:fips-owners", bytesToHex(new Uint8Array(32)).replace(/^00/, "zz"))
   assert.deepEqual(pairedDevices(s), [])
 })
+
+test("sign-out forgets the paired devices: the owner set, their names and roles, and the mesh key (Tron, PR 1705)", async () => {
+  const { forgetThisBrowser } = await import("../src/haven/vault.js")
+  const s = memStorage()
+  await ownMeshHex(s)
+  addPaired({ npub: npubEncode(keypair().hex), name: "Alice's iPhone", role: "phone" }, { storage: s })
+  s.setItem("unrelated", "keep")
+  const idb = { deleteDatabase() { const req = {}; setTimeout(() => req.onsuccess?.()); return req }, databases: async () => [] }
+  const { failed } = await forgetThisBrowser({ vault: null, pubkey: "e".repeat(64), storage: s, idb, waitMs: 50, session: memStorage(), sw: {} })
+  assert.deepEqual(failed, [])
+  assert.deepEqual([...s.map.keys()], ["unrelated"])
+  assert.deepEqual(pairedDevices(s), [])
+})
