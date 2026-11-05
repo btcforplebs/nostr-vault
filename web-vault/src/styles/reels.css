@@ -1,6 +1,6 @@
 /* The diVines feed (readers/ReelsScreen.jsx, ReelPage.jsx): a column of 9:16 pages, one per screenful, snapping page by
    page, white text and the rail over the video as on the iPhone. */
-.reels-pager { position: relative; width: min(100%, 520px); margin: 0 auto; height: calc(100dvh - var(--reels-top, 210px)); min-height: 420px;
+.reels-pager { position: relative; height: calc(100dvh - var(--reels-top, 210px)); min-height: 420px; aspect-ratio: 9 / 16; width: auto; max-width: 100%; margin: 0 auto;
   overflow-y: auto; scroll-snap-type: y mandatory; overscroll-behavior: contain; scrollbar-width: none; border-radius: var(--radius); background: #000; }
 .reels-pager::-webkit-scrollbar { display: none; }
 .reels-wait { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-2); font: var(--t-foot); }
@@ -38,5 +38,6 @@
 
 /* A phone: the column is the screen, edge to edge. */
 @media (max-width: 560px) {
-  .reels-pager { width: 100%; border-radius: 0; --reels-top: 230px; }
+  /* Ends above the floating Post button. */
+  .reels-pager { aspect-ratio: auto; width: 100%; border-radius: 0; --reels-top: 290px; }
 }
