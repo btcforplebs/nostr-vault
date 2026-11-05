@@ -35,6 +35,7 @@ struct VaultDashboardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 statusCard
+                YourDevicesSection(macDetail: macSyncDetail)
                 ListWipeBanner()
                 safetySection
                 reachSection
@@ -347,13 +348,14 @@ struct VaultDashboardView: View {
     private var usesSigner: Bool { config.activeSigningMode() == "nip46" && configService.hasBunkerConfig(forNpub: activeNpub) }
 
     private var safetyDoneCount: Int {
-        [hasLocalKey || usesSigner, !followingBackup.snapshots.isEmpty, !config.macRelayURL.isEmpty, VaultHistory.lastNotesBackup != nil]
+        // The Mac's copy moved to Your devices (pairing plan §6).
+        [hasLocalKey || usesSigner, !followingBackup.snapshots.isEmpty, VaultHistory.lastNotesBackup != nil]
             .filter { $0 }.count
     }
 
     private var safetySection: some View {
         let _ = historyRevision
-        return DashboardSection(title: "Is it safe?", detail: "\(safetyDoneCount) of 4") {
+        return DashboardSection(title: "Is it safe?", detail: "\(safetyDoneCount) of 3") {
             DashboardRowLink(
                 icon: "key.fill",
                 title: usesSigner ? "Your key is in a signer app" : hasLocalKey ? "Your key is on this device" : "No key on this device",
@@ -379,15 +381,6 @@ struct VaultDashboardView: View {
                 state: .info
             ) {
                 ListBackupView().settingsPage("List backups")
-            }
-            DashboardDivider()
-            DashboardRowLink(
-                icon: "laptopcomputer",
-                title: "Second copy on your Mac",
-                detail: macSyncDetail,
-                state: config.macRelayURL.isEmpty ? .todo : .done
-            ) {
-                MacSyncSettingsPage().settingsPage("Home vault sync")
             }
             DashboardDivider()
             DashboardRow(
@@ -607,6 +600,14 @@ struct VaultDashboardView: View {
             DashboardDivider()
             SettingLink(icon: "photo.on.rectangle", title: "Media servers", value: nil) {
                 MediaServersPage().settingsPage("Media servers")
+            }
+            DashboardDivider()
+            SettingLink(icon: "point.3.filled.connected.trianglepath.dotted", title: "Mesh settings", value: nil) {
+                #if os(iOS)
+                FipsMeshSettingsView().settingsPage("Mesh")
+                #else
+                MacFipsMeshSettingsView().settingsPage("Mesh")
+                #endif
             }
         }
     }

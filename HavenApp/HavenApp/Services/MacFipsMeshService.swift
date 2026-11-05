@@ -223,7 +223,7 @@ final class MacFipsMeshService: ObservableObject {
 
     /// This Mac's mesh npub from its stored key, without starting the engine.
     /// Creates the key if there is none yet, as a start would.
-    nonisolated private static func meshNpubFromKey() -> String? {
+    nonisolated static func meshNpubFromKey() -> String? {
         guard let nsec = meshNsec(), let decoded = Bech32.decode(nsec), decoded.hrp == "nsec",
               decoded.data.count == 32,
               let pkCStr = GetPublicKeyC(UnsafeMutablePointer(mutating: (decoded.hexString as NSString).utf8String))

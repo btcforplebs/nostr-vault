@@ -109,6 +109,7 @@ targets:
         INFOPLIST_KEY_LSUIElement: true
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         INFOPLIST_KEY_NSPrincipalClass: NSApplication
+        INFOPLIST_KEY_NSCameraUsageDescription: "Nostr Vault uses the camera to scan the code on your other device when you link it."
         ENABLE_HARDENED_RUNTIME: true
         CODE_SIGN_ENTITLEMENTS: HavenApp/App/HavenApp.entitlements
         CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION: true
