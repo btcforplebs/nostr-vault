@@ -23,3 +23,22 @@ export function idbDrafts(pubkey, idb = globalThis.indexedDB) {
     delete: key => run("readwrite", s => s.delete(key)),
   }
 }
+
+/** Whether any relay other than this machine's own took the post: what "sent" means to every composer. */
+export const reachedRelay = result => !!result?.relays?.some(r => !r.local && r.ok)
+
+/**
+ * After a send, for every composer (note, reply, quote, article, poll). Sent (a relay took it): the box is emptied,
+ * nothing more is saved, and the saved draft is deleted before the caller moves on, so the next post can't start with
+ * this one's text or attachments (a user's next note went out with the old photo, 2026-11-05: the composer closed
+ * before its "empty box, delete the draft" save ran). Not sent: text and attachments stay, and so does the draft.
+ * `stopSaving()` stops the composer's save-on-change; `clear()` empties its box. -> true when cleared
+ */
+export async function forgetIfSent(result, { stopSaving, clear, saving, drafts, key }) {
+  if (!reachedRelay(result)) return false
+  stopSaving()
+  clear()
+  await saving?.current
+  await drafts.delete(key).catch(() => {})
+  return true
+}

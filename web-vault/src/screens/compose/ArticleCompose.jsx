@@ -8,7 +8,7 @@ import { Markdown } from "../../readers/Markdown.jsx"
 import { Dialog } from "../../components/Moderation.jsx"
 import { PostResult } from "./PostResult.jsx"
 import { ComposeKinds } from "./ComposeKinds.jsx"
-import { idbDrafts } from "./drafts.js"
+import { forgetIfSent, idbDrafts } from "./drafts.js"
 import { LONG_FORM_KIND, articleDraftOf, articleHint, buildArticle, canPublishArticle, hasArticle } from "./article.js"
 
 if (import.meta.env) import("../../readers/readers.css")
@@ -77,8 +77,13 @@ export function ArticleCompose({ ctx }) {
     try {
       const cover = a.cover?.status === "done" ? a.cover : null
       const { content, tags } = buildArticle({ ...a, cover })
-      setResult(await publishKind(ctx.vault, ctx.signer, ctx.session.pubkey, LONG_FORM_KIND, content, ctx.account.relays.write, tags))
-      setA(EMPTY); setPreviewing(false)
+      const sent = await publishKind(ctx.vault, ctx.signer, ctx.session.pubkey, LONG_FORM_KIND, content, ctx.account.relays.write, tags)
+      setResult(sent)
+      // Sent: the form and its draft are cleared before anything else (drafts.js forgetIfSent). No relay took it: the
+      // article and its cover stay, to try again.
+      const clear = () => { if (a.cover?.preview?.startsWith("blob:")) URL.revokeObjectURL(a.cover.preview); setA(EMPTY); setPreviewing(false) }
+      if (await forgetIfSent(sent, { stopSaving: () => setLoaded(false), clear, saving, drafts: drafts.current, key: DRAFT_KEY })) setLoaded(true)
+      else setErr("Not sent to any relay. Your article is still here: try again.")
     } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
   }
   const cancel = () => (hasArticle(a) ? setLeaving(true) : history.back())

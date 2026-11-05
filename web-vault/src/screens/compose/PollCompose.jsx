@@ -7,7 +7,7 @@ import { uniq } from "../../net/pool.js"
 import { Dialog } from "../../components/Moderation.jsx"
 import { PostResult } from "./PostResult.jsx"
 import { ComposeKinds } from "./ComposeKinds.jsx"
-import { idbDrafts } from "./drafts.js"
+import { forgetIfSent, idbDrafts } from "./drafts.js"
 import { CLOSING, MAX_OPTIONS, MIN_OPTIONS, POLL_KIND, buildPoll, closingHint, emptyPoll, hasPoll, localInput, pollComplete, pollDraftOf, pollHint, pollRelaysFor } from "./poll.js"
 
 const DRAFT_KEY = "poll"
@@ -65,8 +65,11 @@ export function PollCompose({ ctx }) {
       const write = ctx.account.relays.write
       const relays = pollRelaysFor(write)
       const { content, tags } = buildPoll(d, relays)
-      setResult(await publishKind(ctx.vault, ctx.signer, ctx.session.pubkey, POLL_KIND, content, uniq([...write, ...relays]), tags))
-      setD(emptyPoll())
+      const sent = await publishKind(ctx.vault, ctx.signer, ctx.session.pubkey, POLL_KIND, content, uniq([...write, ...relays]), tags)
+      setResult(sent)
+      // Sent: the form and its draft are cleared (drafts.js forgetIfSent). No relay took it: the poll stays, to try again.
+      if (await forgetIfSent(sent, { stopSaving: () => setLoaded(false), clear: () => setD(emptyPoll()), saving, drafts: drafts.current, key: DRAFT_KEY })) setLoaded(true)
+      else setErr("Not sent to any relay. Your poll is still here: try again.")
     } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
   }
   const cancel = () => (hasPoll(d) ? setLeaving(true) : history.back())
