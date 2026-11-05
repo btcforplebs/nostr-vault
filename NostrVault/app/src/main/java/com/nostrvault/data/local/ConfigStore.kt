@@ -76,6 +76,8 @@ class ConfigStore @Inject constructor(
         fun write(hexKey: String, hexPubkey: String): Boolean
         /** Factory reset: the owner's key and passwords, and any store set aside. */
         fun forgetOwner(hexPubkey: String?, npub: String)
+        /** Factory reset: every other key the store holds (added accounts, their passwords, the mesh identity). */
+        fun forgetEverything() {}
     }
 
     internal var keyVault: KeyVault = object : KeyVault {
@@ -94,6 +96,10 @@ class ConfigStore @Inject constructor(
             CredentialStore.deleteOwnerPassword()
             CredentialStore.deleteSetAside(context)
         }
+        override fun forgetEverything() {
+            CredentialStore.init(context)
+            CredentialStore.wipeAll()
+        }
     }
 
     /** A secret key's hex pubkey, for a key whose config names no owner. Tests put their own here. */
@@ -107,6 +113,17 @@ class ConfigStore @Inject constructor(
      */
     internal var clearPrefs: (String) -> Unit = { name ->
         context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit()
+    }
+
+    /**
+     * Factory Reset, outside filesDir: the cache folder and every SharedPreferences file (tutorials, notification
+     * ledgers, relay followers…). Tests put their own here.
+     */
+    internal var wipeOutsideFiles: () -> Unit = {
+        context.cacheDir?.listFiles()?.forEach { it.deleteRecursively() }
+        context.filesDir.parentFile?.let { File(it, "shared_prefs") }?.listFiles()?.forEach { prefsFile ->
+            context.getSharedPreferences(prefsFile.name.removeSuffix(".xml"), Context.MODE_PRIVATE).edit().clear().commit()
+        }
     }
 
     /** (pubkey, key) known to be in [keyVault], so a save need not write it again. */
@@ -514,6 +531,11 @@ class ConfigStore @Inject constructor(
             // The key the config file used to hold goes with it.
             val pub = hexPubkey(cfg.ownerNpub) ?: cfg.ownerHexKey?.let(publicKeyOf)
             try { keyVault.forgetOwner(pub, cfg.ownerNpub) } catch (_: Exception) { }
+            // "All your relay data will be lost": every added account's key, the decrypted DM caches, the notes
+            // database, media, the widget snapshot and every cache go too (bug hunt 2026-11-05 #2).
+            try { keyVault.forgetEverything() } catch (_: Exception) { }
+            wipeAppFiles(context.filesDir)
+            try { wipeOutsideFiles() } catch (_: Exception) { }
             vaulted = null
             // The relay's certificate goes with its data; a new one is coming.
             LocalTls.forgetAll()
@@ -547,6 +569,15 @@ internal fun forgetListState(filesDir: File, clearPrefs: (String) -> Unit) {
     // The wipe alarm's own-edit and already-notified ledgers go with the lists.
     clearPrefs(OwnListEdits.PREFS)
     clearPrefs(ListWipeWatcher.PREFS)
+}
+
+/**
+ * Factory Reset: everything in the app's own files folder (config, DM caches, the relay's database and media, widget
+ * snapshot, queues). The relay is stopped first by the caller. Then the reset itself writes nothing back: the app
+ * relaunches into setup.
+ */
+internal fun wipeAppFiles(filesDir: File) {
+    filesDir.listFiles()?.forEach { it.deleteRecursively() }
 }
 
 /** Whether the active account moving from [previous] to [current] is a switch. */

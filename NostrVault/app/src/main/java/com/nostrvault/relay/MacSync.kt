@@ -2,6 +2,7 @@ package com.nostrvault.relay
 
 import com.nostrvault.fips.DeviceRole
 import com.nostrvault.fips.HomeVaultRules
+import com.nostrvault.fips.MyDevicesRules
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -66,8 +67,12 @@ object MacSync {
     fun macMeshNpub(config: HavenConfig): String? {
         val typed = config.macRelayURL.trim()
         if (typed.isNotEmpty()) return HomeVaultRules.meshNpubFromInput(typed)
+        // Only the owner's Mac fills the owner's vault: another account's Mac is that account's (Logen 2026-11-05).
         return config.fipsMesh.devices
-            .firstOrNull { it.role == DeviceRole.MAC && it.npub in config.fipsPeers && it.npub != config.homeVaultNpub }
+            .firstOrNull {
+                it.role == DeviceRole.MAC && it.npub in config.fipsPeers && it.npub != config.homeVaultNpub &&
+                    MyDevicesRules.isOwners(it.linkedBy, config.ownerNpub)
+            }
             ?.npub
     }
 

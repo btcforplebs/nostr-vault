@@ -46,6 +46,11 @@ data class FipsDevice(
     @SerialName("send_media") val sendMedia: Boolean = true,
     /** Unix seconds this device was last in reach, or 0 when never seen. */
     @SerialName("last_seen") val lastSeen: Long = 0,
+    /**
+     * The account (npub) that linked it. Linked devices belong to that account, so only its posts go to it (Logen
+     * 2026-11-05). "" for devices added before this: the owner's.
+     */
+    @SerialName("linked_by") val linkedBy: String = "",
 )
 
 @Serializable
@@ -78,13 +83,18 @@ data class MyDevice(
  */
 object MyDevicesRules {
     /** The list: allowed peers, plus a home vault that is not among them yet, with names and roles from [labels]. */
-    fun list(peers: List<String>, homeVault: String?, labels: List<FipsDevice>, connected: List<String>): List<MyDevice> {
+    fun list(
+        peers: List<String>, homeVault: String?, labels: List<FipsDevice>, connected: List<String>, ownerNpub: String = "",
+    ): List<MyDevice> {
         val byNpub = labels.associateBy { it.npub }
         return (peers + listOfNotNull(homeVault)).distinct().map { npub ->
             val label = byNpub[npub]
+            // Another account's home vault keeps its name: it is that account's, not the phone-wide one.
+            val othersHome = label?.role == DeviceRole.HOME_VAULT && !isOwners(label.linkedBy, ownerNpub)
             MyDevice(
                 npub = npub,
-                role = if (npub == homeVault) DeviceRole.HOME_VAULT else label?.role?.takeIf { it != DeviceRole.HOME_VAULT } ?: DeviceRole.PHONE,
+                role = if (npub == homeVault || othersHome) DeviceRole.HOME_VAULT
+                else label?.role?.takeIf { it != DeviceRole.HOME_VAULT } ?: DeviceRole.PHONE,
                 name = label?.name.orEmpty(),
                 inReach = npub in connected,
                 lastSeen = label?.lastSeen ?: 0,
@@ -109,14 +119,24 @@ object MyDevicesRules {
     fun add(
         peers: List<String>, homeVault: String?, labels: List<FipsDevice>, ownNpub: String?,
         npub: String, role: DeviceRole, name: String,
+        /** The account linking it ("" = the owner), and the owner, so another account's device never takes the owner's home vault place. */
+        linkedBy: String = "", ownerNpub: String = "",
     ): Change? {
         if (!isMeshNpub(npub) || npub == ownNpub) return null
-        val newHome = if (role == DeviceRole.HOME_VAULT) npub else homeVault.takeIf { it != npub }
+        val ownersDevice = isOwners(linkedBy, ownerNpub)
+        val newHome = if (role == DeviceRole.HOME_VAULT && ownersDevice) npub else homeVault.takeIf { it != npub }
         val kept = labels.filter { it.npub != npub }.map { if (it.npub == homeVault && newHome != homeVault) it.copy(role = DeviceRole.PHONE) else it }
         // Never seen until it is in reach: adding it is not seeing it.
-        val label = FipsDevice(npub = npub, role = role, name = name.trim(), lastSeen = byNpubSeen(labels, npub))
+        val label = FipsDevice(
+            npub = npub, role = role, name = name.trim(), lastSeen = byNpubSeen(labels, npub),
+            linkedBy = linkedBy.takeIf { !ownersDevice }.orEmpty(),
+        )
         return Change(peers = (peers + npub).distinct(), homeVault = newHome, labels = kept + label)
     }
+
+    /** Whether a device linked by [linkedBy] is the owner's: "" (older devices, or the owner linking) or the owner's npub. */
+    fun isOwners(linkedBy: String, ownerNpub: String): Boolean =
+        linkedBy.isEmpty() || ownerNpub.isEmpty() || linkedBy == ownerNpub
 
     private fun byNpubSeen(labels: List<FipsDevice>, npub: String) = labels.firstOrNull { it.npub == npub }?.lastSeen ?: 0
 

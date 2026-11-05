@@ -111,7 +111,7 @@ class YourDevicesViewModel @Inject constructor(
     configStore: ConfigStore,
 ) : ViewModel() {
     val devices = combine(configStore.config, mesh.status) { cfg, st ->
-        MyDevicesRules.list(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, st.peers)
+        MyDevicesRules.list(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, st.peers, cfg.ownerNpub)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     suspend fun refresh() = mesh.refresh()

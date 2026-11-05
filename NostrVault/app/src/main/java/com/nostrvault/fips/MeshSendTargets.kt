@@ -12,8 +12,13 @@ internal data class MeshSendTarget(val npub: String, val role: DeviceRole, val n
  */
 internal object MeshSendTargets {
     fun of(config: HavenConfig): List<MeshSendTarget> {
-        val home = config.homeVaultNpub
-        val macs = config.fipsMesh.devices
+        // Linked devices belong to the account that linked them; the sender sends the owner's posts, so only the
+        // owner's devices get them (Logen 2026-11-05).
+        val owners = config.fipsMesh.devices.filter { MyDevicesRules.isOwners(it.linkedBy, config.ownerNpub) }
+        val home = config.homeVaultNpub?.takeIf { h ->
+            config.fipsMesh.devices.none { it.npub == h && !MyDevicesRules.isOwners(it.linkedBy, config.ownerNpub) }
+        }
+        val macs = owners
             .filter { it.role == DeviceRole.MAC && it.npub in config.fipsPeers && it.npub != home && MyDevicesRules.isMeshNpub(it.npub) }
             .distinctBy { it.npub }
             .map { MeshSendTarget(it.npub, DeviceRole.MAC, notes = it.sendNotes, media = it.sendMedia) }
