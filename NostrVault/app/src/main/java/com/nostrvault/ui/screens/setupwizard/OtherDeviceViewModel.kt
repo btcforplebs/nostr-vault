@@ -13,7 +13,6 @@ import com.nostrvault.fips.MeshPairingJoiner
 import com.nostrvault.fips.MyDevicesRules
 import com.nostrvault.service.serverListDropsAfter
 import com.nostrvault.ui.screens.pairing.PairDeviceViewModel
-import com.nostrvault.fips.MeshCopyClient
 import com.nostrvault.fips.MeshCopyStarter
 import com.nostrvault.fips.MeshCopyV2
 import com.nostrvault.fips.OtherVaultLink
@@ -216,10 +215,9 @@ class OtherDeviceViewModel @Inject constructor(
                 otherVaultLink.close()
                 fallBack()
             }
-            when (val r = copyStarter.start(url, name)) {
-                is MeshCopyClient.Result.Ready -> if (followCopy(name)) return@launch
-                MeshCopyClient.Result.NotServed -> Unit
-                is MeshCopyClient.Result.Failed -> {
+            when (val r = copyStarter.start(a.mesh, url, name)) {
+                MeshCopyStarter.Result.Started -> if (followCopy(name)) return@launch
+                is MeshCopyStarter.Result.Failed -> {
                     if (r.line.isNotEmpty()) notificationManager.showToast(r.line, PillTone.WARNING)
                     // Short of space here, or the other device is another account's: no copy from it at all.
                     if (MeshCopyV2.action(r.code) == MeshCopyV2.Action.STOP && r.code != "auth_refused") {

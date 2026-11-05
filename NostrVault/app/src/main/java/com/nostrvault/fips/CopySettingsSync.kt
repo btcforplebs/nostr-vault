@@ -49,8 +49,11 @@ class CopySettingsSync internal constructor(
 
     sealed interface Step {
         data object Nothing : Step
-        /** A listed setting changed here (or there is no file yet): write the file with `updated_at` = now. */
-        data object Write : Step
+        /**
+         * A listed setting changed here, or there is no file yet: write the file dated [at]. The first file is dated
+         * [FIRST_FILE_AT], since nothing here changed before it and any real change on a linked device must win.
+         */
+        data class Write(val at: Long) : Step
         /** The engine left a file this device didn't write: apply it. */
         data class Apply(val file: CopySettings.Checked) : Step
     }
@@ -60,7 +63,7 @@ class CopySettingsSync internal constructor(
     /** From app start: every change of a listed setting is written; a newer file is applied first. */
     fun start() {
         scope.launch(Dispatchers.IO) {
-            configStore.config.map { CopySettings.keys(it).toString() }.distinctUntilChanged().collect { sync() }
+            configStore.config.map { CopySettings.keys(it).toString() to it.hasCompletedSetup }.distinctUntilChanged().collect { sync() }
         }
     }
 
@@ -72,11 +75,12 @@ class CopySettingsSync internal constructor(
     private suspend fun sync() = lock.withLock {
         val file = File(dataDir(), CopySettings.FILE)
         val raw = runCatching { file.takeIf { it.exists() }?.readText() }.getOrNull()
-        val current = CopySettings.keys(configStore.config.value)
-        when (val s = step(current, raw, baseline.keys, baseline.at, nowS())) {
+        val config = configStore.config.value
+        val current = CopySettings.keys(config)
+        when (val s = step(current, raw, baseline.keys, baseline.at, nowS(), config.hasCompletedSetup)) {
             Step.Nothing -> Unit
-            Step.Write -> {
-                val at = nowS()
+            is Step.Write -> {
+                val at = s.at
                 write(file, CopySettings.file(current, at))
                 baseline.keys = current.toString()
                 baseline.at = at
@@ -101,16 +105,22 @@ class CopySettingsSync internal constructor(
     }
 
     companion object {
+        /** The date of this device's first file: older than any real change, so a linked device's change wins. */
+        const val FIRST_FILE_AT = 1L
+
         /**
          * What to do with this device's [current] keys and the file's [raw] content. Only this app and the engine
          * write the file, and the engine writes only a winner (newest `updated_at`, contract §5), so a file this
          * device did not write last is applied. A missing or refused file is written over with this device's own.
+         * Nothing is written before [setupDone]: a fresh device's defaults must never reach a linked device (Tron,
+         * #1784). As on Apple, a file the engine left is still applied during setup.
          */
-        fun step(current: JsonObject, raw: String?, baselineKeys: String?, baselineAt: Long, nowS: Long): Step {
-            val checked = raw?.let { CopySettings.check(it, nowS).first } ?: return Step.Write
+        fun step(current: JsonObject, raw: String?, baselineKeys: String?, baselineAt: Long, nowS: Long, setupDone: Boolean): Step {
+            val write = if (setupDone) Step.Write(if (raw == null) FIRST_FILE_AT else nowS) else Step.Nothing
+            val checked = raw?.let { CopySettings.check(it, nowS).first } ?: return write
             val foreign = baselineKeys == null || checked.updatedAt != baselineAt
             if (foreign) return if (checked.keys == current) Step.Nothing else Step.Apply(checked)
-            return if (sameKeys(baselineKeys!!, current)) Step.Nothing else Step.Write
+            return if (sameKeys(baselineKeys!!, current)) Step.Nothing else write
         }
 
         private fun sameKeys(a: String, b: JsonObject) = runCatching { Json.parseToJsonElement(a) == b }.getOrDefault(false)

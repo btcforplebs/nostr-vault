@@ -51,6 +51,9 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
     @Inject
     lateinit var copySettingsSync: com.nostrvault.fips.CopySettingsSync
 
+    @Inject
+    lateinit var meshCopyStarter: com.nostrvault.fips.MeshCopyStarter
+
     override fun onCreate() {
         warmUpOffMain()
         super.onCreate()
@@ -75,6 +78,8 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
                 if (!on) trimGoMemory()
                 // A list another app clobbered while we were away (docs/LIST_WIPE_ALARM.md).
                 if (on) listWipeWatcher.onForeground()
+                // A cut mesh copy resumes, a linked device due one gets a catch-up (Tron, #1784).
+                if (on) meshCopyStarter.reconnect()
             },
         )
         // GIFs downloaded for "Save to my Blossom" that a crash left behind.
@@ -88,6 +93,16 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
         profilePicturePrefetcher.start(applicationScope)
         // The allowlisted settings file the mesh copy carries and keeps synced (docs/MESH_COPY_V2_CONTRACT.md §5).
         copySettingsSync.start()
+        // The same when the relay comes up; a stopped relay ends its copy run (the engine keeps the state).
+        applicationScope.launch {
+            com.nostrvault.relay.RelayForegroundService.relayStatus.collect { st ->
+                when (st) {
+                    com.nostrvault.relay.RelayForegroundService.RelayStatus.RUNNING -> meshCopyStarter.reconnect()
+                    com.nostrvault.relay.RelayForegroundService.RelayStatus.OFFLINE -> meshCopyStarter.relayStopped()
+                    else -> Unit
+                }
+            }
+        }
         // The share sheet's "post as" line reads this, never the config with the keys.
         shareAccountsPublisher.start(applicationScope)
         // Widgets hear the relay start and stop, not only its 30 s tick.

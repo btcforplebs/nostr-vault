@@ -12,8 +12,9 @@ import java.security.MessageDigest
 
 /**
  * The B side's rules for the zip mesh copy (docs/MESH_COPY_V2_CONTRACT.md, fixtures in docs/fixtures/mesh-copy/,
- * which win over the prose). The engine fetches the chunks; the app signs the one start, reads the manifest for the
- * free-space check, and shows the `COPY` lines. Twin of the engine's `copyv2_rules.go` and the Apple lane's rules.
+ * which win over the prose). The engine makes the start call, checks the manifest and the free space, fetches the
+ * chunks and restores; the app signs the one start, keeps the [Record] of what to resume and whom to catch up with,
+ * and shows the `COPY` lines. Twin of the engine's `copyv2_rules.go` and the Apple lane's rules.
  */
 object MeshCopyV2 {
     const val CHUNK = 4194304L
@@ -253,6 +254,69 @@ object MeshCopyV2 {
         val host = u.host ?: return null
         val port = if (u.port > 0) ":${u.port}" else ""
         return "http://$host$port" to (u.rawPath ?: "").trimEnd('/')
+    }
+
+    // ---- B's own record: what to resume and whom to catch up with (twin of Apple's MeshCopyV2.Record) ----
+
+    /** StartCopyFromC / CopySyncC answers. */
+    const val RUN_STARTED = 0
+    const val RUN_BUSY = 2
+    const val RUN_RELAY_NOT_RUNNING = 3
+
+    /** How long a start keeps trying while this device's relay comes up (code 3), and how often. */
+    const val RELAY_WAIT_S = 90L
+    const val RETRY_EVERY_S = 3L
+
+    /** A catch-up with one linked device at most this often. */
+    const val SYNC_EVERY_S = 15 * 60L
+
+    /**
+     * Kept in this app's prefs. No token and no address: the engine keeps the token (copy_peers.json and the copy
+     * state), and the address is dialed fresh each time.
+     */
+    data class Record(val pending: Pending? = null, val copied: Map<String, Long> = emptyMap()) {
+        /** The copy under way or cut short, and whether the next try needs a fresh signed start. */
+        data class Pending(val peer: String, val name: String, val freshStart: Boolean)
+
+        /** A finished `COPY` line from [peer], applied. */
+        fun finished(l: Line, peer: String, now: Long): Record {
+            if (l.stage != "done" && l.stage != "failed") return this
+            if (l.stage == "done") return Record(null, copied + (peer to now))
+            return when (action(l.error)) {
+                Action.RESUME_NEXT_RECONNECT, Action.KEEP_STATE, Action.WAIT -> copy(pending = pending?.copy(freshStart = false))
+                Action.RESTART_NEXT_RECONNECT, Action.RESTART -> copy(pending = pending?.copy(freshStart = true))
+                // A stop (another owner, no space, an old app) or relays: no retry.
+                else -> copy(pending = null)
+            }
+        }
+
+        /** The linked devices due a catch-up: copied before, not the one a copy is pending with, not in [SYNC_EVERY_S]. */
+        fun syncDue(now: Long): List<String> =
+            copied.filter { (peer, last) -> peer != pending?.peer && now - last >= SYNC_EVERY_S }.keys.sorted()
+
+        fun toJson(): String = JsonObject(
+            linkedMapOf(
+                "pending" to (pending?.let {
+                    JsonObject(
+                        linkedMapOf("peer" to JsonPrimitive(it.peer), "name" to JsonPrimitive(it.name), "fresh" to JsonPrimitive(it.freshStart)),
+                    )
+                } ?: kotlinx.serialization.json.JsonNull),
+                "copied" to JsonObject(copied.mapValues { JsonPrimitive(it.value) }),
+            ),
+        ).toString()
+
+        companion object {
+            fun fromJson(raw: String?): Record = runCatching {
+                val o = Json.parseToJsonElement(raw ?: return Record()) as JsonObject
+                val p = o["pending"] as? JsonObject
+                val pending = p?.let {
+                    val peer = it.str("peer").takeIf(String::isNotEmpty) ?: return@let null
+                    Pending(peer, it.str("name"), (it["fresh"] as? JsonPrimitive)?.contentOrNull == "true")
+                }
+                val copied = (o["copied"] as? JsonObject).orEmpty().mapNotNull { (k, v) -> (v as? JsonPrimitive)?.longOrNull?.let { k to it } }.toMap()
+                Record(pending, copied)
+            }.getOrDefault(Record())
+        }
     }
 
     // ---- Helpers ----

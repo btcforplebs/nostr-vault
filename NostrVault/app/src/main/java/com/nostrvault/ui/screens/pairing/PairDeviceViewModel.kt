@@ -8,7 +8,6 @@ import com.nostrvault.di.ApplicationScope
 import com.nostrvault.fips.DeviceRole
 import com.nostrvault.fips.FipsMeshManager
 import com.nostrvault.fips.HomeVaultSender
-import com.nostrvault.fips.MeshCopyClient
 import com.nostrvault.fips.MeshCopyStarter
 import com.nostrvault.fips.MeshCopyV2
 import com.nostrvault.fips.MeshPairing
@@ -311,18 +310,16 @@ class PairDeviceViewModel @Inject constructor(
 
     /**
      * B: any link starts the copy from the device just linked (docs/MESH_COPY_V2_CONTRACT.md §3), on the app's
-     * scope so it carries on when this screen closes. An other device without the zip copy (404) says nothing: the
-     * pushes and the catch-up carry its notes.
+     * scope so it carries on when this screen closes. The engine makes the copy; its `COPY` lines are the status.
      */
     private fun copyFrom(npub: String, name: String) {
         appScope.launch {
             val url = copyStarter.dial(npub) ?: return@launch copyLine(MeshCopyV2.errorLine("unreachable", name))
-            when (val r = copyStarter.start(url, name)) {
-                is MeshCopyClient.Result.Ready -> viewModelScope.launch {
+            when (val r = copyStarter.start(npub, url, name)) {
+                MeshCopyStarter.Result.Started -> viewModelScope.launch {
                     copyStarter.progress.collect { l -> l?.let { copyLine(MeshCopyV2.statusText(it, name)) } }
                 }
-                MeshCopyClient.Result.NotServed -> Unit
-                is MeshCopyClient.Result.Failed -> copyLine(r.line)
+                is MeshCopyStarter.Result.Failed -> copyLine(r.line)
             }
         }
     }
