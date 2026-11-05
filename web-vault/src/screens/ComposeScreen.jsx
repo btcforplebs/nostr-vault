@@ -26,6 +26,7 @@ import { draftKey, forgetIfSent, idbDrafts, reachedRelay } from "./compose/draft
 import { ComposeKinds, composeType } from "./compose/ComposeKinds.jsx"
 import { ArticleCompose } from "./compose/ArticleCompose.jsx"
 import { PollCompose } from "./compose/PollCompose.jsx"
+import { HighlightCompose } from "./compose/HighlightCompose.jsx"
 import { SEND_ACTIONS, countdownText, sendAction, sendDelaySeconds, startCountdown } from "../net/send-delay.js"
 import { EMPTY_DRAFT, addPhotos, hasSomethingToPost, photoToken, placeBody, removePhoto as dropPhoto, updatePhoto, withoutTokens } from "./compose/draft-model.js"
 import { ComposeAttachments } from "./compose/ComposeAttachments.jsx"
@@ -154,6 +155,7 @@ export function ComposeScreen(props) {
   const type = props.fixed || props.inline ? "note" : composeType()
   if (type === "article") return <ArticleCompose ctx={props.ctx} />
   if (type === "poll") return <PollCompose ctx={props.ctx} />
+  if (type === "highlight") return <HighlightCompose ctx={props.ctx} />
   return <NoteCompose {...props} />
 }
 
