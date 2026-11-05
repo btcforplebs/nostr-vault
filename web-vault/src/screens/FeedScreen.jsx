@@ -17,7 +17,9 @@ import { markSynced, syncedRecently } from "../net/feed-synced.js"
 import { visibleNotes } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { feedList, loadMenu, saveMenu, visibleFeeds, PINNED_FEED, loadChoice, linkChoice, feedRelays, LINK_PARAMS, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, readsHaven, globalLike, withScope, saveMediaScope, liveFilters, liveKeeps, trustScoped } from "../net/feeds.js"
-import { fetchPopular } from "../net/popular.js"
+import { fetchPopular, audienceKeeps, popularRanks } from "../net/popular.js"
+import { setEveryone, everyoneLocked } from "../net/global-trust.js"
+import { EveryoneShieldDialog } from "../components/EveryoneShieldDialog.jsx"
 import { discoverNetwork, fetchDiscover } from "../net/discover.js"
 import { globalTrust } from "../readers/trust.js"
 import { mediaTiles } from "../net/media.js"
@@ -68,6 +70,10 @@ export function FeedScreen({ ctx }) {
   // notes are, and dropped on a switch. Popular's tap shows the whole new ranking (`popularNext`).
   const [strangePending, setStrangePending] = useState([])
   const popularNext = useRef(null)
+  const popularScores = useRef(new Map()) // note id -> its Popular score (net/popular.js), for the rank line
+  const [audience, setAudience] = useState("all") // Popular from (net/popular.js AUDIENCES), this visit only
+  const [ranks, setRanks] = useState(false) // Popular's rank line, off as on the iPhone
+  const [shieldAsk, setShieldAsk] = useState(null) // Global's Everyone: "warn" | "lock" while asking
   // Older: "" | "busy" | "end" | an error message. One load at a time; a feed switch starts over.
   const [olderState, setOlderState] = useState("")
   // A reader (Articles, Live, …) draws its own list under the picker; the notes below are not loaded for it.
@@ -263,8 +269,10 @@ export function FeedScreen({ ctx }) {
     const t = setInterval(async () => {
       if (document.hidden || !navigator.onLine) return
       try {
-        const next = (await fetchPopular({ me, follows, relays, vault, blocked })).notes
+        const got = await fetchPopular({ me, follows, relays, vault, blocked })
+        const next = got.notes
         if (keyNow.current !== "popular") return
+        popularScores.current = got.scores
         const shownIds = new Set((strangeNow.current ?? []).map(n => n.id))
         const joined = next.filter(n => !shownIds.has(n.id))
         popularNext.current = next
@@ -293,7 +301,7 @@ export function FeedScreen({ ctx }) {
       : c.mode === "discovery" && !network.current ? "Finding the people your follows follow…" : "Loading…")
     try {
       const page = c.mode === "popular"
-        ? (await fetchPopular({ me: ctx.session?.pubkey, follows, relays, vault, blocked })).notes
+        ? await fetchPopular({ me: ctx.session?.pubkey, follows, relays, vault, blocked }).then(got => { popularScores.current = got.scores; return got.notes })
         : c.mode === "discovery" ? await fetchDiscover(await discoverPeople(), account.relays.read, { until })
         : await fetchStrangerFeed(c, account.relays.read, { until, limit: c.mode === "media" ? MEDIA_PAGE : PAGE, trust: trustScoped(c) ? await globalTrust(ctx.session?.pubkey, follows) : null })
       if (n !== seq.current) return
@@ -342,7 +350,17 @@ export function FeedScreen({ ctx }) {
   // Blocked people's notes stay where they are and are only left out here, so unblocking brings them back.
   const list = following ? notes : strange
   const threaded = layout === "threaded" && hasLayouts(choice.mode)
-  const shown = list && visibleNotes(media ? list : applyFilters(list, filters, { threaded }), blocked)
+  const followSet = new Set(follows)
+  const shown = list && visibleNotes(media ? list : applyFilters(popular ? list.filter(n => audienceKeeps(n, audience, followSet)) : list, filters, { threaded }), blocked)
+  // "🔥 #3 · 1.2k" above each scored note while ranks are on, numbered in the order shown (PopularRanking).
+  const rankMap = popular && ranks && shown ? popularRanks(shown.map(n => n.id), popularScores.current) : null
+  const rankOf = rankMap ? id => (rankMap.has(id) ? { rank: rankMap.get(id), score: popularScores.current.get(id) } : null) : null
+  // Global's shield: off at once; on behind the phone's warning, or the lock while too few are followed.
+  const flipShield = () => {
+    if (choice.everyone) { setEveryone(false); pick({ ...choice, everyone: false }) }
+    else setShieldAsk(everyoneLocked(follows, ctx.session?.pubkey) ? "lock" : "warn")
+  }
+  const proceedEveryone = () => { setShieldAsk(null); setEveryone(true); pick({ ...choice, everyone: true }) }
   const tiles = media && shown && mediaTiles(shown.filter(n => n.kind === 1 || n.kind === 6)) // notes, as the iPhone's grid
   // Back from a thread finds the list where it was left (the phone layout draws the Feed again).
   useFeedSpot(`${feedKey(choice)}:${layout}`, !!shown?.length)
@@ -356,8 +374,11 @@ export function FeedScreen({ ctx }) {
         <FeedModeMenu feeds={visibleFeeds(FEEDS, menu)} choice={choice} onPick={pick} onEdit={() => setEditing(true)} />
         <FeedToolbar layout={!Reader && hasLayouts(choice.mode) ? layout : null} onCycleLayout={cycleLayout}
           filters={filters} onFilters={changeFilters} toggles={toggles}
-          scope={media ? choice.scope : null} onScope={pickScope} />
+          scope={media ? choice.scope : null} onScope={pickScope}
+          shield={global ? { everyone: !!choice.everyone, locked: everyoneLocked(follows, ctx.session?.pubkey) } : null} onShield={flipShield}
+          audience={popular ? audience : null} onAudience={setAudience} ranks={popular ? ranks : null} onRanks={() => setRanks(!ranks)} />
       </header>
+      {shieldAsk && <EveryoneShieldDialog ask={shieldAsk} follows={follows} me={ctx.session?.pubkey} onProceed={proceedEveryone} onClose={() => setShieldAsk(null)} />}
       {editing && <EditFeeds feeds={FEEDS} menu={menu} onChange={changeMenu} onClose={() => setEditing(false)} />}
       {choice.mode === "hashtag" && <HashtagBox choice={choice} onPick={pick} />}
       <PullIndicator pull={pull} busy={syncing && pull > 0} />
@@ -382,8 +403,8 @@ export function FeedScreen({ ctx }) {
           : media ? <Media tiles={tiles} blockedAll={!!strange.length && !shown.length}
               onOlder={() => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} olderState={olderState} />
           : !strange.length && choice.mode === "list" && choice.authors && !choice.authors.length ? <p class="empty">This list has no one in it, or it didn't come back from your relays.</p>
-          : !strange.length ? <p class="empty">{popular ? "Nothing popular in the last day yet: a note needs likes, reposts or zaps from three people your follows follow." : global ? "No notes from your web of trust on these relays yet." : "No notes found."}</p>
-          : <Notes shown={shown} memoryOnly layout={layout} keepFeedOrder fetchRoots={rootFetcher(vault, account.relays.read, { save: false })}
+          : !strange.length ? <p class="empty">{popular ? "Nothing popular in the last day yet: a note needs likes, reposts or zaps from three people your follows follow." : global && !choice.everyone ? "No notes from your web of trust on these relays yet." : "No notes found."}</p>
+          : <Notes shown={shown} memoryOnly layout={layout} keepFeedOrder rankOf={rankOf} fetchRoots={rootFetcher(vault, account.relays.read, { save: false })}
               olderState={olderState} onOlder={popular ? null : () => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} />}
       </>}
     </main>
@@ -392,9 +413,9 @@ export function FeedScreen({ ctx }) {
 
 /** The notes left after blocks, then Older (none for Popular, which is one ranked page). When every loaded note is
  *  from someone blocked, say so above Older. `memoryOnly`: strangers' notes, so their cards write nothing to /feed. */
-export function Notes({ shown, onOlder, olderState, memoryOnly = false, layout = "expanded", keepFeedOrder = false, fetchRoots }) {
+export function Notes({ shown, onOlder, olderState, memoryOnly = false, layout = "expanded", keepFeedOrder = false, fetchRoots, rankOf = null }) {
   return <>
-    {shown.length ? <FeedRows notes={shown} layout={layout} memoryOnly={memoryOnly} keepFeedOrder={keepFeedOrder} fetchRoots={fetchRoots} />
+    {shown.length ? <FeedRows notes={shown} layout={layout} memoryOnly={memoryOnly} keepFeedOrder={keepFeedOrder} fetchRoots={fetchRoots} rankOf={rankOf} />
       : <p class="empty">Every note loaded here is from someone you blocked.</p>}
     {onOlder && <OlderButton onOlder={onOlder} state={olderState} />}
   </>

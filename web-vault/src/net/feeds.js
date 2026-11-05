@@ -4,7 +4,7 @@
 // their notes, stay in memory too: FeedScreen passes `memoryOnly` to their cards and `save: false` to fetchProfiles.
 import { pool, uniq } from "./pool.js"
 import { FEED_KINDS } from "./sync.js"
-import { filterGlobal, trustShows } from "./global-trust.js"
+import { filterGlobal, trustShows, everyoneOn, everyoneShows } from "./global-trust.js"
 import { trustedFilters } from "../readers/trust.js"
 
 // The iPhone's FeedMode order (Services/FeedServiceTypes.swift FeedMode). Readers (src/readers) take their place in it.
@@ -87,15 +87,18 @@ const SCOPE_KEY = "nv-media-scope"
 export const loadMediaScope = (storage = globalThis.localStorage) => (storage?.getItem(SCOPE_KEY) === "global" ? "global" : "following")
 export const saveMediaScope = (scope, storage = globalThis.localStorage) => storage?.setItem(SCOPE_KEY, scope === "global" ? "global" : "following")
 /** The choice with Media's scope filled in (the saved one when it has none); other feeds as they are. */
-export const withScope = (choice, storage = globalThis.localStorage) =>
-  choice.mode === "media" ? { ...choice, scope: choice.scope === "global" || choice.scope === "following" ? choice.scope : loadMediaScope(storage) } : choice
+export const withScope = (choice, storage = globalThis.localStorage) => {
+  const c = choice.mode === "media" ? { ...choice, scope: choice.scope === "global" || choice.scope === "following" ? choice.scope : loadMediaScope(storage) } : choice
+  // Global's Everyone shield (global-trust.js), when the choice doesn't say: the one kept on this browser.
+  return globalLike(c) && typeof c.everyone !== "boolean" && everyoneOn(storage) ? { ...c, everyone: true } : c
+}
 /** Whether a choice is read from Haven /feed: Following, and Media on Following. */
 export const readsHaven = choice => choice.mode === "following" || (choice.mode === "media" && choice.scope !== "global")
 /** Global, and Media on Global: read from everyone, kept to the web of trust (global-trust.js). */
 export const globalLike = choice => choice.mode === "global" || (choice.mode === "media" && choice.scope === "global")
 /** The stranger feeds read through your web of trust: Global, and Hashtag and Relay like it (only notes by people in
  *  your web, global-trust.js trustShows; Logen 2026-11-04). They take `trust` and show nothing without it. */
-export const trustScoped = choice => globalLike(choice) || choice.mode === "hashtag" || choice.mode === "relay"
+export const trustScoped = choice => (globalLike(choice) && !choice.everyone) || choice.mode === "hashtag" || choice.mode === "relay"
 const KEY = "nv-feed"
 
 /** The last feed picked on this browser: { mode, tag }. Following when nothing (or nothing valid) is saved. */
@@ -188,14 +191,14 @@ export async function fetchStrangerFeed(choice, relays, { limit = 100, until, tr
   for (const ev of evs) if (ev?.id && filter.kinds.includes(ev.kind) && !byId.has(ev.id)) byId.set(ev.id, ev)
   const notes = [...byId.values()].sort((a, b) => b.created_at - a.created_at)
   // A list read in several REQs can bring back more than a page: keep the newest page.
-  return global ? filterGlobal(notes, trust) : scoped ? notes.filter(n => trustShows(n, trust)) : choice.mode === "list" ? notes.slice(0, limit) : notes
+  return global ? (choice.everyone ? notes.filter(everyoneShows) : filterGlobal(notes, trust)) : scoped ? notes.filter(n => trustShows(n, trust)) : choice.mode === "list" ? notes.slice(0, limit) : notes
 }
 
 /** What a stranger feed keeps open for its New posts pill (net/feed-live.js watchLive), or [] when nothing can come:
  *  Global as its pages ask (trusted authors, then open; `trust` needed), Hashtag's tag, Discover's `network` in REQs of
  *  250. Popular is a ranked page, not a stream, so it has none. */
 export function liveFilters(choice, { trust = null, network = null } = {}) {
-  if (globalLike(choice)) return trust?.size ? trustedFilters({ kinds: FEED_KINDS }, trust) : []
+  if (globalLike(choice)) return choice.everyone ? [{ kinds: FEED_KINDS }] : trust?.size ? trustedFilters({ kinds: FEED_KINDS }, trust) : []
   if (choice.mode === "hashtag") return choice.tag && trust?.size ? trustedFilters({ kinds: [1], "#t": [choice.tag] }, trust) : []
   if (choice.mode === "relay") return choice.relay && trust?.size ? trustedFilters({ kinds: FEED_KINDS }, trust) : []
   if (choice.mode === "list") return listFilters(choice)
@@ -210,7 +213,7 @@ export function liveFilters(choice, { trust = null, network = null } = {}) {
 /** Whether a note that came in live belongs on a stranger feed: Global keeps what its pages keep (global-trust.js),
  *  Discover only its network's, Hashtag a kind 1 with the tag. */
 export function liveKeeps(choice, ev, { trust = null, network = null } = {}) {
-  if (globalLike(choice)) return !!trust && FEED_KINDS.includes(ev.kind) && filterGlobal([ev], trust).length === 1
+  if (globalLike(choice)) return FEED_KINDS.includes(ev.kind) && (choice.everyone ? everyoneShows(ev) : !!trust && filterGlobal([ev], trust).length === 1)
   if (choice.mode === "hashtag") return ev.kind === 1 && (ev.tags ?? []).some(t => t[0] === "t" && String(t[1]).toLowerCase() === choice.tag) && trustShows(ev, trust)
   if (choice.mode === "discovery") return FEED_KINDS.includes(ev.kind) && !!network?.includes(ev.pubkey)
   if (choice.mode === "relay") return FEED_KINDS.includes(ev.kind) && trustShows(ev, trust)
@@ -243,7 +246,8 @@ export function noteAuthors(notes) {
 
 // Stranger feeds already loaded this session, by feed, so switching back shows them at once. Memory only.
 const held = new Map()
-export const feedKey = ({ mode, tag, scope, relay, list, authors }) => (mode === "hashtag" ? `hashtag:${tag}` : mode === "media" && scope === "global" ? "media:global"
+export const feedKey = ({ mode, tag, scope, relay, list, authors, everyone }) => (mode === "hashtag" ? `hashtag:${tag}` : mode === "media" && scope === "global" ? `media:global${everyone ? ":everyone" : ""}`
+  : mode === "global" && everyone ? "global:everyone"
   : mode === "relay" ? `relay:${relay}` : mode === "list" ? `list:${list}:${authors ? authors.length : "?"}` : mode)
 export const heldNotes = choice => held.get(feedKey(choice)) ?? null
 export const holdNotes = (choice, notes) => { held.set(feedKey(choice), notes) }

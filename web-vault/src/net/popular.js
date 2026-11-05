@@ -69,7 +69,7 @@ export function rankTargets(t, floor = MIN_REACTORS, top = TOP) {
 
 /** Scored notes, best first: the author's own engagement left out (and the floor checked again without it), the
  *  score decayed 5% an hour after 12 hours down to a fifth, then at most PER_AUTHOR per author (dvm.go scoreNotes). */
-export function scoreNotes(notes, t, { floor = MIN_REACTORS, now = Math.floor(Date.now() / 1000) } = {}) {
+export function scoreNotes(notes, t, { floor = MIN_REACTORS, now = Math.floor(Date.now() / 1000), scores = null } = {}) {
   const seen = new Set(), scored = []
   for (const n of notes) {
     if (seen.has(n.id)) continue
@@ -80,6 +80,7 @@ export function scoreNotes(notes, t, { floor = MIN_REACTORS, now = Math.floor(Da
     const ageHours = (now - n.created_at) / 3600
     const decay = Math.max(0.2, 1 - Math.max(0, ageHours - 12) * 0.05)
     scored.push({ note: n, score: raw * decay })
+    scores?.set(n.id, raw * decay)
   }
   scored.sort((a, b) => b.score - a.score || (a.note.id < b.note.id ? -1 : 1))
   const perAuthor = new Map()
@@ -104,8 +105,8 @@ export async function trustSet(me, follows, { relays = PROFILE_RELAYS, query = (
 /**
  * The Popular page: notes ranked from the last day's engagement on these relays. Asks once for everyone's
  * engagement (as the iPhone does) and once for the follows' own, since a busy relay's 5,000 can miss them.
- * Blocked people's likes, reposts and zaps don't count. -> { notes, trusted } (trusted: how many people count, so the
- * screen can say why it's empty). `query` is for tests.
+ * Blocked people's likes, reposts and zaps don't count. -> { notes, trusted, scores } (trusted: how many people count,
+ * so the screen can say why it's empty; scores: note id -> its score, for the rank line). `query` is for tests.
  */
 export async function fetchPopular({ me, follows, relays, vault, blocked = new Set(), now = Math.floor(Date.now() / 1000), query = (r, f, o) => pool.querySync(r, f, o) }) {
   const trusted = await trustSet(me, follows, { query })
@@ -117,12 +118,30 @@ export async function fetchPopular({ me, follows, relays, vault, blocked = new S
   for (const evs of await Promise.all(asks)) for (const ev of evs) if (ev?.id) byId.set(ev.id, ev)
   const t = tally(byId.values(), trusted, verifyEvent, blocked)
   const ids = rankTargets(t)
-  if (!ids.length) return { notes: [], trusted: trusted.size }
+  if (!ids.length) return { notes: [], trusted: trusted.size, scores: new Map() }
   // Bodies: Haven /feed first (read only), the relays for the rest.
   const found = new Map()
   if (vault) for (const ev of await vault.feed.query({ ids, kinds: [1] }).catch(() => [])) found.set(ev.id, ev)
   const missing = ids.filter(id => !found.has(id))
   if (missing.length) for (const ev of await query(urls, { ids: missing, kinds: [1] }, { maxWait: 8000 })) if (ev?.kind === 1 && missing.includes(ev.id)) found.set(ev.id, ev)
   // Only notes by people in the web show: trusted likes can lift a stranger's note, but it stays out (Logen 2026-11-04).
-  return { notes: scoreNotes([...found.values()].filter(n => trusted.has(n.pubkey)), t, { now }), trusted: trusted.size }
+  const scores = new Map()
+  return { notes: scoreNotes([...found.values()].filter(n => trusted.has(n.pubkey)), t, { now, scores }), trusted: trusted.size, scores }
 }
+
+// The Popular feed's own controls (iPhone PopularRankControls.swift; parity #21): who it ranks, and the rank line.
+// Both are for this visit, as on the phone (FeedService.popularFilter, showPopularEngagement).
+
+/** Everyone / People you follow / People you don't follow (PopularFilter.menuTitle). */
+export const AUDIENCES = [["all", "Everyone"], ["follows", "People you follow"], ["nonFollows", "People you don't follow"]]
+/** Whether a note's author is in `audience` (FeedFilterEngine's popular branch). */
+export const audienceKeeps = (note, audience, follows) =>
+  audience === "follows" ? follows.has(note.pubkey) : audience === "nonFollows" ? !follows.has(note.pubkey) : true
+/** PopularRanking.ranks: each scored note's place in the order shown, from #1; a narrower audience renumbers. */
+export function popularRanks(ids, scores) {
+  const ranks = new Map()
+  for (const id of ids) if (scores.has(id) && !ranks.has(id)) ranks.set(id, ranks.size + 1)
+  return ranks
+}
+/** PopularRankLine.formatted: "1.2k" from 1000, else the whole number. */
+export const rankScore = s => (s >= 1000 ? `${(s / 1000).toFixed(1)}k` : `${Math.round(s)}`)

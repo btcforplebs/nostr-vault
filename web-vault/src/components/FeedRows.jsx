@@ -3,7 +3,9 @@
 // click on the open note goes to its thread (the iPhone's expandedNoteId). For threads, a root the feed doesn't carry
 // is fetched (Haven, then the read relays) into memory only; the card says "Loading the start of this thread…" until
 // it lands, and drops the line if no relay has it.
+import { Fragment } from "preact"
 import { useEffect, useMemo, useState } from "preact/hooks"
+import { Ranked } from "./PopularRankLine.jsx"
 import { useFeedTap } from "./feed-tap.js"
 import { NoteCard } from "./NoteCard.jsx"
 import { CondensedNote } from "./CondensedNote.jsx"
@@ -16,23 +18,24 @@ import { fetchProfiles } from "../net/profiles.js"
 import { replyRefs } from "../net/thread.js"
 import { lineLimit } from "../net/line-limits.js"
 
-export function FeedRows({ notes, layout, keepFeedOrder = false, memoryOnly = false, fetchRoots }) {
+/** `rankOf(id)` -> { rank, score } or null: Popular's rank line above a card (PopularRankLine.jsx). */
+export function FeedRows({ notes, layout, keepFeedOrder = false, memoryOnly = false, fetchRoots, rankOf = null }) {
   // The open post glides to the tap line (feed-tap.js); while one is open, room under the list lets the last ones reach it.
   const [openId, setOpenId] = useFeedTap()
   const room = openId && <div class="tap-room" aria-hidden="true" />
   const compactLines = lineLimit("compact") // Settings › Feed Text, Compact View
   if (layout === "condensed") return <><div class="condensed-list">{notes.map(n => {
     const shown = tileNote(n) ?? n
-    return openId && shown.id === openId
-      ? <div key={n.id} data-tap-open><NoteCard event={n} memoryOnly={memoryOnly} /></div>
-      : <CondensedNote key={n.id} event={n} card lines={compactLines} onOpen={x => setOpenId(x.id)} />
+    return <Fragment key={n.id}><Ranked id={n.id} rankOf={rankOf}>{openId && shown.id === openId
+      ? <div data-tap-open><NoteCard event={n} memoryOnly={memoryOnly} /></div>
+      : <CondensedNote event={n} card lines={compactLines} onOpen={x => setOpenId(x.id)} />}</Ranked></Fragment>
   })}</div>{room}</>
-  if (layout === "threaded") return <><Threads notes={notes} keepFeedOrder={keepFeedOrder} fetchRoots={fetchRoots} memoryOnly={memoryOnly} openId={openId} setOpenId={setOpenId} />{room}</>
+  if (layout === "threaded") return <><Threads notes={notes} keepFeedOrder={keepFeedOrder} fetchRoots={fetchRoots} memoryOnly={memoryOnly} openId={openId} setOpenId={setOpenId} rankOf={rankOf} />{room}</>
   // A reply shows the note it answers above it, unless that note is the very next row (the iPhone's parentIsNext).
-  return notes.map((n, i) => <NoteCard key={n.id} event={n} memoryOnly={memoryOnly} showParent={n.kind === 1 && !!replyRefs(n).parent && notes[i + 1]?.id !== replyRefs(n).parent} />)
+  return notes.map((n, i) => <Fragment key={n.id}><Ranked id={n.id} rankOf={rankOf}><NoteCard event={n} memoryOnly={memoryOnly} showParent={n.kind === 1 && !!replyRefs(n).parent && notes[i + 1]?.id !== replyRefs(n).parent} /></Ranked></Fragment>)
 }
 
-function Threads({ notes, keepFeedOrder, fetchRoots, memoryOnly, openId, setOpenId }) {
+function Threads({ notes, keepFeedOrder, fetchRoots, memoryOnly, openId, setOpenId, rankOf }) {
   // id -> the root event, or null once a fetch came back without it.
   const [fetched, setFetched] = useState(() => new Map())
   const threads = useMemo(() => buildThreads(notes.filter(n => n.kind === 1 || n.kind === 6 || hasKindBody(n)), { keepFeedOrder, resolve: id => fetched.get(id) ?? null }), [notes, fetched, keepFeedOrder])
@@ -51,8 +54,8 @@ function Threads({ notes, keepFeedOrder, fetchRoots, memoryOnly, openId, setOpen
     }).catch(() => {})
     return () => { live = false }
   }, [key])
-  return threads.map(t => <FeedThreadCard key={t.rootId} thread={t} openId={openId} setOpenId={setOpenId} memoryOnly={memoryOnly}
-    rootUnavailable={!t.root && fetched.has(t.rootId)} />)
+  return threads.map(t => <Fragment key={t.rootId}><Ranked id={t.rootId} rankOf={rankOf}><FeedThreadCard thread={t} openId={openId} setOpenId={setOpenId} memoryOnly={memoryOnly}
+    rootUnavailable={!t.root && fetched.has(t.rootId)} /></Ranked></Fragment>)
 }
 
 // Roots asked for this page load, id -> { ev (null when nobody had it), at }: coming back to the Feed draws them from

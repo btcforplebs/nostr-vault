@@ -136,3 +136,11 @@
 .discover-empty strong { font: var(--t-title2); }
 .discover-empty p { margin: 0; max-width: 32ch; color: var(--text-2); font: var(--t-foot); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .discover-empty button { margin-top: 6px; }
+
+/* Global's shield on Everyone: orange, as the iPhone (FeedView+TrustScope). Popular's audience menu and rank line. */
+.feed-tool.everyone { color: #ff9f0a; }
+.feed-tool.feed-audience { width: auto; min-width: 0; padding: 0 8px; border-radius: 999px; font: 600 12px var(--font); color: var(--text-2);
+  background: none; appearance: none; -webkit-appearance: none; cursor: pointer; }
+.popular-rank { display: flex; align-items: center; gap: 5px; margin: 10px var(--gutter) 4px 4px; font: 600 12px var(--font); color: var(--text-2); }
+.popular-rank b { color: var(--text); }
+.popular-rank .mono { font: 500 11px var(--mono); color: var(--text-3); }

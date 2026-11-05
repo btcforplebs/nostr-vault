@@ -1,6 +1,7 @@
 // The Feed's header, as on the iPhone (Views/Feed/FeedPickerMenu.swift, FeedView+Toolbar.swift): on the left one glass
 // pill, the feed's icon + name + chevron, that opens the list of feeds; on the right one glass capsule with the layout
 // button, then the Auto-load, Reposts and Replies toggles. Refresh stays for mouse users (no pull to refresh there).
+import { AUDIENCES } from "../net/popular.js"
 import { useEffect, useRef, useState } from "preact/hooks"
 import { LAYOUT_NAME, nextLayout } from "../net/feed-layout.js"
 
@@ -34,6 +35,9 @@ const TOGGLE_ICON = {
 const SCOPE_ICON = { following: FEED_ICON.following, global: FEED_ICON.global }
 const SCOPE_NAME = { following: "Following", global: "Global" }
 const TOGGLE_NAME = { reposts: "Reposts", replies: "Replies" }
+// Global's shield (iPhone checkmark.shield / shield.slash) and Popular's flame (flame / flame.fill).
+const SHIELD = { trust: "M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6zM9 12l2 2 4-4", everyone: "M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6zM4 4l16 16", locked: "M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6zM10 11V9.5a2 2 0 0 1 4 0V11M9 11h6v4H9z" }
+const FLAME = "M12 22c4 0 7-3 7-7 0-5-5-7-5-12-3 2-5 5-5 8-1-1-2-2-2-4-2 2-2 5-2 8 0 4 3 7 7 7z"
 
 export const Icon = ({ d, size = 18 }) => (
   <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -89,12 +93,25 @@ export function FeedModeMenu({ feeds, choice, onPick, onEdit }) {
 
 /** The right capsule. `layout`: null when this feed has one layout. `toggles`: which filters this feed offers.
  *  No Refresh: new notes come in on their own. `scope`: Media's "following" | "global", null elsewhere; `onScope(scope)` picks one. */
-export function FeedToolbar({ layout, onCycleLayout, filters, onFilters, toggles = [], scope = null, onScope }) {
+/** `shield` ({ everyone, locked }): Global's Web of Trust / Everyone button. `audience` ("all" | "follows" |
+ *  "nonFollows") and `ranks` (boolean): Popular's audience menu and rank line switch. Null leaves each out. */
+export function FeedToolbar({ layout, onCycleLayout, filters, onFilters, toggles = [], scope = null, onScope, shield = null, onShield, audience = null, onAudience, ranks = null, onRanks }) {
   const next = layout && LAYOUT_NAME[nextLayout(layout)]
   const flip = k => onFilters({ ...filters, [k]: !filters[k] })
-  if (!layout && !toggles.length && !scope) return null
+  if (!layout && !toggles.length && !scope && !shield && audience === null) return null
+  const shieldName = shield && (shield.everyone ? "Everyone: unfiltered posts. Click for your Web of Trust"
+    : shield.locked ? "Web of Trust. Everyone unlocks once you follow 5 people" : "Web of Trust: people you follow and the people they follow. Click for everyone")
   return (
     <div class="feed-toolbar" role="toolbar" aria-label="Feed options">
+      {shield && <button type="button" class={`feed-tool on${shield.everyone ? " everyone" : ""}`} aria-pressed={shield.everyone} title={shieldName}
+        aria-label={shield.everyone ? "Everyone" : "Web of Trust"} onClick={onShield}>
+        <Icon d={shield.everyone ? SHIELD.everyone : shield.locked ? SHIELD.locked : SHIELD.trust} />
+      </button>}
+      {audience !== null && <select class="feed-tool feed-audience" aria-label="Popular from" title="Popular from" value={audience} onChange={e => onAudience(e.currentTarget.value)}>
+        {AUDIENCES.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+      </select>}
+      {ranks !== null && <button type="button" class={`feed-tool${ranks ? " on" : ""}`} aria-pressed={ranks} title="Ranks" aria-label="Ranks" onClick={onRanks}><Icon d={FLAME} /></button>}
+      {(shield || audience !== null) && (scope || layout || toggles.length > 0) && <span class="feed-tool-divider" aria-hidden="true" />}
       {scope && ["following", "global"].map(s => (
         <button key={s} type="button" class={`feed-tool${scope === s ? " on" : ""}`} aria-pressed={scope === s}
           title={SCOPE_NAME[s]} aria-label={SCOPE_NAME[s]} onClick={() => onScope(s)}>
