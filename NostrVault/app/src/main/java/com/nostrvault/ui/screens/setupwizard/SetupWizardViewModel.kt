@@ -57,7 +57,7 @@ import javax.inject.Inject
 internal const val IMPORT_TOUR_START_DATE = "2023-01-01"
 
 enum class WizardStep {
-    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, STARTER_RELAYS, USE_NOSTR_KEY, REFERRER, BACKUP_QUESTION, RELAY_CHECK, IMPORT_TOUR,
+    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, STARTER_RELAYS, USE_NOSTR_KEY, REFERRER, OTHER_DEVICE, BACKUP_QUESTION, RELAY_CHECK, IMPORT_TOUR,
     ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, NOTIFICATIONS, COMPLETE
 }
 
@@ -330,19 +330,24 @@ class SetupWizardViewModel @Inject constructor(
      */
     val activeSteps: List<WizardStep>
         get() {
-            val steps = withReferrerStep(
-                when (_setupPath.value) {
-                    SetupPath.BROWSE -> browseSteps
-                    SetupPath.NEW_TO_NOSTR -> newUserSteps
-                    SetupPath.USE_NOSTR -> useNostrSteps
-                    else -> fullSteps
-                },
+            val readOnly = configStore.config.value.setupMode == "browse"
+            val steps = BringItOver.withStep(
+                withReferrerStep(
+                    when (_setupPath.value) {
+                        SetupPath.BROWSE -> browseSteps
+                        SetupPath.NEW_TO_NOSTR -> newUserSteps
+                        SetupPath.USE_NOSTR -> useNostrSteps
+                        else -> fullSteps
+                    },
+                    _setupPath.value,
+                    readOnly = readOnly,
+                ),
                 _setupPath.value,
-                readOnly = configStore.config.value.setupMode == "browse",
+                readOnly = readOnly,
             )
             return if (_useExternalRelay.value) {
                 // No import here, so "I already use Nostr" ends on the done screen.
-                val withoutImport = steps - WizardStep.IMPORT_NOTES - WizardStep.MIRROR_MEDIA -
+                val withoutImport = steps - WizardStep.IMPORT_NOTES - WizardStep.MIRROR_MEDIA - WizardStep.OTHER_DEVICE -
                     WizardStep.BACKUP_QUESTION - WizardStep.RELAY_CHECK - WizardStep.IMPORT_TOUR
                 if (WizardStep.COMPLETE in withoutImport) withoutImport else withoutImport + WizardStep.COMPLETE
             } else {

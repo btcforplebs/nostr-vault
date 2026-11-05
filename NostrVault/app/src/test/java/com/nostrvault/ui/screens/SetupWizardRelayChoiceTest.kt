@@ -147,10 +147,10 @@ class SetupWizardRelayChoiceTest {
     }
 
     @Test
-    fun `I already use Nostr is your key, who told you, backup question, relay check, import tour`() {
+    fun `I already use Nostr is your key, who told you, other device, backup question, relay check, import tour`() {
         viewModel.setSetupPath(SetupPath.USE_NOSTR)
         assertEquals(
-            listOf(WizardStep.USE_NOSTR_KEY, WizardStep.REFERRER, WizardStep.BACKUP_QUESTION, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR),
+            listOf(WizardStep.USE_NOSTR_KEY, WizardStep.REFERRER, WizardStep.OTHER_DEVICE, WizardStep.BACKUP_QUESTION, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR),
             viewModel.activeSteps.drop(2),
         )
     }
