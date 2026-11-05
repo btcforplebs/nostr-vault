@@ -2,7 +2,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { LINK_LIMIT, OTHER_KIND, setupNotice, FALLBACK, QUESTION, RELAYS, BACKUP, COPY, COPY_DETAIL, linkedLine, setupOutcome, waitingSince, restoreSetupBackup } from "../src/net/setup-bring-over.js"
+import { LINK_LIMIT, LOST_DEVICE, OTHER_KIND, setupNotice, FALLBACK, QUESTION, RELAYS, BACKUP, COPY, COPY_DETAIL, linkedLine, setupOutcome, waitingSince, restoreSetupBackup } from "../src/net/setup-bring-over.js"
 
 test("linked (or already linked) goes on to setup; abort, expiry and refusal fall back", () => {
   assert.equal(setupOutcome({ step: "linked" }, 10, 20), "linked")
@@ -24,11 +24,12 @@ test("the 3 minutes start when this browser scanned the other device or put its 
   assert.equal(waitingSince({ step: "showing" }, null, 9), 9)
 })
 
-test("the words: the three choices, Logen's copy wording, and no other mesh, FIPS, address or role words", () => {
-  assert.deepEqual([RELAYS, BACKUP, COPY], ["Import from relays", "Import from a backup", "Copy from my other vault"])
+test("the words: New to Nostr Vault?, its two answers, Logen's copy wording, and no other mesh, FIPS, address or role words", () => {
+  assert.equal(QUESTION, "New to Nostr Vault?")
+  assert.deepEqual([RELAYS, COPY], ["Yes, bring my notes from relays", "No, copy from my other vault"])
   assert.equal(COPY_DETAIL, "Links your devices, then brings your notes from your relays", "the web copies nothing over the mesh (import audit)")
   assert.ok(!/mesh|fips|address|role/i.test(COPY_DETAIL))
-  for (const w of [QUESTION, RELAYS, BACKUP, COPY, FALLBACK, OTHER_KIND]) assert.ok(!/mesh|fips|address|role/i.test(w), w)
+  for (const w of [QUESTION, RELAYS, COPY, FALLBACK, OTHER_KIND, LOST_DEVICE]) assert.ok(!/mesh|fips|address|role/i.test(w), w)
   assert.equal(FALLBACK, "Couldn't reach your other device; getting your notes from your relays instead.")
   assert.equal(linkedLine("Logen's iPhone"), "Linked with Logen's iPhone. Getting your notes now.")
   const screen = readFileSync(new URL("../src/screens/SetupBringOver.jsx", import.meta.url), "utf8")

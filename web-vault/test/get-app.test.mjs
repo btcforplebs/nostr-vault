@@ -42,5 +42,5 @@ test("the welcome screen shows it above the ways in, as a link that opens the do
   assert.match(src, /const app = appDownload\(\)/)
   const actions = src.indexOf('class="welcome-actions"')
   const get = src.indexOf('class="welcome-door welcome-get" href={app.url}')
-  assert.ok(actions > 0 && get > actions && get < src.indexOf(">Create an account<"))
+  assert.ok(actions > 0 && get > actions && get < src.indexOf(">{NEW_TO_NOSTR_YES}<"), "above the New to Nostr? doors")
 })

@@ -11,14 +11,19 @@ import { withImportLock } from "./import-lock.js"
 /** How long the other device has to answer after this browser scanned it (or showed its code): the plan's 3 minutes. */
 export const LINK_LIMIT = 180
 
-export const QUESTION = "Bring in your notes"
-export const RELAYS = "Import from relays"
-export const RELAYS_DETAIL = "Fetch your notes and the people you follow from your relays."
+// The second of setup's two questions (Logen 2026-11-05, as Apple #1761 and Android #1759): New to Nostr Vault? Yes
+// brings your notes from relays, No copies from your other vault. The backup zip left setup: it's Restore in Settings
+// and on the Vault Dashboard's Keep it full.
+export const QUESTION = "New to Nostr Vault?"
+export const RELAYS = "Yes, bring my notes from relays"
+export const RELAYS_DETAIL = "Your notes and the people you follow, from your relays."
 export const BACKUP = "Import from a backup"
 export const BACKUP_DETAIL = "A Nostr Vault backup file (.zip) from this browser, your iPhone or your Mac."
 // Logen's words, 2026-11-05; the small print as Tod gave it after the import audit (the web copies nothing over the mesh).
-export const COPY = "Copy from my other vault"
+export const COPY = "No, copy from my other vault"
 export const COPY_DETAIL = "Links your devices, then brings your notes from your relays"
+/** On the copy screen, for someone whose other device is gone. */
+export const LOST_DEVICE = "Lost your other device? We'll bring your notes from relays"
 export const FALLBACK = "Couldn't reach your other device; getting your notes from your relays instead."
 export const linkedLine = name => `Linked with ${displayName(name)}. Getting your notes now.`
 

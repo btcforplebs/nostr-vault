@@ -3,7 +3,7 @@
 // Import notes also looks for older versions of the user's lists (net/list-history-import.js); asking the history
 // relays too is the user's switch, on by default (Logen 2026-11-04 14:34Z; off asks no relay at all), and that search
 // can be skipped while it runs.
-import { Row, RowButton, Section } from "./parts.jsx"
+import { Row, RowButton, Section, SettingRow } from "./parts.jsx"
 import { monthYear, relative } from "../../net/vault-history.js"
 
 // The words, as the apps have them (ListHistoryScan.swift): a title, then a small line with "Lazarus" linking to its repo.
@@ -41,6 +41,8 @@ export function KeepFullSection({ startDate, history = {}, importing, mediaBusy,
       <Row icon="up" title="Export notes" detail={history.notesBackup ? `Last made ${relative(history.notesBackup)}.` : "Never made."}>
         <RowButton title="Export" busy={exportBusy} disabled={busy} onClick={onExport} />
       </Row>
+      {/* The backup zip left setup (Logen 2026-11-05): restored from here, as the apps' Keep it full does. */}
+      <SettingRow icon="zip" title="Restore from a backup" href="#/settings/backup" />
       {status && <div class={`dash-row dash-note${status.error ? " error" : ""}`} role="status">{status.text}</div>}
       <div class="dash-row dash-note small muted">{IMPORT_MEDIA_NOTE}</div>
     </Section>

@@ -14,9 +14,11 @@ import { uploadPhoto, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
 import { withTimeout } from "../signer/readonly.js"
 import { askToKeep, sevenDayErase, KEEP_IT } from "../components/StorageNote.jsx"
 import { KeyCard, painted } from "../components/KeyCard.jsx"
+import { ReferrerStep } from "./ReferrerStep.jsx"
 import "../styles/onboarding.css"
 
-const STEPS = ["intro", "keys", "password", "profile", "follows", "relays", "done"]
+// "referrer": who showed you this app (only here: new to Nostr, Logen 2026-11-05); whoever is picked joins the follows.
+const STEPS = ["intro", "keys", "password", "profile", "referrer", "follows", "relays", "done"]
 const PUBLISH_WAIT_MS = 12000
 
 /** `onSignedIn({ signer, session, firstEvents })`: main.jsx's. `onBack`: to the welcome screen. */
@@ -53,6 +55,7 @@ export function CreateAccount({ onSignedIn, onBack }) {
         {id === "password" && <Password initial={password} onContinue={p => { setPassword(p); next() }} />}
         {id === "profile" && <Profile name={name} setName={setName} photo={photo} setPhoto={setPhoto} onContinue={next}
           onSkip={() => { setName(""); setPhoto(null); next() }} />}
+        {id === "referrer" && <ReferrerStep onFollow={pk => { setPicked(s => new Set([...s, pk])); next() }} onSkip={next} />}
         {id === "follows" && <Follows packs={packs} picked={picked} setPicked={setPicked} onContinue={next} />}
         {id === "relays" && <StarterRelays relays={relays} setRelays={setRelays} onContinue={next} />}
         {id === "done" && <Done keyPair={key} password={password} name={name} photo={photo} follows={[...picked]} relays={relays} onSignedIn={onSignedIn} onBack={() => setStep(s => s - 1)} />}

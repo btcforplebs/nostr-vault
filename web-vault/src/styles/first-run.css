@@ -1,0 +1,11 @@
+/* First run (net/first-run.js): the welcome tour over the app, and the one-time notification card. */
+.tour { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, .6); }
+.tour-card { width: min(420px, 100%); padding: 22px; border-radius: var(--radius); background: var(--s1); color: var(--text); box-shadow: 0 10px 40px rgba(0, 0, 0, .45); }
+.tour-card h2 { margin: 4px 0 8px; font: var(--t-title2); }
+.tour-card p { margin: 0; text-wrap: pretty; }
+.tour-actions, .notify-ask-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.tour-skip { border: 0; background: none; color: var(--text-2); }
+.notify-ask { position: fixed; left: 50%; bottom: max(84px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 55; width: min(440px, calc(100% - 24px));
+  padding: 14px 16px; border-radius: var(--radius); background: var(--s1); color: var(--text); box-shadow: 0 8px 30px rgba(0, 0, 0, .45); }
+.notify-ask p { margin: 0; }
+.notify-ask-actions { margin-top: 12px; }
