@@ -169,13 +169,15 @@ final class MeshPairingHello: @unchecked Sendable {
               let tags = event["tags"] as? [[String]],
               (event["kind"] as? Int) == MeshPairing.helloKind,
               tags.contains(where: { $0.count >= 2 && $0[0] == "p" && $0[1] == ownHex }) else { return }
+        // The relay can send anything under any author: only a valid
+        // signature says the sender's mesh key made it. Marked seen only
+        // after that, so a broken copy reusing the real id can't hide the
+        // real event (Tron, PR 1704).
+        guard NostrEventVerifier.isValid(event) else { return }
         lock.lock()
         let fresh = seen.insert(id).inserted
         lock.unlock()
-        // The relay can send anything under any author: only a valid
-        // signature says the sender's mesh key made it.
-        guard fresh, NostrEventVerifier.isValid(event),
-              let plain = Self.decrypt(ciphertext, from: sender) else { return }
+        guard fresh, let plain = Self.decrypt(ciphertext, from: sender) else { return }
         let incoming = Incoming(senderHex: sender.lowercased(), content: plain)
         let deliver = onMessage
         Task { @MainActor in deliver(incoming) }
