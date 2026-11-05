@@ -51,7 +51,8 @@ extension ComposeView {
                 content: convertMentionsToNostr(content),
                 replyTo: effectiveReplyTo,
                 quoteTo: effectiveQuoteTo,
-                taggedPubkeys: taggedPubkeys
+                taggedPubkeys: taggedPubkeys,
+                authorPubkey: lockedHex
             )
         }
 

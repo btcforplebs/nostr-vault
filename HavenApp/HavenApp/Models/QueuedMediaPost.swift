@@ -154,6 +154,15 @@ enum PostingAccount {
     /// would otherwise sign the reply with whichever key is active now.
     /// Switching to the owner returns the owner's npub, which
     /// `switchActiveAccount` stores as "".
+    /// The account a composer writes as, fixed when it opens: `postAs` (a
+    /// reply for another account's note), else the account active then. A
+    /// new note used to post as whichever account was active at Post (Mac
+    /// bug hunt 2026-11-05 #4).
+    static func composerAccount(postAs: String?, active: String, owner: String) -> String {
+        if let wanted = postAs?.trimmingCharacters(in: .whitespacesAndNewlines), !wanted.isEmpty { return wanted }
+        return resolve(active: active, owner: owner)
+    }
+
     static func switchTarget(postAs: String?, active: String, owner: String) -> String? {
         guard let wanted = postAs?.trimmingCharacters(in: .whitespacesAndNewlines), !wanted.isEmpty else { return nil }
         return resolve(active: active, owner: owner) == wanted ? nil : wanted

@@ -13,6 +13,9 @@ struct PollComposeView: View {
     @State private var closes: Closing = .oneDay
     @State private var customEnd = Date().addingTimeInterval(24 * 3600)
     @State private var isPosting = false
+    /// The account active when this composer opened; a switch since then
+    /// refuses to post rather than sign as the other account.
+    @State private var openedAs: PostingAccount.Lock?
     @State private var error: String?
     @FocusState private var focusedOption: Int?
     @StateObject private var drafts = ComposerDraftKeeper(kind: .poll)
@@ -193,6 +196,8 @@ struct PollComposeView: View {
             }
         }
         .onChange(of: currentDraft) { _, d in drafts.changed(d, cover: nil) }
+        // Posts as the account it was opened as (PostingAccount.composerAccount).
+        .onAppear { if openedAs == nil { openedAs = ModePostPublisher.lockAccount(configService: configService) } }
         // Swiping the sheet away keeps the draft, like Save Draft.
         .onDisappear { drafts.saveNow(currentDraft, cover: nil) }
         .confirmationDialog("Save this poll as a draft?", isPresented: $confirmingCancel, titleVisibility: .visible) {
@@ -247,7 +252,7 @@ struct PollComposeView: View {
         guard ready.isComplete() else { return }
         isPosting = true
         error = nil
-        let lock = ModePostPublisher.lockAccount(configService: configService)
+        let lock = openedAs ?? ModePostPublisher.lockAccount(configService: configService)
         let relays = pollRelays
         Task {
             do {
