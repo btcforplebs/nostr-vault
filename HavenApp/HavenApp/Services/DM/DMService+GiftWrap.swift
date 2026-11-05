@@ -241,6 +241,8 @@ extension DMService {
         if userAsked {
             refusedWraps.userAskedAgain()
         } else if !mayAskActiveSigner {
+            // Not in front: the next didBecomeActive asks (resumeSignerWorkInFront).
+            signerWorkHeld = true
             return
         }
         // Asked for (Retry, refresh): once the automatic rounds are used up,

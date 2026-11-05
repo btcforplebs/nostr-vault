@@ -174,6 +174,11 @@ final class DMSignerPolicyTests: XCTestCase {
         let auth = try body(processing, after: "private func handleAuthChallenge(")
         let authHold = try body(String(auth), after: "guard mayAskOwnerSigner else {", until: "return")
         XCTAssertTrue(authHold.contains("signerWorkHeld = true"))
+        // An automatic round skipped while not active (refresh before .active,
+        // the backoff timer in the background) is resumed in front.
+        let retryRound = try body(wrap, after: "func retryWaitingForSigner(")
+        let skipped = try body(String(retryRound), after: "} else if !mayAskActiveSigner {", until: "return")
+        XCTAssertTrue(skipped.contains("signerWorkHeld = true"))
     }
 
     /// Every place the DM code asks a signer checks first.
