@@ -6,7 +6,9 @@ if (import.meta.env) import("../../styles/compose-kinds.css")
 
 export const COMPOSE_TYPES = [["note", "Note"], ["article", "Article"], ["recipe", "Recipe"], ["poll", "Poll"], ["highlight", "Highlight"]]
 
-const TYPES = new Set(COMPOSE_TYPES.map(([t]) => t))
+// A listing (Sell something) opens from Marketplace, as the iPhone's does from its Marketplace feed, so it isn't one of
+// the New Post kinds above.
+const TYPES = new Set([...COMPOSE_TYPES.map(([t]) => t), "listing"])
 
 /** "#/compose?type=article" -> "article"; anything else (a bare #/compose, a reply, a quote) is a note. */
 export function composeType(hash = globalThis.location?.hash ?? "") {

@@ -28,6 +28,7 @@ import { ArticleCompose } from "./compose/ArticleCompose.jsx"
 import { RecipeCompose } from "./compose/RecipeCompose.jsx"
 import { PollCompose } from "./compose/PollCompose.jsx"
 import { HighlightCompose } from "./compose/HighlightCompose.jsx"
+import { ListingCompose } from "./compose/ListingCompose.jsx"
 import { SEND_ACTIONS, countdownText, sendAction, sendDelaySeconds, startCountdown } from "../net/send-delay.js"
 import { EMPTY_DRAFT, addPhotos, hasSomethingToPost, photoToken, placeBody, removePhoto as dropPhoto, updatePhoto, withoutTokens } from "./compose/draft-model.js"
 import { ComposeAttachments } from "./compose/ComposeAttachments.jsx"
@@ -158,6 +159,7 @@ export function ComposeScreen(props) {
   if (type === "recipe") return <RecipeCompose ctx={props.ctx} />
   if (type === "poll") return <PollCompose ctx={props.ctx} />
   if (type === "highlight") return <HighlightCompose ctx={props.ctx} />
+  if (type === "listing") return <ListingCompose ctx={props.ctx} />
   return <NoteCompose {...props} />
 }
 
