@@ -46,14 +46,13 @@ class ReferrerFollowsTest {
         val steps = listOf(WizardStep.WELCOME, WizardStep.RELAY_CHOICE, WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD, WizardStep.PROFILE, WizardStep.COMPLETE)
         assertEquals(
             listOf(WizardStep.WELCOME, WizardStep.RELAY_CHOICE, WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD, WizardStep.PROFILE, WizardStep.REFERRER, WizardStep.COMPLETE),
-            withReferrerStep(steps, SetupPath.NEW_TO_NOSTR, readOnly = false),
+            withReferrerStep(steps, SetupPath.NEW_TO_NOSTR),
         )
     }
 
-    @Test fun `the step follows the key on I already use Nostr, unless read-only`() {
-        val steps = listOf(WizardStep.WELCOME, WizardStep.RELAY_CHOICE, WizardStep.USE_NOSTR_KEY, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR)
-        assertEquals(WizardStep.REFERRER, withReferrerStep(steps, SetupPath.USE_NOSTR, readOnly = false)[3])
-        assertFalse(WizardStep.REFERRER in withReferrerStep(steps, SetupPath.USE_NOSTR, readOnly = true))
-        assertFalse(WizardStep.REFERRER in withReferrerStep(steps, SetupPath.FULL, readOnly = false))
+    @Test fun `only new to Nostr is asked, never I already use Nostr (Logen 2026-11-05)`() {
+        val steps = listOf(WizardStep.WELCOME, WizardStep.RELAY_CHOICE, WizardStep.USE_NOSTR_KEY, WizardStep.NEW_TO_VAULT, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR)
+        assertEquals(steps, withReferrerStep(steps, SetupPath.USE_NOSTR))
+        assertFalse(WizardStep.REFERRER in withReferrerStep(steps, SetupPath.FULL))
     }
 }

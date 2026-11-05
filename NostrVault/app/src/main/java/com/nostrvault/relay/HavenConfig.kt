@@ -329,9 +329,12 @@ data class HavenConfig(
      * global switch could not turn new-follower notifications off at all.
      */
     val pushNotifyFollows: Boolean = true,
-    /** Setup's "Stay in the Loop" step (or the one launch-time ask for paths
-     *  without it) has dealt with POST_NOTIFICATIONS; don't ask again. */
+    /** The one notification question has been answered (NotificationAsk); don't ask again. */
     val notificationPermissionAsked: Boolean = false,
+    /** Setup just finished and the notification question is still to come,
+     *  once the main screen shows (NotificationAsk). Never set on an upgrade,
+     *  so a later launch never asks cold. */
+    val notificationAskPending: Boolean = false,
     // Per-account push preferences (mirrors iOS). Master enable + server URL
     // stay global above; each account keeps its own per-type toggles. Falls
     // back to the global flags for accounts without an entry (back-compat).
