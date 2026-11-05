@@ -118,12 +118,13 @@ class DMService: ObservableObject {
     var injectedDmIds = Set<String>()
     let maxInjectedDmIds = 5_000
 
-    /// Persisted timestamp for efficient DM catch-up from external relays.
-    private let lastExternalFetchKey = "com.haven.dm.lastExternalFetchTimestamp"
+    /// Persisted timestamp for efficient DM catch-up from external relays,
+    /// one per account (`DMCatchUp`).
     var lastExternalFetchTimestamp: Int64 {
-        get { Int64(UserDefaults.standard.integer(forKey: lastExternalFetchKey)) }
-        set { UserDefaults.standard.set(Int(newValue), forKey: lastExternalFetchKey) }
+        get { Int64(UserDefaults.standard.integer(forKey: DMCatchUp.key(account: loadedAccountPubkey))) }
     }
+    /// The external fetch in flight: its account, start and how many relays sent EOSE.
+    var externalCatchUp: DMCatchUp?
 
     private init() {
         loadedAccountPubkey = NostrService.shared.activeHexPubkey
