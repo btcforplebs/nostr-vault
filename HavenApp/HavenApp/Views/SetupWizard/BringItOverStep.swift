@@ -85,13 +85,26 @@ struct BringItOverStep: View {
         guard !copying, let other else { return }
         copying = true
         Task {
-            guard let url = await Self.vaultURL(other.mesh) else { return fallBack() }
+            guard let url = await dialOtherVault(other.mesh) else { return fallBack() }
             configService.config.importStartDate = OtherVaultCopy.startDate
             configService.save()
             copyURL = url
             relayManager.startFirstRun(config: configService.config, alsoFrom: [url])
             requestedAt = Self.now
         }
+    }
+
+    /// Dials the other vault until it answers or `OtherVaultCopy.dialWindow`
+    /// runs out: A starts sharing as the link completes, and its engine
+    /// takes seconds to start and be found (Logen 2026-11-05).
+    private func dialOtherVault(_ meshNpub: String) async -> String? {
+        let startedAt = Self.now
+        while !finished {
+            if let url = await Self.vaultURL(meshNpub) { return url }
+            guard OtherVaultCopy.dialsAgain(startedAt: startedAt, now: Self.now) else { return nil }
+            try? await Task.sleep(nanoseconds: UInt64(OtherVaultCopy.dialRetryEvery) * 1_000_000_000)
+        }
+        return nil
     }
 
     /// The other device's vault as a local ws:// address, or nil. Never log it.

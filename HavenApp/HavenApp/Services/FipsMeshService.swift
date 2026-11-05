@@ -44,6 +44,10 @@ final class FipsMeshService: ObservableObject {
     }
 
     @Published private(set) var kioskActive = false
+    /// Kiosk mode is on only for a just-linked device's copy (shareForCopy),
+    /// until this time; nil when the owner turned it on.
+    @Published private(set) var copyShareUntil: Date?
+    private var copyShareTimer: Timer?
     /// A start is in flight. The toggle shows on, and a second tap cancels it.
     @Published private(set) var starting = false
     @Published private(set) var status: Status?
@@ -140,6 +144,11 @@ final class FipsMeshService: ObservableObject {
     }
 
     func startKiosk() {
+        // The owner turns it on during a copy window: it stays on after it.
+        if copyShareUntil != nil, kioskActive || starting {
+            endCopyWindowKeepingKiosk()
+            return
+        }
         guard !kioskActive, !starting else { return }
         guard FipsMeshSettings.enabled else {
             lastError = Self.offMessage
@@ -196,7 +205,11 @@ final class FipsMeshService: ObservableObject {
     /// Otherwise the owner turned it off. Kiosk mode never signs a 10063:
     /// only Save does (Logen, 2026-10-31).
     func stopKiosk(leavingApp: Bool = false) {
-        if !leavingApp { UserDefaults.standard.set(false, forKey: Self.kioskWantedKey) }
+        // A copy window ends with any stop; it never comes back on its own
+        // and never posts the paused note.
+        let forCopy = copyShareUntil != nil
+        clearCopyWindow()
+        if !leavingApp || forCopy { UserDefaults.standard.set(false, forKey: Self.kioskWantedKey) }
         if starting {
             // didStart sees the cancel and stops the engine.
             starting = false
@@ -213,7 +226,45 @@ final class FipsMeshService: ObservableObject {
         resignObserver = nil
         stopEngine()
         status = nil
-        if leavingApp { notifyPaused() }
+        if leavingApp && !forCopy { notifyPaused() }
+    }
+
+    // MARK: - Sharing for a just-linked device's copy
+
+    /// This iPhone was A in a link: share the vault with its own devices for
+    /// `OtherVaultCopy.shareWindow`, so the device it just linked can copy
+    /// from it ("Copy from my other vault"). Off again after the window or
+    /// when the app leaves the screen. Nothing if it already shares.
+    /// Returns whether it is sharing for the copy.
+    @discardableResult
+    func shareForCopy() -> Bool {
+        guard OtherVaultCopy.sharesAfterLink(wasA: true, meshOn: FipsMeshSettings.enabled,
+                                             alreadySharing: kioskActive || starting) else { return false }
+        startKiosk()
+        guard starting || kioskActive else { return false }
+        copyShareUntil = Date().addingTimeInterval(TimeInterval(OtherVaultCopy.shareWindow))
+        copyShareTimer?.invalidate()
+        copyShareTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(OtherVaultCopy.shareWindow),
+                                              repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.copyShareUntil != nil else { return }
+                print("FipsMesh: copy window over, kiosk mode off")
+                self.stopKiosk()
+            }
+        }
+        print("FipsMesh: sharing for a linked device's copy, \(OtherVaultCopy.shareWindow / 60) min")
+        return true
+    }
+
+    private func clearCopyWindow() {
+        copyShareTimer?.invalidate()
+        copyShareTimer = nil
+        copyShareUntil = nil
+    }
+
+    private func endCopyWindowKeepingKiosk() {
+        clearCopyWindow()
+        UserDefaults.standard.set(true, forKey: Self.kioskWantedKey)
     }
 
     /// My Devices changed. A running engine keeps the `own_devices` it started
@@ -236,8 +287,12 @@ final class FipsMeshService: ObservableObject {
             print("FipsMesh: My Devices changed, kiosk mode starts again with the new list")
             // No other device left: kiosk mode can't start, so it goes off.
             let startsAgain = !MeshDevicesLogic.ownDevices(after, ownNpub: own).isEmpty
+            // A copy window restarts as a copy window, not as the owner's kiosk.
+            let forCopy = copyShareUntil != nil
             stopKiosk()
-            if startsAgain {
+            if startsAgain && forCopy {
+                shareForCopy()
+            } else if startsAgain {
                 // Still wanted: if this start fails or the app leaves
                 // mid-start, coming back tries again (resumeIfWanted).
                 UserDefaults.standard.set(true, forKey: Self.kioskWantedKey)
@@ -294,7 +349,8 @@ final class FipsMeshService: ObservableObject {
                 return
             }
             kioskActive = true
-            UserDefaults.standard.set(true, forKey: Self.kioskWantedKey)
+            // A copy window isn't the owner's choice: it doesn't come back.
+            UserDefaults.standard.set(copyShareUntil == nil, forKey: Self.kioskWantedKey)
             UIApplication.shared.isIdleTimerDisabled = true
             // print reaches relay.log (stdout), the file pulled off a device.
             print("FipsMesh: kiosk live, My Devices only, strangers at the mesh door (\(budget.remaining) bytes left today)")
@@ -628,7 +684,9 @@ final class FipsMeshService: ObservableObject {
     /// engine's share-again (that would keep the old session's limit).
     private func shareAgain() {
         print("FipsMesh: kiosk starting a new session for strangers")
+        let forCopy = copyShareUntil != nil
         stopKiosk()
+        if forCopy { shareForCopy(); return }
         UserDefaults.standard.set(true, forKey: Self.kioskWantedKey)
         startKiosk()
     }

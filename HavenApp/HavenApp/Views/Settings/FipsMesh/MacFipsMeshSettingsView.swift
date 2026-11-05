@@ -9,7 +9,8 @@ struct MacFipsMeshSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     @ObservedObject private var mesh = MacFipsMeshService.shared
     @StateObject private var detection = FIPSDetectionService()
-    @State private var showQR = false
+    @State private var showPair = false
+    @State private var copied = false
     @State private var newAddress = ""
     @State private var newName = ""
     @State private var newRole: MeshDeviceRole = .phone
@@ -25,6 +26,7 @@ struct MacFipsMeshSettingsView: View {
             advancedSection
         }
         .groupedFormStyleCompat()
+        .sheet(isPresented: $showPair) { PairDeviceView().environmentObject(configService) }
         .onAppear {
             detection.startPolling()
             mesh.loadOwnNpub()
@@ -86,33 +88,22 @@ struct MacFipsMeshSettingsView: View {
                         .foregroundColor(.secondary)
                     Text(npub)
                         .font(.appSystem(size: 12, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-                HStack(spacing: 12) {
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(npub, forType: .string)
-                    } label: {
-                        Label("Copy", systemImage: "doc.on.doc")
-                    }
-                    Button {
-                        withAnimation(Motion.control) { showQR.toggle() }
-                    } label: {
-                        Label(showQR ? "Hide QR" : "Show QR", systemImage: "qrcode")
-                    }
-                }
-                if showQR {
-                    MeshQRCode.view(for: npub, label: "This Mac's mesh address QR code")
+                        .foregroundColor(.secondary)
                 }
             } else {
                 Text("Reading this Mac's mesh address…")
                     .font(.appCaption)
                     .foregroundColor(.secondary)
             }
+            Button {
+                showPair = true
+            } label: {
+                Label("Link a device", systemImage: "qrcode.viewfinder")
+            }
         } header: {
             Text("This Device")
         } footer: {
-            Text("Add this address on your phones under Mesh → My Devices, as Home vault · full history.")
+            Text("Link your phone or iPad with two scans. For something that can't scan, copy this address under Advanced.")
         }
     }
 
@@ -251,6 +242,22 @@ struct MacFipsMeshSettingsView: View {
 
     private var advancedSection: some View {
         Section {
+            if let npub = mesh.ownNpub {
+                HStack {
+                    Text(npub)
+                        .font(.appSystem(size: 11, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Button(copied ? "Copied" : "Copy mesh address") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(npub, forType: .string)
+                        copied = true
+                    }
+                }
+            }
             Picker("Address source", selection: Binding(
                 get: { configService.config.fipsAddressSource },
                 set: { value in
@@ -280,7 +287,7 @@ struct MacFipsMeshSettingsView: View {
         } header: {
             Text("Advanced")
         } footer: {
-            Text("Which npub the listed .fips address uses.")
+            Text("This Mac's mesh address, for a device that can't scan (a Linux box). Address source: which npub the listed .fips address uses.")
         }
     }
 }
