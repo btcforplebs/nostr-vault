@@ -22,6 +22,8 @@ export const FEED_ICON = {
   polls: "M5 20V11M12 20V4M19 20v-7M3 20h18", // chart.bar
 }
 export const LIST_ICON = "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"
+// Your network's day (the iPhone's square.grid.2x2).
+const DASHBOARD_ICON = "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"
 const EDIT_ICON = "M4 6h10M4 12h7M4 18h10M18 5v14M15 16l3 3 3-3M15 8l3-3 3 3" // arrow.up.arrow.down + list
 const LAYOUT_ICON = {
   expanded: "M4 4h16v7H4zM4 14h16v6H4z",
@@ -57,8 +59,8 @@ function useDismiss(open, setOpen, ref) {
 }
 
 /** The left pill: icon + name + chevron; it opens the feeds. `feeds`: [{ id, label }] in the picker's order.
- *  `onEdit` opens Edit Feeds, the list's last item as on the iPhone. */
-export function FeedModeMenu({ feeds, choice, onPick, onEdit }) {
+ *  `onEdit` opens Edit Feeds, the list's last item as on the iPhone; `onDashboard` the Feed Dashboard, just above it. */
+export function FeedModeMenu({ feeds, choice, onPick, onEdit, onDashboard }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   useDismiss(open, setOpen, ref)
@@ -81,8 +83,11 @@ export function FeedModeMenu({ feeds, choice, onPick, onEdit }) {
             <span class="check" aria-hidden="true">{choice.mode === f.id ? "✓" : ""}</span>
           </button>
         ))}
+        {(onEdit || onDashboard) && <span class="feed-mode-sep" role="separator" />}
+        {onDashboard && <button type="button" role="menuitem" class="feed-mode-edit feed-mode-dashboard" onClick={() => { setOpen(false); onDashboard() }}>
+          <Icon d={DASHBOARD_ICON} size={17} /><span>Dashboard</span><span class="check" aria-hidden="true" />
+        </button>}
         {onEdit && <>
-          <span class="feed-mode-sep" role="separator" />
           <button type="button" role="menuitem" class="feed-mode-edit" onClick={() => { setOpen(false); onEdit() }}>
             <Icon d={EDIT_ICON} size={17} /><span>Edit Feeds</span><span class="check" aria-hidden="true" />
           </button>
