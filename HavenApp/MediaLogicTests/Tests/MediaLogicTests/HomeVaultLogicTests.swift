@@ -401,3 +401,57 @@ final class MacMediaVaultTests: XCTestCase {
         XCTAssertFalse(HomeVaultLogic.photoNodeMissing(from: nil, photoNpub: macNpub), "no list seen yet")
     }
 }
+
+/// Every linked phone gets this phone's new notes and media, each on its own lane (Logen 2026-11-05).
+final class HomeVaultPhoneLaneTests: XCTestCase {
+
+    private func device(_ npub: String, _ role: MeshDeviceRole) -> MeshDevice {
+        MeshDevice(npub: npub, name: "", role: role)
+    }
+
+    private func sendItem(_ kind: HomeVaultItem.Kind, _ id: String, to target: String? = nil) -> HomeVaultItem {
+        HomeVaultItem(kind: kind, id: id, ownerHex: "o", eventJSON: nil, contentType: nil,
+                      added: Date(timeIntervalSince1970: 0), attempts: 0, notBefore: nil, target: target)
+    }
+
+    func testEveryLinkedPhoneIsATargetOnceButNotThisPhoneOrTheHomeVaultOrMac() {
+        let devices = [device("phoneA", .phone), device("me", .phone), device("phoneB", .phone),
+                       device("phoneA", .phone), device("kiosk", .homeVault), device("mac", .mac),
+                       device("page", .browser), device("kioskAsPhone", .phone)]
+        XCTAssertEqual(HomeVaultLogic.phoneTargets(devices: devices, ownNpub: "me", homeVault: "kioskAsPhone", mac: "mac"),
+                       ["phoneA", "phoneB"])
+        XCTAssertEqual(HomeVaultLogic.phoneTargets(devices: [device("mac", .mac)], ownNpub: nil, homeVault: nil, mac: nil), [])
+    }
+
+    func testTheSameSendIsPerLane() {
+        XCTAssertTrue(HomeVaultLogic.sameSend(sendItem(.event, "e1"), sendItem(.event, "e1")))
+        XCTAssertFalse(HomeVaultLogic.sameSend(sendItem(.event, "e1"), sendItem(.event, "e1", to: "phoneA")),
+                       "the home vault's copy and a phone's copy are two sends")
+        XCTAssertFalse(HomeVaultLogic.sameSend(sendItem(.event, "e1", to: "phoneA"), sendItem(.event, "e1", to: "phoneB")))
+        XCTAssertFalse(HomeVaultLogic.sameSend(sendItem(.blob, "e1"), sendItem(.event, "e1")))
+    }
+
+    func testEachLaneHasItsOwnCap() {
+        let full = (0..<3).map { sendItem(.event, "p\($0)", to: "phoneA") }
+        XCTAssertFalse(HomeVaultLogic.hasRoom(for: sendItem(.event, "x", to: "phoneA"), in: full, max: 3))
+        XCTAssertTrue(HomeVaultLogic.hasRoom(for: sendItem(.event, "x"), in: full, max: 3), "a full phone lane can't stop the home vault")
+        XCTAssertTrue(HomeVaultLogic.hasRoom(for: sendItem(.event, "x", to: "phoneB"), in: full, max: 3))
+    }
+
+    func testAnIPhoneTakesSendsWhileOpenWithAPhoneLinked() {
+        XCTAssertTrue(HomeVaultLogic.sharesWhileOpen(meshOn: true, appActive: true, alreadySharing: false, linkedPhones: 1))
+        XCTAssertFalse(HomeVaultLogic.sharesWhileOpen(meshOn: false, appActive: true, alreadySharing: false, linkedPhones: 1))
+        XCTAssertFalse(HomeVaultLogic.sharesWhileOpen(meshOn: true, appActive: false, alreadySharing: false, linkedPhones: 1))
+        XCTAssertFalse(HomeVaultLogic.sharesWhileOpen(meshOn: true, appActive: true, alreadySharing: true, linkedPhones: 1))
+        XCTAssertFalse(HomeVaultLogic.sharesWhileOpen(meshOn: true, appActive: true, alreadySharing: false, linkedPhones: 0))
+    }
+
+    func testAQueueSavedBeforeLanesStaysTheHomeVaults() throws {
+        let old = #"[{"kind":"event","id":"e1","ownerHex":"o","added":0,"attempts":0}]"#
+        let items = try JSONDecoder().decode([HomeVaultItem].self, from: Data(old.utf8))
+        XCTAssertEqual(items.count, 1)
+        XCTAssertNil(items[0].target)
+        let laned = try JSONDecoder().decode([HomeVaultItem].self, from: JSONEncoder().encode([sendItem(.blob, "b", to: "phoneA")]))
+        XCTAssertEqual(laned[0].target, "phoneA")
+    }
+}

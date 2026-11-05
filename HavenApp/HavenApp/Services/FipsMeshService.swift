@@ -46,8 +46,16 @@ final class FipsMeshService: ObservableObject {
     @Published private(set) var kioskActive = false
     /// Kiosk mode is on only for a just-linked device's copy (shareForCopy),
     /// until this time; nil when the owner turned it on.
-    @Published private(set) var copyShareUntil: Date?
-    private var copyShareTimer: Timer?
+    /// Set only by FipsMeshService+TemporaryShare.
+    @Published var copyShareUntil: Date?
+    var copyShareTimer: Timer?
+    /// Kiosk mode is on only while the app is open, so linked phones can send
+    /// this one their new notes and media (shareWhileOpenIfWanted). Set only
+    /// by FipsMeshService+TemporaryShare.
+    @Published var sharingWhileOpen = false
+    /// Sharing that isn't the owner's kiosk: it never comes back by itself
+    /// and never posts the paused note.
+    var isTemporaryShare: Bool { copyShareUntil != nil || sharingWhileOpen }
     /// A start is in flight. The toggle shows on, and a second tap cancels it.
     @Published private(set) var starting = false
     @Published private(set) var status: Status?
@@ -82,18 +90,24 @@ final class FipsMeshService: ObservableObject {
 
     /// Kiosk mode was on when the app last left the screen. Leaving the app
     /// stops it (iOS would suspend the mesh), and coming back starts it again.
-    private static let kioskWantedKey = "fipsMesh.kioskWanted"
+    static let kioskWantedKey = "fipsMesh.kioskWanted"
     private static let pausedNoteID = "fipsmesh-kiosk-paused"
     private var activeObserver: NSObjectProtocol?
 
     /// Called once at launch: turns kiosk mode back on each time the app comes
-    /// on screen, if it was on when the app left.
+    /// on screen, if it was on when the app left; otherwise shares with My
+    /// Devices while open when a phone is linked (shareWhileOpenIfWanted).
     func resumeWhenActive() {
         guard activeObserver == nil else { return }
         activeObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.resumeIfWanted() }
+        }
+        // This runs from a launch Task: the first activation may be past.
+        if UIApplication.shared.applicationState == .active,
+           !UserDefaults.standard.bool(forKey: Self.kioskWantedKey) {
+            shareWhileOpenIfWanted()
         }
     }
 
@@ -112,7 +126,11 @@ final class FipsMeshService: ObservableObject {
                 center.removePendingNotificationRequests(withIdentifiers: [id])
             }
         }
-        guard UserDefaults.standard.bool(forKey: Self.kioskWantedKey), !kioskActive, !starting else { return }
+        guard UserDefaults.standard.bool(forKey: Self.kioskWantedKey) else {
+            shareWhileOpenIfWanted()
+            return
+        }
+        guard !kioskActive, !starting else { return }
         print("FipsMesh: app back on screen, turning kiosk mode on again")
         startKiosk()
     }
@@ -145,8 +163,8 @@ final class FipsMeshService: ObservableObject {
 
     func startKiosk() {
         // The owner turns it on during a copy window: it stays on after it.
-        if copyShareUntil != nil, kioskActive || starting {
-            endCopyWindowKeepingKiosk()
+        if isTemporaryShare, kioskActive || starting {
+            endTemporaryShareKeepingKiosk()
             return
         }
         guard !kioskActive, !starting else { return }
@@ -207,8 +225,8 @@ final class FipsMeshService: ObservableObject {
     func stopKiosk(leavingApp: Bool = false) {
         // A copy window ends with any stop; it never comes back on its own
         // and never posts the paused note.
-        let forCopy = copyShareUntil != nil
-        clearCopyWindow()
+        let forCopy = isTemporaryShare
+        clearTemporaryShare()
         if !leavingApp || forCopy { UserDefaults.standard.set(false, forKey: Self.kioskWantedKey) }
         if starting {
             // didStart sees the cancel and stops the engine.
@@ -229,44 +247,6 @@ final class FipsMeshService: ObservableObject {
         if leavingApp && !forCopy { notifyPaused() }
     }
 
-    // MARK: - Sharing for a just-linked device's copy
-
-    /// This iPhone was A in a link: share the vault with its own devices for
-    /// `OtherVaultCopy.shareWindow`, so the device it just linked can copy
-    /// from it ("Copy from my other vault"). Off again after the window or
-    /// when the app leaves the screen. Nothing if it already shares.
-    /// Returns whether it is sharing for the copy.
-    @discardableResult
-    func shareForCopy() -> Bool {
-        guard OtherVaultCopy.sharesAfterLink(wasA: true, meshOn: FipsMeshSettings.enabled,
-                                             alreadySharing: kioskActive || starting) else { return false }
-        startKiosk()
-        guard starting || kioskActive else { return false }
-        copyShareUntil = Date().addingTimeInterval(TimeInterval(OtherVaultCopy.shareWindow))
-        copyShareTimer?.invalidate()
-        copyShareTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(OtherVaultCopy.shareWindow),
-                                              repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.copyShareUntil != nil else { return }
-                print("FipsMesh: copy window over, kiosk mode off")
-                self.stopKiosk()
-            }
-        }
-        print("FipsMesh: sharing for a linked device's copy, \(OtherVaultCopy.shareWindow / 60) min")
-        return true
-    }
-
-    private func clearCopyWindow() {
-        copyShareTimer?.invalidate()
-        copyShareTimer = nil
-        copyShareUntil = nil
-    }
-
-    private func endCopyWindowKeepingKiosk() {
-        clearCopyWindow()
-        UserDefaults.standard.set(true, forKey: Self.kioskWantedKey)
-    }
-
     /// My Devices changed. A running engine keeps the `own_devices` it started
     /// with, so a removed (lost or stolen) phone would keep reaching this
     /// vault: restart it with the new list (NIP-F1 revoke). `before` is the
@@ -282,6 +262,8 @@ final class FipsMeshService: ObservableObject {
         switch MeshDevicesLogic.engineAfterDevicesChange(before: before, after: after, ownNpub: own,
                                                          kiosk: kioskActive || starting, client: client) {
         case .keep:
+            // A phone just linked: this one may now take its sends.
+            shareWhileOpenIfWanted()
             return
         case .restartKiosk:
             print("FipsMesh: My Devices changed, kiosk mode starts again with the new list")
@@ -289,9 +271,12 @@ final class FipsMeshService: ObservableObject {
             let startsAgain = !MeshDevicesLogic.ownDevices(after, ownNpub: own).isEmpty
             // A copy window restarts as a copy window, not as the owner's kiosk.
             let forCopy = copyShareUntil != nil
+            let whileOpen = sharingWhileOpen
             stopKiosk()
             if startsAgain && forCopy {
                 shareForCopy()
+            } else if whileOpen {
+                shareWhileOpenIfWanted()
             } else if startsAgain {
                 // Still wanted: if this start fails or the app leaves
                 // mid-start, coming back tries again (resumeIfWanted).
@@ -342,16 +327,19 @@ final class FipsMeshService: ObservableObject {
         switch result {
         case .failure(let error):
             lastError = error.message
+            clearTemporaryShare()
         case .success:
             // The app left while the engine was starting: kiosk mode never goes live.
             guard UIApplication.shared.applicationState != .background else {
+                clearTemporaryShare()
                 stopEngine()
                 return
             }
             kioskActive = true
             // A copy window isn't the owner's choice: it doesn't come back.
-            UserDefaults.standard.set(copyShareUntil == nil, forKey: Self.kioskWantedKey)
-            UIApplication.shared.isIdleTimerDisabled = true
+            UserDefaults.standard.set(!isTemporaryShare, forKey: Self.kioskWantedKey)
+            // Sharing only while open lets the screen sleep as usual.
+            UIApplication.shared.isIdleTimerDisabled = !sharingWhileOpen
             // print reaches relay.log (stdout), the file pulled off a device.
             print("FipsMesh: kiosk live, My Devices only, strangers at the mesh door (\(budget.remaining) bytes left today)")
             // Today's budget was used up before this start: strangers wait
@@ -685,8 +673,10 @@ final class FipsMeshService: ObservableObject {
     private func shareAgain() {
         print("FipsMesh: kiosk starting a new session for strangers")
         let forCopy = copyShareUntil != nil
+        let whileOpen = sharingWhileOpen
         stopKiosk()
         if forCopy { shareForCopy(); return }
+        if whileOpen { shareWhileOpenIfWanted(); return }
         UserDefaults.standard.set(true, forKey: Self.kioskWantedKey)
         startKiosk()
     }

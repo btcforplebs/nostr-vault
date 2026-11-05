@@ -6,6 +6,12 @@ import UIKit
 /// owner's phones in kiosk mode, reached over the FIPS mesh. The kiosk keeps
 /// them and passes notes on to the regular relays.
 ///
+/// Every linked phone in My Devices gets them too (Logen 2026-11-05), each
+/// on its own lane (`HomeVaultItem.target`) with its own cap, dial and
+/// backoff, as Android's MeshSendTargets. A phone takes them while its app
+/// is open (it shares with its own devices then, FipsMeshService), so its
+/// lane waits until then.
+///
 /// The home vault is a kiosk's mesh address, picked from the owner's 10063 or
 /// pasted/scanned from the kiosk. This phone lists it in the owner's 10063, so
 /// the kiosk needs no key. The kiosk's mesh door takes `PUT /upload` and an
@@ -78,21 +84,51 @@ final class HomeVaultSender: ObservableObject {
 
     // MARK: - Queueing
 
-    /// A signed event this phone just published. Only the home vault owner's own.
+    /// A signed event this phone just published: to the home vault when it is
+    /// its owner's, and to each linked phone when it is this device's owner's.
     func enqueue(eventDict: [String: Any]) {
-        guard let vault = homeVault,
-              let pubkey = eventDict["pubkey"] as? String, pubkey == vault.ownerHex,
+        guard let pubkey = eventDict["pubkey"] as? String,
               let id = eventDict["id"] as? String,
               let data = try? JSONSerialization.data(withJSONObject: eventDict),
               let json = String(data: data, encoding: .utf8) else { return }
-        _ = add(HomeVaultItem(kind: .event, id: id, ownerHex: pubkey, eventJSON: json, contentType: nil, added: Date(), attempts: 0, notBefore: nil))
+        let item = HomeVaultItem(kind: .event, id: id, ownerHex: pubkey, eventJSON: json, contentType: nil, added: Date(), attempts: 0, notBefore: nil)
+        if let vault = homeVault, pubkey == vault.ownerHex { _ = add(item) }
+        for target in phoneTargets(owner: pubkey) {
+            var copy = item
+            copy.target = target
+            _ = add(copy)
+        }
+    }
+
+    /// The linked phones that get `owner`'s new notes and media: only this
+    /// device's owner's (the phones were linked for it; Android sends the
+    /// owner's posts only too).
+    func phoneTargets(owner: String) -> [String] {
+        guard let ownerHex = Bech32.decode(ConfigService.shared.config.ownerNpub)?.hexString.lowercased(),
+              owner.lowercased() == ownerHex else { return [] }
+        return linkedPhones
+    }
+
+    /// My Devices' phones, whichever account is active.
+    private var linkedPhones: [String] {
+        let config = ConfigService.shared.config
+        return HomeVaultLogic.phoneTargets(devices: FipsMeshDevices.current(config),
+                                           ownNpub: FipsMeshService.shared.ownMeshNpub,
+                                           homeVault: homeVault?.meshNpub, mac: config.macRelayMeshNpub)
     }
 
     /// A blob just saved to this phone's own Blossom, signed for by `signer`.
     /// True when it is queued for the home vault.
     /// `forwardTo`: the public server the vault passes it on to.
+    /// Each linked phone gets a copy too (it doesn't pass it on anywhere).
     @discardableResult
     func enqueue(blobSha256 sha256: String, contentType: String, signer: String, byteCount: Int, forwardTo: String? = nil) -> Bool {
+        if byteCount <= Self.maxBlobBytes {
+            for target in phoneTargets(owner: signer) {
+                _ = add(HomeVaultItem(kind: .blob, id: sha256, ownerHex: signer, eventJSON: nil, contentType: contentType,
+                                      added: Date(), attempts: 0, notBefore: nil, target: target))
+            }
+        }
         guard let vault = mediaVault, signer == vault.ownerHex else { return false }
         guard byteCount <= Self.maxBlobBytes else {
             appLog("\(sha256.prefix(8)) is \(byteCount) bytes, over the \(Self.maxBlobBytes) the kiosk takes — kept on this phone only", level: "WARN")
@@ -149,7 +185,7 @@ final class HomeVaultSender: ObservableObject {
         if await HomeVaultTransport.vaultHas(sha256: sha256, base: base, authBase64: checkAuth) { return true }
         // A background pass may hold the item or the vault's one upload slot:
         // then the vault itself is the answer.
-        guard let item = queue.first(where: { $0.kind == .blob && $0.id == sha256 }),
+        guard let item = queue.first(where: { $0.kind == .blob && $0.id == sha256 && $0.target == nil }),
               await sendBlob(item, base: base) == .sent else {
             return await HomeVaultTransport.vaultHas(sha256: sha256, base: base, authBase64: checkAuth)
         }
@@ -161,12 +197,15 @@ final class HomeVaultSender: ObservableObject {
     /// False when the item could not be queued.
     @discardableResult
     private func add(_ item: HomeVaultItem) -> Bool {
-        guard !queue.contains(where: { $0.kind == item.kind && $0.id == item.id }) else { return true }
+        guard !queue.contains(where: { HomeVaultLogic.sameSend($0, item) }) else { return true }
         // Full: refuse the new item, as the kiosk's own queue does. Dropping
         // the oldest would lose something that never got out (Tron, #473).
-        guard queue.count < Self.maxQueue else {
-            appLog("queue full (\(Self.maxQueue)) — \(item.kind.rawValue) \(item.id.prefix(8)) not queued", level: "WARN")
-            lastResult = "The queue is full: new notes and media aren't going to your home vault. Tap Send now when it's in reach."
+        // Each lane has its own cap.
+        guard HomeVaultLogic.hasRoom(for: item, in: queue, max: Self.maxQueue) else {
+            appLog("queue full (\(Self.maxQueue)) — \(item.kind.rawValue) \(item.id.prefix(8)) not queued\(item.target == nil ? "" : " for a linked phone")", level: "WARN")
+            lastResult = item.target == nil
+                ? "The queue is full: new notes and media aren't going to your home vault. Tap Send now when it's in reach."
+                : "The queue for your other phone is full: open Nostr Vault on it so it can catch up."
             return false
         }
         // Media before the notes that point at it, so a note never lands first.
@@ -218,17 +257,25 @@ final class HomeVaultSender: ObservableObject {
             appLog("gave up on \(item.kind.rawValue) \(item.id.prefix(8)) after \(item.attempts) tries", level: "WARN")
             gaveUp.append(item.kind == .mirror
                 ? "a photo a note links never reached your media servers"
-                : "a \(item.kind == .event ? "note" : "photo") never reached your home vault")
+                : "a \(item.kind == .event ? "note" : "photo") never reached your \(item.target == nil ? "home vault" : "other phone")")
+            remove(item)
+        }
+        // A phone no longer linked gets nothing more: its lane goes.
+        let linked = Set(linkedPhones)
+        for item in queue where item.target.map({ !linked.contains($0) }) ?? false {
+            appLog("dropped \(item.kind.rawValue) \(item.id.prefix(8)): that phone is no longer linked")
             remove(item)
         }
 
         let active = UIApplication.shared.applicationState == .active
         // A bunker signer may need a person: never ask it from the background.
         let signerNeedsPerson = ConfigService.shared.config.activeSigningMode() != "local"
-        var base: URL?
-        var meshTried = false
+        // Per lane (`HomeVaultItem.target`, "" for the home vault): one dial
+        // each, and a note waits only on media of its own lane.
+        var bases: [String: URL] = [:]
+        var meshTried = Set<String>()
         var meshWhy: String?
-        var mediaWaiting = false
+        var mediaWaiting = Set<String>()
         var waiting = false
         var prompts = 0
 
@@ -252,20 +299,25 @@ final class HomeVaultSender: ObservableObject {
                 let ok = await blossom.mirrorFromLocal(sha256: item.id, contentType: item.contentType ?? "application/octet-stream", server: item.server)
                 result = ok ? .sent : .unreachable("no media server took it yet")
             } else {
-                // Notes go to a kiosk only; media also to a Mac set by mesh npub.
-                guard let vault = item.kind == .event ? homeVault : mediaVault, vault.ownerHex == item.ownerHex,
+                let lane = item.target ?? ""
+                // A linked phone's lane goes to that phone. Otherwise notes go
+                // to a kiosk only; media also to a Mac set by mesh npub.
+                let vault = item.target.map { HomeVault(ownerHex: item.ownerHex, meshNpub: $0) }
+                    ?? (item.kind == .event ? homeVault : mediaVault)
+                guard let vault, vault.ownerHex == item.ownerHex,
                       vault.ownerHex == NostrService.shared.activeHexPubkey else { waiting = true; continue }
-                if item.kind == .event && mediaWaiting { waiting = true; continue }
-                if !meshTried {
-                    meshTried = true
+                if item.kind == .event && mediaWaiting.contains(lane) { waiting = true; continue }
+                if !meshTried.contains(lane) {
+                    meshTried.insert(lane)
                     if let url = await FipsMeshService.shared.ingressURL(meshNpub: vault.meshNpub) {
-                        base = url
-                    } else {
-                        meshWhy = "the mesh did not reach your home vault"
+                        bases[lane] = url
+                    } else if item.target == nil || meshWhy == nil {
+                        meshWhy = item.target == nil ? "the mesh did not reach your home vault"
+                            : "your other phone isn't in reach (it takes them while Nostr Vault is open on it)"
                     }
                 }
-                guard let base else {
-                    if item.kind == .blob { mediaWaiting = true }
+                guard let base = bases[lane] else {
+                    if item.kind == .blob { mediaWaiting.insert(lane) }
                     backOff(item)
                     waiting = true
                     continue
@@ -284,7 +336,7 @@ final class HomeVaultSender: ObservableObject {
                 appLog("refused \(item.kind.rawValue) \(item.id.prefix(8)): \(why)", level: "WARN")
                 remove(item)
             case .unreachable(let why):
-                if item.kind == .blob { mediaWaiting = true }
+                if item.kind == .blob { mediaWaiting.insert(item.target ?? "") }
                 backOff(item)
                 waiting = true
                 appLog("\(item.kind.rawValue) \(item.id.prefix(8)) will retry: \(why)")
@@ -305,7 +357,7 @@ final class HomeVaultSender: ObservableObject {
     }
 
     private func backOff(_ item: HomeVaultItem) {
-        guard let i = queue.firstIndex(where: { $0.kind == item.kind && $0.id == item.id }) else { return }
+        guard let i = queue.firstIndex(where: { HomeVaultLogic.sameSend($0, item) }) else { return }
         queue[i].attempts += 1
         queue[i].notBefore = Date().addingTimeInterval(HomeVaultLogic.backoff(afterAttempts: queue[i].attempts))
         saveQueue()
@@ -389,7 +441,7 @@ final class HomeVaultSender: ObservableObject {
     }
 
     private func remove(_ item: HomeVaultItem) {
-        queue.removeAll { $0.kind == item.kind && $0.id == item.id }
+        queue.removeAll { HomeVaultLogic.sameSend($0, item) }
         saveQueue()
     }
 
