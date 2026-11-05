@@ -203,8 +203,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         Task { @MainActor in
             FeedService.shared.refresh()
 
-            // Sync DMs from external relays
-            DMService.shared.syncOnForeground()
+            // Sync DMs from external relays: never a signer prompt with the
+            // app closed (a bunker waits for the next foreground).
+            DMService.shared.syncInBackground()
 
             // With a Mac relay set, catch up from it (and the other relays):
             // new events land in the local relay and notify through the same

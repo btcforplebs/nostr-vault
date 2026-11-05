@@ -301,6 +301,10 @@ extension DMService {
         case .none:
             break
         case .sign(let challenge):
+            // A bunker is never asked from the background. Not a failure (a
+            // failure gives the relay up for the session): this fetch just
+            // reads what needs no AUTH; the next one in front signs.
+            guard mayAskActiveSigner else { return }
             let generation = switchGeneration
             Task { @MainActor [weak self] in
                 guard let self else { return }

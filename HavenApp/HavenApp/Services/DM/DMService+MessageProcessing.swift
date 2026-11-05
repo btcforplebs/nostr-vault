@@ -117,6 +117,15 @@ extension DMService {
         // Kept until the relay accepts an AUTH, so it can be signed again once
         // the owner's signer is reachable (retryPendingAuth).
         if !isRetry { authRetry.received(challenge) }
+        // An owner bunker is never asked from the background: the kept
+        // challenge is signed when the app comes to the front
+        // (resumeSignerWorkInFront, signer audit item 5).
+        guard mayAskOwnerSigner else {
+            // A kept challenge taken for a retry goes back, still unsigned.
+            if isRetry { authRetry.received(challenge) }
+            signerWorkHeld = true
+            return
+        }
 
         Task {
             // Always sign AUTH with owner's key since the local relay is owned by the owner account
@@ -197,6 +206,14 @@ extension DMService {
                 print("ℹ️ Watch-only: NIP-04 DM decryption unavailable (no signing key) — skipping inbound DMs")
                 #endif
             }
+            return
+        }
+
+        // A bunker is never asked to decrypt from the background. Not marked
+        // seen: the inbox subscription is renewed in front and it comes back.
+        guard mayAskActiveSigner else {
+            nip04HeldForSigner = true
+            signerWorkHeld = true
             return
         }
 

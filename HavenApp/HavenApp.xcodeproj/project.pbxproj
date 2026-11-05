@@ -242,6 +242,7 @@
 		2061C05EDB45E6A677C44828 /* NoteTranslation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDB08989DAA08A101C01CEC2 /* NoteTranslation.swift */; };
 		20909F66629BEC603D2806A0 /* FloatingArrowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C6F73BF6DECD70643354714 /* FloatingArrowController.swift */; };
 		20ACAB0CCDD35997C75B68B4 /* LiveFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C29A25C6DBE37CB0202A7F /* LiveFeedService.swift */; };
+		20B79D60254DD561EAD2AB53 /* DMService+SignerPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64BAF7CD86FC5EBA575A0824 /* DMService+SignerPolicy.swift */; };
 		20C64DF5C7E38056A044BB8C /* NVWidgetLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC382C7EF657BEBE0775C5A9 /* NVWidgetLogic.swift */; };
 		20E36A7DBF7BA868620F56D2 /* CustomEmojiText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0842F86AEFC979CFBDF29054 /* CustomEmojiText.swift */; };
 		2130716A490DF017337B3544 /* FeedService+WebOfTrust.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6532640E58C10C0D8A136047 /* FeedService+WebOfTrust.swift */; };
@@ -1288,6 +1289,7 @@
 		A8DBC53F2A3635DFA615C75D /* TabButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33EF69906D14085C32707F25 /* TabButton.swift */; };
 		A9175BE3300E9CE097E14F26 /* BlossomService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803F7E83A0267F02449FA666 /* BlossomService.swift */; };
 		A945F90593453AEC2794E43C /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E7F41B7A5FACA30EA7AE9015 /* Localizable.xcstrings */; };
+		A9B920B944467163F1F215D3 /* DMService+SignerPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64BAF7CD86FC5EBA575A0824 /* DMService+SignerPolicy.swift */; };
 		A9BB3CB519144EE25890C345 /* BlossomDashboardMirrors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD2828F9DD6C5EB7FA5ADE4 /* BlossomDashboardMirrors.swift */; };
 		A9BD6764846DB55ACAEBB348 /* NoteRow+ExpandedLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D7F06C12BC798B50FBF8CA0 /* NoteRow+ExpandedLayout.swift */; };
 		A9F61360795D5D8B2007582E /* BlossomService+Mirroring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80E8DDC285524202934229A5 /* BlossomService+Mirroring.swift */; };
@@ -2426,6 +2428,7 @@
 		64608CF1EFDCD7211E9AAE04 /* ShareInboxTrigger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInboxTrigger.swift; sourceTree = "<group>"; };
 		648E05F35CCEDA3203E337DF /* SetupOwnerKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupOwnerKey.swift; sourceTree = "<group>"; };
 		649EE87FE3A42105E4EC17E9 /* haven */ = {isa = PBXFileReference; path = haven; sourceTree = "<group>"; };
+		64BAF7CD86FC5EBA575A0824 /* DMService+SignerPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+SignerPolicy.swift"; sourceTree = "<group>"; };
 		64BBE97369E66B2804EFFC5F /* MediaVaultLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaVaultLink.swift; sourceTree = "<group>"; };
 		6532640E58C10C0D8A136047 /* FeedService+WebOfTrust.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+WebOfTrust.swift"; sourceTree = "<group>"; };
 		6558C31748490E315EA4DE8E /* AvatarImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarImageCache.swift; sourceTree = "<group>"; };
@@ -4551,6 +4554,7 @@
 				9B66DBC6F906E98DB63E2AAD /* DMService+Publishing.swift */,
 				B5AF9325362206BD88D81991 /* DMService+Reconnect.swift */,
 				880DB060F395AAD9CE1427E1 /* DMService+Sending.swift */,
+				64BAF7CD86FC5EBA575A0824 /* DMService+SignerPolicy.swift */,
 			);
 			path = DM;
 			sourceTree = "<group>";
@@ -5079,6 +5083,7 @@
 				358A1A18DE8227A6CC491966 /* DMService+Publishing.swift in Sources */,
 				3C92F74F6D8341C0B3C6101F /* DMService+Reconnect.swift in Sources */,
 				8FBA9847BECCEC77C835E371 /* DMService+Sending.swift in Sources */,
+				A9B920B944467163F1F215D3 /* DMService+SignerPolicy.swift in Sources */,
 				D4FEBF02D25AA17670907C36 /* DMService.swift in Sources */,
 				3B9603B55AA165569FDAF0D8 /* DMShareAccountRow.swift in Sources */,
 				76E2CAF186640D463BABC13B /* DMShareHandler.swift in Sources */,
@@ -6087,6 +6092,7 @@
 				D6DB303C4F4CADFF7AF5053B /* DMService+Publishing.swift in Sources */,
 				D50939A6B0EB9A8CEED1E6D6 /* DMService+Reconnect.swift in Sources */,
 				EE564FD8E0ABB41D221F9393 /* DMService+Sending.swift in Sources */,
+				20B79D60254DD561EAD2AB53 /* DMService+SignerPolicy.swift in Sources */,
 				73AE59BA2106FFA1751992DB /* DMService.swift in Sources */,
 				137B460766611AC47BFECD47 /* DMShareAccountRow.swift in Sources */,
 				4F84D2402F6BABCCBBB1ED72 /* DMShareHandler.swift in Sources */,
