@@ -198,14 +198,29 @@ class AppDelegate: NSObject, ObservableObject {
         guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
         // The job may have ended while the alert was up.
         guard relay.busyJob != nil else { return .terminateNow }
+        armQuitWhenIdle()
+        return .terminateLater
+    }
+
+    /// Quits once the vault is free. @Published fires in willSet and the hop to
+    /// main lands a turn later, so a restore or backup queued behind the first
+    /// one can already have taken busyJob by then: check again, and keep
+    /// waiting if it has.
+    @MainActor
+    private func armQuitWhenIdle() {
+        let relay = RelayProcessManager.shared
         quitWhenIdle = relay.$busyJob
             .first { $0 == nil }
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.quitWhenIdle = nil
-                NSApp.reply(toApplicationShouldTerminate: true)
+                guard let self else { return }
+                self.quitWhenIdle = nil
+                if relay.busyJob != nil {
+                    self.armQuitWhenIdle()
+                } else {
+                    NSApp.reply(toApplicationShouldTerminate: true)
+                }
             }
-        return .terminateLater
     }
     #endif
 
