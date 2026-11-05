@@ -138,13 +138,15 @@ final class VaultSocket {
         idleWork = nil
         return await withCheckedContinuation { (continuation: CheckedContinuation<VaultSessionCore.Outcome, Never>) in
             // The same key asked again while the first is out (one event
-            // published twice at once): the first ends.
-            if waiters[key] != nil { apply(core.timedOut(key: key)) }
+            // published twice at once): submit ends the first, so its effects
+            // go before this waiter is set. Nothing in them answers this one
+            // (answers come later, off the socket).
+            let (token, effects) = core.submit(key: key, kind: kind, frame: frame)
+            apply(effects)
             waiters[key] = { continuation.resume(returning: $0) }
-            apply(core.submit(key: key, kind: kind, frame: frame))
             DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
                 guard let self else { return }
-                self.apply(self.core.timedOut(key: key))
+                self.apply(self.core.timedOut(key: key, token: token))
             }
         }
     }

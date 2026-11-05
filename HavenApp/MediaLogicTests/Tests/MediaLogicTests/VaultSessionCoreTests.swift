@@ -86,7 +86,7 @@ private final class Driver {
     func query(_ filter: [String: Any]) -> [(id: String, createdAt: Int)]? {
         let sub = "s\(results.count)-\(UUID().uuidString.prefix(4))"
         let frame = String(data: try! JSONSerialization.data(withJSONObject: ["REQ", sub, filter]), encoding: .utf8)!
-        apply(core.submit(key: sub, kind: .req, frame: frame))
+        apply(core.submit(key: sub, kind: .req, frame: frame).effects)
         guard case .events(let raw)? = results[sub] else { return nil }
         return raw.map { obj in
             let d = obj as! [String: Any]
@@ -187,18 +187,20 @@ final class VaultSessionCoreTests: XCTestCase {
     /// sent into a refusal.
     func testRequestsWaitForTheLoginsOK() {
         var core = VaultSessionCore()
-        XCTAssertEqual(core.submit(key: "a", kind: .req, frame: "A").count, 1) // connect
+        XCTAssertEqual(core.submit(key: "a", kind: .req, frame: "A").effects.count, 1) // connect
         _ = core.connected()
         let challenge = core.received(type: "AUTH", ["AUTH", "c1"])
         guard case .signAuth = challenge.first else { return XCTFail("challenge not answered") }
-        XCTAssertTrue(core.submit(key: "b", kind: .req, frame: "B").isEmpty, "sent while signing")
+        XCTAssertTrue(core.submit(key: "b", kind: .req, frame: "B").effects.isEmpty, "sent while signing")
         _ = core.authSigned(id: "x", frame: "AUTHFRAME")
         let onOK = core.received(type: "OK", ["OK", "x", true, ""])
         let sent = onOK.compactMap { if case .send(let t) = $0 { return t } else { return nil } }
         XCTAssertTrue(sent.contains("B"))
     }
 
-    /// After the login, one `auth-required` refusal gets one retry; a second fails.
+    /// After the login, one `auth-required` refusal gets one retry; a second
+    /// fails and closes the socket (its login is no good), so the next
+    /// request logs in afresh instead of failing on it too (Tron, PR 1739).
     func testOneRetryAfterTheLogin() {
         var core = VaultSessionCore()
         _ = core.submit(key: "a", kind: .req, frame: "A")
@@ -209,7 +211,10 @@ final class VaultSessionCoreTests: XCTestCase {
         let first = core.received(type: "CLOSED", ["CLOSED", "a", "auth-required: again"])
         guard case .send("A")? = first.first else { return XCTFail("no retry") }
         let second = core.received(type: "CLOSED", ["CLOSED", "a", "auth-required: again"])
-        guard case .finish("a", .failed)? = second.first else { return XCTFail("retried twice") }
+        XCTAssertFalse(second.contains { if case .send = $0 { return true } else { return false } }, "retried twice")
+        guard case .disconnect? = second.first else { return XCTFail("refused socket kept") }
+        XCTAssertTrue(second.contains { if case .finish("a", .failed) = $0 { return true } else { return false } })
+        guard case .connect? = core.submit(key: "b", kind: .req, frame: "B").effects.first else { return XCTFail("no new socket") }
     }
 
     /// A refused login, or none could be signed: the socket closes and
@@ -222,7 +227,7 @@ final class VaultSessionCoreTests: XCTestCase {
         let none = core.authUnavailable()
         guard case .disconnect? = none.first else { return XCTFail("socket kept") }
         XCTAssertTrue(core.isIdle)
-        guard case .connect? = core.submit(key: "b", kind: .req, frame: "B").first else { return XCTFail("no new socket") }
+        guard case .connect? = core.submit(key: "b", kind: .req, frame: "B").effects.first else { return XCTFail("no new socket") }
     }
 
     /// A dropped socket fails what was asked on it; the next request reconnects.
@@ -252,24 +257,66 @@ final class VaultSessionCoreTests: XCTestCase {
     /// so the next request opens a new one rather than also timing out.
     func testTimeoutWithNothingHeardDropsTheSocket() {
         var core = VaultSessionCore()
-        _ = core.submit(key: "a", kind: .req, frame: "A")
+        let a = core.submit(key: "a", kind: .req, frame: "A").token
         _ = core.connected()                       // no challenge: an open vault
-        let out = core.timedOut(key: "a")
+        let out = core.timedOut(key: "a", token: a)
         guard case .disconnect? = out.first else { return XCTFail("dead socket kept") }
-        guard case .connect? = core.submit(key: "b", kind: .req, frame: "B").first else { return XCTFail("no new socket") }
+        guard case .connect? = core.submit(key: "b", kind: .req, frame: "B").effects.first else { return XCTFail("no new socket") }
     }
 
     /// A slow vault (it answered something since the request went) keeps
     /// its socket: only that request ends.
     func testTimeoutOnASlowVaultKeepsTheSocket() {
         var core = VaultSessionCore()
-        _ = core.submit(key: "a", kind: .req, frame: "A")
+        let a = core.submit(key: "a", kind: .req, frame: "A").token
         _ = core.submit(key: "b", kind: .req, frame: "B")
         _ = core.connected()
         _ = core.received(type: "EVENT", ["EVENT", "a", ["id": "e1"]])
-        let out = core.timedOut(key: "a")
+        let out = core.timedOut(key: "a", token: a)
         XCTAssertFalse(out.contains { if case .disconnect = $0 { return true } else { return false } })
         XCTAssertFalse(core.isIdle, "b still waits")
         XCTAssertEqual(core.link, .up)
+    }
+
+    /// The same event published again while the first is out ends the first
+    /// as failed, without calling the socket dead: other requests on it go on
+    /// (Tron, PR 1739: it used to run the dead-socket check and fail them all).
+    func testSameKeyAgainEndsOnlyTheFirst() {
+        var core = VaultSessionCore()
+        _ = core.submit(key: "q", kind: .req, frame: "Q")
+        _ = core.submit(key: "e", kind: .event, frame: "E")
+        _ = core.connected()                       // sent; nothing heard yet
+        let again = core.submit(key: "e", kind: .event, frame: "E")
+        XCTAssertFalse(again.effects.contains { if case .disconnect = $0 { return true } else { return false } }, "socket called dead")
+        guard case .finish("e", .failed)? = again.effects.first else { return XCTFail("first not ended") }
+        XCTAssertTrue(again.effects.contains { if case .send("E") = $0 { return true } else { return false } }, "second not sent")
+        XCTAssertEqual(core.link, .up)
+        guard case .events? = core.received(type: "EOSE", ["EOSE", "q"]).last.map({ if case .finish(_, let o) = $0 { return o } else { return .failed } }) else {
+            return XCTFail("q failed with the first e")
+        }
+    }
+
+    /// The first submission's timer, firing after a retry of the same event,
+    /// does nothing: only the retry's own timer can end it.
+    func testOldTimerDoesNotEndARetry() {
+        var core = VaultSessionCore()
+        let first = core.submit(key: "e", kind: .event, frame: "E").token
+        _ = core.connected()
+        _ = core.received(type: "OK", ["OK", "e", false, "error: nope"])  // failed; the user retries
+        let retry = core.submit(key: "e", kind: .event, frame: "E").token
+        XCTAssertNotEqual(first, retry)
+        XCTAssertTrue(core.timedOut(key: "e", token: first).isEmpty, "old timer ended the retry")
+        XCTAssertFalse(core.isIdle)
+        XCTAssertFalse(core.timedOut(key: "e", token: retry).isEmpty)
+    }
+
+    /// A second holding a full page or more of versions doesn't end paging:
+    /// a full page with nothing new steps to the second before it (Tron,
+    /// PR 1739; same class as Go's drainSecond).
+    func testFullPageOfOneSecondStepsPastIt() {
+        let page = (0..<3).map { (id: "s\($0)", createdAt: 500) }
+        XCTAssertEqual(VaultPaging.nextUntil(page: page, known: [], limit: 3), 500)
+        XCTAssertEqual(VaultPaging.nextUntil(page: page, known: Set(page.map(\.id)), limit: 3), 499)
+        XCTAssertNil(VaultPaging.nextUntil(page: Array(page.prefix(2)), known: [], limit: 3))
     }
 }

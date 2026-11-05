@@ -52,6 +52,8 @@ struct VaultSessionCore {
         var sentAt = 0
         var retried = false
         var events: [Any] = []
+        /// Which submission of `key` this is (`submit`'s token).
+        let token: Int
     }
 
     private(set) var link: Link = .down
@@ -61,24 +63,33 @@ struct VaultSessionCore {
     /// Messages received on this socket, to tell a slow vault from a dead
     /// socket (one iOS killed while the app was away still reads connected).
     private var heard = 0
+    /// Submissions so far: each one's token, so a timer set for an earlier
+    /// submission of the same key can't end a later one.
+    private var submissions = 0
 
     /// No request waiting: the socket may be closed when it stays so.
     var isIdle: Bool { ops.isEmpty }
 
     /// A request: `key` is a REQ's subscription id or an EVENT's id, `frame`
-    /// the JSON text to send.
-    mutating func submit(key: String, kind: Kind, frame: String) -> [Effect] {
-        ops[key] = Op(kind: kind, frame: frame)
+    /// the JSON text to send. `token` names this submission for `timedOut`.
+    /// The same key asked again while the first is out (one event published
+    /// twice): the first ends `.failed`, and the socket is not judged by it.
+    mutating func submit(key: String, kind: Kind, frame: String) -> (token: Int, effects: [Effect]) {
+        var out: [Effect] = []
+        if ops[key] != nil { out.append(finish(key, .failed)) }
+        submissions += 1
+        ops[key] = Op(kind: kind, frame: frame, token: submissions)
         order.append(key)
         switch link {
         case .down:
             link = .connecting
-            return [.connect]
+            out.append(.connect)
         case .connecting:
-            return []
+            break
         case .up:
-            return sendReady()
+            out += sendReady()
         }
+        return (submissions, out)
     }
 
     mutating func connected() -> [Effect] {
@@ -114,9 +125,10 @@ struct VaultSessionCore {
         return [.disconnect] + failAll()
     }
 
-    /// Gave up waiting for `key`.
-    mutating func timedOut(key: String) -> [Effect] {
-        guard let op = ops[key] else { return [] }
+    /// Gave up waiting for submission `token` of `key`. A timer for an
+    /// earlier submission (already ended) does nothing.
+    mutating func timedOut(key: String, token: Int) -> [Effect] {
+        guard let op = ops[key], op.token == token else { return [] }
         // Nothing at all heard on the socket since this was sent: the socket
         // is dead, not the vault slow. Close it, so the next request opens a
         // new one instead of waiting out its own timeout on this one.
@@ -187,7 +199,14 @@ struct VaultSessionCore {
             ops[key] = op
             return []
         }
-        guard !op.retried else { return [finish(key, .failed)] }
+        guard !op.retried else {
+            // Logged in, and still refused for want of a login after its
+            // retry: this socket's login is no good. Close it, so the next
+            // request logs in afresh instead of every one failing on it.
+            link = .down
+            auth = .none
+            return [.disconnect] + failAll()
+        }
         op.retried = true
         op.sent = true
         op.sentAt = heard
@@ -242,10 +261,12 @@ enum VaultPaging {
     static let maxPages = 50
 
     /// The next page's `until`, or nil when `page` was the last: it came back
-    /// under the limit, or brought nothing not already read (`known` holds
-    /// every id read before it).
+    /// under the limit (`known` holds every id read before it). A full page
+    /// that brought nothing new is one second holding a page or more of
+    /// versions: the next page asks from the second before it, so paging
+    /// goes on past it (those of that second past the page are not read).
     static func nextUntil(page: [(id: String, createdAt: Int)], known: Set<String>, limit: Int = limit) -> Int? {
-        guard page.count >= limit, page.contains(where: { !known.contains($0.id) }) else { return nil }
-        return page.map(\.createdAt).min()
+        guard page.count >= limit, let oldest = page.map(\.createdAt).min() else { return nil }
+        return page.contains(where: { !known.contains($0.id) }) ? oldest : oldest - 1
     }
 }
