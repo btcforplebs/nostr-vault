@@ -150,7 +150,7 @@ class SetupWizardRelayChoiceTest {
     fun `I already use Nostr is your key, who told you, backup question, relay check, import tour`() {
         viewModel.setSetupPath(SetupPath.USE_NOSTR)
         assertEquals(
-            listOf(WizardStep.USE_NOSTR_KEY, WizardStep.REFERRER, WizardStep.BACKUP_QUESTION, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR),
+            listOf(WizardStep.USE_NOSTR_KEY, WizardStep.REFERRER, WizardStep.NEW_TO_VAULT, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR),
             viewModel.activeSteps.drop(2),
         )
     }
@@ -170,7 +170,7 @@ class SetupWizardRelayChoiceTest {
         viewModel.setUseNostrInput("nostr:npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m")
         viewModel.continueUseNostr()
 
-        assertEquals(WizardStep.BACKUP_QUESTION, viewModel.step.value)
+        assertEquals(WizardStep.NEW_TO_VAULT, viewModel.step.value)
         assertEquals("npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m", saved.ownerNpub)
         assertEquals("browse", saved.setupMode)
         assertEquals("browse", saved.signingMode)

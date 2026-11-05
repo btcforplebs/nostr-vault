@@ -57,7 +57,7 @@ import javax.inject.Inject
 internal const val IMPORT_TOUR_START_DATE = "2023-01-01"
 
 enum class WizardStep {
-    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, STARTER_RELAYS, USE_NOSTR_KEY, REFERRER, BACKUP_QUESTION, RELAY_CHECK, IMPORT_TOUR,
+    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, STARTER_RELAYS, USE_NOSTR_KEY, REFERRER, NEW_TO_VAULT, RELAY_CHECK, IMPORT_TOUR,
     ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, NOTIFICATIONS, COMPLETE
 }
 
@@ -324,7 +324,7 @@ class SetupWizardViewModel @Inject constructor(
      *  there's no done screen; a restored backup finishes it at the question. */
     private val useNostrSteps = listOf(
         WizardStep.WELCOME, WizardStep.RELAY_CHOICE,
-        WizardStep.USE_NOSTR_KEY, WizardStep.BACKUP_QUESTION, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR,
+        WizardStep.USE_NOSTR_KEY, WizardStep.NEW_TO_VAULT, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR,
     )
 
     /**
@@ -347,7 +347,7 @@ class SetupWizardViewModel @Inject constructor(
             return if (_useExternalRelay.value) {
                 // No import here, so "I already use Nostr" ends on the done screen.
                 val withoutImport = steps - WizardStep.IMPORT_NOTES - WizardStep.MIRROR_MEDIA -
-                    WizardStep.BACKUP_QUESTION - WizardStep.RELAY_CHECK - WizardStep.IMPORT_TOUR
+                    WizardStep.NEW_TO_VAULT - WizardStep.RELAY_CHECK - WizardStep.IMPORT_TOUR
                 if (WizardStep.COMPLETE in withoutImport) withoutImport else withoutImport + WizardStep.COMPLETE
             } else {
                 steps

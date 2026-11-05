@@ -21,7 +21,7 @@ import java.io.File
 
 /** "Do you have a Vault backup?" for people who already use Nostr (3.0.1 #10). */
 @OptIn(ExperimentalCoroutinesApi::class)
-class SetupWizardBackupQuestionTest {
+class SetupWizardNewToVaultTest {
 
     private var saved = HavenConfig()
     private lateinit var viewModel: SetupWizardViewModel
@@ -55,7 +55,7 @@ class SetupWizardBackupQuestionTest {
     @Test
     fun `the question comes after your key and Who told you, and before the relay check`() {
         val steps = viewModel.activeSteps
-        val question = steps.indexOf(WizardStep.BACKUP_QUESTION)
+        val question = steps.indexOf(WizardStep.NEW_TO_VAULT)
         assertEquals(steps.indexOf(WizardStep.USE_NOSTR_KEY) + 1, steps.indexOf(WizardStep.REFERRER))
         assertEquals(steps.indexOf(WizardStep.REFERRER) + 1, question)
         assertEquals(steps.indexOf(WizardStep.RELAY_CHECK) - 1, question)
@@ -64,13 +64,13 @@ class SetupWizardBackupQuestionTest {
     @Test
     fun `new accounts are never asked`() {
         viewModel.choosePath(SetupPath.NEW_TO_NOSTR)
-        assertFalse(WizardStep.BACKUP_QUESTION in viewModel.activeSteps)
+        assertFalse(WizardStep.NEW_TO_VAULT in viewModel.activeSteps)
     }
 
     @Test
     fun `an external relay is never asked, there is no vault to restore into`() {
         viewModel.setUseExternalRelay(true)
-        assertFalse(WizardStep.BACKUP_QUESTION in viewModel.activeSteps)
+        assertFalse(WizardStep.NEW_TO_VAULT in viewModel.activeSteps)
     }
 
     @Test
@@ -83,7 +83,7 @@ class SetupWizardBackupQuestionTest {
     fun `Back from the relay check returns to the question`() {
         viewModel.answerNoBackup()
         viewModel.goBack()
-        assertEquals(WizardStep.BACKUP_QUESTION, viewModel.step.value)
+        assertEquals(WizardStep.NEW_TO_VAULT, viewModel.step.value)
     }
 
     @Test
@@ -94,7 +94,7 @@ class SetupWizardBackupQuestionTest {
         viewModel.restoreBackupFile(file) { restoredPath = it; 0 }
         assertEquals(file.absolutePath, restoredPath)
         assertEquals(VaultBackupQuestion.State.Restored, viewModel.backupQuestion.value)
-        assertEquals(WizardStep.BACKUP_QUESTION, viewModel.step.value)
+        assertEquals(WizardStep.NEW_TO_VAULT, viewModel.step.value)
         assertFalse(file.exists())
     }
 
@@ -105,7 +105,7 @@ class SetupWizardBackupQuestionTest {
         viewModel.restoreBackupFile(file) { 2 }
         val state = viewModel.backupQuestion.value as VaultBackupQuestion.State.Failed
         assertTrue(state.message.startsWith("This backup isn't yours"))
-        assertEquals(WizardStep.BACKUP_QUESTION, viewModel.step.value)
+        assertEquals(WizardStep.NEW_TO_VAULT, viewModel.step.value)
         assertFalse(file.exists())
 
         // Continue can't finish setup off a refused backup.

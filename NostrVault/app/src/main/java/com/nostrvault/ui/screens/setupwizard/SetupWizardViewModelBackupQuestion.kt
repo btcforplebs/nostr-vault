@@ -43,7 +43,7 @@ object VaultBackupQuestion {
 /** No backup: on to the relay check, as before. */
 fun SetupWizardViewModel.answerNoBackup() {
     _backupQuestion.value = VaultBackupQuestion.State.Ask
-    _step.value = stepAfter(WizardStep.BACKUP_QUESTION)
+    _step.value = stepAfter(WizardStep.NEW_TO_VAULT)
 }
 
 /** Yes: the picked file is copied where the relay can read it, then restored. */
