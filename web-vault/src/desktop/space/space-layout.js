@@ -1,7 +1,7 @@
 // The desktop layout (Logen, 2026-11-03): Your space's panels (which show, in what order, which are collapsed to their
 // header) and the left rail's pins (rail/rail-favs.js). The format and every rule here are in docs/SPACE_LAYOUT.md,
 // shared with the iPad (HavenApp/Models/SpaceLayout.swift); fix one of them if they disagree. No styles, so tests can
-// import it. SpaceDock.jsx and Sidebar.jsx draw it; layout-store.js keeps it; net/space-sync.js syncs it.
+// import it. SpaceDock.jsx and Sidebar.jsx draw it; layout-store.js keeps it, in this browser only.
 //   { v: 1, at: <unix seconds of the last edit>, pins: [pin, ...], panels: [{ id, on, open }, ...], ...kept }
 // Every top-level key, panel field and entry this app doesn't understand is kept exactly as read, so an older app and
 // a newer one can share a layout.
