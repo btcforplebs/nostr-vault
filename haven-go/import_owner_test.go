@@ -540,9 +540,10 @@ func TestMoveInForgedNotesDoNotDriveTheLane(t *testing.T) {
 	if count(t, db, owner.pk) != 0 {
 		t.Fatal("stored an unsigned note")
 	}
-	// The lane's first page has nothing real in it: done. The relay answered
-	// (EOSE), so it isn't re-read by window either.
-	if asks > 2 {
+	// The lane's first page has nothing real in it: done, and (an empty
+	// first answer being unconfirmed) walked by window, one page each: 30
+	// days are 3 windows. Paging on the forged notes would be hundreds.
+	if asks > 1+4 {
 		t.Fatalf("forged notes drove %d requests", asks)
 	}
 }
@@ -751,9 +752,11 @@ func TestMoveInWidenedWindowThatTimesOutIsReadAgainNarrow(t *testing.T) {
 	}
 }
 
-// A lane that ends with an empty EOSE has nothing older: it is asked once and
-// never walked window by window.
-func TestMoveInEmptyLaneIsNotWalked(t *testing.T) {
+// A lane whose first page ends with an empty EOSE is unconfirmed, not
+// "nothing" (Tidy, RESEARCH/NV_IMPORT_BEFORE_NEGENTROPY_2026_11_05.md fix 1):
+// it is walked, and a relay that really has nothing costs about a dozen asks
+// for four years, not ~140, because empty windows widen.
+func TestMoveInEmptyLaneIsWalkedCheaply(t *testing.T) {
 	noNegentropy(t)
 	_, _ = moveInSetup(t, 1400, "wss://nothing.example")
 	asked := 0
@@ -766,8 +769,169 @@ func TestMoveInEmptyLaneIsNotWalked(t *testing.T) {
 
 	importOwnerNotes(context.Background())
 
-	if asked != 1 {
-		t.Fatalf("an empty lane was asked %d times, want 1 (no window walk)", asked)
+	if asked < 2 {
+		t.Fatalf("an empty lane was asked %d times: it was taken at its word, not walked", asked)
+	}
+	if asked > 20 {
+		t.Fatalf("an empty relay was asked %d times for 1,400 days: the walk did not widen", asked)
+	}
+}
+
+// A relay that answers a wide scan with an empty EOSE but hands over 10 days
+// at a time (12 mini, 2026-11-05): every note still comes.
+func TestMoveInWideEmptyAnswerIsReadByWindow(t *testing.T) {
+	noNegentropy(t)
+	owner, db := moveInSetup(t, 100, "wss://narrow-empty.example")
+	notes := spread(t, owner, 1200, time.Hour) // 50 days
+	r := &pagingRelay{held: notes}
+	var mu sync.Mutex
+	prev := importPage
+	importPage = func(_ context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
+		if f.Until == nil || f.Since == nil || *f.Until-*f.Since > 30*24*3600 {
+			return nil, true // too wide: an empty EOSE
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		return r.answer(f)
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	importOwnerNotes(context.Background())
+
+	if got := count(t, db, owner.pk); got != 1200 {
+		t.Fatalf("vault has %d of 1200 notes: an empty wide answer was taken as nothing", got)
+	}
+}
+
+// negRelays: a negentropy relay whose session "finishes" with nothing (it
+// listed nothing), plus a paged relay that has notes. limit1 counts the
+// negentropy relay's limit:1 asks.
+func negEmptySetup(t *testing.T, negHolds, otherHolds []*nostr.Event, limit1 *int) (*pagingRelay, *pagingRelay) {
+	t.Helper()
+	neg, other := &pagingRelay{held: negHolds}, &pagingRelay{held: otherHolds}
+	prevSync, prevSup := importNegSync, importNegSupported
+	importNegSupported = func(_ context.Context, url string) bool { return url == "wss://neg.example" }
+	importNegSync = func(context.Context, nostr.RelayStore, string, nostr.Filter) (negsync.Stats, error) {
+		return negsync.Stats{}, nil // done, listed nothing
+	}
+	var mu sync.Mutex
+	prev := importPage
+	importPage = func(_ context.Context, url string, f nostr.Filter) ([]*nostr.Event, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		if url == "wss://neg.example" {
+			if f.Limit == 1 {
+				*limit1++
+			}
+			return neg.answer(f)
+		}
+		return other.answer(f)
+	}
+	t.Cleanup(func() { importNegSync, importNegSupported, importPage = prevSync, prevSup, prev })
+	return neg, other
+}
+
+// Negentropy "done" with 0 stored while another relay's lane found notes
+// (fix 2): one limit:1 ask, and a relay that holds a note is walked.
+func TestMoveInEmptyNegentropyIsCheckedWhenOthersFoundNotes(t *testing.T) {
+	owner, db := moveInSetup(t, 100, "wss://neg.example", "wss://other.example")
+	notes := spread(t, owner, 300, time.Hour)
+	limit1 := 0
+	negEmptySetup(t, notes, notes[:100], &limit1)
+
+	importOwnerNotes(context.Background())
+
+	if limit1 != 1 {
+		t.Fatalf("the empty negentropy relay got %d limit:1 asks, want 1", limit1)
+	}
+	if got := count(t, db, owner.pk); got != 300 {
+		t.Fatalf("vault has %d of 300 notes: the negentropy relay that holds 200 more was not walked", got)
+	}
+}
+
+// The same with the relay really empty: one ask, no walk. And with no other
+// relay finding anything (a re-run): no ask at all.
+func TestMoveInEmptyNegentropyThatHoldsNothingIsNotWalked(t *testing.T) {
+	owner, _ := moveInSetup(t, 100, "wss://neg.example", "wss://other.example")
+	notes := spread(t, owner, 100, time.Hour)
+	limit1 := 0
+	neg, _ := negEmptySetup(t, nil, notes, &limit1)
+
+	importOwnerNotes(context.Background())
+
+	if limit1 != 1 || neg.asks != 1 {
+		t.Fatalf("an empty negentropy relay got %d limit:1 asks and %d in all, want 1 and 1", limit1, neg.asks)
+	}
+
+	limit1 = 0
+	neg.asks = 0
+	importOwnerNotes(context.Background()) // everything already stored
+	if limit1 != 0 || neg.asks != 0 {
+		t.Fatalf("a re-run with nothing new asked the negentropy relay %d times (%d limit:1)", neg.asks, limit1)
+	}
+}
+
+// What the walk leaves unread (deadline, drop) goes into IMPORT_RESULT as
+// unread:<from>..<to> (fix 3).
+func TestMoveInUnreadRangeIsInTheResult(t *testing.T) {
+	noNegentropy(t)
+	collect := func() *importOutcome {
+		o := newImportOutcome()
+		currentImport.Store(o)
+		t.Cleanup(func() { currentImport.CompareAndSwap(o, nil) })
+		return o
+	}
+	unreadOf := func(o *importOutcome) string {
+		_, r := o.status()
+		for _, p := range strings.Split(r, ",") {
+			if strings.HasPrefix(p, "unread:") {
+				return p
+			}
+		}
+		return ""
+	}
+
+	// A dead relay, dropped: none of it was read.
+	_, _ = moveInSetup(t, 730, "wss://dead.example")
+	prev := importPage
+	t.Cleanup(func() { importPage = prev })
+	importPage = func(context.Context, string, nostr.Filter) ([]*nostr.Event, bool) { return nil, false }
+	o := collect()
+	importOwnerNotes(context.Background())
+	want := "unread:" + time.Now().AddDate(0, 0, -730).Format(layout) + ".." + time.Now().Format(layout)
+	if got := unreadOf(o); got != want {
+		t.Fatalf("a dropped relay left %q in the result, want %q", got, want)
+	}
+
+	// A walk cut by its deadline: from the start up to where it stopped.
+	owner, _ := moveInSetup(t, 3650, "wss://slow.example")
+	prevDeadline := importWalkDeadline
+	importWalkDeadline = 200 * time.Millisecond
+	t.Cleanup(func() { importWalkDeadline = prevDeadline })
+	importPage = func(ctx context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
+		select {
+		case <-time.After(50 * time.Millisecond):
+		case <-ctx.Done():
+			return nil, false
+		}
+		ev := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, CreatedAt: *f.Since + 1, Content: "slow"})
+		return []*nostr.Event{&ev}, true
+	}
+	o = collect()
+	from := time.Now().AddDate(0, 0, -3650)
+	importOwnerWindows(context.Background(), []walkRelay{{url: "wss://slow.example", top: time.Now()}}, from, []string{owner.pk}, func(*nostr.Event) bool { return true })
+	got := unreadOf(o)
+	if !strings.HasPrefix(got, "unread:"+from.Format(layout)+"..") || strings.HasSuffix(got, ".."+time.Now().Format(layout)) {
+		t.Fatalf("a cut walk left %q in the result, want unread:%s..<where it stopped>", got, from.Format(layout))
+	}
+
+	// A walk that finished leaves nothing.
+	importWalkDeadline = prevDeadline
+	importPage = func(context.Context, string, nostr.Filter) ([]*nostr.Event, bool) { return nil, true }
+	o = collect()
+	importOwnerWindows(context.Background(), []walkRelay{{url: "wss://slow.example", top: time.Now()}}, time.Now().AddDate(0, 0, -100), []string{owner.pk}, func(*nostr.Event) bool { return true })
+	if got := unreadOf(o); got != "" {
+		t.Fatalf("a finished walk left %q in the result", got)
 	}
 }
 
