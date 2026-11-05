@@ -18,4 +18,9 @@ enum FeedStayPut {
 
     /// Below the top, the post being read is kept on screen when posts go in above it.
     static func keepsReading(isAtTop: Bool) -> Bool { !isAtTop }
+
+    /// At the top, posts going in drop in from behind the top bar and push the
+    /// feed down (Logen 2026-11-05). Below the top they go in without moving,
+    /// so the post being read stays still.
+    static func dropsIn(isAtTop: Bool) -> Bool { isAtTop }
 }

@@ -68,6 +68,10 @@ struct FeedView: View {
     /// Debounce work item for auto-loading pending notes so overlapping
     /// onChange triggers don't queue duplicate applyPendingNotes() calls.
     @State var autoLoadWork: DispatchWorkItem?
+    /// True while waiting posts drop in at the top (`dropInPendingNotes`);
+    /// rows and thread cards take `NewPostsDropIn.transition` only then.
+    @State var newPostsDropping = false
+    @State var newPostsDropWork: DispatchWorkItem?
     /// Debounce work item for rebuilding the row data cache to prevent
     /// expensive synchronous operations during active scrolling.
     @State var cacheRebuildWork: DispatchWorkItem?

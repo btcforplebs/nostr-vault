@@ -20,4 +20,9 @@ final class FeedStayPutTests: XCTestCase {
         XCTAssertTrue(FeedStayPut.keepsReading(isAtTop: false))
         XCTAssertFalse(FeedStayPut.keepsReading(isAtTop: true))
     }
+
+    func testNewPostsDropInOnlyAtTheTop() {
+        XCTAssertTrue(FeedStayPut.dropsIn(isAtTop: true))
+        XCTAssertFalse(FeedStayPut.dropsIn(isAtTop: false), "scrolled down: today's behaviour, nothing moves")
+    }
 }

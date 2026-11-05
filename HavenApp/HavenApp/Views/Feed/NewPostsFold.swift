@@ -19,3 +19,19 @@ struct NewPostsFold<Content: View>: View {
             .accessibilityHidden(visible <= 0.5)
     }
 }
+
+/// New posts going in at the top of the feed: each one comes down from
+/// behind the top bar (`.move(edge: .top)` slides it from just above its own
+/// slot) and the feed under it is pushed down by the same spring.
+enum NewPostsDropIn {
+    /// Rows while a drop-in is running. Removal stays the plain fade.
+    static var transition: AnyTransition {
+        Motion.isReduced
+            ? .opacity
+            : .asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity)
+    }
+
+    /// How long a drop-in stays armed: covers the threaded feed's regroup,
+    /// which lands a moment after the posts go in.
+    static let window: Double = 0.8
+}
