@@ -110,6 +110,11 @@ enum RelayLogParser {
         return nil
     }
 
+    /// "2024-03-15": a log line's date, not some other ten characters.
+    static func isDay(_ s: String) -> Bool {
+        s.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil
+    }
+
     /// Extract state changes from a single log line.
     /// Pure string parsing — no MainActor, no UI dependencies.
     static func collectStateChanges(from line: String, into batch: inout BatchedStateUpdate) {
@@ -132,12 +137,16 @@ enum RelayLogParser {
                 batch.importStatusMessage = "Looking through notes from \(line[rangeStart..<rangeEnd])..."
             }
         } else if line.contains("Imported") && line.contains("notes") {
-            if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
-                batch.progressDateStr = String(dateStr)
+            let dateStr = line.components(separatedBy: "to ").last.map { String($0.prefix(10)) }
+            if let dateStr {
+                batch.progressDateStr = dateStr
             }
-            if let rangeStart = line.range(of: "from ")?.upperBound,
-               let rangeEnd = line.range(of: " to", range: rangeStart..<line.endIndex)?.lowerBound {
-                batch.importStatusMessage = "Found notes from \(line[rangeStart..<rangeEnd])..."
+            // The month on screen is the range's END: a whole-history lane
+            // (import_owner.go) logs "from <start> to <today>", and showing
+            // its start held the screen on "Jan 2023" (12 mini, 2026-11-05).
+            // A window's end is the month just read.
+            if let dateStr, line.range(of: "from ") != nil, isDay(dateStr) {
+                batch.importStatusMessage = "Found notes from \(dateStr)..."
             } else {
                 batch.importStatusMessage = "Found notes..."
             }
