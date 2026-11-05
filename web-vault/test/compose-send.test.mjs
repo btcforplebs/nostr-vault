@@ -148,16 +148,19 @@ const { ComposeScreen, replySnippet, reachedRelay } = await import("../src/scree
 const flush = async () => { for (let i = 0; i < 3; i++) { await new Promise(r => setTimeout(r, 50)); await new Promise(r => setImmediate(r)) } }
 
 let relayAnswer = () => Promise.resolve("ok")
-async function composer(props = {}) {
-  const sk = generateSecretKey(), pubkey = getPublicKey(sk)
+async function composer(props = {}, { sk = generateSecretKey(), parent = null, refuse = false } = {}) {
+  const pubkey = getPublicKey(sk)
   const signed = [], stored = [], published = []
   const ctx = {
     session: { pubkey },
-    signer: { method: "nip07", signEvent: async t => { const e = finalizeEvent(t, sk); signed.push(e); return e } },
-    vault: { outbox: { event: async e => { stored.push(e); return { ok: true } } }, feed: {} },
-    account: { relays: { write: ["wss://relay.example"] } },
+    signer: { method: "nip07", signEvent: async t => { if (refuse) throw new Error("User rejected"); const e = finalizeEvent(t, sk); signed.push(e); return e } },
+    vault: { outbox: { event: async e => { stored.push(e); return { ok: true } }, query: async () => [] },
+      feed: { query: async f => (parent && f.ids?.includes(parent.id) ? [parent] : []) } },
+    account: { relays: { write: ["wss://relay.example"], read: [] } },
   }
   pool.publish = (urls, e) => { published.push({ urls, e }); return urls.map(() => relayAnswer()) }
+  // Nothing reaches the network: the reply strip asks for the author's profile.
+  pool.querySync = async () => []
   const root = new Node(1, "div")
   render(h(ComposeScreen, { ctx, ...props }), root)
   await flush()
@@ -353,3 +356,131 @@ test("opened from Reply, the box has the focus at once; the reply box under a th
   assert.notEqual(focusedNode, d.box)
   d.unmount()
 })
+
+// ---- after a post: nothing of it is left for the next one (Logen, 2026-11-05: a note went out with the last one's photo)
+
+const draftsOf = pk => dbs.get(`haven:${pk}:drafts`)
+const photo = n => ({ url: `https://media.example/${"ab".repeat(31)}${n}${n}.jpg`, sha256: `${"ab".repeat(31)}${n}${n}`, mime: "image/jpeg", size: 1000 })
+
+/** Posts `words` with a saved photo in `key`'s draft; `leaveAtOnce` unmounts as soon as the relay is asked, as the
+ *  route change does when the composer closes. -> the composer and the account's key */
+async function postWithPhoto(t, { key = "new", props = {}, parent = null, words = "first post with a photo", leaveAtOnce = false } = {}) {
+  mock.timers.enable({ apis: ["setInterval", "Date"] })
+  t.after(() => { mock.timers.reset(); history.state = null; relayAnswer = () => Promise.resolve("ok") })
+  local.clear(); local.set(SEND_DELAY_KEY, "0"); backs = 0; history.state = { nvDepth: 2 }
+  const sk = generateSecretKey(), pk = getPublicKey(sk)
+  dbs.set(`haven:${pk}:drafts`, new Map([[key, { text: words, mentions: {}, photos: [photo(1)] }]]))
+  const c = await composer(props, { sk, parent })
+  assert.equal(c.box.value, words, "the saved draft is in the box")
+  assert.match(c.text(), /1 of \d+/, "with its photo")
+  c.button(props.fixed ? "Reply" : target(key) === "quote" ? "Post" : target(key) === "reply" ? "Reply" : "Post").click()
+  if (leaveAtOnce) { for (let i = 0; i < 20 && !c.published.length; i++) await new Promise(r => setImmediate(r)); c.unmount() }
+  await flush()
+  return { c, sk, pk }
+}
+const target = key => key.split(":")[0]
+
+for (const [name, key, props, hash] of [
+  ["a new note", "new", {}, "#/compose"],
+  ["a reply", "reply:R", {}, "#/compose?reply=R"],
+  ["a quote", "quote:R", {}, "#/compose?quote=R"],
+]) {
+  test(`${name}: once sent, the text, the attachment and the saved draft are gone, even when the composer closes at once`, async t => {
+    const psk = generateSecretKey()
+    const parent = finalizeEvent({ kind: 1, created_at: 1_700_000_000, tags: [], content: "the note answered" }, psk)
+    const k = key.replace("R", parent.id)
+    location.hash = hash.replace("R", parent.id)
+    t.after(() => { location.hash = "#/compose" })
+    const { c, sk, pk } = await postWithPhoto(t, { key: k, props, parent: key === "new" ? null : parent, leaveAtOnce: true })
+    assert.equal(c.published.length, 1)
+    assert.ok(c.published[0].e.content.includes(photo(1).url), "the photo went with this post")
+    assert.equal(draftsOf(pk).has(k), false, "the saved draft is deleted")
+    // The next composer for the same thing starts empty: no old text, no old photo.
+    const next = await composer(props, { sk, parent: key === "new" ? null : parent })
+    assert.equal(next.box.value, "")
+    assert.doesNotMatch(next.text(), /\d+ of \d+(?! relays)/)
+    await next.type("second post")
+    next.button(target(k) === "reply" ? "Reply" : "Post").click(); await flush()
+    assert.equal(next.published.length, 1)
+    assert.ok(!next.published[0].e.content.includes(photo(1).url), "the next post carries no old photo")
+    assert.ok(!next.published[0].e.tags.some(t => t[0] === "imeta"))
+    next.unmount()
+  })
+}
+
+test("the reply box under a thread empties after a reply and keeps saving the next one", async t => {
+  const psk = generateSecretKey()
+  const parent = finalizeEvent({ kind: 1, created_at: 1_700_000_000, tags: [], content: "thread root" }, psk)
+  const key = `reply:${parent.id}`
+  const { c, pk } = await postWithPhoto(t, { key, props: { fixed: { mode: "reply", id: parent.id }, inline: true }, parent })
+  assert.equal(c.published.length, 1)
+  assert.equal(c.box.value, "")
+  assert.doesNotMatch(c.text(), /\d+ of \d+(?! relays)/)
+  assert.equal(draftsOf(pk).has(key), false)
+  await c.type("a second reply, not sent yet")
+  assert.equal(draftsOf(pk).get(key)?.text, "a second reply, not sent yet", "drafts save again")
+  c.unmount()
+})
+
+test("a note no relay took keeps its text, its attachment and its draft", async t => {
+  relayAnswer = () => Promise.reject(new Error("blocked: test"))
+  const { c, pk } = await postWithPhoto(t)
+  assert.equal(c.published.length, 1)
+  assert.equal(c.box.value, "first post with a photo")
+  assert.match(c.text(), /1 of \d+/)
+  assert.match(c.text(), /Your text and attachments are still here/)
+  assert.equal(draftsOf(pk).get("new")?.photos?.length, 1)
+  assert.equal(backs, 0)
+  c.unmount()
+})
+
+test("a send that fails (the signer refused) keeps the text and attachment", async t => {
+  mock.timers.enable({ apis: ["setInterval", "Date"] })
+  t.after(() => mock.timers.reset())
+  local.clear(); local.set(SEND_DELAY_KEY, "0")
+  const sk = generateSecretKey(), pk = getPublicKey(sk)
+  dbs.set(`haven:${pk}:drafts`, new Map([["new", { text: "keep me", mentions: {}, photos: [photo(2)] }]]))
+  const c = await composer({}, { sk, refuse: true })
+  c.button("Post").click(); await flush()
+  assert.equal(c.box.value, "keep me")
+  assert.match(c.text(), /User rejected/)
+  assert.match(c.text(), /1 of \d+/)
+  assert.equal(draftsOf(pk).get("new")?.text, "keep me")
+  assert.equal(c.published.length, 0)
+  c.unmount()
+})
+
+// Articles and polls: the same rule, through their own forms.
+for (const [kind, key, saved, fieldOf] of [
+  ["an article", "article", { title: "My article", summary: "", body: "Body text #nostr", cover: photo(3) }, d => d.body],
+  ["a poll", "poll", { question: "Pick one?", options: ["Red", "Blue"], multiple: false, closing: "day" }, d => d.question],
+]) {
+  for (const took of [true, false]) {
+    test(`${kind}: ${took ? "once sent, the form and its saved draft are cleared" : "no relay took it: the form and its draft stay"}`, async t => {
+      local.clear(); history.state = { nvDepth: 2 }
+      location.hash = `#/compose?type=${key}`
+      t.after(() => { location.hash = "#/compose"; relayAnswer = () => Promise.resolve("ok") })
+      if (!took) relayAnswer = () => Promise.reject(new Error("blocked: test"))
+      const sk = generateSecretKey(), pk = getPublicKey(sk)
+      dbs.set(`haven:${pk}:drafts`, new Map([[key, saved]]))
+      const c = await composer({}, { sk })
+      const field = c.root.all(n => (n.localName === "input" || n.localName === "textarea") && n.value === fieldOf(saved))[0]
+      assert.ok(field, "the saved draft is in the form")
+      c.root.all(n => n.localName === "form")[0].fire("submit"); await flush()
+      assert.equal(c.published.length, 1)
+      if (took) {
+        assert.equal(draftsOf(pk).has(key), false, "the draft is deleted")
+        assert.equal(c.root.all(n => (n.localName === "input" || n.localName === "textarea") && n.value === fieldOf(saved)).length, 0, "the form is empty")
+        c.unmount()
+        const next = await composer({}, { sk })
+        assert.equal(next.root.all(n => (n.localName === "input" || n.localName === "textarea") && n.value === fieldOf(saved)).length, 0, "and opens empty next time")
+        next.unmount()
+      } else {
+        assert.equal(fieldOf(draftsOf(pk).get(key) ?? {}), fieldOf(saved), "the draft is kept")
+        assert.ok(c.root.all(n => (n.localName === "input" || n.localName === "textarea") && n.value === fieldOf(saved)).length, "the form keeps it")
+        assert.match(c.text(), /still here: try again/)
+        c.unmount()
+      }
+    })
+  }
+}

@@ -22,7 +22,7 @@ import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { PostResult } from "./compose/PostResult.jsx"
 import { canGoBack } from "../components/nav-depth.js"
 import { takeKeyboard } from "./compose/keyboard.js"
-import { draftKey, idbDrafts } from "./compose/drafts.js"
+import { draftKey, forgetIfSent, idbDrafts } from "./compose/drafts.js"
 import { ComposeKinds, composeType } from "./compose/ComposeKinds.jsx"
 import { ArticleCompose } from "./compose/ArticleCompose.jsx"
 import { PollCompose } from "./compose/PollCompose.jsx"
@@ -166,6 +166,8 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
   const setText = t => setDraft(d => ({ ...d, text: t }))
   const setMentions = f => setDraft(d => ({ ...d, mentions: typeof f === "function" ? f(d.mentions) : f }))
   const clearDraft = () => setDraft(EMPTY_DRAFT)
+  // Emptied after a send: the attachments' local previews go with them.
+  const clearSent = () => setDraft(d => { for (const p of d.photos) if (p.preview?.startsWith("blob:")) URL.revokeObjectURL(p.preview); return EMPTY_DRAFT })
   const [view, setView] = useState("write") // phone: "write" | "preview"; wide screens show both
   const [waitPost, setWaitPost] = useState(false) // Post tapped while photos are still going up
   const [altFor, setAltFor] = useState(null) // the id whose ALT is being written
@@ -356,19 +358,22 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
     history.back()
   }
   const undo = () => { if (countdown.current?.cancel()) { countdown.current = null; setPending(null); setUndone(true); box.current?.focus() } }
-  // Once a relay has the note, the composer closes back to where it was opened, as the iPhone's sheet does. Opened as
-  // the first page there's nowhere to go back to, so the result stays with a Done button. A note no relay took stays
-  // here with its errors; the reply box under a thread (inline) just clears.
+  // Once a relay has the note, its text and attachments are cleared and its draft deleted (compose/drafts.js
+  // forgetIfSent), then the composer closes back to where it was opened, as the iPhone's sheet does. Opened as the
+  // first page there's nowhere to go back to, so the result stays with a Done button; the reply box under a thread
+  // (inline) stays, empty, for the next reply. A note no relay took, or a send that failed, keeps its text and
+  // attachments here with its errors, to try again.
   const send = async ({ content, tags }) => {
     setBusy(true)
     try {
       const sent = await publishNote(ctx.vault, ctx.signer, ctx.session.pubkey, content, ctx.account.relays.write, tags)
       setResult(sent)
-      clearDraft(); setMention(null)
-      if (!inline && reachedRelay(sent)) {
-        if (canGoBack()) history.back()
-        else setFinished(true)
-      }
+      setMention(null)
+      const cleared = await forgetIfSent(sent, { stopSaving: () => setLoaded(null), clear: clearSent, saving, drafts: drafts.current, key })
+      if (!cleared) setErr(NOT_SENT)
+      else if (inline) setLoaded(key) // saving again, for the next reply
+      else if (canGoBack()) history.back()
+      else setFinished(true)
     } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
   }
 
@@ -448,8 +453,10 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
   )
 }
 
-/** Whether any relay other than this machine's own took the note. */
-export const reachedRelay = result => !!result?.relays?.some(r => !r.local && r.ok)
+/** Whether any relay other than this machine's own took the note (compose/drafts.js). */
+export { reachedRelay } from "./compose/drafts.js"
+/** Under a note no relay took: it's all still in the box. */
+export const NOT_SENT = "Not sent to any relay. Your text and attachments are still here: try again."
 
 /** Writing one attachment's NIP-92 alt (ComposeView+Chrome altEditorSheet). */
 function AltDialog({ value, video, onSave, onClose }) {
