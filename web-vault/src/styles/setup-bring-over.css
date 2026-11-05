@@ -1,4 +1,4 @@
-/* First-run "Already using Nostr Vault on another device?" (screens/SetupBringOver.jsx), in the splash's column as
+/* First sign-in's import choice (screens/SetupBringOver.jsx), in the splash's column as
    "Getting your vault ready" (vault-ready.css). */
 .setup-bring { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; gap: 14px;
   padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); max-width: 440px; margin: 0 auto; text-align: center; }
@@ -6,6 +6,8 @@
 .setup-bring h1 { margin: 4px 0 0; font: var(--t-title2); text-wrap: balance; }
 .setup-choice { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; padding: 14px 16px; border-radius: var(--radius); border: 1px solid var(--hair); background: var(--s1); color: var(--text); }
 .setup-choice.primary { border-color: var(--accent); }
+.setup-choice { cursor: pointer; }
+.setup-choice.disabled, .setup-choice:disabled { opacity: .6; cursor: default; }
 .setup-choice-title { font: var(--t-body); font-weight: 600; }
 .setup-choice-detail { font: var(--t-foot); color: var(--text-2); }
 .setup-bring .pair-words { text-align: left; }
