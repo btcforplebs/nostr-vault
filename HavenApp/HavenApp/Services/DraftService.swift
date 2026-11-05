@@ -42,8 +42,9 @@ class DraftService: ObservableObject {
 
     /// Pending saves that failed relay sync. Drained when relay comes online.
     private var pendingSaves: [Draft] = []
-    /// Draft IDs deleted while relay was offline. Applied when relay comes online.
-    private var pendingDeletes: Set<String> = []
+    /// Drafts deleted while relay was offline, with the account each was
+    /// deleted as. Applied when relay comes online and that account is active.
+    private var pendingDeletes: Set<PendingDraftDelete> = []
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -101,36 +102,58 @@ class DraftService: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+
+        // Queued items for an account go out once it is active again.
+        ConfigService.shared.$config
+            .map(\.activeAccountNpub)
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, RelayProcessManager.shared.state == .running,
+                      !self.pendingSaves.isEmpty || !self.pendingDeletes.isEmpty else { return }
+                Task { await self.flushPending() }
+            }
+            .store(in: &cancellables)
     }
 
     private func syncOnRelayReady() async {
-        // 1. Flush pending deletes
-        for draftId in pendingDeletes {
-            await deleteFromRelay(id: draftId)
-        }
-        pendingDeletes.removeAll()
-
-        // 2. Flush pending saves
-        for draft in pendingSaves {
-            await saveToRelay(draft: draft)
-        }
-        pendingSaves.removeAll()
-
+        await flushPending()
         // 3. Fetch from relay and merge with local cache
         await fetchDrafts()
     }
+
+    /// Sends the queued deletes, then saves, that belong to the active
+    /// account; the rest stay queued for theirs (DraftSyncPlan).
+    private func flushPending() async {
+        let active = NostrService.shared.activeHexPubkey
+        let deletes = DraftSyncPlan.split(Array(pendingDeletes), author: \.pubkey, active: active)
+        pendingDeletes = Set(deletes.later)
+        for item in deletes.now {
+            await deleteFromRelay(id: item.id, as: item.pubkey)
+        }
+        let saves = DraftSyncPlan.split(pendingSaves, author: \.pubkey, active: active)
+        pendingSaves = saves.later
+        for draft in saves.now {
+            await saveToRelay(draft: draft)
+        }
+    }
+
 
     // MARK: - Save Draft
 
     /// Save a draft locally first (guaranteed), then sync to the /private relay.
     /// Because kind 31234 is a parameterized replaceable event, re-publishing with the
     /// same `d` tag automatically replaces the previous version in the relay store.
+    /// `authorPubkey`: the account the composer writes as (hex); nil is the
+    /// active account. A switch while typing must not move the draft.
     func saveDraft(
         draftId: String,
         content: String,
         replyTo: FeedNote?,
         quoteTo: FeedNote?,
-        taggedPubkeys: [String]
+        taggedPubkeys: [String],
+        authorPubkey: String? = nil
     ) async {
         // 1. Always update local state + disk first (guaranteed persistence)
         let draft = saveDraftLocally(
@@ -138,7 +161,8 @@ class DraftService: ObservableObject {
             content: content,
             replyTo: replyTo,
             quoteTo: quoteTo,
-            taggedPubkeys: taggedPubkeys
+            taggedPubkeys: taggedPubkeys,
+            authorPubkey: authorPubkey
         )
 
         // 2. Attempt relay sync
@@ -161,7 +185,8 @@ class DraftService: ObservableObject {
         content: String,
         replyTo: FeedNote?,
         quoteTo: FeedNote?,
-        taggedPubkeys: [String]
+        taggedPubkeys: [String],
+        authorPubkey: String? = nil
     ) -> Draft {
         // Build tags — mirror the NIP-10 tag logic from ComposeView.postNote()
         var tags: [[String]] = [
@@ -209,7 +234,7 @@ class DraftService: ObservableObject {
         let draft = Draft(
             id: draftId,
             content: content,
-            pubkey: NostrService.shared.activeHexPubkey,
+            pubkey: (authorPubkey?.isEmpty == false ? authorPubkey : nil) ?? NostrService.shared.activeHexPubkey,
             replyToId: replyTo?.id,
             rootId: replyTo?.tags.first(where: { $0.count >= 4 && $0[0] == "e" && $0[3] == "root" })?[1],
             quoteId: quoteTo?.id,
@@ -231,6 +256,13 @@ class DraftService: ObservableObject {
 
     /// Sign and send a draft event to the relay.
     private func saveToRelay(draft: Draft) async {
+        // Signed with the active key: another account's draft waits for its
+        // own (it used to be stored signed by whoever was active).
+        guard DraftSyncPlan.isDue(author: draft.pubkey, active: NostrService.shared.activeHexPubkey) else {
+            pendingSaves.removeAll { $0.id == draft.id }
+            pendingSaves.append(draft)
+            return
+        }
         guard let event = await NostrService.shared.signEventAsync(
             kind: 31234, content: draft.content, tags: draft.tags
         ) else { return }
@@ -297,6 +329,8 @@ class DraftService: ObservableObject {
 
     /// Remove a draft locally and send a kind 5 deletion event to the relay.
     func deleteDraft(id draftId: String) async {
+        // The account it was deleted as: its own draft, whoever is active later.
+        let author = drafts.first(where: { $0.id == draftId })?.pubkey ?? NostrService.shared.activeHexPubkey
         // Always remove from local state + disk immediately
         drafts.removeAll { $0.id == draftId }
         pendingSaves.removeAll { $0.id == draftId }
@@ -305,14 +339,21 @@ class DraftService: ObservableObject {
         // Attempt relay-side deletion
         let relayReady = await RelayProcessManager.shared.ensureRelayReady(timeout: 5.0)
         if relayReady {
-            await deleteFromRelay(id: draftId)
+            await deleteFromRelay(id: draftId, as: author)
         } else {
-            pendingDeletes.insert(draftId)
+            pendingDeletes.insert(PendingDraftDelete(id: draftId, pubkey: author))
         }
     }
 
-    private func deleteFromRelay(id draftId: String) async {
-        let pubkey = NostrService.shared.activeHexPubkey
+    /// The kind 5 names `author`'s draft and is signed by the active key, so
+    /// it waits until that account is active (DraftSyncPlan).
+    private func deleteFromRelay(id draftId: String, as author: String?) async {
+        let active = NostrService.shared.activeHexPubkey
+        guard DraftSyncPlan.isDue(author: author, active: active) else {
+            pendingDeletes.insert(PendingDraftDelete(id: draftId, pubkey: author))
+            return
+        }
+        let pubkey = (author?.isEmpty == false ? author! : active)
         let aTag = "31234:\(pubkey):\(draftId)"
         if let event = await NostrService.shared.signEventAsync(
             kind: 5, content: "", tags: [["a", aTag]]

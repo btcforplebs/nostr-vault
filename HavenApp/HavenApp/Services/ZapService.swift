@@ -12,11 +12,16 @@ class ZapService: ObservableObject {
         case invoiceFetchFailed
         case paymentFailed(String)
         case signFailed
-        
+        /// The provider's invoice was not for the amount asked (ZapInvoiceCheck).
+        case wrongInvoiceAmount
+        case invoiceExpired
+
         var errorDescription: String? {
             switch self {
             case .lnurlResolutionFailed: return "Failed to resolve Lightning Address"
             case .invoiceFetchFailed: return "Failed to fetch invoice from provider"
+            case .wrongInvoiceAmount: return "The zap server asked for a different amount. Nothing was paid."
+            case .invoiceExpired: return "The zap server's invoice had already expired. Nothing was paid."
             case .paymentFailed(let msg): return "Payment failed: \(msg)"
             case .signFailed: return "Failed to sign Zap Request"
             }
@@ -137,7 +142,19 @@ class ZapService: ObservableObject {
                 throw ZapError.invoiceFetchFailed
             }
             
-            // 4. Pay via NWC
+            // 4. Never pay more than was asked, or a dead invoice (LUD-06).
+            switch ZapInvoiceCheck.problem(invoice: invoice, amountMsat: amountMsat) {
+            case .wrongAmount?:
+                RelayProcessManager.shared.addLog("Zap: invoice amount does not match \(amountMsat) msat; not paying", level: "ERROR")
+                throw ZapError.wrongInvoiceAmount
+            case .expired?:
+                RelayProcessManager.shared.addLog("Zap: invoice already expired; not paying", level: "ERROR")
+                throw ZapError.invoiceExpired
+            case nil:
+                break
+            }
+
+            // 5. Pay via NWC
             do {
                 let preimage = try await NWCService.payInvoice(bolt11: invoice)
                 RelayProcessManager.shared.addLog("Zap: Successfully paid! Preimage: \(preimage)", level: "INFO")

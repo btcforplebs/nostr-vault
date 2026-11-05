@@ -305,7 +305,13 @@ struct ComposeView: View {
                 // A reply for another account's note: be that account before
                 // anything is typed, so the avatar, the signer and a remote
                 // signer's connection are all that account's.
-                if postAsPicked == nil { postAsPicked = postAs }
+                // Every note is locked to the account it was opened as, not
+                // just replies (PostingAccount.composerAccount).
+                if postAsPicked == nil {
+                    postAsPicked = PostingAccount.composerAccount(postAs: postAs,
+                                                                  active: configService.config.activeAccountNpub,
+                                                                  owner: configService.config.ownerNpub)
+                }
                 if let npub = PostingAccount.switchTarget(postAs: postAsPicked,
                                                           active: configService.config.activeAccountNpub,
                                                           owner: configService.config.ownerNpub) {

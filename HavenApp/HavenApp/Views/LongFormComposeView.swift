@@ -27,6 +27,9 @@ struct LongFormComposeView: View {
     @State private var categories = ""
 
     @State private var isPosting = false
+    /// The account active when this composer opened; a switch since then
+    /// refuses to post rather than sign as the other account.
+    @State private var openedAs: PostingAccount.Lock?
     @State private var status: String?
     @State private var error: String?
     @StateObject private var drafts: ComposerDraftKeeper
@@ -249,7 +252,11 @@ struct LongFormComposeView: View {
         }
         .onChange(of: currentDraft) { _, draft in drafts.changed(draft, cover: coverData) }
         .onChange(of: coverData) { _, cover in drafts.changed(currentDraft, cover: cover) }
-        .onAppear { if let opening, title.isEmpty, body_.isEmpty { open(opening) } }
+        .onAppear {
+            // Posts as the account it was opened as (PostingAccount.composerAccount).
+            if openedAs == nil { openedAs = ModePostPublisher.lockAccount(configService: configService) }
+            if let opening, title.isEmpty, body_.isEmpty { open(opening) }
+        }
         // Swiping the sheet away keeps the draft, like Save Draft.
         .onDisappear { drafts.saveNow(currentDraft, cover: coverData) }
         .confirmationDialog(isRecipe ? "Save this recipe as a draft?" : "Save this article as a draft?",
@@ -355,7 +362,7 @@ struct LongFormComposeView: View {
     private func publish() {
         isPosting = true
         error = nil
-        let lock = ModePostPublisher.lockAccount(configService: configService)
+        let lock = openedAs ?? ModePostPublisher.lockAccount(configService: configService)
         Task {
             do {
                 var imageURL: URL?

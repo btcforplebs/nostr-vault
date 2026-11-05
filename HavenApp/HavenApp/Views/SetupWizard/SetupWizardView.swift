@@ -375,6 +375,15 @@ struct SetupWizardView: View {
     /// (iPhone/iPad) to its key step; full setup and browse (Mac) both start
     /// at identity.
     private func choosePath(_ path: SetupPath) {
+        // Another way in starts over: a key typed or generated for the
+        // earlier way must not carry into this one (bug hunt 2026-11-05).
+        if SetupOwnerKey.resetsTypedKeys(from: setupPath, to: path) {
+            npub = ""
+            nsec = ""
+            nsecPassword = ""
+            bunkerURI = ""
+            signingMode = "local"
+        }
         setupPath = path
         // Follows picked on an earlier way through are not this run's.
         SetupReferral().pendingFollows = []
@@ -502,6 +511,7 @@ struct SetupWizardView: View {
     }
 
     private func saveIntermediateConfig() {
+        let previousNpub = configService.config.ownerNpub
         configService.config.ownerNpub = npub
         // Browse / New to Nostr mode: set default localhost relay URL so the local relay can start
         configService.config.relayURL = ((setupPath == .browse || setupPath == .newToNostr || setupPath == .useNostr) && relayURL.isEmpty)
@@ -530,7 +540,17 @@ struct SetupWizardView: View {
 
         if signingMode == "nip46" {
             configService.config.nip46BunkerURI = bunkerURI
-        } else if !nsec.isEmpty && !nsecPassword.isEmpty {
+        }
+        // The saved owner key must be this npub's: write this run's, or clear
+        // one left from another account (SetupOwnerKey). Only looked at when
+        // the npub changed, so the key is not decrypted on every step.
+        let npubChanged = previousNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+            != npub.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stored: SetupOwnerKey.Stored = npubChanged
+            ? SetupStoredOwnerKey.stored(in: configService.config, for: npub) : .matches
+        switch SetupOwnerKey.action(typedKey: !nsec.isEmpty, hasPassword: !nsecPassword.isEmpty,
+                                    signer: signingMode == "nip46", npubKnown: !npub.isEmpty, stored: stored) {
+        case .write:
             do {
                 configService.config.ownerNcryptsec = try NIP49Service.encrypt(nsec: nsec, password: nsecPassword)
                 configService.config.ownerNsec = ""
@@ -540,6 +560,10 @@ struct SetupWizardView: View {
                 showSetupError = true
                 return
             }
+        case .clear:
+            SetupStoredOwnerKey.clear(in: &configService.config)
+        case .keep:
+            break
         }
         configService.save()
     }

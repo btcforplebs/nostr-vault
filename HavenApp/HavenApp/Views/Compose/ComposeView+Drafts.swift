@@ -57,7 +57,8 @@ extension ComposeView {
                     content: convertMentionsToNostr(content),
                     replyTo: effectiveReplyTo,
                     quoteTo: effectiveQuoteTo,
-                    taggedPubkeys: taggedPubkeys
+                    taggedPubkeys: taggedPubkeys,
+                    authorPubkey: draftAuthorHex
                 )
             }
         }
@@ -104,7 +105,8 @@ extension ComposeView {
                     content: convertMentionsToNostr(content),
                     replyTo: effectiveReplyTo,
                     quoteTo: effectiveQuoteTo,
-                    taggedPubkeys: taggedPubkeys
+                    taggedPubkeys: taggedPubkeys,
+                    authorPubkey: draftAuthorHex
                 )
             }
         }
@@ -149,5 +151,14 @@ extension ComposeView {
         } else {
             draftQuoteTo = nil
         }
+    }
+}
+
+extension ComposeView {
+    /// The account this composer writes as (hex), so a switch while typing
+    /// never moves the draft to another account.
+    var draftAuthorHex: String? {
+        guard let npub = postAsPicked, let hex = Bech32.decode(npub)?.hexString, !hex.isEmpty else { return nil }
+        return hex
     }
 }
