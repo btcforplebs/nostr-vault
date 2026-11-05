@@ -125,7 +125,8 @@ data class ImportJobs(
 
         /** One line per range not read: "nostr.wine: 2023-01-01 to 2026-11-05 (silent)". */
         fun unreadLines(job: Job): List<String> = job.unread.map { u ->
-            val host = u.relay.removePrefix("wss://").removePrefix("ws://").trimEnd('/')
+            // The host alone: a path can be a secret (the other vault's link token, a mesh ingress token).
+            val host = u.relay.removePrefix("wss://").removePrefix("ws://").substringBefore('/').substringBefore('?')
             val why = when (u.why) {
                 "silent" -> "didn't answer"
                 "not_read_yet" -> "not read yet"
