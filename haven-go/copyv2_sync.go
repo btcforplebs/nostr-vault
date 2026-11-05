@@ -1,0 +1,566 @@
+//go:build !(js && wasm)
+
+package main
+
+// Mesh vault copy v2: the catch-up on every reconnect (docs/MESH_COPY_V2_CONTRACT.md §6).
+// An id-list diff over the copy token, not NIP-77: the engine holds no owner
+// key to answer NIP-42 for /private and /chat. Every event either side takes
+// from the other goes through importOne, the restore's own checks (id,
+// signature, the store's author rule, NIP-09 deletions): audit #14.
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"maps"
+	"net/http"
+	"os"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/fiatjaf/eventstore"
+	"github.com/nbd-wtf/go-nostr"
+)
+
+// copySyncStores: the stores the catch-up keeps the same on both devices.
+var copySyncStores = []string{"outbox", "private", "chat", "inbox"}
+
+const (
+	copySyncPage     = 5000
+	copySyncBatch    = 500
+	copySyncMaxBody  = 32 << 20
+	copySyncOverlap  = 7 * 24 * time.Hour // gift wraps backdate up to 2 days
+	copySyncFile     = "copy_sync.json"
+	copySyncMaxFiles = 2000
+)
+
+func copySyncDB(store string) DBBackend {
+	if !slices.Contains(copySyncStores, store) {
+		return nil
+	}
+	return dbs[store]
+}
+
+// ─── A: the endpoints ──────────────────────────────────────────────────────
+
+func (s *copyServer) store(name string) DBBackend {
+	if s.syncDB != nil {
+		return s.syncDB(name)
+	}
+	return copySyncDB(name)
+}
+
+func (s *copyServer) serveSync(w http.ResponseWriter, r *http.Request, what string) {
+	if _, ok := s.bearer(r); !ok {
+		http.Error(w, "auth_refused", http.StatusUnauthorized)
+		return
+	}
+	ctx := r.Context()
+	q := r.URL.Query()
+	switch {
+	case what == "ids" && r.Method == http.MethodGet:
+		db := s.store(q.Get("store"))
+		if db == nil {
+			http.Error(w, "unknown store", http.StatusBadRequest)
+			return
+		}
+		since, _ := strconv.ParseInt(q.Get("since"), 10, 64)
+		until, _ := strconv.ParseInt(q.Get("until"), 10, 64)
+		ids, more, err := copyListIDs(ctx, db, since, until)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		copyJSON(w, http.StatusOK, map[string]any{"ids": ids, "more": more})
+	case what == "events" && r.Method == http.MethodPost:
+		var req struct {
+			Store string   `json:"store"`
+			IDs   []string `json:"ids"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || len(req.IDs) > copySyncBatch {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		db := s.store(req.Store)
+		if db == nil {
+			http.Error(w, "unknown store", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_ = copyWriteEvents(ctx, db, req.IDs, w)
+	case what == "put" && r.Method == http.MethodPost:
+		db := s.store(q.Get("store"))
+		if db == nil {
+			http.Error(w, "unknown store", http.StatusBadRequest)
+			return
+		}
+		st, err := importDBStats(ctx, db, io.LimitReader(r.Body, copySyncMaxBody))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		copyJSON(w, http.StatusOK, map[string]int{"stored": st.stored, "dup": st.dup, "skipped": st.skipped, "bad": st.bad})
+	case what == "files" && r.Method == http.MethodGet:
+		since, _ := strconv.ParseInt(q.Get("since"), 10, 64)
+		files, err := copyOwnFilesSince(ctx, since)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		copyJSON(w, http.StatusOK, map[string]any{"files": files})
+	case strings.HasPrefix(what, "file/") && r.Method == http.MethodGet:
+		sha := strings.TrimPrefix(what, "file/")
+		own, err := copyOwnMediaSet(ctx)
+		if err != nil || !own[sha] {
+			// Only own uploads leave over this path (pick 6).
+			http.NotFound(w, r)
+			return
+		}
+		path := copyBlobFile(sha)
+		if path == "" {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeFile(w, r, path)
+	case what == "settings" && r.Method == http.MethodGet:
+		raw, err := os.ReadFile(copySettingsFile)
+		if err != nil || copySettingsRefusal(raw, time.Now()) != "" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(raw)
+	case what == "settings" && r.Method == http.MethodPut:
+		raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		copyJSON(w, http.StatusOK, map[string]string{"settings": storeCopySettings(raw)})
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+// copyListIDs: [id, created_at] newest first in (since..until], one page.
+func copyListIDs(ctx context.Context, db DBBackend, since, until int64) ([][2]any, bool, error) {
+	f := nostr.Filter{Limit: copySyncPage}
+	if since > 0 {
+		ts := nostr.Timestamp(since)
+		f.Since = &ts
+	}
+	if until > 0 {
+		ts := nostr.Timestamp(until)
+		f.Until = &ts
+	}
+	ch, err := db.QueryEvents(eventstore.SetNegentropy(ctx), f)
+	if err != nil {
+		return nil, false, err
+	}
+	var evs []*nostr.Event
+	for ev := range ch {
+		evs = append(evs, ev)
+	}
+	sort.Slice(evs, func(i, j int) bool {
+		if evs[i].CreatedAt != evs[j].CreatedAt {
+			return evs[i].CreatedAt > evs[j].CreatedAt
+		}
+		return evs[i].ID < evs[j].ID
+	})
+	more := len(evs) >= copySyncPage
+	if len(evs) > copySyncPage {
+		evs = evs[:copySyncPage]
+	}
+	out := make([][2]any, len(evs))
+	for i, ev := range evs {
+		out[i] = [2]any{ev.ID, int64(ev.CreatedAt)}
+	}
+	return out, more, nil
+}
+
+// copyWriteEvents writes the events of ids as JSONL. Kind 5 first: a
+// receiver that stores a note before its deletion arrives would keep a
+// deleted note (audit #15).
+func copyWriteEvents(ctx context.Context, db DBBackend, ids []string, w io.Writer) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	ch, err := db.QueryEvents(eventstore.SetNegentropy(ctx), nostr.Filter{IDs: ids})
+	if err != nil {
+		return err
+	}
+	var evs []*nostr.Event
+	for ev := range ch {
+		evs = append(evs, ev)
+	}
+	sort.SliceStable(evs, func(i, j int) bool { return evs[i].Kind == nostr.KindDeletion && evs[j].Kind != nostr.KindDeletion })
+	for _, ev := range evs {
+		// Deleted here but still stored (its kind 5 came in later): never sent.
+		if ev.Kind != nostr.KindDeletion && (isDeleted(ctx, db, ev) || (outboxDB != nil && db != outboxDB && isDeleted(ctx, outboxDB, ev))) {
+			continue
+		}
+		if _, err := fmt.Fprintln(w, ev); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// copyFile is one own upload on the catch-up's list.
+type copyFile struct {
+	SHA256    string `json:"sha256"`
+	Pubkey    string `json:"pubkey"`
+	Type      string `json:"type"`
+	Size      string `json:"size"`
+	CreatedAt int64  `json:"created_at"`
+}
+
+// copyOwnMediaSet: the own uploads (contract §4) on this device, by hash.
+func copyOwnMediaSet(ctx context.Context) (map[string]bool, error) {
+	accounts := copyAccounts()
+	uploaders, _, err := copyOwnBlobRecords(ctx, accounts)
+	if err != nil {
+		return nil, err
+	}
+	named, err := copyNamedByOwnNotes(ctx, accounts)
+	if err != nil {
+		return nil, err
+	}
+	return copyOwnMediaFrom(uploaders, accounts, named), nil
+}
+
+// copyOwnFilesSince: own uploads whose record is at or after since, newest first, capped.
+func copyOwnFilesSince(ctx context.Context, since int64) ([]copyFile, error) {
+	accounts := copyAccounts()
+	_, records, err := copyOwnBlobRecords(ctx, accounts)
+	if err != nil {
+		return nil, err
+	}
+	named, err := copyNamedByOwnNotes(ctx, accounts)
+	if err != nil {
+		return nil, err
+	}
+	var out []copyFile
+	for sha, rec := range records {
+		if int64(rec.CreatedAt) < since || !named[sha][rec.PubKey] || copyBlobFile(sha) == "" {
+			continue
+		}
+		f := copyFile{SHA256: sha, Pubkey: rec.PubKey, CreatedAt: int64(rec.CreatedAt)}
+		if t := rec.Tags.GetFirst([]string{"type", ""}); t != nil {
+			f.Type = (*t)[1]
+		}
+		if t := rec.Tags.GetFirst([]string{"size", ""}); t != nil {
+			f.Size = (*t)[1]
+		}
+		out = append(out, f)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt > out[j].CreatedAt })
+	if len(out) > copySyncMaxFiles {
+		out = out[:copySyncMaxFiles]
+	}
+	return out, nil
+}
+
+// ─── B: the client ─────────────────────────────────────────────────────────
+
+var copySyncMu sync.Mutex
+
+func loadCopySync() map[string]int64 {
+	out := map[string]int64{}
+	if raw, err := os.ReadFile(copySyncFile); err == nil {
+		_ = json.Unmarshal(raw, &out)
+	}
+	return out
+}
+
+// markCopySynced records a good catch-up (or the first copy) with peer at t.
+func markCopySynced(peer string, t int64) {
+	copySyncMu.Lock()
+	defer copySyncMu.Unlock()
+	all := loadCopySync()
+	all[copyPeerKey(peer)] = t
+	raw, _ := json.Marshal(all)
+	tmp := copySyncFile + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o600); err == nil {
+		_ = os.Rename(tmp, copySyncFile)
+	}
+}
+
+// copySyncResult: what one catch-up moved.
+type copySyncResult struct {
+	Got, Sent, Files int
+	Settings         string
+}
+
+func (c *copyClient) store(name string) DBBackend {
+	if c.syncDB != nil {
+		return c.syncDB(name)
+	}
+	return copySyncDB(name)
+}
+
+// sync is one catch-up with A: notes both ways, own files A has, settings.
+func (c *copyClient) sync(ctx context.Context) (copySyncResult, error) {
+	var res copySyncResult
+	c.token = copyPeerToken(c.peer)
+	if c.token == "" {
+		return res, copyErr("auth_refused")
+	}
+	copySyncMu.Lock()
+	last := loadCopySync()[copyPeerKey(c.peer)]
+	copySyncMu.Unlock()
+	started := time.Now().Unix()
+	since := int64(0)
+	if last > 0 {
+		since = last - int64(copySyncOverlap/time.Second)
+	}
+	for _, store := range copySyncStores {
+		db := c.store(store)
+		if db == nil {
+			continue
+		}
+		got, sent, err := c.syncStore(ctx, store, db, since)
+		res.Got += got
+		res.Sent += sent
+		if err != nil {
+			return res, err
+		}
+	}
+	files, err := c.syncFiles(ctx, since)
+	res.Files = files
+	if err != nil {
+		return res, err
+	}
+	res.Settings, _ = c.syncSettings(ctx)
+	markCopySynced(c.peer, started)
+	slog.Info("copy catch-up done", "got", res.Got, "sent", res.Sent, "files", res.Files, "settings", res.Settings)
+	return res, nil
+}
+
+func (c *copyClient) remoteIDs(ctx context.Context, store string, since int64) (map[string]bool, error) {
+	out := map[string]bool{}
+	until := int64(0)
+	for {
+		path := fmt.Sprintf("/copy/v2/sync/ids?store=%s&since=%d", store, since)
+		if until > 0 {
+			path += fmt.Sprintf("&until=%d", until)
+		}
+		resp, err := c.do(ctx, http.MethodGet, path, nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		var page struct {
+			IDs  [][2]json.RawMessage `json:"ids"`
+			More bool                 `json:"more"`
+		}
+		err = func() error {
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return statusError(resp.StatusCode)
+			}
+			return json.NewDecoder(io.LimitReader(resp.Body, 64<<20)).Decode(&page)
+		}()
+		if err != nil {
+			return nil, err
+		}
+		oldest := int64(0)
+		for _, pair := range page.IDs {
+			var id string
+			var at int64
+			if json.Unmarshal(pair[0], &id) != nil || json.Unmarshal(pair[1], &at) != nil {
+				continue
+			}
+			out[id] = true
+			if oldest == 0 || at < oldest {
+				oldest = at
+			}
+		}
+		// A page of one second only would never move: step past it.
+		if !page.More || oldest == 0 || (until > 0 && oldest >= until) {
+			return out, nil
+		}
+		until = oldest
+	}
+}
+
+func copyLocalIDs(ctx context.Context, db DBBackend, since int64) (map[string]bool, error) {
+	f := nostr.Filter{}
+	if since > 0 {
+		ts := nostr.Timestamp(since)
+		f.Since = &ts
+	}
+	ch, err := db.QueryEvents(eventstore.SetNegentropy(ctx), f)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for ev := range ch {
+		out[ev.ID] = true
+	}
+	return out, nil
+}
+
+func (c *copyClient) syncStore(ctx context.Context, store string, db DBBackend, since int64) (got, sent int, err error) {
+	theirs, err := c.remoteIDs(ctx, store, since)
+	if err != nil {
+		return 0, 0, err
+	}
+	mine, err := copyLocalIDs(ctx, db, since)
+	if err != nil {
+		return 0, 0, err
+	}
+	var want, give []string
+	for id := range theirs {
+		if !mine[id] {
+			want = append(want, id)
+		}
+	}
+	for id := range mine {
+		if !theirs[id] {
+			give = append(give, id)
+		}
+	}
+	slices.Sort(want)
+	slices.Sort(give)
+	for start := 0; start < len(want); start += copySyncBatch {
+		batch := want[start:min(start+copySyncBatch, len(want))]
+		body, _ := json.Marshal(map[string]any{"store": store, "ids": batch})
+		resp, err := c.do(ctx, http.MethodPost, "/copy/v2/sync/events", map[string]string{"Content-Type": "application/json"}, body)
+		if err != nil {
+			return got, sent, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return got, sent, statusError(resp.StatusCode)
+		}
+		// Through the restore's checks: id, signature, author rule, deletions.
+		st, err := importDBStats(ctx, db, io.LimitReader(resp.Body, copySyncMaxBody))
+		resp.Body.Close()
+		got += st.stored
+		if err != nil {
+			return got, sent, err
+		}
+	}
+	for start := 0; start < len(give); start += copySyncBatch {
+		batch := give[start:min(start+copySyncBatch, len(give))]
+		var buf bytes.Buffer
+		if err := copyWriteEvents(ctx, db, batch, &buf); err != nil {
+			return got, sent, err
+		}
+		if buf.Len() == 0 {
+			continue
+		}
+		resp, err := c.do(ctx, http.MethodPost, "/copy/v2/sync/put?store="+store, map[string]string{"Content-Type": "application/x-ndjson"}, buf.Bytes())
+		if err != nil {
+			return got, sent, err
+		}
+		var out struct{ Stored int }
+		_ = json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&out)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return got, sent, statusError(resp.StatusCode)
+		}
+		sent += out.Stored
+	}
+	return got, sent, nil
+}
+
+func (c *copyClient) syncFiles(ctx context.Context, since int64) (int, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/copy/v2/sync/files?since=%d", since), nil, nil)
+	if err != nil {
+		return 0, err
+	}
+	var list struct{ Files []copyFile }
+	err = func() error {
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return statusError(resp.StatusCode)
+		}
+		return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&list)
+	}()
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, f := range list.Files {
+		if !isBlobHash(f.SHA256) || copyBlobFile(f.SHA256) != "" {
+			continue
+		}
+		resp, err := c.do(ctx, http.MethodGet, "/copy/v2/sync/file/"+f.SHA256, nil, nil)
+		if err != nil {
+			return n, err
+		}
+		ok := false
+		if resp.StatusCode == http.StatusOK {
+			ok, err = storeCopyBlob(f.SHA256, resp.Body)
+		}
+		resp.Body.Close()
+		if err != nil {
+			return n, err
+		}
+		if !ok {
+			continue
+		}
+		// Its record, in Keep's shape, only now that the file is here.
+		rec := &nostr.Event{PubKey: f.Pubkey, Kind: 24242, CreatedAt: nostr.Timestamp(f.CreatedAt),
+			Tags: nostr.Tags{{"x", f.SHA256}, {"type", f.Type}, {"size", f.Size}}}
+		rec.ID = rec.GetID()
+		if blossomDB != nil {
+			importBlobRecord(ctx, blossomDB, rec, time.Now())
+		}
+		n++
+	}
+	return n, nil
+}
+
+// syncSettings: newest updated_at wins, a tie keeps each side's own.
+func (c *copyClient) syncSettings(ctx context.Context) (string, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/copy/v2/sync/settings", nil, nil)
+	if err != nil {
+		return "", err
+	}
+	theirs, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	resp.Body.Close()
+	var theirStamp int64
+	if resp.StatusCode == http.StatusOK {
+		var s copySettings
+		if json.Unmarshal(theirs, &s) == nil {
+			theirStamp = s.UpdatedAt
+		}
+	}
+	mine := localCopySettingsStamp()
+	switch {
+	case copySettingsNewer(mine, theirStamp):
+		return storeCopySettings(theirs), nil
+	case copySettingsNewer(theirStamp, mine):
+		raw, err := os.ReadFile(copySettingsFile)
+		if err != nil || copySettingsRefusal(raw, time.Now()) != "" {
+			return "refused", nil
+		}
+		resp, err := c.do(ctx, http.MethodPut, "/copy/v2/sync/settings", map[string]string{"Content-Type": "application/json"}, raw)
+		if err != nil {
+			return "", err
+		}
+		resp.Body.Close()
+		return "sent", nil
+	}
+	return "same", nil
+}
+
+// copyOwnMediaFrom is copyOwnMedia's rule on already-collected names.
+func copyOwnMediaFrom(uploaders map[string]string, accounts map[string]bool, named map[string]map[string]bool) map[string]bool {
+	out := map[string]bool{}
+	for _, sha := range slices.Sorted(maps.Keys(uploaders)) {
+		if up := uploaders[sha]; accounts[up] && named[sha][up] {
+			out[sha] = true
+		}
+	}
+	return out
+}

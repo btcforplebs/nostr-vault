@@ -191,7 +191,10 @@ func TestOwnerCanDeleteAnyEvent(t *testing.T) {
 // round brings a deleted event straight back.
 func TestNegStoresSkipDeletedEvents(t *testing.T) {
 	skipWithoutFS(t)
-	owner := hexid('0')
+	// The outbox store takes only signed owner notes whose id is their hash
+	// (audit #14), so the owner here is a real key.
+	ownerKey := newTestKey(t)
+	owner := ownerKey.pk
 	author := hexid('1')
 	setupSyncConfig(owner)
 	config.OwnerPubKey = owner
@@ -199,7 +202,7 @@ func TestNegStoresSkipDeletedEvents(t *testing.T) {
 	ctx := context.Background()
 
 	reply := nostr.Event{ID: hexid('a'), PubKey: author, Kind: nostr.KindTextNote, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"p", owner}}}
-	ownerNote := nostr.Event{ID: hexid('b'), PubKey: owner, Kind: nostr.KindTextNote, CreatedAt: nostr.Now(), Tags: nostr.Tags{}}
+	ownerNote := ownerKey.sign(t, nostr.Event{PubKey: owner, Kind: nostr.KindTextNote, CreatedAt: nostr.Now(), Tags: nostr.Tags{}})
 	deletion := func(id string, target string) *nostr.Event {
 		return &nostr.Event{ID: id, PubKey: owner, Kind: nostr.KindDeletion, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"e", target}}}
 	}

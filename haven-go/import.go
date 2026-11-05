@@ -1013,8 +1013,12 @@ func sanitizeNotifyPreview(s string) string {
 // from a whitelisted key and not already present. Used by the owner catch-up
 // pull to surface notes the owner published from another client.
 func processOwnerEvent(ctx context.Context, ev nostr.RelayEvent, wdbOutbox eventstore.RelayWrapper) {
-	if _, ok := config.WhitelistedPubKeys[ev.PubKey]; !ok {
-		return // relay returned a non-owner event; ignore
+	// An owner's key, and an id that is the hash of the content it signed:
+	// go-nostr checks the signature but trusts the id as sent, so a relay
+	// could file a real note under a made-up id (audit #14; the import's
+	// own rule, import_owner.go verifiedOwnerNote).
+	if !verifiedOwnerNote(ev.Event) {
+		return
 	}
 	if isBlacklisted(ev.PubKey) {
 		return

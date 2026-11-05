@@ -468,6 +468,12 @@ func (s *outboxNegStore) QueryEvents(ctx context.Context, f nostr.Filter) (chan 
 			if ev.Kind == nostr.KindGiftWrap || nostr.IsEphemeralKind(ev.Kind) || nip70.IsProtected(*ev) {
 				continue
 			}
+			// Marked deleted here (its kind 5 is in, the note not yet removed,
+			// as after a restore): never sent back out to be stored again
+			// (audit #15).
+			if ev.Kind != nostr.KindDeletion && isDeleted(ctx, s.outbox.Store, ev) {
+				continue
+			}
 			// A list the relay lacks may be one it replaced with a newer copy
 			// (an edit on another device). Upload ours only when the relay
 			// answered and holds nothing newer; with no relay to ask, never.
@@ -495,8 +501,11 @@ func (s *outboxNegStore) Publish(ctx context.Context, ev nostr.Event) error {
 	// Tombstones only for deletions (below): the sync filter is authors=owner, so other rejects are
 	// either relay misbehavior or whitelist/blacklist state that can change —
 	// both must stay re-fetchable rather than be permanently suppressed.
-	if _, ok := config.WhitelistedPubKeys[ev.PubKey]; !ok {
-		return nil // relay returned a non-owner event
+	// An owner's key, an id that is the hash of what was signed, and a good
+	// signature (audit #14): Mac sync and catch-up stored whatever a relay
+	// listed under an owner key.
+	if !verifiedOwnerNote(&ev) {
+		return nil
 	}
 	if isBlacklisted(ev.PubKey) {
 		return nil
