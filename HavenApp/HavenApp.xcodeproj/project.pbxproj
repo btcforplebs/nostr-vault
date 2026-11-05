@@ -896,6 +896,7 @@
 		7BA99BC18B894F8193CB8130 /* FeedService+NoteBatching.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCC058D0D2E82973E7CFE31 /* FeedService+NoteBatching.swift */; };
 		7BBEF207D9F586EA174A96E4 /* WotNewcomers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DEFE8FD51A67D177C07A118 /* WotNewcomers.swift */; };
 		7BF4ECCAF2166AF9161C3117 /* NVLiveNowLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DF96DD396424A23F4A524CE /* NVLiveNowLogic.swift */; };
+		7C08178B71259541EEB6E414 /* QuitGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 970FDDA6C665527B23121662 /* QuitGuard.swift */; };
 		7C227BD34B8AB5B7878BE831 /* PiPManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87C20D37E2726CA2C9EDD10B /* PiPManager.swift */; };
 		7C5B2634D8A0F0C107BAC582 /* FeedNoteRow+Reactions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D3A3A057633F264653666C6 /* FeedNoteRow+Reactions.swift */; };
 		7C6EA0A3A0D30C9E9064BD3E /* GlobeRelayLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A809D2C83A8A632BD817A269 /* GlobeRelayLink.swift */; };
@@ -1244,6 +1245,7 @@
 		A9F61360795D5D8B2007582E /* BlossomService+Mirroring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80E8DDC285524202934229A5 /* BlossomService+Mirroring.swift */; };
 		A9FB943263163D2D69AFA234 /* VaultDashboardDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = D67ADBC1563448EB3D0AE077 /* VaultDashboardDetails.swift */; };
 		AA107D7B77C75318F5856F10 /* PlayableLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8C3E65ED03CD249289CAA9 /* PlayableLinks.swift */; };
+		AA1CE1E98B83995BB46C09A3 /* QuitGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 970FDDA6C665527B23121662 /* QuitGuard.swift */; };
 		AA59BF000A3A92965CAF6A2B /* FillYourVaultCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 550D9D8D45278CB4685E44C9 /* FillYourVaultCoordinator.swift */; };
 		AA7A14658D6BCB88A3174586 /* RelayLogParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09F904D883705C247E543061 /* RelayLogParser.swift */; };
 		AA8BE2645CF3A87E7AE0DC6C /* ListHistoryScan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 553707F873D13C982C8456E0 /* ListHistoryScan.swift */; };
@@ -2542,6 +2544,7 @@
 		95DDFCB3C82896EDE259BF03 /* NVWidgetBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVWidgetBridge.swift; sourceTree = "<group>"; };
 		95ECDB003F4997CEABAC3644 /* MediaPagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPagerView.swift; sourceTree = "<group>"; };
 		9670761629748C0E0753F7FC /* ProfileLookupBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileLookupBatch.swift; sourceTree = "<group>"; };
+		970FDDA6C665527B23121662 /* QuitGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuitGuard.swift; sourceTree = "<group>"; };
 		976E0C4659DE7076CD1FD9C6 /* SharePortalPosting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharePortalPosting.swift; sourceTree = "<group>"; };
 		981FAE57C3F293056913DDA7 /* DMSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMSearch.swift; sourceTree = "<group>"; };
 		982E5846CE3EB2461F41A4FB /* VaultChangeHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultChangeHandlers.swift; sourceTree = "<group>"; };
@@ -3998,6 +4001,7 @@
 				34A3EE75F17D363C0E2C9E44 /* PublishTargets.swift */,
 				E02263EA7B83AAC9AB47B12A /* PullDownToCloseRule.swift */,
 				32EA96B6514D35753903D9D6 /* QueuedMediaPost.swift */,
+				970FDDA6C665527B23121662 /* QuitGuard.swift */,
 				528D1E62E799D477438A8E24 /* QuoteReference.swift */,
 				771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */,
 				78FF5CDA9642898C97A55DBD /* ReactionGrouping.swift */,
@@ -5473,6 +5477,7 @@
 				3B87F862800C34B5D341E481 /* QueuedMediaPost.swift in Sources */,
 				7E214E76C9C2598A10793820 /* QuickBarRow.swift in Sources */,
 				4977B8CF6B918F5EA4F70BF1 /* QuietNavigationTitle.swift in Sources */,
+				AA1CE1E98B83995BB46C09A3 /* QuitGuard.swift in Sources */,
 				CB6C6600EA69654CCD511E87 /* QuoteReference.swift in Sources */,
 				CF11F2A3B34BC8D6843AE229 /* QuoteReferenceIDs.swift in Sources */,
 				C0B9F2FE9E1B16B2EDA3FA29 /* QuotedEventsView.swift in Sources */,
@@ -6419,6 +6424,7 @@
 				E06E050A55097E0E672B9C3F /* QueuedMediaPost.swift in Sources */,
 				6FADE7F1EE93ECA61C279770 /* QuickBarRow.swift in Sources */,
 				0FE8F2D3C4275D9A807D6DFF /* QuietNavigationTitle.swift in Sources */,
+				7C08178B71259541EEB6E414 /* QuitGuard.swift in Sources */,
 				E215B1FE35EB9D31FF48C426 /* QuoteReference.swift in Sources */,
 				F11DF1086DA8F6B030403814 /* QuoteReferenceIDs.swift in Sources */,
 				363BC094743519D8269457BB /* QuotedEventsView.swift in Sources */,

@@ -2,6 +2,7 @@ import SwiftUI
 import UserNotifications
 #if os(macOS)
 import AppKit
+import Combine
 #endif
 
 @MainActor
@@ -14,6 +15,8 @@ class AppDelegate: NSObject, ObservableObject {
     private var focusResignObserver: NSObjectProtocol?
     private var focusActivateObserver: NSObjectProtocol?
     private var miniaturizeObserver: NSObjectProtocol?
+    /// Set while a quit waits for a restore or backup to finish (QuitGuard).
+    private var quitWhenIdle: AnyCancellable?
     #endif
 
     @MainActor
@@ -175,6 +178,36 @@ class AppDelegate: NSObject, ObservableObject {
             }
         }
     }
+
+    #if os(macOS)
+    /// A restore or backup holds the databases until it ends; quitting in the
+    /// middle used to leave a half-restored vault or a cut-short backup. Ask
+    /// first, and quit by itself once the job is done (QuitGuard).
+    @MainActor
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let relay = RelayProcessManager.shared
+        guard case let .ask(title, detail) = QuitGuard.decision(busyJob: relay.busyJob?.rawValue) else {
+            return .terminateNow
+        }
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.addButton(withTitle: QuitGuard.quitWhenDone)
+        alert.addButton(withTitle: QuitGuard.dontQuit)
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+        // The job may have ended while the alert was up.
+        guard relay.busyJob != nil else { return .terminateNow }
+        quitWhenIdle = relay.$busyJob
+            .first { $0 == nil }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.quitWhenIdle = nil
+                NSApp.reply(toApplicationShouldTerminate: true)
+            }
+        return .terminateLater
+    }
+    #endif
 
     @MainActor
     func applicationWillTerminate(_ notification: Notification) {
