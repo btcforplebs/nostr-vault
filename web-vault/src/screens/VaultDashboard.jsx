@@ -13,6 +13,8 @@ import { HISTORY_DEFAULT_ON, KeepFullSection } from "../components/dashboard/Kee
 import { SettingsSection } from "../components/dashboard/SettingsSection.jsx"
 import { ActivitySection, ActivityWindow } from "../components/dashboard/ActivitySection.jsx"
 import { AdvancedSection } from "../components/dashboard/AdvancedSection.jsx"
+import { YourDevicesSection } from "../components/dashboard/YourDevicesSection.jsx"
+import { PairDevice } from "./PairDevice.jsx"
 import { useBlocks } from "../components/useBlocks.js"
 import { useDmTrust } from "../components/useDmTrust.js"
 import { routeClient, deviceKey } from "../haven/vault.js"
@@ -37,7 +39,9 @@ const toMs = t => (t > 1e12 ? t : t * 1000)
 export function VaultDashboard({ ctx }) {
   const { vault, session, account } = ctx
   const me = session.pubkey
-  const [view, setView] = useState("dashboard") // or "activity" (View All)
+  const [view, setView] = useState("dashboard") // or "activity" (View All), or "pair" (Link a device)
+  const [pairMode, setPairMode] = useState("show") // PairDevice: "show" this browser's code or "scan" the other's
+  const pair = mode => { setPairMode(mode); setView("pair") }
   // Import notes: also ask the history relays (the user's tick, off each time the sheet opens), and the Skip button's
   // signal for the list scan.
   const [historyRelays, setHistoryRelays] = useState(HISTORY_DEFAULT_ON)
@@ -130,13 +134,15 @@ export function VaultDashboard({ ctx }) {
       <div class="dash-scrim" onClick={closeDashboard} />
       <div class="dash-panel">
         <header class="dash-bar-top">
-          {view === "activity" ? <button type="button" class="dash-link" onClick={() => setView("dashboard")}>Back</button> : <span />}
-          <h2 id="dash-title"><DashIcon />{view === "activity" ? "Vault Activity" : "Vault Dashboard"}</h2>
+          {view !== "dashboard" ? <button type="button" class="dash-link" onClick={() => setView("dashboard")}>Back</button> : <span />}
+          <h2 id="dash-title"><DashIcon />{view === "activity" ? "Vault Activity" : view === "pair" ? "Link a device" : "Vault Dashboard"}</h2>
           <button type="button" class="dash-link done" onClick={closeDashboard} autofocus>Done</button>
         </header>
         <div class="dash-scroll">
-          {view === "activity" ? <ActivityWindow items={items} version={`${APP_VERSION}${APP_COMMIT ? ` · ${APP_COMMIT}` : ""}`} /> : <>
+          {view === "activity" ? <ActivityWindow items={items} version={`${APP_VERSION}${APP_COMMIT ? ` · ${APP_COMMIT}` : ""}`} />
+          : view === "pair" ? <PairDevice key={pairMode} ctx={ctx} mode={pairMode} onMode={setPairMode} onClose={() => setView("dashboard")} /> : <>
             <StatusCard syncing={syncing} />
+            <YourDevicesSection ctx={ctx} onPair={pair} />
             <ListWipeBanner ctx={ctx} />
             <SafetySection method={session.method} followSavedAt={followSavedAt} backupAt={history.notesBackup} onBackup={exportFile} backupBusy={jobs.export} />
             <ReachSection trusted={trusted.size} blocked={blocked.size} />
