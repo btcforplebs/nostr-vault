@@ -946,7 +946,7 @@ class ConfigService: ObservableObject {
     /// closes). Also fixes secondary/non-owner accounts never reaching the
     /// relay's blacklist at all, since the relay-level list is global, not
     /// per-account, and previously only the owner's blocks were synced to it.
-    private func syncBlacklistToRelay() {
+    func syncBlacklistToRelay() {
         guard let data = try? JSONEncoder().encode(config.allBlockedNpubsAcrossAccounts),
               let json = String(data: data, encoding: .utf8),
               let cJSON = strdup(json) else { return }
