@@ -19,10 +19,8 @@ struct iPhoneTabView: View {
     /// The tab bar alone, without the mini player above it.
     @State private var tabBarOnlyHeight: CGFloat = 0
     @ObservedObject private var buttonRow = FloatingButtonRow.shared
-    /// The software keyboard is on screen. The bottom inset follows it up,
-    /// so on Search the tab bar would sit over the results while typing.
+    /// The software keyboard is on screen: the dock goes (DockInset.shown).
     @State private var keyboardUp = false
-    private var hidesChromeForKeyboard: Bool { keyboardUp && selectedTab == 1 }
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -68,7 +66,7 @@ struct iPhoneTabView: View {
     private var showsSpace: Bool { usesNoteSplit && isLandscape }
 
     private var dockPlacement: DockInset.Placement {
-        DockInset.placement(dockShown: !hidesChromeForKeyboard && !showsSpace, keyboardUp: keyboardUp)
+        DockInset.placement(dockShown: DockInset.shown(keyboardUp: keyboardUp, sideRail: showsSpace), keyboardUp: keyboardUp)
     }
 
     private var rootDockInset: CGFloat {
@@ -248,8 +246,9 @@ struct iPhoneTabView: View {
         // The dock's band is safe area on the window's root view controller,
         // so picture-in-picture keeps clear of it (DockSafeAreaInset); the dock
         // is drawn in that band. While typing it rides above the keyboard as a
-        // SwiftUI inset, as before. Hidden while typing on Search, so results
-        // get the space, and on the iPad landscape rail.
+        // SwiftUI inset, as before. Hidden while typing on any tab (Logen
+        // 2026-11-05: a DM thread is a Vault page now, and the dock covered
+        // its message box), and on the iPad landscape rail.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if dockPlacement == .swiftUIInset { dock }
         }
