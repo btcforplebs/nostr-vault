@@ -25,7 +25,7 @@ capabilities.
 |------|-------|------|------|
 | `mesh/` | nv-mesh | 0755 | |
 | `mesh/key/nsec` | nv-mesh | dir 0700, file 0600 | The box's mesh key, made on first boot. It is linked into place, never renamed over an existing key, and the directory is fsynced, so a power cut or two racing starts can't change the npub. nv-mesh refuses to use a key that is a symlink, belongs to another uid, can't be made 0600, or doesn't decode, and never replaces such a key. No API may ever serve it. |
-| `mesh/npub` | nv-mesh | 0644 | The box's mesh npub. The owner adds it under My Devices on the phone. |
+| `mesh/npub` | nv-mesh | 0644 | The box's mesh npub. The owner adds it on the phone: Profile › Mesh › My Devices › Add a device, then Paste instead with this npub. |
 | `mesh/status.json` | nv-mesh | 0644 | Written every 5 s. It holds the engine's `NvFipsStatusJSON` plus `npub`, `devices` (count), `error` (plain words, or null) and `updated` (unix s). It is written atomically. havend returns it as `mesh` in `GET /api/box/status`. |
 | `mesh-devices.json` (`NV_MESH_DEVICES`) | havend | readable by nv-mesh | The owner's devices: `["npub1…"]`, `[{"npub":"npub1…","name":"…"}]` or `{"devices":[…]}`. It is re-read every 5 s, and a change restarts the engine (as on the Mac), so a removed device drops at once. If the file is unreadable, the last good list is kept. Bad npubs and the box's own npub are skipped. |
 

@@ -20,6 +20,7 @@ struct PairShowQRView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .accessibilityLabel("Pairing code")
             }
+            PairCodeText(code: qr)
             Text(caption)
                 .font(.appBody)
                 .multilineTextAlignment(.center)
@@ -53,5 +54,32 @@ struct PairCheckWordsView: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// The code under the QR as text, with Copy, for pasting on the other device.
+struct PairCodeText: View {
+    let code: String
+    @State private var copied = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text(code)
+                .font(.appSystem(size: 11, design: .monospaced))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+            Button {
+                PlatformClipboard.copy(code)
+                copied = true
+            } label: {
+                Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+            }
+            .buttonStyle(.bordered)
+            .tint(.havenPurple)
+        }
+        .onChange(of: code) { _, _ in copied = false }
     }
 }

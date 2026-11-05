@@ -1,7 +1,7 @@
 import Foundation
 
 /// The data behind Your space › My devices: the owner's devices from
-/// Settings › Mesh › My Devices, and each one's FIPS overlay advert from the
+/// Profile › Mesh › My Devices, and each one's FIPS overlay advert from the
 /// finder relays (MyDevicesStatus). Reads only; nothing is published.
 @MainActor
 final class MyDevicesPanelModel: ObservableObject {

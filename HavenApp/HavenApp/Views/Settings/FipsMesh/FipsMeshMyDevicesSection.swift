@@ -5,13 +5,15 @@ import SwiftUI
 /// same list both ways (Logen, 2026-10-21: who I reach is who may reach me).
 /// The phone engine has no allowlist yet, so today it is the devices this
 /// phone reaches; nothing here claims more. Tap one for its page; Add a
-/// device by address is the one way in for every role.
+/// device (the two scans, or Paste instead) is the one way in for every role.
 struct FipsMeshMyDevicesSection: View {
     let devices: [MeshDevice]
     /// Owned by the page: the sheet hangs off the page's List. On this
     /// Section it went on every row, so with a device listed two sheets fought
     /// over one flag and Add a device closed as it opened (2026-10-21).
-    @Binding var showAdd: Bool
+    /// The two-scan pairing (PairDeviceView), the one way to add a device; a
+    /// Linux box or browser relay page is pasted there by its address.
+    @Binding var showPair: Bool
     @ObservedObject private var mesh = FipsMeshService.shared
 
     var body: some View {
@@ -24,9 +26,9 @@ struct FipsMeshMyDevicesSection: View {
                 }
             }
             Button {
-                showAdd = true
+                showPair = true
             } label: {
-                Label("Add a device by address", systemImage: "plus.circle.fill")
+                Label("Add a device", systemImage: "plus.circle.fill")
                     .font(.appBody)
                     .foregroundColor(.havenPurple)
             }

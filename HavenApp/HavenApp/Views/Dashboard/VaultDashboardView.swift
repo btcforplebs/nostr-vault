@@ -599,14 +599,13 @@ struct VaultDashboardView: View {
             SettingLink(icon: "photo.on.rectangle", title: "Media servers", value: nil) {
                 MediaServersPage().settingsPage("Media servers")
             }
+            #if os(macOS)
+            // iPhone/iPad: Mesh is on the Profile tab, beside Settings.
             DashboardDivider()
             SettingLink(icon: "point.3.filled.connected.trianglepath.dotted", title: "Mesh settings", value: nil) {
-                #if os(iOS)
-                FipsMeshSettingsView().settingsPage("Mesh")
-                #else
                 MacFipsMeshSettingsView().settingsPage("Mesh")
-                #endif
             }
+            #endif
         }
     }
 

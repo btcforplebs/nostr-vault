@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Your space › My devices: which of your own devices (Settings › Mesh ›
+/// Your space › My devices: which of your own devices (Profile › Mesh ›
 /// My Devices) are on the mesh now, and when each one last was. "Connected
 /// now" comes from this iPad's running mesh engine; the rest from each
 /// device's FIPS overlay advert on the finder relays (MyDevicesStatus).
@@ -9,6 +9,7 @@ struct MyDevicesPanel: View {
     @EnvironmentObject var configService: ConfigService
     @ObservedObject private var mesh = FipsMeshService.shared
     @StateObject private var model = MyDevicesPanelModel()
+    @State private var showPairing = false
 
     private var devices: [MeshDevice] { model.devices(configService.config) }
     private var peers: Set<String> { mesh.status?.running == true ? Set(mesh.status?.peers ?? []) : [] }
@@ -17,7 +18,7 @@ struct MyDevicesPanel: View {
         let devices = devices
         VStack(alignment: .leading, spacing: 10) {
             if devices.isEmpty {
-                Text("No devices yet. Add your home vault, phones or browser vault in Settings › Mesh › My Devices.")
+                Text("No devices yet. Add your Mac, phones or home vault with two scans.")
                     .font(.appSystem(size: 13))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -31,6 +32,16 @@ struct MyDevicesPanel: View {
                     Text("Checking the mesh…").font(.appSystem(size: 12)).foregroundColor(.secondary)
                 }
             }
+            // The same two-scan pairing as the Vault dashboard and Mesh.
+            Button { showPairing = true } label: {
+                Label("Add a device", systemImage: "plus.circle.fill")
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .foregroundColor(.havenPurple)
+            }
+            .buttonStyle(.plain)
+        }
+        .sheet(isPresented: $showPairing) {
+            PairDeviceView().environmentObject(configService)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)

@@ -57,7 +57,7 @@ enum MyDevicesStatus {
         return Status(state: live ? .online : .offline, lastSeen: newest.createdAt)
     }
 
-    /// Above the list (Your space and Settings › Mesh › My Devices): being on
+    /// Above the list (Your space and Profile › Mesh › My Devices): being on
     /// the mesh means your posts and media can be fetched from that device,
     /// not just that it is linked (Logen, 2026-11-04).
     static let header = "Devices on your mesh share your posts and media with people who can reach them."
