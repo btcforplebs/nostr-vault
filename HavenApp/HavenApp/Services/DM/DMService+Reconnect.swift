@@ -136,7 +136,7 @@ extension DMService {
 
     /// Redials the kind 4 inbox when it is the half that died, without
     /// touching the authenticated /chat socket next to it.
-    private func restartNIP04IfNeeded() {
+    func restartNIP04IfNeeded() {
         guard let legacy = nip04Client, legacy.connectionState == .connected else {
             startNIP04Listening()
             return

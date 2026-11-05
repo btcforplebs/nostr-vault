@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import UIKit
+#endif
 import Combine
 
 // MARK: - DMService
@@ -76,6 +79,12 @@ class DMService: ObservableObject {
     var signerRetryAttempt = 0
     /// Parks the queue while a remote signer is not answering.
     var signerGate = SignerWaitGate()
+    /// Wraps the signer refused: asked about again only by Retry
+    /// (DMSignerPolicy, signer audit item 5).
+    var refusedWraps = DMRefusedWraps()
+    /// A NIP-04 DM was left for the foreground because a bunker can't be
+    /// asked from the background; the inbox subscription is renewed then.
+    var nip04HeldForSigner = false
 
     /// /inbox (NIP-04 and the gift wraps stored there) reconnects on its own,
     /// like /chat. Before, it came back only when the app returned to the
@@ -145,6 +154,15 @@ class DMService: ObservableObject {
                 self?.handleAccountSwitch()
             }
             .store(in: &cancellables)
+
+        // Work held back while the app was not in front (a bunker is never
+        // asked then) goes to the signer once it is.
+        #if os(iOS)
+        NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.resumeSignerWorkInFront() }
+            .store(in: &cancellables)
+        #endif
 
         // A block or unblock changes what the inbox shows and the unread badge.
         NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))

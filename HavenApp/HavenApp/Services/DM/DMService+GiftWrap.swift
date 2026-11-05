@@ -46,6 +46,17 @@ extension DMService {
     }
 
     private func processGiftWrap(_ event: NostrEvent, generation: UInt64) async {
+        // A bunker is never asked while the app is not in front (Background
+        // App Refresh): wait, unasked, for the next foreground.
+        guard mayAskActiveSigner else {
+            waitForSigner(event, autoRetry: false)
+            return
+        }
+        // The signer refused this one: only the inbox's Retry asks again.
+        guard refusedWraps.mayAsk(event.id) else {
+            waitForSigner(event, autoRetry: false)
+            return
+        }
         // The signer is not answering: wait with the others, no request.
         guard signerGate.mayAsk(event.id) else {
             waitForSigner(event, autoRetry: true)
@@ -136,6 +147,7 @@ extension DMService {
             sortConversations()
             dmUpdateSubject.send()
             saveConversations()
+            refusedWraps.answered(event.id)
             // The signer answered: the next failure starts the backoff over.
             if signerWaiting.isEmpty { signerRetryAttempt = 0 }
         } catch let error as NIP17Service.NIP17Error {
@@ -147,6 +159,7 @@ extension DMService {
             #endif
             guard self.switchGeneration == generation else { return }
             rememberUnreadableGiftWrap(event.id)
+            refusedWraps.answered(event.id)
             signerAnswered(event.id)
         } catch {
             // Signer offline, timed out or refused: keep it and try again.
@@ -155,7 +168,13 @@ extension DMService {
             #endif
             guard self.switchGeneration == generation else { return }
             let mayAnswerLater = Self.signerMayAnswerLater(error)
-            if mayAnswerLater { signerGate.noAnswer() } else { signerAnswered(event.id) }
+            if mayAnswerLater {
+                signerGate.noAnswer()
+            } else {
+                // Refused or an error that asking again won't change.
+                refusedWraps.refused(event.id)
+                signerAnswered(event.id)
+            }
             waitForSigner(event, autoRetry: mayAnswerLater)
         }
     }
@@ -206,21 +225,34 @@ extension DMService {
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard let self, !Task.isCancelled else { return }
             self.signerRetryTask = nil
-            self.retryWaitingForSigner()
+            self.retryWaitingForSigner(userAsked: false)
         }
     }
 
     /// Sends every waiting message back through the queue. A success clears
     /// it; a failure puts it back in `signerWaiting` and schedules the next try.
-    func retryWaitingForSigner() {
+    /// `userAsked`: the inbox's Retry. Only then do refused wraps go back to
+    /// the signer; an automatic round (a refresh, the next foreground, the
+    /// backoff timer) leaves them waiting, and with a bunker asks nothing at
+    /// all while the app is not in front (signer audit item 5).
+    func retryWaitingForSigner(userAsked: Bool = true) {
         guard !signerWaiting.isEmpty else { return }
+        if userAsked {
+            refusedWraps.userAskedAgain()
+        } else if !mayAskActiveSigner {
+            return
+        }
         // Asked for (Retry, refresh): once the automatic rounds are used up,
         // this allows one more, so a signer that comes back still gets asked.
         if signerRetryTask == nil { signerRetryAttempt = min(signerRetryAttempt, Self.maxSignerRetries - 1) }
         // Parked after a timeout: ask about the newest wrap only. Its answer
         // releases the rest; no answer parks them all for the next round.
+        // The probe is a wrap the signer may be asked about: a refused one
+        // would wait unasked and hold the whole queue behind it.
         if signerGate.parked,
-           let newest = signerWaiting.values.max(by: { $0.created_at < $1.created_at }) {
+           let newest = signerWaiting.values
+               .filter({ userAsked || !refusedWraps.isRefused($0.id) })
+               .max(by: { $0.created_at < $1.created_at }) {
             signerGate.probe(newest.id)
             signerWaiting.removeValue(forKey: newest.id)
             waitingForSignerCount = signerWaiting.count
@@ -244,6 +276,7 @@ extension DMService {
         signerRetryTask = nil
         signerRetryAttempt = 0
         signerGate.reset()
+        refusedWraps.reset()
         signerWaiting.removeAll()
         waitingForSignerCount = 0
     }
