@@ -11,8 +11,16 @@ enum DockInset {
         case rootBand
         /// Today's SwiftUI `.safeAreaInset`, above the keyboard.
         case swiftUIInset
-        /// No dock (typing on Search, the iPad landscape rail).
+        /// No dock (typing, the iPad landscape rail).
         case none
+    }
+
+    /// Whether the dock (tab bar + mini player) is drawn at all. Never while
+    /// the keyboard is up, on any tab or pushed page: it covered the message
+    /// box of a DM thread (a Vault page since 2026-11-03, no longer a sheet)
+    /// and Search's results. Never beside the iPad landscape rail.
+    static func shown(keyboardUp: Bool, sideRail: Bool) -> Bool {
+        !keyboardUp && !sideRail
     }
 
     static func placement(dockShown: Bool, keyboardUp: Bool) -> Placement {
