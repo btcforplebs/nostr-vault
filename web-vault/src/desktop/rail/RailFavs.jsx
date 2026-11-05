@@ -4,12 +4,16 @@
 import { Avatar } from "../../components/Avatar.jsx"
 import { useProfile } from "../../components/useProfile.js"
 import { FEED_ICON, LIST_ICON } from "../../components/FeedPickerMenu.jsx"
-import { pinHref, pinKey, relayName } from "./rail-favs.js"
+import { pinHref, pinKey, relayName, feedPinToWeb } from "./rail-favs.js"
 import { Icon, ICON } from "../icons.jsx"
 
 // Each drawn section's name and its shortcut (desktop/keys.js), for the tooltips.
 export const SECTION = { feed: ["Feed", "g f"], search: ["Search", "/"], messages: ["Messages", "g m"], wot: ["WoT", "g w"], vault: ["Vault", "g v"], profile: ["Profile", "g p"] }
-export const KIND_NAME = { person: "Person", hashtag: "Hashtag", list: "List", relay: "Relay" }
+export const KIND_NAME = { person: "Person", hashtag: "Hashtag", list: "List", relay: "Relay", feed: "Feed" }
+
+/** A feed pin's name, as the Feed's picker says it (iPhone FeedMode.displayName). */
+export const FEED_NAME = { discovery: "Discover", global: "Global", hashtags: "Hashtags", popular: "Popular", media: "Media",
+  reels: "diVines", articles: "Articles", recipes: "Recipes", marketplace: "Marketplace", live: "Live", polls: "Polls", music: "Music" }
 
 /** A pin's name in full, for its tooltip and the edit list. The live name wins over the one saved when it was pinned. */
 export function pinTitle(p, profile) {
@@ -19,6 +23,7 @@ export function pinTitle(p, profile) {
     case "hashtag": return `#${p.t}`
     case "list": return p.name || p.a.slice(p.a.indexOf(":", 6) + 1)
     case "relay": return relayName(p.url)
+    case "feed": return FEED_NAME[p.id] ?? p.id
     default: return p.name || p.type
   }
 }
@@ -26,7 +31,8 @@ export function pinTitle(p, profile) {
 /** A pin's icon (a person shows their face). */
 export function PinIcon({ pin, size = 20 }) {
   if (pin.type === "person") return <Avatar pubkey={pin.p} size={size + 6} />
-  const d = pin.type === "section" ? ICON[pin.id] : pin.type === "hashtag" ? FEED_ICON.hashtag : pin.type === "relay" ? FEED_ICON.relay : LIST_ICON
+  const d = pin.type === "section" ? ICON[pin.id] : pin.type === "hashtag" ? FEED_ICON.hashtag : pin.type === "relay" ? FEED_ICON.relay
+    : pin.type === "feed" ? FEED_ICON[feedPinToWeb(pin.id)] ?? LIST_ICON : LIST_ICON
   return <Icon d={d} size={size} />
 }
 
