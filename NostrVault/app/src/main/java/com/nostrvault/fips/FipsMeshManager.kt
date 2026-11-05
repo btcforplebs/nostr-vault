@@ -93,6 +93,9 @@ class FipsMeshManager @Inject constructor(
     /** The allowlist the running engine started with; null before the first start. */
     @Volatile private var engineOwnDevices: List<String>? = null
 
+    /** Whether a phone was linked when the running engine started ([MeshEnginePlan.hasLinkedPhone]). */
+    @Volatile private var engineHasLinkedPhone = false
+
     /** One restart at a time: setPeers and the My Devices watch can both ask. */
     private val restartLock = kotlinx.coroutines.sync.Mutex()
 
@@ -101,14 +104,18 @@ class FipsMeshManager @Inject constructor(
         // when it changes. setPeers restarts on its own; this covers the home vault, which is
         // set from elsewhere (HomeVaultSender.setHomeVault).
         appScope.launch {
+            // So does a phone becoming (or no longer being) linked, which turns the own-devices share on or off.
             configStore.config
-                .map { MeshEnginePlan.ownDevices(it, _status.value.npub) }
+                .map { MeshEnginePlan.ownDevices(it, _status.value.npub) to MeshEnginePlan.hasLinkedPhone(it) }
                 .distinctUntilChanged()
                 .collect {
                     withContext(Dispatchers.IO) {
                         restartKeepingAllowance(onlyIf = {
-                            engineOwnDevices != null &&
-                                MeshEnginePlan.ownDevices(configStore.config.value, _status.value.npub) != engineOwnDevices
+                            val config = configStore.config.value
+                            engineOwnDevices != null && (
+                                MeshEnginePlan.ownDevices(config, _status.value.npub) != engineOwnDevices ||
+                                    MeshEnginePlan.hasLinkedPhone(config) != engineHasLinkedPhone
+                                )
                         })
                     }
                 }
@@ -152,9 +159,14 @@ class FipsMeshManager @Inject constructor(
 
         val rc = FipsBridge.start(nsec, startOptions())
         if (rc == 0) {
-            // A restart inside the copy window (the link's own My Devices restart among them) keeps the copy share.
-            if (configStore.config.value.fipsShareRelay) offerRelay()
-            else if (OtherVaultCopy.open(copyShareUntil, System.currentTimeMillis())) offerToOwnDevices()
+            // Share on: full sharing. Off: own devices still get the vault while a phone is linked (its sends must
+            // arrive) or inside the copy window (the link's own My Devices restart among them).
+            val config = configStore.config.value
+            engineHasLinkedPhone = MeshEnginePlan.hasLinkedPhone(config)
+            if (config.fipsShareRelay) offerRelay()
+            else if (engineHasLinkedPhone ||
+                OtherVaultCopy.open(copyShareUntil, System.currentTimeMillis())
+            ) offerToOwnDevices()
             // B: the other vault's lasting address comes back with the engine it forwards through.
             otherVaultLink.restore()
         }
@@ -310,7 +322,9 @@ class FipsMeshManager @Inject constructor(
      */
     suspend fun shareForCopy(): Boolean = withContext(Dispatchers.IO) {
         val running = FipsBridge.status().running
-        val sharing = configStore.config.value.fipsShareRelay
+        val config = configStore.config.value
+        // A linked phone already has own devices shared (exported at the engine's start): that covers the copy.
+        val sharing = config.fipsShareRelay || MeshEnginePlan.sharesWithLinkedPhones(config)
         if (!OtherVaultCopy.sharesAfterLink(running, sharing)) return@withContext running
         copyShareUntil = System.currentTimeMillis() + OtherVaultCopy.SHARE_WINDOW_MS
         offerToOwnDevices()
@@ -320,7 +334,9 @@ class FipsMeshManager @Inject constructor(
             // Withdrawing means dropping the endpoint (no un-export), unless Share was turned on meanwhile.
             changeLock.withLock {
                 restartKeepingAllowance(onlyIf = {
-                    !configStore.config.value.fipsShareRelay && !OtherVaultCopy.open(copyShareUntil, System.currentTimeMillis())
+                    val config = configStore.config.value
+                    !config.fipsShareRelay && !MeshEnginePlan.sharesWithLinkedPhones(config) &&
+                        !OtherVaultCopy.open(copyShareUntil, System.currentTimeMillis())
                 })
             }
             refresh()
