@@ -14,19 +14,28 @@ import com.nostrvault.relay.HavenConfig
  * it answers no one's offers, so the default install no longer gives its address away (Tron, #1030).
  */
 internal object MeshEnginePlan {
-    /** My Devices as the engine's allowlist: valid mesh npubs, once each, never this phone's own. */
+    /**
+     * My Devices as the engine's allowlist: valid mesh npubs, once each, never this phone's own, and only the owner's.
+     * A device another account linked belongs to that account (Logen 2026-11-05), so it must not reach the owner's
+     * relay port; it gets the door like everyone else (Tron, #1736; the web's ownersForAccount, #1726).
+     */
     fun ownDevices(config: HavenConfig, ownNpub: String?): List<String> =
         (config.fipsPeers + listOfNotNull(config.homeVaultNpub))
             .map { it.trim() }
-            .filter { MyDevicesRules.isMeshNpub(it) && it != ownNpub }
+            .filter { MyDevicesRules.isMeshNpub(it) && it != ownNpub && !othersDevice(config, it) }
             .distinct()
+
+    /** Linked while another account was active. Unlabelled and older devices ("" linkedBy) stay the owner's. */
+    private fun othersDevice(config: HavenConfig, npub: String): Boolean =
+        config.fipsMesh.devices.any { it.npub == npub && !MyDevicesRules.isOwners(it.linkedBy, config.ownerNpub) }
 
     /** Start options. [maxServeBytes] is what this sharing session may still send. */
     fun options(config: HavenConfig, ownNpub: String?, maxServeBytes: Long): FipsStartOptions {
         val own = ownDevices(config, ownNpub)
         return FipsStartOptions(
             // Valid npubs only: a typo typed by hand into the config used to stop the engine.
-            peers = config.fipsPeers.map { it.trim() }.filter { MyDevicesRules.isMeshNpub(it) }.distinct(),
+            // Only the owner's: dialing another account's device would hand it this phone's address.
+            peers = config.fipsPeers.map { it.trim() }.filter { MyDevicesRules.isMeshNpub(it) && !othersDevice(config, it) }.distinct(),
             // FIPS Mesh → Advanced: the finder relays (the same three as iPhone and Mac by default) and the middle server.
             relays = config.fipsMesh.engineFinderRelays,
             publicSeeds = config.fipsMesh.middleServer == FipsMeshSettings.MIDDLE_PUBLIC,

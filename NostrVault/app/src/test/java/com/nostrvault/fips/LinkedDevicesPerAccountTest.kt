@@ -68,4 +68,18 @@ class LinkedDevicesPerAccountTest {
         assertNull(MacSync.macMeshNpub(config(listOf(FipsDevice(othersMac, DeviceRole.MAC, linkedBy = other)))))
         assertEquals(mac, MacSync.macMeshNpub(config(listOf(FipsDevice(othersMac, DeviceRole.MAC, linkedBy = other), FipsDevice(mac, DeviceRole.MAC)))))
     }
+
+    @Test
+    fun `another account's device is not on the engine allowlist and is not dialed`() {
+        val cfg = config(listOf(FipsDevice(mac, DeviceRole.MAC), FipsDevice(othersMac, DeviceRole.MAC, linkedBy = other)))
+        val options = MeshEnginePlan.options(cfg, ownNpub = phone, maxServeBytes = 1)
+        assertEquals(listOf(mac), options.ownDevices)
+        assertEquals(listOf(mac), options.peers)
+    }
+
+    @Test
+    fun `a device the owner linked while active stays on the allowlist`() {
+        val cfg = config(listOf(FipsDevice(mac, DeviceRole.MAC, linkedBy = owner)))
+        assertEquals(listOf(mac), MeshEnginePlan.ownDevices(cfg, ownNpub = phone))
+    }
 }
