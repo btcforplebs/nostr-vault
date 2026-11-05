@@ -29,7 +29,7 @@ const OTHER_SK = generateSecretKey(), OTHER = getPublicKey(OTHER_SK)
 const signed = (sk, kind, content, created_at = 1000) => finalizeEvent({ kind, content, tags: [], created_at }, sk)
 
 test("groups are the phone's, each row with a page or a screen to go to; every settings page is a row", () => {
-  assert.deepEqual(SETTINGS_GROUPS.map(g => g.title), ["Account", "Relays", "Your Vault", "Advanced"])
+  assert.deepEqual(SETTINGS_GROUPS.map(g => g.title), ["Account", "Feed & Display", "Notifications", "Relays", "Your Vault", "Advanced"])
   const rows = SETTINGS_GROUPS.flatMap(g => g.rows)
   assert.equal(rows.find(r => r.id === "accounts").href, "#/accounts")
   // The phone's row titles and tile colours (SettingsView.SettingsTab, iconBackgroundColor)
@@ -39,7 +39,7 @@ test("groups are the phone's, each row with a page or a screen to go to; every s
   assert.equal(rows.find(r => r.id === "relay-access").href, "#/relay")
   assert.equal(rows.find(r => r.id === "wallet").href, "#/wallet")
   for (const r of rows) assert.match(r.href, /^#\/[a-z-]+(\/[a-z-]+)?$/)
-  assert.deepEqual(Object.keys(PAGES).sort(), ["backup", "blocked", "database", "following-backup", "import", "logs", "media-servers", "recently-deleted", "recover-list", "relays"])
+  assert.deepEqual(Object.keys(PAGES).sort(), ["appearance", "backup", "blocked", "database", "feed", "following-backup", "import", "logs", "media", "media-servers", "notifications", "privacy", "recently-deleted", "recover-list", "relays"])
   assert.ok(isPage("backup") && !isPage("accounts") && !isPage("") && !isPage(undefined) && !isPage("constructor"))
   assert.match(APP_VERSION, /^\d+\.\d+\.\d+/)
   assert.match(SUPPORT_NPUB, /^npub1/)
@@ -132,12 +132,12 @@ test("every Sign out button asks before the wipe", () => {
   assert.doesNotMatch(main, /onClick=\{onSignOut\}/)
 })
 
-test("the Settings index has the Send Delay picker, Off / 5s / 10s", async () => {
+test("Settings › Feed has the Send Delay picker, Off / 5s / 10s", async () => {
   const { choiceLabel } = await import("../src/components/SendDelayPicker.jsx")
   const { SEND_DELAY_CHOICES } = await import("../src/net/send-delay.js")
   assert.deepEqual(SEND_DELAY_CHOICES.map(choiceLabel), ["Off", "5s", "10s"])
-  const screen = readFileSync(new URL("../src/screens/SettingsScreen.jsx", import.meta.url), "utf8")
-  assert.match(screen, /<div class="section-label">Posting<\/div>\s*<div class="settings-rows"><SendDelayPicker \/><\/div>/)
+  const page = readFileSync(new URL("../src/screens/settings/FeedSettingsPage.jsx", import.meta.url), "utf8")
+  assert.match(page, /<Section label="Posting"><SendDelayPicker \/><\/Section>/)
 })
 
 test("a backup file is the phone's .zip by its bytes, anything else an older .jsonl", async () => {

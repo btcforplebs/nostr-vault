@@ -27,5 +27,5 @@ test("NoteCard draws the zap button only when it is on; the profile zap stays; S
   const src = f => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8")
   assert.match(src("components/NoteCard.jsx"), /\{zapButtonOn\(\) && <ZapButton note=\{note\} \/>\}/)
   assert.doesNotMatch(src("screens/PersonScreen.jsx"), /zapButtonOn/)
-  assert.match(src("screens/SettingsScreen.jsx"), /<div class="section-label">Post buttons<\/div>\s*<div class="settings-rows"><PostButtonsSwitch \/><\/div>/)
+  assert.match(src("screens/settings/AppearancePage.jsx"), /<Section label="Post buttons"><PostButtonsSwitch \/><\/Section>/)
 })

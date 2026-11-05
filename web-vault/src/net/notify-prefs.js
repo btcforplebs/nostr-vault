@@ -3,13 +3,14 @@
 // The master switch is notify-watch.js notifyOn; these only matter while it is on.
 
 export const TYPES = [
-  { id: "mentions", title: "Mentions and quotes", on: true },
+  // The iPhone's names and order (AccountNotificationSection); a mention covers quotes too, as on the phone.
+  { id: "mentions", title: "Mentions", on: true },
   { id: "replies", title: "Replies", on: true },
-  { id: "dms", title: "Messages", on: true },
+  { id: "dms", title: "Direct Messages", on: true },
   { id: "zaps", title: "Zaps", on: true },
-  { id: "follows", title: "New followers", on: true },
-  { id: "reactions", title: "Likes and reactions", on: false },
+  { id: "reactions", title: "Reactions", on: false },
   { id: "reposts", title: "Reposts", on: false },
+  { id: "follows", title: "New Followers", on: true },
 ]
 
 const KEY = "nv-notify-types"

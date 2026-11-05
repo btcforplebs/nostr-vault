@@ -3,6 +3,7 @@
 // next visit to the Feed.
 import { useState } from "preact/hooks"
 import { LINE_LIMITS, MIN_LINES, MAX_LINES, lineLimit, setLineLimit, linesText } from "../net/line-limits.js"
+import { SettingInfo } from "./SettingInfo.jsx"
 
 export function LineLimitSteppers() {
   return (
@@ -20,7 +21,7 @@ function Stepper({ view }) {
   const step = d => { setLineLimit(view, n + d); setN(lineLimit(view)) }
   return (
     <div class="settings-row static line-stepper">
-      <span class="settings-title">{title}</span>
+      <span class="settings-title">{title}<SettingInfo topic={view === "compact" ? "display.compactLines" : "display.threadedLines"} /></span>
       <span class="muted line-stepper-value" aria-live="polite">{linesText(n)}</span>
       <span class="seg-pill" role="group" aria-label={`${title} lines`}>
         <button type="button" aria-label={`Fewer lines in ${title}`} disabled={n <= MIN_LINES} onClick={() => step(-1)}>−</button>

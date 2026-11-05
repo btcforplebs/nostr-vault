@@ -18,7 +18,8 @@ test("per-type switches start as the iPhone's: likes and reposts off, the rest o
   setType("reactions", true, s); setType("zaps", false, s)
   const t = readTypes(s)
   assert.equal(t.reactions, true); assert.equal(t.zaps, false); assert.equal(t.reposts, false)
-  assert.deepEqual(TYPES.map(x => x.id), ["mentions", "replies", "dms", "zaps", "follows", "reactions", "reposts"])
+  assert.deepEqual(TYPES.map(x => x.id), ["mentions", "replies", "dms", "zaps", "reactions", "reposts", "follows"], "the iPhone's order (AccountNotificationSection)")
+  assert.deepEqual(TYPES.map(x => x.title), ["Mentions", "Replies", "Direct Messages", "Zaps", "Reactions", "Reposts", "New Followers"], "and its names")
   assert.equal(typeOfLine("quote"), "mentions"); assert.equal(typeOfLine("article"), null)
 })
 

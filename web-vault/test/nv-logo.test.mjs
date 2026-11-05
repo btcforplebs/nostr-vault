@@ -21,5 +21,5 @@ test("shown by default (never set); the switch hides and shows it again", () => 
 test("Badges draws the logo only when not hidden; Settings has the switch", () => {
   const src = f => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8")
   assert.match(src("components/Badges.jsx"), /\{fromNostrVault\(note\) && !nvLogoHidden\(\) && <span class="badge-nv"/)
-  assert.match(src("screens/SettingsScreen.jsx"), /<div class="section-label">Posts<\/div>\s*<div class="settings-rows"><NostrVaultLogoSwitch \/><\/div>/)
+  assert.match(src("screens/settings/AppearancePage.jsx"), /<Section label="Posts"><NostrVaultLogoSwitch \/><\/Section>/)
 })

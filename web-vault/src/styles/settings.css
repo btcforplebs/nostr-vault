@@ -223,3 +223,18 @@ a.settings-row:hover { background: var(--s2); }
 button.default-reaction { width: calc(100% - 2 * var(--gutter)); border: 0; text-align: left; justify-content: flex-start; box-shadow: none; cursor: pointer; }
 button.default-reaction:active { transform: none; }
 .default-reaction-emoji { flex: none; font-size: 24px; line-height: 1; }
+
+/* A setting's (i) (components/SettingInfo.jsx) and its bubble, fixed to the window: the cards clip what overflows. */
+.setting-info { display: inline-flex; vertical-align: middle; margin-left: 4px; }
+.setting-info-btn { display: inline-grid; place-items: center; width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0;
+  border-radius: 50%; background: none; color: var(--text-3); }
+.setting-info-btn:hover, .setting-info-btn[aria-expanded="true"] { color: var(--text); background: var(--s2); }
+.setting-info-pop { position: fixed; z-index: 60; display: grid; gap: 4px; padding: 12px 14px; border-radius: 12px; background: var(--s2);
+  border: 1px solid var(--hair); box-shadow: 0 8px 24px rgb(0 0 0 / .45); font: var(--t-foot); color: var(--text-2); white-space: normal; text-transform: none; letter-spacing: 0; }
+.setting-info-pop b { color: var(--text); font-weight: 600; }
+.notify-types-head { display: flex; align-items: center; }
+/* Settings › Blocked › Block Someone: an npub and Block. */
+.block-someone { display: flex; gap: 8px; margin: 0 var(--gutter) 12px; }
+.block-someone input { flex: 1; min-width: 0; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--hair); background: var(--s1); color: var(--text); font: var(--t-body); }
+.block-someone button.danger-fill { background: var(--danger); color: #fff; border-color: transparent; }
+.block-someone button.danger-fill:disabled { background: var(--s2); color: var(--text-3); }

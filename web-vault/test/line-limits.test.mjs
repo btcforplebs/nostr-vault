@@ -35,5 +35,5 @@ test("the feed draws with them and Settings has the Feed Text section", () => {
   assert.match(src("components/FeedThreadCard.jsx"), /lines=\{depth \? Math\.max\(1, lines - 1\) : lines\}/, "a reply shows one fewer")
   assert.match(src("components/FeedRows.jsx"), /const compactLines = lineLimit\("compact"\)/)
   assert.match(src("components/FeedRows.jsx"), /<CondensedNote key=\{n\.id\} event=\{n\} card lines=\{compactLines\}/)
-  assert.match(src("screens/SettingsScreen.jsx"), /<div class="section-label">Feed Text<\/div>\s*<div class="settings-rows"><LineLimitSteppers \/><\/div>/)
+  assert.match(src("screens/settings/AppearancePage.jsx"), /<Section label="Feed Text"><LineLimitSteppers \/><\/Section>/, "Settings › Appearance, as the iPhone")
 })

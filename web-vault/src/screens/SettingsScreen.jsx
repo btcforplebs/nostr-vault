@@ -21,15 +21,14 @@ import { importOwn, importLine, IMPORT_START_DATE } from "../net/sync.js"
 import { ownPostRelays } from "../net/own-relays.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { learn } from "../shell.js"
-import { NotifySwitch } from "../components/NotifySwitch.jsx"
 import { RESET_ALL_QUESTION } from "../net/reset-all.js"
-import { SendDelayPicker } from "../components/SendDelayPicker.jsx"
-import { DefaultReactionRow } from "../components/DefaultReactionRow.jsx"
-import { PostButtonsSwitch } from "../components/PostButtonsSwitch.jsx"
-import { NostrVaultLogoSwitch } from "../components/NostrVaultLogoSwitch.jsx"
-import { AutoplaySwitch } from "../components/AutoplaySwitch.jsx"
-import { LineLimitSteppers } from "../components/LineLimitSteppers.jsx"
 import { BOX, BoxLink } from "../box/BoxLink.jsx"
+import { AppearancePage } from "./settings/AppearancePage.jsx"
+import { MediaCachePage } from "./settings/MediaCachePage.jsx"
+import { PrivacyPage } from "./settings/PrivacyPage.jsx"
+import { FeedSettingsPage } from "./settings/FeedSettingsPage.jsx"
+import { NotificationsPage } from "./settings/NotificationsPage.jsx"
+import { BlockSomeone } from "./settings/BlockSomeone.jsx"
 import {
   SETTINGS_GROUPS, PAGES, isPage, APP_VERSION, APP_COMMIT, commitUrl, SUPPORT_NPUB, PRIVACY_URL,
   logLines,
@@ -54,9 +53,15 @@ const ICONS = {
   people: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M16 4.3a3.5 3.5 0 0 1 0 6.4M18 14.2a6.5 6.5 0 0 1 3.5 5.8",
   // A circle arrow going back (arrow.counterclockwise): an older version of a list.
   restore: "M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4",
+  // Feed & Display, Notifications and Privacy (newspaper, paintpalette, photo.on.rectangle, bell.badge, hand.raised).
+  news: "M4 5h13v14H6a2 2 0 0 1-2-2zM17 9h3v8a2 2 0 0 1-2 2M8 9h5M8 13h5M8 17h3",
+  palette: "M12 21a9 9 0 1 1 9-9c0 2-1.5 3-3 3h-2a2 2 0 0 0-1.5 3.3A1.6 1.6 0 0 1 12 21zM7.5 11h.01M10 7.5h.01M14 7.5h.01M16.5 11h.01",
+  photo: "M4 5h16v14H4zM4 15l4-4 5 5M13 13l2-2 5 5M15.5 9h.01",
+  bell: "M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0",
+  hand: "M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4a1.5 1.5 0 0 1 3 0v8M14 11.5V5.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-12.5 4.3L3 15.8a1.6 1.6 0 0 1 2.5-2L8 16",
 }
-// SettingsView.swift iOSBody's sections, top to bottom. The web has no Feed & Display, Mesh or Help rows yet.
-const ORDER = ["Account", "Feed & Display", "Relays", "Your Vault", "Mesh", "Help", "Advanced"]
+// SettingsView.swift iOSBody's sections, top to bottom. The web has no Mesh or Help rows yet.
+const ORDER = ["Account", "Feed & Display", "Notifications", "Relays", "Your Vault", "Mesh", "Help", "Advanced"]
 const rank = g => { const i = ORDER.indexOf(g.title); return i < 0 ? ORDER.length : i }
 const GROUPS = [...SETTINGS_GROUPS].sort((a, b) => rank(a) - rank(b))
 const Icon = ({ d, size = 16 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
@@ -104,34 +109,6 @@ function Index({ ctx }) {
           </a>
         </div>
       </section>}
-      <section class="settings-group">
-        <div class="section-label">Notifications</div>
-        <div class="settings-rows"><NotifySwitch /></div>
-      </section>
-      <section class="settings-group">
-        <div class="section-label">Feed Text</div>
-        <div class="settings-rows"><LineLimitSteppers /></div>
-      </section>
-      <section class="settings-group">
-        <div class="section-label">Posts</div>
-        <div class="settings-rows"><NostrVaultLogoSwitch /></div>
-      </section>
-      <section class="settings-group">
-        <div class="section-label">Post buttons</div>
-        <div class="settings-rows"><PostButtonsSwitch /></div>
-      </section>
-      <section class="settings-group">
-        <div class="section-label">Reactions</div>
-        <div class="settings-rows"><DefaultReactionRow /></div>
-      </section>
-      <section class="settings-group">
-        <div class="section-label">Posting</div>
-        <div class="settings-rows"><SendDelayPicker /></div>
-      </section>
-      <section class="settings-group">
-        <div class="section-label">Media</div>
-        <div class="settings-rows"><AutoplaySwitch /></div>
-      </section>
       {GROUPS.map(g => (
         <section key={g.title} class="settings-group">
           <div class="section-label">{g.title}</div>
@@ -204,7 +181,12 @@ function Page({ ctx, page }) {
   return (
     <main class="screen settings">
       <header class="screen-head"><a class="button small" href="#/settings">‹ Settings</a><h2>{title}</h2><span style="width: 92px" /></header>
-      {page === "blocked" && <Blocked ctx={ctx} />}
+      {page === "blocked" && <><BlockSomeone ctx={ctx} /><Blocked ctx={ctx} /></>}
+      {page === "feed" && <FeedSettingsPage />}
+      {page === "appearance" && <AppearancePage />}
+      {page === "media" && <MediaCachePage />}
+      {page === "privacy" && <PrivacyPage />}
+      {page === "notifications" && <NotificationsPage />}
       {page === "recently-deleted" && <RecentlyDeletedPage ctx={ctx} />}
       {page === "following-backup" && <FollowingBackupPage ctx={ctx} />}
       {page === "recover-list" && <RecoverListPage ctx={ctx} />}
@@ -226,7 +208,7 @@ function Blocked({ ctx }) {
   useEffect(() => { if (list.length) fetchProfiles(ctx.vault, list, uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS])).catch(() => {}) }, [list.length])
   return (
     <>
-      <p class="settings-note muted small">Your block list, the same one your phone uses. Blocked people's notes, replies and messages are hidden. Block someone from the ⋯ menu on their note or profile.{privateNote ? ` Private entries aren't shown: ${privateNote}.` : ""}</p>
+      <p class="settings-note muted small">Your block list, the same one your phone uses. Blocked people's notes, replies and messages are hidden. Block someone above by their npub, or from the ⋯ menu on their note or profile.{privateNote ? ` Private entries aren't shown: ${privateNote}.` : ""}</p>
       {list.length ? list.map(pk => <BlockedRow key={pk} ctx={ctx} pubkey={pk} isPrivate={privateBlocked?.has(pk)} />)
         : <p class="empty">Nobody is blocked.</p>}
     </>

@@ -18,13 +18,10 @@ export const PRIVACY_URL = "https://nostrvault.app/privacy.html"
 /**
  * The phone's groups (SettingsView.groups), with the rows the web has. A row's `href` is where it goes: a page of
  * this screen ("#/settings/<page>"), another screen ("#/accounts" is the Accounts & Keys screen, "#/relay" the
- * Relay screen with its FIPS panel, which is the web's "Who Can Reach You"). Rows the phone has and the web
- * doesn't are left out rather than shown dead: Feed, Appearance,
- * Media & Cache, Notifications, Sync with Vault on Mac, Tutorials, Proof of Work, Start Relay Automatically.
- * Some of their settings sit on the index itself instead of a page: the Notifications switch, Appearance's Feed Text
- * (components/LineLimitSteppers.jsx), Post buttons (components/PostButtonsSwitch.jsx) and Reactions
- * (components/DefaultReactionRow.jsx), Feed's Posting section (Send Delay, components/SendDelayPicker.jsx) and Media &
- * Cache's Autoplay Videos (components/AutoplaySwitch.jsx).
+ * Relay screen with its FIPS panel, which is the web's "Who Can Reach You"). Feed, Appearance, Media & Cache, Privacy
+ * and Notifications are pages as on the phone (screens/settings/, Logen 2026-11-05). Rows the phone has and the web
+ * doesn't are left out rather than shown dead: Sync with Vault on Mac, Tutorials, Proof of Work, Start Relay
+ * Automatically.
  */
 export const SETTINGS_GROUPS = [
   { title: "Account", rows: [
@@ -34,6 +31,15 @@ export const SETTINGS_GROUPS = [
     { id: "following-backup", title: "Following Backup", icon: "people", color: "#40c8e0", href: "#/settings/following-backup" },
     { id: "recover-list", title: "Recover a List", icon: "restore", color: "#64d2ff", href: "#/settings/recover-list" },
     { id: "wallet", title: "Wallet", icon: "bolt", color: "#ff9f0a", href: "#/wallet" },
+    { id: "privacy", title: "Privacy", icon: "hand", color: "#0a84ff", href: "#/settings/privacy" },
+  ] },
+  { title: "Feed & Display", rows: [
+    { id: "feed", title: "Feed", icon: "news", color: "#ff375f", href: "#/settings/feed" },
+    { id: "appearance", title: "Appearance", icon: "palette", color: "#bf5af2", href: "#/settings/appearance" },
+    { id: "media", title: "Media & Cache", icon: "photo", color: "#5e5ce6", href: "#/settings/media" },
+  ] },
+  { title: "Notifications", rows: [
+    { id: "notifications", title: "Notifications", icon: "bell", color: "#ff453a", href: "#/settings/notifications" },
   ] },
   { title: "Relays", rows: [
     { id: "relays", title: "Relays", icon: "relays", color: "var(--accent)", href: "#/settings/relays" },
