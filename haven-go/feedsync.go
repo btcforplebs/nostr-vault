@@ -139,15 +139,24 @@ const feedShortHoldRounds = 2
 // those streaks across rounds (normalized URL → rounds); a relay that reads
 // to the end, or isn't asked, drops out of it.
 func feedFallbackPull(ctx context.Context, relays []string, filter nostr.Filter, publish func(*nostr.Event), shortRounds map[string]int) bool {
+	// One entry per relay: two spellings of one relay (trailing slash, case)
+	// would share a key and step its streak twice a round (Tron, #1721).
+	asked := map[string]bool{}
+	relays = slices.DeleteFunc(slices.Clone(relays), func(url string) bool {
+		key := nostr.NormalizeURL(url)
+		if asked[key] {
+			return true
+		}
+		asked[key] = true
+		return false
+	})
 	res := fetchPaged(ctx, relays, filter, importMaxPages, publish)
 	if ctx.Err() != nil {
 		return false
 	}
-	asked := map[string]bool{}
 	held := false
 	for _, url := range relays {
 		key := nostr.NormalizeURL(url)
-		asked[key] = true
 		if !slices.Contains(res.Short, url) {
 			delete(shortRounds, key)
 			continue

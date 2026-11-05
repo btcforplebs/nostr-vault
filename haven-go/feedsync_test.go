@@ -109,4 +109,13 @@ func TestFeedFallbackPullPagesPastTheCapAndSaysWhenComplete(t *testing.T) {
 	if feedFallbackPull(context.Background(), []string{"wss://tired.example"}, filter, func(*nostr.Event) {}, streak) {
 		t.Fatal("a fresh stop partway was called complete")
 	}
+
+	// The same relay listed twice under two spellings counts once a round.
+	streak = map[string]int{}
+	twice := []string{"wss://tired.example", "wss://tired.example/"}
+	for round, want := range []bool{false, false, true} {
+		if complete := feedFallbackPull(context.Background(), twice, filter, func(*nostr.Event) {}, streak); complete != want {
+			t.Fatalf("listed twice, round %d: complete=%v, want %v", round+1, complete, want)
+		}
+	}
 }
