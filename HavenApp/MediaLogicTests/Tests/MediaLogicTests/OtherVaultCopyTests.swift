@@ -65,4 +65,27 @@ final class OtherVaultCopyTests: XCTestCase {
         XCTAssertEqual(OtherVaultCopy.copyingLine(""), "Copying from your other device…")
         XCTAssertEqual(OtherVaultCopy.copyingLine("Logen's iPhone"), "Copying from Logen's iPhone…")
     }
+
+    // MARK: Reaching the other vault (Logen 2026-11-05)
+
+    func testBDialsAgainForAboutAMinuteBeforeFallingBack() {
+        XCTAssertTrue(OtherVaultCopy.dialsAgain(startedAt: 0, now: 0))
+        XCTAssertTrue(OtherVaultCopy.dialsAgain(startedAt: 0, now: 45))
+        // The next dial would start past the window: fall back now.
+        XCTAssertFalse(OtherVaultCopy.dialsAgain(startedAt: 0, now: 50))
+        XCTAssertFalse(OtherVaultCopy.dialsAgain(startedAt: 0, now: 90))
+        XCTAssertEqual(OtherVaultCopy.dialWindow, 60)
+    }
+
+    func testOnlyAWithTheMeshOnStartsSharingForTheCopy() {
+        XCTAssertTrue(OtherVaultCopy.sharesAfterLink(wasA: true, meshOn: true, alreadySharing: false))
+        XCTAssertFalse(OtherVaultCopy.sharesAfterLink(wasA: false, meshOn: true, alreadySharing: false), "B reads, it doesn't share")
+        XCTAssertFalse(OtherVaultCopy.sharesAfterLink(wasA: true, meshOn: false, alreadySharing: false), "the Mesh switch is off")
+        XCTAssertFalse(OtherVaultCopy.sharesAfterLink(wasA: true, meshOn: true, alreadySharing: true), "kiosk already on: leave it be")
+    }
+
+    func testTheCopyWindowOutlastsTheBDial() {
+        XCTAssertGreaterThan(OtherVaultCopy.shareWindow, OtherVaultCopy.dialWindow + OtherVaultCopy.linkTimeout)
+        XCTAssertTrue(OtherVaultCopy.keepOpenLine.hasPrefix("Keep Nostr Vault open on this device"))
+    }
 }

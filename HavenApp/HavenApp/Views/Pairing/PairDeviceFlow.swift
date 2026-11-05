@@ -34,6 +34,8 @@ final class PairDeviceFlow: ObservableObject {
     /// Bumped to give the camera a fresh start after a rejected code.
     @Published private(set) var scanToken = 0
     @Published private(set) var secondsLeft: Int?
+    /// A on an iPhone: sharing its vault for the linked device's copy.
+    @Published private(set) var sharingForCopy = false
 
     private let config: ConfigService
     private var own: MeshPairingHello.OwnMesh?
@@ -397,6 +399,11 @@ final class PairDeviceFlow: ObservableObject {
         step = .linked(name: MeshPairing.displayName(device.name), already: already)
         // A keeps resending the ack while this screen is open; B is done.
         if joiner != nil { stopRelays() }
+        #if os(iOS)
+        // A: the device it just linked may copy from it next, and an iPhone
+        // only shares its vault in kiosk mode (Logen 2026-11-05).
+        if session != nil { sharingForCopy = FipsMeshService.shared.shareForCopy() }
+        #endif
     }
 
     private func fail(_ text: String) {
@@ -423,6 +430,7 @@ final class PairDeviceFlow: ObservableObject {
         helloAt = nil
         notice = nil
         scanToken = 0
+        sharingForCopy = false
     }
 
     private func stopRelays() {
@@ -599,7 +607,7 @@ private struct PairDeviceSteps: View {
             case .byAddress(let npub):
                 PairByAddressView(npub: npub, flow: flow)
             case .linked(let name, let already):
-                PairLinkedView(name: name, already: already, done: done)
+                PairLinkedView(name: name, already: already, keepOpen: flow.sharingForCopy, done: done)
             case .failed(let text):
                 Text(text).font(.appBody)
                 Button("Start again") { flow.cancel() }

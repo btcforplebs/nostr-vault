@@ -9,9 +9,37 @@ struct FipsMeshAdvancedView: View {
     @State private var relays = FipsMeshSettings.finderRelays
     @State private var middle = FipsMeshSettings.middleServer
     @State private var newRelay = ""
+    @State private var address = FipsMeshService.shared.ownMeshNpub
+    @State private var copied = false
 
     var body: some View {
         List {
+            Section {
+                if let address {
+                    Text(address)
+                        .font(.appSystem(size: 12, design: .monospaced))
+                        .textSelection(.enabled)
+                    Button {
+                        UIPasteboard.general.string = address
+                        copied = true
+                    } label: {
+                        Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    }
+                } else {
+                    Text("This phone has no mesh address yet.")
+                        .font(.appCaption)
+                        .foregroundColor(.secondary)
+                }
+            } header: {
+                Text("Mesh Address")
+            } footer: {
+                Text("For a device that can't scan, such as a Linux box: add this address there. Your phones, iPads and Macs link with Link a device instead.")
+            }
+            .task {
+                guard address == nil else { return }
+                address = await Task.detached { FipsMeshService.meshNpubFromKey() }.value
+            }
+
             Section {
                 ForEach(relays, id: \.self) { relay in
                     Text(relay).font(.appSystem(size: 13, design: .monospaced))

@@ -45,6 +45,34 @@ enum OtherVaultCopy {
         step == self.step ? NewToVaultQuestion.step : step
     }
 
+    // MARK: Reaching the other vault (Logen 2026-11-05)
+
+    /// B keeps dialing the other vault this long before it falls back to
+    /// relays: A's engine takes seconds to start and be found.
+    static let dialWindow = 60
+    /// Between two dials.
+    static let dialRetryEvery = 10
+
+    /// Whether B dials again after a dial that reached nothing.
+    static func dialsAgain(startedAt: Int, now: Int) -> Bool {
+        now - startedAt + dialRetryEvery < dialWindow
+    }
+
+    /// How long an iPhone that was A in a link shares its vault with its own
+    /// devices (kiosk mode, My Devices only), so the device it just linked
+    /// can copy from it. An iPhone shares only in kiosk mode, which nothing
+    /// else turns on.
+    static let shareWindow = 15 * 60
+
+    /// Whether A starts sharing for the copy: the mesh is on and the vault
+    /// isn't shared already (kiosk on, or starting). B never does: it reads.
+    static func sharesAfterLink(wasA: Bool, meshOn: Bool, alreadySharing: Bool) -> Bool {
+        wasA && meshOn && !alreadySharing
+    }
+
+    /// On A's "Linked" screen while it shares for the copy.
+    static let keepOpenLine = "Keep Nostr Vault open on this device while your other device copies from it."
+
     static func isStalled(lastProgressAt: Int, now: Int) -> Bool {
         now - lastProgressAt >= stallTimeout
     }

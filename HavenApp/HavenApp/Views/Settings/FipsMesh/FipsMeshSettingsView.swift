@@ -17,7 +17,7 @@ struct FipsMeshSettingsView: View {
     var body: some View {
         List {
             meshSection
-            FipsMeshThisDeviceSection()
+            FipsMeshThisDeviceSection(showPair: $showPair)
             FipsMeshMyDevicesSection(devices: devices, showPair: $showPair)
             syncSection
             FipsMeshShareSection()
