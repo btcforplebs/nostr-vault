@@ -186,8 +186,25 @@ extension RelayProcessManager {
     /// restore is waited out. Then the relay stops and `reset` runs on the
     /// lifecycle chain, so nothing opens the vault between the stop and the
     /// delete. `refused` gets the words when it stayed busy: nothing deleted.
+    ///
+    /// An import request that is only held (booting or stopping, re-queued
+    /// by `asyncAfter`) sets none of the busy flags, so the generation is
+    /// bumped up front: that request stands down instead of running into the
+    /// fresh folder as the old account (Tron, PR 1757).
     func stopForFactoryReset(reset: @escaping @MainActor () -> Void,
                              refused: @escaping @MainActor (String) -> Void) {
+        // Put back on a refusal, so a reset that deleted nothing doesn't
+        // leave the relay down after the cancelled import ends.
+        let savedRestart = restartAfterImportConfig
+        // From here no import end may start the old account's relay: its
+        // 1 s delayed start could land after the delete.
+        restartAfterImportConfig = nil
+        importRequestGeneration += 1
+        queuedImport = nil
+        let refuse: @MainActor (RelayProcessManager) -> Void = { manager in
+            if manager.restartAfterImportConfig == nil { manager.restartAfterImportConfig = savedRestart }
+            refused(FactoryResetGate.busyText)
+        }
         Task { @MainActor [weak self] in
             let started = Date()
             var cancelSent = false
@@ -199,23 +216,25 @@ extension RelayProcessManager {
                     self.enqueueLifecycle { [weak self] in
                         guard let self else { return }
                         guard !self.importHoldsVault, self.busyJob == nil else {
-                            return refused(FactoryResetGate.busyText)
+                            return refuse(self)
                         }
                         await self.performStop()
+                        // Nothing queued before this point may start after the delete.
+                        self.importRequestGeneration += 1
+                        self.queuedImport = nil
+                        self.restartAfterImportConfig = nil
                         reset()
                     }
                     return
                 case .cancelImport:
                     cancelSent = true
                     self.logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Factory reset: cancelling the running import first"))
-                    // The account is going: its import's end must not start its relay again.
-                    self.restartAfterImportConfig = nil
                     self.cancelImport()
                 case .wait:
                     break
                 case .refuse:
                     self.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Factory reset refused: the vault stayed busy (\(self.busyJob?.rawValue ?? "import"))"))
-                    return refused(FactoryResetGate.busyText)
+                    return refuse(self)
                 }
                 try? await Task.sleep(nanoseconds: UInt64(FactoryResetGate.pollInterval * 1_000_000_000))
             }

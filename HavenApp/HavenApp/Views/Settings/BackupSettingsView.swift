@@ -15,10 +15,12 @@ struct BackupSettingsView: View {
     @State private var isExportingBlossom = false
     @State private var isImportingBlossom = false
     @State private var statusMessage = ""
-    /// A refused restore ("This backup isn't yours…") is a failure too.
+    static let notThisVaultsBackup = "This backup isn't this vault's. It holds no notes signed by the vault owner's key."
+
+    /// A refused restore ("This backup isn't…") is a failure too.
     private var statusFailed: Bool {
         statusMessage.contains("failed") || statusMessage.contains("Failed") || statusMessage.contains("Error")
-            || statusMessage.contains("isn't yours")
+            || statusMessage.contains("This backup isn't")
     }
     @State private var activeImportType: ImportType?
     @State private var showFileImporter = false
@@ -236,7 +238,9 @@ struct BackupSettingsView: View {
             Task { @MainActor in
                 isImportingJSONL = false
                 try? FileManager.default.removeItem(at: tempFile)
-                statusMessage = VaultBackupQuestion.restoreError(code: code) ?? "Notes restored successfully!"
+                // Checked against this vault's owner, not the active account.
+                statusMessage = code == 2 ? Self.notThisVaultsBackup
+                    : VaultBackupQuestion.restoreError(code: code) ?? "Notes restored successfully!"
                 clearStatus()
             }
         }
