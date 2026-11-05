@@ -55,6 +55,8 @@ export function MarketplaceScreen({ ctx }) {
   return (
     <div class="reader-feed">
       <Scopes scopes={MARKET_SCOPES} value={scope} onPick={pick} onRefresh={load} />
+      {/* Sell something (iPhone FeedActions .listing): a NIP-99 listing, compose/ListingCompose.jsx. Read-only can't sign. */}
+      {!ctx.signer?.readOnly && <a class="button market-sell" href="#/compose?type=listing">Sell something</a>}
       {cats.length > 0 && (
         <div class="reader-chips" role="tablist" aria-label="Category">
           <button type="button" class={!category ? "on" : ""} aria-selected={!category} onClick={() => setCategory(null)}>All</button>
