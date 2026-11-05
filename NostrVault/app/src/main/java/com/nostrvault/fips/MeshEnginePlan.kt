@@ -56,6 +56,16 @@ internal object MeshEnginePlan {
      * engine sends everyone else to the door ([FipsStartOptions.strangersPort]) and refuses the two
      * being one port.
      */
+    /**
+     * Share off, and a phone of the owner's is linked: this vault is shared with own devices anyway (relay port only,
+     * the door for strangers stays shut), so that phone's sends arrive (Logen 2026-11-05, iPhone #1779
+     * `shareWhileOpenIfWanted`). Share on is the full sharing it always was.
+     */
+    fun sharesWithLinkedPhones(config: HavenConfig): Boolean = !config.fipsShareRelay && hasLinkedPhone(config)
+
+    /** A phone of the owner's is in My Devices, one that gets their sends ([MeshSendTargets]). */
+    fun hasLinkedPhone(config: HavenConfig): Boolean = MeshSendTargets.of(config).any { it.role == DeviceRole.PHONE }
+
     @Suppress("UNUSED_PARAMETER")
     fun sharePort(config: HavenConfig, ownDevices: List<String>): Int = config.relayPort
 }
