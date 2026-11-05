@@ -1,6 +1,5 @@
 package com.nostrvault.ui.screens.settings.fipsmesh
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,15 +39,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.google.zxing.BarcodeFormat
-import com.journeyapps.barcodescanner.BarcodeEncoder
 import com.nostrvault.fips.FipsStatus
 import com.nostrvault.fips.MyDevice
 import com.nostrvault.fips.MyDevicesRules
@@ -71,6 +65,8 @@ fun FipsMeshScreen(
     onBack: () -> Unit,
     onOpenDevice: (String) -> Unit,
     onOpenAdvanced: () -> Unit,
+    /** The two-scan link (PairDeviceScreen), the same as Vault › Your devices › Add. */
+    onLinkDevice: () -> Unit = {},
     viewModel: FipsMeshViewModel = hiltViewModel(),
 ) {
     val status by viewModel.status.collectAsState()
@@ -116,7 +112,7 @@ fun FipsMeshScreen(
             // Only This Device needs the mesh running (its address comes from the engine). My Devices and Share With
             // Others stay usable when it is off: taking a lost phone out, or turning kiosk mode off, must never need
             // the mesh on first, which would announce this phone and let that phone dial in (Tron, #981).
-            if (status.running) ThisDeviceSection(status)
+            if (status.running) ThisDeviceSection(status, onLinkDevice)
             MyDevicesSection(devices, status.running, onOpenDevice) { adding = true }
             SyncSection(viewModel)
             ShareSection(viewModel, status)
@@ -130,13 +126,16 @@ fun FipsMeshScreen(
     if (adding) AddDeviceSheet(viewModel, onDismiss = { adding = false })
 }
 
+/**
+ * This Device: its address as plain text, and Link a device, the two-scan flow (Logen 2026-11-05). The old Copy and
+ * bare-address QR are gone from here: the two-scan flow refuses a bare address, so they only led people astray. Copy
+ * lives under Advanced (FipsMeshAdvancedScreen) for the by-address path.
+ */
 @Composable
-private fun ThisDeviceSection(status: FipsStatus) {
-    val clipboard = LocalClipboardManager.current
+private fun ThisDeviceSection(status: FipsStatus, onLinkDevice: () -> Unit) {
     val colors = LocalNostrVaultColors.current
-    var showQr by remember { mutableStateOf(false) }
     val npub = status.npub ?: return
-    MeshSection("This Device", footer = "Add this address on your other devices so they let this phone in.") {
+    MeshSection("This Device", footer = THIS_DEVICE_FOOTER) {
         Text("Mesh address", color = SecondaryText, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
         Text(npub, color = PrimaryText, fontSize = 13.sp, fontFamily = FontFamily.Monospace, lineHeight = 18.sp, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
         status.address?.let {
@@ -147,27 +146,18 @@ private fun ThisDeviceSection(status: FipsStatus) {
             }
         }
         MeshDivider()
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
-            val tinted = ButtonDefaults.buttonColors(containerColor = colors.primary.copy(alpha = 0.25f), contentColor = colors.primary)
-            Button(onClick = { clipboard.setText(AnnotatedString(npub)) }, colors = tinted, modifier = Modifier.weight(1f)) {
-                Icon(NostrVaultIcons.Copy, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Copy")
-            }
-            Button(onClick = { showQr = !showQr }, colors = tinted, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.QrCode2, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (showQr) "Hide QR" else "Show QR")
-            }
-        }
-        if (showQr) {
-            // What the other device scans under Add a device by address.
-            val qr = remember(npub) { runCatching { BarcodeEncoder().encodeBitmap("fipsmesh://$npub/", BarcodeFormat.QR_CODE, 480, 480) }.getOrNull() }
-            qr?.let {
-                Box(Modifier.fillMaxWidth().padding(bottom = 14.dp), contentAlignment = Alignment.Center) {
-                    Image(it.asImageBitmap(), contentDescription = "Mesh address QR code",
-                        modifier = Modifier.size(200.dp).background(Color.White, RoundedCornerShape(8.dp)).padding(8.dp))
-                }
-            }
+        Button(
+            onClick = onLinkDevice,
+            colors = ButtonDefaults.buttonColors(containerColor = colors.primary.copy(alpha = 0.25f), contentColor = colors.primary),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        ) {
+            Icon(Icons.Filled.QrCode2, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(LINK_A_DEVICE)
         }
     }
 }
+
+internal const val LINK_A_DEVICE = "Link a device"
+internal const val THIS_DEVICE_FOOTER = "Link a device shows a code to scan, then scans the other device's. Two scans and both are linked."
 
 @Composable
 private fun MyDevicesSection(devices: List<MyDevice>, running: Boolean, onOpen: (String) -> Unit, onAdd: () -> Unit) {

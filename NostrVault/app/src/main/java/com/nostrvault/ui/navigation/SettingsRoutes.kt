@@ -165,6 +165,7 @@ internal fun NavGraphBuilder.settingsRoutes(
             onBack = { navController.popBackStack() },
             onOpenDevice = { npub -> navController.navigate(Screen.FipsMeshDevice.createRoute(npub)) },
             onOpenAdvanced = { navController.navigate(Screen.FipsMeshAdvanced.route) },
+            onLinkDevice = { navController.navigate(Screen.PairDevice.route) },
         )
     }
 
