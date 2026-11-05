@@ -6,6 +6,8 @@ struct ComposeContext: Identifiable {
     let quoteTo: FeedNote?
     var initialContent: String = ""
     var draftId: String? = nil
+    /// Edit on a pending post: its hosted photos (PendingPostEdit).
+    var media: [PendingPostEdit.Media] = []
 }
 
 /// A composer for a feed that shows something other than notes.

@@ -99,7 +99,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             replyTo: request.replyTo,
             quoteTo: request.quoteTo,
             initialContent: request.content,
-            restoredDraftId: request.draftId
+            restoredDraftId: request.draftId,
+            restoredMedia: request.media
         )
         .hashtagLinks()
         .environmentObject(ConfigService.shared)

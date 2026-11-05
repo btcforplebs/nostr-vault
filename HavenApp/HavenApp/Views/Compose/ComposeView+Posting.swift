@@ -60,14 +60,11 @@ extension ComposeView {
             // several seconds, more on slower devices or with PoW set high) isn't killed
             // mid-flight if the user backgrounds the app or locks the phone right after
             // tapping post.
+            // Handed back when iOS says the time is up, not only at the end.
             #if os(iOS)
-            let bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "ComposePost", expirationHandler: nil)
+            let backgroundTime = BackgroundUploadTime(name: "ComposePost")
+            defer { backgroundTime.end() }
             #endif
-            defer {
-                #if os(iOS)
-                UIApplication.shared.endBackgroundTask(bgTaskId)
-                #endif
-            }
 
             // 1. Media. Each attachment began uploading when it was picked;
             // wait only for the ones still going (ComposeView+Uploads).

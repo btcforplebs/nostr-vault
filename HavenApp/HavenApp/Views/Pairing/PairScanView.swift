@@ -6,11 +6,14 @@ import SwiftUI
 struct PairScanView: View {
     let title: String
     var validate: (String) -> String? = { _ in nil }
+    /// The camera's X (iOS). The camera sits inside the pairing sheet, so the
+    /// X must not dismiss: that closed the whole Add a device sheet.
+    let onCancel: () -> Void
     let onCode: (String) -> Void
 
     var body: some View {
         #if os(iOS)
-        QRScannerView(title: title, validate: validate, onCodeScanned: onCode)
+        QRScannerView(title: title, validate: validate, onCancel: onCancel, onCodeScanned: onCode)
             .frame(height: 340)
             .clipShape(RoundedRectangle(cornerRadius: 16))
         #else

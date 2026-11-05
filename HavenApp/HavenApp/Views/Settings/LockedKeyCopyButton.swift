@@ -80,7 +80,7 @@ struct LockedKeyCopyButton: View {
     }
 
     private func copy(_ ncryptsec: String) {
-        PlatformClipboard.copy(ncryptsec)
+        PlatformClipboard.copySecret(ncryptsec)
         copied = true
         Task {
             try? await Task.sleep(nanoseconds: 2_000_000_000)

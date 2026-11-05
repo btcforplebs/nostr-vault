@@ -205,7 +205,7 @@ struct RevealKeySheetView: View {
     }
 
     private func copyNsec(_ nsec: String) {
-        PlatformClipboard.copy(nsec)
+        PlatformClipboard.copySecret(nsec)
         copied = true
         Task {
             try? await Task.sleep(nanoseconds: 2_000_000_000)

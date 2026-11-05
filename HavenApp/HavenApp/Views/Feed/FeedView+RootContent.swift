@@ -104,7 +104,7 @@ extension FeedView {
             }
         }
         .sheet(item: $composeContext) { ctx in
-            ComposeView(onDismiss: { composeContext = nil }, replyTo: ctx.replyTo, quoteTo: ctx.quoteTo, initialContent: ctx.initialContent, restoredDraftId: ctx.draftId)
+            ComposeView(onDismiss: { composeContext = nil }, replyTo: ctx.replyTo, quoteTo: ctx.quoteTo, initialContent: ctx.initialContent, restoredDraftId: ctx.draftId, restoredMedia: ctx.media)
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
@@ -130,7 +130,7 @@ extension FeedView {
         // iOS reopens the composer from SceneDelegate, over any open sheet.
         .onChange(of: pendingManager.editRequest?.id) { _, _ in
             guard let req = pendingManager.editRequest else { return }
-            composeContext = ComposeContext(replyTo: req.replyTo, quoteTo: req.quoteTo, initialContent: req.content, draftId: req.draftId)
+            composeContext = ComposeContext(replyTo: req.replyTo, quoteTo: req.quoteTo, initialContent: req.content, draftId: req.draftId, media: req.media)
             pendingManager.editRequest = nil
         }
         #endif

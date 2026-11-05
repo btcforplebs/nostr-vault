@@ -14,12 +14,17 @@ import AudioToolbox
 struct QRScannerView: UIViewControllerRepresentable {
     var title: String = "Scan Nostr QR Code"
     var validate: ((String) -> String?)? = nil
+    /// The X. Set it when the scanner sits inside another screen rather than
+    /// being a sheet of its own: there `dismiss(animated:)` is passed up to
+    /// whatever presented that screen and closes it all.
+    var onCancel: (() -> Void)? = nil
     let onCodeScanned: (String) -> Void
 
     func makeUIViewController(context: Context) -> QRScannerViewController {
         let controller = QRScannerViewController()
         controller.title = title
         controller.validate = validate
+        controller.onCancel = onCancel
         controller.onCodeScanned = onCodeScanned
         return controller
     }
@@ -29,6 +34,8 @@ struct QRScannerView: UIViewControllerRepresentable {
 
 class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
     var onCodeScanned: ((String) -> Void)?
+    /// Nil: the X dismisses this controller's presentation.
+    var onCancel: (() -> Void)?
     /// Returns nil to accept a scanned code, or a message explaining the rejection.
     var validate: ((String) -> String?)?
     override var title: String? {
@@ -135,7 +142,12 @@ class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsD
     }
 
     @objc private func dismissScanner() {
-        dismiss(animated: true)
+        if let onCancel {
+            captureSession?.stopRunning()
+            onCancel()
+        } else {
+            dismiss(animated: true)
+        }
     }
 
     private func showMessage(_ message: String) {

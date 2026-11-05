@@ -84,9 +84,8 @@ struct AddAccountSheetView: View {
     }
 
     private func processAddAccount() {
-        let input = addInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard input.starts(with: "npub") else {
-            addError = "Must be an npub"; return
+        guard let input = NpubValidation.typedNpub(addInput) else {
+            addError = "That isn't a complete npub. Check it and paste it again."; return
         }
         if !configService.config.whitelistedNpubs.contains(input) {
             configService.config.whitelistedNpubs.append(input)

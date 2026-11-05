@@ -140,23 +140,26 @@ final class LocalNotificationService {
         // so the next background wake's round does not repeat it.
         if type == "summary" { NotificationActivityLog.recordCatchUpSummary() }
 
-        if type == "dm" || type == "giftwrap" {
+        // The relay knows only the public blocks; private ones are checked
+        // here, before any path (NotificationRoute). Muted words, hashtags
+        // and threads are checked on the note path below.
+        switch NotificationRoute.route(type: type, author: author,
+                                       blocked: ConfigService.shared.blockedHexPubkeys(forAccount: npub)) {
+        case .drop:
+            return
+        case .dm:
             announceDM(id: id, type: type, author: author, recipientHex: recipientHex, npub: npub)
             return
-        }
-
-        if type == "follow" {
+        case .follow:
             if NotificationPolicy.followIsNamed(author, trusted: trusted) {
                 announceFollow(follower: author, npub: npub)
             } else {
                 announceFoldedFollow(follower: author, npub: npub)
             }
             return
+        case .note:
+            break
         }
-
-        // The relay knows only the public blocks; private ones, and muted
-        // words, hashtags and threads, are checked here.
-        if BlockedPeople.isBlocked(author, in: ConfigService.shared.blockedHexPubkeys(forAccount: npub)) { return }
         Task { @MainActor in
             // Not before the note and its author can show (NotificationReadiness).
             let carried = await Self.awaitRenderable(type: type, id: id, author: author)

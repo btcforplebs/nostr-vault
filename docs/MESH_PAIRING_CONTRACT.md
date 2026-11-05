@@ -144,6 +144,11 @@ show the same 4 words and the other device's short address (`npub1abc…wxyz`), 
 | `ackWindow` | 360 | B waits this long for the ack after scanning A |
 | `helloSkew` | 180 | a hello's own `t` must be this close to the receiver's clock |
 
+The role confirm (Add) has a deadline on both sides, so a pairing never ends linked on one side only
+(`MeshPairingConfirmWindow`). A's Add must come within `scanWindow` of the hello (the scan step's countdown carries on);
+B's Add, which sends the hello, within `ackWindow` − `scanWindow` − 15 s (relay margin) = 165 s of the scan. An Add past
+its deadline fails with the expired text: nothing is stored and no hello or ack is sent.
+
 ## 7. Words people read
 
 The role confirm, refusals and outcomes have one wording on every platform, pinned by `payload-cases.json` `texts`:
