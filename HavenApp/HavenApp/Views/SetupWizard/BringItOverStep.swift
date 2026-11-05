@@ -21,6 +21,8 @@ struct BringItOverStep: View {
     @State private var copying = false
     @State private var lastProgress: (value: Double, message: String, at: Int)?
     @State private var finished = false
+    /// The copy's import was asked for (its outcome is this request's).
+    @State private var requested = false
 
     private static var now: Int { Int(Date().timeIntervalSince1970) }
 
@@ -65,9 +67,13 @@ struct BringItOverStep: View {
         lastProgress = (relayManager.importProgress, relayManager.importStatusMessage, Self.now)
         Task {
             guard let url = await Self.vaultURL(other.mesh) else { return fallBack() }
-            configService.config.importStartDate = ImportTourStep.importStartDate
+            configService.config.importStartDate = OtherVaultCopy.startDate
             configService.save()
-            relayManager.importNotes(config: configService.config, alsoFrom: [url])
+            // Refused when an import is already running: a copy can't join it.
+            guard relayManager.importNotes(config: configService.config, alsoFrom: [url], otherVault: url) else {
+                return fallBack()
+            }
+            requested = true
         }
     }
 
@@ -85,7 +91,17 @@ struct BringItOverStep: View {
         guard !finished else { return }
         let now = Self.now
         if copying {
-            if relayManager.importCompleted && !relayManager.isImporting { return done() }
+            // Only haven-go's result line ends it (ImportResult): the other
+            // vault not reached, a failed or a cancelled run goes on to the
+            // relay import with the "not reached" line; anything else is done
+            // (the relay import still runs next, OtherVaultCopy.afterCopied).
+            if requested, !relayManager.isImporting, let outcome = relayManager.importOutcome {
+                switch outcome.status {
+                case .failed, .cancelled: return fallBack()
+                case .partial where outcome.otherVaultNotReached: return fallBack()
+                case .complete, .partial: return done()
+                }
+            }
             let value = relayManager.importProgress, message = relayManager.importStatusMessage
             if let last = lastProgress, last.value == value, last.message == message {
                 if OtherVaultCopy.isStalled(lastProgressAt: last.at, now: now) { fallBack() }

@@ -52,11 +52,11 @@ extension RelayProcessManager {
                 self.pendingAppliedConfig = nil
 
                 // An import stops the relay and restarts it from
-                // pendingImportConfig when it ends; hand it the newer config
-                // so the save is applied then rather than dropped.
+                // restartAfterImportConfig when it ends; hand it the newer
+                // config so the save is applied then rather than dropped.
                 if self.isImporting {
-                    if self.pendingImportConfig != nil {
-                        self.pendingImportConfig = next
+                    if self.restartAfterImportConfig != nil {
+                        self.restartAfterImportConfig = next
                         self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Relay settings changed during import; they apply when the import ends"))
                     }
                     continue

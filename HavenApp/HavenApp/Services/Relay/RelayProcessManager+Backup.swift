@@ -69,6 +69,14 @@ extension RelayProcessManager {
     func runBackupExport(config: HavenConfig, outputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
         enqueueLifecycle { [weak self] in
             guard let self else { return }
+            // One busy flag: a running import owns the databases.
+            guard !self.isVaultBusy else {
+                self.addLog("Backup not made: the vault is busy (\(self.busyJob?.rawValue ?? "")); try again when it ends", level: "ERROR")
+                completion(false)
+                return
+            }
+            self.busyJob = .backingUp
+            defer { if self.busyJob == .backingUp { self.busyJob = nil } }
             let wasRunning = self.isRunning
             if wasRunning { await self.performStop() }
             guard await self.waitForRelayDrain() else {
@@ -115,6 +123,13 @@ extension RelayProcessManager {
                             completion: @escaping @Sendable (Int32) -> Void) {
         enqueueLifecycle { [weak self] in
             guard let self else { return }
+            guard !self.isVaultBusy else {
+                self.addLog("Restore not started: the vault is busy (\(self.busyJob?.rawValue ?? "")); try again when it ends", level: "ERROR")
+                completion(1)
+                return
+            }
+            self.busyJob = .restoring
+            defer { if self.busyJob == .restoring { self.busyJob = nil } }
             let wasRunning = self.isRunning
             if wasRunning { await self.performStop() }
             guard await self.waitForRelayDrain() else {

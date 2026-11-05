@@ -6,69 +6,83 @@ import UniformTypeIdentifiers
 import UIKit
 #endif
 
+/// One import request: what `importNotes` was asked for, carried through a
+/// hold, a stop or a retry unchanged.
+struct ImportRequest {
+    let config: HavenConfig
+    /// Relays read for this import only (setup's own servers, the other vault).
+    let alsoFrom: [String]
+    let listHistory: Bool
+    /// The other vault's link address, for "Copy from my other vault".
+    let otherVault: String?
+    /// Refused starts already retried (ImportStartGate).
+    var retries = 0
+
+    /// The env key haven-go reads for `otherVault` (import_result.go).
+    static let otherVaultEnv = "IMPORT_OTHER_VAULT_RELAY"
+}
+
 extension RelayProcessManager {
+    /// An import, restore or backup owns the databases, or an import is
+    /// between a refused start and its retry.
+    var isVaultBusy: Bool { busyJob != nil || isImporting }
+
+    /// Cancel: the Go side ends the import, its end handler reports
+    /// "cancelled" and starts the relay again. A request still held or
+    /// between retries simply stands down.
     func cancelImport() {
-        if self.isImporting || self.isRunning {
-             DispatchQueue.global().async {
-                 StopRelayC()
-             }
+        importRequestGeneration += 1
+        queuedImport = nil
+        if state == .importing {
+            importStatusMessage = "Cancelling import…"
+            DispatchQueue.global().async { StopRelayC() }
+            return
         }
-        isImporting = false
-        DispatchQueue.main.async {
-            self.isImporting = false
-            self.listHistoryScanning = false
-            self.importProgress = 0.0
-            self.importStatusMessage = "Import cancelled"
-            self.pendingImportConfig = nil
-        }
+        if isImporting { endImport(with: .cancelledBeforeStart) }
     }
-    
+
+    /// The import overlay's dismiss: a running import is cancelled; an ended
+    /// one just leaves the screen.
     func dismissImport() {
-        if self.isImporting || self.isRunning {
-             DispatchQueue.global().async {
-                 StopRelayC()
-             }
-        }
-        DispatchQueue.main.async {
-            self.isImporting = false
-            // If we were waiting to restart, do it now
-            if let config = self.pendingImportConfig {
-                self.pendingImportConfig = nil
-                self.startRelay(config: config)
-            }
+        if state == .importing || isImporting {
+            cancelImport()
         }
     }
-    
-    
-    /// Kills any existing haven processes and clears database locks before import
-    // Note: Replaced by forceCleanLocks() but kept as stub if needed for future refactoring, 
-    // or we can remove it. For now, we will use forceCleanLocks() instead.
-    // The usages below will be updated.
-    
+
     /// `alsoFrom`: relays read for this import only, on top of
     /// `config.importSeedRelays`; not saved (setup's own-servers read).
     /// `listHistory`: "Look up and back up my lists" was on (the switch's
-    /// default; haven-go list_history_scan.go).
-    func importNotes(config: HavenConfig, alsoFrom: [String] = [], listHistory: Bool = false) {
+    /// default; haven-go list_history_scan.go). `otherVault`: the paired
+    /// device's address for "Copy from my other vault" (also in `alsoFrom`).
+    /// -> false when refused: a copy (extra relays) can't join a running
+    /// import, which would drop its relays.
+    @discardableResult
+    func importNotes(config: HavenConfig, alsoFrom: [String] = [], listHistory: Bool = false,
+                     otherVault: String? = nil) -> Bool {
         logStore.append(LogEntry(timestamp: Date(), level: "DEBUG", message: "importNotes called. Current State: \(state), isRunning: \(isRunning)"))
+        if isImporting && !alsoFrom.isEmpty {
+            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Import with extra relays refused: an import is already running"))
+            return false
+        }
         importRequestGeneration += 1
         if !isImporting {
             importRequestedAt = Date()
             importEngineStarted = false
             importStartFailed = false
+            importCompleted = false
+            importOutcome = nil
         }
-        requestImport(config: config, alsoFrom: alsoFrom, listHistory: listHistory,
-                      generation: importRequestGeneration, waits: 0, retries: 0)
+        requestImport(ImportRequest(config: config, alsoFrom: alsoFrom, listHistory: listHistory, otherVault: otherVault),
+                      generation: importRequestGeneration, waits: 0)
+        return true
     }
 
-    /// Runs the request on the lifecycle chain, behind any start or stop
-    /// already queued, so it sees a settled vault (ImportStartGate). Booting
-    /// or stopping holds it; it used to be dropped there with a WARN.
-    func requestImport(config: HavenConfig, alsoFrom: [String], listHistory: Bool,
-                       generation: Int, waits: Int, retries: Int) {
+    /// Runs the request on the lifecycle chain, behind any start, stop,
+    /// restore or backup already queued, so it sees a settled vault
+    /// (ImportStartGate). Booting or stopping holds it.
+    func requestImport(_ request: ImportRequest, generation: Int, waits: Int) {
         enqueueLifecycle { [weak self] in
-            self?.beginImport(config: config, alsoFrom: alsoFrom, listHistory: listHistory,
-                              generation: generation, waits: waits, retries: retries)
+            self?.beginImport(request, generation: generation, waits: waits)
         }
     }
 
@@ -82,10 +96,10 @@ extension RelayProcessManager {
         }
     }
 
-    private func beginImport(config: HavenConfig, alsoFrom: [String], listHistory: Bool,
-                             generation: Int, waits: Int, retries: Int) {
-        // A newer importNotes call owns the import now.
+    private func beginImport(_ request: ImportRequest, generation: Int, waits: Int) {
+        // A newer importNotes call (or Cancel) owns the import now.
         guard generation == importRequestGeneration else { return }
+        let config = request.config
 
         switch ImportStartGate.action(vault: gateVault, isRunning: isRunning, isShuttingDown: isShuttingDown) {
         case .alreadyImporting:
@@ -102,24 +116,20 @@ extension RelayProcessManager {
                 logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import held: vault is \(state) (running: \(isRunning))"))
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + ImportStartGate.waitInterval) { [weak self] in
-                self?.requestImport(config: config, alsoFrom: alsoFrom, listHistory: listHistory,
-                                    generation: generation, waits: waits + 1, retries: retries)
+                self?.requestImport(request, generation: generation, waits: waits + 1)
             }
             return
         case .stopThenStart:
             logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Stopping running relay to start import..."))
-            self.pendingImportConfig = config
-            self.pendingImportAlsoFrom = alsoFrom
-            self.pendingImportListHistory = listHistory
-            self.pendingImportRetries = retries
+            queuedImport = request
             stopRelay()
             return
         case .start:
             break
         }
 
-        importRefusal = nil
-        self.pendingImportConfig = config
+        busyJob = .importing
+        restartAfterImportConfig = config
         self.state = .importing
         isRunning = false
         isBooting = false
@@ -138,7 +148,7 @@ extension RelayProcessManager {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
         
-        RelayConfiguration.writeImportSeedRelays(config: config, under: relayDataDir, alsoFrom: alsoFrom)
+        RelayConfiguration.writeImportSeedRelays(config: config, under: relayDataDir, alsoFrom: request.alsoFrom)
         if let data = try? encoder.encode(config.activeBlastrRelays.isEmpty ? [] : config.activeBlastrRelays) { try? data.write(to: relayDataDir.appendingPathComponent(config.blastrRelaysFile)) }
         if let data = try? encoder.encode(config.dmRelays) { try? data.write(to: relayDataDir.appendingPathComponent("relays_dm.json")) }
         if let data = try? encoder.encode(config.whitelistedNpubs) { try? data.write(to: relayDataDir.appendingPathComponent("whitelisted_npubs.json")) }
@@ -150,10 +160,13 @@ extension RelayProcessManager {
 
         var configEnv = generateEnvDictionary(config: config)
         // Always set: the Go side keeps the process environment between imports.
-        configEnv[ListHistoryScan.optInEnv] = listHistory ? "1" : "0"
+        configEnv[ListHistoryScan.optInEnv] = request.listHistory ? "1" : "0"
         // Only the account moving in: never the device's other accounts.
         let movingIn = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
-        configEnv[ListHistoryScan.accountEnv] = listHistory ? (Bech32.decode(movingIn)?.hexString ?? "") : ""
+        configEnv[ListHistoryScan.accountEnv] = request.listHistory ? (Bech32.decode(movingIn)?.hexString ?? "") : ""
+        // The paired device read for "Copy from my other vault", so the
+        // result line can say whether it was reached (haven-go import_result.go).
+        configEnv[ImportRequest.otherVaultEnv] = request.otherVault ?? ""
         listHistoryScanning = false
         listHistoryNote = nil
         for (key, value) in configEnv {
@@ -172,30 +185,37 @@ extension RelayProcessManager {
             self.importProgress = 0.0
             self.importStatusMessage = "Starting import for \(config.ownerNpub.prefix(12))..."
         }
-        
+
         clearDatabaseLocks { [weak self] in
-             Task { @MainActor in
-                 guard let self = self else { return }
-                 if self.state != .importing { return }
-                 
-                 self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "C-Shared Import sequence started"))
-                 
-                 DispatchQueue.global().async {
-                     // 1 = true (importing mode)
-                     StartRelayC(1)
-                     
-                     // StartRelayC(1) returns when the import is over, or at
-                     // once when the Go side refused it. The refusal line
-                     // comes through the log pipe; give it a moment to land.
-                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                         self.importCycleEnded(config: config, alsoFrom: alsoFrom, listHistory: listHistory,
-                                               generation: generation, retries: retries)
-                     }
-                 }
-             }
+            Task { @MainActor in
+                guard let self = self else { return }
+                guard self.state == .importing, generation == self.importRequestGeneration else {
+                    // Cancelled before the Go side was called.
+                    if self.state == .importing { self.state = .idle }
+                    self.endImport(with: .cancelledBeforeStart)
+                    return
+                }
+                self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "C-Shared Import sequence started"))
+
+                DispatchQueue.global().async {
+                    // 1 = importing mode. Returns when the import cycle is
+                    // over, whatever happened; Go keeps that cycle's
+                    // IMPORT_RESULT line for us (no log-pipe timing guess).
+                    StartRelayC(1)
+                    var line = ""
+                    if let c = GetImportResultC() {
+                        line = String(cString: c)
+                        free(c)
+                    }
+                    let result = ImportResult.parse(line) ?? .noResult
+                    DispatchQueue.main.async {
+                        self.importCycleEnded(result, request: request, generation: generation)
+                    }
+                }
+            }
         }
     }
-    
+
     /// Moving in's Skip: stop the list history scan, keep what it found; the
     /// import carries on.
     func skipListHistoryScan() {
@@ -203,50 +223,49 @@ extension RelayProcessManager {
         DispatchQueue.global().async { _ = SkipListHistoryScanC() }
     }
 
-    /// A refused start is retried (ImportStartGate); anything else ends the
-    /// import as before.
-    private func importCycleEnded(config: HavenConfig, alsoFrom: [String], listHistory: Bool,
-                                  generation: Int, retries: Int) {
-        guard !importEngineStarted, let refusal = importRefusal else {
-            importCompletedSuccessfully()
-            return
-        }
-        importRefusal = nil
-        state = .idle
-        if ImportStartGate.shouldRetry(refusal, retries: retries), generation == importRequestGeneration {
-            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Import start refused; retrying (\(retries + 1) of \(ImportStartGate.maxRefusedRetries))"))
+    /// One import cycle ended. A start the Go side refused because the last
+    /// cycle hadn't let go is tried again; anything else ends the import with
+    /// what Go reported, and the relay starts again in every case.
+    private func importCycleEnded(_ result: ImportResult, request: ImportRequest, generation: Int) {
+        logStore.append(LogEntry(timestamp: Date(), level: result.isComplete ? "INFO" : "WARN",
+                                 message: "Import ended: \(result.status.rawValue) (\(result.reasons.joined(separator: ",")))"))
+        if state == .importing { state = .idle }
+        if busyJob == .importing { busyJob = nil }
+        if result.isRetryableStart, ImportStartGate.shouldRetry(retries: request.retries),
+           generation == importRequestGeneration {
+            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Import start refused; retrying (\(request.retries + 1) of \(ImportStartGate.maxRefusedRetries))"))
+            var next = request
+            next.retries += 1
             DispatchQueue.main.asyncAfter(deadline: .now() + ImportStartGate.refusedRetryDelay) { [weak self] in
-                self?.requestImport(config: config, alsoFrom: alsoFrom, listHistory: listHistory,
-                                    generation: generation, waits: 0, retries: retries + 1)
+                self?.requestImport(next, generation: generation, waits: 0)
             }
             return
         }
-        logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Import did not start; the relay comes back without it"))
-        listHistoryScanning = false
-        isImporting = false
-        importStartFailed = true
-        importStatusMessage = ImportStartGate.couldNotStart
-        if let restartConfig = pendingImportConfig {
-            pendingImportConfig = nil
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                self.startRelay(config: restartConfig)
-            }
-        }
+        endImport(with: result)
     }
 
-    private func importCompletedSuccessfully() {
-        self.listHistoryScanning = false
-        self.isImporting = false
-        self.importProgress = 1.0
-        self.importStatusMessage = "Import Complete!"
-        self.importCompleted = true
-        self.state = .idle
+    /// Records how the import ended, says so honestly, and starts the relay
+    /// again. Only a complete import counts as done ("Last ran").
+    private func endImport(with result: ImportResult) {
+        if busyJob == .importing { busyJob = nil }
+        listHistoryScanning = false
+        isImporting = false
+        importOutcome = result
+        switch result.status {
+        case .complete:
+            importProgress = 1.0
+            importCompleted = true
+        case .failed:
+            importStartFailed = true
+        case .partial, .cancelled:
+            break
+        }
+        importStatusMessage = result.summary
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import process ended: \(result.summary)"))
 
-        self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import process terminated successfully."))
-
-        if let restartConfig = self.pendingImportConfig {
-            self.pendingImportConfig = nil
-            self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import successful, restarting relay..."))
+        if let restartConfig = restartAfterImportConfig {
+            restartAfterImportConfig = nil
+            logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import ended, restarting relay..."))
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 self.startRelay(config: restartConfig)
             }

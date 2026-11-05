@@ -94,6 +94,7 @@ type importLogWriter struct {
 func (w *importLogWriter) Write(p []byte) (n int, err error) {
 	msg := strings.TrimSpace(string(p))
 	if msg != "" {
+		observeImportLine(msg)
 		// Route notification markers to the dedicated (non-lossy) queue and keep
 		// them out of the user-facing console log; everything else feeds the
 		// best-effort latest-message import log.
@@ -408,19 +409,33 @@ func StartRelayC(importMode bool) {
 // relayLC.current before the import starts so StopRelayC's lock-free
 // cancel phase can abort a long-running import.
 func runImportCycle() {
+	// One IMPORT_RESULT line ends every call, whatever happened (import_result.go).
+	o := newImportOutcome()
+	currentImport.Store(o)
+	defer o.finish()
+	defer func() {
+		if r := recover(); r != nil {
+			o.fail("panic")
+			panic(r) // StartRelayC recovers and logs it, after the result line
+		}
+	}()
+
 	relayLC.mu.Lock()
 	defer relayLC.mu.Unlock()
 	if relayLC.current.Load() != nil {
 		log.Println("⚠️ Import ignored: relay already running")
+		o.fail("already_running")
 		return
 	}
 	if !relayLC.awaitDrained(drainWait) {
 		log.Println("🚫 Import refused:", errStillDraining)
+		o.fail("still_draining")
 		return
 	}
 
 	if err := prepareCSharedEnv(); err != nil {
 		log.Println("🚫", err)
+		o.fail("config")
 		return
 	}
 
@@ -443,16 +458,38 @@ func runImportCycle() {
 	}()
 
 	log.Println("🚀 HAVEN", config.RelayVersion, "is booting up (C-Shared Import Mode)")
-	if !ensureImportRelays() {
+	ok := ensureImportRelays()
+	o.relaysChecked(config.ImportSeedRelays, importRelays(), importOtherVaultRelay())
+	if !ok {
 		log.Println("🚫 Import aborted: could not connect to any seed relays")
+		if ctx.Err() != nil {
+			o.cancel()
+		} else {
+			o.fail("no_seed_relay")
+		}
 		return
 	}
 	runImport(ctx)
 	if ctx.Err() != nil {
 		log.Println("🛑 Import cancelled")
+		o.cancel()
 		return
 	}
-	log.Println("✅ Import completed in C-Shared mode")
+	if status, _ := o.status(); status == "complete" {
+		log.Println("✅ Import completed in C-Shared mode")
+	}
+}
+
+// GetImportResultC returns the last import's IMPORT_RESULT line
+// (import_result.go), or NULL before the first import. The caller frees it.
+//
+//export GetImportResultC
+func GetImportResultC() *C.char {
+	l, _ := lastImportResult.Load().(string)
+	if l == "" {
+		return nil
+	}
+	return C.CString(l)
 }
 
 //export RelistenRelayC
