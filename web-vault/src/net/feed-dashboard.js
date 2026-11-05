@@ -15,8 +15,8 @@ export const POLL_KIND = 1068, ARTICLE_KIND = 30023, DIVINE_KIND = 34236
 const RELAY_CAP = 6
 const HEX64 = /^[0-9a-f]{64}$/
 
-/** The tiles' feeds, in the iPhone's order, with its names. Reels (diVines) has no web feed, so its tile opens nothing. */
-export const TILE_NAMES = { polls: "Polls", marketplace: "Marketplace", articles: "Articles", reels: "Reels", recipes: "Recipes", music: "Music" }
+/** The tiles' feeds, in the iPhone's order, with its names (FeedMode.displayName: Reels shows as diVines). */
+export const TILE_NAMES = { polls: "Polls", marketplace: "Marketplace", articles: "Articles", reels: "diVines", recipes: "Recipes", music: "Music" }
 
 /** FeedDashboardView.compact: 999, 1.2k, 12k, 1.2M. */
 export function compact(n) {

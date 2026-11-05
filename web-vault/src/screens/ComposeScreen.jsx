@@ -26,6 +26,7 @@ import { draftKey, forgetIfSent, idbDrafts, reachedRelay } from "./compose/draft
 import { ComposeKinds, composeType } from "./compose/ComposeKinds.jsx"
 import { ArticleCompose } from "./compose/ArticleCompose.jsx"
 import { RecipeCompose } from "./compose/RecipeCompose.jsx"
+import { DivineCompose } from "./compose/DivineCompose.jsx"
 import { PollCompose } from "./compose/PollCompose.jsx"
 import { HighlightCompose } from "./compose/HighlightCompose.jsx"
 import { ListingCompose } from "./compose/ListingCompose.jsx"
@@ -157,6 +158,7 @@ export function ComposeScreen(props) {
   const type = props.fixed || props.inline ? "note" : composeType()
   if (type === "article") return <ArticleCompose ctx={props.ctx} />
   if (type === "recipe") return <RecipeCompose ctx={props.ctx} />
+  if (type === "divine") return <DivineCompose ctx={props.ctx} />
   if (type === "poll") return <PollCompose ctx={props.ctx} />
   if (type === "highlight") return <HighlightCompose ctx={props.ctx} />
   if (type === "listing") return <ListingCompose ctx={props.ctx} />

@@ -1,0 +1,29 @@
+/* New diVine (screens/compose/DivineCompose.jsx), as the iPhone's DivineComposeView: the rule up top, a 9:16 black
+   frame with "6s max length" or the looping clip, the length meter, the sources, then title and caption. */
+.divine-form { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 0 var(--gutter) 24px; }
+.divine-form > * { width: 100%; max-width: 420px; }
+.divine-head { display: flex; flex-direction: column; gap: 4px; text-align: center; }
+.divine-head strong { font: var(--t-headline); }
+.divine-head span { font: var(--t-foot); color: var(--text-2); }
+.divine-video { aspect-ratio: 9 / 16; max-height: 420px; width: auto; max-width: 100%; display: grid; place-items: center; overflow: hidden;
+  border-radius: 16px; background: #000; color: #fff; }
+.divine-video video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.divine-video p { margin: 0; display: flex; align-items: center; gap: 8px; font: var(--t-foot); color: rgb(255 255 255 / .8); }
+.divine-limit { flex-direction: column; }
+.divine-limit b { font: 800 56px/1 var(--font); color: #fff; }
+.divine-limit span { font: 600 15px var(--font); color: rgb(255 255 255 / .7); }
+.divine-form .spinner { width: 14px; height: 14px; border: 2px solid var(--hair); border-top-color: var(--accent); border-radius: 50%; display: inline-block; }
+@media (prefers-reduced-motion: no-preference) { .divine-form .spinner { animation: spin .8s linear infinite; } }
+.divine-meter { display: flex; flex-direction: column; gap: 6px; }
+.divine-bar { height: 6px; border-radius: 3px; background: var(--s2); overflow: hidden; }
+.divine-bar span { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.divine-meter-row { display: flex; justify-content: space-between; font: var(--t-foot); color: var(--text-2); }
+.divine-meter-row b { color: var(--text); font-variant-numeric: tabular-nums; }
+.divine-sources { display: flex; flex-direction: column; gap: 10px; }
+.divine-sources.row { flex-direction: row; }
+.divine-sources button { flex: 1; min-height: 46px; }
+.divine-fields { display: flex; flex-direction: column; gap: 10px; }
+.divine-fields .kind-field { width: 100%; box-sizing: border-box; margin: 0; padding: 12px 14px; border: 0; border-radius: var(--radius);
+  background: var(--s2); color: var(--text); font: 400 16px/1.45 var(--font); resize: vertical; }
+.divine-status { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0; }
+.divine-warn { margin: 0; padding: 10px 12px; border-radius: var(--radius); background: rgb(255 159 10 / .15); color: #ffb340; font: var(--t-foot); }

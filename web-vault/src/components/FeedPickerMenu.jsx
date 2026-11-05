@@ -20,6 +20,7 @@ export const FEED_ICON = {
   music: "M9 18V5l11-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM20 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
   relay: "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01",
   polls: "M5 20V11M12 20V4M19 20v-7M3 20h18", // chart.bar
+  reels: "M3 5h18v14H3zM10 9l5 3-5 3z", // play.rectangle
 }
 export const LIST_ICON = "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"
 // Your network's day (the iPhone's square.grid.2x2).

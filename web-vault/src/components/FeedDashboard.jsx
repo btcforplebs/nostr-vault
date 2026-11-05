@@ -13,6 +13,7 @@ import { savePollScope } from "../readers/polls.js"
 import { saveScope as saveMarketScope } from "../readers/market.js"
 import { saveScope as saveRecipeScope } from "../readers/recipes.js"
 import { saveScope as saveLiveScope } from "../readers/live.js"
+import { saveScope as saveReelScope } from "../readers/reels.js"
 import { TILE_NAMES, WINDOW_S, compact, fetchDashboard, newFollowersSince, profilesOf } from "../net/feed-dashboard.js"
 import { countEvents } from "../net/feed-dashboard-vault.js"
 
@@ -24,10 +25,9 @@ const kept = { key: null, at: 0, snapshot: null }
 
 /** Where each tile's feed keeps its Following / Global choice (FeedDashboardStore.openOnFollowing). */
 const FOLLOWING_SCOPE = { polls: () => savePollScope("following"), marketplace: () => saveMarketScope("following"),
-  recipes: () => saveRecipeScope("following"), live: () => saveLiveScope("following") }
-/** Opens `feed` on Following. Reels has no feed on the web. */
+  recipes: () => saveRecipeScope("following"), live: () => saveLiveScope("following"), reels: () => saveReelScope("following") }
+/** Opens `feed` on Following. */
 export function openOnFollowing(feed, onPick) {
-  if (feed === "reels") return false
   FOLLOWING_SCOPE[feed]?.()
   onPick({ mode: feed })
   return true
@@ -161,8 +161,7 @@ function Content({ s, feed, go, onPick, onClose }) {
     {s.tiles.length > 0 && <Card title="From your follows" icon={I.grid} tint="purple">
       <div class="fdash-tiles">
         {s.tiles.map(t => (
-          <button key={t.feed} type="button" class="fdash-tile" disabled={t.feed === "reels"} aria-label={`${TILE_NAMES[t.feed]}, ${t.count}`}
-            title={t.feed === "reels" ? "Reels has no feed on the web yet" : undefined} onClick={() => feed(t.feed)}>
+          <button key={t.feed} type="button" class="fdash-tile" aria-label={`${TILE_NAMES[t.feed]}, ${t.count}`} onClick={() => feed(t.feed)}>
             <span class="fdash-tile-count">{t.count}</span>
             <strong>{TILE_NAMES[t.feed]}</strong>
             <span class="fdash-clip">{t.preview ?? " "}</span>

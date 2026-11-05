@@ -6,8 +6,10 @@ import { LiveScreen } from "./LiveScreen.jsx"
 import { MusicScreen } from "./MusicScreen.jsx"
 import { MarketplaceScreen } from "./MarketplaceScreen.jsx"
 import { PollsScreen } from "./PollsScreen.jsx"
+import { ReelsScreen } from "./ReelsScreen.jsx"
 
 export const READERS = [
+  { id: "reels", label: "diVines", Screen: ReelsScreen },
   { id: "articles", label: "Articles", Screen: ArticlesScreen },
   { id: "recipes", label: "Recipes", Screen: RecipesScreen },
   { id: "marketplace", label: "Marketplace", Screen: MarketplaceScreen },
