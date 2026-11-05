@@ -1,0 +1,249 @@
+import SwiftUI
+
+// MARK: - Already using Nostr Vault on another device?
+
+/// Pairing plan §5a: asked right after sign-in. Yes links this device to the
+/// other one and copies the vault across (BringItOverStep); No is today's
+/// setup. No mesh, address or role words here.
+struct OtherDeviceQuestionStep: View {
+    let onYes: () -> Void
+    let onNo: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Spacer().frame(height: 12)
+            Image(systemName: "iphone.and.arrow.forward")
+                .font(.appSystem(size: 40))
+                .foregroundColor(WizardColors.accentPrimary)
+            Text(OtherDeviceQuestion.title)
+                .font(.appSystem(size: isIOSDevice ? 24 : 28, weight: .semibold))
+                .foregroundColor(WizardColors.textPrimary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(OtherDeviceQuestion.yesDetail)
+                .font(.appSystem(size: 15))
+                .foregroundColor(WizardColors.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer().frame(height: 8)
+            WizardPrimaryButton(title: OtherDeviceQuestion.yes, action: onYes)
+            Button(action: onNo) {
+                Text(OtherDeviceQuestion.no)
+                    .font(.appSystem(size: 15, weight: .semibold))
+                    .foregroundColor(WizardColors.textPrimary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+// MARK: - Yes, bring it over
+
+/// The two scans with this device as B (lane A's PairDeviceFlow, unchanged),
+/// then the copy from the other device with its progress. Anything that
+/// fails calls `onFallback`, which goes on quietly to the relay import.
+struct BringItOverStep: View {
+    @EnvironmentObject var configService: ConfigService
+    @EnvironmentObject var relayManager: RelayProcessManager
+    @StateObject private var holder = PairDeviceFlowHolder()
+
+    /// Linked and copied (or copying on in the background).
+    let onDone: () -> Void
+    /// No link, or the copy stalled: one plain line, then the relay import.
+    let onFallback: () -> Void
+
+    @State private var scanning = false
+    @State private var other: MeshPairing.Payload?
+    @State private var linkStartedAt: Int?
+    @State private var copying = false
+    @State private var lastProgress: (value: Double, message: String, at: Int)?
+    @State private var finished = false
+
+    private static var now: Int { Int(Date().timeIntervalSince1970) }
+
+    var body: some View {
+        let flow = holder.flow(configService)
+        VStack(spacing: 16) {
+            Spacer().frame(height: 12)
+            Text(OtherDeviceQuestion.yes)
+                .font(.appSystem(size: isIOSDevice ? 24 : 28, weight: .semibold))
+                .foregroundColor(WizardColors.textPrimary)
+            BringItOverContent(flow: flow, other: other, copying: copying, scanning: $scanning,
+                               scanned: scanned, confirm: confirm, onLinked: startCopy, onFailed: fallBack,
+                               onContinue: done)
+                .environmentObject(relayManager)
+        }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in watch() }
+        .onDisappear {
+            if !copying { flow.cancel() }
+        }
+    }
+
+    /// The other device's code, before lane A's flow takes it: kept for its
+    /// name and for the copy.
+    private func scanned(_ text: String) -> String? {
+        let flow = holder.flow(configService)
+        if case .success(let p) = MeshPairing.parse(text, ownMesh: nil) { other = p }
+        let refusal = flow.scannedFirstCode(text)
+        if refusal == nil { scanning = false }
+        return refusal
+    }
+
+    private func confirm() {
+        linkStartedAt = Self.now
+        holder.flow(configService).roleConfirmed()
+    }
+
+    /// Linked: copy from the other device, read through its link like any
+    /// other relay, by the import that setup already runs.
+    private func startCopy() {
+        guard !copying, let other else { return }
+        copying = true
+        lastProgress = (relayManager.importProgress, relayManager.importStatusMessage, Self.now)
+        Task {
+            guard let url = await Self.vaultURL(other.mesh) else { return fallBack() }
+            configService.config.importStartDate = ImportTourStep.importStartDate
+            configService.save()
+            relayManager.importNotes(config: configService.config, alsoFrom: [url])
+        }
+    }
+
+    /// The other device's vault as a local ws:// address, or nil. Never log it.
+    private static func vaultURL(_ meshNpub: String) async -> String? {
+        #if os(iOS)
+        return await FipsMeshService.shared.relayWebsocketURL(meshNpub: meshNpub)
+        #else
+        guard let base = await MacFipsMeshService.shared.ingressURL(meshNpub: meshNpub) else { return nil }
+        return HomeVaultLogic.websocketURL(base: base)?.absoluteString
+        #endif
+    }
+
+    private func watch() {
+        guard !finished else { return }
+        let now = Self.now
+        if copying {
+            if relayManager.importCompleted && !relayManager.isImporting { return done() }
+            let value = relayManager.importProgress, message = relayManager.importStatusMessage
+            if let last = lastProgress, last.value == value, last.message == message {
+                if OtherDeviceQuestion.isStalled(lastProgressAt: last.at, now: now) { fallBack() }
+            } else {
+                lastProgress = (value, message, now)
+            }
+        } else if let started = linkStartedAt, OtherDeviceQuestion.linkTimedOut(startedAt: started, now: now) {
+            fallBack()
+        }
+    }
+
+    private func done() {
+        guard !finished else { return }
+        finished = true
+        onDone()
+    }
+
+    private func fallBack() {
+        guard !finished else { return }
+        finished = true
+        if !copying { holder.flow(configService).cancel() }
+        onFallback()
+    }
+}
+
+private struct BringItOverContent: View {
+    @ObservedObject var flow: PairDeviceFlow
+    @EnvironmentObject var relayManager: RelayProcessManager
+    let other: MeshPairing.Payload?
+    let copying: Bool
+    @Binding var scanning: Bool
+    let scanned: (String) -> String?
+    let confirm: () -> Void
+    let onLinked: () -> Void
+    let onFailed: () -> Void
+    let onContinue: () -> Void
+
+    private var otherName: String {
+        let n = other?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return n.isEmpty ? "your other device" : n
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            if copying {
+                copyProgress
+            } else {
+                steps
+            }
+        }
+        .onChange(of: flow.step) { _, step in
+            switch step {
+            case .linked: onLinked()
+            case .failed: onFailed()
+            default: break
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var steps: some View {
+        switch flow.step {
+        case .start:
+            line("On your other device, open Your devices on its dashboard, tap Add and then Show my code.")
+            if scanning {
+                PairScanView(title: "Point the camera at your other device's code", validate: scanned) { _ in }
+            } else {
+                WizardPrimaryButton(title: "Scan its code") { scanning = true }
+            }
+        case .confirmRole:
+            line(MeshPairing.roleConfirmText(role: other?.role ?? .phone, name: other?.name ?? "", setup: true))
+            WizardPrimaryButton(title: "Add", action: confirm)
+            Button("Cancel") { flow.cancel() }
+                .buttonStyle(.plain)
+                .foregroundColor(WizardColors.textSecondary)
+        case .joined(let qr, _, let words, let short, let needsWordsTap):
+            PairShowQRView(qr: qr, caption: "Now let \(otherName) scan this code.", secondsLeft: nil)
+            if needsWordsTap {
+                PairCheckWordsView(words: words, short: short,
+                                   caption: "Check that \(otherName) shows these same words.")
+                WizardPrimaryButton(title: "They match") { flow.wordsMatch() }
+            } else {
+                ProgressView().tint(WizardColors.accentPrimary)
+            }
+        case .linked:
+            ProgressView().tint(WizardColors.accentPrimary)
+        default:
+            ProgressView().tint(WizardColors.accentPrimary)
+        }
+        if let notice = flow.notice {
+            Text(notice)
+                .font(.appSystem(size: 13))
+                .foregroundColor(.orange)
+                .multilineTextAlignment(.center)
+        }
+    }
+
+    private var copyProgress: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.appSystem(size: 36))
+                .foregroundColor(WizardColors.success)
+            line("Linked ✓ \(otherName)")
+            Text(OtherDeviceQuestion.copyingLine(other?.name ?? ""))
+                .font(.appSystem(size: 15, weight: .medium))
+                .foregroundColor(WizardColors.textPrimary)
+            ProgressView(value: max(relayManager.importProgress, 0.02))
+                .tint(WizardColors.accentPrimary)
+            // The import's own status line names the account by npub: not here (§5a).
+            line("It carries on if you go ahead now.")
+            WizardPrimaryButton(title: "Continue", action: onContinue)
+        }
+    }
+
+    private func line(_ text: String) -> some View {
+        Text(text)
+            .font(.appSystem(size: 15))
+            .foregroundColor(WizardColors.textSecondary)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
