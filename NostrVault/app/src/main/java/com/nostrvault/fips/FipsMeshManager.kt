@@ -40,6 +40,13 @@ class FipsMeshManager @Inject constructor(
     private val _status = MutableStateFlow(FipsStatus.stopped)
     val status: StateFlow<FipsStatus> = _status.asStateFlow()
 
+    /**
+     * One at a time across every mesh change: Mesh settings (on/off, a device added or removed, Advanced) and pairing.
+     * A change reads the config inside it, so a queued Remove or Mesh off is never undone by one that read before it
+     * (Tron, #981 and #1706).
+     */
+    val changeLock = kotlinx.coroutines.sync.Mutex()
+
     /** Last failure, for the UI. Cleared by a successful start. */
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError.asStateFlow()

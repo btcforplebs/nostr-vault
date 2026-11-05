@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 /**
@@ -219,9 +220,14 @@ class PairDeviceViewModel @Inject constructor(
     // ---- The role confirm ----
 
     fun confirmRole() {
+        // Only from the confirm screen: a late tap after a stop does nothing.
+        if (_ui.value !is Ui.ConfirmRole) return
         when (val p = pending.also { pending = null }) {
             is Pending.AddB -> {
                 val s = session ?: return
+                // B stops waiting for the ack 360 s after it scanned, which is no earlier than its hello: past A's
+                // scan window from that hello, don't link this side alone.
+                if (now() - helloAt > MeshPairing.SCAN_WINDOW) return stop(MeshPairing.EXPIRED_TEXT)
                 store(p.npub, p.role, p.name)
                 sendAck(s)
                 _ui.value = Ui.Linked(MeshPairing.displayName(p.name))
@@ -305,7 +311,8 @@ class PairDeviceViewModel @Inject constructor(
     fun turnOnMesh() {
         _ui.value = Ui.NoMesh(starting = true)
         viewModelScope.launch {
-            val ok = mesh.start()
+            // Behind any Mesh settings change still queued (Tron, #1706): never a start while Mesh off is stopping it.
+            val ok = mesh.changeLock.withLock { mesh.status.value.running || mesh.start() }
             if (ok) showCode() else _ui.value = Ui.NoMesh(error = mesh.lastError.value ?: "The mesh did not start.")
         }
     }
@@ -321,14 +328,20 @@ class PairDeviceViewModel @Inject constructor(
 
     private fun store(npub: String, role: DeviceRole, name: String) {
         val own = ownHex?.let(MeshPairing::npub)
+        // In the same queue as Mesh settings, reading the config inside it: a Remove or Mesh off queued before this
+        // is finished first and not undone (Tron, #1706).
         appScope.launch {
-            val before = configStore.config.value
-            val change = MyDevicesRules.add(before.fipsPeers, before.homeVaultNpub, before.fipsMesh.devices, own, npub, role, name) ?: return@launch
-            configStore.updateAsync { it.copy(fipsMesh = it.fipsMesh.copy(devices = change.labels)) }
-            if (change.peers != before.fipsPeers) mesh.setPeers(change.peers)
-            if (change.homeVault != before.homeVaultNpub) homeVault.setHomeVault(change.homeVault)
-            configStore.updateAsync { it.copy(serverListDropMesh = serverListDropsAfter(before, it)) }
+            mesh.changeLock.withLock { storeNow(own, npub, role, name) }
         }
+    }
+
+    private suspend fun storeNow(own: String?, npub: String, role: DeviceRole, name: String) {
+        val before = configStore.config.value
+        val change = MyDevicesRules.add(before.fipsPeers, before.homeVaultNpub, before.fipsMesh.devices, own, npub, role, name) ?: return
+        configStore.updateAsync { it.copy(fipsMesh = it.fipsMesh.copy(devices = change.labels)) }
+        if (change.peers != before.fipsPeers) mesh.setPeers(change.peers)
+        if (change.homeVault != before.homeVaultNpub) homeVault.setHomeVault(change.homeVault)
+        configStore.updateAsync { it.copy(serverListDropMesh = serverListDropsAfter(before, it)) }
     }
 
     // ---- Helpers ----
@@ -370,6 +383,7 @@ class PairDeviceViewModel @Inject constructor(
 
     private fun stop(text: String) {
         stopTicker()
+        pending = null
         hello?.close()
         _ui.value = Ui.Stopped(text)
     }
