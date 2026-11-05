@@ -503,6 +503,8 @@ struct VaultDashboardView: View {
                 }
                 .disabled(exporter.isBusy || !actionsEnabled)
             }
+            DashboardDivider()
+            RestoreBackupRow()
             if !actionsEnabled || !exporter.statusMessage.isEmpty {
                 DashboardDivider()
                 HStack(spacing: 6) {

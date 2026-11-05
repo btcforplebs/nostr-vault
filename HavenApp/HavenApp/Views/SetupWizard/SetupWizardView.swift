@@ -120,30 +120,17 @@ struct SetupWizardView: View {
     private var pathSteps: [Int] {
         switch setupPath {
         case .none: return []
-        case .newToNostr: return [9, 10, 11, 17, 15, 8] // keys, password, profile, relay list, who told you, done
-        // Existing Nostr users: the Vault backup question comes before the relay import.
-        case .browse: return VaultBackupQuestion.steps(path: .browse, isIOS: isIOSDevice)
-        case .full:
-            // macOS full setup: who told you (15) after the wallet.
-            let steps = VaultBackupQuestion.steps(path: .full, isIOS: isIOSDevice)
-            return isIOSDevice ? steps : Self.addingReferrer(to: steps, before: 8)
-        case .useNostr:
-            // your key, Vault backup?, relay check, (who told you), import tour.
-            // A read-only key can't follow anyone.
-            let steps = VaultBackupQuestion.steps(path: .useNostr, isIOS: isIOSDevice)
-            return useNostrIsReadOnly ? steps : Self.addingReferrer(to: steps, before: 13)
+        // "Who showed you this app?" (15) is only for people new to Nostr (Logen 2026-11-05).
+        case .newToNostr: return [9, 10, 11, 17, 15, 8] // keys, password, profile, relay list, who showed you, done
+        // People who already use Nostr: "New to Nostr Vault?" comes before the relay import.
+        case .browse: return NewToVaultQuestion.steps(path: .browse, isIOS: isIOSDevice)
+        case .full: return NewToVaultQuestion.steps(path: .full, isIOS: isIOSDevice)
+        case .useNostr: return NewToVaultQuestion.steps(path: .useNostr, isIOS: isIOSDevice)
         }
     }
 
-    /// `steps` with "Who told you about Nostr Vault?" (15) right before `next`.
-    private static func addingReferrer(to steps: [Int], before next: Int) -> [Int] {
-        var out = steps
-        out.insert(15, at: out.firstIndex(of: next) ?? out.endIndex)
-        return out
-    }
-
-    /// The path as the Vault backup question knows it; nil for a new account.
-    private var backupQuestionPath: VaultBackupQuestion.Path? {
+    /// The path as "New to Nostr Vault?" knows it; nil for a new account.
+    private var vaultQuestionPath: NewToVaultQuestion.Path? {
         switch setupPath {
         case .useNostr: return .useNostr
         case .full: return .full
@@ -265,14 +252,14 @@ struct SetupWizardView: View {
                     if isIOSDevice {
                         goForward() // Go to notifications
                     } else {
-                        currentStep = 15 // Who told you, then complete
+                        currentStep = 8 // Complete
                     }
                 },
                 onSkip: {
                     if isIOSDevice {
                         goForward()
                     } else {
-                        currentStep = 15
+                        currentStep = 8
                     }
                 }
             )
@@ -347,11 +334,11 @@ struct SetupWizardView: View {
                 onContinue: { goForward() }
             )
         case OtherVaultCopy.step:
-            BringItOverStep(onDone: bringItOverDone, onFallback: bringItOverFellBack)
-        case VaultBackupQuestion.step:
-            VaultBackupQuestionStep(
-                onRestored: { answerBackupQuestion(.restored) },
-                onNo: { answerBackupQuestion(.no) },
+            BringItOverStep(onDone: bringItOverDone, onFallback: bringItOverFellBack,
+                            onRelaysInstead: { goToRelayImport() })
+        case NewToVaultQuestion.step:
+            NewToVaultStep(
+                onRelays: { goToRelayImport() },
                 onCopyFromOtherVault: { go(to: OtherVaultCopy.step) }
             )
         case 14:
@@ -403,19 +390,18 @@ struct SetupWizardView: View {
     private func goForward() {
         direction = .forward
         withAnimation(WizardAnimations.springEnter) {
-            if let path = backupQuestionPath, VaultBackupQuestion.isAskedAfter(step: currentStep, path: path) {
-                currentStep = VaultBackupQuestion.step // → Do you have a Vault backup?
+            if let path = vaultQuestionPath, NewToVaultQuestion.isAskedAfter(step: currentStep, path: path) {
+                currentStep = NewToVaultQuestion.step // → New to Nostr Vault?
             } else if currentStep == 14 {
-                // relay check → who told you → import tour
-                currentStep = useNostrIsReadOnly ? 13 : 15
+                currentStep = 13 // relay check → import tour
             } else if currentStep == 15 {
-                currentStep = setupPath == .useNostr ? 13 : 8
+                currentStep = 8 // who showed you (new to Nostr) → done
             } else if currentStep == 4 && setupPath == .browse {
                 // Browse mode: after import, skip mirror/wallet/notifications — go to complete
                 currentStep = 8
             } else if currentStep == 6 && !isIOSDevice {
-                // macOS full setup: skip notifications, go to who told you
-                currentStep = 15
+                // macOS full setup: skip notifications, go to done
+                currentStep = 8
             } else {
                 currentStep += 1
             }
@@ -434,15 +420,14 @@ struct SetupWizardView: View {
                 currentStep = 0 // Back to the front door
             } else if currentStep == OtherVaultCopy.step {
                 currentStep = OtherVaultCopy.backStep // the copy: back to the import choice
-            } else if currentStep == VaultBackupQuestion.step, let path = backupQuestionPath {
-                currentStep = VaultBackupQuestion.previous(path: path)
-            } else if currentStep == 14 || (currentStep == 4 && backupQuestionPath != nil) {
-                currentStep = VaultBackupQuestion.step // Relay import: back to the backup question
+            } else if currentStep == NewToVaultQuestion.step, let path = vaultQuestionPath {
+                currentStep = NewToVaultQuestion.previous(path: path)
+            } else if currentStep == 14 || (currentStep == 4 && vaultQuestionPath != nil) {
+                currentStep = NewToVaultQuestion.step // Relay import: back to New to Nostr Vault?
             } else if currentStep == 13 {
-                currentStep = useNostrIsReadOnly ? 14 : 15 // Import tour: back to who told you / the relay check
+                currentStep = 14 // Import tour: back to the relay check
             } else if currentStep == 15 {
-                // Who told you: back to profile, the relay check or the wallet
-                currentStep = setupPath == .newToNostr ? 17 : setupPath == .useNostr ? 14 : 6
+                currentStep = 17 // Who showed you (new to Nostr only): back to the relay list
             } else if currentStep == 17 {
                 currentStep = 11 // Relay list: back to profile
             } else if currentStep == 11 {
@@ -457,7 +442,7 @@ struct SetupWizardView: View {
                 } else if isIOSDevice {
                     currentStep = 7 // iOS full: back to notifications
                 } else {
-                    currentStep = 15 // macOS full: back to who told you
+                    currentStep = 6 // macOS full: back to the wallet
                 }
             } else if currentStep == 7 && isIOSDevice {
                 currentStep = 6 // iOS full: back to wallet
@@ -479,35 +464,26 @@ struct SetupWizardView: View {
         macRelayURL = configService.config.macRelayURL
     }
 
-    /// Linked and copied: like a restored backup, the relay import is skipped.
+    /// Linked and copied: the relay import still runs after it.
     private func bringItOverDone() {
         keepLinkedMac()
-        guard let path = backupQuestionPath else { return }
-        switch OtherVaultCopy.afterCopied(path: path) {
-        case .finish: saveAndComplete()
-        case .step(let next): go(to: next)
-        }
+        guard let path = vaultQuestionPath else { return }
+        go(to: OtherVaultCopy.afterCopied(path: path))
+    }
+
+    /// Yes, new to Nostr Vault (or "Lost your other device?"): the relay import.
+    private func goToRelayImport() {
+        keepLinkedMac()
+        guard let path = vaultQuestionPath else { return }
+        go(to: NewToVaultQuestion.relayImportStep(path: path))
     }
 
     /// No link or a stalled copy: one plain line, then today's relay setup.
     private func bringItOverFellBack() {
         keepLinkedMac()
         fallbackNote = OtherVaultCopy.fallbackLine
-        guard let path = backupQuestionPath else { return }
+        guard let path = vaultQuestionPath else { return }
         go(to: OtherVaultCopy.afterFallback(path: path))
-    }
-
-    /// Yes (restored) skips the relay import; No goes on to it as before.
-    private func answerBackupQuestion(_ answer: VaultBackupQuestion.Answer) {
-        guard let path = backupQuestionPath else { return }
-        switch VaultBackupQuestion.next(after: answer, path: path) {
-        case .finish:
-            saveAndComplete()
-        case .step(let next):
-            direction = .forward
-            withAnimation(WizardAnimations.springEnter) { currentStep = next }
-            saveIntermediateConfig()
-        }
     }
 
     private func saveIntermediateConfig() {
@@ -572,11 +548,8 @@ struct SetupWizardView: View {
         saveIntermediateConfig()
         configService.config.adoptGlobalBunkerConfigForOwner()
         configService.config.hasCompletedSetup = true
-        // New accounts start with notifications on (DMs, replies, mentions and
-        // zaps per NotificationPreferences' defaults) — otherwise a first DM
-        // arrives silently. Set here rather than as the config default so
-        // existing installs keep whatever they had.
-        configService.config.enablePushNotifications = true
+        // The push switch is set by the answer to the notification prompt,
+        // asked once you're in (NotificationAsk), not switched on before it.
         configService.save()
         configService.refreshActiveAccountHex()
 
@@ -602,19 +575,14 @@ struct SetupWizardView: View {
             FeedService.shared.followUsers(referralFollows)
         }
 
-        if isIOSDevice {
-            // Not on top of the first tutorial or the import pill: ask when
-            // the first tutorial closes. If none does this launch,
-            // AppDelegate asks at the next launch.
-            TutorialCenter.shared.onNextClose = {
-                PushNotificationService.shared.requestPermissionAndRegister()
-            }
-        } else {
-            // The Mac asks as the setup window closes: the switch above is
-            // already on, and without the system's permission nothing it
-            // allows can show. The Mac AppDelegate asks again at launch.
-            PushNotificationService.shared.requestPermissionAndRegister()
-        }
+        // The notification prompt: once you're in, with no tutorial card or
+        // guide on screen (NotificationAsk). The Mac opens its window first;
+        // the prompt comes as it appears.
+        #if os(macOS)
+        MacWindow.openMainFromAppKit()
+        #else
+        PushNotificationService.shared.askWhenIn()
+        #endif
 
         onComplete()
         dismiss()

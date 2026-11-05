@@ -140,7 +140,8 @@
                     only read the photos in your public posts.</p>
 
                 <h2 id="turn-the-mesh-on">Turn the mesh on</h2>
-                <p>On each device, open <span class="path">Settings &rarr; Mesh</span> and switch on
+                <p>On each device, open Mesh (on iPhone and iPad <span class="path">Profile &rarr; Mesh</span>, elsewhere
+                    <span class="path">Settings &rarr; Mesh</span>) and switch on
                     <span class="ui">Mesh</span>. Under <span class="ui">This Device</span> you'll see its
                     <span class="ui">Mesh address</span>, a long key starting with <code>npub</code>. That's how your other devices
                     find this one.</p>
@@ -151,13 +152,20 @@
                 </div>
 
                 <h2 id="add">Add a device</h2>
+                <p><strong>On iPhone and iPad</strong>, tap <span class="ui">Add a device</span> under My Devices. One device taps
+                    <span class="ui">Show my code</span>, the other <span class="ui">Scan a code</span>, then they swap; both add each
+                    other. Each code also shows as text with <span class="ui">Copy</span>, and every scan step has
+                    <span class="ui">Paste instead</span> for the other device's code. A Linux box or the browser relay page shows
+                    only its mesh address: paste that under <span class="ui">Paste instead</span>, pick what it is, and tap
+                    <span class="ui">Add</span>.</p>
+                <p><strong>On Android and the Mac</strong>, add it by address:</p>
                 <ol class="steps">
                     <li>On the device you want to add, open <span class="ui">Mesh</span> and, under
                         <span class="ui">This Device</span>, tap <span class="ui">Copy</span>, or <span class="ui">Show QR</span> to
                         scan it from the other device.</li>
-                    <li>On the other device, tap <span class="ui">Add a device by address</span>. Paste the address, or tap
-                        <span class="ui">Scan its QR code</span>.</li>
-                    <li>Under <span class="ui">This Is</span>, pick what it is:
+                    <li>On the other device, tap <span class="ui">Add a device by address</span>. Paste the address (on Android you
+                        can also scan it).</li>
+                    <li>Pick what it is:
                         <ul>
                             <li><span class="ui">Home vault &middot; full history</span>: Nostr Vault on your Mac. Your new notes and photos go to it, and
                                 your history syncs back. See <a href="/docs/mesh/sync/">Home vault sync</a>.</li>

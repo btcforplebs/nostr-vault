@@ -65,6 +65,8 @@ struct HavenApp: App {
 
         Window("Nostr Vault", id: "viewer-window") {
             MenuBarView(configService: configService, relayManager: relayManager, isPoppedOut: true)
+                // The notification prompt comes with the main window, not before it.
+                .onAppear { PushNotificationService.shared.askWhenIn() }
                 .environmentObject(configService)
                 .environmentObject(relayManager)
                 .environmentObject(nostrService)

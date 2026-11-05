@@ -1,9 +1,8 @@
 import XCTest
 @testable import MediaLogic
 
-/// Setup's "Copy from my other vault", the third answer on the import choice:
-/// copied skips the relay import like a restored backup; a failure goes to
-/// the relay import as "import from my relays" would.
+/// Setup's "Copy from my other vault", the No answer to "New to Nostr
+/// Vault?": copied or not, the relay import runs after it.
 final class OtherVaultCopyTests: XCTestCase {
     private let paths: [OtherVaultCopy.Path] = [.useNostr, .browse, .full]
 
@@ -11,12 +10,12 @@ final class OtherVaultCopyTests: XCTestCase {
     func testNoNewStepInTheDots() {
         for path in paths {
             for isIOS in [true, false] {
-                XCTAssertFalse(VaultBackupQuestion.steps(path: path, isIOS: isIOS).contains(OtherVaultCopy.step))
+                XCTAssertFalse(NewToVaultQuestion.steps(path: path, isIOS: isIOS).contains(OtherVaultCopy.step))
             }
         }
-        XCTAssertEqual(OtherVaultCopy.dotStep(OtherVaultCopy.step), VaultBackupQuestion.step)
+        XCTAssertEqual(OtherVaultCopy.dotStep(OtherVaultCopy.step), NewToVaultQuestion.step)
         XCTAssertEqual(OtherVaultCopy.dotStep(14), 14)
-        XCTAssertEqual(OtherVaultCopy.backStep, VaultBackupQuestion.step)
+        XCTAssertEqual(OtherVaultCopy.backStep, NewToVaultQuestion.step)
     }
 
     /// The copy reads only the other vault's public notes, so the normal
@@ -24,10 +23,9 @@ final class OtherVaultCopyTests: XCTestCase {
     /// like a restored backup and leave the vault thin).
     func testCopiedStillRunsTheRelayImport() {
         for path in paths {
-            XCTAssertEqual(OtherVaultCopy.afterCopied(path: path), VaultBackupQuestion.next(after: .no, path: path))
-            XCTAssertNotEqual(OtherVaultCopy.afterCopied(path: path), .finish)
+            XCTAssertEqual(OtherVaultCopy.afterCopied(path: path), NewToVaultQuestion.relayImportStep(path: path))
         }
-        XCTAssertEqual(OtherVaultCopy.afterCopied(path: .useNostr), .step(14))
+        XCTAssertEqual(OtherVaultCopy.afterCopied(path: .useNostr), 14)
         XCTAssertEqual(OtherVaultCopy.startDate, "2020-11-01")
     }
 
@@ -37,7 +35,7 @@ final class OtherVaultCopyTests: XCTestCase {
         XCTAssertEqual(OtherVaultCopy.afterFallback(path: .full), 4)
         XCTAssertEqual(OtherVaultCopy.afterFallback(path: .browse), 4)
         for path in paths {
-            XCTAssertEqual(.step(OtherVaultCopy.afterFallback(path: path)), VaultBackupQuestion.next(after: .no, path: path))
+            XCTAssertEqual(OtherVaultCopy.afterFallback(path: path), NewToVaultQuestion.relayImportStep(path: path))
         }
     }
 
