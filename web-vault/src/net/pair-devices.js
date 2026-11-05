@@ -87,6 +87,53 @@ export function addPaired(device, { storage, liveOwners, pubkey = activeOf(stora
   return pairedDevices(storage, pubkey)
 }
 
+/** Removing account `pubkey` from this browser (signer/accounts.js removeAccount): the vaults it paired leave the owner
+ *  set too, unless another account here also paired them. Without this they would stay in the set with no account
+ *  claiming them, which reads as "paired by link" and lets them into every account's vault (bug hunt 2026-11-05 #1).
+ *  Its record goes with it. Call before the account leaves the list. */
+export function forgetPairedOf(pubkey, { storage = globalThis.localStorage } = {}) {
+  if (!pubkey) return
+  const s = fips(storage)
+  const owners = readOwners(s)
+  if (!owners) return // unreadable: left alone, and the record kept so a later remove can still forget them
+  const mine = Object.keys(readMap(s, metaKey(pubkey)))
+  const others = othersPaired(s, pubkey, storage)
+  if (mine.length) {
+    for (const hex of mine) if (!others.has(hex)) owners.delete(hex)
+    saveOwners(owners, s)
+  }
+  s.removeItem(metaKey(pubkey))
+}
+
+/**
+ * The storage Who Can Reach You's owner box saves through (RelayScreen.jsx, web-relay/src/fips/panel.js), for account
+ * `pubkey`. The box shows only this account's owners (and those added by link), so a plain save would drop the vaults
+ * other accounts paired, and anything typed in would belong to no account and reach every account's vault (bug hunt
+ * 2026-11-05 #5). Here a save of the owner set keeps every owner the box doesn't show, records an added address as this
+ * account's (one another account already paired too), and drops a removed one from this account's record. Everything else passes through.
+ */
+export function ownerBoxStorage(pubkey, { storage = globalThis.localStorage } = {}) {
+  const base = fips(storage)
+  return {
+    getItem: k => base.getItem(k),
+    removeItem: k => base.removeItem(k),
+    setItem(k, v) {
+      if (k !== OWNERS_ITEM || !pubkey) return base.setItem(k, v)
+      const before = readOwners(base)
+      if (!before) throw new Error("This browser's list of linked devices can't be read, so nothing was saved.")
+      const shown = ownersForAccount(before, pubkey, { storage })
+      let next
+      try { next = parseOwners(String(v)) } catch { return base.setItem(k, v) }
+      const hidden = [...before].filter(hex => !shown.has(hex))
+      const meta = readMeta(base, pubkey)
+      for (const hex of next) if (!shown.has(hex)) meta[hex] ??= { name: "", role: null }
+      for (const hex of Object.keys(meta)) if (shown.has(hex) && !next.has(hex)) delete meta[hex]
+      base.setItem(metaKey(pubkey), JSON.stringify(meta))
+      saveOwners(new Set([...hidden, ...next]), base)
+    },
+  }
+}
+
 /** This browser's name in its code, the device model for now (Logen is still to pick the defaults): "Chrome on Mac". */
 export function browserDeviceName(ua = globalThis.navigator?.userAgent ?? "") {
   const browser = /Edg\//.test(ua) ? "Edge" : /OPR\/|Opera/.test(ua) ? "Opera" : /Firefox\//.test(ua) ? "Firefox"

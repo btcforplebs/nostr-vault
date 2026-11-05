@@ -56,7 +56,7 @@ export function AccountsScreen({ ctx }) {
       </section>
       <section class="card">
         <h3>Paired vaults</h3>
-        <p class="muted small">Vaults you pair on the Who Can Reach You screen are paired with this browser, not with one account. A paired vault can reach whichever account is active here, and signing out of any account un-pairs them all.</p>
+        <p class="muted small">A vault you pair or add while an account is active can reach only that account's vault in this browser. Removing the account un-pairs its vaults, and signing out un-pairs them all. A vault added by an older pairing link reaches every account here.</p>
       </section>
       <section class="card">
         <h3>Your keys</h3>

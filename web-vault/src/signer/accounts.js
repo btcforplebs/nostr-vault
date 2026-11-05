@@ -3,6 +3,7 @@
 import { loadSession, saveSession, forgetAccount, checkedPubkey } from "../session.js"
 import { storeNames, forgetAccountKeys } from "../haven/vault.js"
 import { findExtension } from "./nip07.js"
+import { forgetPairedOf } from "../net/pair-devices.js"
 import { bunkerSigner } from "./nip46.js"
 
 /**
@@ -35,6 +36,8 @@ export async function switchAccount({ account, vault, signer, storage = localSto
 export async function removeAccount({ account, pool, storage = localStorage, idb = indexedDB, waitMs = 5000, signerFor = bunkerSigner, session = globalThis.sessionStorage }) {
   if (loadSession(storage)?.pubkey === account.pubkey) throw new Error("That's the account you're using. Sign out instead.")
   const revoked = account.method === "nip46" ? await signerFor(account, pool, storage).revoke() : null
+  // Its paired vaults leave the owner set first, while the account list still says who else claims them.
+  forgetPairedOf(account.pubkey, { storage })
   forgetAccount(account.pubkey, storage)
   forgetAccountKeys(account.pubkey, { storage, session })
   const failed = []
