@@ -11,6 +11,8 @@ export const HISTORY_CHOICE = "Look up and back up my lists"
 export const HISTORY_DETAIL = ["Finds older versions using ", "Lazarus", " spec"]
 export const LAZARUS_URL = "https://github.com/dmnyc/lazarus"
 export const HISTORY_DEFAULT_ON = true
+/** Why the phone's Import media isn't here (parity #30): said on the page, not only in this file. */
+export const IMPORT_MEDIA_NOTE = "Import media isn't on the web yet: this browser's vault can't take files from your media servers. Back up media saves them to a file instead."
 
 export function KeepFullSection({ startDate, history = {}, importing, mediaBusy, exportBusy, status, onImport, onMedia, onExport,
   historyRelays = HISTORY_DEFAULT_ON, onHistoryRelays, onSkip }) {
@@ -40,6 +42,7 @@ export function KeepFullSection({ startDate, history = {}, importing, mediaBusy,
         <RowButton title="Export" busy={exportBusy} disabled={busy} onClick={onExport} />
       </Row>
       {status && <div class={`dash-row dash-note${status.error ? " error" : ""}`} role="status">{status.text}</div>}
+      <div class="dash-row dash-note small muted">{IMPORT_MEDIA_NOTE}</div>
     </Section>
   )
 }

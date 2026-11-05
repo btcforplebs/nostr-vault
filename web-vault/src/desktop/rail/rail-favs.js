@@ -12,9 +12,10 @@
 
 /** Every section id the format names, in the default order (docs "Default pins"). */
 export const SECTION_IDS = ["feed", "search", "profile", "wot", "vault", "messages", "notifications", "relay", "settings"]
-/** The sections the web's rail draws as rows. Settings is the rail's foot; Notifications and the Dashboard (relay) are
- *  reached from the Vault, so those three stay in the layout without a row here. */
-export const RAIL_SECTIONS = ["feed", "search", "profile", "wot", "vault", "messages"]
+/** The sections the web's rail draws as rows. Settings is the rail's foot and the Dashboard (relay) is reached from the
+ *  Vault, so those two stay in the layout without a row here. Notifications has its own row (parity #31), as the
+ *  iPad's sidebar. */
+export const RAIL_SECTIONS = ["feed", "search", "profile", "wot", "vault", "messages", "notifications"]
 export const VALUE_FIELD = { section: "id", list: "a", person: "p", hashtag: "t", relay: "url", feed: "id" }
 /** Feed pin ids are the iPhone's FeedMode, lower case; the web calls its Hashtag feed "hashtag". */
 export const feedPinToWeb = id => (id === "hashtags" ? "hashtag" : id)

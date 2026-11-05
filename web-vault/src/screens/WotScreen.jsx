@@ -22,6 +22,7 @@ import { WotGlobe } from "./WotGlobe.jsx"
 import { TrustCard } from "./WotCard.jsx"
 import { LayerMenu, WotToolbar, WotSearch } from "./WotTopBar.jsx"
 import { WotMyWeb, WotGlobeIcon } from "./WotMyWeb.jsx"
+import { WotList } from "./WotList.jsx"
 import { fetchPersonLists } from "../net/person.js"
 
 if (import.meta.env) import("../styles/wot.css")
@@ -49,6 +50,7 @@ export function WotScreen({ ctx, pubkey }) {
   const [rebuilding, setRebuilding] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [myWebOpen, setMyWebOpen] = useState(false)
+  const [listOpen, setListOpen] = useState(false) // the web as a list (WotList.jsx), over the globe
   const [crumbs, setCrumbs] = useState([me]) // the trail: you, then each person whose web you went on to
   const [frames, setFrames] = useState(() => new Map()) // someone on the trail -> { ring, listFound, lists }
   const stepping = useRef(null) // who See their web is moving onto, so the address change extends the trail
@@ -181,7 +183,8 @@ export function WotScreen({ ctx, pubkey }) {
       <div class="wot-top">
         <div class="wot-bar">
           <LayerMenu layer={layer} counts={counts} onPick={pickLayer} onRebuild={() => setRound(r => r + 1)} rebuilding={rebuilding} missing={missing} />
-          <WotToolbar searchOpen={searchOpen} onSearch={() => { setSearchOpen(!searchOpen); setPicked(null) }} followsBack={followsBackOn} onFollowsBack={flipFollowsBack} />
+          <WotToolbar searchOpen={searchOpen} onSearch={() => { setSearchOpen(!searchOpen); setPicked(null) }} followsBack={followsBackOn} onFollowsBack={flipFollowsBack}
+            listOpen={listOpen} onList={() => { setListOpen(!listOpen); setPicked(null); setSearchOpen(false) }} />
         </div>
         {searchOpen && <WotSearch web={web} me={me} onClose={() => setSearchOpen(false)} onPick={pk => { setSearchOpen(false); if (root !== me) goTo(me); setPicked(pk); setCentre(pk) }} />}
         {crumbs.length > 1 && (
@@ -200,8 +203,11 @@ export function WotScreen({ ctx, pubkey }) {
         {(note || hint || noList) && <div class="wot-note" role="status">{note || noList || hint}</div>}
       </div>
       {middle && <div class="wot-middle" role="status"><span class="wot-spin" aria-hidden="true" />{middle}</div>}
+      {listOpen && showing && <WotList ctx={ctx} web={showing.web} layer={showing.root === me ? layer : "everyone"} lit={lit}
+        title={showing.root === me ? "Your web" : `${nameOf(showing.root)}'s web`} onClose={() => setListOpen(false)}
+        onPick={pk => { setListOpen(false); setPicked(pk); setCentre(pk) }} />}
       {picked && web && <TrustCard ctx={ctx} web={web} built={built} root={root} pubkey={picked} onPick={pk => { setPicked(pk); setCentre(pk) }} onSeeWeb={seeTheirWeb} onClose={() => setPicked(null)} />}
-      {!picked && !searchOpen && !myWebOpen && (
+      {!picked && !searchOpen && !myWebOpen && !listOpen && (
         <button type="button" class="wot-myweb-button" aria-label="My Web" title="Opens your web's dashboard" onClick={() => setMyWebOpen(true)}>
           <WotGlobeIcon />My Web
         </button>

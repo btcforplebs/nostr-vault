@@ -1,8 +1,9 @@
-// "In your vault" (VaultContentsSection): how much room it takes, what it holds by kind, and its media files. The
-// phone's Cache row is left out: other people's media is the browser's own HTTP cache here, which a page can neither
-// size nor clear. The browser's own warning (it may clear the copy) closes the card.
+// "In your vault" (VaultContentsSection): how much room it takes, what it holds by kind, its media files, and the
+// Cache the web can clear (CacheRow.jsx: your follows' contact lists; other people's media is the browser's own HTTP
+// cache, which a page can neither size nor clear). The browser's own warning (it may clear the copy) closes the card.
 import { ExpandingRow, Line, RowButton, Section } from "./parts.jsx"
 import { StorageNote } from "../StorageNote.jsx"
+import { CacheRow } from "./CacheRow.jsx"
 import { groupRows, kindName, MEDIA_BUCKETS, sizeText } from "../../net/vault-contents.js"
 
 const GROUP_ICONS = { notes: "note", articles: "article", highlights: "highlight", reactions: "heart", zaps: "bolt", messages: "envelope", profile: "person", other: "more" }
@@ -19,7 +20,7 @@ export const storageParts = (usage, media) => [
 // The phone's "Public events only" never applies: this browser's device key is whitelisted on every route.
 export const statusText = ({ counting }) => (counting ? "Counting…" : "Couldn't count.")
 
-export function ContentsSection({ contents, counting, failed, usage, media, kept, onRetry }) {
+export function ContentsSection({ contents, counting, failed, usage, media, kept, onRetry, me }) {
   const parts = storageParts(usage, media?.size)
   const total = Math.max(1, parts.reduce((n, p) => n + p.size, 0))
   const status = counting || failed
@@ -39,6 +40,7 @@ export function ContentsSection({ contents, counting, failed, usage, media, kept
       <ExpandingRow icon="photo" title="Media files" value={media ? media.count.toLocaleString() : "—"} detail={media ? sizeText(media.size) : undefined} canExpand={(media?.count ?? 0) > 0}>
         {MEDIA_BUCKETS.filter(([k]) => media?.buckets[k].count > 0).map(([k, t]) => <Line key={k} title={t} value={`${media.buckets[k].count.toLocaleString()} · ${sizeText(media.buckets[k].size)}`} />)}
       </ExpandingRow>
+      {me && <CacheRow me={me} />}
       <div class="dash-row dash-note"><StorageNote kept={kept} /></div>
     </Section>
   )

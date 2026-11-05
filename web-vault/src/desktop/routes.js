@@ -69,7 +69,8 @@ export function sideOf(route, otherProfile = false) {
   if (otherProfile) return "search"
   if (route === "messages" || route === "dm") return "messages"
   if (route === "settings" || route === "accounts" || route === "wallet") return "settings"
-  if (route === "relay" || route === "notifications" || route === "bookmarks") return "vault"
+  if (route === "notifications") return "notifications" // its own rail row (parity #31)
+  if (route === "relay" || route === "bookmarks") return "vault"
   if (route === "compose" || route === "thread") return null
   return route
 }

@@ -17,10 +17,10 @@ const A = "a".repeat(64), B = "b".repeat(64)
 const keys = r => r.map(pinKey)
 const sections = r => r.filter(p => p.type === "section").map(p => p.id)
 
-test("the default pins are every section in the doc's order; the web's rail draws six of them", () => {
+test("the default pins are every section in the doc's order; the web's rail draws seven of them (Notifications has its own row, parity #31)", () => {
   assert.deepEqual(SECTION_IDS, ["feed", "search", "profile", "wot", "vault", "messages", "notifications", "relay", "settings"])
   assert.deepEqual(defaultPins(), SECTION_IDS.map(id => ({ type: "section", id })))
-  assert.deepEqual(RAIL_SECTIONS, ["feed", "search", "profile", "wot", "vault", "messages"])
+  assert.deepEqual(RAIL_SECTIONS, ["feed", "search", "profile", "wot", "vault", "messages", "notifications"])
   assert.deepEqual(shownPins(defaultPins()).map(p => p.id), RAIL_SECTIONS)
 })
 
@@ -94,8 +94,8 @@ test("each pin opens its place", () => {
 test("reorder: up/down among drawn ones (hidden ones keep their places), drag before another or to the end", () => {
   const r = normalizePins([{ type: "section", id: "feed" }, { type: "future" }, { type: "hashtag", t: "x" }])
   const drawn = p => shownPins(p).map(pinKey)
-  // x steps over the future pin (not drawn) and the sections not drawn, and swaps with Messages.
-  assert.deepEqual(drawn(movePin(r, "hashtag:x", -1)).slice(-2), ["hashtag:x", "section:messages"])
+  // x steps over the future pin (not drawn) and the sections not drawn, and swaps with Notifications.
+  assert.deepEqual(drawn(movePin(r, "hashtag:x", -1)).slice(-2), ["hashtag:x", "section:notifications"])
   assert.equal(keys(movePin(r, "hashtag:x", -1)).indexOf(`future:{"type":"future"}`), keys(r).indexOf(`future:{"type":"future"}`), "the future pin keeps its place")
   assert.equal(movePin(r, "section:feed", -1), r)
   assert.equal(keys(movePinBefore(r, "section:feed", null)).at(-1), "section:feed")

@@ -3,6 +3,9 @@
 // reloads the page. No address (the browser's relay has no socket) and no Start or Stop: closing the tab stops it.
 import { useEffect, useRef, useState } from "preact/hooks"
 
+/** Why there is no Start or Stop here (parity #30), on the card itself. */
+export const NO_START_STOP = "It runs while this page is open: no Start or Stop here. Closing the tab stops it."
+
 /** "Up 3d 4h", "Up 2h 5m", "Up 7m" since `start` (ms). */
 export function uptimeLine(start, now = Date.now()) {
   const s = Math.max(0, Math.floor((now - start) / 1000))
@@ -27,6 +30,7 @@ export function StatusCard({ syncing = false, start = performance.timeOrigin, re
       <span class="dash-text">
         <span class="dash-status-title">Your vault is running</span>
         <span class="dash-sub">{syncing ? "Updating who can reach you…" : uptimeLine(start, now)}</span>
+        <span class="dash-sub">{NO_START_STOP}</span>
       </span>
       <span class="dash-menu" ref={box}>
         <button type="button" class="dash-more" aria-label="Vault controls" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(m => !m)}>

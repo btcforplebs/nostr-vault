@@ -124,3 +124,17 @@
 .wot-count { font: 600 17px/1 var(--font-round); font-variant-numeric: tabular-nums; color: var(--text); }
 .wot-count-row.on .wot-count, .wot-count-check { color: var(--accent); }
 .wot-count-check { width: 12px; font-weight: 700; }
+
+/* The web as a list (WotList.jsx): a panel over the globe, under the top bar, scrolling on its own. */
+.wot-list { position: absolute; z-index: 6; left: 12px; right: 12px; top: 120px; bottom: calc(var(--tabbar-h, 0px) + var(--tabbar-gap, 0px) + env(safe-area-inset-bottom) + 12px);
+  max-width: 560px; margin: 0 auto; overflow-y: auto; overscroll-behavior: contain; border-radius: 18px; background: rgb(28 28 30 / .94);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); padding: 8px 8px 12px; }
+.desk-full .wot-list { top: 76px; bottom: 16px; }
+.wot-list-head { position: sticky; top: -8px; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 8px; background: inherit; }
+.wot-list-rows { list-style: none; margin: 0; padding: 0; }
+.wot-list-row { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 12px; align-items: center; width: 100%; min-height: 52px; padding: 6px 8px;
+  border: 0; border-radius: 12px; background: none; color: var(--text); text-align: left; }
+.wot-list-row:hover { background: rgb(255 255 255 / .06); }
+.wot-list-text { display: grid; min-width: 0; }
+.wot-list-text > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wot-list-empty { padding: 12px 8px; }

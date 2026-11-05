@@ -18,6 +18,7 @@ import { visibleRows } from "../net/blocks.js"
 import { followLists } from "../net/wot.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { SkeletonList, Spinner } from "../components/Loading.jsx"
+import { VaultPagesMenu } from "./VaultPagesMenu.jsx"
 import "../styles/notifications.css"
 
 export { Faces, Who, MAX_FACES } from "../components/ActivityFaces.jsx"
@@ -35,7 +36,8 @@ const mergeEvents = (have, page) => {
   return fresh.length ? [...have, ...fresh] : have
 }
 
-export function NotificationsScreen({ ctx }) {
+/** `vaultMenu`: on a phone it is one of the Vault's pages and wears the Vault menu top left (VaultPagesMenu.jsx), as Messages does. */
+export function NotificationsScreen({ ctx, vaultMenu = false }) {
   const { vault, account, session } = ctx
   const relays = uniq([...account.relays.read, ...DEFAULT_RELAYS])
   const last = kept.get(session.pubkey)
@@ -143,7 +145,7 @@ export function NotificationsScreen({ ctx }) {
 
   return (
     <main class="screen">
-      <header class="screen-head"><h2>Notifications</h2></header>
+      <header class="screen-head">{vaultMenu ? <><VaultPagesMenu ctx={ctx} current="notifications" /><h2 class="sr-only">Notifications</h2></> : <h2>Notifications</h2>}</header>
       <div class="segmented" role="tablist" aria-label="Show">
         <button role="tab" aria-selected={filter === "all"} class={filter === "all" ? "on" : ""} onClick={() => setFilter("all")}>All</button>
         <button role="tab" aria-selected={filter === "mentions"} class={filter === "mentions" ? "on" : ""} onClick={() => setFilter("mentions")}>Mentions</button>

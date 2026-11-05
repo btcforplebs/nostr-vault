@@ -147,7 +147,7 @@ export function VaultDashboard({ ctx }) {
             <ListWipeBanner ctx={ctx} />
             <SafetySection method={session.method} followSavedAt={followSavedAt} backupAt={history.notesBackup} onBackup={exportFile} backupBusy={jobs.export} />
             <ReachSection trusted={trusted.size} blocked={blocked.size} />
-            <ContentsSection {...counts} usage={storage.usage} kept={storage.kept} media={media} onRetry={look} />
+            <ContentsSection {...counts} usage={storage.usage} kept={storage.kept} media={media} onRetry={look} me={session.pubkey} />
             <KeepFullSection startDate={IMPORT_START_DATE} history={history} importing={jobs.importing} mediaBusy={jobs.media} exportBusy={jobs.export}
               status={jobs.status} onImport={importNotes} onMedia={mediaFile} onExport={exportFile}
               historyRelays={historyRelays} onHistoryRelays={setHistoryRelays} onSkip={() => skip.current?.abort()} />
