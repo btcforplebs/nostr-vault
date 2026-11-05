@@ -472,12 +472,28 @@ func importOwnerWindows(ctx context.Context, relays []walkRelay, start time.Time
 		noAnswer := func(st *walkState) bool {
 			return res.Sent[st.url] == 0 && (slices.Contains(res.Silent, st.url) || slices.Contains(res.Quiet, st.url))
 		}
-		retry := false
+		// All of them at once: one pause for every relay that refused, not
+		// one 35 s pause after another.
+		var (
+			retryMu sync.Mutex
+			retry   bool
+			retries sync.WaitGroup
+		)
 		for _, st := range asked {
-			if noAnswer(st) && relayBanned(st.url) && importRetryAfterRefusal(ctx, st.url) {
-				retry = true
+			if !noAnswer(st) || !relayBanned(st.url) {
+				continue
 			}
+			retries.Add(1)
+			go func(url string) {
+				defer retries.Done()
+				if importRetryAfterRefusal(ctx, url) {
+					retryMu.Lock()
+					retry = true
+					retryMu.Unlock()
+				}
+			}(st.url)
 		}
+		retries.Wait()
 		if ctx.Err() != nil {
 			return stored
 		}
