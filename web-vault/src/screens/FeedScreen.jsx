@@ -20,6 +20,7 @@ import { useBlocks } from "../components/useBlocks.js"
 import { feedList, loadMenu, saveMenu, visibleFeeds, PINNED_FEED, loadChoice, linkChoice, feedRelays, LINK_PARAMS, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, readsHaven, globalLike, withScope, saveMediaScope, liveFilters, liveKeeps, trustScoped } from "../net/feeds.js"
 import { fetchPopular, audienceKeeps, popularRanks } from "../net/popular.js"
 import { setEveryone, everyoneLocked } from "../net/global-trust.js"
+import { SCREENED_LINE } from "../net/topic-filter.js"
 import { EveryoneShieldDialog } from "../components/EveryoneShieldDialog.jsx"
 import { discoverNetwork, fetchDiscover } from "../net/discover.js"
 import { globalTrust } from "../readers/trust.js"
@@ -81,6 +82,8 @@ export function FeedScreen({ ctx }) {
   const Reader = readerFor(choice.mode)?.Screen
   // `following`: read from Haven /feed (Following, and Media on Following). Media on Global is a stranger feed.
   const following = readsHaven(choice), media = choice.mode === "media", popular = choice.mode === "popular"
+  // A hashtag under the Everyone lock (fewer than 5 follows) opens screened, not empty (net/feeds.js screenedHashtag).
+  const hashtagScreened = c => c.mode === "hashtag" && everyoneLocked(follows, me)
   // Global, Media on Global, Popular and Discover are all read through your web of trust, so they wait for your follows.
   const global = globalLike(choice), discover = choice.mode === "discovery", needsWeb = popular || global || discover
   // Discover's network (net/discover.js), worked out once per follow list and kept for Older: { key, people }.
@@ -258,7 +261,8 @@ export function FeedScreen({ ctx }) {
     ;(async () => {
       const trust = trustScoped(c) ? await globalTrust(me, follows) : null
       const network = c.mode === "discovery" ? await discoverPeople() : null
-      const filters = liveFilters(c, { trust, network })
+      // Screened hashtag pages (a new account) take new posts on the next load: each needs its author's follow count.
+      const filters = hashtagScreened(c) ? [] : liveFilters(c, { trust, network })
       if (!live || !filters.length) return
       close = watchLive({ filters, relays: feedRelays(c, account.relays.read), keep: ev => liveKeeps(c, ev, { trust, network }), onNotes: evs => holdNew(key, evs) })
     })().catch(() => {})
@@ -305,7 +309,9 @@ export function FeedScreen({ ctx }) {
       const page = c.mode === "popular"
         ? await fetchPopular({ me: ctx.session?.pubkey, follows, relays, vault, blocked }).then(got => { popularScores.current = got.scores; return got.notes })
         : c.mode === "discovery" ? await fetchDiscover(await discoverPeople(), account.relays.read, { until })
-        : await fetchStrangerFeed(c, account.relays.read, { until, limit: c.mode === "media" ? MEDIA_PAGE : PAGE, trust: trustScoped(c) ? await globalTrust(ctx.session?.pubkey, follows) : null })
+        : await fetchStrangerFeed(c, account.relays.read, { until, limit: c.mode === "media" ? MEDIA_PAGE : PAGE, trust: trustScoped(c) ? await globalTrust(ctx.session?.pubkey, follows) : null,
+          // Under the Everyone lock a hashtag opens screened (feeds.js screenedHashtag), so a new account can find people.
+          screened: hashtagScreened(c), follows })
       if (n !== seq.current) return
       const all = until ? mergePage(heldNotes(c) ?? [], page) : page
       holdNotes(c, all)
@@ -388,6 +394,7 @@ export function FeedScreen({ ctx }) {
       {Reader ? <Reader ctx={ctx} /> : <>
       {/* Always there, so the list doesn't move when "Syncing…" comes and goes. */}
       <div class="status-line keep">{status}</div>
+      {hashtagScreened(choice) && <div class="status-line muted small">{SCREENED_LINE}</div>}
       {privateNote && !ctx.signer?.readOnly && <div class="status-line">Your private blocks weren't read ({privateNote}), so those people may still show.</div>}
       {following
         ? !follows.length ? account.loaded ? <EmptyFollowing /> : <SkeletonRows label="Loading your follows…" />

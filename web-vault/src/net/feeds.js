@@ -2,7 +2,8 @@
 // Hashtag (`#t` notes), Popular (net/popular.js) and Media (Following's image and video notes, net/media.js). Discover, Global and Hashtag notes are strangers': they are held in memory only and never written
 // to Haven /feed, which is the Following feed's store. Their names and pictures, and the quotes and @names inside
 // their notes, stay in memory too: FeedScreen passes `memoryOnly` to their cards and `save: false` to fetchProfiles.
-import { pool, uniq } from "./pool.js"
+import { pool, uniq, PROFILE_RELAYS } from "./pool.js"
+import { followCounts, screenTopic } from "./topic-filter.js"
 import { FEED_KINDS } from "./sync.js"
 import { filterGlobal, trustShows, everyoneOn, everyoneShows } from "./global-trust.js"
 import { trustedFilters } from "../readers/trust.js"
@@ -179,10 +180,11 @@ const listFilters = (choice, page = {}) => {
 /** One page of a stranger feed from the network, newest first, once each. Nothing is stored. Global takes `trust`
  *  (readers/trust.js globalTrust): it asks once for trusted authors and once open, as the iPhone does, and keeps only
  *  what Global shows (global-trust.js); no trust shows nothing. `query` is for tests. */
-export async function fetchStrangerFeed(choice, relays, { limit = 100, until, trust = null, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+export async function fetchStrangerFeed(choice, relays, { limit = 100, until, trust = null, screened = false, follows = [], query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
   const page = { limit, ...(until ? { until } : {}) }
   const filter = choice.mode === "list" ? listFilters(choice, page)[0] : feedFilter(choice, { limit, until })
   if (!filter) return []
+  if (screened && choice.mode === "hashtag") return screenedHashtag(filter, relays, { trust, follows, query })
   const global = globalLike(choice), scoped = trustScoped(choice)
   if (scoped && !trust?.size) return []
   const filters = scoped ? trustedFilters(filter, trust) : choice.mode === "list" ? listFilters(choice, page) : [filter]
@@ -192,6 +194,25 @@ export async function fetchStrangerFeed(choice, relays, { limit = 100, until, tr
   const notes = [...byId.values()].sort((a, b) => b.created_at - a.created_at)
   // A list read in several REQs can bring back more than a page: keep the newest page.
   return global ? (choice.everyone ? notes.filter(everyoneShows) : filterGlobal(notes, trust)) : scoped ? notes.filter(n => trustShows(n, trust)) : choice.mode === "list" ? notes.slice(0, limit) : notes
+}
+
+/**
+ * A hashtag page for an account still under the Everyone lock (global-trust.js everyoneLocked: fewer than 5 follows),
+ * which has too small a web to read the tag through, and no way to open it either: the new-user loop (RESEARCH/
+ * NV_NEW_USER_HASHTAG_LOOP_2026_11_05.md, Logen 2026-11-05). The tag is asked open, as the iPhone's screened path does:
+ * your follows' and your web's notes stay on top as they are, and everyone else's go through the topic filter
+ * (topic-filter.js: no bots, farms, stuffing, adult tags or app posts).
+ */
+async function screenedHashtag(filter, relays, { trust, follows, query }) {
+  const evs = await query(uniq(relays), filter, { maxWait: 8000 }).catch(() => [])
+  const byId = new Map()
+  for (const ev of evs) if (ev?.id && ev.kind === 1 && !byId.has(ev.id)) byId.set(ev.id, ev)
+  const notes = [...byId.values()].sort((a, b) => b.created_at - a.created_at)
+  const mine = new Set(follows)
+  const top = notes.filter(n => mine.has(n.pubkey) || (trust?.size && trustShows(n, trust)))
+  const rest = notes.filter(n => !top.includes(n))
+  const counts = rest.length ? await followCounts(rest.map(n => n.pubkey), uniq([...PROFILE_RELAYS, ...relays]), query) : new Map()
+  return [...top, ...screenTopic(rest, counts)]
 }
 
 /** What a stranger feed keeps open for its New posts pill (net/feed-live.js watchLive), or [] when nothing can come:
