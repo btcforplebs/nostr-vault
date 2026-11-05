@@ -16,11 +16,14 @@ import java.net.URI
  */
 internal object NoteMediaScan {
 
-    /** Notes per local relay page: the store's maximum (a larger limit falls back to a smaller default). */
+    /**
+     * Notes asked for per local relay page. The store may answer with fewer (the relay caps a plain query at 250),
+     * so a short page is not the end: only a page with nothing new is ([collect]).
+     */
     const val PAGE = 1_500
 
-    /** Pages at most, so a huge history cannot keep the import scanning forever. */
-    const val MAX_PAGES = 20
+    /** Pages at most, so a huge history cannot keep the import scanning forever (400 x 250 = 100,000 notes). */
+    const val MAX_PAGES = 400
 
     private val LOCAL_HOSTS = setOf("localhost", "127.0.0.1", "0.0.0.0")
 
@@ -55,6 +58,24 @@ internal object NoteMediaScan {
         } else {
             """{"kinds":[1],"authors":["$owner"],"until":$until,"limit":$PAGE}"""
         }
+
+    /**
+     * Every note of [owner] the store gives, newest first, page by page back to the oldest. [fetch] runs one
+     * [pageFilter]; each next page starts at the oldest note seen (`until` is inclusive, so that note comes again
+     * and is not new). It ends on a page with no new note. It used to end on any page shorter than [PAGE], and the
+     * store's 250 cap made that the first one: only the newest 250 notes were ever scanned.
+     */
+    suspend fun collect(owner: String, fetch: suspend (String) -> List<JsonObject>): List<Note> {
+        val notes = LinkedHashMap<String, Note>()
+        var until: Long? = null
+        for (page in 0 until MAX_PAGES) {
+            val fresh = fetch(pageFilter(owner, until)).mapNotNull(::parse)
+                .filter { it.pubkey == owner && notes.putIfAbsent(it.id, it) == null }
+            if (fresh.isEmpty()) break
+            until = fresh.minOf { it.createdAt }
+        }
+        return notes.values.toList()
+    }
 
     /** id, created_at, content and tags of a raw event; null when it is not a usable note. */
     fun parse(event: JsonObject): Note? = runCatching {

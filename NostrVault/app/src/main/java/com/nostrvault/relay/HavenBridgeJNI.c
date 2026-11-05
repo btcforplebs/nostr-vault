@@ -68,6 +68,7 @@ extern int BackupToCloudC(void);
 extern int RestoreFromCloudC(void);
 extern int ZipDirectoryC(const char* dirPath, const char* zipPath);
 extern int UnzipDirectoryC(const char* zipPath, const char* destPath);
+extern int ImportOwnerBlobC(const char* path, const char* sha256, const char* mimeType);
 extern char* SignEventC(const char* jsonStr, const char* sk);
 extern int VerifyEventC(const char* jsonStr);
 extern char* MineAndSignEventC(const char* jsonStr, const char* sk, int difficulty, int maxAttempts);
@@ -232,6 +233,18 @@ Java_com_nostrvault_relay_HavenBridge_zipDirectory(JNIEnv *env, jobject thiz, js
     REL_CSTR(env, dirPath, cDir);
     REL_CSTR(env, zipPath, cZip);
     return result;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_nostrvault_relay_HavenBridge_importOwnerBlob(JNIEnv *env, jobject thiz, jstring path, jstring sha256, jstring mimeType) {
+    const char *cPath = GET_CSTR(env, path);
+    const char *cSha = GET_CSTR(env, sha256);
+    const char *cType = GET_CSTR(env, mimeType);
+    int result = ImportOwnerBlobC((char*)cPath, (char*)cSha, (char*)cType);
+    REL_CSTR(env, path, cPath);
+    REL_CSTR(env, sha256, cSha);
+    REL_CSTR(env, mimeType, cType);
+    return result == 1 ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jint JNICALL
