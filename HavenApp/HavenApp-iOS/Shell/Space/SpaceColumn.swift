@@ -228,49 +228,10 @@ struct SpaceColumn: View {
                 .buttonStyle(.plain)
                 .foregroundColor(.havenPurple)
             }
-            feedPins
             Button("Reset to default") { withAnimation(.easeInOut(duration: 0.2)) { store.resetPanels() } }
                 .font(.appSystem(size: 13))
                 .foregroundColor(.secondary)
                 .padding(.top, 4)
-        }
-    }
-
-    /// Feed types the left rail can carry (Logen, 2026-11-05): tap to pin
-    /// one there (`{"type":"feed","id":"music"}`), tap again to take it off.
-    /// Following is the Feed section itself, so it isn't offered.
-    private var feedPins: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Feeds on your rail")
-                .font(.appSystem(size: 13, weight: .semibold))
-                .foregroundColor(.secondary)
-                .padding(.top, 10)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 6, alignment: .leading)], alignment: .leading, spacing: 6) {
-                ForEach(FeedMode.allCases.filter { $0 != .following }, id: \.self) { mode in
-                    let kind = SpaceLayout.Pin.Kind.feed(mode.pinId)
-                    let pinned = store.isPinned(kind)
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            if pinned, let pin = SpaceLayout.Pin.favourite(kind) {
-                                store.removePin(pin.id)
-                            } else if let pin = SpaceLayout.Pin.favourite(kind) {
-                                store.addPin(pin)
-                            }
-                        }
-                    } label: {
-                        Label(mode.displayName, systemImage: pinned ? "checkmark" : mode.symbolName)
-                            .font(.appSystem(size: 12, weight: .semibold))
-                            .foregroundColor(pinned ? .white : .havenPurple)
-                            .lineLimit(1)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Capsule().fill(pinned ? Color.havenPurple : Color.havenPurple.opacity(0.12)))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(pinned ? "\(mode.displayName) on your rail. Take off" : "Add \(mode.displayName) to your rail")
-                }
-            }
         }
     }
 

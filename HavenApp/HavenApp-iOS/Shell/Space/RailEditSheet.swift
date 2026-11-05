@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Edit the iPad rail: drag the sections and favourites into any order,
-/// remove favourites (the sections stay), and add a list, person, hashtag or
-/// relay. Saved for the account and synced with the web (`SpaceLayoutStore`).
+/// remove favourites (the sections stay), pin feed types (Music, Recipes, …)
+/// and add a list, person, hashtag or relay. Saved for the account and synced with the web (`SpaceLayoutStore`).
 struct RailEditSheet: View {
     @ObservedObject private var store = SpaceLayoutStore.shared
     @EnvironmentObject var nostrService: NostrService
@@ -32,6 +32,31 @@ struct RailEditSheet: View {
                     }
                 } footer: {
                     Text("Drag to reorder. Sections can move but not go. Your rail is kept on your account, so the web vault shows it too.")
+                }
+                // Feed types for this rail (Logen, 2026-11-05: on the left
+                // rail, picked here, not in Your space): a tap pins one as
+                // {"type":"feed","id":…}, another takes it off.
+                Section {
+                    ForEach(FeedMode.allCases.filter { $0 != .following }, id: \.self) { mode in
+                        let kind = SpaceLayout.Pin.Kind.feed(mode.pinId)
+                        let pinned = store.isPinned(kind)
+                        Button {
+                            guard let pin = SpaceLayout.Pin.favourite(kind) else { return }
+                            if pinned { store.removePin(pin.id) } else { store.addPin(pin) }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: mode.symbolName).foregroundColor(.havenPurple).frame(width: 28)
+                                Text(mode.displayName).foregroundColor(.primary)
+                                Spacer()
+                                Image(systemName: pinned ? "checkmark.circle.fill" : "plus.circle")
+                                    .foregroundColor(pinned ? .havenPurple : .secondary)
+                            }
+                        }
+                        .accessibilityLabel(pinned ? "\(mode.displayName) on your rail. Take off" : "Add \(mode.displayName) to your rail")
+                        .disabled(!pinned && store.layout.favouriteCount >= SpaceLayout.maxFavourites)
+                    }
+                } header: {
+                    Text("Feeds on your rail")
                 }
                 Section {
                     Button { adding = true } label: {
