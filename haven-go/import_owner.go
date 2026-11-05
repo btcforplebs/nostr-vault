@@ -507,6 +507,9 @@ func importOwnerWindows(ctx context.Context, relays []walkRelay, start time.Time
 type walkReport struct {
 	unread []jobRange
 	tops   map[string]time.Time // how far down each relay was read; start = all of it
+	// progress (may be nil) hears the tops after every window, so a job
+	// can save them before a kill.
+	progress func(tops map[string]time.Time)
 }
 
 func (w *walkReport) left(url string, from, to time.Time, why string) {
@@ -710,6 +713,14 @@ func importOwnerWindowsReport(ctx context.Context, relays []walkRelay, start tim
 					log.Printf("⚠️ %s answered nothing, or went quiet without finishing, for %d windows in a row; not asking it again", seedHost(st.url), limit)
 				}
 			}
+		}
+		if report != nil && report.progress != nil {
+			for _, st := range asked {
+				if !st.dropped {
+					report.tops[st.url] = begin
+				}
+			}
+			report.progress(maps.Clone(report.tops))
 		}
 		end = begin
 		if res.Notes == 0 && !failed {

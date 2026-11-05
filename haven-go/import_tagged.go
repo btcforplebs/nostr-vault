@@ -9,6 +9,8 @@ import (
 	"maps"
 	"runtime/debug"
 	"slices"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/fiatjaf/eventstore"
@@ -33,10 +35,13 @@ import (
 var importTaggedDeadline = 15 * time.Minute
 
 // taggedReport: what one tagged run did. unread: per relay, what it could
-// not read (silent, stopped partway, cut by the deadline or a stop); done: the
-// relays that answered to the end, which a resumed run can skip.
+// not read (silent, stopped partway, cut by the deadline or a stop, an empty
+// answer it couldn't confirm); done: the relays that answered to the end,
+// which a resumed run can skip. wotRejected: notes the web of trust kept
+// out (a wider web may let them in).
 type taggedReport struct {
 	stored, failed int
+	wotRejected    int
 	timedOut       bool
 	unread         []jobRange
 	done           []string
@@ -44,7 +49,7 @@ type taggedReport struct {
 
 // importTaggedNotes is the import cycle's tagged step.
 func importTaggedNotes(ctx context.Context) {
-	rep := importTaggedRun(ctx, importRelays())
+	rep := importTaggedRun(ctx, importRelays(), nil)
 	// Honest result (Tron, background risks 1): a relay that never answered,
 	// stopped partway or was cut is missing replies, not "complete".
 	if o := currentImport.Load(); o != nil {
@@ -55,9 +60,14 @@ func importTaggedNotes(ctx context.Context) {
 	}
 }
 
-// importTaggedRun pulls the owners' tagged notes from relays, each filter
-// paged per relay, under importTaggedDeadline.
-func importTaggedRun(ctx context.Context, relays []string) (rep taggedReport) {
+// importTaggedProbeWindow: how far back the check of an empty answer asks.
+const importTaggedProbeWindow = 10 * 24 * time.Hour
+
+// importTaggedRun pulls the owners' tagged notes from relays under
+// importTaggedDeadline. Each relay runs on its own, both filters paged
+// newest first; onDone (may be nil) hears each relay that answered to the
+// end, as it does, so a job can save that before a kill.
+func importTaggedRun(ctx context.Context, relays []string, onDone func(url string)) (rep taggedReport) {
 	timeout := importTaggedDeadline
 	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -83,12 +93,18 @@ func importTaggedRun(ctx context.Context, relays []string) (rep taggedReport) {
 		return rep
 	}
 
-	// keep runs one note at a time (fetchPaged), whichever relay sent it.
-	// Same rules as the live inbox (classifyInboxEvent), so a zap is judged
-	// by its zapper here too, plus the zaps you sent.
+	// keep stores one note at a time, whichever relay sent it. Same rules
+	// as the live inbox (classifyInboxEvent), so a zap is judged by its
+	// zapper here too, plus the zaps you sent.
+	var keepMu sync.Mutex
 	keep := func(ev *nostr.Event) {
+		keepMu.Lock()
+		defer keepMu.Unlock()
 		c := classifyInboxEvent(ctx, ev)
 		if !c.accept {
+			if c.reason == rejectNotInWot {
+				rep.wotRejected++
+			}
 			return
 		}
 		dbToWrite := wdbInbox
@@ -109,61 +125,32 @@ func importTaggedRun(ctx context.Context, relays []string) (rep taggedReport) {
 		rep.stored++
 	}
 
-	// Per relay, the worst of the two filters decides what is left unread.
-	left := map[string]jobRange{}
-	note := func(url string, to time.Time, why string) {
-		if _, ok := left[url]; ok {
-			return
-		}
-		left[url] = jobRange{Relay: url, From: start.Format(layout), To: to.Format(layout), Why: why}
-	}
 	filters := []nostr.Filter{{Tags: nostr.TagMap{"p": pTags}}, givenZapsFilter(pTags, nil)}
-	ran := 0
-	runsafe.Run("importTaggedNotes.fetch", func() {
-		for _, f := range filters {
-			if ctx.Err() != nil {
-				break
-			}
-			res := fetchPaged(ctx, relays, f, importLaneMaxPages, keep)
-			ran++
-			reached := func(url string) time.Time {
-				if o, ok := res.Oldest[url]; ok {
-					return o.Time()
-				}
-				return time.Now()
-			}
-			for _, url := range res.Silent {
-				note(url, time.Now(), "silent")
-			}
-			for _, url := range res.Short {
-				note(url, reached(url), "stopped_partway")
-			}
-			for _, url := range res.Cut {
-				why := "cut"
-				if parent.Err() == nil {
-					why = "deadline"
-				}
-				note(url, reached(url), why)
-			}
-		}
-	})
-	if ran < len(filters) {
-		// A filter that never ran read nothing from anyone.
-		why := "cut"
-		if parent.Err() == nil {
-			why = "deadline"
-		}
-		for _, url := range relays {
-			note(url, time.Now(), why)
-		}
-	}
+	var (
+		mu sync.Mutex
+		wg sync.WaitGroup
+	)
 	for _, url := range relays {
-		if u, ok := left[url]; ok {
-			rep.unread = append(rep.unread, u)
-		} else {
+		wg.Add(1)
+		go func(url string) {
+			defer wg.Done()
+			var left *jobRange
+			runsafe.Run("importTaggedNotes.relay", func() { left = importTaggedRelay(ctx, parent, url, filters, start, keep) })
+			mu.Lock()
+			defer mu.Unlock()
+			if left != nil {
+				rep.unread = append(rep.unread, *left)
+				return
+			}
 			rep.done = append(rep.done, url)
-		}
+			if onDone != nil {
+				onDone(url)
+			}
+		}(url)
 	}
+	wg.Wait()
+	slices.SortFunc(rep.unread, func(a, b jobRange) int { return strings.Compare(a.Relay, b.Relay) })
+	slices.Sort(rep.done)
 	rep.timedOut = ctx.Err() != nil && parent.Err() == nil && errors.Is(context.Cause(ctx), context.DeadlineExceeded)
 
 	switch {
@@ -186,4 +173,51 @@ func importTaggedRun(ctx context.Context, relays []string) (rep taggedReport) {
 	log.Println("✅ tagged import complete")
 	debug.FreeOSMemory()
 	return rep
+}
+
+// importTaggedRelay reads every filter from one relay; nil when it answered
+// to the end, else what it left unread. An empty first answer is checked
+// with one narrow ask (the last 10 days): some relays answer a wide scan
+// empty but hand over a narrow one (Tidy, 12 mini 2026-11-05), and such an
+// answer is unconfirmed, not "nothing" (Tron, PR 1763).
+func importTaggedRelay(ctx, parent context.Context, url string, filters []nostr.Filter, start time.Time, keep func(*nostr.Event)) *jobRange {
+	cutWhy := func() string {
+		if parent.Err() == nil {
+			return "deadline"
+		}
+		return "cut"
+	}
+	for _, f := range filters {
+		if ctx.Err() != nil {
+			return &jobRange{Relay: url, From: start.Format(layout), To: time.Now().Format(layout), Why: cutWhy()}
+		}
+		res := fetchPaged(ctx, []string{url}, f, importLaneMaxPages, keep)
+		reached := time.Now()
+		if o, ok := res.Oldest[url]; ok {
+			reached = o.Time()
+		}
+		switch {
+		case slices.Contains(res.Cut, url):
+			return &jobRange{Relay: url, From: start.Format(layout), To: reached.Format(layout), Why: cutWhy()}
+		case slices.Contains(res.Silent, url):
+			return &jobRange{Relay: url, From: start.Format(layout), To: time.Now().Format(layout), Why: "silent"}
+		case slices.Contains(res.Short, url):
+			return &jobRange{Relay: url, From: start.Format(layout), To: reached.Format(layout), Why: "stopped_partway"}
+		case slices.Contains(res.Empty, url):
+			probe := f
+			since := nostr.Timestamp(time.Now().Add(-importTaggedProbeWindow).Unix())
+			if probe.Since == nil || *probe.Since < since {
+				probe.Since = &since
+			}
+			probe.Limit = 1
+			var evs []*nostr.Event
+			runsafe.Run("importTaggedNotes.probe", func() { evs, _ = importPage(ctx, url, probe) })
+			for _, ev := range evs {
+				if ev != nil && probe.Matches(ev) {
+					return &jobRange{Relay: url, From: start.Format(layout), To: time.Now().Format(layout), Why: "empty_unconfirmed"}
+				}
+			}
+		}
+	}
+	return nil
 }

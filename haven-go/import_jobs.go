@@ -202,6 +202,9 @@ func saveJobsFile(f *jobsFile) {
 	}
 }
 
+// jobCheckpointEvery: how often a run may save its cursor. Shorter in tests.
+var jobCheckpointEvery = 2 * time.Second
+
 // jobsMu guards the file between the runner and readers.
 var jobsMu sync.Mutex
 
@@ -290,6 +293,26 @@ func (r *jobRunner) run(ctx context.Context, spawn func(string, func()), name st
 		if res.cursor == nil {
 			res.cursor = map[string]string{}
 		}
+		var (
+			cpMu   sync.Mutex
+			cpLast time.Time
+		)
+		res.checkpoint = func() {
+			cpMu.Lock()
+			defer cpMu.Unlock()
+			if time.Since(cpLast) < jobCheckpointEvery {
+				return
+			}
+			cpLast = time.Now()
+			res.cursorMu.Lock()
+			cursor := maps.Clone(res.cursor)
+			res.cursorMu.Unlock()
+			updateJob(func(f *jobsFile) {
+				if j := f.job(name); j != nil && j.Status == jobRunning {
+					j.Cursor = cursor
+				}
+			})
+		}
 		panicked := false
 		runsafe.Run("importJob."+name, func() {
 			defer func() {
@@ -306,7 +329,9 @@ func (r *jobRunner) run(ctx context.Context, spawn func(string, func()), name st
 		r.mu.Unlock()
 		updateJob(func(f *jobsFile) {
 			j := f.job(name)
-			j.Cursor = res.cursor
+			res.cursorMu.Lock()
+			j.Cursor = maps.Clone(res.cursor)
+			res.cursorMu.Unlock()
 			if len(j.Cursor) == 0 {
 				j.Cursor = nil
 			}
@@ -404,7 +429,12 @@ func resumeImportJobs(ctx context.Context, spawn func(string, func())) {
 
 // jobResult is what one run reports back to the runner.
 type jobResult struct {
+	// checkpoint saves the cursor now, throttled: a hard kill (jetsam,
+	// process death) skips the end-of-run save, and a resume would then
+	// repeat the whole run (Tron, PR 1763). Set by the runner.
+	checkpoint func()
 	stored     int
+	cursorMu   sync.Mutex
 	unread     []jobRange
 	partial    []string // reasons with no range (e.g. web_of_trust_owners_only)
 	failReason string
@@ -503,13 +533,20 @@ func runSetupJob(ctx context.Context, spawn func(string, func()), res *jobResult
 		res.unread = append(res.unread, jobRange{Relay: w.url, From: start.Format(layout), To: w.top.Format(layout), Why: "slow"})
 		pending[w.url] = strconv.FormatInt(w.top.Unix(), 10)
 	}
+	// A seed that didn't answer the connect check is retried by older_relays
+	// too, over its whole range (Tron nit, PR 1763).
+	for _, u := range res.unread {
+		if u.Why == "unreachable" {
+			pending[u.Relay] = strconv.FormatInt(time.Now().Unix(), 10)
+		}
+	}
 	res.afterFns = append(res.afterFns, func(f *jobsFile) {
 		// older_relays reads exactly these, from where each stopped.
 		older := f.job(jobOlderRelays)
 		older.Cursor = pending
 		older.Unread = []jobRange{}
 		for _, u := range res.unread {
-			if u.Why == "slow" {
+			if u.Why == "slow" || u.Why == "unreachable" {
 				older.Unread = append(older.Unread, jobRange{Relay: u.Relay, From: u.From, To: u.To, Why: "not_read_yet"})
 			}
 		}
@@ -573,11 +610,13 @@ func runRepliesJob(ctx context.Context, res *jobResult) {
 			relays = append(relays, url)
 		}
 	}
-	rep := importTaggedRun(ctx, relays)
-	res.stored += rep.stored
-	for _, url := range rep.done {
+	rep := importTaggedRun(ctx, relays, func(url string) {
+		res.cursorMu.Lock()
 		res.cursor[url] = "done"
-	}
+		res.cursorMu.Unlock()
+		res.checkpoint()
+	})
+	res.stored += rep.stored
 	res.unread = append(res.unread, rep.unread...)
 	if rep.failed > 0 {
 		res.partial = append(res.partial, "notes_failed")
@@ -589,6 +628,21 @@ func runRepliesJob(ctx context.Context, res *jobResult) {
 			res.partial = append(res.partial, "web_of_trust_owners_only")
 		}
 	}
+	// The web kept some out, and it is still the follows-only one: the wider
+	// web may let them in, so this is offered again, not "done" (Tron, PR 1763).
+	if rep.wotRejected > 0 && !widerNetworkRan() {
+		res.partial = append(res.partial, "web_of_trust_follows_only")
+		log.Printf("ℹ️ %d replies or mentions from people outside your follows were left out; run Wider network, then Replies again", rep.wotRejected)
+	}
+}
+
+// widerNetworkRan: the wider_network job has built the full web.
+func widerNetworkRan() bool {
+	jobsMu.Lock()
+	f := loadJobsFile()
+	jobsMu.Unlock()
+	j := f.job(jobWiderNetwork)
+	return j != nil && (j.Status == jobDone || j.Status == jobPartial)
 }
 
 // runOlderRelaysJob: the relays setup couldn't finish, read 10 days at a
@@ -612,15 +666,35 @@ func runOlderRelaysJob(ctx context.Context, res *jobResult) {
 	}
 	owners := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
 	keeper := newOwnerKeeper(ctx)
-	rep := &walkReport{}
-	res.stored += importOwnerWindowsReport(ctx, relays, start, owners, keeper.keep, rep)
-	for url, top := range rep.tops {
-		if top.After(start) {
-			res.cursor[url] = strconv.FormatInt(top.Unix(), 10)
-		} else {
-			delete(res.cursor, url)
+	setTops := func(tops map[string]time.Time) {
+		res.cursorMu.Lock()
+		defer res.cursorMu.Unlock()
+		for url, top := range tops {
+			if top.After(start) {
+				res.cursor[url] = strconv.FormatInt(top.Unix(), 10)
+			} else {
+				delete(res.cursor, url)
+			}
 		}
 	}
+	rep := &walkReport{progress: func(tops map[string]time.Time) {
+		setTops(tops)
+		res.checkpoint()
+	}}
+	res.stored += importOwnerWindowsReport(ctx, relays, start, owners, keeper.keep, rep)
+	setTops(rep.tops)
+	res.afterFns = append(res.afterFns, func(f *jobsFile) {
+		// setup handed these over: what older_relays has now read is no
+		// longer setup's to report (Tron nit, PR 1763).
+		older, setup := f.job(jobOlderRelays), f.job(jobSetup)
+		setup.Unread = slices.DeleteFunc(setup.Unread, func(u jobRange) bool {
+			_, left := older.Cursor[u.Relay]
+			return (u.Why == "slow" || u.Why == "unreachable") && !left
+		})
+		if setup.Status == jobPartial && len(setup.Unread) == 0 && strings.Trim(strings.ReplaceAll(strings.ReplaceAll(setup.Reason, "slow", ""), "unreachable", ""), ",") == "" {
+			setup.Status, setup.Reason = jobDone, "ok"
+		}
+	})
 	res.unread = append(res.unread, rep.unread...)
 	if keeper.failedCount() > 0 {
 		res.partial = append(res.partial, "notes_failed")
@@ -630,6 +704,12 @@ func runOlderRelaysJob(ctx context.Context, res *jobResult) {
 // runWiderNetworkJob: the full web of trust (follows of follows), saved to
 // the cache the relay and the apps read, and swapped in for the running one.
 func runWiderNetworkJob(ctx context.Context, res *jobResult) {
+	// The relay's own first build (no cache yet) must finish first, or it
+	// would store its follows-only web over this one (Tron nit, PR 1763).
+	wot.WaitReady(ctx)
+	if ctx.Err() != nil {
+		return
+	}
 	model := wot.NewSimpleInMemory(
 		pool,
 		config.WhitelistedPubKeys,

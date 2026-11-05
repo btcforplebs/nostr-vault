@@ -117,6 +117,9 @@ func TestJobsSetupNeverSaysDoneWhenASeedDidNotAnswer(t *testing.T) {
 	if setup.Stored != 31 || setup.EndedAt == 0 {
 		t.Fatalf("stored %d ended %d", setup.Stored, setup.EndedAt)
 	}
+	if older := readJobs(t).job(jobOlderRelays); older.Cursor[dead] == "" {
+		t.Fatalf("the dead seed was not handed to older_relays: %v", older.Cursor)
+	}
 	// Every seed answering: done.
 	seedsAnswer(t, relay.url)
 	config.ImportSeedRelays = []string{relay.url}
@@ -224,6 +227,10 @@ func TestJobsOlderRelaysResumesAfterACutAndGetsEverything(t *testing.T) {
 	if done.Stored != 400 {
 		t.Fatalf("stored %d across the cut and the resume, want 400", done.Stored)
 	}
+	// What setup handed over is read now: setup is no longer partial for it.
+	if s := readJobs(t).job(jobSetup); s.Status != jobDone || len(s.Unread) != 0 {
+		t.Fatalf("setup after older_relays finished: %s %+v", s.Status, s.Unread)
+	}
 }
 
 // replies: a relay that never answers leaves the job partial with its range
@@ -260,8 +267,8 @@ func TestJobsRepliesSilentRelayIsPartialAndResumeSkipsFinishedRelays(t *testing.
 			}
 			return nil, true
 		}
-		if hang.Load() && slices.Contains(f.Kinds, nostr.KindZap) {
-			<-ctx.Done() // hangs in the second filter, after the good relay finished both
+		if hang.Load() {
+			<-ctx.Done() // hangs; each relay runs on its own, so the good one still finishes
 		}
 		return nil, false // silent
 	}
@@ -461,4 +468,141 @@ func TestEffectiveWotDepth(t *testing.T) {
 	if d := effectiveWotDepth(); d != 3 {
 		t.Fatalf("wider network done: depth %d, want 3", d)
 	}
+}
+
+// A hard kill (jetsam, process death) skips the end-of-run save: the cursor
+// must already be on disk as relays finish, or the resume repeats the whole
+// run (Tron, PR 1763). Read the file while the run is still going.
+func TestJobsCheckpointBeforeTheRunEnds(t *testing.T) {
+	noNegentropy(t)
+	owner, _ := jobsSetup(t, 200, "wss://slow.example")
+	seedsAnswer(t, "wss://slow.example")
+	prevEvery := jobCheckpointEvery
+	jobCheckpointEvery = 0
+	t.Cleanup(func() { jobCheckpointEvery = prevEvery })
+	notes := spread(t, owner, 400, 12*time.Hour)
+	held := &pagingRelay{held: notes}
+	var (
+		mu      sync.Mutex
+		windows int
+	)
+	release := make(chan struct{})
+	prev := importPage
+	importPage = func(ctx context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
+		if f.Until == nil || f.Since == nil || *f.Until-*f.Since > 30*24*3600 {
+			return nil, false
+		}
+		mu.Lock()
+		windows++
+		w := windows
+		mu.Unlock()
+		if w > 3 {
+			select { // hangs: the process "dies" here
+			case <-release:
+			case <-ctx.Done():
+			}
+			return nil, false
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		return held.answer(f)
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	runJobAndWait(t, context.Background(), jobSetup, false)
+	before := readJobs(t).job(jobOlderRelays).Cursor["wss://slow.example"]
+	cycle, stop := context.WithCancel(context.Background())
+	defer stop()
+	if got := importJobsRunner.run(cycle, goSpawn, jobOlderRelays, false); got != runStarted {
+		t.Fatal(got)
+	}
+	var now string
+	for deadline := time.Now().Add(10 * time.Second); ; {
+		if j := readJobs(t).job(jobOlderRelays); j.Status == jobRunning {
+			now = j.Cursor["wss://slow.example"]
+		}
+		if now != "" && now != before {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("cursor still %q (setup left %q) while the run is going: a kill would start over", now, before)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	close(release)
+	stop()
+	importJobsRunner.wait()
+}
+
+// replies: an empty answer to the wide ask is checked with one narrow ask.
+// A relay that then hands over a recent note is "empty_unconfirmed", not
+// done (Tron, PR 1763); one that is empty there too is done.
+func TestJobsRepliesEmptyAnswerIsCheckedNotTrusted(t *testing.T) {
+	owner, _ := jobsSetup(t, 30, "wss://wide-empty.example", "wss://really-empty.example")
+	seedsAnswer(t, "wss://wide-empty.example", "wss://really-empty.example")
+	repliesStores(t)
+	wot.MarkReady(wot.NewCycle(), stubWot{allow: true})
+	stranger := newTestKey(t)
+	reply := stranger.sign(t, nostr.Event{Kind: nostr.KindTextNote, Content: "hi", Tags: nostr.Tags{{"p", owner.pk}}})
+	prev := importPage
+	importPage = func(_ context.Context, url string, f nostr.Filter) ([]*nostr.Event, bool) {
+		narrow := f.Since != nil && time.Since(f.Since.Time()) < 11*24*time.Hour
+		if url == "wss://wide-empty.example" && narrow && f.Matches(&reply) {
+			return []*nostr.Event{&reply}, true
+		}
+		return nil, true // every wide ask: an empty answer, with EOSE
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	runJobAndWait(t, context.Background(), jobReplies, false)
+	j := readJobs(t).job(jobReplies)
+	if j.Status != jobPartial || len(j.Unread) != 1 || j.Unread[0].Relay != "wss://wide-empty.example" || j.Unread[0].Why != "empty_unconfirmed" {
+		t.Fatalf("got %s %+v", j.Status, j.Unread)
+	}
+	if j.Cursor["wss://really-empty.example"] != "done" || j.Cursor["wss://wide-empty.example"] != "" {
+		t.Fatalf("cursor %v", j.Cursor)
+	}
+}
+
+// replies the follows-only web kept out make the job partial until the
+// wider web has run, so it is offered again (Tron, PR 1763).
+func TestJobsRepliesKeptOutByAFollowsOnlyWebAreNotDone(t *testing.T) {
+	owner, _ := jobsSetup(t, 30, "wss://a.example")
+	seedsAnswer(t, "wss://a.example")
+	repliesStores(t)
+	wot.MarkReady(wot.NewCycle(), stubWot{members: map[string]bool{owner.pk: true}})
+	stranger := newTestKey(t)
+	mention := stranger.sign(t, nostr.Event{Kind: nostr.KindTextNote, Content: "hey", Tags: nostr.Tags{{"p", owner.pk}}})
+	prev := importPage
+	importPage = func(_ context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
+		if f.Until == nil && f.Matches(&mention) {
+			return []*nostr.Event{&mention}, true
+		}
+		return nil, true
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	runJobAndWait(t, context.Background(), jobReplies, false)
+	if j := readJobs(t).job(jobReplies); j.Status != jobPartial || !strings.Contains(j.Reason, "web_of_trust_follows_only") {
+		t.Fatalf("follows-only web kept a mention out: %s %q", j.Status, j.Reason)
+	}
+	updateJob(func(f *jobsFile) { f.job(jobWiderNetwork).Status = jobDone })
+	runJobAndWait(t, context.Background(), jobReplies, false)
+	if j := readJobs(t).job(jobReplies); j.Status != jobDone {
+		t.Fatalf("with the wider web run: %s %q", j.Status, j.Reason)
+	}
+}
+
+func repliesStores(t *testing.T) {
+	t.Helper()
+	inbox, chat := newTestBackend(t, "inbox"), newTestBackend(t, "chat")
+	for _, db := range []DBBackend{inbox, chat} {
+		if err := db.Init(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(db.Close)
+	}
+	savedInbox, savedChat := inboxDB, chatDB
+	inboxDB, chatDB = inbox, chat
+	t.Cleanup(func() { inboxDB, chatDB = savedInbox, savedChat })
 }
