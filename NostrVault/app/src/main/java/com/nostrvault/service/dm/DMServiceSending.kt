@@ -10,6 +10,7 @@ import com.nostrvault.service.DMService.Companion.TAG
 
     internal suspend fun DMService.sendNIP17DM(content: String, recipientHexPubkey: String) {
         val generation = switchGeneration
+        val cacheKey = loadedCacheKey
 
         // Optimistic UI update
         val optimisticId = UUID.randomUUID().toString()
@@ -93,7 +94,14 @@ import com.nostrvault.service.DMService.Companion.TAG
                     }
                 }
 
-                if (switchGeneration != generation) return@withContext
+                if (switchGeneration != generation) throw DMAccountSwitchedException()
+
+                // Find where the recipient reads before anything goes out (this
+                // can wait seconds for their relay list): a message with nowhere
+                // to go must not leave only your own copy behind, looking sent.
+                val recipientRelays = fetchRecipientDMRelays(recipientHexPubkey)
+                if (recipientRelays.isEmpty()) throw Exception("Couldn't find a relay to reach them.")
+                if (switchGeneration != generation) throw DMAccountSwitchedException()
                 publishing = true
 
                 // Pre-mark our own self-copy gift wrap as seen. It is addressed to
@@ -129,19 +137,18 @@ import com.nostrvault.service.DMService.Companion.TAG
                     publishAuthenticated(selfEvent, relayUrl, ownHexPubkey)
                 }
 
-                val recipientRelays = fetchRecipientDMRelays(recipientHexPubkey)
                 for (relayUrl in recipientRelays) {
                     publishAuthenticated(recipientEvent, relayUrl, ownHexPubkey)
                 }
             } catch (e: CancellationException) {
+                if (!publishing) takeBackOptimisticSend(cacheKey, recipientHexPubkey, optimisticId)
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "NIP-17 send failed: ${e.message}")
                 if (!publishing) {
-                    // Nothing went out: take back the optimistic bubble.
-                    withContext(Dispatchers.Main.immediate) {
-                        removeMessageFromConversation(recipientHexPubkey, optimisticId)
-                    }
+                    // Nothing went out: take back the optimistic bubble, from
+                    // the old account's saved inbox if the account changed.
+                    takeBackOptimisticSend(cacheKey, recipientHexPubkey, optimisticId)
                     throw e
                 }
             }
@@ -180,7 +187,7 @@ import com.nostrvault.service.DMService.Companion.TAG
                 val event = nostrService.signEventAsync(kind = 4, content = encrypted, tags = tags)
                     ?: throw Exception("Signing failed")
 
-                if (switchGeneration != generation) return@withContext
+                if (switchGeneration != generation) throw DMAccountSwitchedException()
                 publishing = true
 
                 // Optimistic UI

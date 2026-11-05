@@ -16,7 +16,7 @@ import com.nostrvault.service.DMService.Companion.TAG
         val conversations = _conversations.value
         val pending = pendingDecryptQueue.toList()
         val oldKey = loadedCacheKey
-        scope.launch(Dispatchers.IO) {
+        switchSaveJob = scope.launch(Dispatchers.IO) {
             if (oldKey != null) {
                 writeCache(oldKey, conversations)
                 // The old account's undecrypted backlog belongs to its own

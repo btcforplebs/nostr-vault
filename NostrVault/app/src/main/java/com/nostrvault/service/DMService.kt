@@ -219,6 +219,8 @@ class DMService @Inject constructor(
     internal var hasStarted = false
     internal var saveJob: Job? = null
     internal var pendingSaveJob: Job? = null
+    /** The last account switch's save of the old inbox (see takeBackOptimisticSend). */
+    internal var switchSaveJob: Job? = null
 
     /**
      * The account (hex pubkey) whose conversations are in memory, and so the
@@ -351,17 +353,24 @@ class DMService @Inject constructor(
      * signer that refused, encryption failed) so the screen can show iOS's
      * "Failed to Send" alert and hand the text back; nothing was published
      * then. Once publishing starts, relay failures are only logged.
+     *
+     * The send runs on this service's scope, not the caller's: leaving the
+     * thread mid-send used to cancel it after your own copy went out but
+     * before the recipient's did, leaving a bubble that looked sent. A caller
+     * that is cancelled just stops waiting; a failure still takes the bubble back.
      */
     suspend fun sendDM(
         content: String,
         recipientHexPubkey: String,
         useNIP04: Boolean = false,
     ) {
-        if (useNIP04) {
-            sendNIP04DM(content, recipientHexPubkey)
-        } else {
-            sendNIP17DM(content, recipientHexPubkey)
-        }
+        scope.async {
+            if (useNIP04) {
+                sendNIP04DM(content, recipientHexPubkey)
+            } else {
+                sendNIP17DM(content, recipientHexPubkey)
+            }
+        }.await()
     }
 
     @Volatile internal var backfillRunning = false

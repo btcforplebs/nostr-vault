@@ -99,8 +99,8 @@ fun PowSettingsScreen(
             Spacer(Modifier.height(24.dp))
 
             PowSection(
-                title = "Direct Messages",
-                subtitle = "Kind 4 and NIP-17 encrypted messages",
+                title = "Old-style Direct Messages",
+                subtitle = "Kind 4 (NIP-04) messages only. Private NIP-17 messages are not mined.",
                 enabled = dmEnabled,
                 difficulty = dmDifficulty,
                 onToggle = prefs::setDmEnabled,

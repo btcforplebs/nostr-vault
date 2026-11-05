@@ -113,7 +113,9 @@ class PowPreferences @Inject constructor(
         return when (kind) {
             1, 6, 30023 -> if (snap.noteEnabled) snap.noteDifficulty else 0
             7 -> if (snap.reactionEnabled) snap.reactionDifficulty else 0
-            4, 14 -> if (snap.dmEnabled) snap.dmDifficulty else 0
+            // Kind 4 only: a NIP-17 message's rumor (kind 14) is never signed,
+            // and its seal and gift wrap are not mined.
+            4 -> if (snap.dmEnabled) snap.dmDifficulty else 0
             else -> 0
         }
     }
