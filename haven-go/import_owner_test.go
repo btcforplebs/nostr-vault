@@ -855,6 +855,7 @@ func TestMoveInRateLimitedRelayIsRetriedOnce(t *testing.T) {
 	}
 	t.Cleanup(func() { importPage = prev })
 
+	beginImportRefusalRetries() // runImport's first step
 	importOwnerNotes(context.Background())
 
 	if got := count(t, db, owner.pk); got != 300 {
@@ -888,10 +889,47 @@ func TestMoveInRelayRefusingTwiceIsDropped(t *testing.T) {
 	}
 	t.Cleanup(func() { importPage = prev })
 
+	beginImportRefusalRetries() // runImport's first step
 	importOwnerNotes(context.Background())
 
 	if asked != 2 {
 		t.Fatalf("a relay refusing every time reached the relay %d times, want 2 (once, then its one retry)", asked)
+	}
+}
+
+// A refusal given before the notes start (WoT init and the list-history scan
+// dial the same relays first) still gets its one retry: the import's retry
+// budget starts at the top of runImport, not in importOwnerNotes (Tron, #1721).
+func TestMoveInRefusalBeforeNotesStartIsRetried(t *testing.T) {
+	noNegentropy(t)
+	owner, db := moveInSetup(t, 100, "wss://early.example")
+	prevBackoff := importRefusalBackoff
+	importRefusalBackoff = 10 * time.Millisecond
+	t.Cleanup(func() {
+		importRefusalBackoff = prevBackoff
+		relayBans.Delete(nostr.NormalizeURL("wss://early.example"))
+	})
+	notes := spread(t, owner, 300, time.Hour)
+	r := &pagingRelay{held: notes}
+	var mu sync.Mutex
+	prev := importPage
+	importPage = func(_ context.Context, url string, f nostr.Filter) ([]*nostr.Event, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		if relayBanned(url) {
+			return nil, false // what the pool's dial gate does
+		}
+		return r.answer(f)
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	beginImportRefusalRetries()
+	// A 429 during WoT init, before importOwnerNotes runs.
+	noteRelayRefusal("wss://early.example", errors.New("rate-limited: slow down"))
+	importOwnerNotes(context.Background())
+
+	if got := count(t, db, owner.pk); got != 300 {
+		t.Fatalf("vault has %d of 300 notes: a refusal before the notes started never got its retry", got)
 	}
 }
 

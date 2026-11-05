@@ -52,7 +52,7 @@ func noteRelayRefusal(url string, err error) {
 	}
 	key := nostr.NormalizeURL(url)
 	if _, loaded := relayBans.Swap(key, time.Now()); !loaded {
-		slog.Warn("relay refused us, skipping it for 24 h", "relay", key, "err", err)
+		slog.Warn("relay refused us, skipping it for 24 h", "relay", seedHost(key), "err", withoutSeedPath(err.Error(), key))
 	}
 }
 
@@ -132,7 +132,7 @@ func importRetryAfterRefusal(ctx context.Context, url string) bool {
 	}
 	importRetried[key] = true
 	importRetryMu.Unlock()
-	slog.Warn("relay refused us during the import; trying it once more after a pause", "relay", key, "wait", importRefusalBackoff)
+	slog.Warn("relay refused us during the import; trying it once more after a pause", "relay", seedHost(key), "wait", importRefusalBackoff)
 	select {
 	case <-time.After(importRefusalBackoff):
 	case <-ctx.Done():

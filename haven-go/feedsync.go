@@ -122,17 +122,49 @@ func (s *feedNegStore) Publish(ctx context.Context, ev nostr.Event) error {
 	return nil
 }
 
+// feedShortHoldRounds: how many rounds in a row one relay stopping partway
+// may hold the fallback watermark back. Past that the round counts as
+// complete without it, or one relay that keeps going quiet (or a busy one
+// that keeps hitting importMaxPages inside the window) pins the watermark for
+// every relay and each hourly round re-reads the whole window from all of
+// them (Tron, #1721).
+const feedShortHoldRounds = 2
+
 // feedFallbackPull reads filter from relays, each paged newest first until a
 // page brings nothing older (fetchPaged), handing every note to publish. It
 // used to be one request, so a relay's answer cap (often 500) was counted as
-// the whole round. True when the round read everything: no relay stopped
-// partway, and at least one answered.
-func feedFallbackPull(ctx context.Context, relays []string, filter nostr.Filter, publish func(*nostr.Event)) bool {
+// the whole round. True when the round read everything: at least one relay
+// answered, and no relay stopped partway, except one that has now stopped
+// partway more than feedShortHoldRounds rounds in a row. shortRounds keeps
+// those streaks across rounds (normalized URL → rounds); a relay that reads
+// to the end, or isn't asked, drops out of it.
+func feedFallbackPull(ctx context.Context, relays []string, filter nostr.Filter, publish func(*nostr.Event), shortRounds map[string]int) bool {
 	res := fetchPaged(ctx, relays, filter, importMaxPages, publish)
 	if ctx.Err() != nil {
 		return false
 	}
-	return len(res.Short) == 0 && len(res.Silent) < len(relays)
+	asked := map[string]bool{}
+	held := false
+	for _, url := range relays {
+		key := nostr.NormalizeURL(url)
+		asked[key] = true
+		if !slices.Contains(res.Short, url) {
+			delete(shortRounds, key)
+			continue
+		}
+		shortRounds[key]++
+		if shortRounds[key] <= feedShortHoldRounds {
+			held = true
+		} else if shortRounds[key] == feedShortHoldRounds+1 {
+			log.Println("📚 feed catch-up: relay keeps stopping partway, no longer holding the watermark for it:", key)
+		}
+	}
+	for key := range shortRounds {
+		if !asked[key] {
+			delete(shortRounds, key)
+		}
+	}
+	return !held && len(res.Silent) < len(relays)
 }
 
 // ownerFollowSet derives the follow set from the owner's newest kind-3 in the
@@ -270,6 +302,10 @@ func syncFeed(ctx context.Context) {
 	// gets the whole window of articles and polls in its first round, which
 	// is a few dozen events, not the hours of notes the common pull starts
 	// with.
+	// Per relay: rounds in a row it stopped partway (feedFallbackPull).
+	// Only runFeedSync touches it, one round at a time.
+	feedShortRounds := map[string]int{}
+
 	var lastSeenRare atomic.Int64
 	lastSeenRare.Store(state.mark("feed_rare", int64(windowSince()), int64(windowSince())))
 
@@ -382,7 +418,7 @@ func syncFeed(ctx context.Context) {
 		complete := true
 		if len(fallback) > 0 && ctx.Err() == nil {
 			log.Println("📚 feed catch-up pull since", time.Unix(int64(fsince), 0).Format(time.RFC3339), "on", len(fallback), "relays")
-			complete = feedFallbackPull(ctx, fallback, commonFilter, func(ev *nostr.Event) { store.Publish(ctx, *ev) })
+			complete = feedFallbackPull(ctx, fallback, commonFilter, func(ev *nostr.Event) { store.Publish(ctx, *ev) }, feedShortRounds)
 			if ctx.Err() != nil {
 				return
 			}
@@ -395,7 +431,8 @@ func syncFeed(ctx context.Context) {
 		// the next fallback pull re-queries an ever-widening window (expanding
 		// downloads, 100% CPU). A round cut short (a relay stopped partway, or
 		// none answered) keeps it, so the next round asks again for what this
-		// one missed (Tidy import audit, item 8); the window's edge (since)
+		// one missed (Tidy import audit, item 8), for at most
+		// feedShortHoldRounds rounds per relay; the window's edge (since)
 		// still bounds how far back that can reach. Monotonic.
 		if ctx.Err() == nil {
 			if complete {

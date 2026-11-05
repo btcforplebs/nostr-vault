@@ -150,22 +150,22 @@ func importOwnerNegentropy(ctx context.Context, url string, filter nostr.Filter,
 			// Listed notes it didn't send (or that failed the check): ask
 			// for exactly those once more, then page it if any still lack.
 			left := importFetchIDs(ctx, url, stats.Missing, store)
-			log.Printf("⚠️ negentropy import %s: %d of %d listed notes didn't come; %d still missing after asking again", url, len(stats.Missing), stats.RemoteOnly, left)
+			log.Printf("⚠️ negentropy import %s: %d of %d listed notes didn't come; %d still missing after asking again", seedHost(url), len(stats.Missing), stats.RemoteOnly, left)
 			if left > 0 {
 				return false
 			}
 		}
-		log.Printf("📥 negentropy import %s: %d notes it had that the vault didn't", url, stats.RemoteOnly)
+		log.Printf("📥 negentropy import %s: %d notes it had that the vault didn't", seedHost(url), stats.RemoteOnly)
 		return true
 	case errors.Is(err, negsync.ErrUnsupported):
 		markNegentropyUnsupported(url)
 	case errors.Is(err, negsync.ErrRefused):
-		slog.Warn("negentropy import refused, paging instead", "relay", url, "err", err)
+		slog.Warn("negentropy import refused, paging instead", "relay", seedHost(url), "err", withoutSeedPath(err.Error(), url))
 		markNegentropyUnsupported(url)
 		noteRelayRefusal(url, err)
 	default:
 		noteRelayRefusal(url, err)
-		slog.Warn("negentropy import failed, paging instead", "relay", url, "err", err)
+		slog.Warn("negentropy import failed, paging instead", "relay", seedHost(url), "err", withoutSeedPath(err.Error(), url))
 	}
 	return false
 }
@@ -252,7 +252,8 @@ func importOwnerNotes(ctx context.Context) {
 	// Each relay on its own: negentropy if it may speak it, else (or if it
 	// didn't hand everything over) its whole history paged newest first.
 	// A slow relay, a silent probe or a long lane only delays its own notes.
-	beginImportRefusalRetries()
+	// The refusal-retry budget was started by runImport, before WoT init and
+	// the list-history scan dialed these same relays.
 	var (
 		mu    sync.Mutex
 		total int
@@ -270,7 +271,7 @@ func importOwnerNotes(ctx context.Context) {
 				total += n
 				mu.Unlock()
 				if n > 0 {
-					log.Printf("📦 Imported %d notes from %s to %s (%s, %s)", n, from, today, url, how)
+					log.Printf("📦 Imported %d notes from %s to %s (%s, %s)", n, from, today, seedHost(url), how)
 				}
 			}
 			negStore := &importNegStore{outbox: &outboxNegStore{outbox: wdb, advance: func(nostr.Timestamp) { stored.Add(1) }}, lock: &keepMu}
@@ -304,7 +305,7 @@ func importOwnerNotes(ctx context.Context) {
 			}
 			report("paged")
 			if overran {
-				log.Printf("⚠️ %s still sending after %s; reading it window by window", url, importLaneDeadline)
+				log.Printf("⚠️ %s still sending after %s; reading it window by window", seedHost(url), importLaneDeadline)
 			}
 			if overran || len(res.Short) > 0 || len(res.Silent) > 0 {
 				// The lane read newest first down to its oldest note: only
@@ -331,7 +332,7 @@ func importOwnerNotes(ctx context.Context) {
 	if len(redo) > 0 {
 		names := make([]string, len(redo))
 		for i, w := range redo {
-			names[i] = w.url
+			names[i] = seedHost(w.url)
 		}
 		log.Printf("⚠️ %d relay(s) did not finish their whole history; reading them window by window: %v", len(redo), names)
 		total += importOwnerWindows(ctx, redo, startTime, owners, func(ev *nostr.Event) bool { return keep(ev) })
@@ -531,9 +532,9 @@ func importOwnerWindows(ctx context.Context, relays []walkRelay, start time.Time
 			if st.silent >= limit {
 				st.dropped = true
 				if st.alive {
-					log.Printf("⚠️ %s sent notes, then nothing for %d windows in a row; not asking it again (before %s not read from it)", st.url, limit, begin.Format(layout))
+					log.Printf("⚠️ %s sent notes, then nothing for %d windows in a row; not asking it again (before %s not read from it)", seedHost(st.url), limit, begin.Format(layout))
 				} else {
-					log.Printf("⚠️ %s answered nothing, or went quiet without finishing, for %d windows in a row; not asking it again", st.url, limit)
+					log.Printf("⚠️ %s answered nothing, or went quiet without finishing, for %d windows in a row; not asking it again", seedHost(st.url), limit)
 				}
 			}
 		}

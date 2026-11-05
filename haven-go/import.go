@@ -132,6 +132,11 @@ func runImport(ctx context.Context) {
 	// NOTE: do NOT use flag.FlagSet / os.Args here — in C-shared (iOS embedded)
 	// mode os.Args belongs to the host app and index [2:] is garbage.
 	// All configuration is already loaded from environment variables by loadConfig().
+
+	// First: WoT init and the list-history scan dial the import relays before
+	// the notes do. A refusal there must count as "during this import", or it
+	// never gets its one retry and the relay is dropped as silent (Tron, #1721).
+	beginImportRefusalRetries()
 	if err := GranularInitDBs([]string{"chat", "outbox", "inbox", "lists", "listsimport"}); err != nil {
 		log.Println("🚫 failed to init import DBs:", err)
 		return

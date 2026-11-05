@@ -76,7 +76,7 @@ func TestFeedFallbackPullPagesPastTheCapAndSaysWhenComplete(t *testing.T) {
 
 	withPagingRelays(t, map[string]*pagingRelay{"wss://capped.example": {held: held, cap: 300}})
 	got := 0
-	if !feedFallbackPull(context.Background(), []string{"wss://capped.example"}, filter, func(*nostr.Event) { got++ }) {
+	if !feedFallbackPull(context.Background(), []string{"wss://capped.example"}, filter, func(*nostr.Event) { got++ }, map[string]int{}) {
 		t.Fatal("a round that read everything was not complete")
 	}
 	if got != 1200 {
@@ -84,9 +84,29 @@ func TestFeedFallbackPullPagesPastTheCapAndSaysWhenComplete(t *testing.T) {
 	}
 
 	// Stops partway (answers, then goes quiet): the round is not complete,
-	// so the watermark stays for the next round to ask again.
+	// so the watermark stays for the next round to ask again, but only for
+	// feedShortHoldRounds rounds in a row. Past that the relay no longer pins
+	// the watermark for every relay (Tron, #1721).
 	withPagingRelays(t, map[string]*pagingRelay{"wss://tired.example": {held: held, cap: 300, quiet: 1}})
-	if feedFallbackPull(context.Background(), []string{"wss://tired.example"}, filter, func(*nostr.Event) {}) {
-		t.Fatal("a round cut partway was called complete")
+	streak := map[string]int{}
+	// Spelled out, not read from the constant: holding forever must fail here.
+	for round, want := range []bool{false, false, true, true} {
+		complete := feedFallbackPull(context.Background(), []string{"wss://tired.example"}, filter, func(*nostr.Event) {}, streak)
+		if complete != want {
+			t.Fatalf("round %d: complete=%v, want %v", round+1, complete, want)
+		}
+	}
+	// A round where it reads to the end clears its streak: its next stop
+	// partway holds the watermark again.
+	withPagingRelays(t, map[string]*pagingRelay{"wss://tired.example": {held: held, cap: 300}})
+	if !feedFallbackPull(context.Background(), []string{"wss://tired.example"}, filter, func(*nostr.Event) {}, streak) {
+		t.Fatal("a round that read everything was not complete")
+	}
+	if len(streak) != 0 {
+		t.Fatalf("streak kept after a full read: %v", streak)
+	}
+	withPagingRelays(t, map[string]*pagingRelay{"wss://tired.example": {held: held, cap: 300, quiet: 1}})
+	if feedFallbackPull(context.Background(), []string{"wss://tired.example"}, filter, func(*nostr.Event) {}, streak) {
+		t.Fatal("a fresh stop partway was called complete")
 	}
 }
