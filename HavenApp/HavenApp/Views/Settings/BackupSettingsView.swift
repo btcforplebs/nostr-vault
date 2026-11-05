@@ -15,6 +15,13 @@ struct BackupSettingsView: View {
     @State private var isExportingBlossom = false
     @State private var isImportingBlossom = false
     @State private var statusMessage = ""
+    static let notThisVaultsBackup = "This backup isn't this vault's. It holds no notes signed by the vault owner's key."
+
+    /// A refused restore ("This backup isn't…") is a failure too.
+    private var statusFailed: Bool {
+        statusMessage.contains("failed") || statusMessage.contains("Failed") || statusMessage.contains("Error")
+            || statusMessage.contains("This backup isn't")
+    }
     @State private var activeImportType: ImportType?
     @State private var showFileImporter = false
     
@@ -123,8 +130,8 @@ struct BackupSettingsView: View {
             if !statusMessage.isEmpty {
                 Section {
                     HStack {
-                        Image(systemName: statusMessage.contains("failed") || statusMessage.contains("Error") ? "xmark.circle.fill" : "checkmark.circle.fill")
-                            .foregroundColor(statusMessage.contains("failed") || statusMessage.contains("Error") ? .red : .havenOnline)
+                        Image(systemName: statusFailed ? "xmark.circle.fill" : "checkmark.circle.fill")
+                            .foregroundColor(statusFailed ? .red : .havenOnline)
                         Text(statusMessage)
                             .font(.appCallout)
                             .foregroundColor(.secondary)
@@ -226,11 +233,14 @@ struct BackupSettingsView: View {
             return
         }
         
-        relayManager.runBackupRestore(config: configService.config, inputPath: tempFile.path) { success in
+        // Only this vault owner's own backup: someone else's is never merged in.
+        relayManager.runOwnBackupRestore(config: configService.config, inputPath: tempFile.path) { code in
             Task { @MainActor in
                 isImportingJSONL = false
                 try? FileManager.default.removeItem(at: tempFile)
-                statusMessage = success ? "Notes restored successfully!" : "Note restore failed. Check that it's this account's own backup."
+                // Checked against this vault's owner, not the active account.
+                statusMessage = code == 2 ? Self.notThisVaultsBackup
+                    : VaultBackupQuestion.restoreError(code: code) ?? "Notes restored successfully!"
                 clearStatus()
             }
         }

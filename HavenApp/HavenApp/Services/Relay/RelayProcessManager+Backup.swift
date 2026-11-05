@@ -107,11 +107,7 @@ extension RelayProcessManager {
         }
     }
 
-    func runBackupRestore(config: HavenConfig, inputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
-        runRestore(config: config, inputPath: inputPath, restore: { RestoreDatabaseC($0) }) { completion($0 == 0) }
-    }
-
-    /// Setup's restore: refuses a backup with no event signed by the owner
+    /// The one restore (setup and Settings): refuses a backup with no event signed by the owner
     /// (code 2), so someone else's backup is never merged in. `completion`
     /// gets RestoreOwnBackupC's code: 0 ok, 1 failed, 2 not the owner's.
     func runOwnBackupRestore(config: HavenConfig, inputPath: String, completion: @escaping @Sendable (Int32) -> Void) {
