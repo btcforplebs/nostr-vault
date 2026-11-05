@@ -18,6 +18,16 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
 
     fun DashboardViewModel.importBlossom() { blossomService.runMirror() }
 
+    /**
+     * The one busy flag (twin of iOS #1720): while an import, backup or restore owns the vault, a stop, restart or
+     * force-clean is refused with one line. -> true when refused.
+     */
+    fun DashboardViewModel.refusedWhileBusy(): Boolean {
+        if (!relayImportService.isBusy) return false
+        setExportStatus(com.nostrvault.service.RelayImportService.BUSY_LINE, isError = true, clearLater = true)
+        return true
+    }
+
     private fun DashboardViewModel.setExportStatus(message: String, isError: Boolean = false, clearLater: Boolean = false) {
         exportStatusClear?.cancel()
         _exportStatus.value = message

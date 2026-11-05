@@ -1,62 +1,54 @@
 package com.nostrvault.ui.screens
 
 import com.nostrvault.fips.DeviceRole
-import com.nostrvault.relay.MacSyncStatus
+import com.nostrvault.service.ImportResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Setup's "Copy from my other vault" (plan §5a): its words and when the copy gives up. */
+/** Setup's "Copy from my other vault" (plan §5a, #1720 twin): how the copy ends and its words. */
 class BringItOverTest {
-    @Test
-    fun onlyAMacIsCopiedFrom() {
-        assertTrue(BringItOver.copiesFrom(DeviceRole.MAC))
-        assertFalse(BringItOver.copiesFrom(DeviceRole.PHONE))
-        assertFalse(BringItOver.copiesFrom(DeviceRole.HOME_VAULT))
-        assertFalse(BringItOver.copiesFrom(DeviceRole.BROWSER))
-    }
-
-    private val linked = 1_000L
-    private fun status(state: String?, posts: Int? = null, started: Long = linked + 30) =
-        MacSyncStatus(state = state, posts = posts, startedAt = started, updatedAt = started)
+    private fun result(line: String) = ImportResult.parse("IMPORT_RESULT $line")!!
 
     @Test
-    fun theCopyEndsDoneOrFallsBack() {
-        assertEquals(BringItOver.Copy.Done(4200), BringItOver.judge(status("done", 4200), linked, linked, linked + 60))
-        assertEquals(BringItOver.Copy.Stalled, BringItOver.judge(status("failed"), linked, linked, linked + 60))
-        assertEquals(BringItOver.Copy.Done(12), BringItOver.judge(status("incomplete", 12), linked, linked, linked + 60))
-        assertEquals(BringItOver.Copy.Stalled, BringItOver.judge(status("incomplete", 0), linked, linked, linked + 60))
+    fun onlyTheResultLineEndsTheCopy() {
+        assertEquals(BringItOver.Copy.Done, BringItOver.after(result("status=complete reason=ok owner=9 tagged=0 relays=5/5 other_vault=reached")))
+        assertEquals("partial but the other vault was read", BringItOver.Copy.Done,
+            BringItOver.after(result("status=partial reason=walk_deadline owner=9 tagged=0 relays=4/5 other_vault=reached")))
+        assertEquals(BringItOver.Copy.FallBack,
+            BringItOver.after(result("status=partial reason=other_vault_not_reached owner=9 tagged=0 relays=4/5 other_vault=not_reached")))
+        assertEquals(BringItOver.Copy.FallBack, BringItOver.after(result("status=failed reason=no_seed_relay owner=0 tagged=0 relays=0/5 other_vault=none")))
+        assertEquals(BringItOver.Copy.FallBack, BringItOver.after(result("status=cancelled reason=cancelled owner=0 tagged=0 relays=5/5 other_vault=none")))
+        assertEquals(BringItOver.Copy.FallBack, BringItOver.after(ImportResult.NO_RESULT))
     }
 
     @Test
     fun twoMinutesWithoutProgressIsAStall() {
-        val running = status("running", 300)
-        assertEquals(BringItOver.Copy.Going, BringItOver.judge(running, linked, linked + 100, linked + 200))
-        assertEquals(BringItOver.Copy.Stalled, BringItOver.judge(running, linked, linked + 100, linked + 221))
-        assertEquals("nothing at all for 2 minutes", BringItOver.Copy.Stalled, BringItOver.judge(null, linked, linked, linked + 121))
-        assertEquals(BringItOver.Copy.Going, BringItOver.judge(null, linked, linked, linked + 120))
+        assertFalse(BringItOver.isStalled(lastProgressAt = 1_000, now = 1_119))
+        assertTrue(BringItOver.isStalled(lastProgressAt = 1_000, now = 1_120))
     }
 
     @Test
-    fun aStatusFromBeforeTheLinkIsNotThisCopy() {
-        val old = status("done", 99, started = linked - 600)
-        assertEquals(BringItOver.Copy.Going, BringItOver.judge(old, linked, linked, linked + 10))
-        assertEquals(BringItOver.Copy.Stalled, BringItOver.judge(old, linked, linked, linked + 121))
+    fun readsFromTheMacBackfillEpoch() {
+        assertEquals("2020-11-01", BringItOver.START_DATE)
     }
 
     @Test
-    fun logensWordsForTheThirdOption() {
+    fun wordsMatchIos() {
         assertEquals("Copy from my other vault", BringItOver.COPY)
-        assertEquals("Your Mac or another device signed in as you. Scan two codes and it copies over the mesh.", BringItOver.COPY_DETAIL)
+        assertEquals("Links your devices, then brings your notes from your relays", BringItOver.COPY_DETAIL)
+        assertEquals("Your other vault was not reached; getting your notes from your relays instead", BringItOver.FALLBACK_LINE)
+        assertEquals("Copying from Logen's Mac…", BringItOver.copyingLine("Logen's Mac"))
+        assertEquals("Copying from your other device…", BringItOver.copyingLine("  "))
     }
 
-    /** The approved small print is the one line that says "mesh"; nothing else on these screens does. */
     @Test
     fun noMeshWordsOnTheseScreens() {
         val words = listOf(
-            BringItOver.COPY, BringItOver.CANCEL, BringItOver.SCAN_TITLE, BringItOver.SCAN_BODY, BringItOver.FALLBACK_LINE,
-            BringItOver.showCodeTitle("Mac"), BringItOver.showCodeBody("Mac"), BringItOver.linkedLine("Mac"),
+            BringItOver.COPY, BringItOver.COPY_DETAIL, BringItOver.CANCEL, BringItOver.SCAN_TITLE, BringItOver.SCAN_BODY,
+            BringItOver.FALLBACK_LINE, BringItOver.showCodeTitle("Mac"), BringItOver.showCodeBody("Mac"),
+            BringItOver.linkedLine("Mac"), BringItOver.copyingLine("Mac"),
             com.nostrvault.fips.MeshPairing.roleConfirmText(DeviceRole.MAC, "Logen's Mac", setup = true),
         )
         for (w in words) for (banned in listOf("mesh", "fips", "npub", "address", "role")) {
@@ -65,8 +57,12 @@ class BringItOverTest {
     }
 
     @Test
-    fun copyingLine() {
-        assertEquals("Copying from Mac…", BringItOver.copyingLine("Mac", null))
-        assertEquals("Copying from Mac… 3,412 notes so far", BringItOver.copyingLine("Mac", 3412))
+    fun theTourSaysHowItEnded() {
+        assertEquals("Couldn't start, try again", tourStoppedTitle(result("status=failed reason=db_init owner=0 tagged=0 relays=0/0 other_vault=none")))
+        assertEquals("Couldn't start, try again", tourStoppedTitle(null))
+        assertEquals("Import cancelled", tourStoppedTitle(ImportResult.CANCELLED))
+        val partial = result("status=partial reason=relay_dropped owner=40 tagged=0 relays=3/4 other_vault=none")
+        assertEquals("Some notes may be missing", tourStoppedTitle(partial))
+        assertTrue(tourStoppedBody(partial).startsWith("Imported 40 notes, but some may be missing."))
     }
 }

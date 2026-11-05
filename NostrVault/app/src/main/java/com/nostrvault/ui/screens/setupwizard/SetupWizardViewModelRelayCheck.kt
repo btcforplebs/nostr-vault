@@ -91,6 +91,7 @@ import kotlinx.coroutines.launch
         val sameAccountAgain = importTourPubkey == null
         importTourPubkey = pubkey
         _tourImportFailed.value = false
+        _tourOutcome.value = null
         _tourCounts.value = null
         if (sameAccountAgain && relayImportService.importCompleted.value && !relayImportService.isImporting.value) {
             loadTourCounts()
@@ -101,11 +102,18 @@ import kotlinx.coroutines.launch
         // 10-day windows, each waiting on every relay, so two more years cost
         // minutes for everyone. Older notes can be pulled from Settings → Import.
         configStore.update { it.copy(importStartDate = IMPORT_TOUR_START_DATE) }
-        relayImportService.importNotes(listHistory = _importListHistory.value)
+        if (!relayImportService.importNotes(listHistory = _importListHistory.value)) {
+            // Refused (the vault is busy): it never started, so say so rather than wait for nothing.
+            _tourOutcome.value = com.nostrvault.service.ImportResult.APP_FAILED
+            _tourImportFailed.value = true
+            return
+        }
         viewModelScope.launch {
-            relayImportService.isImporting.first { it }
             relayImportService.isImporting.first { !it }
-            if (!relayImportService.importCompleted.value) _tourImportFailed.value = true
+            // Only a complete import counts as done; partial, failed and cancelled each say so (#1720 twin).
+            val outcome = relayImportService.importOutcome.value ?: com.nostrvault.service.ImportResult.NO_RESULT
+            _tourOutcome.value = outcome
+            if (!outcome.isComplete) _tourImportFailed.value = true
         }
     }
 
