@@ -44,7 +44,15 @@ class ConfigStoreSaveTest {
             forgotten += hexPubkey to npub
             hexPubkey?.let { keys.remove(it) }
         }
+        var forgotEverything = false
+        override fun forgetEverything() {
+            forgotEverything = true
+            keys.clear()
+        }
     }
+
+    /** Whether the store wiped the cache folder and every prefs file. */
+    private var wipedOutside = false
 
     private val vault = FakeVault()
 
@@ -59,6 +67,7 @@ class ConfigStoreSaveTest {
     private fun store() = ConfigStore(context).apply {
         keyVault = vault
         clearPrefs = { clearedPrefs += it }
+        wipeOutsideFiles = { wipedOutside = true }
         publicKeyOf = { if (it == secret) ownerHex else null }
         reload()
     }
@@ -210,6 +219,28 @@ class ConfigStoreSaveTest {
         // The next 10063 / 10006 / 10015 edit starts from the network's copy, not this phone's.
         assertFalse(bases.exists())
         assertEquals(listOf("interest_lists", "fresh_account_keys", "own_list_edits", "list_wipe_alarm"), clearedPrefs)
+    }
+
+    /** Bug hunt 2026-11-05 #2: "All your relay data will be lost" left DMs, notes, widgets and added accounts' keys. */
+    @Test
+    fun `factory reset wipes DM caches, the relay database, widgets and every stored key`() = runBlocking {
+        val dmCache = File(filesDir, "dm_cache_${ownerHex}.json").apply { writeText("""[{"content":"a private message"}]""") }
+        val db = File(filesDir, "relay_data/db/000001.vlog").apply { parentFile!!.mkdirs(); writeText("notes") }
+        val blob = File(filesDir, "relay_data/blossom/abc").apply { parentFile!!.mkdirs(); writeText("media") }
+        val widget = File(filesDir, "widget-snapshot.json").apply { writeText("""{"recent":["a note"]}""") }
+        val profiles = File(filesDir, "nostrvault_data/profiles.json").apply { parentFile!!.mkdirs(); writeText("{}") }
+        val added = "7a".repeat(32)
+        vault.keys["added-account"] = added
+        val store = store()
+        store.updateAsync { it.copy(ownerNpub = owner, ownerHexKey = secret) }
+
+        store.resetApp()
+
+        for (f in listOf(dmCache, db, blob, widget, profiles)) assertFalse("${f.name} survived the reset", f.exists())
+        assertTrue("files folder is empty: ${filesDir.list()?.toList()}", filesDir.list().isNullOrEmpty())
+        assertTrue(vault.forgotEverything)
+        assertTrue(vault.keys.isEmpty())
+        assertTrue(wipedOutside)
     }
 
     @Test

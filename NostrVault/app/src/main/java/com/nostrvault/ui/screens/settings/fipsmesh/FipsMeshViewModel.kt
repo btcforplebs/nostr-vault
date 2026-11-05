@@ -51,7 +51,7 @@ class FipsMeshViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, configStore.config.value.fipsMesh)
 
     val devices = combine(configStore.config, mesh.status) { cfg, st ->
-        MyDevicesRules.list(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, st.peers)
+        MyDevicesRules.list(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, st.peers, cfg.ownerNpub)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** The owner's kiosks in their 10063 that are not in My Devices yet: offered in Add a Device. */
@@ -97,7 +97,11 @@ class FipsMeshViewModel @Inject constructor(
     fun addDevice(npub: String, role: DeviceRole, name: String): Boolean {
         val own = mesh.status.value.npub
         if (!MyDevicesRules.isMeshNpub(npub) || npub == own) return false
-        change { cfg -> MyDevicesRules.add(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, own, npub, role, name) }
+        change { cfg ->
+            // Linked by the account active now (Logen 2026-11-05).
+            val linkedBy = cfg.activeAccountNpub?.trim()?.takeIf { it.isNotEmpty() } ?: cfg.ownerNpub
+            MyDevicesRules.add(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, own, npub, role, name, linkedBy, cfg.ownerNpub)
+        }
         return true
     }
 

@@ -275,6 +275,14 @@ object CredentialStore {
      */
     fun readMeshNsec(): String? = prefs.getString(MESH_IDENTITY, null)
 
+    /** Factory Reset: every key and password in the store, at once (commit: the app relaunches right after). */
+    fun wipeAll(): Boolean = try {
+        prefs.edit().clear().commit()
+    } catch (e: Exception) {
+        Log.e(TAG, "Failed to wipe the credential store: ${e.message}")
+        false
+    }
+
     fun deleteMeshNsec(): Boolean =
         delete(MESH_IDENTITY)
 

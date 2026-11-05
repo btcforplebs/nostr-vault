@@ -140,7 +140,11 @@ class PairDeviceViewModel @Inject constructor(
             }
             MeshPairingSession.Outcome.Abort -> stop(MeshPairing.ABORT_TEXT)
             MeshPairingSession.Outcome.Expired -> stop(MeshPairing.EXPIRED_TEXT)
-            is MeshPairingSession.Outcome.Refuse -> (_ui.value as? Ui.ShowCode)?.let { _ui.value = it.copy(note = MeshPairing.OTHER_OWNER_TEXT) }
+            is MeshPairingSession.Outcome.Refuse -> (_ui.value as? Ui.ShowCode)?.let {
+                val owner = MeshPairing.parseHello(plaintext)?.owner
+                val name = owner?.takeIf { o.why == "switchTo" }?.let(::accountName)
+                _ui.value = it.copy(note = PairDeviceRules.helloRefusalText(o.why, name))
+            }
             else -> Unit // a resend, or not for this code: keep waiting quietly
         }
     }
@@ -208,10 +212,11 @@ class PairDeviceViewModel @Inject constructor(
             is MeshPairing.OwnerCheck.SwitchTo -> { _ui.value = Ui.SwitchAccount(MeshPairing.switchToText(accountName(o.npub)), o.npub); return }
             MeshPairing.OwnerCheck.Ok -> Unit
         }
-        when (val r = MeshPairing.roleCheck(p.mesh, p.role, existing())) {
-            is MeshPairing.RoleCheck.RefuseOtherRole -> return stop(MeshPairing.otherRoleText(r.role))
-            MeshPairing.RoleCheck.AlreadyLinked -> { _ui.value = Ui.Linked(MeshPairing.displayName(p.name), already = true); return }
-            MeshPairing.RoleCheck.Add -> Unit
+        when (val next = PairDeviceRules.afterScanFirst(MeshPairing.roleCheck(p.mesh, p.role, existing()))) {
+            is PairDeviceRules.AfterScan.Refuse -> return stop(next.text)
+            // Known already: the hello goes out at once so the other side can add this phone again.
+            PairDeviceRules.AfterScan.JoinAgain -> return join(p, now())
+            PairDeviceRules.AfterScan.Confirm -> Unit
         }
         pending = Pending.JoinA(p, now())
         _ui.value = Ui.ConfirmRole(MeshPairing.roleConfirmText(p.role, p.name), MeshPairing.shortAddress(p.mesh))
@@ -337,7 +342,11 @@ class PairDeviceViewModel @Inject constructor(
 
     private suspend fun storeNow(own: String?, npub: String, role: DeviceRole, name: String) {
         val before = configStore.config.value
-        val change = MyDevicesRules.add(before.fipsPeers, before.homeVaultNpub, before.fipsMesh.devices, own, npub, role, name) ?: return
+        // Linked by the account active now: only its posts go to the device (Logen 2026-11-05).
+        val change = MyDevicesRules.add(
+            before.fipsPeers, before.homeVaultNpub, before.fipsMesh.devices, own, npub, role, name,
+            linkedBy = activeNpub().orEmpty(), ownerNpub = before.ownerNpub,
+        ) ?: return
         configStore.updateAsync { it.copy(fipsMesh = it.fipsMesh.copy(devices = change.labels)) }
         if (change.peers != before.fipsPeers) mesh.setPeers(change.peers)
         if (change.homeVault != before.homeVaultNpub) homeVault.setHomeVault(change.homeVault)
@@ -351,7 +360,7 @@ class PairDeviceViewModel @Inject constructor(
 
     private fun existing(): List<Pair<String, DeviceRole>> {
         val cfg = configStore.config.value
-        return MyDevicesRules.list(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, emptyList()).map { it.npub to it.role }
+        return MyDevicesRules.list(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, emptyList(), cfg.ownerNpub).map { it.npub to it.role }
     }
 
     private fun activeNpub(): String? {

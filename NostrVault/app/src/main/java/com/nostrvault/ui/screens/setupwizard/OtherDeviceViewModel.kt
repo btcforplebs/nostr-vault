@@ -250,7 +250,11 @@ class OtherDeviceViewModel @Inject constructor(
 
     private suspend fun store(own: String?, npub: String, role: DeviceRole, name: String) {
         val before = configStore.config.value
-        val change = MyDevicesRules.add(before.fipsPeers, before.homeVaultNpub, before.fipsMesh.devices, own, npub, role, name) ?: return
+        // Setup links for the account being set up, the owner.
+        val change = MyDevicesRules.add(
+            before.fipsPeers, before.homeVaultNpub, before.fipsMesh.devices, own, npub, role, name,
+            linkedBy = owner().orEmpty(), ownerNpub = before.ownerNpub,
+        ) ?: return
         configStore.updateAsync { it.copy(fipsMesh = it.fipsMesh.copy(devices = change.labels)) }
         if (change.peers != before.fipsPeers) mesh.setPeers(change.peers)
         if (change.homeVault != before.homeVaultNpub) homeVault.setHomeVault(change.homeVault)
@@ -270,7 +274,7 @@ class OtherDeviceViewModel @Inject constructor(
 
     private fun existing(): List<Pair<String, DeviceRole>> {
         val cfg = configStore.config.value
-        return MyDevicesRules.list(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, emptyList()).map { it.npub to it.role }
+        return MyDevicesRules.list(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, emptyList(), cfg.ownerNpub).map { it.npub to it.role }
     }
 
     private fun tick(onTick: (Long) -> Unit) {

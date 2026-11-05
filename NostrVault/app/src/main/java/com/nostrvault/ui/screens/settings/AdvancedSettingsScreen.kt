@@ -33,7 +33,9 @@ class AdvancedSettingsViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val mediaCacheService: MediaCacheService,
     private val notificationManager: com.nostrvault.ui.notification.NotificationManager,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
 ) : ViewModel() {
+
     private val _cacheBytes = MutableStateFlow<Long?>(null)
     /** Size of the media cache, null until measured (iOS cacheBytes). */
     val cacheBytes: StateFlow<Long?> = _cacheBytes.asStateFlow()
@@ -77,6 +79,9 @@ class AdvancedSettingsViewModel @Inject constructor(
     }
 
     companion object {
+        /** Factory Reset waits this long for the relay to close its databases. */
+        private const val RELAY_STOP_WAIT_MS = 8_000L
+
         /** The confirm text, with the size when it is known (iOS clearMessage). */
         fun clearMessage(bytes: Long?): String {
             val size = bytes?.let { formatSize(it) + " of " } ?: ""
@@ -107,7 +112,11 @@ class AdvancedSettingsViewModel @Inject constructor(
 
     fun factoryReset(onDone: () -> Unit) {
         viewModelScope.launch {
+            // The relay closes its databases before they are deleted (bounded: the reset still goes ahead).
+            withTimeoutOrNull(RELAY_STOP_WAIT_MS) { while (RelayForegroundService.serviceAlive) delay(100) }
             configStore.resetApp()
+            // Home-screen widgets drop the old account's notes, media and streams now, not at the next tick.
+            com.nostrvault.widget.WidgetPublisher.redraw(appContext)
             onDone()
         }
     }
