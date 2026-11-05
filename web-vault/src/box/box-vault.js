@@ -13,9 +13,14 @@ const enc = new TextEncoder(), dec = new TextDecoder()
 // Logins (signer audit 2026-11-05 #4): a box socket that has logged in (the box answered its AUTH OK) is kept when its client closes and handed to
 // the next client of that route, so a Vault Dashboard, a backup or a re-opened stream doesn't ask the signer again.
 // A login the user declines is remembered for the page (until retryLogin, or a reload), so polled reads don't
-// re-prompt every few minutes. A signed AUTH that isn't the signed-in account's is never sent.
+// re-prompt every few minutes. A signer that never answered (a bunker timeout, `unreachable`) didn't decline: the next
+// read asks again (Tron 1745). A signed AUTH that isn't the signed-in account's is never sent.
 export const LOGIN_DECLINED = "You declined to log in to your box, so it wasn't asked again. Reload the page to log in."
 const IDLE_PER_ROUTE = 4
+// Subscription ids (Tron 1745): each HavenClient numbers its own q1, q2..., so a kept socket could hand a new client
+// the box's answers to the old client's still-open q1. Every client of a link gets its own prefix on the way out, it is
+// taken off on the way back, and an answer with another client's prefix is dropped. Its open REQs are CLOSEd on give.
+const SUB_OUT = new Set(["REQ", "COUNT", "CLOSE"]), SUB_IN = new Set(["EVENT", "EOSE", "CLOSED", "COUNT"])
 
 /** The box's sockets for one page: `link(route)` hands out an idle logged-in socket of that route, or a new one. */
 function boxLinks({ signer, pubkey, Socket = globalThis.WebSocket, loc = globalThis.location } = {}) {
@@ -27,7 +32,7 @@ function boxLinks({ signer, pubkey, Socket = globalThis.WebSocket, loc = globalT
     if (login.declined) throw new Error(LOGIN_DECLINED)
     const template = { kind: 22242, created_at: Math.floor(Date.now() / 1000), content: "", tags: [["relay", url], ["challenge", challenge]] }
     let signed
-    try { signed = await signer.signEvent(template) } catch (e) { login.declined = true; throw e }
+    try { signed = await signer.signEvent(template) } catch (e) { if (!e?.unreachable) login.declined = true; throw e }
     const who = me()
     // checkSigned: the event asked for, validly signed, by the signed-in account (not whatever the signer is on).
     return who ? checkSigned(signed, template, who) : signed
@@ -36,7 +41,7 @@ function boxLinks({ signer, pubkey, Socket = globalThis.WebSocket, loc = globalT
   const open = route => {
     const url = boxRelayUrl(route, loc)
     const ws = new Socket(url)
-    const link = { url, route, ws, user: null, alive: true, renamed: new Map() } // renamed: id the box answers -> id the client waits on
+    const link = { url, route, ws, user: null, alive: true, renamed: new Map(), gen: 0, tag: "", subs: new Set() } // renamed: id the box answers -> id the client waits on
     link.opened = new Promise((resolve, reject) => {
       ws.onopen = () => resolve()
       ws.onerror = () => reject(new Error(`box relay unreachable: ${url}`))
@@ -58,6 +63,11 @@ function boxLinks({ signer, pubkey, Socket = globalThis.WebSocket, loc = globalT
           // asking the signer again won't change that, so it isn't asked again either.
           if (msg[2] === true) link.loggedIn = true
           else login.declined = true
+        } else if (SUB_IN.has(msg[0]) && typeof msg[1] === "string") {
+          if (!link.tag || !msg[1].startsWith(link.tag)) return // another (closed) client's subscription
+          const id = msg[1].slice(link.tag.length)
+          if (msg[0] === "CLOSED" || msg[0] === "COUNT") link.subs.delete(msg[1])
+          text = JSON.stringify([msg[0], id, ...msg.slice(2)])
         }
       } catch {}
       link.user?.data(enc.encode(`${text}\n`))
@@ -71,11 +81,16 @@ function boxLinks({ signer, pubkey, Socket = globalThis.WebSocket, loc = globalT
       const list = idle.get(route) ?? []
       let link
       while ((link = list.pop()) && !link.alive) {}
-      return link ?? open(route)
+      link ??= open(route)
+      link.tag = `c${++link.gen}:`
+      return link
     },
     // A client is done with `link`: an open socket waits for the route's next client, else it is closed.
     give(link) {
       link.user = null
+      if (link.alive && link.loggedIn) for (const sub of link.subs) link.ws.send(JSON.stringify(["CLOSE", sub]))
+      link.subs.clear()
+      link.tag = "" // answers still on their way for this client are dropped
       const list = idle.get(link.route) ?? []
       if (!link.alive || !link.loggedIn || list.length >= IDLE_PER_ROUTE) { link.alive = false; link.ws.close(); return }
       idle.set(link.route, [...list, link])
@@ -99,9 +114,15 @@ export function boxConn(route, { signer, Socket = globalThis.WebSocket, loc = gl
   let queue = Promise.resolve()
   const finish = () => { if (done) return; done = true; for (const cb of closers) cb() }
   link.user = { data: b => onData(b), closed: finish }
+  const tag = link.tag
   const send = async line => {
-    let out = line
     const msg = JSON.parse(line)
+    if (done && msg[0] !== "CLOSE") return // queued before close: the socket may be another client's now
+    if (SUB_OUT.has(msg[0]) && typeof msg[1] === "string") {
+      msg[1] = tag + msg[1]
+      if (msg[0] === "CLOSE") link.subs.delete(msg[1]); else link.subs.add(msg[1])
+    }
+    let out = JSON.stringify(msg)
     if (msg[0] === "AUTH" && msg[1]?.kind === 22242) {
       const challenge = msg[1].tags.find(t => t[0] === "challenge")?.[1]
       const signed = await pool.sign(url, challenge)
@@ -109,6 +130,7 @@ export function boxConn(route, { signer, Socket = globalThis.WebSocket, loc = gl
       out = JSON.stringify(["AUTH", signed])
     }
     await link.opened
+    if (done && msg[0] !== "CLOSE") { link.subs.delete(msg[1]); return }
     ws.send(out)
   }
   return {

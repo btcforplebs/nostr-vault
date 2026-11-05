@@ -163,3 +163,52 @@ test("#4: an AUTH signed by another account is never sent, and the box refusing 
   assert.equal(s2.asked, 1)
   await h2.stop()
 })
+
+test("#4: a signer that never answered (bunker timeout) didn't decline: the next read asks again (Tron 1745)", async () => {
+  const { Socket } = fakeBox(pk(ME))
+  let asked = 0
+  const signer = { signEvent: async t => { asked++; if (asked === 1) throw Object.assign(new Error("Your signer didn't answer"), { unreachable: true }); return finalizeEvent(t, ME) } }
+  const haven = boxHaven({ signer, Socket, loc, pubkey: pk(ME) })
+  await assert.rejects(read(haven, "/"))
+  const evs = await read(haven, "/")
+  assert.equal(asked, 2)
+  assert.equal(evs.length, 1)
+  await haven.stop()
+})
+
+test("#4: a kept socket never hands a new client the old client's open query (Tron 1745)", async () => {
+  // The box holds a REQ for kind 9 (a slow read) and answers it late; kind 1 is answered at once.
+  const sockets = []
+  class Socket {
+    constructor(url) { this.url = url; this.sent = []; this.held = []; this.authed = false; sockets.push(this); setTimeout(() => { this.onopen?.(); this.reply(["AUTH", "chal"]) }, 0) }
+    reply(m) { this.onmessage?.({ data: JSON.stringify(m) }) }
+    send(text) {
+      const m = JSON.parse(text); this.sent.push(m)
+      if (m[0] === "AUTH") { this.authed = verifyEvent(m[1]) && m[1].pubkey === pk(ME); return this.reply(["OK", m[1].id, this.authed, ""]) }
+      if (m[0] === "REQ" && !this.authed) return this.reply(["CLOSED", m[1], "auth-required: owner only"])
+      if (m[0] === "REQ" && m[2]?.kinds?.[0] === 9) return this.held.push(m[1])
+      if (m[0] === "REQ") { this.reply(["EVENT", m[1], { id: "new", kind: 1, content: "mine" }]); return this.reply(["EOSE", m[1]]) }
+    }
+    late() { for (const id of this.held) { this.reply(["EVENT", id, { id: "old", kind: 9, content: "stale" }]); this.reply(["EOSE", id]) } }
+    close() { this.onclose?.() }
+  }
+  const haven = boxHaven({ signer: countingSigner(ME), Socket, loc, pubkey: pk(ME) })
+  await read(haven, "/") // logs the socket in
+  const slow = new HavenClient(haven.conn("x", { route: "/" }), { auth: deviceAuth, timeoutMs: 2000 })
+  const gaveUp = slow.query({ kinds: [9] }).catch(() => {})
+  await new Promise(r => setTimeout(r, 20))
+  slow.close() // a dashboard giving up on a slow read
+  await gaveUp
+  const s = sockets[0]
+  assert.equal(sockets.length, 1, "the same logged-in socket is kept")
+  const oldSub = s.held[0]
+  assert.ok(s.sent.some(m => m[0] === "CLOSE" && m[1] === oldSub), "the old client's open REQ was CLOSEd")
+  // Next client: its own q1 is answered only by its own REQ, even when the old one's answers arrive first.
+  const c = new HavenClient(haven.conn("x", { route: "/" }), { auth: deviceAuth, timeoutMs: 2000 })
+  const origSend = s.send.bind(s)
+  s.send = text => { if (JSON.parse(text)[0] === "REQ") s.late(); return origSend(text) }
+  const evs = await c.query({ kinds: [1], limit: 1 })
+  c.close()
+  assert.deepEqual(evs.map(e => e.content), ["mine"])
+  await haven.stop()
+})
