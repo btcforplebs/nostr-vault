@@ -24,6 +24,8 @@ struct ImportTourStep: View {
     /// Not every relay answered the count, so there are no numbers to show.
     @State private var countFailed = false
     @State private var started = false
+    /// Ticks once a second for the 60 s "Couldn't start" check.
+    @State private var now = Date()
 
     /// Same as the config default. 2021 was tried: the import walks the
     /// history in 10-day windows, each waiting on every relay, and a fresh
@@ -40,6 +42,12 @@ struct ImportTourStep: View {
     private var stage: ImportTourStage {
         ImportTourStage(statusMessage: relayManager.importStatusMessage, completed: done)
     }
+    /// Nothing started 60 s after the request, or it gave up (ImportStartGate).
+    private var couldNotStart: Bool {
+        ImportStartGate.showsCouldNotStart(requestedAt: relayManager.importRequestedAt, now: now,
+                                           engineStarted: relayManager.importEngineStarted,
+                                           failed: relayManager.importStartFailed, completed: done)
+    }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -48,6 +56,9 @@ struct ImportTourStep: View {
                 .font(.appSystem(size: isIOSDevice ? 24 : 28, weight: .semibold))
                 .foregroundColor(WizardColors.textPrimary)
             progressHeader
+            if couldNotStart {
+                ImportCouldNotStartButton(action: tryAgain)
+            }
             ListHistoryScanStatus(textColor: WizardColors.textSecondary, accent: WizardColors.accentPrimary, showsLooking: false)
             card
             if done && index < lastIndex {
@@ -55,6 +66,7 @@ struct ImportTourStep: View {
             }
         }
         .onAppear(perform: startImportOnce)
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now = $0 }
         .onChange(of: done) { _, isDone in
             if isDone { loadCounts() }
         }
@@ -249,6 +261,10 @@ struct ImportTourStep: View {
         guard !relayManager.isImporting else { return }
         configService.config.importStartDate = Self.importStartDate
         configService.save()
+        relayManager.importNotes(config: configService.config, alsoFrom: alsoFrom, listHistory: listHistory)
+    }
+
+    private func tryAgain() {
         relayManager.importNotes(config: configService.config, alsoFrom: alsoFrom, listHistory: listHistory)
     }
 

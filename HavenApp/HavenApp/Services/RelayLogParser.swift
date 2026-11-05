@@ -79,6 +79,10 @@ enum RelayLogParser {
         var listHistoryScanning: Bool?
         /// The scan's closing count line.
         var listHistoryNote: String?
+        /// The Go side began an import cycle (ImportStartGate).
+        var importEngineStarted = false
+        /// The Go side did not run the import it was asked for.
+        var importRefusal: ImportStartGate.Refusal?
     }
 
     // Cached regex patterns for boot/import status parsing
@@ -118,6 +122,8 @@ enum RelayLogParser {
     /// Extract state changes from a single log line.
     /// Pure string parsing — no MainActor, no UI dependencies.
     static func collectStateChanges(from line: String, into batch: inout BatchedStateUpdate) {
+        if ImportStartGate.isEngineStart(line) { batch.importEngineStarted = true }
+        if let refusal = ImportStartGate.refusal(in: line) { batch.importRefusal = refusal }
         if ListHistoryScan.collect(from: line, into: &batch) { return }
         // Import state
         if line.contains("connected successfully") {

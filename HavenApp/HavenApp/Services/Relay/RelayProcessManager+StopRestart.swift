@@ -133,7 +133,10 @@ extension RelayProcessManager {
             pendingImportAlsoFrom = []
             let listHistory = pendingImportListHistory
             pendingImportListHistory = false
-            importNotes(config: importConfig, alsoFrom: alsoFrom, listHistory: listHistory)
+            let retries = pendingImportRetries
+            pendingImportRetries = 0
+            requestImport(config: importConfig, alsoFrom: alsoFrom, listHistory: listHistory,
+                          generation: importRequestGeneration, waits: 0, retries: retries)
         }
     }
     

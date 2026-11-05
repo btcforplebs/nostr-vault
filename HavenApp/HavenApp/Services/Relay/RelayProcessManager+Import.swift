@@ -51,21 +51,74 @@ extension RelayProcessManager {
     /// default; haven-go list_history_scan.go).
     func importNotes(config: HavenConfig, alsoFrom: [String] = [], listHistory: Bool = false) {
         logStore.append(LogEntry(timestamp: Date(), level: "DEBUG", message: "importNotes called. Current State: \(state), isRunning: \(isRunning)"))
-        
-        // Strict guard: Must be idle and NOT running
-        guard state == .idle && !isRunning else {
-            if (state == .running || state == .booting) && isRunning {
-                logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Stopping running relay to start import..."))
-                self.pendingImportConfig = config
-                self.pendingImportAlsoFrom = alsoFrom
-                self.pendingImportListHistory = listHistory
-                stopRelay()
-            } else {
-                logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot start import: current state is \(state) (running: \(isRunning))"))
+        importRequestGeneration += 1
+        if !isImporting {
+            importRequestedAt = Date()
+            importEngineStarted = false
+            importStartFailed = false
+        }
+        requestImport(config: config, alsoFrom: alsoFrom, listHistory: listHistory,
+                      generation: importRequestGeneration, waits: 0, retries: 0)
+    }
+
+    /// Runs the request on the lifecycle chain, behind any start or stop
+    /// already queued, so it sees a settled vault (ImportStartGate). Booting
+    /// or stopping holds it; it used to be dropped there with a WARN.
+    func requestImport(config: HavenConfig, alsoFrom: [String], listHistory: Bool,
+                       generation: Int, waits: Int, retries: Int) {
+        enqueueLifecycle { [weak self] in
+            self?.beginImport(config: config, alsoFrom: alsoFrom, listHistory: listHistory,
+                              generation: generation, waits: waits, retries: retries)
+        }
+    }
+
+    private var gateVault: ImportStartGate.Vault {
+        switch state {
+        case .idle: return .idle
+        case .booting: return .booting
+        case .running: return .running
+        case .stopping: return .stopping
+        case .importing: return .importing
+        }
+    }
+
+    private func beginImport(config: HavenConfig, alsoFrom: [String], listHistory: Bool,
+                             generation: Int, waits: Int, retries: Int) {
+        // A newer importNotes call owns the import now.
+        guard generation == importRequestGeneration else { return }
+
+        switch ImportStartGate.action(vault: gateVault, isRunning: isRunning, isShuttingDown: isShuttingDown) {
+        case .alreadyImporting:
+            logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import already running; this request joins it"))
+            return
+        case .wait:
+            guard waits < ImportStartGate.maxWaits else {
+                logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Import gave up waiting: vault stayed \(state) (running: \(isRunning))"))
+                importStartFailed = true
+                importStatusMessage = ImportStartGate.couldNotStart
+                return
+            }
+            if waits == 0 {
+                logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import held: vault is \(state) (running: \(isRunning))"))
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + ImportStartGate.waitInterval) { [weak self] in
+                self?.requestImport(config: config, alsoFrom: alsoFrom, listHistory: listHistory,
+                                    generation: generation, waits: waits + 1, retries: retries)
             }
             return
+        case .stopThenStart:
+            logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Stopping running relay to start import..."))
+            self.pendingImportConfig = config
+            self.pendingImportAlsoFrom = alsoFrom
+            self.pendingImportListHistory = listHistory
+            self.pendingImportRetries = retries
+            stopRelay()
+            return
+        case .start:
+            break
         }
-        
+
+        importRefusal = nil
         self.pendingImportConfig = config
         self.state = .importing
         isRunning = false
@@ -131,9 +184,12 @@ extension RelayProcessManager {
                      // 1 = true (importing mode)
                      StartRelayC(1)
                      
-                     // When StartRelayC(1) returns, the import is fully complete!
-                     DispatchQueue.main.async {
-                         self.importCompletedSuccessfully()
+                     // StartRelayC(1) returns when the import is over, or at
+                     // once when the Go side refused it. The refusal line
+                     // comes through the log pipe; give it a moment to land.
+                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                         self.importCycleEnded(config: config, alsoFrom: alsoFrom, listHistory: listHistory,
+                                               generation: generation, retries: retries)
                      }
                  }
              }
@@ -145,6 +201,37 @@ extension RelayProcessManager {
     func skipListHistoryScan() {
         listHistoryScanning = false
         DispatchQueue.global().async { _ = SkipListHistoryScanC() }
+    }
+
+    /// A refused start is retried (ImportStartGate); anything else ends the
+    /// import as before.
+    private func importCycleEnded(config: HavenConfig, alsoFrom: [String], listHistory: Bool,
+                                  generation: Int, retries: Int) {
+        guard !importEngineStarted, let refusal = importRefusal else {
+            importCompletedSuccessfully()
+            return
+        }
+        importRefusal = nil
+        state = .idle
+        if ImportStartGate.shouldRetry(refusal, retries: retries), generation == importRequestGeneration {
+            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Import start refused; retrying (\(retries + 1) of \(ImportStartGate.maxRefusedRetries))"))
+            DispatchQueue.main.asyncAfter(deadline: .now() + ImportStartGate.refusedRetryDelay) { [weak self] in
+                self?.requestImport(config: config, alsoFrom: alsoFrom, listHistory: listHistory,
+                                    generation: generation, waits: 0, retries: retries + 1)
+            }
+            return
+        }
+        logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Import did not start; the relay comes back without it"))
+        listHistoryScanning = false
+        isImporting = false
+        importStartFailed = true
+        importStatusMessage = ImportStartGate.couldNotStart
+        if let restartConfig = pendingImportConfig {
+            pendingImportConfig = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self.startRelay(config: restartConfig)
+            }
+        }
     }
 
     private func importCompletedSuccessfully() {
