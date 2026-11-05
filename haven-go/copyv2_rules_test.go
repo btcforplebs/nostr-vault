@@ -213,11 +213,8 @@ func TestCopyOwnMediaFixtures(t *testing.T) {
 	for _, r := range fx.Records {
 		records[r.SHA256] = r.Pubkey
 	}
-	var events []*nostr.Event
-	for _, e := range fx.Events {
-		events = append(events, &nostr.Event{PubKey: e.Pubkey, Kind: e.Kind, Content: e.Content, Tags: e.Tags})
-	}
-	got := copyOwnMedia(records, map[string]bool{fx.Owner: true}, events)
+	// fx.Events name some of the files; the rule must not care (contract §4).
+	got := copyOwnMedia(records, map[string]bool{fx.Owner: true})
 	for _, sha := range fx.ExpectInMedia {
 		if !got[sha] {
 			t.Errorf("%s: own upload left out", sha[:8])

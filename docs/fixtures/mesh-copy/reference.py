@@ -139,18 +139,21 @@ write("settings-refuse-cases.json", {"now": 1767000300, "cases": [
     {"name": "none there", "mine": 100, "theirs": None, "expect": "mine"},
 ]})
 
-media_blob, saved_blob, repost_blob, other_blob, draft_blob = (h(x) for x in ["own photo", "saved photo", "reposted photo", "theirs", "draft"])
+# Media (contract 4, Logen 2026-11-05): every file under a record by one of
+# the vault's own keys is the owner's, saved and mirrored photos included; a
+# record by any other key is left out. Which notes name a file doesn't matter:
+# the events are here to show that.
+media_blob, saved_blob, repost_blob, other_blob, draft_blob, dm_blob = (h(x) for x in ["own photo", "saved photo", "reposted photo", "theirs", "draft", "dm file sent"])
 write("media-own-uploads-cases.json", {"owner": OWNER, "other": OTHER,
-    "records": [{"sha256": b, "pubkey": OWNER} for b in [media_blob, saved_blob, repost_blob, draft_blob]] + [{"sha256": other_blob, "pubkey": OTHER}],
+    "records": [{"sha256": b, "pubkey": OWNER} for b in [media_blob, saved_blob, repost_blob, draft_blob, dm_blob]] + [{"sha256": other_blob, "pubkey": OTHER}],
     "events": [
         {"name": "own note with imeta", "pubkey": OWNER, "kind": 1, "content": "look", "tags": [["imeta", f"url https://cdn.example/{media_blob}.jpg", f"x {media_blob}"]]},
         {"name": "someone else's note naming the saved photo", "pubkey": OTHER, "kind": 1, "content": f"https://cdn.example/{saved_blob}.png", "tags": []},
         {"name": "own repost carrying a photo", "pubkey": OWNER, "kind": 6, "content": json.dumps({"content": f"https://cdn.example/{repost_blob}"}), "tags": []},
         {"name": "own note naming a file someone else uploaded", "pubkey": OWNER, "kind": 1, "content": f"https://cdn.example/{other_blob}", "tags": []},
     ],
-    "expect_in_media": [media_blob],
-    "expect_left_out": {saved_blob: "saved from someone else's post", repost_blob: "named only inside a repost",
-                        other_blob: "record is not the owner's", draft_blob: "never named by an own note"}})
+    "expect_in_media": [media_blob, saved_blob, repost_blob, draft_blob, dm_blob],
+    "expect_left_out": {other_blob: "record is not by one of the vault's own keys, even though an own note names it"}})
 
 write("errors-v2.json", {"errors": [
     {"code": "auth_refused", "http": 401, "b": "stop", "line": "Couldn't sign in to {name}"},

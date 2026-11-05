@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"net/http"
 	"os"
 	"slices"
@@ -119,7 +118,7 @@ func (s *copyServer) serveSync(w http.ResponseWriter, r *http.Request, what stri
 		sha := strings.TrimPrefix(what, "file/")
 		own, err := copyOwnMediaSet(ctx)
 		if err != nil || !own[sha] {
-			// Only own uploads leave over this path (pick 6).
+			// Only the owner's own files leave over this path (pick 6, §4).
 			http.NotFound(w, r)
 			return
 		}
@@ -222,34 +221,27 @@ type copyFile struct {
 	CreatedAt int64  `json:"created_at"`
 }
 
-// copyOwnMediaSet: the own uploads (contract §4) on this device, by hash.
+// copyOwnMediaSet: the owner's own files (contract §4) on this device, by hash.
 func copyOwnMediaSet(ctx context.Context) (map[string]bool, error) {
 	accounts := copyAccounts()
 	uploaders, _, err := copyOwnBlobRecords(ctx, accounts)
 	if err != nil {
 		return nil, err
 	}
-	named, err := copyNamedByOwnNotes(ctx, accounts)
-	if err != nil {
-		return nil, err
-	}
-	return copyOwnMediaFrom(uploaders, accounts, named), nil
+	return copyOwnMedia(uploaders, accounts), nil
 }
 
-// copyOwnFilesSince: own uploads whose record is at or after since, newest first, capped.
+// copyOwnFilesSince: own files whose record is at or after since, newest first, capped.
 func copyOwnFilesSince(ctx context.Context, since int64) ([]copyFile, error) {
 	accounts := copyAccounts()
-	_, records, err := copyOwnBlobRecords(ctx, accounts)
+	uploaders, records, err := copyOwnBlobRecords(ctx, accounts)
 	if err != nil {
 		return nil, err
 	}
-	named, err := copyNamedByOwnNotes(ctx, accounts)
-	if err != nil {
-		return nil, err
-	}
+	own := copyOwnMedia(uploaders, accounts)
 	var out []copyFile
 	for sha, rec := range records {
-		if int64(rec.CreatedAt) < since || !named[sha][rec.PubKey] || copyBlobFile(sha) == "" {
+		if int64(rec.CreatedAt) < since || !own[sha] || copyBlobFile(sha) == "" {
 			continue
 		}
 		f := copyFile{SHA256: sha, Pubkey: rec.PubKey, CreatedAt: int64(rec.CreatedAt)}
@@ -552,15 +544,4 @@ func (c *copyClient) syncSettings(ctx context.Context) (string, error) {
 		return "sent", nil
 	}
 	return "same", nil
-}
-
-// copyOwnMediaFrom is copyOwnMedia's rule on already-collected names.
-func copyOwnMediaFrom(uploaders map[string]string, accounts map[string]bool, named map[string]map[string]bool) map[string]bool {
-	out := map[string]bool{}
-	for _, sha := range slices.Sorted(maps.Keys(uploaders)) {
-		if up := uploaders[sha]; accounts[up] && named[sha][up] {
-			out[sha] = true
-		}
-	}
-	return out
 }

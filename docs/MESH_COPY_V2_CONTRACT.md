@@ -19,8 +19,8 @@ Logen's picks (2026-11-05), binding:
 3. Old backup zips still import, unchanged.
 4. A refused (unsafe) settings file is skipped and the copy finishes without it.
 5. A deletes the copy zip after B is done.
-6. Media means **own uploads only**. Photos other people sent, or that the owner saved from someone else's post,
-   never land in B's vault.
+6. Media means **the owner's own files**: everything under a record by the vault's own keys, including what he saved
+   or mirrored (Logen, 2026-11-05). Photos other people only sent him never land in B's vault (§4).
 7. DMs stay encrypted in transit and are decrypted only on B.
 
 ## 1. Where it is served
@@ -68,7 +68,7 @@ the owner.
      private and chat events stay encrypted), with two differences:
      - `blossom.jsonl` carries only the records of the files in `media.zip`;
      - `settings.json` is added when A has one and it passes §5.
-   - **`media.zip`**: the owner's own uploads (§4), each as `media/<sha256>` in the stored form (no compression).
+   - **`media.zip`**: the owner's own files (§4), each as `media/<sha256>` in the stored form (no compression).
    - `manifest.json`: §3.1.
    - Every part is written as `<name>.partial` and renamed when complete. A part that is visible is a whole part.
    - Before building, A checks free space for roughly the size of the stores plus the media. Short of that, the
@@ -141,31 +141,35 @@ COPY stage=<building|fetching|restoring|relays|done|failed> part=<notes|media|->
 - `error` is present only on `stage=failed`, and on `done` when settings were refused (`error=settings_refused`).
 - On `stage=failed ... error=needs_space`, `bytes=<free>/<need>` carries B's free bytes and the need (parts + restored + 1 GB), so the app words "Needs <need> free, this device has <free>" without measuring.
 
-## 4. Media: own uploads only
+## 4. Media: the owner's own files
 
-**What lands in A's vault today.** A's Blossom store holds:
-- (a) what the owner uploaded while posting;
-- (b) **other people's photos the owner saved**:
+**The rule (Logen, 2026-11-05):** anything the owner saved or mirrored counts as his, with no label. A file goes into
+`media.zip`, and into catch-up's `sync/files`, when its blob record (kind 24242) is by **one of this vault's own
+keys** (the owner and any added accounts). That covers:
+- uploads made while posting;
+- drafts and other files never posted;
+- encrypted DM files the owner sent;
+- other people's photos the owner saved or mirrored:
   - iOS: `MediaBackupActions.saveToVault` (`SourceIndicatorView.swift:221`) and the media grid's mirror
     (`MediaGridItem.swift:197`);
   - Android: `BlossomService.mirrorUrlToLocal`, from the feed viewer, Profile › Save to vault and pasted links
     (`FeedMediaMirrorViewModel.kt:103`, `ProfileViewModel.kt:795`, `MediaGalleryViewModel.kt:334`).
 
-Both kinds are stored as `blossom/<sha256>` with a kind 24242 record whose pubkey is **the owner** (the owner signs
-the upload). The record alone can't tell them apart.
+Which notes name a file does not matter.
 
-**The rule:** a file goes into `media.zip` only when **both** hold:
-1. its blob record's pubkey is a whitelisted key of A's vault;
-2. at least one event **written by that key** in A's outbox names it: an `x` or `imeta … x` tag with its sha256, or
-   a URL whose last path part is `<sha256>[.ext]` in the content or in an `imeta url`/`url` tag.
-   - Reposts (kinds 6, 16) don't count: their content is someone else's note.
+**Left out:** a file whose record is by any other key, even when an own note names it.
 
-So a photo the owner saved from someone else is left out, even though the owner signed its upload. So is a file
-named only by someone else's post.
+**Photos other people only sent the owner are not in A's store.** Every way a file gets into A's Blossom store needs
+a record by one of the vault's own keys:
+- an upload is refused unless its kind 24242 is signed by a whitelisted key (`init.go`, `RejectUpload`; the mesh door
+  checks the same, `mesh_door.go` `meshUploadAuthorized`);
+- a restore keeps a blob record only from a whitelisted key (`jsonl.go` `importBlobRecord`);
+- neither app mirrors received media unprompted: every save or mirror above is an owner action, and the bulk
+  `mirrorFromNoteMedia` reads only the owner's own notes;
+- a received DM attachment stays on the sender's server until the owner saves it, and once saved it is his.
 
-**Known gap:** a file the owner uploaded but never posted (a draft, or an encrypted DM attachment, whose reference
-is inside a gift wrap) is left out too. Its notes come over; the file stays on A. Fixture:
-`media-own-uploads-cases.json`.
+The record check is therefore the exclusion, and the copy applies it twice: when it reads the blob index
+(`copyOwnBlobRecords`) and in the rule itself (`copyOwnMedia`). Fixture: `media-own-uploads-cases.json`.
 
 ## 5. Settings (`settings-allowlist.json`, `settings-refuse-cases.json`)
 
@@ -212,7 +216,7 @@ The app calls the engine when a linked device comes into reach. The engine then:
 2. **Every event either side stores from the other** passes the same checks as a restore: id hash, signature,
    author filter per store. An event marked deleted on the receiver is not stored. One that the sender's own
    deletions mark is not sent (fixes #14 and #15).
-3. **Media.** `GET /copy/v2/sync/files?since=<t>` lists the own uploads (§4) added since then. Each missing one is
+3. **Media.** `GET /copy/v2/sync/files?since=<t>` lists the owner's own files (§4) added since then. Each missing one is
    fetched with `GET /copy/v2/sync/file/<sha256>` and hash-checked.
 4. **Settings** (§5).
 

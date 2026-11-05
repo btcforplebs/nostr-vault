@@ -353,7 +353,7 @@ func TestCopyServesWholeChunksOnly(t *testing.T) {
 
 // ─── A: the build ──────────────────────────────────────────────────────────
 
-func TestCopyBuildTakesOnlyOwnUploadsAndSafeSettings(t *testing.T) {
+func TestCopyBuildTakesOwnFilesAndSafeSettings(t *testing.T) {
 	owner, other := newTestKey(t), newTestKey(t)
 	openCopyVault(t, owner.pk)
 	own := addBlob(t, owner.pk, []byte("my own photo"))
@@ -377,17 +377,20 @@ func TestCopyBuildTakesOnlyOwnUploadsAndSafeSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Settings != "included" || m.Files.Count != 1 {
-		t.Fatalf("settings %q, files %d; want included, 1", m.Settings, m.Files.Count)
+	// Every file under the owner's own record is his (Logen, 2026-11-05):
+	// posted, saved from someone else, never posted. Only a record by
+	// another key stays out, even when an own note names it.
+	if m.Settings != "included" || m.Files.Count != 3 {
+		t.Fatalf("settings %q, files %d; want included, 3", m.Settings, m.Files.Count)
 	}
 	media := zipNames(t, filepath.Join(copyCacheDir, "t1", "media.zip"))
-	if media["media/"+own] == nil {
-		t.Fatal("own posted photo left out")
-	}
-	for name, sha := range map[string]string{"saved from someone else": saved, "draft": draft, "someone else's upload": theirs} {
-		if media["media/"+sha] != nil {
-			t.Errorf("%s is in the media part", name)
+	for name, sha := range map[string]string{"own posted photo": own, "saved from someone else": saved, "draft": draft} {
+		if media["media/"+sha] == nil {
+			t.Errorf("%s left out", name)
 		}
+	}
+	if media["media/"+theirs] != nil {
+		t.Error("someone else's upload is in the media part")
 	}
 	notes := zipNames(t, filepath.Join(copyCacheDir, "t1", "notes.zip"))
 	if notes["settings.json"] == nil {
@@ -396,7 +399,7 @@ func TestCopyBuildTakesOnlyOwnUploadsAndSafeSettings(t *testing.T) {
 	rc, _ := notes["blossom.jsonl"].Open()
 	raw, _ := io.ReadAll(rc)
 	rc.Close()
-	if strings.Count(string(raw), "\n") != 1 || !strings.Contains(string(raw), own) {
+	if strings.Count(string(raw), "\n") != 3 || strings.Contains(string(raw), theirs) {
 		t.Fatalf("blob index not trimmed to the media part: %s", raw)
 	}
 	if copyZipKey(m.Parts) != m.ZipKey || copyManifestError(m, owner.pk) != "" {
@@ -702,13 +705,15 @@ func TestCopyCatchUpBothWaysSendsDeletionsFirst(t *testing.T) {
 	}
 }
 
-// Pick 6 on the catch-up path: only own uploads are listed or served.
-func TestCopySyncFilesAreOwnUploadsOnly(t *testing.T) {
+// Pick 6 on the catch-up path: only own files are listed or served.
+func TestCopySyncFilesAreOwnFilesOnly(t *testing.T) {
 	owner, other := newTestKey(t), newTestKey(t)
 	openCopyVault(t, owner.pk)
 	own := addBlob(t, owner.pk, []byte("posted"))
 	saved := addBlob(t, owner.pk, []byte("saved from someone"))
+	theirs := addBlob(t, other.pk, []byte("their upload"))
 	saveEv(t, outboxDB, owner.sign(t, nostr.Event{Kind: 1, Content: "https://x.example/" + own}))
+	saveEv(t, outboxDB, owner.sign(t, nostr.Event{Kind: 1, Content: "https://x.example/" + theirs}))
 	saveEv(t, feedDB, other.sign(t, nostr.Event{Kind: 1, Content: "https://x.example/" + saved}))
 	s := newTestCopyServer(nil)
 	token := copyRandomHex(32)
@@ -722,14 +727,16 @@ func TestCopySyncFilesAreOwnUploadsOnly(t *testing.T) {
 		return rec
 	}
 	list := get("/copy/v2/sync/files?since=0").Body.String()
-	if !strings.Contains(list, own) || strings.Contains(list, saved) {
+	if !strings.Contains(list, own) || !strings.Contains(list, saved) || strings.Contains(list, theirs) {
 		t.Fatalf("file list: %s", list)
 	}
-	if c := get("/copy/v2/sync/file/" + own).Code; c != 200 {
-		t.Fatalf("own file: %d", c)
+	for _, sha := range []string{own, saved} {
+		if c := get("/copy/v2/sync/file/" + sha).Code; c != 200 {
+			t.Fatalf("own file %s: %d", sha[:8], c)
+		}
 	}
-	if c := get("/copy/v2/sync/file/" + saved).Code; c != 404 {
-		t.Fatalf("a saved photo was served: %d", c)
+	if c := get("/copy/v2/sync/file/" + theirs).Code; c != 404 {
+		t.Fatalf("someone else's upload was served: %d", c)
 	}
 }
 

@@ -13,8 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/nbd-wtf/go-nostr"
 )
 
 // copyChunkSize: every part is fetched and checked in 4 MiB pieces.
@@ -379,66 +377,19 @@ func copySettingsNewer(mine, theirs int64) bool {
 	return theirs > 0 && theirs > mine
 }
 
-// ─── own uploads (contract §4) ─────────────────────────────────────────────
+// ─── own files (contract §4) ────────────────────────────────────────────────
 
-// copyNamedBlobs: the 64-hex blob hashes an event names in its own right:
-// x tags, imeta x/url entries, url tags, and URLs in its content. Reposts
-// (6, 16) carry someone else's note as content and name nothing.
-func copyNamedBlobs(ev *nostr.Event) []string {
-	if ev.Kind == 6 || ev.Kind == 16 {
-		return nil
-	}
-	var out []string
-	add := func(s string) {
-		for _, m := range copyBlobInURL.FindAllStringSubmatch(s, -1) {
-			out = append(out, strings.ToLower(m[1]))
-		}
-	}
-	for _, tag := range ev.Tags {
-		if len(tag) < 2 {
-			continue
-		}
-		switch tag[0] {
-		case "x":
-			if isBlobHash(strings.ToLower(tag[1])) {
-				out = append(out, strings.ToLower(tag[1]))
-			}
-		case "url":
-			add(tag[1])
-		case "imeta":
-			for _, entry := range tag[1:] {
-				if v, ok := strings.CutPrefix(entry, "x "); ok && isBlobHash(strings.ToLower(v)) {
-					out = append(out, strings.ToLower(v))
-				} else if v, ok := strings.CutPrefix(entry, "url "); ok {
-					add(v)
-				}
-			}
-		}
-	}
-	add(ev.Content)
-	return out
-}
-
-// copyBlobInURL: a URL whose last path part is <sha256>[.ext].
-var copyBlobInURL = regexp.MustCompile(`https?://[^\s"'<>]*/([0-9a-fA-F]{64})(?:\.[A-Za-z0-9]{1,8})?(?:[?#][^\s"'<>]*)?(?:$|[\s"'<>])`)
-
-// copyOwnMedia: of the blob records (sha256 -> uploader), the ones an event
-// written by that same uploader names. That is the own-uploads rule: a photo
-// the owner saved from someone else's post has an owner-signed record too,
-// but no own note names it.
-func copyOwnMedia(records map[string]string, accounts map[string]bool, events []*nostr.Event) map[string]bool {
-	named := map[string]map[string]bool{} // sha -> authors naming it
-	for _, ev := range events {
-		for _, sha := range copyNamedBlobs(ev) {
-			if named[sha] == nil {
-				named[sha] = map[string]bool{}
-			}
-			named[sha][ev.PubKey] = true
-		}
-	}
+// copyOwnMedia: of the blob records (sha256 -> uploader), the vault's own
+// files: every one whose record is by one of this vault's own keys. That is
+// uploads, drafts, DM files the owner sent, and photos the owner saved or
+// mirrored (Logen, 2026-11-05: what he saved counts as his). A record by any
+// other key is left out; the upload gate (init.go RejectUpload) and the
+// restore (jsonl.go importBlobRecord) never file one, so a photo someone only
+// sent the owner is not in the store to begin with.
+func copyOwnMedia(records map[string]string, accounts map[string]bool) map[string]bool {
 	out := map[string]bool{}
 	for sha, uploader := range records {
-		if accounts[uploader] && named[sha][uploader] {
+		if accounts[uploader] {
 			out[sha] = true
 		}
 	}

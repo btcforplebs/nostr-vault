@@ -72,27 +72,6 @@ func copyOwnBlobRecords(ctx context.Context, accounts map[string]bool) (map[stri
 	return uploader, records, nil
 }
 
-// copyNamedByOwnNotes: for each blob hash, the own keys whose outbox notes name it.
-func copyNamedByOwnNotes(ctx context.Context, accounts map[string]bool) (map[string]map[string]bool, error) {
-	named := map[string]map[string]bool{}
-	if outboxDB == nil || len(accounts) == 0 {
-		return named, nil
-	}
-	ch, err := outboxDB.QueryEvents(eventstore.SetNegentropy(ctx), nostr.Filter{Authors: slices.Collect(maps.Keys(accounts))})
-	if err != nil {
-		return nil, err
-	}
-	for ev := range ch {
-		for _, sha := range copyNamedBlobs(ev) {
-			if named[sha] == nil {
-				named[sha] = map[string]bool{}
-			}
-			named[sha][ev.PubKey] = true
-		}
-	}
-	return named, nil
-}
-
 // copyBlobFile: the stored file for sha256 (bare hash or hash.ext), never a
 // partial .tmp write; "" when there is none.
 func copyBlobFile(sha string) string {
@@ -135,16 +114,9 @@ func buildCopy(ctx context.Context, dir, id string, progress copyBuildProgress) 
 	if err != nil {
 		return m, err
 	}
-	named, err := copyNamedByOwnNotes(ctx, accounts)
-	if err != nil {
-		return m, err
-	}
 	media := map[string]string{} // sha -> file
 	var mediaBytes int64
-	for sha, up := range uploaders {
-		if !named[sha][up] {
-			continue
-		}
+	for sha := range copyOwnMedia(uploaders, accounts) {
 		if file := copyBlobFile(sha); file != "" {
 			if st, err := os.Stat(file); err == nil {
 				media[sha] = file
