@@ -17,7 +17,7 @@ import { YourKeyPage } from "./YourKeyPage.jsx"
 import { UnblockDialog } from "../components/Moderation.jsx"
 import { useProfile } from "../components/useProfile.js"
 import { fetchProfiles } from "../net/profiles.js"
-import { importOwn, IMPORT_START_DATE } from "../net/sync.js"
+import { importOwn, importLine, IMPORT_START_DATE } from "../net/sync.js"
 import { ownPostRelays } from "../net/own-relays.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { learn } from "../shell.js"
@@ -263,12 +263,12 @@ function Import({ ctx }) {
     setBusy(true); setProgress(0); setState("Connecting to relays...")
     try {
       const relays = ownPostRelays(ctx.account)
-      const { found, stored } = await importOwn(ctx.vault, ctx.session.pubkey, relays, {
+      const r = await importOwn(ctx.vault, ctx.session.pubkey, relays, {
         startDate,
         onProgress: p => { setProgress(p.progress); setState(`${p.empty ? "Looking through" : "Found"} notes from ${p.from}... (${p.found} found)`) },
       })
       setProgress(1)
-      setState(`Import Complete! ${found} found, ${stored} new.`)
+      setState(importLine(r))
     } catch (e) { setState(`Couldn't import (${e?.message ?? e})`) }
     setBusy(false)
   }

@@ -26,7 +26,8 @@ test("the 3 minutes start when this browser scanned the other device or put its 
 
 test("the words: the three choices, Logen's copy wording, and no other mesh, FIPS, address or role words", () => {
   assert.deepEqual([RELAYS, BACKUP, COPY], ["Import from relays", "Import from a backup", "Copy from my other vault"])
-  assert.equal(COPY_DETAIL, "Your Mac or another device signed in as you. Scan two codes and it copies over the mesh.")
+  assert.equal(COPY_DETAIL, "Links your devices, then brings your notes from your relays", "the web copies nothing over the mesh (import audit)")
+  assert.ok(!/mesh|fips|address|role/i.test(COPY_DETAIL))
   for (const w of [QUESTION, RELAYS, BACKUP, COPY, FALLBACK, OTHER_KIND]) assert.ok(!/mesh|fips|address|role/i.test(w), w)
   assert.equal(FALLBACK, "Couldn't reach your other device; getting your notes from your relays instead.")
   assert.equal(linkedLine("Logen's iPhone"), "Linked with Logen's iPhone. Getting your notes now.")
@@ -56,11 +57,18 @@ test("a backup restores only this account's events, and says how many", async ()
   const stored = []
   const vault = { outbox: { event: async ev => (stored.push(ev.id), { ok: true }) } }
   const lines = new TextEncoder().encode([...mine, theirs].map(e => JSON.stringify(e)).join("\n"))
-  assert.equal(await restoreSetupBackup({ vault, pubkey: me, bytes: lines }), "Restored 2 events from your backup. Getting the rest from your relays.")
+  assert.equal(await restoreSetupBackup({ vault, pubkey: me, bytes: lines, lock: f => f() }),
+    "Restored 2 events from your backup. Not everything came in: 1 event not kept (not this account's, or damaged). Getting the rest from your relays.")
   assert.deepEqual(stored, mine.map(e => e.id))
   await assert.rejects(restoreSetupBackup({ vault, pubkey: me, bytes: new TextEncoder().encode(JSON.stringify(theirs)) }), /nothing of yours/)
   const zip = new Uint8Array([0x50, 0x4b, 3, 4, 0])
   assert.equal(await restoreSetupBackup({ vault, pubkey: me, bytes: zip, zipImport: async () => ({ counts: { outbox: { stored: 5 }, chat: 2 }, failed: [] }) }),
     "Restored 7 events from your backup. Getting the rest from your relays.")
   await assert.rejects(restoreSetupBackup({ vault, pubkey: me, bytes: zip, zipImport: async () => ({ counts: {}, failed: [] }) }), /no notes/)
+  // Tron 18: a restore that lost writes, or skipped files, says so instead of plain "Restored".
+  assert.equal(await restoreSetupBackup({ vault, pubkey: me, bytes: zip, zipImport: async () => ({
+    counts: { outbox: { stored: 5, refused: 1, bad: 1, failed: 3 } }, skipped: ["blossom.jsonl"], failed: [] }) }),
+    "Restored 5 events from your backup. Not everything came in: 3 events not saved (this browser's vault didn't answer); 2 events not kept (not this account's, or damaged); skipped blossom.jsonl. Getting the rest from your relays.")
+  await assert.rejects(restoreSetupBackup({ vault, pubkey: me, bytes: zip, zipImport: async () => ({ counts: { outbox: { stored: 0, refused: 0, bad: 0, failed: 4 } }, failed: [] }) }),
+    /None of that backup could be saved here \(4 events failed\)/)
 })

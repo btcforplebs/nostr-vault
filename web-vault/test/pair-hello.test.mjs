@@ -6,7 +6,7 @@ import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure
 import { bytesToHex } from "nostr-tools/utils"
 import { npubEncode } from "nostr-tools/nip19"
 import { sealHello, openHello, ownMeshHex, sendHello, listenHellos } from "../src/net/pair-hello.js"
-import { pairedDevices, addPaired, roleCheckList } from "../src/net/pair-devices.js"
+import { pairedDevices, addPaired, roleCheckList, ownersForAccount } from "../src/net/pair-devices.js"
 import { HELLO_KIND, helloJson, roleCheck } from "../src/net/mesh-pairing.js"
 
 const memStorage = () => {
@@ -127,4 +127,39 @@ test("sign-out forgets the paired devices: the owner set, their names and roles,
   assert.deepEqual(failed, [])
   assert.deepEqual([...s.map.keys()], ["unrelated"])
   assert.deepEqual(pairedDevices(s), [])
+})
+
+test("paired devices are per account: another account's device is not this one's owner (Tron 20)", () => {
+  const s = memStorage()
+  const A = keypair().hex, B = keypair().hex
+  s.setItem("nv-accounts", JSON.stringify([{ method: "readonly", pubkey: A }, { method: "readonly", pubkey: B }]))
+  const link = keypair().hex
+  s.setItem("nv-vault:fips-owners", link) // paired by link before: everyone's, as before
+  const phoneA = keypair().hex, macB = keypair().hex
+  addPaired({ npub: npubEncode(phoneA), name: "A's iPhone", role: "phone" }, { storage: s, pubkey: A })
+  addPaired({ npub: npubEncode(macB), name: "B's Mac", role: "mac" }, { storage: s, pubkey: B })
+  assert.deepEqual(new Set(pairedDevices(s, A).map(d => d.hex)), new Set([link, phoneA]))
+  assert.deepEqual(new Set(pairedDevices(s, B).map(d => d.hex)), new Set([link, macB]))
+  const saved = new Set(s.getItem("nv-vault:fips-owners").split(" "))
+  assert.deepEqual(ownersForAccount(saved, A, { storage: s }), new Set([link, phoneA]))
+  assert.deepEqual(ownersForAccount(saved, B, { storage: s }), new Set([link, macB]))
+  // Each account's record ends in its pubkey, so signing that account out removes it (vault.js accountKeys).
+  assert.ok(s.getItem(`nv-vault:fips-paired:${A}`).includes(phoneA))
+})
+
+test("the one-per-browser list from before moves to the account that reads it first", () => {
+  const s = memStorage()
+  const A = keypair().hex, dev = keypair().hex
+  s.setItem("nv-vault:fips-owners", dev)
+  s.setItem("nv-vault:fips-owner-meta", JSON.stringify({ [dev]: { name: "Old", role: "mac" } }))
+  assert.deepEqual(pairedDevices(s, A).map(d => [d.name, d.role]), [["Old", "mac"]])
+  assert.equal(s.getItem("nv-vault:fips-owner-meta"), null)
+  assert.ok(s.getItem(`nv-vault:fips-paired:${A}`).includes("Old"))
+})
+
+test("an owner list that can't be read is not overwritten by a new link", () => {
+  const s = memStorage()
+  s.setItem("nv-vault:fips-owners", "not-a-key")
+  assert.throws(() => addPaired({ npub: npubEncode(keypair().hex), name: "x", role: "phone" }, { storage: s, pubkey: keypair().hex }), /can't be read/)
+  assert.equal(s.getItem("nv-vault:fips-owners"), "not-a-key")
 })

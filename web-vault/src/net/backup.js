@@ -15,6 +15,7 @@ import { matchFilters } from "nostr-tools/filter"
 import { makeAuthEvent } from "nostr-tools/nip42"
 import { HavenClient } from "../../../web-relay/src/haven/client.js"
 import { deviceKey } from "../haven/vault.js"
+import { withImportLock } from "./import-lock.js"
 
 const RELAY_HOST = "vault.local" // vault.js: Haven's ServiceURL, which NIP-42 AUTH is checked against
 // haven-go feedKinds (feedsync.go), plus kind 0, which the page's own stream caches there.
@@ -89,12 +90,17 @@ export async function exportNotes({ vault, pubkey, sk = deviceKey(), onProgress 
 
 /**
  * Restore a backup .zip (from here or the iPhone) into this account's stores.
- * -> { counts: { database: { stored, refused, bad, why? } }, skipped: file names this vault has no database for,
+ * -> { counts: { database: { stored, refused, bad, failed, why? } }, skipped: file names this vault has no database for,
  *      failed: messages for databases that couldn't be opened (damaged, too large) }
  * "refused" is Haven saying no (bad signature, someone else's account, a kind the route doesn't take), and a duplicate
- * of an event already here is "stored": it is there.
+ * of an event already here is "stored": it is there. "failed" is a write Haven didn't answer. Holds the import lock
+ * (import-lock.js): refused at once while another import or restore runs in this browser.
  */
-export async function importNotes({ vault, pubkey, bytes, sk = deviceKey(), onProgress = () => {}, open = openRoute }) {
+export function importNotes(opts) {
+  return withImportLock(() => importNotesUnlocked(opts))
+}
+
+async function importNotesUnlocked({ vault, pubkey, bytes, sk = deviceKey(), onProgress = () => {}, open = openRoute }) {
   const counts = {}
   const dev = getPublicKey(sk)
   const skipped = []
@@ -107,7 +113,7 @@ export async function importNotes({ vault, pubkey, bytes, sk = deviceKey(), onPr
     // A damaged or oversized database is reported and the rest of the backup still restores.
     let data
     try { data = await entry.read() } catch (e) { failed.push(String(e?.message ?? e)); continue }
-    const c = (counts[name] = { stored: 0, refused: 0, bad: 0 })
+    const c = (counts[name] = { stored: 0, refused: 0, bad: 0, failed: 0 })
     const belongs = DATABASES[name].filters(pubkey, dev)
     const client = open(vault, name, sk)
     try {
@@ -121,7 +127,10 @@ export async function importNotes({ vault, pubkey, bytes, sk = deviceKey(), onPr
         try { ev = JSON.parse(line) } catch { c.bad++; continue }
         if (!ev || typeof ev.id !== "string" || typeof ev.sig !== "string" || !Array.isArray(ev.tags)) { c.bad++; continue }
         if (!matchFilters(belongs, ev)) { c.refused++; continue }
-        const r = await store(ev)
+        // A write Haven doesn't answer (a timeout) is counted and the rest goes on; the screen says so (Tron 18).
+        let r
+        try { r = await store(ev) } catch { c.failed++; continue }
+        if (r.thrown) { c.failed++; continue }
         if (r.ok || /^duplicate:/.test(r.message ?? "")) c.stored++
         else { c.refused++; c.why ??= r.message } // the first reason, so the screen can say what Haven objected to
       }
@@ -139,7 +148,8 @@ export async function importNotes({ vault, pubkey, bytes, sk = deviceKey(), onPr
  */
 export function storeEvent(client, delays = [0, 20, 100, 400]) {
   let authSent = false
-  const send = ev => client.event(ev).catch(e => ({ ok: false, message: String(e?.message ?? e) }))
+  // `thrown`: Haven never answered (a timeout), as against a refusal it sent; the restore counts the two apart.
+  const send = ev => client.event(ev).catch(e => ({ ok: false, message: String(e?.message ?? e), thrown: true }))
   return async ev => {
     let r = await send(ev)
     for (const ms of delays) {

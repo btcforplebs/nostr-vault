@@ -7,6 +7,7 @@ import { normalizeURL } from "nostr-tools/utils"
 import { pool, publishRelays, relayLists, uniq } from "./pool.js"
 import { appendClientTag } from "./client-tag.js"
 import { neverConnectUrls } from "./never-connect.js"
+import { withImportLock } from "./import-lock.js"
 
 // Notes and reposts, plus the articles, polls, highlights, comments, pictures and generic reposts the iPhone shows in
 // Following (FeedServiceTypes.timelineKinds). feed-kinds.js timelineShows decides which comments and kind 16s draw.
@@ -87,14 +88,17 @@ export async function readFeed(vault, follows, { limit = 100, until } = {}) {
 
 /**
  * Pull follows' notes since the newest one cached (or the last two days) into Haven /feed. `onFirstPage` runs once
- * the first group of follows is stored, before the rest are asked. -> notes stored
+ * the first group of follows is stored, before the rest are asked. `tally` counts { failed: stores Haven didn't
+ * answer, capped: relay pages cut at FEED_MAX_PAGES }. -> notes stored
  */
-export async function syncFeed(vault, follows, relays, { onProgress = () => {}, onFirstPage = () => {} } = {}) {
+export async function syncFeed(vault, follows, relays, { onProgress = () => {}, onFirstPage = () => {}, tally = { failed: 0, capped: 0 },
+  query = (r, f, o) => pool.querySync(r, f, o), reach = urls => Promise.any(urls.map(url => pool.ensureRelay(url, { connectionTimeout: 5000 }))) } = {}) {
   if (!follows.length) return 0
+  tally.failed ??= 0; tally.capped ??= 0
   // querySync treats a relay it can't reach as an empty answer, so check that at least one relay is up first. The
   // first one up is enough: the rest join the query as they connect, rather than the slowest connect (up to 5 s for
   // a host that never answers) holding back every relay's notes.
-  await Promise.any(relays.map(url => pool.ensureRelay(url, { connectionTimeout: 5000 }))).catch(() => { throw new Error("no relay reachable") })
+  await reach(relays).catch(() => { throw new Error("no relay reachable") })
   const top = (await readFeed(vault, follows, { limit: 1 }))[0]
   const since = top ? top.created_at - 600 : now() - 2 * 86400
   let stored = 0, done = 0
@@ -103,13 +107,26 @@ export async function syncFeed(vault, follows, relays, { onProgress = () => {}, 
     // Each relay's answer is stored as it lands, so the fastest relay's notes show without waiting for the slowest
     // (up to maxWait). A note two relays send is written once: Haven takes one request per id at a time.
     // A relay whose notes Haven refused doesn't stop the others; the sync fails once they have all finished.
-    const filter = { kinds: FEED_KINDS, authors: follows.slice(i, i + 250), since, limit: 500 }
-    const failed = (await Promise.allSettled(relays.map(async url => {
-      const evs = (await pool.querySync([url], filter, { maxWait: 8000 }).catch(() => [])).filter(e => !sent.has(e.id) && sent.add(e.id))
-      const n = await storeAll(vault.feed, evs)
-      if (n) onProgress({ done, of: follows.length, stored: (stored += n) })
-    }))).find(r => r.status === "rejected")
-    if (failed) throw failed.reason
+    // A relay that sends a full page has more: it is paged back (until = the page's oldest) until a page comes back
+    // short, so a busy group of follows isn't cut at 500 with the rest never asked again (the next sync starts from the
+    // newest cached note; Tidy 8). FEED_MAX_PAGES is the backstop.
+    const filter = { kinds: FEED_KINDS, authors: follows.slice(i, i + 250), since, limit: FEED_PAGE }
+    await Promise.all(relays.map(async url => {
+      let until
+      for (let n = 0; n < FEED_MAX_PAGES; n++) {
+        const page = await query([url], until === undefined ? filter : { ...filter, until }, { maxWait: 8000 }).catch(() => [])
+        const evs = page.filter(e => !sent.has(e.id) && sent.add(e.id))
+        // A store Haven doesn't answer is counted, not thrown: one timeout no longer fails the whole sync (Tidy 6).
+        const k = await storeAll(vault.feed, evs, { tally })
+        if (k) onProgress({ done, of: follows.length, stored: (stored += k) })
+        if (page.length < FEED_PAGE) return
+        const oldest = page.reduce((m, e) => Math.min(m, e.created_at), Infinity)
+        const next = evs.length ? oldest : oldest - 1 // a page of nothing new is one second: step past it
+        if (next < since || next === until) return
+        until = next
+      }
+      tally.capped++
+    }))
     done = Math.min(done + 250, follows.length)
     onProgress({ done, of: follows.length, stored })
   }
@@ -126,6 +143,9 @@ export async function syncFeed(vault, follows, relays, { onProgress = () => {}, 
 
 /** How many groups of 250 follows syncFeed asks the relays for at once: one REQ each per relay. */
 export const FEED_CHUNKS_AT_ONCE = 3
+/** One page of follows' notes from one relay, and how many pages a group may take since the last sync. */
+export const FEED_PAGE = 500
+export const FEED_MAX_PAGES = 20
 
 /**
  * The user's own notes and articles from their write relays into Haven's outbox route. Each relay is asked on its
@@ -257,35 +277,90 @@ export const importNet = { page: askPage, negentropy: negentropyNeeds }
  *  2. every other relay pages its whole history newest first (no ten-day windows);
  *  3. a lane that stops partway, never answers, or runs past IMPORT_LANE_DEADLINE_MS is read the old way, ten days
  *     at a time, and dropped after IMPORT_SILENT_WINDOWS silent windows.
- * Download only: nothing is sent to a relay but requests. A note counts only once its id is the hash of its content,
- * its signature holds and the account wrote it; stores run one batch at a time across every relay, deletions after
- * the rest of their batch, so a note and its deletion can't both get through Haven's check.
- * onProgress({ progress 0..1, from: "yyyy-mm-dd", found, stored, empty }). -> { found, stored }
+ * Then the notes that tag the account (replies, reactions, zaps to you) into the inbox, paged the same way per relay
+ * (haven-go importTaggedNotes; Tidy 3). Messages (kinds 4, 13, 14, 1059) are left to the chat sync.
+ * Download only: nothing is sent to a relay but requests. A note counts only once its id is the hash of its content
+ * and its signature holds (and, for the owner lane, the account wrote it); stores run one batch at a time across every
+ * relay, deletions after the rest of their batch, so a note and its deletion can't both get through Haven's check. A
+ * note counts as had only once Haven has answered for it (Tidy 5), and a write Haven doesn't answer is counted, not
+ * thrown (Tidy 6). Holds the import lock (import-lock.js): a second import in any tab is refused at once.
+ * onProgress({ progress 0..1, from: "yyyy-mm-dd", found, stored, empty, tagged }).
+ * -> { found, stored, failed, cut: relays that didn't finish, tagged: { found, stored }, result }, where result is
+ *    "complete" (every relay finished and every write landed), "partial" or "failed" (nothing came in), as the apps.
  */
-export async function importOwn(vault, pubkey, relays, { startDate = IMPORT_START_DATE, onProgress = () => {}, maxWait = IMPORT_IDLE_MS,
+export function importOwn(vault, pubkey, relays, opts = {}) {
+  return withImportLock(() => importOwnUnlocked(vault, pubkey, relays, opts))
+}
+
+/** The outcome the apps show: every relay finished and every write landed, or some of it, or nothing. */
+export function importResult({ relays, cut, failed, stored, found }) {
+  if (!cut.length && !failed) return "complete"
+  if (cut.length < relays || stored > 0 || found > 0) return "partial"
+  return "failed"
+}
+
+/** The line Settings and the Dashboard show when an import ends, complete / partial / failed as the apps. */
+export function importLine({ result, found, stored, failed = 0, cut = [], tagged }) {
+  const counts = `${found} found, ${stored} new` + (tagged?.found ? `, ${tagged.stored} new that tag you` : "")
+  if (result === "complete") return `Import Complete! ${counts}.`
+  if (result === "partial") {
+    const why = [cut.length && `${cut.length} relay${cut.length === 1 ? "" : "s"} didn't finish`, failed && `${failed} couldn't be saved here`].filter(Boolean).join("; ")
+    return `Import partly done: ${counts}${why ? `. ${why}` : ""}. Run it again to fill the gaps.`
+  }
+  return "Import failed: nothing came in from your relays. Check your connection and run it again."
+}
+
+const DM_KINDS = new Set([4, 13, 14, 1059, 1060])
+
+async function importOwnUnlocked(vault, pubkey, relays, { startDate = IMPORT_START_DATE, onProgress = () => {}, maxWait = IMPORT_IDLE_MS,
   laneDeadlineMs = IMPORT_LANE_DEADLINE_MS } = {}) {
   const start = Date.parse(`${startDate}T00:00:00Z`) / 1000
   if (!Number.isFinite(start)) throw new Error(`not a date: ${startDate}`)
   await Promise.any(relays.map(url => pool.ensureRelay(url, { connectionTimeout: 5000 }))).catch(() => { throw new Error("no relay reachable") })
   const end = now()
-  const seen = new Set()
+  const tally = { failed: 0 }
+  const cut = new Set()
+  const tagged = { found: 0, stored: 0 }
   let found = 0, stored = 0
 
-  const real = (e, since, until) => e && e.pubkey === pubkey && e.created_at >= since && (until === undefined || e.created_at <= until) && verifyEvent(e)
+  const verified = e => { const { id, pubkey: pk, created_at, kind, tags, content, sig } = e; return verifyEvent({ id, pubkey: pk, created_at, kind, tags, content, sig }) }
+  const inRange = (e, since, until) => e && e.created_at >= since && (until === undefined || e.created_at <= until)
+  const real = (e, since, until) => inRange(e, since, until) && e.pubkey === pubkey && verified(e)
+  const tagsMe = (e, since, until) => inRange(e, since, until) && e.pubkey !== pubkey && !DM_KINDS.has(e.kind)
+    && (e.tags ?? []).some(t => t?.[0] === "p" && t[1] === pubkey) && verified(e)
 
-  // One store batch at a time across every relay; within a batch, deletions after the rest.
-  let storing = Promise.resolve()
-  const keep = evs => {
-    const fresh = evs.filter(e => !seen.has(e.id) && seen.add(e.id))
-    found += fresh.length
-    if (!fresh.length) return storing
-    const run = storing.then(async () => {
-      stored += await storeAll(vault.outbox, fresh.filter(e => e.kind !== 5))
-      stored += await storeAll(vault.outbox, fresh.filter(e => e.kind === 5))
-    })
-    storing = run.catch(() => {})
-    return run
+  // Per destination: what Haven holds (stored or duplicate), what is being written now, and every id ever seen (found).
+  const sink = (route, count) => {
+    const had = new Set(), writing = new Set(), sighted = new Set()
+    const again = new Map() // id -> a copy another relay sent while the first was being written
+    let storing = Promise.resolve()
+    const keepNow = evs => {
+      for (const e of evs) if (!sighted.has(e.id)) { sighted.add(e.id); count.found++ }
+      // A copy is written only if no other copy is held or in flight. One that failed (a timeout) isn't in `had`, so
+      // the next relay's copy is written (Tidy 5), and a copy that came while it was in flight gets one more try.
+      for (const e of evs) if (writing.has(e.id) && !had.has(e.id)) again.set(e.id, e)
+      const fresh = evs.filter(e => !had.has(e.id) && !writing.has(e.id) && writing.add(e.id))
+      if (!fresh.length) return storing
+      const saved = e => { had.add(e.id); again.delete(e.id) }
+      const run = storing.then(async () => {
+        count.stored += await storeAll(route, fresh.filter(e => e.kind !== 5), { tally, onSaved: saved })
+        count.stored += await storeAll(route, fresh.filter(e => e.kind === 5), { tally, onSaved: saved })
+      }).finally(() => {
+        for (const e of fresh) writing.delete(e.id)
+        const retry = fresh.map(e => again.get(e.id)).filter(Boolean)
+        for (const e of retry) again.delete(e.id)
+        if (retry.length) keepNow(retry)
+      })
+      storing = run.catch(() => {})
+      return run
+    }
+    // Waits for every write, including a retry queued by the last one.
+    keepNow.drain = async () => { for (let s; s !== storing;) { s = storing; await s } }
+    return keepNow
   }
+  const own = { get found() { return found }, set found(v) { found = v }, get stored() { return stored }, set stored(v) { stored = v } }
+  const keep = sink(vault.outbox, own)
+  const keepTagged = sink(vault.inbox ?? vault.outbox, tagged)
 
   // Progress: each relay's share of the history covered (1 when it's done), averaged; `from` the oldest day reached.
   const covered = new Map(relays.map(url => [url, 0]))
@@ -296,12 +371,12 @@ export async function importOwn(vault, pubkey, relays, { startDate = IMPORT_STAR
       if (reached < oldestDay) oldestDay = Math.max(reached, start)
     }
     const progress = [...covered.values()].reduce((a, b) => a + b, 0) / Math.max(1, covered.size)
-    onProgress({ progress, from: day(oldestDay), found, stored, empty: false })
+    onProgress({ progress, from: day(oldestDay), found, stored, empty: false, tagged: tagged.found })
   }
 
   // One relay paged from `until` (or now) back to `since`. -> "done" | "short" | "silent" | "overran"
-  const page = async (url, since, until, maxPages, deadline) => {
-    let f = { authors: [pubkey], since, limit: IMPORT_PAGE_LIMIT }
+  const page = async (url, since, until, maxPages, deadline, { base = { authors: [pubkey] }, check = real, put = keep, onPage = report } = {}) => {
+    let f = { ...base, since, limit: IMPORT_PAGE_LIMIT }
     if (until !== undefined) f.until = until
     const mine = new Set()
     let stepped = false
@@ -310,12 +385,12 @@ export async function importOwn(vault, pubkey, relays, { startDate = IMPORT_STAR
       if (n === maxPages) return "short"
       const { events, eose } = await importNet.page(url, f, maxWait)
       // Checked before a note can count as new, or made-up notes keep a lane paging (Tron, PR 1663).
-      const ok = events.filter(e => real(e, since, f.until))
+      const ok = events.filter(e => check(e, since, f.until))
       if (!ok.length) return eose ? "done" : n > 0 ? "short" : "silent"
       const oldest = ok.reduce((m, e) => Math.min(m, e.created_at), Infinity)
       const fresh = ok.filter(e => !mine.has(e.id) && mine.add(e.id))
-      await keep(fresh)
-      report(url, oldest)
+      await put(fresh)
+      onPage(url, oldest)
       let u = oldest // inclusive: notes sharing that second come back and are skipped
       if (!fresh.length) {
         if (stepped) return "done"
@@ -386,35 +461,55 @@ export async function importOwn(vault, pubkey, relays, { startDate = IMPORT_STAR
     else redo.push(url)
   }))
 
-  // The old walk, ten days at a time, for the lanes that didn't finish.
+  // The old walk, ten days at a time, for the lanes that didn't finish. A relay finishes only if every window it was
+  // asked for ended on its own; a dropped one, or a window cut short, leaves it in `cut` (the import is partial).
   if (redo.length) {
     const silent = new Map(redo.map(url => [url, 0]))
     let left = [...redo]
     for (let until = end; until > start && left.length; until -= IMPORT_WINDOW) {
       const since = Math.max(start, until - IMPORT_WINDOW)
       const hows = await Promise.all(left.map(url => page(url, since, until, IMPORT_WINDOW_MAX_PAGES)))
-      left.forEach((url, i) => silent.set(url, hows[i] === "silent" ? silent.get(url) + 1 : 0))
+      left.forEach((url, i) => {
+        silent.set(url, hows[i] === "silent" ? silent.get(url) + 1 : 0)
+        if (hows[i] !== "done") cut.add(url)
+      })
       left = left.filter(url => silent.get(url) < IMPORT_SILENT_WINDOWS)
     }
     for (const url of redo) report(url, start)
   }
-  await storing
-  return { found, stored }
+
+  // Notes that tag you, every relay at once, paged back to the start date (a lane that doesn't finish leaves it cut).
+  await Promise.all(relays.map(async url => {
+    const how = await page(url, start, undefined, IMPORT_LANE_MAX_PAGES, Date.now() + laneDeadlineMs,
+      { base: { "#p": [pubkey] }, check: tagsMe, put: keepTagged, onPage: () => report() })
+    if (how !== "done" && how !== "silent") cut.add(url)
+  }))
+  await keep.drain()
+  await keepTagged.drain()
+  const out = { found, stored, failed: tally.failed, cut: [...cut], tagged: { ...tagged } }
+  return { ...out, result: importResult({ relays: relays.length, ...out, found: found + tagged.found, stored: stored + tagged.stored }) }
 }
 
 /**
  * Writes events into a Haven route 100 at a time, not one round trip after another: a first sync's 500 notes took
  * ~1 s in turn. Haven takes one request per id at a time, so a note another sync (Refresh, the background tick)
- * is writing right now counts as a duplicate here. -> how many were stored
+ * is writing right now counts as a duplicate here. `onSaved(ev)` for each Haven now holds (stored or duplicate);
+ * `tally` counts failed writes instead of throwing. -> how many were stored
  */
-export async function storeAll(route, evs) {
+export async function storeAll(route, evs, { tally, onSaved } = {}) {
   let stored = 0
   for (let i = 0; i < evs.length; i += 100) {
-    const rs = await Promise.all(evs.slice(i, i + 100).map(ev => route.event(ev).catch(e => {
+    const rs = await Promise.all(evs.slice(i, i + 100).map(ev => route.event(ev).then(r => {
+      if (r?.ok || /^duplicate:/.test(r?.message ?? "")) onSaved?.(ev)
+      return r
+    }, e => {
       if (/already in flight/.test(e?.message)) return { ok: false }
+      // With a tally, a write Haven didn't answer (a timeout) is counted and the rest go on (Tidy 6); without one it
+      // throws, as before.
+      if (tally) { tally.failed = (tally.failed ?? 0) + 1; return { ok: false } }
       throw e
     })))
-    stored += rs.filter(r => r.ok).length
+    stored += rs.filter(r => r?.ok).length
   }
   return stored
 }

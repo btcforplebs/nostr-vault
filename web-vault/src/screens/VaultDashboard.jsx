@@ -24,7 +24,7 @@ import { activityItems } from "../net/relay-activity.js"
 import { snapshotStore } from "../net/follow-backup.js"
 import { mediaServers } from "../net/upload.js"
 import { exportNotes, zip } from "../net/backup.js"
-import { importOwn, IMPORT_START_DATE } from "../net/sync.js"
+import { importOwn, importLine, IMPORT_START_DATE } from "../net/sync.js"
 import { importListHistory, historyLine } from "../net/list-history-import.js"
 import { ownPostRelays } from "../net/own-relays.js"
 import { saveFile } from "../net/save-file.js"
@@ -108,7 +108,7 @@ export function VaultDashboard({ ctx }) {
   const importNotes = job("importing", async () => {
     setJobs(j => ({ ...j, importing: { progress: 0, text: "Connecting to relays..." } }))
     const relays = ownPostRelays(account)
-    const { found, stored } = await importOwn(vault, me, relays, { startDate: IMPORT_START_DATE,
+    const result = await importOwn(vault, me, relays, { startDate: IMPORT_START_DATE,
       onProgress: p => setJobs(j => ({ ...j, importing: { progress: p.progress, text: `${p.empty ? "Looking through" : "Found"} notes from ${p.from}... (${p.found} found)` } })) })
     // Moving in also brings back older versions of the user's lists (net/list-history-import.js): filed in the vault's
     // list history for Recover a List, never published, never made the current list.
@@ -119,8 +119,9 @@ export function VaultDashboard({ ctx }) {
     const lists = await importListHistory(ctx, { history: historyRelays, signal: skip.current.signal,
       onProgress: p => setJobs(j => ({ ...j, importing: { progress: p.done / p.total, text: `Looking for older versions of your lists... (${p.found} found)`, skippable: true } })),
     }).catch(() => ({ found: 0, answered: 0 })).finally(() => { skip.current = null })
-    markRan(me, "notesImport")
-    setJobs(j => ({ ...j, status: { text: `Import Complete! ${found} found, ${stored} new. ${historyLine(lists)}`.trim() } }))
+    // "Last ran" moves only for a complete import, as the apps record it (audit item 12).
+    if (result.result === "complete") markRan(me, "notesImport")
+    setJobs(j => ({ ...j, status: { text: `${importLine(result)} ${historyLine(lists)}`.trim(), error: result.result === "failed" } }))
     count().catch(() => {})
   })
 

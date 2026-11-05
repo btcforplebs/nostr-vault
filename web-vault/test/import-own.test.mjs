@@ -44,14 +44,16 @@ function fakeVault({ delayMs = 0 } = {}) {
 
 /** Relays that answer newest first and stop at their cap; none speaks NIP-77 unless `neg` says. -> asks per relay */
 function fakeRelays(t, byRelay, { caps = {}, neg = {}, page } = {}) {
-  const asks = {}, negAsks = {}
+  const asks = {}, negAsks = {}, tagAsks = {}
   let published = 0
   t.mock.method(pool, "ensureRelay", async () => ({}))
   t.mock.method(pool, "publish", () => { published++; return [] })
   t.mock.method(importNet, "page", page ?? (async (url, f) => {
-    asks[url] = (asks[url] ?? 0) + 1
+    if (f["#p"]) tagAsks[url] = (tagAsks[url] ?? 0) + 1 // the tagged-notes lane, counted apart
+    else asks[url] = (asks[url] ?? 0) + 1
+    const who = e => f["#p"] ? e.tags.some(t => t[0] === "p" && f["#p"].includes(t[1])) : f.authors.includes(e.pubkey)
     const hits = (byRelay[url] ?? []).filter(e => f.ids ? f.ids.includes(e.id)
-      : f.authors.includes(e.pubkey) && e.created_at >= f.since && (f.until === undefined || e.created_at <= f.until))
+      : who(e) && e.created_at >= f.since && (f.until === undefined || e.created_at <= f.until))
       .sort((a, b) => b.created_at - a.created_at)
     return { events: hits.slice(0, Math.min(f.limit ?? Infinity, caps[url] ?? Infinity)), eose: true }
   }))
@@ -61,7 +63,7 @@ function fakeRelays(t, byRelay, { caps = {}, neg = {}, page } = {}) {
     const mine = new Set(have.map(h => h.id))
     return neg[url](f).filter(id => !mine.has(id))
   })
-  return { asks, negAsks, published: () => published }
+  return { asks, negAsks, tagAsks, published: () => published }
 }
 
 const within = (evs, since) => evs.filter(e => e.created_at >= since)
@@ -191,7 +193,7 @@ test("a dead relay is asked once for its lane, then dropped after a few silent w
   fakeRelays(t, {}, { page: async () => { asks++; return { events: [], eose: false } } })
   const startDate = new Date((now - 730 * 86400) * 1000).toISOString().slice(0, 10)
   await importOwn(fakeVault(), me, ["wss://dead.example"], { startDate })
-  assert.equal(asks, 1 + IMPORT_SILENT_WINDOWS)
+  assert.equal(asks, 1 + IMPORT_SILENT_WINDOWS + 1, "its lane, the silent windows, and one ask for the notes that tag you")
 })
 
 test("made-up notes (unsigned, or someone else's) never count: they can't keep a lane paging", async t => {
