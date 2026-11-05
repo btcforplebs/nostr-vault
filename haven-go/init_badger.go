@@ -36,21 +36,28 @@ func (l quietBadgerLogger) Warningf(format string, args ...interface{}) {
 }
 
 func newBadgerBackend(path string) DBBackend {
+	return newBadgerStoreFor(path, runtime.GOOS)
+}
+
+// newBadgerStoreFor builds the Badger store with goos's sizing, so a test on
+// the Mac can open a store sized like a phone's (badger_split.go).
+func newBadgerStoreFor(path, goos string) *badgerStore {
 	// Bound the negentropy vector size explicitly: the library default is 16M
 	// events, which a NEG-OPEN with a broad filter could try to materialize in
 	// memory — far too much on a phone.
 	maxNeg := 100_000
-	if runtime.GOOS == "android" || runtime.GOOS == "ios" {
+	if goos == "android" || goos == "ios" {
 		maxNeg = 50_000
 	}
-	return &badger.BadgerBackend{
+	s := &badgerStore{}
+	s.BadgerBackend = &badger.BadgerBackend{
 		Path:               path,
 		MaxLimitNegentropy: maxNeg,
 		BadgerOptionsModifier: func(opts badgerdb.Options) badgerdb.Options {
 			// Silence Badger's every-60s cache-size warnings; the small caches
 			// below are deliberate. Wraps whatever logger Badger defaulted to.
 			opts = opts.WithLogger(quietBadgerLogger{opts.Logger})
-			switch runtime.GOOS {
+			switch goos {
 			case "android", "ios":
 				// Phones share RAM with the JVM (Android) or live under strict
 				// jetsam limits (iOS). With 6 databases running, every MB
@@ -102,5 +109,7 @@ func newBadgerBackend(path string) DBBackend {
 					WithValueThreshold(1 << 10)       // 1 KB: inline small values
 			}
 		},
+		SkipIndexingTag: s.skipTag,
 	}
+	return s
 }
