@@ -53,3 +53,15 @@
 .media-mesh-text:is(.media-tile *, .condensed-thumb *, .vault-thumb *, .vault-thumbs *) { position: absolute;
   width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } /* spinner alone; text for readers */
 .parent-preview .media-mesh { min-height: 80px; max-height: 150px; margin-top: 4px; }
+
+/* The viewer's notes that use the item on screen (MediaNotesSheet.jsx): a sheet from the bottom, and its button. */
+.lightbox-notes-btn { position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 16px); transform: translateX(-50%);
+  min-height: 34px; padding: 0 14px; border: 0; border-radius: 999px; background: rgb(255 255 255 / .14); color: #fff; font: 600 13px var(--font); }
+.lightbox-notes-btn::before { content: "⌃ "; }
+.lightbox-notes { position: absolute; left: 0; right: 0; bottom: 0; max-height: 55%; overflow-y: auto; overscroll-behavior: contain;
+  padding: 12px 12px calc(env(safe-area-inset-bottom) + 12px); border-radius: 18px 18px 0 0; background: var(--s1); border-top: 1px solid var(--hair); }
+.lightbox-notes-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 8px; color: var(--text-2); }
+.lightbox-note { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: center; padding: 8px 4px; border-radius: 10px; color: var(--text); text-decoration: none; }
+.lightbox-note:hover { background: var(--s2); }
+.lightbox-note-text { display: grid; min-width: 0; }
+.lightbox-note-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

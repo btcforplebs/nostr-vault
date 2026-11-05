@@ -132,3 +132,42 @@ test("the desktop layout is untouched: every feed-bar rule needs html[data-fold]
   const main = readFileSync(new URL("../main.jsx", import.meta.url), "utf8")
   assert.match(main, /mode === "phone" && session \? startChromeFold\(\)/)
 })
+
+test("Collapse Menu on Scroll off: scrolling leaves the bars full size; turning it off unfolds them (parity N6)", async () => {
+  const { setFoldOn, foldOn } = await import("../src/components/chrome-fold.js")
+  // Turning it off springs the bars back: frames run at once here (reduced motion), a second apart.
+  let clock = 0
+  const realNow = performance.now
+  performance.now = () => clock
+  const raf = globalThis.requestAnimationFrame, caf = globalThis.cancelAnimationFrame
+  globalThis.requestAnimationFrame = f => { clock += 1000; f(clock); return 1 }
+  globalThis.cancelAnimationFrame = () => {}
+  const m = new Map(), storage = { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)) }
+  assert.equal(foldOn(storage), true, "on by default: today's behaviour")
+  const listeners = {}, props = {}
+  const root = { dataset: {}, scrollHeight: 5000, style: { setProperty: (k, v) => { props[k] = v }, getPropertyValue: k => props[k] ?? "", removeProperty: k => { delete props[k] } } }
+  const win = { document: { documentElement: root }, innerHeight: 800, scrollY: 1000, localStorage: storage,
+    addEventListener: (k, f) => { listeners[k] = f }, removeEventListener: k => { delete listeners[k] }, matchMedia: () => ({ matches: true }) }
+  const stop = startChromeFold(win)
+  listeners.touchstart({ touches: [{}] }); win.scrollY = 1045; listeners.scroll()
+  assert.equal(root.dataset.fold, "folded")
+  setFoldOn(false, storage)
+  assert.equal(foldOn(storage), false)
+  assert.equal(root.dataset.fold, "open", "turning it off shows the bars at once")
+  listeners.touchstart({ touches: [{}] }); win.scrollY = 1200; listeners.scroll(); listeners.touchend({ touches: [] })
+  assert.equal(root.dataset.fold, "open", "off: a scroll doesn't fold them")
+  stop()
+  setFoldOn(true, storage)
+  const off = startChromeFold({ ...win, localStorage: { getItem: () => "off", setItem() {} } })
+  listeners.touchstart({ touches: [{}] }); win.scrollY = 1300; listeners.scroll()
+  assert.equal(root.dataset.fold, "open", "a page that starts with it off never folds")
+  off()
+  globalThis.requestAnimationFrame = raf; globalThis.cancelAnimationFrame = caf; performance.now = realNow
+})
+
+test("Settings › Appearance has the switch, under Tab Bar, with the iPhone's (i)", () => {
+  const page = readFileSync(new URL("../src/screens/settings/AppearancePage.jsx", import.meta.url), "utf8")
+  assert.match(page, /<Section label="Tab Bar"[^>]*><CollapseMenuSwitch \/><\/Section>/)
+  const sw = readFileSync(new URL("../src/components/CollapseMenuSwitch.jsx", import.meta.url), "utf8")
+  assert.match(sw, /Collapse Menu on Scroll<SettingInfo topic="display\.tabBarAnimation" \/>/)
+})
