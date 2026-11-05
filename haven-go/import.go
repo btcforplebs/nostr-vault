@@ -6,6 +6,8 @@ import (
 	"log"
 	"log/slog"
 	"maps"
+	"net"
+	"net/url"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -55,6 +57,16 @@ func ensureImportRelays() bool {
 	log.Println("🧪 Testing import relays")
 	for _, relay := range config.ImportSeedRelays {
 		if _, err := pool.EnsureRelay(relay); err != nil {
+			if ov := importOtherVaultRelay(); (ov != "" && nostr.NormalizeURL(ov) == nostr.NormalizeURL(relay)) || otherVaultSeed(relay) {
+				// "Copy from my other vault" adds that vault (over the mesh,
+				// or on the LAN) as one more seed. It used to drop out here
+				// without a word while setup still called the copy done
+				// (Tron, import audit item 10). The URL carries a token:
+				// never logged, only its host.
+				log.Printf("⚠️ other vault not reached (%s); importing from public relays only", seedHost(relay))
+				slog.Error("🚫 Error connecting to relay", "relay", seedHost(relay), "error", withoutSeedPath(err.Error(), relay))
+				continue
+			}
 			slog.Error("🚫 Error connecting to relay", "relay", relay, "error", err)
 		} else {
 			reachable = append(reachable, relay)
@@ -76,10 +88,55 @@ func ensureImportRelays() bool {
 	}
 }
 
+// otherVaultSeed: a seed that looks like another of the user's vaults (for an
+// app that doesn't set IMPORT_OTHER_VAULT_RELAY), never a public relay: on this device (the mesh ingress, ws://127.0.0.1:<port>/<token>),
+// on the LAN, or a .local name.
+func otherVaultSeed(relay string) bool {
+	u, err := url.Parse(relay)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	if host == "localhost" || strings.HasSuffix(strings.ToLower(host), ".local") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast())
+}
+
+// seedHost: scheme and host of relay, without path or query (a mesh token).
+func seedHost(relay string) string {
+	u, err := url.Parse(relay)
+	if err != nil {
+		return "(unparsable relay)"
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+// withoutSeedPath: msg with relay's path and query (a mesh token) taken out,
+// in whatever form the error quotes the URL.
+func withoutSeedPath(msg, relay string) string {
+	u, err := url.Parse(relay)
+	if err != nil {
+		return "(error hidden: unparsable relay)"
+	}
+	for _, secret := range []string{u.RawQuery, strings.TrimPrefix(u.EscapedPath(), "/"), strings.TrimPrefix(u.Path, "/")} {
+		if secret != "" {
+			msg = strings.ReplaceAll(msg, secret, "…")
+		}
+	}
+	return msg
+}
+
 func runImport(ctx context.Context) {
 	// NOTE: do NOT use flag.FlagSet / os.Args here — in C-shared (iOS embedded)
 	// mode os.Args belongs to the host app and index [2:] is garbage.
 	// All configuration is already loaded from environment variables by loadConfig().
+
+	// First: WoT init and the list-history scan dial the import relays before
+	// the notes do. A refusal there must count as "during this import", or it
+	// never gets its one retry and the relay is dropped as silent (Tron, #1721).
+	beginImportRefusalRetries()
 	if err := GranularInitDBs([]string{"chat", "outbox", "inbox", "lists", "listsimport"}); err != nil {
 		log.Println("🚫 failed to init import DBs:", err)
 		return
@@ -111,66 +168,6 @@ func runImport(ctx context.Context) {
 	log.Println("📦 importing notes")
 	importOwnerNotes(ctx)
 	importTaggedNotes(ctx)
-}
-
-func importTaggedNotes(ctx context.Context) {
-	taggedImportedNotes := 0
-	done := make(chan struct{}, 1)
-	timeout := time.Duration(config.ImportTaggedNotesFetchTimeoutSeconds) * time.Second
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	wdbInbox := eventstore.RelayWrapper{Store: inboxDB}
-	wdbChat := eventstore.RelayWrapper{Store: chatDB}
-	pTags := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
-	filter := nostr.Filter{
-		Tags: nostr.TagMap{"p": pTags},
-	}
-
-	log.Println("📦 importing inbox notes, please wait up to", timeout)
-
-	go func() {
-		// done must close even if the fetch loop panics, otherwise the
-		// select below waits out the full timeout.
-		defer close(done)
-		runsafe.Run("importTaggedNotes.fetch", func() {
-			// Same rules as the live inbox (classifyInboxEvent), so a zap
-			// is judged by its zapper here too, plus the zaps you sent.
-			for _, f := range []nostr.Filter{filter, givenZapsFilter(pTags, nil)} {
-				for ev := range pool.FetchMany(ctx, importRelays(), f) {
-					if ctx.Err() != nil {
-						break // Stop the loop on timeout
-					}
-					c := classifyInboxEvent(ctx, ev.Event)
-					if !c.accept {
-						continue
-					}
-					dbToWrite := wdbInbox
-					if c.chat {
-						dbToWrite = wdbChat
-					}
-					if isDeleted(ctx, dbToWrite.Store, ev.Event) {
-						slog.Debug("🚫 skipping deleted tagged event", "id", ev.ID)
-						continue
-					}
-					if err := dbToWrite.Publish(ctx, *ev.Event); err != nil {
-						log.Println("🚫 error importing tagged note", ev.ID, ":", err)
-					}
-					taggedImportedNotes++
-				}
-			}
-		})
-	}()
-
-	select {
-	case <-done:
-		log.Println("📦 imported", taggedImportedNotes, "tagged notes")
-	case <-ctx.Done():
-		log.Println("🚫 Timeout after", timeout, "while importing tagged notes")
-	}
-
-	log.Println("✅ tagged import complete")
-	debug.FreeOSMemory()
 }
 
 func subscribeInboxAndChat(ctx context.Context) {
