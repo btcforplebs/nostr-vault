@@ -25,6 +25,12 @@ import com.nostrvault.relay.RelayForegroundService
  * Settings imports. It does no work itself; [RelayImportService] starts it
  * when an import begins and stops it when the import ends.
  */
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface ImportServiceEntryPoint {
+    fun relayImportService(): RelayImportService
+}
+
 class ImportForegroundService : Service() {
     companion object {
         private const val TAG = "ImportForegroundService"
@@ -69,8 +75,17 @@ class ImportForegroundService : Service() {
                     acquire(WAKELOCK_TIMEOUT_MS)
                 }
         }
-        // The import lives in this process; if it dies there is nothing to resume.
-        return START_NOT_STICKY
+        // Killed mid-import: Android restarts this service (intent null) and the cut import runs again from its
+        // record (ImportResume). It used to be START_NOT_STICKY, and a cut import just vanished.
+        if (intent == null) {
+            val importer = dagger.hilt.android.EntryPointAccessors
+                .fromApplication(applicationContext, ImportServiceEntryPoint::class.java).relayImportService()
+            if (!importer.isImporting.value && !importer.resumeCutImport()) {
+                stopSelf()
+                return START_NOT_STICKY
+            }
+        }
+        return START_STICKY
     }
 
     /** Android 15 caps dataSync time; give up the foreground rather than be killed. */

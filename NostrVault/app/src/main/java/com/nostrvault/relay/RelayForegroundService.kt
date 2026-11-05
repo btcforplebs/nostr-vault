@@ -282,6 +282,12 @@ class RelayForegroundService : Service() {
 
         fun start(context: Context) {
             if (externalMode) return
+            // Never under a running import: this service's StopRelayC on any later destroy would cancel it
+            // (Tron's import risks #7). The import starts the relay itself when it ends.
+            if (com.nostrvault.service.RelayImportService.importRunning) {
+                Log.i(TAG, "An import is running; the relay starts when it ends")
+                return
+            }
             // No relay and no notification before setup is finished: the
             // setup import's cleanup and the boot receiver both got here on
             // a setup that was left half-way. Setup's last step starts it.

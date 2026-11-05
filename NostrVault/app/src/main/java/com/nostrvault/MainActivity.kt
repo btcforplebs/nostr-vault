@@ -494,6 +494,8 @@ class MainActivity : FragmentActivity() {
             if (relayImportService.takeRelayRestartPending() && !configStore.config.value.useExternalRelay) {
                 RelayForegroundService.start(this)
             }
+            // An import the process was killed in the middle of runs again (ImportResume).
+            relayImportService.resumeCutImport()
             feedService.resumeFeed()
             // Start DM listeners once, then catch up from external relays each
             // time the app returns to the foreground.

@@ -50,6 +50,15 @@ class RelayImportService @Inject constructor(
         /** [withRelayStopped]'s answer when the vault is busy: nothing was stopped or run. */
         const val BUSY_CODE = -2
         const val BUSY_LINE = "The vault is busy importing. Try again when it ends."
+
+        /**
+         * An import is running in this process: the relay service must not start under it (its StopRelayC on any
+         * later destroy cancels the import) and Factory Reset must not delete the vault it writes (Tron's import
+         * risks #5/#7, 2026-11-05). Read by code that has no handle on this service.
+         */
+        @Volatile
+        var importRunning = false
+            private set
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -125,8 +134,13 @@ class RelayImportService @Inject constructor(
         }
 
         _isImporting.value = true
+        importRunning = true
         updateBusy()
         _importOutcome.value = null
+        // Written before it starts, cleared when it ends: still here next start = it was killed (ImportResume).
+        val nowS = System.currentTimeMillis() / 1000
+        val previous = ImportResume.read(context)?.takeIf { it.listHistory == listHistory && it.alsoFrom == alsoFrom && it.otherVault == otherVault }
+        ImportResume.write(context, ImportResume.next(previous, listHistory, alsoFrom, otherVault, nowS))
         importJob = scope.launch {
             var outcome: ImportResult = ImportResult.APP_FAILED
             _importProgress.value = 0f
@@ -203,7 +217,10 @@ class RelayImportService @Inject constructor(
                 _importCompleted.value = outcome.isComplete
                 _importStatusMessage.value = outcome.summary
                 _isImporting.value = false
+                importRunning = false
                 updateBusy()
+                // It ended (even cancelled or failed): nothing to resume.
+                ImportResume.clear(context)
                 _listHistoryScanning.value = false
                 ImportForegroundService.stop(context)
                 // 4. Restart relay in normal mode
@@ -220,6 +237,20 @@ class RelayImportService @Inject constructor(
             }
         }
         return true
+    }
+
+    /**
+     * A cut import (the process was killed mid-run) runs again, with its options, when the app or the import
+     * service comes back. -> true when one was started.
+     */
+    fun resumeCutImport(): Boolean {
+        val cut = ImportResume.read(context) ?: return false
+        if (!ImportResume.shouldResume(cut, System.currentTimeMillis() / 1000, isBusy)) {
+            if (!isBusy) ImportResume.clear(context)
+            return false
+        }
+        Log.i(TAG, "Resuming an import that was cut (run ${cut.runs + 1})")
+        return importNotes(cut.listHistory, cut.alsoFrom, cut.otherVault)
     }
 
     /**
