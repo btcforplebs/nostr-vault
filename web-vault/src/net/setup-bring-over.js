@@ -6,6 +6,7 @@
 import { displayName } from "./mesh-pairing.js"
 import { importNotes } from "./backup.js"
 import { parseBackup, restoreBackup } from "./settings.js"
+import { withImportLock } from "./import-lock.js"
 
 /** How long the other device has to answer after this browser scanned it (or showed its code): the plan's 3 minutes. */
 export const LINK_LIMIT = 180
@@ -15,9 +16,9 @@ export const RELAYS = "Import from relays"
 export const RELAYS_DETAIL = "Fetch your notes and the people you follow from your relays."
 export const BACKUP = "Import from a backup"
 export const BACKUP_DETAIL = "A Nostr Vault backup file (.zip) from this browser, your iPhone or your Mac."
-// Logen's words, 2026-11-05.
+// Logen's words, 2026-11-05; the small print as Tod gave it after the import audit (the web copies nothing over the mesh).
 export const COPY = "Copy from my other vault"
-export const COPY_DETAIL = "Your Mac or another device signed in as you. Scan two codes and it copies over the mesh."
+export const COPY_DETAIL = "Links your devices, then brings your notes from your relays"
 export const FALLBACK = "Couldn't reach your other device; getting your notes from your relays instead."
 export const linkedLine = name => `Linked with ${displayName(name)}. Getting your notes now.`
 
@@ -46,18 +47,36 @@ export const setupNotice = text => (text && /mesh/i.test(text) ? OTHER_KIND : te
 const isZip = b => b.length >= 4 && b[0] === 0x50 && b[1] === 0x4b && b[2] === 3 && b[3] === 4
 const plural = (n, one) => `${n.toLocaleString()} ${one}${n === 1 ? "" : "s"}`
 
+/** What a setup restore left out, in one sentence, or "": writes Haven didn't answer, events it refused, files with
+ *  nothing this vault keeps (Tron 18: setup used to say "Restored" over all of it). */
+export function restoreGaps({ failed = 0, refused = 0, skipped = [], broken = [] }) {
+  const parts = [
+    failed && `${plural(failed, "event")} not saved (this browser's vault didn't answer)`,
+    refused && `${plural(refused, "event")} not kept (not this account's, or damaged)`,
+    skipped.length && `skipped ${skipped.join(", ")}`,
+    broken.length && `${plural(broken.length, "part")} of the file couldn't be read`,
+  ].filter(Boolean)
+  return parts.length ? ` Not everything came in: ${parts.join("; ")}.` : ""
+}
+
 /** Restores a backup file into the vault, as Settings › Backup does (components/BackupCard.jsx): the phone's .zip, or
- *  the older web .jsonl. Only this account's own signed events go in. -> the line for the steps screen. Throws a
- *  plain sentence when the file holds nothing to restore. */
-export async function restoreSetupBackup({ vault, pubkey, bytes, onStatus = () => {}, zipImport = importNotes }) {
+ *  the older web .jsonl. Only this account's own signed events go in. -> the line for the steps screen, which says
+ *  what didn't come in. Throws a plain sentence when the file holds nothing to restore, or when another import or
+ *  restore holds the lock. */
+export async function restoreSetupBackup({ vault, pubkey, bytes, onStatus = () => {}, zipImport = importNotes, lock = withImportLock }) {
   if (isZip(bytes)) {
-    const { counts, failed } = await zipImport({ vault, pubkey, bytes, onProgress: () => onStatus("Restoring your backup…") })
-    const stored = Object.values(counts).reduce((n, c) => n + (typeof c === "number" ? c : c.stored), 0)
-    if (!Object.keys(counts).length) throw new Error(failed?.length ? failed.join(" ") : "That .zip has no notes in it. Choose a Nostr Vault backup.")
-    return `Restored ${plural(stored, "event")} from your backup. Getting the rest from your relays.`
+    const { counts, failed: broken = [], skipped = [] } = await zipImport({ vault, pubkey, bytes, onProgress: () => onStatus("Restoring your backup…") })
+    const sum = k => Object.values(counts).reduce((n, c) => n + (typeof c === "number" ? (k === "stored" ? c : 0) : (c[k] ?? 0)), 0)
+    const stored = sum("stored")
+    if (!stored && !sum("failed")) throw new Error(broken.length ? broken.join(" ") : "That .zip has no notes of yours in it. Choose a Nostr Vault backup.")
+    if (!stored) throw new Error(`None of that backup could be saved here (${plural(sum("failed"), "event")} failed). Try again, or import from relays.`)
+    return `Restored ${plural(stored, "event")} from your backup.${restoreGaps({ failed: sum("failed"), refused: sum("refused") + sum("bad"), skipped, broken })} Getting the rest from your relays.`
   }
-  const { events } = parseBackup(new TextDecoder().decode(bytes), pubkey)
+  const { events, skipped } = parseBackup(new TextDecoder().decode(bytes), pubkey)
   if (!events.length) throw new Error("That file has nothing of yours to restore. Choose a Nostr Vault backup.")
-  const r = await restoreBackup(vault, events, { onProgress: p => onStatus(`Restoring ${p.done} of ${p.of}…`) })
-  return `Restored ${plural(r.stored + r.duplicate, "event")} from your backup. Getting the rest from your relays.`
+  const r = await lock(() => restoreBackup(vault, events, { onProgress: p => onStatus(`Restoring ${p.done} of ${p.of}…`) }))
+  const had = r.stored + r.duplicate
+  if (!had) throw new Error(`None of that backup could be saved here (${plural(r.refused.length, "event")} refused). Try again, or import from relays.`)
+  const notYours = Object.values(skipped ?? {}).reduce((a, b) => a + b, 0)
+  return `Restored ${plural(had, "event")} from your backup.${restoreGaps({ refused: r.refused.length + notYours })} Getting the rest from your relays.`
 }

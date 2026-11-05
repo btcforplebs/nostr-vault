@@ -89,7 +89,7 @@ test("real Haven: export reads every database, restore puts it back and refuses 
   // Seed through the same AUTHed owner streams the backup uses: import into an empty store.
   const seedZip = await zip(Object.entries(seed).map(([n, evs]) => ({ name: `${n}.jsonl`, data: enc(evs.map(e => JSON.stringify(e)).join("\n") + "\n") })))
   const seeded = await importNotes({ vault, pubkey: me, bytes: seedZip, sk: device })
-  for (const [n, evs] of Object.entries(seed)) assert.deepEqual(seeded.counts[n], { stored: evs.length, refused: 0, bad: 0 }, n + JSON.stringify(seeded.counts[n]))
+  for (const [n, evs] of Object.entries(seed)) assert.deepEqual(seeded.counts[n], { stored: evs.length, refused: 0, bad: 0, failed: 0 }, n + JSON.stringify(seeded.counts[n]))
 
   const out = await exportNotes({ vault, pubkey: me, sk: device })
   for (const [n, evs] of Object.entries(seed)) assert.equal(out.counts[n], evs.length, `export ${n}`)
@@ -101,7 +101,7 @@ test("real Haven: export reads every database, restore puts it back and refuses 
   await h.stop()
   await start("backup-b")
   const back = await importNotes({ vault, pubkey: me, bytes, sk: device })
-  for (const [n, evs] of Object.entries(seed)) assert.deepEqual(back.counts[n], { stored: evs.length, refused: 0, bad: 0 }, `restore ${n}`)
+  for (const [n, evs] of Object.entries(seed)) assert.deepEqual(back.counts[n], { stored: evs.length, refused: 0, bad: 0, failed: 0 }, `restore ${n}`)
   const again = await exportNotes({ vault, pubkey: me, sk: device })
   assert.deepEqual(again.counts, out.counts, "what was restored reads back the same")
 
@@ -117,8 +117,8 @@ test("real Haven: export reads every database, restore puts it back and refuses 
     { name: "blossom.jsonl", data: enc("") },
   ])
   const r = await importNotes({ vault, pubkey: me, bytes: bad, sk: device })
-  assert.deepEqual(r.counts.outbox, { stored: 0, refused: 2, bad: 1, why: "invalid: id is computed incorrectly" }) // the stranger's note never reached Haven
-  assert.deepEqual(r.counts.private, { stored: 0, refused: 1, bad: 0 }, "a stranger's note never reaches /private")
+  assert.deepEqual(r.counts.outbox, { stored: 0, refused: 2, bad: 1, failed: 0, why: "invalid: id is computed incorrectly" }) // the stranger's note never reached Haven
+  assert.deepEqual(r.counts.private, { stored: 0, refused: 1, bad: 0, failed: 0 }, "a stranger's note never reaches /private")
   assert.deepEqual(r.skipped, ["blossom.jsonl"])
   const after2 = await exportNotes({ vault, pubkey: me, sk: device })
   assert.equal(after2.counts.outbox, seed.outbox.length, "nothing from the crafted backup got in")

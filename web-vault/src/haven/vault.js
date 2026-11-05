@@ -10,6 +10,7 @@ import { makeAuthEvent } from "nostr-tools/nip42"
 import { loadHaven } from "../../../web-relay/src/haven/haven.js"
 import { HavenClient } from "../../../web-relay/src/haven/client.js"
 import { loadOwners } from "../../../web-relay/src/fips/owners.js"
+import { ownersForAccount } from "../net/pair-devices.js"
 import { VAULT_NS, RELAY_NS, pageStorage } from "../../../web-relay/src/page-storage.js"
 import { clearSession } from "../session.js"
 import { forgetSynced } from "../net/feed-synced.js"
@@ -41,7 +42,8 @@ export function deviceKey(storage = localStorage) {
 }
 
 export async function startVault({ pubkey, log = () => {} }) {
-  const owners = loadOwners({ log, account: pubkey, storage: fipsStorage() })
+  // Only this account's paired devices, and those paired by link: never one another account here paired (Tron 20).
+  const owners = ownersForAccount(loadOwners({ log, account: pubkey, storage: fipsStorage() }), pubkey)
   const sk = deviceKey()
   const t0 = Date.now()
   const haven = await loadHaven(WASM)

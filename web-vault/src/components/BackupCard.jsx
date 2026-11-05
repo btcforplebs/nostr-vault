@@ -3,6 +3,7 @@
 import { useState } from "preact/hooks"
 import { exportNotes, importNotes } from "../net/backup.js"
 import { parseBackup, restoreBackup } from "../net/settings.js"
+import { withImportLock } from "../net/import-lock.js"
 import { saveFile } from "../net/save-file.js"
 
 const NAMES = { outbox: "your notes", private: "private notes", chat: "messages", inbox: "inbox", feed: "feed cache" }
@@ -47,7 +48,10 @@ export function BackupCard({ ctx }) {
       const { counts, skipped, failed } = await importNotes({ vault: ctx.vault, pubkey: ctx.session.pubkey, bytes, onProgress: n => setStatus(`Restoring ${NAMES[n] ?? n}…`) })
       if (!Object.keys(counts).length) throw new Error(failed.length ? failed.join(" ") : "That .zip has no notes in it. Choose a Nostr Vault notes backup.")
       const refused = Object.values(counts).reduce((n, c) => n + c.refused + c.bad, 0)
-      setStatus(`Restored: ${summary(counts)}.` + (refused ? ` ${events(refused)} not restored: not this account's, or damaged.` : "") + (skipped.length ? ` Skipped ${skipped.join(", ")}.` : "") + (failed.length ? ` ${failed.join(" ")}` : ""))
+      // A write the vault didn't answer is said, not hidden under "Restored" (Tron 18).
+      const unsaved = Object.values(counts).reduce((n, c) => n + (c.failed ?? 0), 0)
+      setStatus(`Restored: ${summary(counts)}.` + (refused ? ` ${events(refused)} not restored: not this account's, or damaged.` : "")
+        + (unsaved ? ` ${events(unsaved)} not saved: this browser's vault didn't answer. Restore again to add them.` : "") + (skipped.length ? ` Skipped ${skipped.join(", ")}.` : "") + (failed.length ? ` ${failed.join(" ")}` : ""))
     })()
   }
   // An older web backup: your own signed events, one per line, into your notes.
@@ -55,7 +59,7 @@ export function BackupCard({ ctx }) {
     const { events: evs, skipped } = parseBackup(text, ctx.session.pubkey)
     const skippedText = Object.entries(skipped).filter(([, n]) => n).map(([k, n]) => `${n} ${SKIPPED[k]}`).join(", ")
     if (!evs.length) throw new Error(`That file has nothing to restore${skippedText ? ` (${skippedText})` : ""}. Choose a Nostr Vault backup.`)
-    const r = await restoreBackup(ctx.vault, evs, { onProgress: p => setStatus(`Restoring ${p.done} of ${p.of}…`) })
+    const r = await withImportLock(() => restoreBackup(ctx.vault, evs, { onProgress: p => setStatus(`Restoring ${p.done} of ${p.of}…`) }))
     setStatus(`Restored: your notes ${r.stored}, already here ${r.duplicate}.` + (r.refused.length ? ` ${events(r.refused.length)} refused.` : "") + (skippedText ? ` Skipped ${skippedText}.` : ""))
   }
   return (
