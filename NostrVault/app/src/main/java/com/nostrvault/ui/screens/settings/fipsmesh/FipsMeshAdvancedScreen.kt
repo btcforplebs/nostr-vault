@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -63,6 +64,19 @@ fun FipsMeshAdvancedScreen(onBack: () -> Unit, viewModel: FipsMeshViewModel = hi
         containerColor = WindowBackground,
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+            // The by-address path (Add a device by address on another device): copy this phone's mesh address. The
+            // two-scan Link a device on Mesh settings is the way for your own devices (Logen 2026-11-05).
+            val status by viewModel.status.collectAsState()
+            status.npub?.let { npub ->
+                MeshSection("This Device's Address", footer = "For adding this phone by address. To link your own devices, use Link a device.") {
+                    Text(npub, color = PrimaryText, fontSize = 13.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        lineHeight = 18.sp, modifier = Modifier.padding(top = 12.dp))
+                    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                    TextButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(npub)) }) {
+                        Icon(NostrVaultIcons.Copy, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Copy")
+                    }
+                }
+            }
             MeshSection(
                 "Finder Relays",
                 footer = "Your devices post where they are here, so the others can find them. They see this phone's IP address the way any relay does.",
