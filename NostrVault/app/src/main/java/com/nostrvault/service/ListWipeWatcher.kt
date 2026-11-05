@@ -52,14 +52,15 @@ class ListWipeWatcher @Inject constructor(
         scope.launch { check(author) }
     }
 
-    /** The app came to the front: check every account on this device once the vault answers. */
+    /**
+     * The app came to the front: check the active account once the vault answers. Every account used to be
+     * checked, each a read of /lists (and a login with Amber or a bunker); another account is still checked when
+     * the vault files a version of its lists ([onLogLine]) (the signer storm, iOS #1739).
+     */
     fun onForeground() {
         scope.launch {
             withTimeoutOrNull(30_000) { RelayForegroundService.readyForConnections.first { it } } ?: return@launch
-            val accounts = configStore.config.value.allAccountNpubs()
-                .mapNotNull { npub -> runCatching { com.nostrvault.relay.HavenBridge.decodeNpub(npub) }.getOrNull() }
-                .ifEmpty { listOf(configStore.activeAccountHexPubkey.value) }
-            for (hex in accounts.distinct()) check(hex)
+            foregroundAccounts(configStore.activeAccountHexPubkey.value).forEach { check(it) }
         }
     }
 
@@ -140,6 +141,9 @@ class ListWipeWatcher @Inject constructor(
         private const val TYPE = "type=listversion|"
 
         /** Whether [raw] is the vault's list-version nudge rather than an inbox marker. */
+        /** Who a foreground checks: the active account only. */
+        internal fun foregroundAccounts(activeHex: String): List<String> = listOf(activeHex).filter { it.isNotEmpty() }
+
         fun isMarker(raw: String): Boolean = raw.contains("🔔NOTIFY|$TYPE")
 
         /** The author of a list-version marker: 64 lowercase hex, else null. */
