@@ -158,7 +158,7 @@ internal fun SetupWizardViewModel.finishAfterLink(onComplete: () -> Unit) {
 
 @Composable
 private fun Title(text: String) {
-    Text(text, color = PrimaryText, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+    Text(text, color = PrimaryText, fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
 }
 
 @Composable
