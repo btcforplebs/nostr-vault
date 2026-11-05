@@ -10,8 +10,8 @@ class VaultAccountChipsTest {
     private val bob = "b".repeat(64)
     private val cat = "c".repeat(64)
 
-    private fun line(id: String, at: Long) =
-        VaultActivity(id = id, kind = VaultActivity.Kind.REPLY, actors = listOf("x"), createdAt = at, openId = id, preview = "")
+    private fun line(id: String, at: Long, kind: VaultActivity.Kind = VaultActivity.Kind.REPLY) =
+        VaultActivity(id = id, kind = kind, actors = listOf("x"), createdAt = at, openId = id, preview = "")
 
     @Test fun oneAccountShowsNoChips() {
         assertEquals(emptyList<VaultAccountChip>(), VaultAccountChips.chips(listOf(me), me))
@@ -54,7 +54,10 @@ class VaultAccountChipsTest {
 
     @Test fun sameLineIdInTwoAccountsStaysTwoRows() {
         val merged = VaultAccountChips.merge(
-            mapOf(bob to listOf(line("follow-2026-10-31", 100)), me to listOf(line("follow-2026-10-31", 100))),
+            mapOf(
+                bob to listOf(line("follow-2026-10-31", 100, VaultActivity.Kind.FOLLOW)),
+                me to listOf(line("follow-2026-10-31", 100, VaultActivity.Kind.FOLLOW)),
+            ),
             listOf(me, bob), 10,
         )
         assertEquals(2, merged.map { it.key }.toSet().size)
@@ -98,5 +101,28 @@ class VaultAccountChipsTest {
         assertFalse(VaultAccountChips.pageShowsChipRow(VaultMode.MEDIA))
         // Bookmarks is the active account's list only.
         assertFalse(VaultAccountChips.pageShowsChipRow(VaultMode.BOOKMARKS))
+    }
+
+    /** Live Vault §1 (iOS #1772): a reply that tagged two of your accounts was two rows, unread twice. */
+    @Test fun oneEventTaggingSeveralAccountsIsOneRow() {
+        val merged = VaultAccountChips.merge(
+            mapOf(bob to listOf(line("e1", 300)), me to listOf(line("e1", 300), line("m2", 100)), cat to listOf(line("e1", 300))),
+            listOf(me, bob, cat), 10,
+        )
+        assertEquals(listOf("e1", "m2"), merged.map { it.line.id })
+        // The shared line's accounts in switcher order; its key stays unique.
+        assertEquals(listOf(me, bob, cat), merged.first().accounts)
+        assertEquals(me, merged.first().account)
+        assertEquals(2, merged.map { it.key }.toSet().size)
+    }
+
+    @Test fun foldedLinesStayPerAccount() {
+        for (kind in listOf(VaultActivity.Kind.REACTION, VaultActivity.Kind.REPOST, VaultActivity.Kind.FOLLOW)) {
+            val merged = VaultAccountChips.merge(mapOf(me to listOf(line("x-1", 100, kind)), bob to listOf(line("x-1", 100, kind))), listOf(me, bob), 10)
+            assertEquals(kind.name, 2, merged.size)
+        }
+        // A zap with its own words is one event; the folded "zap-" line is per account.
+        assertEquals(1, VaultAccountChips.merge(mapOf(me to listOf(line("z1", 1, VaultActivity.Kind.ZAP)), bob to listOf(line("z1", 1, VaultActivity.Kind.ZAP))), listOf(me, bob), 10).size)
+        assertEquals(2, VaultAccountChips.merge(mapOf(me to listOf(line("zap-p", 1, VaultActivity.Kind.ZAP)), bob to listOf(line("zap-p", 1, VaultActivity.Kind.ZAP))), listOf(me, bob), 10).size)
     }
 }

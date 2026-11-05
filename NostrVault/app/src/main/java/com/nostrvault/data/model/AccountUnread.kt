@@ -5,8 +5,10 @@ package com.nostrvault.data.model
  * number on that account's row in the account switcher.
  *
  * The vault serves every account on the device, and each NOTIFY marker names
- * the account it is for (`recipient=<hex>`, haven-go import.go
- * emitInboxNotify). Markers are counted by event id, so a marker raised twice
+ * the accounts it is for: every account it tagged (`recipients=<hex>,<hex>`,
+ * haven-go import.go emitInboxNotify), or the first one (`recipient=<hex>`) from
+ * an older relay. The event counts once for each of them (Live Vault §1, iOS
+ * #1772). Markers are counted by event id, so a marker raised twice
  * counts once. Viewing an account's Vault list empties its count, the same
  * moment that list moves its own seen mark (`vaultActivitySeenAt.<hex>`).
  * iOS: AccountUnread.swift.
@@ -17,12 +19,20 @@ data class AccountUnread(val ids: Map<String, List<String>> = emptyMap()) {
 
     fun count(hex: String): Int = ids[hex.lowercase()]?.size ?: 0
 
-    /** With the marker [body] (the text after `🔔NOTIFY|`) counted; this same value when it does not count. */
-    fun record(body: String): AccountUnread {
-        val (recipient, id) = parse(body) ?: return this
-        val list = ids[recipient].orEmpty()
-        if (id in list) return this
-        return copy(ids = ids + (recipient to (list + id).takeLast(CAP)))
+    /**
+     * With the marker [body] (the text after `🔔NOTIFY|`) counted once for each account it tagged that [accepts]
+     * (the store's per-account list rules); this same value when it counts for none.
+     */
+    fun record(body: String, accepts: (String) -> Boolean = { true }): AccountUnread {
+        val marker = parseMarker(body) ?: return this
+        var next = ids
+        for (recipient in marker.recipients) {
+            if (!accepts(recipient)) continue
+            val list = next[recipient].orEmpty()
+            if (marker.id in list) continue
+            next = next + (recipient to (list + marker.id).takeLast(CAP))
+        }
+        return if (next == ids) this else copy(ids = next)
     }
 
     /**
@@ -91,11 +101,18 @@ data class AccountUnread(val ids: Map<String, List<String>> = emptyMap()) {
             }.toMap()
             val type = fields["type"] ?: return null
             if (type !in COUNTED_TYPES) return null
-            val recipient = fields["recipient"]?.lowercase() ?: return null
-            if (!HEX64.matches(recipient)) return null
+            val recipients = recipients(fields)
+            if (recipients.isEmpty()) return null
             val id = fields["id"]?.takeIf { it.isNotEmpty() } ?: return null
-            return Marker(type, fields["author"].orEmpty().lowercase(), recipient, id)
+            return Marker(type, fields["author"].orEmpty().lowercase(), recipients.first(), id, recipients)
         }
+
+        /** `recipients=` when the relay names every account it tagged, then `recipient=`; each once, hex only. */
+        internal fun recipients(fields: Map<String, String>): List<String> =
+            (fields["recipients"].orEmpty().split(',') + fields["recipient"].orEmpty())
+                .map { it.trim().lowercase() }
+                .filter { HEX64.matches(it) }
+                .distinct()
 
         /**
          * One of your accounts tagging another (A tags B) while "Notify me
@@ -133,9 +150,10 @@ data class AccountUnread(val ids: Map<String, List<String>> = emptyMap()) {
                     if (eq < 0) null else part.substring(0, eq) to part.substring(eq + 1)
                 }.toMap()
                 val kind = fields["kind"]?.toIntOrNull() ?: continue
-                val recipient = fields["recipient"].orEmpty().lowercase()
                 val author = fields["author"].orEmpty().lowercase()
-                if (isOwnAccountTag(recipient, author)) own += kind else other += kind
+                // Own-account only when every account it tagged is one of yours tagging another.
+                val recipients = recipients(fields).ifEmpty { listOf("") }
+                if (recipients.all { isOwnAccountTag(it, author) }) own += kind else other += kind
             }
             return own - other
         }
@@ -151,5 +169,13 @@ data class AccountUnread(val ids: Map<String, List<String>> = emptyMap()) {
     }
 
     /** One counted NOTIFY marker. [author] is the zap's sender for zaps (haven-go inboxTrustKey). */
-    data class Marker(val type: String, val author: String, val recipient: String, val id: String)
+    data class Marker(
+        val type: String,
+        val author: String,
+        /** The first account it tagged (the one an older relay names alone). */
+        val recipient: String,
+        val id: String,
+        /** Every account it tagged that the relay named. */
+        val recipients: List<String> = listOf(recipient),
+    )
 }

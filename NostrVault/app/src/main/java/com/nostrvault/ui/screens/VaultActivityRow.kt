@@ -58,6 +58,31 @@ import java.text.NumberFormat
 
 private const val AVATAR_LIMIT = 6
 
+/** Account pictures shown on a line before "+N". */
+internal const val ACCOUNT_STACK_LIMIT = 3
+
+/** "+2" past [ACCOUNT_STACK_LIMIT], or null. */
+internal fun accountStackMore(count: Int): String? = (count - ACCOUNT_STACK_LIMIT).takeIf { it > 0 }?.let { "+$it" }
+
+@Composable
+private fun AccountStack(accounts: List<String>, profiles: Map<String, FeedProfile>, modifier: Modifier = Modifier) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
+        accounts.take(ACCOUNT_STACK_LIMIT).forEachIndexed { i, hex ->
+            AvatarImage(
+                url = profiles[hex]?.pictureURL,
+                pubkey = hex,
+                size = 18.dp,
+                displayName = profiles[hex]?.bestName,
+                modifier = Modifier.offset(x = (-8 * i).dp).border(2.dp, SecondaryGroupedBg, CircleShape),
+            )
+        }
+        accountStackMore(accounts.size)?.let {
+            Text(it, color = SecondaryText, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.offset(x = (-8 * ACCOUNT_STACK_LIMIT + 2).dp))
+        }
+    }
+}
+
 /** One notification-style line: what happened, who did it, what it was about. */
 @Composable
 internal fun VaultActivityRow(
@@ -66,8 +91,11 @@ internal fun VaultActivityRow(
     profiles: Map<String, FeedProfile>,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    /** The account the line is for, when the list holds more than one account's lines. */
-    account: String? = null,
+    /**
+     * The accounts the line is for, when the list holds more than one account's lines: one, or several when one
+     * event tagged several of them (VaultAccountChips.merge).
+     */
+    accounts: List<String> = emptyList(),
 ) {
     val colors = LocalNostrVaultColors.current
     val (icon, tint) = activityStyle(line.kind, colors.primary)
@@ -85,7 +113,7 @@ internal fun VaultActivityRow(
             .clickable(onClick = onClick)
             .padding(14.dp)
             .semantics(mergeDescendants = true) {
-                contentDescription = (account?.let { "For ${name(it)}. " } ?: "") + "$who $verb. $preview"
+                contentDescription = (if (accounts.isEmpty()) "" else "For ${accounts.joinToString(", ") { name(it) }}. ") + "$who $verb. $preview"
                 if (isUnread) stateDescription = "New"
             },
     ) {
@@ -96,19 +124,10 @@ internal fun VaultActivityRow(
             ) {
                 Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(17.dp))
             }
-            if (account != null) {
-                // Whose notification this is: that account's picture on the
-                // line's icon. The name is read out, not printed on every line.
-                AvatarImage(
-                    url = profiles[account]?.pictureURL,
-                    pubkey = account,
-                    size = 18.dp,
-                    displayName = profiles[account]?.bestName,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .offset(x = 5.dp, y = 5.dp)
-                        .border(2.dp, SecondaryGroupedBg, CircleShape),
-                )
+            if (accounts.isNotEmpty()) {
+                // Whose notification this is: those accounts' pictures stacked on the line's icon (up to 3, then
+                // +N). The names are read out, not printed on every line. iOS: accountMark (#1772).
+                AccountStack(accounts, profiles, Modifier.align(Alignment.BottomEnd).offset(x = 5.dp, y = 5.dp))
             }
         }
         Spacer(Modifier.width(12.dp))
