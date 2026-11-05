@@ -120,6 +120,23 @@
       }
     },
     {
+      "line": "COPY stage=failed part=- bytes=1000/1092993024 items=0/0 source=mesh error=needs_space",
+      "expect": {
+        "stage": "failed",
+        "part": "-",
+        "bytes": [
+          1000,
+          1092993024
+        ],
+        "items": [
+          0,
+          0
+        ],
+        "source": "mesh",
+        "error": "needs_space"
+      }
+    },
+    {
       "line": "COPY stage=done part=- bytes=0/0 items=1/1 source=mesh later=1",
       "expect": {
         "stage": "done",

@@ -78,6 +78,7 @@ write("progress-v2-lines.json", {"cases": [
     {"line": "COPY stage=done part=- bytes=0/0 items=21003/21003 source=mesh", "expect": {"stage": "done", "part": "-", "bytes": [0, 0], "items": [21003, 21003], "source": "mesh", "error": ""}},
     {"line": "COPY stage=done part=- bytes=0/0 items=5/5 source=mesh error=settings_refused", "expect": {"stage": "done", "part": "-", "bytes": [0, 0], "items": [5, 5], "source": "mesh", "error": "settings_refused"}},
     {"line": "COPY stage=failed part=notes bytes=0/9000000 items=0/3 source=mesh error=hash_mismatch", "expect": {"stage": "failed", "part": "notes", "bytes": [0, 9000000], "items": [0, 3], "source": "mesh", "error": "hash_mismatch"}},
+    {"line": "COPY stage=failed part=- bytes=1000/1092993024 items=0/0 source=mesh error=needs_space", "expect": {"stage": "failed", "part": "-", "bytes": [1000, 1092993024], "items": [0, 0], "source": "mesh", "error": "needs_space"}},
     {"line": "COPY stage=done part=- bytes=0/0 items=1/1 source=mesh later=1", "expect": {"stage": "done", "part": "-", "bytes": [0, 0], "items": [1, 1], "source": "mesh", "error": ""}},
     {"line": "2026/11/05 10:00:00 COPY stage=fetching part=media bytes=1/2 items=0/1 source=mesh", "expect": {"stage": "fetching", "part": "media", "bytes": [1, 2], "items": [0, 1], "source": "mesh", "error": ""}},
     {"line": "COPY stage=paused part=- bytes=0/0 items=0/0 source=mesh", "expect": None},

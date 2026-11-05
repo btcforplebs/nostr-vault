@@ -85,7 +85,8 @@ the owner.
 7. **B restores `media`.** Each `media/<sha256>` is hash-checked, then stored. Its record is restored only when the
    file is.
 8. **B applies settings.** The engine leaves the checked `settings.json` for the app, at `copy-settings.json` in
-   B's data dir, and the app applies it (§5).
+   B's relay root (the parent of `DATABASE_PATH`, the folder holding `.env`; Apple: `haven_database/copy-settings.json`),
+   and the app applies it (§5).
 9. **Relays.** The relay import job then runs as in setup, for anything A lacked.
 10. **Done.** B calls `POST /copy/v2/<id>/done`. A deletes `copy-<id>/`, now or 24 h after the build, whichever
     comes first. B deletes its parts once they are restored.
@@ -138,6 +139,7 @@ COPY stage=<building|fetching|restoring|relays|done|failed> part=<notes|media|->
 
 - Keys are in that order. Unknown keys after them are ignored.
 - `error` is present only on `stage=failed`, and on `done` when settings were refused (`error=settings_refused`).
+- On `stage=failed ... error=needs_space`, `bytes=<free>/<need>` carries B's free bytes and the need (parts + restored + 1 GB), so the app words "Needs <need> free, this device has <free>" without measuring.
 
 ## 4. Media: own uploads only
 
