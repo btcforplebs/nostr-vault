@@ -49,6 +49,7 @@ extension DMService {
         // A bunker is never asked while the app is not in front (Background
         // App Refresh): wait, unasked, for the next foreground.
         guard mayAskActiveSigner else {
+            signerWorkHeld = true
             waitForSigner(event, autoRetry: false)
             return
         }

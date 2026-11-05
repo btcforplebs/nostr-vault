@@ -13,7 +13,12 @@ import Foundation
 ///   - an automatic fetch from the outside relays runs at most every 5 min,
 ///     in the foreground as in the background;
 ///   - a wrap the signer refused is not asked about again on its own: only
-///     the inbox's Retry asks again.
+///     the inbox's Retry asks again. The refused list is in memory only, so
+///     after a relaunch each refused wrap is asked about once more, once;
+///   - "in front" is iOS's `.active` state. The Mac has no closed-app DM
+///     work and always counts as in front, so a Mac running only in the menu
+///     bar may still prompt a phone bunker. Intended: the Mac is the vault
+///     host and its menu bar app is the app.
 /// Pure logic, no app types: tested in MediaLogicTests.
 enum DMSignerPolicy {
     /// Seconds between two automatic fetches from the outside relays.

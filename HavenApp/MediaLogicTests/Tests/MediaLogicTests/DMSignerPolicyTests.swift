@@ -153,6 +153,29 @@ final class DMSignerPolicyTests: XCTestCase {
         XCTAssertTrue(sync.contains("DMSignerPolicy.fetchDue("))
     }
 
+    /// Becoming active resumes only work that was held (not after Control
+    /// Center or an alert), and a held NIP-04 DM gets a fresh REQ: a live
+    /// inbox socket would not serve it again.
+    func testResumeRunsOnlyAfterAHoldAndReRequestsNIP04() throws {
+        let conv = try source("HavenApp/Services/DM/DMService+Conversations.swift")
+        let resume = try body(conv, after: "func resumeSignerWorkInFront() {")
+        let guardHeld = try XCTUnwrap(resume.range(of: "guard signerWorkHeld else { return }"))
+        let retry = try XCTUnwrap(resume.range(of: "retryWaitingForSigner(userAsked: false)"))
+        XCTAssertLessThan(guardHeld.lowerBound, retry.lowerBound)
+        XCTAssertTrue(resume.contains("startNIP04Listening()"))
+        XCTAssertFalse(resume.contains("restartNIP04IfNeeded()"), "a live socket keeps the held DM unshown")
+
+        let wrap = try source("HavenApp/Services/DM/DMService+GiftWrap.swift")
+        let process = try body(wrap, after: "private func processGiftWrap(")
+        XCTAssertTrue(process.contains("guard mayAskActiveSigner else {\n            signerWorkHeld = true"))
+        let processing = try source("HavenApp/Services/DM/DMService+MessageProcessing.swift")
+        let nip04 = try body(processing, after: "func handleIncomingNIP04(")
+        XCTAssertTrue(nip04.contains("nip04HeldForSigner = true\n            signerWorkHeld = true"))
+        let auth = try body(processing, after: "private func handleAuthChallenge(")
+        let authHold = try body(String(auth), after: "guard mayAskOwnerSigner else {", until: "return")
+        XCTAssertTrue(authHold.contains("signerWorkHeld = true"))
+    }
+
     /// Every place the DM code asks a signer checks first.
     func testEveryPromptPointChecksTheAppIsInFront() throws {
         let wrap = try source("HavenApp/Services/DM/DMService+GiftWrap.swift")

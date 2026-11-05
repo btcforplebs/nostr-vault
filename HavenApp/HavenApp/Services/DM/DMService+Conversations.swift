@@ -104,12 +104,18 @@ extension DMService {
     /// The app came to the front: send the signer what waited for it there.
     /// Wraps held in the background (never asked) go now; refused ones still
     /// wait for Retry; the /chat AUTH kept from the background is signed.
+    /// Nothing held: nothing to do (didBecomeActive also fires after Control
+    /// Center, an alert or the Face ID sheet).
+    /// A held NIP-04 DM was never marked seen, but a live inbox socket does
+    /// not serve it again on its own: a fresh REQ does.
     func resumeSignerWorkInFront() {
+        guard signerWorkHeld else { return }
+        signerWorkHeld = false
         retryWaitingForSigner(userAsked: false)
         retryPendingAuth()
         if nip04HeldForSigner {
             nip04HeldForSigner = false
-            restartNIP04IfNeeded()
+            startNIP04Listening()
         }
     }
 

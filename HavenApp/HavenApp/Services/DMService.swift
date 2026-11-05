@@ -85,6 +85,10 @@ class DMService: ObservableObject {
     /// A NIP-04 DM was left for the foreground because a bunker can't be
     /// asked from the background; the inbox subscription is renewed then.
     var nip04HeldForSigner = false
+    /// Signer work was held because the app was not in front. Only then does
+    /// becoming active resume it: Control Center, an alert or the Face ID
+    /// sheet going away must not send the waiting wraps to a bunker again.
+    var signerWorkHeld = false
 
     /// /inbox (NIP-04 and the gift wraps stored there) reconnects on its own,
     /// like /chat. Before, it came back only when the app returned to the

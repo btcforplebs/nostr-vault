@@ -123,6 +123,7 @@ extension DMService {
         guard mayAskOwnerSigner else {
             // A kept challenge taken for a retry goes back, still unsigned.
             if isRetry { authRetry.received(challenge) }
+            signerWorkHeld = true
             return
         }
 
@@ -212,6 +213,7 @@ extension DMService {
         // seen: the inbox subscription is renewed in front and it comes back.
         guard mayAskActiveSigner else {
             nip04HeldForSigner = true
+            signerWorkHeld = true
             return
         }
 
