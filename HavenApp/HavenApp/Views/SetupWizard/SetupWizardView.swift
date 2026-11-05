@@ -87,6 +87,9 @@ struct SetupWizardView: View {
     @State private var importOwnRelays: [String] = []
     @State private var importListHistory = false
 
+    /// "Couldn't reach your other device…", over the relay import it fell back to.
+    @State private var fallbackNote: String?
+
     // Error state
     @State private var setupError: String?
     @State private var showSetupError = false
@@ -115,6 +118,12 @@ struct SetupWizardView: View {
     // Welcome (step 0) is the front door, not step 1 of N: it shows no dots,
     // and picking a way in there is what sets the path.
     private var pathSteps: [Int] {
+        let steps = pathStepsWithoutOtherDevice
+        guard let path = backupQuestionPath else { return steps }
+        return OtherDeviceQuestion.steps(steps, path: path)
+    }
+
+    private var pathStepsWithoutOtherDevice: [Int] {
         switch setupPath {
         case .none: return []
         case .newToNostr: return [9, 10, 11, 17, 15, 8] // keys, password, profile, relay list, who told you, done
@@ -155,7 +164,7 @@ struct SetupWizardView: View {
     private var useNostrIsReadOnly: Bool { signingMode != "nip46" && nsec.isEmpty }
 
     private var currentDotIndex: Int {
-        pathSteps.firstIndex(of: currentStep) ?? 0
+        pathSteps.firstIndex(of: OtherDeviceQuestion.dotStep(currentStep)) ?? 0
     }
 
     var body: some View {
@@ -195,6 +204,15 @@ struct SetupWizardView: View {
                     // Content area
                     ScrollView {
                         VStack {
+                            if let fallbackNote, currentStep != OtherDeviceQuestion.bringOverStep {
+                                Text(fallbackNote)
+                                    .font(.appSystem(size: 13))
+                                    .foregroundColor(WizardColors.textSecondary)
+                                    .multilineTextAlignment(.center)
+                                    .frame(maxWidth: 560)
+                                    .padding(.horizontal, 24)
+                                    .padding(.top, 8)
+                            }
                             stepContent
                                 .frame(maxWidth: 560)
                                 .padding(.horizontal, 24)
@@ -334,6 +352,13 @@ struct SetupWizardView: View {
                 bunkerURI: $bunkerURI,
                 onContinue: { goForward() }
             )
+        case OtherDeviceQuestion.step:
+            OtherDeviceQuestionStep(
+                onYes: { go(to: OtherDeviceQuestion.bringOverStep) },
+                onNo: { if let path = backupQuestionPath { go(to: OtherDeviceQuestion.afterNo(path: path)) } }
+            )
+        case OtherDeviceQuestion.bringOverStep:
+            BringItOverStep(onDone: bringItOverDone, onFallback: bringItOverFellBack)
         case VaultBackupQuestion.step:
             VaultBackupQuestionStep(
                 onRestored: { answerBackupQuestion(.restored) },
@@ -379,7 +404,9 @@ struct SetupWizardView: View {
     private func goForward() {
         direction = .forward
         withAnimation(WizardAnimations.springEnter) {
-            if let path = backupQuestionPath, VaultBackupQuestion.isAskedAfter(step: currentStep, path: path) {
+            if let path = backupQuestionPath, OtherDeviceQuestion.isAskedAfter(step: currentStep, path: path) {
+                currentStep = OtherDeviceQuestion.step // → Already using Nostr Vault on another device?
+            } else if let path = backupQuestionPath, VaultBackupQuestion.isAskedAfter(step: currentStep, path: path) {
                 currentStep = VaultBackupQuestion.step // → Do you have a Vault backup?
             } else if currentStep == 14 {
                 // relay check → who told you → import tour
@@ -408,8 +435,14 @@ struct SetupWizardView: View {
         withAnimation(WizardAnimations.springEnter) {
             if currentStep == 12 || currentStep == 9 || currentStep == 2 {
                 currentStep = 0 // Back to the front door
+            } else if currentStep == OtherDeviceQuestion.step, let path = backupQuestionPath {
+                currentStep = OtherDeviceQuestion.previous(path: path)
+            } else if currentStep == OtherDeviceQuestion.bringOverStep {
+                currentStep = OtherDeviceQuestion.step
+            } else if currentStep == 3, let path = backupQuestionPath, path == .full {
+                currentStep = OtherDeviceQuestion.step // Mac relay config: back to the question
             } else if currentStep == VaultBackupQuestion.step, let path = backupQuestionPath {
-                currentStep = VaultBackupQuestion.previous(path: path)
+                currentStep = OtherDeviceQuestion.backFromBackupQuestion(path: path)
             } else if currentStep == 14 || (currentStep == 4 && backupQuestionPath != nil) {
                 currentStep = VaultBackupQuestion.step // Relay import: back to the backup question
             } else if currentStep == 13 {
@@ -439,6 +472,36 @@ struct SetupWizardView: View {
                 currentStep -= 1
             }
         }
+    }
+
+    private func go(to step: Int) {
+        direction = .forward
+        withAnimation(WizardAnimations.springEnter) { currentStep = step }
+        saveIntermediateConfig()
+    }
+
+    /// Linking may have set the Mac sync address (the other device is a
+    /// Mac): keep it, or the next save would put back the wizard's empty one.
+    private func keepLinkedMac() {
+        macRelayURL = configService.config.macRelayURL
+    }
+
+    /// Linked and copied: like a restored backup, the relay import is skipped.
+    private func bringItOverDone() {
+        keepLinkedMac()
+        guard let path = backupQuestionPath else { return }
+        switch OtherDeviceQuestion.afterCopied(path: path) {
+        case .finish: saveAndComplete()
+        case .step(let next): go(to: next)
+        }
+    }
+
+    /// No link or a stalled copy: one plain line, then today's relay setup.
+    private func bringItOverFellBack() {
+        keepLinkedMac()
+        fallbackNote = OtherDeviceQuestion.fallbackLine
+        guard let path = backupQuestionPath else { return }
+        go(to: OtherDeviceQuestion.afterFallback(path: path))
     }
 
     /// Yes (restored) skips the relay import; No goes on to it as before.
