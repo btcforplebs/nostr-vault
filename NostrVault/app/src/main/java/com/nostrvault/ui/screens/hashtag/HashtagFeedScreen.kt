@@ -48,6 +48,8 @@ fun HashtagFeedScreen(
     val notes = remember(fromFollows, fromOthers) { fromFollows + fromOthers }
     val isLoading by viewModel.isLoading.collectAsState()
     val everyone by viewModel.globalShowsEveryone.collectAsState()
+    // Under 5 follows the tag opens screened, like the Hashtags feed (WotUnlock.hashtagsScreened).
+    val unfiltered by viewModel.unfilteredForNewAccount.collectAsState()
     var showEveryoneWarning by remember { mutableStateOf(false) }
     val profiles by viewModel.profiles.collectAsState()
     val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
@@ -132,6 +134,9 @@ fun HashtagFeedScreen(
                     onToggle = viewModel::toggleFollow,
                 )
             }
+            if (unfiltered) {
+                item(key = "hashtag-unfiltered") { HashtagSectionHeader("Unfiltered: people you don't know yet") }
+            }
             if (notes.isEmpty()) {
                 item(key = "hashtag-empty") {
                     Column(
@@ -151,13 +156,13 @@ fun HashtagFeedScreen(
                                 )
                                 Spacer(Modifier.height(10.dp))
                                 Text(
-                                    text = if (everyone) "No posts tagged #$tag yet"
+                                    text = if (everyone || unfiltered) "No posts tagged #$tag yet"
                                     else "No posts tagged #$tag from people you follow or your network yet",
                                     color = SecondaryText,
                                     fontSize = 15.sp,
                                     textAlign = TextAlign.Center,
                                 )
-                                if (!everyone) {
+                                if (!everyone && !unfiltered) {
                                     Spacer(Modifier.height(6.dp))
                                     Text("The shield above shows everyone.", color = SecondaryText, fontSize = 13.sp)
                                 }
@@ -178,7 +183,7 @@ fun HashtagFeedScreen(
             if (loadingOlder == HashtagNotesViewModel.Section.FOLLOWS) {
                 item(key = "hashtag-follows-older") { HashtagOlderSpinner() }
             }
-            if (fromOthers.isNotEmpty() && !everyone) {
+            if (fromOthers.isNotEmpty() && !everyone && !unfiltered) {
                 item(key = "hashtag-others-header") { HashtagSectionHeader("More from your network") }
             }
             items(fromOthers, key = { it.id }) { note ->

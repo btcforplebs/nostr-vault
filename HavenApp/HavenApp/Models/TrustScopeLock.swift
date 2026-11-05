@@ -24,6 +24,18 @@ enum TrustScopeLock {
         !everyoneIsOn && remaining(followCount: followCount) > 0
     }
 
+    /// Whether a hashtag view (the Hashtags feed or a single #tag page) opens
+    /// screened (`TopicFeedFilter`) instead of filtered to your web. True
+    /// while Everyone is locked, not only with an empty web: with 1-4 follows
+    /// the web is tiny, so a tag showed nearly nothing while Everyone, the
+    /// only way out, stayed locked until 5 follows, and the tags are where a
+    /// new account finds those 5 (Logen 2026-11-05,
+    /// RESEARCH/NV_NEW_USER_HASHTAG_LOOP_2026_11_05.md). Everyone on: never.
+    static func hashtagsScreened(everyoneIsOn: Bool, followCount: Int, noWebYet: Bool) -> Bool {
+        guard !everyoneIsOn else { return false }
+        return noWebYet || isLocked(followCount: followCount, everyoneIsOn: false)
+    }
+
     /// "Follow 3 more people to unlock Everyone".
     static func progressText(followCount: Int) -> String {
         let left = remaining(followCount: followCount)

@@ -36,6 +36,15 @@ enum TopicFeedFilter {
     /// `posts` newest first. `followCounts`: how many people each author
     /// follows (their kind 3), nil while unknown. Returns the ids to show,
     /// in the same order.
+    /// Whether a post by `author` goes in the top "From people you follow"
+    /// group. Screened too: the screen is for strangers, and a friend who
+    /// follows fewer than 20 people would otherwise be screened out of a tag
+    /// you follow them for (Logen 2026-11-05). Only Everyone (no trust set,
+    /// not screened) is one list by time.
+    static func inFollowsGroup(author: String, follows: Set<String>, trustScoped: Bool, screened: Bool) -> Bool {
+        (trustScoped || screened) && follows.contains(author)
+    }
+
     static func shown(_ posts: [Post], followCounts: [String: Int]) -> [String] {
         var domainAuthors: [String: Set<String>] = [:]
         for post in posts {

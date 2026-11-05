@@ -33,10 +33,14 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
     }
 
     private var everyone: Bool { configService.config.globalShowsEveryone }
-    /// Following nobody means no web of trust to filter by. Rather than show
-    /// nothing, the topic feed opens to everyone and says so: it is where a
-    /// new account finds its first people.
-    private var unfilteredForNewAccount: Bool { !everyone && feedService.hasNoWebOfTrustYet }
+    /// Under 5 follows (Everyone still locked) the web is empty or tiny.
+    /// Rather than show nothing, the topic feed opens to everyone, screened,
+    /// and says so: it is where a new account finds its first people
+    /// (`TrustScopeLock.hashtagsScreened`).
+    private var unfilteredForNewAccount: Bool {
+        TrustScopeLock.hashtagsScreened(everyoneIsOn: everyone, followCount: feedService.trustLockFollowCount,
+                                        noWebYet: feedService.hasNoWebOfTrustYet)
+    }
     /// Once the open list is being screened it stays screened while this
     /// view lives: the empty web of trust is rebuilt every 2 minutes, and the
     /// moment the guide's follows give it names, flipping to the network

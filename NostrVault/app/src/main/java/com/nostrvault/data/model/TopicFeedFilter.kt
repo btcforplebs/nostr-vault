@@ -47,6 +47,19 @@ object TopicFeedFilter {
     /** [posts] newest first. [followCounts]: how many people each author
      *  follows (their kind 3), absent while unknown. Returns the ids to show,
      *  in the same order. */
+    /**
+     * Whether a post by [author] goes in the top "From people you follow"
+     * group. Screened too: the screen is for strangers, and a friend who
+     * follows fewer than 20 people would otherwise be screened out of a tag
+     * (Logen 2026-11-05, iOS `TopicFeedFilter.inFollowsGroup`). Only Everyone
+     * (no trust set, not screened) is one list by time.
+     */
+    fun inFollowsGroup(author: String, follows: Set<String>, trustScoped: Boolean, screened: Boolean): Boolean =
+        keepsFollowsGroup(trustScoped, screened) && author in follows
+
+    /** Whether there is a follows group at all: trust-scoped or screened. */
+    fun keepsFollowsGroup(trustScoped: Boolean, screened: Boolean): Boolean = trustScoped || screened
+
     fun shown(posts: List<Post>, followCounts: Map<String, Int>): List<String> {
         val domainAuthors = HashMap<String, MutableSet<String>>()
         for (post in posts) {

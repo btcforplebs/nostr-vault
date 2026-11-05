@@ -26,12 +26,24 @@ struct HashtagFeedView: View {
     }
 
     private var everyone: Bool { configService.config.globalShowsEveryone }
+    /// Under 5 follows (Everyone still locked) the tag opens screened, as the
+    /// Hashtags feed does (`TrustScopeLock.hashtagsScreened`): a tapped #tag
+    /// used to fail closed, empty, with the shield locked.
+    private var screenedForNewAccount: Bool {
+        TrustScopeLock.hashtagsScreened(everyoneIsOn: everyone, followCount: feedService.trustLockFollowCount,
+                                        noWebYet: feedService.hasNoWebOfTrustYet)
+    }
+    /// Screened stays screened while the page is up, so a follow made here
+    /// (the 5th, or the web's rebuild) doesn't wipe the list under the reader.
+    @State private var screenLatched = false
+    private var screened: Bool { !everyone && (screenedForNewAccount || screenLatched) }
 
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
                 LazyVStack(spacing: 12) {
                     header
+                    if screened { unfilteredBanner }
                     if model.fromFollows.isEmpty && model.fromOthers.isEmpty {
                         emptyState
                     }
@@ -43,7 +55,7 @@ struct HashtagFeedView: View {
                         if model.loadingOlder == .follows { olderSpinner }
                     }
                     if !model.fromOthers.isEmpty {
-                        if !everyone { sectionHeader("More from your network") }
+                        if !everyone && !screened { sectionHeader("More from your network") }
                         ForEach(model.fromOthers) { note in
                             row(note).onAppear { model.rowAppeared(note, in: .others) }
                         }
@@ -99,6 +111,7 @@ struct HashtagFeedView: View {
         // missed a swap that kept the size, so this listens to the web itself.
         .onReceive(TrustPathService.webChanged) { restart() }
         .onChange(of: everyone) { _, _ in restart() }
+        .onChange(of: feedService.wotCacheRead) { _, _ in restart() }
         .onDisappear { model.stop() }
         .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingEveryoneWarning) {
             Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
@@ -129,7 +142,19 @@ struct HashtagFeedView: View {
     private func restart() {
         var follows = Set(feedService.followedPubkeys)
         if !configService.activeAccountHexPubkey.isEmpty { follows.insert(configService.activeAccountHexPubkey) }
-        model.start(follows: follows, trust: feedService.globalTrustSet())
+        if screenedForNewAccount { screenLatched = true }
+        if everyone { screenLatched = false }
+        // Screened: the open #t list, cleaned of bots and farms (TopicFeedFilter).
+        model.start(follows: follows, trust: screened ? nil : feedService.globalTrustSet(), screen: screened)
+    }
+
+    private var unfilteredBanner: some View {
+        Label("Unfiltered: people you don't know yet", systemImage: "eye")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .accessibilityLabel("Unfiltered. These posts are from people you don't know yet.")
     }
 
     private var isFollowingTag: Bool { interests.isFollowing(tag) }
@@ -181,12 +206,12 @@ struct HashtagFeedView: View {
                 ProgressView()
             } else {
                 Image(systemName: "number").font(.appSystem(size: 28)).foregroundColor(.secondary)
-                Text(everyone ? "No posts tagged #\(tag) yet"
+                Text(everyone || screened ? "No posts tagged #\(tag) yet"
                               : "No posts tagged #\(tag) from people you follow or your network yet")
                     .font(.appSubheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                if !everyone {
+                if !everyone && !screened {
                     Text("The shield above shows everyone.")
                         .font(.appCaption)
                         .foregroundColor(.secondary)

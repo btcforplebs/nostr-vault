@@ -9,6 +9,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedNote
+import com.nostrvault.data.model.TopicFeedFilter
+import com.nostrvault.data.model.WotUnlock
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.service.TopicFeedScreener
 import com.nostrvault.service.FeedFilterEngine
@@ -168,15 +170,11 @@ abstract class HashtagNotesViewModel(
      * once its own properties exist.
      */
     /**
-     * Following nobody means no Web of Trust to filter by. The Hashtags feed
-     * then opens to everyone and says so: it is where a new account finds its
-     * first people. The single-tag sheet keeps failing closed.
-     */
-    protected open val opensWithoutWebOfTrust: Boolean = false
-
-    /**
-     * True while this feed is open to everyone because there's no Web of
-     * Trust yet. Those posts are screened for bots and farms
+     * True while this feed is open to everyone because Everyone is still
+     * locked (under 5 follows, [WotUnlock.hashtagsScreened]), the Hashtags
+     * feed and the single-tag sheet alike: a tiny web showed a tag nearly
+     * empty, and the tags are where a new account finds its first people.
+     * Those posts are screened for bots and farms
      * ([TopicFeedScreener]) rather than shown raw, and in that order: posts
      * people responded to first.
      */
@@ -253,7 +251,9 @@ abstract class HashtagNotesViewModel(
         }
         // Null is everyone; empty is nobody (no Web of Trust yet fails closed, like Global).
         val everyone = globalShowsEveryone.value
-        val unfiltered = opensWithoutWebOfTrust && !everyone && feedService.hasNoWebOfTrustYet()
+        val followCount = WotUnlock.followCount(
+            feedService.followedPubkeys.value, configStore.activeAccountHexPubkey.value)
+        val unfiltered = WotUnlock.hashtagsScreened(everyone, followCount, feedService.hasNoWebOfTrustYet())
         if (unfiltered) screenLatched = true
         if (everyone) screenLatched = false
         val screen = !everyone && (unfiltered || screenLatched)
@@ -281,7 +281,9 @@ abstract class HashtagNotesViewModel(
             if (!resuming) screener.reset()
             if (!resuming) seen.clear()
             follows = followSet
-            topGroup = if (trust == null) emptySet() else followSet
+            // Screened, your follows keep the top group (a friend is never
+            // screened out with the strangers); only Everyone is one list.
+            topGroup = if (TopicFeedFilter.keepsFollowsGroup(trust != null, screen)) followSet else emptySet()
             if (!resuming) exhausted.clear()
             generation
         }

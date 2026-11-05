@@ -17,6 +17,17 @@ object WotUnlock {
     /** How many more follows unlock the switch; 0 when it is unlocked. */
     fun followsNeeded(count: Int): Int = (MIN_FOLLOWS - count).coerceAtLeast(0)
 
+    /**
+     * Whether a hashtag view (the Hashtags feed or a single #tag sheet) opens
+     * screened ([TopicFeedFilter]) instead of filtered to your web. True while
+     * Everyone is locked, not only with an empty web: with 1-4 follows the
+     * web is tiny, so a tag showed nearly nothing while Everyone stayed
+     * locked, and the tags are where a new account finds its 5 (Logen
+     * 2026-11-05, iOS `TrustScopeLock.hashtagsScreened`). Everyone on: never.
+     */
+    fun hashtagsScreened(everyoneIsOn: Boolean, followCount: Int, noWebYet: Boolean): Boolean =
+        !everyoneIsOn && (noWebYet || followsNeeded(followCount) > 0)
+
     /** "Follow 3 more people to unlock Everyone" (iOS `TrustScopeLock.progressText`). */
     fun progressLine(needed: Int): String =
         "Follow $needed more ${if (needed == 1) "person" else "people"} to unlock Everyone"
