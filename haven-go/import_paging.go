@@ -127,6 +127,11 @@ type windowResult struct {
 	// closed or failed before answering). A whole-history lane re-reads them
 	// window by window: some relays time out on a wide scan but answer 10 days.
 	Silent []string
+	// Empty: relays whose first page ended with EOSE and no note. On a
+	// whole-history lane that is unconfirmed, not "nothing": some relays
+	// answer a wide scan empty but hand over 10 days (12 mini, 2026-11-05),
+	// so the lane walks them window by window (import_owner.go).
+	Empty []string
 	// Quiet: relays that ended some page of this window by going quiet (no
 	// EOSE) instead of answering it, whether or not they sent notes first.
 	// Each such page cost the whole idle wait; the window walk counts them
@@ -232,6 +237,9 @@ func fetchPaged(ctx context.Context, relays []string, filter nostr.Filter, maxPa
 					seen[ev.ID] = true
 					keep(ev)
 					res.Notes++
+				}
+				if matched == 0 && eose && page == 0 {
+					res.Empty = append(res.Empty, url)
 				}
 				if matched == 0 && !eose {
 					if page > 0 {

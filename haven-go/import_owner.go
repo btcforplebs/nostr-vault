@@ -258,7 +258,10 @@ func importOwnerNotes(ctx context.Context) {
 		mu    sync.Mutex
 		total int
 		redo  []walkRelay // lanes that didn't finish: re-read by window, from where they stopped
-		wg    sync.WaitGroup
+		// negEmpty: relays whose negentropy finished but stored nothing.
+		// Checked once the lanes are done (importNegEmptyHolds).
+		negEmpty []string
+		wg       sync.WaitGroup
 	)
 	for _, url := range importRelays() {
 		wg.Add(1)
@@ -279,6 +282,11 @@ func importOwnerNotes(ctx context.Context) {
 			runsafe.Run("importOwnerNotes.negentropy", func() { synced = importOwnerNegentropy(ctx, url, filter, negStore) })
 			if synced || ctx.Err() != nil {
 				report("negentropy")
+				if synced && stored.Load() == 0 {
+					mu.Lock()
+					negEmpty = append(negEmpty, url)
+					mu.Unlock()
+				}
 				return
 			}
 			// A refusal on the negentropy socket bans the relay for every
@@ -307,7 +315,15 @@ func importOwnerNotes(ctx context.Context) {
 			if overran {
 				log.Printf("⚠️ %s still sending after %s; reading it window by window", seedHost(url), importLaneDeadline)
 			}
-			if overran || len(res.Short) > 0 || len(res.Silent) > 0 {
+			if len(res.Empty) > 0 {
+				log.Printf("⚠️ %s answered the whole-history ask with nothing; checking it window by window", seedHost(url))
+			}
+			// An empty first answer is unconfirmed, not "nothing": some
+			// relays answer a wide scan empty but 10 days in full (Tidy,
+			// RESEARCH/NV_IMPORT_BEFORE_NEGENTROPY_2026_11_05.md fix 1). The
+			// walk widens over empty windows, so one that really has
+			// nothing costs about a dozen asks.
+			if overran || len(res.Short) > 0 || len(res.Silent) > 0 || len(res.Empty) > 0 {
 				// The lane read newest first down to its oldest note: only
 				// what is older is left. Starting the walk there (not at the
 				// start date) means a walk cut by its deadline leaves the
@@ -327,6 +343,20 @@ func importOwnerNotes(ctx context.Context) {
 		return
 	}
 
+	// A negentropy session that stored nothing while other relays' lanes
+	// found notes the vault lacked may have been answered with an empty
+	// list it shouldn't have (fix 2): one limit:1 ask decides it, and a
+	// relay that does hold an owner note is walked like a lane that stopped.
+	if total > 0 {
+		for _, url := range importNegEmptyHolds(ctx, negEmpty, filter) {
+			log.Printf("⚠️ %s: negentropy brought nothing new but it holds notes; reading it window by window", seedHost(url))
+			redo = append(redo, walkRelay{url: url, top: time.Now(), alive: true})
+		}
+		if ctx.Err() != nil {
+			return
+		}
+	}
+
 	// A lane that stopped partway, or never answered, is read window by
 	// window, from where it stopped down to the start date.
 	if len(redo) > 0 {
@@ -342,6 +372,72 @@ func importOwnerNotes(ctx context.Context) {
 	}
 	log.Println("✅ owner note import complete! Imported", total, "notes")
 	debug.FreeOSMemory()
+}
+
+// importNegEmptyHolds: of urls, the relays that answer a limit:1 ask over
+// filter with a real owner note. All asked at once; each costs one request.
+func importNegEmptyHolds(ctx context.Context, urls []string, filter nostr.Filter) []string {
+	var (
+		mu    sync.Mutex
+		holds []string
+		wg    sync.WaitGroup
+	)
+	for _, url := range urls {
+		wg.Add(1)
+		go func(url string) {
+			defer wg.Done()
+			f := filter
+			f.Limit = 1
+			var evs []*nostr.Event
+			runsafe.Run("importOwnerNotes.negEmpty", func() { evs, _ = importPage(ctx, url, f) })
+			for _, ev := range evs {
+				if filter.Matches(ev) && verifiedOwnerNote(ev) {
+					mu.Lock()
+					holds = append(holds, url)
+					mu.Unlock()
+					return
+				}
+			}
+		}(url)
+	}
+	wg.Wait()
+	slices.Sort(holds)
+	return holds
+}
+
+// unreadSpan: the stretch of history the walk left unread from some relay
+// (deadline or drop), reported in IMPORT_RESULT as reason
+// unread:<from>..<to> so an app can offer "Run again" over just that range.
+// One span: the union, so a re-run over it covers every gap.
+type unreadSpan struct{ from, to time.Time }
+
+func (u *unreadSpan) add(from, to time.Time) {
+	if !to.After(from) {
+		return
+	}
+	if u.from.IsZero() || from.Before(u.from) {
+		u.from = from
+	}
+	if to.After(u.to) {
+		u.to = to
+	}
+}
+
+// reason: "unread:2021-01-01..2024-03-10", or "" if nothing was left.
+func (u *unreadSpan) reason() string {
+	if u.from.IsZero() {
+		return ""
+	}
+	return "unread:" + u.from.Format(layout) + ".." + u.to.Format(layout)
+}
+
+// report adds the span to the import being collected, if any.
+func (u *unreadSpan) report() {
+	if r := u.reason(); r != "" {
+		if o := currentImport.Load(); o != nil {
+			o.cut(r)
+		}
+	}
 }
 
 // importSilentWindows: a relay that has sent no note in this import and is
@@ -403,6 +499,8 @@ type walkState struct {
 func importOwnerWindows(ctx context.Context, relays []walkRelay, start time.Time, owners []string, keep func(*nostr.Event) bool) int {
 	stored := 0
 	now := time.Now()
+	var unread unreadSpan
+	defer unread.report()
 	states := make([]*walkState, 0, len(relays))
 	end := start
 	for _, r := range relays {
@@ -463,6 +561,7 @@ func importOwnerWindows(ctx context.Context, relays []walkRelay, start time.Time
 		if ctx.Err() != nil {
 			if parent.Err() == nil {
 				log.Printf("⚠️ reading %v window by window passed %s with %d notes; not read: %s to %s", urls, importWalkDeadline, stored, start.Format(layout), end.Format(layout))
+				unread.add(start, end)
 			}
 			return stored
 		}
@@ -547,9 +646,13 @@ func importOwnerWindows(ctx context.Context, relays []walkRelay, start time.Time
 			}
 			if st.silent >= limit {
 				st.dropped = true
+				// Alive: read down to this window. Never answered: none of
+				// it was read, from where its lane stopped.
 				if st.alive {
+					unread.add(start, begin)
 					log.Printf("⚠️ %s sent notes, then nothing for %d windows in a row; not asking it again (before %s not read from it)", seedHost(st.url), limit, begin.Format(layout))
 				} else {
+					unread.add(start, st.top)
 					log.Printf("⚠️ %s answered nothing, or went quiet without finishing, for %d windows in a row; not asking it again", seedHost(st.url), limit)
 				}
 			}
