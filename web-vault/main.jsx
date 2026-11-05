@@ -119,7 +119,7 @@ function App() {
   const [leaving, setLeaving] = useState(null) // sign-out in progress: { busy } | { failed, revoked }
   // First sign-in on this browser: { [step]: { state, done, of, count } } while Haven fills (net/vault-ready.js).
   const [prep, setPrep] = useState(null)
-  // First sign-in: "Already using Nostr Vault on another device?" before the steps ({ pubkey, liveOwners, done }), and
+  // First sign-in: the import choice (relays, a backup, or copy from my other vault) before the steps ({ pubkey, liveOwners, done }), and
   // the line it leaves for the steps screen.
   const [askOther, setAskOther] = useState(null)
   const [prepNote, setPrepNote] = useState(null)
@@ -165,9 +165,9 @@ function App() {
       shown = { ...local, loaded: !!local.contacts }
       if (firstTime && !opened && !(await hasLocalData(v, local))) {
         step("relay", { state: "done" })
-        // An account made here a moment ago has no other device; box mode has no pairing.
+        // An account made here a moment ago has nothing to bring in; box mode has its own setup.
         if (!BOX && !madeHere) {
-          const { note } = await new Promise(done => setAskOther({ pubkey: session.pubkey, liveOwners: v.owners, done }))
+          const { note } = await new Promise(done => setAskOther({ pubkey: session.pubkey, vault: v, liveOwners: v.owners, done }))
           setAskOther(null)
           setPrepNote(note)
           if (!live) return
@@ -243,7 +243,7 @@ function App() {
   // Not signed in: the welcome screen, and the posts and people a guest can look at (src/guest), until they sign in.
   if (!session) return <GuestApp bootHash={bootHash} onSignedIn={onSignedIn} />
   if (error) return <main class="screen"><p class="error">Your relay didn't start: {error}</p><button onClick={() => location.reload()}>Try again</button></main>
-  if (askOther) return <SetupBringOver pubkey={askOther.pubkey} liveOwners={askOther.liveOwners} onDone={askOther.done} />
+  if (askOther) return <SetupBringOver pubkey={askOther.pubkey} vault={askOther.vault} liveOwners={askOther.liveOwners} onDone={askOther.done} />
   if (prep) return <VaultReady steps={prep} note={prepNote} onOpen={() => openNow.current ? openNow.current() : setPrep(null)} />
   if (!vault || !account) return <Splash>Starting your relay…</Splash>
 
