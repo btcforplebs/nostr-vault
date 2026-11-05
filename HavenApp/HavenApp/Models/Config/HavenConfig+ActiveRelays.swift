@@ -77,6 +77,10 @@ extension HavenConfig {
     /// owner's vaults. A vault with a public https name (another phone's Mac
     /// in 10063) looks like a mirror here; `vaultCheckVerdict` catches it
     /// before the delete is sent.
+    /// A mesh address (`.fips`, `fipsmesh://`) is never a target, either way:
+    /// Delete everywhere reaches those devices over the mesh
+    /// (`MeshDeleteTargets`), and an HTTP delete to one only leaked its name
+    /// to DNS and failed.
     func blossomDeleteTargets(ownerServerList: [String], photoURL: URL?, includeHomeVault: Bool,
                               detectedNpub: String? = nil) -> [String] {
         var candidates = activeBlossomMirrors(detectedNpub: detectedNpub)
@@ -93,6 +97,7 @@ extension HavenConfig {
             let key = Self.blossomServerKey(server)
             guard !key.isEmpty, !seen.contains(key) else { continue }
             seen.insert(key)
+            if MeshDeleteTargets.isMeshAddress(server) { continue }
             if !includeHomeVault && (homeVault.contains(key) || Self.isHomeNetworkServer(server)) { continue }
             targets.append(server)
         }

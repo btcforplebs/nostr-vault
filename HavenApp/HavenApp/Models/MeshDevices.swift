@@ -64,8 +64,15 @@ struct LossyMeshDevice: Decodable {
     }
 }
 
-/// Where a photo goes when it is posted. Stored only: the upload path reads
-/// it (nv-3.0, Tom).
+/// Where new photos go, in the words Mesh settings show on iPhone and Mac
+/// and the website's home vault help page. There is no choice to make: the
+/// "Photos go to" picker set a value nothing read (Logen 2026-11-05).
+enum MeshPhotoPath {
+    static let explainer = "New photos are saved on this device first. If you have a home vault, a copy goes to it over the mesh, and the home vault puts it on your public media server for you. If this device has its own media server, it uploads there itself."
+}
+
+/// Kept so an older config still decodes; nothing reads or shows it any more
+/// (the picker is gone, `MeshPhotoPath`).
 enum MeshPhotoDestination: String, CaseIterable, Identifiable {
     case publicServer = "public"
     case mac

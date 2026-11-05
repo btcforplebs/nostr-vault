@@ -64,6 +64,7 @@
 		077B1D3ADA470A6BE173B8E4 /* ComposeView+Drafts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E36D157E04EFBA9F2C2C802 /* ComposeView+Drafts.swift */; };
 		07ADE3CF27334924FD12F5D0 /* FeedNoteRow+Formatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCC0A5227BD2E582382318E7 /* FeedNoteRow+Formatting.swift */; };
 		07D3B5A3AB257E7D23940245 /* CustomZapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CFC29BEE8A95187513A3787 /* CustomZapSheet.swift */; };
+		07F1C2CD04A0B5BE9D2C32E8 /* MeshDeleteTargets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66353FF82388024A6211F22C /* MeshDeleteTargets.swift */; };
 		08264D7FC961E256630D1F08 /* PublishTargets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34A3EE75F17D363C0E2C9E44 /* PublishTargets.swift */; };
 		086F056B5209B2DBDFD9A3C7 /* libnvfips.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B7AE5C3CB89D22373BCC0664 /* libnvfips.a */; };
 		08C9F56AA4BB111B5D79DE34 /* DMTrust.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1682A24F97C40C3570CB32C1 /* DMTrust.swift */; };
@@ -342,6 +343,7 @@
 		2C9CA279A4133E6E9EA426FF /* FeedHighlight.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D72FDD1119ACE2C1EADE758 /* FeedHighlight.swift */; };
 		2CB176ED82313ACA85A8AE44 /* FeedThreadCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCC2C40E48A867FA28814D4 /* FeedThreadCard.swift */; };
 		2CD002D2D3154108B16B64AB /* ArticleCommentRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5322197B2E2B16920BA467E1 /* ArticleCommentRow.swift */; };
+		2CD0ED8D1E267E207D174114 /* BlossomService+MeshDelete.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93215412F91AC6778B7ED535 /* BlossomService+MeshDelete.swift */; };
 		2CF4B408A85E82C349EA0380 /* MusicPlayerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4305ED0FAA1EFC4C5F3CFE00 /* MusicPlayerService.swift */; };
 		2D64BAF82A0A8FF79F93CF1B /* SignerRequestGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 551F03CBB7840B853EDD301A /* SignerRequestGate.swift */; };
 		2D73E6E8650ACE388C14C8C2 /* ImportSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1255DBAAFB357995BFAAC5F /* ImportSettingsView.swift */; };
@@ -406,6 +408,7 @@
 		3554633B7944BB367104EFDC /* FeedDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B67F3F4FE41AEE7F267AC59 /* FeedDashboardView.swift */; };
 		358A1A18DE8227A6CC491966 /* DMService+Publishing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B66DBC6F906E98DB63E2AAD /* DMService+Publishing.swift */; };
 		358F0887B8E6AF3275F43C7E /* MediaCacheService+MemoryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCB3C0E4C43D7B5971396CBC /* MediaCacheService+MemoryCache.swift */; };
+		35AFA5B050700FDD3363075F /* MediaDeleteWording.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2777E951D68131C64DAEAA23 /* MediaDeleteWording.swift */; };
 		35B7147C9A6D81334FD194D0 /* ComposerDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF5D411E889E67C6FF5E16AF /* ComposerDraft.swift */; };
 		35F9738EB414D345100C7694 /* EmojiListParse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B51A8C730F9E0715F991CD2 /* EmojiListParse.swift */; };
 		363BC094743519D8269457BB /* QuotedEventsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AB87D6F419A5756C1655631 /* QuotedEventsView.swift */; };
@@ -1093,6 +1096,7 @@
 		906C585B369B0C3BB89E483A /* TrustWebView+Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7D56F5AAF9F6D61DDAF4893 /* TrustWebView+Search.swift */; };
 		907267B7941E9E28917646CF /* ScrollChromeModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E73FBAE7710CD17916B73EB /* ScrollChromeModifier.swift */; };
 		907AA19454BFF43EBC887A8F /* NIP17Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD61BE8DFF662A086B42872 /* NIP17Service.swift */; };
+		90944A821D57E5A3CB52C1C3 /* MediaDeleteWording.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2777E951D68131C64DAEAA23 /* MediaDeleteWording.swift */; };
 		909C87487CEB2D92213EDDB4 /* NIP44Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5717FE059897D5903CA56549 /* NIP44Service.swift */; };
 		90ABB9FA6B9029B9510E12AC /* SearchFilterMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7EDB2EA15D2E68ACF4B64F0 /* SearchFilterMenu.swift */; };
 		90C3C712CB8B0009CB8C3047 /* NotificationNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC0F366EF1C957EF41DE12C /* NotificationNames.swift */; };
@@ -1516,6 +1520,7 @@
 		C696526E01A20FFAFD69FEC8 /* MacFipsMeshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD5FA4141163EFF726CBBBD1 /* MacFipsMeshService.swift */; };
 		C6E868B6BF1508377CF818C3 /* ProfileFeedLoader+Loading.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE90DEB009D5712F5E377FEE /* ProfileFeedLoader+Loading.swift */; };
 		C6F7AA469550CD80C622BD7C /* ReferralSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C696946159C30CCFD23453 /* ReferralSuggestions.swift */; };
+		C6F9DC7A718F1CEA23A5CA18 /* MeshDeleteTargets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66353FF82388024A6211F22C /* MeshDeleteTargets.swift */; };
 		C6FB008254DFF454398CC17D /* TrustScopeLockSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 571C869380D6566B09736118 /* TrustScopeLockSheet.swift */; };
 		C70896D50470F8951B7ECBD2 /* FollowingSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE4FF1BF35D7CF7BEF59AD4 /* FollowingSnapshot.swift */; };
 		C71CE09138EF387FD0B1448E /* OwnerSessionWarmup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27B80920656E134E7FCE4717 /* OwnerSessionWarmup.swift */; };
@@ -1979,6 +1984,7 @@
 		FDEA028EC731808F93AAE0CC /* SharePreprocess.js in Resources */ = {isa = PBXBuildFile; fileRef = BA8175210AC81AD9CEE782ED /* SharePreprocess.js */; };
 		FDF20D0EB1D39DD30BC13752 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 64074B113CDD8831C2CD4942 /* PrivacyInfo.xcprivacy */; };
 		FE0414C0046FC50EA9DD4CFA /* FeedMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B91658F386F6313DBAA8D6D /* FeedMediaView.swift */; };
+		FE5567237796A2AE1F75E6B7 /* BlossomService+MeshDelete.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93215412F91AC6778B7ED535 /* BlossomService+MeshDelete.swift */; };
 		FE6D2CF43F88D4D4B82723CB /* ThreadNoteEngagementRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3993A161A3C18B64245FE5 /* ThreadNoteEngagementRow.swift */; };
 		FE7FDEC30CD55938FDAB226A /* GlobeZaps.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8900A988AADA79F41EC5BA9 /* GlobeZaps.swift */; };
 		FEAF96537008A8910F89B9E6 /* RelayMatrix.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E9E5172FB10D6FD12D46EBA /* RelayMatrix.swift */; };
@@ -2171,6 +2177,7 @@
 		264737BC8AA75A18D2E77AF1 /* PagerNeighbors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PagerNeighbors.swift; sourceTree = "<group>"; };
 		26FD42DE3F81B42839907CD4 /* BackupRestoreCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRestoreCode.swift; sourceTree = "<group>"; };
 		27616D34DDA23BBA036583B8 /* DeletedNotesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeletedNotesStore.swift; sourceTree = "<group>"; };
+		2777E951D68131C64DAEAA23 /* MediaDeleteWording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaDeleteWording.swift; sourceTree = "<group>"; };
 		279617C6C46FE95602AF2F5B /* MediaGridItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGridItem.swift; sourceTree = "<group>"; };
 		27A87225270090D65AC98D48 /* libhaven.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libhaven.a; path = build/libhaven.a; sourceTree = SDKROOT; };
 		27B80920656E134E7FCE4717 /* OwnerSessionWarmup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnerSessionWarmup.swift; sourceTree = "<group>"; };
@@ -2423,6 +2430,7 @@
 		6532640E58C10C0D8A136047 /* FeedService+WebOfTrust.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+WebOfTrust.swift"; sourceTree = "<group>"; };
 		6558C31748490E315EA4DE8E /* AvatarImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarImageCache.swift; sourceTree = "<group>"; };
 		65D86DC20FC17947852F5719 /* NostrService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrService.swift; sourceTree = "<group>"; };
+		66353FF82388024A6211F22C /* MeshDeleteTargets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshDeleteTargets.swift; sourceTree = "<group>"; };
 		665772231EE1D4B0755E95C3 /* PendingPostManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingPostManager.swift; sourceTree = "<group>"; };
 		667070BF7CD9F4EA19D897B6 /* RailPinsColumn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RailPinsColumn.swift; sourceTree = "<group>"; };
 		6681C0D9B8CB71534CDED28F /* ProfileFeedLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileFeedLoader.swift; sourceTree = "<group>"; };
@@ -2611,6 +2619,7 @@
 		91CE4EF614B57F02C652177F /* GlobalSearchLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSearchLogic.swift; sourceTree = "<group>"; };
 		92C46E8F1322A7D41B684A36 /* ComposerDraftsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerDraftsSheet.swift; sourceTree = "<group>"; };
 		92E2111DB061D2145C10FEC5 /* NWCBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NWCBackupService.swift; sourceTree = "<group>"; };
+		93215412F91AC6778B7ED535 /* BlossomService+MeshDelete.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlossomService+MeshDelete.swift"; sourceTree = "<group>"; };
 		933A5866D724C6642AC6533B /* MediaCacheService+DiskCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MediaCacheService+DiskCache.swift"; sourceTree = "<group>"; };
 		9347328EA88F849DF9639F14 /* PagePDFRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PagePDFRenderer.swift; sourceTree = "<group>"; };
 		93478F128B3552096C953E1B /* BitcoinSweepEstimate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinSweepEstimate.swift; sourceTree = "<group>"; };
@@ -3189,6 +3198,7 @@
 				50F86F7EE1F2369C32106CFE /* BlossomService+Download.swift */,
 				AD7C75DADB5410D449F14955 /* BlossomService+ExternalMirror.swift */,
 				AAB509F2A30B9B45176A3489 /* BlossomService+LocalUpload.swift */,
+				93215412F91AC6778B7ED535 /* BlossomService+MeshDelete.swift */,
 				80E8DDC285524202934229A5 /* BlossomService+Mirroring.swift */,
 				125339BC390902958460CB6C /* BlossomService+PostUpload.swift */,
 				6E342C8296FB88060B9FC675 /* BlossomService+Presence.swift */,
@@ -4068,11 +4078,13 @@
 				A7F7D5B8237EEF6E947F2E02 /* MarketListing.swift */,
 				62B1CCA082F36A09EF426579 /* MarketScopeGate.swift */,
 				FEC8D69A1DD319E0BBC022F1 /* MediaDateGrouping.swift */,
+				2777E951D68131C64DAEAA23 /* MediaDeleteWording.swift */,
 				FE2060B412DD17816F0495D8 /* MediaItem.swift */,
 				78947C68D9C77DF8F43687BF /* MediaNoteMatch.swift */,
 				177153C4A2D4AFBC483689BE /* MediaPostRetry.swift */,
 				70378B160E275AD7443C4260 /* MediaShareLink.swift */,
 				64BBE97369E66B2804EFFC5F /* MediaVaultLink.swift */,
+				66353FF82388024A6211F22C /* MeshDeleteTargets.swift */,
 				CDFEEEE3A5F4A53B832E01EE /* MeshDevices.swift */,
 				34DCE0355B3090ED15513B4A /* MeshPairing.swift */,
 				0F0E74199E8E25A07F27928B /* MeshPairingConfirmWindow.swift */,
@@ -4978,6 +4990,7 @@
 				B47625D1EBF2AD53AF3E7BBD /* BlossomService+Download.swift in Sources */,
 				1128386BCB6EA0F90C6A6C14 /* BlossomService+ExternalMirror.swift in Sources */,
 				3F21BB94AF95CD331C1DD1EE /* BlossomService+LocalUpload.swift in Sources */,
+				2CD0ED8D1E267E207D174114 /* BlossomService+MeshDelete.swift in Sources */,
 				26272FE4E62C5EAE020ADBF9 /* BlossomService+Mirroring.swift in Sources */,
 				FC0E9B79F57A815ED1D00BDE /* BlossomService+PostUpload.swift in Sources */,
 				C0868BFDDD8279ABD3D6990E /* BlossomService+Presence.swift in Sources */,
@@ -5371,6 +5384,7 @@
 				DDF88C90EED2AAB24C40E13E /* MediaCacheService.swift in Sources */,
 				44E80A628D1FFA5E86841553 /* MediaCopyFileRow.swift in Sources */,
 				81E4B84A7AD7E745DE93E2A4 /* MediaDateGrouping.swift in Sources */,
+				90944A821D57E5A3CB52C1C3 /* MediaDeleteWording.swift in Sources */,
 				040DD927F572B12A2A02312B /* MediaGalleryDataProcessing.swift in Sources */,
 				18D877F6D6B57C3C14907074 /* MediaGalleryGrid.swift in Sources */,
 				749BD0ED1C39EA1001BFD198 /* MediaGalleryToolbar.swift in Sources */,
@@ -5405,6 +5419,7 @@
 				1F28F57023B41F320C1D7A3B /* MenuBarView+Sidebar.swift in Sources */,
 				87115DD7372EA9CF7317ADD3 /* MenuBarView+TabBar.swift in Sources */,
 				E50C4B4F8787584FC7E29EA2 /* MenuBarView.swift in Sources */,
+				C6F9DC7A718F1CEA23A5CA18 /* MeshDeleteTargets.swift in Sources */,
 				8ECF8568B8F80F5213816DF7 /* MeshDevices.swift in Sources */,
 				EDCC11293EC1A7BB105D2DCE /* MeshIdentityReset.swift in Sources */,
 				AB7F8F34512CA3C52285854B /* MeshMediaRouter+Live.swift in Sources */,
@@ -5985,6 +6000,7 @@
 				8448DD5389D070385122456E /* BlossomService+Download.swift in Sources */,
 				A7DACD373A5AF63152E0B1AE /* BlossomService+ExternalMirror.swift in Sources */,
 				4C3FE1C20BEBCAA94022D784 /* BlossomService+LocalUpload.swift in Sources */,
+				FE5567237796A2AE1F75E6B7 /* BlossomService+MeshDelete.swift in Sources */,
 				A9F61360795D5D8B2007582E /* BlossomService+Mirroring.swift in Sources */,
 				2F1EB307947AE9926E01F5B4 /* BlossomService+PostUpload.swift in Sources */,
 				A5426B9936B2F8DD06D601FA /* BlossomService+Presence.swift in Sources */,
@@ -6370,6 +6386,7 @@
 				5E7C388BDCF4352D837F6ED9 /* MediaCacheService.swift in Sources */,
 				5B55C977E5ADD84B68CF98E1 /* MediaCopyFileRow.swift in Sources */,
 				4295059D93DE26D8335EE808 /* MediaDateGrouping.swift in Sources */,
+				35AFA5B050700FDD3363075F /* MediaDeleteWording.swift in Sources */,
 				98F3C8B40BF9B4F8F3C99EBD /* MediaGalleryDataProcessing.swift in Sources */,
 				346E57283E62BF450CDC1B58 /* MediaGalleryGrid.swift in Sources */,
 				BF1F6EADB3CD222E4B0C6072 /* MediaGalleryToolbar.swift in Sources */,
@@ -6404,6 +6421,7 @@
 				202B56C429C91D0B21574F1F /* MenuBarView+Sidebar.swift in Sources */,
 				55657F564136D2FA6CF59EFD /* MenuBarView+TabBar.swift in Sources */,
 				D3ED7A3CC129E99735F99CB6 /* MenuBarView.swift in Sources */,
+				07F1C2CD04A0B5BE9D2C32E8 /* MeshDeleteTargets.swift in Sources */,
 				7A1150CE373429DACC50BDC7 /* MeshDevices.swift in Sources */,
 				D5F589CB24E1407D75DEF741 /* MeshIdentityReset.swift in Sources */,
 				A497F168AB85DD029F0035BF /* MeshMediaRouter+Live.swift in Sources */,

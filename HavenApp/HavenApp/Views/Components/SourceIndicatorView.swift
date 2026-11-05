@@ -272,7 +272,7 @@ enum MediaBackupActions {
             ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: leftover,
                                            tone: .warning, seconds: 6)
         } else {
-            ActionToastManager.shared.show(icon: "trash", message: "Deleted", tone: .success)
+            ActionToastManager.shared.show(icon: "trash", message: "Deleted everywhere", tone: .success)
         }
         return localOk
     }

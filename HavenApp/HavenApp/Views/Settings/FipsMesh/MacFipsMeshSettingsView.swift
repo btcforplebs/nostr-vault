@@ -191,6 +191,10 @@ struct MacFipsMeshSettingsView: View {
             Text("Your phones sync with this Mac. Check sync from Mesh on the phone.")
                 .font(.appCaption)
                 .foregroundColor(.secondary)
+            // The iPhone's twin is in FipsMeshShareSection (was a "Photos go to" picker).
+            Text(MeshPhotoPath.explainer)
+                .font(.appCaption)
+                .foregroundColor(.secondary)
         } header: {
             Text("Sync")
         }
