@@ -58,6 +58,17 @@ final class BlossomFolderIndexTests: XCTestCase {
         XCTAssertNil(index.file(forHash: a, in: dir))
     }
 
+    /// The relay writes `<sha>.tmp` then renames it: a half-written or
+    /// restoring copy must not count as the stored photo.
+    func testAPartialCopyIsNeverReturned() throws {
+        for ext in ["tmp", "part", "restoring", "download"] { try write("\(a).\(ext)") }
+        let index = BlossomFolderIndex()
+        XCTAssertNil(index.file(forHash: a, in: dir))
+        try write("\(a).jpg")
+        index.invalidate()
+        XCTAssertEqual(index.file(forHash: a, in: dir)?.lastPathComponent, "\(a).jpg")
+    }
+
     func testAnotherFolderIsListedOnItsOwn() throws {
         try write("\(a).jpg")
         let index = BlossomFolderIndex()

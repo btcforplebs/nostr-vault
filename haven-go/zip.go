@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -70,7 +71,25 @@ func ZipDirectory(source, target string) error {
 	})
 }
 
-// UnzipDirectory extracts a zip archive to the destination directory.
+// unzipKeepFree is left free on the device by an unzip: a media restore
+// that fills the disk would take the vault (and the phone) down with it.
+const unzipKeepFree = 1 << 30 // 1 GiB
+
+// unzipMaxEntries caps the files one archive may unpack.
+const unzipMaxEntries = 1_000_000
+
+// unzipFallbackCap is the byte cap when free space can't be measured.
+const unzipFallbackCap = 64 << 30 // 64 GiB
+
+// unzipFreeBytes measures free space; a test stands in for a full disk.
+var unzipFreeBytes = freeBytes
+
+var errUnzipTooBig = errors.New("archive is bigger than the free space on this device")
+
+// UnzipDirectory extracts a zip archive to the destination directory. It
+// stops once the bytes written (counted, not taken from the headers) would
+// leave less than unzipKeepFree on the disk, and writes every file 0600:
+// the zip's own modes could make a blob the relay can't read.
 func UnzipDirectory(archive, dest string) error {
 	reader, err := zip.OpenReader(archive)
 	if err != nil {
@@ -79,7 +98,21 @@ func UnzipDirectory(archive, dest string) error {
 	defer reader.Close()
 
 	dest = filepath.Clean(dest)
+	if err := os.MkdirAll(dest, 0o700); err != nil {
+		return err
+	}
+	if len(reader.File) > unzipMaxEntries {
+		return fmt.Errorf("archive has %d entries, more than %d", len(reader.File), unzipMaxEntries)
+	}
+	budget := uint64(unzipFallbackCap)
+	if free, ok := unzipFreeBytes(dest); ok {
+		if free <= unzipKeepFree {
+			return errUnzipTooBig
+		}
+		budget = free - unzipKeepFree
+	}
 
+	var written uint64
 	for _, file := range reader.File {
 		path := filepath.Join(dest, file.Name)
 
@@ -89,15 +122,17 @@ func UnzipDirectory(archive, dest string) error {
 		}
 
 		if file.FileInfo().IsDir() {
-			os.MkdirAll(path, os.ModePerm)
+			if err := os.MkdirAll(path, 0o700); err != nil {
+				return err
+			}
 			continue
 		}
 
-		if err := os.MkdirAll(filepath.Dir(path), os.ModePerm); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return err
 		}
 
-		dstFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
+		dstFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 		if err != nil {
 			return err
 		}
@@ -108,12 +143,18 @@ func UnzipDirectory(archive, dest string) error {
 			return err
 		}
 
-		_, err = io.Copy(dstFile, srcFile)
+		// One byte past the budget says the archive doesn't fit.
+		n, err := io.Copy(dstFile, io.LimitReader(srcFile, int64(budget-written)+1))
 		dstFile.Close()
 		srcFile.Close()
+		written += uint64(n)
 
 		if err != nil {
 			return err
+		}
+		if written > budget {
+			_ = os.Remove(path)
+			return errUnzipTooBig
 		}
 	}
 

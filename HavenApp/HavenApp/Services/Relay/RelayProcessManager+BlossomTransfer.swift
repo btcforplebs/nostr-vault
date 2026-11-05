@@ -150,51 +150,32 @@ extension RelayProcessManager {
             let result = UnzipDirectoryC(cSrc, cDst)
             free(cSrc)
             free(cDst)
-            
+            // 3. Move the files in, off the main actor: each one is hashed
+            // against its name first (BlossomArchiveRestore).
+            let restored: BlossomArchiveRestore.Result? = result == 0
+                ? BlossomArchiveRestore.restore(from: stagingDir, into: blossomDir)
+                : nil
+            try? FileManager.default.removeItem(at: tempZipURL)
+            try? FileManager.default.removeItem(at: stagingDir)
+
             Task { @MainActor in
-                // Cleanup zip copy
-                try? FileManager.default.removeItem(at: tempZipURL)
-                
-                if result == 0 {
-                    // 3. Process files in staging
-                    do {
-                        let fileURLs = try FileManager.default.contentsOfDirectory(at: stagingDir, includingPropertiesForKeys: nil)
-                        var count = 0
-                        
-                        for fileURL in fileURLs {
-                            if fileURL.hasDirectoryPath { continue }
-                            if fileURL.lastPathComponent.hasPrefix(".") { continue }
-                            if fileURL.lastPathComponent == "__MACOSX" { continue }
-                            
-                            // Strip extension
-                            let filename = fileURL.deletingPathExtension().lastPathComponent
-                            
-                            // Validate SHA256 (64 hex chars)
-                            if filename.count == 64 && filename.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil {
-                                let destURL = blossomDir.appendingPathComponent(filename)
-                                // Overwrite
-                                if FileManager.default.fileExists(atPath: destURL.path) {
-                                    try FileManager.default.removeItem(at: destURL)
-                                }
-                                try FileManager.default.moveItem(at: fileURL, to: destURL)
-                                count += 1
-                            } else {
-                                self?.logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Skipping invalid blossom file: \(fileURL.lastPathComponent)"))
-                            }
-                        }
-                        
-                        self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom import complete. Imported \(count) files."))
-                        try? FileManager.default.removeItem(at: stagingDir)
-                        completion(true)
-                        
-                    } catch {
-                         self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Error processing imported files: \(error)"))
-                         try? FileManager.default.removeItem(at: stagingDir)
-                         completion(false)
+                if let restored {
+                    if restored.mismatched > 0 {
+                        self?.logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Skipped \(restored.mismatched) media files whose contents don't match their names"))
                     }
+                    if restored.skipped > 0 {
+                        self?.logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Skipped \(restored.skipped) files that aren't vault media"))
+                    }
+                    if restored.imported == 0 {
+                        // Nothing restored is a failure, not "restored".
+                        self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom import found no media files in the backup"))
+                        completion(false)
+                        return
+                    }
+                    self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom import complete. Imported \(restored.imported) files."))
+                    completion(true)
                 } else {
-                    self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Unzip failed in Go process"))
-                    try? FileManager.default.removeItem(at: stagingDir)
+                    self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Unzip failed in Go process (bad archive, or too big for the free space)"))
                     completion(false)
                 }
             }

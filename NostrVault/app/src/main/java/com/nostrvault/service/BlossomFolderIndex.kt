@@ -45,13 +45,22 @@ class BlossomFolderIndex(private val clock: () -> Long = System::currentTimeMill
         readAt = clock()
         val found = HashMap<String, String>()
         dir.list()?.forEach { name ->
-            if (name.startsWith(".") || name.length < 66 || name[64] != '.' || name.endsWith(".corrupt")) return@forEach
+            if (name.startsWith(".") || name.length < 66 || name[64] != '.' || isPartial(name)) return@forEach
             found.putIfAbsent(name.substring(0, 64), name)
         }
         byHash = found
     }
 
     companion object {
+        /**
+         * Files that are not the blob: the relay's write-then-rename temp, one the viewer set aside as broken, and
+         * the apps' download and restore temps (haven-go load_blob.go partialBlobSuffixes). Counting a half-written
+         * `<sha>.tmp` as stored made mirroring skip that photo for good.
+         */
+        private val PARTIAL_SUFFIXES = listOf(".tmp", ".corrupt", ".part", ".restoring", ".download")
+
+        fun isPartial(name: String): Boolean = PARTIAL_SUFFIXES.any { name.endsWith(it) }
+
         /** A folder date this close to the listing may hide a change made in the same tick. */
         const val SETTLE_MS = 2_000L
     }
