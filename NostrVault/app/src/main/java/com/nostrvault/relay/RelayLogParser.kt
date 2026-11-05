@@ -83,6 +83,8 @@ object RelayLogParser {
         var progressBump: Boolean = false,
     )
 
+    /** "2024-03-15": a log line's date, not some other ten characters. */
+    private val DAY = Regex("""\d{4}-\d{2}-\d{2}""")
     private val ANALYSED_REGEX = Regex("""(?:analysed|count=)(\d+)""", RegexOption.IGNORE_CASE)
     private val TRUST_GRAPH_REGEX = Regex("""(?:kept=|followers: )(\d+)""", RegexOption.IGNORE_CASE)
     private val PUBKEYS_REGEX = Regex("""pubkeys=(\d+)""", RegexOption.IGNORE_CASE)
@@ -120,12 +122,14 @@ object RelayLogParser {
                 batch.importStatusMessage = "Connected to relays..."
             }
             line.contains("Imported") && line.contains("notes") && !line.contains("complete") -> {
-                line.substringAfterLast("to ", "").take(10).let { dateStr ->
-                    if (dateStr.isNotEmpty()) batch.progressDateStr = dateStr
-                }
-                val from = line.substringAfter("from ", "").substringBefore(" to", "")
-                batch.importStatusMessage = if (from.isNotEmpty()) {
-                    "Found notes from $from..."
+                val dateStr = line.substringAfterLast("to ", "").take(10)
+                if (dateStr.isNotEmpty()) batch.progressDateStr = dateStr
+                // The month on screen is the range's END: a whole-history
+                // lane (import_owner.go) logs "from <start> to <today>", and
+                // showing its start held the screen on "Jan 2023" (12 mini,
+                // 2026-11-05). A window's end is the month just read. Same as iOS.
+                batch.importStatusMessage = if (line.contains("from ") && DAY.matches(dateStr)) {
+                    "Found notes from $dateStr..."
                 } else {
                     "Found notes..."
                 }

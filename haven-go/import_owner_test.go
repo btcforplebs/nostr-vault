@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -665,5 +668,100 @@ func TestOwnerWindowWalkStopsAtItsDeadline(t *testing.T) {
 	}
 	if got >= 365 {
 		t.Fatalf("the walk stored %d notes: it read all ~365 windows, the deadline did nothing", got)
+	}
+}
+
+// A relay whose whole-history lane times out but that answers every window
+// empty, with EOSE (nostr-pub.wellorder.net, 12 mini, 2026-11-05: ~140
+// windows from Jan 2023, the screen stuck on "Jan 2023"). Empty answers widen
+// the window, so four years take a few dozen asks at most, the one recent
+// note still comes, and every window logs a line the import screen reads.
+func TestMoveInEmptyWindowsWidenInsteadOfWalkingEveryOne(t *testing.T) {
+	noNegentropy(t)
+	owner, db := moveInSetup(t, 1400, "wss://empty.example")
+	recent := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, CreatedAt: nostr.Timestamp(time.Now().Add(-5 * 24 * time.Hour).Unix()), Content: "the one recent note"})
+	var mu sync.Mutex
+	windows := 0
+	prev := importPage
+	importPage = func(_ context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		if f.Until == nil {
+			return nil, false // the whole-history lane: times out, so it is walked
+		}
+		windows++
+		if f.Matches(&recent) {
+			return []*nostr.Event{&recent}, true
+		}
+		return nil, true // empty, with EOSE
+	}
+	t.Cleanup(func() { importPage = prev })
+	var buf bytes.Buffer
+	prevOut := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(prevOut) })
+
+	importOwnerNotes(context.Background())
+
+	if windows > 30 {
+		t.Fatalf("an empty relay was asked %d times for 1,400 days: the walk did not widen (10-day windows: ~140)", windows)
+	}
+	if got := count(t, db, owner.pk); got != 1 {
+		t.Fatalf("vault has %d notes, want the 1 recent one: widening skipped it", got)
+	}
+	out := buf.String()
+	first := "No notes found for " + time.Now().AddDate(0, 0, -1400).Format(layout)
+	if !strings.Contains(out, first) {
+		t.Fatalf("the walk's first window logged no line the import screen reads (%q):\n%s", first, out)
+	}
+	if !strings.Contains(out, "(window by window)") {
+		t.Fatalf("the window with the recent note logged no Imported line:\n%s", out)
+	}
+}
+
+// A relay that times out on anything wider than 30 days: a widened window it
+// can't answer is read again 10 days at a time, so widening never costs a
+// note (and the timeout is not counted against the relay).
+func TestMoveInWidenedWindowThatTimesOutIsReadAgainNarrow(t *testing.T) {
+	noNegentropy(t)
+	owner, db := moveInSetup(t, 400, "wss://narrow.example")
+	notes := spread(t, owner, 480, time.Hour) // the last 20 days
+	r := &pagingRelay{held: notes}
+	var mu sync.Mutex
+	prev := importPage
+	importPage = func(_ context.Context, _ string, f nostr.Filter) ([]*nostr.Event, bool) {
+		if f.Until == nil || f.Since == nil || *f.Until-*f.Since > 30*24*3600 {
+			return nil, false // too wide: times out
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		return r.answer(f)
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	importOwnerNotes(context.Background())
+
+	if got := count(t, db, owner.pk); got != 480 {
+		t.Fatalf("vault has %d of 480 notes: a widened window that timed out was not read again narrow", got)
+	}
+}
+
+// A lane that ends with an empty EOSE has nothing older: it is asked once and
+// never walked window by window.
+func TestMoveInEmptyLaneIsNotWalked(t *testing.T) {
+	noNegentropy(t)
+	_, _ = moveInSetup(t, 1400, "wss://nothing.example")
+	asked := 0
+	prev := importPage
+	importPage = func(context.Context, string, nostr.Filter) ([]*nostr.Event, bool) {
+		asked++
+		return nil, true
+	}
+	t.Cleanup(func() { importPage = prev })
+
+	importOwnerNotes(context.Background())
+
+	if asked != 1 {
+		t.Fatalf("an empty lane was asked %d times, want 1 (no window walk)", asked)
 	}
 }

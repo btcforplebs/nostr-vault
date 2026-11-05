@@ -34,8 +34,10 @@ import (
 //  3. Every other relay pages its whole history newest first: a sparse year
 //     costs one request instead of 36.
 //  4. A relay whose lane stopped partway, or never answered, is read the old
-//     way, window by window (dropped after 3 silent windows), so no relay
-//     gives fewer notes than before.
+//     way, window by window (dropped after 3 silent windows; windows widen
+//     while every relay answers empty), so no relay gives fewer notes than
+//     before. A lane that ended with an empty EOSE has nothing older and is
+//     not walked at all.
 //
 // Live, Logen's 8 relays (2026-11-04): 21 s instead of 29 m 24 s, every note
 // the old walk found (bar 8 he had deleted); a re-run 32 s and 251 requests
@@ -313,8 +315,21 @@ const importSilentWindows = 3
 // Shorter in tests.
 var importWalkDeadline = 15 * time.Minute
 
-// importOwnerWindows is the old walk, 10 days at a time from start, for the
-// relays whose lane didn't finish. Returns how many notes it stored.
+// importWindowStride: the walk's base window, 10 days.
+const importWindowStride = 240 * time.Hour
+
+// importMaxStride: the widest window the walk grows to, 160 days. A run of
+// windows every relay answers empty (EOSE, no notes) doubles the next one, so
+// a relay with nothing older (nostr-pub.wellorder.net, 12 mini, 2026-11-05)
+// costs a dozen asks for four years instead of ~140, and its later notes
+// still come: an empty answer is never a reason to stop asking.
+const importMaxStride = 16 * importWindowStride
+
+// importOwnerWindows is the old walk, from start, for the relays whose lane
+// didn't finish: 10 days at a time, wider while every relay answers empty.
+// Each window logs one line ("Imported N notes from X to Y" or "No notes
+// found for X to Y") that the apps' import screens read, so the month on
+// screen is the month being read. Returns how many notes it stored.
 func importOwnerWindows(ctx context.Context, relays []string, start time.Time, owners []string, keep func(*nostr.Event) bool) int {
 	stored := 0
 	silent := map[string]int{}
@@ -322,9 +337,11 @@ func importOwnerWindows(ctx context.Context, relays []string, start time.Time, o
 	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, importWalkDeadline)
 	defer cancel()
-	for begin := start; len(relays) > 0 && !begin.After(time.Now()); begin = begin.Add(240 * time.Hour) {
-		end := begin.Add(240 * time.Hour)
+	stride, maxStride := importWindowStride, importMaxStride
+	for begin := start; len(relays) > 0 && !begin.After(time.Now()); {
+		end := begin.Add(stride)
 		s, u := nostr.Timestamp(begin.Unix()), nostr.Timestamp(end.Unix())
+		before := stored
 		var res windowResult
 		runsafe.Run("importOwnerNotes.windows", func() {
 			res = fetchWindowPaged(ctx, relays, nostr.Filter{Authors: owners, Since: &s, Until: &u}, func(ev *nostr.Event) {
@@ -338,6 +355,23 @@ func importOwnerWindows(ctx context.Context, relays []string, start time.Time, o
 				log.Printf("⚠️ reading %v window by window passed %s; stopped at %s with %d notes", relays, importWalkDeadline, begin.Format(layout), stored)
 			}
 			return stored
+		}
+		failed := len(res.Silent) > 0 || len(res.Quiet) > 0 || len(res.Short) > 0
+		if failed && stride > importWindowStride {
+			// A relay that answers 10 days may time out on a wider range:
+			// read this stretch again 10 days at a time, and never widen
+			// this far again. Nothing is counted against it for the wide ask.
+			maxStride, stride = stride/2, importWindowStride
+			continue
+		}
+		shown := end
+		if now := time.Now(); shown.After(now) {
+			shown = now
+		}
+		if n := stored - before; n > 0 {
+			log.Printf("📦 Imported %d notes from %s to %s (window by window)", n, begin.Format(layout), shown.Format(layout))
+		} else {
+			log.Printf("ℹ️ No notes found for %s to %s", begin.Format(layout), shown.Format(layout))
 		}
 		if len(res.Short) > 0 {
 			log.Printf("⚠️ %d relay(s) stopped partway through %s to %s; their older notes there may be missing: %v",
@@ -357,6 +391,12 @@ func importOwnerWindows(ctx context.Context, relays []string, start time.Time, o
 			}
 			return false
 		})
+		begin = end
+		if res.Notes == 0 && !failed {
+			stride = min(stride*2, maxStride)
+		} else {
+			stride = importWindowStride
+		}
 	}
 	return stored
 }

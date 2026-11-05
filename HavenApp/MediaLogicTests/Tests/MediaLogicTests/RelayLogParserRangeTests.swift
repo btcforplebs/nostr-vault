@@ -7,7 +7,7 @@ final class RelayLogParserRangeTests: XCTestCase {
     func testImportedLineWithEarlierToDoesNotTrap() {
         var batch = RelayLogParser.BatchedStateUpdate()
         RelayLogParser.collectStateChanges(from: "Imported 12 notes to the vault from 2024-03-05 to 2024-03-15", into: &batch)
-        XCTAssertEqual(batch.importStatusMessage, "Found notes from 2024-03-05...")
+        XCTAssertEqual(batch.importStatusMessage, "Found notes from 2024-03-15...")
         XCTAssertEqual(batch.eventsStoredDelta, 12)
     }
 
@@ -23,12 +23,22 @@ final class RelayLogParserRangeTests: XCTestCase {
         XCTAssertEqual(batch.importStatusMessage, "Looking through notes from 2021-05-21...")
     }
 
-    /// The exact import.go format still parses as before.
-    func testImportGoFormatUnchanged() {
+    /// A window line shows the month it reached (its end date).
+    func testImportGoFormatShowsTheEndDate() {
         var batch = RelayLogParser.BatchedStateUpdate()
-        RelayLogParser.collectStateChanges(from: "2026/10/08 00:28:01 📦 Imported 7 notes from 2024-03-05 to 2024-03-15", into: &batch)
-        XCTAssertEqual(batch.importStatusMessage, "Found notes from 2024-03-05...")
+        RelayLogParser.collectStateChanges(from: "2026/10/08 00:28:01 📦 Imported 7 notes from 2024-03-05 to 2024-03-15 (window by window)", into: &batch)
+        XCTAssertEqual(batch.importStatusMessage, "Found notes from 2024-03-15...")
         XCTAssertEqual(batch.progressDateStr, "2024-03-15")
+    }
+
+    /// A whole-history lane (import_owner.go) logs "from <start> to <today>":
+    /// the screen shows today's month, not the start's (12 mini, 2026-11-05:
+    /// it sat on "Jan 2023" while the import ran).
+    func testWholeHistoryLaneShowsTheEndMonth() {
+        var batch = RelayLogParser.BatchedStateUpdate()
+        RelayLogParser.collectStateChanges(from: "2026/11/05 00:49:54 📦 Imported 11 notes from 2023-01-01 to 2026-11-05 (wss://relay.snort.social, paged)", into: &batch)
+        XCTAssertEqual(batch.importStatusMessage, "Found notes from 2026-11-05...")
+        XCTAssertEqual(ImportTourStage(statusMessage: batch.importStatusMessage!, completed: false).text, "Saving your notes from Nov 2026…")
     }
 
     /// The real trigger (Fred's re-shoot, 2026-10-08): a Swift print and a Go
