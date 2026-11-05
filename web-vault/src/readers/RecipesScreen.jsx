@@ -56,7 +56,9 @@ export function RecipesScreen({ ctx }) {
   const shown = unblocked && inCategory(unblocked, category)
   return (
     <div class="reader-feed">
-      <Scopes scopes={RECIPE_SCOPES} value={scope} onPick={pick} onRefresh={load} />
+      <Scopes scopes={RECIPE_SCOPES} value={scope} onPick={pick} onRefresh={load}>
+        {!ctx.signer?.readOnly && <RecipeButton />}
+      </Scopes>
       {chips.length > 0 && (
         <div class="reader-chips" role="tablist" aria-label="Category">
           <button type="button" class={category === null ? "on" : ""} aria-selected={category === null} onClick={() => setCategory(null)}>All</button>
@@ -74,6 +76,14 @@ export function RecipesScreen({ ctx }) {
     </div>
   )
 }
+
+/** The button the iPhone floats over Recipes (FeedActions ModeComposer .recipe): opens New Recipe. */
+export const RecipeButton = () => (
+  <a class="reader-compose" href="#/compose?type=recipe" aria-label="Post a recipe" title="Post a recipe">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 2v20M4 2v6a3 3 0 0 0 6 0V2M17 22V2c-2.2 0-4 2.7-4 7s1.8 5 4 5" /></svg>
+    Recipe
+  </a>
+)
 
 /** The iPhone's empty Recipes: nothing from your follows (Show Global recipes), no relay answered, or nothing came. */
 export function RecipesEmpty({ scope, failed, onGlobal, onRetry }) {

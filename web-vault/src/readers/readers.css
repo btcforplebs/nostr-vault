@@ -4,6 +4,9 @@
 .reader-scope-row button { min-height: 30px; padding: 0 12px; border-radius: 999px; font: var(--t-foot); font-weight: 600;
   background: transparent; color: var(--text-2); border: 1px solid var(--hair); }
 .reader-scope-row button.on { background: var(--s2); color: var(--text); border-color: var(--strong); }
+/* Recipes' Recipe button (New Recipe), at the scope row's right, in the accent. */
+.reader-compose { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 12px; border-radius: 999px;
+  background: var(--accent); color: #fff; font: var(--t-foot); font-weight: 600; text-decoration: none; }
 
 .reader-card { display: block; }
 .reader-card:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }

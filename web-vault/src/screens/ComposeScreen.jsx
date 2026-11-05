@@ -25,6 +25,7 @@ import { takeKeyboard } from "./compose/keyboard.js"
 import { draftKey, forgetIfSent, idbDrafts, reachedRelay } from "./compose/drafts.js"
 import { ComposeKinds, composeType } from "./compose/ComposeKinds.jsx"
 import { ArticleCompose } from "./compose/ArticleCompose.jsx"
+import { RecipeCompose } from "./compose/RecipeCompose.jsx"
 import { PollCompose } from "./compose/PollCompose.jsx"
 import { HighlightCompose } from "./compose/HighlightCompose.jsx"
 import { SEND_ACTIONS, countdownText, sendAction, sendDelaySeconds, startCountdown } from "../net/send-delay.js"
@@ -154,6 +155,7 @@ function useKeyboardFrame(on) {
 export function ComposeScreen(props) {
   const type = props.fixed || props.inline ? "note" : composeType()
   if (type === "article") return <ArticleCompose ctx={props.ctx} />
+  if (type === "recipe") return <RecipeCompose ctx={props.ctx} />
   if (type === "poll") return <PollCompose ctx={props.ctx} />
   if (type === "highlight") return <HighlightCompose ctx={props.ctx} />
   return <NoteCompose {...props} />

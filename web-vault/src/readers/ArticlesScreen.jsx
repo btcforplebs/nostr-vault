@@ -74,7 +74,8 @@ export function ArticlesScreen({ ctx }) {
 /** Following / Global capsules, under the feed picker. Shared by the reader feeds. No Refresh button (Logen
  *  2026-11-04): `onRefresh` runs on its own every READER_RECHECK_MS while the list is at the top (a look reads its
  *  first page again, which would drop the older ones scrolled through), and when the page comes back to the front. */
-export function Scopes({ scopes, value, onPick, onRefresh }) {
+/** `children`: an action at the row's right (Recipes' Recipe button). */
+export function Scopes({ scopes, value, onPick, onRefresh, children }) {
   const box = useRef(null)
   useAutoLook(() => { if (onRefresh && scrollTopOf(feedScroller(box.current)) < AT_TOP_PX) return onRefresh() }, { every: READER_RECHECK_MS, on: !!onRefresh }, [value])
   return (
@@ -82,6 +83,7 @@ export function Scopes({ scopes, value, onPick, onRefresh }) {
       <div class="reader-scope-row" role="tablist" aria-label="Show">
         {scopes.map(s => <button key={s.id} type="button" role="tab" aria-selected={value === s.id} class={value === s.id ? "on" : ""} onClick={() => onPick(s.id)}>{s.label}</button>)}
       </div>
+      {children}
     </div>
   )
 }
