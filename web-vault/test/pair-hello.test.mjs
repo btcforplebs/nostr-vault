@@ -163,3 +163,61 @@ test("an owner list that can't be read is not overwritten by a new link", () => 
   assert.throws(() => addPaired({ npub: npubEncode(keypair().hex), name: "x", role: "phone" }, { storage: s, pubkey: keypair().hex }), /can't be read/)
   assert.equal(s.getItem("nv-vault:fips-owners"), "not-a-key")
 })
+
+// ---- who owns which vault (bug hunt 2026-11-05 #1 and #5) ----
+
+const fakeIdb = () => ({ databases: async () => [], deleteDatabase() { const r = {}; setTimeout(() => r.onsuccess?.()); return r } })
+function twoAccounts() {
+  const s = memStorage()
+  const A = keypair().hex, B = keypair().hex
+  s.setItem("nv-accounts", JSON.stringify([{ method: "readonly", pubkey: A }, { method: "readonly", pubkey: B }]))
+  s.setItem("nv-session", JSON.stringify({ method: "readonly", pubkey: A }))
+  return { s, A, B }
+}
+const saved = s => new Set((s.getItem("nv-vault:fips-owners") ?? "").split(" ").filter(Boolean))
+
+test("removing an account takes the vaults it paired out of the owner set, never into everyone's (#1)", async () => {
+  const { removeAccount } = await import("../src/signer/accounts.js")
+  const { s, A, B } = twoAccounts()
+  const link = keypair().hex, onlyB = keypair().hex, both = keypair().hex
+  s.setItem("nv-vault:fips-owners", link)
+  addPaired({ npub: npubEncode(onlyB), name: "B's Mac", role: "mac" }, { storage: s, pubkey: B })
+  addPaired({ npub: npubEncode(both), name: "shared", role: "phone" }, { storage: s, pubkey: B })
+  addPaired({ npub: npubEncode(both), name: "shared", role: "phone" }, { storage: s, pubkey: A })
+  assert.ok(!ownersForAccount(saved(s), A, { storage: s }).has(onlyB), "before: B's vault isn't A's owner")
+  await removeAccount({ account: { method: "readonly", pubkey: B }, pool: null, storage: s, idb: fakeIdb(), waitMs: 50, session: memStorage() })
+  assert.ok(!saved(s).has(onlyB), "B's vault left the owner set")
+  assert.ok(!ownersForAccount(saved(s), A, { storage: s }).has(onlyB), "and is not A's owner now")
+  assert.ok(saved(s).has(both) && ownersForAccount(saved(s), A, { storage: s }).has(both), "a vault A paired too stays A's")
+  assert.ok(saved(s).has(link), "a link-paired vault is untouched")
+  assert.equal(s.getItem(`nv-vault:fips-paired:${B}`), null)
+})
+
+test("Save vaults keeps other accounts' vaults, and an address typed in is this account's only (#5)", async () => {
+  const { ownerBoxStorage } = await import("../src/net/pair-devices.js")
+  const { s, A, B } = twoAccounts()
+  const link = keypair().hex, bVault = keypair().hex, aVault = keypair().hex, typed = keypair().hex
+  s.setItem("nv-vault:fips-owners", link)
+  addPaired({ npub: npubEncode(bVault), name: "B's Mac", role: "mac" }, { storage: s, pubkey: B })
+  addPaired({ npub: npubEncode(aVault), name: "A's phone", role: "phone" }, { storage: s, pubkey: A })
+  const box = ownerBoxStorage(A, { storage: s })
+  const shown = ownersForAccount(saved(s), A, { storage: s })
+  assert.ok(!shown.has(bVault))
+  // The panel saves what the box shows, unedited: B's vault must survive.
+  box.setItem("fips-owners", [...shown].join(" "))
+  assert.ok(saved(s).has(bVault), "B's vault is still paired")
+  assert.ok(ownersForAccount(saved(s), B, { storage: s }).has(bVault))
+  // Typed in as A: an owner of A's vault, not of B's.
+  box.setItem("fips-owners", [...shown, typed].join(" "))
+  assert.ok(ownersForAccount(saved(s), A, { storage: s }).has(typed))
+  assert.ok(!ownersForAccount(saved(s), B, { storage: s }).has(typed), "typed by A, never B's owner")
+  // Removed from A's box: gone from A's record and the set; B's untouched.
+  box.setItem("fips-owners", [link, typed].join(" "))
+  assert.ok(!saved(s).has(aVault))
+  assert.ok(!(aVault in JSON.parse(s.getItem(`nv-vault:fips-paired:${A}`))))
+  assert.ok(saved(s).has(bVault) && saved(s).has(link))
+  // Other items pass straight through.
+  box.setItem("fips-owner-account", "x")
+  assert.equal(s.getItem("nv-vault:fips-owner-account"), "x")
+  assert.equal(box.getItem("fips-owner-account"), "x")
+})

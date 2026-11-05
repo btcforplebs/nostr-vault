@@ -9,12 +9,15 @@ import { mountFipsPanel } from "../../../web-relay/src/fips/panel.js"
 import { loadRelayIdentity } from "../../../web-relay/src/fips/node.js"
 import { fipsStorage } from "../haven/vault.js"
 import { resetBrowser } from "./SettingsScreen.jsx"
+import { ownerBoxStorage } from "../net/pair-devices.js"
 
 export function RelayScreen({ ctx, log }) {
   const { vault, session } = ctx
   const [address, setAddress] = useState("")
   const [copied, setCopied] = useState(false)
-  useEffect(() => { mountFipsPanel({ haven: vault.haven, owners: vault.owners, log, account: session.pubkey, storage: fipsStorage() }) }, [])
+  // The owner box saves through ownerBoxStorage: the vaults other accounts paired stay, and an address typed here is
+  // this account's (pair-devices.js).
+  useEffect(() => { mountFipsPanel({ haven: vault.haven, owners: vault.owners, log, account: session.pubkey, storage: ownerBoxStorage(session.pubkey) }) }, [])
   // The relay's mesh address is the npub of its own FIPS key (made once, kept in this browser), never the user's key.
   // The FIPS card shows only mesh addresses, never the account: FIPS is not tied to who is signed in.
   // The site has no server: this address over FIPS is the only way to reach the relay.
