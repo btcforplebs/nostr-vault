@@ -19,6 +19,7 @@ export const FEED_ICON = {
   live: "M12 12h.01M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8",
   music: "M9 18V5l11-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM20 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
   relay: "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01",
+  polls: "M5 20V11M12 20V4M19 20v-7M3 20h18", // chart.bar
 }
 export const LIST_ICON = "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"
 const EDIT_ICON = "M4 6h10M4 12h7M4 18h10M18 5v14M15 16l3 3 3-3M15 8l3-3 3 3" // arrow.up.arrow.down + list

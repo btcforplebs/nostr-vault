@@ -18,6 +18,7 @@ import { SettingsScreen } from "../screens/SettingsScreen.jsx"
 import { AccountsScreen } from "../screens/AccountsScreen.jsx"
 import { WalletScreen } from "../screens/WalletScreen.jsx"
 import { WotScreen } from "../screens/WotScreen.jsx"
+import { BookmarksScreen } from "../screens/BookmarksScreen.jsx"
 import { compose } from "../net/actions.js"
 import { parseHash, withParam, sideOf, SPLIT, FULL } from "./routes.js"
 import { keyCommand, SHEET } from "./keys.js"
@@ -84,6 +85,7 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
             : view.route === "vault" ? <VaultScreen ctx={ctx} desk />
             : view.route === "messages" ? <MessagesScreen ctx={ctx} />
             : view.route === "notifications" ? <NotificationsScreen ctx={ctx} />
+            : view.route === "bookmarks" ? <BookmarksScreen ctx={ctx} />
             : null}
         </div>
       )}
