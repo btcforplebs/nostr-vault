@@ -63,6 +63,17 @@ class BlossomService @Inject constructor(
         internal const val AUTO_MIRROR_EVERY_MS = 3L * 60 * 60 * 1000
 
         /** Whether the Media tab's Auto-Mirror should run, given the last finished import (iOS `autoMirrorEvery`). */
+        /**
+         * A Mirror Now result. A server that didn't answer is named: "All media
+         * already mirrored" was shown when the only server couldn't be reached.
+         */
+        internal fun mirrorResultText(count: Int, unreachableHosts: List<String>): String {
+            val done = if (count > 0) "Mirrored $count file${if (count == 1) "" else "s"}" else null
+            if (unreachableHosts.isEmpty()) return done ?: "All media already mirrored"
+            val missed = "Couldn't reach ${unreachableHosts.distinct().joinToString(", ")}"
+            return if (done != null) "$done. $missed" else missed
+        }
+
         internal fun autoMirrorDue(lastImport: Long?, now: Long): Boolean =
             lastImport == null || now < lastImport || now - lastImport >= AUTO_MIRROR_EVERY_MS
     }
@@ -114,11 +125,13 @@ class BlossomService @Inject constructor(
         scope.launch {
             val result = try {
                 var count = 0
+                val unreachable = java.util.concurrent.CopyOnWriteArrayList<String>()
                 // 1. From your Blossom servers (their /list of your files).
                 if (configStore.config.value.activeBlossomMirrors.isNotEmpty()) {
                     count += mirrorAllFromExternal(
                         onProgress = { pct -> _mirrorRun.value = _mirrorRun.value.copy(progress = pct) },
                         onLogMessage = { msg -> _mirrorRun.value = _mirrorRun.value.copy(status = msg) },
+                        onUnreachable = { unreachable += it },
                     )
                 }
                 // 2. From the media links in your notes, on any server (iOS MirrorService).
@@ -128,7 +141,7 @@ class BlossomService @Inject constructor(
                     onLogMessage = { msg -> _mirrorRun.value = _mirrorRun.value.copy(status = msg) },
                 )
                 vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.MEDIA_IMPORT)
-                if (count > 0) "Mirrored $count files" else "All media already mirrored"
+                mirrorResultText(count, unreachable.map(::serverHost))
             } catch (e: Exception) {
                 Log.w(TAG, "Mirror run failed: ${e.message}")
                 "Mirror failed: ${e.message}"
@@ -489,6 +502,8 @@ class BlossomService @Inject constructor(
     suspend fun mirrorAllFromExternal(
         onProgress: ((Float) -> Unit)? = null,
         onLogMessage: ((String) -> Unit)? = null,
+        /** A server whose list of your files couldn't be read (no answer, or an error status). */
+        onUnreachable: ((String) -> Unit)? = null,
     ): Int = withContext(Dispatchers.IO) {
         val mirrors = configStore.config.value.activeBlossomMirrors
         val ownerPubkey = nostrService.ownerHexPubkey
@@ -512,14 +527,18 @@ class BlossomService @Inject constructor(
                     .apply { if (batchAuth.isNotEmpty()) addHeader("Authorization", "Nostr $batchAuth") }
                     .build()
 
-                val response = remoteClient.newCall(request).execute()
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: continue
-                    val blobs = json.decodeFromString<List<BlobDescriptor>>(body)
-                    blobs.mapNotNull { it.sha256 }.forEach { allHashes.add(it) }
+                val body = remoteClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) response.body?.string() else null
                 }
+                if (body == null) {
+                    onUnreachable?.invoke(mirror)
+                    continue
+                }
+                val blobs = json.decodeFromString<List<BlobDescriptor>>(body)
+                blobs.mapNotNull { it.sha256 }.forEach { allHashes.add(it) }
             } catch (e: Exception) {
                 Log.w(TAG, "Blob list fetch from $mirror failed: ${e.message}")
+                onUnreachable?.invoke(mirror)
             }
         }
 

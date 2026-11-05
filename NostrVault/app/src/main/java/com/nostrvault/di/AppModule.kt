@@ -90,6 +90,8 @@ object AppModule {
             // Bounded timeouts so a slow/dead avatar host fails fast (and can retry)
             // instead of hanging forever as a perpetually-blank profile picture.
             .okHttpClient { imageHttpClient() }
+            // A photo that loads drops its "Couldn't reach the owner's vault" (MeshMediaStatus.loaded).
+            .eventListener(com.nostrvault.fips.MeshMediaLoadListener)
             .components {
                 // Before the built-in HTTP fetcher, which would download a whole
                 // video to read one frame of it.

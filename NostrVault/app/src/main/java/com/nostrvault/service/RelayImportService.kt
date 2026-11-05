@@ -262,9 +262,8 @@ class RelayImportService @Inject constructor(
      * op that calls initDBs() (HavenBridge.backupDatabase / restoreDatabase) MUST
      * run while the relay is down, otherwise initDBs() can't acquire the DB and
      * the op returns a non-zero code. The relay status flips to OFFLINE before
-     * StopRelayC -> CloseDBs() actually finishes, so we can't poll it; we wait a
-     * conservative interval (shutdown is bounded to SHUTDOWN_TIMEOUT_MS = 5s) and
-     * retry once if the DB is still locked.
+     * StopRelayC -> CloseDBs() actually finishes, so the op waits for Go to say
+     * the old run has drained and retries a refusal ([ExclusiveDbOp]).
      *
      * @param onStatus progress callback ("Stopping relay…", "Restarting relay…").
      * @param op the Go bridge call; returns 0 on success.
@@ -291,14 +290,9 @@ class RelayImportService @Inject constructor(
 
         return try {
             withContext(Dispatchers.IO) {
-                delay(2500) // let onDestroy -> StopRelayC -> CloseDBs() finish
-                var code = op()
-                if (code != 0) {
-                    // DB may still be closing on a slow shutdown; wait and retry once.
-                    delay(2500)
-                    code = op()
-                }
-                code
+                delay(2500) // let onDestroy -> StopRelayC start the shutdown
+                // The shutdown can take far longer than Go's own 10 s wait (ExclusiveDbOp).
+                ExclusiveDbOp.run(op = op, onStatus = onStatus)
             }
         } finally {
             onStatus("Restarting relay…")

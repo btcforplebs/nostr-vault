@@ -96,7 +96,7 @@ class BackupSettingsViewModel @Inject constructor(
         src: Uri? = null,
         stopRelay: Boolean = false,
         onSuccess: () -> Unit = {},
-        failMessage: (Int) -> String = { "Operation failed (code $it)" },
+        failMessage: (Int) -> String = ::exportFailText,
         op: (File) -> Int,
     ) {
         if (_busy.value) return
@@ -135,6 +135,8 @@ class BackupSettingsViewModel @Inject constructor(
                 onSuccess()
                 _status.value = done
             } catch (e: Exception) {
+                // The picker made the file before anything was written: a failed export must not leave it empty.
+                if (dest != null) withContext(Dispatchers.IO) { discardExport(context, dest) }
                 _status.value = "Error: ${e.message}"
             } finally {
                 _busy.value = false
@@ -273,6 +275,25 @@ internal fun restoreFailText(code: Int): String = when (code) {
     // so: with another account active, its own backup is refused too. Same as iOS #1757.
     2 -> NOT_THIS_VAULTS_BACKUP
     com.nostrvault.service.RelayImportService.BUSY_CODE -> com.nostrvault.service.RelayImportService.BUSY_LINE
+    com.nostrvault.service.ExclusiveDbOp.DRAIN_TIMEOUT_CODE -> com.nostrvault.service.ExclusiveDbOp.DRAIN_TIMEOUT_LINE
     else -> "Restore failed (code $code)."
+}
+
+/** What a failed export says. */
+internal fun exportFailText(code: Int): String = when (code) {
+    com.nostrvault.service.RelayImportService.BUSY_CODE -> com.nostrvault.service.RelayImportService.BUSY_LINE
+    com.nostrvault.service.ExclusiveDbOp.DRAIN_TIMEOUT_CODE -> com.nostrvault.service.ExclusiveDbOp.DRAIN_TIMEOUT_LINE
+    else -> "Export failed (code $code)."
+}
+
+/**
+ * Removes the file the save picker created for an export that then failed, so no
+ * empty zip is left behind to be mistaken for a backup. Best effort: a provider that
+ * refuses both deletes keeps it.
+ */
+private fun discardExport(context: Context, dest: Uri) {
+    val deleted = runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, dest) }
+        .getOrDefault(false)
+    if (!deleted) runCatching { context.contentResolver.delete(dest, null, null) }
 }
 
