@@ -105,6 +105,15 @@ object HavenBridge {
     external fun setAppForeground(on: Boolean)
 
     /**
+     * Stores the file at [path] in this vault's Blossom store as the owner's,
+     * with no signature: the app's own way in for a vault with no account key
+     * (npub only). In-process only, not an HTTP route. The file must hash to
+     * [sha256]. True when the blob is there now.
+     * Maps to Go: ImportOwnerBlobC(path, sha256, mimeType)
+     */
+    external fun importOwnerBlob(path: String, sha256: String, mimeType: String): Boolean
+
+    /**
      * A full Go GC that hands free memory back to the system. Sync and import
      * rounds spike the heap, and Go keeps the peak until something else frees
      * it, which on an idle relay can be an hour away. Tens to hundreds of ms:

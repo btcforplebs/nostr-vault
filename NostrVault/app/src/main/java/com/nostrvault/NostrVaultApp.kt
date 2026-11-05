@@ -54,6 +54,9 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
     @Inject
     lateinit var meshCopyStarter: com.nostrvault.fips.MeshCopyStarter
 
+    @Inject
+    lateinit var mediaImportAfterMovingIn: com.nostrvault.service.MediaImportAfterMovingIn
+
     override fun onCreate() {
         warmUpOffMain()
         super.onCreate()
@@ -91,6 +94,8 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
             com.nostrvault.service.shareportal.PrivateCopyService.clearOpened(this@NostrVaultApp)
         }
         profilePicturePrefetcher.start(applicationScope)
+        // One Import media when the first Moving in finishes.
+        mediaImportAfterMovingIn.start()
         // The allowlisted settings file the mesh copy carries and keeps synced (docs/MESH_COPY_V2_CONTRACT.md §5).
         copySettingsSync.start()
         // The same when the relay comes up; a stopped relay ends its copy run (the engine keeps the state).

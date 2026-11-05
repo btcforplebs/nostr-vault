@@ -18,6 +18,7 @@ extension BlossomService {
             logger.warning("No Blossom mirrors configured")
             return 0
         }
+        let keyless = await vaultIsKeyless
 
         // Get local blob hashes
         let blossomDir = relayDataDir.appendingPathComponent(blossomPath)
@@ -50,7 +51,8 @@ extension BlossomService {
                 ["t", "list"],
                 ["expiration", String(listExpiration)]
             ]
-            let listAuthEvent = await nostrService.signEventAsync(kind: 24242, content: "List blobs", tags: listAuthTags)
+            // A keyless vault signs nothing (no signer to ask); the list is asked for unsigned.
+            let listAuthEvent = keyless ? nil : await nostrService.signEventAsync(kind: 24242, content: "List blobs", tags: listAuthTags)
             var listAuthHeader: String? = nil
             if let authEvent = listAuthEvent,
                let authJSON = try? JSONEncoder().encode(authEvent) {

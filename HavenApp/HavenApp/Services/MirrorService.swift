@@ -141,91 +141,90 @@ class MirrorService: ObservableObject {
         }
     }
 
-    /// Extracts media items from active feed notes in FeedService.shared.notes (owner and whitelisted only)
-
-    /// Fetches all historical notes for the owner from the local relay, extracting associated media URLs.
-    /// This ensures we discover past uploads that are no longer actively in the feed buffer.
+    /// Every one of the owner's notes in the local vault, read page by page
+    /// (`OwnerNotePager`): one query used to return only the newest 250, so
+    /// media in older notes was never imported. Plus the media already in the feed.
     private func fetchAllOwnerMedia(configService: ConfigService, nostrService: NostrService) async -> [MediaItem] {
         let ownerPubkey = nostrService.ownerHexPubkey
         var items = nostrService.noteMedia
-        
+
         guard !ownerPubkey.isEmpty else { return items }
-        let localURLStr = configService.config.nostrURL
-        guard let localURL = URL(string: localURLStr) else { return items }
-        
+        guard let localURL = URL(string: configService.config.nostrURL) else { return items }
+
         let client = WebSocketClient()
         client.isTemporary = true
-        
-        // Use holding class to prevent Swift 6 concurrency capture errors
-        class CancellableHolder {
-            var cancellable: AnyCancellable?
-        }
-        let holder = CancellableHolder()
-        
-        // Use AsyncStream to bridge Combine logic cleanly
-        let stream = AsyncStream<String> { continuation in
-            holder.cancellable = client.messageSubject.sink { msg in
-                continuation.yield(msg)
-            }
-            
-            client.connect(url: localURL)
-            
-            continuation.onTermination = { _ in
-                holder.cancellable?.cancel()
-                DispatchQueue.main.async { client.disconnect() }
-            }
-        }
-        
-        // Wait briefly for WebSocket connection to established
+        let pages = NotePageReader(client: client)
+        client.connect(url: localURL)
+        defer { client.disconnect() }
+        // Wait briefly for the WebSocket connection to be established
         try? await Task.sleep(nanoseconds: 500_000_000)
-        
-        // Fire REQ for all owner's notes
-        let reqId = "mirrorhist"
-        let reqFilter: [String: Any] = ["kinds": [1], "authors": [ownerPubkey]]
-        let reqMsg = ["REQ", reqId, reqFilter] as [Any]
-        
-        if let reqData = try? JSONSerialization.data(withJSONObject: reqMsg),
-           let reqString = String(data: reqData, encoding: .utf8) {
-            client.send(text: reqString)
-        }
-        
-        // Setup a 4 second maximum timeout for historical note fetch
-        let timeoutTask = Task {
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
-            return true
-        }
-        
-        var newMedia = [MediaItem]()
-        
-        for await message in stream {
-            if timeoutTask.isCancelled { break }
-            if Task.isCancelled { break }
 
-            guard let data = message.data(using: .utf8),
-                  let array = try? JSONSerialization.jsonObject(with: data) as? [Any],
-                  array.count >= 2,
-                  let msgType = array[0] as? String else { continue }
-                  
-            if msgType == "EOSE" && (array[1] as? String) == reqId {
-                timeoutTask.cancel()
-                break
-            } else if msgType == "EVENT", array.count >= 3,
-                      let eventDict = array[2] as? [String: Any],
-                      let eventData = try? JSONSerialization.data(withJSONObject: eventDict),
-                      let eventRaw = try? JSONDecoder().decode(NostrEvent.self, from: eventData) {
-                
-                let urls = nostrService.extractMediaURLs(from: eventRaw.content)
-                let eventItems = urls.map { 
-                    MediaItem(id: UUID(), url: $0, type: .unknown, dateAdded: eventRaw.createdAtDate, pubkey: eventRaw.pubkey, tags: eventRaw.tags, mimeType: nil) 
-                }
-                newMedia.append(contentsOf: eventItems)
+        var pageNumber = 0
+        let notes = await OwnerNotePager.collect(
+            owner: ownerPubkey, id: \.id, pubkey: \.pubkey, createdAt: { Int($0.created_at) }
+        ) { until in
+            pageNumber += 1
+            return await pages.fetch(subscription: "mirrorhist\(pageNumber)", filter: OwnerNotePager.filter(owner: ownerPubkey, until: until))
+        }
+        log("Read \(notes.count) of your note(s) from this device's vault (\(pageNumber) page(s))")
+
+        for note in notes {
+            let urls = nostrService.extractMediaURLs(from: note.content)
+            items.append(contentsOf: urls.map {
+                MediaItem(id: UUID(), url: $0, type: .unknown, dateAdded: note.createdAtDate, pubkey: note.pubkey, tags: note.tags, mimeType: nil)
+            })
+        }
+        return items
+    }
+}
+
+/// One REQ at a time over a temporary vault connection: the events of a
+/// subscription until its EOSE, or what came within 8 s.
+@MainActor
+private final class NotePageReader {
+    private let client: WebSocketClient
+    private var cancellable: AnyCancellable?
+    private var waiting: (id: String, events: [NostrEvent], done: CheckedContinuation<[NostrEvent], Never>)?
+
+    init(client: WebSocketClient) {
+        self.client = client
+        cancellable = client.messageSubject.receive(on: DispatchQueue.main).sink { [weak self] in self?.handle($0) }
+    }
+
+    func fetch(subscription id: String, filter: [String: Any]) async -> [NostrEvent] {
+        guard let data = try? JSONSerialization.data(withJSONObject: ["REQ", id, filter] as [Any]),
+              let text = String(data: data, encoding: .utf8) else { return [] }
+        return await withCheckedContinuation { continuation in
+            waiting = (id, [], continuation)
+            client.send(text: text)
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+                self?.finish(id)
             }
         }
-        
-        timeoutTask.cancel()
-        client.disconnect()
-        
-        items.append(contentsOf: newMedia)
-        return items
+    }
+
+    private func handle(_ message: String) {
+        guard let current = waiting,
+              let data = message.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [Any],
+              array.count >= 2, let type = array[0] as? String, (array[1] as? String) == current.id else { return }
+        if type == "EOSE" || type == "CLOSED" {
+            finish(current.id)
+        } else if type == "EVENT", array.count >= 3,
+                  let dict = array[2] as? [String: Any],
+                  let eventData = try? JSONSerialization.data(withJSONObject: dict),
+                  let event = try? JSONDecoder().decode(NostrEvent.self, from: eventData) {
+            waiting?.events.append(event)
+        }
+    }
+
+    private func finish(_ id: String) {
+        guard let current = waiting, current.id == id else { return }
+        waiting = nil
+        if let data = try? JSONSerialization.data(withJSONObject: ["CLOSE", id]), let text = String(data: data, encoding: .utf8) {
+            client.send(text: text)
+        }
+        current.done.resume(returning: current.events)
     }
 }

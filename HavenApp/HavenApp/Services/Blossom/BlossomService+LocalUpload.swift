@@ -82,6 +82,11 @@ extension BlossomService {
     }
 
     func saveToLocalRelay(source: UploadSource, sha256: String, contentType: String, mirrorToExternal: Bool, progress: ((Double) -> Void)? = nil) async -> Bool {
+        // A keyless vault can't sign the upload: in-process, no signer asked.
+        // Nothing to push outside either, since that needs a signature too.
+        if OwnVaultUpload.route(keyless: await vaultIsKeyless) == .inProcess {
+            return await importToOwnVaultInProcess(source: source, sha256: sha256, contentType: contentType)
+        }
         let auth = await makeUploadAuth(sha256: sha256)
         let localResult = await uploadToLocalWithRecovery(source: source, sha256: sha256, contentType: contentType, authBase64: auth)
         guard localResult != nil else {

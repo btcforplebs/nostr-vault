@@ -255,6 +255,8 @@ extension RelayProcessManager {
         case .complete:
             importProgress = 1.0
             importCompleted = true
+            // One Import media when the first Moving in finishes.
+            MediaImportAfterMovingIn.movingInCompleted()
         case .failed:
             importStartFailed = true
         case .partial, .cancelled:

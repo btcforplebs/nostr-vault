@@ -335,6 +335,8 @@ class BlossomService @Inject constructor(
         url: String,
         authHeader: String? = null,
         publicOnly: Boolean = false,
+        /** Import media's way into the vault (keyless or signed); null: [authHeader], signed here if null. */
+        ownVault: OwnVaultAuth? = null,
     ): String? = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder().url(url).get().build()
@@ -349,7 +351,8 @@ class BlossomService @Inject constructor(
             val contentType = response.header("Content-Type") ?: "application/octet-stream"
             val data = readBodyCapped(response, MAX_BLOB_BYTES) ?: return@withContext null
             val sha256 = computeSHA256(data)
-            if (saveToLocalRelay(data, sha256, contentType, authHeader)) sha256 else null
+            val saved = ownVault?.let { saveToOwnVault(data, sha256, contentType, it) } ?: saveToLocalRelay(data, sha256, contentType, authHeader)
+            if (saved) sha256 else null
         } catch (e: Exception) {
             Log.w(TAG, "Mirror $url to local failed: ${e.message}")
             null
@@ -516,7 +519,9 @@ class BlossomService @Inject constructor(
         // (upload isn't bound to a blob hash; list matches the "list" verb). This is
         // a single signer round-trip — one Amber/NIP-46 prompt for the whole pull,
         // instead of one per mirror plus one per blob.
-        val batchAuth = createAuthHeader(listOf("list", "upload"))
+        // A keyless vault signs nothing: its uploads go in-process (OwnVaultAuth).
+        val ownVault = ownVaultAuth(listOf("list", "upload"))
+        val batchAuth = (ownVault as? OwnVaultAuth.Signed)?.header.orEmpty()
 
         // Fetch blob lists from each mirror
         for (mirror in mirrors) {
@@ -546,7 +551,7 @@ class BlossomService @Inject constructor(
         val missing = allHashes.filter { !mediaCacheService.isInLocalBlossom(it) }
         onLogMessage?.invoke("Found ${missing.size} blobs to mirror")
         if (missing.isEmpty()) return@withContext 0
-        if (batchAuth.isEmpty()) {
+        if (ownVault == null) {
             onLogMessage?.invoke("Mirror aborted: could not sign auth event (signer unavailable)")
             return@withContext 0
         }
@@ -559,7 +564,7 @@ class BlossomService @Inject constructor(
                 launch {
                     try {
                         val data = downloadFromMirrors(hash)
-                        if (data != null && saveToLocalRelay(data, hash, "application/octet-stream", batchAuth)) {
+                        if (data != null && saveToOwnVault(data, hash, "application/octet-stream", ownVault)) {
                             saved.incrementAndGet()
                         }
                     } finally {
@@ -587,16 +592,10 @@ class BlossomService @Inject constructor(
         val relay = configStore.config.value.nostrURL
         if (owner.isEmpty() || relay == null) return@withContext 0
 
-        val notes = LinkedHashMap<String, NoteMediaScan.Note>()
-        var until: Long? = null
-        for (page in 0 until NoteMediaScan.MAX_PAGES) {
-            val events = nostrService.queryRawEvents(listOf(NoteMediaScan.pageFilter(owner, until)), listOf(relay), timeoutMs = 8_000L)
-            val fresh = events.mapNotNull(NoteMediaScan::parse).filter { it.pubkey == owner && notes.putIfAbsent(it.id, it) == null }
-            // `until` is inclusive, so a full page that brings nothing new is the end.
-            if (fresh.isEmpty() || events.size < NoteMediaScan.PAGE) break
-            until = fresh.minOf { it.createdAt }
+        val notes = NoteMediaScan.collect(owner) { filter ->
+            nostrService.queryRawEvents(listOf(filter), listOf(relay), timeoutMs = 8_000L)
         }
-        val urls = notes.values.flatMap { note ->
+        val urls = notes.flatMap { note ->
             nostrService.extractMediaURLs(note.content, note.pubkey, note.tags, note.createdAt).map { it.url }
         }
         onLogMessage?.invoke("Found ${urls.size} media link(s) in ${notes.size} note(s)")
@@ -605,9 +604,9 @@ class BlossomService @Inject constructor(
             onLogMessage?.invoke("All note media already exists locally")
             return@withContext 0
         }
-        // One signature for every upload: one signer prompt, not one per file.
-        val auth = createAuthHeader(listOf("upload"))
-        if (auth.isEmpty()) {
+        // One signature for every upload: one signer prompt, not one per file (none when keyless).
+        val auth = ownVaultAuth(listOf("upload"))
+        if (auth == null) {
             onLogMessage?.invoke("Note media skipped: could not sign the upload (signer unavailable)")
             return@withContext 0
         }
@@ -619,7 +618,7 @@ class BlossomService @Inject constructor(
                 mirrorSemaphore.acquire()
                 launch {
                     try {
-                        if (mirrorUrlToLocal(url, auth) != null) saved.incrementAndGet()
+                        if (mirrorUrlToLocal(url, ownVault = auth) != null) saved.incrementAndGet()
                     } finally {
                         mirrorSemaphore.release()
                         onProgress?.invoke(completed.incrementAndGet().toFloat() / toImport.size)
