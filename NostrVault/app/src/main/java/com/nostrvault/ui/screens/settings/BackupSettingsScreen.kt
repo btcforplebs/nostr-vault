@@ -60,8 +60,14 @@ class BackupSettingsViewModel @Inject constructor(
         HavenBridge.backupDatabase(tmp.absolutePath)
     }
 
-    fun importNotes(src: Uri) = run("Restoring notes…", "Notes restored", src = src, stopRelay = true) { tmp ->
-        HavenBridge.restoreDatabase(tmp.absolutePath)
+    /**
+     * Only a backup of this account's own notes is restored, as in setup: the owner-checked restore refuses one
+     * that holds no notes signed by the owner (Tron's import risks, 2026-11-05).
+     */
+    fun importNotes(src: Uri) = run(
+        "Restoring notes…", "Notes restored", src = src, stopRelay = true, failMessage = ::restoreFailText,
+    ) { tmp ->
+        HavenBridge.restoreOwnBackup(tmp.absolutePath)
     }
 
     fun exportMedia(
@@ -90,6 +96,7 @@ class BackupSettingsViewModel @Inject constructor(
         src: Uri? = null,
         stopRelay: Boolean = false,
         onSuccess: () -> Unit = {},
+        failMessage: (Int) -> String = { "Operation failed (code $it)" },
         op: (File) -> Int,
     ) {
         if (_busy.value) return
@@ -114,7 +121,7 @@ class BackupSettingsViewModel @Inject constructor(
                     } else {
                         withContext(Dispatchers.IO) { op(tmp) }
                     }
-                    if (code != 0) error("Operation failed (code $code)")
+                    if (code != 0) error(failMessage(code))
                     if (dest != null) {
                         withContext(Dispatchers.IO) {
                             context.contentResolver.openOutputStream(dest)?.use { out ->
@@ -255,5 +262,12 @@ private fun BackupRow(
             colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
         ) { Text(buttonText) }
     }
+}
+
+/** What a refused notes restore says (haven-go RestoreOwnBackupC: 2 = holds no notes signed by this account). */
+internal fun restoreFailText(code: Int): String = when (code) {
+    2 -> "This backup isn't yours. It holds no notes signed by your key, so nothing was restored."
+    com.nostrvault.service.RelayImportService.BUSY_CODE -> com.nostrvault.service.RelayImportService.BUSY_LINE
+    else -> "Restore failed (code $code)."
 }
 

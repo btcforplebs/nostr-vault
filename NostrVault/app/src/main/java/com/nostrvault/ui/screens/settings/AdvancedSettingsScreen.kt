@@ -110,6 +110,13 @@ class AdvancedSettingsViewModel @Inject constructor(
         }
     }
 
+    /** An import is running: say so and do nothing (Factory Reset, external relay). -> true when refused. */
+    fun refusedWhileImporting(): Boolean {
+        if (!com.nostrvault.service.RelayImportService.importRunning) return false
+        notificationManager.showToast(com.nostrvault.service.RelayImportService.BUSY_LINE, com.nostrvault.ui.notification.PillTone.WARNING)
+        return true
+    }
+
     fun factoryReset(onDone: () -> Unit) {
         viewModelScope.launch {
             // The relay closes its databases before they are deleted (bounded: the reset still goes ahead).
@@ -172,6 +179,7 @@ fun AdvancedSettingsScreen(
             // Android only: another app's relay instead of the built-in one.
             SectionLabel("External Relay", SettingsHelp.RELAY_EXTERNAL)
             ExternalRelaySection(config) { enabled, relayURL, blossomURL ->
+                if (viewModel.refusedWhileImporting()) return@ExternalRelaySection
                 RelayForegroundService.stop(context)
                 viewModel.applyExternalRelay(enabled, relayURL, blossomURL) { relaunchApp(context) }
             }
@@ -199,6 +207,8 @@ fun AdvancedSettingsScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showResetDialog = false
+                    // Never under a running import: the wipe would delete the vault it is writing (Tron's risks #5).
+                    if (viewModel.refusedWhileImporting()) return@TextButton
                     RelayForegroundService.stop(context)
                     viewModel.factoryReset { relaunchApp(context) }
                 }) { Text("Reset Everything", color = ErrorRed) }

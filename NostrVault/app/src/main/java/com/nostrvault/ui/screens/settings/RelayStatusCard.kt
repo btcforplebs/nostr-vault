@@ -35,20 +35,27 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 
 @HiltViewModel
-class RelayStatusCardViewModel @Inject constructor(configStore: ConfigStore) : ViewModel() {
+class RelayStatusCardViewModel @Inject constructor(
+    configStore: ConfigStore,
+    relayImportService: com.nostrvault.service.RelayImportService,
+) : ViewModel() {
     val config = configStore.config
+    /** An import owns the vault: the card says so and offers no Start (Tron's import risks #7). */
+    val isImporting = relayImportService.isImporting
 }
 
 /** The card's status word, as on iOS RelayStatusCard. */
 enum class RelayCardStatus(val label: String) {
-    RUNNING("Running"), STARTING("Starting…"), STOPPED("Stopped"), EXTERNAL("External");
+    RUNNING("Running"), STARTING("Starting…"), IMPORTING("Importing…"), STOPPED("Stopped"), EXTERNAL("External");
 
     companion object {
         /** An external relay is another app's: its health isn't this app's to report. */
-        fun of(status: RelayStatus, external: Boolean): RelayCardStatus = when {
+        fun of(status: RelayStatus, external: Boolean, importing: Boolean = false): RelayCardStatus = when {
             external -> EXTERNAL
+            // The relay is off for the whole import: that is not "Stopped", and Start would cut the import.
+            importing || status == RelayStatus.IMPORTING -> IMPORTING
             status == RelayStatus.RUNNING -> RUNNING
-            status == RelayStatus.BOOTING || status == RelayStatus.IMPORTING -> STARTING
+            status == RelayStatus.BOOTING -> STARTING
             else -> STOPPED
         }
 
@@ -68,10 +75,11 @@ fun RelayStatusCard(viewModel: RelayStatusCardViewModel = hiltViewModel()) {
     val context = LocalContext.current
     val config by viewModel.config.collectAsState()
     val relayStatus by RelayForegroundService.relayStatus.collectAsState()
-    val status = RelayCardStatus.of(relayStatus, config.useExternalRelay)
+    val importing by viewModel.isImporting.collectAsState()
+    val status = RelayCardStatus.of(relayStatus, config.useExternalRelay, importing)
     val color = when (status) {
         RelayCardStatus.RUNNING -> SuccessGreen
-        RelayCardStatus.STARTING -> ZapOrange
+        RelayCardStatus.STARTING, RelayCardStatus.IMPORTING -> ZapOrange
         RelayCardStatus.STOPPED -> ErrorRed
         RelayCardStatus.EXTERNAL -> SecondaryText
     }

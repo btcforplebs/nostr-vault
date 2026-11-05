@@ -206,7 +206,7 @@ internal fun VaultDashboardContent(
                 connections = connections,
             ),
             syncing = wotSyncing && !isExternal,
-            onStart = { RelayForegroundService.start(context) },
+            onStart = { if (!vaultViewModel.refusedWhileBusy()) RelayForegroundService.start(context) },
             // One busy flag: stop, restart and force-clean never cut an import, backup or restore.
             onStop = { if (!vaultViewModel.refusedWhileBusy()) RelayForegroundService.stop(context) },
             onRestart = {

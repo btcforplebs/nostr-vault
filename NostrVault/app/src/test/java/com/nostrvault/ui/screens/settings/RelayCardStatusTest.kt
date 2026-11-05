@@ -9,7 +9,7 @@ class RelayCardStatusTest {
     @Test fun statusWords() {
         assertEquals(RelayCardStatus.RUNNING, RelayCardStatus.of(RelayStatus.RUNNING, external = false))
         assertEquals(RelayCardStatus.STARTING, RelayCardStatus.of(RelayStatus.BOOTING, external = false))
-        assertEquals(RelayCardStatus.STARTING, RelayCardStatus.of(RelayStatus.IMPORTING, external = false))
+        assertEquals(RelayCardStatus.IMPORTING, RelayCardStatus.of(RelayStatus.IMPORTING, external = false))
         assertEquals(RelayCardStatus.STOPPED, RelayCardStatus.of(RelayStatus.OFFLINE, external = false))
         // Another app's relay: no Running/Stopped claim, and no Start button.
         assertEquals(RelayCardStatus.EXTERNAL, RelayCardStatus.of(RelayStatus.OFFLINE, external = true))
@@ -17,5 +17,12 @@ class RelayCardStatusTest {
 
     @Test fun addressIsLoopbackForTheEmbeddedRelay() {
         assertEquals("ws://127.0.0.1:4000", RelayCardStatus.address(HavenConfig(relayPort = 4000)))
+    }
+
+    /** Tron's import risks #7: the relay is off for the whole import, which read as "Stopped" with a Start button. */
+    @org.junit.Test
+    fun `an import is never shown as stopped`() {
+        assertEquals(RelayCardStatus.IMPORTING, RelayCardStatus.of(RelayStatus.OFFLINE, external = false, importing = true))
+        assertEquals(RelayCardStatus.STOPPED, RelayCardStatus.of(RelayStatus.OFFLINE, external = false, importing = false))
     }
 }
