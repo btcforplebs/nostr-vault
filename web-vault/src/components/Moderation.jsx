@@ -1,6 +1,7 @@
 // Block, unblock and report, from a note's ⋯ menu, a profile's ⋯ menu and Settings › Blocked. The dialogs are
 // native <dialog>s (focus held inside, Escape closes). Writing the list is net/blocks.js setBlock; reporting is
 // net/reports.js reportAndBlock, which blocks too, as the iPhone's Report & Block does.
+import { BookmarkMenuItem } from "./BookmarkMenuItem.jsx"
 import { useEffect, useRef, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { actionContext, deleteNote, shareLink } from "../net/actions.js"
@@ -64,6 +65,7 @@ export function MoreMenu({ note, pubkey, className = "" }) {
           {note && <button role="menuitem" onClick={share}>{copied === "share" ? "Link copied" : "Share"}</button>}
           {note && <button role="menuitem" onClick={copy("link", shareLink(note))}>{copied === "link" ? "Link copied" : "Copy link"}</button>}
           {note && text && <button role="menuitem" onClick={copy("text", text)}>{copied === "text" ? "Text copied" : "Copy text"}</button>}
+          {note && <BookmarkMenuItem ctx={ctx} note={note} onDone={() => setOpen(false)} />}
           {note && <hr class="more-sep" />}
           {own && <button role="menuitem" class="danger" onClick={pick("delete")}>Delete post…</button>}
           {!own && note && <button role="menuitem" class="danger" onClick={pick("report")}>Report note…</button>}
