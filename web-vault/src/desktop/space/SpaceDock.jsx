@@ -11,7 +11,10 @@ import { useState } from "preact/hooks"
 import { useVaultUnread } from "../../components/useVaultUnread.js"
 import { badgeCount } from "../../components/useUnreadTotal.js"
 import { readFolded, writeFolded } from "./live-vault.js"
-import { shownPanels, hiddenPanels, setOn, setOpen, moveBy, moveBefore, defaultLayout, sameLayout, resetPanels } from "./space-layout.js"
+import { shownPanels, hiddenPanels, setOn, setOpen, moveBy, moveBefore, defaultLayout, sameLayout, resetPanels, setPins } from "./space-layout.js"
+import { favourite, pin, unpin, isPinned, pinKey, feedPinToWeb } from "../rail/rail-favs.js"
+import { FEED_NAME } from "../rail/RailFavs.jsx"
+import { FEED_ICON, LIST_ICON } from "../../components/FeedPickerMenu.jsx"
 import { useLayout } from "./layout-store.js"
 import { PANELS, PANEL_IDS } from "./panels.js"
 import { CollapseButton, EditTools, AddPanels, useDragPanels } from "./SpaceEdit.jsx"
@@ -99,6 +102,7 @@ export function SpaceDock({ ctx, folded, onFold }) {
                 onAdd={id => change(l => setOn(l, id, true))}
                 onReset={isDefault ? null : () => change(l => resetPanels(l, PANEL_IDS))} />
             )}
+            {editing && <FeedPins pins={layout.pins} onToggle={f => change(l => setPins(l, isPinned(l.pins, f) ? unpin(l.pins, pinKey(f)) : pin(l.pins, f)))} />}
           </>}
         </div>
       </div>
@@ -114,5 +118,27 @@ function RailButton({ d, title, open, badge = 0, onClick }) {
       aria-label={badge > 0 ? `${title}, ${badge} new` : title} onClick={onClick}>
       <Icon d={d} size={19} />{badge > 0 && <span class="sp-mini-badge">{badgeCount(badge)}</span>}
     </button>
+  )
+}
+
+/** Feed types the left rail can carry (Logen, 2026-11-05, as the iPad's Edit): a click pins one there as
+ *  { type: "feed", id }, another takes it off. Following is the Feed section itself, so it isn't offered. */
+function FeedPins({ pins, onToggle }) {
+  return (
+    <section class="sp-feed-pins" aria-label="Feeds on your rail">
+      <p class="sp-feed-pins-head">Feeds on your rail</p>
+      <div class="sp-feed-pins-grid">
+        {Object.entries(FEED_NAME).map(([id, name]) => {
+          const f = favourite("feed", id)
+          const on = isPinned(pins, f)
+          return (
+            <button key={id} type="button" class={on ? "sp-feed-pin on" : "sp-feed-pin"} aria-pressed={on}
+              aria-label={on ? `${name} on your rail. Take off` : `Add ${name} to your rail`} onClick={() => onToggle(f)}>
+              <Icon d={on ? "M5 12l5 5 9-10" : FEED_ICON[feedPinToWeb(id)] ?? LIST_ICON} size={14} />{name}
+            </button>
+          )
+        })}
+      </div>
+    </section>
   )
 }

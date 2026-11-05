@@ -105,3 +105,13 @@
 .sp-link { padding: 0; border: 0; background: none; color: var(--accent-light); font: inherit; text-decoration: underline; cursor: pointer; }
 .sp-reset { justify-self: start; margin: 4px 2px; font: 600 12px var(--font); }
 .sp-nothing { margin: 8px 4px; color: var(--text-2); font: var(--t-foot); }
+
+/* Edit's "Feeds on your rail" (SpaceDock.jsx FeedPins): chips that pin a feed type to the left rail. */
+.sp-feed-pins { flex: none; }
+.sp-feed-pins-head { margin: 10px 0 8px; font: 600 13px var(--font); color: var(--text-2); }
+.sp-feed-pins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+.sp-feed-pin { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border: 0; border-radius: 999px; background: var(--accent-pale);
+  color: var(--accent-light); font: 600 12px var(--font); text-align: left; cursor: pointer; }
+.sp-feed-pin.on { background: var(--accent); color: #1a0d03; }
+/* Editing, every slot keeps its height and the column scrolls (the feed chips below made the column taller). */
+.space-dock.editing .sp-slot { flex-shrink: 0; }

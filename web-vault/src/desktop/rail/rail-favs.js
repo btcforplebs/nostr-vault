@@ -6,7 +6,7 @@
 //
 // A pin is an object with a `type` and that type's value field (docs table):
 //   { type: "section", id }   { type: "list", a: "30000:<hex>:<d>" | "39089:<hex>:<d>" }   { type: "person", p: <hex> }
-//   { type: "hashtag", t }    { type: "relay", url }
+//   { type: "hashtag", t }    { type: "relay", url }    { type: "feed", id: "music" } (a feed type, 2026-11-05)
 // plus an optional `name` (the label when it was pinned). A pin is kept exactly as read, its value normalised: fields,
 // types and section ids this app doesn't know stay where they are and are not drawn.
 
@@ -15,7 +15,10 @@ export const SECTION_IDS = ["feed", "search", "profile", "wot", "vault", "messag
 /** The sections the web's rail draws as rows. Settings is the rail's foot; Notifications and the Dashboard (relay) are
  *  reached from the Vault, so those three stay in the layout without a row here. */
 export const RAIL_SECTIONS = ["feed", "search", "profile", "wot", "vault", "messages"]
-export const VALUE_FIELD = { section: "id", list: "a", person: "p", hashtag: "t", relay: "url" }
+export const VALUE_FIELD = { section: "id", list: "a", person: "p", hashtag: "t", relay: "url", feed: "id" }
+/** Feed pin ids are the iPhone's FeedMode, lower case; the web calls its Hashtag feed "hashtag". */
+export const feedPinToWeb = id => (id === "hashtags" ? "hashtag" : id)
+export const webFeedToPin = id => (id === "hashtag" ? "hashtags" : id)
 /** Most favourites (pins other than sections) the rail keeps. */
 export const MAX_FAVOURITES = 30
 
@@ -46,6 +49,7 @@ export function normalizeValue(type, value) {
       return (kind === "30000" || kind === "39089") && HEX.test(pk) && d ? `${kind}:${pk}:${d}` : ""
     }
     case "relay": return normalizeRelay(v)
+    case "feed": { const id = v.toLowerCase(); return /\s/.test(id) ? "" : id }
     default: return v
   }
 }
@@ -111,6 +115,7 @@ export function pinHref(p) {
     case "hashtag": return `#/feed?tag=${encodeURIComponent(p.t)}`
     case "list": return `#/feed?list=${encodeURIComponent(p.a)}`
     case "relay": return `#/feed?relay=${encodeURIComponent(p.url)}`
+    case "feed": return `#/feed?feed=${encodeURIComponent(feedPinToWeb(p.id))}`
     default: return null
   }
 }
