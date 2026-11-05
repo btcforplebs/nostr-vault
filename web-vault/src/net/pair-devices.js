@@ -94,10 +94,11 @@ export function addPaired(device, { storage, liveOwners, pubkey = activeOf(stora
 export function forgetPairedOf(pubkey, { storage = globalThis.localStorage } = {}) {
   if (!pubkey) return
   const s = fips(storage)
+  const owners = readOwners(s)
+  if (!owners) return // unreadable: left alone, and the record kept so a later remove can still forget them
   const mine = Object.keys(readMap(s, metaKey(pubkey)))
   const others = othersPaired(s, pubkey, storage)
-  const owners = readOwners(s)
-  if (owners && mine.length) {
+  if (mine.length) {
     for (const hex of mine) if (!others.has(hex)) owners.delete(hex)
     saveOwners(owners, s)
   }
@@ -109,7 +110,7 @@ export function forgetPairedOf(pubkey, { storage = globalThis.localStorage } = {
  * `pubkey`. The box shows only this account's owners (and those added by link), so a plain save would drop the vaults
  * other accounts paired, and anything typed in would belong to no account and reach every account's vault (bug hunt
  * 2026-11-05 #5). Here a save of the owner set keeps every owner the box doesn't show, records an added address as this
- * account's, and drops a removed one from this account's record. Everything else passes through.
+ * account's (one another account already paired too), and drops a removed one from this account's record. Everything else passes through.
  */
 export function ownerBoxStorage(pubkey, { storage = globalThis.localStorage } = {}) {
   const base = fips(storage)
@@ -118,13 +119,14 @@ export function ownerBoxStorage(pubkey, { storage = globalThis.localStorage } = 
     removeItem: k => base.removeItem(k),
     setItem(k, v) {
       if (k !== OWNERS_ITEM || !pubkey) return base.setItem(k, v)
-      const before = readOwners(base) ?? new Set()
+      const before = readOwners(base)
+      if (!before) throw new Error("This browser's list of linked devices can't be read, so nothing was saved.")
       const shown = ownersForAccount(before, pubkey, { storage })
       let next
       try { next = parseOwners(String(v)) } catch { return base.setItem(k, v) }
       const hidden = [...before].filter(hex => !shown.has(hex))
       const meta = readMeta(base, pubkey)
-      for (const hex of next) if (!before.has(hex)) meta[hex] ??= { name: "", role: null }
+      for (const hex of next) if (!shown.has(hex)) meta[hex] ??= { name: "", role: null }
       for (const hex of Object.keys(meta)) if (shown.has(hex) && !next.has(hex)) delete meta[hex]
       base.setItem(metaKey(pubkey), JSON.stringify(meta))
       saveOwners(new Set([...hidden, ...next]), base)

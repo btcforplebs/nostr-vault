@@ -221,3 +221,31 @@ test("Save vaults keeps other accounts' vaults, and an address typed in is this 
   assert.equal(s.getItem("nv-vault:fips-owner-account"), "x")
   assert.equal(box.getItem("fips-owner-account"), "x")
 })
+
+test("Save vaults: an address another account already paired, typed in, becomes this account's too (Tron 1726)", async () => {
+  const { ownerBoxStorage } = await import("../src/net/pair-devices.js")
+  const { s, A, B } = twoAccounts()
+  const x = keypair().hex
+  s.setItem("nv-vault:fips-owners", "")
+  addPaired({ npub: npubEncode(x), name: "A's Mac", role: "mac" }, { storage: s, pubkey: A })
+  const shownB = ownersForAccount(saved(s), B, { storage: s })
+  assert.ok(!shownB.has(x))
+  ownerBoxStorage(B, { storage: s }).setItem("fips-owners", [...shownB, x].join(" "))
+  assert.ok(ownersForAccount(saved(s), B, { storage: s }).has(x), "B reaches x after typing it")
+  assert.ok(x in JSON.parse(s.getItem(`nv-vault:fips-paired:${B}`)))
+  assert.equal(JSON.parse(s.getItem(`nv-vault:fips-paired:${A}`))[x].name, "A's Mac", "A's record untouched")
+})
+
+test("An unreadable owner set is never overwritten by Save vaults or by removing an account", async () => {
+  const { ownerBoxStorage, forgetPairedOf } = await import("../src/net/pair-devices.js")
+  const { s, A, B } = twoAccounts()
+  const x = keypair().hex
+  s.setItem("nv-vault:fips-owners", "")
+  addPaired({ npub: npubEncode(x), name: "B's Mac", role: "mac" }, { storage: s, pubkey: B })
+  s.setItem("nv-vault:fips-owners", "not-an-address")
+  assert.throws(() => ownerBoxStorage(A, { storage: s }).setItem("fips-owners", x), /can't be read/)
+  assert.equal(s.getItem("nv-vault:fips-owners"), "not-an-address")
+  forgetPairedOf(B, { storage: s })
+  assert.equal(s.getItem("nv-vault:fips-owners"), "not-an-address")
+  assert.ok(x in JSON.parse(s.getItem(`nv-vault:fips-paired:${B}`)), "B's record kept")
+})
