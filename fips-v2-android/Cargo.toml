@@ -21,7 +21,7 @@ fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev
 # The browser relay protocol (NIP-01 over TCP/FIPS 7447), over this node's
 # datagram API: relay_link.rs.
 web-relay-vault = { path = "../web-relay-vault" }
-smoltcp = { version = "0.12", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"] }
+smoltcp = { version = "0.13.1", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
