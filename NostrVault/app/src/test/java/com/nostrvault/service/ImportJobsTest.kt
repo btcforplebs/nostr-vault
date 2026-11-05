@@ -59,4 +59,24 @@ class ImportJobsTest {
         assertEquals("Another one is running. One at a time.", ImportJobs.runRefusal(ImportJobs.RUN_BUSY))
         assertEquals("Your vault isn't running. Start it, then try again.", ImportJobs.runRefusal(ImportJobs.RUN_RELAY_NOT_RUNNING))
     }
+
+    @Test
+    fun `an unread line shows the host, never a path with a secret in it`() {
+        val job = ImportJobs.Job(name = "older_relays", unread = listOf(ImportJobs.Unread(relay = "ws://127.0.0.1:4100/s3cret", from = "2020-11-01", to = "2026-11-05", why = "not_read_yet")))
+        assertEquals("127.0.0.1:4100: 2020-11-01 to 2026-11-05 (not read yet)", ImportJobs.unreadLines(job).single())
+    }
+
+    @Test
+    fun `the other vault's address closes once nothing is left to read from it`() {
+        val url = "ws://127.0.0.1:4100/s3cret"
+        fun jobs(older: String, unread: String?) = ImportJobs.parse("""
+            {"jobs":[{"name":"setup","status":"partial"},
+              {"name":"older_relays","status":"$older","unread":[${unread?.let { "{\"relay\":\"$it\",\"why\":\"not_read_yet\"}" } ?: ""}]}]}
+        """.trimIndent())!!
+        assertTrue(FirstRunImport.stillToRead(jobs("partial", url), url))
+        assertTrue(FirstRunImport.stillToRead(jobs("partial", "$url/"), url))
+        assertTrue(FirstRunImport.stillToRead(jobs("running", null), url))
+        assertFalse(FirstRunImport.stillToRead(jobs("done", null), url))
+        assertFalse(FirstRunImport.stillToRead(jobs("partial", "wss://nostr.wine"), url))
+    }
 }

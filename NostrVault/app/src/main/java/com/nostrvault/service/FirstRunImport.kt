@@ -87,8 +87,8 @@ class FirstRunImport @Inject constructor(
                 setup == null -> Unit
                 setup.letsIn -> {
                     dropOtherVaultSeed()
-                    // All read: the address goes. Partial keeps it for older_relays (OtherVaultCopy.KEEP_LINK_MS).
-                    if (otherVault != null && setup.status != ImportJobs.PARTIAL) otherVaultLink.close()
+                    // The address goes as soon as nothing is left to read from it (Tron, #1777).
+                    otherVault?.let(::closeLinkWhenRead)
                     _state.value = State.In(partial = setup.status == ImportJobs.PARTIAL, stored = setup.stored)
                     return
                 }
@@ -111,15 +111,45 @@ class FirstRunImport @Inject constructor(
         RelayForegroundService.otherVaultRelay = null
     }
 
+    /**
+     * Closes the other vault's address once neither setup nor older_relays has anything left to read from it, checked
+     * every [LINK_CHECK_MS]. An app restart ends the watch; the address then lasts [OtherVaultCopy.KEEP_LINK_MS] at most.
+     */
+    private fun closeLinkWhenRead(url: String) {
+        linkWatch?.cancel()
+        linkWatch = scope.launch {
+            val until = System.currentTimeMillis() + com.nostrvault.fips.OtherVaultCopy.KEEP_LINK_MS
+            while (System.currentTimeMillis() < until) {
+                val now = jobs.read()
+                if (now != null && !stillToRead(now, url)) break
+                delay(LINK_CHECK_MS)
+            }
+            otherVaultLink.close()
+        }
+    }
+
+    private var linkWatch: Job? = null
+
     /** Back to the start (an account change in setup). */
     fun reset() {
         job?.cancel()
         _state.value = State.Idle
+        linkWatch?.cancel()
         if (otherVault != null) otherVaultLink.close()
         otherVault = null
     }
 
-    private companion object {
+    internal companion object {
+        /** [url] still has a range to read: listed unread by setup or older_relays, or older_relays is reading. */
+        fun stillToRead(jobs: ImportJobs, url: String): Boolean {
+            val older = jobs.job(OLDER_RELAYS)
+            if (older?.isRunning == true) return true
+            return listOfNotNull(jobs.job(ImportJobs.SETUP), older)
+                .any { j -> j.unread.any { it.relay.trimEnd('/') == url.trimEnd('/') } }
+        }
+
+        const val OLDER_RELAYS = "older_relays"
+        const val LINK_CHECK_MS = 60_000L
         const val RELAY_WAIT_MS = 90_000L
         const val START_TRIES = 30
         const val RETRY_MS = 1_000L
