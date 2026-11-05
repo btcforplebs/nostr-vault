@@ -6,9 +6,9 @@ import com.nostrvault.relay.HavenConfig
 internal data class MeshSendTarget(val npub: String, val role: DeviceRole, val notes: Boolean, val media: Boolean)
 
 /**
- * Where [HomeVaultSender] sends: the home vault, which gets everything, then each Mac in My Devices
- * with its own Send notes / Send media switches. A Mac takes the same owner-signed Blossom upload and
- * EVENT the home vault does. Pure for the tests.
+ * Where [HomeVaultSender] sends: the home vault, then each Mac in My Devices, each with its own Send
+ * notes / Send media switches (a home vault with no label gets both). A Mac takes the same owner-signed
+ * Blossom upload and EVENT the home vault does. Pure for the tests.
  */
 internal object MeshSendTargets {
     fun of(config: HavenConfig): List<MeshSendTarget> {
@@ -17,8 +17,13 @@ internal object MeshSendTargets {
             .filter { it.role == DeviceRole.MAC && it.npub in config.fipsPeers && it.npub != home && MyDevicesRules.isMeshNpub(it.npub) }
             .distinctBy { it.npub }
             .map { MeshSendTarget(it.npub, DeviceRole.MAC, notes = it.sendNotes, media = it.sendMedia) }
-        return listOfNotNull(home?.let { MeshSendTarget(it, DeviceRole.HOME_VAULT, notes = true, media = true) }) + macs
+        val homeLabel = home?.let { h -> config.fipsMesh.devices.firstOrNull { it.npub == h } }
+        val homeTarget = home?.let { MeshSendTarget(it, DeviceRole.HOME_VAULT, notes = homeLabel?.sendNotes ?: true, media = homeLabel?.sendMedia ?: true) }
+        return listOfNotNull(homeTarget) + macs
     }
+
+    /** Whether a device in this role is sent anything, so its Send switches mean something. Phones and browsers are not. */
+    fun receivesSends(role: DeviceRole): Boolean = role == DeviceRole.HOME_VAULT || role == DeviceRole.MAC
 
     /**
      * After queueing one item on each lane: drain if any lane took it, so one full or broken lane

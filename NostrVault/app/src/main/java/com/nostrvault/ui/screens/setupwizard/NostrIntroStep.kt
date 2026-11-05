@@ -121,6 +121,8 @@ internal fun NostrIntroStep(viewModel: SetupWizardViewModel) {
 @Composable
 private fun NewKeysPage(npub: String, nsec: String, onContinue: () -> Unit) {
     val context = LocalContext.current
+    // The nsec is shown in full: keep it out of screenshots and Recents.
+    com.nostrvault.ui.components.SecureWindowEffect()
     var savedKey by remember { mutableStateOf(false) }
     var copiedKey by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(copiedKey) {

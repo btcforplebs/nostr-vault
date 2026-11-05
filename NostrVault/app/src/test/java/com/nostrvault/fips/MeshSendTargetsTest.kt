@@ -28,6 +28,33 @@ class MeshSendTargetsTest {
     }
 
     @Test
+    fun `the home vault follows its own send switches`() {
+        // Its switches were drawn but the home vault always got notes and media (bug hunt 2026-11-05 #6).
+        val targets = MeshSendTargets.of(
+            config(listOf(FipsDevice(kiosk, DeviceRole.HOME_VAULT, sendNotes = true, sendMedia = false)), home = kiosk),
+        )
+        assertEquals(listOf(MeshSendTarget(kiosk, DeviceRole.HOME_VAULT, notes = true, media = false)), targets)
+        val notesOff = MeshSendTargets.of(config(listOf(FipsDevice(kiosk, DeviceRole.PHONE, sendNotes = false)), home = kiosk))
+        assertEquals(listOf(MeshSendTarget(kiosk, DeviceRole.HOME_VAULT, notes = false, media = true)), notesOff)
+    }
+
+    @Test
+    fun `only roles that are sent anything have send switches`() {
+        assertEquals(
+            listOf(DeviceRole.MAC, DeviceRole.HOME_VAULT),
+            DeviceRole.entries.filter { MeshSendTargets.receivesSends(it) },
+        )
+    }
+
+    @Test
+    fun `a home vault with no label gets everything`() {
+        assertEquals(
+            listOf(MeshSendTarget(kiosk, DeviceRole.HOME_VAULT, notes = true, media = true)),
+            MeshSendTargets.of(config(emptyList(), peers = listOf(kiosk), home = kiosk)),
+        )
+    }
+
+    @Test
     fun `a mac that was removed from my devices is not sent to`() {
         // Its label can outlive it in the list; fipsPeers is what My Devices is.
         assertEquals(emptyList<MeshSendTarget>(), MeshSendTargets.of(config(listOf(FipsDevice(mac, DeviceRole.MAC)), peers = emptyList())))
