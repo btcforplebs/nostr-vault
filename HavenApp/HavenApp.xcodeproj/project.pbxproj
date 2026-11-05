@@ -312,6 +312,7 @@
 		292899C69F326043A00AAF4C /* MyDevicesStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FEFD738FD3D4C13BCD7D2A6 /* MyDevicesStatus.swift */; };
 		2967EF7A63FDB4431EB3651A /* MessageComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47E52CADA44AC55958A69E64 /* MessageComposerView.swift */; };
 		2990B2735FE4E622E580C90C /* SharePortalRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 668985E052176EC97E23C013 /* SharePortalRouter.swift */; };
+		2994BC8B39F44CD67F24CC02 /* NoteMediaURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = A040CB55969B89915509B7E4 /* NoteMediaURL.swift */; };
 		2994C3A0BE9AFB6C41AD71FA /* LongFormContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42DB00CA3C4EA172D7C76C2A /* LongFormContent.swift */; };
 		29A348BEE3CCE7F28369D001 /* NoteTranslation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDB08989DAA08A101C01CEC2 /* NoteTranslation.swift */; };
 		29DE088BE79CA2D3C1624EC9 /* RelayActivityViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 104C14D088ED0825A8996A61 /* RelayActivityViews.swift */; };
@@ -1226,6 +1227,7 @@
 		A02E8133985155B2B29F7287 /* WalletLightningTab+LNURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF12EBE0F3A10E9A0AA2D2C6 /* WalletLightningTab+LNURL.swift */; };
 		A036232BAFC92A70B8441CCB /* PushNotificationStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76BAFE194F5C54218E6F3555 /* PushNotificationStep.swift */; };
 		A0667200BDE9D010B6BD8E91 /* VaultAccountScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D067C84E080273BBCC96B7 /* VaultAccountScope.swift */; };
+		A0CEC635016806F2F27B35F8 /* NoteMediaURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = A040CB55969B89915509B7E4 /* NoteMediaURL.swift */; };
 		A0D8D9ED7C42C9933AB4888F /* ZapInvoiceCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5D2CE6DFCDE4E46DC7C6BB3 /* ZapInvoiceCheck.swift */; };
 		A1692EAF2AD8BD03C1191EE3 /* PrivateCopyReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 579A1C5EC941EABED1012F88 /* PrivateCopyReviewView.swift */; };
 		A23830E08BFDAE516043A625 /* StartupSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F93CB9AC3A12C978695F2627 /* StartupSettingsView.swift */; };
@@ -2700,6 +2702,7 @@
 		9FD2828F9DD6C5EB7FA5ADE4 /* BlossomDashboardMirrors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDashboardMirrors.swift; sourceTree = "<group>"; };
 		9FEC6DB9D99B45B49569D8A5 /* ProfileContent+Sections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProfileContent+Sections.swift"; sourceTree = "<group>"; };
 		9FEFD738FD3D4C13BCD7D2A6 /* MyDevicesStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyDevicesStatus.swift; sourceTree = "<group>"; };
+		A040CB55969B89915509B7E4 /* NoteMediaURL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteMediaURL.swift; sourceTree = "<group>"; };
 		A0470608431CE649B6E55F7D /* QuotedNoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotedNoteView.swift; sourceTree = "<group>"; };
 		A04E0F5ADF9DEBE1B0772D48 /* SnoScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnoScene.swift; sourceTree = "<group>"; };
 		A0A692460CA32D00E9050B99 /* AnimatedThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedThumbnail.swift; sourceTree = "<group>"; };
@@ -4124,6 +4127,7 @@
 				AE1A64222EFDE647C6491CFB /* NostrWebLink.swift */,
 				6DDDBB29FDB253D22C3F8452 /* NoteDeletion.swift */,
 				41941842EAF3EFE0A1C87C96 /* NoteInvoices.swift */,
+				A040CB55969B89915509B7E4 /* NoteMediaURL.swift */,
 				CE87DC6C17138B7274AF82BA /* NoteTagging.swift */,
 				FDB08989DAA08A101C01CEC2 /* NoteTranslation.swift */,
 				15F574998943FBDB5B63F2FC /* NotificationAsk.swift */,
@@ -5568,6 +5572,7 @@
 				5335596D525595585FFBE345 /* NoteDetailView.swift in Sources */,
 				6B415D28731D3A962FAB0E57 /* NoteDetailViewWrapper.swift in Sources */,
 				691DE632A6F2142C7868CE0B /* NoteInvoices.swift in Sources */,
+				2994BC8B39F44CD67F24CC02 /* NoteMediaURL.swift in Sources */,
 				61A85468EFF7CB9C6B455D49 /* NoteNavigationLink.swift in Sources */,
 				1FB591DE0A4D4D89DBA8378F /* NoteRow+EngagementBar.swift in Sources */,
 				A9BD6764846DB55ACAEBB348 /* NoteRow+ExpandedLayout.swift in Sources */,
@@ -6559,6 +6564,7 @@
 				F1EE2375CCE4F0CB39544FE6 /* NoteDetailView.swift in Sources */,
 				4E41FEE7D01279C5CAEACDAD /* NoteDetailViewWrapper.swift in Sources */,
 				AE97417C4244BEE153341027 /* NoteInvoices.swift in Sources */,
+				A0CEC635016806F2F27B35F8 /* NoteMediaURL.swift in Sources */,
 				10EFE6F5CE71C1D715E1F23D /* NoteNavigationLink.swift in Sources */,
 				3EBEC2F605993B37DDB345AB /* NoteRow+EngagementBar.swift in Sources */,
 				E66930E311700B1D4D32D634 /* NoteRow+ExpandedLayout.swift in Sources */,

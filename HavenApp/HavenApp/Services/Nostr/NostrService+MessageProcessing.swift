@@ -298,23 +298,6 @@ extension NostrService {
             }
         }
 
-        return urls.map { url in
-            var finalURL = url
-
-            // Normalize potential local/development URLs to use HTTP instead of HTTPS
-            // We check for localhost, 127.0.0.1, and any URL that matches the current relayURL if it's local
-            let isKnownLocal = finalURL.host == "localhost" ||
-                               finalURL.host == "127.0.0.1" ||
-                               ConfigService.shared.config.isLocal
-
-            if finalURL.scheme == "https" && isKnownLocal {
-                var components = URLComponents(url: finalURL, resolvingAgainstBaseURL: false)
-                components?.scheme = "http"
-                if let normalizedURL = components?.url {
-                    finalURL = normalizedURL
-                }
-            }
-            return finalURL
-        }
+        return urls.compactMap(NoteMediaURL.normalized)
     }
 }
