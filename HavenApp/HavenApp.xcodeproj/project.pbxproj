@@ -131,6 +131,7 @@
 		10EFE6F5CE71C1D715E1F23D /* NoteNavigationLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54018888DDE538484D3BC086 /* NoteNavigationLink.swift */; };
 		1128386BCB6EA0F90C6A6C14 /* BlossomService+ExternalMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD7C75DADB5410D449F14955 /* BlossomService+ExternalMirror.swift */; };
 		115508A02F8C10437B5B13A6 /* ActivityTargetFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B9646E91993C4D774E5F139 /* ActivityTargetFetcher.swift */; };
+		1158E176293FFD91B323AD8F /* VaultAccountPickButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60B1AC4F3D175F1346A59E50 /* VaultAccountPickButton.swift */; };
 		1170A2AE5A61D5B5FF2510CF /* GifPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A557F0804214239CCFEDDD8 /* GifPickerSheet.swift */; };
 		1174270778C248F38AEEE995 /* FeedVisibleRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBB8668F5703C081765EC7C1 /* FeedVisibleRows.swift */; };
 		118E505D61BB811FBD89BF60 /* ShareLinkedData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17163EA755D614A59098581B /* ShareLinkedData.swift */; };
@@ -293,6 +294,7 @@
 		2730A44FC8B4A4AC41BF67A3 /* VaultBackupRestore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A6E60029BAE8DFF771BF7B3 /* VaultBackupRestore.swift */; };
 		27414B230CC3AA23BA86C684 /* VideoPlaybackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E884308913F1B4723D26D1C /* VideoPlaybackService.swift */; };
 		27501A57652E5103F7832F81 /* FeedDashboardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4081F45635AA7AA7E02B86BD /* FeedDashboardStore.swift */; };
+		27546BAB2AFD282EDD2F139E /* VaultAccountPickButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60B1AC4F3D175F1346A59E50 /* VaultAccountPickButton.swift */; };
 		27703645E49752E01B52779F /* BookmarkShareReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33A10CEB2C60DA33D62A752D /* BookmarkShareReviewView.swift */; };
 		2781CECEBC6411CB2C55082D /* NIP46Service+OwnerSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4179E0679998B43B177F2D87 /* NIP46Service+OwnerSession.swift */; };
 		279BE75888336D92427BF1D6 /* SuggestedMediaServers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2FAE9D93A33F91E3E22BEDA /* SuggestedMediaServers.swift */; };
@@ -2404,6 +2406,7 @@
 		5FBEF0271AE2E33206E9750E /* BlossomService+Delete.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlossomService+Delete.swift"; sourceTree = "<group>"; };
 		606AB572251938C1D2B3590A /* HighlightSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightSheet.swift; sourceTree = "<group>"; };
 		60872FCCCF59C889353D525F /* VaultSearchLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultSearchLogic.swift; sourceTree = "<group>"; };
+		60B1AC4F3D175F1346A59E50 /* VaultAccountPickButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultAccountPickButton.swift; sourceTree = "<group>"; };
 		60E2FC58F9B9F4CECA67CBB7 /* MusicAlbumPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicAlbumPage.swift; sourceTree = "<group>"; };
 		614245993910AB626DBE345C /* RelayProcessManager+Backup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RelayProcessManager+Backup.swift"; sourceTree = "<group>"; };
 		618885CB514523D351B723B4 /* MosaicWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MosaicWidget.swift; sourceTree = "<group>"; };
@@ -3254,6 +3257,7 @@
 				436B49412CA8DD29DA49C857 /* OpensMessagesMode.swift */,
 				5AB87D6F419A5756C1655631 /* QuotedEventsView.swift */,
 				A6BE0E091BAC1028A89B70F5 /* RepostedNoteView.swift */,
+				60B1AC4F3D175F1346A59E50 /* VaultAccountPickButton.swift */,
 				95D067C84E080273BBCC96B7 /* VaultAccountScope.swift */,
 				6CECEAC5DA37BC34F9B495F6 /* VaultActivityList.swift */,
 				9D539D337278666988D68FA9 /* VaultActivityRow+Compact.swift */,
@@ -5796,6 +5800,7 @@
 				E0DB1B155E0792C5547BFBFF /* UseNostrKeyStep.swift in Sources */,
 				98A99ED17D681E7ADA2508A4 /* UserStatusPublisher.swift in Sources */,
 				743513B1249298195CDB646C /* VaultAccountChips.swift in Sources */,
+				27546BAB2AFD282EDD2F139E /* VaultAccountPickButton.swift in Sources */,
 				A0667200BDE9D010B6BD8E91 /* VaultAccountScope.swift in Sources */,
 				9B7EAB5161D2211D2C606077 /* VaultActivity.swift in Sources */,
 				A57122F246651B7A435A4283 /* VaultActivityList.swift in Sources */,
@@ -6765,6 +6770,7 @@
 				4FE172118ED099EE11B16D2D /* UseNostrKeyStep.swift in Sources */,
 				4138860007014EACC05BE78D /* UserStatusPublisher.swift in Sources */,
 				0747868ACF7C85B5C374FE46 /* VaultAccountChips.swift in Sources */,
+				1158E176293FFD91B323AD8F /* VaultAccountPickButton.swift in Sources */,
 				1382803766ADF1D8508775B2 /* VaultAccountScope.swift in Sources */,
 				479B88C49019A417889D71D1 /* VaultActivity.swift in Sources */,
 				8C418FB5341BAAE9D24F35FC /* VaultActivityList.swift in Sources */,

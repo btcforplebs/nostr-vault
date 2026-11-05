@@ -113,10 +113,12 @@ extension VaultView {
         if viewMode != .activity { scheduleUpdateDisplayData() }
     }
 
-    /// A line was opened: its account's count empties.
+    /// A line was opened: the counts of every account it is for empty.
     func openedAccountLine(_ line: VaultAccountLine) {
-        guard line.account != followersOwnerHex.lowercased() else { return }
-        AccountUnreadStore.shared.markVaultSeen(hex: line.account)
+        let me = followersOwnerHex.lowercased()
+        for hex in line.accounts where hex != me {
+            AccountUnreadStore.shared.markVaultSeen(hex: hex)
+        }
     }
 
     /// Back to the active account's own list (account switched, or removed).

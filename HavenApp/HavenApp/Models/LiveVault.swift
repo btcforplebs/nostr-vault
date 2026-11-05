@@ -27,17 +27,23 @@ enum LiveVault {
 
     /// `lines` (newest first) against the snapshot on screen.
     /// `rows`: the snapshot's lines in the order they were drawn, each in its
-    /// latest form (a line gone from `lines` drops out), then lines older than
-    /// its newest that came in late, below them. Nothing already drawn moves.
+    /// latest form (a line gone from `lines` drops out), with lines older than
+    /// its newest that came in late slotted in by time (Logen 2026-11-05), not
+    /// left at the very bottom. Drawn rows keep their order among themselves.
     /// `held`: lines newer than the snapshot, not drawn yet.
     static func split(_ lines: [VaultActivity], _ shot: Snapshot) -> (rows: [VaultActivity], held: [VaultActivity]) {
         let byId = Dictionary(lines.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let on = Set(shot.ids)
-        let rows = shot.ids.compactMap { byId[$0] }
+        var rows = shot.ids.compactMap { byId[$0] }
+        let drawn = rows.count
         let rest = lines.filter { !on.contains($0.id) }
         let held = rest.filter { $0.createdAt > shot.top }
-        let late = rest.filter { $0.createdAt <= shot.top }
-        return (Array((rows + late).prefix(max(maxRows, rows.count))), held)
+        // Newest first, each above the first row older than it; a tie goes below.
+        for line in rest.filter({ $0.createdAt <= shot.top }) {
+            let at = rows.firstIndex { $0.createdAt < line.createdAt } ?? rows.count
+            rows.insert(line, at: at)
+        }
+        return (Array(rows.prefix(max(maxRows, drawn))), held)
     }
 
     /// Who to show on top: the people behind `lines`, newest first, each

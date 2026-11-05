@@ -72,7 +72,7 @@ extension VaultView {
             } else if others {
                 LazyVStack(spacing: 10) {
                     ForEach(tagged) { item in
-                        activityLink(item.line, account: item.account)
+                        activityLink(item.line, accounts: item.accounts)
                             .padding(.horizontal, 16)
                             .onAppear {
                                 if item.id == tagged.last?.id { loadMoreAccountLines() }
@@ -98,16 +98,32 @@ extension VaultView {
     /// A line opens what it's about: the post (theirs, or yours they reacted
     /// to), the person when it's a follow or a zap on your profile, or the
     /// Followers list when several followed you that day.
-    /// `account` is set when the list holds other accounts' lines too: the
-    /// row then says whose it is, and opening it clears that account's count.
+    /// `accounts` is set when the list holds other accounts' lines too: the
+    /// row then says whose it is (one event that tagged several of them is one
+    /// row, unread if it is newer than any of their seen marks), and opening
+    /// it clears their counts. With several, a tap first asks which account.
     @ViewBuilder
-    private func activityLink(_ line: VaultActivity, account: String? = nil) -> some View {
-        let unreadSince = account.map(accountUnreadSince) ?? activityUnreadSince
-        let row = VaultActivityRow(line: line, isUnread: line.createdAt > unreadSince, account: account) { url, all in
+    private func activityLink(_ line: VaultActivity, accounts: [String] = []) -> some View {
+        let account = accounts.first
+        let isUnread = accounts.isEmpty
+            ? line.createdAt > activityUnreadSince
+            : accounts.contains { line.createdAt > accountUnreadSince($0) }
+        let row = VaultActivityRow(line: line, isUnread: isUnread, accounts: accounts) { url, all in
             showingMediaUrl = IdentifiableURL(url: url, allURLs: all)
         }
             .relayFocusOutline(line.openId != nil && focusedEventId == line.openId)
         let isOtherAccount = account.map { $0 != followersOwnerHex.lowercased() } ?? false
+        if accounts.count > 1 {
+            VaultAccountPickButton(accounts: accounts, name: accountName,
+                                   onPick: { openActivity(line, account: $0, accounts: accounts) }) { row }
+        } else {
+            singleAccountLink(line, account: account, isOtherAccount: isOtherAccount, row: row)
+        }
+    }
+
+    @ViewBuilder
+    private func singleAccountLink(_ line: VaultActivity, account: String?, isOtherAccount: Bool,
+                                   row: some View) -> some View {
         #if os(iOS)
         if isOtherAccount {
             Button { openActivity(line, account: account) } label: { row }
@@ -132,9 +148,18 @@ extension VaultView {
         #endif
     }
 
-    private func openActivity(_ line: VaultActivity, account: String? = nil) {
+    /// The name the account picker shows for one of your accounts.
+    private func accountName(_ hex: String) -> String {
+        nostrService.profiles[hex]?.bestName ?? "npub…" + String(hex.suffix(6))
+    }
+
+    /// `account`: the account to open the line as. `accounts`: every account
+    /// the line is for, all marked seen (just `account` when not given).
+    private func openActivity(_ line: VaultActivity, account: String? = nil, accounts: [String] = []) {
         let isOtherAccount = account.map { $0 != followersOwnerHex.lowercased() } ?? false
-        if let account { openedAccountLine(VaultAccountLine(account: account, line: line)) }
+        if let account {
+            openedAccountLine(VaultAccountLine(accounts: accounts.isEmpty ? [account] : accounts, line: line))
+        }
         // A line for another account opens as that account: switch first, so
         // a reply or like from the opened note signs with the right key.
         if let npub = VaultAccountChips.switchTarget(lineAccount: account, active: followersOwnerHex,
@@ -181,9 +206,9 @@ extension VaultView {
 struct VaultActivityRow: View {
     let line: VaultActivity
     var isUnread = false
-    /// The account the line is for, when the list holds more than one
-    /// account's lines; nil draws the row as with one account.
-    var account: String? = nil
+    /// The accounts the line is for, when the list holds more than one
+    /// account's lines; empty draws the row as with one account.
+    var accounts: [String] = []
     /// A tapped thumbnail: the picture, and the line's pictures to swipe.
     var onImage: ((URL, [URL]) -> Void)? = nil
     /// One fixed-height line (iPad's Live Vault column), no thumbnails.
@@ -194,6 +219,8 @@ struct VaultActivityRow: View {
     @State private var emojiImages: [String: PlatformImage] = [:]
 
     private static let avatarLimit = 6
+    /// Account pictures stacked on a line for several of your accounts.
+    private static let accountLimit = 3
 
     var body: some View {
         if compact { compactBody } else { fullBody }
@@ -201,10 +228,13 @@ struct VaultActivityRow: View {
 
     private var fullBody: some View {
         HStack(alignment: .top, spacing: 12) {
-            badge
-                .overlay(alignment: .bottomTrailing) {
-                    if let account { accountMark(account) }
-                }
+            VStack(spacing: 8) {
+                badge
+                    .overlay(alignment: .bottomTrailing) {
+                        if accounts.count == 1 { accountMark(accounts[0]) }
+                    }
+                if accounts.count > 1 { accountStack }
+            }
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .center, spacing: 8) {
                     avatars
@@ -261,6 +291,25 @@ struct VaultActivityRow: View {
             .overlay(Circle().stroke(Color.platformSecondaryGroupedBackground, lineWidth: 2))
             .offset(x: 5, y: 5)
             .accessibilityLabel("For \(name(hex))")
+    }
+
+    /// One event for several of your accounts: their pictures stacked under
+    /// the line's icon, up to three, then "+N".
+    private var accountStack: some View {
+        HStack(spacing: -8) {
+            ForEach(accounts.prefix(Self.accountLimit), id: \.self) { hex in
+                AvatarView(url: nostrService.profiles[hex]?.pictureURL, pubkey: hex, size: 18)
+                    .overlay(Circle().stroke(Color.platformSecondaryGroupedBackground, lineWidth: 2))
+            }
+            if accounts.count > Self.accountLimit {
+                Text("+\(accounts.count - Self.accountLimit)")
+                    .font(.appSystem(size: 10, weight: .bold))
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 10)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("For " + accounts.map(name).joined(separator: ", "))
     }
 
     var badge: some View {
