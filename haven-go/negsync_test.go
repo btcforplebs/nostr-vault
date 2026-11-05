@@ -313,7 +313,10 @@ func TestTempRejectsReevaluate(t *testing.T) {
 
 func TestOutboxNegStoreUpFilter(t *testing.T) {
 	skipWithoutFS(t)
-	owner := hexid('0')
+	// The down path stores only signed owner notes whose id is their hash
+	// (audit #14), so the owner here is a real key.
+	ownerKey := newTestKey(t)
+	owner := ownerKey.pk
 	setupSyncConfig(owner)
 
 	ctx := context.Background()
@@ -321,12 +324,9 @@ func TestOutboxNegStoreUpFilter(t *testing.T) {
 	s := &outboxNegStore{outbox: outbox, tombs: newTestTombs(t)}
 
 	now := nostr.Now()
-	public := nostr.Event{ID: hexid('a'), PubKey: owner, Kind: nostr.KindTextNote, CreatedAt: now}
-	protected := nostr.Event{
-		ID: hexid('b'), PubKey: owner, Kind: nostr.KindTextNote, CreatedAt: now,
-		Tags: nostr.Tags{{"-"}},
-	}
-	wrap := nostr.Event{ID: hexid('c'), PubKey: owner, Kind: nostr.KindGiftWrap, CreatedAt: now}
+	public := ownerKey.sign(t, nostr.Event{Kind: nostr.KindTextNote, CreatedAt: now})
+	protected := ownerKey.sign(t, nostr.Event{Kind: nostr.KindTextNote, CreatedAt: now, Tags: nostr.Tags{{"-"}}})
+	wrap := ownerKey.sign(t, nostr.Event{Kind: nostr.KindGiftWrap, CreatedAt: now})
 
 	for _, ev := range []nostr.Event{public, protected, wrap} {
 		if err := s.Publish(ctx, ev); err != nil {

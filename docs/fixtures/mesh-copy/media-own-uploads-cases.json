@@ -1,0 +1,76 @@
+{
+  "owner": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581",
+  "other": "8e5966554908cc04840d0975ab4d5870643b1649f85e7267f6b732a7a0bef383",
+  "records": [
+    {
+      "sha256": "a647f524c89025fbb9a312f9dbb39c75865659ebc41bc787b1d35f831dc20da4",
+      "pubkey": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581"
+    },
+    {
+      "sha256": "0954c1626a4e36b8e640986f1684c93bfb24a18249238f8b67ffc45d9d3745aa",
+      "pubkey": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581"
+    },
+    {
+      "sha256": "c0391c45f9d806e5fe40e932f73a1061615ccd6591f29a44d8d974ca6b428f6d",
+      "pubkey": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581"
+    },
+    {
+      "sha256": "7743ce348d9284d677a185f33295b92266cc435a5b5f775029b300066d26693a",
+      "pubkey": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581"
+    },
+    {
+      "sha256": "d145a7319cb74a75355df29276ebc3ae936ed6c78651441b3bfc04de4466dc45",
+      "pubkey": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581"
+    },
+    {
+      "sha256": "4c55a8552a2c7261f61f798c2265e6f13358f326ae5b934096ff16bd15e62c33",
+      "pubkey": "8e5966554908cc04840d0975ab4d5870643b1649f85e7267f6b732a7a0bef383"
+    }
+  ],
+  "events": [
+    {
+      "name": "own note with imeta",
+      "pubkey": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581",
+      "kind": 1,
+      "content": "look",
+      "tags": [
+        [
+          "imeta",
+          "url https://cdn.example/a647f524c89025fbb9a312f9dbb39c75865659ebc41bc787b1d35f831dc20da4.jpg",
+          "x a647f524c89025fbb9a312f9dbb39c75865659ebc41bc787b1d35f831dc20da4"
+        ]
+      ]
+    },
+    {
+      "name": "someone else's note naming the saved photo",
+      "pubkey": "8e5966554908cc04840d0975ab4d5870643b1649f85e7267f6b732a7a0bef383",
+      "kind": 1,
+      "content": "https://cdn.example/0954c1626a4e36b8e640986f1684c93bfb24a18249238f8b67ffc45d9d3745aa.png",
+      "tags": []
+    },
+    {
+      "name": "own repost carrying a photo",
+      "pubkey": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581",
+      "kind": 6,
+      "content": "{\"content\": \"https://cdn.example/c0391c45f9d806e5fe40e932f73a1061615ccd6591f29a44d8d974ca6b428f6d\"}",
+      "tags": []
+    },
+    {
+      "name": "own note naming a file someone else uploaded",
+      "pubkey": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581",
+      "kind": 1,
+      "content": "https://cdn.example/4c55a8552a2c7261f61f798c2265e6f13358f326ae5b934096ff16bd15e62c33",
+      "tags": []
+    }
+  ],
+  "expect_in_media": [
+    "a647f524c89025fbb9a312f9dbb39c75865659ebc41bc787b1d35f831dc20da4",
+    "0954c1626a4e36b8e640986f1684c93bfb24a18249238f8b67ffc45d9d3745aa",
+    "c0391c45f9d806e5fe40e932f73a1061615ccd6591f29a44d8d974ca6b428f6d",
+    "7743ce348d9284d677a185f33295b92266cc435a5b5f775029b300066d26693a",
+    "d145a7319cb74a75355df29276ebc3ae936ed6c78651441b3bfc04de4466dc45"
+  ],
+  "expect_left_out": {
+    "4c55a8552a2c7261f61f798c2265e6f13358f326ae5b934096ff16bd15e62c33": "record is not by one of the vault's own keys, even though an own note names it"
+  }
+}

@@ -121,3 +121,21 @@ func TestMeshDoorPortReachesTheEngine(t *testing.T) {
 		}
 	}
 }
+
+// havend as B: the box hands the engine its copy order under the engine's
+// own names (haven-go copyv2_client.go startCopyFromEnv), nothing else.
+func TestEngineEnvPassesTheCopyOrder(t *testing.T) {
+	k := newTestKey(t)
+	c, _ := ConfigFromEnv(envOf(map[string]string{"NV_OWNER": k.pk}))
+	joined := strings.Join(EngineEnvList(c, "/v", envOf(map[string]string{
+		"NV_COPY_FROM": "npub1a", "NV_COPY_BASE": "http://127.0.0.1:9", "NV_COPY_START_AUTH": "e30=",
+	})), "\n")
+	for _, want := range []string{"COPY_FROM=npub1a", "COPY_BASE=http://127.0.0.1:9", "COPY_START_AUTH=e30="} {
+		if !strings.Contains(joined, "\n"+want) && !strings.HasPrefix(joined, want) {
+			t.Fatalf("engine env lacks %s:\n%s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "NV_COPY_") {
+		t.Fatalf("engine env leaks box names:\n%s", joined)
+	}
+}

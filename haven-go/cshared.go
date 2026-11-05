@@ -338,6 +338,9 @@ func StartRelayC(importMode bool) {
 		// duplicate pattern registration in the default mux.
 		mux := http.NewServeMux()
 		mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("templates/static"))))
+		// The mesh vault copy (copyv2_server.go): on the handler the own
+		// devices reach, never on the door.
+		mux.Handle("/copy/v2/", copyV2)
 
 		// All Blossom endpoints (PUT /upload, GET /<sha256>, DELETE /<sha256>, etc.)
 		// are handled by the khatru/blossom server mounted on outboxRelay in init.go.
@@ -519,6 +522,53 @@ func RunImportJobC(name *C.char) C.int {
 		return runRelayNotReady
 	}
 	return C.int(importJobsRunner.run(c.ctx, c.spawn, C.GoString(name), false))
+}
+
+// StartCopyFromC starts the mesh vault copy from the owner's device peer
+// (its mesh npub), reached at base (the loopback address the app's mesh
+// gives its own-device port). startAuth: base64 of the owner-signed kind
+// 27235 event for POST <base>/copy/v2/start, or "" to resume a copy whose
+// token this device still holds. 0 started, 2 busy, 3 relay not running.
+// Progress: COPY lines (docs/MESH_COPY_V2_CONTRACT.md §3.3).
+//
+//export StartCopyFromC
+func StartCopyFromC(peer *C.char, base *C.char, startAuth *C.char) C.int {
+	c := relayLC.current.Load()
+	if c == nil || c.server == nil {
+		return runRelayNotReady
+	}
+	return C.int(startCopyFrom(c.ctx, c.spawn, C.GoString(peer), C.GoString(base), C.GoString(startAuth)))
+}
+
+// CopySyncC runs one catch-up with peer at base: call it when a linked
+// device comes into reach. 0 started, 2 busy, 3 relay not running.
+//
+//export CopySyncC
+func CopySyncC(peer *C.char, base *C.char) C.int {
+	c := relayLC.current.Load()
+	if c == nil || c.server == nil {
+		return runRelayNotReady
+	}
+	return C.int(startCopySync(c.ctx, c.spawn, C.GoString(peer), C.GoString(base)))
+}
+
+// RevokeCopyTokensC is Remove device on A: the removed device (its mesh npub
+// or hex) can no longer read copies or catch up. 0 revoked, 1 none held.
+//
+//export RevokeCopyTokensC
+func RevokeCopyTokensC(peer *C.char) C.int {
+	if copyV2.revoke(C.GoString(peer)) {
+		return 0
+	}
+	return 1
+}
+
+// CancelCopyC stops a running copy or catch-up; its state is kept for a
+// resume. 0 cancelling, 1 nothing running.
+//
+//export CancelCopyC
+func CancelCopyC() C.int {
+	return C.int(copyRuns.stop())
 }
 
 // CancelImportJobC: 0 cancelling, 1 not running.

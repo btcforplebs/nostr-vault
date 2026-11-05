@@ -1,0 +1,52 @@
+{
+  "v": 1,
+  "keys": {
+    "feed_layouts": {
+      "type": "object<string>",
+      "hex": false,
+      "about": "per-feed layout, feed id -> layout name"
+    },
+    "zaps_only": {
+      "type": "bool",
+      "hex": false,
+      "about": "zaps-only mode"
+    },
+    "auto_load_new_posts": {
+      "type": "bool",
+      "hex": false,
+      "about": "auto-load new posts"
+    },
+    "new_posts_pill": {
+      "type": "bool",
+      "hex": false,
+      "about": "the New Posts pill"
+    },
+    "wot_depth": {
+      "type": "int",
+      "hex": false,
+      "min": 0,
+      "max": 3,
+      "about": "web of trust depth"
+    },
+    "blocked_relays": {
+      "type": "string[]",
+      "hex": false,
+      "about": "relay URLs never used"
+    },
+    "dm_relays": {
+      "type": "string[]",
+      "hex": false,
+      "about": "DM relay choice"
+    },
+    "media_servers": {
+      "type": "string[]",
+      "hex": false,
+      "about": "media server choice, in order"
+    },
+    "notifications": {
+      "type": "object<bool>",
+      "hex": false,
+      "about": "notification switches, switch name -> on"
+    }
+  }
+}

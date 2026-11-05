@@ -151,6 +151,12 @@ func EngineEnvList(c Config, vaultDir string, getenv func(string) string) []stri
 			env[k] = v
 		}
 	}
+	// The mesh vault copy as B (haven-go copyv2_client.go startCopyFromEnv).
+	for _, k := range []string{"COPY_FROM", "COPY_BASE", "COPY_START_AUTH"} {
+		if v := getenv("NV_" + k); v != "" {
+			env[k] = v
+		}
+	}
 	// S3 backups, when the installer set them, pass through under the
 	// engine's own names.
 	if p := getenv("NV_BACKUP_PROVIDER"); p != "" {

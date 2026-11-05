@@ -127,11 +127,16 @@ func main() {
 		runsafe.Go("ingestPopularEngagement", func() { ingestPopularEngagement(mainCtx) })
 		runsafe.Go("periodicCloudBackups", func() { startPeriodicCloudBackups(mainCtx) })
 		runsafe.Go("wot.PeriodicRefresh", func() { wot.PeriodicRefresh(mainCtx, config.WotRefreshInterval) })
+		// havend as B: a first copy (or its resume) asked for at start.
+		startCopyFromEnv(mainCtx, os.Getenv, runsafe.Go)
 		runsafe.Go("wot.RefreshWhileEmpty", func() { wot.RefreshWhileEmpty(mainCtx, wot.EmptyGraphRefreshInterval, ownerFollowListStamp) })
 		runsafe.Go("wot.RefreshOnFollowListChange", func() { wot.RefreshOnFollowListChange(mainCtx, wot.FollowListCheckInterval, ownerFollowListAt) })
 	})
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("templates/static"))))
+	// The mesh vault copy (copyv2_server.go): on the handler the own devices
+	// reach, never on the door.
+	http.Handle("/copy/v2/", copyV2)
 
 	// All Blossom endpoints (PUT /upload, GET /<sha256>, DELETE /<sha256>, etc.)
 	// are handled by the khatru/blossom server mounted on outboxRelay in init.go.
