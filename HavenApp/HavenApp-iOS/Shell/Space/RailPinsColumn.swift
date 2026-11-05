@@ -64,6 +64,11 @@ struct RailPinsColumn<Top: View>: View {
     private func open(_ pin: SpaceLayout.Pin) {
         if case .person(let p) = pin.kind {
             NotificationCenter.default.post(name: .havenOpenProfile, object: p)
+        } else if case .feed(let id) = pin.kind {
+            // The Feed tab, switched to that type (Logen, 2026-11-05).
+            guard let mode = FeedMode(pinId: id) else { return }
+            NotificationCenter.default.post(name: .havenOpenFeed, object: nil)
+            FeedService.shared.switchMode(mode)
         } else {
             openPin = pin
         }

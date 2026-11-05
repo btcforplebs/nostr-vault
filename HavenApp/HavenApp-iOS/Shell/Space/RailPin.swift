@@ -8,6 +8,7 @@ enum RailPin {
         case .person: return "person.crop.circle"
         case .hashtag: return "number"
         case .relay: return "antenna.radiowaves.left.and.right"
+        case .feed(let id): return FeedMode(pinId: id)?.symbolName ?? "square"
         case .section, .unknown: return "square"
         }
     }
@@ -18,6 +19,7 @@ enum RailPin {
         case .person(let p): return String(p.prefix(8))
         case .hashtag(let t): return "#\(t)"
         case .relay(let url): return URL(string: url)?.host ?? url
+        case .feed(let id): return FeedMode(pinId: id)?.displayName ?? id
         case .section(let id): return id
         case .unknown: return ""
         }
@@ -27,7 +29,7 @@ enum RailPin {
     static func label(_ pin: SpaceLayout.Pin, profiles: [String: FeedProfile]) -> String {
         switch pin.kind {
         case .person(let p): return profiles[p]?.bestName ?? pin.name ?? fallbackLabel(pin.kind)
-        case .hashtag, .relay: return fallbackLabel(pin.kind)
+        case .hashtag, .relay, .feed: return fallbackLabel(pin.kind)
         default: return pin.name ?? fallbackLabel(pin.kind)
         }
     }
@@ -66,5 +68,15 @@ struct RailPinItem: View {
         .onAppear {
             if case .person(let p) = pin.kind, nostrService.profiles[p] == nil { nostrService.fetchMissingProfiles(for: [p]) }
         }
+    }
+}
+
+extension FeedMode {
+    /// A feed pin's id (`{"type":"feed","id":"music"}`): the raw value, lower case.
+    var pinId: String { rawValue.lowercased() }
+
+    init?(pinId: String) {
+        guard let mode = FeedMode.allCases.first(where: { $0.pinId == pinId.lowercased() }) else { return nil }
+        self = mode
     }
 }

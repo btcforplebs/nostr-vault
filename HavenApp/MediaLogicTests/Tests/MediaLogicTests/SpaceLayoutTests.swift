@@ -81,6 +81,22 @@ final class SpaceLayoutTests: XCTestCase {
         XCTAssertEqual(layout.panels.map(\.id), ["messages", "live-vault", "wot-mini"])
     }
 
+    /// A feed pin (`{"type":"feed","id":"music"}`, 2026-11-05): read, normalised,
+    /// the same pin once, and written back as it came.
+    func testFeedPinReadsWritesAndIsOnePin() {
+        let music = SpaceLayout.Pin.favourite(.feed("Music"))!
+        XCTAssertEqual(music.kind, .feed("music"))
+        XCTAssertEqual(music.id, "feed:music")
+        XCTAssertNil(SpaceLayout.Pin.favourite(.feed("  ")))
+        XCTAssertNil(SpaceLayout.Pin.favourite(.feed("two words")))
+        var layout = SpaceLayout.defaultLayout(panelIds: panelIds)
+        layout = layout.addingPin(music, at: 1)!
+        XCTAssertNil(layout.addingPin(SpaceLayout.Pin.favourite(.feed("music"))!, at: 2), "the same feed is pinned once")
+        let again = SpaceLayout.decode(layout.encoded(), sections: sections, panelIds: panelIds)!
+        XCTAssertTrue(again.pins.contains { $0.kind == .feed("music") })
+        XCTAssertEqual(layout.removingPin("feed:music", at: 3).pins.filter { !$0.isSection }.count, 0)
+    }
+
     func testFavouritesCapAtThirty() {
         let pins = (0..<35).map { #"{"type":"hashtag","t":"t\#($0)"}"# }.joined(separator: ",")
         let layout = parse(#"{"v":1,"pins":[\#(pins)]}"#)!
