@@ -12,7 +12,12 @@ final class ImportJobsService: ObservableObject {
 
     @Published private(set) var list: ImportJobs.List?
     /// Setup's stage while first run is waiting on it.
-    @Published private(set) var setupStage: ImportJobs.SetupStage = .starting
+    @Published private(set) var setupStage: ImportJobs.SetupStage = .starting {
+        didSet {
+            // Setup let the person in: one Import media (MediaImportAfterMovingIn).
+            if case .finished = setupStage, oldValue != setupStage { MediaImportAfterMovingIn.movingInCompleted() }
+        }
+    }
     /// The last Run that didn't start, in plain words.
     @Published var runRefusal: String?
 

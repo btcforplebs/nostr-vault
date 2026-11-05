@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -17,7 +18,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Import media runs once by itself when the first Moving in finishes, so a
+ * Import media runs once by itself when the first Moving in finishes (setup's
+ * way in, or the Vault's Moving in), so a
  * new vault holds the owner's media without anyone finding the button (it
  * used to hold only what was posted from the device). Once per device, never
  * on a plain start, and not at all if Import media already ran here.
@@ -47,6 +49,7 @@ internal class MediaImportAfterMovingInRule(
 class MediaImportAfterMovingIn @Inject constructor(
     @ApplicationContext context: Context,
     private val relayImport: RelayImportService,
+    private val firstRun: FirstRunImport,
     private val blossom: BlossomService,
     private val vaultHistory: VaultHistoryStore,
     @ApplicationScope private val scope: CoroutineScope,
@@ -61,8 +64,13 @@ class MediaImportAfterMovingIn @Inject constructor(
         runImport = blossom::runMirror,
     )
 
-    /** Watches for a completed Moving in (NostrVaultApp). */
+    /** Watches for a completed Moving in: setup's (first run) or the Vault's (NostrVaultApp). */
     fun start() {
+        // Setup's way in: the relay already serves when it lets the person in.
+        scope.launch {
+            firstRun.state.filterIsInstance<FirstRunImport.State.In>().collect { rule.movingInDone() }
+        }
+        // The Vault's Moving in (import mode), which restarts the relay at its end.
         scope.launch {
             // drop(1): the value at launch is not a Moving in that just finished.
             relayImport.importCompleted.drop(1).filter { it }.collect {
