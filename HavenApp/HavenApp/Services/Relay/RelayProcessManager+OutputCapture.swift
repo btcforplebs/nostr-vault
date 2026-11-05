@@ -211,6 +211,10 @@ extension RelayProcessManager {
             }
         }
 
+        if !batch.importJobLines.isEmpty {
+            ImportJobsService.shared.handle(batch.importJobLines)
+        }
+
         // A start that didn't happen: back to stopped at once, so the
         // controls come back instead of waiting out the boot watchdog.
         if let reason = batch.startFailed, state == .booting {

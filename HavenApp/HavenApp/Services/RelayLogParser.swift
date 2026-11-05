@@ -84,6 +84,8 @@ enum RelayLogParser {
         /// nothing, so without this the app sat on "Booting…" for the whole
         /// watchdog with every control disabled.
         var startFailed: String?
+        /// `IMPORT_JOB` lines (ImportJobs): a first-run or Vault job moved.
+        var importJobLines: [ImportJobs.Line] = []
     }
 
     /// The `RELAY_START_FAILED|` line (haven-go cshared.go logStartFailed).
@@ -104,6 +106,7 @@ enum RelayLogParser {
             || !batch.inboxActivityKinds.isEmpty
             || !batch.notifyMarkers.isEmpty
             || !batch.listVersionMarkers.isEmpty
+            || !batch.importJobLines.isEmpty
     }
 
     // Cached regex patterns for boot/import status parsing
@@ -144,6 +147,10 @@ enum RelayLogParser {
     /// Pure string parsing — no MainActor, no UI dependencies.
     static func collectStateChanges(from line: String, into batch: inout BatchedStateUpdate) {
         if ImportStartGate.isEngineStart(line) { batch.importEngineStarted = true }
+        if let job = ImportJobs.parseLine(line) {
+            batch.importJobLines.append(job)
+            return
+        }
         if ListHistoryScan.collect(from: line, into: &batch) { return }
         // Import state
         if line.contains("connected successfully") {

@@ -20,6 +20,7 @@ private extension View {
 struct ImportNotesStep: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     @EnvironmentObject var configService: ConfigService
+    @ObservedObject private var jobs = ImportJobsService.shared
     let onContinue: () -> Void
     let onSkip: () -> Void
 
@@ -27,8 +28,18 @@ struct ImportNotesStep: View {
     /// Their own servers (kind 10002 write relays), read for this import
     /// only: never saved or published.
     @State private var ownRelays: [String] = []
-    /// "Look up and back up my lists": on unless switched off (ListHistoryScan).
-    @State private var lookForOldLists = ListHistoryScan.defaultOn
+    /// Import was tapped: first run's setup job (ImportJobs) is on.
+    @State private var requested = false
+
+    /// Setup let them in: done or partial.
+    private var setupDone: Bool {
+        if case .finished = jobs.setupStage { return true }
+        return false
+    }
+    private var setupFailed: String? {
+        if case .couldNotFinish(let reason) = jobs.setupStage { return ImportJobs.couldNotFinishText(reason: reason) }
+        return nil
+    }
 
     var body: some View {
         VStack(spacing: 24) {
@@ -53,22 +64,26 @@ struct ImportNotesStep: View {
             .opacity(appeared ? 1 : 0)
             .animation(WizardAnimations.fadeIn.delay(0.3), value: appeared)
 
-            WizardSkipLink(title: String(localized: "setup.import.skip")) { onSkip() }
+            WizardSkipLink(title: String(localized: "setup.import.skip")) {
+                // A setup already asked for carries on in the running relay.
+                if requested { relayManager.endFirstRun() }
+                onSkip()
+            }
 
             Spacer().frame(height: 8)
         }
         .onAppear { appeared = true }
         .task { await loadOwnRelays() }
-        // Importing can run 20+ minutes; don't let the screen dim or lock while it's up.
+        // Don't let the screen dim or lock while setup is up.
         .keepsScreenAwake()
         .alert(String(localized: "setup.import.alert.portConflict"), isPresented: $relayManager.isPortConflict) {
             Button(String(localized: "setup.import.alert.retry")) {
                 relayManager.isPortConflict = false
-                relayManager.importNotes(config: configService.config, alsoFrom: ownRelays, listHistory: lookForOldLists)
+                startSetup()
             }
             Button(String(localized: "setup.action.cancel"), role: .cancel) {
                 relayManager.isPortConflict = false
-                relayManager.cancelImport()
+                relayManager.cancelFirstRunSetup()
             }
         } message: {
             Text("Port \(configService.config.relayPort) is currently in use. Stop the other process or change the port in Settings.")
@@ -78,43 +93,50 @@ struct ImportNotesStep: View {
     @ViewBuilder
     private var networkImportContent: some View {
         VStack(spacing: 14) {
-            if relayManager.isImporting || relayManager.importCompleted {
+            if requested {
                 VStack(spacing: 12) {
                     HStack {
-                        Text(relayManager.importCompleted ? String(localized: "setup.import.done") : String(localized: "setup.import.importing"))
+                        Text(setupDone ? String(localized: "setup.import.done") : String(localized: "setup.import.importing"))
                             .font(.appSystem(size: 13))
                             .foregroundColor(WizardColors.textSecondary)
                         Spacer()
-                        Text("\(Int(relayManager.importProgress * 100))%")
-                            .font(.appSystem(size: 13, design: .monospaced))
-                            .foregroundColor(WizardColors.accentPrimary)
                     }
 
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(WizardColors.bgElevated)
-                                .frame(height: 6)
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(WizardColors.accentGradient)
-                                .frame(width: geo.size.width * relayManager.importProgress, height: 6)
-                        }
+                    // setup reports no progress of its own, and takes seconds.
+                    if setupDone || setupFailed != nil {
+                        ProgressView(value: 1)
+                            .tint(setupFailed != nil ? .orange : WizardColors.accentPrimary)
+                    } else {
+                        ProgressView()
+                            .progressViewStyle(.linear)
+                            .tint(WizardColors.accentPrimary)
                     }
-                    .frame(height: 6)
 
-                    if !relayManager.importCompleted {
-                        Text(relayManager.importStatusMessage)
+                    if let setupFailed {
+                        Text(setupFailed)
+                            .font(.appSystem(size: 12))
+                            .foregroundColor(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                        ImportCouldNotStartButton(action: startSetup)
+                    } else if jobs.setupStage == .finished(partial: true) {
+                        Text(ImportTourStep.partialLine)
+                            .font(.appSystem(size: 12))
+                            .foregroundColor(WizardColors.textMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if !setupDone {
+                        Text("Bringing in your notes…")
                             .font(.appSystem(size: 12))
                             .foregroundColor(WizardColors.textMuted)
                             .lineLimit(2)
                     }
 
-                    ListHistoryScanStatus(textColor: WizardColors.textSecondary, accent: WizardColors.accentPrimary)
-
-                    if relayManager.importCompleted {
-                        WizardPrimaryButton(title: String(localized: "setup.action.continue"), action: onContinue)
-                    } else {
-                        Button(action: { relayManager.cancelImport() }) {
+                    if setupDone {
+                        WizardPrimaryButton(title: String(localized: "setup.action.continue")) {
+                            relayManager.endFirstRun()
+                            onContinue()
+                        }
+                    } else if setupFailed == nil {
+                        Button(action: { relayManager.cancelFirstRunSetup() }) {
                             Text(String(localized: "setup.import.cancelImport"))
                                 .font(.appSystem(size: 14, weight: .medium))
                                 .foregroundColor(WizardColors.error)
@@ -155,11 +177,6 @@ struct ImportNotesStep: View {
                     ownRelaysNote
                         .frame(minHeight: 80, maxHeight: 120)
                         .cornerRadius(8)
-
-                    Divider().background(WizardColors.borderSubtle)
-
-                    ListHistoryOptInToggle(isOn: $lookForOldLists, textColor: WizardColors.textSecondary)
-                        .tint(WizardColors.accentPrimary)
                 }
                 .padding(16)
                 .background(WizardColors.bgCard)
@@ -168,10 +185,15 @@ struct ImportNotesStep: View {
 
                 WizardPrimaryButton(title: String(localized: "setup.import.action")) {
                     configService.save()
-                    relayManager.importNotes(config: configService.config, alsoFrom: ownRelays, listHistory: lookForOldLists)
+                    startSetup()
                 }
             }
         }
+    }
+
+    private func startSetup() {
+        requested = true
+        relayManager.startFirstRun(config: configService.config, alsoFrom: ownRelays)
     }
 
     @ViewBuilder

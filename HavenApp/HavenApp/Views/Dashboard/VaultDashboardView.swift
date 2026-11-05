@@ -40,6 +40,7 @@ struct VaultDashboardView: View {
                 safetySection
                 reachSection
                 VaultContentsSection(model: contents)
+                StillToBringInSection()
                 keepItFullSection
                 settingsSection
                 activitySection

@@ -118,6 +118,8 @@ struct DashboardView: View {
                         actionGrid
                     }
 
+                    StillToBringInSection()
+
                     exportStatusView
 
                     DashboardListBackupsRow()
@@ -193,6 +195,9 @@ struct DashboardView: View {
                         }
 
                         actionGrid
+                            .padding(.horizontal)
+
+                        StillToBringInSection()
                             .padding(.horizontal)
 
                         exportStatusView

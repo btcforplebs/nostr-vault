@@ -2,20 +2,21 @@ import SwiftUI
 
 // MARK: - Import tour
 
-/// Import starts as soon as this shows. Over it, the import tour's lesson
-/// cards at the reader's own pace, then a Ready card with real counts.
-/// Import done first: "Jump in" shows under any card. Cards done first: the
-/// app can open with the import still running (it lives in
-/// `RelayProcessManager`, not this view).
+/// First run's setup job (ImportJobs) starts as soon as this shows: the
+/// vault runs and serves, and setup brings in their own notes, follows and
+/// current lists, in seconds. Over it, the import tour's lesson cards at the
+/// reader's own pace, then a Ready card with real counts. Setup done or
+/// partial: "Jump in" shows under any card. The long items (replies, older
+/// relays, wider network, list history) are the Vault tab's "Still to bring
+/// in", run only when tapped (Logen 2026-11-05).
 struct ImportTourStep: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     @EnvironmentObject var configService: ConfigService
+    @ObservedObject private var jobs = ImportJobsService.shared
     let isReadOnly: Bool
     /// Their own servers picked in the relay check, read for this import
     /// only (not saved).
     var alsoFrom: [String] = []
-    /// Also look for older versions of their lists (the relay check's switch).
-    var listHistory = false
     /// `keptRunning`: they left with the import still going.
     let onEnter: (_ keptRunning: Bool) -> Void
 
@@ -24,8 +25,6 @@ struct ImportTourStep: View {
     /// Not every relay answered the count, so there are no numbers to show.
     @State private var countFailed = false
     @State private var started = false
-    /// Ticks once a second for the 60 s "Couldn't start" check.
-    @State private var now = Date()
 
     /// Same as the config default. 2021 was tried: the import walks the
     /// history in 10-day windows, each waiting on every relay, and a fresh
@@ -38,23 +37,24 @@ struct ImportTourStep: View {
     /// The small orange label over each lesson (mockup).
     static let kickers = ["WHY IMPORT", "HOW IT WORKS", "RELAYS", "OPTIONAL", "FEEDS"]
     private var lastIndex: Int { lessons.count }  // the Ready card
-    /// The import ended, however it went (haven-go's IMPORT_RESULT).
-    private var done: Bool { relayManager.importOutcome != nil && !relayManager.isImporting }
-    /// It ended, but not complete: say how instead of "Your notes are home".
-    private var endedShort: ImportResult? {
-        guard done, let outcome = relayManager.importOutcome, !outcome.isComplete else { return nil }
-        return outcome
+    /// Setup let them in: done, or partial (a slow or silent relay, whose
+    /// range waits under "Older and slower relays").
+    private var done: Bool {
+        if case .finished = jobs.setupStage { return true }
+        return false
     }
-    private var stage: ImportTourStage {
-        if let endedShort { return ImportTourStage(text: endedShort.summary, step: ImportTourStage.stepCount) }
-        return ImportTourStage(statusMessage: relayManager.importStatusMessage, completed: done)
+    private var partial: Bool { jobs.setupStage == .finished(partial: true) }
+    /// Setup failed, was cancelled or never started: Try again.
+    private var couldNotFinish: String? {
+        if case .couldNotFinish(let reason) = jobs.setupStage { return ImportJobs.couldNotFinishText(reason: reason) }
+        return nil
     }
-    /// Nothing started 60 s after the request, or it gave up (ImportStartGate).
-    private var couldNotStart: Bool {
-        ImportStartGate.showsCouldNotStart(requestedAt: relayManager.importRequestedAt, now: now,
-                                           engineStarted: relayManager.importEngineStarted,
-                                           failed: relayManager.importStartFailed, completed: done)
+    private var stageText: String {
+        if let couldNotFinish { return couldNotFinish }
+        if partial { return Self.partialLine }
+        return done ? "Done. Your notes are in." : "Bringing in your notes…"
     }
+    static let partialLine = "Your notes are in. Some relays were slow: the rest is in the Vault tab under Still to bring in."
 
     var body: some View {
         VStack(spacing: 16) {
@@ -63,19 +63,17 @@ struct ImportTourStep: View {
                 .font(.appSystem(size: isIOSDevice ? 24 : 28, weight: .semibold))
                 .foregroundColor(WizardColors.textPrimary)
             progressHeader
-            if couldNotStart {
+            if couldNotFinish != nil {
                 ImportCouldNotStartButton(action: tryAgain)
             }
-            ListHistoryScanStatus(textColor: WizardColors.textSecondary, accent: WizardColors.accentPrimary, showsLooking: false)
             card
             if done && index < lastIndex {
                 doneBar
             }
         }
         .onAppear(perform: startImportOnce)
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now = $0 }
         .onChange(of: done) { _, isDone in
-            if isDone && endedShort == nil { loadCounts() }
+            if isDone { loadCounts() }
         }
     }
 
@@ -83,22 +81,23 @@ struct ImportTourStep: View {
 
     private var progressHeader: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(stage.text)
-                    .font(.appSystem(size: 13, weight: .medium))
-                    .foregroundColor(endedShort != nil ? .orange : done ? WizardColors.success : WizardColors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer()
-                Text("\(stage.step) of \(ImportTourStage.stepCount)")
-                    .font(.appSystem(size: 12))
-                    .foregroundColor(WizardColors.textMuted)
+            Text(stageText)
+                .font(.appSystem(size: 13, weight: .medium))
+                .foregroundColor(couldNotFinish != nil ? .orange : done ? WizardColors.success : WizardColors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            // setup reports no progress of its own, and takes seconds.
+            if done || couldNotFinish != nil {
+                ProgressView(value: 1)
+                    .tint(couldNotFinish != nil ? .orange : WizardColors.success)
+            } else {
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .tint(WizardColors.accentPrimary)
             }
-            ProgressView(value: done ? 1 : max(relayManager.importProgress, 0.02))
-                .tint(endedShort != nil ? .orange : done ? WizardColors.success : WizardColors.accentPrimary)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Import"))
-        .accessibilityValue(Text(stage.text))
+        .accessibilityLabel(Text("Bringing in your notes"))
+        .accessibilityValue(Text(stageText))
     }
 
     // MARK: Cards
@@ -187,21 +186,19 @@ struct ImportTourStep: View {
 
     @ViewBuilder
     private var readyCard: some View {
-        Text(endedShort != nil ? "The import ended early" : done ? "Your notes are home" : "Almost there")
+        Text(couldNotFinish != nil ? "Your notes aren't in yet" : done ? "Your notes are home" : "Almost there")
             .font(.appSystem(size: 20, weight: .semibold))
             .foregroundColor(WizardColors.textPrimary)
-        if let endedShort {
-            Text(endedShort.summary)
+        if let couldNotFinish {
+            Text(couldNotFinish)
                 .font(.appSystem(size: 15))
                 .foregroundColor(WizardColors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("You can run it again any time from the Vault tab.")
-                .font(.appSystem(size: 13))
-                .foregroundColor(WizardColors.textSecondary)
         } else if done {
-            Text("Everything we found is saved on this device.")
+            Text(partial ? Self.partialLine : "Your notes are saved on this device. Replies, older relays and more are in the Vault tab under Still to bring in.")
                 .font(.appSystem(size: 15))
                 .foregroundColor(WizardColors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
             if let counts {
                 HStack(spacing: 10) {
                     countTile(counts.notes, "notes")
@@ -219,7 +216,7 @@ struct ImportTourStep: View {
                     .foregroundColor(WizardColors.textSecondary)
             }
         } else {
-            Text("Still importing. That's normal for a long history, so you can wait here or keep it running in the background.")
+            Text("Still bringing in your notes. You can wait here or keep it running in the background.")
                 .font(.appSystem(size: 15))
                 .foregroundColor(WizardColors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -250,10 +247,10 @@ struct ImportTourStep: View {
 
     private var doneBar: some View {
         HStack {
-            Label(endedShort?.summary ?? "Import done. Your notes are home.",
-                  systemImage: endedShort == nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+            Label(partial ? "Your notes are in. Some relays were slow." : "Done. Your notes are in.",
+                  systemImage: partial ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                 .font(.appSystem(size: 14, weight: .medium))
-                .foregroundColor(endedShort == nil ? WizardColors.success : .orange)
+                .foregroundColor(partial ? .orange : WizardColors.success)
             Spacer()
             Button("Jump in") { enter(keptRunning: false) }
                 .font(.appSystem(size: 14, weight: .semibold))
@@ -265,7 +262,7 @@ struct ImportTourStep: View {
                 .buttonStyle(.plain)
         }
         .padding(12)
-        .background((endedShort == nil ? WizardColors.success : Color.orange).opacity(0.12))
+        .background((partial ? Color.orange : WizardColors.success).opacity(0.12))
         .cornerRadius(12)
     }
 
@@ -274,15 +271,14 @@ struct ImportTourStep: View {
     private func startImportOnce() {
         guard !started else { return }
         started = true
-        if relayManager.importCompleted && !relayManager.isImporting { loadCounts(); return }
-        guard !relayManager.isImporting else { return }
+        if done { loadCounts(); return }
         configService.config.importStartDate = Self.importStartDate
         configService.save()
-        relayManager.importNotes(config: configService.config, alsoFrom: alsoFrom, listHistory: listHistory)
+        relayManager.startFirstRun(config: configService.config, alsoFrom: alsoFrom)
     }
 
     private func tryAgain() {
-        relayManager.importNotes(config: configService.config, alsoFrom: alsoFrom, listHistory: listHistory)
+        relayManager.startFirstRun(config: configService.config, alsoFrom: alsoFrom)
     }
 
     /// Seeing every lesson card finishes the tour (and covers Vault and
@@ -294,6 +290,9 @@ struct ImportTourStep: View {
         } else {
             TutorialCenter.shared.skip(.importTour, account: account)
         }
+        // Kept running: setup carries on in the relay (and resumes by
+        // itself if the relay stops before it ends).
+        relayManager.endFirstRun()
         onEnter(keptRunning)
     }
 
