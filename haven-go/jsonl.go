@@ -21,25 +21,26 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 )
 
-func (z *zipWriter) close() {
-	if err := z.w.Close(); err != nil {
-		slog.Error("❌ error closing zip writer", "error", err)
-	}
-	if err := z.f.Close(); err != nil {
-		slog.Error("❌ error closing zip file", "error", err)
-	}
-}
+// partialSuffix marks a backup still being written. exportToZip writes to
+// `<name>.partial` and renames it to the real name only once every store is
+// in and the zip is closed, so a backup cut short (the app quit, the disk
+// filled, a store failed) never leaves a file that looks like a real backup.
+const partialSuffix = ".partial"
 
-func exportToZip(ctx context.Context, zipFileName string) error {
+func exportToZip(ctx context.Context, zipFileName string) (err error) {
 	slog.Info("🛫 starting export", "file", zipFileName)
-	f, err := os.Create(zipFileName)
+	partial := zipFileName + partialSuffix
+	f, err := os.Create(partial)
 	if err != nil {
 		return fmt.Errorf("error creating zip file: %w", err)
 	}
-
 	zw := zip.NewWriter(f)
-	z := &zipWriter{f: f, w: zw}
-	defer z.close()
+	defer func() {
+		if err != nil {
+			_ = f.Close()
+			_ = os.Remove(partial)
+		}
+	}()
 
 	for name, db := range dbs {
 		fileName := name + ".jsonl"
@@ -61,6 +62,18 @@ func exportToZip(ctx context.Context, zipFileName string) error {
 		}
 	}
 
+	if err := zw.Close(); err != nil {
+		return fmt.Errorf("error finishing zip: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("error writing zip: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("error closing zip file: %w", err)
+	}
+	if err := os.Rename(partial, zipFileName); err != nil {
+		return fmt.Errorf("error saving zip: %w", err)
+	}
 	slog.Info("✅ export complete", "file", zipFileName)
 	return nil
 }
@@ -218,11 +231,6 @@ func importFromJSONL(ctx context.Context, relayName, jsonlFileName string) error
 
 	slog.Info("✅ import complete", "file", jsonlFileName)
 	return nil
-}
-
-type zipWriter struct {
-	f *os.File
-	w *zip.Writer
 }
 
 func importDB(ctx context.Context, db DBBackend, r io.Reader) error {
