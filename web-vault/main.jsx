@@ -21,6 +21,7 @@ import { setActionContext } from "./src/net/actions.js"
 import { setQuoteSource } from "./src/net/quotes.js"
 import { setMeshPeople } from "./src/net/fips-media.js"
 import { GuestApp } from "./src/guest/GuestApp.jsx"
+import { SetupBringOver } from "./src/screens/SetupBringOver.jsx"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { startNavDepth } from "./src/components/nav-depth.js"
 import { ComposeScreen } from "./src/screens/ComposeScreen.jsx"
@@ -118,6 +119,10 @@ function App() {
   const [leaving, setLeaving] = useState(null) // sign-out in progress: { busy } | { failed, revoked }
   // First sign-in on this browser: { [step]: { state, done, of, count } } while Haven fills (net/vault-ready.js).
   const [prep, setPrep] = useState(null)
+  // First sign-in: "Already using Nostr Vault on another device?" before the steps ({ pubkey, liveOwners, done }), and
+  // the line it leaves for the steps screen.
+  const [askOther, setAskOther] = useState(null)
+  const [prepNote, setPrepNote] = useState(null)
   const openNow = useRef(null)
   // A key made here whose sealed copy this browser can't open any more: the password opens its ncryptsec again.
   const [locked, setLocked] = useState(false)
@@ -149,6 +154,7 @@ function App() {
       if (!live) return
       log("boot", { loadMs: v.loadMs, startMs: v.startMs, method: session.method })
       setVault(v)
+      const madeHere = !!firstEvents
       if (firstEvents) {
         for (const ev of firstEvents) await v.outbox.event(ev).catch(e => log("first-event-error", { kind: ev.kind, err: String(e) }))
         firstEvents = null
@@ -159,6 +165,13 @@ function App() {
       shown = { ...local, loaded: !!local.contacts }
       if (firstTime && !opened && !(await hasLocalData(v, local))) {
         step("relay", { state: "done" })
+        // An account made here a moment ago has no other device; box mode has no pairing.
+        if (!BOX && !madeHere) {
+          const { note } = await new Promise(done => setAskOther({ pubkey: session.pubkey, liveOwners: v.owners, done }))
+          setAskOther(null)
+          setPrepNote(note)
+          if (!live) return
+        }
         const { account: ready, fresh } = await prepareVault({ vault: v, pubkey: session.pubkey, local, early, log, onStep: step })
         if (!live) return
         if (fresh) {
@@ -230,7 +243,8 @@ function App() {
   // Not signed in: the welcome screen, and the posts and people a guest can look at (src/guest), until they sign in.
   if (!session) return <GuestApp bootHash={bootHash} onSignedIn={onSignedIn} />
   if (error) return <main class="screen"><p class="error">Your relay didn't start: {error}</p><button onClick={() => location.reload()}>Try again</button></main>
-  if (prep) return <VaultReady steps={prep} onOpen={() => openNow.current ? openNow.current() : setPrep(null)} />
+  if (askOther) return <SetupBringOver pubkey={askOther.pubkey} liveOwners={askOther.liveOwners} onDone={askOther.done} />
+  if (prep) return <VaultReady steps={prep} note={prepNote} onOpen={() => openNow.current ? openNow.current() : setPrep(null)} />
   if (!vault || !account) return <Splash>Starting your relay…</Splash>
 
   // After a follow or unfollow: the new list is in Haven's outbox, so read the account back and the feed follows it.

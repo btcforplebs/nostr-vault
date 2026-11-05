@@ -29,8 +29,9 @@ function StepIcon({ state }) {
 
 const STATE_WORD = { active: "in progress", done: "done", slow: "continuing in the background", failed: "skipped" }
 
-/** `steps`: { [id]: { state, done, of, count } } as prepareVault reports them. */
-export function VaultReady({ steps, onOpen }) {
+/** `steps`: { [id]: { state, done, of, count } } as prepareVault reports them. `note`: one line from the "another
+ *  device?" step before it (screens/SetupBringOver.jsx): linked, or why it fell back. */
+export function VaultReady({ steps, onOpen, note = null }) {
   const pct = Math.round(progressOf(steps) * 100)
   const current = STEPS.find(s => steps[s.id]?.state === "active")
   return (
@@ -38,6 +39,7 @@ export function VaultReady({ steps, onOpen }) {
       <span class="splash-mark"><img src="./icon.svg" alt="" /></span>
       <h1>Getting your vault ready</h1>
       <p class="vr-lede">Your vault runs right here in this tab. The first time, it fetches your notes and the people you follow, so the app opens full. Next time it opens straight away.</p>
+      {note && <p class="vr-note" role="status">{note}</p>}
       <div class="vr-bar" role="progressbar" aria-label="Getting your vault ready" aria-valuemin="0" aria-valuemax="100" aria-valuenow={pct}
         aria-valuetext={current ? `${pct}%, ${current.title.toLowerCase()}` : `${pct}%`}>
         <span style={{ width: `${pct}%` }} />
