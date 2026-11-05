@@ -102,6 +102,8 @@ sealed class Screen(val route: String) {
         fun createRoute(npub: String) = "settings/mesh/device/$npub"
     }
     data object FipsMeshAdvanced : Screen("settings/mesh/advanced")
+    /** Vault Dashboard › Your devices › Add a device: the two-scan link. */
+    data object PairDevice : Screen("vault/pair_device")
 
     // Dashboard
     /**

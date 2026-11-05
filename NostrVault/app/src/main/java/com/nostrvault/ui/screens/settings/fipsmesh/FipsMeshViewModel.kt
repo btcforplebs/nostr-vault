@@ -146,7 +146,7 @@ class FipsMeshViewModel @Inject constructor(
      */
     private fun queued(block: suspend () -> Unit) {
         appScope.launch {
-            meshLock.withLock {
+            mesh.changeLock.withLock {
                 _busy.value = true
                 try { block() } finally { _busy.value = false }
             }
@@ -154,8 +154,6 @@ class FipsMeshViewModel @Inject constructor(
     }
 
     private companion object {
-        /** Shared by every FIPS Mesh page: the list page and a device page each have their own view model. */
-        val meshLock = kotlinx.coroutines.sync.Mutex()
         const val SEEN_WRITE_EVERY_S = 60L
     }
 }
