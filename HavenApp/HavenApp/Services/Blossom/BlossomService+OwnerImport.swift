@@ -39,7 +39,7 @@ extension BlossomService {
             withCStrings([path.path, sha256, contentType]) { p in ImportOwnerBlobC(p[0], p[1], p[2]) }
         }.value == 1
         if stored {
-            logger.info("importToOwnVaultInProcess: \(sha256.prefix(8)) stored (keyless vault)")
+            logger.info("importToOwnVaultInProcess: \(sha256.prefix(8)) stored in-process")
         } else {
             logger.warning("importToOwnVaultInProcess: vault refused \(sha256.prefix(8))")
         }
