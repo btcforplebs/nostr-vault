@@ -40,7 +40,10 @@
   </div>
   <h2 style="font-size:15px;margin:16px 0 4px">Mesh (NIP-01 on port 7447, owner only)</h2>
   <textarea id="fipsOwners" rows="2" placeholder="Your vault's mesh address (one per line)" style="width:100%;box-sizing:border-box;background:#111;color:#ddd;border:1px solid #444;border-radius:8px;padding:8px;font:12px ui-monospace,monospace"></textarea>
-  <input id="fipsAccount" placeholder="Your Nostr account npub, so your notes are kept" autocapitalize="off" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;background:#111;color:#ddd;border:1px solid #444;border-radius:8px;padding:8px;font:12px ui-monospace,monospace;margin-top:6px">
+  <pre id="fipsAccountNow"></pre>
+  <input id="fipsAccount" placeholder="To keep your notes, sign once: nsec, ncryptsec or bunker:// (not kept)" type="password" autocapitalize="off" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;background:#111;color:#ddd;border:1px solid #444;border-radius:8px;padding:8px;font:12px ui-monospace,monospace;margin-top:6px">
+  <input id="fipsAccountPw" placeholder="ncryptsec password" type="password" autocomplete="off" style="width:100%;box-sizing:border-box;background:#111;color:#ddd;border:1px solid #444;border-radius:8px;padding:8px;font:12px ui-monospace,monospace;margin-top:6px">
+  <div><button id="fipsAccountExt">Sign with extension</button><button id="fipsAccountSign">Sign with key</button><button id="fipsAccountClear">Forget account</button></div>
   <div><button id="fipsSave">Save owners</button><button id="fipsStart">Start mesh</button></div>
   <pre id="fipsStatus"></pre>
   <h2 style="font-size:15px;margin:16px 0 4px">Photo from your vault (mesh port 80)</h2>
