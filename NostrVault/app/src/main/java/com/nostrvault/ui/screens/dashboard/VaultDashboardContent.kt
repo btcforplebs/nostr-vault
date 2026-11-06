@@ -230,6 +230,7 @@ internal fun VaultDashboardContent(
             onAddDevice = { onOpenScreen(Screen.PairDevice) },
             // The dashboard opens pages by Screen, not by route: a device opens the Mesh list it sits in.
             onOpenDevice = { onOpenScreen(Screen.MeshSettings) },
+            onOpenMesh = { onOpenScreen(Screen.MeshSettings) },
         )
 
         // ── Is it safe? ────────────────────────────────────────
