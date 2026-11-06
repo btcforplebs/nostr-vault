@@ -49,8 +49,8 @@ extension FeedService {
     }
 
     /// A local DVM result (Popular, Catch Up, Underrated) that finished
-    /// after you left its feed: filed as that feed's cache (memory, and disk
-    /// for Popular) so the next visit shows it at once.
+    /// after you left its feed: filed as that feed's cache (memory and
+    /// disk) so the next visit shows it at once.
     func storeDvmResult(_ ranked: [FeedNote], scores: [String: Double], mode: FeedMode) {
         guard !ranked.isEmpty else { return }
         let cache = ModeFeedCache(notes: ranked, parentNotesCache: [:], noteStats: [:],

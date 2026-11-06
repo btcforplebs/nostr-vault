@@ -6,9 +6,11 @@ final class FeedSpeedPolicyTests: XCTestCase {
 
     // MARK: - Saved across relaunch
 
-    func testOnlyDiscoverAndPopularAreKeptOnDisk() {
+    func testOnlyDiscoverAndTheLocalDvmFeedsAreKeptOnDisk() {
         XCTAssertTrue(FeedSpeedPolicy.persistsModeCache("Discovery"))
-        XCTAssertTrue(FeedSpeedPolicy.persistsModeCache("Popular"))
+        for mode in ["Popular", "Catch Up", "Underrated"] {
+            XCTAssertTrue(FeedSpeedPolicy.persistsModeCache(mode), mode)
+        }
         for mode in ["Following", "Global", "Media", "Articles", "Polls", "Recipes", "Live"] {
             XCTAssertFalse(FeedSpeedPolicy.persistsModeCache(mode), mode)
         }

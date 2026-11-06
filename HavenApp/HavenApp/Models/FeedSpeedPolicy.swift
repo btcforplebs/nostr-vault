@@ -11,7 +11,8 @@ enum FeedSpeedPolicy {
     /// ranking to compute), so their tab caches are also kept on disk and are
     /// instant on a cold launch. Every other feed stays memory-only.
     static func persistsModeCache(_ mode: String) -> Bool {
-        mode == discovery || mode == popular
+        // Catch Up and Underrated are computed the same way as Popular.
+        mode == discovery || mode == popular || mode == "Catch Up" || mode == "Underrated"
     }
 
     /// How old a tab cache may be and still be shown. A persisted one is shown

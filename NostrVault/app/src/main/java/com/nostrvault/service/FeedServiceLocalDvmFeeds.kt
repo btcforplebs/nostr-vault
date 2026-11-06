@@ -8,6 +8,7 @@ import com.nostrvault.data.model.isLocalDvm
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.FeedService.Companion.TAG
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
@@ -59,7 +60,19 @@ internal object LocalDvmFeeds {
  * mid-compute for Catch Up still computes Catch Up.
  */
 internal fun FeedService.loadLocalDvmFeed(mode: FeedMode) {
-    if (!mode.isLocalDvm || !localDvmLoading.add(mode)) return
+    if (!mode.isLocalDvm) return
+    // Catch Up with no follow list known yet (a launch straight into it):
+    // load the list first, then compute, instead of computing for nobody
+    // (iOS FeedService.dvmCompute).
+    if (mode == FeedMode.CATCH_UP && _followedPubkeys.value.isEmpty() && !_hasAttemptedContactLoad.value) {
+        scope.launch {
+            if (!_isLoadingContacts.value) loadContactList()
+            _isLoadingContacts.first { !it }
+            if (_feedMode.value == FeedMode.CATCH_UP && _hasAttemptedContactLoad.value) loadLocalDvmFeed(FeedMode.CATCH_UP)
+        }
+        return
+    }
+    if (!localDvmLoading.add(mode)) return
     if (mode == FeedMode.POPULAR) _isLoadingPopular.value = true
     _isLoadingFeed.value = true
     _connectionStatus.value = LocalDvmFeeds.computingStatus(mode)
