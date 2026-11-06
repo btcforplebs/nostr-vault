@@ -2,7 +2,9 @@ import SwiftUI
 
 /// Vault Dashboard › Your devices: your linked devices, a green dot for one
 /// this device is connected to now, and Add a device (the two-scan pairing).
-/// The Mac's row opens its sync page, as "Second copy on your Mac" did.
+/// The Mac's row opens its sync page, as "Second copy on your Mac" did; the
+/// other devices and the Mesh settings row open the Mesh settings screen
+/// (Logen 2026-11-06; Android YourDevicesCard).
 struct YourDevicesSection: View {
     @EnvironmentObject var configService: ConfigService
     @State private var showPairing = false
@@ -30,12 +32,16 @@ struct YourDevicesSection: View {
                         MacSyncSettingsPage().settingsPage("Home vault sync")
                     }
                 } else {
-                    DashboardRow(icon: device.role.icon, title: device.displayName, detail: line(device), state: dotState(device)) {
-                        EmptyView()
+                    DashboardRowLink(icon: device.role.icon, title: device.displayName, detail: line(device), state: dotState(device)) {
+                        meshSettings
                     }
                 }
                 DashboardDivider()
             }
+            SettingLink(icon: "point.3.filled.connected.trianglepath.dotted", title: "Mesh settings", value: nil) {
+                meshSettings
+            }
+            DashboardDivider()
             DashboardRow(
                 icon: "plus",
                 title: "Add a device",
@@ -49,6 +55,15 @@ struct YourDevicesSection: View {
             PairDeviceView()
                 .environmentObject(configService)
         }
+    }
+
+    /// The existing Mesh settings screen, as Settings › Mesh opens it.
+    @ViewBuilder private var meshSettings: some View {
+        #if os(iOS)
+        FipsMeshSettingsView().settingsPage("Mesh")
+        #else
+        MacFipsMeshSettingsView().settingsPage("Mesh")
+        #endif
     }
 
     /// Connected now (the running engine's peers). The Mac's engine reports no

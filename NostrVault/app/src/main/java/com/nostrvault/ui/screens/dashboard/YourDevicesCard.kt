@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,12 +46,14 @@ import javax.inject.Inject
 
 /**
  * Vault Dashboard › Your devices (plan §6): your linked devices with the green dot for the ones in reach, and Add a
- * device, which opens the two-scan link. Mesh settings stays under Advanced. Twin of iOS `YourDevicesSection.swift`.
+ * device, which opens the two-scan link. A device and the Mesh settings row open the Mesh settings screen (Logen
+ * 2026-11-06); Advanced keeps its link too. Twin of iOS `YourDevicesSection.swift`.
  */
 @Composable
 internal fun YourDevicesCard(
     onAddDevice: () -> Unit,
     onOpenDevice: () -> Unit,
+    onOpenMesh: () -> Unit,
     viewModel: YourDevicesViewModel = hiltViewModel(),
 ) {
     val devices by viewModel.devices.collectAsState()
@@ -70,6 +73,8 @@ internal fun YourDevicesCard(
             DeviceRow(device, onClick = onOpenDevice)
         }
         if (devices.isNotEmpty()) DashDivider()
+        SettingLink(Icons.Filled.Hub, "Mesh settings", null, onClick = onOpenMesh)
+        DashDivider()
         DashRow(
             icon = Icons.Filled.Devices,
             title = if (devices.isEmpty()) "Link your other devices" else "Add a device",
