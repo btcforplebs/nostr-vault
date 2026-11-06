@@ -143,7 +143,7 @@ func runImport(ctx context.Context) {
 	}
 	wotModel := wot.NewSimpleInMemory(
 		pool,
-		config.WhitelistedPubKeys,
+		whitelist(),
 		importRelays(),
 		config.WotDepth,
 		config.WotMinimumFollowers,
@@ -189,7 +189,7 @@ func subscribeInboxAndChat(ctx context.Context) {
 
 	relays := withAccountInboxRelays(ctx, inboxRelays())
 
-	pTags := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
+	pTags := slices.Collect(maps.Keys(whitelist()))
 
 	// The negentropy reconciliation window. Wider than the watermark on
 	// purpose: NIP-59 gift wraps randomize created_at up to 2 days into the
@@ -776,7 +776,7 @@ func classifyInboxEvent(ctx context.Context, ev *nostr.Event) inboxClassificatio
 		if len(tag) < 2 {
 			continue
 		}
-		if _, ok := config.WhitelistedPubKeys[tag[1]]; !ok {
+		if _, ok := whitelist()[tag[1]]; !ok {
 			continue
 		}
 		if !slices.Contains(recipients, tag[1]) {

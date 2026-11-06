@@ -38,7 +38,7 @@ func meshOwnerGetAuthorized(r *http.Request, sha256 string) bool {
 	if json.Unmarshal(raw, &ev) != nil || ev.Kind != 24242 {
 		return false
 	}
-	if _, ok := config.WhitelistedPubKeys[ev.PubKey]; !ok {
+	if _, ok := whitelist()[ev.PubKey]; !ok {
 		return false
 	}
 	if authExpiration(&ev) <= time.Now().Unix() ||

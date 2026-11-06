@@ -80,7 +80,7 @@ func parseBlobForward(r *http.Request, now time.Time) (*blobForward, error) {
 	if ok, _ := ev.CheckSignature(); !ok {
 		return nil, errors.New("forward authorization signature is invalid")
 	}
-	if _, ok := config.WhitelistedPubKeys[ev.PubKey]; !ok {
+	if _, ok := whitelist()[ev.PubKey]; !ok {
 		return nil, errors.New("forward authorization is not from a key this relay serves")
 	}
 	if t := ev.Tags.GetFirst([]string{"t"}); t == nil || len(*t) < 2 || (*t)[1] != "upload" {

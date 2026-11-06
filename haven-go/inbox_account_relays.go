@@ -151,7 +151,7 @@ func publicWSS(url string) bool {
 // withAccountInboxRelays adds every on-device account's inbox relays to
 // relays and logs how many it added.
 func withAccountInboxRelays(ctx context.Context, relays []string) []string {
-	extra := accountInboxRelays(ctx, slices.Collect(maps.Keys(config.WhitelistedPubKeys)), relays)
+	extra := accountInboxRelays(ctx, slices.Collect(maps.Keys(whitelist())), relays)
 	if len(extra) > 0 {
 		log.Println("📢 inbox also pulls", len(extra), "account relays:", strings.Join(extra, " "))
 	}

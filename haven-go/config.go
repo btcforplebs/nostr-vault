@@ -101,6 +101,8 @@ const relaySoftware = "https://github.com/barrydeen/haven"
 const minInboxPullIntervalSeconds = 3600
 
 func loadConfig() Config {
+	// Live-added accounts end with the config that preceded them (whitelist.go).
+	resetLiveAccounts()
 	_ = godotenv.Load(".env")
 
 	defaultWotDepth := 3

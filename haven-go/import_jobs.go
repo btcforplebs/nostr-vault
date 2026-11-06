@@ -112,7 +112,7 @@ func jobsAccount() string {
 	if config.OwnerPubKey != "" {
 		return config.OwnerPubKey
 	}
-	keys := slices.Sorted(maps.Keys(config.WhitelistedPubKeys))
+	keys := slices.Sorted(maps.Keys(whitelist()))
 	return strings.Join(keys, ",")
 }
 
@@ -565,7 +565,7 @@ func runSetupJob(ctx context.Context, spawn func(string, func()), res *jobResult
 // media servers, …), however old: the owner-notes step only reaches back to
 // the start date. One request per relay; the store keeps the newest of each.
 func importCurrentLists(ctx context.Context, relays []string) int {
-	owners := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
+	owners := slices.Collect(maps.Keys(whitelist()))
 	f := nostr.Filter{Authors: owners, Kinds: historyScanKinds, Limit: importPageLimit}
 	keeper := newOwnerKeeper(ctx)
 	var (
@@ -664,7 +664,7 @@ func runOlderRelaysJob(ctx context.Context, res *jobResult) {
 	if len(relays) == 0 {
 		return // nothing left: done
 	}
-	owners := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
+	owners := slices.Collect(maps.Keys(whitelist()))
 	keeper := newOwnerKeeper(ctx)
 	setTops := func(tops map[string]time.Time) {
 		res.cursorMu.Lock()
@@ -712,7 +712,7 @@ func runWiderNetworkJob(ctx context.Context, res *jobResult) {
 	}
 	model := wot.NewSimpleInMemory(
 		pool,
-		config.WhitelistedPubKeys,
+		whitelist(),
 		config.ImportSeedRelays,
 		config.WotDepth,
 		config.WotMinimumFollowers,
@@ -736,7 +736,7 @@ func runWiderNetworkJob(ctx context.Context, res *jobResult) {
 // runListHistoryJob: older versions of the owners' lists, filed for Recover
 // a List. The user ran it, so it runs whatever the import's opt-in says.
 func runListHistoryJob(ctx context.Context, res *jobResult) {
-	owners := slices.Sorted(maps.Keys(config.WhitelistedPubKeys))
+	owners := slices.Sorted(maps.Keys(whitelist()))
 	relays := uniqueRelays(append(append([]string{}, config.ImportSeedRelays...), historyRelays...))
 	versions, answered := scanListHistory(ctx, relays, owners, historyScanKinds)
 	if ctx.Err() != nil {

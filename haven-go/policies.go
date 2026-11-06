@@ -113,7 +113,7 @@ func ownerStream(ctx context.Context) bool {
 func whitelistBypassEventRateLimiter(tokensPerInterval int, interval time.Duration, maxTokens int) func(ctx context.Context, evt *nostr.Event) (bool, string) {
 	inner := policies.EventIPRateLimiter(tokensPerInterval, interval, maxTokens)
 	return func(ctx context.Context, evt *nostr.Event) (bool, string) {
-		if _, ok := config.WhitelistedPubKeys[evt.PubKey]; ok {
+		if _, ok := whitelist()[evt.PubKey]; ok {
 			return false, ""
 		}
 		// The browser build's owner streams: the page itself caching its
@@ -127,7 +127,7 @@ func whitelistBypassEventRateLimiter(tokensPerInterval int, interval time.Durati
 
 func MustBeWhitelistedToQuery(ctx context.Context, _ nostr.Filter) (bool, string) {
 	authenticatedUser := khatru.GetAuthed(ctx)
-	if _, ok := config.WhitelistedPubKeys[authenticatedUser]; !ok {
+	if _, ok := whitelist()[authenticatedUser]; !ok {
 		slog.Debug("🚫 query rejected: user is not whitelisted", "user", authenticatedUser)
 		return true, "restricted: you must be whitelisted to query this relay"
 	}
@@ -145,14 +145,14 @@ func MustBeInWotToQuery(ctx context.Context, _ nostr.Filter) (bool, string) {
 
 func MustBeWhitelistedToPost(ctx context.Context, event *nostr.Event) (bool, string) {
 	// Event from a whitelisted pubkey can always be posted, even if the user is not authenticated
-	if _, ok := config.WhitelistedPubKeys[event.PubKey]; ok {
+	if _, ok := whitelist()[event.PubKey]; ok {
 		return false, ""
 	}
 	authenticatedUser := khatru.GetAuthed(ctx)
 	if authenticatedUser == "" {
 		return true, "auth-required: you must be authenticated to post to this relay"
 	}
-	if _, ok := config.WhitelistedPubKeys[authenticatedUser]; !ok {
+	if _, ok := whitelist()[authenticatedUser]; !ok {
 		slog.Debug("🚫 event rejected: user is not whitelisted", "event", event.ID, "pubkey", authenticatedUser)
 		return true, "restricted: you must be whitelisted to post to this relay"
 	}
@@ -298,7 +298,7 @@ func MustTagWhitelistedPubKey(_ context.Context, event *nostr.Event) (bool, stri
 		if len(tag) < 2 {
 			continue
 		}
-		if _, ok := config.WhitelistedPubKeys[tag[1]]; ok {
+		if _, ok := whitelist()[tag[1]]; ok {
 			return false, ""
 		}
 	}

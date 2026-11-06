@@ -42,7 +42,7 @@ type copyBuildProgress func(copyProgress)
 // copyAccounts: the vault's own keys (the owner and any added accounts).
 func copyAccounts() map[string]bool {
 	out := map[string]bool{}
-	for k := range config.WhitelistedPubKeys {
+	for k := range whitelist() {
 		out[k] = true
 	}
 	return out
@@ -106,6 +106,10 @@ func copyDirBytes(dir string) int64 {
 // renamed only when whole. A short disk is errCopyNoSpace.
 func buildCopy(ctx context.Context, dir, id string, progress copyBuildProgress) (copyManifest, error) {
 	m := copyManifest{V: 2, ID: id, State: "building", Owner: config.OwnerPubKey, CreatedAt: time.Now().Unix(), Counts: map[string]int{}}
+	accountsRaw := marshalLocalCopyAccounts()
+	for _, a := range localCopyAccounts().Accounts {
+		m.Accounts = append(m.Accounts, a.Npub)
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return m, err
 	}
@@ -137,7 +141,7 @@ func buildCopy(ctx context.Context, dir, id string, progress copyBuildProgress) 
 	// notes.zip: every store as the backup writes it; the blob index trimmed
 	// to the files in media.zip; settings.json when it passes the check.
 	notesPath := filepath.Join(dir, "notes.zip")
-	settingsState, err := writeCopyNotes(ctx, notesPath, stores, records, media, m.Counts, func() {
+	settingsState, err := writeCopyNotes(ctx, notesPath, accountsRaw, stores, records, media, m.Counts, func() {
 		p.StoresDone++
 		progress(p)
 	})
@@ -183,7 +187,7 @@ func (c *copyCounter) Write(b []byte) (int, error) {
 	return c.w.Write(b)
 }
 
-func writeCopyNotes(ctx context.Context, path string, stores []string, records map[string]*nostr.Event, media map[string]string, counts map[string]int, storeDone func()) (settings string, err error) {
+func writeCopyNotes(ctx context.Context, path string, accounts []byte, stores []string, records map[string]*nostr.Event, media map[string]string, counts map[string]int, storeDone func()) (settings string, err error) {
 	partial := path + partialSuffix
 	f, err := os.OpenFile(partial, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -196,6 +200,10 @@ func writeCopyNotes(ctx context.Context, path string, stores []string, records m
 		}
 	}()
 	zw := zip.NewWriter(f)
+	// accounts.json first: B reads it before any store (§3.4).
+	if err := writeZipAccounts(zw, accounts); err != nil {
+		return "", err
+	}
 	for _, name := range stores {
 		w, err := zw.CreateHeader(&zip.FileHeader{Name: name + ".jsonl", Method: zip.Deflate, Modified: time.Now()})
 		if err != nil {

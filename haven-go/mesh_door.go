@@ -204,7 +204,7 @@ func meshUploadAuthorized(r *http.Request) (*nostr.Event, int, string) {
 	}
 	// The owner-key path. TODO(mesh-key): remove once every app signs
 	// mesh uploads with its device key (docs/MESH_COPY_V2_CONTRACT.md §2.1).
-	if _, ok := config.WhitelistedPubKeys[ev.PubKey]; !ok {
+	if _, ok := whitelist()[ev.PubKey]; !ok {
 		return nil, http.StatusForbidden, "only media signed by whitelisted pubkeys are allowed"
 	}
 	if authExpiration(&ev) <= time.Now().Unix() {
@@ -379,7 +379,7 @@ func meshOwnerEventsOnly(ctx context.Context, event *nostr.Event) (bool, string)
 	if !isMeshConn(ctx) {
 		return false, ""
 	}
-	if _, ok := config.WhitelistedPubKeys[event.PubKey]; ok {
+	if _, ok := whitelist()[event.PubKey]; ok {
 		return false, ""
 	}
 	return true, "restricted: the mesh accepts only the owner's own events"

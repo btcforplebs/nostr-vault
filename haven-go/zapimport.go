@@ -56,7 +56,7 @@ func givenZapSender(ev *nostr.Event) string {
 	if sender == "" {
 		return ""
 	}
-	if _, ok := config.WhitelistedPubKeys[sender]; !ok {
+	if _, ok := whitelist()[sender]; !ok {
 		return ""
 	}
 	for tag := range ev.Tags.FindAll("P") {

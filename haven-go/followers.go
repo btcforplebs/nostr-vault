@@ -55,11 +55,11 @@ func observeFollowList(ev *nostr.Event) {
 			continue
 		}
 		size++
-		if _, ok := config.WhitelistedPubKeys[tag[1]]; ok {
+		if _, ok := whitelist()[tag[1]]; ok {
 			tagged[tag[1]] = struct{}{}
 		}
 	}
-	for owner := range config.WhitelistedPubKeys {
+	for owner := range whitelist() {
 		_, tagsOwner := tagged[owner]
 		switch l.ObserveList(owner, ev.PubKey, int64(ev.CreatedAt), tagsOwner, size) {
 		case followers.New:
@@ -104,7 +104,7 @@ func runFollowerLedger(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
 	}
-	owners := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
+	owners := slices.Collect(maps.Keys(whitelist()))
 	l, err := followers.Open(fs, config.FollowersPath, owners)
 	if err != nil {
 		log.Println("⚠️ follower ledger unavailable:", err)

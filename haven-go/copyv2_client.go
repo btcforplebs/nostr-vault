@@ -252,7 +252,7 @@ func (c *copyClient) waitReady(ctx context.Context, id string) (copyManifest, er
 			}
 			continue
 		}
-		if why := copyManifestError(m, config.OwnerPubKey); why != "" {
+		if why := copyManifestError(m, config.OwnerPubKey, whitelist()); why != "" {
 			return m, copyErr(why)
 		}
 		return m, nil
@@ -355,14 +355,22 @@ type copyRestoreStats struct {
 // only with their files), and leaves the checked settings for the app.
 // Returns the settings state: "included", "none" or "refused".
 func restoreCopyNotes(ctx context.Context, path string, stats *copyRestoreStats) (settings string, err error) {
-	if config.OwnerPubKey != "" {
-		ours, err := zipHasEventBy(path, config.OwnerPubKey)
-		if err != nil {
-			return "", err
-		}
-		if !ours {
-			return "", errNotYourBackup
-		}
+	// The copy came from a paired device (bearer token), so its accounts are
+	// taken (§3.4): own for this restore, so their notes are kept, and for
+	// good only when the restore succeeds.
+	theirs, has, err := checkZipAccounts(path)
+	if err != nil {
+		return "", err
+	}
+	if has {
+		added := addLiveAccountsNew(theirs.hexes())
+		defer func() {
+			if err != nil {
+				removeLiveAccounts(added)
+				return
+			}
+			rememberCopyAccounts(theirs)
+		}()
 	}
 	zr, err := zip.OpenReader(path)
 	if err != nil {
@@ -638,6 +646,9 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 	if err != nil {
 		if errors.Is(err, errNotYourBackup) {
 			return copyErr("wrong_owner")
+		}
+		if errors.Is(err, errAccountsRefused) {
+			return copyErr("bad_manifest")
 		}
 		return err
 	}

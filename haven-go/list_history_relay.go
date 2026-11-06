@@ -70,10 +70,10 @@ func rejectListHistoryWrite(ctx context.Context, evt *nostr.Event) (bool, string
 	if authed == "" {
 		return true, "auth-required: only this vault's own apps can file list history"
 	}
-	if _, ok := config.WhitelistedPubKeys[authed]; !ok {
+	if _, ok := whitelist()[authed]; !ok {
 		return true, "restricted: only this vault's own apps can file list history"
 	}
-	if _, owner := config.WhitelistedPubKeys[evt.PubKey]; !owner {
+	if _, owner := whitelist()[evt.PubKey]; !owner {
 		return true, "restricted: list history is kept only for this vault's accounts"
 	}
 	if time.Unix(int64(evt.CreatedAt), 0).After(time.Now().Add(listHistoryImportSkew)) {
@@ -94,7 +94,7 @@ func queryListHistory(ctx context.Context, store DBBackend, f nostr.Filter) (cha
 	}
 	authors := f.Authors
 	if len(authors) == 0 {
-		for pk := range config.WhitelistedPubKeys {
+		for pk := range whitelist() {
 			authors = append(authors, pk)
 		}
 	}
@@ -106,7 +106,7 @@ func queryListHistory(ctx context.Context, store DBBackend, f nostr.Filter) (cha
 	}
 	var found []*nostr.Event
 	for _, author := range authors {
-		if _, owner := config.WhitelistedPubKeys[author]; !owner {
+		if _, owner := whitelist()[author]; !owner {
 			continue
 		}
 		for _, kind := range kinds {
