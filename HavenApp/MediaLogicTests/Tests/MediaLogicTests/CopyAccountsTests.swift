@@ -127,5 +127,7 @@ final class CopyAccountsTests: XCTestCase {
         XCTAssertLessThan(try XCTUnwrap(done.range(of: "asking = true")).lowerBound,
                           try XCTUnwrap(done.range(of: "finished = true")).lowerBound)
         XCTAssertTrue(step.contains("CopyAccountsAskView(accounts: accounts.offered)"))
+        let watch = try body(of: "private func watch() {", in: step, length: 300)
+        XCTAssertTrue(watch.contains("guard !finished, !asking else { return }"), "an ask on screen is not a stalled copy")
     }
 }

@@ -120,7 +120,8 @@ struct BringItOverStep: View {
     }
 
     private func watch() {
-        guard !finished else { return }
+        // The copy is done while the ask is up: no more lines come, and that is not a stall.
+        guard !finished, !asking else { return }
         let now = Self.now
         if copying {
             // No COPY line this long after the last one is a stall; a stop
@@ -135,7 +136,7 @@ struct BringItOverStep: View {
     }
 
     private func done() {
-        guard !finished, !asking else { return }
+        guard !finished else { return }
         // The copy's accounts this device lacks are asked about before
         // setup goes on (Logen, 2026-11-06); none are added unasked.
         accounts.refreshOffer()
