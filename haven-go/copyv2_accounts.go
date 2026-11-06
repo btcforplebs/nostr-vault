@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"slices"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -27,6 +28,19 @@ const copyAccountsEntry = "accounts.json"
 // the engine merges what it is given into it on B, and the app adds any new
 // npub to its own account list (look-only) and its whitelist file.
 const copyAccountsFile = "copy-accounts.json"
+
+// copyBroughtFile: the engine's own record of the accounts that came from
+// another device (a copy, a catch-up or a backup zip) and were not this
+// vault's then. Once ticked they are own, but the vault only ever reads them
+// from relays and never uploads them (Logen, 2026-11-06: nothing is published
+// or changed on relays for a brought-over account). Never sent anywhere;
+// entries are never removed.
+const copyBroughtFile = "copy-brought.json"
+
+type copyBroughtList struct {
+	V        int      `json:"v"`
+	Accounts []string `json:"accounts"` // npubs
+}
 
 const (
 	copyAccountsMax     = 64
@@ -208,6 +222,7 @@ func takeCopyAccounts(raw []byte) string {
 // person which of those it lacks to add, and adds only the ticked ones
 // (AddAccountsC and its whitelist file). Merging never removes one.
 func offerCopyAccounts(theirs copyAccountList) {
+	recordBroughtAccounts(theirs)
 	var mine copyAccountList
 	if raw, err := os.ReadFile(copyAccountsFile); err == nil {
 		if f, why := copyAccountsRefusal(raw); why == "" {
@@ -225,6 +240,69 @@ func offerCopyAccounts(theirs copyAccountList) {
 			_ = os.Rename(tmp, copyAccountsFile)
 		}
 	}
+}
+
+var copyBroughtMu sync.Mutex
+
+// recordBroughtAccounts adds to copy-brought.json every account in theirs that
+// is not this vault's own now (the owner never is).
+func recordBroughtAccounts(theirs copyAccountList) {
+	own := whitelist()
+	copyBroughtMu.Lock()
+	defer copyBroughtMu.Unlock()
+	have := readBroughtNpubs()
+	known := map[string]bool{}
+	for _, n := range have {
+		known[n] = true
+	}
+	next := have
+	for _, a := range theirs.Accounts {
+		h, ok := npubHex(a.Npub)
+		if !ok || h == config.OwnerPubKey || known[a.Npub] {
+			continue
+		}
+		if _, isOwn := own[h]; isOwn {
+			continue
+		}
+		known[a.Npub] = true
+		next = append(next, a.Npub)
+	}
+	if len(next) == len(have) {
+		return
+	}
+	out, _ := json.Marshal(copyBroughtList{V: 1, Accounts: next})
+	tmp := copyBroughtFile + ".tmp"
+	if os.WriteFile(tmp, out, 0o600) == nil {
+		_ = os.Rename(tmp, copyBroughtFile)
+	}
+}
+
+func readBroughtNpubs() []string {
+	raw, err := os.ReadFile(copyBroughtFile)
+	if err != nil {
+		return nil
+	}
+	var l copyBroughtList
+	if json.Unmarshal(raw, &l) != nil {
+		return nil
+	}
+	return l.Accounts
+}
+
+// broughtAccounts: the hex keys of every brought-over account (never the
+// owner). The owner-event sync downloads their events but never uploads one
+// (outboxNegStore.QueryEvents).
+func broughtAccounts() map[string]struct{} {
+	copyBroughtMu.Lock()
+	npubs := readBroughtNpubs()
+	copyBroughtMu.Unlock()
+	out := make(map[string]struct{}, len(npubs))
+	for _, n := range npubs {
+		if h, ok := npubHex(n); ok && h != config.OwnerPubKey {
+			out[h] = struct{}{}
+		}
+	}
+	return out
 }
 
 func marshalLocalCopyAccounts() []byte {

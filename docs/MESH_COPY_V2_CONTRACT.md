@@ -235,6 +235,10 @@ The vault's own keys are its owner and every added account (look-only included).
   one calls `AddAccountsC` and writes it to its whitelist file before the next relay start (the engine's live
   additions end there). An unticked account stays out; its notes stay in the vault, so ticking it later finds them
   all at once.
+- **Read only on relays** (Logen, 2026-11-06). Every offered account that is not B's own at that moment is recorded
+  in the engine's `copy-brought.json` (npubs; never sent anywhere; never shrinks). Ticked or not, nothing by such
+  an account is ever uploaded: the owner sync's upload source (`outboxNegStore.QueryEvents`) drops its events,
+  lists included, while its new events still come down. Lifting this for one account is a later, separate change.
 - **Merging** (`mergeCopyAccounts`): mine first, then theirs that are new; a name I have stays, a missing one is
   filled; **nothing is ever removed**, by a copy, a restore or a catch-up.
 - **Live add without a restart.** `int AddAccountsC(char* accountsJSON)`, same JSON: how many were new (0 or more),

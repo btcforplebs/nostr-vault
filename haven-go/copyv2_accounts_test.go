@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/fiatjaf/eventstore"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -445,5 +446,70 @@ func TestCatchUpMergesAccountsNeverRemoves(t *testing.T) {
 	raw, _ = os.ReadFile(copyAccountsFile)
 	if !strings.Contains(string(raw), `"A2"`) || !strings.Contains(string(raw), npubOf(t, b2.pk)) {
 		t.Fatalf("A's app file: %s", raw)
+	}
+}
+
+// A brought-over account, once ticked, is read from relays but never written
+// to them (Logen, 2026-11-06; Tron #1807): the owner sync's upload source
+// yields none of its events, lists included, while its new events still come
+// down. An account that was already own when offered is not brought over, and
+// the record never shrinks.
+func TestBroughtOverAccountsAreNeverUploaded(t *testing.T) {
+	owner, x, already := newTestKey(t), newTestKey(t), newTestKey(t)
+	openCopyVault(t, owner.pk)
+	t.Cleanup(resetLiveAccounts)
+	addLiveAccounts([]string{already.pk})
+
+	list := func(keys ...testKey) copyAccountList {
+		var l copyAccountList
+		l.V = 1
+		for _, k := range keys {
+			l.Accounts = append(l.Accounts, copyAccount{Npub: npubOf(t, k.pk)})
+		}
+		return l
+	}
+	offerCopyAccounts(list(owner, x, already))
+	brought := broughtAccounts()
+	if _, ok := brought[x.pk]; !ok || len(brought) != 1 {
+		t.Fatalf("brought = %v, want only x", brought)
+	}
+	// The person ticks x (AddAccountsC); a later offer without x keeps it.
+	addLiveAccounts([]string{x.pk})
+	offerCopyAccounts(list(owner))
+	if _, ok := broughtAccounts()[x.pk]; !ok {
+		t.Fatal("ticking or a later offer took x off the brought-over record")
+	}
+
+	now := nostr.Now()
+	ownerNote := owner.sign(t, nostr.Event{Kind: nostr.KindTextNote, CreatedAt: now, Content: "mine"})
+	xNote := x.sign(t, nostr.Event{Kind: nostr.KindTextNote, CreatedAt: now, Content: "x"})
+	xFollows := x.sign(t, nostr.Event{Kind: nostr.KindFollowList, CreatedAt: now})
+	alreadyNote := already.sign(t, nostr.Event{Kind: nostr.KindTextNote, CreatedAt: now, Content: "own"})
+	for _, ev := range []nostr.Event{ownerNote, xNote, xFollows, alreadyNote} {
+		saveEv(t, outboxDB, ev)
+	}
+	s := &outboxNegStore{outbox: eventstore.RelayWrapper{Store: outboxDB}, tombs: newTestTombs(t)}
+	ch, err := s.QueryEvents(context.Background(), nostr.Filter{IDs: []string{ownerNote.ID, xNote.ID, xFollows.ID, alreadyNote.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	up := map[string]bool{}
+	for ev := range ch {
+		up[ev.ID] = true
+	}
+	if up[xNote.ID] || up[xFollows.ID] {
+		t.Fatal("a brought-over account's event would be uploaded")
+	}
+	if !up[ownerNote.ID] || !up[alreadyNote.ID] {
+		t.Fatalf("own events not offered for upload: %v", up)
+	}
+
+	// Down still works for x.
+	later := x.sign(t, nostr.Event{Kind: nostr.KindTextNote, CreatedAt: now + 1, Content: "x later"})
+	if err := s.Publish(context.Background(), later); err != nil {
+		t.Fatal(err)
+	}
+	if countIn(t, outboxDB, nostr.Filter{IDs: []string{later.ID}}) != 1 {
+		t.Fatal("a brought-over account's new note did not come down")
 	}
 }
