@@ -644,9 +644,10 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 	rctx := ctx
 	if has {
 		// The keep list (copyKeepEntry): every account whose notes A holds.
-		// Those accounts.json doesn't name are recorded as brought over
-		// before the first event goes in, so they are read only from the
-		// start; none is offered or added.
+		// Every account B doesn't own, named in accounts.json or only in the
+		// keep list (or an older A's accounts.json alone), is recorded as
+		// brought over before the first event goes in, so it is read only
+		// from the start; a failed record stops the copy. None is added here.
 		keep, err := checkZipKeep(paths["notes"])
 		if err != nil {
 			if errors.Is(err, errAccountsRefused) {
@@ -654,7 +655,8 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 			}
 			return err
 		}
-		if err := recordBroughtAccounts(keepOnly(keep, theirs)); err != nil {
+		brought := copyAccountList{V: 1, Accounts: append(slices.Clone(theirs.Accounts), keepOnly(keep, theirs).Accounts...)}
+		if err := recordBroughtAccounts(brought); err != nil {
 			return err
 		}
 		rctx = withRestoreKeys(ctx, append(theirs.hexes(), keep...))

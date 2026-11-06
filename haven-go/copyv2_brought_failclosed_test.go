@@ -85,3 +85,57 @@ func TestRestoreStopsWhenBroughtListIsBroken(t *testing.T) {
 		t.Fatal("their note was restored unmarked")
 	}
 }
+
+// Tron, #1827 delta: an account named in A's accounts.json that B doesn't
+// own is recorded before the restore too, and a failed record stops the
+// copy (it was recorded only after, in offerCopyAccounts, which just logs).
+func TestCopyStopsForNamedAccountsWhenBroughtListCannotBeWritten(t *testing.T) {
+	owner, second := newTestKey(t), newTestKey(t)
+	t.Cleanup(resetLiveAccounts)
+
+	openCopyVault(t, owner.pk)
+	config.WhitelistedPubKeys = map[string]struct{}{owner.pk: {}, second.pk: {}}
+	secondNote := second.sign(t, nostr.Event{Kind: 1, Content: "second's note"})
+	saveEv(t, outboxDB, owner.sign(t, nostr.Event{Kind: 1, Content: "owner's note"}))
+	saveEv(t, outboxDB, secondNote)
+	app := `{"v":1,"updated_at":5,"accounts":[{"npub":"` + npubOf(t, owner.pk) + `","name":"Me"},{"npub":"` + npubOf(t, second.pk) + `","name":"Second"}]}`
+	if err := os.WriteFile(copyAccountsFile, []byte(app), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ts, _ := buildAndServeCopy(t)
+
+	run := func() error {
+		c := newCopyClient("npub1peer", ts.URL)
+		c.free = func(string) (uint64, bool) { return 1 << 40, true }
+		return c.run(context.Background(), startProof(t, owner, nostr.Now(), "/copy/v2/start"))
+	}
+	copyPollEvery = 10 * time.Millisecond
+	t.Cleanup(func() { copyPollEvery = 2 * time.Second })
+	var logs bytes.Buffer
+	captureLog(t, &logs)
+
+	openCopyVault(t, owner.pk)
+	if err := os.Mkdir(copyBroughtFile+".tmp", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(); err == nil {
+		t.Fatal("the copy went on with the named account unrecorded")
+	}
+	if countIn(t, outboxDB, nostr.Filter{IDs: []string{secondNote.ID}}) != 0 {
+		t.Fatal("the named account's note was restored unmarked")
+	}
+
+	// Writable again: recorded, restored, offered, not added.
+	if err := os.Remove(copyBroughtFile + ".tmp"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(); err != nil {
+		t.Fatalf("copy: %v\n%s", err, logs.String())
+	}
+	if countIn(t, outboxDB, nostr.Filter{IDs: []string{secondNote.ID}}) != 1 {
+		t.Fatal("the named account's note was not kept")
+	}
+	if _, b := broughtAccounts()[second.pk]; !b || isOwnKey(second.pk) {
+		t.Fatal("the named account is not read only, or was added")
+	}
+}

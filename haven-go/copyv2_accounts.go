@@ -249,7 +249,9 @@ func takeCopyAccounts(raw []byte) string {
 // (AddAccountsC and its whitelist file). Merging never removes one.
 func offerCopyAccounts(theirs copyAccountList) {
 	if err := recordBroughtAccounts(theirs); err != nil {
-		// Nothing of theirs is restored on this path; offering stays safe.
+		// The catch-up restores nothing of theirs, and a copy recorded
+		// them before its restore (and stopped on failure), so offering
+		// stays safe.
 		slog.Error("copy: could not record brought-over accounts", "error", err)
 	}
 	var mine copyAccountList
