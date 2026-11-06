@@ -30,6 +30,9 @@ final class CopySavingTests: XCTestCase {
         XCTAssertEqual(CopySaving.countsLine(notes: 1, progress: notes), "1 note")
         XCTAssertEqual(CopySaving.countsLine(notes: 12345, progress: media), "12,345 notes · 340 of 1,200 photos and videos")
         XCTAssertEqual(CopySaving.countsLine(notes: nil, progress: media), "340 of 1,200 photos and videos")
+        // Items on any other line are not photos.
+        let notesItems = try line("stage=restoring part=notes bytes=0/5000 items=3/9 source=mesh")
+        XCTAssertEqual(CopySaving.countsLine(notes: 7, progress: notesItems), "7 notes")
     }
 
     func testRouterAddressIsPrivateOnly() {
