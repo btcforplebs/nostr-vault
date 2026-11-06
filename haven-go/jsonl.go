@@ -138,15 +138,20 @@ func importFromZip(ctx context.Context, zipFileName string) error {
 	// the zip's outbox and lists, never feed or inbox, which hold other
 	// people's notes by design.
 	// A zip with accounts.json is taken when it shares one of this vault's
-	// accounts. Its other accounts are never added: anyone can write a zip
-	// naming the owner's public npub beside their own (§3.4). The person adds
-	// them in the app; their notes then come back with a second restore.
+	// accounts (one sharing none stays refused). Its other accounts are never
+	// added (§3.4): their events are kept, so adding one later finds its notes
+	// here (Logen, 2026-11-06), and the list is offered to the app, which asks
+	// the person.
 	theirs, has, err := checkZipAccounts(zipFileName)
 	if err != nil {
 		return err
 	}
-	if n := notOwnCount(theirs); has && n > 0 {
-		slog.Warn("restore: backup names accounts this vault lacks; not added, their own notes are skipped", "accounts", n)
+	if has {
+		if n := notOwnCount(theirs); n > 0 {
+			slog.Info("restore: backup names accounts this vault lacks; their events are kept, the accounts are offered, not added", "accounts", n)
+		}
+		ctx = withRestoreKeys(ctx, theirs.hexes())
+		defer offerCopyAccounts(theirs)
 	}
 
 	zipFile, err := zip.OpenReader(zipFileName)
@@ -307,7 +312,7 @@ func importOne(ctx context.Context, db DBBackend, event *nostr.Event, now time.T
 	// The list history keeps every version: replacing would collapse a
 	// restored history to one copy per list.
 	if listsDB != nil && db == listsDB {
-		if !isOwnerList(event) {
+		if !isRestoreList(ctx, event) {
 			return restoreSkipped
 		}
 		if err := recordListVersion(ctx, db, event); err != nil {
@@ -321,7 +326,7 @@ func importOne(ctx context.Context, db DBBackend, event *nostr.Event, now time.T
 	}
 	// So do the versions an import filed (list_history_import.go).
 	if listsImportDB != nil && db == listsImportDB {
-		if !isOwnerList(event) {
+		if !isRestoreList(ctx, event) {
 			return restoreSkipped
 		}
 		if err := fileImportedVersion(ctx, event); err != nil {
@@ -369,19 +374,57 @@ func importOne(ctx context.Context, db DBBackend, event *nostr.Event, now time.T
 // restore does (web-vault/src/net/backup.js DATABASES). Feed and chat hold
 // other people's events by design.
 func restoreAccepts(ctx context.Context, db DBBackend, event *nostr.Event) bool {
+	keys := restoreKeys(ctx)
 	switch {
 	case db == nil:
 		return false
 	case outboxDB != nil && db == outboxDB, privateDB != nil && db == privateDB:
-		_, ok := whitelist()[event.PubKey]
+		_, ok := keys[event.PubKey]
 		return ok
 	case inboxDB != nil && db == inboxDB:
 		// The inbox's own write rule: tags one of the vault's keys, or is the
 		// owner's delete request.
-		reject, _ := MustTagWhitelistedPubKey(ctx, event)
-		return !reject
+		if reject, _ := MustTagWhitelistedPubKey(ctx, event); !reject {
+			return true
+		}
+		for tag := range event.Tags.FindAll("p") {
+			if len(tag) >= 2 {
+				if _, ok := keys[tag[1]]; ok {
+					return true
+				}
+			}
+		}
+		return false
 	}
 	return true
+}
+
+// restoreKeysKey carries one restore's extra keys (withRestoreKeys).
+type restoreKeysKey struct{}
+
+// withRestoreKeys: a restore that keeps, beside the vault's own keys' events,
+// those of extra (a copy's or own zip's checked accounts, §3.4; Logen,
+// 2026-11-06: adding an account later must find its notes already here).
+// Only the restore's author filters read it: nothing becomes own.
+func withRestoreKeys(ctx context.Context, extra []string) context.Context {
+	return context.WithValue(ctx, restoreKeysKey{}, extra)
+}
+
+// restoreKeys: the vault's own keys plus this restore's extra ones.
+func restoreKeys(ctx context.Context) map[string]struct{} {
+	extra, _ := ctx.Value(restoreKeysKey{}).([]string)
+	own := whitelist()
+	if len(extra) == 0 {
+		return own
+	}
+	out := make(map[string]struct{}, len(own)+len(extra))
+	for k := range own {
+		out[k] = struct{}{}
+	}
+	for _, k := range extra {
+		out[k] = struct{}{}
+	}
+	return out
 }
 
 // importBlobRecord restores one blob index record: kind 24242, an id that
@@ -395,7 +438,7 @@ func importBlobRecord(ctx context.Context, db DBBackend, event *nostr.Event, now
 	if event.Kind != 24242 || !event.CheckID() || !event.CreatedAt.Time().Before(now.Add(importFutureSlack)) {
 		return restoreSkipped
 	}
-	if _, ok := whitelist()[event.PubKey]; !ok {
+	if _, ok := restoreKeys(ctx)[event.PubKey]; !ok {
 		return restoreSkipped
 	}
 	record, ok := rebuildBlobRecord(event)
@@ -712,4 +755,13 @@ func exportDB(ctx context.Context, db DBBackend, w io.Writer) error {
 	slog.Info("📤 exported events", "count", count)
 
 	return nil
+}
+
+// isRestoreList: isOwnerList, with this restore's extra keys (§3.4).
+func isRestoreList(ctx context.Context, evt *nostr.Event) bool {
+	if evt == nil || !isProtectedListKind(evt.Kind) {
+		return false
+	}
+	_, ok := restoreKeys(ctx)[evt.PubKey]
+	return ok
 }

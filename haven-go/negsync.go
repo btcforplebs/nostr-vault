@@ -453,19 +453,25 @@ func (s *outboxNegStore) QuerySync(ctx context.Context, f nostr.Filter) ([]*nost
 }
 
 // QueryEvents is the up-direction source: only broadcastable events may leave
-// the device. Gift wraps, ephemeral kinds, and NIP-70 protected events are
-// dropped — they may be listed as haves in the vector, but they are never
+// the device. Gift wraps, ephemeral kinds, NIP-70 protected events and
+// anything by a brought-over account (copy-brought.json) are dropped — they may be listed as haves in the vector, but they are never
 // yielded for upload.
 func (s *outboxNegStore) QueryEvents(ctx context.Context, f nostr.Filter) (chan *nostr.Event, error) {
 	ch, err := s.outbox.QueryEvents(ctx, f)
 	if err != nil {
 		return nil, err
 	}
+	// Brought-over accounts are read only (Logen, 2026-11-06): nothing they
+	// wrote ever leaves this vault for a relay, whatever the sync filter.
+	brought := broughtAccounts()
 	out := make(chan *nostr.Event)
 	go func() {
 		defer close(out)
 		for ev := range ch {
 			if ev.Kind == nostr.KindGiftWrap || nostr.IsEphemeralKind(ev.Kind) || nip70.IsProtected(*ev) {
+				continue
+			}
+			if _, b := brought[ev.PubKey]; b {
 				continue
 			}
 			// Marked deleted here (its kind 5 is in, the note not yet removed,

@@ -91,6 +91,66 @@
       "expect": "secret_value"
     },
     {
+      "name": "an ncryptsec where an npub goes",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "ncryptsec1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqne776j"
+          }
+        ]
+      },
+      "expect": "secret_value"
+    },
+    {
+      "name": "a bunker URI in a name",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w",
+            "name": "bunker://relay.example?secret=x"
+          }
+        ]
+      },
+      "expect": "secret_value"
+    },
+    {
+      "name": "a password field on an account",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w",
+            "password": "hunter2"
+          }
+        ]
+      },
+      "expect": "unknown_key"
+    },
+    {
+      "name": "a signer field",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w",
+            "name": "Owner"
+          },
+          {
+            "npub": "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap",
+            "name": "Other"
+          }
+        ],
+        "signer": "nostrconnect://x"
+      },
+      "expect": "unknown_key"
+    },
+    {
       "name": "an extra field",
       "file": {
         "v": 1,

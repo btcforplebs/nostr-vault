@@ -354,24 +354,9 @@ type copyRestoreStats struct {
 // restoreNotes restores every store but the blob index (whose records go in
 // only with their files), and leaves the checked settings for the app.
 // Returns the settings state: "included", "none" or "refused".
+// ctx carries the restore's keys (withRestoreKeys): the run has already
+// checked the zip's accounts.
 func restoreCopyNotes(ctx context.Context, path string, stats *copyRestoreStats) (settings string, err error) {
-	// The copy came from a paired device (bearer token), so its accounts are
-	// taken (§3.4): own for this restore, so their notes are kept, and for
-	// good only when the restore succeeds.
-	theirs, has, err := checkZipAccounts(path)
-	if err != nil {
-		return "", err
-	}
-	if has {
-		added := addLiveAccountsNew(theirs.hexes())
-		defer func() {
-			if err != nil {
-				removeLiveAccounts(added)
-				return
-			}
-			rememberCopyAccounts(theirs)
-		}()
-	}
 	zr, err := zip.OpenReader(path)
 	if err != nil {
 		return "", err
@@ -642,7 +627,11 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 
 	var stats copyRestoreStats
 	c.line(copyLine{Stage: "restoring", Part: "notes", Bytes: [2]int64{0, partSize(m, "notes")}})
-	settings, err := restoreCopyNotes(ctx, paths["notes"], &stats)
+	// §3.4 (Logen, 2026-11-06): the copy keeps every event it carries, for
+	// every account in its list, but adds no account. The list goes to the
+	// app (copy-accounts.json), which asks the person and calls AddAccountsC
+	// for the ones they tick; their notes are already here.
+	theirs, has, err := checkZipAccounts(paths["notes"])
 	if err != nil {
 		if errors.Is(err, errNotYourBackup) {
 			return copyErr("wrong_owner")
@@ -652,8 +641,16 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 		}
 		return err
 	}
+	rctx := ctx
+	if has {
+		rctx = withRestoreKeys(ctx, theirs.hexes())
+	}
+	settings, err := restoreCopyNotes(rctx, paths["notes"], &stats)
+	if err != nil {
+		return err
+	}
 	c.line(copyLine{Stage: "restoring", Part: "media", Items: [2]int64{0, int64(m.Files.Count)}})
-	if err := restoreCopyMedia(ctx, paths["media"], paths["notes"], &stats, func(done, total int) {
+	if err := restoreCopyMedia(rctx, paths["media"], paths["notes"], &stats, func(done, total int) {
 		if done%25 == 0 || done == total {
 			c.line(copyLine{Stage: "restoring", Part: "media", Items: [2]int64{int64(done), int64(total)}})
 		}
@@ -662,6 +659,10 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 	}
 	st.Restored = []string{"notes", "media"}
 	_ = c.saveState(st)
+	if has {
+		// Offered to the person, never added here (§3.4).
+		offerCopyAccounts(theirs)
+	}
 
 	// A deletes its zip once B has everything (pick 5).
 	if resp, err := c.do(ctx, http.MethodPost, "/copy/v2/"+m.ID+"/done", nil, nil); err == nil {
