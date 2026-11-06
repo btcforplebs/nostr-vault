@@ -136,6 +136,8 @@ class AccountSettingsViewModel @Inject constructor(
             configStore.update { if (isOwner) it.copy(signingMode = "local", setupMode = "full") else it }
             configStore.setSigningMode(npub, "local")
         }
+        // A key here now: the vault takes this account as its own (VaultWhitelist).
+        configStore.accountKeysChanged()
         _keysChanged.value++
         return null
     }
@@ -239,6 +241,8 @@ class AccountSettingsViewModel @Inject constructor(
         if (cfg.signingMode(npub) == "local" && cfg.bunkerConfig(npub) != null) {
             configStore.setSigningMode(npub, "nip46")
         }
+        // No key or signer left: the vault drops it at the restart this asks for (VaultWhitelist).
+        configStore.accountKeysChanged()
         _keysChanged.value++
     }
 
@@ -258,6 +262,7 @@ class AccountSettingsViewModel @Inject constructor(
         configStore.removeAccount(npub)
         credentialStore.deleteCredentialHexKey(npub)
         if (hex.isNotEmpty()) credentialStore.deleteNsec(hex)
+        configStore.accountKeysChanged()
         _keysChanged.value++
     }
 

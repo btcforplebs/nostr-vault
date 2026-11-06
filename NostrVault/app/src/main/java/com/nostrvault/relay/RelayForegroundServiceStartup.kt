@@ -231,9 +231,6 @@ import kotlinx.coroutines.withTimeoutOrNull
             // written only when missing, so Blastr and import-seed edits never
             // reached the relay after the first boot.
             RelayConfiguration.writeRelayListFiles(config, inputs, relayDataDir)
-            if (config.whitelistedNpubsFile.isNotEmpty()) {
-                HavenBridge.setEnv("WHITELISTED_NPUBS_FILE", File(relayDataDir, config.whitelistedNpubsFile).absolutePath)
-            }
 
             // Start the relay
             Log.i(TAG, "Starting Go relay on port ${config.relayPort} (attempt ${retryCount + 1})")

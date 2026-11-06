@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.di.ApplicationScope
-import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.NostrService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -27,9 +26,10 @@ import javax.inject.Singleton
  * (docs/MESH_COPY_V2_CONTRACT.md §3.4), and asks the person which accounts a copy or catch-up brought over to add
  * here. Twin of iOS `CopyAccountsSync.swift`.
  *
- * Logen's rule (2026-11-06): nothing is added on its own. The ticked ones become look-only accounts (npub only: no
- * nsec, no bunker, no signer), through AddAccountsC now and the whitelist file for the next relay start. Every
- * offered account is settled either way and never asked again.
+ * Logen's rule (2026-11-06): nothing is added on its own. The ticked ones become look-only accounts here (npub only:
+ * no nsec, no bunker, no signer), and so get no vault access: the vault's own keys are the owner plus accounts with a
+ * key or signer on this device ([com.nostrvault.relay.VaultWhitelist], 11:37Z). Every offered account is settled
+ * either way and never asked again.
  */
 @Singleton
 class CopyAccountsSync internal constructor(
@@ -65,9 +65,7 @@ class CopyAccountsSync internal constructor(
         fun signingAccounts(): List<String>
         /** A display name for [hex], or empty. */
         fun name(hex: String): String
-        /** AddAccountsC: how many were new, or -1 when refused (0 when the relay library isn't loaded). */
-        fun addLive(json: String): Int
-        /** Adds [npubs] here look-only (no key, no signer) and to the relay's whitelist file. */
+        /** Adds [npubs] here look-only (no key, no signer): watch-only, never in the vault's whitelist. */
         fun addLookOnly(npubs: List<String>)
     }
 
@@ -153,13 +151,8 @@ class CopyAccountsSync internal constructor(
         val a = CopyAccounts.answer(_offered.value, ticked)
         settledStore.hexes = settledStore.hexes + a.settle
         _offered.value = emptyList()
-        val json = CopyAccounts.addJson(a.add, nowS()) ?: return
-        // Live now, without a relay restart.
-        if (device.addLive(json) < 0) {
-            Log.e(TAG, "accounts not added: the list was refused")
-            return
-        }
-        // And here, for the next relay start. Look-only: the npub is all that is stored.
+        if (a.add.isEmpty()) return
+        // Look-only: the npub is all that is stored, and the vault does not take it as its own.
         device.addLookOnly(a.add.map { it.npub })
         Log.i(TAG, "added ${a.add.size} brought-over account(s), look-only")
     }
@@ -172,8 +165,6 @@ class CopyAccountsSync internal constructor(
         override fun signingAccounts() = configStore.signingAccountNpubs()
         override fun name(hex: String): String =
             runCatching { nostr.get().profiles.value[hex]?.bestName }.getOrNull().orEmpty()
-        override fun addLive(json: String): Int =
-            if (HavenBridge.isLoaded) runCatching { HavenBridge.addAccounts(json) }.getOrDefault(-1) else 0
         override fun addLookOnly(npubs: List<String>) {
             // As Settings › Accounts › add a view-only npub (AccountSettingsViewModel.addViewOnly).
             for (n in npubs) {
@@ -182,7 +173,6 @@ class CopyAccountsSync internal constructor(
                 configStore.addAccount(n)
                 configStore.setSigningMode(n, "local")
             }
-            configStore.update { it.copy(broughtAccountNpubs = (it.broughtAccountNpubs + npubs).distinct()) }
         }
     }
 

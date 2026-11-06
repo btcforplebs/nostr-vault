@@ -513,12 +513,15 @@ class ConfigStore @Inject constructor(
     fun signingAccountNpubs(): List<String> {
         val cfg = _config.value
         return com.nostrvault.fips.MeshPairing.signingAccounts(cfg.ownerNpub, cfg.allAccountNpubs()) { npub ->
-            cfg.bunkerConfig(npub) != null || cfg.signingMode(npub) == "amber" || runCatching {
-                val hex = HavenBridge.decodeNpub(npub)
-                CredentialStore.getCredentialHexKey(npub) != null || (hex != null && CredentialStore.getNsec(hex) != null)
-            }.getOrDefault(false)
+            com.nostrvault.relay.VaultWhitelist.canSignHere(cfg, npub)
         }
     }
+
+    /**
+     * A key was stored or deleted outside a config save: the vault's whitelist ([com.nostrvault.relay.VaultWhitelist])
+     * may have changed, so the relay restarts if it would now start differently, as after a save.
+     */
+    fun accountKeysChanged() = relayApplier.configSaved(_config.value)
 
     fun setSigningMode(npub: String, mode: String) =
         update { it.copy(accountSigningModes = it.accountSigningModes + (npub to mode)) }

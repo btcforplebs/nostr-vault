@@ -38,7 +38,7 @@ object CopyAccounts {
     // ---- The refuse check (the engine's copyAccountsRefusal) ----
 
     /**
-     * The file's accounts, or why it may not be written, read or handed to AddAccountsC. Same order as the engine:
+     * The file's accounts, or why it may not be written, read or read back. Same order as the engine:
      * size, JSON, secrets anywhere, fields and types, version, count, npubs, names.
      */
     fun check(raw: String): Checked {
@@ -133,8 +133,6 @@ object CopyAccounts {
         add = offered.filter { it.npub in ticked },
     )
 
-    /** The JSON for AddAccountsC: the ticked accounts in the file's shape. */
-    fun addJson(ticked: List<Account>, updatedAt: Long): String? = if (ticked.isEmpty()) null else fileJson(ticked, updatedAt)
 
     /** A name as written: trimmed, cut to [NAME_MAX], and left out when it reads as a key. */
     fun cleanName(raw: String?): String {

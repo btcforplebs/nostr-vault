@@ -40,34 +40,23 @@ class CopyAccountsWiringTest {
         assertTrue(view.contains("onClick = { onAnswer(emptyList()) }"))
     }
 
+    /** A ticked account is look-only here, so it never gets vault access; nothing calls AddAccountsC (VaultWhitelist). */
     @Test
-    fun `the whitelist file holds the ticked accounts still on this device, nothing else`() {
-        val c = HavenConfig(ownerNpub = owner, accountNpubs = listOf(other, third), broughtAccountNpubs = listOf(third, owner, "npub1gone"))
-        assertEquals(listOf(third), RelayConfiguration.whitelistNpubs(c))
-        assertEquals(emptyList<String>(), RelayConfiguration.whitelistNpubs(HavenConfig(ownerNpub = owner, accountNpubs = listOf(other))))
-        assertTrue(source("relay/RelayConfiguration.kt").contains("write(\"WHITELISTED_NPUBS_FILE\", WHITELIST_FILE_NAME, whitelistNpubs(config))"))
-    }
-
-    /** Only the answer calls AddAccountsC, and it stores npubs only: no key, signer or bunker. */
-    @Test
-    fun `nothing but the ticked answer adds an account`() {
-        val callers = main.walkTopDown().filter { it.extension == "kt" && it.readText().contains("HavenBridge.addAccounts(") }.map { it.name }.toList()
-        assertEquals(listOf("CopyAccountsSync.kt"), callers)
+    fun `a ticked account is added look-only, with no vault access`() {
+        val calls = main.walkTopDown().filter { it.extension == "kt" || it.extension == "c" }
+            .filter { it.readText().contains("addAccounts(") || it.readText().contains("AddAccountsC") }.map { it.name }.toList()
+        assertEquals(emptyList<String>(), calls)
         val sync = source("fips/CopyAccountsSync.kt")
-        val answer = body(sync, "fun answer(ticked: Collection<String>) {", 900)
+        val answer = body(sync, "fun answer(ticked: Collection<String>) {", 700)
         assertTrue(answer.contains("CopyAccounts.answer(_offered.value, ticked)"))
-        assertTrue(answer.contains("CopyAccounts.addJson(a.add"))
         assertTrue(answer.contains("device.addLookOnly(a.add.map { it.npub })"))
-        val lookOnly = body(sync, "override fun addLookOnly(npubs: List<String>) {", 700)
+        val lookOnly = body(sync, "override fun addLookOnly(npubs: List<String>) {", 500)
         for (text in listOf(answer, lookOnly)) {
-            for (banned in listOf("Credential", "Nsec", "nsec", "Bunker", "bunker", "Keystore", "publish", "amber")) {
+            for (banned in listOf("Credential", "Nsec", "nsec", "Bunker", "bunker", "Keystore", "publish", "amber", "whitelist")) {
                 assertFalse(banned, text.contains(banned))
             }
         }
         assertTrue(lookOnly.contains("configStore.setSigningMode(n, \"local\")"))
-        val jni = File("src/main/java/com/nostrvault/relay/HavenBridgeJNI.c").readText()
-        assertTrue(jni.contains("extern int AddAccountsC(char* accountsJSON);"))
-        assertTrue(jni.contains("Java_com_nostrvault_relay_HavenBridge_addAccounts"))
     }
 
     @Test
@@ -102,6 +91,7 @@ class CopyAccountsWiringTest {
         assertFalse(setup.contains("MeshPairing.ownerCheck("))
         val store = body(source("data/local/ConfigStore.kt"), "fun signingAccountNpubs(): List<String> {", 600)
         assertTrue(store.contains("MeshPairing.signingAccounts(cfg.ownerNpub, cfg.allAccountNpubs())"))
-        assertTrue(store.contains(".getOrDefault(false)"))
+        // The same "can sign here" as the vault's own keys (VaultWhitelist): one rule for pairing and vault access.
+        assertTrue(store.contains("VaultWhitelist.canSignHere(cfg, npub)"))
     }
 }
