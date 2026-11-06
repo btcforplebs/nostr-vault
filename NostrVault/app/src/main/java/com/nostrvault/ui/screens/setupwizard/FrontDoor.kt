@@ -105,7 +105,7 @@ internal fun FrontDoor(onChoose: (SetupPath) -> Unit) {
                 modifier = Modifier.padding(top = 16.dp, bottom = 16.dp),
             ) {
                 WizardPrimaryButton(text = "Create an account", onClick = { onChoose(SetupPath.NEW_TO_NOSTR) })
-                FrontDoorSecondaryButton(text = "I already use Nostr", onClick = { onChoose(SetupPath.USE_NOSTR) })
+                FrontDoorSecondaryButton(text = "Bring an account", onClick = { onChoose(SetupPath.USE_NOSTR) })
                 // "Just look around" is Mac-only on iOS (WelcomeStepView), so a
                 // phone offers just these two.
             }

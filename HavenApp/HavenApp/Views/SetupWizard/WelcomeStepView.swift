@@ -169,14 +169,10 @@ struct WelcomeStepView: View {
     /// No entrance delay: these are tappable on the first frame.
     private var actions: some View {
         VStack(spacing: 12) {
-            // Setup's first question (Logen 2026-11-05); the second, "New to
-            // Nostr Vault?", follows for people who already use Nostr.
-            Text("New to Nostr?")
-                .font(.appSystem(size: 15, weight: .semibold))
-                .foregroundColor(WizardColors.textSecondary)
-                .accessibilityAddTraits(.isHeader)
+            // Two plain choices, no question above them (Logen 2026-11-06).
+            // "New to Nostr Vault?" still follows for people who bring one.
             Button { onChoose(.newToNostr) } label: {
-                Text("Yes, create an account").font(.appSystem(size: 17, weight: .semibold))
+                Text("Create an account").font(.appSystem(size: 17, weight: .semibold))
             }
             .buttonStyle(FrontDoorButtonStyle(isPrimary: true))
 
@@ -184,7 +180,7 @@ struct WelcomeStepView: View {
             // vs can-post, so this one button covers both. The Mac still
             // offers browse separately.
             Button { onChoose(isIOSDevice ? .useNostr : .full) } label: {
-                Text("No, I already use Nostr").font(.appSystem(size: 17, weight: .semibold))
+                Text("Bring an account").font(.appSystem(size: 17, weight: .semibold))
             }
             .buttonStyle(FrontDoorButtonStyle(isPrimary: false))
 
