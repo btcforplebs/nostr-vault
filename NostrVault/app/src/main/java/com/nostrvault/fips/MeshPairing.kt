@@ -1,6 +1,7 @@
 package com.nostrvault.fips
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -57,6 +58,11 @@ object MeshPairing {
         val owner: String,
         val ownerHex: String,
         val code: Code,
+        /**
+         * `ah`: the other device's signing accounts, each as a tag salted with this code's secret ([accountTag]), so
+         * a link works when the two share any account. Never npubs in plain text (Tron, PR 1809). Only A's code.
+         */
+        val accountTags: List<String> = emptyList(),
     )
 
     sealed interface Parsed {
@@ -66,7 +72,7 @@ object MeshPairing {
 
     // ---- The QR ----
 
-    fun build(mesh: String, name: String, role: DeviceRole, owner: String, code: Code): String {
+    fun build(mesh: String, name: String, role: DeviceRole, owner: String, code: Code, accounts: List<String> = emptyList()): String {
         val q = mutableListOf("m=$mesh")
         val n = cleanName(name)
         if (n.isNotEmpty()) q += "n=${percentEncode(n)}"
@@ -77,6 +83,10 @@ object MeshPairing {
             is Code.Echo -> "e=${code.value}"
         }
         if (code is Code.Echo) q += "b=${code.bSecret}"
+        if (code is Code.Secret) {
+            val tags = wireAccounts(accounts, owner).mapNotNull { accountTag(it, code.value) }
+            if (tags.isNotEmpty()) q += "ah=" + tags.joinToString(",")
+        }
         return "nvpair:v1?" + q.joinToString("&")
     }
 
@@ -117,6 +127,7 @@ object MeshPairing {
             Payload(
                 mesh = npub(meshHex), meshHex = meshHex, name = name, role = role,
                 owner = npub(ownerHex), ownerHex = ownerHex, code = if (s != null) Code.Secret(raw) else Code.Echo(raw, b!!),
+                accountTags = if (s != null) readTags(fields["ah"].orEmpty()) else emptyList(),
             ),
         )
     }
@@ -136,6 +147,63 @@ object MeshPairing {
         if (active != null && npubHex(active) == hex) return OwnerCheck.Ok
         accounts.firstOrNull { npubHex(it) == hex }?.let { return OwnerCheck.SwitchTo(it) }
         return OwnerCheck.OtherOwner
+    }
+
+    /**
+     * The link rule (Logen, 2026-11-06): two devices may link when they share any account, not only the active one.
+     * [owner] and [theirs] are what the other device sent (`o` and `a`); [mine] is what this device pairs on.
+     */
+    fun sharesAccount(owner: String, theirs: List<String>, mine: List<String>): Boolean {
+        val own = mine.mapNotNull(::npubHex).toSet()
+        return (listOf(owner) + theirs).any { n -> npubHex(n)?.let(own::contains) == true }
+    }
+
+    /** The QR's rule: [owner] (`o`) is one of [mine], or one of [mine] makes a tag in [tags] (`ah`) with [secret]. */
+    fun sharesAccount(owner: String, tags: List<String>, secret: String, mine: List<String>): Boolean {
+        if (sharesAccount(owner, emptyList(), mine)) return true
+        val theirs = tags.toSet()
+        return mine.any { n -> accountTag(n, secret)?.let(theirs::contains) == true }
+    }
+
+    /**
+     * One account in `ah`: the first [TAG_BYTES] bytes of SHA-256("nvpair-ah" ‖ s ‖ pubkey), hex. Salted per code,
+     * so a photo of one code can only test a guessed npub against that code, never list the accounts.
+     */
+    fun accountTag(npub: String, secret: String): String? {
+        val s = secretBytes(secret) ?: return null
+        val key = npubHex(npub)?.let(::hexBytes)?.takeIf { it.size == 32 } ?: return null
+        return sha256("nvpair-ah".toByteArray() + s + key).take(TAG_BYTES).joinToString("") { "%02x".format(it) }
+    }
+
+    const val TAG_BYTES = 8
+
+    /** At most this many accounts travel in `a` or `ah` (a QR code has to stay scannable). */
+    const val ACCOUNTS_MAX = 8
+
+    /**
+     * The accounts this device pairs on: [owner], plus every other account it can sign for ([canSign]: a stored key
+     * or a signer). Look-only accounts are often someone else's public npub, so two people watching one npub must
+     * not link (Tron, PR 1809).
+     */
+    fun signingAccounts(owner: String, all: List<String>, canSign: (String) -> Boolean): List<String> =
+        all.filter { it == owner || canSign(it) }
+
+    /** `a` as sent: npubs, without the owner (`o` carries it), no repeats. */
+    private fun wireAccounts(accounts: List<String>, owner: String): List<String> {
+        val seen = mutableSetOf(npubHex(owner).orEmpty())
+        return accounts.mapNotNull { n -> npubHex(n)?.takeIf(seen::add)?.let(::npub) }.take(ACCOUNTS_MAX)
+    }
+
+    /** `ah` as read: only well-formed tags, no repeats; a bad entry is dropped, never a refusal. */
+    private fun readTags(raw: String): List<String> {
+        val seen = mutableSetOf<String>()
+        return raw.split(',').filter { t -> t.length == TAG_BYTES * 2 && t.all { it in "0123456789abcdef" } && seen.add(t) }.take(ACCOUNTS_MAX)
+    }
+
+    /** `a` as read: only the entries that are npubs, no repeats. A bad entry is dropped: `a` is optional. */
+    private fun readAccounts(raw: Any?): List<String> {
+        val seen = mutableSetOf<String>()
+        return (raw as? JsonArray).orEmpty().mapNotNull { npubHex(stringOf(it))?.takeIf(seen::add)?.let(::npub) }.take(ACCOUNTS_MAX)
     }
 
     sealed interface RoleCheck {
@@ -201,16 +269,19 @@ object MeshPairing {
 
     // ---- Hello and ack (the decrypted content of a kind-21195 event) ----
 
-    data class Hello(val secret: String, val name: String, val role: DeviceRole, val owner: String, val time: Long)
+    /** [accounts]: `a`, the sender's signing accounts (npubs), optional. */
+    data class Hello(val secret: String, val name: String, val role: DeviceRole, val owner: String, val time: Long, val accounts: List<String> = emptyList())
 
     /** [words]: A linked by Accept with the check words, so B needs its own tap. */
     data class Ack(val digest: String, val words: Boolean)
 
-    fun helloJson(secret: String, name: String, role: DeviceRole, owner: String, time: Long): String {
+    fun helloJson(secret: String, name: String, role: DeviceRole, owner: String, time: Long, accounts: List<String> = emptyList()): String {
         val parts = mutableListOf("\"v\":1", "\"s\":${jsonString(secret)}")
         val n = cleanName(name)
         if (n.isNotEmpty()) parts += "\"n\":${jsonString(n)}"
         parts += listOf("\"r\":${jsonString(wire(role))}", "\"o\":${jsonString(owner)}", "\"t\":$time")
+        val a = wireAccounts(accounts, owner)
+        if (a.isNotEmpty()) parts += "\"a\":[" + a.joinToString(",", transform = ::jsonString) + "]"
         return "{" + parts.joinToString(",") + "}"
     }
 
@@ -228,7 +299,7 @@ object MeshPairing {
         val n = if (d.containsKey("n")) stringOf(d["n"]) ?: return null else ""
         val name = n.trim()
         if (name.codePointCount(0, name.length) > NAME_MAX) return null
-        return Hello(s, name, role, npub(ownerHex), t)
+        return Hello(s, name, role, npub(ownerHex), t, readAccounts(d["a"]))
     }
 
     fun parseAck(text: String): Ack? {

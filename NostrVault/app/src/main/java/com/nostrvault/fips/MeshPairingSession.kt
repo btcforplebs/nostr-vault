@@ -11,6 +11,12 @@ class MeshPairingSession(
     val ownMeshHex: String,
     val active: String?,
     val accounts: List<String>,
+    /**
+     * The link rule (Logen, 2026-11-06): a hello from a device that shares any account with this one is taken
+     * ([MeshPairing.sharesAccount]); [accounts] is then what this device pairs on (signing accounts only). Off, the
+     * shared contract's [MeshPairing.ownerCheck] (active only, else switchTo) that the fixtures pin.
+     */
+    val matchAnyAccount: Boolean = false,
 ) {
     sealed interface Outcome {
         /** The hello is good: open the camera on B. */
@@ -51,10 +57,15 @@ class MeshPairingSession(
         if (sender == ownMeshHex) return Outcome.Ignore("ownAddress")
         if (h.secret != secret) return Outcome.Ignore("wrongSecret")
         if (kotlin.math.abs(now - h.time) > MeshPairing.HELLO_SKEW) return Outcome.Ignore("stale")
-        when (MeshPairing.ownerCheck(h.owner, active, accounts)) {
-            MeshPairing.OwnerCheck.Ok -> Unit
-            is MeshPairing.OwnerCheck.SwitchTo -> return Outcome.Refuse("switchTo")
-            MeshPairing.OwnerCheck.OtherOwner -> return Outcome.Refuse("otherOwner")
+        if (matchAnyAccount) {
+            // The active account counts only if it is one of [accounts].
+            if (!MeshPairing.sharesAccount(h.owner, h.accounts, accounts)) return Outcome.Refuse("otherOwner")
+        } else {
+            when (MeshPairing.ownerCheck(h.owner, active, accounts)) {
+                MeshPairing.OwnerCheck.Ok -> Unit
+                is MeshPairing.OwnerCheck.SwitchTo -> return Outcome.Refuse("switchTo")
+                MeshPairing.OwnerCheck.OtherOwner -> return Outcome.Refuse("otherOwner")
+            }
         }
         if (state == State.Waiting) {
             if (now - createdAt > MeshPairing.CODE_LIFETIME) {

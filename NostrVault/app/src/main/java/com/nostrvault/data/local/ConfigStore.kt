@@ -505,6 +505,21 @@ class ConfigStore @Inject constructor(
         }
     }
 
+    /**
+     * The accounts pairing links on: the owner, plus every added account with a stored key or a signer (Amber or a
+     * bunker). Look-only accounts are left out ([com.nostrvault.fips.MeshPairing.signingAccounts]). A key store that
+     * can't be read counts as no key here: pairing never links on a guess.
+     */
+    fun signingAccountNpubs(): List<String> {
+        val cfg = _config.value
+        return com.nostrvault.fips.MeshPairing.signingAccounts(cfg.ownerNpub, cfg.allAccountNpubs()) { npub ->
+            cfg.bunkerConfig(npub) != null || cfg.signingMode(npub) == "amber" || runCatching {
+                val hex = HavenBridge.decodeNpub(npub)
+                CredentialStore.getCredentialHexKey(npub) != null || (hex != null && CredentialStore.getNsec(hex) != null)
+            }.getOrDefault(false)
+        }
+    }
+
     fun setSigningMode(npub: String, mode: String) =
         update { it.copy(accountSigningModes = it.accountSigningModes + (npub to mode)) }
 
