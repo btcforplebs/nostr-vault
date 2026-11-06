@@ -36,7 +36,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import coil.compose.AsyncImage
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.service.BlossomService
@@ -221,7 +220,8 @@ class DMThreadViewModel @Inject constructor(
             val sha256 = blossomService.computeSHA256(tempFile)
             val url = blossomService.uploadAndMirror(tempFile, sha256, contentType, toHomeVault = false)
             tempFile.delete()
-            url
+            // A video's link carries its extension, so the other app shows a video.
+            if (url != null && DMVideo.isVideoMime(contentType)) DMAttachment.videoLink(url, DMVideo.extension(contentType)) else url
         } catch (_: Exception) {
             null
         }
@@ -336,7 +336,8 @@ fun DMThreadScreen(
                         onSend = viewModel::sendMessage,
                         onPickImage = {
                             imagePicker.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                // Photos and videos from one button (Logen 2026-11-06).
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
                             )
                         },
                         onClearImage = viewModel::clearAttachedImage,
@@ -473,9 +474,10 @@ private fun MessageBubble(
     val otherBubbleColor = if (oled) Color(0xFF14141A) else Color(0xFF292933)
 
     // A photo sent as its Blossom link shows as the photo; tap opens the viewer (iOS #288).
-    val parts = remember(message.content) { DMAttachment.split(message.content) }
+    val parts = remember(message.content) { DMAttachment.split(message.content, withVideos = true) }
     val zoomOrigin = remember { MediaZoomSources.newOrigin() }
-    val showText = parts.text.isNotEmpty() || parts.images.isEmpty()
+    val showText = parts.text.isNotEmpty() || (parts.images.isEmpty() && parts.videos.isEmpty())
+    val media = remember(parts) { parts.images + parts.videos }
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val maxBubbleWidth = maxWidth * 0.75f
@@ -520,8 +522,13 @@ private fun MessageBubble(
                             modifier = Modifier
                                 .size(photoSize)
                                 .mediaZoomSource(MediaSourceKey(zoomOrigin, index), crop = true)
-                                .clickable { FullScreenMediaRouter.open(parts.images, index, zoomOrigin) },
+                                .clickable { FullScreenMediaRouter.open(media, index, zoomOrigin) },
                         )
+                    }
+                    parts.videos.forEachIndexed { index, url ->
+                        DMVideoTile(size = photoSize) {
+                            FullScreenMediaRouter.open(media, parts.images.size + index, zoomOrigin)
+                        }
                     }
                     if (showText) {
                         // Long-press selects, as iOS .textSelection(.enabled). The
@@ -611,10 +618,8 @@ private fun MessageInputBar(
             // Attached image preview
             attachedImage?.let { uri ->
                 Box(modifier = Modifier.padding(start = 12.dp, top = 8.dp)) {
-                    AsyncImage(
-                        model = uri,
-                        contentDescription = "Attached image",
-                        contentScale = ContentScale.Crop,
+                    DMAttachmentThumbnail(
+                        uri = uri,
                         modifier = Modifier
                             .size(64.dp)
                             .clip(RoundedCornerShape(10.dp)),

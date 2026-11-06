@@ -30,7 +30,7 @@ import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.TertiaryText
 
 /**
- * The thread's photo button: tap picks a photo, press and hold offers
+ * The thread's photo button: tap picks a photo or video, press and hold offers
  * "Paste Photo" for one copied in another app without a keyboard to paste it
  * from (iOS DMThreadView's contextMenu on the photo button).
  */
@@ -54,7 +54,7 @@ internal fun DMPhotoButton(
                 .combinedClickable(
                     enabled = enabled,
                     role = Role.Button,
-                    onClickLabel = "Attach image",
+                    onClickLabel = "Attach photo or video",
                     onLongClickLabel = "Paste photo",
                     onClick = onPick,
                     onLongClick = { menu = true },
@@ -62,7 +62,7 @@ internal fun DMPhotoButton(
         ) {
             Icon(
                 imageVector = NostrVaultIcons.Media,
-                contentDescription = "Attach image",
+                contentDescription = "Attach photo or video",
                 tint = if (enabled) colors.primary else TertiaryText,
             )
         }
