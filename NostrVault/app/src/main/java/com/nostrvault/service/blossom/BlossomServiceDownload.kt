@@ -43,7 +43,9 @@ import com.nostrvault.service.BlossomService.Companion.TAG
     /** The blob from the first mirror that has it, streamed to a temp file and hash-checked (StreamedBlob.kt). */
     internal suspend fun BlossomService.downloadFromMirrors(sha256: String, onSkip: ((String) -> Unit)? = null): StreamedBlob? {
         val mirrors = configStore.config.value.activeBlossomMirrors
-        for (mirror in mirrors) {
+        var i = 0
+        while (i < mirrors.size) {
+            val mirror = mirrors[i++]
             try {
                 val request = Request.Builder()
                     .url("$mirror/$sha256")
@@ -57,6 +59,8 @@ import com.nostrvault.service.BlossomService.Companion.TAG
                     // the temp file is discarded rather than poison the vault.
                     when (val got = streamToTempFile(response, expectSha = sha256)) {
                         is StreamResult.Ok -> return got.blob
+                        // A big file ahead: wait for it, then ask this mirror again.
+                        StreamResult.Busy -> { BigFileGate.shared.waitTurn(); i-- }
                         is StreamResult.Skipped -> {
                             Log.w(TAG, "Mirror $mirror for ${sha256.take(8)}: ${got.reason}")
                             // No room is the same on every mirror: stop and say so.

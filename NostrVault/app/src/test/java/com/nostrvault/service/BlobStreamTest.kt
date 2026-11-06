@@ -138,7 +138,7 @@ class BlobStreamTest {
     fun `unknown length, the disk is re-checked as it arrives, and the temp file goes`() {
         var free = 512 * mb
         val input = Generated(400 * mb)
-        val got = BlobStream.toTempFile(input, -1, dir) { free.also { free -= 16 * mb } }
+        val got = BlobStream.toTempFile(input, -1, dir, freeBytes = { free.also { free -= 16 * mb } })
         // Not a strict point; it must stop well before the whole file and leave nothing.
         assertTrue(got is StreamResult.Skipped)
         assertTrue(input.pos < 400 * mb)
@@ -179,6 +179,49 @@ class BlobStreamTest {
         assertTrue("big on this phone: in-process", BlobStream.storesInProcess(keyless = false, externalRelay = false, size = big))
         assertFalse("small signed: HTTP from the file, as before", BlobStream.storesInProcess(keyless = false, externalRelay = false, size = small))
         assertFalse("external relay: HTTP from the file", BlobStream.storesInProcess(keyless = false, externalRelay = true, size = big))
+    }
+
+    @Test
+    fun `big files go one at a time, and a failed one gives its turn back`() = runBlocking {
+        val gate = BigFileGate()
+        val big = BlobStream.BIG_BYTES + mb
+        val first = (BlobStream.toTempFile(Generated(big), big, dir, freeBytes = plenty, gate = gate) as StreamResult.Ok).blob
+
+        // A second big file waits its turn: told Busy before a byte is read, nothing left on disk.
+        val second = Generated(big)
+        assertEquals(StreamResult.Busy, BlobStream.toTempFile(second, big, dir, freeBytes = plenty, gate = gate))
+        assertEquals(0L, second.pos)
+        // No length given: it finds out it is big on the way, stops, and its temp file goes.
+        val chunked = Generated(big)
+        assertEquals(StreamResult.Busy, BlobStream.toTempFile(chunked, -1, dir, freeBytes = plenty, gate = gate))
+        assertTrue(chunked.pos <= BlobStream.BIG_BYTES + BlobStream.BUFFER_BYTES)
+        assertEquals(listOf(first.file), dir.listFiles()!!.toList())
+        // Small files are not held up.
+        assertTrue(BlobStream.toTempFile(Generated(mb), mb, dir, freeBytes = plenty, gate = gate) is StreamResult.Ok)
+
+        // Once the first is stored, the next big file goes in.
+        assertTrue(BlobStream.store(first, "video/mp4", viaEngine = true, inProcess = { _, _, _ -> true }) { false })
+        val next = BlobStream.toTempFile(Generated(big), big, dir, freeBytes = plenty, gate = gate)
+        assertTrue("$next", next is StreamResult.Ok)
+        (next as StreamResult.Ok).blob.delete()
+
+        // A big file that fails (bad hash, no room) gives the turn back.
+        assertTrue(BlobStream.toTempFile(Generated(big), big, dir, "0".repeat(64), plenty, gate) is StreamResult.Skipped)
+        assertTrue(BlobStream.toTempFile(Generated(big), big, dir, freeBytes = { 10 * mb }, gate = gate) is StreamResult.Skipped)
+        assertTrue("turn free again", gate.tryTake())
+    }
+
+    @Test
+    fun `an import sweeps temp files a killed import left, never a running one`() {
+        val leftover = File(dir, "import-123.blob").apply { writeBytes(ByteArray(1024)) }
+        val other = File(dir, "photo.jpg").apply { writeBytes(ByteArray(10)) }
+        val running = (BlobStream.toTempFile(Generated(mb), mb, dir, freeBytes = plenty) as StreamResult.Ok).blob
+        assertEquals(1, BlobStream.sweepLeftovers(dir))
+        assertFalse(leftover.exists())
+        assertTrue(other.exists())
+        assertTrue("a download still on its way in is kept", running.file.exists())
+        running.delete()
+        assertEquals(0, BlobStream.sweepLeftovers(dir))
     }
 
     private fun sha256Of(f: File): String {

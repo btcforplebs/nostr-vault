@@ -343,22 +343,28 @@ class BlossomService @Inject constructor(
         try {
             val request = Request.Builder().url(url).get().build()
             val client = if (publicOnly) publicOnlyClient else remoteClient
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                Log.w(TAG, "Mirror $url to local: download HTTP ${response.code}")
-                return@withContext null
-            }
-            // Prefer the source server's Content-Type — it's the authoritative format
-            // metadata; the relay's magic library can't detect MP4/MOV from bytes alone.
-            val contentType = response.header("Content-Type") ?: "application/octet-stream"
-            // To disk through one small buffer, then into the vault from the file (StreamedBlob.kt):
-            // no size cap, only a free-storage check.
-            val blob = when (val got = streamToTempFile(response)) {
-                is StreamResult.Ok -> got.blob
-                is StreamResult.Skipped -> {
-                    Log.w(TAG, "Mirror $url to local skipped: ${got.reason}")
-                    onSkip?.invoke(got.reason)
+            var contentType: String
+            var blob: StreamedBlob
+            while (true) {
+                val response = client.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    response.close()
+                    Log.w(TAG, "Mirror $url to local: download HTTP ${response.code}")
                     return@withContext null
+                }
+                // Prefer the source server's Content-Type — it's the authoritative format
+                // metadata; the relay's magic library can't detect MP4/MOV from bytes alone.
+                contentType = response.header("Content-Type") ?: "application/octet-stream"
+                // To disk through one small buffer, then into the vault from the file (StreamedBlob.kt):
+                // no size cap, only a free-storage check.
+                when (val got = streamToTempFile(response)) {
+                    is StreamResult.Ok -> { blob = got.blob; break }
+                    StreamResult.Busy -> BigFileGate.shared.waitTurn()
+                    is StreamResult.Skipped -> {
+                        Log.w(TAG, "Mirror $url to local skipped: ${got.reason}")
+                        onSkip?.invoke(got.reason)
+                        return@withContext null
+                    }
                 }
             }
             val sha256 = blob.sha256
@@ -518,6 +524,7 @@ class BlossomService @Inject constructor(
         /** A server whose list of your files couldn't be read (no answer, or an error status). */
         onUnreachable: ((String) -> Unit)? = null,
     ): Int = withContext(Dispatchers.IO) {
+        BlobStream.sweepLeftovers()
         val mirrors = configStore.config.value.activeBlossomMirrors
         val ownerPubkey = nostrService.ownerHexPubkey
 
@@ -598,6 +605,7 @@ class BlossomService @Inject constructor(
         onProgress: ((Float) -> Unit)? = null,
         onLogMessage: ((String) -> Unit)? = null,
     ): Int = withContext(Dispatchers.IO) {
+        BlobStream.sweepLeftovers()
         val owner = nostrService.ownerHexPubkey
         val relay = configStore.config.value.nostrURL
         if (owner.isEmpty() || relay == null) return@withContext 0
