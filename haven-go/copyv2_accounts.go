@@ -37,6 +37,18 @@ const copyAccountsFile = "copy-accounts.json"
 // entries are never removed.
 const copyBroughtFile = "copy-brought.json"
 
+// copyKeepEntry is a copy's second list (notes.zip, right after
+// accounts.json): every account whose notes A holds, signing or not (its own
+// keys, look-only ones included, and the accounts brought over to it). B keeps
+// those accounts' events read only (recorded as brought over), offers none of
+// them and adds none: the offer stays accounts.json, signing accounts only
+// (Logen, 2026-11-06). npubs only, same §3.4 check. Absent from an older A.
+const copyKeepEntry = "keep.json"
+
+// copyKeepMax: a keep list's cap (an npub entry is ~80 bytes, so this stays
+// well under copyAccountsMaxSize).
+const copyKeepMax = 512
+
 type copyBroughtList struct {
 	V        int      `json:"v"`
 	Accounts []string `json:"accounts"` // npubs
@@ -64,6 +76,12 @@ type copyAccountList struct {
 // bad_name, too_many. Secrets are looked for first, anywhere in the file, so
 // a key pasted where an npub goes reads as a key (nsec1…, 64 hex).
 func copyAccountsRefusal(raw []byte) (copyAccountList, string) {
+	return copyListRefusal(raw, copyAccountsMax)
+}
+
+// copyListRefusal is copyAccountsRefusal with a cap on the entries (the keep
+// list may be longer than the account list).
+func copyListRefusal(raw []byte, maxEntries int) (copyAccountList, string) {
 	var out copyAccountList
 	if len(raw) > copyAccountsMaxSize {
 		return out, "too_many"
@@ -83,7 +101,7 @@ func copyAccountsRefusal(raw []byte) (copyAccountList, string) {
 	if out.V != 1 {
 		return copyAccountList{}, "bad_version"
 	}
-	if len(out.Accounts) == 0 || len(out.Accounts) > copyAccountsMax {
+	if len(out.Accounts) == 0 || len(out.Accounts) > maxEntries {
 		return copyAccountList{}, "too_many"
 	}
 	for _, a := range out.Accounts {
@@ -312,6 +330,50 @@ func broughtAccounts() map[string]struct{} {
 	return out
 }
 
+// localCopyKeep: the keep list A sends: the owner, then every other key whose
+// notes this vault holds (whitelist(), look-only included, and
+// broughtAccounts()), sorted, no names. Over copyKeepMax the rest is cut,
+// loudly.
+func localCopyKeep() copyAccountList {
+	set := map[string]struct{}{}
+	for k := range whitelist() {
+		set[k] = struct{}{}
+	}
+	for k := range broughtAccounts() {
+		set[k] = struct{}{}
+	}
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		if isLowerHex64(k) && k != config.OwnerPubKey {
+			keys = append(keys, k)
+		}
+	}
+	slices.Sort(keys)
+	if isLowerHex64(config.OwnerPubKey) {
+		keys = append([]string{config.OwnerPubKey}, keys...)
+	}
+	if len(keys) > copyKeepMax {
+		slog.Warn("copy: keep list cut", "accounts", len(keys), "kept", copyKeepMax)
+		keys = keys[:copyKeepMax]
+	}
+	out := copyAccountList{V: 1, UpdatedAt: time.Now().Unix()}
+	for _, k := range keys {
+		if npub, err := nip19.EncodePublicKey(k); err == nil {
+			out.Accounts = append(out.Accounts, copyAccount{Npub: npub})
+		}
+	}
+	return out
+}
+
+func marshalLocalCopyKeep() []byte {
+	l := localCopyKeep()
+	if len(l.Accounts) == 0 {
+		return nil
+	}
+	raw, _ := json.Marshal(l)
+	return raw
+}
+
 func marshalLocalCopyAccounts() []byte {
 	raw, _ := json.Marshal(localCopyAccounts())
 	return raw
@@ -322,7 +384,11 @@ func marshalLocalCopyAccounts() []byte {
 var errAccountsRefused = errors.New("this backup's account list was refused")
 
 func writeZipAccounts(zw *zip.Writer, raw []byte) error {
-	w, err := zw.CreateHeader(&zip.FileHeader{Name: copyAccountsEntry, Method: zip.Deflate, Modified: time.Now()})
+	return writeZipEntry(zw, copyAccountsEntry, raw)
+}
+
+func writeZipEntry(zw *zip.Writer, name string, raw []byte) error {
+	w, err := zw.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Deflate, Modified: time.Now()})
 	if err != nil {
 		return err
 	}
@@ -382,6 +448,59 @@ func checkZipAccounts(path string) (theirs copyAccountList, has bool, err error)
 		slog.Warn("restore: accounts refused", "reason", why)
 		return theirs, false, errAccountsRefused
 	}
+}
+
+// checkZipKeep reads a copy's keep list (copyKeepEntry): the hex keys whose
+// events B keeps read only. No entry (an older A): nil. An entry that fails
+// §3.4 (a key, a secret, a malformed file) refuses the whole copy
+// (errAccountsRefused), as accounts.json does. Adds nothing.
+func checkZipKeep(path string) ([]string, error) {
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		return nil, err
+	}
+	defer zr.Close()
+	for _, f := range zr.File {
+		if f.Name != copyKeepEntry {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, err
+		}
+		raw, err := io.ReadAll(io.LimitReader(rc, copyAccountsMaxSize+1))
+		rc.Close()
+		if err != nil {
+			return nil, err
+		}
+		list, why := copyListRefusal(raw, copyKeepMax)
+		if why != "" {
+			slog.Warn("restore: keep list refused", "reason", why)
+			return nil, errAccountsRefused
+		}
+		return list.hexes(), nil
+	}
+	return nil, nil
+}
+
+// keepOnly: the keep list's accounts that accounts.json does not name. These
+// are recorded as brought over before the restore (read only from the first
+// event); the named ones go through the offer as before.
+func keepOnly(keep []string, theirs copyAccountList) copyAccountList {
+	named := map[string]bool{}
+	for _, h := range theirs.hexes() {
+		named[h] = true
+	}
+	out := copyAccountList{V: 1}
+	for _, h := range keep {
+		if named[h] {
+			continue
+		}
+		if npub, err := nip19.EncodePublicKey(h); err == nil {
+			out.Accounts = append(out.Accounts, copyAccount{Npub: npub})
+		}
+	}
+	return out
 }
 
 // notOwnCount: how many of theirs are not this vault's own.

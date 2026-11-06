@@ -227,6 +227,13 @@ The vault's own keys are its owner and every added account (look-only included).
   each key the file lists that is also own (whitelisted), named from the file. A whitelisted key the file does not
   list (a look-only account, often someone else's npub) never travels, nor does one the file lists but A never
   ticked (Tron, #1810). No file, or one refused as below: the owner only (fail closed).
+- **The keep list, `keep.json`** (Logen, 2026-11-06, iPad <- Mac on build 10 dropped a look-only account's notes):
+  a copy's `notes.zip` carries it right after `accounts.json`, same shape and checks, no names, up to 512 entries:
+  the owner first, then every other key whose notes A holds (its whitelist, look-only included, and its own
+  brought-over accounts). B keeps every event by (or, for the inbox, tagging) a key on it, records those
+  `accounts.json` does not name as brought over **before the first event goes in** (read only, below), and offers
+  or adds none of them: the offer stays `accounts.json`, signing accounts only. A refused `keep.json` refuses the
+  copy (`bad_manifest`). No `keep.json` (an older A): `accounts.json` alone, as before. Backup zips do not carry it.
 - **B takes it only when it shares at least one** of B's own keys. Sharing none: `wrong_owner` (an own-account zip
   sharing none stays refused). Refused list: `bad_manifest`, nothing restored, nothing offered, and logged.
 - **Every event it carries is kept, no account is added** (Logen, 2026-11-06). A copy (paired, bearer-authenticated)
@@ -247,7 +254,8 @@ The vault's own keys are its owner and every added account (look-only included).
   browser build's owner stream), and the public page and mesh photo index skip it. The `/inbox` relay does the
   same for events that tag such an account and none of B's other own keys (one tagging the owner too stays
   visible; its count can come out low, never high). A backup zip's blob records for such an account are not
-  restored, so `/list/<pubkey>` and HEAD never answer for them; a linked device's copy keeps them. Lifting this for
+  restored, so `/list/<pubkey>` and HEAD never answer for them; a linked device's copy keeps them for the
+  accounts `accounts.json` names, not for keep-list-only accounts (recorded before the restore). Lifting this for
   one account is a later, separate change.
 - **Merging** (`mergeCopyAccounts`): mine first, then theirs that are new; a name I have stays, a missing one is
   filled; **nothing is ever removed**, by a copy, a restore or a catch-up.
