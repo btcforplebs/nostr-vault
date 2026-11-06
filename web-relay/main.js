@@ -2,7 +2,8 @@ import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure
 import { bytesToHex, hexToBytes } from "nostr-tools/utils"
 import { npubEncode } from "nostr-tools/nip19"
 import { mountFipsPanel } from "./src/fips/panel.js"
-import { loadOwners, loadOwnerAccount, havenAuthors } from "./src/fips/owners.js"
+import { loadOwners, havenAuthors } from "./src/fips/owners.js"
+import { loadOwnerAccount } from "./src/fips/owner-proof.js"
 import { RELAY_NS, pageStorage, migrateRelayKeys } from "./src/page-storage.js"
 import { loadHaven } from "./src/haven/haven.js"
 import { HavenClient } from "./src/haven/client.js"
@@ -131,7 +132,7 @@ async function startHaven(owners) {
   haven = await loadHaven()
   const loadMs = Date.now() - t
   // Its own stores ("haven:relay:<route>"): the vault's are "haven:<pubkey>:<route>" on the same origin.
-  await haven.start({ ...havenAuthors({ owners, account: loadOwnerAccount(LS), extra: [pk] }), storePrefix: "relay" })
+  await haven.start({ ...havenAuthors({ owners, account: loadOwnerAccount(LS, { bind: pk, log }), extra: [pk] }), storePrefix: "relay" })
   relay = new HavenClient(haven.conn("page", { mode: "nip01", route: "/" }))
   return { loadMs, startMs: Date.now() - t - loadMs }
 }
@@ -154,7 +155,7 @@ async function startHaven(owners) {
       $("status").textContent = `Haven ready (owner ${npubEncode([...owners][0]).slice(0, 16)}…)`
     }
   } catch (e) { $("status").textContent = "HAVEN FAILED TO START: " + e; log("init-error", { err: String(e) }); haven = relay = undefined }
-  mountFipsPanel({ haven, owners, log, storage: LS })
+  mountFipsPanel({ haven, owners, log, storage: LS, bind: pk })
 
   // heartbeat every 5s; generator event every 10s; beacon a heartbeat every 60s
   let n = 0
