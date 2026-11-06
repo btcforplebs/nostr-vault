@@ -25,6 +25,9 @@ extension FeedService {
         guard let feed = mode.localDvm, !loadingDvmFeeds.contains(mode) else { return }
         guard let compute = dvmCompute(for: feed) else { return }
         loadingDvmFeeds.insert(mode)
+        // The account it is computed for: an account switch mid-compute
+        // drops the answer (and handleAccountSwitch already cleared the flag).
+        let account = ConfigService.shared.activeAccountHexPubkey
         let showingOld = !notes.isEmpty
         if !showingOld {
             isLoadingFeed = true
@@ -40,7 +43,7 @@ extension FeedService {
         /// loading state and status are touched: another feed may be on screen.
         func finishEmpty(_ status: String) {
             DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
+                guard let self, ConfigService.shared.activeAccountHexPubkey == account else { return }
                 self.loadingDvmFeeds.remove(mode)
                 guard self.feedMode == mode else { return }
                 self.isLoadingFeed = false
@@ -90,7 +93,7 @@ extension FeedService {
             }
 
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self, ConfigService.shared.activeAccountHexPubkey == account else { return }
                 // Cleared before the mode check: left set, the next visit's
                 // load returned at its guard and the screen sat on the
                 // loading view for good.

@@ -9,9 +9,9 @@ package main
 //
 // It reads the same engagement Popular does (the passive tally, backfilled
 // when thin) and keeps Popular's defences: only reactors inside your web of
-// trust count, the author's own engagement does not, and the feed is withheld
-// while the trust graph is not built. The bar is lower than Popular's (two
-// trusted people, not three): a note with a small audience is the point.
+// trust count, the author's own engagement does not, the bar is the same
+// three trusted people, and the feed is withheld while the trust graph is
+// not built.
 
 import (
 	"context"
@@ -26,8 +26,11 @@ import (
 )
 
 const (
-	// Distinct trusted reactors (author excluded) a note needs.
-	underratedMinReactors = 2
+	// Distinct trusted reactors (author excluded) a note needs: Popular's
+	// bar. Two was tried and is what a manufactured campaign already clears
+	// (dvm.go trustGraph: 6,467 boosters, two inside the graph), and the
+	// formula below gives strangers its best weights (Tron, #1830).
+	underratedMinReactors = minTrustedReactors
 	// Candidates whose bodies are looked up, most engaged first.
 	underratedMaxCandidates = 400
 	// Notes one Underrated result lists, and the most per author.
@@ -35,6 +38,10 @@ const (
 	underratedMaxPerAuthor   = 2
 	underratedBridgeBoost    = 1.5
 	underratedPostCountLimit = 200
+	// Posts assumed for an author the local stores know nothing about (not
+	// a follow, so not in feedDB): no "posts less" boost for an unknown, or
+	// a stranger posting a thousand times a day would count as one post.
+	underratedUnknownPosts = 8
 )
 
 var (
@@ -65,7 +72,7 @@ func isBridged(tags nostr.Tags) bool {
 // tally, so a test can drive it without stores or a graph.
 type underratedInputs struct {
 	// posts is how many posts each author made in the window, as far as the
-	// local stores know (0 = unknown).
+	// local stores know (0 or missing = unknown: underratedUnknownPosts).
 	posts map[string]int
 	// reach returns how many of your follows follow the author, and false
 	// when that is not known.
@@ -78,6 +85,7 @@ type underratedInputs struct {
 //	base   = log2(1 + raw)                      engagement counts, damped
 //	lift   = (raw + 1) / (usual + 1)            against the author's own usual
 //	posts  = 1 / (1 + log2(posts))              fewer posts, more weight
+//	         (an author the local stores don't know counts as 8)
 //	reach  = 1 / (1 + log2(1 + vouches))        known to fewer of your follows
 //	bridge = 1.5 for a NIP-48 bridged note
 //	decay  = Popular's: full for 12h, then down to 0.2
@@ -114,8 +122,13 @@ func scoreUnderrated(events []*nostr.Event, tally map[string]map[string]float64,
 	results := make([]PopularNote, 0, len(cands))
 	for _, c := range cands {
 		pk := c.ev.PubKey
-		posts := max(in.posts[pk], authorNotes[pk], 1)
+		known := in.posts[pk]
+		posts := max(known, authorNotes[pk], 1)
 		usual := authorTotal[pk] / float64(posts)
+		if known <= 0 {
+			// Unknown: the usual is what we saw, and no boost for posting less.
+			posts = max(authorNotes[pk], underratedUnknownPosts)
+		}
 		score := math.Log2(1+c.raw) *
 			((c.raw + 1) / (usual + 1)) *
 			(1 / (1 + math.Log2(float64(posts))))

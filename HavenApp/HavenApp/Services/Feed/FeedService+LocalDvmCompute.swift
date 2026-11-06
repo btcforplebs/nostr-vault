@@ -14,8 +14,10 @@ extension FeedService {
             return { ComputeUnderratedNotesC() }
         case .catchUp:
             var follows = followedPubkeys
-            if follows.isEmpty, let backup = FollowingBackupService.shared.snapshots.last {
-                follows = backup.pubkeys
+            if follows.isEmpty {
+                // This account's backup: the shared service may hold another
+                // account's, loaded by Following Backup.
+                follows = FollowingBackupService.shared.latestPubkeys(forAccountKey: currentSnapshotKey())
             }
             if follows.isEmpty && !hasAttemptedContactLoad {
                 if !isLoadingContacts {

@@ -88,3 +88,25 @@ func dvmIDs(notes []PopularNote) []string {
 	}
 	return out
 }
+
+// A relay's note is kept only if its id is its hash and its signature holds:
+// a note signed under someone else's id is dropped (Tron, #1830).
+func TestVerifiedRelayEventRejectsAForgedID(t *testing.T) {
+	sk := nostr.GeneratePrivateKey()
+	ev := &nostr.Event{Kind: 1, Content: "hi", CreatedAt: nostr.Now(), Tags: nostr.Tags{}}
+	if err := ev.Sign(sk); err != nil {
+		t.Fatal(err)
+	}
+	if !verifiedRelayEvent(ev) {
+		t.Fatal("a real signed event must pass")
+	}
+	forged := *ev
+	forged.ID = dvmPK('f')
+	if err := forged.Sign(sk); err != nil {
+		t.Fatal(err)
+	}
+	forged.ID = dvmPK('f')
+	if verifiedRelayEvent(&forged) || verifiedRelayEvent(nil) {
+		t.Fatal("an id that is not the event's hash must fail")
+	}
+}

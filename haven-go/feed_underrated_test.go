@@ -62,7 +62,7 @@ func TestUnderratedScoresAgainstTheAuthorsUsual(t *testing.T) {
 	now := time.Now()
 	a := dvmPK('a')
 	events := []*nostr.Event{dvmNote("a1", a, now), dvmNote("a2", a, now)}
-	tally := map[string]map[string]float64{"a1": dvmReactors("r", 6), "a2": dvmReactors("s", 2)}
+	tally := map[string]map[string]float64{"a1": dvmReactors("r", 6), "a2": dvmReactors("s", 3)}
 	got := scoreUnderrated(events, tally, underratedInputs{posts: map[string]int{a: 10}}, now)
 	if len(got) != 2 || got[0].ID != "a1" {
 		t.Fatalf("got %v", dvmIDs(got))
@@ -86,15 +86,16 @@ func TestUnderratedWeighsBridgedNotes(t *testing.T) {
 	}
 }
 
-// Popular's defences hold: the author's own like does not count, and one
-// trusted reactor is under the bar.
-func TestUnderratedNeedsTwoOtherPeople(t *testing.T) {
+// Popular's defences hold: the author's own like does not count, and two
+// trusted reactors are under Popular's bar of three, which a manufactured
+// campaign already cleared at two (Tron, #1830).
+func TestUnderratedNeedsThreeOtherPeople(t *testing.T) {
 	now := time.Now()
 	a := dvmPK('a')
-	events := []*nostr.Event{dvmNote("self", a, now), dvmNote("one", dvmPK('b'), now)}
+	events := []*nostr.Event{dvmNote("self", a, now), dvmNote("two", dvmPK('b'), now)}
 	tally := map[string]map[string]float64{
-		"self": {a: 3, "r1": 1},
-		"one":  {"r1": 1},
+		"self": {a: 3, "r1": 1, "r2": 1},
+		"two":  {"r1": 1, "r2": 1},
 	}
 	if got := scoreUnderrated(events, tally, underratedInputs{}, now); len(got) != 0 {
 		t.Fatalf("got %v, want none", dvmIDs(got))
@@ -112,5 +113,18 @@ func TestUnderratedCapsNotesPerAuthor(t *testing.T) {
 	}
 	if got := scoreUnderrated(events, tally, underratedInputs{}, now); len(got) != underratedMaxPerAuthor {
 		t.Fatalf("got %d notes from one author, want %d", len(got), underratedMaxPerAuthor)
+	}
+}
+
+// A stranger nothing local knows gets no "posts less" boost: feedDB holds
+// only follows, so an unknown count is not one post (Tron, #1830).
+func TestUnderratedGivesNoPostsBoostToAnUnknownAuthor(t *testing.T) {
+	now := time.Now()
+	known, stranger := dvmPK('k'), dvmPK('s')
+	events := []*nostr.Event{dvmNote("z-known", known, now), dvmNote("a-stranger", stranger, now)}
+	tally := map[string]map[string]float64{"z-known": dvmReactors("r", 3), "a-stranger": dvmReactors("s", 3)}
+	got := scoreUnderrated(events, tally, underratedInputs{posts: map[string]int{known: 1}}, now)
+	if len(got) != 2 || got[0].ID != "z-known" {
+		t.Fatalf("got %+v, want the one-post follow first", got)
 	}
 }

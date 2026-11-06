@@ -135,8 +135,8 @@ var fetchCatchUpFromNetwork = func(ctx context.Context, authors []string, since 
 			if _, dup := seen[ev.ID]; dup || ev.Event == nil {
 				continue
 			}
-			// Relays are not trusted to have checked the signature.
-			if ok, _ := ev.Event.CheckSignature(); !ok {
+			// Relays are not trusted to have checked the id or signature.
+			if !verifiedRelayEvent(ev.Event) {
 				continue
 			}
 			seen[ev.ID] = struct{}{}

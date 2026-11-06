@@ -71,6 +71,9 @@ extension FeedService {
             FollowNotificationManager.shared.clearPending()
         }
         if isLoadingExtendedNetwork { isLoadingExtendedNetwork = false }
+        // A local DVM feed computing for the previous account lands for
+        // nobody (loadLocalDvmFeed); the new account's own load may start.
+        if !loadingDvmFeeds.isEmpty { loadingDvmFeeds.removeAll() }
         extendedNetworkComputedAt = nil
         if isLoadingFeed { isLoadingFeed = false }
         if isSyncing { isSyncing = false }

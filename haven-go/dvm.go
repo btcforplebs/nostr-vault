@@ -243,7 +243,7 @@ func resolveNoteBodies(ctx context.Context, ids []string) []*nostr.Event {
 			noteCtx, noteCancel := context.WithTimeout(ctx, 15*time.Second)
 			defer noteCancel()
 			for ev := range pool.FetchMany(noteCtx, relays, nostr.Filter{Kinds: []int{1, 30023}, IDs: missing}) {
-				if _, have := found[ev.ID]; !have {
+				if _, have := found[ev.ID]; !have && verifiedRelayEvent(ev.Event) {
 					found[ev.ID] = ev.Event
 				}
 			}
@@ -255,6 +255,19 @@ func resolveNoteBodies(ctx context.Context, ids []string) []*nostr.Event {
 		out = append(out, ev)
 	}
 	return out
+}
+
+// verifiedRelayEvent reports whether an event a relay sent is what it says:
+// its id is the hash of its content and its signature is valid for that id.
+// go-nostr's CheckSignature never compares the id to the hash, so a relay
+// could hand over its own note signed under any id it liked, and with the id
+// the engagement of the note it stands in for (Tron, #1830).
+func verifiedRelayEvent(ev *nostr.Event) bool {
+	if ev == nil || !ev.CheckID() {
+		return false
+	}
+	ok, _ := ev.CheckSignature()
+	return ok
 }
 
 // missingIDs returns the ids not yet resolved, preserving order.
