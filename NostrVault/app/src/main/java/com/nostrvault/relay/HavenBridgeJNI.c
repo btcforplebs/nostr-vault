@@ -110,7 +110,6 @@ extern int RunImportJobC(char* name);
 extern int StartCopyFromC(char* peer, char* base, char* startAuth);
 extern int CopySyncC(char* peer, char* base);
 extern int SetMeshDevicesC(char* devices);
-extern int AddAccountsC(char* accountsJSON);
 extern int CancelImportJobC(char* name);
 extern char* GetNotifyLogC(void);
 extern char* GetLogLinesC(void);
@@ -641,16 +640,6 @@ Java_com_nostrvault_relay_HavenBridge_copySync(JNIEnv *env, jobject thiz, jstrin
     int rc = CopySyncC((char*)cPeer, (char*)cBase);
     REL_CSTR(env, base, cBase);
     REL_CSTR(env, peer, cPeer);
-    return rc;
-}
-
-// The accounts the person ticked after a copy, live (haven-go cshared.go AddAccountsC).
-JNIEXPORT jint JNICALL
-Java_com_nostrvault_relay_HavenBridge_addAccounts(JNIEnv *env, jobject thiz, jstring accountsJson) {
-    const char *cJson = GET_CSTR(env, accountsJson);
-    if (cJson == NULL) return -1;
-    int rc = AddAccountsC((char*)cJson);
-    REL_CSTR(env, accountsJson, cJson);
     return rc;
 }
 

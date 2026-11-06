@@ -22,14 +22,12 @@ class CopyAccountsSyncTest {
     private val third = "npub1ks0t9yldwmqlr2k8jnm25gs92za45mp5rhwtkk0r0wlz9wg688zs99ny60"
 
     /** [signing]: the accounts it can sign for; the rest of [npubs] are look-only. */
-    private class FakeDevice(var npubs: List<String>, var live: Int = 1, var signing: List<String>? = null) : CopyAccountsSync.Device {
-        val liveCalls = mutableListOf<String>()
+    private class FakeDevice(var npubs: List<String>, var signing: List<String>? = null) : CopyAccountsSync.Device {
         val lookOnly = mutableListOf<String>()
         override fun changes(): Flow<Any?> = emptyFlow()
         override fun accounts() = npubs
         override fun signingAccounts() = signing ?: npubs
         override fun name(hex: String) = if (MeshPairing.npub(hex) == npubs.firstOrNull()) "Owner" else ""
-        override fun addLive(json: String): Int { liveCalls += json; return live }
         override fun addLookOnly(npubs: List<String>) { lookOnly += npubs }
     }
 
@@ -56,13 +54,11 @@ class CopyAccountsSyncTest {
     }
 
     @Test
-    fun `a copy's accounts are offered, and only the ticked reach AddAccountsC and this device`() {
+    fun `a copy's accounts are offered, and only the ticked are added here, look-only`() {
         sync.writeOwn()
         engineMerges(Account(owner), Account(other, "Other"), Account(third))
         assertEquals(listOf(Account(other, "Other"), Account(third)), sync.refreshOffer())
         sync.answer(listOf(third))
-        assertEquals(1, device.liveCalls.size)
-        assertEquals(CopyAccounts.Checked.Ok(listOf(Account(third))), CopyAccounts.check(device.liveCalls.single()))
         assertEquals(listOf(third), device.lookOnly)
         assertTrue(sync.offered.value.isEmpty())
         // Both were asked: neither is asked again, even after the next catch-up merges them in again.
@@ -75,18 +71,8 @@ class CopyAccountsSyncTest {
         engineMerges(Account(owner), Account(other))
         assertEquals(listOf(other), sync.refreshOffer().map { it.npub })
         sync.answer(emptyList())
-        assertTrue(device.liveCalls.isEmpty())
         assertTrue(device.lookOnly.isEmpty())
         assertTrue(sync.refreshOffer().isEmpty())
-    }
-
-    @Test
-    fun `a list the engine refuses is not added here either`() {
-        device.live = -1
-        engineMerges(Account(owner), Account(other))
-        sync.refreshOffer()
-        sync.answer(listOf(other))
-        assertTrue(device.lookOnly.isEmpty())
     }
 
     @Test

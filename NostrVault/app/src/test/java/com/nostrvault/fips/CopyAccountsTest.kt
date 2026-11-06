@@ -86,8 +86,6 @@ class CopyAccountsTest {
         assertNull(CopyAccounts.fileJson(listOf(Account(owner, nsec)), 1))
         assertNull(CopyAccounts.fileJson(listOf(Account(hex(owner))), 1))
         assertNull(CopyAccounts.fileJson(listOf(Account(owner, "bunker://relay.example?secret=x")), 1))
-        assertNull(CopyAccounts.addJson(listOf(Account(nsec)), 1))
-        assertNull(CopyAccounts.addJson(emptyList(), 1))
         // A name that reads as a key is left out rather than refusing the whole file.
         assertEquals("", CopyAccounts.cleanName(nsec))
         assertEquals("", CopyAccounts.cleanName("x" + "a".repeat(64)))
@@ -115,15 +113,5 @@ class CopyAccountsTest {
         assertEquals(CopyAccounts.Answer(setOf(hex(other), hex(third)), emptyList()), CopyAccounts.answer(offered, emptyList()))
         // A tick for something never offered adds nothing.
         assertTrue(CopyAccounts.answer(offered, listOf(owner)).add.isEmpty())
-    }
-
-    @Test
-    fun `the AddAccountsC JSON is the file shape with only the ticked`() {
-        val json = CopyAccounts.addJson(listOf(Account(other, "Other")), 1767000000)!!
-        val o = Json.parseToJsonElement(json) as JsonObject
-        assertEquals(1, o["v"]!!.jsonPrimitive.content.toInt())
-        assertEquals(listOf(Account(other, "Other")), accounts(o["accounts"]))
-        assertEquals(setOf("v", "updated_at", "accounts"), o.keys)
-        assertFalse("nsec" in json || "bunker" in json)
     }
 }

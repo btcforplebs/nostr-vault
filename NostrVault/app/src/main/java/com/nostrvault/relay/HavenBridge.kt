@@ -424,13 +424,6 @@ object HavenBridge {
     external fun setMeshDevices(devicesJson: String): Int
 
     /**
-     * AddAccountsC: makes the accounts in [accountsJson] (the copy-accounts.json shape, npubs and names only) the
-     * vault's own now, without a relay restart (contract §3.4). How many were new, or -1 when refused. Only
-     * [com.nostrvault.fips.CopyAccountsSync.answer] calls it, with the accounts the person ticked.
-     */
-    external fun addAccounts(accountsJson: String): Int
-
-    /**
      * Moving in's Skip: stops the list history scan; what it found so far is
      * kept and the import carries on. True when a scan was running.
      * Maps to Go: SkipListHistoryScanC()
