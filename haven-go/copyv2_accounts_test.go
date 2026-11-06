@@ -769,3 +769,55 @@ func TestStrangerZipInboxAndBlobsAreNotServed(t *testing.T) {
 		t.Fatal("my own blob record was not restored")
 	}
 }
+
+// Only the app's signing accounts travel (Tron, #1810): the owner, plus each
+// own key copy-accounts.json lists. A look-only account (own, not in the
+// file) and an offered one (in the file, never ticked) stay home. No file or
+// a bad one: the owner only.
+func TestLocalAccountsSendSigningAccountsOnly(t *testing.T) {
+	owner, signing, lookOnly, offered := newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t)
+	openCopyVault(t, owner.pk)
+	t.Cleanup(resetLiveAccounts)
+	addLiveAccounts([]string{signing.pk, lookOnly.pk})
+
+	sent := func() map[string]string {
+		var l copyAccountList
+		if err := json.Unmarshal(marshalLocalCopyAccounts(), &l); err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]string{}
+		for _, a := range l.Accounts {
+			h, _ := npubHex(a.Npub)
+			out[h] = a.Name
+		}
+		if len(l.Accounts) > 0 && l.Accounts[0].Npub != npubOf(t, owner.pk) {
+			t.Fatalf("owner not first: %v", l.Accounts)
+		}
+		return out
+	}
+
+	_ = os.Remove(copyAccountsFile)
+	if got := sent(); len(got) != 1 {
+		t.Fatalf("no file: sent %v, want the owner only", got)
+	}
+	if _, ok := sent()[owner.pk]; !ok {
+		t.Fatal("no file: the owner was not sent")
+	}
+	_ = os.WriteFile(copyAccountsFile, []byte(`{"v":1,"accounts":[{"npub":"`+signing.pk+`"}]}`), 0o600)
+	if got := sent(); len(got) != 1 {
+		t.Fatalf("refused file: sent %v, want the owner only", got)
+	}
+
+	app := `{"v":1,"updated_at":5,"accounts":[{"npub":"` + npubOf(t, signing.pk) + `","name":"Work"},{"npub":"` + npubOf(t, offered.pk) + `","name":"Offered"}]}`
+	_ = os.WriteFile(copyAccountsFile, []byte(app), 0o600)
+	got := sent()
+	if _, ok := got[owner.pk]; !ok || got[signing.pk] != "Work" || len(got) != 2 {
+		t.Fatalf("sent %v, want the owner and the signing account (named) only", got)
+	}
+	if _, ok := got[lookOnly.pk]; ok {
+		t.Fatal("a look-only account travels")
+	}
+	if _, ok := got[offered.pk]; ok {
+		t.Fatal("an offered, never-ticked account travels")
+	}
+}

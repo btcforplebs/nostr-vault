@@ -147,10 +147,16 @@ func mergeCopyAccounts(mine, theirs []copyAccount) []copyAccount {
 	return out
 }
 
-// localCopyAccounts: this vault's accounts as it would send them: every own
-// key as an npub (owner first), named from the app's copy-accounts.json.
+// localCopyAccounts: this vault's accounts as it would send them (manifest,
+// zip, catch-up): the owner, then each own key the app's copy-accounts.json
+// lists (its signing accounts), as npubs with the file's names. A key that is
+// own but not in the file (a look-only account: often someone else's npub)
+// never travels (Tron, #1810): a device that ticked it would make it own
+// there. No readable file: the owner only (fail closed). Listed but not own
+// (offered, never ticked): not sent either.
 func localCopyAccounts() copyAccountList {
 	names := map[string]string{}
+	listed := map[string]bool{}
 	stamp := int64(0)
 	if raw, err := os.ReadFile(copyAccountsFile); err == nil {
 		if f, why := copyAccountsRefusal(raw); why == "" {
@@ -158,6 +164,7 @@ func localCopyAccounts() copyAccountList {
 			for _, a := range f.Accounts {
 				if h, ok := npubHex(a.Npub); ok {
 					names[h] = a.Name
+					listed[h] = true
 				}
 			}
 		}
@@ -165,7 +172,7 @@ func localCopyAccounts() copyAccountList {
 	own := whitelist()
 	keys := make([]string, 0, len(own))
 	for k := range own {
-		if isLowerHex64(k) {
+		if isLowerHex64(k) && (k == config.OwnerPubKey || listed[k]) {
 			keys = append(keys, k)
 		}
 	}
