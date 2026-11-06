@@ -102,6 +102,7 @@ final class ProfileSaveGuardTests: XCTestCase {
             }
         }
         XCTAssertEqual(signers.sorted(), [
+            "HavenApp/Services/LeaveNostrService.swift",
             "HavenApp/Views/Profile/ProfileEditView.swift",
             "HavenApp/Views/SetupWizard/SetupWizardView.swift",
         ])
