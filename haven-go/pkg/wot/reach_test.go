@@ -21,7 +21,4 @@ func TestReachNamesFollowsAndCountsTheSecondLayer(t *testing.T) {
 	if n, _, known := wt.Reach("stranger"); n != 0 || !known {
 		t.Fatal("outside the second layer: 0 vouches")
 	}
-	if m := wt.MedianVouches(); m != 5 {
-		t.Fatalf("median %d, want 5", m)
-	}
 }

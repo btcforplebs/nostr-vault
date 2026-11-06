@@ -141,7 +141,10 @@ object FeedFilterEngine {
                     }
                 }
                 // Posts, never replies, as the relay picked them.
-                FeedMode.CATCH_UP, FeedMode.UNDERRATED -> !note.isReply
+                FeedMode.CATCH_UP -> !note.isReply
+                // Underrated is only people this account doesn't follow (iOS
+                // filterFeedNotes; Logen 2026-11-06).
+                FeedMode.UNDERRATED -> !note.isReply && note.pubkey !in followedPubkeys
                 FeedMode.MEDIA -> note.mediaURLs.isNotEmpty()
                 FeedMode.ARTICLES -> note.kind == LONG_FORM_KIND && longFormAdmits(note.pubkey)
                 FeedMode.RECIPES -> note.kind == LONG_FORM_KIND && RecipeTopics.matches(note.tags) &&

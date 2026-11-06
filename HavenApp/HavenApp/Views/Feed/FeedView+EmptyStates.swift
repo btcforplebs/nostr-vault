@@ -205,7 +205,7 @@ extension FeedView {
                     "Nobody you follow posted in the last two weeks, or their posts haven't reached your vault yet.")
         case .underrated:
             return ("binoculars", "Nothing underrated yet",
-                    "Underrated needs a few people in your web liking, reposting or zapping notes. Check back later.")
+                    "Underrated shows people your follows follow and you don't, once a few people in your web like, repost or zap them. Check back later.")
         default:
             return ("chart.line.uptrend.xyaxis", String(localized: "feed.empty.popular.title"),
                     String(localized: "feed.empty.popular.subtitle"))

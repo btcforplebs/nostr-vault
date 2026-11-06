@@ -7,6 +7,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.nostrvault.data.model.FeedNote
+import java.util.Date
 
 /** Popular, Catch Up and Underrated: computed by the relay's local DVM (iOS FeedMode.isLocalDvm). */
 class LocalDvmFeedsTest {
@@ -57,5 +59,22 @@ class LocalDvmFeedsTest {
         assertEquals("No underrated notes", LocalDvmFeeds.emptyStatus(FeedMode.UNDERRATED, graphReady = true, followsNobody = false))
         assertEquals("Building your web of trust…", LocalDvmFeeds.emptyStatus(FeedMode.UNDERRATED, graphReady = false, followsNobody = false))
         assertEquals("No popular notes", LocalDvmFeeds.emptyStatus(FeedMode.POPULAR, graphReady = true, followsNobody = false))
+    }
+
+    /** Logen 2026-11-06: Underrated is only people you don't follow. */
+    @Test
+    fun `Underrated leaves out people the active account follows`() {
+        fun note(id: String, pubkey: String) =
+            FeedNote(id = id, pubkey = pubkey, content = "hello", createdAt = Date(1_700_000_000_000L), tags = emptyList(), kind = 1)
+        val shown = FeedFilterEngine.filterFeedNotes(
+            notes = listOf(note("followed", a), note("out", b)),
+            mode = FeedMode.UNDERRATED,
+            blocked = emptySet(),
+            showReposts = true,
+            showReplies = true,
+            followedPubkeys = setOf(a),
+            wotPubkeys = setOf(a, b),
+        )
+        assertEquals(listOf("out"), shown.map { it.id })
     }
 }

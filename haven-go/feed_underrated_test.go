@@ -16,6 +16,9 @@ func dvmReactors(prefix string, n int) map[string]float64 {
 	return m
 }
 
+// anyOneStepOut treats every author as one step out with one vouch.
+func anyOneStepOut(string) (int, bool) { return 1, true }
+
 func dvmRank(notes []PopularNote, id string) int {
 	for i, n := range notes {
 		if n.ID == id {
@@ -37,7 +40,7 @@ func TestUnderratedPutsAQuietPersonsGoodNoteFirst(t *testing.T) {
 	tally := map[string]map[string]float64{"quiet": dvmReactors("r", 4), "busy": dvmReactors("s", 12)}
 	in := underratedInputs{
 		posts: map[string]int{quiet: 1, busy: 40},
-		reach: func(p string) (int, bool) {
+		oneStepOut: func(p string) (int, bool) {
 			if p == busy {
 				return 300, true
 			}
@@ -63,7 +66,7 @@ func TestUnderratedScoresAgainstTheAuthorsUsual(t *testing.T) {
 	a := dvmPK('a')
 	events := []*nostr.Event{dvmNote("a1", a, now), dvmNote("a2", a, now)}
 	tally := map[string]map[string]float64{"a1": dvmReactors("r", 6), "a2": dvmReactors("s", 3)}
-	got := scoreUnderrated(events, tally, underratedInputs{posts: map[string]int{a: 10}}, now)
+	got := scoreUnderrated(events, tally, underratedInputs{posts: map[string]int{a: 10}, oneStepOut: anyOneStepOut}, now)
 	if len(got) != 2 || got[0].ID != "a1" {
 		t.Fatalf("got %v", dvmIDs(got))
 	}
@@ -77,7 +80,7 @@ func TestUnderratedWeighsBridgedNotes(t *testing.T) {
 		dvmNote("bridged", b, now, nostr.Tag{"proxy", "https://mastodon.social/@x/1", "activitypub"}),
 	}
 	tally := map[string]map[string]float64{"native": dvmReactors("r", 3), "bridged": dvmReactors("s", 3)}
-	got := scoreUnderrated(events, tally, underratedInputs{}, now)
+	got := scoreUnderrated(events, tally, underratedInputs{oneStepOut: anyOneStepOut}, now)
 	if got[0].ID != "bridged" || got[0].Score <= got[1].Score*1.4 {
 		t.Fatalf("got %+v", got)
 	}
@@ -97,7 +100,7 @@ func TestUnderratedNeedsThreeOtherPeople(t *testing.T) {
 		"self": {a: 3, "r1": 1, "r2": 1},
 		"two":  {"r1": 1, "r2": 1},
 	}
-	if got := scoreUnderrated(events, tally, underratedInputs{}, now); len(got) != 0 {
+	if got := scoreUnderrated(events, tally, underratedInputs{oneStepOut: anyOneStepOut}, now); len(got) != 0 {
 		t.Fatalf("got %v, want none", dvmIDs(got))
 	}
 }
@@ -111,7 +114,7 @@ func TestUnderratedCapsNotesPerAuthor(t *testing.T) {
 		events = append(events, dvmNote(id, a, now))
 		tally[id] = dvmReactors(id, 3)
 	}
-	if got := scoreUnderrated(events, tally, underratedInputs{}, now); len(got) != underratedMaxPerAuthor {
+	if got := scoreUnderrated(events, tally, underratedInputs{oneStepOut: anyOneStepOut}, now); len(got) != underratedMaxPerAuthor {
 		t.Fatalf("got %d notes from one author, want %d", len(got), underratedMaxPerAuthor)
 	}
 }
@@ -123,8 +126,47 @@ func TestUnderratedGivesNoPostsBoostToAnUnknownAuthor(t *testing.T) {
 	known, stranger := dvmPK('k'), dvmPK('s')
 	events := []*nostr.Event{dvmNote("z-known", known, now), dvmNote("a-stranger", stranger, now)}
 	tally := map[string]map[string]float64{"z-known": dvmReactors("r", 3), "a-stranger": dvmReactors("s", 3)}
-	got := scoreUnderrated(events, tally, underratedInputs{posts: map[string]int{known: 1}}, now)
+	got := scoreUnderrated(events, tally, underratedInputs{posts: map[string]int{known: 1}, oneStepOut: anyOneStepOut}, now)
 	if len(got) != 2 || got[0].ID != "z-known" {
 		t.Fatalf("got %+v, want the one-post follow first", got)
 	}
+}
+
+// Logen 2026-11-06: only people he does not follow, picked from the people
+// his follows follow. His own follows and strangers nobody he follows
+// follows are left out, however well their notes did.
+func TestUnderratedIsOnlyPeopleOneStepOut(t *testing.T) {
+	now := time.Now()
+	follow, out, stranger := dvmPK('f'), dvmPK('o'), dvmPK('s')
+	events := []*nostr.Event{
+		dvmNote("follow", follow, now), dvmNote("out", out, now), dvmNote("stranger", stranger, now),
+	}
+	tally := map[string]map[string]float64{
+		"follow": dvmReactors("r", 9), "out": dvmReactors("s", 3), "stranger": dvmReactors("t", 9),
+	}
+	web := fakeReach{follows: map[string]bool{follow: true}, vouches: map[string]int{out: 2}, known: true}
+	got := scoreUnderrated(events, tally, underratedInputs{oneStepOut: oneStepOutFrom(web)}, now)
+	if len(got) != 1 || got[0].ID != "out" {
+		t.Fatalf("got %v, want [out]", dvmIDs(got))
+	}
+	// A graph that can't tell (no vouch counts), or none at all: nobody.
+	if got := scoreUnderrated(events, tally, underratedInputs{oneStepOut: oneStepOutFrom(fakeReach{})}, now); len(got) != 0 {
+		t.Fatalf("unknown graph: got %v", dvmIDs(got))
+	}
+	if got := scoreUnderrated(events, tally, underratedInputs{}, now); len(got) != 0 {
+		t.Fatalf("no graph: got %v", dvmIDs(got))
+	}
+}
+
+type fakeReach struct {
+	follows map[string]bool
+	vouches map[string]int
+	known   bool
+}
+
+func (f fakeReach) Reach(pk string) (int, bool, bool) {
+	if f.follows[pk] {
+		return 0, true, true
+	}
+	return f.vouches[pk], false, f.known
 }

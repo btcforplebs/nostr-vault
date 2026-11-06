@@ -313,7 +313,7 @@ internal fun EmptyFeedPlaceholder(
                     FeedMode.GLOBAL -> "Waiting for notes from your feed relays"
                     FeedMode.POPULAR -> "Not enough engagement data from relays.\nCheck back later or try refreshing."
                     FeedMode.CATCH_UP -> "Nobody you follow has posted in the last two weeks"
-                    FeedMode.UNDERRATED -> "Not enough engagement from your web yet.\nCheck back later or try refreshing."
+                    FeedMode.UNDERRATED -> "Underrated shows people your follows follow and you don't.\nCheck back later or try refreshing."
                     FeedMode.MEDIA -> "Photos and videos from your feed show up here"
                     FeedMode.ARTICLES -> "Long-form posts in your vault show up here"
                     FeedMode.RECIPES -> "Recipes from zap.cooking show up here"
