@@ -637,6 +637,13 @@ class ConfigService: ObservableObject {
         return result
     }
 
+    /// The accounts pairing links on: the owner plus every account with a
+    /// stored key or signer; look-only accounts are left out
+    /// (`MeshPairing.signingAccounts`).
+    var signingAccountNpubs: [String] {
+        MeshPairing.signingAccounts(allAccountNpubs) { hasCredential(forNpub: $0) || hasBunkerConfig(forNpub: $0) }
+    }
+
     /// Every account on the device, by lowercase hex (`allAccountNpubs`).
     var allAccountHexes: Set<String> {
         Set(allAccountNpubs.compactMap { Bech32.decode($0)?.hexString.lowercased() })

@@ -127,10 +127,10 @@ final class PairDeviceFlow: ObservableObject {
         guard let own = loadOwn() else { return fail("This device's mesh key couldn't be read. Open Mesh settings once, then try again.") }
         let secret = MeshPairing.newSecret()
         session = MeshPairingSession(secret: secret, createdAt: Self.now, ownMeshHex: own.hex,
-                                     active: activeNpub, accounts: config.allAccountNpubs, matchAnyAccount: true)
+                                     active: activeNpub, accounts: config.signingAccountNpubs, matchAnyAccount: true)
         startRelays(own)
         let qr = MeshPairing.build(mesh: own.npub, name: Self.ownName, role: Self.ownRole, owner: activeNpub,
-                                   code: .secret(secret), accounts: config.allAccountNpubs)
+                                   code: .secret(secret), accounts: config.signingAccountNpubs)
         step = .showing(qr: qr)
         startTicker()
     }
@@ -196,8 +196,9 @@ final class PairDeviceFlow: ObservableObject {
             return "That's the code from the second step. Scan the code on the device that showed one first."
         }
         // Any account the two devices share will do (Logen, 2026-11-06).
-        guard MeshPairing.sharesAccount(owner: payload.owner, theirs: payload.accounts,
-                                        mine: config.allAccountNpubs + [activeNpub]) else {
+        // Only accounts this device can sign for count (Tron, PR 1809).
+        guard MeshPairing.sharesAccount(owner: payload.owner, tags: payload.accountTags,
+                                        secret: payload.code.value, mine: config.signingAccountNpubs) else {
             return MeshPairing.otherOwnerText
         }
         if case .refuseOtherRole(let role) = MeshPairing.roleCheck(npub: payload.mesh, role: payload.role, existing: existing) {
@@ -238,12 +239,12 @@ final class PairDeviceFlow: ObservableObject {
         guard let joiner, let own, let sB = ownSecret, case .secret(let sA) = joiner.a.code else { return }
         startRelays(own)
         let content = MeshPairing.helloJSON(secret: sA, name: Self.ownName, role: Self.ownRole, owner: activeNpub,
-                                            time: Self.now, accounts: config.allAccountNpubs)
+                                            time: Self.now, accounts: config.signingAccountNpubs)
         guard hello?.send(content, toHex: joiner.a.meshHex) == true else {
             return fail("This device's mesh key couldn't be read. Open Mesh settings once, then try again.")
         }
         let qr = MeshPairing.build(mesh: own.npub, name: Self.ownName, role: Self.ownRole, owner: activeNpub,
-                                   code: .echo(sA, bSecret: sB), accounts: config.allAccountNpubs)
+                                   code: .echo(sA, bSecret: sB))
         let words = MeshPairing.checkWords(aHex: joiner.a.meshHex, bHex: own.hex, secret: sA) ?? []
         step = .joined(qr: qr, name: MeshPairing.displayName(joiner.a.name), words: words,
                        short: MeshPairing.shortAddress(joiner.a.mesh), needsWordsTap: false)

@@ -12,21 +12,50 @@ final class MeshPairingAnyAccountTests: XCTestCase {
     private let mesh = "npub1jc7rrss6ua9nxpqlwvcshs6rq8pdgjx6a6m63ey243nrjf7wqv3sy8aysl"
     private let secret = "MfL-vrRY_QiUhuVK2cwvQQ"
 
-    func testCodeCarriesTheOtherAccounts() throws {
+    func testCodeCarriesSaltedTagsNotNpubs() throws {
         let uri = MeshPairing.build(mesh: mesh, name: "Mac", role: .phone, owner: active, code: .secret(secret),
                                     accounts: [active, second, second, "npub1nope"])
-        XCTAssertTrue(uri.contains("&a=\(second)"), uri)
+        XCTAssertFalse(uri.contains(second), "no account npub in plain text: \(uri)")
+        XCTAssertFalse(uri.contains(MeshPairing.npubHex(second)!), uri)
+        let tag = try XCTUnwrap(MeshPairing.accountTag(second, secret: secret))
+        XCTAssertEqual(tag.count, 16)
+        XCTAssertTrue(uri.contains("&ah=\(tag)"), uri)
         let p = try MeshPairing.parse(uri, ownMesh: nil).get()
         XCTAssertEqual(p.owner, active)
-        XCTAssertEqual(p.accounts, [second], "owner is in o, repeats and non-npubs are dropped")
+        XCTAssertEqual(p.accountTags, [tag], "owner is in o, repeats and non-npubs are dropped")
+        // The salt is the code's secret: another code tags the same account differently.
+        XCTAssertNotEqual(MeshPairing.accountTag(second, secret: "AAAAAAAAAAAAAAAAAAAAAA"), tag)
         // No accounts: the code is exactly what it was.
-        XCTAssertFalse(MeshPairing.build(mesh: mesh, name: "Mac", role: .phone, owner: active, code: .secret(secret)).contains("a="))
+        XCTAssertFalse(MeshPairing.build(mesh: mesh, name: "Mac", role: .phone, owner: active, code: .secret(secret)).contains("ah="))
+        // B's echo code never carries accounts; A reads them from the encrypted hello.
+        XCTAssertFalse(MeshPairing.build(mesh: mesh, name: "iPad", role: .phone, owner: active,
+                                         code: .echo(secret, bSecret: secret), accounts: [second]).contains("ah="))
     }
 
-    func testABadAccountsFieldIsIgnoredNotRefused() throws {
+    func testABadTagsFieldIsIgnoredNotRefused() throws {
         let base = MeshPairing.build(mesh: mesh, name: "Mac", role: .phone, owner: active, code: .secret(secret))
-        let p = try MeshPairing.parse(base + "&a=nsec1xyz,,\(second)", ownMesh: nil).get()
-        XCTAssertEqual(p.accounts, [second])
+        let tag = try XCTUnwrap(MeshPairing.accountTag(second, secret: secret))
+        let p = try MeshPairing.parse(base + "&ah=\(second),xyz,,\(tag),\(tag)", ownMesh: nil).get()
+        XCTAssertEqual(p.accountTags, [tag])
+    }
+
+    func testQRTagsMatchOnlyMyAccounts() throws {
+        let tag = try XCTUnwrap(MeshPairing.accountTag(second, secret: secret))
+        XCTAssertTrue(MeshPairing.sharesAccount(owner: stranger, tags: [tag], secret: secret, mine: [second]))
+        XCTAssertTrue(MeshPairing.sharesAccount(owner: active, tags: [], secret: secret, mine: [active]))
+        XCTAssertFalse(MeshPairing.sharesAccount(owner: stranger, tags: [tag], secret: secret, mine: [active]))
+        XCTAssertFalse(MeshPairing.sharesAccount(owner: stranger, tags: [tag], secret: "AAAAAAAAAAAAAAAAAAAAAA",
+                                                 mine: [second]), "a tag only matches with its own code's secret")
+    }
+
+    /// Look-only accounts (npub only, no key or signer) don't count; the
+    /// owner always does (Tron, PR 1809).
+    func testOnlySigningAccountsCount() {
+        let watched = stranger
+        let signer = second
+        let canSign: (String) -> Bool = { $0 == signer }
+        XCTAssertEqual(MeshPairing.signingAccounts([active, watched, second], canSign: canSign), [active, second])
+        XCTAssertEqual(MeshPairing.signingAccounts([], canSign: canSign), [])
     }
 
     func testHelloCarriesTheAccounts() throws {
@@ -75,6 +104,15 @@ final class MeshPairingAnyAccountTests: XCTestCase {
                        .refuse(.otherOwner))
     }
 
+    /// A look-only active account (left out of `accounts`) doesn't link.
+    func testSessionIgnoresALookOnlyActiveAccount() {
+        var s = MeshPairingSession(secret: secret, createdAt: 1_793_800_000,
+                                   ownMeshHex: "f29276ce125c563297e8f62e302c5d9e23d98f88ad7bd04f40f467c3a371730a",
+                                   active: stranger, accounts: [active], matchAnyAccount: true)
+        XCTAssertEqual(s.receiveHello(senderHex: sender, content: hello(owner: stranger), now: 1_793_800_012),
+                       .refuse(.otherOwner))
+    }
+
     /// Off (the shared contract, as Android): another account still asks to switch.
     func testSessionWithoutTheRuleKeepsTheContract() {
         var s = session(any: false)
@@ -90,9 +128,11 @@ final class MeshPairingAnyAccountTests: XCTestCase {
             .appendingPathComponent("HavenApp")
         let text = try String(contentsOf: app.appendingPathComponent("Views/Pairing/PairDeviceFlow.swift"), encoding: .utf8)
         XCTAssertTrue(text.contains("matchAnyAccount: true"))
-        XCTAssertTrue(text.contains("MeshPairing.sharesAccount(owner: payload.owner, theirs: payload.accounts"))
+        XCTAssertTrue(text.contains("MeshPairing.sharesAccount(owner: payload.owner, tags: payload.accountTags"))
         XCTAssertFalse(text.contains("MeshPairing.ownerCheck("))
-        XCTAssertEqual(text.components(separatedBy: "accounts: config.allAccountNpubs)").count - 1, 3,
-                       "both codes and the hello carry this device's accounts")
+        XCTAssertFalse(text.contains("allAccountNpubs"), "look-only accounts never reach pairing")
+        XCTAssertEqual(text.components(separatedBy: "accounts: config.signingAccountNpubs").count - 1, 3,
+                       "the session, A's code and the hello use this device's signing accounts")
+        XCTAssertTrue(text.contains("code: .echo(sA, bSecret: sB))"), "B's code carries no accounts")
     }
 }

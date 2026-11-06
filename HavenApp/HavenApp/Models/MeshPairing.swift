@@ -57,10 +57,13 @@ enum MeshPairing {
         var owner: String
         var ownerHex: String
         var code: Code
-        /// `a`: every account on the other device (npubs), so a link works
-        /// when the two share any account. Optional: older codes and
+        /// `ah`: the other device's signing accounts, each as a tag salted
+        /// with this code's secret (`accountTag`), so a link works when the
+        /// two share any account. Never npubs in plain text: anyone who sees
+        /// the screen would learn which accounts live on one device (Tron,
+        /// PR 1809). Only A's code carries it; optional, older codes and
         /// Android send only `o`.
-        var accounts: [String] = []
+        var accountTags: [String] = []
     }
 
     // MARK: The QR
@@ -78,8 +81,10 @@ enum MeshPairing {
             query.append("e=\(e)")
             query.append("b=\(b)")
         }
-        let a = wireAccounts(accounts, owner: owner)
-        if !a.isEmpty { query.append("a=" + a.joined(separator: ",")) }
+        if case .secret(let s) = code {
+            let tags = wireAccounts(accounts, owner: owner).compactMap { accountTag($0, secret: s) }
+            if !tags.isEmpty { query.append("ah=" + tags.joined(separator: ",")) }
+        }
         return "nvpair:v1?" + query.joined(separator: "&")
     }
 
@@ -125,7 +130,7 @@ enum MeshPairing {
         return .success(Payload(
             mesh: npub(hex: meshHex), meshHex: meshHex, name: name, role: role,
             owner: npub(hex: ownerHex), ownerHex: ownerHex, code: s != nil ? .secret(raw) : .echo(raw, bSecret: b ?? ""),
-            accounts: readAccounts((fields["a"] ?? "").split(separator: ",").map(String.init))
+            accountTags: s != nil ? readTags(fields["ah"] ?? "") : []
         ))
     }
 
@@ -161,6 +166,34 @@ enum MeshPairing {
         return ([owner] + theirs).contains { npubHex($0).map(own.contains) ?? false }
     }
 
+    /// The QR's rule: `owner` (`o`) is one of `mine`, or one of `mine` makes
+    /// a tag in `tags` (`ah`) with this code's `secret`.
+    static func sharesAccount(owner: String, tags: [String], secret: String, mine: [String]) -> Bool {
+        if sharesAccount(owner: owner, theirs: [], mine: mine) { return true }
+        let theirs = Set(tags)
+        return mine.contains { accountTag($0, secret: secret).map(theirs.contains) ?? false }
+    }
+
+    /// One account in `ah`: the first 8 bytes of SHA-256("nvpair-ah" ‖ s ‖
+    /// pubkey), hex. Salted per code, so a photo of one code can only test a
+    /// guessed npub against that code, never list the accounts.
+    static func accountTag(_ npub: String, secret: String) -> String? {
+        guard let s = secretBytes(secret), let hex = npubHex(npub), let key = Bech32.hexToData(hex),
+              key.count == 32 else { return nil }
+        let h = SHA256.hash(data: Data("nvpair-ah".utf8) + s + key)
+        return h.prefix(tagBytes).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static let tagBytes = 8
+
+    /// The accounts this device pairs on: the owner (first in `all`), plus
+    /// every other account it can sign for (`canSign`: a stored key or a
+    /// signer). Look-only accounts are often someone else's public npub, so
+    /// two people watching one npub must not link (Tron, PR 1809).
+    static func signingAccounts(_ all: [String], canSign: (String) -> Bool) -> [String] {
+        all.enumerated().filter { $0.offset == 0 || canSign($0.element) }.map(\.element)
+    }
+
     /// At most this many accounts travel in `a` (a QR code has to stay
     /// scannable).
     static let accountsMax = 8
@@ -171,6 +204,15 @@ enum MeshPairing {
         return Array(accounts.compactMap { n -> String? in
             guard let hex = npubHex(n), seen.insert(hex).inserted else { return nil }
             return npub(hex: hex)
+        }.prefix(accountsMax))
+    }
+
+    /// `ah` as read: only well-formed tags, no repeats; a bad entry is
+    /// dropped, never a refusal.
+    private static func readTags(_ raw: String) -> [String] {
+        var seen = Set<String>()
+        return Array(raw.split(separator: ",").map(String.init).filter { t in
+            t.count == tagBytes * 2 && t.allSatisfy { "0123456789abcdef".contains($0) } && seen.insert(t).inserted
         }.prefix(accountsMax))
     }
 

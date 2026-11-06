@@ -66,8 +66,9 @@ struct MeshPairingSession {
         guard h.secret == secret else { return .ignore(.wrongSecret) }
         guard abs(now - h.time) <= MeshPairing.helloSkew else { return .ignore(.stale) }
         if matchAnyAccount {
-            let mine = accounts + [active].compactMap { $0 }
-            guard MeshPairing.sharesAccount(owner: h.owner, theirs: h.accounts, mine: mine) else {
+            // `accounts` is what this device pairs on (signing accounts only);
+            // the active account counts only if it is one of them.
+            guard MeshPairing.sharesAccount(owner: h.owner, theirs: h.accounts, mine: accounts) else {
                 return .refuse(.otherOwner)
             }
         } else {
