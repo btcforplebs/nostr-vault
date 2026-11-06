@@ -389,20 +389,16 @@ final class HomeVaultSender: ObservableObject {
             forward = (server, token)
         }
         let contentType = item.contentType ?? "application/octet-stream"
-        let result = await HomeVaultTransport.upload(file: file, size: size, sha256: item.id, contentType: contentType, authBase64: auth, base: base, forward: forward)
+        let (result, ownerRetry) = await HomeVaultTransport.upload(file: file, size: size, sha256: item.id, contentType: contentType, authBase64: auth, base: base, forward: forward)
         // A vault without the paired set yet (an older build, or the box
         // before havend passes it) turns the device form down: one retry
-        // with the owner's form while vaults accept it. TODO(mesh-key).
-        guard meshAuth != nil, Self.refusedTheDeviceForm(result),
+        // with the owner's form while vaults accept it. A vault that has its
+        // set says so, and its refusal stands (MeshKeyAuth.retriesWithOwnerForm).
+        // TODO(mesh-key).
+        guard meshAuth != nil, ownerRetry,
               let ownerAuth = await signUploadAuth(sha256: item.id, size: size) else { return result }
         appLog("vault did not take the device key for \(item.id.prefix(8)), sent with the owner's", level: "WARN")
-        return await HomeVaultTransport.upload(file: file, size: size, sha256: item.id, contentType: contentType, authBase64: ownerAuth, base: base, forward: forward)
-    }
-
-    /// The vault's 401 or 403 (MeshKeyAuth.retriesWithOwnerForm), as the
-    /// upload reports it.
-    private static func refusedTheDeviceForm(_ result: HomeVaultSendResult) -> Bool {
-        [401, 403].contains { MeshKeyAuth.retriesWithOwnerForm(status: $0) && result == HomeVaultLogic.uploadResult(status: $0) }
+        return await HomeVaultTransport.upload(file: file, size: size, sha256: item.id, contentType: contentType, authBase64: ownerAuth, base: base, forward: forward).result
     }
 
     /// This phone's mesh-key upload token for one blob on one vault
@@ -550,9 +546,10 @@ enum HomeVaultTransport {
 
     /// BUD-02 `PUT /upload` to the vault, streamed from `file`, with the owner's 24242 authorisation.
     /// `forward`: the vault passes the blob on to that public server with that
-    /// token once stored (haven-go blossom_forward.go).
+    /// token once stored (haven-go blossom_forward.go). `ownerRetry`: the
+    /// refusal allows one retry with the owner's form (MeshKeyAuth).
     static func upload(file: URL, size: Int, sha256: String, contentType: String, authBase64: String, base: URL,
-                       forward: (server: String, authBase64: String)? = nil) async -> SendResult {
+                       forward: (server: String, authBase64: String)? = nil) async -> (result: SendResult, ownerRetry: Bool) {
         var request = URLRequest(url: base.appendingPathComponent("upload"))
         request.httpMethod = "PUT"
         request.timeoutInterval = 120
@@ -569,9 +566,10 @@ enum HomeVaultTransport {
         defer { session.finishTasksAndInvalidate() }
         do {
             let (_, response) = try await session.upload(for: request, fromFile: file)
-            return HomeVaultLogic.uploadResult(status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+            return (HomeVaultLogic.uploadResult(status: (response as? HTTPURLResponse)?.statusCode ?? 0),
+                    MeshKeyAuth.retriesWithOwnerForm(response))
         } catch {
-            return .unreachable("the home vault did not take the upload")
+            return (.unreachable("the home vault did not take the upload"), false)
         }
     }
 

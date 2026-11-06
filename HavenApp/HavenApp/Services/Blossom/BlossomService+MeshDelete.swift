@@ -37,11 +37,11 @@ extension BlossomService {
         }
 
         for target in targets {
-            var outcome: (gone: Bool, deleteStatus: Int)?
+            var outcome: (gone: Bool, ownerRetry: Bool)?
             if let deviceDelete {
                 outcome = await Self.deleteOverMesh(npub: target.npub, sha256: sha256, auth: deviceDelete, checkAuth: deviceCheck)
             }
-            if outcome == nil || (outcome?.gone == false && MeshKeyAuth.retriesWithOwnerForm(status: outcome?.deleteStatus ?? 0)) {
+            if outcome == nil || (outcome?.gone == false && outcome?.ownerRetry == true) {
                 if let auth = await owner() {
                     outcome = await Self.deleteOverMesh(npub: target.npub, sha256: sha256, auth: auth, checkAuth: auth)
                 } else {
@@ -79,14 +79,14 @@ extension BlossomService {
     /// Right after the engine starts the link may still be coming up and drop
     /// the first tries, so a dropped connection is tried again for a while.
     /// The ingress URL carries a token: logged by npub only.
-    private static func deleteOverMesh(npub: String, sha256: String, auth: String, checkAuth: String?) async -> (gone: Bool, deleteStatus: Int) {
+    private static func deleteOverMesh(npub: String, sha256: String, auth: String, checkAuth: String?) async -> (gone: Bool, ownerRetry: Bool) {
         let giveUp = Date().addingTimeInterval(30)
         let session = URLSession(configuration: .ephemeral)
         defer { session.finishTasksAndInvalidate() }
         while true {
             guard let base = await ingress(npub) else {
                 print("Mesh delete \(npub.prefix(12)): vault not reachable")
-                return (false, 0)
+                return (false, false)
             }
             var delete = URLRequest(url: base.appendingPathComponent(sha256))
             delete.httpMethod = "DELETE"
@@ -102,11 +102,13 @@ extension BlossomService {
                 if !gone {
                     print("Mesh delete \(npub.prefix(12)): DELETE \(deleteStatus), then HEAD \(checkStatus.map(String.init) ?? "no answer")")
                 }
-                return (gone, deleteStatus)
+                // A vault with its paired set marks its refusal final
+                // (MeshKeyAuth.retriesWithOwnerForm): no owner token for it.
+                return (gone, MeshKeyAuth.retriesWithOwnerForm(deleteResponse))
             } catch {
                 guard Date().addingTimeInterval(2) < giveUp else {
                     print("Mesh delete \(npub.prefix(12)) failed: \(error.localizedDescription)")
-                    return (false, 0)
+                    return (false, false)
                 }
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }

@@ -58,12 +58,26 @@ enum MeshKeyAuth {
         return String(data: data, encoding: .utf8)
     }
 
-    /// The vault turned the device form down (it has no paired set yet: an
-    /// older build, or a box before havend passes the set). One retry with
-    /// the owner's form, for as long as vaults accept it. TODO(mesh-key):
-    /// remove with the owner form.
-    static func retriesWithOwnerForm(status: Int) -> Bool {
-        status == 401 || status == 403
+    /// The header a vault adds to a 401/403 for a Blossom request over the
+    /// mesh once it has its paired set (haven-go mesh_devices_signal.go,
+    /// PR #1804). Its refusal is then final for the device key.
+    static let pairedSetHeader = "X-Mesh-Devices"
+
+    /// The vault turned the device form down and has no paired set yet (an
+    /// older build, or a box before havend passes the set): one retry with
+    /// the owner's form, for as long as vaults accept it. A vault that has
+    /// its set says so (`pairedSetHeader`) and gets no account-key token
+    /// (Tron, #1803). TODO(mesh-key): remove with the owner form.
+    static func retriesWithOwnerForm(status: Int, headers: [AnyHashable: Any] = [:]) -> Bool {
+        guard status == 401 || status == 403 else { return false }
+        // HTTP header names are case-insensitive.
+        return !headers.keys.contains { ($0 as? String)?.caseInsensitiveCompare(pairedSetHeader) == .orderedSame }
+    }
+
+    /// `retriesWithOwnerForm` for a URLSession answer.
+    static func retriesWithOwnerForm(_ response: URLResponse?) -> Bool {
+        guard let http = response as? HTTPURLResponse else { return false }
+        return retriesWithOwnerForm(status: http.statusCode, headers: http.allHeaderFields)
     }
 
     private static func unique(_ values: [String]) -> [String] {

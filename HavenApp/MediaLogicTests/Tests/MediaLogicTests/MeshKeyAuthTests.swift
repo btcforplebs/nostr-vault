@@ -84,4 +84,22 @@ final class MeshKeyAuthTests: XCTestCase {
             XCTAssertFalse(MeshKeyAuth.retriesWithOwnerForm(status: status), "\(status)")
         }
     }
+
+    func testAVaultWithItsSetGetsNoOwnerRetry() {
+        for status in [401, 403] {
+            XCTAssertFalse(MeshKeyAuth.retriesWithOwnerForm(status: status, headers: ["X-Mesh-Devices": "set"]), "\(status)")
+            XCTAssertFalse(MeshKeyAuth.retriesWithOwnerForm(status: status, headers: ["x-mesh-devices": "set"]), "\(status) lower case")
+            XCTAssertTrue(MeshKeyAuth.retriesWithOwnerForm(status: status, headers: ["Content-Type": "text/plain"]), "\(status) no header")
+        }
+        XCTAssertFalse(MeshKeyAuth.retriesWithOwnerForm(status: 200, headers: [:]))
+    }
+
+    func testURLResponseCarriesTheSignal() throws {
+        let url = try XCTUnwrap(URL(string: "http://127.0.0.1:1/upload"))
+        let marked = HTTPURLResponse(url: url, statusCode: 403, httpVersion: "HTTP/1.1", headerFields: ["X-Mesh-Devices": "set"])
+        let older = HTTPURLResponse(url: url, statusCode: 401, httpVersion: "HTTP/1.1", headerFields: [:])
+        XCTAssertFalse(MeshKeyAuth.retriesWithOwnerForm(marked))
+        XCTAssertTrue(MeshKeyAuth.retriesWithOwnerForm(older))
+        XCTAssertFalse(MeshKeyAuth.retriesWithOwnerForm(nil))
+    }
 }
