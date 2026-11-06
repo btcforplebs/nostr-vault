@@ -810,6 +810,8 @@ func meshBlobHandler(w http.ResponseWriter, r *http.Request) {
 
 func dynamicRelayHandler(w http.ResponseWriter, r *http.Request) {
 	// A Blossom request signed by a paired device's mesh key (mesh_devices.go).
+	// A 401/403 on a vault with its set says so (mesh_devices_signal.go).
+	w = withMeshDevicesSignal(w, r)
 	r, code, why := withMeshDeviceAuth(r)
 	if code != 0 {
 		http.Error(w, why, code)
