@@ -152,7 +152,9 @@ func importFromZip(ctx context.Context, zipFileName string) error {
 		if n := notOwnCount(theirs); n > 0 {
 			slog.Info("restore: backup names accounts this vault lacks; their events are kept, never uploaded or served, and the accounts are not offered", "accounts", n)
 		}
-		recordBroughtAccounts(theirs)
+		if err := recordBroughtAccounts(theirs); err != nil {
+			return err
+		}
 		ctx = withRestoreKeys(ctx, theirs.hexes())
 	}
 

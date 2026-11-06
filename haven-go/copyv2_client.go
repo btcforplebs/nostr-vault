@@ -654,7 +654,9 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 			}
 			return err
 		}
-		recordBroughtAccounts(keepOnly(keep, theirs))
+		if err := recordBroughtAccounts(keepOnly(keep, theirs)); err != nil {
+			return err
+		}
 		rctx = withRestoreKeys(ctx, append(theirs.hexes(), keep...))
 	}
 	settings, err := restoreCopyNotes(rctx, paths["notes"], &stats)

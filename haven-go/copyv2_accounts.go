@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -247,7 +248,10 @@ func takeCopyAccounts(raw []byte) string {
 // person which of those it lacks to add, and adds only the ticked ones
 // (AddAccountsC and its whitelist file). Merging never removes one.
 func offerCopyAccounts(theirs copyAccountList) {
-	recordBroughtAccounts(theirs)
+	if err := recordBroughtAccounts(theirs); err != nil {
+		// Nothing of theirs is restored on this path; offering stays safe.
+		slog.Error("copy: could not record brought-over accounts", "error", err)
+	}
 	var mine copyAccountList
 	if raw, err := os.ReadFile(copyAccountsFile); err == nil {
 		if f, why := copyAccountsRefusal(raw); why == "" {
@@ -270,12 +274,18 @@ func offerCopyAccounts(theirs copyAccountList) {
 var copyBroughtMu sync.Mutex
 
 // recordBroughtAccounts adds to copy-brought.json every account in theirs that
-// is not this vault's own now (the owner never is).
-func recordBroughtAccounts(theirs copyAccountList) {
+// is not this vault's own now (the owner never is). It fails closed: an error
+// means the list may not hold them, so the caller must not restore their
+// events (they would be served and uploaded as if own). An existing list it
+// can't read is an error too, never overwritten (that would drop its marks).
+func recordBroughtAccounts(theirs copyAccountList) error {
 	own := whitelist()
 	copyBroughtMu.Lock()
 	defer copyBroughtMu.Unlock()
-	have := readBroughtNpubs()
+	have, err := readBroughtNpubsStrict()
+	if err != nil {
+		return err
+	}
 	known := map[string]bool{}
 	for _, n := range have {
 		known[n] = true
@@ -293,13 +303,38 @@ func recordBroughtAccounts(theirs copyAccountList) {
 		next = append(next, a.Npub)
 	}
 	if len(next) == len(have) {
-		return
+		return nil
 	}
-	out, _ := json.Marshal(copyBroughtList{V: 1, Accounts: next})
+	out, err := json.Marshal(copyBroughtList{V: 1, Accounts: next})
+	if err != nil {
+		return fmt.Errorf("brought-over list: %w", err)
+	}
 	tmp := copyBroughtFile + ".tmp"
-	if os.WriteFile(tmp, out, 0o600) == nil {
-		_ = os.Rename(tmp, copyBroughtFile)
+	if err := os.WriteFile(tmp, out, 0o600); err != nil {
+		return fmt.Errorf("brought-over list: %w", err)
 	}
+	if err := os.Rename(tmp, copyBroughtFile); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("brought-over list: %w", err)
+	}
+	return nil
+}
+
+// readBroughtNpubsStrict is readBroughtNpubs for the writer: no file is an
+// empty list, but a file it can't read or parse is an error.
+func readBroughtNpubsStrict() ([]string, error) {
+	raw, err := os.ReadFile(copyBroughtFile)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("brought-over list: %w", err)
+	}
+	var l copyBroughtList
+	if err := json.Unmarshal(raw, &l); err != nil {
+		return nil, fmt.Errorf("brought-over list: %w", err)
+	}
+	return l.Accounts, nil
 }
 
 func readBroughtNpubs() []string {
