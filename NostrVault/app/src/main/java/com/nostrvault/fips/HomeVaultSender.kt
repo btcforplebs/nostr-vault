@@ -62,6 +62,10 @@ class HomeVaultSender @Inject constructor(
     @Volatile
     var signer: suspend (kind: Int, content: String, tags: List<List<String>>) -> String? = { _, _, _ -> null }
 
+    /** This phone's mesh-key Blossom token for one blob on one vault ([MeshKeySigner.blossom]); swapped in tests. */
+    internal var meshToken: (verb: MeshKeyAuth.Verb, sha256: String, receiver: String, content: String, lifetimeS: Long, size: Long?) -> String? =
+        { verb, sha, receiver, content, lifetime, size -> MeshKeySigner.blossom(verb, listOf(sha), listOf(receiver), content, lifetime, size) }
+
     /** The owner's hex pubkey. Wired by NostrService. */
     @Volatile
     var ownerHex: () -> String = { "" }
@@ -533,7 +537,7 @@ class HomeVaultSender @Inject constructor(
     }
 
     /** One blob to [receiver] (the vault's mesh npub) through [base]. */
-    private suspend fun sendBlob(
+    internal suspend fun sendBlob(
         base: String,
         item: HomeVaultQueue.Item,
         queue: HomeVaultQueue,
@@ -552,7 +556,7 @@ class HomeVaultSender @Inject constructor(
         val mediaType = type.toMediaTypeOrNull() ?: return HomeVaultSend.REJECTED
         // Signed per send, not when queued: Blossom auth expires. This phone's mesh key for this vault
         // (docs/MESH_COPY_V2_CONTRACT.md §2.1); the owner's form only without one (TODO(mesh-key)).
-        val meshAuth = MeshKeySigner.blossom(MeshKeyAuth.Verb.UPLOAD, listOf(sha), listOf(receiver), "Upload to my vault", size = file.length())
+        val meshAuth = meshToken(MeshKeyAuth.Verb.UPLOAD, sha, receiver, "Upload to my vault", MeshKeyAuth.BLOSSOM_LIFETIME_S, file.length())
         val auth = meshAuth ?: uploadAuth(sha) ?: run {
             problem("Could not sign the upload")
             return HomeVaultSend.RETRY
@@ -598,8 +602,7 @@ class HomeVaultSender @Inject constructor(
     private suspend fun checkAuth(sha256: String, receiver: String): String? {
         // This phone's mesh key first, for this vault: a HEAD does not spend it. The owner's form only without a
         // mesh key (TODO(mesh-key)).
-        MeshKeySigner.blossom(MeshKeyAuth.Verb.GET, listOf(sha256), listOf(receiver), "Check my vault", VaultCheck.AUTH_LIFETIME_S)
-            ?.let { return it }
+        meshToken(MeshKeyAuth.Verb.GET, sha256, receiver, "Check my vault", VaultCheck.AUTH_LIFETIME_S, null)?.let { return it }
         if (!signerIsLocal()) return null
         return signedAuth(VaultCheck.authTags(sha256, System.currentTimeMillis() / 1000), "Check home vault", "check")
     }

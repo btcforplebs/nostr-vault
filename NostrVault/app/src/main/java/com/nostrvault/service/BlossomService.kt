@@ -716,16 +716,15 @@ class BlossomService @Inject constructor(
                 if (gone) Outcome.GONE else Outcome.LEFT
             }
         }
-        // One owner signature for every mesh device, covering the DELETE and the HEAD after it.
-        // Names every mesh vault (`<npub>.fips`, which a vault takes as itself) so it is never a
-        // token without a server; it only ever goes to the owner's own devices.
-        val meshAuth = if (mesh.isEmpty()) "" else signAuthHeader(
-            "delete+get", sha256,
-            BlossomDeleteAuth.tags(sha256, "", operations = listOf("delete", "get"), servers = mesh.map { "${it.npub}.fips" }),
-        )
-        val meshOutcomes = mesh.map { target ->
-            async { target.key to (meshAuth.isNotEmpty() && deleteOverMesh(target.npub, sha256, meshAuth)) }
+        // This device's mesh key for the mesh devices (MeshDeleteAuth). The owner's fallback names every mesh vault
+        // (`<npub>.fips`, which a vault takes as itself) and covers the DELETE and the HEAD; owner's devices only.
+        val meshAuth = MeshDeleteAuth.of(sha256, mesh.map { it.npub }) {
+            signAuthHeader(
+                "delete+get", sha256,
+                BlossomDeleteAuth.tags(sha256, "", operations = listOf("delete", "get"), servers = mesh.map { "${it.npub}.fips" }),
+            ).takeIf { it.isNotEmpty() }
         }
+        val meshOutcomes = mesh.map { target -> async { target.key to deleteOnMeshDevice(target.npub, sha256, meshAuth) } }
         val served = mirrors.zip(outcomes.awaitAll())
         val all = served.filter { it.second != Outcome.SKIPPED }.map { it.first to (it.second == Outcome.GONE) } + meshOutcomes.awaitAll()
         MirrorDeleteResult(
