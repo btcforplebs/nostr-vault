@@ -64,6 +64,28 @@ test("a proof doesn't transfer: other relay key, altered event, or a swapped acc
   assert.equal(pk, good.pubkey)
 })
 
+test("a NIP-42 AUTH or any near-copy of the proof is not a proof (Tron 1816)", () => {
+  const sk = generateSecretKey()
+  const ch = proofTemplate(bind).tags.find(t => t[0] === "challenge")[1]
+  const now = Math.floor(Date.now() / 1000)
+  // What a relay picking its own AUTH challenge gets signed automatically (DM inbox AUTH, auto-allow extensions).
+  const auth = finalizeEvent({ kind: 22242, created_at: now, tags: [["relay", "wss://evil.example"], ["challenge", ch]], content: "" }, sk)
+  assert.equal(provenAccount(auth, bind), undefined)
+  assert.throws(() => saveOwnerAccount(auth, storage, { bind }))
+  const t = proofTemplate(bind)
+  const variants = [
+    { ...t, kind: 22242 },
+    { ...t, content: "" },
+    { ...t, tags: [["relay", "wss://evil.example"], t.tags[1]] },
+    { ...t, tags: [...t.tags, ["p", getPublicKey(generateSecretKey())]] },
+    { ...t, tags: [t.tags[1]] },
+  ]
+  for (const v of variants) assert.equal(provenAccount(finalizeEvent(v, sk), bind), undefined, JSON.stringify(v).slice(0, 120))
+  assert.equal(provenAccount(finalizeEvent(t, sk), bind), getPublicKey(sk), "the exact template still proves")
+  store.set(ACCOUNT_ITEM, auth.pubkey); store.set(PROOF_ITEM, JSON.stringify(auth))
+  assert.equal(loadOwnerAccount(storage, { bind }), undefined, "an AUTH saved by hand is dropped on load")
+})
+
 test("a key in this browser signs once: nsec, hex and ncryptsec work, an npub can't", async () => {
   const sk = generateSecretKey(), pk = getPublicKey(sk)
   for (const [text, pw] of [[nsecEncode(sk)], [bytesToHex(sk)], [encrypt(sk, "pw-1", 4), "pw-1"]]) {

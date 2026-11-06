@@ -10,7 +10,10 @@ import { xOnly } from "./owners.js"
 
 export const ACCOUNT_ITEM = "fips-owner-account"
 export const PROOF_ITEM = "fips-owner-account-proof"
-export const PROOF_KIND = 22242
+// A kind of its own, in the ephemeral range so relays don't keep it. Not 22242: that is NIP-42 AUTH, which a relay
+// can ask for with any challenge it likes and which apps (Nostr Vault's DM inbox AUTH) and extensions sign without
+// asking, so an AUTH could be turned into a proof. Nothing signs this kind on its own.
+export const PROOF_KIND = 29242
 const RELAY_TAG = "https://nostrvault.app/relay/"
 const CONTENT = "I own this browser relay. Keep my notes on it."
 
@@ -27,11 +30,13 @@ export function proofTemplate(bind, now = Math.floor(Date.now() / 1000)) {
 /** The account a proof proves for this relay, or undefined when it's unsigned, altered, or for another relay. */
 export function provenAccount(proof, bind) {
   try {
-    if (!proof || proof.kind !== PROOF_KIND || !xOnly(bind)) return undefined
-    if (!proof.tags?.some(t => t[0] === "challenge" && t[1] === challenge(bind))) return undefined
+    if (!proof || !xOnly(bind)) return undefined
     // A plain copy: nostr-tools caches "verified" on the object under a symbol, and a spread or an object handed back
     // by an extension can carry it over onto altered fields.
     const plain = JSON.parse(JSON.stringify(proof))
+    // Exactly the template: kind, content and the full tag list, so no other signed event can stand in for it.
+    const want = proofTemplate(bind, plain.created_at)
+    if (plain.kind !== want.kind || plain.content !== want.content || JSON.stringify(plain.tags) !== JSON.stringify(want.tags)) return undefined
     return verifyEvent(plain) ? plain.pubkey : undefined
   } catch {
     return undefined
@@ -95,8 +100,12 @@ export async function signWithKey(text, password, bind, { bunker } = {}) {
   } else if (/^[0-9a-f]{64}$/i.test(t)) {
     sk = Uint8Array.from(t.match(/../g), h => parseInt(h, 16))
   } else throw new Error("Paste an nsec, an ncryptsec with its password, or a bunker:// link. An npub can't sign.")
-  getPublicKey(sk)
-  return finalizeEvent(proofTemplate(bind), sk)
+  try {
+    getPublicKey(sk)
+    return finalizeEvent(proofTemplate(bind), sk)
+  } finally {
+    sk.fill(0)
+  }
 }
 
 /** Sign through a NIP-46 bunker (only loaded when used). */
