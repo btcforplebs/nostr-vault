@@ -298,6 +298,8 @@ object RelayConfiguration {
 
     /** The blocked-people file when config names none (iOS's default name). */
     const val BLACKLIST_FILE_NAME = "blacklisted_npubs.json"
+    /** The whitelist file this app writes (iOS default name); see [whitelistNpubs]. */
+    const val WHITELIST_FILE_NAME = "whitelisted_npubs.json"
 
     /**
      * Dials a Mac on the mesh first (see [resolveMacMeshRelay]), so it blocks
@@ -419,7 +421,14 @@ object RelayConfiguration {
         // HavenBridge.updateBlacklist. Not a launch input: a block must not
         // restart the relay.
         write("BLACKLISTED_NPUBS_FILE", config.blacklistedNpubsFile.ifEmpty { BLACKLIST_FILE_NAME }, config.allBlockedNpubsAcrossAccounts())
+        // The relay's own keys besides the owner: the brought-over accounts the person ticked (contract §3.4). A
+        // custom file named in the config is left as it is (the start sets it after this).
+        if (config.whitelistedNpubsFile.isEmpty()) write("WHITELISTED_NPUBS_FILE", WHITELIST_FILE_NAME, whitelistNpubs(config))
     }
+
+    /** Ticked brought-over accounts that are still on this device. Empty means the owner only, as before. */
+    fun whitelistNpubs(config: HavenConfig): List<String> =
+        config.broughtAccountNpubs.filter { it in config.accountNpubs && it != config.ownerNpub }.distinct()
 
     /** A JSON array of plain strings (npubs, relay URLs), as the relay reads it. */
     fun npubListJson(items: List<String>): String =

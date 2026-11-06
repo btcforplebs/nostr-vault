@@ -52,6 +52,9 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
     lateinit var copySettingsSync: com.nostrvault.fips.CopySettingsSync
 
     @Inject
+    lateinit var copyAccountsSync: com.nostrvault.fips.CopyAccountsSync
+
+    @Inject
     lateinit var meshCopyStarter: com.nostrvault.fips.MeshCopyStarter
 
     @Inject
@@ -98,6 +101,8 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
         mediaImportAfterMovingIn.start()
         // The allowlisted settings file the mesh copy carries and keeps synced (docs/MESH_COPY_V2_CONTRACT.md §5).
         copySettingsSync.start()
+        // And the accounts list it carries (§3.4): this device's own kept current, a copy's offered, never added unasked.
+        copyAccountsSync.start()
         // The same when the relay comes up; a stopped relay ends its copy run (the engine keeps the state).
         applicationScope.launch {
             com.nostrvault.relay.RelayForegroundService.relayStatus.collect { st ->

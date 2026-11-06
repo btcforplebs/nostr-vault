@@ -330,6 +330,7 @@ class RelayForegroundService : Service() {
         fun importJobService(): com.nostrvault.service.ImportJobService
         fun meshCopyStarter(): com.nostrvault.fips.MeshCopyStarter
         fun copySettingsSync(): com.nostrvault.fips.CopySettingsSync
+        fun copyAccountsSync(): com.nostrvault.fips.CopyAccountsSync
     }
 
     // ── Lifecycle state machine (replaces bare `relayStarted` boolean) ──
@@ -408,9 +409,14 @@ class RelayForegroundService : Service() {
         // A COPY line is the mesh copy's progress; its done may leave the other device's settings to apply.
         val meshCopy = EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java).meshCopyStarter()
         val copySettings = EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java).copySettingsSync()
+        val copyAccounts = EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java).copyAccountsSync()
         logStore.lineSink = { line ->
             importJobs.onLogLine(line)
-            if (meshCopy.onLogLine(line)?.stage == "done") copySettings.syncNow()
+            if (meshCopy.onLogLine(line)?.stage == "done") {
+                copySettings.syncNow()
+                // The accounts the copy or catch-up brought (§3.4): asked, never added on their own.
+                copyAccounts.refreshOffer()
+            }
         }
         logStore.quietKinds = { markers ->
             accountUnread.ownAccountOnlyKinds(markers.filterNot(com.nostrvault.service.ListWipeWatcher::isMarker))

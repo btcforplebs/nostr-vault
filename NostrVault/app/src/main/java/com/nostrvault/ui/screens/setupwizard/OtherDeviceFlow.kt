@@ -141,6 +141,7 @@ internal fun OtherDeviceFlow(
                 if (s.status.isNotBlank()) Small(s.status)
                 Body("Your notes from your relays come next.")
             }
+            is OtherDeviceViewModel.Ui.AskAccounts -> CopyAccountsAskView(s.accounts, onAnswer = viewModel::answerAccounts)
             OtherDeviceViewModel.Ui.Copied -> Unit
         }
     }
