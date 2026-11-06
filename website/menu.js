@@ -29,6 +29,7 @@
             ['https://github.com/btcforplebs/nostr-vault', 'GitHub'],
             ['https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md', 'Changelog'],
             ['/privacy.html', 'Privacy Policy'],
+            ['/support/', 'Support'],
             ['https://npub120rlujghxmnfz803syfemlv49zu565fpxjrt88wumwk4zjekwhkslyl4dc.nsite.lol/', 'The nsite copy'],
             ['https://btcforplebs.com', 'btcforplebs'],
         ] },

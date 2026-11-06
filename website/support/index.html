@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support - NOSTR VAULT</title>
+    <meta name="description" content="Get help with Nostr Vault: answers about lost keys, removing your account and sync, and how to contact us.">
+    <link rel="canonical" href="https://nostrvault.app/support/">
+    <link rel="stylesheet" href="/style.css?v=20261101">
+    <link rel="stylesheet" href="/menu.css?v=20261025">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <style>
+        .support-content {
+            max-width: 800px;
+            margin: 100px auto 60px;
+            padding: 0 20px;
+            color: #fff;
+            line-height: 1.6;
+            overflow-wrap: anywhere; /* the npub would widen the page on a phone */
+        }
+
+        .support-content h1 {
+            font-size: 2.5rem;
+            margin-bottom: 20px;
+            background: linear-gradient(90deg, #bb86fc, #7b1fa2);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .support-content h2 {
+            font-size: 1.5rem;
+            margin-top: 40px;
+            margin-bottom: 15px;
+            color: #bb86fc;
+        }
+
+        .support-content h3 {
+            font-size: 1.1rem;
+            margin-top: 25px;
+            margin-bottom: 8px;
+        }
+
+        .support-content p {
+            margin-bottom: 15px;
+            opacity: 0.9;
+        }
+
+        .support-content ul {
+            margin-bottom: 15px;
+            padding-left: 20px;
+        }
+
+        .support-content li {
+            margin-bottom: 8px;
+            opacity: 0.9;
+        }
+
+        .support-content a {
+            color: #bb86fc;
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <div class="logo">
+            <a href="/" style="display: flex; align-items: center; text-decoration: none; color: inherit;">
+                <img src="/assets/haven_icon.png" alt="Nostr Vault Logo">
+                <span>NOSTR VAULT</span>
+            </a>
+        </div>
+        <div class="actions">
+            <a href="/docs/" class="btn-download">Docs</a>
+        </div>
+    </nav>
+
+    <div class="support-content fade-in-up">
+        <h1>Support</h1>
+        <p>Help for the Nostr Vault apps for iPhone, iPad, Mac and Android, and the web app at nostrvault.app/vault/.</p>
+
+        <h2>How to get help</h2>
+        <ul>
+            <li><strong>Read the guide.</strong> The <a href="/docs/">Nostr Vault docs</a> cover setup, keys, your
+                vault, backups and messages. Most questions are answered in the <a href="/docs/faq/">FAQ</a> and
+                <a href="/docs/troubleshooting/">Troubleshooting</a>.</li>
+            <li><strong>Write to us.</strong> Email <a href="mailto:btcforplebs@gmail.com">btcforplebs@gmail.com</a>.
+                Tell us which device you use, the app version (in Settings), and what happened. We read every
+                message.</li>
+        </ul>
+
+        <h2>Common questions</h2>
+
+        <h3>I lost my secret key. Can you get it back?</h3>
+        <p>No. Your secret key (it starts with nsec) is kept only on your device, or in your signer app. It is never
+            sent to us or any server, so nobody can reset or recover it, not even us.</p>
+        <ul>
+            <li>If another device still has the account, open Settings &rarr; Accounts &amp; Keys there and back up
+                the key now.</li>
+            <li>If you saved the key, or a password-locked copy (starts with ncryptsec), add it again in Settings
+                &rarr; Accounts &amp; Keys &rarr; Add Account.</li>
+            <li>If the key is gone everywhere, that account can't post again. Create a new account, and tell the
+                people who follow you your new npub.</li>
+        </ul>
+        <p>If you forgot the password that locks your key on a device, your saved secret key is the only way back
+            in. See <a href="/docs/keys/">Your keys and accounts</a>.</p>
+
+        <h3>How do I delete my account?</h3>
+        <p>Your Nostr account is a pair of keys that lives on your devices, not on our servers, so removing it from
+            the app removes it from that device:</p>
+        <ul>
+            <li><strong>One account:</strong> Settings &rarr; Accounts &amp; Keys &rarr; tap the account &rarr;
+                Remove Account.</li>
+            <li><strong>Everything on this device</strong> (all accounts, keys, your vault and its notes): Settings
+                &rarr; Database &amp; Reset &rarr; Factory Reset. On the web app, Sign out on your last account does
+                the same for that browser.</li>
+        </ul>
+        <p>Notes you already published are also on the public relays you posted to. You can delete a note from its
+            menu in the app, which asks those relays to remove it. To have anything removed from our relay,
+            relay.btcforplebs.com, email us from the contact below with your npub.</p>
+
+        <h3>My notes or follows don't show on another device. How does sync work?</h3>
+        <p>Your notes, follows and profile are kept on your Nostr relays, so any device signed in to the same
+            account sees them. Each device's vault also keeps its own copy.</p>
+        <ul>
+            <li>Make sure both devices use the same relays: Settings &rarr; Relays.</li>
+            <li>To fill a new device with your older notes, use Settings &rarr; Your Vault &rarr; Import Notes (web
+                app: Settings &rarr; Import Notes).</li>
+            <li>To move a whole vault, use Settings &rarr; Your Vault &rarr; Backup &amp; Restore (web app: Settings
+                &rarr; Backup &amp; Restore), or link your devices in My Devices.</li>
+        </ul>
+        <p>More in <a href="/docs/vault/">Your vault</a> and <a href="/docs/backup/">Backups</a>.</p>
+
+        <h2>Contact</h2>
+        <ul>
+            <li><strong>Email:</strong> <a href="mailto:btcforplebs@gmail.com">btcforplebs@gmail.com</a></li>
+            <li><strong>Nostr:</strong> npub1vxlhjzeqjjhmqdy4e8sndt8kzklqlnxzew2mtt8mtakvalsckp3qa0gnvx</li>
+        </ul>
+        <p>To report abusive content, use the same contacts. See also our <a href="/privacy.html">Privacy Policy</a>.</p>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a
+                href="https://github.com/bitvora/haven">bitvora</a>.</p>
+        <p style="margin-top: 10px; font-size: 0.8rem; opacity: 0.6;">Designed with passion. | <a href="/privacy.html"
+                style="color: #bb86fc; text-decoration: none;">Privacy Policy</a> | <a href="/support/"
+                style="color: #bb86fc; text-decoration: none;">Support</a></p>
+    </footer>
+
+    <script src="/script.js?v=20261025"></script>
+    <script src="/menu.js?v=20261101"></script>
+</body>
+
+</html>
