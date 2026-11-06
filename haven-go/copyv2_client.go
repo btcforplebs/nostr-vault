@@ -23,6 +23,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // copyInDir holds B's copies in progress, one directory per peer.
@@ -460,27 +462,9 @@ func storeCopyBlob(sha string, r io.Reader) (bool, error) {
 	if copyBlobFile(sha) != "" {
 		return true, nil
 	}
-	final := config.BlossomPath + sha
-	tmp := final + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return false, err
-	}
-	h := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(f, h), r); err != nil {
-		f.Close()
-		_ = os.Remove(tmp)
-		return false, err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return false, err
-	}
-	if hex.EncodeToString(h.Sum(nil)) != sha {
-		_ = os.Remove(tmp)
-		return false, nil
-	}
-	return true, os.Rename(tmp, final)
+	// A temp file of its own: the catch-up runs on every reconnect and can
+	// overlap an upload or Import media of the same blob (writeBlobFile).
+	return writeBlobFile(afero.NewOsFs(), sha, r)
 }
 
 // restoreCopyMedia stores each file of media.zip, then the blob records of

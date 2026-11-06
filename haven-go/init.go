@@ -3,8 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -579,24 +579,14 @@ func initRelays(ctx context.Context) error {
 		// Write to a temp file and rename into place: an interrupted write must
 		// never leave a truncated blob sitting at the final hash-named path,
 		// where it would shadow the healthy remote copy on every client forever.
-		finalPath := config.BlossomPath + sha256
-		tmpPath := finalPath + ".tmp"
-		file, err := fs.Create(tmpPath)
+		// A temp file per call (writeBlobFile): an upload overlapping another
+		// write of the same blob can't rename a half-written file into place.
+		ok, err := writeBlobFile(fs, sha256, bytes.NewReader(body))
 		if err != nil {
 			return err
 		}
-		if _, err := io.Copy(file, bytes.NewReader(body)); err != nil {
-			file.Close()
-			_ = fs.Remove(tmpPath)
-			return err
-		}
-		if err := file.Close(); err != nil {
-			_ = fs.Remove(tmpPath)
-			return err
-		}
-		if err := fs.Rename(tmpPath, finalPath); err != nil {
-			_ = fs.Remove(tmpPath)
-			return err
+		if !ok {
+			return errors.New("blob does not match its sha256")
 		}
 		return nil
 	})
