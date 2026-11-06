@@ -192,8 +192,8 @@ func TestLiveAccountsAreOwnAtOnceAndEndWithTheConfig(t *testing.T) {
 	}
 }
 
-// writeAccountsZip: a backup zip with accounts.json and one outbox note.
-func writeAccountsZip(t *testing.T, accounts string, note nostr.Event) string {
+// writeAccountsZip: a backup zip with accounts.json and outbox notes.
+func writeAccountsZip(t *testing.T, accounts string, notes ...nostr.Event) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "backup.zip")
 	f, err := os.Create(path)
@@ -206,8 +206,10 @@ func writeAccountsZip(t *testing.T, accounts string, note nostr.Event) string {
 		_, _ = w.Write([]byte(accounts))
 	}
 	w, _ := zw.Create("outbox.jsonl")
-	line, _ := json.Marshal(note)
-	_, _ = w.Write(append(line, '\n'))
+	for _, note := range notes {
+		line, _ := json.Marshal(note)
+		_, _ = w.Write(append(line, '\n'))
+	}
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -215,10 +217,11 @@ func writeAccountsZip(t *testing.T, accounts string, note nostr.Event) string {
 	return path
 }
 
-// A restore takes a zip that shares one of this vault's accounts, makes its
-// other accounts own and keeps their notes; refuses one sharing none; and
-// refuses one with a key in accounts, adding nothing.
-func TestRestoreTakesSharedAccountsAndRefusesKeys(t *testing.T) {
+// A backup restore (Settings, setup, cloud) takes a zip that shares one of
+// this vault's accounts but never adds its other accounts: an npub is public,
+// so anyone can write [owner, attacker] (Tron, PR #1805). Refuses one sharing
+// none, and one with a key in accounts, adding nothing.
+func TestRestoreChecksSharedAccountsAndNeverAddsThem(t *testing.T) {
 	me, them, stranger := newTestKey(t), newTestKey(t), newTestKey(t)
 	openCopyVault(t, me.pk)
 	t.Cleanup(resetLiveAccounts)
@@ -239,25 +242,47 @@ func TestRestoreTakesSharedAccountsAndRefusesKeys(t *testing.T) {
 		t.Fatalf("no shared account: %v, want errNotYourBackup", err)
 	}
 
-	// Sharing me: theirs become mine before the stores, so their note stays.
+	// Sharing me (the attack shape: my public npub beside theirs): restored,
+	// but theirs is not added, their note is not taken into my outbox, and
+	// nothing is written for the app.
 	shared := `{"v":1,"updated_at":1,"accounts":[{"npub":"` + npubOf(t, them.pk) + `","name":"Them"},{"npub":"` + npubOf(t, me.pk) + `"}]}`
-	if err := importFromZip(context.Background(), writeAccountsZip(t, shared, theirNote)); err != nil {
+	myNote := me.sign(t, nostr.Event{Kind: 1, Content: "my note"})
+	zipPath := writeAccountsZip(t, shared, theirNote, myNote)
+	if err := importFromZip(context.Background(), zipPath); err != nil {
 		t.Fatalf("shared account: %v", err)
 	}
-	if !isOwnKey(them.pk) {
-		t.Fatal("their account is not own after the restore")
+	if isOwnKey(them.pk) {
+		t.Fatal("a backup zip made a stranger's key own")
 	}
-	if countIn(t, outboxDB, nostr.Filter{IDs: []string{theirNote.ID}}) != 1 {
-		t.Fatal("the other account's note was dropped")
+	if countIn(t, outboxDB, nostr.Filter{IDs: []string{theirNote.ID}}) != 0 {
+		t.Fatal("a stranger's note went into the owner-only outbox")
 	}
-	raw, err := os.ReadFile(copyAccountsFile)
-	if err != nil || !strings.Contains(string(raw), npubOf(t, them.pk)) || !strings.Contains(string(raw), `"Them"`) {
-		t.Fatalf("copy-accounts.json for the app: %s %v", raw, err)
+	if countIn(t, outboxDB, nostr.Filter{IDs: []string{myNote.ID}}) != 1 {
+		t.Fatal("my own note was not restored")
 	}
-	for _, secret := range []string{me.pk, them.pk} {
-		if strings.Contains(string(raw), secret) {
-			t.Fatal("copy-accounts.json holds a hex key")
-		}
+	if _, err := os.Stat(copyAccountsFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("copy-accounts.json written by a backup restore: %v", err)
+	}
+}
+
+// A paired copy whose restore fails takes back the accounts it added for the
+// run and writes nothing for the app (no half-applied state).
+func TestCopyRestoreFailureTakesAccountsBack(t *testing.T) {
+	me, them := newTestKey(t), newTestKey(t)
+	openCopyVault(t, me.pk)
+	t.Cleanup(resetLiveAccounts)
+	shared := `{"v":1,"updated_at":1,"accounts":[{"npub":"` + npubOf(t, them.pk) + `"},{"npub":"` + npubOf(t, me.pk) + `"}]}`
+	// Only a note nobody's store takes: nothing restored.
+	bad := nostr.Event{Kind: 1, Content: "unsigned", PubKey: them.pk, ID: strings.Repeat("0", 64), Sig: strings.Repeat("0", 128)}
+	var stats copyRestoreStats
+	if _, err := restoreCopyNotes(context.Background(), writeAccountsZip(t, shared, bad), &stats); err == nil {
+		t.Fatal("restore of nothing succeeded")
+	}
+	if isOwnKey(them.pk) {
+		t.Fatal("a failed copy left its accounts own")
+	}
+	if _, err := os.Stat(copyAccountsFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("copy-accounts.json written by a failed copy: %v", err)
 	}
 }
 

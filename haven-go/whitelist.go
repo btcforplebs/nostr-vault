@@ -53,6 +53,12 @@ func isOwnKey(pk string) bool {
 // check that reads whitelist(): restore, import, inbox, uploads. Returns how
 // many were new.
 func addLiveAccounts(hexes []string) int {
+	return len(addLiveAccountsNew(hexes))
+}
+
+// addLiveAccountsNew is addLiveAccounts returning the keys that were new, so a
+// caller can take them back (removeLiveAccounts) when its work fails.
+func addLiveAccountsNew(hexes []string) []string {
 	liveWLMu.Lock()
 	defer liveWLMu.Unlock()
 	base := config.WhitelistedPubKeys
@@ -60,7 +66,7 @@ func addLiveAccounts(hexes []string) int {
 	if l := liveWL.Load(); l != nil && l.base == mapID(base) {
 		maps.Copy(extra, l.extra)
 	}
-	added := 0
+	var added []string
 	for _, h := range hexes {
 		if _, own := base[h]; own {
 			continue
@@ -69,13 +75,36 @@ func addLiveAccounts(hexes []string) int {
 			continue
 		}
 		extra[h] = struct{}{}
-		added++
+		added = append(added, h)
 	}
+	storeLiveAccounts(base, extra)
+	return added
+}
+
+// removeLiveAccounts takes back live additions (never a configured account).
+func removeLiveAccounts(hexes []string) {
+	if len(hexes) == 0 {
+		return
+	}
+	liveWLMu.Lock()
+	defer liveWLMu.Unlock()
+	base := config.WhitelistedPubKeys
+	l := liveWL.Load()
+	if l == nil || l.base != mapID(base) {
+		return
+	}
+	extra := maps.Clone(l.extra)
+	for _, h := range hexes {
+		delete(extra, h)
+	}
+	storeLiveAccounts(base, extra)
+}
+
+func storeLiveAccounts(base, extra map[string]struct{}) {
 	merged := make(map[string]struct{}, len(base)+len(extra))
 	maps.Copy(merged, base)
 	maps.Copy(merged, extra)
 	liveWL.Store(&liveWhitelist{base: mapID(base), extra: extra, merged: merged})
-	return added
 }
 
 // resetLiveAccounts: a new config is the app's word on its accounts again

@@ -222,9 +222,14 @@ The vault's own keys are its owner and every added account (look-only included).
   (§3.1); `GET`/`PUT /copy/v2/sync/accounts` in the catch-up (§6).
 - **A writes it** from its whitelist (owner first), naming each from the app's `copy-accounts.json` in the engine's
   working dir (the same folder as `copy-settings.json`), which the app keeps current with its accounts and names.
-- **B takes it only when it shares at least one** of B's own keys. Then, before any store is read, every account in
-  it becomes B's own at once (no relay restart), and the engine merges the list into B's `copy-accounts.json`.
-  Sharing none: `wrong_owner`. Refused: `bad_manifest`, nothing restored, nothing added.
+- **B takes it only when it shares at least one** of B's own keys. Sharing none: `wrong_owner`. Refused:
+  `bad_manifest`, nothing restored, nothing added.
+- **Only a paired copy adds accounts.** An npub is public, so "shares one" proves only that a zip *may* be ours,
+  never who made it. Over the paired, bearer-authenticated copy and catch-up, every account in it becomes B's own
+  (no relay restart): for the copy, before any store is read so their notes are kept, taken back if the restore
+  fails, and merged into B's `copy-accounts.json` only when it succeeds. A Settings › Back up zip (Settings, setup,
+  cloud restore) only checks ownership with it and **never adds a key**: its other accounts' notes are skipped from
+  the owner-only stores until the person adds those accounts in the app and restores again.
 - **B's app** watches `copy-accounts.json` and adds every npub it lacks to its accounts (look-only) and its
   whitelist file, **before its next relay start**: a relay start reads the whitelist file again, and the engine's
   live additions end with it (`AddAccountsC`).
@@ -349,5 +354,5 @@ Every code, where it comes from, and what B does.
 
 A v2 `notes.zip` only adds `accounts.json` and `settings.json` (plus the trimmed `blossom.jsonl`), which old
 readers skip (`jsonl.go importFromZip` reads `.jsonl` entries only). Settings › Back up zips now carry
-`accounts.json` too, and a restore takes them by §3.4. Old backup zips restore unchanged: no accounts, no settings,
+`accounts.json` too, and a restore checks ownership with it (§3.4) but adds no account. Old backup zips restore unchanged: no accounts, no settings,
 no media part, owner check by their notes.

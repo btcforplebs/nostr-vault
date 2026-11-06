@@ -174,19 +174,41 @@ func localCopyAccounts() copyAccountList {
 	return out
 }
 
-// takeCopyAccounts is the one place another device's accounts go in: checked,
-// taken only when they share one of this vault's own, made own now (no
-// restart), and merged into copy-accounts.json for the app. Returns "added"
-// (or "same"), or the refusal: a §3.4 reason, or "no_shared_account".
-func takeCopyAccounts(raw []byte) string {
+// checkCopyAccounts: raw's accounts when they pass §3.4 and share one of this
+// vault's own; otherwise the refusal (a §3.4 reason, or "no_shared_account").
+// Adds nothing.
+func checkCopyAccounts(raw []byte) (copyAccountList, string) {
 	theirs, why := copyAccountsRefusal(raw)
+	if why != "" {
+		return theirs, why
+	}
+	if !copySharesAccount(whitelist(), theirs.hexes()) {
+		return theirs, "no_shared_account"
+	}
+	return theirs, ""
+}
+
+// takeCopyAccounts is where another device's accounts go in over the paired,
+// bearer-authenticated catch-up (§6): checked, made own now (no restart), and
+// merged into copy-accounts.json for the app. Returns "added" (or "same"), or
+// the refusal. Never for a zip that arrives outside a paired copy: an npub is
+// public, so sharing one proves nothing about who made the file.
+func takeCopyAccounts(raw []byte) string {
+	theirs, why := checkCopyAccounts(raw)
 	if why != "" {
 		return why
 	}
-	if !copySharesAccount(whitelist(), theirs.hexes()) {
-		return "no_shared_account"
-	}
 	added := addLiveAccounts(theirs.hexes())
+	rememberCopyAccounts(theirs)
+	if added > 0 {
+		return "added"
+	}
+	return "same"
+}
+
+// rememberCopyAccounts merges theirs into copy-accounts.json, which the app
+// adds to its accounts and whitelist file.
+func rememberCopyAccounts(theirs copyAccountList) {
 	var mine copyAccountList
 	if raw, err := os.ReadFile(copyAccountsFile); err == nil {
 		if f, why := copyAccountsRefusal(raw); why == "" {
@@ -204,10 +226,6 @@ func takeCopyAccounts(raw []byte) string {
 			_ = os.Rename(tmp, copyAccountsFile)
 		}
 	}
-	if added > 0 {
-		return "added"
-	}
-	return "same"
 }
 
 func marshalLocalCopyAccounts() []byte {
@@ -228,19 +246,19 @@ func writeZipAccounts(zw *zip.Writer, raw []byte) error {
 	return err
 }
 
-// takeZipAccounts is the owner check of every restore (copy and backup zip
-// alike). With accounts.json: refused (errAccountsRefused) unless it passes
-// §3.4, not ours (errNotYourBackup) unless it shares one of this vault's
-// accounts; otherwise its accounts become this vault's before any store is
-// read, so their notes are kept. Without it (an older zip): ours only when
-// its own notes hold one by the owner, as before. No owner: nothing to check.
-func takeZipAccounts(path string) error {
+// checkZipAccounts is the owner check of every restore (copy and backup zip
+// alike). It only checks; it never adds a key. With accounts.json: refused
+// (errAccountsRefused) unless it passes §3.4, not ours (errNotYourBackup)
+// unless it shares one of this vault's accounts; has is true and theirs is
+// the list. Without it (an older zip): ours only when its own notes hold one
+// by the owner, as before. No owner: nothing to check.
+func checkZipAccounts(path string) (theirs copyAccountList, has bool, err error) {
 	if config.OwnerPubKey == "" {
-		return nil
+		return theirs, false, nil
 	}
 	zr, err := zip.OpenReader(path)
 	if err != nil {
-		return err
+		return theirs, false, err
 	}
 	var entry *zip.File
 	for _, f := range zr.File {
@@ -253,30 +271,43 @@ func takeZipAccounts(path string) error {
 		zr.Close()
 		ours, err := zipHasEventBy(path, config.OwnerPubKey)
 		if err != nil {
-			return err
+			return theirs, false, err
 		}
 		if !ours {
-			return errNotYourBackup
+			return theirs, false, errNotYourBackup
 		}
-		return nil
+		return theirs, false, nil
 	}
 	defer zr.Close()
 	rc, err := entry.Open()
 	if err != nil {
-		return err
+		return theirs, false, err
 	}
 	raw, err := io.ReadAll(io.LimitReader(rc, copyAccountsMaxSize+1))
 	rc.Close()
 	if err != nil {
-		return err
+		return theirs, false, err
 	}
-	switch why := takeCopyAccounts(raw); why {
-	case "added", "same":
-		return nil
+	theirs, why := checkCopyAccounts(raw)
+	switch why {
+	case "":
+		return theirs, true, nil
 	case "no_shared_account":
-		return errNotYourBackup
+		return theirs, false, errNotYourBackup
 	default:
 		slog.Warn("restore: accounts refused", "reason", why)
-		return errAccountsRefused
+		return theirs, false, errAccountsRefused
 	}
+}
+
+// notOwnCount: how many of theirs are not this vault's own.
+func notOwnCount(theirs copyAccountList) int {
+	own := whitelist()
+	n := 0
+	for _, h := range theirs.hexes() {
+		if _, ok := own[h]; !ok {
+			n++
+		}
+	}
+	return n
 }

@@ -138,9 +138,15 @@ func importFromZip(ctx context.Context, zipFileName string) error {
 	// the zip's outbox and lists, never feed or inbox, which hold other
 	// people's notes by design.
 	// A zip with accounts.json is taken when it shares one of this vault's
-	// accounts, and its accounts become this vault's too (§3.4).
-	if err := takeZipAccounts(zipFileName); err != nil {
+	// accounts. Its other accounts are never added: anyone can write a zip
+	// naming the owner's public npub beside their own (§3.4). The person adds
+	// them in the app; their notes then come back with a second restore.
+	theirs, has, err := checkZipAccounts(zipFileName)
+	if err != nil {
 		return err
+	}
+	if n := notOwnCount(theirs); has && n > 0 {
+		slog.Warn("restore: backup names accounts this vault lacks; not added, their own notes are skipped", "accounts", n)
 	}
 
 	zipFile, err := zip.OpenReader(zipFileName)

@@ -355,8 +355,22 @@ type copyRestoreStats struct {
 // only with their files), and leaves the checked settings for the app.
 // Returns the settings state: "included", "none" or "refused".
 func restoreCopyNotes(ctx context.Context, path string, stats *copyRestoreStats) (settings string, err error) {
-	if err := takeZipAccounts(path); err != nil {
+	// The copy came from a paired device (bearer token), so its accounts are
+	// taken (§3.4): own for this restore, so their notes are kept, and for
+	// good only when the restore succeeds.
+	theirs, has, err := checkZipAccounts(path)
+	if err != nil {
 		return "", err
+	}
+	if has {
+		added := addLiveAccountsNew(theirs.hexes())
+		defer func() {
+			if err != nil {
+				removeLiveAccounts(added)
+				return
+			}
+			rememberCopyAccounts(theirs)
+		}()
 	}
 	zr, err := zip.OpenReader(path)
 	if err != nil {
