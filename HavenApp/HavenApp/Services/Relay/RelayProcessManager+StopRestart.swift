@@ -218,12 +218,22 @@ extension RelayProcessManager {
                         guard !self.importHoldsVault, self.busyJob == nil else {
                             return refuse(self)
                         }
-                        await self.performStop()
-                        // Nothing queued before this point may start after the delete.
-                        self.importRequestGeneration += 1
-                        self.queuedImport = nil
-                        self.restartAfterImportConfig = nil
-                        reset()
+                        await FactoryResetGate.stopThenDelete(
+                            stop: { await self.performStop() },
+                            drained: { await self.waitForRelayDrain() },
+                            delete: {
+                                // Nothing queued before this point may start after the delete.
+                                self.importRequestGeneration += 1
+                                self.queuedImport = nil
+                                self.restartAfterImportConfig = nil
+                                reset()
+                            },
+                            refuse: {
+                                self.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Factory reset refused: the last vault run was still shutting down; nothing deleted"))
+                                refuse(self)
+                                // Stopped for nothing: bring the vault back.
+                                if let config = self.lastConfig { self.startRelay(config: config) }
+                            })
                     }
                     return
                 case .cancelImport:

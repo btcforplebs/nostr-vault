@@ -26,4 +26,29 @@ final class FactoryResetGateTests: XCTestCase {
         XCTAssertEqual(FactoryResetGate.action(importRunning: false, otherJob: true, cancelSent: false, waited: limit), .refuse)
         XCTAssertEqual(FactoryResetGate.action(importRunning: false, otherJob: false, cancelSent: true, waited: limit), .reset)
     }
+
+    // MARK: Stop, drain, then delete (12 mini, 2026-11-06)
+
+    @MainActor
+    func testFolderIsDeletedOnlyAfterTheOldRunHasDrained() async {
+        var steps: [String] = []
+        await FactoryResetGate.stopThenDelete(
+            stop: { steps.append("stop") },
+            drained: { steps.append("drain"); return true },
+            delete: { steps.append("delete") },
+            refuse: { steps.append("refuse") })
+        XCTAssertEqual(steps, ["stop", "drain", "delete"])
+    }
+
+    @MainActor
+    func testStillDrainingDeletesNothing() async {
+        var deleted = false, refused = false
+        await FactoryResetGate.stopThenDelete(
+            stop: {},
+            drained: { false },
+            delete: { deleted = true },
+            refuse: { refused = true })
+        XCTAssertFalse(deleted, "the old run still has the databases open: deleting now repeats the 95 s retry storm")
+        XCTAssertTrue(refused)
+    }
 }

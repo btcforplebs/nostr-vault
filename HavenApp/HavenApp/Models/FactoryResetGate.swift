@@ -35,4 +35,18 @@ enum FactoryResetGate {
         if importRunning && !cancelSent { return .cancelImport }
         return .wait
     }
+
+    /// The stop and the delete. StopRelayC returns after about 2 s and the old
+    /// run can still be closing its databases: on the 12 mini (2026-11-06) the
+    /// folder was deleted under it, its feed database retried writes to the
+    /// missing files for about 95 s, and every new start waited that out.
+    /// So the folder goes only once the old run has drained
+    /// (`RelayDrainWait`); still draining after that wait: nothing deleted.
+    @MainActor
+    static func stopThenDelete(stop: () async -> Void, drained: () async -> Bool,
+                               delete: () -> Void, refuse: () -> Void) async {
+        await stop()
+        guard await drained() else { return refuse() }
+        delete()
+    }
 }

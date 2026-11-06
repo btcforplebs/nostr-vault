@@ -112,11 +112,14 @@ final class ImportJobsService: ObservableObject {
         let generation = setupGeneration
         setupStage = .starting
         Task { [weak self] in
-            let deadline = Date().addingTimeInterval(Self.setupStartTimeout)
-            while Date() < deadline {
+            // Only time the vault isn't starting counts (ImportJobs.setupStartWait).
+            var waited: TimeInterval = 0
+            while waited < Self.setupStartTimeout {
                 guard let self, generation == self.setupGeneration else { return }
+                let passStart = Date()
                 // The start was queued on the lifecycle chain: let it run.
                 await relayManager.lifecycleChain.value
+                let chainWait = Date().timeIntervalSince(passStart)
                 if await relayManager.ensureRelayReady(timeout: 5) {
                     switch self.run(ImportJobs.setup) {
                     case .started:
@@ -138,6 +141,12 @@ final class ImportJobsService: ObservableObject {
                     }
                 }
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
+                let starting = ImportJobs.vaultStarting(booting: relayManager.state == .booting,
+                                                        stopping: relayManager.state == .stopping || RelayDrainingC() == 1,
+                                                        applyingConfig: relayManager.isApplyingConfig)
+                // Waiting on the chain is a queued start or stop: never counted.
+                waited = ImportJobs.setupStartWait(after: waited, pass: Date().timeIntervalSince(passStart) - chainWait,
+                                                   vaultStarting: starting)
             }
             guard let self, generation == self.setupGeneration else { return }
             self.runRefusal = nil
@@ -151,6 +160,7 @@ final class ImportJobsService: ObservableObject {
         setupStage = .starting
     }
 
-    /// Nothing took setup this long after it was asked for: Try again.
+    /// Nothing took setup this long after it was asked for, not counting
+    /// time the vault spent starting: Try again.
     static let setupStartTimeout: TimeInterval = 60
 }
