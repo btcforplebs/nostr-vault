@@ -46,7 +46,7 @@ class ImportResultTest {
     @Test
     fun leftoverCycleSaysBusy() {
         val draining = ImportResult.parse("IMPORT_RESULT status=failed reason=still_draining owner=0 tagged=0 relays=0/0 other_vault=none")!!
-        assertEquals("The vault was still busy. Try again in a moment.", draining.summary)
+        assertEquals("The vault was still shutting down, so the import didn't start. Your vault is starting again; try Import notes in a moment.", draining.summary)
     }
 
     @Test

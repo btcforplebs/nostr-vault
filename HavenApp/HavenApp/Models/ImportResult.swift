@@ -57,6 +57,10 @@ struct ImportResult: Equatable {
 
     /// The Go side didn't run it because the last relay cycle hadn't let go
     /// yet: worth starting again shortly.
+    /// A start Go refused: the import never ran, and the vault starts again
+    /// (endImport), so say both (12 mini 2026-11-05: it sat paused).
+    static let refusedStartLine = "The vault was still shutting down, so the import didn't start. Your vault is starting again; try Import notes in a moment."
+
     var isRetryableStart: Bool {
         status == .failed && (reasons == ["already_running"] || reasons == ["still_draining"])
     }
@@ -82,7 +86,7 @@ struct ImportResult: Equatable {
         case .failed:
             switch reasons.first {
             case "no_seed_relay": return "Couldn't reach any relay. Check your connection, then try again."
-            case "already_running", "still_draining": return "The vault was still busy. Try again in a moment."
+            case "already_running", "still_draining": return Self.refusedStartLine
             default: return "The import couldn't run. Try again."
             }
         }

@@ -265,9 +265,13 @@ extension RelayProcessManager {
         importStatusMessage = result.summary
         logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import process ended: \(result.summary)"))
 
-        if let restartConfig = restartAfterImportConfig {
+        // A refused start never leaves the vault paused: it starts again with
+        // the config it last ran with, even if this request had none queued.
+        if let restartConfig = restartAfterImportConfig ?? (result.isRetryableStart ? lastConfig : nil) {
             restartAfterImportConfig = nil
-            logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import ended, restarting relay..."))
+            logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: result.isRetryableStart
+                ? "Import refused (the last vault run was still shutting down); starting the vault again"
+                : "Import ended, restarting relay..."))
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 self.startRelay(config: restartConfig)
             }

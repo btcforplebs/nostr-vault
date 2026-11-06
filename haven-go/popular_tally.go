@@ -562,14 +562,14 @@ func ingestPopularEngagement(ctx context.Context) {
 		}()
 
 		popularTally.markAlive(time.Now())
-		for ev := range pool.SubscribeMany(subCtx, relays, filter) {
+		eventsUntilDone(subCtx, pool.SubscribeMany(subCtx, relays, filter), func(ev nostr.RelayEvent) {
 			now := time.Now()
 			popularTally.markAlive(now)
 			popularTally.add(ev.Event, now)
 			if at := int64(ev.CreatedAt); at > watermark && at <= now.Add(popularMaxClockSkew).Unix() {
 				watermark = at
 			}
-		}
+		})
 		mark.Stop()
 		close(done)
 		stopSub()
