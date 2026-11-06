@@ -63,10 +63,12 @@ final class CopyAccountsSync: ObservableObject {
         }
     }
 
-    /// This device's accounts, owner first, named from their profiles.
+    /// This device's signing accounts (owner, or a stored key or signer),
+    /// owner first, named from their profiles. Look-only accounts are never
+    /// listed (Tron, #1810).
     private func ownAccounts() -> [CopyAccounts.Account] {
         let profiles = NostrService.shared.profiles
-        return ConfigService.shared.allAccountNpubs.compactMap { npub in
+        return ConfigService.shared.signingAccountNpubs.compactMap { npub in
             guard let hex = MeshPairing.npubHex(npub) else { return nil }
             let p = profiles[hex]
             let raw = [p?.displayName, p?.name].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -82,13 +84,15 @@ final class CopyAccountsSync: ObservableObject {
     }
 
     /// Writes the file when this device's accounts or names change. Never
-    /// drops what a copy or catch-up merged in.
+    /// drops what a copy or catch-up merged in, except this device's own
+    /// look-only accounts.
     func writeOwn() {
         let own = ownAccounts()
         guard !own.isEmpty else { return }
         settled.formUnion(ownHex)
         let existing = readFile()
-        let next = CopyAccounts.ownFile(own: own, existing: existing)
+        let signing = Set(own.compactMap { MeshPairing.npubHex($0.npub) })
+        let next = CopyAccounts.ownFile(own: own, existing: existing, lookOnly: ownHex.subtracting(signing))
         guard next != existing, let data = CopyAccounts.fileData(next, updatedAt: Self.now) else { return }
         try? data.write(to: fileURL, options: [.atomic])
     }

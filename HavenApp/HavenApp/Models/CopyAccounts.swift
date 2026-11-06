@@ -103,8 +103,15 @@ enum CopyAccounts {
     /// names it knows now, then every other account already in the file
     /// (what a copy or catch-up brought). Own names win here, as this device
     /// knows its own accounts best; nothing already in the file is dropped.
-    static func ownFile(own: [Account], existing: [Account]) -> [Account] {
-        var mine = own
+    ///
+    /// `lookOnly` (hex): accounts on this device with no key or signer. They
+    /// are never listed: one is often someone else's npub, and a device that
+    /// ticked it would make it an own key there, able to AUTH and read its
+    /// /private and /lists (Tron, #1810). An entry an older build wrote for
+    /// one is dropped here.
+    static func ownFile(own: [Account], existing: [Account], lookOnly: Set<String> = []) -> [Account] {
+        let existing = existing.filter { a in MeshPairing.npubHex(a.npub).map { !lookOnly.contains($0) } ?? true }
+        var mine = own.filter { a in MeshPairing.npubHex(a.npub).map { !lookOnly.contains($0) } ?? false }
         for i in mine.indices where mine[i].name.isEmpty {
             mine[i].name = existing.first(where: { $0.npub == mine[i].npub })?.name ?? ""
         }

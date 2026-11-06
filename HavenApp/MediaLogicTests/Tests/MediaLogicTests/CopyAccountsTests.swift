@@ -56,6 +56,26 @@ final class CopyAccountsTests: XCTestCase {
         XCTAssertEqual(try CopyAccounts.check(data).get(), next)
     }
 
+    /// Look-only accounts here are never listed, and an older entry for one
+    /// is dropped; a brought-over account not own here stays (Tron, #1810).
+    func testOwnFileListsOnlySigningAccounts() {
+        let existing = [CopyAccounts.Account(npub: owner, name: "Owner"), .init(npub: other, name: "Watched"),
+                        .init(npub: third, name: "Brought")]
+        let next = CopyAccounts.ownFile(own: [.init(npub: owner, name: "Owner"), .init(npub: other, name: "Watched")],
+                                        existing: existing, lookOnly: [hex(other)])
+        XCTAssertEqual(next.map(\.npub), [owner, third])
+    }
+
+    /// The service hands ownFile the signing accounts, and every other own one as look-only.
+    func testServiceWritesSigningAccountsOnly() throws {
+        let text = try source("Services/Relay/CopyAccountsSync.swift")
+        let own = try body(of: "private func ownAccounts() -> [CopyAccounts.Account] {", in: text, length: 200)
+        XCTAssertTrue(own.contains("ConfigService.shared.signingAccountNpubs"))
+        XCTAssertFalse(own.contains("allAccountNpubs"))
+        let write = try body(of: "func writeOwn() {", in: text, length: 600)
+        XCTAssertTrue(write.contains("lookOnly: ownHex.subtracting(signing)"))
+    }
+
     func testFileDataNeverWritesAKey() {
         let nsec = "nsec19uqxr6xazkeed24thcl9gwl8e5alzdtma8enxekqkv3ux3m9ty3qqp49sa"
         XCTAssertNil(CopyAccounts.fileData([.init(npub: owner, name: nsec)], updatedAt: 1))
