@@ -77,7 +77,7 @@ class FipsMeshManager @Inject constructor(
      */
     fun restoreIfEnabled(scope: CoroutineScope) {
         // The relay just started with no paired set: give it one before any mesh request, mesh on or off.
-        pushDeviceSet()
+        scope.launch(Dispatchers.IO) { pushDeviceSet() }
         if (!configStore.config.value.fipsMeshEnabled || _status.value.running) return
         if (!restoring.compareAndSet(false, true)) return
         scope.launch {

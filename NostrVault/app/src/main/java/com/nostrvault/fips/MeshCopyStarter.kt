@@ -23,7 +23,8 @@ import javax.inject.Singleton
 
 /**
  * B, on any link (setup's "Copy from my other vault" and Vault › Your devices › Add): dials the other vault, signs
- * the one start with this device's own mesh key ([MeshKeySigner], never the owner's: §2) and hands it to the engine (StartCopyFromC), which makes the start call, checks the manifest and the
+ * the one start with this device's own mesh key ([MeshKeySigner], never the owner's: §2) and hands it to the engine
+ * (StartCopyFromC), which makes the start call, checks the manifest and the
  * free space, fetches, restores and says `/done`. It also resumes a cut copy and runs a catch-up (CopySyncC) when the
  * relay comes up and when the app comes back, for devices copied from before. The engine's `COPY` lines come back
  * through [onLogLine] as [progress]. Twin of Apple's `MeshCopyV2Service` (docs/MESH_COPY_V2_CONTRACT.md).
