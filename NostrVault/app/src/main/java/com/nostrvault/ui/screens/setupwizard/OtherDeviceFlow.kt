@@ -141,6 +141,14 @@ internal fun OtherDeviceFlow(
                 if (s.status.isNotBlank()) Small(s.status)
                 Body("Your notes from your relays come next.")
             }
+            is OtherDeviceViewModel.Ui.CopyFailed -> {
+                Title("Couldn't reach ${s.name}")
+                Body(s.line)
+                Spacer(Modifier.height(8.dp))
+                WizardPrimaryButton(text = "Try again", onClick = viewModel::tryAgainCopy)
+                WizardSecondaryButton(text = "Continue without it", onClick = viewModel::continueWithoutCopy)
+                Small("Your notes come from your relays instead.")
+            }
             is OtherDeviceViewModel.Ui.AskAccounts -> CopyAccountsAskView(s.accounts, onAnswer = viewModel::answerAccounts)
             OtherDeviceViewModel.Ui.Copied -> Unit
         }

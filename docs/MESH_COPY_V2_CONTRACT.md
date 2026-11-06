@@ -377,7 +377,7 @@ Every code, where it comes from, and what B does.
 | `unsupported_version` | the manifest is `v` > 2 | stops; asks for an update |
 | `bad_manifest` | anything else wrong in the manifest, or a refused `accounts.json` (§3.4) | stops |
 | `hash_mismatch` | 3 bad tries on one chunk, or a whole part twice | stops; the next reconnect starts over |
-| `unreachable` | no link | waits for the next reconnect and resumes |
+| `unreachable` | no link | the pending copy tries again every 15 s (resuming with the held token) for 5 min from the first miss, then shows a failed state with Try again (a fresh 5 min); a reconnect also resumes it. A catch-up is not retried |
 | `nothing_restored` | the restore stored nothing | shows the error, never "Done" |
 | `settings_refused` | §5 | finishes without settings, one line saying so |
 | `cancelled` | the user stopped it | keeps the state for a later resume |

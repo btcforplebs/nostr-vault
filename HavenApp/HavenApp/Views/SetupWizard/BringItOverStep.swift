@@ -48,9 +48,11 @@ struct BringItOverStep: View {
                 }
             } else {
                 BringItOverContent(flow: flow, other: other, copying: copying, progress: copy.progress,
+                                   retrying: MeshCopyV2.unreachableLine(copy.unreachable, name: other?.name ?? ""),
                                    stopLine: stopLine, scanning: $scanning,
                                    scanned: scanned, confirm: confirm, onLinked: startCopy, onFailed: fallBack,
                                    onContinue: { stopLine == nil ? done() : fallBack() },
+                                   onTryAgain: copy.unreachable == .gaveUp ? tryAgain : nil,
                                    onSkip: done)
                     .environmentObject(relayManager)
             }
@@ -68,6 +70,7 @@ struct BringItOverStep: View {
         }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in watch() }
         .onChange(of: copy.progress) { _, p in moved(p) }
+        .onChange(of: copy.unreachable) { _, r in unreachableChanged(r) }
         // The local-network prompt comes now, before the scan, not over
         // the copy's progress (Logen, 2026-11-06).
         .onAppear { LocalNetworkPermission.ask() }
@@ -117,6 +120,8 @@ struct BringItOverStep: View {
         lastMoveAt = Self.now
         if CopySaving.copyFinished(p) { return done() }
         guard p.isFinished else { return }
+        // Can't reach it yet: the service keeps trying, then says it failed.
+        if copy.unreachable != .none { return unreachableChanged(copy.unreachable) }
         if let line = MeshCopyV2.message(for: p, name: other?.name ?? "") {
             stopLine = line
         } else {
@@ -133,12 +138,26 @@ struct BringItOverStep: View {
             // with words waits for Continue.
             // Saving sends no lines until it ends: not a stall either.
             guard stopLine == nil, CopySaving.mayStall(copy.progress), let lastMoveAt else { return }
-            // Dialling and waiting for the relay count as moving.
-            if copy.starting { self.lastMoveAt = now; return }
+            // Dialling, waiting for the relay and trying again count as moving.
+            if copy.starting || copy.unreachable != .none { self.lastMoveAt = now; return }
             if OtherVaultCopy.isStalled(lastProgressAt: lastMoveAt, now: now) { fallBack() }
         } else if let started = linkStartedAt, OtherVaultCopy.linkTimedOut(startedAt: started, now: now) {
             fallBack()
         }
+    }
+
+    /// Still trying: progress shows the line. Tried for minutes: failed,
+    /// with Try again and Continue (the relays).
+    private func unreachableChanged(_ r: MeshCopyV2.Retry) {
+        guard copying, !finished else { return }
+        lastMoveAt = Self.now
+        stopLine = r == .gaveUp ? MeshCopyV2.unreachableLine(r, name: other?.name ?? "") : nil
+    }
+
+    private func tryAgain() {
+        stopLine = nil
+        lastMoveAt = Self.now
+        copy.tryAgain()
     }
 
     private func done() {
@@ -175,6 +194,8 @@ private struct BringItOverContent: View {
     let other: MeshPairing.Payload?
     let copying: Bool
     let progress: MeshCopyV2.Progress?
+    /// The copy can't reach the other device and keeps trying (its line).
+    let retrying: String?
     let stopLine: String?
     @Binding var scanning: Bool
     let scanned: (String) -> String?
@@ -182,6 +203,8 @@ private struct BringItOverContent: View {
     let onLinked: () -> Void
     let onFailed: () -> Void
     let onContinue: () -> Void
+    /// The copy failed to reach the other device: start a fresh round of tries.
+    let onTryAgain: (() -> Void)?
     /// Skip while saving: in now; saving and the catch-up carry on.
     let onSkip: () -> Void
 
@@ -258,16 +281,20 @@ private struct BringItOverContent: View {
                     .foregroundColor(.orange)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                line("Your notes come from your relays instead.")
+                if let onTryAgain {
+                    WizardPrimaryButton(title: "Try again", action: onTryAgain)
+                } else {
+                    line("Your notes come from your relays instead.")
+                }
             } else {
-                Text(progress.map { MeshCopyV2.stageLine($0, name: other?.name ?? "") }
+                Text(retrying ?? progress.map { MeshCopyV2.stageLine($0, name: other?.name ?? "") }
                      ?? OtherVaultCopy.copyingLine(other?.name ?? ""))
                     .font(.appSystem(size: 15, weight: .medium))
                     .foregroundColor(WizardColors.textPrimary)
                     .multilineTextAlignment(.center)
                 if let progress, CopySaving.slides(progress) {
                     CopySavingProgress(progress: progress, onSkip: onSkip)
-                } else if let fraction = progress?.fraction {
+                } else if retrying == nil, let fraction = progress?.fraction {
                     ProgressView(value: fraction)
                         .progressViewStyle(.linear)
                         .tint(WizardColors.accentPrimary)
@@ -278,7 +305,15 @@ private struct BringItOverContent: View {
                 }
                 line("It carries on if you go ahead now.")
             }
-            WizardPrimaryButton(title: "Continue", action: onContinue)
+            if onTryAgain != nil {
+                Button("Continue without it", action: onContinue)
+                    .font(.appSystem(size: 15, weight: .medium))
+                    .foregroundColor(WizardColors.accentPrimary)
+                    .frame(minHeight: 44)
+                    .buttonStyle(.plain)
+            } else {
+                WizardPrimaryButton(title: "Continue", action: onContinue)
+            }
         }
     }
 

@@ -267,10 +267,40 @@ object MeshCopyV2 {
     const val SYNC_EVERY_S = 15 * 60L
 
     /**
+     * A copy the other device can't be reached for (`unreachable`, after the engine's own ~20 s) is tried again this
+     * often, for [UNREACHABLE_RETRY_FOR_S] from the first miss; then it has failed and waits for Try again (Logen,
+     * 2026-11-06). Before, it sat on "Waiting" until a reconnect. Twin of Apple's `unreachableRetryEvery`.
+     */
+    const val UNREACHABLE_RETRY_EVERY_S = 15L
+    const val UNREACHABLE_RETRY_FOR_S = 5 * 60L
+
+    /** What B does next about a copy it can't reach. */
+    sealed interface Retry {
+        /** Nothing to retry: no copy pending, or it isn't unreachable. */
+        data object None : Retry
+        /** Try again in [seconds]. */
+        data class After(val seconds: Long) : Retry
+        /** Tried for [UNREACHABLE_RETRY_FOR_S]: failed, Try again starts over. */
+        data object GaveUp : Retry
+    }
+
+    /** The copy screen's line while B keeps trying, and once it has failed. */
+    fun unreachableLine(r: Retry, name: String): String? = when (r) {
+        Retry.None -> null
+        is Retry.After -> "Can't reach $name yet. Trying again…"
+        Retry.GaveUp -> "Couldn't reach $name. Make sure it's on and Nostr Vault is open, then try again."
+    }
+
+    /**
      * Kept in this app's prefs. No token and no address: the engine keeps the token (copy_peers.json and the copy
      * state), and the address is dialed fresh each time.
      */
-    data class Record(val pending: Pending? = null, val copied: Map<String, Long> = emptyMap()) {
+    data class Record(
+        val pending: Pending? = null,
+        val copied: Map<String, Long> = emptyMap(),
+        /** When the pending copy first couldn't reach its device (null while it can, or none is pending). */
+        val unreachableSince: Long? = null,
+    ) {
         /** The copy under way or cut short, and whether the next try needs a fresh signed start. */
         data class Pending(val peer: String, val name: String, val freshStart: Boolean)
 
@@ -278,12 +308,27 @@ object MeshCopyV2 {
         fun finished(l: Line, peer: String, now: Long): Record {
             if (l.stage != "done" && l.stage != "failed") return this
             if (l.stage == "done") return Record(null, copied + (peer to now))
+            val since = if (l.error == "unreachable" && pending?.peer == peer) unreachableSince ?: now else null
             return when (action(l.error)) {
                 Action.RESUME_NEXT_RECONNECT, Action.KEEP_STATE, Action.WAIT -> copy(pending = pending?.copy(freshStart = false))
                 Action.RESTART_NEXT_RECONNECT, Action.RESTART -> copy(pending = pending?.copy(freshStart = true))
                 // A stop (another owner, no space, an old app) or relays: no retry.
                 else -> copy(pending = null)
-            }
+            }.copy(unreachableSince = since)
+        }
+
+        /** A try that never reached the engine (no link to the device): a miss like the engine's `unreachable`. */
+        fun missed(peer: String, now: Long): Record =
+            if (pending?.peer != peer) this else copy(unreachableSince = unreachableSince ?: now)
+
+        /** Try again, the device came back, or a new start: a fresh window. */
+        fun retryNow(): Record = copy(unreachableSince = null)
+
+        /** What to do about the pending copy now (see [Retry]). */
+        fun retry(now: Long): Retry {
+            val since = unreachableSince
+            if (pending == null || since == null) return Retry.None
+            return if (now - since >= UNREACHABLE_RETRY_FOR_S) Retry.GaveUp else Retry.After(UNREACHABLE_RETRY_EVERY_S)
         }
 
         /** The linked devices due a catch-up: copied before, not the one a copy is pending with, not in [SYNC_EVERY_S]. */
@@ -298,6 +343,7 @@ object MeshCopyV2 {
                     )
                 } ?: kotlinx.serialization.json.JsonNull),
                 "copied" to JsonObject(copied.mapValues { JsonPrimitive(it.value) }),
+                "unreachable_since" to (unreachableSince?.let(::JsonPrimitive) ?: kotlinx.serialization.json.JsonNull),
             ),
         ).toString()
 
@@ -310,7 +356,8 @@ object MeshCopyV2 {
                     Pending(peer, it.str("name"), (it["fresh"] as? JsonPrimitive)?.contentOrNull == "true")
                 }
                 val copied = (o["copied"] as? JsonObject).orEmpty().mapNotNull { (k, v) -> (v as? JsonPrimitive)?.longOrNull?.let { k to it } }.toMap()
-                Record(pending, copied)
+                val since = (o["unreachable_since"] as? JsonPrimitive)?.longOrNull
+                Record(pending, copied, since)
             }.getOrDefault(Record())
         }
     }
