@@ -573,7 +573,8 @@ func initRelays(ctx context.Context) error {
 	// (load_blob.go), and an old one is cleared here.
 	sweepStaleBlobTemps(time.Now())
 	blossomServer = blossom.New(outboxRelay, getHTTPScheme(config.RelayURL)+config.RelayURL)
-	blossomServer.Store = blossom.EventStoreBlobIndexWrapper{Store: blossomDB, ServiceURL: blossomServer.ServiceURL}
+	// A paired device's upload or delete is filed under the owner (mesh_devices.go).
+	blossomServer.Store = meshOwnerIndex{blossom.EventStoreBlobIndexWrapper{Store: blossomDB, ServiceURL: blossomServer.ServiceURL}}
 	blossomServer.StoreBlob = append(blossomServer.StoreBlob, func(ctx context.Context, sha256 string, ext string, body []byte) error {
 		slog.Debug("storing blob", "sha256", sha256, "ext", ext)
 		// Write to a temp file and rename into place: an interrupted write must
@@ -600,6 +601,9 @@ func initRelays(ctx context.Context) error {
 	})
 	blossomServer.RejectUpload = append(blossomServer.RejectUpload, func(ctx context.Context, event *nostr.Event, size int, ext string) (bool, string, int) {
 		if _, ok := config.WhitelistedPubKeys[event.PubKey]; ok {
+			return false, ext, size
+		}
+		if isMeshDeviceAuth(ctx, event) {
 			return false, ext, size
 		}
 
@@ -805,6 +809,12 @@ func meshBlobHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func dynamicRelayHandler(w http.ResponseWriter, r *http.Request) {
+	// A Blossom request signed by a paired device's mesh key (mesh_devices.go).
+	r, code, why := withMeshDeviceAuth(r)
+	if code != 0 {
+		http.Error(w, why, code)
+		return
+	}
 	var relay *khatru.Relay
 	relayType := r.URL.Path
 

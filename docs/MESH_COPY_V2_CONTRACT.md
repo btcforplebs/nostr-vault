@@ -39,19 +39,62 @@ Logen's picks (2026-11-05), binding:
 
 ## 2. Authentication
 
-The engine holds no owner key, so B's app signs once and the engine carries the result.
+**The mesh never uses the account key** (Logen, 2026-11-06). The copy start and Blossom over the mesh are signed by the
+device's **own mesh key**, and a vault accepts one only when that key is in its **paired-device set**. No owner NIP-98,
+no nsec anywhere on the mesh.
 
-**Start.** `POST /copy/v2/start` with `Authorization: Nostr <base64 kind 27235>` (NIP-98), signed by the owner:
+**The paired-device set.** Both sides already store each other's mesh npub at pairing (iOS My Devices, Android
+`fipsPeers` + labels with `linkedBy`). The app hands the set to the engine at start and on every change, the same way
+it passes `own_devices` to FIPS: the owner's devices only (`linkedBy` is the owner or empty), roles kept. Old
+link-paired devices are in it too. No re-pair is needed.
+
+```
+SetMeshDevicesC({"self": "<this vault's mesh npub>", "devices": [{"npub": "<mesh npub>", "role": "phone"}, …]})
+```
+- 0 set; 1 bad input, and the old set is kept.
+- The vault's own key is never a paired device.
+- An **empty or missing set accepts no device**. There is no fallback to "anyone".
+- **Unpair:** a device that leaves the set loses its copy tokens at once (as `RevokeCopyTokensC`).
+
+**Start.** `POST /copy/v2/start` with `Authorization: Nostr <base64 kind 27235>` (NIP-98), signed by **B's mesh key**:
 - `["u", <any scheme://host:port>/copy/v2/start]`. The path is checked. The host is not, because A and B name the
   same mesh link by different loopback addresses.
 - `["method","POST"]`.
-- `["device", <B's own mesh npub>]` (npub or 64 hex). A binds the token to it. A proof without it is 401.
+- `["p", <A's own mesh npub>]` (npub or 64 hex). A proof naming another vault is 401, so it cannot be replayed
+  against another of the owner's vaults.
 - `created_at` within 60 s of A's clock.
 - The event id is used once. A replay is 401.
-- The pubkey is a whitelisted key of A's vault, and the owner.
+- The signer is in A's paired set and is not A. Anyone else is 403.
+- The token is **bound to the signer**. A `device` tag is not needed; if present it must equal the signer (401).
 
-If the check fails: 401 for a missing, bad, stale or replayed proof; 403 for a valid proof from someone who is not
-the owner.
+**Old form, kept until every app sends the device form** (marked `TODO(mesh-key)` in the engine, then removed): the
+owner signs, with `["device", <B's own mesh npub>]` instead of `p`; a proof without it is 401.
+
+If the check fails: 401 for a missing, bad, stale, replayed or misaddressed proof; 403 for a valid proof from a key
+that is neither a paired device nor (old form) the owner.
+
+### 2.1 Blossom over the mesh (upload, get / check, delete)
+
+A paired device's Blossom request, on the door or on the own-device port, carries a kind 24242 signed by **its mesh
+key**:
+- `["t", "upload" | "get" | "delete"]`: exactly one, and it must match the request (PUT/HEAD `/upload` is upload,
+  GET/HEAD `/<sha256>` is get, DELETE `/<sha256>` is delete). Nothing else (list, mirror, …) is allowed: 403.
+- `["x", <sha256>]` for **each** blob acted on, no wildcard and no `server` tag stand-in. An upload whose body hashes
+  to no `x` is refused.
+- `["p", <receiver's mesh npub>]`. Delete everywhere is either one token per target or one event with several `p`
+  tags; each vault checks it is named.
+- `["expiration", <unix>]`, in the future and **at most 5 minutes** ahead.
+- `created_at` no further ahead than the usual 10-minute future skew.
+
+The vault checks: the signer is in its paired set and is not itself; it is named in `p`; the token is unexpired and
+short-lived; and the id has **not been seen before it expires** (no replay: 409, sign a new one). HEAD requests
+(the upload pre-flight and the check after a delete) change nothing and do not spend the token.
+
+**Records are filed under the owner.** A device's upload is indexed under the owner's pubkey, never the device key,
+so §4 and `copyOwnMediaSet` count it. A device's delete removes only the owner's record: a blob whose records are by
+another key stays.
+
+The owner-signed 24242 keeps working until the apps switch (`TODO(mesh-key)`).
 
 **Answer:**
 ```json
@@ -65,7 +108,8 @@ the owner.
     (0 revoked, 1 none held). That drops B's tokens and the copies they could read, on disk too;
   - B starts again: one token per device, so a new start replaces that device's old token and its copy;
   - it has been unused for 30 days;
-  - A's owner changes.
+  - A's owner changes;
+  - B leaves A's paired set (`SetMeshDevicesC`), the same as Remove device.
 - Removing B on B's side forgets A: no resume, no catch-up.
 
 ## 3. The first copy
@@ -169,8 +213,9 @@ Which notes name a file does not matter.
 
 **Photos other people only sent the owner are not in A's store.** Every way a file gets into A's Blossom store needs
 a record by one of the vault's own keys:
-- an upload is refused unless its kind 24242 is signed by a whitelisted key (`init.go`, `RejectUpload`; the mesh door
-  checks the same, `mesh_door.go` `meshUploadAuthorized`);
+- an upload is refused unless its kind 24242 is signed by a whitelisted key, or by a paired device's mesh key, whose
+  upload is then filed under the owner (§2.1; `init.go` `RejectUpload`, `mesh_devices.go` `meshOwnerIndex`; the mesh
+  door checks the same, `mesh_door.go` `meshUploadAuthorized`);
 - a restore keeps a blob record only from a whitelisted key (`jsonl.go` `importBlobRecord`);
 - neither app mirrors received media unprompted: every save or mirror above is an owner action, and the bulk
   `mirrorFromNoteMedia` reads only the owner's own notes;
