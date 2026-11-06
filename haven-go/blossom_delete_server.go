@@ -41,6 +41,10 @@ func rejectDeleteForOtherServer(ctx context.Context, auth *nostr.Event, sha256 s
 	if auth == nil {
 		return true, "missing \"Authorization\" event", 401
 	}
+	if isMeshDeviceAuth(ctx, auth) {
+		// A paired device's token names this vault by its p tag (mesh_devices.go).
+		return false, "", 0
+	}
 	reachedAs := serverTagHost(blossom.RequestHost(ctx))
 	named := false
 	for _, tag := range auth.Tags {

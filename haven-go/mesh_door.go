@@ -72,8 +72,9 @@ func isMeshConn(ctx context.Context) bool {
 }
 
 // meshHandler is the whole mesh door. A mesh peer is an unknown remote
-// client (NIP-F1); the owner's other phone gets in only with the owner's
-// signature:
+// client (NIP-F1); the owner's other phone gets in only with its own paired
+// mesh key's signature (mesh_devices.go), or, until the apps switch, the
+// owner's:
 //   - GET/HEAD /<sha256>[.ext]: read one blob (meshBlobHandler).
 //   - PUT/HEAD /upload: Blossom upload, owner-signed kind 24242 or 403
 //     (checked here, before khatru allocates), at most meshMaxUploadBytes,
@@ -89,6 +90,14 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 	r.Header.Del("X-Real-Ip")
 	r.Header.Del("X-Forwarded-Host")
 	r.Header.Del("X-Forwarded-Proto")
+
+	// A paired device's own mesh key (mesh_devices.go): checked and spent
+	// here, before anything below reads the request.
+	r, code, why := withMeshDeviceAuth(r)
+	if code != 0 {
+		http.Error(w, why, code)
+		return
+	}
 
 	switch {
 	case r.URL.Path == "/upload" && (r.Method == http.MethodPut || r.Method == http.MethodHead):
@@ -119,7 +128,7 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			// Spend the auth on admission: an attempt that stalls or fails
 			// cannot be repeated with the same token (senders sign per try).
-			if !meshAuthUse(auth) {
+			if !isMeshDeviceAuth(r.Context(), auth) && !meshAuthUse(auth) {
 				// 409, not 403: senders treat 403 as final, and a spent
 				// token only means "sign a new one and try again".
 				http.Error(w, "authorization already used", http.StatusConflict)
@@ -187,6 +196,12 @@ func meshUploadAuthorized(r *http.Request) (*nostr.Event, int, string) {
 	if ev.Kind != 24242 {
 		return nil, http.StatusForbidden, "invalid event"
 	}
+	if isMeshDeviceAuth(r.Context(), &ev) {
+		// A paired device's token: fully checked by withMeshDeviceAuth.
+		return meshDeviceAuthIn(r.Context()), 0, ""
+	}
+	// The owner-key path. TODO(mesh-key): remove once every app signs
+	// mesh uploads with its device key (docs/MESH_COPY_V2_CONTRACT.md §2.1).
 	if _, ok := config.WhitelistedPubKeys[ev.PubKey]; !ok {
 		return nil, http.StatusForbidden, "only media signed by whitelisted pubkeys are allowed"
 	}

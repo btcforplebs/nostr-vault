@@ -552,6 +552,25 @@ func CopySyncC(peer *C.char, base *C.char) C.int {
 	return C.int(startCopySync(c.ctx, c.spawn, C.GoString(peer), C.GoString(base)))
 }
 
+// SetMeshDevicesC hands the engine this vault's own mesh npub and its paired
+// devices (docs/MESH_COPY_V2_CONTRACT.md §2): call it at start and on every
+// change, with the same set passed to FIPS as own_devices.
+//
+//	{"self": "npub1…", "devices": [{"npub": "npub1…", "role": "phone"}]}
+//
+// Only these devices' mesh keys may start a copy or use Blossom over the
+// mesh. A device that leaves the set loses its copy tokens at once. An empty
+// set accepts no device. 0 set, 1 bad input (the old set is kept).
+//
+//export SetMeshDevicesC
+func SetMeshDevicesC(devices *C.char) C.int {
+	if err := meshDevices.set(C.GoString(devices)); err != nil {
+		log.Printf("🚫 %v", err)
+		return 1
+	}
+	return 0
+}
+
 // RevokeCopyTokensC is Remove device on A: the removed device (its mesh npub
 // or hex) can no longer read copies or catch up. 0 revoked, 1 none held.
 //

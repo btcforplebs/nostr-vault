@@ -22,6 +22,10 @@ func meshHeadAllowed(r *http.Request, sha256 string) bool {
 // 24242 "get" for sha256, unexpired and validly signed: what khatru checks
 // before meshBlobRejectGet lets the owner read an unposted blob.
 func meshOwnerGetAuthorized(r *http.Request, sha256 string) bool {
+	if dev := meshDeviceAuthIn(r.Context()); dev != nil {
+		// withMeshDeviceAuth checked t=get and that x covers this path's blob.
+		return dev.Tags.FindWithValue("t", "get") != nil && dev.Tags.FindWithValue("x", sha256) != nil
+	}
 	token := r.Header.Get("Authorization")
 	if !strings.HasPrefix(token, "Nostr ") {
 		return false

@@ -169,6 +169,9 @@ func meshBlobRejectGet(ctx context.Context, auth *nostr.Event, sha256 string, _ 
 		if _, ok := config.WhitelistedPubKeys[auth.PubKey]; ok {
 			return false, "", 0
 		}
+		if isMeshDeviceAuth(ctx, auth) {
+			return false, "", 0
+		}
 	}
 	if meshBlobs.has(ctx, sha256) {
 		return false, "", 0

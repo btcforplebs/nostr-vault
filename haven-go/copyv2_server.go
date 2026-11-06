@@ -75,6 +75,12 @@ type copyToken struct {
 
 var copyV2 = &copyServer{jobs: map[string]*copyJob{}, seen: map[string]time.Time{}, now: time.Now}
 
+// Unpair on A: a device that leaves the paired set loses its tokens at once.
+func init() {
+	onMeshDeviceUnpaired = func(hex string) { copyV2.revoke(hex) }
+	meshDeviceOverLoopback = func(r *http.Request) bool { return !copyThroughTunnel(r) && copyFromLoopback(r) }
+}
+
 func (s *copyServer) loadTokens() {
 	if s.loaded {
 		return
@@ -125,6 +131,13 @@ func (s *copyServer) bearer(r *http.Request) (string, bool) {
 		if t.Owner != config.OwnerPubKey || now.Sub(time.Unix(t.LastUsed, 0)) > copyTokenIdle {
 			return "", false
 		}
+		// Once the app has handed over the paired set, a token is good only
+		// while its device is in it: an unpair while the engine was down, or
+		// one that lands between checkStart and the token being issued,
+		// leaves no live token (Tron, #1802).
+		if meshDevices.selfKey() != "" && !meshDevices.paired(t.Device) {
+			return "", false
+		}
 		// Saved at most hourly: every chunk request would otherwise write the file.
 		if now.Sub(time.Unix(t.LastUsed, 0)) > time.Hour {
 			t.LastUsed = now.Unix()
@@ -163,10 +176,12 @@ func copyIsHex(s string, n int) bool {
 	return true
 }
 
-// checkStart verifies the owner's NIP-98 proof for POST /copy/v2/start.
-// The u tag's path must be /copy/v2/start; its host is not compared (A and B
-// name the same mesh link by different loopback addresses). 401 for no, bad,
-// stale or replayed proof; 403 for a good proof by someone else.
+// checkStart verifies the NIP-98 proof for POST /copy/v2/start: signed by a
+// paired device's own mesh key (the device form), or, until the apps switch,
+// by the owner. The u tag's path must be /copy/v2/start; its host is not
+// compared (A and B name the same mesh link by different loopback
+// addresses). 401 for no, bad, stale or replayed proof; 403 for a good proof
+// by a key that is neither. Returns the device the token is bound to.
 func (s *copyServer) checkStart(r *http.Request) (int, string, string) {
 	header, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Nostr ")
 	if !ok {
@@ -197,12 +212,28 @@ func (s *copyServer) checkStart(r *http.Request) (int, string, string) {
 	if err != nil || !u.IsAbs() || u.Path != "/copy/v2/start" || u.RawQuery != "" {
 		return http.StatusUnauthorized, "authorization is not for /copy/v2/start", ""
 	}
-	device := copyDevice(ev.Tags)
-	if device == "" {
-		return http.StatusUnauthorized, "authorization names no device", ""
-	}
-	if config.OwnerPubKey == "" || !strings.EqualFold(ev.PubKey, config.OwnerPubKey) {
-		return http.StatusForbidden, "only the owner may copy this vault", ""
+	var device string
+	switch {
+	case meshDevices.paired(strings.ToLower(ev.PubKey)):
+		// The device form (§2): B signs with its own mesh key, A's paired
+		// set names it, and the p tag names A, so the proof cannot be
+		// replayed against another of the owner's vaults.
+		device = strings.ToLower(ev.PubKey)
+		if meshKeyHex(tagValueOf(ev.Tags, "p")) != meshDevices.selfKey() {
+			return http.StatusUnauthorized, "authorization is for another vault", ""
+		}
+		if named := tagValueOf(ev.Tags, "device"); named != "" && copyDevice(ev.Tags) != device {
+			return http.StatusUnauthorized, "authorization names another device", ""
+		}
+	case config.OwnerPubKey != "" && strings.EqualFold(ev.PubKey, config.OwnerPubKey):
+		// The owner-key form. TODO(mesh-key): remove once every app signs the
+		// start with its device key (docs/MESH_COPY_V2_CONTRACT.md §2).
+		device = copyDevice(ev.Tags)
+		if device == "" {
+			return http.StatusUnauthorized, "authorization names no device", ""
+		}
+	default:
+		return http.StatusForbidden, "only the owner's paired devices may copy this vault", ""
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
