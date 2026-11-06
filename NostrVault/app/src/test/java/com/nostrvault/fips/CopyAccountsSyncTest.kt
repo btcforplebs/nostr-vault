@@ -21,11 +21,13 @@ class CopyAccountsSyncTest {
     private val other = "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap"
     private val third = "npub1ks0t9yldwmqlr2k8jnm25gs92za45mp5rhwtkk0r0wlz9wg688zs99ny60"
 
-    private class FakeDevice(var npubs: List<String>, var live: Int = 1) : CopyAccountsSync.Device {
+    /** [signing]: the accounts it can sign for; the rest of [npubs] are look-only. */
+    private class FakeDevice(var npubs: List<String>, var live: Int = 1, var signing: List<String>? = null) : CopyAccountsSync.Device {
         val liveCalls = mutableListOf<String>()
         val lookOnly = mutableListOf<String>()
         override fun changes(): Flow<Any?> = emptyFlow()
         override fun accounts() = npubs
+        override fun signingAccounts() = signing ?: npubs
         override fun name(hex: String) = if (MeshPairing.npub(hex) == npubs.firstOrNull()) "Owner" else ""
         override fun addLive(json: String): Int { liveCalls += json; return live }
         override fun addLookOnly(npubs: List<String>) { lookOnly += npubs }
@@ -98,6 +100,28 @@ class CopyAccountsSyncTest {
     @Test
     fun `a file holding a key is never offered from`() {
         file.writeText("""{"v":1,"updated_at":1,"accounts":[{"npub":"$other","name":"nsec19uqxr6xazkeed24thcl9gwl8e5alzdtma8enxekqkv3ux3m9ty3qqp49sa"}]}""")
+        assertTrue(sync.refreshOffer().isEmpty())
+    }
+
+    @Test
+    fun `a look-only account never goes in the file, so no other vault is offered it (Tron, #1810)`() {
+        // A: the owner can sign; `other` is look-only (someone's public npub).
+        device.npubs = listOf(owner, other)
+        device.signing = listOf(owner)
+        sync.writeOwn()
+        assertEquals(listOf(Account(owner, "Owner")), CopyAccounts.accountsIn(file.readText()))
+        assertFalse(file.readText().contains(other))
+    }
+
+    @Test
+    fun `a look-only account an older build wrote is dropped from the file`() {
+        // An older build wrote every account, look-only ones too.
+        file.writeText(CopyAccounts.fileJson(listOf(Account(owner), Account(other, "Watched")), 1767000000)!!)
+        device.npubs = listOf(owner, other)
+        device.signing = listOf(owner)
+        sync.writeOwn()
+        assertEquals(listOf(Account(owner, "Owner")), CopyAccounts.accountsIn(file.readText()))
+        // And this device's own look-only account is never offered back to it either.
         assertTrue(sync.refreshOffer().isEmpty())
     }
 }

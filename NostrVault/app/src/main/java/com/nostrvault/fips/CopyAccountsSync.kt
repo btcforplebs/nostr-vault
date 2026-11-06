@@ -55,8 +55,14 @@ class CopyAccountsSync internal constructor(
     interface Device {
         /** Emits whenever the accounts or their names change. */
         fun changes(): Flow<Any?>
-        /** Every account on this device, owner first (npubs). */
+        /** Every account on this device, owner first (npubs): never offered back to it. */
         fun accounts(): List<String>
+        /**
+         * The accounts this device can sign for: the owner plus a stored key, Amber or a bunker
+         * ([com.nostrvault.data.local.ConfigStore.signingAccountNpubs]). Only these go in the file: a look-only account is
+         * often someone else's public npub, and a ticked one becomes an own key on the other vault (Tron, #1810).
+         */
+        fun signingAccounts(): List<String>
         /** A display name for [hex], or empty. */
         fun name(hex: String): String
         /** AddAccountsC: how many were new, or -1 when refused (0 when the relay library isn't loaded). */
@@ -99,8 +105,12 @@ class CopyAccountsSync internal constructor(
 
     private fun ownHex(): Set<String> = device.accounts().mapNotNull(MeshPairing::npubHex).toSet()
 
-    /** This device's accounts, owner first, named from their profiles. */
-    private fun ownAccounts(): List<CopyAccounts.Account> = device.accounts().mapNotNull { npub ->
+    /** This device's look-only accounts (hex): never in the file, even if an older build wrote them there. */
+    private fun lookOnlyHex(): Set<String> =
+        ownHex() - device.signingAccounts().mapNotNull(MeshPairing::npubHex).toSet()
+
+    /** This device's signing accounts, owner first, named from their profiles. */
+    private fun ownAccounts(): List<CopyAccounts.Account> = device.signingAccounts().mapNotNull { npub ->
         val hex = MeshPairing.npubHex(npub) ?: return@mapNotNull null
         CopyAccounts.Account(MeshPairing.npub(hex), CopyAccounts.cleanName(device.name(hex)))
     }.distinctBy { it.npub }
@@ -112,8 +122,9 @@ class CopyAccountsSync internal constructor(
         if (own.isEmpty()) return
         // Own once, never offered back after it is removed here.
         settledStore.hexes = settledStore.hexes + ownHex()
+        val lookOnly = lookOnlyHex()
         val existing = readFile()
-        val next = CopyAccounts.ownFile(own, existing)
+        val next = CopyAccounts.ownFile(own, existing.filter { MeshPairing.npubHex(it.npub) !in lookOnly })
         if (next == existing) return
         val body = CopyAccounts.fileJson(next, nowS()) ?: return
         val f = file
@@ -158,6 +169,7 @@ class CopyAccountsSync internal constructor(
             c.allAccountNpubs().map { n -> n to MeshPairing.npubHex(n)?.let { p[it]?.bestName } }
         }
         override fun accounts() = configStore.config.value.allAccountNpubs()
+        override fun signingAccounts() = configStore.signingAccountNpubs()
         override fun name(hex: String): String =
             runCatching { nostr.get().profiles.value[hex]?.bestName }.getOrNull().orEmpty()
         override fun addLive(json: String): Int =

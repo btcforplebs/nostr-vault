@@ -107,12 +107,13 @@ class FipsMeshManager @Inject constructor(
     init {
         // The relay's paired set first: a removed device's mesh key and copy tokens stop working at once, whatever
         // the mesh engine does next. Again once the engine knows this device's npub.
-        appScope.launch {
+        // On IO throughout (it reads the mesh key): no hop back to the caller's dispatcher.
+        appScope.launch(Dispatchers.IO) {
             kotlinx.coroutines.flow.combine(configStore.config, _status.map { it.npub }) { config, npub ->
                 MeshDeviceSetSync.json(config, npub ?: MeshKeySigner.npub())
             }
                 .distinctUntilChanged()
-                .collect { withContext(Dispatchers.IO) { pushDeviceSet() } }
+                .collect { pushDeviceSet() }
         }
         // My Devices is the engine's allowlist and is fixed at start: a running engine restarts
         // when it changes. setPeers restarts on its own; this covers the home vault, which is
