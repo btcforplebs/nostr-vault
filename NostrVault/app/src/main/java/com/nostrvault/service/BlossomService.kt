@@ -337,6 +337,8 @@ class BlossomService @Inject constructor(
         publicOnly: Boolean = false,
         /** Import media's way into the vault (keyless or signed); null: [authHeader], signed here if null. */
         ownVault: OwnVaultAuth? = null,
+        /** Told why a file was not stored (no room, bad hash, cut short), for the import log. */
+        onSkip: ((String) -> Unit)? = null,
     ): String? = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder().url(url).get().build()
@@ -349,10 +351,18 @@ class BlossomService @Inject constructor(
             // Prefer the source server's Content-Type — it's the authoritative format
             // metadata; the relay's magic library can't detect MP4/MOV from bytes alone.
             val contentType = response.header("Content-Type") ?: "application/octet-stream"
-            val data = readBodyCapped(response, MAX_BLOB_BYTES) ?: return@withContext null
-            val sha256 = computeSHA256(data)
-            val saved = ownVault?.let { saveToOwnVault(data, sha256, contentType, it) } ?: saveToLocalRelay(data, sha256, contentType, authHeader)
-            if (saved) sha256 else null
+            // To disk through one small buffer, then into the vault from the file (StreamedBlob.kt):
+            // no size cap, only a free-storage check.
+            val blob = when (val got = streamToTempFile(response)) {
+                is StreamResult.Ok -> got.blob
+                is StreamResult.Skipped -> {
+                    Log.w(TAG, "Mirror $url to local skipped: ${got.reason}")
+                    onSkip?.invoke(got.reason)
+                    return@withContext null
+                }
+            }
+            val sha256 = blob.sha256
+            if (storeStreamed(blob, contentType, ownVault, authHeader)) sha256 else null
         } catch (e: Exception) {
             Log.w(TAG, "Mirror $url to local failed: ${e.message}")
             null
@@ -563,8 +573,8 @@ class BlossomService @Inject constructor(
                 mirrorSemaphore.acquire()
                 launch {
                     try {
-                        val data = downloadFromMirrors(hash)
-                        if (data != null && saveToOwnVault(data, hash, "application/octet-stream", ownVault)) {
+                        val blob = downloadFromMirrors(hash) { onLogMessage?.invoke("Skipped ${hash.take(8)}: $it") }
+                        if (blob != null && storeStreamed(blob, "application/octet-stream", ownVault)) {
                             saved.incrementAndGet()
                         }
                     } finally {
@@ -618,7 +628,7 @@ class BlossomService @Inject constructor(
                 mirrorSemaphore.acquire()
                 launch {
                     try {
-                        if (mirrorUrlToLocal(url, ownVault = auth) != null) saved.incrementAndGet()
+                        if (mirrorUrlToLocal(url, ownVault = auth) { onLogMessage?.invoke("Skipped $url: $it") } != null) saved.incrementAndGet()
                     } finally {
                         mirrorSemaphore.release()
                         onProgress?.invoke(completed.incrementAndGet().toFloat() / toImport.size)
