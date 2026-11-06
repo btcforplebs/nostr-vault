@@ -58,7 +58,7 @@ type copyManifest struct {
 	// before it fetches (§3.1, §3.4). Absent from an older A.
 	Accounts []string   `json:"accounts,omitempty"`
 	Parts    []copyPart `json:"parts"`
-	ZipKey    string         `json:"zip_key"`
+	ZipKey   string     `json:"zip_key"`
 }
 
 // copyZipKey names one built copy: the parts' hashes, in order.
