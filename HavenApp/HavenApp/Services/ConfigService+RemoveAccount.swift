@@ -1,8 +1,9 @@
 import Foundation
 
 extension ConfigService {
-    /// Removes one account from this device: its key, its signer and every
-    /// per-account setting, then pushes the smaller blocked list to the relay.
+    /// Removes one account from this device (Delete Account on its page, or
+    /// a swipe in the list): its key, its signer, every per-account setting
+    /// and the cache files named after it, then pushes the smaller blocked list to the relay.
     /// Both remove paths in Settings › Accounts call this, so neither can
     /// leave the account's blocks behind (see `removeAccountEntries`).
     func removeAccount(npub raw: String) {
@@ -19,6 +20,10 @@ extension ConfigService {
         removeCredential(forNpub: npub)
         config.removeAccountEntries(npub: npub)
         save()
+        // Its caches and settings too (Delete Account sends nothing to relays).
+        if let hex = Bech32.decode(npub)?.hexString {
+            AppDataWipe.forgetAccount(hex: hex, npub: npub, appSupport: relayDataDir.deletingLastPathComponent())
+        }
         syncBlacklistToRelay()
         NotificationCenter.default.post(name: NSNotification.Name("BlockedAccountsUpdated"), object: nil)
     }

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The "Delete Account" row (Settings › Accounts and Advanced): opens
-/// LeaveNostrForeverView.
+/// The "Delete Account" row at the bottom of an account's page (Settings ›
+/// Accounts › the account): opens DeleteAccountView.
 struct DeleteAccountButton: View {
     let action: () -> Void
 

@@ -7,7 +7,7 @@ import XCTest
 /// come after `removeBunkerConfig`: that call already detaches the active
 /// signer, and its session drop must land before the owner's connect, which
 /// can share the same signer session key.
-/// Both remove paths in the settings view call `ConfigService.removeAccount`.
+/// Both remove paths (the list's swipe, DeleteAccountView) call `ConfigService.removeAccount`.
 /// Neither file can be built here (SwiftUI, the whole app), so this reads
 /// their source.
 final class AccountRemovalSwitchTests: XCTestCase {
@@ -37,13 +37,23 @@ final class AccountRemovalSwitchTests: XCTestCase {
         XCTAssertEqual(offsets(of: "activeAccountNpub = \"\"", in: try removeSource()), [])
     }
 
-    /// Swipe-delete and Remove Account both go through the one removal, so
-    /// neither can leave the account's blocks or settings behind.
+    /// Swipe-delete (the list) and Delete Account (the account's page) both
+    /// go through the one removal, so neither can leave the account's
+    /// blocks, settings or cache files behind.
     func testBothRemovePathsUseTheOneRemoval() throws {
-        let settings = try settingsSource()
-        XCTAssertEqual(offsets(of: "configService.removeAccount(npub:", in: settings).count, 2)
-        XCTAssertEqual(offsets(of: "removeBunkerConfig(forNpub:", in: settings), [])
-        XCTAssertEqual(offsets(of: "removeCredential(forNpub:", in: settings), [])
+        for file in [try settingsSource(), try source("Views/Settings/DeleteAccountView.swift")] {
+            XCTAssertEqual(offsets(of: "configService.removeAccount(npub:", in: file).count, 1)
+            XCTAssertEqual(offsets(of: "removeBunkerConfig(forNpub:", in: file), [])
+            XCTAssertEqual(offsets(of: "removeCredential(forNpub:", in: file), [])
+        }
+    }
+
+    /// The removal also sweeps the account's own cache files and settings.
+    func testTheRemovalSweepsTheAccountsFiles() throws {
+        let source = try removeSource()
+        let save = try XCTUnwrap(offsets(of: "save()", in: source).first)
+        let sweep = try XCTUnwrap(offsets(of: "AppDataWipe.forgetAccount(", in: source).first)
+        XCTAssertGreaterThan(sweep, save)
     }
 
     /// The removal switches away from the account only after its bunker

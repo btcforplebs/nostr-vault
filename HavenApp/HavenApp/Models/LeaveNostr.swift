@@ -1,7 +1,8 @@
 import Foundation
 
-/// "Delete Account" (Settings › Accounts): the owner leaves Nostr from this
-/// device. The rules here are pure so they are unit-tested; LeaveNostrService
+/// "Leave Nostr Forever" (Settings › Advanced): the owner leaves Nostr from
+/// this device. (Delete Account, on each account's page, sends nothing:
+/// `AccountDataSweep`, `ConfigService.removeAccount`.) The rules here are pure so they are unit-tested; LeaveNostrService
 /// runs them and LeaveNostrForeverView shows them.
 ///
 /// Order, and why:
@@ -20,10 +21,30 @@ enum LeaveNostr {
         typed.trimmingCharacters(in: .whitespacesAndNewlines) == confirmWord
     }
 
-    /// NIP-62 "Request to Vanish": every relay that sees it is asked to erase.
+    /// The last of the three Leave Nostr Forever screens: the account's name
+    /// is typed, then the button is held this long.
+    static let holdSeconds: Double = 3
+
+    /// What the person types on the last screen: the account's shown name,
+    /// or the start of its npub when it has no name.
+    static func nameToType(name: String, npub: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? String(npub.prefix(12)) : trimmed
+    }
+
+    /// The typed text matches the name (spaces around it and letter case
+    /// ignored). An empty name never matches.
+    static func nameConfirms(_ typed: String, expected: String) -> Bool {
+        let want = expected.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !want.isEmpty else { return false }
+        return typed.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(want) == .orderedSame
+    }
+
     /// Shown when the vault stayed busy (import or backup) so the wipe did
     /// not start. Whatever was already sent to relays stays sent.
     static let wipeRefusedText = "The vault is still busy (an import or backup), so nothing on this device was deleted yet. Wait for it to finish, then try again."
+
+    /// NIP-62 "Request to Vanish": every relay that sees it is asked to erase.
     static let vanishKind = 62
     static let vanishTags: [[String]] = [["relay", "ALL_RELAYS"]]
     static let vanishContent = "This account was deleted from Nostr Vault."
