@@ -256,11 +256,11 @@ The vault's own keys are its owner and every added account (look-only included).
   visible; its count can come out low, never high). A backup zip's blob records for such an account are not
   restored, so `/list/<pubkey>` and HEAD never answer for them; a linked device's copy keeps them for the
   accounts `accounts.json` names, not for keep-list-only accounts (recorded before the restore).
-- **Signing in lifts it** (Logen, 2026-11-06, after #1827). Once the person signs in on B as such an account (ticked,
-  `AddAccountsC`, or in the whitelist file at the next start), it is own and normal: `broughtAccounts()` leaves out
+- **Signing in lifts it** (Logen, 2026-11-06, after #1827). Once a key or signer for such an account is on B (it is
+  in the whitelist the app hands the engine; a ticked offer is watch-only and does not lift it), it is own and normal: `broughtAccounts()` leaves out
   every key in `whitelist()`, so its events upload (lists through the usual list rule) and are served on the public
   outbox, the public page and the mesh photo index like any own account's. Its entry stays in `copy-brought.json`,
-  so an account removed again is read only again. The engine sees npubs only, so a look-only add lifts it too. A
+  so an account removed again is read only again. A
   backup zip's skipped blob records are not rebuilt by signing in (a later restore of that zip does).
 - **Merging** (`mergeCopyAccounts`): mine first, then theirs that are new; a name I have stays, a missing one is
   filled; **nothing is ever removed**, by a copy, a restore or a catch-up.

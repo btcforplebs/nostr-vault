@@ -26,8 +26,8 @@ const copyAccountsEntry = "accounts.json"
 
 // copyAccountsFile: the accounts the app should list, in the engine's working
 // dir, next to copy-settings.json. The app writes it on A (names included);
-// the engine merges what it is given into it on B, and the app adds any new
-// npub to its own account list (look-only) and its whitelist file.
+// the engine merges what it is given into it on B, and the app offers any new
+// npub; a ticked one is added watch-only (not to the whitelist).
 const copyAccountsFile = "copy-accounts.json"
 
 // copyBroughtFile: the engine's own record of the accounts that came from
