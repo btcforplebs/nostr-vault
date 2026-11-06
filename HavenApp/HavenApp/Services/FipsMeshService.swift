@@ -252,6 +252,9 @@ final class FipsMeshService: ObservableObject {
     /// vault: restart it with the new list (NIP-F1 revoke). `before` is the
     /// list from just before the change.
     func myDevicesChanged(from before: [MeshDevice]) {
+        // The relay's paired set first: a removed device's mesh key and copy
+        // tokens stop working at once, whatever the mesh engine does next.
+        MeshDeviceSetSync.push()
         let after = FipsMeshDevices.current(ConfigService.shared.config)
         let own = ownMeshNpub ?? Self.meshNpubFromKey()
         // Any engine that may be up, not just clientActive: a dial still in

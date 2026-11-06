@@ -181,12 +181,12 @@ final class HomeVaultSender: ObservableObject {
         sending = true
         defer { sending = false }
         // One signed "get" for both checks below.
-        let checkAuth = await signGetAuth(sha256: sha256)
+        let checkAuth = await signGetAuth(sha256: sha256, receiver: vault.meshNpub)
         if await HomeVaultTransport.vaultHas(sha256: sha256, base: base, authBase64: checkAuth) { return true }
         // A background pass may hold the item or the vault's one upload slot:
         // then the vault itself is the answer.
         guard let item = queue.first(where: { $0.kind == .blob && $0.id == sha256 && $0.target == nil }),
-              await sendBlob(item, base: base) == .sent else {
+              await sendBlob(item, base: base, receiver: vault.meshNpub) == .sent else {
             return await HomeVaultTransport.vaultHas(sha256: sha256, base: base, authBase64: checkAuth)
         }
         appLog("sent blob \(sha256.prefix(8)) before publishing its note")
@@ -324,7 +324,7 @@ final class HomeVaultSender: ObservableObject {
                 }
                 switch item.kind {
                 case .event: result = await HomeVaultTransport.sendEvent(json: item.eventJSON ?? "", id: item.id, base: base)
-                default: result = await sendBlob(item, base: base)
+                default: result = await sendBlob(item, base: base, receiver: vault.meshNpub)
                 }
             }
             switch result {
@@ -363,7 +363,7 @@ final class HomeVaultSender: ObservableObject {
         saveQueue()
     }
 
-    private func sendBlob(_ item: HomeVaultItem, base: URL) async -> HomeVaultSendResult {
+    private func sendBlob(_ item: HomeVaultItem, base: URL, receiver: String) async -> HomeVaultSendResult {
         // Streamed from a file: the bytes come from this phone's own Blossom,
         // where every post saves first, and never sit in memory whole.
         guard let file = await HomeVaultTransport.localBlobFile(sha256: item.id) else {
@@ -371,7 +371,12 @@ final class HomeVaultSender: ObservableObject {
         }
         defer { try? FileManager.default.removeItem(at: file) }
         let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int) ?? 0
-        guard let auth = await signUploadAuth(sha256: item.id, size: size) else {
+        // Signed by this phone's mesh key for this vault. Without a mesh key
+        // only the owner's form is left (TODO(mesh-key): remove with it).
+        let meshAuth = Self.meshUploadAuth(sha256: item.id, size: size, receiver: receiver)
+        var firstAuth = meshAuth
+        if firstAuth == nil { firstAuth = await signUploadAuth(sha256: item.id, size: size) }
+        guard let auth = firstAuth else {
             return .unreachable("could not sign the upload")
         }
         // The public server's own token, for the vault to carry there: the
@@ -383,15 +388,44 @@ final class HomeVaultSender: ObservableObject {
             }
             forward = (server, token)
         }
-        return await HomeVaultTransport.upload(file: file, size: size, sha256: item.id, contentType: item.contentType ?? "application/octet-stream", authBase64: auth, base: base, forward: forward)
+        let contentType = item.contentType ?? "application/octet-stream"
+        let (result, ownerRetry) = await HomeVaultTransport.upload(file: file, size: size, sha256: item.id, contentType: contentType, authBase64: auth, base: base, forward: forward)
+        // A vault without the paired set yet (an older build, or the box
+        // before havend passes it) turns the device form down: one retry
+        // with the owner's form while vaults accept it. A vault that has its
+        // set says so, and its refusal stands (MeshKeyAuth.retriesWithOwnerForm).
+        // TODO(mesh-key).
+        guard meshAuth != nil, ownerRetry,
+              let ownerAuth = await signUploadAuth(sha256: item.id, size: size) else { return result }
+        appLog("vault did not take the device key for \(item.id.prefix(8)), sent with the owner's", level: "WARN")
+        return await HomeVaultTransport.upload(file: file, size: size, sha256: item.id, contentType: contentType, authBase64: ownerAuth, base: base, forward: forward).result
+    }
+
+    /// This phone's mesh-key upload token for one blob on one vault
+    /// (docs/MESH_COPY_V2_CONTRACT.md §2.1), or nil with no mesh key. A
+    /// random word keeps two tokens for the same blob distinct: the vault
+    /// takes each id once.
+    private static func meshUploadAuth(sha256: String, size: Int, receiver: String) -> String? {
+        guard let tags = MeshKeyAuth.blossomTags(verb: .upload, sha256s: [sha256], receivers: [receiver], size: size) else { return nil }
+        return MeshKeySigner.authorization(kind: 24242, content: "Upload to my vault \(UUID().uuidString.prefix(8))", tags: tags)
     }
 
     /// The owner's "get" for one blob on the vault, signed once per blob and
     /// reused while it is good. nil when the key is not on this phone (no
     /// remote signer prompt for a check) or signing failed: the check then
     /// goes unsigned, which a Mac's own relay port still answers.
-    private func signGetAuth(sha256: String) async -> String? {
-        if let kept = checkAuths.auth(for: sha256) { return kept }
+    private func signGetAuth(sha256: String, receiver: String) async -> String? {
+        // One token per vault: it names the vault it is for.
+        let key = receiver + "|" + sha256
+        if let kept = checkAuths.auth(for: key) { return kept }
+        // This phone's mesh key first; the check is a HEAD, which does not
+        // spend it. The owner's form only without a mesh key (TODO(mesh-key)).
+        if let tags = MeshKeyAuth.blossomTags(verb: .get, sha256s: [sha256], receivers: [receiver],
+                                              lifetime: HomeVaultLogic.vaultCheckAuthLifetime),
+           let auth = MeshKeySigner.authorization(kind: 24242, content: "Check my vault", tags: tags) {
+            checkAuths.remember(auth, for: key)
+            return auth
+        }
         guard HomeVaultLogic.signsVaultCheck(signingMode: ConfigService.shared.config.activeSigningMode()) else { return nil }
         let nonce = UUID().uuidString.prefix(8)
         guard let event = await NostrService.shared.signEventAsync(
@@ -401,7 +435,7 @@ final class HomeVaultSender: ObservableObject {
                                    "kind": event.kind, "tags": event.tags, "content": event.content, "sig": event.sig]
         guard let json = try? JSONSerialization.data(withJSONObject: dict) else { return nil }
         let auth = json.base64EncodedString()
-        checkAuths.remember(auth, for: sha256)
+        checkAuths.remember(auth, for: key)
         return auth
     }
 
@@ -512,9 +546,10 @@ enum HomeVaultTransport {
 
     /// BUD-02 `PUT /upload` to the vault, streamed from `file`, with the owner's 24242 authorisation.
     /// `forward`: the vault passes the blob on to that public server with that
-    /// token once stored (haven-go blossom_forward.go).
+    /// token once stored (haven-go blossom_forward.go). `ownerRetry`: the
+    /// refusal allows one retry with the owner's form (MeshKeyAuth).
     static func upload(file: URL, size: Int, sha256: String, contentType: String, authBase64: String, base: URL,
-                       forward: (server: String, authBase64: String)? = nil) async -> SendResult {
+                       forward: (server: String, authBase64: String)? = nil) async -> (result: SendResult, ownerRetry: Bool) {
         var request = URLRequest(url: base.appendingPathComponent("upload"))
         request.httpMethod = "PUT"
         request.timeoutInterval = 120
@@ -531,9 +566,10 @@ enum HomeVaultTransport {
         defer { session.finishTasksAndInvalidate() }
         do {
             let (_, response) = try await session.upload(for: request, fromFile: file)
-            return HomeVaultLogic.uploadResult(status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+            return (HomeVaultLogic.uploadResult(status: (response as? HTTPURLResponse)?.statusCode ?? 0),
+                    MeshKeyAuth.retriesWithOwnerForm(response))
         } catch {
-            return .unreachable("the home vault did not take the upload")
+            return (.unreachable("the home vault did not take the upload"), false)
         }
     }
 

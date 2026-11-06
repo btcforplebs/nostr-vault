@@ -205,25 +205,12 @@ final class MeshPairingHello: @unchecked Sendable {
     }
 
     private static func publicHex(secretHex: String) -> String? {
-        guard let pk = withCStrings([secretHex], { p in GetPublicKeyC(p[0]) }) else { return nil }
-        defer { free(pk) }
-        return String(cString: pk).lowercased()
+        MeshKeySigner.publicHex(secretHex: secretHex)
     }
 
     /// The engine's key (FipsMeshService / MacFipsMeshService), read only:
     /// a missing key is the engine's to make.
     private static func readSecretHex() -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: MeshIdentityReset.keychainService,
-            kSecAttrAccount as String: "mesh-nsec",
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data, let nsec = String(data: data, encoding: .utf8),
-              let decoded = Bech32.decode(nsec), decoded.hrp == "nsec", decoded.data.count == 32 else { return nil }
-        return decoded.hexString
+        MeshKeySigner.secretHex()
     }
 }
