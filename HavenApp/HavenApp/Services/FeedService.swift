@@ -414,6 +414,9 @@ class FeedService: ObservableObject {
 
     private init() {
         // FeedService no longer manages profiles; NostrService does.
+        // The main account's files used to be named "owner" whatever its key;
+        // deleted, not handed to whichever account is set up (FeedAccountKey).
+        FeedAccountKey.removeLegacyOwnerFiles(in: ConfigService.shared.relayDataDir.deletingLastPathComponent())
         loadedSnapshotNpub = currentSnapshotKey()
         loadInteractionState(forKey: loadedSnapshotNpub)
         FollowingBackupService.shared.loadSnapshots(forAccountKey: loadedSnapshotNpub)
@@ -437,6 +440,13 @@ class FeedService: ObservableObject {
                 guard let self = self else { return }
                 self.handleAccountSwitch()
             }
+            .store(in: &configCancellables)
+
+        // The first account (setup, or after a factory reset) is no switch:
+        // the feed takes it as the account it saves for.
+        ConfigService.shared.$activeAccountHexPubkey
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.adoptFirstAccountIfNeeded() }
             .store(in: &configCancellables)
 
         // Recompute filtered notes when display-relevant config changes.

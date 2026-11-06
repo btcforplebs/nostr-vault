@@ -95,7 +95,7 @@ enum EngagementTracker {
     /// reactions rebuild its likes as the feed loads.
     static func loadInteractionState(forKey key: String) -> InteractionState {
         let url = interactionStateURL(forKey: key)
-        if let data = try? Data(contentsOf: url),
+        if !key.isEmpty, let data = try? Data(contentsOf: url),
            let state = try? JSONDecoder().decode(InteractionState.self, from: data),
            accepts(state, forKey: key) {
             return state
@@ -111,6 +111,8 @@ enum EngagementTracker {
     /// Persists interaction state to disk. Runs the encode + write on a
     /// background queue to avoid blocking the main thread.
     static func saveInteractionState(_ state: InteractionState, forKey key: String) {
+        // No account (setup, or just after a factory reset): nothing to keep.
+        guard !key.isEmpty else { return }
         let url = interactionStateURL(forKey: key)
         DispatchQueue.global(qos: .utility).async {
             if let data = try? JSONEncoder().encode(state) {

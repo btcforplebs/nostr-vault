@@ -498,6 +498,7 @@ class ConfigService: ObservableObject {
     /// Perform a factory reset: delete data and config using FileManager
     func resetApp() {
         let fileManager = FileManager.default
+        let mainAccountHex = ownerHexPubkeyCached
         
         // 1. Delete relay data directory (contains DB, logs, .env)
         // Checks to ensure we aren't deleting root or home by accident
@@ -519,6 +520,13 @@ class ConfigService: ObservableObject {
         // What this device published to lists: kept, the next edit after
         // signing back in removed entries published before the reset.
         ListPublishReset.clear()
+        // The feed and follow list in memory first, so nothing writes them
+        // back; then the caches beside config.json (feed and follow-list
+        // snapshots, profiles, DM caches) and the settings named for the
+        // account. Kept, the next account set up here loaded the old one's
+        // follows (Logen, 3.2.0 (11), 2026-11-06).
+        FeedService.shared.forgetForFactoryReset()
+        AppDataWipe.sweepCaches(appSupport: relayDataDir.deletingLastPathComponent(), forgetting: mainAccountHex)
 
         // 4. Reset in-memory config
         config = HavenConfig.default

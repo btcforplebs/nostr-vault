@@ -1,9 +1,10 @@
 import Foundation
 
 /// What Factory Reset (`ConfigService.resetApp`) leaves behind, deleted for
-/// "Delete Account": the caches beside config.json (profiles, relay lists,
-/// DM caches named after the account), the app's Caches and temp folders and
-/// its UserDefaults (settings, many keyed by the account's pubkey).
+/// "Delete Account": the app's Caches and temp folders and its UserDefaults
+/// (settings). Factory Reset itself runs `sweepCaches`: the caches beside
+/// config.json (feed and follow-list snapshots, profiles, relay lists, DM
+/// caches) and the settings named after the account's pubkey.
 /// Only the app's own storage: a sandboxed container, or folders named for
 /// this app.
 enum AppDataWipe {

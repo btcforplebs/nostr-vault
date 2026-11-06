@@ -417,6 +417,23 @@ extension FeedService {
         contactRetryScheduled = false
     }
 
+    /// Factory reset: the feed and follow list on screen, every account's
+    /// snapshot in memory and the follow backups go, and nothing is keyed
+    /// until an account is set up, so no running save writes the old
+    /// account's feed back after its files were deleted. The old feed's
+    /// subscriptions are closed and their late frames dropped, so its notes
+    /// can't land in the next account's feed.
+    func forgetForFactoryReset() {
+        closeFeedSubscriptions()
+        beginFeedSubGeneration()
+        clearInMemoryFeedState()
+        accountSnapshots.removeAll()
+        modeCaches.removeAll()
+        loadedSnapshotNpub = ""
+        didRestoreCachedFeed = false
+        FollowingBackupService.shared.forgetAll()
+    }
+
     /// New feed subscription ids from here on, for a tab or account switch.
     /// Frames for the old ones are dropped on processingQueue, which runs this
     /// before any new sink's (FeedSpeedPolicy.isStaleFeedSub).

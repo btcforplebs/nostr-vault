@@ -3,12 +3,24 @@ import Combine
 import SwiftUI
 
 extension FeedService {
-    /// Stable in-memory cache key for the active account. Uses the configured
-    /// `activeAccountNpub`, falling back to "owner" when the owner account is
-    /// active so we never key on an empty string.
+    /// The active account's npub, the key its snapshots and files are named
+    /// by: the main account's npub when no other account is active, "" while
+    /// there is no account. Never a shared "owner" key, which outlived a
+    /// factory reset into the next account (FeedAccountKey).
     func currentSnapshotKey() -> String {
-        let npub = ConfigService.shared.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        return npub.isEmpty ? "owner" : npub
+        let config = ConfigService.shared.config
+        return FeedAccountKey.key(activeNpub: config.activeAccountNpub, ownerNpub: config.ownerNpub)
+    }
+
+    /// Takes the account set up after a reset (or on a fresh install) as the
+    /// one the feed is saved for. A first account is no account switch.
+    func adoptFirstAccountIfNeeded() {
+        guard loadedSnapshotNpub.isEmpty else { return }
+        let key = currentSnapshotKey()
+        guard !key.isEmpty else { return }
+        loadedSnapshotNpub = key
+        loadInteractionState(forKey: key)
+        FollowingBackupService.shared.loadSnapshots(forAccountKey: key)
     }
 
     /// Capture the current published feed state into `accountSnapshots[key]`.
@@ -117,11 +129,12 @@ extension FeedService {
         }
         let havenDir = appSupport.appendingPathComponent("Haven", isDirectory: true)
         try? FileManager.default.createDirectory(at: havenDir, withIntermediateDirectories: true)
-        let safeKey = key.isEmpty ? "owner" : key.replacingOccurrences(of: "/", with: "_")
+        let safeKey = key.replacingOccurrences(of: "/", with: "_")
         return havenDir.appendingPathComponent("feed_snapshot_\(safeKey).json")
     }
 
     private func saveDiskSnapshot(forKey key: String) {
+        guard !key.isEmpty else { return }
         let disk = DiskFeedSnapshot(
             notes: Array(notes.prefix(200)),
             followedPubkeys: followedPubkeys,
@@ -142,6 +155,7 @@ extension FeedService {
     }
 
     private func loadDiskSnapshot(forKey key: String) -> DiskFeedSnapshot? {
+        guard !key.isEmpty else { return nil }
         let url = Self.diskSnapshotURL(forKey: key)
         guard let data = try? Data(contentsOf: url),
               let snap = try? JSONDecoder().decode(DiskFeedSnapshot.self, from: data) else {
@@ -153,6 +167,7 @@ extension FeedService {
     }
 
     func diskSnapshotExists(forKey key: String) -> Bool {
+        guard !key.isEmpty else { return false }
         let url = Self.diskSnapshotURL(forKey: key)
         guard FileManager.default.fileExists(atPath: url.path) else { return false }
         // Quick check: if file exists and isn't expired, we have a snapshot.
