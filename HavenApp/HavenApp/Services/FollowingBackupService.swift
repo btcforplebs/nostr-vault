@@ -13,8 +13,8 @@ class FollowingBackupService: ObservableObject {
 
     func loadSnapshots(forAccountKey key: String) {
         loadedAccountKey = key
-        let url = Self.fileURL(forAccountKey: key)
-        guard FileManager.default.fileExists(atPath: url.path) else {
+        guard let url = Self.fileURL(forAccountKey: key),
+              FileManager.default.fileExists(atPath: url.path) else {
             snapshots = []
             return
         }
@@ -29,8 +29,8 @@ class FollowingBackupService: ObservableObject {
     }
 
     private func saveSnapshots(forAccountKey key: String) {
+        guard let url = Self.fileURL(forAccountKey: key) else { return }
         let store = FollowingSnapshotStore(snapshots: snapshots)
-        let url = Self.fileURL(forAccountKey: key)
         DispatchQueue.global(qos: .utility).async {
             if let data = try? JSONEncoder().encode(store) {
                 try? data.write(to: url)
@@ -38,14 +38,22 @@ class FollowingBackupService: ObservableObject {
         }
     }
 
-    private static func fileURL(forAccountKey key: String) -> URL {
+    /// nil with no account ("" key): nothing is saved for nobody.
+    private static func fileURL(forAccountKey key: String) -> URL? {
+        guard !key.isEmpty else { return nil }
         guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             return URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Haven")
         }
         let havenDir = appSupport.appendingPathComponent("Haven", isDirectory: true)
         try? FileManager.default.createDirectory(at: havenDir, withIntermediateDirectories: true)
-        let safeKey = key.isEmpty ? "owner" : key.replacingOccurrences(of: "/", with: "_")
+        let safeKey = key.replacingOccurrences(of: "/", with: "_")
         return havenDir.appendingPathComponent("following_snapshots_\(safeKey).json")
+    }
+
+    /// Factory reset: the backups in memory go with their files.
+    func forgetAll() {
+        snapshots = []
+        loadedAccountKey = ""
     }
 
     // MARK: - Snapshot Management

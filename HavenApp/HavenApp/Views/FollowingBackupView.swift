@@ -48,9 +48,8 @@ struct FollowingBackupSettingsView: View {
         configService.allAccountNpubs.count > 1
     }
 
-    private var selectedSnapshotKey: String {
-        selectedNpub == configService.config.ownerNpub ? "owner" : selectedNpub
-    }
+    /// The account's npub, as FeedService.currentSnapshotKey names it.
+    private var selectedSnapshotKey: String { selectedNpub }
 
     private var selectedHexPubkey: String {
         Bech32.decode(selectedNpub)?.hexString ?? ""
