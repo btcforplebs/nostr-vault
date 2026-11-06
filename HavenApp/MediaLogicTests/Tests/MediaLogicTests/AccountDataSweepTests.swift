@@ -34,4 +34,18 @@ final class AccountDataSweepTests: XCTestCase {
         XCTAssertTrue(AccountDataSweep.skipped.contains("haven_database"))
         XCTAssertTrue(AccountDataSweep.skipped.contains("config.json"))
     }
+
+    func testSharedListsLoseOnlyThisAccount() throws {
+        let list = try XCTUnwrap(AccountDataSweep.scrubbed([otherHex, hex, npub], hex: hex, npub: npub) as? [String])
+        XCTAssertEqual(list, [otherHex])
+        let dict = try XCTUnwrap(AccountDataSweep.scrubbed([hex: 1, otherHex: 2], hex: hex, npub: npub) as? [String: Int])
+        XCTAssertEqual(dict, [otherHex: 2])
+    }
+
+    func testUntouchedSettingsAreLeftAlone() {
+        XCTAssertNil(AccountDataSweep.scrubbed([otherHex], hex: hex, npub: npub))
+        XCTAssertNil(AccountDataSweep.scrubbed([otherHex: 1], hex: hex, npub: npub))
+        XCTAssertNil(AccountDataSweep.scrubbed(42, hex: hex, npub: npub))
+        XCTAssertNil(AccountDataSweep.scrubbed(hex, hex: hex, npub: npub))
+    }
 }

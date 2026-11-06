@@ -80,7 +80,9 @@ struct DeleteAccountView: View {
 
             if isOwner { ownerLines } else { otherLines }
 
-            Text("Nothing is sent to relays: your notes and profile stay on them. To also ask relays to erase this account, use Settings \u{203A} Advanced \u{203A} Leave Nostr Forever.")
+            Text(isOwner
+                 ? "Nothing is sent to relays: your notes and profile stay on them. To also ask relays to erase this account, use Settings \u{203A} Advanced \u{203A} Leave Nostr Forever."
+                 : "Nothing is sent to relays: this account's notes and profile stay on them.")
                 .font(.appCallout)
                 .foregroundColor(.secondary)
 

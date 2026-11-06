@@ -60,8 +60,8 @@ enum AppDataWipe {
 
     /// Delete Account for one account (not the main one): deletes the files
     /// beside config.json and in the app's caches whose names hold that
-    /// account's hex pubkey or npub, and the settings named after it
-    /// (`AccountDataSweep`). The vault database and config.json are not
+    /// account's hex pubkey or npub, the settings named after it, and its
+    /// entries in settings that list accounts (`AccountDataSweep`). The vault database and config.json are not
     /// touched; `ConfigService.removeAccount` takes the account out of the
     /// config.
     static func forgetAccount(hex: String, npub: String, appSupport: URL,
@@ -71,8 +71,12 @@ enum AppDataWipe {
         roots += ownCacheFolders(bundleID: bundleID, fm: fm)
         for root in roots { removeNamed(in: root, hex: hex, npub: npub, fm: fm) }
         let defaults = UserDefaults.standard
-        for key in defaults.dictionaryRepresentation().keys where AccountDataSweep.belongs(key, hex: hex, npub: npub) {
-            defaults.removeObject(forKey: key)
+        for (key, value) in defaults.dictionaryRepresentation() {
+            if AccountDataSweep.belongs(key, hex: hex, npub: npub) {
+                defaults.removeObject(forKey: key)
+            } else if let kept = AccountDataSweep.scrubbed(value, hex: hex, npub: npub) {
+                defaults.set(kept, forKey: key)
+            }
         }
     }
 

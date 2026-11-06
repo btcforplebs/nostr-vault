@@ -21,4 +21,20 @@ enum AccountDataSweep {
         if npub.hasPrefix("npub1"), npub.count >= 60, lower.contains(npub) { return true }
         return false
     }
+
+    /// A shared setting that lists accounts (`copyAccounts.settled` holds
+    /// pubkeys) with this account's entries taken out: list items, and
+    /// dictionary keys, that hold its hex or npub. Nil when nothing in it is
+    /// this account's, so untouched settings are not rewritten.
+    static func scrubbed(_ value: Any, hex: String, npub: String) -> Any? {
+        if let list = value as? [String] {
+            let kept = list.filter { !belongs($0, hex: hex, npub: npub) }
+            return kept.count == list.count ? nil : kept
+        }
+        if let dict = value as? [String: Any] {
+            let kept = dict.filter { !belongs($0.key, hex: hex, npub: npub) }
+            return kept.count == dict.count ? nil : kept
+        }
+        return nil
+    }
 }
