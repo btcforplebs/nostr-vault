@@ -108,8 +108,8 @@ class MeshCopyV2Test {
         val (base, prefix) = MeshCopyV2.splitLink("ws://127.0.0.1:40123/" + "f".repeat(64))!!
         assertEquals("http://127.0.0.1:40123", base)
         assertEquals("/" + "f".repeat(64), prefix)
-        val tags = MeshCopyV2.startTags(base)
-        assertEquals(listOf(listOf("u", "http://127.0.0.1:40123/copy/v2/start"), listOf("method", "POST")), tags)
+        val tags = MeshKeyAuth.copyStartTags(base, "npub1peer")!!
+        assertEquals(listOf(listOf("u", "http://127.0.0.1:40123/copy/v2/start"), listOf("method", "POST"), listOf("p", "npub1peer")), tags)
         assertFalse(tags.flatten().any { "f".repeat(64) in it })
     }
 

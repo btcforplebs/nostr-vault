@@ -408,13 +408,20 @@ object HavenBridge {
 
     /**
      * StartCopyFromC (docs/MESH_COPY_V2_CONTRACT.md): the mesh copy from the owner's device [peer] (its mesh npub)
-     * through [base]; [startAuth] is base64 of the owner-signed kind 27235 for the start, or "" to resume with the
+     * through [base]; [startAuth] is base64 of this device's mesh-key-signed kind 27235 for the start, or "" to resume with the
      * token the engine holds. 0 started · 2 busy · 3 relay not running. Progress: `COPY` log lines.
      */
     external fun startCopyFrom(peer: String, base: String, startAuth: String): Int
 
     /** CopySyncC: one catch-up with a linked device [peer] through [base]. 0 started · 2 busy · 3 relay not running. */
     external fun copySync(peer: String, base: String): Int
+
+    /**
+     * SetMeshDevicesC (docs/MESH_COPY_V2_CONTRACT.md §2): this vault's mesh npub and its paired devices,
+     * `{"self":"npub1…","devices":[{"npub":"npub1…","role":"phone"}]}`. Only these devices' mesh keys may start a copy
+     * or use Blossom over the mesh; one that leaves the set loses its copy tokens at once. 0 set · 1 bad input (kept).
+     */
+    external fun setMeshDevices(devicesJson: String): Int
 
     /**
      * Moving in's Skip: stops the list history scan; what it found so far is

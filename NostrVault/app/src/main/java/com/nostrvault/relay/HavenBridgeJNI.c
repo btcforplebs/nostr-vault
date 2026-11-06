@@ -109,6 +109,7 @@ extern char* ImportJobsC(void);
 extern int RunImportJobC(char* name);
 extern int StartCopyFromC(char* peer, char* base, char* startAuth);
 extern int CopySyncC(char* peer, char* base);
+extern int SetMeshDevicesC(char* devices);
 extern int CancelImportJobC(char* name);
 extern char* GetNotifyLogC(void);
 extern char* GetLogLinesC(void);
@@ -607,6 +608,15 @@ Java_com_nostrvault_relay_HavenBridge_cancelImportJob(JNIEnv *env, jobject thiz,
     const char *cName = GET_CSTR(env, name);
     int rc = CancelImportJobC((char*)cName);
     REL_CSTR(env, name, cName);
+    return rc;
+}
+
+// The vault's paired set (haven-go cshared.go SetMeshDevicesC): this device's mesh npub and My Devices.
+JNIEXPORT jint JNICALL
+Java_com_nostrvault_relay_HavenBridge_setMeshDevices(JNIEnv *env, jobject thiz, jstring devices) {
+    const char *cDevices = GET_CSTR(env, devices);
+    int rc = SetMeshDevicesC((char*)cDevices);
+    REL_CSTR(env, devices, cDevices);
     return rc;
 }
 

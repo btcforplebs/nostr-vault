@@ -1,13 +1,10 @@
 package com.nostrvault.fips
 
 import android.content.Context
-import android.util.Base64
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.di.ApplicationScope
 import com.nostrvault.relay.HavenBridge
-import com.nostrvault.service.EventPublisher
-import com.nostrvault.service.NostrService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,7 +23,7 @@ import javax.inject.Singleton
 
 /**
  * B, on any link (setup's "Copy from my other vault" and Vault › Your devices › Add): dials the other vault, signs
- * the one start and hands it to the engine (StartCopyFromC), which makes the start call, checks the manifest and the
+ * the one start with this device's own mesh key ([MeshKeySigner], never the owner's: §2) and hands it to the engine (StartCopyFromC), which makes the start call, checks the manifest and the
  * free space, fetches, restores and says `/done`. It also resumes a cut copy and runs a catch-up (CopySyncC) when the
  * relay comes up and when the app comes back, for devices copied from before. The engine's `COPY` lines come back
  * through [onLogLine] as [progress]. Twin of Apple's `MeshCopyV2Service` (docs/MESH_COPY_V2_CONTRACT.md).
@@ -34,6 +31,7 @@ import javax.inject.Singleton
 @Singleton
 class MeshCopyStarter internal constructor(
     private val link: (String) -> String?,
+    /** Base64 of the signed start for these tags, or null with no mesh key (the engine adds "Nostr "). */
     private val sign: suspend (List<List<String>>) -> String?,
     private val engine: Engine,
     private val records: RecordStore,
@@ -44,12 +42,11 @@ class MeshCopyStarter internal constructor(
     @Inject constructor(
         @ApplicationContext context: Context,
         configStore: ConfigStore,
-        nostrService: NostrService,
         otherVaultLink: OtherVaultLink,
         @ApplicationScope scope: CoroutineScope,
     ) : this(
         link = { npub -> otherVaultLink.open(npub)?.takeIf(::answers) },
-        sign = { tags -> signStart(nostrService, tags) },
+        sign = { tags -> MeshKeySigner.authorization(MeshKeyAuth.START_KIND, "", tags) },
         engine = BridgeEngine,
         records = PrefsRecordStore(context),
         setupDone = { configStore.config.value.hasCompletedSetup },
@@ -166,7 +163,12 @@ class MeshCopyStarter internal constructor(
         val startedAt = nowS()
         var code: Int
         while (true) {
-            val auth = if (fresh) sign(MeshCopyV2.startTags(base)) ?: return fail("auth_refused", name) else ""
+            // `p` = A's mesh npub ([peer]): A takes the start only from a device in its paired set. No owner fallback:
+            // the engine posts the start in the background, so A must run a build that has the set (§2).
+            val auth = if (fresh) {
+                val tags = MeshKeyAuth.copyStartTags(base, peer) ?: return fail("unreachable", name)
+                sign(tags) ?: return fail("auth_refused", name)
+            } else ""
             code = engine.startCopyFrom(peer, base + prefix, auth)
             if (code != MeshCopyV2.RUN_RELAY_NOT_RUNNING || nowS() - startedAt >= MeshCopyV2.RELAY_WAIT_S) break
             delay(MeshCopyV2.RETRY_EVERY_S * 1000)
@@ -219,18 +221,6 @@ class MeshCopyStarter internal constructor(
             f.setReadable(false, false); f.setReadable(true, true)
             f.setWritable(false, false); f.setWritable(true, true)
             f.setExecutable(false, false)
-        }
-
-        /** Base64 of the owner's signed kind 27235 for the start (the engine adds "Nostr "); null when the signer says no. */
-        private suspend fun signStart(nostr: NostrService, tags: List<List<String>>): String? {
-            val ev = try {
-                nostr.signEventAsync(kind = MeshCopyV2.NIP98_KIND, content = "", tags = tags, forceOwner = true)
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                null
-            } ?: return null
-            return Base64.encodeToString(EventPublisher.serializeSignedEvent(ev).toByteArray(), Base64.NO_WRAP)
         }
     }
 }

@@ -76,6 +76,8 @@ class FipsMeshManager @Inject constructor(
      * it back after a reboot. Both may ask; one start at a time, and none while it runs.
      */
     fun restoreIfEnabled(scope: CoroutineScope) {
+        // The relay just started with no paired set: give it one before any mesh request, mesh on or off.
+        pushDeviceSet()
         if (!configStore.config.value.fipsMeshEnabled || _status.value.running) return
         if (!restoring.compareAndSet(false, true)) return
         scope.launch {
@@ -99,7 +101,19 @@ class FipsMeshManager @Inject constructor(
     /** One restart at a time: setPeers and the My Devices watch can both ask. */
     private val restartLock = kotlinx.coroutines.sync.Mutex()
 
+    /** The relay's paired set (mesh device keys) from My Devices now: [MeshDeviceSetSync]. */
+    fun pushDeviceSet() = MeshDeviceSetSync.push(configStore.config.value, _status.value.npub)
+
     init {
+        // The relay's paired set first: a removed device's mesh key and copy tokens stop working at once, whatever
+        // the mesh engine does next. Again once the engine knows this device's npub.
+        appScope.launch {
+            kotlinx.coroutines.flow.combine(configStore.config, _status.map { it.npub }) { config, npub ->
+                MeshDeviceSetSync.json(config, npub ?: MeshKeySigner.npub())
+            }
+                .distinctUntilChanged()
+                .collect { withContext(Dispatchers.IO) { pushDeviceSet() } }
+        }
         // My Devices is the engine's allowlist and is fixed at start: a running engine restarts
         // when it changes. setPeers restarts on its own; this covers the home vault, which is
         // set from elsewhere (HomeVaultSender.setHomeVault).

@@ -227,11 +227,7 @@ object MeshCopyV2 {
 
     // ---- The start (§2) ----
 
-    /**
-     * The NIP-98 tags for the start at [httpBase] (`http://host:port`, no path). The link's own secret path
-     * ([OtherVaultLink]) is never signed: A checks the path, and the token must not leave this phone.
-     */
-    fun startTags(httpBase: String): List<List<String>> = listOf(listOf("u", httpBase.trimEnd('/') + START_PATH), listOf("method", "POST"))
+    // The start's tags are [MeshKeyAuth.copyStartTags]: signed by this device's mesh key for A (`p`), never the owner's.
 
     data class Started(val id: String, val token: String)
 
