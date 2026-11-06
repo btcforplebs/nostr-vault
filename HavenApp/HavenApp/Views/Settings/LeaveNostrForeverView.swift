@@ -161,11 +161,13 @@ struct LeaveNostrForeverView: View {
                 phase = .wiping(tally.summary)
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
                 // Closed first: once the account is gone the screen would
-                // otherwise come back blank over setup.
-                #if os(iOS)
-                onDismiss()
-                #endif
-                LeaveNostrService.wipeThisDevice(configService: configService, relayManager: relayManager)
+                // otherwise come back blank over setup. Stays open, saying
+                // why, if the vault was too busy to delete anything.
+                LeaveNostrService.wipeThisDevice(configService: configService, relayManager: relayManager, willWipe: {
+                    #if os(iOS)
+                    onDismiss()
+                    #endif
+                }, refused: { phase = .failed($0) })
             }
         }
     }

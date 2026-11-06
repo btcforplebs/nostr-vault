@@ -21,6 +21,9 @@ enum LeaveNostr {
     }
 
     /// NIP-62 "Request to Vanish": every relay that sees it is asked to erase.
+    /// Shown when the vault stayed busy (import or backup) so the wipe did
+    /// not start. The erase request and blank profile were already sent.
+    static let wipeRefusedText = "Your erase request was sent, but the vault is still busy (an import or backup), so nothing on this device was deleted yet. Wait for it to finish, then delete again."
     static let vanishKind = 62
     static let vanishTags: [[String]] = [["relay", "ALL_RELAYS"]]
     static let vanishContent = "This account was deleted from Nostr Vault."

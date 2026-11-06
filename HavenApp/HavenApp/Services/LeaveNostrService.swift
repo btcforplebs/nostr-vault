@@ -59,32 +59,42 @@ enum LeaveNostrService {
         return .success(tally)
     }
 
-    /// Step 3: disconnects every remote signer (the keys stay in the signer),
-    /// stops the vault, runs the Factory Reset wipe (key, vault data, config,
-    /// keychain items, notifications) and then deletes what that leaves
-    /// (`AppDataWipe`: caches, settings). The Mac app then exits at once, so
-    /// nothing in memory is saved back on the way out; iOS shows setup and
-    /// sweeps once more after anything still running has written its caches.
-    static func wipeThisDevice(configService: ConfigService, relayManager: RelayProcessManager) {
-        for npub in Array(configService.config.accountBunkerConfigs.keys) {
-            configService.removeBunkerConfig(forNpub: npub)
-        }
-        NIP46Service.dropSession(signerKey: NIP46Service.activeSignerKey())
-        NIP46Service.shared.disconnect()
+    /// Step 3: waits out a running import or backup the way Factory Reset
+    /// does (`stopForFactoryReset`), then disconnects every remote signer
+    /// (the keys stay in the signer), runs the Factory Reset wipe (key, vault
+    /// data, config, keychain items, notifications) and deletes what that
+    /// leaves (`AppDataWipe`: caches, settings). `willWipe` runs just before
+    /// anything is deleted; `refused` gets the words when the vault stayed
+    /// busy and nothing on this device was deleted. The Mac app then exits at
+    /// once, so nothing in memory is saved back on the way out; iOS shows
+    /// setup and sweeps once more after anything still running has written
+    /// its caches.
+    static func wipeThisDevice(configService: ConfigService, relayManager: RelayProcessManager,
+                               willWipe: @escaping @MainActor () -> Void,
+                               refused: @escaping @MainActor (String) -> Void) {
         let appSupport = configService.relayDataDir.deletingLastPathComponent()
-        relayManager.stopRelay {
+        relayManager.stopForFactoryReset(reset: {
+            willWipe()
+            for npub in Array(configService.config.accountBunkerConfigs.keys) {
+                configService.removeBunkerConfig(forNpub: npub)
+            }
+            NIP46Service.dropSession(signerKey: NIP46Service.activeSignerKey())
+            NIP46Service.shared.disconnect()
+            configService.resetApp()
+            forgetCachesInMemory()
+            AppDataWipe.clearRest(appSupport: appSupport)
+            #if canImport(AppKit)
+            exit(0)
+            #else
             Task { @MainActor in
-                configService.resetApp()
-                forgetCachesInMemory()
-                AppDataWipe.clearRest(appSupport: appSupport)
-                #if canImport(AppKit)
-                exit(0)
-                #else
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 AppDataWipe.sweepCaches(appSupport: appSupport)
-                #endif
             }
-        }
+            #endif
+        }, refused: { _ in
+            RelayProcessManager.shared.addLog("Delete Account: vault stayed busy; nothing on this device deleted", level: "ERROR")
+            refused(LeaveNostr.wipeRefusedText)
+        })
     }
 
     /// Empties the caches that running services write back to disk on a
