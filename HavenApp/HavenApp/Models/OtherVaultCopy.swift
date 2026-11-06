@@ -4,10 +4,11 @@ import Foundation
 /// 2026-11-04): the No answer to "New to Nostr Vault?" (NewToVaultQuestion,
 /// 2026-11-05). It runs
 /// the two scans with this device as B, then imports from the other device
-/// (one more relay, read over the link) since `startDate`. The normal relay
-/// import always runs after it: the copy reads only the other vault's public
-/// notes, so it is not a full copy. A link or copy that fails falls back
-/// quietly to the relay import.
+/// (one more relay, read over the link) since `startDate`. Once the copy is
+/// in, setup opens straight into the app and the engine's relay catch-up
+/// runs in the background (Logen, 2026-11-06 15:28Z); there is no relay
+/// import screen after it. A link or copy that fails falls back quietly to
+/// the relay import.
 ///
 /// Pure Foundation so MediaLogicTests can test the routing; the wizard
 /// (SetupWizardView) maps its own path onto `NewToVaultQuestion.Path`.
@@ -25,12 +26,6 @@ enum OtherVaultCopy {
     /// How far back the copy reads: the Mac backfill's epoch (macsync.go),
     /// not setup's 2023 relay-import start, so older notes and lists come over.
     static let startDate = "2020-11-01"
-
-    /// Linked and copied: the normal relay import still runs after it, as
-    /// for "bring my notes from my relays" (the copy is not a full copy).
-    static func afterCopied(path: Path) -> Int {
-        NewToVaultQuestion.relayImportStep(path: path)
-    }
 
     /// The link or the copy failed: the relay import, as if Yes had been picked.
     static func afterFallback(path: Path) -> Int {

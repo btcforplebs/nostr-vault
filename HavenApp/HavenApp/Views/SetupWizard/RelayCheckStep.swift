@@ -13,6 +13,9 @@ struct RelayCheckStep: View {
     /// Their own picked relays, for setup only. Older list versions are a
     /// Vault tab item now ("Still to bring in"), not a switch here.
     let onStart: (_ ownRelays: [String]) -> Void
+    /// Skip: in now, no import. Always there, checking or not, so this
+    /// screen never blocks (Logen, 2026-11-06 15:28Z).
+    let onSkip: () -> Void
 
     @State private var rows: [RelayCheck.Row] = []
     @State private var isChecking = true
@@ -58,6 +61,12 @@ struct RelayCheckStep: View {
                 .foregroundColor(WizardColors.accentPrimary)
                 .frame(minHeight: 44)
                 .disabled(isChecking)
+                .buttonStyle(.plain)
+
+            Button("Skip", action: onSkip)
+                .font(.appSystem(size: 14, weight: .semibold))
+                .foregroundColor(WizardColors.textSecondary)
+                .frame(minHeight: 44)
                 .buttonStyle(.plain)
         }
         .task {

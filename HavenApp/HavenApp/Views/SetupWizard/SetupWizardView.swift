@@ -341,10 +341,10 @@ struct SetupWizardView: View {
                 onCopyFromOtherVault: { go(to: OtherVaultCopy.step) }
             )
         case 14:
-            RelayCheckStep(npub: npub) { own in
+            RelayCheckStep(npub: npub, onStart: { own in
                 importOwnRelays = own
                 goForward()
-            }
+            }, onSkip: { saveAndComplete() })
         case 13:
             ImportTourStep(isReadOnly: useNostrIsReadOnly, alsoFrom: importOwnRelays) { _ in
                 // Kept running or not, setup carries on in the running relay.
@@ -461,11 +461,12 @@ struct SetupWizardView: View {
         macRelayURL = configService.config.macRelayURL
     }
 
-    /// Linked and copied: the relay import still runs after it.
+    /// Linked and copied: straight into the app. The engine's relay
+    /// catch-up runs in the background; no relay import screen after a copy
+    /// (Logen, 2026-11-06 15:28Z).
     private func bringItOverDone() {
         keepLinkedMac()
-        guard let path = vaultQuestionPath else { return }
-        go(to: OtherVaultCopy.afterCopied(path: path))
+        saveAndComplete()
     }
 
     /// Yes, new to Nostr Vault (or "Lost your other device?"): the relay import.

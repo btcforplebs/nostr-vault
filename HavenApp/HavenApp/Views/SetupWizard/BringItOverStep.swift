@@ -51,7 +51,7 @@ struct BringItOverStep: View {
                                    stopLine: stopLine, scanning: $scanning,
                                    scanned: scanned, confirm: confirm, onLinked: startCopy, onFailed: fallBack,
                                    onContinue: { stopLine == nil ? done() : fallBack() },
-                                   onSkipRelays: { copy.skipRelays() })
+                                   onSkip: done)
                     .environmentObject(relayManager)
             }
             if !copying {
@@ -109,13 +109,14 @@ struct BringItOverStep: View {
         }
     }
 
-    /// A `COPY` line: done goes on, a stop with words shows them, anything
-    /// else is progress.
+    /// A `COPY` line: the copy finished (the relay catch-up or done) goes
+    /// in, a stop with words shows them, anything else is progress. The
+    /// catch-up carries on in the background (Logen, 2026-11-06 15:28Z).
     private func moved(_ p: MeshCopyV2.Progress?) {
         guard copying, !finished, let p else { return }
         lastMoveAt = Self.now
+        if CopySaving.copyFinished(p) { return done() }
         guard p.isFinished else { return }
-        if p.stage == "done" { return done() }
         if let line = MeshCopyV2.message(for: p, name: other?.name ?? "") {
             stopLine = line
         } else {
@@ -130,7 +131,8 @@ struct BringItOverStep: View {
         if copying {
             // No COPY line this long after the last one is a stall; a stop
             // with words waits for Continue.
-            guard stopLine == nil, let lastMoveAt else { return }
+            // Saving sends no lines until it ends: not a stall either.
+            guard stopLine == nil, CopySaving.mayStall(copy.progress), let lastMoveAt else { return }
             // Dialling and waiting for the relay count as moving.
             if copy.starting { self.lastMoveAt = now; return }
             if OtherVaultCopy.isStalled(lastProgressAt: lastMoveAt, now: now) { fallBack() }
@@ -180,7 +182,8 @@ private struct BringItOverContent: View {
     let onLinked: () -> Void
     let onFailed: () -> Void
     let onContinue: () -> Void
-    let onSkipRelays: () -> Void
+    /// Skip while saving: in now; saving and the catch-up carry on.
+    let onSkip: () -> Void
 
     private var otherName: String {
         let n = other?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -263,7 +266,7 @@ private struct BringItOverContent: View {
                     .foregroundColor(WizardColors.textPrimary)
                     .multilineTextAlignment(.center)
                 if let progress, CopySaving.slides(progress) {
-                    CopySavingProgress(progress: progress, onSkip: onSkipRelays)
+                    CopySavingProgress(progress: progress, onSkip: onSkip)
                 } else if let fraction = progress?.fraction {
                     ProgressView(value: fraction)
                         .progressViewStyle(.linear)

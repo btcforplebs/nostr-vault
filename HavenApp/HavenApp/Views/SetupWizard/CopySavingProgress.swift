@@ -2,7 +2,8 @@ import SwiftUI
 
 /// The copy's saving and relay catch-up stages: a sliding bar (the engine
 /// has no moving byte count while it saves notes) with the notes and photos
-/// counted so far, and Skip for the relay catch-up.
+/// counted so far, and Skip, which goes in now while the saving and the relay
+/// catch-up carry on in the background.
 struct CopySavingProgress: View {
     let progress: MeshCopyV2.Progress
     let onSkip: () -> Void
@@ -34,24 +35,41 @@ struct CopySavingProgress: View {
         .task { await countNotes() }
     }
 
-    /// The vault's note count every few seconds while this is on screen.
+    /// The vault's saved total every few seconds while this is on screen:
+    /// every event in every store this device can count (public, inbox, and
+    /// /private + /chat when it can sign as the owner), like the Vault tab's
+    /// total. Counting only kind 1 in the public store sat at a few hundred
+    /// while tens of thousands were saved elsewhere (iPad, 2026-11-06). A
+    /// store that doesn't answer keeps its last count, so the line never
+    /// drops back.
     private func countNotes() async {
+        var last: [URL: Int] = [:]
         while !Task.isCancelled {
-            if let url = Self.relayURL,
-               let got = await RelayCounter.count(["notes": ["kinds": [1]]], at: url, timeout: 10)?["notes"] {
-                notes = got
+            let urls = Self.storeURLs
+            await withTaskGroup(of: (URL, Int?).self) { group in
+                for url in urls {
+                    group.addTask { (url, await RelayCounter.count(["all": [:]], at: url, timeout: 10)?["all"]) }
+                }
+                for await (url, got) in group {
+                    if let got { last[url] = max(got, last[url] ?? 0) }
+                }
             }
+            if !last.isEmpty { notes = max(last.values.reduce(0, +), notes ?? 0) }
             try? await Task.sleep(nanoseconds: UInt64(CopySaving.countEvery * 1_000_000_000))
         }
     }
 
-    private static var relayURL: URL? {
+    private static var storeURLs: [URL] {
         let port = ConfigService.shared.config.relayPort
         #if os(macOS)
-        return URL(string: "ws://127.0.0.1:\(port)")
+        let base = URL(string: "ws://127.0.0.1:\(port)")
         #else
-        return URL(string: "wss://127.0.0.1:\(port)")
+        let base = URL(string: "wss://127.0.0.1:\(port)")
         #endif
+        guard let base else { return [] }
+        return RelayCountSession.countable(
+            CopySaving.storePaths.map { $0.isEmpty ? base : base.appendingPathComponent($0) },
+            canSignAsOwner: RelayCounter.ownerCanAuth())
     }
 }
 

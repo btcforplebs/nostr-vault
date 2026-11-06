@@ -18,14 +18,7 @@ final class OtherVaultCopyTests: XCTestCase {
         XCTAssertEqual(OtherVaultCopy.backStep, NewToVaultQuestion.step)
     }
 
-    /// The copy reads only the other vault's public notes, so the normal
-    /// relay import still runs after it (audit 2026-11-05: it used to skip it
-    /// like a restored backup and leave the vault thin).
-    func testCopiedStillRunsTheRelayImport() {
-        for path in paths {
-            XCTAssertEqual(OtherVaultCopy.afterCopied(path: path), NewToVaultQuestion.relayImportStep(path: path))
-        }
-        XCTAssertEqual(OtherVaultCopy.afterCopied(path: .useNostr), 14)
+    func testStartDate() {
         XCTAssertEqual(OtherVaultCopy.startDate, "2020-11-01")
     }
 
