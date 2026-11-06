@@ -22,8 +22,8 @@ enum LeaveNostr {
 
     /// NIP-62 "Request to Vanish": every relay that sees it is asked to erase.
     /// Shown when the vault stayed busy (import or backup) so the wipe did
-    /// not start. The erase request and blank profile were already sent.
-    static let wipeRefusedText = "Your erase request was sent, but the vault is still busy (an import or backup), so nothing on this device was deleted yet. Wait for it to finish, then delete again."
+    /// not start. Whatever was already sent to relays stays sent.
+    static let wipeRefusedText = "The vault is still busy (an import or backup), so nothing on this device was deleted yet. Wait for it to finish, then try again."
     static let vanishKind = 62
     static let vanishTags: [[String]] = [["relay", "ALL_RELAYS"]]
     static let vanishContent = "This account was deleted from Nostr Vault."
@@ -63,11 +63,19 @@ enum LeaveNostr {
     /// Whether a signed reply may be sent: it is the owner's key, the right
     /// kind and the content asked for. A signer that answers with another key
     /// (or edits the event) gets nothing sent and nothing deleted.
-    static func signedAsAsked(pubkey: String, kind: Int, content: String,
-                              ownerHex: String, askedKind: Int, askedContent: String) -> Bool {
+    /// Every tag asked for must be in the signed event (the app may add its
+    /// own client tag, so extra tags are allowed).
+    static func signedAsAsked(pubkey: String, kind: Int, content: String, tags: [[String]],
+                              ownerHex: String, askedKind: Int, askedContent: String, askedTags: [[String]]) -> Bool {
         !ownerHex.isEmpty && pubkey.lowercased() == ownerHex.lowercased()
             && kind == askedKind && content == askedContent
+            && askedTags.allSatisfy { tags.contains($0) }
     }
+
+    /// Whether the wipe may go ahead on its own: at least one relay took the
+    /// erase request. With none (offline, say), deleting the key now would mean
+    /// the request can never be sent again, so the person chooses.
+    static func mayWipe(after tally: Tally) -> Bool { !tally.accepted.isEmpty }
 
     /// The broadcaster's results for a relay that never answered (not a no).
     static let unanswered: Set<String> = ["timeout", "connection failed"]

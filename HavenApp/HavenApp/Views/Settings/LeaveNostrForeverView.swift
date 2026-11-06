@@ -20,9 +20,27 @@ struct LeaveNostrForeverView: View {
         case sending
         case wiping(String)
         case failed(String)
+        /// No relay took the erase request: the person chooses (LeaveNostr.mayWipe).
+        case noneAccepted(String)
     }
 
     private var usesSigner: Bool { configService.config.ownerSignsWithBunker }
+
+    /// Delete Account always erases the owner (main) account; the active one
+    /// may be another. Both are named so nobody erases the wrong identity.
+    private var ownerNpub: String { configService.config.ownerNpub }
+    private var activeNpub: String {
+        let active = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+        return active.isEmpty ? ownerNpub : active
+    }
+    private func name(of npub: String) -> String {
+        let hex = Bech32.decode(npub)?.hexString ?? ""
+        let best = nostrService.profiles[hex]?.bestName ?? ""
+        return best.isEmpty ? Self.short(npub) : best
+    }
+    private static func short(_ npub: String) -> String {
+        npub.count > 20 ? "\(npub.prefix(12))\u{2026}\(npub.suffix(6))" : npub
+    }
     private var otherAccounts: Int { max(configService.allAccountNpubs.count - 1, 0) }
     private var busy: Bool {
         switch phase {
@@ -65,6 +83,8 @@ struct LeaveNostrForeverView: View {
                 .font(.appTitle2.bold())
                 .accessibilityAddTraits(.isHeader)
 
+            accountCard
+
             Text("This is about to happen:").font(.appHeadline)
 
             step(1, "Your profile is blanked, so people see the account is gone.")
@@ -91,12 +111,36 @@ struct LeaveNostrForeverView: View {
             if case .sending = phase {
                 ProgressView("Sending the erase request\u{2026}")
             }
+            if case .noneAccepted(let summary) = phase {
+                Text(summary + ".").font(.appCallout)
+                Text("No relay took the erase request, so nothing has been deleted yet. If you delete now, your key goes with it and the request can never be sent again. Try again when you're online, or delete from this \(Self.device) only.")
+                    .font(.appCallout)
+                    .foregroundColor(.red)
+            }
             if case .wiping(let summary) = phase {
                 Text(summary + ".").font(.appCallout)
                 ProgressView("Deleting everything on this \(Self.device)\u{2026}")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var accountCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Account to erase").font(.appCaption).foregroundColor(.secondary)
+            Text(name(of: ownerNpub)).font(.appHeadline)
+            Text(ownerNpub).font(.appCaption.monospaced()).foregroundColor(.secondary)
+                .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+            if activeNpub != ownerNpub {
+                Text("This erases your main account, \(name(of: ownerNpub)), not \(name(of: activeNpub)), the account you are using now.")
+                    .font(.appCallout.bold())
+                    .foregroundColor(.red)
+                    .padding(.top, 4)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.12)))
     }
 
     private var thirdStep: String {
@@ -135,18 +179,33 @@ struct LeaveNostrForeverView: View {
         }
     }
 
+    @ViewBuilder
     private var buttons: some View {
-        HStack {
-            Button("Cancel") { onDismiss() }
-                .keyboardShortcut(.cancelAction)
-                .disabled(busy)
-            Spacer()
-            Button(role: .destructive) { leave() } label: {
-                Text("Leave Nostr Forever").bold()
+        if case .noneAccepted = phase {
+            HStack {
+                Button("Cancel") { onDismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button(role: .destructive) { wipe() } label: {
+                    Text("Delete from this \(Self.device) only")
+                }
+                Button { leave() } label: { Text("Try Again").bold() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.havenPurple)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
-            .disabled(busy || !LeaveNostr.confirms(typed))
+        } else {
+            HStack {
+                Button("Cancel") { onDismiss() }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(busy)
+                Spacer()
+                Button(role: .destructive) { leave() } label: {
+                    Text("Leave Nostr Forever").bold()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .disabled(busy || !LeaveNostr.confirms(typed))
+            }
         }
     }
 
@@ -158,17 +217,32 @@ struct LeaveNostrForeverView: View {
             case .failure(let why):
                 phase = .failed(why.message + " To delete it from this \(Self.device) only, without telling relays, use Settings \u{203A} Advanced \u{203A} Factory Reset.")
             case .success(let tally):
+                guard LeaveNostr.mayWipe(after: tally) else {
+                    phase = .noneAccepted(tally.summary)
+                    return
+                }
                 phase = .wiping(tally.summary)
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
-                // Closed first: once the account is gone the screen would
-                // otherwise come back blank over setup. Stays open, saying
-                // why, if the vault was too busy to delete anything.
-                LeaveNostrService.wipeThisDevice(configService: configService, relayManager: relayManager, willWipe: {
-                    #if os(iOS)
-                    onDismiss()
-                    #endif
-                }, refused: { phase = .failed($0) })
+                finishWipe()
             }
         }
+    }
+
+    /// "Delete from this device only", after no relay took the request.
+    private func wipe() {
+        guard case .noneAccepted(let summary) = phase else { return }
+        phase = .wiping(summary)
+        finishWipe()
+    }
+
+    private func finishWipe() {
+        // Closed first: once the account is gone the screen would otherwise
+        // come back blank over setup. Stays open, saying why, if the vault
+        // was too busy to delete anything.
+        LeaveNostrService.wipeThisDevice(configService: configService, relayManager: relayManager, willWipe: {
+            #if os(iOS)
+            onDismiss()
+            #endif
+        }, refused: { phase = .failed($0) })
     }
 }
