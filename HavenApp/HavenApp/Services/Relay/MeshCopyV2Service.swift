@@ -30,6 +30,11 @@ final class MeshCopyV2Service: ObservableObject {
 
     private static var now: Int { Int(Date().timeIntervalSince1970) }
 
+    /// A copy or catch-up is starting or running. A relay restart would cut
+    /// it, so settings restarts wait for this to clear
+    /// (`MeshCopyV2.settingsRestartWait`).
+    var isCopyActive: Bool { starting || current != nil }
+
     private init() {
         if let data = UserDefaults.standard.data(forKey: Self.recordKey),
            let r = try? JSONDecoder().decode(MeshCopyV2.Record.self, from: data) {

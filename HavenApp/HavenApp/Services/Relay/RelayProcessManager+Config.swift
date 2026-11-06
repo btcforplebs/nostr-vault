@@ -30,14 +30,21 @@ extension RelayProcessManager {
         applyConfigTask = Task { @MainActor [weak self] in
             guard let self else { return }
             while self.pendingAppliedConfig != nil {
-                // Wait until saves have gone quiet and the relay has had its
-                // minimum rest since the last settings restart.
+                // Wait until saves have gone quiet, the relay has had its
+                // minimum rest since the last settings restart, and no mesh
+                // copy is on (a restart would cut it).
+                var loggedCopyHold = false
                 while true {
                     let now = Date()
                     let quietLeft = Self.applyQuietPeriod - now.timeIntervalSince(self.lastApplyRequest)
                     let gapLeft = self.lastRestartFinished.map { Self.applyMinimumGap - now.timeIntervalSince($0) } ?? 0
-                    let wait = max(quietLeft, gapLeft)
+                    let copyActive = MeshCopyV2Service.shared.isCopyActive
+                    let wait = MeshCopyV2.settingsRestartWait(quietLeft: quietLeft, gapLeft: gapLeft, copyActive: copyActive)
                     if wait <= 0 { break }
+                    if copyActive, !loggedCopyHold, self.pendingAppliedConfig.map(self.needsRestart(for:)) == true {
+                        loggedCopyHold = true
+                        self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Relay settings changed during a mesh copy; they apply when the copy ends"))
+                    }
                     do {
                         try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
                     } catch {

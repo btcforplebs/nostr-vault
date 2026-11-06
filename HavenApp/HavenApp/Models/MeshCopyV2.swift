@@ -200,6 +200,24 @@ enum MeshCopyV2 {
         }
     }
 
+    // MARK: Settings restarts wait for a copy
+
+    /// How often a held settings restart looks again while a copy is on.
+    static let restartHoldPoll: TimeInterval = 2
+
+    /// Seconds a relay settings restart still waits, given the quiet-period
+    /// and minimum-gap waits left. A restart cuts a running copy: on
+    /// 2026-11-06 a fresh iPad adopted its owner's relay list mid copy, the
+    /// restart cancelled the copy, and the phone finished packing it 3 s
+    /// later. So while a copy or catch-up is starting or running the restart
+    /// keeps waiting, and runs (with the latest settings) once it ends, as
+    /// it already does for an import.
+    static func settingsRestartWait(quietLeft: TimeInterval, gapLeft: TimeInterval,
+                                    copyActive: Bool) -> TimeInterval {
+        let wait = max(quietLeft, gapLeft)
+        return copyActive ? max(wait, restartHoldPoll) : wait
+    }
+
     // MARK: B's own record: what to resume and whom to catch up with
 
     /// How long a start keeps trying while B's relay comes up (code 3).
