@@ -134,6 +134,7 @@
 		10E1131073AC917E036BDF79 /* FeedMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B91658F386F6313DBAA8D6D /* FeedMediaView.swift */; };
 		10EFE6F5CE71C1D715E1F23D /* NoteNavigationLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54018888DDE538484D3BC086 /* NoteNavigationLink.swift */; };
 		1128386BCB6EA0F90C6A6C14 /* BlossomService+ExternalMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD7C75DADB5410D449F14955 /* BlossomService+ExternalMirror.swift */; };
+		112E1699A2BD77FAD034806C /* CopySaving.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B372B39BC49ABA2ADD10179 /* CopySaving.swift */; };
 		115508A02F8C10437B5B13A6 /* ActivityTargetFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B9646E91993C4D774E5F139 /* ActivityTargetFetcher.swift */; };
 		1158E176293FFD91B323AD8F /* VaultAccountPickButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60B1AC4F3D175F1346A59E50 /* VaultAccountPickButton.swift */; };
 		1170A2AE5A61D5B5FF2510CF /* GifPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A557F0804214239CCFEDDD8 /* GifPickerSheet.swift */; };
@@ -1005,6 +1006,7 @@
 		8237E21398977EE2BB3AD600 /* RelayFailReason.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877D6213216BFCF65A3C5F3E /* RelayFailReason.swift */; };
 		82494B87098AEB93C4C03BD4 /* FeedNoteRow+Reactions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D3A3A057633F264653666C6 /* FeedNoteRow+Reactions.swift */; };
 		8260BA8E12D59DEA80D7BDDC /* ProfileEngagementStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD292CB3880A2292BE462A49 /* ProfileEngagementStore.swift */; };
+		827E7E7D78E6E20C3D3FB71B /* CopySaving.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B372B39BC49ABA2ADD10179 /* CopySaving.swift */; };
 		82B5D5B73A709BBABC6948C7 /* RelayProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105E5C471F2CCABE27A5E705 /* RelayProbe.swift */; };
 		82BAC1127023B84798FABA5E /* PairDeviceFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457AD0407508E0995D0FFCF7 /* PairDeviceFlow.swift */; };
 		82C225B813963E491616A762 /* ProfileEngagementStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD292CB3880A2292BE462A49 /* ProfileEngagementStore.swift */; };
@@ -1105,6 +1107,7 @@
 		8F5A474B71C88E7CC52941EB /* HavenConfig+DMInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F3F697CC1A3F0653BB6D0B3 /* HavenConfig+DMInbox.swift */; };
 		8F8199339D065CB5F1B0D40E /* FeedLayoutMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C7B0FCECC367D25BBB73718 /* FeedLayoutMode.swift */; };
 		8F93F332F198EA21AF03F61C /* OpensMessagesMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 436B49412CA8DD29DA49C857 /* OpensMessagesMode.swift */; };
+		8FADA0354E5907D4829F7FC1 /* LocalNetworkPermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABAAD88CEF9ECC233DEED6B0 /* LocalNetworkPermission.swift */; };
 		8FB4AC11983C87F32165B037 /* FeedService+LocalRelayInjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5101A381AFB18BEE714448F1 /* FeedService+LocalRelayInjection.swift */; };
 		8FBA9847BECCEC77C835E371 /* DMService+Sending.swift in Sources */ = {isa = PBXBuildFile; fileRef = 880DB060F395AAD9CE1427E1 /* DMService+Sending.swift */; };
 		8FD2F5609FCB69DBA1EA3304 /* SpaceColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5025F252087ECAC750E07F88 /* SpaceColumn.swift */; };
@@ -1494,6 +1497,7 @@
 		BE9AE08E7FC80EA8A259583D /* KioskCapPause.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D922513ACBA3CDE4D557891 /* KioskCapPause.swift */; };
 		BEAE6DBD2E1DEFD5AD821BBF /* TopicFeedFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F893631E7565E9BB00A8EEC /* TopicFeedFilter.swift */; };
 		BEB34BAAE1F75B7FC7DA1F39 /* RelayConfigStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA754FD69CE3C70A03501C91 /* RelayConfigStep.swift */; };
+		BF0FF285EA8FB3D2B0301224 /* LocalNetworkPermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABAAD88CEF9ECC233DEED6B0 /* LocalNetworkPermission.swift */; };
 		BF1CF1BFBC3601ECC6A57600 /* MusicSheetHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = B29B5158D01DE5F007A2B1AD /* MusicSheetHost.swift */; };
 		BF1F6EADB3CD222E4B0C6072 /* MediaGalleryToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC26E9FB9DE4AFA3840A2CB /* MediaGalleryToolbar.swift */; };
 		BF2C23440F6684625655CFD4 /* NostrURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = D905B09C965B0356FE1B3469 /* NostrURI.swift */; };
@@ -1824,6 +1828,7 @@
 		E75FCF0B1644D222EA8B7F1F /* LiveStreamPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95A69FF314C01604E9AB69A9 /* LiveStreamPlayerView.swift */; };
 		E7902FCDB1215B79E1D3D0EE /* ComposeView+Posting.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2448DA40C2E9F5497069E96 /* ComposeView+Posting.swift */; };
 		E792228433527A9CF7D14C4F /* MusicArtistPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5947F392DFBF2A9CC90CEB91 /* MusicArtistPage.swift */; };
+		E7EE64BCD08121216819C893 /* CopySavingProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B073EAAE5544A4F65885E897 /* CopySavingProgress.swift */; };
 		E7EFAB5689240E5BE29F36D5 /* TrustWebView+Globe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99BB884D57C3B72272208E6D /* TrustWebView+Globe.swift */; };
 		E81C052AE86BC27F0D798AAE /* NVRelayAsk.swift in Sources */ = {isa = PBXBuildFile; fileRef = E22DCF8AB8337406564BAC9E /* NVRelayAsk.swift */; };
 		E8225284033F0834F8C6B2A1 /* NostrService+EventQueries.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0600FF30DDEB5242A8FB1E0 /* NostrService+EventQueries.swift */; };
@@ -1948,6 +1953,7 @@
 		F6CD2A12D44A1062CEA4475F /* ZoomSwipeWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E23194264AA64ADEF638EDF8 /* ZoomSwipeWatch.swift */; };
 		F6F032EECDD7BDAE6BA492FB /* OtherResponseCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14FAD736D401196122276352 /* OtherResponseCard.swift */; };
 		F71EB0360DE279D578934433 /* GlobeEdge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F3BE28BF7980055E4D418F8 /* GlobeEdge.swift */; };
+		F72B444F98FD716970AC920B /* CopySavingProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B073EAAE5544A4F65885E897 /* CopySavingProgress.swift */; };
 		F72F020F12B14610A2E336D6 /* ArticleReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10BB63071E62D3686FEB781F /* ArticleReaderView.swift */; };
 		F77339F2E80B3F9EFF01B473 /* DeletedPostsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E680C50EB51C30D009823043 /* DeletedPostsStore.swift */; };
 		F7ACEB2AC974E83FA7B89D77 /* FeedService+Relays.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B34BEF72503E04EC348EF2B /* FeedService+Relays.swift */; };
@@ -2296,6 +2302,7 @@
 		3A8787F8C6DC62731C2BC67B /* RelayProcessManager+FirstRun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RelayProcessManager+FirstRun.swift"; sourceTree = "<group>"; };
 		3AB256B302F132F38FBEA3C5 /* ProfilePostsLoadPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilePostsLoadPlan.swift; sourceTree = "<group>"; };
 		3ADBFCE4923AF67D80521F44 /* FipsMeshMyDevicesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FipsMeshMyDevicesSection.swift; sourceTree = "<group>"; };
+		3B372B39BC49ABA2ADD10179 /* CopySaving.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopySaving.swift; sourceTree = "<group>"; };
 		3B9646E91993C4D774E5F139 /* ActivityTargetFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityTargetFetcher.swift; sourceTree = "<group>"; };
 		3C9C0FA7AC543647A0CA8515 /* BookmarkMenuItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkMenuItem.swift; sourceTree = "<group>"; };
 		3CB15AE080BDC0999543399A /* WebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketClient.swift; sourceTree = "<group>"; };
@@ -2791,6 +2798,7 @@
 		AAB509F2A30B9B45176A3489 /* BlossomService+LocalUpload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlossomService+LocalUpload.swift"; sourceTree = "<group>"; };
 		AB737FAA07F1DCC8EA29556C /* libnvfips.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libnvfips.a; path = build/libnvfips.a; sourceTree = SDKROOT; };
 		AB79C0D33E22277543C173F1 /* ReelsFeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReelsFeedService.swift; sourceTree = "<group>"; };
+		ABAAD88CEF9ECC233DEED6B0 /* LocalNetworkPermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNetworkPermission.swift; sourceTree = "<group>"; };
 		ABC7040B1702C92C635F0E6D /* CollapsedNowPlayingButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollapsedNowPlayingButton.swift; sourceTree = "<group>"; };
 		ABD60255398375B7A8772D93 /* VaultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultView.swift; sourceTree = "<group>"; };
 		AC7C42A113F1DF2AA4AE3B00 /* BlossomUploadReply.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomUploadReply.swift; sourceTree = "<group>"; };
@@ -2808,6 +2816,7 @@
 		AECE3C16F322D12D0CC02FC1 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		AEFACBF119702896AC43B502 /* BookmarkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkService.swift; sourceTree = "<group>"; };
 		B0600FF30DDEB5242A8FB1E0 /* NostrService+EventQueries.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+EventQueries.swift"; sourceTree = "<group>"; };
+		B073EAAE5544A4F65885E897 /* CopySavingProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopySavingProgress.swift; sourceTree = "<group>"; };
 		B082AB61C72D6EF9CCFD625B /* PushNotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationSettingsView.swift; sourceTree = "<group>"; };
 		B135DFE24DED0CD334C9AC15 /* PrivateCopyShareHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivateCopyShareHandler.swift; sourceTree = "<group>"; };
 		B14E3BC6EB9439A763E73FE2 /* ProfileRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileRepository.swift; sourceTree = "<group>"; };
@@ -3873,6 +3882,7 @@
 				2CE6DCB37E979F242074190A /* BringItOverStep.swift */,
 				4FC62598934C9404FD5BC715 /* CompleteStep.swift */,
 				25CD84D7B568943171E90C8E /* CopyAccountsAskView.swift */,
+				B073EAAE5544A4F65885E897 /* CopySavingProgress.swift */,
 				F37A04D4EB9E1C725671A610 /* IdentityStepView.swift */,
 				B72DFD54673471C63A265F7C /* ImportCouldNotStartButton.swift */,
 				71AB0175468D57FB7435B690 /* ImportNotesStep.swift */,
@@ -4058,6 +4068,7 @@
 				DF5D411E889E67C6FF5E16AF /* ComposerDraft.swift */,
 				5600D540B4446A14A59C8EC0 /* Config */,
 				0AA8837A927A1C9B6B08A5F2 /* CopyAccounts.swift */,
+				3B372B39BC49ABA2ADD10179 /* CopySaving.swift */,
 				CA156FC0C0969693F67E9704 /* CopySettings.swift */,
 				4E5491B12E550308F38BE003 /* CustomEmoji.swift */,
 				0571B58CF85751A2BFC66266 /* DeletedNotes.swift */,
@@ -4516,6 +4527,7 @@
 				937CB610C3601ECF3B4BBD0E /* LiveStatusService.swift */,
 				0148FE6656C62C9C703374B7 /* LiveTrustPath.swift */,
 				2B14053AFA5E916B43335BEE /* LNURLService.swift */,
+				ABAAD88CEF9ECC233DEED6B0 /* LocalNetworkPermission.swift */,
 				48CA2811713E8B33E246FC55 /* LocalNotificationService.swift */,
 				A79C96E2BA9033BBD4457347 /* LocalNotificationService+Readiness.swift */,
 				49F43AE6D03159B7716D9F71 /* LogStore.swift */,
@@ -5130,6 +5142,8 @@
 				499FB668CC1884928039CE94 /* CopyAccounts.swift in Sources */,
 				FDCC7C8569643F6A70486C33 /* CopyAccountsAskView.swift in Sources */,
 				B06A0F4E145FA1BC93E21D35 /* CopyAccountsSync.swift in Sources */,
+				112E1699A2BD77FAD034806C /* CopySaving.swift in Sources */,
+				F72B444F98FD716970AC920B /* CopySavingProgress.swift in Sources */,
 				2D3606645055E76ED682405E /* CopySettings.swift in Sources */,
 				7163FB1988CB43D66D24F454 /* CopySettingsSync.swift in Sources */,
 				47D602C388B2BA74EBA29A05 /* CredentialStore.swift in Sources */,
@@ -5426,6 +5440,7 @@
 				1E3DDE06240C163C9491FCCF /* LiveVault.swift in Sources */,
 				983E81479BB7A8A339A8C2B0 /* LiveVaultModel.swift in Sources */,
 				F9BE9B075BD53AF97F7C2890 /* LiveVaultPanel.swift in Sources */,
+				BF0FF285EA8FB3D2B0301224 /* LocalNetworkPermission.swift in Sources */,
 				D3B2E30CFADDB68B4ADAA39A /* LocalNotificationService+Readiness.swift in Sources */,
 				D99028853E74DA3CE76AE9B7 /* LocalNotificationService.swift in Sources */,
 				C244EE2E8FA58AC58748CA0C /* LocalRelaySearchPlan.swift in Sources */,
@@ -6156,6 +6171,8 @@
 				5290A9EDAB645E91D8E62FFE /* CopyAccounts.swift in Sources */,
 				1194D4407221F85D84006CE3 /* CopyAccountsAskView.swift in Sources */,
 				98403BF75A4FE842A9748931 /* CopyAccountsSync.swift in Sources */,
+				827E7E7D78E6E20C3D3FB71B /* CopySaving.swift in Sources */,
+				E7EE64BCD08121216819C893 /* CopySavingProgress.swift in Sources */,
 				3C5F46670625E1D4A6CB3391 /* CopySettings.swift in Sources */,
 				B57B0F44EACE668B2F35F79D /* CopySettingsSync.swift in Sources */,
 				14FE82E63F5A97838F91AAE6 /* CredentialStore.swift in Sources */,
@@ -6446,6 +6463,7 @@
 				CF9EA6FA08DCD4924763295A /* LiveStreamShare.swift in Sources */,
 				98D91BFE3A7953892B6BA982 /* LiveTrustPath.swift in Sources */,
 				5DDCFC3DDD88D12EFD97E9E4 /* LiveVault.swift in Sources */,
+				8FADA0354E5907D4829F7FC1 /* LocalNetworkPermission.swift in Sources */,
 				DB7034BD78D0E1495B92E71D /* LocalNotificationService+Readiness.swift in Sources */,
 				417A5B57E5552977F48B6B23 /* LocalNotificationService.swift in Sources */,
 				405BE8FAC5DE89B9AC15D061 /* LocalRelaySearchPlan.swift in Sources */,
