@@ -5,6 +5,9 @@ struct AccountsSettingsView: View {
     @ObservedObject private var nostrService = NostrService.shared
     @ObservedObject private var nip46Service = NIP46Service.shared
 
+    // Delete Account (Leave Nostr Forever)
+    @State private var showDeleteAccount = false
+
     // Add Account Sheet
     @State private var showAddAccount = false
 
@@ -48,11 +51,23 @@ struct AccountsSettingsView: View {
                     Label("Add Account", systemImage: "plus.circle.fill")
                 }
             }
+
+            if !configService.config.ownerNpub.isEmpty {
+                Section {
+                    DeleteAccountButton { showDeleteAccount = true }
+                } footer: {
+                    Text("Asks your relays to erase your account, then deletes it and everything Nostr Vault keeps on this device.")
+                }
+            }
         }
         .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .sheet(isPresented: $showDeleteAccount) {
+            LeaveNostrForeverView(configService: configService, nostrService: NostrService.shared,
+                                  relayManager: RelayProcessManager.shared, onDismiss: { showDeleteAccount = false })
+        }
         .sheet(isPresented: $showAddAccount) {
             AddAccountSheetView(onDismiss: { showAddAccount = false }, configService: configService)
         }
