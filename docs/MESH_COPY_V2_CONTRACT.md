@@ -222,8 +222,11 @@ The vault's own keys are its owner and every added account (look-only included).
   a name over 80 characters (`bad_name`); 0 or over 64 accounts (`too_many`).
 - **Where it is.** The first entry of `notes.zip` and of every Settings › Back up zip; `accounts` in the manifest
   (§3.1); `GET`/`PUT /copy/v2/sync/accounts` in the catch-up (§6).
-- **A writes it** from its whitelist (owner first), naming each from the app's `copy-accounts.json` in the engine's
-  working dir (the same folder as `copy-settings.json`), which the app keeps current with its accounts and names.
+- **A writes it** from the app's `copy-accounts.json` in the engine's working dir (the same folder as
+  `copy-settings.json`), which the app keeps current with its signing accounts and names: the owner first, then
+  each key the file lists that is also own (whitelisted), named from the file. A whitelisted key the file does not
+  list (a look-only account, often someone else's npub) never travels, nor does one the file lists but A never
+  ticked (Tron, #1810). No file, or one refused as below: the owner only (fail closed).
 - **B takes it only when it shares at least one** of B's own keys. Sharing none: `wrong_owner` (an own-account zip
   sharing none stays refused). Refused list: `bad_manifest`, nothing restored, nothing offered, and logged.
 - **Every event it carries is kept, no account is added** (Logen, 2026-11-06). A copy (paired, bearer-authenticated)
