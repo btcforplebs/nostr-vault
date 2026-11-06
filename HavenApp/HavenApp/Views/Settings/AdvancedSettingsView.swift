@@ -6,7 +6,7 @@ struct AdvancedSettingsView: View {
     @State private var showResetConfirmation = false
     /// Why Factory Reset deleted nothing (the vault stayed busy).
     @State private var resetRefused: String?
-    @State private var showDeleteAccount = false
+    @State private var showLeaveNostr = false
 
     var body: some View {
         Form {
@@ -42,7 +42,10 @@ struct AdvancedSettingsView: View {
 
             Section {
                 if !configService.config.ownerNpub.isEmpty {
-                    DeleteAccountButton { showDeleteAccount = true }
+                    Button(role: .destructive) { showLeaveNostr = true } label: {
+                        Label("Leave Nostr Forever", systemImage: "person.crop.circle.badge.xmark")
+                            .foregroundColor(.red)
+                    }
                 }
                 Button(role: .destructive) {
                     showResetConfirmation = true
@@ -59,9 +62,9 @@ struct AdvancedSettingsView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .sheet(isPresented: $showDeleteAccount) {
+        .sheet(isPresented: $showLeaveNostr) {
             LeaveNostrForeverView(configService: configService, nostrService: NostrService.shared,
-                                  relayManager: relayManager, onDismiss: { showDeleteAccount = false })
+                                  relayManager: relayManager, onDismiss: { showLeaveNostr = false })
         }
         .alert("Are you sure?", isPresented: $showResetConfirmation) {
             Button("Cancel", role: .cancel) { }

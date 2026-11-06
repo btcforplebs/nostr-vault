@@ -784,19 +784,20 @@ class ConfigService: ObservableObject {
     }
 
     func removeBunkerConfig(forNpub npub: String) {
-        if let old = config.accountBunkerConfigs[npub] {
+        let removed = config.accountBunkerConfigs[npub]
+        if let old = removed {
             NIP46Service.dropSession(signerKey: NIP46Service.signerKey(bunkerURI: old.bunkerURI, signerPubkey: old.signerPubkey))
             let activeNpub = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
             if npub == activeNpub { NIP46Service.shared.detachForAccountSwitch() }
         }
         config.accountBunkerConfigs.removeValue(forKey: npub)
-        // If no accounts use NIP-46 anymore, reset global signing mode
+        // The shared fields must not keep this account's link (URI, secret,
+        // the client key the signer authorized). The keychain sync on save
+        // then deletes the shared client-key item.
         if config.accountBunkerConfigs.isEmpty {
-            config.signingMode = "local"
-            config.nip46BunkerURI = ""
-            config.nip46SignerPubkey = ""
-            config.nip46RelayURL = ""
-            config.nip46Secret = ""
+            config.clearGlobalBunkerFields()
+        } else if let old = removed {
+            config.clearGlobalBunkerLink(ifHolds: old)
         }
         save()
     }

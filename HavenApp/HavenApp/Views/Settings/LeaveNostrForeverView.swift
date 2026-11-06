@@ -3,9 +3,11 @@ import SwiftUI
 import UIKit
 #endif
 
-/// "Delete Account" › "Leave Nostr Forever": the owner's account is erased
-/// from Nostr as far as this app can ask, then from this device. Every line
-/// on screen says what `LeaveNostrService` does, in its order.
+/// Settings › Advanced › "Leave Nostr Forever": the owner's account is
+/// erased from Nostr as far as this app can ask, then from this device.
+/// Three warnings on separate screens; the last one unlocks only when the
+/// account's name is typed and the button is held for `LeaveNostr.holdSeconds`.
+/// Every line on screen says what `LeaveNostrService` does, in its order.
 struct LeaveNostrForeverView: View {
     @ObservedObject var configService: ConfigService
     @ObservedObject var nostrService: NostrService
@@ -14,6 +16,8 @@ struct LeaveNostrForeverView: View {
 
     @State private var typed = ""
     @State private var phase: Phase = .confirm
+    /// Which of the three warning screens is showing (1...3).
+    @State private var screen = 1
 
     private enum Phase: Equatable {
         case confirm
@@ -41,6 +45,11 @@ struct LeaveNostrForeverView: View {
     private static func short(_ npub: String) -> String {
         npub.count > 20 ? "\(npub.prefix(12))\u{2026}\(npub.suffix(6))" : npub
     }
+    private var nameToType: String {
+        let hex = Bech32.decode(ownerNpub)?.hexString ?? ""
+        return LeaveNostr.nameToType(name: nostrService.profiles[hex]?.bestName ?? "", npub: ownerNpub)
+    }
+    private var nameTyped: Bool { LeaveNostr.nameConfirms(typed, expected: nameToType) }
     private var otherAccounts: Int { max(configService.allAccountNpubs.count - 1, 0) }
     private var busy: Bool {
         switch phase {
@@ -70,7 +79,7 @@ struct LeaveNostrForeverView: View {
         NavigationStack {
             ScrollView { content.padding(20) }
                 .safeAreaInset(edge: .bottom) { buttons.padding().background(.bar) }
-                .navigationTitle("Delete Account")
+                .navigationTitle("Leave Nostr Forever")
                 .navigationBarTitleDisplayMode(.inline)
         }
         .interactiveDismissDisabled(busy)
@@ -79,50 +88,73 @@ struct LeaveNostrForeverView: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Leave Nostr Forever")
-                .font(.appTitle2.bold())
-                .accessibilityAddTraits(.isHeader)
-
-            accountCard
-
-            Text("This is about to happen:").font(.appHeadline)
-
-            step(1, "Your profile is blanked, so people see the account is gone.")
-            step(2, "We ask every relay you use, and your vault, to erase all your notes and your profile (a Nostr \u{201C}erase me\u{201D} request, signed by \(usesSigner ? "your signer" : "you")).")
-            step(3, thirdStep)
-
-            if usesSigner {
-                Text("Your account signs with a remote signer: it signs both requests, then this \(Self.device) disconnects from it. Your key stays in the signer.")
-                    .font(.appCallout)
-            }
-
-            Text("Most relays honour the request. Some may not, and we can't force them. Photos you put on outside media servers are not covered by the request. Copies other people saved stay with them.")
-                .font(.appCallout)
-                .foregroundColor(.secondary)
-
-            Text(undoLine)
-                .font(.appCallout.bold())
-
-            if case .confirm = phase { confirmField }
-            if case .failed(let message) = phase {
-                Text(message).font(.appCallout).foregroundColor(.red)
-                confirmField
-            }
-            if case .sending = phase {
-                ProgressView("Sending the erase request\u{2026}")
-            }
-            if case .noneAccepted(let summary) = phase {
-                Text(summary + ".").font(.appCallout)
-                Text("No relay took the erase request, so nothing has been deleted yet. If you delete now, your key goes with it and the request can never be sent again. Try again when you're online, or delete from this \(Self.device) only.")
-                    .font(.appCallout)
-                    .foregroundColor(.red)
-            }
-            if case .wiping(let summary) = phase {
-                Text(summary + ".").font(.appCallout)
-                ProgressView("Deleting everything on this \(Self.device)\u{2026}")
+            Text("Warning \(screen) of 3").font(.appCaption.bold()).foregroundColor(.red)
+            switch screen {
+            case 1: firstWarning
+            case 2: secondWarning
+            default: lastWarning
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 1 of 3: whose account, and what is about to happen.
+    @ViewBuilder
+    private var firstWarning: some View {
+        Text("Leave Nostr Forever")
+            .font(.appTitle2.bold())
+            .accessibilityAddTraits(.isHeader)
+        accountCard
+        Text("This is about to happen:").font(.appHeadline)
+        step(1, "Your profile is blanked, so people see the account is gone.")
+        step(2, "We ask every relay you use, and your vault, to erase all your notes and your profile (a Nostr \u{201C}erase me\u{201D} request, signed by \(usesSigner ? "your signer" : "you")).")
+        step(3, thirdStep)
+        if usesSigner {
+            Text("Your account signs with a remote signer: it signs both requests, then this \(Self.device) disconnects from it. Your key stays in the signer.")
+                .font(.appCallout)
+        }
+    }
+
+    /// 2 of 3: what the request can't reach.
+    @ViewBuilder
+    private var secondWarning: some View {
+        Text("Not everything can be erased")
+            .font(.appTitle2.bold())
+            .accessibilityAddTraits(.isHeader)
+        Text("Most relays honour the request. Some may not, and we can't force them.").font(.appBody)
+        Text("Photos you put on outside media servers are not covered by the request.").font(.appBody)
+        Text("Copies other people saved stay with them.").font(.appBody)
+        Text("To delete the account from this \(Self.device) only, without telling relays, cancel and use Delete Account on its page (Settings \u{203A} Accounts).")
+            .font(.appCallout)
+            .foregroundColor(.secondary)
+    }
+
+    /// 3 of 3: no way back. Type the name, then hold.
+    @ViewBuilder
+    private var lastWarning: some View {
+        Text("There is no way back")
+            .font(.appTitle2.bold())
+            .accessibilityAddTraits(.isHeader)
+        accountCard
+        Text(undoLine).font(.appCallout.bold())
+        if case .confirm = phase { confirmField }
+        if case .failed(let message) = phase {
+            Text(message).font(.appCallout).foregroundColor(.red)
+            confirmField
+        }
+        if case .sending = phase {
+            ProgressView("Sending the erase request\u{2026}")
+        }
+        if case .noneAccepted(let summary) = phase {
+            Text(summary + ".").font(.appCallout)
+            Text("No relay took the erase request, so nothing has been deleted yet. If you delete now, your key goes with it and the request can never be sent again. Try again when you're online, or delete from this \(Self.device) only.")
+                .font(.appCallout)
+                .foregroundColor(.red)
+        }
+        if case .wiping(let summary) = phase {
+            Text(summary + ".").font(.appCallout)
+            ProgressView("Deleting everything on this \(Self.device)\u{2026}")
+        }
     }
 
     private var accountCard: some View {
@@ -161,14 +193,14 @@ struct LeaveNostrForeverView: View {
 
     private var confirmField: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Type \(LeaveNostr.confirmWord) to confirm").font(.appCallout)
-            TextField(LeaveNostr.confirmWord, text: $typed)
+            Text("Type \(nameToType) to confirm, then hold the button for \(Int(LeaveNostr.holdSeconds)) seconds.").font(.appCallout)
+            TextField(nameToType, text: $typed)
                 .textFieldStyle(.roundedBorder)
                 .autocorrectionDisabled()
                 #if os(iOS)
-                .textInputAutocapitalization(.characters)
+                .textInputAutocapitalization(.never)
                 #endif
-                .accessibilityLabel("Type DELETE to confirm")
+                .accessibilityLabel("Type \(nameToType) to confirm")
         }
     }
 
@@ -193,29 +225,38 @@ struct LeaveNostrForeverView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.havenPurple)
             }
-        } else {
+        } else if screen < 3 {
             HStack {
                 Button("Cancel") { onDismiss() }
                     .keyboardShortcut(.cancelAction)
-                    .disabled(busy)
                 Spacer()
-                Button(role: .destructive) { leave() } label: {
-                    Text("Leave Nostr Forever").bold()
+                if screen > 1 { Button("Back") { screen -= 1 } }
+                Button { screen += 1 } label: { Text("Continue").bold() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+            }
+        } else {
+            VStack(spacing: 10) {
+                HoldToConfirmButton(title: "Hold to Leave Nostr Forever", seconds: LeaveNostr.holdSeconds,
+                                    enabled: !busy && nameTyped) { leave() }
+                HStack {
+                    Button("Cancel") { onDismiss() }
+                        .keyboardShortcut(.cancelAction)
+                        .disabled(busy)
+                    Spacer()
+                    Button("Back") { screen = 2 }.disabled(busy)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .disabled(busy || !LeaveNostr.confirms(typed))
             }
         }
     }
 
     private func leave() {
-        guard LeaveNostr.confirms(typed), !busy else { return }
+        guard screen == 3, nameTyped, !busy else { return }
         phase = .sending
         Task { @MainActor in
             switch await LeaveNostrService.sendEraseRequest(configService: configService, nostrService: nostrService) {
             case .failure(let why):
-                phase = .failed(why.message + " To delete it from this \(Self.device) only, without telling relays, use Settings \u{203A} Advanced \u{203A} Factory Reset.")
+                phase = .failed(why.message + " To delete it from this \(Self.device) only, without telling relays, use Delete Account on its page (Settings \u{203A} Accounts).")
             case .success(let tally):
                 guard LeaveNostr.mayWipe(after: tally) else {
                     phase = .noneAccepted(tally.summary)

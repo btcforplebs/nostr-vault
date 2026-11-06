@@ -13,13 +13,12 @@ struct AccountDetailView: View {
     var onImportKey: () -> Void
     var onConnectBunker: () -> Void
     var onRevealKey: () -> Void
-    var onRemoveAccount: () -> Void
 
     // Every account action below is one-way: the key material is gone, or the
     // signer link is, and nothing here can put it back.
     @State private var showingRemoveKeyConfirm = false
     @State private var showingDisconnectSignerConfirm = false
-    @State private var showingRemoveAccountConfirm = false
+    @State private var showingDeleteAccount = false
 
     private var isOwner: Bool { npub == configService.config.ownerNpub }
     private var activeNpub: String {
@@ -152,15 +151,15 @@ struct AccountDetailView: View {
                     Text("Remote Signer (NIP-46)")
                 }
 
-                // Remove account (non-owner only)
-                if !isOwner {
-                    Section {
-                        Button(role: .destructive) {
-                            showingRemoveAccountConfirm = true
-                        } label: {
-                            Label("Remove Account", systemImage: "person.badge.minus")
-                        }
-                    }
+                // Delete Account: this account only, nothing sent to relays
+                // (DeleteAccountView). The main account takes the device's
+                // vault with it, and its screen says so.
+                Section {
+                    DeleteAccountButton { showingDeleteAccount = true }
+                } footer: {
+                    Text(isOwner
+                         ? "Deletes your main account and its vault from this device. Nothing is sent to relays."
+                         : "Deletes this account from this device. Nothing is sent to relays.")
                 }
             }
             .groupedFormStyleCompat()
@@ -178,16 +177,12 @@ struct AccountDetailView: View {
                 confirmTitle: "Disconnect",
                 action: disconnectRemoteSigner
             )
-            .confirmDestructive(
-                "Remove Account",
-                isPresented: $showingRemoveAccountConfirm,
-                consequence: "This removes \(npub.prefix(12))… from Nostr Vault, along with any key or signer stored for it. Nothing on the relays changes, but you will need the key again to sign back in.",
-                confirmTitle: "Remove Account",
-                action: {
-                    onRemoveAccount()
-                    dismiss()
+            .sheet(isPresented: $showingDeleteAccount) {
+                DeleteAccountView(configService: configService, npub: npub) { deleted in
+                    showingDeleteAccount = false
+                    if deleted { dismiss() }
                 }
-            )
+            }
             .navigationTitle("Account")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)

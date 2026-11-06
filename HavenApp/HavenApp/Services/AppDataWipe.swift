@@ -58,6 +58,43 @@ enum AppDataWipe {
         }
     }
 
+    /// Delete Account for one account (not the main one): deletes the files
+    /// beside config.json and in the app's caches whose names hold that
+    /// account's hex pubkey or npub, the settings named after it, and its
+    /// entries in settings that list accounts (`AccountDataSweep`). The vault database and config.json are not
+    /// touched; `ConfigService.removeAccount` takes the account out of the
+    /// config.
+    static func forgetAccount(hex: String, npub: String, appSupport: URL,
+                              bundleID: String = Bundle.main.bundleIdentifier ?? "") {
+        let fm = FileManager.default
+        var roots = [appSupport]
+        roots += ownCacheFolders(bundleID: bundleID, fm: fm)
+        for root in roots { removeNamed(in: root, hex: hex, npub: npub, fm: fm) }
+        let defaults = UserDefaults.standard
+        for (key, value) in defaults.dictionaryRepresentation() {
+            if AccountDataSweep.belongs(key, hex: hex, npub: npub) {
+                defaults.removeObject(forKey: key)
+            } else if let kept = AccountDataSweep.scrubbed(value, hex: hex, npub: npub) {
+                defaults.set(kept, forKey: key)
+            }
+        }
+    }
+
+    private static func removeNamed(in root: URL, hex: String, npub: String, fm: FileManager) {
+        guard root.path.count > 10, root.path != NSHomeDirectory(),
+              let walker = fm.enumerator(at: root, includingPropertiesForKeys: nil) else { return }
+        var doomed: [URL] = []
+        for case let item as URL in walker {
+            let name = item.lastPathComponent
+            if AccountDataSweep.skipped.contains(name) { walker.skipDescendants(); continue }
+            if AccountDataSweep.belongs(name, hex: hex, npub: npub) {
+                doomed.append(item)
+                walker.skipDescendants()
+            }
+        }
+        for item in doomed { try? fm.removeItem(at: item) }
+    }
+
     private static func removeContents(of dir: URL, fm: FileManager, keeping: Set<String> = []) {
         // Never a root or home folder by mistake.
         guard dir.path.count > 10, dir.path != NSHomeDirectory(),

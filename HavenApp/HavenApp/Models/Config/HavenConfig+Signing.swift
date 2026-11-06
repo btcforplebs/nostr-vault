@@ -20,6 +20,31 @@ extension HavenConfig {
         )
     }
 
+    /// Clears the shared nip46* fields (link, secret and client key) when they
+    /// hold `old`'s signer link, so a removed account's link is not left
+    /// behind there. Returns whether it cleared them. Whoever becomes active
+    /// next copies its own link back in (`syncGlobalNIP46Fields`).
+    @discardableResult
+    mutating func clearGlobalBunkerLink(ifHolds old: AccountBunkerConfig) -> Bool {
+        let holds = (!old.clientPubkey.isEmpty && nip46ClientPubkey == old.clientPubkey)
+            || (!old.signerPubkey.isEmpty && nip46SignerPubkey == old.signerPubkey)
+            || (!old.bunkerURI.isEmpty && nip46BunkerURI == old.bunkerURI)
+        guard holds else { return false }
+        clearGlobalBunkerFields()
+        return true
+    }
+
+    /// Empties every shared nip46* field and goes back to local signing.
+    mutating func clearGlobalBunkerFields() {
+        signingMode = "local"
+        nip46BunkerURI = ""
+        nip46SignerPubkey = ""
+        nip46RelayURL = ""
+        nip46Secret = ""
+        nip46ClientSecretKey = ""
+        nip46ClientPubkey = ""
+    }
+
     /// Returns the signing mode for the currently active account.
     /// Respects explicit user preference in accountSigningModes if set,
     /// otherwise falls back to auto-detection based on available credentials.
