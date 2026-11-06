@@ -33,16 +33,17 @@ enum LeaveNostrService {
         guard !configService.config.ownerNpub.isEmpty, !ownerHex.isEmpty else { return .failure(.noOwner) }
 
         guard let profile = await nostrService.signEventAsync(kind: 0, content: LeaveNostr.blankProfileContent, forceOwner: true),
-              LeaveNostr.signedAsAsked(pubkey: profile.pubkey, kind: profile.kind, content: profile.content, ownerHex: ownerHex,
-                                       askedKind: 0, askedContent: LeaveNostr.blankProfileContent),
+              LeaveNostr.signedAsAsked(pubkey: profile.pubkey, kind: profile.kind, content: profile.content, tags: profile.tags,
+                                       ownerHex: ownerHex, askedKind: 0, askedContent: LeaveNostr.blankProfileContent, askedTags: []),
               ProfileSaveGuard.mayPublish(kind: profile.kind, signedPubkey: profile.pubkey, profilePubkey: ownerHex, formLoadedFor: ownerHex) else {
             RelayProcessManager.shared.addLog("Delete Account: blank profile not signed; nothing sent or deleted", level: "ERROR")
             return .failure(.profileNotSigned)
         }
         guard let erase = await nostrService.signEventAsync(kind: 62, content: LeaveNostr.vanishContent,
                                                             tags: LeaveNostr.vanishTags, forceOwner: true),
-              LeaveNostr.signedAsAsked(pubkey: erase.pubkey, kind: erase.kind, content: erase.content, ownerHex: ownerHex,
-                                       askedKind: LeaveNostr.vanishKind, askedContent: LeaveNostr.vanishContent) else {
+              LeaveNostr.signedAsAsked(pubkey: erase.pubkey, kind: erase.kind, content: erase.content, tags: erase.tags,
+                                       ownerHex: ownerHex, askedKind: LeaveNostr.vanishKind, askedContent: LeaveNostr.vanishContent,
+                                       askedTags: LeaveNostr.vanishTags) else {
             RelayProcessManager.shared.addLog("Delete Account: erase request not signed; nothing sent or deleted", level: "ERROR")
             return .failure(.eraseNotSigned)
         }
@@ -64,7 +65,7 @@ enum LeaveNostrService {
     /// keychain items, notifications) and then deletes what that leaves
     /// (`AppDataWipe`: caches, settings). The Mac app then exits at once, so
     /// nothing in memory is saved back on the way out; iOS shows setup and
-    /// sweeps once more after anything still running has written its caches.
+    /// sweeps twice more (3 s, 10 s) after anything still running has written its caches.
     static func wipeThisDevice(configService: ConfigService, relayManager: RelayProcessManager) {
         for npub in Array(configService.config.accountBunkerConfigs.keys) {
             configService.removeBunkerConfig(forNpub: npub)
@@ -72,6 +73,7 @@ enum LeaveNostrService {
         NIP46Service.dropSession(signerKey: NIP46Service.activeSignerKey())
         NIP46Service.shared.disconnect()
         let appSupport = configService.relayDataDir.deletingLastPathComponent()
+        let ownerHex = NostrService.shared.ownerHexPubkey
         relayManager.stopRelay {
             Task { @MainActor in
                 configService.resetApp()
@@ -80,8 +82,10 @@ enum LeaveNostrService {
                 #if canImport(AppKit)
                 exit(0)
                 #else
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                AppDataWipe.sweepCaches(appSupport: appSupport)
+                for wait: UInt64 in [3, 7] {
+                    try? await Task.sleep(nanoseconds: wait * 1_000_000_000)
+                    AppDataWipe.sweepCaches(appSupport: appSupport, forgetting: ownerHex)
+                }
                 #endif
             }
         }

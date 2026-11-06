@@ -38,16 +38,26 @@ final class LeaveNostrTests: XCTestCase {
 
     func testOnlyTheOwnersOwnSignatureOfTheAskedEventCounts() {
         let owner = String(repeating: "a", count: 64)
-        XCTAssertTrue(LeaveNostr.signedAsAsked(pubkey: owner.uppercased(), kind: 62, content: "x",
-                                               ownerHex: owner, askedKind: 62, askedContent: "x"))
-        XCTAssertFalse(LeaveNostr.signedAsAsked(pubkey: String(repeating: "b", count: 64), kind: 62, content: "x",
-                                                ownerHex: owner, askedKind: 62, askedContent: "x"))
-        XCTAssertFalse(LeaveNostr.signedAsAsked(pubkey: owner, kind: 1, content: "x",
-                                                ownerHex: owner, askedKind: 62, askedContent: "x"))
-        XCTAssertFalse(LeaveNostr.signedAsAsked(pubkey: owner, kind: 62, content: "edited",
-                                                ownerHex: owner, askedKind: 62, askedContent: "x"))
-        XCTAssertFalse(LeaveNostr.signedAsAsked(pubkey: "", kind: 62, content: "x",
-                                                ownerHex: "", askedKind: 62, askedContent: "x"))
+        let asked = LeaveNostr.vanishTags
+        func check(pubkey: String = owner, kind: Int = 62, content: String = "x",
+                   tags: [[String]] = LeaveNostr.vanishTags + [["client", "Nostr Vault"]], ownerHex: String = owner) -> Bool {
+            LeaveNostr.signedAsAsked(pubkey: pubkey, kind: kind, content: content, tags: tags,
+                                     ownerHex: ownerHex, askedKind: 62, askedContent: "x", askedTags: asked)
+        }
+        XCTAssertTrue(check(pubkey: owner.uppercased()), "an added client tag is fine")
+        XCTAssertFalse(check(pubkey: String(repeating: "b", count: 64)), "another key")
+        XCTAssertFalse(check(kind: 1), "another kind")
+        XCTAssertFalse(check(content: "edited"), "edited content")
+        XCTAssertFalse(check(tags: [["client", "Nostr Vault"]]), "ALL_RELAYS dropped")
+        XCTAssertFalse(check(tags: [["relay", "wss://one.example"]]), "narrowed to one relay")
+        XCTAssertFalse(check(pubkey: "", ownerHex: ""), "no owner")
+    }
+
+    func testTheWipeWaitsForAtLeastOneRelay() {
+        XCTAssertFalse(LeaveNostr.mayWipe(after: LeaveNostr.Tally(total: 3)), "offline: none answered")
+        XCTAssertFalse(LeaveNostr.mayWipe(after: LeaveNostr.Tally(refused: ["a", "b"], total: 2)), "all refused")
+        XCTAssertFalse(LeaveNostr.mayWipe(after: LeaveNostr.Tally(total: 0)), "no relays at all")
+        XCTAssertTrue(LeaveNostr.mayWipe(after: LeaveNostr.Tally(accepted: ["a"], refused: ["b"], total: 3)))
     }
 
     func testTallySaysWhoAcceptedRefusedAndStayedSilent() {
