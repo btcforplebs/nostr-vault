@@ -138,20 +138,22 @@ func importFromZip(ctx context.Context, zipFileName string) error {
 	// the zip's outbox and lists, never feed or inbox, which hold other
 	// people's notes by design.
 	// A zip with accounts.json is taken when it shares one of this vault's
-	// accounts (one sharing none stays refused). Its other accounts are never
-	// added (§3.4): their events are kept, so adding one later finds its notes
-	// here (Logen, 2026-11-06), and the list is offered to the app, which asks
-	// the person.
+	// accounts (one sharing none stays refused). It keeps every event it
+	// holds for every account in its list, so signing in with one later finds
+	// its notes here, but it never offers or adds an account: only a copy from
+	// a linked device offers (Logen, 2026-11-06). Its other accounts are
+	// recorded as brought over first, so nothing of theirs is uploaded or
+	// served on the public outbox, not even while the restore runs.
 	theirs, has, err := checkZipAccounts(zipFileName)
 	if err != nil {
 		return err
 	}
 	if has {
 		if n := notOwnCount(theirs); n > 0 {
-			slog.Info("restore: backup names accounts this vault lacks; their events are kept, the accounts are offered, not added", "accounts", n)
+			slog.Info("restore: backup names accounts this vault lacks; their events are kept, never uploaded or served, and the accounts are not offered", "accounts", n)
 		}
+		recordBroughtAccounts(theirs)
 		ctx = withRestoreKeys(ctx, theirs.hexes())
-		defer offerCopyAccounts(theirs)
 	}
 
 	zipFile, err := zip.OpenReader(zipFileName)
@@ -439,6 +441,13 @@ func importBlobRecord(ctx context.Context, db DBBackend, event *nostr.Event, now
 		return restoreSkipped
 	}
 	if _, ok := restoreKeys(ctx)[event.PubKey]; !ok {
+		return restoreSkipped
+	}
+	// A blob record would make its uploader's files listable at /list/<pubkey>
+	// and answer HEAD. A backup zip records its other accounts as brought over
+	// before storing, so theirs are skipped (Tron #1808): the zip proves only
+	// that it may be ours. A linked device's copy keeps them.
+	if _, b := broughtAccounts()[event.PubKey]; b {
 		return restoreSkipped
 	}
 	record, ok := rebuildBlobRecord(event)

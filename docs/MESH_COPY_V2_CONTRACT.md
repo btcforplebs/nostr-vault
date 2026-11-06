@@ -230,15 +230,22 @@ The vault's own keys are its owner and every added account (look-only included).
   and a Settings › Back up zip restore keep each event whose author (or, for the inbox, a tagged key) is one of B's
   own keys **or** in the list, in every store, lists and blob records included. Nothing becomes B's own: the
   restore's author filters read the list, the whitelist does not change.
-- **Offered to the person.** After a successful restore (and on each catch-up, §6) the engine merges the list into
+- **Offered to the person, by a linked device only.** After a successful copy restore (and on each catch-up, §6) the engine merges the list into
   B's `copy-accounts.json`. B's app shows the accounts it lacks at setup, asks which to bring, and for each ticked
   one calls `AddAccountsC` and writes it to its whitelist file before the next relay start (the engine's live
   additions end there). An unticked account stays out; its notes stay in the vault, so ticking it later finds them
-  all at once.
-- **Read only on relays** (Logen, 2026-11-06). Every offered account that is not B's own at that moment is recorded
+  all at once. A Settings › Back up zip restore never offers or adds an account (Logen, 2026-11-06): it keeps every
+  event the zip holds and records the zip's other accounts as brought over (below) before storing anything.
+- **Read only on relays** (Logen, 2026-11-06). Every offered account, and every account a backup zip names, that is not B's own at that moment is recorded
   in the engine's `copy-brought.json` (npubs; never sent anywhere; never shrinks). Ticked or not, nothing by such
   an account is ever uploaded: the owner sync's upload source (`outboxNegStore.QueryEvents`) drops its events,
-  lists included, while its new events still come down. Lifting this for one account is a later, separate change.
+  lists included, while its new events still come down. Nor is it served on the public outbox (`brought_reads.go`):
+  outbox relay reads and counts drop its events unless the reader is NIP-42 authed as one of B's own keys (or the
+  browser build's owner stream), and the public page and mesh photo index skip it. The `/inbox` relay does the
+  same for events that tag such an account and none of B's other own keys (one tagging the owner too stays
+  visible; its count can come out low, never high). A backup zip's blob records for such an account are not
+  restored, so `/list/<pubkey>` and HEAD never answer for them; a linked device's copy keeps them. Lifting this for
+  one account is a later, separate change.
 - **Merging** (`mergeCopyAccounts`): mine first, then theirs that are new; a name I have stays, a missing one is
   filled; **nothing is ever removed**, by a copy, a restore or a catch-up.
 - **Live add without a restart.** `int AddAccountsC(char* accountsJSON)`, same JSON: how many were new (0 or more),
@@ -270,7 +277,8 @@ a record by one of the vault's own keys:
 - an upload is refused unless its kind 24242 is signed by a whitelisted key, or by a paired device's mesh key, whose
   upload is then filed under the owner (§2.1; `init.go` `RejectUpload`, `mesh_devices.go` `meshOwnerIndex`; the mesh
   door checks the same, `mesh_door.go` `meshUploadAuthorized`);
-- a restore keeps a blob record only from a whitelisted key (`jsonl.go` `importBlobRecord`);
+- a restore keeps a blob record only from a whitelisted key or the copy's list, never from a brought-over account
+  named by a backup zip (`jsonl.go` `importBlobRecord`);
 - neither app mirrors received media unprompted: every save or mirror above is an owner action, and the bulk
   `mirrorFromNoteMedia` reads only the owner's own notes;
 - a received DM attachment stays on the sender's server until the owner saves it, and once saved it is his.
@@ -362,5 +370,5 @@ Every code, where it comes from, and what B does.
 
 A v2 `notes.zip` only adds `accounts.json` and `settings.json` (plus the trimmed `blossom.jsonl`), which old
 readers skip (`jsonl.go importFromZip` reads `.jsonl` entries only). Settings › Back up zips now carry
-`accounts.json` too, and a restore checks ownership with it (§3.4) but adds no account. Old backup zips restore unchanged: no accounts, no settings,
+`accounts.json` too, and a restore checks ownership with it (§3.4) but neither adds nor offers an account. Old backup zips restore unchanged: no accounts, no settings,
 no media part, owner check by their notes.
