@@ -84,14 +84,6 @@ final class MeshCopyV2Service: ObservableObject {
         _ = CancelCopyC()
     }
 
-    /// Skip on the relay catch-up after a copy: stops the engine's setup
-    /// import job; the copy then ends with its `done` line as usual.
-    func skipRelays() {
-        guard progress.map(CopySaving.canSkip) == true else { return }
-        _ = CopySaving.relayJob.withCString { CancelImportJobC(UnsafeMutablePointer(mutating: $0)) }
-        RelayProcessManager.shared.addLog("Mesh copy: relay catch-up skipped")
-    }
-
     /// Remove device, both sides (any device can be A or B; Tron's review of
     /// #1788/#1790). As A: the engine drops that device's copy tokens and the
     /// copies they could read, on disk too. As B: a running copy with it is
