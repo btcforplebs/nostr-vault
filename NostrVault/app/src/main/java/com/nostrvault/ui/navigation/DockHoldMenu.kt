@@ -305,8 +305,8 @@ data class DockHoldRow(
     val avatar: Pair<String, String?>? = null,
     /** A second, smaller line (an account's short npub); the row grows to 50 dp. */
     val subtitle: String? = null,
-    /** A thin line above this row, as drawn: starts a new group (the account menu's settings). */
-    val dividerAbove: Boolean = false,
+    /** A thin line under this row, as drawn: ends a group (the account menu's settings, above the accounts). */
+    val dividerBelow: Boolean = false,
 )
 
 /**
@@ -391,12 +391,6 @@ fun <T> DockHoldMenuOverlay(
                 ) {
                     for (item in items.reversed()) {
                         val spec = row(item)
-                        if (spec.dividerAbove) {
-                            HorizontalDivider(
-                                color = PrimaryText.copy(alpha = 0.15f),
-                                modifier = Modifier.width(210.dp).padding(horizontal = 10.dp, vertical = 3.dp),
-                            )
-                        }
                         DockHoldMenuRow(
                             spec = spec,
                             hovered = menu.hovered == item,
@@ -406,6 +400,12 @@ fun <T> DockHoldMenuOverlay(
                                 onPick(item)
                             },
                         )
+                        if (spec.dividerBelow) {
+                            HorizontalDivider(
+                                color = PrimaryText.copy(alpha = 0.15f),
+                                modifier = Modifier.width(210.dp).padding(horizontal = 10.dp, vertical = 3.dp),
+                            )
+                        }
                     }
                 }
             }

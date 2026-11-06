@@ -614,7 +614,7 @@ private fun Modifier.combinedClickableCompat(
 
 /**
  * The account picture's gesture: with [onPickAccount] set (always, in the
- * app: the menu has App settings and Mesh settings under the accounts) a hold
+ * app: the menu has App settings and Mesh settings above the accounts) a hold
  * or a slight slide opens the account menu (the dock engine); otherwise a tap
  * and a long press, as before.
  */

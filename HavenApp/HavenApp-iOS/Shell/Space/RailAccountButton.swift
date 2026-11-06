@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// The account picture at the top of the iPad rail. A tap lists the
-/// accounts on this device; a tap on one switches to it. Under them, after a
-/// divider, App settings and Mesh settings, as in the dock's hold menu.
+/// accounts on this device; a tap on one switches to it. Above them, then a
+/// divider: App settings and Mesh settings, as in the dock's hold menu.
 /// No hold or slide, unlike the iPhone dock's avatar.
 struct RailAccountButton: View {
     @ObservedObject var configService: ConfigService
@@ -50,19 +50,20 @@ private struct AccountList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            ForEach(ProfileMenuSettings.allCases) { page in
+                settingsRow(page)
+            }
+            .padding(.top, 6)
+            Divider()
+                .padding(.vertical, 6)
             Text("Accounts")
                 .font(.appSystem(size: 13, weight: .semibold))
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 16)
-                .padding(.top, 14)
+                .padding(.top, 8)
                 .padding(.bottom, 6)
             ForEach(configService.allAccountNpubs, id: \.self) { npub in
                 row(npub)
-            }
-            Divider()
-                .padding(.vertical, 6)
-            ForEach(ProfileMenuSettings.allCases) { page in
-                settingsRow(page)
             }
         }
         .padding(.bottom, 8)
