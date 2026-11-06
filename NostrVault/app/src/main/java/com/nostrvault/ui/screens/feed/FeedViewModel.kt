@@ -326,7 +326,8 @@ class FeedViewModel @Inject constructor(
      * `FeedView.currentFeedSupportsThreading`.
      */
     private fun feedSupportsThreading(mode: FeedMode): Boolean = when (mode) {
-        FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR, FeedMode.HASHTAGS -> true
+        FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR,
+        FeedMode.CATCH_UP, FeedMode.UNDERRATED, FeedMode.HASHTAGS -> true
         FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.POLLS, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.REELS, FeedMode.MUSIC -> false
     }
 

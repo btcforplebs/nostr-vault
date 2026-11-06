@@ -14,7 +14,7 @@ extension FeedService {
         case .media: return mediaFeedMode == .following
         case .articles: return articlesFeedMode == .following
         case .polls: return pollsFeedMode == .following
-        case .global, .popular, .recipes, .marketplace, .live, .reels, .music, .hashtags: return false
+        case .global, .popular, .catchUp, .underrated, .recipes, .marketplace, .live, .reels, .music, .hashtags: return false
         }
     }
 
@@ -47,7 +47,7 @@ extension FeedService {
         case .polls: return pollsFeedMode == .following ? followSetFeedAuthors : []
         case .media: return mediaFeedMode == .following ? followSetFeedAuthors : []
         case .discovery: return extendedNetworkPubkeys
-        case .global, .popular, .recipes, .marketplace, .live, .reels, .music, .hashtags: return []
+        case .global, .popular, .catchUp, .underrated, .recipes, .marketplace, .live, .reels, .music, .hashtags: return []
         }
     }
 
@@ -71,7 +71,7 @@ extension FeedService {
         defer { isReconciling = false }
 
         guard !isPaused else { return }
-        guard feedMode != .popular else { return }   // popular has no relay subs
+        guard !feedMode.isLocalDvm else { return }   // local DVM feeds have no relay subs
         guard feedMode != .reels else { return }     // ReelsFeedService owns its own
         // Recipes, Marketplace and Live run their own services and Music has
         // no relay feed. Reconciling here opened an author-less kind-1 REQ

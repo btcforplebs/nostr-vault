@@ -3,57 +3,62 @@ import Combine
 import SwiftUI
 
 extension FeedService {
-    // MARK: - Popular Feed (Local DVM)
+    // MARK: - Local DVM feeds (Popular, Catch Up, Underrated)
 
-    /// Query the local Go DVM for popular notes. The Go backend fetches
-    /// engagement data (reactions, reposts, zaps) from seed relays, scores
-    /// notes by popularity, and returns the top results.
     /// "No popular notes found" is wrong while the trust graph is still being
     /// built: the relay is withholding the feed on purpose, and there is
-    /// something to wait for.
-    private func popularEmptyStatus() -> String {
-        curatedGraphReady ? "No popular notes found" : curatedGraphPendingStatus
+    /// something to wait for. Catch Up reads only your follows.
+    private func dvmEmptyStatus(_ feed: LocalDvmFeed) -> String {
+        feed.needsTrustGraph && !curatedGraphReady ? curatedGraphPendingStatus : feed.emptyStatus
     }
 
-    /// Computes the Popular ranking. A ranking already on screen (the tab
-    /// cache, or the last one saved to disk) stays up while the new one is
-    /// worked out, and is swapped for it when it lands; only an empty screen
-    /// shows the loading rows. Leaving Popular mid-compute no longer strands
-    /// it: the flag is cleared whatever mode is showing, and the result is
-    /// filed in Popular's cache for the next visit.
-    func loadPopularFeed() {
-        guard !isLoadingPopular else { return }
-        isLoadingPopular = true
-        let showingOld = feedMode == .popular && !notes.isEmpty
+    /// Asks the relay's local DVM for the feed on screen (Popular, Catch Up
+    /// or Underrated; haven-go dvm.go, feed_catchup.go, feed_underrated.go).
+    /// A result already on screen (the tab cache, or the last one saved to
+    /// disk) stays up while the new one is worked out, and is swapped for it
+    /// when it lands; only an empty screen shows the loading rows. Leaving
+    /// the feed mid-compute no longer strands it: its flag is cleared
+    /// whatever mode is showing, and the result is filed in that feed's
+    /// cache for the next visit.
+    func loadLocalDvmFeed() {
+        let mode = feedMode
+        guard let feed = mode.localDvm, !loadingDvmFeeds.contains(mode) else { return }
+        guard let compute = dvmCompute(for: feed) else { return }
+        loadingDvmFeeds.insert(mode)
+        // The account it is computed for: an account switch mid-compute
+        // drops the answer (and handleAccountSwitch already cleared the flag).
+        let account = ConfigService.shared.activeAccountHexPubkey
+        let showingOld = !notes.isEmpty
         if !showingOld {
             isLoadingFeed = true
             shouldScrollToTopOnLoad = true
-            connectionStatus = "Discovering popular notes..."
+            connectionStatus = feed.loadingStatus
             notes.removeAll()
             popularNoteScores.removeAll()
             resetFeedThreadReplies()
             recomputeFilteredNotes()
         }
 
-        /// Ends a compute that produced nothing to show. Only Popular's own
+        /// Ends a compute that produced nothing to show. Only this feed's own
         /// loading state and status are touched: another feed may be on screen.
         func finishEmpty(_ status: String) {
             DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.isLoadingPopular = false
-                guard self.feedMode == .popular else { return }
+                guard let self, ConfigService.shared.activeAccountHexPubkey == account else { return }
+                self.loadingDvmFeeds.remove(mode)
+                guard self.feedMode == mode else { return }
                 self.isLoadingFeed = false
-                // A ranking already on screen stays, with its status.
+                // A result already on screen stays, with its status.
                 if self.notes.isEmpty { self.connectionStatus = status }
             }
         }
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let resultPtr = ComputePopularNotesC() else {
-                finishEmpty("No popular notes found")
+            guard let resultPtr = compute() else {
+                finishEmpty(feed.emptyStatus)
                 return
             }
             let jsonString = String(cString: resultPtr)
+            free(resultPtr)
 
             // Check for error response
             if let errorData = jsonString.data(using: .utf8),
@@ -63,9 +68,9 @@ extension FeedService {
                 return
             }
 
-            // Parse popular notes
+            // Parse the notes
             guard let data = jsonString.data(using: .utf8),
-                  let popularNotes = try? JSONDecoder().decode([PopularNoteResult].self, from: data) else {
+                  let dvmNotes = try? JSONDecoder().decode([PopularNoteResult].self, from: data) else {
                 finishEmpty("Failed to parse results")
                 return
             }
@@ -73,7 +78,7 @@ extension FeedService {
             // Convert to FeedNote and build score map
             var feedNotes: [FeedNote] = []
             var scores: [String: Double] = [:]
-            for pn in popularNotes {
+            for pn in dvmNotes {
                 let note = FeedNote(
                     id: pn.id,
                     pubkey: pn.pubkey,
@@ -88,29 +93,29 @@ extension FeedService {
             }
 
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self, ConfigService.shared.activeAccountHexPubkey == account else { return }
                 // Cleared before the mode check: left set, the next visit's
-                // loadPopularFeed returned at its guard and the screen sat on
-                // the loading view for good.
-                self.isLoadingPopular = false
-                guard self.feedMode == .popular else {
+                // load returned at its guard and the screen sat on the
+                // loading view for good.
+                self.loadingDvmFeeds.remove(mode)
+                guard self.feedMode == mode else {
                     // Computed for nobody on screen: kept for the next visit.
-                    self.storePopularResult(feedNotes, scores: scores)
+                    self.storeDvmResult(feedNotes, scores: scores, mode: mode)
                     return
                 }
-                // An empty answer doesn't wipe a ranking already showing.
+                // An empty answer doesn't wipe a result already showing.
                 if FeedSpeedPolicy.popularReplacesShown(resultCount: feedNotes.count, showingOld: showingOld) {
                     self.notes = feedNotes
                     self.popularNoteScores = scores
                     if showingOld { self.resetFeedThreadReplies() }
                 }
                 self.isLoadingFeed = false
-                self.connectionStatus = self.notes.isEmpty ? self.popularEmptyStatus() : "Live"
-                if self.notes.isEmpty && !self.curatedGraphReady {
+                self.connectionStatus = self.notes.isEmpty ? self.dvmEmptyStatus(feed) : "Live"
+                if self.notes.isEmpty && feed.needsTrustGraph && !self.curatedGraphReady {
                     self.pollForCuratedGraph()
                 }
                 self.recomputeFilteredNotes()
-                if !feedNotes.isEmpty { self.captureModeCache(for: .popular) }
+                if !feedNotes.isEmpty { self.captureModeCache(for: mode) }
             }
         }
     }
@@ -129,7 +134,7 @@ extension FeedService {
     /// Popular too, or a post would carry the open firehose in underneath
     /// it. The post's own author and you always show.
     func loadFeedThreadReplies(rootIds: [String]) {
-        guard feedMode == .popular || feedMode == .global else { return }
+        guard feedMode.isLocalDvm || feedMode == .global else { return }
         let trusted = globalTrustSet()
         let wanted = rootIds.filter { !threadRepliesRequested.contains($0) }
         guard !wanted.isEmpty else { return }

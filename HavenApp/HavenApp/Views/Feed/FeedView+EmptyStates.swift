@@ -197,10 +197,25 @@ extension FeedView {
             .background(Color.platformControlBackground)
     }
 
+    /// Popular's empty state, worded for Catch Up and Underrated too.
+    private var dvmEmptyText: (icon: String, title: String, subtitle: String) {
+        switch feedService.feedMode {
+        case .catchUp:
+            return ("clock.arrow.circlepath", "All caught up",
+                    "Nobody you follow posted in the last two weeks, or their posts haven't reached your vault yet.")
+        case .underrated:
+            return ("binoculars", "Nothing underrated yet",
+                    "Underrated needs a few people in your web liking, reposting or zapping notes. Check back later.")
+        default:
+            return ("chart.line.uptrend.xyaxis", String(localized: "feed.empty.popular.title"),
+                    String(localized: "feed.empty.popular.subtitle"))
+        }
+    }
+
     var emptyPopularStateView: some View {
         VStack(spacing: 40) {
             VStack(spacing: 16) {
-                Image(systemName: "chart.line.uptrend.xyaxis")
+                Image(systemName: dvmEmptyText.icon)
                     .font(.appSystem(size: 56, weight: .thin))
                     .foregroundStyle(
                         LinearGradient(
@@ -211,11 +226,11 @@ extension FeedView {
                     )
 
                 VStack(spacing: 12) {
-                    Text(String(localized: "feed.empty.popular.title"))
+                    Text(dvmEmptyText.title)
                         .font(.appSystem(size: 22, weight: .bold, design: .default))
                         .tracking(0.2)
 
-                    Text(String(localized: "feed.empty.popular.subtitle"))
+                    Text(dvmEmptyText.subtitle)
                         .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
                         .foregroundColor(.secondary)
                         .tracking(0.3)

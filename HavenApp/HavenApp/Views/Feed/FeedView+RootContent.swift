@@ -44,13 +44,13 @@ extension FeedView {
                     loadingContactsView
                 } else if feedService.feedMode == .discovery && feedService.isLoadingExtendedNetwork && feedService.notes.isEmpty {
                     loadingExtendedNetworkView
-                } else if feedService.feedMode == .popular && feedService.isLoadingPopular && feedService.notes.isEmpty {
+                } else if feedService.feedMode.isLocalDvm && feedService.isLoadingLocalDvm && feedService.notes.isEmpty {
                     loadingPopularView
                 } else if showEmptyState {
                     emptyStateView
                 } else if feedService.feedMode == .discovery && feedService.extendedNetworkPubkeys.isEmpty && !feedService.isLoadingFeed && !feedService.isLoadingExtendedNetwork {
                     emptyDiscoveryStateView
-                } else if feedService.feedMode == .popular && feedService.filteredNotes.isEmpty && !feedService.isLoadingFeed && !feedService.isLoadingPopular {
+                } else if feedService.feedMode.isLocalDvm && feedService.filteredNotes.isEmpty && !feedService.isLoadingFeed && !feedService.isLoadingLocalDvm {
                     emptyPopularStateView
                 } else {
                     feedList

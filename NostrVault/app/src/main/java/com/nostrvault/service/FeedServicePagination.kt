@@ -15,10 +15,10 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
     fun FeedService.loadMore() {
         // In-flight guard: scroll-triggered, so without this it re-fires on every
         // bottom-reach and leaks a client + collector per relay each time.
-        // Popular is a fixed ranked set: an older page would add unscored
+        // Popular, Catch Up and Underrated are fixed scored sets: an older page would add unscored
         // notes under it. Feeds with their own service have no timeline page.
         val mode = _feedMode.value
-        if (mode == FeedMode.POPULAR || mode in OWN_SERVICE_MODES) return
+        if (mode.isLocalDvm || mode in OWN_SERVICE_MODES) return
         // An author-scoped feed with no authors would page the whole network
         // (the filter just omits `authors`). Same guards as the live REQ.
         if (mode == FeedMode.DISCOVERY && _extendedNetworkPubkeys.value.isEmpty()) return

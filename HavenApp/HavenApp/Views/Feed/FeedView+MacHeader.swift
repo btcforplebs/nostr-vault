@@ -229,7 +229,7 @@ extension FeedView {
                 .help(configService.config.showReposts ? String(localized: "feed.help.hideReposts") : String(localized: "feed.help.showReposts"))
 
                 // Replies toggle (Global never shows replies)
-                if feedService.feedMode != .global {
+                if feedService.feedMode != .global && !feedService.feedMode.isLocalDvm {
                     Button(action: { configService.config.showReplies.toggle(); configService.save(); feedService.recomputeFilteredNotes() }) {
                         Image(systemName: configService.config.showReplies ? "message.fill" : "message")
                             .font(.appSystem(size: 15, weight: .semibold))

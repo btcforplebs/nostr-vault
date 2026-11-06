@@ -21,11 +21,12 @@ class NewInstallFeedLayoutTest {
     @Test
     fun `a new install opens the timeline feeds threaded`() {
         val fresh = HavenConfig.newInstall()
-        for (mode in listOf(FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.HASHTAGS, FeedMode.POPULAR)) {
+        for (mode in listOf(FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.HASHTAGS, FeedMode.POPULAR,
+            FeedMode.CATCH_UP, FeedMode.UNDERRATED)) {
             assertEquals(mode.name, FeedLayoutMode.THREADED, layout(fresh, mode))
         }
-        // Only those five: the media and article feeds keep their own layouts.
-        assertEquals(5, fresh.feedLayoutModes.size)
+        // Only those seven: the media and article feeds keep their own layouts.
+        assertEquals(7, fresh.feedLayoutModes.size)
     }
 
     @Test

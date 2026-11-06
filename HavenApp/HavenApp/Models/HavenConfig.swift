@@ -49,7 +49,7 @@ struct HavenConfig: Codable, Equatable {
     /// 2026-10-08). Saved configs keep their own, including older ones
     /// without this key (see `init(from:)`).
     var feedLayoutModes: [String: String] = Dictionary(uniqueKeysWithValues:
-        ["Following", "Discovery", "Global", "Hashtags", "Popular"].map { ($0, "threaded") })
+        ["Following", "Discovery", "Global", "Hashtags", "Popular", "Catch Up", "Underrated"].map { ($0, "threaded") })
     var defaultReactionEmoji: String = "❤️" // Default emoji for quick reactions
     var appIcon: String = "Default" // Selected app icon name
     var zapsOnlyMode: Bool = false // When true, likes/reactions are removed from the UI entirely; zaps become the primary engagement + notification signal

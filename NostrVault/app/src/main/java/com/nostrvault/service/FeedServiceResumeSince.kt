@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import com.nostrvault.data.model.FeedMode
+import com.nostrvault.data.model.isLocalDvm
 import com.nostrvault.data.model.NIP88Poll
 import kotlinx.coroutines.launch
 
@@ -104,7 +105,7 @@ internal fun FeedService.notePrimaryRelayFailed(relayUrl: String) {
 
 private fun FeedService.markRoundIfComplete() {
     val mode = _feedMode.value
-    if (!FeedModeCaches.usesNotePipeline(mode) || mode == FeedMode.POPULAR) return
+    if (!FeedModeCaches.usesNotePipeline(mode) || mode.isLocalDvm) return
     if (FeedResumeSince.roundComplete(roundRelays, roundEoseRelays, roundFailedRelays)) {
         feedNotesKey = currentFeedNotesKey()
         // A relay that failed this round missed what came since: it asks wide next time.

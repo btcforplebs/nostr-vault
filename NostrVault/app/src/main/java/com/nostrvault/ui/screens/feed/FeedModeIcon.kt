@@ -30,6 +30,8 @@ internal val FeedMode.icon: ImageVector
         FeedMode.DISCOVERY -> NostrVaultIcons.Discover
         FeedMode.GLOBAL -> NostrVaultIcons.Globe
         FeedMode.POPULAR -> NostrVaultIcons.Popular
+        FeedMode.CATCH_UP -> NostrVaultIcons.CatchUp
+        FeedMode.UNDERRATED -> NostrVaultIcons.Underrated
         FeedMode.MEDIA -> NostrVaultIcons.Media
         FeedMode.REELS -> NostrVaultIcons.Reels
         FeedMode.ARTICLES -> NostrVaultIcons.Articles

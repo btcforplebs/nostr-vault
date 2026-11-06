@@ -257,7 +257,7 @@ extension FeedView {
                 }
                 // Global never shows replies (FeedFilterEngine), so the
                 // toggle would do nothing there.
-                if feedService.feedMode != .global {
+                if feedService.feedMode != .global && !feedService.feedMode.isLocalDvm {
                     IconFilterButton(icon: configService.config.showReplies ? "message.fill" : "message", tooltip: "Replies", isSelected: configService.config.showReplies, color: .havenPurple) {
                         configService.config.showReplies.toggle()
                         configService.save()

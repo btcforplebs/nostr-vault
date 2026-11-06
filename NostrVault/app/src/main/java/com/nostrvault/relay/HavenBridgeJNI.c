@@ -99,6 +99,8 @@ extern void NIP46DropC(const char* signerPubkey);
 extern char* NIP46SignEventWithC(const char* signerPubkey, const char* eventJSON);
 extern char* NIP46AwaitNostrConnectC(const char* clientSK, const char* relaysJSON, const char* secret, long long since, int waitSeconds);
 extern char* ComputePopularNotesC(void);
+extern char* ComputeCatchUpNotesC(char* follows);
+extern char* ComputeUnderratedNotesC(void);
 extern char* GetFollowersC(const char* owner);
 extern int RefreshWotC(void);
 extern char* WotRefreshProgressC(void);
@@ -552,6 +554,20 @@ Java_com_nostrvault_relay_HavenBridge_nip46GetPendingAuthUrl(JNIEnv *env, jobjec
 JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_computePopularNotes(JNIEnv *env, jobject thiz) {
     return goStringToJstring(env, ComputePopularNotesC());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_computeCatchUpNotes(JNIEnv *env, jobject thiz, jstring followsJson) {
+    const char *cFollows = GET_CSTR(env, followsJson);
+    if (cFollows == NULL) return NULL;
+    char *result = ComputeCatchUpNotesC((char*)cFollows);
+    REL_CSTR(env, followsJson, cFollows);
+    return goStringToJstring(env, result);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_computeUnderratedNotes(JNIEnv *env, jobject thiz) {
+    return goStringToJstring(env, ComputeUnderratedNotesC());
 }
 
 // ---- Web of trust rebuild ----

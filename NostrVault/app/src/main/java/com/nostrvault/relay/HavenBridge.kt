@@ -315,6 +315,15 @@ object HavenBridge {
     /** Compute popular notes from the local relay. Returns JSON array. */
     external fun computePopularNotes(): String?
 
+    /**
+     * Catch Up: the newest post of each person in [followsJson] (a JSON array
+     * of hex pubkeys), newest first. Same JSON as [computePopularNotes].
+     */
+    external fun computeCatchUpNotes(followsJson: String): String?
+
+    /** Underrated: Popular turned over. Same JSON as [computePopularNotes]. */
+    external fun computeUnderratedNotes(): String?
+
     // -----------------------------------------------------------------------
     // Web of trust rebuild
     // -----------------------------------------------------------------------

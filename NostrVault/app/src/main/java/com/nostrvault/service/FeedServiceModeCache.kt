@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import com.nostrvault.data.model.FeedMode
+import com.nostrvault.data.model.isLocalDvm
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.NoteStats
 import kotlin.concurrent.withLock
@@ -89,7 +90,7 @@ internal class FeedModeCaches(private val now: () -> Long = System::currentTimeM
         /** Feeds whose notes come through FeedService's own note list. */
         fun usesNotePipeline(mode: FeedMode): Boolean = when (mode) {
             FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR,
-            FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.POLLS -> true
+            FeedMode.CATCH_UP, FeedMode.UNDERRATED, FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.POLLS -> true
             else -> false
         }
 
@@ -126,8 +127,8 @@ internal fun FeedService.captureModeCache(mode: FeedMode) {
     // still the previous account's: never file it (or save it) under this one.
     if (!FeedModeCaches.ownsNotes(notesAccount, nostrService.activeHexPubkey)) return
     if (notesAccount == null) notesAccount = nostrService.activeHexPubkey
-    // Until its result lands, Popular is showing the previous feed's notes.
-    if (mode == FeedMode.POPULAR && (_isLoadingPopular.value || _popularNoteScores.value.isEmpty())) return
+    // Until its result lands, a local DVM feed is showing the previous feed's notes.
+    if (mode.isLocalDvm && (mode in localDvmLoading || _popularNoteScores.value.isEmpty())) return
     val kept = FeedModeCaches.notesToKeep(_filteredNotes.value, _pendingNotes.value, _notes.value)
     val ids = kept.mapTo(HashSet()) { it.id }
     val key = modeCacheKey(mode)
@@ -176,8 +177,8 @@ internal fun FeedService.restoreModeCache(mode: FeedMode): Long? {
  * Popular on a switch: a result under five minutes old is shown as it was;
  * anything older (or none) is computed again.
  */
-internal fun FeedService.showCachedPopularOrLoad(cachedAgeMs: Long?) {
-    if (cachedAgeMs == null || cachedAgeMs >= FeedModeCaches.POPULAR_FRESH_MS) return loadPopularFeed()
-    _isLoadingPopular.value = false
-    _connectionStatus.value = "Popular"
+internal fun FeedService.showCachedLocalDvmOrLoad(mode: FeedMode, cachedAgeMs: Long?) {
+    if (cachedAgeMs == null || cachedAgeMs >= FeedModeCaches.POPULAR_FRESH_MS) return loadLocalDvmFeed(mode)
+    if (mode == FeedMode.POPULAR) _isLoadingPopular.value = false
+    _connectionStatus.value = mode.displayName
 }

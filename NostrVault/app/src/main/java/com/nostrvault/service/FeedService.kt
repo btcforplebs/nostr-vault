@@ -318,6 +318,8 @@ class FeedService @Inject constructor(
 
     internal val _isLoadingPopular = MutableStateFlow(false)
     val isLoadingPopular: StateFlow<Boolean> = _isLoadingPopular.asStateFlow()
+    /** Local DVM feeds being computed now (FeedServiceLocalDvmFeeds.kt), one at a time each. */
+    internal val localDvmLoading: MutableSet<FeedMode> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     internal val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()

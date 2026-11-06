@@ -307,6 +307,8 @@ internal fun FeedTopBar(
                         )
                     }
                 }
+                // The relay picks these; there is nothing to scope.
+                FeedMode.CATCH_UP, FeedMode.UNDERRATED -> Unit
             } } }
         } }
     }

@@ -34,7 +34,7 @@ internal data class DiskModeCache(
  * One file per account and feed, in the app's support directory.
  */
 internal object FeedModeCacheDisk {
-    val MODES = setOf(FeedMode.DISCOVERY, FeedMode.POPULAR)
+    val MODES = setOf(FeedMode.DISCOVERY, FeedMode.POPULAR, FeedMode.CATCH_UP, FeedMode.UNDERRATED)
 
     /** [cacheKey] is [modeCacheKey]: account hex + feed name. */
     fun fileName(cacheKey: String): String =

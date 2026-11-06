@@ -503,6 +503,7 @@
 		402C9DDE13F31D1BE6B424EC /* PullDownToClose.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3A5E48B6B5A7D86DDF84F92 /* PullDownToClose.swift */; };
 		405BE8FAC5DE89B9AC15D061 /* LocalRelaySearchPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A847D1496121BC4956AAF6 /* LocalRelaySearchPlan.swift */; };
 		4074CDCD57B2B928CD471236 /* FeedService+InteractionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8296ED91C5A2F87876E23F0B /* FeedService+InteractionState.swift */; };
+		4094FA77821C005E04F82052 /* LocalDvmFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4428B268F51253A9AF4B8BC /* LocalDvmFeed.swift */; };
 		409BA6B19B2FD431E734C387 /* RelayProcessManager+Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B83064688F922769785D5B /* RelayProcessManager+Config.swift */; };
 		40E0AD8F7C51942A0382F52C /* LiveChatAttachMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 220CCFE2E1EB4539CE6C22C4 /* LiveChatAttachMenu.swift */; };
 		4103D3EF38F088EB79B4F109 /* TrustWebView+Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7D56F5AAF9F6D61DDAF4893 /* TrustWebView+Search.swift */; };
@@ -1021,6 +1022,7 @@
 		82494B87098AEB93C4C03BD4 /* FeedNoteRow+Reactions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D3A3A057633F264653666C6 /* FeedNoteRow+Reactions.swift */; };
 		8260BA8E12D59DEA80D7BDDC /* ProfileEngagementStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD292CB3880A2292BE462A49 /* ProfileEngagementStore.swift */; };
 		827E7E7D78E6E20C3D3FB71B /* CopySaving.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B372B39BC49ABA2ADD10179 /* CopySaving.swift */; };
+		827F2C54843628C6F2B7632A /* FeedService+LocalDvmCompute.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF228055650A32D74D622D04 /* FeedService+LocalDvmCompute.swift */; };
 		82B5D5B73A709BBABC6948C7 /* RelayProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105E5C471F2CCABE27A5E705 /* RelayProbe.swift */; };
 		82BAC1127023B84798FABA5E /* PairDeviceFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457AD0407508E0995D0FFCF7 /* PairDeviceFlow.swift */; };
 		82C225B813963E491616A762 /* ProfileEngagementStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD292CB3880A2292BE462A49 /* ProfileEngagementStore.swift */; };
@@ -1273,6 +1275,7 @@
 		A277F29437010D00F31D4E43 /* PinFeedModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F140B3EDEE3D455A5CAD2705 /* PinFeedModel.swift */; };
 		A2BDA7184F6C475C10571D12 /* ShareModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 886A3A64328DE20446BEB1C1 /* ShareModel.swift */; };
 		A2D15394E4128DAA496E409C /* SearchRecommendations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A45C528A229C534E4FCA016 /* SearchRecommendations.swift */; };
+		A2ED0D1A2C8B3B36A7C14DFB /* FeedService+LocalDvmCompute.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF228055650A32D74D622D04 /* FeedService+LocalDvmCompute.swift */; };
 		A3258A0341853E49D016C521 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7B2365D506330BA6CF87F8 /* AppearanceSettingsView.swift */; };
 		A32BE09A005360A1730BB3D1 /* FeedVideoShape.swift in Sources */ = {isa = PBXBuildFile; fileRef = A65E47EAB300A4D76EE4F262 /* FeedVideoShape.swift */; };
 		A34E77F17D236644D0ECA522 /* ZapNotificationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDAD290D5323C4E69E647941 /* ZapNotificationBanner.swift */; };
@@ -1738,6 +1741,7 @@
 		DA455878A98B3172DC89DA14 /* TrustGlobeCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCE61C621EC79CB4E00F63F9 /* TrustGlobeCanvas.swift */; };
 		DA4D22419FAD927F58025331 /* FilterButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE65F95458326DF0C43FCEAC /* FilterButton.swift */; };
 		DACEFF32366C05635FF82E03 /* NIP46Error.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BCE06AC36BF540013C789B2 /* NIP46Error.swift */; };
+		DAD434A8DBB5F7874CA96C82 /* LocalDvmFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4428B268F51253A9AF4B8BC /* LocalDvmFeed.swift */; };
 		DADD47CE66A0FE71FD19A897 /* MacFipsMeshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD5FA4141163EFF726CBBBD1 /* MacFipsMeshService.swift */; };
 		DAE4A7A278DB13A04F024920 /* ImportedVideoFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A623FB39DA0A3C42E9249A /* ImportedVideoFile.swift */; };
 		DAF441B097E15C8F2407E352 /* EmojiPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = B217E0E9F1229BFCC97EF224 /* EmojiPalette.swift */; };
@@ -2843,6 +2847,7 @@
 		AECCABC32A83B0C40919AAF8 /* YourDevicesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YourDevicesSection.swift; sourceTree = "<group>"; };
 		AECE3C16F322D12D0CC02FC1 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		AEFACBF119702896AC43B502 /* BookmarkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkService.swift; sourceTree = "<group>"; };
+		AF228055650A32D74D622D04 /* FeedService+LocalDvmCompute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+LocalDvmCompute.swift"; sourceTree = "<group>"; };
 		B0600FF30DDEB5242A8FB1E0 /* NostrService+EventQueries.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+EventQueries.swift"; sourceTree = "<group>"; };
 		B073EAAE5544A4F65885E897 /* CopySavingProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopySavingProgress.swift; sourceTree = "<group>"; };
 		B082AB61C72D6EF9CCFD625B /* PushNotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationSettingsView.swift; sourceTree = "<group>"; };
@@ -2985,6 +2990,7 @@
 		D39BB3DA1D948E689E12C3E3 /* CaretFollower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaretFollower.swift; sourceTree = "<group>"; };
 		D3B410605BF99F9DAB06729E /* OnThisDay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnThisDay.swift; sourceTree = "<group>"; };
 		D402A79FB4D7F03B9F67E1D2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		D4428B268F51253A9AF4B8BC /* LocalDvmFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalDvmFeed.swift; sourceTree = "<group>"; };
 		D4548E4FDB56EC1AA7CE1EDB /* BookmarksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarksView.swift; sourceTree = "<group>"; };
 		D49413971796142180D204C0 /* DMCatchUp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMCatchUp.swift; sourceTree = "<group>"; };
 		D4FBCB45EE5F7F14C5CCFF74 /* DMService+MessageProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+MessageProcessing.swift"; sourceTree = "<group>"; };
@@ -3901,6 +3907,7 @@
 				B57F2BA06072B2B23E26A0A8 /* FeedService+FollowMany.swift */,
 				8296ED91C5A2F87876E23F0B /* FeedService+InteractionState.swift */,
 				332F03725477EEBFD25F9939 /* FeedService+Lifecycle.swift */,
+				AF228055650A32D74D622D04 /* FeedService+LocalDvmCompute.swift */,
 				5101A381AFB18BEE714448F1 /* FeedService+LocalRelayInjection.swift */,
 				1A2AB34DA20A23140E417E72 /* FeedService+ModeCache.swift */,
 				0DCC058D0D2E82973E7CFE31 /* FeedService+NoteBatching.swift */,
@@ -4188,6 +4195,7 @@
 				8181D15CA118AFF70A6E02A0 /* LiveStatusBook.swift */,
 				F3288F6282FAD679EE8536D2 /* LiveStreamShare.swift */,
 				A61A8FEF30B0D5D1A39FF6D6 /* LiveVault.swift */,
+				D4428B268F51253A9AF4B8BC /* LocalDvmFeed.swift */,
 				71A847D1496121BC4956AAF6 /* LocalRelaySearchPlan.swift */,
 				C40FE00243820A6D15633BB8 /* LocalTLSPolicy.swift */,
 				A1E97DE0A79D54F91CAE7557 /* LockedKeyExport.swift */,
@@ -5304,6 +5312,7 @@
 				8D844A007271DC4179A287D5 /* FeedService+FollowMany.swift in Sources */,
 				4074CDCD57B2B928CD471236 /* FeedService+InteractionState.swift in Sources */,
 				B2A9C3976DF6EB497C3B67A7 /* FeedService+Lifecycle.swift in Sources */,
+				827F2C54843628C6F2B7632A /* FeedService+LocalDvmCompute.swift in Sources */,
 				A35A3AD1BE0BE23D09D06739 /* FeedService+LocalRelayInjection.swift in Sources */,
 				48BEF392D82E25D1E15AA36C /* FeedService+ModeCache.swift in Sources */,
 				C0A88A1192D0E3D0770B605B /* FeedService+NoteBatching.swift in Sources */,
@@ -5499,6 +5508,7 @@
 				1E3DDE06240C163C9491FCCF /* LiveVault.swift in Sources */,
 				983E81479BB7A8A339A8C2B0 /* LiveVaultModel.swift in Sources */,
 				F9BE9B075BD53AF97F7C2890 /* LiveVaultPanel.swift in Sources */,
+				DAD434A8DBB5F7874CA96C82 /* LocalDvmFeed.swift in Sources */,
 				BF0FF285EA8FB3D2B0301224 /* LocalNetworkPermission.swift in Sources */,
 				D3B2E30CFADDB68B4ADAA39A /* LocalNotificationService+Readiness.swift in Sources */,
 				D99028853E74DA3CE76AE9B7 /* LocalNotificationService.swift in Sources */,
@@ -6342,6 +6352,7 @@
 				9AA39A88C11C8452772610DA /* FeedService+FollowMany.swift in Sources */,
 				5CE31AC90EAD6AF82BDF4EEC /* FeedService+InteractionState.swift in Sources */,
 				32DF0A4A4B9E0DFE32F94675 /* FeedService+Lifecycle.swift in Sources */,
+				A2ED0D1A2C8B3B36A7C14DFB /* FeedService+LocalDvmCompute.swift in Sources */,
 				8FB4AC11983C87F32165B037 /* FeedService+LocalRelayInjection.swift in Sources */,
 				09EAA8A64F1AD51552012B79 /* FeedService+ModeCache.swift in Sources */,
 				7BA99BC18B894F8193CB8130 /* FeedService+NoteBatching.swift in Sources */,
@@ -6534,6 +6545,7 @@
 				CF9EA6FA08DCD4924763295A /* LiveStreamShare.swift in Sources */,
 				98D91BFE3A7953892B6BA982 /* LiveTrustPath.swift in Sources */,
 				5DDCFC3DDD88D12EFD97E9E4 /* LiveVault.swift in Sources */,
+				4094FA77821C005E04F82052 /* LocalDvmFeed.swift in Sources */,
 				8FADA0354E5907D4829F7FC1 /* LocalNetworkPermission.swift in Sources */,
 				DB7034BD78D0E1495B92E71D /* LocalNotificationService+Readiness.swift in Sources */,
 				417A5B57E5552977F48B6B23 /* LocalNotificationService.swift in Sources */,

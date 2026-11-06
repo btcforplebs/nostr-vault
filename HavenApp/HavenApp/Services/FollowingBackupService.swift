@@ -122,6 +122,14 @@ class FollowingBackupService: ObservableObject {
         return snapshots.last?.contactListCreatedAt ?? 0
     }
 
+    /// The follow set of an account's most recent backup, [] if none.
+    func latestPubkeys(forAccountKey key: String) -> [String] {
+        if loadedAccountKey != key {
+            loadSnapshots(forAccountKey: key)
+        }
+        return snapshots.last?.pubkeys ?? []
+    }
+
     func deleteSnapshot(id: UUID, forAccountKey key: String) {
         snapshots.removeAll { $0.id == id }
         saveSnapshots(forAccountKey: key)

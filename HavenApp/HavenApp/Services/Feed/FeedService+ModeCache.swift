@@ -17,7 +17,7 @@ extension FeedService {
     /// Feeds whose notes come through this service's own pipeline.
     static func usesNotePipeline(_ mode: FeedMode) -> Bool {
         switch mode {
-        case .following, .discovery, .global, .popular, .media, .articles, .polls: return true
+        case .following, .discovery, .global, .popular, .catchUp, .underrated, .media, .articles, .polls: return true
         default: return false
         }
     }
@@ -48,14 +48,15 @@ extension FeedService {
         saveDiskModeCache(cache, mode: mode)
     }
 
-    /// A Popular ranking that finished after you left Popular: filed as
-    /// Popular's cache (memory and disk) so the next visit shows it at once.
-    func storePopularResult(_ ranked: [FeedNote], scores: [String: Double]) {
+    /// A local DVM result (Popular, Catch Up, Underrated) that finished
+    /// after you left its feed: filed as that feed's cache (memory and
+    /// disk) so the next visit shows it at once.
+    func storeDvmResult(_ ranked: [FeedNote], scores: [String: Double], mode: FeedMode) {
         guard !ranked.isEmpty else { return }
         let cache = ModeFeedCache(notes: ranked, parentNotesCache: [:], noteStats: [:],
                                   popularNoteScores: scores, capturedAt: Date())
-        modeCaches[modeCacheKey(.popular)] = cache
-        saveDiskModeCache(cache, mode: .popular)
+        modeCaches[modeCacheKey(mode)] = cache
+        saveDiskModeCache(cache, mode: mode)
     }
 
     /// Puts a cached feed back on screen. Returns its age, or nil if there was
