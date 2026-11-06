@@ -868,6 +868,7 @@
 		7074C757D82E2F1DA9B77D5C /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B28025DEECA1DBE5C1594358 /* FeedView.swift */; };
 		709993BB5445AD866D371C58 /* LiveNowModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 083AB9E96216A0440D26D501 /* LiveNowModel.swift */; };
 		70C09988B3009E817EE8EC43 /* MediaShareLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70378B160E275AD7443C4260 /* MediaShareLink.swift */; };
+		70F40C95D99C3DCCA40CF66F /* DMVideoAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A7402147FAE2D5DA87D95EF /* DMVideoAttachment.swift */; };
 		711BFD75450E7D351ACB2690 /* ProfileActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBFCD52C53864BA74263D0E7 /* ProfileActions.swift */; };
 		71482801ED1C62712D8736A2 /* ReferralSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C696946159C30CCFD23453 /* ReferralSuggestions.swift */; };
 		7163FB1988CB43D66D24F454 /* CopySettingsSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DCCD11C9E97C032F2BD1FA /* CopySettingsSync.swift */; };
@@ -1437,6 +1438,7 @@
 		B386724A8940928483234E37 /* NewToVaultStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FC6197FC5445D1791E20673 /* NewToVaultStep.swift */; };
 		B3A065D965688DBC83174179 /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC33568A91E5B5B737A03D1F /* FeedService.swift */; };
 		B3C732E56C5484EA9CAF99BF /* MediaPostShareHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8AA58D6F5990BE4F751953 /* MediaPostShareHandler.swift */; };
+		B3FD24BC9B33881B24479DAD /* DMVideoAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A7402147FAE2D5DA87D95EF /* DMVideoAttachment.swift */; };
 		B40BA85ED93F41D32CE93858 /* NoteDeletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DDDBB29FDB253D22C3F8452 /* NoteDeletion.swift */; };
 		B440F78F5E6A93EEB6E6756D /* ListHistoryScanStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56BD3061693CB7921DAB3A13 /* ListHistoryScanStatus.swift */; };
 		B4458685AE82CBDC247405F4 /* SignerWaitGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66050958913C4DFE7CAABBA /* SignerWaitGate.swift */; };
@@ -2537,6 +2539,7 @@
 		69FCE89FDCC4D758B3B2AE81 /* NVShareIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVShareIntent.swift; sourceTree = "<group>"; };
 		6A63F6F2329E7E843153FEFD /* MediaPostReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPostReviewView.swift; sourceTree = "<group>"; };
 		6A66B764FCF1CB44F6DBFBEB /* GatedArticle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatedArticle.swift; sourceTree = "<group>"; };
+		6A7402147FAE2D5DA87D95EF /* DMVideoAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMVideoAttachment.swift; sourceTree = "<group>"; };
 		6A7A3CF8810AB625AAA69F06 /* PrivateCopyRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivateCopyRecord.swift; sourceTree = "<group>"; };
 		6AA56C80CEA5467926CDEEA4 /* RecipeShareHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeShareHandler.swift; sourceTree = "<group>"; };
 		6AB6A0B4CA70E65B86DCFB31 /* VaultDashboardComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultDashboardComponents.swift; sourceTree = "<group>"; };
@@ -3364,6 +3367,7 @@
 			children = (
 				8CB9E79782AB55A41F57E213 /* DMRequestsButton.swift */,
 				0FCAB2E176636514B4B09244 /* DMSearchResultsList.swift */,
+				6A7402147FAE2D5DA87D95EF /* DMVideoAttachment.swift */,
 			);
 			path = DM;
 			sourceTree = "<group>";
@@ -5237,6 +5241,7 @@
 				15393DD23237B42966817286 /* DMThreadView.swift in Sources */,
 				734590DDC74F5F7DB7A12EFD /* DMTrust.swift in Sources */,
 				22D217B1EDF268AA149F3B7C /* DMUnreadRule.swift in Sources */,
+				B3FD24BC9B33881B24479DAD /* DMVideoAttachment.swift in Sources */,
 				82260876404FFEC615922E6E /* DashboardBreakdowns.swift in Sources */,
 				7E1A5CA08F04AA8FA6158758 /* DashboardHelpers.swift in Sources */,
 				5C0106F4FB0A43FACA00A017 /* DashboardListBackupsRow.swift in Sources */,
@@ -6280,6 +6285,7 @@
 				19BDF752BAF456473D9AD1D9 /* DMThreadView.swift in Sources */,
 				08C9F56AA4BB111B5D79DE34 /* DMTrust.swift in Sources */,
 				6E3DEFFBF2246912BC1DF181 /* DMUnreadRule.swift in Sources */,
+				70F40C95D99C3DCCA40CF66F /* DMVideoAttachment.swift in Sources */,
 				C31925F3587C9BC08C895DFA /* DashboardBreakdowns.swift in Sources */,
 				4E6FA86296F8D1B4C7144D4D /* DashboardHelpers.swift in Sources */,
 				9AB8195BB914D1809DA0A078 /* DashboardListBackupsRow.swift in Sources */,

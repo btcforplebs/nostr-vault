@@ -52,4 +52,33 @@ class DMAttachmentTest {
         val text = "  two\n\nlines  "
         assertEquals(text, DMAttachment.split(text).text)
     }
+
+    // Videos (Logen 2026-11-06), as iOS DMAttachmentTests.
+    private val clip = "https://blossom.primal.net/0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9.mp4"
+
+    @Test fun sentVideoSplitsBackIntoTextAndVideo() {
+        val split = DMAttachment.split("watch\n$clip", withVideos = true)
+        assertEquals("watch", split.text)
+        assertEquals(listOf(clip), split.videos)
+        assertEquals(emptyList<String>(), split.images)
+    }
+
+    @Test fun photosAndVideosBothShowOnce() {
+        val split = DMAttachment.split("$photo\n$clip\n$clip", withVideos = true)
+        assertEquals("", split.text)
+        assertEquals(listOf(photo), split.images)
+        assertEquals(listOf(clip), split.videos)
+    }
+
+    @Test fun videoLinksStayTextUnlessAsked() {
+        val split = DMAttachment.split(clip)
+        assertEquals(clip, split.text)
+        assertEquals(emptyList<String>(), split.videos)
+    }
+
+    @Test fun videoLinkAddsTheExtensionOnlyWhenMissing() {
+        assertEquals("https://cdn.example.com/abc123.mov", DMAttachment.videoLink("https://cdn.example.com/abc123", "mov"))
+        assertEquals(clip, DMAttachment.videoLink(clip, "mov"))
+        assertEquals("https://cdn.example.com/abc123", DMAttachment.videoLink("https://cdn.example.com/abc123", ""))
+    }
 }

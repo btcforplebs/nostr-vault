@@ -28,13 +28,15 @@ struct DMThreadView: View {
     @Namespace private var mediaZoom
     @Environment(\.dismiss) private var dismiss
 
-    /// A photo waiting to go out with the next message. GIFs keep their bytes
-    /// so they still move; everything else is re-encoded as a JPEG, which also
-    /// drops the location the camera wrote into it.
+    /// A photo or video waiting to go out with the next message. GIFs keep
+    /// their bytes so they still move; other photos are re-encoded as a JPEG,
+    /// which also drops the location the camera wrote into it. A video stays
+    /// a file on disk (`video`), and the upload strips its location.
     private struct PickedAttachment {
-        let data: Data
+        var data = Data()
         let mimeType: String
         let preview: Image?
+        var video: DMVideoAttachment?
     }
 
     private var canSend: Bool {
@@ -157,9 +159,16 @@ struct DMThreadView: View {
                                 }
                                 .frame(width: 64, height: 64)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .overlay {
+                                    if attachment.video != nil {
+                                        Image(systemName: "play.circle.fill")
+                                            .font(.appSystem(size: 22))
+                                            .foregroundStyle(.white, .black.opacity(0.4))
+                                    }
+                                }
 
                                 Button {
-                                    self.attachment = nil
+                                    discardAttachment()
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .font(.appSystem(size: 18))
@@ -168,7 +177,7 @@ struct DMThreadView: View {
                                 .buttonStyle(.plain)
                                 .padding(3)
                                 .disabled(isSending)
-                                .accessibilityLabel("Remove photo")
+                                .accessibilityLabel(attachment.video == nil ? "Remove photo" : "Remove video")
                             }
                             Spacer()
                         }
@@ -178,7 +187,8 @@ struct DMThreadView: View {
 
                     // Message input
                     HStack(alignment: .bottom, spacing: 10) {
-                        PhotosPicker(selection: $pickedPhotoItem, matching: .images) {
+                        // Photos and videos from one button (Logen 2026-11-06).
+                        PhotosPicker(selection: $pickedPhotoItem, matching: .any(of: [.images, .videos])) {
                             Image(systemName: "photo")
                                 .font(.appSystem(size: 17, weight: .medium))
                                 .foregroundColor(.havenPurple)
@@ -186,7 +196,7 @@ struct DMThreadView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(isSending)
-                        .accessibilityLabel("Attach photo")
+                        .accessibilityLabel("Attach photo or video")
                         #if os(iOS)
                         // A photo copied in another app, without a keyboard for ⌘V:
                         // press and hold (or right-click) the photo button.
@@ -247,9 +257,9 @@ struct DMThreadView: View {
                 #endif
             }
             .background(Color.platformWindowBackground.ignoresSafeArea())
-            // A photo dragged in from Photos, Files or Safari goes out with the
-            // next message, the same as one picked with the photo button.
-            .onDrop(of: [.image], isTargeted: $isDropTargeted) { providers in
+            // A photo or video dragged in from Photos, Files or Safari goes out
+            // with the next message, the same as one picked with the button.
+            .onDrop(of: DroppedMedia.acceptedTypes, isTargeted: $isDropTargeted) { providers in
                 guard !isSending, let provider = providers.first else { return false }
                 Task { await attachDropped(provider) }
                 return true
@@ -342,6 +352,14 @@ struct DMThreadView: View {
     }
 
     private func attachPhoto(_ item: PhotosPickerItem) async {
+        if DMVideoAttachment.isVideo(item) {
+            guard let video = await DMVideoAttachment.load(item) else {
+                sendError = "Couldn't read that video."
+                return
+            }
+            await attachVideo(video)
+            return
+        }
         guard let data = try? await item.loadTransferable(type: Data.self) else {
             sendError = "Couldn't read that photo."
             return
@@ -351,11 +369,28 @@ struct DMThreadView: View {
 
     @MainActor
     private func attachDropped(_ provider: NSItemProvider) async {
-        guard case .image(let data, let type)? = await DroppedMedia.load(provider, acceptingVideo: false) else {
-            sendError = "Couldn't read that photo."
-            return
+        switch await DroppedMedia.load(provider, acceptingVideo: true) {
+        case .image(let data, let type)?:
+            prepareAttachment(data, isGIF: type.conforms(to: .gif))
+        case .video(let file, let type)?:
+            await attachVideo(DMVideoAttachment(file: file, type: type))
+        case nil:
+            sendError = "Couldn't read that photo or video."
         }
-        prepareAttachment(data, isGIF: type.conforms(to: .gif))
+    }
+
+    @MainActor
+    private func attachVideo(_ video: DMVideoAttachment) async {
+        let poster = await video.poster()
+        discardAttachment()
+        attachment = PickedAttachment(mimeType: video.mimeType, preview: poster, video: video)
+    }
+
+    /// Removes the attachment, and a video's copy on disk with it.
+    @MainActor
+    private func discardAttachment() {
+        attachment?.video?.discard()
+        attachment = nil
     }
 
     private func pasteClipboardImage() {
@@ -383,6 +418,7 @@ struct DMThreadView: View {
             sendError = "Couldn't read that photo."
             return
         }
+        discardAttachment()
         attachment = prepared
     }
 
@@ -418,18 +454,24 @@ struct DMThreadView: View {
 
         Task {
             do {
-                // The photo goes up first: a message that names a URL no
-                // server holds would reach them as a dead link.
-                var photoURL: URL?
-                if let photo {
-                    photoURL = try await ModePostPublisher.upload(
+                // The photo or video goes up first: a message that names a
+                // URL no server holds would reach them as a dead link.
+                var mediaURL: URL?
+                if let video = photo?.video {
+                    let url = try await ModePostPublisher.upload(
+                        fileURL: video.file, mimeType: video.mimeType,
+                        configService: configService, nostrService: nostrService).url
+                    mediaURL = DMAttachment.videoLink(url, extension: video.fileExtension)
+                } else if let photo {
+                    mediaURL = try await ModePostPublisher.upload(
                         data: photo.data, mimeType: photo.mimeType,
                         configService: configService, nostrService: nostrService).url
                 }
-                let content = DMAttachment.content(text: messageToSend, imageURL: photoURL)
+                let content = DMAttachment.content(text: messageToSend, mediaURL: mediaURL)
                 try await dmService.sendDM(content: content, to: counterpartyPubkey, useNIP04: useNIP04)
                 await MainActor.run {
                     isSending = false
+                    photo?.video?.discard()
                 }
             } catch {
                 #if DEBUG
@@ -438,7 +480,7 @@ struct DMThreadView: View {
                 await MainActor.run {
                     isSending = false
                     messageInput = messageToSend
-                    attachment = photo
+                    if attachment == nil { attachment = photo } else { photo?.video?.discard() }
                     sendError = error.localizedDescription
                 }
             }
@@ -456,8 +498,8 @@ struct MessageBubbleView: View {
     /// Opens a photo the message carries; the second argument is all of them.
     var onOpenImage: ((URL, [URL]) -> Void)? = nil
 
-    /// The message's photos, and its text without their links.
-    private var parts: (text: String, images: [URL]) { DMAttachment.split(message.content) }
+    /// The message's photos and videos, and its text without their links.
+    private var parts: (text: String, images: [URL], videos: [URL]) { DMAttachment.split(message.content, withVideos: true) }
 
     private var sentCorners: UnevenRoundedRectangle {
         UnevenRoundedRectangle(
@@ -493,7 +535,7 @@ struct MessageBubbleView: View {
                     let split = parts
                     ForEach(split.images, id: \.absoluteString) { url in
                         Button {
-                            onOpenImage?(url, split.images)
+                            onOpenImage?(url, split.images + split.videos)
                         } label: {
                             RetryableAsyncImage(url: url, contentMode: .fill, targetSize: CGSize(width: 600, height: 600))
                                 .frame(width: min(240, containerWidth * 0.6), height: min(240, containerWidth * 0.6))
@@ -504,8 +546,17 @@ struct MessageBubbleView: View {
                         .mediaZoomSource(url, namespace: mediaZoom)
                         .accessibilityLabel("Photo")
                     }
+                    ForEach(split.videos, id: \.absoluteString) { url in
+                        Button {
+                            onOpenImage?(url, split.images + split.videos)
+                        } label: {
+                            DMVideoTile(size: min(240, containerWidth * 0.6))
+                        }
+                        .buttonStyle(.plain)
+                        .mediaZoomSource(url, namespace: mediaZoom)
+                    }
 
-                    if !split.text.isEmpty || split.images.isEmpty {
+                    if !split.text.isEmpty || (split.images.isEmpty && split.videos.isEmpty) {
                         Text(split.text)
                             .font(.appSystem(size: 15))
                             .foregroundColor(message.isFromMe ? .white : .primary)
