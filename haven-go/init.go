@@ -683,6 +683,7 @@ func initRelays(ctx context.Context) error {
 	})
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(inboxRelay, inboxDB)
+	hideBroughtOnInbox(inboxRelay)
 	inboxRelay.DeleteEvent = append(inboxRelay.DeleteEvent, inboxDB.DeleteEvent)
 	inboxRelay.OverwriteDeletionOutcome = append(inboxRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	inboxRelay.ReplaceEvent = append(inboxRelay.ReplaceEvent, inboxDB.ReplaceEvent)

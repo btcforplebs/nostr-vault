@@ -665,3 +665,107 @@ func TestBroughtOverAccountsAreNeverUploaded(t *testing.T) {
 		t.Fatal("a brought-over account's new note did not come down")
 	}
 }
+
+// writeStoresZip: a backup zip with accounts.json and the given stores.
+func writeStoresZip(t *testing.T, accounts string, stores map[string][]nostr.Event) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "backup.zip")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	w, _ := zw.Create(copyAccountsEntry)
+	_, _ = w.Write([]byte(accounts))
+	for name, evs := range stores {
+		w, _ := zw.Create(name + ".jsonl")
+		for _, ev := range evs {
+			line, _ := json.Marshal(ev)
+			_, _ = w.Write(append(line, '\n'))
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	return path
+}
+
+// The same stranger's zip, inbox and Blossom side (Tron #1808): events
+// tagging the stranger are stored but not served from /inbox to anyone but
+// the vault's own (one tagging the owner too stays visible), and the
+// stranger's blob records are not restored, so /list/<stranger> stays empty.
+func TestStrangerZipInboxAndBlobsAreNotServed(t *testing.T) {
+	me, stranger, alice := newTestKey(t), newTestKey(t), newTestKey(t)
+	openCopyVault(t, me.pk)
+	t.Cleanup(resetLiveAccounts)
+	now := nostr.Now()
+	toStranger := alice.sign(t, nostr.Event{Kind: 1, CreatedAt: now, Content: "hi stranger", Tags: nostr.Tags{{"p", stranger.pk}}})
+	toBoth := alice.sign(t, nostr.Event{Kind: 1, CreatedAt: now, Content: "hi both", Tags: nostr.Tags{{"p", stranger.pk}, {"p", me.pk}}})
+	toMe := alice.sign(t, nostr.Event{Kind: 1, CreatedAt: now, Content: "hi me", Tags: nostr.Tags{{"p", me.pk}}})
+	blob := func(uploader, x string) nostr.Event {
+		ev := nostr.Event{PubKey: uploader, Kind: 24242, CreatedAt: now, Tags: nostr.Tags{{"x", x}, {"type", "image/jpeg"}, {"size", "12"}}}
+		ev.ID = ev.GetID()
+		return ev
+	}
+	strangerBlob, myBlob := blob(stranger.pk, strings.Repeat("ab", 32)), blob(me.pk, strings.Repeat("cd", 32))
+	accounts := `{"v":1,"updated_at":1,"accounts":[{"npub":"` + npubOf(t, stranger.pk) + `"},{"npub":"` + npubOf(t, me.pk) + `"}]}`
+	zipPath := writeStoresZip(t, accounts, map[string][]nostr.Event{
+		"inbox":   {toStranger, toBoth, toMe},
+		"blossom": {strangerBlob, myBlob},
+	})
+	if err := importFromZip(context.Background(), zipPath); err != nil {
+		t.Fatalf("stranger zip naming the owner: %v", err)
+	}
+
+	// Inbox: all stored, the stranger-only one hidden from strangers.
+	all := nostr.Filter{IDs: []string{toStranger.ID, toBoth.ID, toMe.ID}}
+	if countIn(t, inboxDB, all) != 3 {
+		t.Fatal("the zip's inbox events were not all stored")
+	}
+	query := hideBroughtInboxQuery(func(ctx context.Context, f nostr.Filter) (chan *nostr.Event, error) {
+		return inboxDB.QueryEvents(ctx, f)
+	})
+	count := hideBroughtInboxCount(func(ctx context.Context, f nostr.Filter) (int64, error) {
+		return int64(countIn(t, inboxDB, f)), nil
+	})
+	served := func(ctx context.Context, f nostr.Filter) map[string]bool {
+		ch, err := query(ctx, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]bool{}
+		for ev := range ch {
+			got[ev.ID] = true
+		}
+		return got
+	}
+	for _, f := range []nostr.Filter{all, {Tags: nostr.TagMap{"p": []string{stranger.pk}}}, {Kinds: []int{1}}} {
+		if got := served(context.Background(), f); got[toStranger.ID] {
+			t.Fatalf("filter %v served the stranger's mail from /inbox: %v", f, got)
+		}
+	}
+	if got := served(context.Background(), all); !got[toBoth.ID] || !got[toMe.ID] {
+		t.Fatalf("mail to the owner is no longer served: %v", got)
+	}
+	if n, _ := count(context.Background(), nostr.Filter{Kinds: []int{1}, Tags: nostr.TagMap{"p": []string{stranger.pk}}}); n != 0 {
+		t.Fatalf("count by the stranger's p tag = %d, want 0", n)
+	}
+	if n, _ := count(context.Background(), nostr.Filter{Kinds: []int{1}, Tags: nostr.TagMap{"p": []string{me.pk}}}); n != 2 {
+		t.Fatalf("count by my p tag = %d, want 2", n)
+	}
+	if got := served(authedAs(stranger.pk), all); got[toStranger.ID] {
+		t.Fatal("AUTH as the zip's (not this vault's) account was served its mail")
+	}
+	if got := served(authedAs(me.pk), all); len(got) != 3 {
+		t.Fatalf("the owner's own read got %v, want all 3", got)
+	}
+
+	// Blossom: only my record restored.
+	if countIn(t, blossomDB, nostr.Filter{Authors: []string{stranger.pk}, Kinds: []int{24242}}) != 0 {
+		t.Fatal("the stranger's blob record was restored (listable at /list/<stranger>)")
+	}
+	if countIn(t, blossomDB, nostr.Filter{Authors: []string{me.pk}, Kinds: []int{24242}}) != 1 {
+		t.Fatal("my own blob record was not restored")
+	}
+}

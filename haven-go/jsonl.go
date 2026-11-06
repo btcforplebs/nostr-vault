@@ -443,6 +443,13 @@ func importBlobRecord(ctx context.Context, db DBBackend, event *nostr.Event, now
 	if _, ok := restoreKeys(ctx)[event.PubKey]; !ok {
 		return restoreSkipped
 	}
+	// A blob record would make its uploader's files listable at /list/<pubkey>
+	// and answer HEAD. A backup zip records its other accounts as brought over
+	// before storing, so theirs are skipped (Tron #1808): the zip proves only
+	// that it may be ours. A linked device's copy keeps them.
+	if _, b := broughtAccounts()[event.PubKey]; b {
+		return restoreSkipped
+	}
 	record, ok := rebuildBlobRecord(event)
 	if !ok {
 		return restoreSkipped

@@ -104,6 +104,109 @@ func hideBroughtCount(count func(context.Context, nostr.Filter) (int64, error)) 
 	}
 }
 
+// inboxHides: an inbox event is hidden from a reader that is not the vault's
+// own when it tags a brought-over account and none of the vault's other own
+// keys. One tagging the owner too stays visible (it is the owner's mail).
+func inboxHides(ev *nostr.Event, brought map[string]struct{}) bool {
+	own := whitelist()
+	tagsBrought := false
+	for tag := range ev.Tags.FindAll("p") {
+		if len(tag) < 2 {
+			continue
+		}
+		if _, b := brought[tag[1]]; b {
+			tagsBrought = true
+			continue
+		}
+		if _, o := own[tag[1]]; o {
+			return false
+		}
+	}
+	return tagsBrought
+}
+
+func hideBroughtInboxQuery(query func(context.Context, nostr.Filter) (chan *nostr.Event, error)) func(context.Context, nostr.Filter) (chan *nostr.Event, error) {
+	return func(ctx context.Context, filter nostr.Filter) (chan *nostr.Event, error) {
+		ch, err := query(ctx, filter)
+		hidden := hiddenBrought(ctx, nil)
+		if err != nil || ch == nil || len(hidden) == 0 {
+			return ch, err
+		}
+		out := make(chan *nostr.Event)
+		go func() {
+			defer close(out)
+			for ev := range ch {
+				if inboxHides(ev, hidden) {
+					continue
+				}
+				select {
+				case out <- ev:
+				case <-ctx.Done():
+					for range ch {
+					}
+					return
+				}
+			}
+		}()
+		return out, nil
+	}
+}
+
+// hideBroughtInboxCount: the total minus the same filter narrowed to events
+// tagging the hidden accounts. An event tagging an own key too is subtracted
+// as well, so the count can come out low, never high.
+func hideBroughtInboxCount(count func(context.Context, nostr.Filter) (int64, error)) func(context.Context, nostr.Filter) (int64, error) {
+	return func(ctx context.Context, filter nostr.Filter) (int64, error) {
+		n, err := count(ctx, filter)
+		if err != nil {
+			return n, err
+		}
+		hidden := hiddenBrought(ctx, nil)
+		if len(hidden) == 0 {
+			return n, nil
+		}
+		var ps []string
+		if want, ok := filter.Tags["p"]; ok {
+			for _, p := range want {
+				if _, h := hidden[p]; h {
+					ps = append(ps, p)
+				}
+			}
+			if len(ps) == 0 {
+				return n, nil
+			}
+		} else {
+			for p := range hidden {
+				ps = append(ps, p)
+			}
+		}
+		narrowed := filter.Clone()
+		tags := nostr.TagMap{}
+		for k, v := range filter.Tags {
+			tags[k] = v
+		}
+		tags["p"] = ps
+		narrowed.Tags = tags
+		m, err := count(ctx, narrowed)
+		if err != nil {
+			return 0, nil
+		}
+		return max(n-m, 0), nil
+	}
+}
+
+// hideBroughtOnInbox wraps every query and count hook of the inbox relay
+// (Tron #1808: a zip's events tagging its other accounts are stored but must
+// not be served from the owner's /inbox). Call it after enableSearch.
+func hideBroughtOnInbox(rl *khatru.Relay) {
+	for i, q := range rl.QueryEvents {
+		rl.QueryEvents[i] = hideBroughtInboxQuery(q)
+	}
+	for i, c := range rl.CountEvents {
+		rl.CountEvents[i] = hideBroughtInboxCount(c)
+	}
+}
+
 // hideBroughtOnOutbox wraps every query and count hook of the outbox relay.
 // Call it after enableSearch.
 func hideBroughtOnOutbox(rl *khatru.Relay) {

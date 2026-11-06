@@ -241,8 +241,11 @@ The vault's own keys are its owner and every added account (look-only included).
   an account is ever uploaded: the owner sync's upload source (`outboxNegStore.QueryEvents`) drops its events,
   lists included, while its new events still come down. Nor is it served on the public outbox (`brought_reads.go`):
   outbox relay reads and counts drop its events unless the reader is NIP-42 authed as one of B's own keys (or the
-  browser build's owner stream), and the public page and mesh photo index skip it. Lifting this for one account is
-  a later, separate change.
+  browser build's owner stream), and the public page and mesh photo index skip it. The `/inbox` relay does the
+  same for events that tag such an account and none of B's other own keys (one tagging the owner too stays
+  visible; its count can come out low, never high). A backup zip's blob records for such an account are not
+  restored, so `/list/<pubkey>` and HEAD never answer for them; a linked device's copy keeps them. Lifting this for
+  one account is a later, separate change.
 - **Merging** (`mergeCopyAccounts`): mine first, then theirs that are new; a name I have stays, a missing one is
   filled; **nothing is ever removed**, by a copy, a restore or a catch-up.
 - **Live add without a restart.** `int AddAccountsC(char* accountsJSON)`, same JSON: how many were new (0 or more),
@@ -274,7 +277,8 @@ a record by one of the vault's own keys:
 - an upload is refused unless its kind 24242 is signed by a whitelisted key, or by a paired device's mesh key, whose
   upload is then filed under the owner (§2.1; `init.go` `RejectUpload`, `mesh_devices.go` `meshOwnerIndex`; the mesh
   door checks the same, `mesh_door.go` `meshUploadAuthorized`);
-- a restore keeps a blob record only from a whitelisted key (`jsonl.go` `importBlobRecord`);
+- a restore keeps a blob record only from a whitelisted key or the copy's list, never from a brought-over account
+  named by a backup zip (`jsonl.go` `importBlobRecord`);
 - neither app mirrors received media unprompted: every save or mirror above is an owner action, and the bulk
   `mirrorFromNoteMedia` reads only the owner's own notes;
 - a received DM attachment stays on the sender's server until the owner saves it, and once saved it is his.
