@@ -24,6 +24,14 @@ enum MeshKeySigner {
         return signed
     }
 
+    /// This device's mesh npub from its key, read only: nil when the
+    /// engine has not made one yet (never makes one).
+    static func npub() -> String? {
+        guard let sk = secretHex(), let pk = publicHex(secretHex: sk),
+              let data = Bech32.hexToData(pk) else { return nil }
+        return Bech32.encode(hrp: "npub", data: data)
+    }
+
     static func publicHex(secretHex: String) -> String? {
         guard let pk = withCStrings([secretHex], { p in GetPublicKeyC(p[0]) }) else { return nil }
         defer { free(pk) }

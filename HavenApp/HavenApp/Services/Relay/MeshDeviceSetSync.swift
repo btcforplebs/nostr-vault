@@ -12,14 +12,15 @@ enum MeshDeviceSetSync {
         let config = ConfigService.shared.config
         #if os(iOS)
         let devices = FipsMeshDevices.current(config)
-        let own = FipsMeshService.shared.ownMeshNpub
+        let own = FipsMeshService.shared.ownMeshNpub ?? MeshKeySigner.npub()
         #else
         let devices = config.meshDevices
-        let own = MacFipsMeshService.shared.ownNpub
+        let own = MacFipsMeshService.shared.ownNpub ?? MeshKeySigner.npub()
         #endif
-        // The stored mesh npub only: asking the key for it would make one on a
-        // device that has never used the mesh. None yet: the engine keeps its
-        // set (none at first, which accepts no device).
+        // The engine's status or the key itself, read only: asking the mesh
+        // service for it would make a key on a device that has never used the
+        // mesh. None yet: the engine keeps its set (none at first, which
+        // accepts no device).
         guard let json = MeshKeyAuth.deviceSet(selfNpub: own, devices: devices) else { return }
         let rc = json.withCString { SetMeshDevicesC(UnsafeMutablePointer(mutating: $0)) }
         if rc != 0 {
