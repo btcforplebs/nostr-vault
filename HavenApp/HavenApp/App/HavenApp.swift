@@ -67,6 +67,8 @@ struct HavenApp: App {
             MenuBarView(configService: configService, relayManager: relayManager, isPoppedOut: true)
                 // The notification prompt comes with the main window, not before it.
                 .onAppear { PushNotificationService.shared.askWhenIn() }
+                // Accounts a later copy or catch-up brought over: asked, never added unasked.
+                .copyAccountsAsk(enabled: configService.config.hasCompletedSetup)
                 .environmentObject(configService)
                 .environmentObject(relayManager)
                 .environmentObject(nostrService)

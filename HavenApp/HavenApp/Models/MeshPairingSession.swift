@@ -33,6 +33,11 @@ struct MeshPairingSession {
     let ownMeshHex: String
     let active: String?
     let accounts: [String]
+    /// The Apple apps' rule: a hello from a device that shares any account
+    /// with this one is taken (`MeshPairing.sharesAccount`). Off, the shared
+    /// contract's `ownerCheck` (active only, else switchTo) that Android and
+    /// the fixtures still use.
+    let matchAnyAccount: Bool
     private(set) var state: State = .waiting
     private(set) var senderHex: String?
     private(set) var hello: MeshPairing.Hello?
@@ -40,12 +45,14 @@ struct MeshPairingSession {
     /// s_B from B's scanned code; nil after Accept.
     private var bSecret: String?
 
-    init(secret: String, createdAt: Int, ownMeshHex: String, active: String?, accounts: [String]) {
+    init(secret: String, createdAt: Int, ownMeshHex: String, active: String?, accounts: [String],
+         matchAnyAccount: Bool = false) {
         self.secret = secret
         self.createdAt = createdAt
         self.ownMeshHex = ownMeshHex
         self.active = active
         self.accounts = accounts
+        self.matchAnyAccount = matchAnyAccount
     }
 
     mutating func receiveHello(senderHex sender: String, content: String, now: Int) -> Outcome {
@@ -58,10 +65,18 @@ struct MeshPairingSession {
         guard sender != ownMeshHex else { return .ignore(.ownAddress) }
         guard h.secret == secret else { return .ignore(.wrongSecret) }
         guard abs(now - h.time) <= MeshPairing.helloSkew else { return .ignore(.stale) }
-        switch MeshPairing.ownerCheck(owner: h.owner, active: active, accounts: accounts) {
-        case .ok: break
-        case .switchTo: return .refuse(.switchTo)
-        case .otherOwner: return .refuse(.otherOwner)
+        if matchAnyAccount {
+            // `accounts` is what this device pairs on (signing accounts only);
+            // the active account counts only if it is one of them.
+            guard MeshPairing.sharesAccount(owner: h.owner, theirs: h.accounts, mine: accounts) else {
+                return .refuse(.otherOwner)
+            }
+        } else {
+            switch MeshPairing.ownerCheck(owner: h.owner, active: active, accounts: accounts) {
+            case .ok: break
+            case .switchTo: return .refuse(.switchTo)
+            case .otherOwner: return .refuse(.otherOwner)
+            }
         }
         if state == .waiting {
             guard now - createdAt <= MeshPairing.codeLifetime else {
