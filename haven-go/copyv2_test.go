@@ -402,8 +402,8 @@ func TestCopyBuildTakesOwnFilesAndSafeSettings(t *testing.T) {
 	if strings.Count(string(raw), "\n") != 3 || strings.Contains(string(raw), theirs) {
 		t.Fatalf("blob index not trimmed to the media part: %s", raw)
 	}
-	if copyZipKey(m.Parts) != m.ZipKey || copyManifestError(m, owner.pk) != "" {
-		t.Fatalf("built manifest refused: %q", copyManifestError(m, owner.pk))
+	if copyZipKey(m.Parts) != m.ZipKey || copyManifestError(m, owner.pk, whitelist()) != "" {
+		t.Fatalf("built manifest refused: %q", copyManifestError(m, owner.pk, whitelist()))
 	}
 
 	// A secret in the settings: the copy goes without them.

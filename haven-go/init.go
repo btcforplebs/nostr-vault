@@ -600,7 +600,7 @@ func initRelays(ctx context.Context) error {
 		return deleteBlobFiles(sha256)
 	})
 	blossomServer.RejectUpload = append(blossomServer.RejectUpload, func(ctx context.Context, event *nostr.Event, size int, ext string) (bool, string, int) {
-		if _, ok := config.WhitelistedPubKeys[event.PubKey]; ok {
+		if _, ok := whitelist()[event.PubKey]; ok {
 			return false, ext, size
 		}
 		if isMeshDeviceAuth(ctx, event) {

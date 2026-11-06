@@ -188,7 +188,7 @@ func retryPendingOnce(ctx context.Context, q *blastQueue) {
 		ev := p.Event
 		// The file is on disk: check it is still a valid note from this
 		// account before sending it anywhere.
-		_, whitelisted := config.WhitelistedPubKeys[ev.PubKey]
+		_, whitelisted := whitelist()[ev.PubKey]
 		if ok, _ := ev.CheckSignature(); !ok || !ev.CheckID() || !whitelisted {
 			slog.Warn("🗑️ dropping a queued note that is not this account's", "id", ev.ID)
 			q.remove(ev.ID)

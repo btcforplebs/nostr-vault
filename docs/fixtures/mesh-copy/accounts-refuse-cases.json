@@ -1,0 +1,399 @@
+{
+  "cases": [
+    {
+      "name": "two accounts",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w",
+            "name": "Owner"
+          },
+          {
+            "npub": "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap",
+            "name": "Other"
+          }
+        ]
+      },
+      "expect": ""
+    },
+    {
+      "name": "no names",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w"
+          }
+        ]
+      },
+      "expect": ""
+    },
+    {
+      "name": "a hex key where an npub goes",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581"
+          }
+        ]
+      },
+      "expect": "secret_value"
+    },
+    {
+      "name": "an nsec where an npub goes",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "nsec19uqxr6xazkeed24thcl9gwl8e5alzdtma8enxekqkv3ux3m9ty3qqp49sa"
+          }
+        ]
+      },
+      "expect": "secret_value"
+    },
+    {
+      "name": "an nsec in a name",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w",
+            "name": "nsec19uqxr6xazkeed24thcl9gwl8e5alzdtma8enxekqkv3ux3m9ty3qqp49sa"
+          }
+        ]
+      },
+      "expect": "secret_value"
+    },
+    {
+      "name": "a key under an extra field",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w",
+            "name": "Owner"
+          },
+          {
+            "npub": "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap",
+            "name": "Other"
+          }
+        ],
+        "key": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581"
+      },
+      "expect": "secret_value"
+    },
+    {
+      "name": "an extra field",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w",
+            "name": "Owner"
+          },
+          {
+            "npub": "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap",
+            "name": "Other"
+          }
+        ],
+        "keys": {}
+      },
+      "expect": "unknown_key"
+    },
+    {
+      "name": "an extra field on an account",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w",
+            "relay": "wss://x"
+          }
+        ]
+      },
+      "expect": "unknown_key"
+    },
+    {
+      "name": "a bad checksum",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcaq"
+          }
+        ]
+      },
+      "expect": "bad_npub"
+    },
+    {
+      "name": "an nprofile, not an npub",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "nprofile1qqsycypfd9lwxkr3t5apfg4dmqtufvqk29zqm6qgxu0hs9j6eyxutqgzvm7eg"
+          }
+        ]
+      },
+      "expect": "bad_npub"
+    },
+    {
+      "name": "v2",
+      "file": {
+        "v": 2,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w",
+            "name": "Owner"
+          },
+          {
+            "npub": "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap",
+            "name": "Other"
+          }
+        ]
+      },
+      "expect": "bad_version"
+    },
+    {
+      "name": "no accounts",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": []
+      },
+      "expect": "too_many"
+    },
+    {
+      "name": "65 accounts",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "npub16xj6exspt7kzaaang9nnvd239g23raqlud73zxex0upeamzafavqx0ccqe"
+          },
+          {
+            "npub": "npub1d2ulr6u005ec3a8e6kr0vm5el42qsr0jc3r0pevxdzcfcz9pdhgqdsqrjm"
+          },
+          {
+            "npub": "npub1q90hu67946h5sdeypz0fy5kvzw6sj5dxk62py538vh8lf4uqxphqn2jsd9"
+          },
+          {
+            "npub": "npub19ag99j0azkce5xx9sngpxc6ksxvxz0cvxn5ygz000yu8pxs4nmpqvlned9"
+          },
+          {
+            "npub": "npub1jsy3m4j2y8l7jss5h3k30hhtgwrn5h8j7zn3kj6u42d9eqdkje7sutraak"
+          },
+          {
+            "npub": "npub13rdlvy5h93v55tp0dh0yj0h3cnxj0td63smwd67spwyl79p6hfssztrq8k"
+          },
+          {
+            "npub": "npub1rkf26jmfslaqx37vt5hmdnu7glyr7nmv46emtmm0v2tnq55fy8pseath09"
+          },
+          {
+            "npub": "npub1lwzgexde5slv0pn2y04qqrqe8xsk3a0lzuc55zugc7l8z8t77lgquf72qj"
+          },
+          {
+            "npub": "npub1tg7l38d8hu3aw8kx8ug3myt3c0c9q3ecpgtczteqyj8x8n776naswdkf3p"
+          },
+          {
+            "npub": "npub1c0ypc2u6nt57xkxk3lz8m0y9jmcekssqz8n3cetazct0znah0ytsru0qgc"
+          },
+          {
+            "npub": "npub1ftjrlkp4sjz2vkcrelem8u8tu4rcm6jg8xxjgc50g9pf2x8yhnsq0ywplg"
+          },
+          {
+            "npub": "npub1zwrk6p385j83nrjatm46q3824m8823dpztv89mclc7hhdrjd5alsyhj3uy"
+          },
+          {
+            "npub": "npub1trsg76d6swrw9ku8tvdzmynnffxfcnmzu3yk9lffukd9gmadkdnq2gufgy"
+          },
+          {
+            "npub": "npub1va6wj7ej63lyapyqr8rnx0g2ana3adr0xdv30u6d78j6m8qpzmus65wv23"
+          },
+          {
+            "npub": "npub182x0aqw4qvptqvwduvrq839ml0327k3jllacpgp57j5a48f329fspazljy"
+          },
+          {
+            "npub": "npub1t02v5jt4xz6txjgwx58nty9m48lzzcfgkdd90r69nly6hp6946yqp8yt25"
+          },
+          {
+            "npub": "npub1345vv4t803w89kq339y73xt4wxg4jtej2fqju9kuvna8u38l5z2sxljjjn"
+          },
+          {
+            "npub": "npub1d3rurhnxulj7h4a3lcr5d6s6xc9u7ppe9xpflvvvh4aq0sjawcus7fdk3n"
+          },
+          {
+            "npub": "npub1xcht07y4fe6w8facywehxktehkdywh8ve08egudhwd3xd3ygr02qrejy5v"
+          },
+          {
+            "npub": "npub1rlchv5zn9scrflmrjspxylx7js5krrq6mseh5euw7he6vjt3f4aqwlf3s6"
+          },
+          {
+            "npub": "npub1edneqwnz602dvnjupga5wljjywq9rnuaxde26qnae6cn2sllz4esv2nqxe"
+          },
+          {
+            "npub": "npub16u0j8zntwn3mzucz74c7s2z402f8j8wrs3ctkwvuctr8t5tnqgts8g8nj8"
+          },
+          {
+            "npub": "npub1gv4ju7l5tql8wmp6lqlpj54t5lhn60nf2c99k5pq3quept42y0yssykh7k"
+          },
+          {
+            "npub": "npub1768nrz0889xckww3hz7mqdfznj4vvlkru8t3l0jvfj56pvkl7tass6z8tn"
+          },
+          {
+            "npub": "npub12g9n92789hulk80y77mg3ancc2k8gjwgmenrcdfqkytglzmdv0kssjaz9k"
+          },
+          {
+            "npub": "npub1vsx6xzdgxcaq9ewmr77n5cr87qcu8cj6xe0k9lpxqqn2s69pwwesj0nhu0"
+          },
+          {
+            "npub": "npub14nmtk2zvd2dn6pjqd7vcc57apqzcy2zhcfk5g75ytk8wftg8r6kswxxrhh"
+          },
+          {
+            "npub": "npub1cvrrpj8e8ea9we0cgy4jsw8sedpemnwjqm0lz5s9cfvvyx8qrm6qu4c5km"
+          },
+          {
+            "npub": "npub1nsdprmlpqjq2yrcxrglyzw0sftcjwy36493ywt488vuwe85x4e6qfp3m7e"
+          },
+          {
+            "npub": "npub1jupzy3nd0mpcdl50e7qgcm3vtprs86d3mh0al9cv3v7yq7w53rdq23x583"
+          },
+          {
+            "npub": "npub1qn20gdy9ts86pd2f6kfy95puj4s2xz2zqjtw285gzxcv4wksexcs3d64s0"
+          },
+          {
+            "npub": "npub190d23gvh9sxyx8gdc6r6mutxy3s34np5ykum0mrkemcr9c5hkz6qzt4era"
+          },
+          {
+            "npub": "npub1f4x7pfw8yuf77haq5jyvu0flf9lgsylxz8wzkef7mtaa28wsqy6q78m42p"
+          },
+          {
+            "npub": "npub1lj5r3nlpww8y3r9xxftcyezwfuagyd6l85v364uhqdcaasf60geqn56qmn"
+          },
+          {
+            "npub": "npub1yp7mg3vp5awav70pkqwhvdecz2kzqcex0gn9pt4z8klgttzckdjqanma0z"
+          },
+          {
+            "npub": "npub1m4gqnnfww9uspsr5xzwd2cxhp80cljptzejumctq6vpr7f6eudfq6akz0k"
+          },
+          {
+            "npub": "npub1hzshcjtfzw0fwyatjme5h96arv5hwhcejemvudkwu64yrl9ps78quyfcwd"
+          },
+          {
+            "npub": "npub1a50dx2mjxe7khkv7n8ncwq0qdskp2qtjyttd4wf65g4ytwcanrfsvyyr4k"
+          },
+          {
+            "npub": "npub1hnkf7wedh027v8vkqavn4xgv3p3eqzq4qlmymfsk2avgk9hjrnrs85l223"
+          },
+          {
+            "npub": "npub17x0zy4yms2je0lqpaeqeeznt9nuqkafuhmr7xkgazj03aqkuct3qmrh48m"
+          },
+          {
+            "npub": "npub177r4n6gca5qvpn4jzef627gxvnn2tr9xfrjj7cjd3mk27mpfytystgnj0j"
+          },
+          {
+            "npub": "npub1aglw39q7w835aag5nr59tlgmsfuhgdea3lexl5czltgnfe2a8rdq8eln9c"
+          },
+          {
+            "npub": "npub1am58kkfk46s55zy7fku8u2wrflmxpzmk6sf7xc834mcdrqnf8wesyry8yp"
+          },
+          {
+            "npub": "npub127njynn68ntqxxuzdgewddp7vhz0un2yf2pzdrwe77sx3pdj4ypsdnglfh"
+          },
+          {
+            "npub": "npub13j2kd3xzaf7yk2l0y2dv6pq3c0g2sxp923xhw9y6lxqfrr5c3w3qwkcwtv"
+          },
+          {
+            "npub": "npub1e64r57qd5fjunm54ljw4xtuj4hk047d6ey5fmvp3ms5u6yrga8dq2lr2ca"
+          },
+          {
+            "npub": "npub1mvrx90yqk564m9eu75ypgl0tzedsgnh2t5zfk2hup3ufnhaxjnnsy39zm8"
+          },
+          {
+            "npub": "npub1kt98n7heuyfwe30fah9hey03j875umcau3lhd2e48kw5u74zdcyqwe7fju"
+          },
+          {
+            "npub": "npub1vys752pk03qp8888wuvuylpkh24mvsfdemuq7u87z7x02ftsm9fqxhwfud"
+          },
+          {
+            "npub": "npub1z62c6360ze2xm8j7a8qz9suqz2076mdecglkcys7gc52xwpx4fhs2l8805"
+          },
+          {
+            "npub": "npub1k9ud06gqeg7xar9v9ex94rtk3eefdkrvmcpvpxs3ygfppysje9aqnqrkvh"
+          },
+          {
+            "npub": "npub1vf9fxzx8hgqtcag6fwzygg4q3pdsy24k7jql3kqmnxwewej790jsclpvaj"
+          },
+          {
+            "npub": "npub159pmam2nwxeaqczsrls2tr24tk289yxyy4673gspdnvd3e2dyx8spgxczl"
+          },
+          {
+            "npub": "npub1q2wqwu46c0tdqg045uanr0jjmc2vyjlsdugr5x6edweapzet9y7qc0expn"
+          },
+          {
+            "npub": "npub13dhml9zz7e544uc3thwr8et067hu862ra0slz8sun2av0649vc3qxdhlc9"
+          },
+          {
+            "npub": "npub1zg73rnuxkhhyfjgkc4m088e3p27f67t8fp4a8url2yngh6j86w6sv67pcn"
+          },
+          {
+            "npub": "npub1fmktpgz75nu8z93cul9ptjvl5v5m4gwktsr4lnndav36p09pfccsvjavj0"
+          },
+          {
+            "npub": "npub13vwsfhgn3yzngnl26sn6p839vkqgqe7hjd468umxhuzv6kt86wfq9cx7n3"
+          },
+          {
+            "npub": "npub1edme5zkp6savpc4we9rdeqx2t9k36j7hxf4gczqtu20hmedsptgsqvaa8v"
+          },
+          {
+            "npub": "npub1ry8q2g60yweg66hd8anqgwjz0nauk944ssecduhn4lvdtpxv5resesd50c"
+          },
+          {
+            "npub": "npub1kwqthm0w9v06sunvmw9pzcma52c3zucs6yyrzvm9swx3glz0u60shmlzdh"
+          },
+          {
+            "npub": "npub12u9wtysmgn50cml4pdm94p2y9f4g64rww07ct3chm4uhgvvvukeqtasq30"
+          },
+          {
+            "npub": "npub16wk8h5d3c6qfxq4l486tce3t8kragft7fl3vp577nc2t3jxqs6tqlltntd"
+          },
+          {
+            "npub": "npub1xt77l3ayyafxthz0qy27kvjl0g0zhm8xqvgnrl3hqwd6wvrpjc3s29v02l"
+          },
+          {
+            "npub": "npub1dlqsklju5ue53ur0zkr92yym2hmpwdcds8mnvckczvdqfuaqwjzqjqzcq8"
+          }
+        ]
+      },
+      "expect": "too_many"
+    },
+    {
+      "name": "an 81-character name",
+      "file": {
+        "v": 1,
+        "updated_at": 1767000000,
+        "accounts": [
+          {
+            "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w",
+            "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"
+          }
+        ]
+      },
+      "expect": "bad_name"
+    }
+  ]
+}

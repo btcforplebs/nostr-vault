@@ -168,8 +168,8 @@ func applyImportedDeletion(ctx context.Context, db eventDeleter, ev *nostr.Event
 // sync round offers them again. Runs once at startup; applyDeletion is
 // idempotent, so the sweep is cheap when there is nothing left to remove.
 func sweepDeleteRequests(ctx context.Context, db eventDeleter) {
-	authors := make([]string, 0, len(config.WhitelistedPubKeys))
-	for pk := range config.WhitelistedPubKeys {
+	authors := make([]string, 0, len(whitelist()))
+	for pk := range whitelist() {
 		authors = append(authors, pk)
 	}
 	if len(authors) == 0 {

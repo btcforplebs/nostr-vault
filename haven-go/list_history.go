@@ -104,7 +104,7 @@ func isOwnerList(evt *nostr.Event) bool {
 	if evt == nil || !isProtectedListKind(evt.Kind) {
 		return false
 	}
-	_, owner := config.WhitelistedPubKeys[evt.PubKey]
+	_, owner := whitelist()[evt.PubKey]
 	return owner
 }
 
@@ -295,7 +295,7 @@ func seedListHistory(ctx context.Context, outbox, history DBBackend) {
 	if outbox == nil || history == nil {
 		return
 	}
-	for author := range config.WhitelistedPubKeys {
+	for author := range whitelist() {
 		for kind := range protectedListKinds {
 			ch, err := outbox.QueryEvents(ctx, nostr.Filter{Authors: []string{author}, Kinds: []int{kind}, Limit: listHistoryQueryLimit})
 			if err != nil {

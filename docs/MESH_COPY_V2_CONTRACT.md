@@ -22,6 +22,8 @@ Logen's picks (2026-11-05), binding:
 6. Media means **the owner's own files**: everything under a record by the vault's own keys, including what he saved
    or mirrored (Logen, 2026-11-05). Photos other people only sent him never land in B's vault (§4).
 7. DMs stay encrypted in transit and are decrypted only on B.
+8. **Accounts travel** (Logen, 2026-11-06): B takes A's accounts (look-only npubs and names, never keys) when it
+   shares at least one of them, and keeps every account's notes. Catch-ups merge accounts and never remove one (§3.4).
 
 ## 1. Where it is served
 
@@ -125,7 +127,7 @@ The owner-signed 24242 keeps working until the apps switch (`TODO(mesh-key)`).
 1. **B starts.** `POST /copy/v2/start` (§2). A answers at once and builds in the background.
 2. **A builds**, into its cache directory as `copy-<id>/`:
    - **`notes.zip`**: the backup writer's zip (`<store>.jsonl` for every store, as stored, so gift wraps and
-     private and chat events stay encrypted), with two differences:
+     private and chat events stay encrypted), with `accounts.json` as its **first** entry (§3.4), and two differences:
      - `blossom.jsonl` carries only the records of the files in `media.zip`;
      - `settings.json` is added when A has one and it passes §5.
    - **`media.zip`**: the owner's own files (§4), each as `media/<sha256>` in the stored form (no compression).
@@ -141,7 +143,8 @@ The owner-signed 24242 keeps working until the apps switch (`TODO(mesh-key)`).
 5. **B checks** each chunk's sha256 against the manifest and writes it at its offset in `copy-<id>/<part>.partial`.
    It records the chunk in the state file (§3.2).
 6. **B restores `notes`** first, once that part is whole and its sha256 matches. It uses the normal restore: owner
-   check, author filters, deletions, blob records, bad lines counted.
+   check (§3.4: `accounts.json` read and taken **before any store**, so the other accounts' notes are kept), author
+   filters, deletions, blob records, bad lines counted.
 7. **B restores `media`.** Each `media/<sha256>` is hash-checked, then stored. Its record is restored only when the
    file is.
 8. **B applies settings.** The engine leaves the checked `settings.json` for the app, at `copy-settings.json` in
@@ -159,6 +162,7 @@ The owner-signed 24242 keeps working until the apps switch (`TODO(mesh-key)`).
  "progress": {"stores_done": 3, "stores_total": 9, "files_done": 10, "files_total": 40},
  "counts": {"outbox": 21000, "chat": 300}, "files": {"count": 40, "bytes": 123456789},
  "settings": "included|none|refused",
+ "accounts": ["npub1… (A's owner first)", "npub1…"],
  "parts": [{"name": "notes", "size": 9000000, "sha256": "…", "chunk": 4194304, "chunks": ["…", "…", "…"]},
            {"name": "media", "size": 0, "sha256": "…", "chunk": 4194304, "chunks": []}],
  "zip_key": "<sha256 of the parts' sha256 values, joined in order with \"\\n\">"}
@@ -166,7 +170,9 @@ The owner-signed 24242 keeps working until the apps switch (`TODO(mesh-key)`).
 
 **B accepts a ready manifest only when** (`manifest-v2-cases.json`):
 - `v` is 2;
-- `owner` is B's owner;
+- `owner` is B's owner, **or** `accounts` holds at least one of B's own keys (§3.4; `manifest-accounts-cases.json`).
+  Every `accounts` entry must be an npub (else `bad_manifest`). An older A sends no `accounts`: then only `owner`
+  counts;
 - the parts are `notes`, then optionally `media`, each once;
 - `chunk` is 4194304;
 - every sha256 is 64 lower-case hex;
@@ -200,6 +206,34 @@ COPY stage=<building|fetching|restoring|relays|done|failed> part=<notes|media|->
 - Keys are in that order. Unknown keys after them are ignored.
 - `error` is present only on `stage=failed`, and on `done` when settings were refused (`error=settings_refused`).
 - On `stage=failed ... error=needs_space`, `bytes=<free>/<need>` carries B's free bytes and the need (parts + restored + 1 GB), so the app words "Needs <need> free, this device has <free>" without measuring.
+
+### 3.4 Accounts (`accounts-refuse-cases.json`, `accounts-merge-cases.json`, `manifest-accounts-cases.json`)
+
+The vault's own keys are its owner and every added account (look-only included). They travel as `accounts.json`:
+```json
+{"v": 1, "updated_at": 1767000000, "accounts": [{"npub": "npub1…", "name": "BTCforPlebs"}, {"npub": "npub1…"}]}
+```
+- **npubs and names only, never keys.** Refused, with the reason the fixture names: any string (names included,
+  at any depth) holding `nsec1`, `ncryptsec1`, `nostr+walletconnect:`, `bunker:` or 64+ hex digits
+  (`secret_value`, checked first: a hex pubkey is refused too, so it can never be mistaken for one); `v` not 1
+  (`bad_version`); a field other than these (`unknown_key`); an `npub` that does not decode as one (`bad_npub`);
+  a name over 80 characters (`bad_name`); 0 or over 64 accounts (`too_many`).
+- **Where it is.** The first entry of `notes.zip` and of every Settings › Back up zip; `accounts` in the manifest
+  (§3.1); `GET`/`PUT /copy/v2/sync/accounts` in the catch-up (§6).
+- **A writes it** from its whitelist (owner first), naming each from the app's `copy-accounts.json` in the engine's
+  working dir (the same folder as `copy-settings.json`), which the app keeps current with its accounts and names.
+- **B takes it only when it shares at least one** of B's own keys. Then, before any store is read, every account in
+  it becomes B's own at once (no relay restart), and the engine merges the list into B's `copy-accounts.json`.
+  Sharing none: `wrong_owner`. Refused: `bad_manifest`, nothing restored, nothing added.
+- **B's app** watches `copy-accounts.json` and adds every npub it lacks to its accounts (look-only) and its
+  whitelist file, **before its next relay start**: a relay start reads the whitelist file again, and the engine's
+  live additions end with it (`AddAccountsC`).
+- **Merging** (`mergeCopyAccounts`): mine first, then theirs that are new; a name I have stays, a missing one is
+  filled; **nothing is ever removed**, by a copy, a restore or a catch-up.
+- **Live add without a restart.** `int AddAccountsC(char* accountsJSON)`, same JSON: how many were new (0 or more),
+  or -1 when refused as above. For an account added on this device while a copy runs. No shared-account rule (the
+  user is adding it here); the app also writes it to its whitelist file.
+- **Old zips** (no `accounts.json`): restored as before, only when their own notes hold one by the owner.
 
 ## 4. Media: the owner's own files
 
@@ -262,6 +296,8 @@ loser's `copy-settings.json`, and its app applies it on change.
 - NWC strings;
 - the mesh key;
 - My Devices, the device name, the home vault choice.
+- accounts: they travel as their own `accounts.json` (§3.4), never as a settings key, so the settings secret check
+  (no 64-hex) stays as strict as it is.
 
 ## 6. Catch-up (every reconnect)
 
@@ -281,6 +317,9 @@ The app calls the engine when a linked device comes into reach. The engine then:
    fetched with `GET /copy/v2/sync/file/<sha256>` and hash-checked.
 4. **Settings** (§5).
 
+Before the notes, **accounts** (§3.4): B `GET /copy/v2/sync/accounts` and takes A's, then `PUT`s its own, which A
+takes the same way. Each side adds only when the lists share an account; neither removes one.
+
 This is an id-list diff, not NIP-77. The engine has no owner key to answer NIP-42 for `/private` and `/chat`, so it
 uses the copy token on the own-device port instead.
 
@@ -297,9 +336,9 @@ Every code, where it comes from, and what B does.
 | `range` | 416 | refetches by the manifest |
 | `no_space` | A is short of disk | falls back to relays and says so |
 | `needs_space` | B is short (parts + restored + 1 GB) | stops before fetching; "Needs X GB free, this device has Y" |
-| `wrong_owner` | the manifest's owner isn't B's | stops |
+| `wrong_owner` | the manifest's owner isn't B's and its accounts share none of B's (§3.4) | stops |
 | `unsupported_version` | the manifest is `v` > 2 | stops; asks for an update |
-| `bad_manifest` | anything else wrong in the manifest | stops |
+| `bad_manifest` | anything else wrong in the manifest, or a refused `accounts.json` (§3.4) | stops |
 | `hash_mismatch` | 3 bad tries on one chunk, or a whole part twice | stops; the next reconnect starts over |
 | `unreachable` | no link | waits for the next reconnect and resumes |
 | `nothing_restored` | the restore stored nothing | shows the error, never "Done" |
@@ -308,6 +347,7 @@ Every code, where it comes from, and what B does.
 
 ## 8. Old backups
 
-A v2 `notes.zip` only adds `settings.json` (plus the trimmed `blossom.jsonl`), which old readers skip
-(`jsonl.go importFromZip` reads `.jsonl` entries only). Old backup zips restore unchanged: no settings, no media
-part.
+A v2 `notes.zip` only adds `accounts.json` and `settings.json` (plus the trimmed `blossom.jsonl`), which old
+readers skip (`jsonl.go importFromZip` reads `.jsonl` entries only). Settings › Back up zips now carry
+`accounts.json` too, and a restore takes them by §3.4. Old backup zips restore unchanged: no accounts, no settings,
+no media part, owner check by their notes.

@@ -50,7 +50,7 @@ func (m *meshBlobIndex) add(ev *nostr.Event) {
 	if ev == nil || meshBlobPrivateKinds[ev.Kind] {
 		return
 	}
-	if _, ok := config.WhitelistedPubKeys[ev.PubKey]; !ok {
+	if _, ok := whitelist()[ev.PubKey]; !ok {
 		return
 	}
 	m.mu.Lock()
@@ -114,8 +114,8 @@ func readPublicBlobRefs(ctx context.Context) (map[string]struct{}, error) {
 	if outboxDB == nil {
 		return nil, errors.New("no outbox")
 	}
-	authors := make([]string, 0, len(config.WhitelistedPubKeys))
-	for pk := range config.WhitelistedPubKeys {
+	authors := make([]string, 0, len(whitelist()))
+	for pk := range whitelist() {
 		authors = append(authors, pk)
 	}
 	set := map[string]struct{}{}
@@ -166,7 +166,7 @@ func meshBlobRejectGet(ctx context.Context, auth *nostr.Event, sha256 string, _ 
 		return false, "", 0
 	}
 	if auth != nil {
-		if _, ok := config.WhitelistedPubKeys[auth.PubKey]; ok {
+		if _, ok := whitelist()[auth.PubKey]; ok {
 			return false, "", 0
 		}
 		if isMeshDeviceAuth(ctx, auth) {

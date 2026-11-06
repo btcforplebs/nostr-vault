@@ -41,7 +41,7 @@ func TestCopyManifestFixtures(t *testing.T) {
 		t.Fatalf("positive control: only %d cases read", len(fx.Cases))
 	}
 	for _, c := range fx.Cases {
-		got := copyManifestError(c.Manifest, fx.Owner)
+		got := copyManifestError(c.Manifest, fx.Owner, map[string]struct{}{fx.Owner: {}})
 		if (got == "") != c.Expect.OK || got != c.Expect.Error {
 			t.Errorf("%s: got %q, want ok=%v error=%q", c.Name, got, c.Expect.OK, c.Expect.Error)
 		}

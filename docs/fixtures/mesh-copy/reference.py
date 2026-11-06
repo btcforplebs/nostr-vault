@@ -9,6 +9,26 @@ CHUNK = 4194304
 def h(label): return hashlib.sha256(label.encode()).hexdigest()
 OWNER = h("owner")
 OTHER = h("someone else")
+THIRD = h("a third account")
+
+# bech32 (BIP-173), for npubs of the label keys above.
+_B32 = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+def _polymod(values):
+    g = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3]; chk = 1
+    for v in values:
+        b = chk >> 25; chk = (chk & 0x1ffffff) << 5 ^ v
+        for i in range(5): chk ^= g[i] if ((b >> i) & 1) else 0
+    return chk
+def _bech32(hrp, data):
+    acc, bits, out = 0, 0, []
+    for b in data:
+        acc = (acc << 8) | b; bits += 8
+        while bits >= 5: bits -= 5; out.append((acc >> bits) & 31)
+    if bits: out.append((acc << (5 - bits)) & 31)
+    hx = [ord(c) >> 5 for c in hrp] + [0] + [ord(c) & 31 for c in hrp]
+    pm = _polymod(hx + out + [0] * 6) ^ 1
+    return hrp + "1" + "".join(_B32[d] for d in out + [(pm >> 5 * (5 - i)) & 31 for i in range(6)])
+def npub(hexkey): return _bech32("npub", bytes.fromhex(hexkey))
 def zip_key(parts): return hashlib.sha256("\n".join(p["sha256"] for p in parts).encode()).hexdigest()
 def part(name, size, tag="a"):
     return {"name": name, "size": size, "sha256": h(f"{name}-{tag}"), "chunk": CHUNK,
@@ -17,7 +37,7 @@ def manifest(parts, **over):
     m = {"v": 2, "id": h("copy-id")[:32], "state": "ready", "error": "", "owner": OWNER, "created_at": 1767000000,
          "progress": {"stores_done": 9, "stores_total": 9, "files_done": 2, "files_total": 2},
          "counts": {"outbox": 3}, "files": {"count": 2, "bytes": sum(p["size"] for p in parts if p["name"] == "media")},
-         "settings": "included", "parts": parts, "zip_key": zip_key(parts)}
+         "settings": "included", "accounts": [npub(OWNER)], "parts": parts, "zip_key": zip_key(parts)}
     m.update(over)
     return m
 def write(name, obj):
@@ -36,7 +56,7 @@ manifest_cases = {"owner": OWNER, "cases": [
     {"name": "empty media part", "manifest": manifest([notes, part("media", 0)]), "expect": {"ok": True}},
     {"name": "still building", "manifest": broken(lambda m: m.update(state="building")), "expect": {"ok": False, "error": "building"}},
     {"name": "failed on A", "manifest": broken(lambda m: m.update(state="failed", error="no_space")), "expect": {"ok": False, "error": "no_space"}},
-    {"name": "wrong owner", "manifest": broken(lambda m: m.update(owner=OTHER)), "expect": {"ok": False, "error": "wrong_owner"}},
+    {"name": "wrong owner", "manifest": broken(lambda m: m.update(owner=OTHER, accounts=[npub(OTHER)])), "expect": {"ok": False, "error": "wrong_owner"}},
     {"name": "v3 from a newer A", "manifest": broken(lambda m: m.update(v=3)), "expect": {"ok": False, "error": "unsupported_version"}},
     {"name": "v1", "manifest": broken(lambda m: m.update(v=1)), "expect": {"ok": False, "error": "bad_manifest"}},
     {"name": "no notes part", "manifest": manifest([media]), "expect": {"ok": False, "error": "bad_manifest"}},
@@ -50,6 +70,17 @@ manifest_cases = {"owner": OWNER, "cases": [
     {"name": "zip_key does not match", "manifest": broken(lambda m: m.update(zip_key=h("other"))), "expect": {"ok": False, "error": "bad_manifest"}},
 ]}
 write("manifest-v2-cases.json", manifest_cases)
+
+# §3.4: B takes a copy of its owner's vault, or of a vault whose accounts share one of B's own keys
+# ("accounts", hex). Same rule as manifest-v2-cases otherwise.
+write("manifest-accounts-cases.json", {"owner": OWNER, "accounts": [OWNER], "cases": [
+    {"name": "B's owner's vault", "manifest": good, "expect": {"ok": True}},
+    {"name": "another owner's vault that has B's owner as an account", "manifest": broken(lambda m: m.update(owner=OTHER, accounts=[npub(OTHER), npub(OWNER)])), "expect": {"ok": True}},
+    {"name": "another owner's vault sharing no account", "manifest": broken(lambda m: m.update(owner=OTHER, accounts=[npub(OTHER), npub(THIRD)])), "expect": {"ok": False, "error": "wrong_owner"}},
+    {"name": "another owner, older A without accounts", "manifest": broken(lambda m: (m.update(owner=OTHER), m.pop("accounts"))), "expect": {"ok": False, "error": "wrong_owner"}},
+    {"name": "B's owner, older A without accounts", "manifest": broken(lambda m: m.pop("accounts")), "expect": {"ok": True}},
+    {"name": "an account that is hex, not an npub", "manifest": broken(lambda m: m.update(accounts=[OWNER])), "expect": {"ok": False, "error": "bad_manifest"}},
+]})
 
 rebuilt = manifest([part("notes", 9_000_000, "b"), media])
 state = lambda done, failures=None, key=None: {"v": 1, "id": good["id"], "zip_key": key or good["zip_key"], "done": done, "failures": failures or {}}
@@ -171,5 +202,37 @@ write("errors-v2.json", {"errors": [
     {"code": "nothing_restored", "http": None, "b": "stop", "line": "Nothing in the copy could be restored"},
     {"code": "settings_refused", "http": None, "b": "continue", "line": "Settings weren't copied: they held something that must stay on {name}"},
     {"code": "cancelled", "http": None, "b": "keep_state", "line": "Copy stopped"},
+]})
+# §3.4 accounts.json: npubs and names only, never keys.
+acct = lambda **over: {"v": 1, "updated_at": 1767000000, "accounts": [{"npub": npub(OWNER), "name": "Owner"}, {"npub": npub(OTHER), "name": "Other"}], **over}
+NSEC = _bech32("nsec", bytes.fromhex(h("a secret key")))
+bad_npub = npub(OTHER)[:-1] + ("q" if npub(OTHER)[-1] != "q" else "p")
+write("accounts-refuse-cases.json", {"cases": [
+    {"name": "two accounts", "file": acct(), "expect": ""},
+    {"name": "no names", "file": acct(accounts=[{"npub": npub(OWNER)}]), "expect": ""},
+    {"name": "a hex key where an npub goes", "file": acct(accounts=[{"npub": OWNER}]), "expect": "secret_value"},
+    {"name": "an nsec where an npub goes", "file": acct(accounts=[{"npub": NSEC}]), "expect": "secret_value"},
+    {"name": "an nsec in a name", "file": acct(accounts=[{"npub": npub(OWNER), "name": NSEC}]), "expect": "secret_value"},
+    {"name": "a key under an extra field", "file": {**acct(), "key": OWNER}, "expect": "secret_value"},
+    {"name": "an extra field", "file": {**acct(), "keys": {}}, "expect": "unknown_key"},
+    {"name": "an extra field on an account", "file": acct(accounts=[{"npub": npub(OWNER), "relay": "wss://x"}]), "expect": "unknown_key"},
+    {"name": "a bad checksum", "file": acct(accounts=[{"npub": bad_npub}]), "expect": "bad_npub"},
+    {"name": "an nprofile, not an npub", "file": acct(accounts=[{"npub": _bech32("nprofile", bytes([0, 32]) + bytes.fromhex(OWNER))}]), "expect": "bad_npub"},
+    {"name": "v2", "file": acct(v=2), "expect": "bad_version"},
+    {"name": "no accounts", "file": acct(accounts=[]), "expect": "too_many"},
+    {"name": "65 accounts", "file": acct(accounts=[{"npub": npub(h(f"k{i}"))} for i in range(65)]), "expect": "too_many"},
+    {"name": "an 81-character name", "file": acct(accounts=[{"npub": npub(OWNER), "name": "n" * 81}]), "expect": "bad_name"},
+]})
+write("accounts-merge-cases.json", {"merge": [
+    {"name": "theirs adds one", "mine": [{"npub": npub(OWNER), "name": "Owner"}], "theirs": [{"npub": npub(OTHER), "name": "Other"}],
+     "expect": [{"npub": npub(OWNER), "name": "Owner"}, {"npub": npub(OTHER), "name": "Other"}]},
+    {"name": "never removes", "mine": [{"npub": npub(OWNER)}, {"npub": npub(THIRD)}], "theirs": [{"npub": npub(OWNER)}],
+     "expect": [{"npub": npub(OWNER)}, {"npub": npub(THIRD)}]},
+    {"name": "my name stays, a missing one is filled", "mine": [{"npub": npub(OWNER), "name": "Me"}, {"npub": npub(OTHER)}],
+     "theirs": [{"npub": npub(OWNER), "name": "Owner"}, {"npub": npub(OTHER), "name": "Other"}],
+     "expect": [{"npub": npub(OWNER), "name": "Me"}, {"npub": npub(OTHER), "name": "Other"}]},
+], "shares": [
+    {"name": "one in common", "mine": [OWNER], "theirs": [npub(OTHER), npub(OWNER)], "expect": True},
+    {"name": "none in common", "mine": [OWNER], "theirs": [npub(OTHER), npub(THIRD)], "expect": False},
 ]})
 print("ok")

@@ -54,7 +54,10 @@ type copyManifest struct {
 	Counts    map[string]int `json:"counts"`
 	Files     copyFiles      `json:"files"`
 	Settings  string         `json:"settings"`
-	Parts     []copyPart     `json:"parts"`
+	// Accounts: A's own keys as npubs (owner first), for B's owner check
+	// before it fetches (§3.1, §3.4). Absent from an older A.
+	Accounts []string   `json:"accounts,omitempty"`
+	Parts    []copyPart `json:"parts"`
 	ZipKey    string         `json:"zip_key"`
 }
 
@@ -81,8 +84,9 @@ func isLowerHex64(s string) bool {
 }
 
 // copyManifestError: why B refuses a manifest, or "" when it is a ready copy
-// of ownerHex's vault it can fetch.
-func copyManifestError(m copyManifest, ownerHex string) string {
+// B can fetch: of ownerHex's vault, or of a vault that shares at least one of
+// B's own keys (mine) in its accounts.
+func copyManifestError(m copyManifest, ownerHex string, mine map[string]struct{}) string {
 	switch {
 	case m.State == "building":
 		return "building"
@@ -95,7 +99,16 @@ func copyManifestError(m copyManifest, ownerHex string) string {
 		return "unsupported_version"
 	case m.V != 2 || m.State != "ready":
 		return "bad_manifest"
-	case !strings.EqualFold(m.Owner, ownerHex):
+	}
+	theirs := make([]string, 0, len(m.Accounts))
+	for _, npub := range m.Accounts {
+		h, ok := npubHex(npub)
+		if !ok {
+			return "bad_manifest"
+		}
+		theirs = append(theirs, h)
+	}
+	if !strings.EqualFold(m.Owner, ownerHex) && !copySharesAccount(mine, theirs) {
 		return "wrong_owner"
 	}
 	if len(m.Parts) == 0 || m.Parts[0].Name != "notes" || len(m.Parts) > 2 || (len(m.Parts) == 2 && m.Parts[1].Name != "media") {

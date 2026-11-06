@@ -128,6 +128,17 @@ func (s *copyServer) serveSync(w http.ResponseWriter, r *http.Request, what stri
 			return
 		}
 		http.ServeFile(w, r, path)
+	case what == "accounts" && r.Method == http.MethodGet:
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(marshalLocalCopyAccounts())
+	case what == "accounts" && r.Method == http.MethodPut:
+		// B's accounts, merged into A's when they share one (§3.4). Never removes.
+		raw, err := io.ReadAll(io.LimitReader(r.Body, copyAccountsMaxSize+1))
+		if err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		copyJSON(w, http.StatusOK, map[string]string{"accounts": takeCopyAccounts(raw)})
 	case what == "settings" && r.Method == http.MethodGet:
 		raw, err := os.ReadFile(copySettingsFile)
 		if err != nil || copySettingsRefusal(raw, time.Now()) != "" {
@@ -289,6 +300,7 @@ func markCopySynced(peer string, t int64) {
 type copySyncResult struct {
 	Got, Sent, Files int
 	Settings         string
+	Accounts         string
 }
 
 func (c *copyClient) store(name string) DBBackend {
@@ -313,6 +325,9 @@ func (c *copyClient) sync(ctx context.Context) (copySyncResult, error) {
 	if last > 0 {
 		since = last - int64(copySyncOverlap/time.Second)
 	}
+	// Accounts first, both ways, so each side keeps the other's new accounts'
+	// notes in this same round (§3.4, §6). They only ever merge.
+	res.Accounts, _ = c.syncAccounts(ctx)
 	for _, store := range copySyncStores {
 		db := c.store(store)
 		if db == nil {
@@ -332,7 +347,7 @@ func (c *copyClient) sync(ctx context.Context) (copySyncResult, error) {
 	}
 	res.Settings, _ = c.syncSettings(ctx)
 	markCopySynced(c.peer, started)
-	slog.Info("copy catch-up done", "got", res.Got, "sent", res.Sent, "files", res.Files, "settings", res.Settings)
+	slog.Info("copy catch-up done", "got", res.Got, "sent", res.Sent, "files", res.Files, "settings", res.Settings, "accounts", res.Accounts)
 	return res, nil
 }
 
@@ -544,4 +559,26 @@ func (c *copyClient) syncSettings(ctx context.Context) (string, error) {
 		return "sent", nil
 	}
 	return "same", nil
+}
+
+// syncAccounts: A's accounts merged into B's, then B's into A's. Each side
+// takes the other's only when they share one (§3.4); nothing is removed.
+// Returns what B did with A's ("added", "same" or the refusal).
+func (c *copyClient) syncAccounts(ctx context.Context) (string, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/copy/v2/sync/accounts", nil, nil)
+	if err != nil {
+		return "", err
+	}
+	theirs, _ := io.ReadAll(io.LimitReader(resp.Body, copyAccountsMaxSize+1))
+	resp.Body.Close()
+	got := "none"
+	if resp.StatusCode == http.StatusOK {
+		got = takeCopyAccounts(theirs)
+	}
+	resp, err = c.do(ctx, http.MethodPut, "/copy/v2/sync/accounts", map[string]string{"Content-Type": "application/json"}, marshalLocalCopyAccounts())
+	if err != nil {
+		return got, err
+	}
+	resp.Body.Close()
+	return got, nil
 }

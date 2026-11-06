@@ -1,0 +1,109 @@
+{
+  "merge": [
+    {
+      "name": "theirs adds one",
+      "mine": [
+        {
+          "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w",
+          "name": "Owner"
+        }
+      ],
+      "theirs": [
+        {
+          "npub": "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap",
+          "name": "Other"
+        }
+      ],
+      "expect": [
+        {
+          "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w",
+          "name": "Owner"
+        },
+        {
+          "npub": "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap",
+          "name": "Other"
+        }
+      ]
+    },
+    {
+      "name": "never removes",
+      "mine": [
+        {
+          "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w"
+        },
+        {
+          "npub": "npub1ks0t9yldwmqlr2k8jnm25gs92za45mp5rhwtkk0r0wlz9wg688zs99ny60"
+        }
+      ],
+      "theirs": [
+        {
+          "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w"
+        }
+      ],
+      "expect": [
+        {
+          "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w"
+        },
+        {
+          "npub": "npub1ks0t9yldwmqlr2k8jnm25gs92za45mp5rhwtkk0r0wlz9wg688zs99ny60"
+        }
+      ]
+    },
+    {
+      "name": "my name stays, a missing one is filled",
+      "mine": [
+        {
+          "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w",
+          "name": "Me"
+        },
+        {
+          "npub": "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap"
+        }
+      ],
+      "theirs": [
+        {
+          "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w",
+          "name": "Owner"
+        },
+        {
+          "npub": "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap",
+          "name": "Other"
+        }
+      ],
+      "expect": [
+        {
+          "npub": "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w",
+          "name": "Me"
+        },
+        {
+          "npub": "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap",
+          "name": "Other"
+        }
+      ]
+    }
+  ],
+  "shares": [
+    {
+      "name": "one in common",
+      "mine": [
+        "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581"
+      ],
+      "theirs": [
+        "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap",
+        "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w"
+      ],
+      "expect": true
+    },
+    {
+      "name": "none in common",
+      "mine": [
+        "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581"
+      ],
+      "theirs": [
+        "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap",
+        "npub1ks0t9yldwmqlr2k8jnm25gs92za45mp5rhwtkk0r0wlz9wg688zs99ny60"
+      ],
+      "expect": false
+    }
+  ]
+}

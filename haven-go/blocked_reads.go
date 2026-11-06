@@ -25,7 +25,7 @@ import (
 // servesAuthor reports whether events by pubkey may be served. Your own
 // accounts are always served, even if one appears on the blacklist.
 func servesAuthor(pubkey string) bool {
-	if _, own := config.WhitelistedPubKeys[pubkey]; own {
+	if _, own := whitelist()[pubkey]; own {
 		return true
 	}
 	return !isBlacklisted(pubkey)

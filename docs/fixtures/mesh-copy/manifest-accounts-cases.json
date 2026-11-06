@@ -1,0 +1,337 @@
+{
+  "owner": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581",
+  "accounts": [
+    "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581"
+  ],
+  "cases": [
+    {
+      "name": "B's owner's vault",
+      "manifest": {
+        "v": 2,
+        "id": "adbec2d29fc4cc2d0f84826f715304cb",
+        "state": "ready",
+        "error": "",
+        "owner": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581",
+        "created_at": 1767000000,
+        "progress": {
+          "stores_done": 9,
+          "stores_total": 9,
+          "files_done": 2,
+          "files_total": 2
+        },
+        "counts": {
+          "outbox": 3
+        },
+        "files": {
+          "count": 2,
+          "bytes": 8388608
+        },
+        "settings": "included",
+        "accounts": [
+          "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w"
+        ],
+        "parts": [
+          {
+            "name": "notes",
+            "size": 9000000,
+            "sha256": "3f7adf08de83e643fe6db5e279ce58821ab6504a1d032884f0939d3876035afa",
+            "chunk": 4194304,
+            "chunks": [
+              "23a07a22b926ee7679a427b4c6f9b7c645136f0fbf0a9dfe1809fe21f86e004d",
+              "e38630473598185ab6044117773a2615e334677f44159cc7346b7b8da5bbe422",
+              "1f950d9394d50283e1b608ee9f01bcaee8218b85b2f24bf6848f8b16337f762d"
+            ]
+          },
+          {
+            "name": "media",
+            "size": 8388608,
+            "sha256": "0c2d2f69545a972fe1742cce4cafd87f10212b6a94e4a67224f4197c315c34c6",
+            "chunk": 4194304,
+            "chunks": [
+              "15b1992c75fc136cf648067c2575104a8523cbad59a4e02ced7127bad80b9fe6",
+              "1d52d162e80eb3c70f4236c84e9deff2e6879b449b063020c9c99e151c5992b3"
+            ]
+          }
+        ],
+        "zip_key": "b3e534c4c3d6a38b912312b89ff6b02c0417ccaa81a1cf08e5237126529d5bcc"
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "another owner's vault that has B's owner as an account",
+      "manifest": {
+        "v": 2,
+        "id": "adbec2d29fc4cc2d0f84826f715304cb",
+        "state": "ready",
+        "error": "",
+        "owner": "8e5966554908cc04840d0975ab4d5870643b1649f85e7267f6b732a7a0bef383",
+        "created_at": 1767000000,
+        "progress": {
+          "stores_done": 9,
+          "stores_total": 9,
+          "files_done": 2,
+          "files_total": 2
+        },
+        "counts": {
+          "outbox": 3
+        },
+        "files": {
+          "count": 2,
+          "bytes": 8388608
+        },
+        "settings": "included",
+        "accounts": [
+          "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap",
+          "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w"
+        ],
+        "parts": [
+          {
+            "name": "notes",
+            "size": 9000000,
+            "sha256": "3f7adf08de83e643fe6db5e279ce58821ab6504a1d032884f0939d3876035afa",
+            "chunk": 4194304,
+            "chunks": [
+              "23a07a22b926ee7679a427b4c6f9b7c645136f0fbf0a9dfe1809fe21f86e004d",
+              "e38630473598185ab6044117773a2615e334677f44159cc7346b7b8da5bbe422",
+              "1f950d9394d50283e1b608ee9f01bcaee8218b85b2f24bf6848f8b16337f762d"
+            ]
+          },
+          {
+            "name": "media",
+            "size": 8388608,
+            "sha256": "0c2d2f69545a972fe1742cce4cafd87f10212b6a94e4a67224f4197c315c34c6",
+            "chunk": 4194304,
+            "chunks": [
+              "15b1992c75fc136cf648067c2575104a8523cbad59a4e02ced7127bad80b9fe6",
+              "1d52d162e80eb3c70f4236c84e9deff2e6879b449b063020c9c99e151c5992b3"
+            ]
+          }
+        ],
+        "zip_key": "b3e534c4c3d6a38b912312b89ff6b02c0417ccaa81a1cf08e5237126529d5bcc"
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "another owner's vault sharing no account",
+      "manifest": {
+        "v": 2,
+        "id": "adbec2d29fc4cc2d0f84826f715304cb",
+        "state": "ready",
+        "error": "",
+        "owner": "8e5966554908cc04840d0975ab4d5870643b1649f85e7267f6b732a7a0bef383",
+        "created_at": 1767000000,
+        "progress": {
+          "stores_done": 9,
+          "stores_total": 9,
+          "files_done": 2,
+          "files_total": 2
+        },
+        "counts": {
+          "outbox": 3
+        },
+        "files": {
+          "count": 2,
+          "bytes": 8388608
+        },
+        "settings": "included",
+        "accounts": [
+          "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap",
+          "npub1ks0t9yldwmqlr2k8jnm25gs92za45mp5rhwtkk0r0wlz9wg688zs99ny60"
+        ],
+        "parts": [
+          {
+            "name": "notes",
+            "size": 9000000,
+            "sha256": "3f7adf08de83e643fe6db5e279ce58821ab6504a1d032884f0939d3876035afa",
+            "chunk": 4194304,
+            "chunks": [
+              "23a07a22b926ee7679a427b4c6f9b7c645136f0fbf0a9dfe1809fe21f86e004d",
+              "e38630473598185ab6044117773a2615e334677f44159cc7346b7b8da5bbe422",
+              "1f950d9394d50283e1b608ee9f01bcaee8218b85b2f24bf6848f8b16337f762d"
+            ]
+          },
+          {
+            "name": "media",
+            "size": 8388608,
+            "sha256": "0c2d2f69545a972fe1742cce4cafd87f10212b6a94e4a67224f4197c315c34c6",
+            "chunk": 4194304,
+            "chunks": [
+              "15b1992c75fc136cf648067c2575104a8523cbad59a4e02ced7127bad80b9fe6",
+              "1d52d162e80eb3c70f4236c84e9deff2e6879b449b063020c9c99e151c5992b3"
+            ]
+          }
+        ],
+        "zip_key": "b3e534c4c3d6a38b912312b89ff6b02c0417ccaa81a1cf08e5237126529d5bcc"
+      },
+      "expect": {
+        "ok": false,
+        "error": "wrong_owner"
+      }
+    },
+    {
+      "name": "another owner, older A without accounts",
+      "manifest": {
+        "v": 2,
+        "id": "adbec2d29fc4cc2d0f84826f715304cb",
+        "state": "ready",
+        "error": "",
+        "owner": "8e5966554908cc04840d0975ab4d5870643b1649f85e7267f6b732a7a0bef383",
+        "created_at": 1767000000,
+        "progress": {
+          "stores_done": 9,
+          "stores_total": 9,
+          "files_done": 2,
+          "files_total": 2
+        },
+        "counts": {
+          "outbox": 3
+        },
+        "files": {
+          "count": 2,
+          "bytes": 8388608
+        },
+        "settings": "included",
+        "parts": [
+          {
+            "name": "notes",
+            "size": 9000000,
+            "sha256": "3f7adf08de83e643fe6db5e279ce58821ab6504a1d032884f0939d3876035afa",
+            "chunk": 4194304,
+            "chunks": [
+              "23a07a22b926ee7679a427b4c6f9b7c645136f0fbf0a9dfe1809fe21f86e004d",
+              "e38630473598185ab6044117773a2615e334677f44159cc7346b7b8da5bbe422",
+              "1f950d9394d50283e1b608ee9f01bcaee8218b85b2f24bf6848f8b16337f762d"
+            ]
+          },
+          {
+            "name": "media",
+            "size": 8388608,
+            "sha256": "0c2d2f69545a972fe1742cce4cafd87f10212b6a94e4a67224f4197c315c34c6",
+            "chunk": 4194304,
+            "chunks": [
+              "15b1992c75fc136cf648067c2575104a8523cbad59a4e02ced7127bad80b9fe6",
+              "1d52d162e80eb3c70f4236c84e9deff2e6879b449b063020c9c99e151c5992b3"
+            ]
+          }
+        ],
+        "zip_key": "b3e534c4c3d6a38b912312b89ff6b02c0417ccaa81a1cf08e5237126529d5bcc"
+      },
+      "expect": {
+        "ok": false,
+        "error": "wrong_owner"
+      }
+    },
+    {
+      "name": "B's owner, older A without accounts",
+      "manifest": {
+        "v": 2,
+        "id": "adbec2d29fc4cc2d0f84826f715304cb",
+        "state": "ready",
+        "error": "",
+        "owner": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581",
+        "created_at": 1767000000,
+        "progress": {
+          "stores_done": 9,
+          "stores_total": 9,
+          "files_done": 2,
+          "files_total": 2
+        },
+        "counts": {
+          "outbox": 3
+        },
+        "files": {
+          "count": 2,
+          "bytes": 8388608
+        },
+        "settings": "included",
+        "parts": [
+          {
+            "name": "notes",
+            "size": 9000000,
+            "sha256": "3f7adf08de83e643fe6db5e279ce58821ab6504a1d032884f0939d3876035afa",
+            "chunk": 4194304,
+            "chunks": [
+              "23a07a22b926ee7679a427b4c6f9b7c645136f0fbf0a9dfe1809fe21f86e004d",
+              "e38630473598185ab6044117773a2615e334677f44159cc7346b7b8da5bbe422",
+              "1f950d9394d50283e1b608ee9f01bcaee8218b85b2f24bf6848f8b16337f762d"
+            ]
+          },
+          {
+            "name": "media",
+            "size": 8388608,
+            "sha256": "0c2d2f69545a972fe1742cce4cafd87f10212b6a94e4a67224f4197c315c34c6",
+            "chunk": 4194304,
+            "chunks": [
+              "15b1992c75fc136cf648067c2575104a8523cbad59a4e02ced7127bad80b9fe6",
+              "1d52d162e80eb3c70f4236c84e9deff2e6879b449b063020c9c99e151c5992b3"
+            ]
+          }
+        ],
+        "zip_key": "b3e534c4c3d6a38b912312b89ff6b02c0417ccaa81a1cf08e5237126529d5bcc"
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "an account that is hex, not an npub",
+      "manifest": {
+        "v": 2,
+        "id": "adbec2d29fc4cc2d0f84826f715304cb",
+        "state": "ready",
+        "error": "",
+        "owner": "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581",
+        "created_at": 1767000000,
+        "progress": {
+          "stores_done": 9,
+          "stores_total": 9,
+          "files_done": 2,
+          "files_total": 2
+        },
+        "counts": {
+          "outbox": 3
+        },
+        "files": {
+          "count": 2,
+          "bytes": 8388608
+        },
+        "settings": "included",
+        "accounts": [
+          "4c1029697ee358715d3a14a2add817c4b01651440de808371f78165ac90dc581"
+        ],
+        "parts": [
+          {
+            "name": "notes",
+            "size": 9000000,
+            "sha256": "3f7adf08de83e643fe6db5e279ce58821ab6504a1d032884f0939d3876035afa",
+            "chunk": 4194304,
+            "chunks": [
+              "23a07a22b926ee7679a427b4c6f9b7c645136f0fbf0a9dfe1809fe21f86e004d",
+              "e38630473598185ab6044117773a2615e334677f44159cc7346b7b8da5bbe422",
+              "1f950d9394d50283e1b608ee9f01bcaee8218b85b2f24bf6848f8b16337f762d"
+            ]
+          },
+          {
+            "name": "media",
+            "size": 8388608,
+            "sha256": "0c2d2f69545a972fe1742cce4cafd87f10212b6a94e4a67224f4197c315c34c6",
+            "chunk": 4194304,
+            "chunks": [
+              "15b1992c75fc136cf648067c2575104a8523cbad59a4e02ced7127bad80b9fe6",
+              "1d52d162e80eb3c70f4236c84e9deff2e6879b449b063020c9c99e151c5992b3"
+            ]
+          }
+        ],
+        "zip_key": "b3e534c4c3d6a38b912312b89ff6b02c0417ccaa81a1cf08e5237126529d5bcc"
+      },
+      "expect": {
+        "ok": false,
+        "error": "bad_manifest"
+      }
+    }
+  ]
+}

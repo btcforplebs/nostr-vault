@@ -42,6 +42,12 @@ func exportToZip(ctx context.Context, zipFileName string) (err error) {
 		}
 	}()
 
+	// The vault's accounts first, so a restore reads them before any store
+	// (docs/MESH_COPY_V2_CONTRACT.md §3.4, §8).
+	if err := writeZipAccounts(zw, marshalLocalCopyAccounts()); err != nil {
+		return fmt.Errorf("error writing accounts: %w", err)
+	}
+
 	for name, db := range dbs {
 		fileName := name + ".jsonl"
 		slog.Info("📦 exporting db to fileName", "fileName", fileName)
@@ -131,14 +137,10 @@ func importFromZip(ctx context.Context, zipFileName string) error {
 	// Only the owner's own backup (Setup and Settings alike). The check reads
 	// the zip's outbox and lists, never feed or inbox, which hold other
 	// people's notes by design.
-	if config.OwnerPubKey != "" {
-		ours, err := zipHasEventBy(zipFileName, config.OwnerPubKey)
-		if err != nil {
-			return err
-		}
-		if !ours {
-			return errNotYourBackup
-		}
+	// A zip with accounts.json is taken when it shares one of this vault's
+	// accounts, and its accounts become this vault's too (§3.4).
+	if err := takeZipAccounts(zipFileName); err != nil {
+		return err
 	}
 
 	zipFile, err := zip.OpenReader(zipFileName)
@@ -365,7 +367,7 @@ func restoreAccepts(ctx context.Context, db DBBackend, event *nostr.Event) bool 
 	case db == nil:
 		return false
 	case outboxDB != nil && db == outboxDB, privateDB != nil && db == privateDB:
-		_, ok := config.WhitelistedPubKeys[event.PubKey]
+		_, ok := whitelist()[event.PubKey]
 		return ok
 	case inboxDB != nil && db == inboxDB:
 		// The inbox's own write rule: tags one of the vault's keys, or is the
@@ -387,7 +389,7 @@ func importBlobRecord(ctx context.Context, db DBBackend, event *nostr.Event, now
 	if event.Kind != 24242 || !event.CheckID() || !event.CreatedAt.Time().Before(now.Add(importFutureSlack)) {
 		return restoreSkipped
 	}
-	if _, ok := config.WhitelistedPubKeys[event.PubKey]; !ok {
+	if _, ok := whitelist()[event.PubKey]; !ok {
 		return restoreSkipped
 	}
 	record, ok := rebuildBlobRecord(event)

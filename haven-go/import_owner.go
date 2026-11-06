@@ -85,7 +85,7 @@ func verifiedOwnerNote(ev *nostr.Event) bool {
 	if ev == nil {
 		return false
 	}
-	if _, ok := config.WhitelistedPubKeys[ev.PubKey]; !ok {
+	if _, ok := whitelist()[ev.PubKey]; !ok {
 		return false
 	}
 	if !ev.CheckID() {
@@ -226,7 +226,7 @@ func importOwnerNotesRun(ctx context.Context, walk bool) (rep ownerReport) {
 	}
 	wdb := eventstore.RelayWrapper{Store: outboxDB}
 	since := nostr.Timestamp(startTime.Unix())
-	owners := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
+	owners := slices.Collect(maps.Keys(whitelist()))
 	filter := nostr.Filter{Authors: owners, Since: &since}
 	from, today := startTime.Format(layout), time.Now().Format(layout)
 

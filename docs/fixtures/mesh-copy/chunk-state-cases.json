@@ -23,6 +23,9 @@
           "bytes": 8388608
         },
         "settings": "included",
+        "accounts": [
+          "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w"
+        ],
         "parts": [
           {
             "name": "notes",
@@ -87,6 +90,9 @@
           "bytes": 8388608
         },
         "settings": "included",
+        "accounts": [
+          "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w"
+        ],
         "parts": [
           {
             "name": "notes",
@@ -162,6 +168,9 @@
           "bytes": 8388608
         },
         "settings": "included",
+        "accounts": [
+          "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w"
+        ],
         "parts": [
           {
             "name": "notes",
@@ -235,6 +244,9 @@
           "bytes": 8388608
         },
         "settings": "included",
+        "accounts": [
+          "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w"
+        ],
         "parts": [
           {
             "name": "notes",
@@ -315,6 +327,9 @@
           "bytes": 8388608
         },
         "settings": "included",
+        "accounts": [
+          "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w"
+        ],
         "parts": [
           {
             "name": "notes",

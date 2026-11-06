@@ -115,7 +115,7 @@ func scanAccount() string {
 	if !nostr.IsValidPublicKey(pk) {
 		return ""
 	}
-	if _, ok := config.WhitelistedPubKeys[pk]; !ok {
+	if _, ok := whitelist()[pk]; !ok {
 		return ""
 	}
 	return pk

@@ -100,7 +100,7 @@ func engagesOwnerPost(ctx context.Context, ev *nostr.Event) bool {
 		}
 		return false
 	})
-	return pointsAtPostBy(ctx, refs, config.WhitelistedPubKeys)
+	return pointsAtPostBy(ctx, refs, whitelist())
 }
 
 // isReplyNote reports whether a text note answers another: it has an `e` tag

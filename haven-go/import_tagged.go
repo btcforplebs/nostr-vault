@@ -75,7 +75,7 @@ func importTaggedRun(ctx context.Context, relays []string, onDone func(url strin
 
 	wdbInbox := eventstore.RelayWrapper{Store: inboxDB}
 	wdbChat := eventstore.RelayWrapper{Store: chatDB}
-	pTags := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
+	pTags := slices.Collect(maps.Keys(whitelist()))
 	start, err := time.Parse(layout, config.ImportStartDate)
 	if err != nil {
 		start = time.Unix(0, 0)

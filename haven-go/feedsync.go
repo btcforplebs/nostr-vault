@@ -204,7 +204,7 @@ func ownerFollowSet(ctx context.Context) map[string]struct{} {
 // has in the outbox DB, or "" when there is none. A new follow list is the
 // newest by construction, so the owner-only WoT rebuild runs when this moves.
 func ownerFollowListStamp() string {
-	owners := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
+	owners := slices.Collect(maps.Keys(whitelist()))
 	if len(owners) == 0 || outboxDB == nil {
 		return ""
 	}
@@ -224,13 +224,13 @@ func ownerFollowListStamp() string {
 // ownerFollowLists are the owners' newest follow lists in the outbox DB, one
 // per owner. The WoT build takes them over older copies on the seed relays.
 func ownerFollowLists() []*nostr.Event {
-	if len(config.WhitelistedPubKeys) == 0 || outboxDB == nil {
+	if len(whitelist()) == 0 || outboxDB == nil {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	var lists []*nostr.Event
-	for owner := range config.WhitelistedPubKeys {
+	for owner := range whitelist() {
 		evs, err := eventstore.RelayWrapper{Store: outboxDB}.QuerySync(ctx, nostr.Filter{
 			Authors: []string{owner},
 			Kinds:   []int{nostr.KindFollowList},

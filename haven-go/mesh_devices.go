@@ -294,7 +294,7 @@ func withMeshDeviceAuth(r *http.Request) (*http.Request, int, string) {
 	if json.Unmarshal(raw, &ev) != nil || ev.Kind != 24242 {
 		return r, 0, ""
 	}
-	if _, owner := config.WhitelistedPubKeys[ev.PubKey]; owner || !meshDevices.paired(ev.PubKey) {
+	if _, owner := whitelist()[ev.PubKey]; owner || !meshDevices.paired(ev.PubKey) {
 		return r, 0, "" // owner path (kept until the apps switch) or a stranger
 	}
 	if !meshDeviceOverMesh(r) {

@@ -286,7 +286,7 @@ func StartRelayC(importMode bool) {
 			log.Println("  → Initializing Web of Trust")
 			wotModel := wot.NewSimpleInMemory(
 				cycle.pool,
-				config.WhitelistedPubKeys,
+				whitelist(),
 				config.ImportSeedRelays,
 				effectiveWotDepth(), // first run: follows only until the wider_network job runs
 
@@ -569,6 +569,24 @@ func SetMeshDevicesC(devices *C.char) C.int {
 		return 1
 	}
 	return 0
+}
+
+// AddAccountsC makes accounts the vault's own now, without a relay restart
+// (an account added while a copy runs; contract §3.4). accountsJSON is the
+// accounts.json shape: {"v":1,"updated_at":<unix>,"accounts":[{"npub":"npub1…",
+// "name":"…"}]}, npubs only. Returns how many were new (0 or more), or -1 when
+// the JSON is refused (a key instead of an npub, a bad npub or name, unknown
+// fields). The next relay start reads the whitelist file again, so the app
+// writes the account there too.
+//
+//export AddAccountsC
+func AddAccountsC(accountsJSON *C.char) C.int {
+	list, why := copyAccountsRefusal([]byte(C.GoString(accountsJSON)))
+	if why != "" {
+		log.Printf("🚫 accounts refused: %s", why)
+		return -1
+	}
+	return C.int(addLiveAccounts(list.hexes()))
 }
 
 // RevokeCopyTokensC is Remove device on A: the removed device (its mesh npub
