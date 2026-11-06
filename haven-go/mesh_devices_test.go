@@ -328,3 +328,75 @@ func TestDeviceKeyRefusedElsewhere(t *testing.T) {
 		t.Errorf("device list: %d, want 403", code)
 	}
 }
+
+// Tron, #1802: the paired set is in memory, copy tokens are on disk. A device
+// removed while the engine was down must not keep a token after the restart.
+func TestUnpairWhileDownRevokesAfterRestart(t *testing.T) {
+	owner, vault, phone, tablet := newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t)
+	openCopyVault(t, owner.pk)
+	pairMeshDevices(t, vault, phone, tablet)
+	before := newTestCopyServer(failingBuild)
+	code, id, token := startAs(t, before, deviceStartProof(t, phone, vault.pk, nostr.Now()))
+	if code != 200 {
+		t.Fatalf("start: %d", code)
+	}
+	_, legacyID, legacyToken := startAs(t, before, startProofFor(t, owner, tablet.pk))
+	if got := getWith(before, "/copy/v2/"+id, token, "", nil); got != 200 {
+		t.Fatalf("before restart: %d", got)
+	}
+
+	// Restart: a fresh process holds no set and reads the tokens from disk.
+	meshDevices = &meshDeviceSet{devices: map[string]string{}, seen: map[string]int64{}, now: time.Now}
+	after := newTestCopyServer(failingBuild)
+	after.jobs = before.jobs // the copy on disk; only the token decides
+	// The app's first call after the restart: the phone was removed meanwhile.
+	if err := meshDevices.set(meshSetJSON(t, vault, tablet)); err != nil {
+		t.Fatal(err)
+	}
+	if got := getWith(after, "/copy/v2/"+id, token, "", nil); got != 401 {
+		t.Errorf("removed phone's token after restart: %d, want 401", got)
+	}
+	if got := getWith(after, "/copy/v2/sync/settings", token, "", nil); got != 401 {
+		t.Errorf("removed phone's catch-up after restart: %d, want 401", got)
+	}
+	// A device still paired keeps working, owner-form token included.
+	if got := getWith(after, "/copy/v2/"+legacyID, legacyToken, "", nil); got != 200 {
+		t.Errorf("tablet (still paired) after restart: %d, want 200", got)
+	}
+}
+
+// Tron, #1802: a device key counts only over the mesh. On the box the relay
+// handler is also the public URL (havend names the client in
+// X-Forwarded-For); on the Mac a Cloudflare tunnel arrives from loopback.
+func TestDeviceKeyOnlyOverTheMesh(t *testing.T) {
+	vault, phone := newTestKey(t), newTestKey(t)
+	pairMeshDevices(t, vault, phone)
+	sha := strings.Repeat("ef", 32)
+	try := func(name, remote string, hdr map[string]string, wrap func(*http.Request) *http.Request, want int) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodDelete, "/"+sha, nil)
+		req.RemoteAddr = remote
+		req.Header.Set("Authorization", deviceBlobAuth(t, phone, "delete", sha, vault.pk, time.Now().Add(time.Minute)))
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		if wrap != nil {
+			req = wrap(req)
+		}
+		_, code, _ := withMeshDeviceAuth(req)
+		if code != want {
+			t.Errorf("%s: %d, want %d", name, code, want)
+		}
+	}
+	try("from the internet through havend", "127.0.0.1:4000", map[string]string{"X-Forwarded-For": "203.0.113.9"}, nil, 403)
+	try("through a Cloudflare tunnel", "127.0.0.1:4000", map[string]string{"Cf-Ray": "abc"}, nil, 403)
+	try("from the LAN", "192.168.1.20:5555", nil, nil, 403)
+	try("relay port from loopback (the mesh, Mac/Android)", "127.0.0.1:4000", nil, nil, 0)
+	try("the door", "203.0.113.9:1", nil, markMesh, 0)
+	ownPort := func(r *http.Request) *http.Request {
+		var out *http.Request
+		markMeshOwnPort(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { out = r })).ServeHTTP(httptest.NewRecorder(), r)
+		return out
+	}
+	try("the iPhone's own port", "203.0.113.9:1", nil, ownPort, 0)
+}

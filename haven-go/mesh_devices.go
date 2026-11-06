@@ -210,6 +210,29 @@ func tagValues(tags nostr.Tags, name string) []string {
 
 type meshDeviceAuthKey struct{}
 
+// meshOwnPortKey marks a request that came in on the iPhone's own-device
+// port (HAVEN_MESH_OWN_PORT), which only the mesh reaches.
+type meshOwnPortKey struct{}
+
+// markMeshOwnPort wraps the own-device port's handler.
+func markMeshOwnPort(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), meshOwnPortKey{}, true)))
+	})
+}
+
+// meshDeviceOverLoopback: on the relay port, the request came from this
+// machine and not through a tunnel, which is how the mesh hands Mac,
+// Android and the box's own devices that port (the same gate as /copy/v2,
+// copyv2_server.go sets it). Never true where it is not set (wasm).
+var meshDeviceOverLoopback = func(*http.Request) bool { return false }
+
+// meshDeviceOverMesh: r came in over the mesh: the door, the iPhone's own
+// port, or the relay port from loopback with no tunnel or LAN hop named.
+func meshDeviceOverMesh(r *http.Request) bool {
+	return isMeshRequest(r) || r.Context().Value(meshOwnPortKey{}) != nil || meshDeviceOverLoopback(r)
+}
+
 // meshDeviceAuthIn: the paired device's 24242 this request was admitted on
 // (withMeshDeviceAuth), or nil.
 func meshDeviceAuthIn(ctx context.Context) *nostr.Event {
@@ -273,6 +296,11 @@ func withMeshDeviceAuth(r *http.Request) (*http.Request, int, string) {
 	}
 	if _, owner := config.WhitelistedPubKeys[ev.PubKey]; owner || !meshDevices.paired(ev.PubKey) {
 		return r, 0, "" // owner path (kept until the apps switch) or a stranger
+	}
+	if !meshDeviceOverMesh(r) {
+		// Tron, #1802: on the box the relay handler is also the public URL.
+		// A device's mesh key is good only for what came in over the mesh.
+		return r, http.StatusForbidden, "a device key is accepted only over the mesh"
 	}
 	verb, sha, spend, ok := meshDeviceVerb(r)
 	if !ok {

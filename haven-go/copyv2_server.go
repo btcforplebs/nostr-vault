@@ -76,7 +76,10 @@ type copyToken struct {
 var copyV2 = &copyServer{jobs: map[string]*copyJob{}, seen: map[string]time.Time{}, now: time.Now}
 
 // Unpair on A: a device that leaves the paired set loses its tokens at once.
-func init() { onMeshDeviceUnpaired = func(hex string) { copyV2.revoke(hex) } }
+func init() {
+	onMeshDeviceUnpaired = func(hex string) { copyV2.revoke(hex) }
+	meshDeviceOverLoopback = func(r *http.Request) bool { return !copyThroughTunnel(r) && copyFromLoopback(r) }
+}
 
 func (s *copyServer) loadTokens() {
 	if s.loaded {
@@ -126,6 +129,13 @@ func (s *copyServer) bearer(r *http.Request) (string, bool) {
 			continue
 		}
 		if t.Owner != config.OwnerPubKey || now.Sub(time.Unix(t.LastUsed, 0)) > copyTokenIdle {
+			return "", false
+		}
+		// Once the app has handed over the paired set, a token is good only
+		// while its device is in it: an unpair while the engine was down, or
+		// one that lands between checkStart and the token being issued,
+		// leaves no live token (Tron, #1802).
+		if meshDevices.selfKey() != "" && !meshDevices.paired(t.Device) {
 			return "", false
 		}
 		// Saved at most hourly: every chunk request would otherwise write the file.

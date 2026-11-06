@@ -54,7 +54,9 @@ SetMeshDevicesC({"self": "<this vault's mesh npub>", "devices": [{"npub": "<mesh
 - 0 set; 1 bad input, and the old set is kept.
 - The vault's own key is never a paired device.
 - An **empty or missing set accepts no device**. There is no fallback to "anyone".
-- **Unpair:** a device that leaves the set loses its copy tokens at once (as `RevokeCopyTokensC`).
+- **Unpair:** a device that leaves the set loses its copy tokens at once (as `RevokeCopyTokensC`). Once the set is
+  given, a token is also refused on every use unless its device is in the set, so a device removed while the engine
+  was down has no live token after the restart.
 
 **Start.** `POST /copy/v2/start` with `Authorization: Nostr <base64 kind 27235>` (NIP-98), signed by **B's mesh key**:
 - `["u", <any scheme://host:port>/copy/v2/start]`. The path is checked. The host is not, because A and B name the
@@ -75,8 +77,9 @@ that is neither a paired device nor (old form) the owner.
 
 ### 2.1 Blossom over the mesh (upload, get / check, delete)
 
-A paired device's Blossom request, on the door or on the own-device port, carries a kind 24242 signed by **its mesh
-key**:
+A paired device's Blossom request carries a kind 24242 signed by **its mesh key**. It counts **only over the mesh**:
+the door, the iPhone's own-device port, or the relay port from loopback with no tunnel or LAN hop (the §1 rule). On
+the box the relay handler is also the public URL, so from there, a tunnel or the LAN a device key is 403:
 - `["t", "upload" | "get" | "delete"]`: exactly one, and it must match the request (PUT/HEAD `/upload` is upload,
   GET/HEAD `/<sha256>` is get, DELETE `/<sha256>` is delete). Nothing else (list, mirror, …) is allowed: 403.
 - `["x", <sha256>]` for **each** blob acted on, no wildcard and no `server` tag stand-in. An upload whose body hashes

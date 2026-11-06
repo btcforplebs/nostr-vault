@@ -308,7 +308,7 @@ func (c *relayCycle) startOwnServer() {
 		log.Printf("🚫 mesh own-devices port %s: %v", addr, err)
 		return
 	}
-	srv := &http.Server{Addr: addr, Handler: c.server.Handler}
+	srv := &http.Server{Addr: addr, Handler: markMeshOwnPort(c.server.Handler)}
 	c.trackHijacked(srv)
 	c.ownServer = srv
 	c.spawn("mesh-own-http-server", func() {
