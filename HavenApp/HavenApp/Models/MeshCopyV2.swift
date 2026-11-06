@@ -155,15 +155,6 @@ enum MeshCopyV2 {
         return "\(scheme)://\(host)\(port)/copy/v2/start"
     }
 
-    /// `device`: B's own mesh npub. A binds the token to it, so Remove
-    /// device revokes it and a new start from B replaces it; A refuses a
-    /// start without it (Tron's review of #1788/#1790).
-    static func startAuthTags(base: URL, device: String) -> [[String]]? {
-        let device = device.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let u = startURL(base: base), !device.isEmpty else { return nil }
-        return [["u", u], ["method", "POST"], ["device", device]]
-    }
-
     /// StartCopyFromC / CopySyncC: 0 started, 2 busy, 3 relay not running.
     enum StartResult: Equatable {
         case started, busy, relayNotRunning, failed(Int32)

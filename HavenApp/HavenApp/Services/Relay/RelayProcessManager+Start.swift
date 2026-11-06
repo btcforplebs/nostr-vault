@@ -193,6 +193,8 @@ extension RelayProcessManager {
 
         self.state = .booting
         isRunning = true
+        // The engine's paired set (mesh device keys), before any mesh request.
+        Task { @MainActor in MeshDeviceSetSync.push() }
         isBooting = true
         inboxSubscribed = false
         bootStatusMessage = "Starting system..."

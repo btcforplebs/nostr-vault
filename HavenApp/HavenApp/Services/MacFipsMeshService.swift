@@ -93,6 +93,9 @@ final class MacFipsMeshService: ObservableObject {
     /// restarts it with a changed list, or stops it. Called at launch, from
     /// the switch, and after each My Devices change.
     func sync() {
+        // The relay's paired set: a removed device's mesh key and copy tokens
+        // stop working at once.
+        MeshDeviceSetSync.push()
         syncGen += 1
         let gen = syncGen
         lastError = nil

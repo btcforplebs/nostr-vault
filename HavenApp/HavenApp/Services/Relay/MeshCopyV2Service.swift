@@ -138,7 +138,7 @@ final class MeshCopyV2Service: ObservableObject {
             if let base = await Self.base(peer) {
                 dialled = true
                 // Signed right before the call: A wants it within 60 s.
-                let signed = fresh ? await Self.signedStart(base: base) : .signed("")
+                let signed = fresh ? Self.signedStart(base: base, peer: peer) : .signed("")
                 guard case .signed(let auth) = signed else {
                     if case .notSigned(let why) = signed { Self.log(.notSigned(why), peer: peer) }
                     return .failed(-1)
@@ -180,28 +180,20 @@ final class MeshCopyV2Service: ObservableObject {
         #endif
     }
 
-    /// This device's own mesh npub, the one its engine dials with.
-    private static func ownMeshNpub() -> String? {
-        #if os(iOS)
-        return FipsMeshService.meshNpubFromKey()
-        #else
-        return MacFipsMeshService.meshNpubFromKey()
-        #endif
-    }
-
     private enum SignedStart { case signed(String), notSigned(String) }
 
-    /// Base64 of the owner's kind 27235 for POST <base>/copy/v2/start, or
-    /// why it couldn't be made.
-    private static func signedStart(base: String) async -> SignedStart {
+    /// Base64 of the kind 27235 for POST <base>/copy/v2/start, signed by
+    /// this device's own mesh key with `p` = A's mesh npub (`peer`), or why
+    /// it couldn't be made. The owner's key is never used on the mesh
+    /// (docs/MESH_COPY_V2_CONTRACT.md §2); A must have this device in its
+    /// paired set.
+    private static func signedStart(base: String, peer: String) -> SignedStart {
         guard let url = URL(string: base) else { return .notSigned("bad base") }
-        guard let device = ownMeshNpub() else { return .notSigned("no mesh key on this device") }
-        guard let tags = MeshCopyV2.startAuthTags(base: url, device: device) else { return .notSigned("no start tags") }
-        guard let event = await NostrService.shared.signEventAsync(kind: 27235, content: "", tags: tags, forceOwner: true) else {
-            return .notSigned("the owner's signer did not sign")
+        guard let tags = MeshKeyAuth.copyStartTags(base: url, receiver: peer) else { return .notSigned("no start tags") }
+        guard let auth = MeshKeySigner.authorization(kind: 27235, content: "", tags: tags) else {
+            return .notSigned("no mesh key on this device")
         }
-        guard let json = try? JSONEncoder().encode(event) else { return .notSigned("could not encode") }
-        return .signed(json.base64EncodedString())
+        return .signed(auth)
     }
 
     // MARK: Progress (COPY lines from the relay log)
