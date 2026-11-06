@@ -683,18 +683,3 @@ func (wt *SimpleInMemory) Reach(pubkey string) (vouches int, follow bool, known 
 	}
 	return l.vouches[pubkey], false, true
 }
-
-// MedianVouches is the middle vouch count across the second layer, 0 when
-// there is none: a stand-in reach for a follow, whose own count is not kept.
-func (wt *SimpleInMemory) MedianVouches() int {
-	l := wt.layers.Load()
-	if l == nil || len(l.vouches) == 0 {
-		return 0
-	}
-	counts := make([]int, 0, len(l.vouches))
-	for _, n := range l.vouches {
-		counts = append(counts, n)
-	}
-	slices.Sort(counts)
-	return counts[len(counts)/2]
-}

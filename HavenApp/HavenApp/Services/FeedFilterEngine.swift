@@ -110,8 +110,13 @@ enum FeedFilterEngine {
             if note.kind == 6 && !showReposts { return false }
             // Catch Up: someone unfollowed since it was computed goes now.
             if mode == .catchUp { return followedPubkeys.isEmpty || followedPubkeys.contains(note.pubkey) }
-            // Underrated holds top-level posts, as Popular does.
-            if mode == .underrated { return !note.isReply }
+            // Underrated holds top-level posts, as Popular does, and only
+            // people this account doesn't follow: the relay leaves out the
+            // follows of every account it holds, this the active one's
+            // (Logen 2026-11-06).
+            if mode == .underrated {
+                return !note.isReply && note.pubkey != ownPubkey && !followedPubkeys.contains(note.pubkey)
+            }
             if mode == .popular {
                 let isFollowed = followedPubkeys.contains(note.pubkey)
                 if popularFilter == .follows && !isFollowed { return false }

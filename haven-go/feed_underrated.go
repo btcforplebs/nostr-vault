@@ -2,7 +2,8 @@ package main
 
 // Underrated feed (local DVM): Popular turned over. Popular puts the most
 // engaged notes first; Underrated looks for the note that did well *for its
-// author*: people who post less and are known to fewer people in your web,
+// author*, among people you do not follow yet whom your follows follow (one
+// step out; your own follows are left out entirely): people who post less and are known to fewer people in your web,
 // whose likes, reposts and zaps are measured against what that person usually
 // gets, with extra weight for notes bridged in from another network (NIP-48
 // "proxy" tag), whose authors start with no Nostr audience at all.
@@ -32,7 +33,9 @@ const (
 	// formula below gives strangers its best weights (Tron, #1830).
 	underratedMinReactors = minTrustedReactors
 	// Candidates whose bodies are looked up, most engaged first.
-	underratedMaxCandidates = 400
+	// Most of the engagement your web sees is on your own follows' notes,
+	// which Underrated leaves out, so it looks further down than Popular.
+	underratedMaxCandidates = 600
 	// Notes one Underrated result lists, and the most per author.
 	underratedMaxNotes       = 100
 	underratedMaxPerAuthor   = 2
@@ -54,7 +57,6 @@ var (
 // your follows follow someone (pkg/wot SimpleInMemory).
 type reachModel interface {
 	Reach(pubkey string) (vouches int, follow bool, known bool)
-	MedianVouches() int
 }
 
 // isBridged reports a NIP-48 proxy tag: the note was brought over from
@@ -74,9 +76,24 @@ type underratedInputs struct {
 	// posts is how many posts each author made in the window, as far as the
 	// local stores know (0 or missing = unknown: underratedUnknownPosts).
 	posts map[string]int
-	// reach returns how many of your follows follow the author, and false
-	// when that is not known.
-	reach func(pubkey string) (int, bool)
+	// oneStepOut returns how many of your follows follow the author, and
+	// false for anyone Underrated leaves out: people you follow, and people
+	// none of your follows follow. nil leaves everyone out (fails closed).
+	oneStepOut func(pubkey string) (int, bool)
+}
+
+// oneStepOutFrom reads the web of trust for Underrated: someone you do not
+// follow whom at least one of your follows does (the second layer). A graph
+// without vouch counts (depth 2, or not built) cannot tell, so it names
+// nobody (Logen 2026-11-06: Underrated showed mostly his own follows).
+func oneStepOutFrom(rm reachModel) func(string) (int, bool) {
+	return func(pk string) (int, bool) {
+		vouches, follow, known := rm.Reach(pk)
+		if follow || !known || vouches <= 0 {
+			return 0, false
+		}
+		return vouches, true
+	}
 }
 
 // scoreUnderrated ranks resolved notes. Per note, with raw the summed weight
@@ -110,6 +127,12 @@ func scoreUnderrated(events []*nostr.Event, tally map[string]map[string]float64,
 			continue
 		}
 		seen[ev.ID] = struct{}{}
+		if in.oneStepOut == nil {
+			continue
+		}
+		if _, ok := in.oneStepOut(ev.PubKey); !ok {
+			continue
+		}
 		raw, distinct := scoreExcludingAuthor(tally[ev.ID], ev.PubKey)
 		if distinct < underratedMinReactors {
 			continue
@@ -132,10 +155,8 @@ func scoreUnderrated(events []*nostr.Event, tally map[string]map[string]float64,
 		score := math.Log2(1+c.raw) *
 			((c.raw + 1) / (usual + 1)) *
 			(1 / (1 + math.Log2(float64(posts))))
-		if in.reach != nil {
-			if vouches, ok := in.reach(pk); ok {
-				score *= 1 / (1 + math.Log2(1+float64(max(vouches, 0))))
-			}
+		if vouches, ok := in.oneStepOut(pk); ok {
+			score *= 1 / (1 + math.Log2(1+float64(max(vouches, 0))))
 		}
 		if isBridged(c.ev.Tags) {
 			score *= underratedBridgeBoost
@@ -234,15 +255,7 @@ func computeUnderratedNotes(ctx context.Context) ([]PopularNote, error) {
 	}
 	in := underratedInputs{posts: localPostCounts(ctx, authors, nostr.Timestamp(now.Add(-popularWindow).Unix()))}
 	if rm, ok := model.(reachModel); ok {
-		median := rm.MedianVouches()
-		in.reach = func(pk string) (int, bool) {
-			vouches, follow, known := rm.Reach(pk)
-			if follow {
-				// A follow's own count is not kept; the web's middle stands in.
-				return median, true
-			}
-			return vouches, known
-		}
+		in.oneStepOut = oneStepOutFrom(rm)
 	}
 	results := scoreUnderrated(events, tally, in, now)
 	log.Printf("underrated: %d candidates, %d resolved, %d ranked (%s)", len(ids), len(events), len(results),
