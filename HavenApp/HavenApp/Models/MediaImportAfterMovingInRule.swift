@@ -32,4 +32,20 @@ enum OwnVaultUpload: Equatable {
     case inProcess
 
     static func route(keyless: Bool) -> OwnVaultUpload { keyless ? .inProcess : .signedUpload }
+
+    /// Above this, a signed HTTP upload is not used for this device's own
+    /// vault: the vault (in this app's process) reads a whole upload body into
+    /// memory to hash it, so a 600 MB video would be 600 MB of the app's RAM.
+    /// The in-process import reads the file from disk in pieces instead.
+    static let inProcessAbove: Int64 = 32 << 20
+
+    /// The route for a file of `bytes`. A big file goes in-process when the
+    /// account signing would be the owner anyway, so its record is the same
+    /// one a signed upload makes (the in-process import files it under the
+    /// owner). For another account it stays a signed upload, so the file is
+    /// never filed under a key that didn't save it.
+    static func route(keyless: Bool, bytes: Int64, activeIsOwner: Bool) -> OwnVaultUpload {
+        if keyless { return .inProcess }
+        return bytes > inProcessAbove && activeIsOwner ? .inProcess : .signedUpload
+    }
 }

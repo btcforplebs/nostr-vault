@@ -84,16 +84,28 @@ extension BlossomService {
     func saveToLocalRelay(source: UploadSource, sha256: String, contentType: String, mirrorToExternal: Bool, progress: ((Double) -> Void)? = nil) async -> Bool {
         // A keyless vault can't sign the upload: in-process, no signer asked.
         // Nothing to push outside either, since that needs a signature too.
-        if OwnVaultUpload.route(keyless: await vaultIsKeyless) == .inProcess {
+        // A big file from the owner also goes in-process, read from disk in
+        // pieces, because an HTTP upload to this vault is held whole in memory.
+        let keyless = await vaultIsKeyless
+        let activeIsOwner = await MainActor.run { nostrService.activeHexPubkey == nostrService.ownerHexPubkey }
+        let route = OwnVaultUpload.route(keyless: keyless, bytes: Int64(source.byteCount), activeIsOwner: activeIsOwner)
+        if keyless {
             return await importToOwnVaultInProcess(source: source, sha256: sha256, contentType: contentType)
         }
         let auth = await makeUploadAuth(sha256: sha256)
-        let localResult = await uploadToLocalWithRecovery(source: source, sha256: sha256, contentType: contentType, authBase64: auth)
-        guard localResult != nil else {
-            logger.error("saveToLocalRelay: local upload failed after recovery attempt")
-            return false
+        if route == .inProcess {
+            guard await importToOwnVaultInProcess(source: source, sha256: sha256, contentType: contentType) else {
+                logger.error("saveToLocalRelay: in-process store refused")
+                return false
+            }
+        } else {
+            let localResult = await uploadToLocalWithRecovery(source: source, sha256: sha256, contentType: contentType, authBase64: auth)
+            guard localResult != nil else {
+                logger.error("saveToLocalRelay: local upload failed after recovery attempt")
+                return false
+            }
         }
-        logger.info("saveToLocalRelay: local upload succeeded (\(source.byteCount) bytes)")
+        logger.info("saveToLocalRelay: stored in this vault (\(source.byteCount) bytes, \(route == .inProcess ? "in-process" : "upload"))")
 
         // Push to external mirrors — awaited to ensure uploads complete before returning.
         // Previously fire-and-forget, which caused mirrors to silently fail on iOS
