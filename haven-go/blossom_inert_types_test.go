@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/fiatjaf/khatru"
@@ -62,6 +63,34 @@ func TestBlobsAreNeverServedAsActiveTypes(t *testing.T) {
 	for ext, want := range map[string]string{".png": "image/png", "": "image/png"} {
 		if ct, nosniff, _ := get("/" + pngSha + ext); ct != want || nosniff != "nosniff" {
 			t.Errorf("GET png%s: Content-Type %q (want %q), nosniff %q", ext, ct, want, nosniff)
+		}
+	}
+
+	// A record typed text/html over bytes that sniff as plain text (the
+	// signed upload keeps the uploader's Content-Type). Left without a
+	// Content-Type, ServeContent took it from the stored type's extension
+	// and served a page (Tron, PR #1799 review).
+	keep := func(body []byte, typ string) string {
+		_, sha := ownerBlobFile(t, body)
+		if err := afero.WriteFile(afero.NewOsFs(), config.BlossomPath+sha, body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := bs.Store.Keep(context.Background(), blossom.BlobDescriptor{SHA256: sha, Type: typ, Size: len(body), Uploaded: nostr.Now()}, owner); err != nil {
+			t.Fatal(err)
+		}
+		return sha
+	}
+	plainSha := keep([]byte("hello <script>alert(document.domain)</script>"), "text/html")
+	for _, ext := range []string{"", ".foo", ".html", ".txt"} {
+		if ct, nosniff, _ := get("/" + plainSha + ext); strings.Contains(ct, "html") || ct == "" || nosniff != "nosniff" {
+			t.Errorf("GET text/html record%s: Content-Type %q, nosniff %q", ext, ct, nosniff)
+		}
+	}
+	// Bytes the sniffer can't name keep their (inert) stored type.
+	mp3Sha := keep(append([]byte{0xff, 0xfb, 0x90, 0x44, 0x00}, make([]byte, 64)...), "audio/mpeg")
+	for _, ext := range []string{"", ".foo"} {
+		if ct, _, _ := get("/" + mp3Sha + ext); ct != "audio/mpeg" {
+			t.Errorf("GET audio/mpeg record%s: Content-Type %q", ext, ct)
 		}
 	}
 }
