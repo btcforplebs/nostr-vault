@@ -77,6 +77,8 @@ final class UserListSignGuardTests: XCTestCase {
             "HavenApp/Services/Nostr/NostrService+ListPublishing.swift": ["10000", "10006", "10063"],
             // Save in Relays.
             "HavenApp/Services/Nostr/NostrService+RelayListSave.swift": ["10002", "10050"],
+            // Delete Account: the blank profile, owner-signed, before the erase request (LeaveNostr).
+            "HavenApp/Services/LeaveNostrService.swift": ["0"],
             // Save in Edit profile.
             "HavenApp/Views/Profile/ProfileEditView.swift": ["0"],
             // A new account finishing setup (no list exists yet).

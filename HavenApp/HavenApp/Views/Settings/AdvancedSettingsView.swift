@@ -4,6 +4,7 @@ struct AdvancedSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @State private var showResetConfirmation = false
+    @State private var showDeleteAccount = false
 
     var body: some View {
         Form {
@@ -38,6 +39,9 @@ struct AdvancedSettingsView: View {
             }
 
             Section {
+                if !configService.config.ownerNpub.isEmpty {
+                    DeleteAccountButton { showDeleteAccount = true }
+                }
                 Button(role: .destructive) {
                     showResetConfirmation = true
                 } label: {
@@ -53,6 +57,10 @@ struct AdvancedSettingsView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .sheet(isPresented: $showDeleteAccount) {
+            LeaveNostrForeverView(configService: configService, nostrService: NostrService.shared,
+                                  relayManager: relayManager, onDismiss: { showDeleteAccount = false })
+        }
         .alert("Are you sure?", isPresented: $showResetConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Reset Everything", role: .destructive) {
