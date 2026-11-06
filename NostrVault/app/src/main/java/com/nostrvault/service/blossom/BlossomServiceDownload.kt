@@ -40,7 +40,8 @@ import com.nostrvault.service.BlossomService.Companion.TAG
         }
     }
 
-    suspend fun BlossomService.downloadFromMirrors(sha256: String): ByteArray? {
+    /** The blob from the first mirror that has it, streamed to a temp file and hash-checked (StreamedBlob.kt). */
+    internal suspend fun BlossomService.downloadFromMirrors(sha256: String, onSkip: ((String) -> Unit)? = null): StreamedBlob? {
         val mirrors = configStore.config.value.activeBlossomMirrors
         for (mirror in mirrors) {
             try {
@@ -51,15 +52,22 @@ import com.nostrvault.service.BlossomService.Companion.TAG
 
                 val response = remoteClient.newCall(request).execute()
                 if (response.isSuccessful) {
-                    val data = readBodyCapped(response, MAX_BLOB_BYTES) ?: continue
                     // Blossom is content-addressed: the bytes MUST hash to the
                     // requested digest. A mismatch means a malicious/broken mirror;
-                    // discard rather than poison the local cache.
-                    if (computeSHA256(data) != sha256.lowercase()) {
-                        Log.w(TAG, "Hash mismatch from mirror $mirror for $sha256, discarding")
-                        continue
+                    // the temp file is discarded rather than poison the vault.
+                    when (val got = streamToTempFile(response, expectSha = sha256)) {
+                        is StreamResult.Ok -> return got.blob
+                        is StreamResult.Skipped -> {
+                            Log.w(TAG, "Mirror $mirror for ${sha256.take(8)}: ${got.reason}")
+                            // No room is the same on every mirror: stop and say so.
+                            if (got.reason.startsWith(BlobStream.NO_ROOM)) {
+                                onSkip?.invoke(got.reason)
+                                return null
+                            }
+                        }
                     }
-                    return data
+                } else {
+                    response.close()
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Download from mirror $mirror failed: ${e.message}")
