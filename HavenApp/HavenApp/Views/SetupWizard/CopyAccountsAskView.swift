@@ -61,9 +61,11 @@ struct CopyAccountsAskView: View {
                         .font(.appSystem(size: 16, weight: .medium))
                         .foregroundColor(WizardColors.textPrimary)
                         .lineLimit(1)
-                    Text(MeshPairing.shortAddress(a.npub))
-                        .font(.appSystem(size: 13, design: .monospaced))
-                        .foregroundColor(WizardColors.textSecondary)
+                    if !a.name.isEmpty {
+                        Text(MeshPairing.shortAddress(a.npub))
+                            .font(.appSystem(size: 13, design: .monospaced))
+                            .foregroundColor(WizardColors.textSecondary)
+                    }
                 }
                 Spacer()
             }
