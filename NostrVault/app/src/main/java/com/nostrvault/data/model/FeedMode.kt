@@ -17,6 +17,21 @@ enum class FeedMode(val displayName: String) {
      */
     HASHTAGS("Hashtags"),
     POPULAR("Popular"),
+
+    /**
+     * Catch Up: the newest post of each person you follow, newest first, one
+     * per person. Computed by the relay's local DVM like [POPULAR]
+     * (haven-go feed_catchup.go), from the active account's follow list.
+     */
+    CATCH_UP("Catch Up"),
+
+    /**
+     * Underrated: Popular turned over. The relay's local DVM (haven-go
+     * feed_underrated.go) favours people who post less and are known to fewer
+     * of your follows, scores engagement against the author's own usual and
+     * weighs NIP-48 bridged notes extra.
+     */
+    UNDERRATED("Underrated"),
     MEDIA("Media"),
 
     /**
@@ -71,6 +86,14 @@ enum class FeedMode(val displayName: String) {
      */
     MUSIC("Music"),
 }
+
+/**
+ * Feeds the relay's local DVM computes as a fixed, scored set (Popular,
+ * Catch Up, Underrated): no timeline REQ, no older pages, a pull computes
+ * them again. iOS `FeedMode.isLocalDvm`.
+ */
+val FeedMode.isLocalDvm: Boolean
+    get() = this == FeedMode.POPULAR || this == FeedMode.CATCH_UP || this == FeedMode.UNDERRATED
 
 enum class MediaFeedMode(val displayName: String) {
     FOLLOWING("Following"),

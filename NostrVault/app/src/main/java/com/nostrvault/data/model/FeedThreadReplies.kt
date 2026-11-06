@@ -19,7 +19,7 @@ object FeedThreadReplies {
 
     /** The feeds whose replies are fetched rather than taken from the stream. */
     fun fetchesReplies(mode: FeedMode): Boolean =
-        mode == FeedMode.POPULAR || mode == FeedMode.GLOBAL
+        mode.isLocalDvm || mode == FeedMode.GLOBAL
 
     /** Kind 1 replies tagging any of [postIds]. */
     fun filter(postIds: List<String>): String =

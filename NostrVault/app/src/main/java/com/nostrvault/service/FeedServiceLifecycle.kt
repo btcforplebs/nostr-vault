@@ -43,12 +43,13 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
         // Pre-load WOT pubkeys so DISCOVERY and GLOBAL media modes work immediately
         loadWotPubkeys()
 
-        if (_feedMode.value == FeedMode.POPULAR) {
+        val launchMode = _feedMode.value
+        if (launchMode.isLocalDvm) {
             // The last ranking shows at once; one over five minutes old is
             // computed again behind it.
             scope.launch {
-                val savedAgeMs = restoreSavedModeCache(FeedMode.POPULAR)
-                if (_feedMode.value == FeedMode.POPULAR) showCachedPopularOrLoad(savedAgeMs)
+                val savedAgeMs = restoreSavedModeCache(launchMode)
+                if (_feedMode.value == launchMode) showCachedLocalDvmOrLoad(launchMode, savedAgeMs)
             }
             return
         }
@@ -87,9 +88,11 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
             // them again for the reloaded posts.
             if (_feedMode.value == FeedMode.GLOBAL) resetFeedThreadReplies()
 
-            when (_feedMode.value) {
-                FeedMode.POPULAR -> loadPopularFeed() // Computed, not streamed: pull to refresh computes it again.
-                FeedMode.DISCOVERY -> {
+            val mode = _feedMode.value
+            when {
+                // Computed, not streamed: pull to refresh computes it again.
+                mode.isLocalDvm -> loadLocalDvmFeed(mode)
+                mode == FeedMode.DISCOVERY -> {
                     loadExtendedNetwork()
                     subscribeToAllRelays()
                 }
@@ -116,7 +119,7 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
         resetFeedThreadReplies()
         val cachedAgeMs = restoreModeCache(mode)
         when (mode) {
-            FeedMode.POPULAR -> showCachedPopularOrLoad(cachedAgeMs)
+            FeedMode.POPULAR, FeedMode.CATCH_UP, FeedMode.UNDERRATED -> showCachedLocalDvmOrLoad(mode, cachedAgeMs)
             FeedMode.GLOBAL -> {
                 loadWotPubkeys()
                 subscribeToAllRelays()
@@ -318,7 +321,7 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
         scope.launch {
             while (isActive) {
                 delay(60_000)
-                if (snapshotDirty && _notes.value.isNotEmpty() && _feedMode.value != FeedMode.POPULAR) {
+                if (snapshotDirty && _notes.value.isNotEmpty() && !_feedMode.value.isLocalDvm) {
                     snapshotDirty = false
                     persistCurrentSnapshot()
                 }
@@ -403,9 +406,9 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
         }
     }
 
-/** A launch prewarm runs once, before the first load, and not for Popular (computed, not cached). */
+/** A launch prewarm runs once, before the first load, and not for the local DVM feeds (computed, not cached). */
 internal fun shouldPrewarm(mode: FeedMode, notesEmpty: Boolean, restored: Boolean, loadStarted: Boolean): Boolean =
-    mode != FeedMode.POPULAR && notesEmpty && !restored && !loadStarted
+    !mode.isLocalDvm && notesEmpty && !restored && !loadStarted
 
 /**
  * The relay is ready: load when the feed is empty, as before, and also when the

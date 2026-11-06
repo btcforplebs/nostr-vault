@@ -265,6 +265,8 @@ internal fun EmptyFeedPlaceholder(
                     FeedMode.DISCOVERY -> NostrVaultIcons.GlobeOutline
                     FeedMode.GLOBAL -> NostrVaultIcons.Globe
                     FeedMode.POPULAR -> NostrVaultIcons.BarChart
+                    FeedMode.CATCH_UP -> NostrVaultIcons.CatchUp
+                    FeedMode.UNDERRATED -> NostrVaultIcons.Underrated
                     FeedMode.MEDIA -> NostrVaultIcons.Media
                     FeedMode.ARTICLES -> NostrVaultIcons.Articles
                     FeedMode.RECIPES -> NostrVaultIcons.Recipes
@@ -286,6 +288,8 @@ internal fun EmptyFeedPlaceholder(
                     FeedMode.DISCOVERY -> "No Discovery Feed"
                     FeedMode.GLOBAL -> "No Global Notes Yet"
                     FeedMode.POPULAR -> "No Popular Notes Found"
+                    FeedMode.CATCH_UP -> "All Caught Up"
+                    FeedMode.UNDERRATED -> "No Underrated Notes Found"
                     FeedMode.MEDIA -> "No Media Found"
                     FeedMode.ARTICLES -> "No Articles Yet"
                     FeedMode.RECIPES -> "No Recipes Yet"
@@ -308,6 +312,8 @@ internal fun EmptyFeedPlaceholder(
                     FeedMode.DISCOVERY -> "Follow more people on Nostr to build your extended network"
                     FeedMode.GLOBAL -> "Waiting for notes from your feed relays"
                     FeedMode.POPULAR -> "Not enough engagement data from relays.\nCheck back later or try refreshing."
+                    FeedMode.CATCH_UP -> "Nobody you follow has posted in the last two weeks"
+                    FeedMode.UNDERRATED -> "Not enough engagement from your web yet.\nCheck back later or try refreshing."
                     FeedMode.MEDIA -> "Photos and videos from your feed show up here"
                     FeedMode.ARTICLES -> "Long-form posts in your vault show up here"
                     FeedMode.RECIPES -> "Recipes from zap.cooking show up here"

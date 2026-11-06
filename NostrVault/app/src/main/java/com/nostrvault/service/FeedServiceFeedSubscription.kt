@@ -84,6 +84,8 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
                     FeedMode.GLOBAL -> "global"
                     FeedMode.MEDIA -> "media"
                     FeedMode.POPULAR -> "popular"
+                    FeedMode.CATCH_UP -> "catchup"
+                    FeedMode.UNDERRATED -> "underrated"
                     FeedMode.ARTICLES -> "articles"
                     FeedMode.POLLS -> "polls"
                     FeedMode.RECIPES -> "recipes"
@@ -153,6 +155,8 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
             FeedMode.GLOBAL -> "global"
             FeedMode.MEDIA -> "media"
             FeedMode.POPULAR -> "popular"
+            FeedMode.CATCH_UP -> "catchup"
+            FeedMode.UNDERRATED -> "underrated"
             FeedMode.ARTICLES -> "articles"
             FeedMode.POLLS -> "polls"
             FeedMode.RECIPES -> "recipes"
@@ -245,13 +249,13 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
      * on follow/unfollow — mirrors the iOS resubscribePrimaryIfNeeded reconcile.
      */
     internal fun FeedService.resubscribePrimaryToConnected() {
-        if (_feedMode.value == FeedMode.POPULAR) return
+        if (_feedMode.value.isLocalDvm) return
         val label = when (_feedMode.value) {
             FeedMode.FOLLOWING -> "following"
             FeedMode.DISCOVERY -> "discovery"
             FeedMode.GLOBAL -> "global"
             FeedMode.MEDIA -> "media"
-            FeedMode.POPULAR -> return
+            FeedMode.POPULAR, FeedMode.CATCH_UP, FeedMode.UNDERRATED -> return
             FeedMode.ARTICLES -> "articles"
             FeedMode.POLLS -> "polls"
             FeedMode.RECIPES -> "recipes"
@@ -337,7 +341,7 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
                     sb.append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
                 }
             }
-            FeedMode.POPULAR -> return false // Handled separately
+            FeedMode.POPULAR, FeedMode.CATCH_UP, FeedMode.UNDERRATED -> return false // Computed by the local DVM
         }
         return true
     }

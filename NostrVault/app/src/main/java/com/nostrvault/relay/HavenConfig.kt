@@ -374,6 +374,8 @@ data class HavenConfig(
             com.nostrvault.data.model.FeedMode.GLOBAL,
             com.nostrvault.data.model.FeedMode.HASHTAGS,
             com.nostrvault.data.model.FeedMode.POPULAR,
+            com.nostrvault.data.model.FeedMode.CATCH_UP,
+            com.nostrvault.data.model.FeedMode.UNDERRATED,
         ).associate { it.name to com.nostrvault.data.model.FeedLayoutMode.THREADED.storageKey }
 
         const val DEFAULT_POST_BUTTONS = "⚡️"

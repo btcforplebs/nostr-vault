@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import com.nostrvault.data.model.FeedMode
+import com.nostrvault.data.model.isLocalDvm
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.data.model.poll
@@ -139,6 +140,8 @@ object FeedFilterEngine {
                         PopularFilter.NON_FOLLOWS -> authorForMembership !in followedPubkeys
                     }
                 }
+                // Posts, never replies, as the relay picked them.
+                FeedMode.CATCH_UP, FeedMode.UNDERRATED -> !note.isReply
                 FeedMode.MEDIA -> note.mediaURLs.isNotEmpty()
                 FeedMode.ARTICLES -> note.kind == LONG_FORM_KIND && longFormAdmits(note.pubkey)
                 FeedMode.RECIPES -> note.kind == LONG_FORM_KIND && RecipeTopics.matches(note.tags) &&
@@ -159,8 +162,8 @@ object FeedFilterEngine {
             }
         }
 
-        // Sort: popular by score, everything else chronological
-        filtered = if (mode == FeedMode.POPULAR && popularNoteScores.isNotEmpty()) {
+        // Sort: the local DVM feeds by score (Catch Up's is created_at), everything else chronological
+        filtered = if (mode.isLocalDvm && popularNoteScores.isNotEmpty()) {
             filtered.sortedByDescending { popularNoteScores[it.id] ?: 0.0 }
         } else {
             filtered.sortedByDescending { it.createdAt }

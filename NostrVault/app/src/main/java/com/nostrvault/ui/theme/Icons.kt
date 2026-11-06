@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Whatshot
+import androidx.compose.material.icons.filled.Diamond
 import androidx.compose.material.icons.outlined.Whatshot as OutlinedWhatshot
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.VideoLibrary
@@ -226,6 +227,8 @@ object NostrVaultIcons {
     val Media: ImageVector = Icons.Filled.Image            // photo
     val Popular: ImageVector = Icons.Filled.Whatshot       // flame
     val PopularOutline: ImageVector = Icons.Outlined.OutlinedWhatshot // flame (off)
+    val CatchUp: ImageVector = Icons.Filled.History        // clock.arrow.circlepath
+    val Underrated: ImageVector = Icons.Filled.Diamond     // diamond
     val Discover: ImageVector = Icons.Filled.AutoAwesome   // sparkles
     val Articles: ImageVector = Icons.Filled.Article       // doc.text
     val Recipes: ImageVector = Icons.Filled.Restaurant     // fork.knife
