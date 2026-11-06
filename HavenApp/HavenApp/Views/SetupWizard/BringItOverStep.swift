@@ -50,7 +50,8 @@ struct BringItOverStep: View {
                 BringItOverContent(flow: flow, other: other, copying: copying, progress: copy.progress,
                                    stopLine: stopLine, scanning: $scanning,
                                    scanned: scanned, confirm: confirm, onLinked: startCopy, onFailed: fallBack,
-                                   onContinue: { stopLine == nil ? done() : fallBack() })
+                                   onContinue: { stopLine == nil ? done() : fallBack() },
+                                   onSkipRelays: { copy.skipRelays() })
                     .environmentObject(relayManager)
             }
             if !copying {
@@ -67,6 +68,9 @@ struct BringItOverStep: View {
         }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in watch() }
         .onChange(of: copy.progress) { _, p in moved(p) }
+        // The local-network prompt comes now, before the scan, not over
+        // the copy's progress (Logen, 2026-11-06).
+        .onAppear { LocalNetworkPermission.ask() }
         #if os(macOS)
         .onAppear { MacFipsMeshService.shared.turnOnForCopy() }
         #endif
@@ -176,6 +180,7 @@ private struct BringItOverContent: View {
     let onLinked: () -> Void
     let onFailed: () -> Void
     let onContinue: () -> Void
+    let onSkipRelays: () -> Void
 
     private var otherName: String {
         let n = other?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -257,7 +262,9 @@ private struct BringItOverContent: View {
                     .font(.appSystem(size: 15, weight: .medium))
                     .foregroundColor(WizardColors.textPrimary)
                     .multilineTextAlignment(.center)
-                if let fraction = progress?.fraction {
+                if let progress, CopySaving.slides(progress) {
+                    CopySavingProgress(progress: progress, onSkip: onSkipRelays)
+                } else if let fraction = progress?.fraction {
                     ProgressView(value: fraction)
                         .progressViewStyle(.linear)
                         .tint(WizardColors.accentPrimary)

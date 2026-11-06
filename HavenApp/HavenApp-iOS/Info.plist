@@ -62,7 +62,7 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Nostr Vault records sound with the diVines you film.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Nostr Vault connects to a local Nostr relay running on your device to store and serve your notes and media.</string>
+	<string>Nostr Vault connects to your own devices on this network, like your Mac or iPad, to copy and share your vault, and to the relay on this device that stores your notes and media.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Nostr Vault needs access to save media from your relay to your photo library.</string>
 	<key>CADisableMinimumFrameDuration</key>
