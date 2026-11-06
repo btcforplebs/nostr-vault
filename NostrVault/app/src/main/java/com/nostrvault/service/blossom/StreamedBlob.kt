@@ -7,6 +7,9 @@ import okhttp3.Response
 import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Semaphore
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Big media into the vault without holding it in memory (Logen, 2026-11-06:
@@ -20,9 +23,43 @@ import java.security.MessageDigest
  * temp file plus the vault's copy). The temp file is deleted on any failure,
  * and after the store.
  */
-internal class StreamedBlob(val file: File, val sha256: String, val size: Long) {
+internal class StreamedBlob(
+    val file: File,
+    val sha256: String,
+    val size: Long,
+    /** Held for a big file until it is stored ([BigFileGate]); given back by [delete]. */
+    private val gate: BigFileGate? = null,
+) {
+    private val done = AtomicBoolean(false)
+
     fun delete() {
         file.delete()
+        BlobStream.forget(file)
+        if (done.compareAndSet(false, true)) gate?.give()
+    }
+}
+
+/**
+ * Big files go one at a time (Tron's review of #1818): four big downloads in
+ * parallel could each pass the space check and then abort each other at the
+ * re-check, so none landed. A big file holds this from its first byte until
+ * the vault has it; the waiting ones are told [StreamResult.Busy] and retry.
+ */
+internal class BigFileGate {
+    private val permit = Semaphore(1)
+
+    fun tryTake(): Boolean = permit.tryAcquire()
+
+    fun give() = permit.release()
+
+    /** Blocks until the big file ahead is done (without holding the turn). */
+    fun waitTurn() {
+        permit.acquire()
+        permit.release()
+    }
+
+    companion object {
+        val shared = BigFileGate()
     }
 }
 
@@ -31,6 +68,9 @@ internal sealed interface StreamResult {
 
     /** Not stored; [reason] says why, for the log and the import summary. */
     data class Skipped(val reason: String) : StreamResult
+
+    /** Another big file is on its way in: wait ([BigFileGate.waitTurn]) and ask again. Nothing kept. */
+    data object Busy : StreamResult
 }
 
 internal object BlobStream {
@@ -51,6 +91,30 @@ internal object BlobStream {
 
     const val NO_ROOM = "not enough free storage"
 
+    /** Above this a file is big: one at a time ([BigFileGate]). */
+    const val BIG_BYTES = 50L * 1024 * 1024
+
+    /** Temp files of this run's downloads; anything else named import-*.blob is a leftover. */
+    private val live = ConcurrentHashMap.newKeySet<String>()
+
+    fun forget(file: File) {
+        live.remove(file.absolutePath)
+    }
+
+    /** Where downloads land: the app's private cache. */
+    fun tempDir(): File = File(System.getProperty("java.io.tmpdir") ?: ".")
+
+    /**
+     * Deletes temp files a killed import left behind (Android kills the app
+     * mid-import under low memory; each could hold hundreds of MB and shrink
+     * the space the next import sees). Downloads still running are kept.
+     * @return how many were deleted.
+     */
+    fun sweepLeftovers(dir: File = tempDir()): Int =
+        dir.listFiles { f -> f.isFile && f.name.startsWith("import-") && f.name.endsWith(".blob") }
+            .orEmpty()
+            .count { it.absolutePath !in live && it.delete() }
+
     private fun mb(bytes: Long) = bytes / (1024 * 1024)
 
     /**
@@ -66,11 +130,23 @@ internal object BlobStream {
         dir: File,
         expectSha: String? = null,
         freeBytes: () -> Long = { dir.usableSpace },
+        gate: BigFileGate = BigFileGate.shared,
     ): StreamResult = input.use { stream ->
+        var holding = false
+        if (declaredLength > BIG_BYTES) {
+            if (!gate.tryTake()) return StreamResult.Busy
+            holding = true
+        }
         if (declaredLength >= 0 && !hasRoomFor(declaredLength, freeBytes())) {
+            if (holding) gate.give()
             return skippedForSpace(declaredLength, freeBytes())
         }
-        val temp = File.createTempFile("import-", ".blob", dir)
+        val temp = try {
+            File.createTempFile("import-", ".blob", dir).also { live.add(it.absolutePath) }
+        } catch (e: Exception) {
+            if (holding) gate.give()
+            throw e
+        }
         var kept = false
         try {
             val digest = MessageDigest.getInstance("SHA-256")
@@ -84,6 +160,11 @@ internal object BlobStream {
                     digest.update(buffer, 0, n)
                     out.write(buffer, 0, n)
                     total += n
+                    // No length given: it becomes big here, so it takes its turn now or retries later.
+                    if (!holding && total > BIG_BYTES) {
+                        if (!gate.tryTake()) return StreamResult.Busy
+                        holding = true
+                    }
                     if (declaredLength >= 0 && total > declaredLength) {
                         return StreamResult.Skipped("server sent more than its Content-Length")
                     }
@@ -104,9 +185,13 @@ internal object BlobStream {
                 return StreamResult.Skipped("bytes do not match their sha256")
             }
             kept = true
-            return StreamResult.Ok(StreamedBlob(temp, sha, total))
+            return StreamResult.Ok(StreamedBlob(temp, sha, total, gate.takeIf { holding }))
         } finally {
-            if (!kept) temp.delete()
+            if (!kept) {
+                temp.delete()
+                forget(temp)
+                if (holding) gate.give()
+            }
         }
     }
 
@@ -145,9 +230,8 @@ internal object BlobStream {
 /** Downloads [response]'s body to a temp file in the cache dir (see [BlobStream.toTempFile]). */
 internal fun BlossomService.streamToTempFile(response: Response, expectSha: String? = null): StreamResult {
     val body = response.body ?: return StreamResult.Skipped("empty response")
-    val dir = File(System.getProperty("java.io.tmpdir") ?: ".")
     return try {
-        BlobStream.toTempFile(body.byteStream(), body.contentLength(), dir, expectSha)
+        BlobStream.toTempFile(body.byteStream(), body.contentLength(), BlobStream.tempDir(), expectSha)
     } catch (e: Exception) {
         StreamResult.Skipped("download failed: ${e.message}")
     }
