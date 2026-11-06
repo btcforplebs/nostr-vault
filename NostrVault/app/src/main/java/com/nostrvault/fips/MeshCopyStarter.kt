@@ -6,8 +6,10 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.di.ApplicationScope
 import com.nostrvault.relay.HavenBridge
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,6 +41,8 @@ class MeshCopyStarter internal constructor(
     private val setupDone: () -> Boolean,
     private val scope: CoroutineScope,
     private val nowS: () -> Long = { System.currentTimeMillis() / 1000 },
+    /** Where the unreachable retries run (the link dial blocks); the tests' scheduler in the tests. */
+    private val io: CoroutineDispatcher = Dispatchers.IO,
 ) {
     @Inject constructor(
         @ApplicationContext context: Context,
@@ -78,6 +82,15 @@ class MeshCopyStarter internal constructor(
     /** The engine's newest `COPY` line, or null before any. */
     val progress: StateFlow<MeshCopyV2.Line?> = _progress.asStateFlow()
 
+    private val _unreachable = MutableStateFlow<MeshCopyV2.Retry>(MeshCopyV2.Retry.None)
+    /**
+     * The other device can't be reached: [MeshCopyV2.Retry.After] while this phone keeps trying every ~15 s,
+     * [MeshCopyV2.Retry.GaveUp] once it has tried for a few minutes (then [tryAgain]).
+     */
+    val unreachable: StateFlow<MeshCopyV2.Retry> = _unreachable.asStateFlow()
+    /** The next try at an unreachable copy, while one waits. */
+    private var retryJob: Job? = null
+
     private val lock = Mutex()
     private var record = records.load()
         set(v) { if (v != field) { field = v; records.save(v) } }
@@ -91,13 +104,20 @@ class MeshCopyStarter internal constructor(
     fun onLogLine(raw: String): MeshCopyV2.Line? {
         if (!raw.contains("COPY ")) return null
         val l = MeshCopyV2.parseLine(raw) ?: return null
-        _progress.value = l
         if (l.stage == "done" || l.stage == "failed") {
-            synchronized(this) {
-                (current ?: record.pending?.peer)?.let { record = record.finished(l, it, nowS()) }
-                current = null
+            val peer = synchronized(this) {
+                (current ?: record.pending?.peer)?.also { record = record.finished(l, it, nowS()) }.also { current = null }
             }
+            // Can't reach the device: try again every ~15 s for a few minutes, then say it failed (set before
+            // [progress], which the copy screen follows).
+            if (l.error == "unreachable" && peer != null && record.pending?.peer == peer) missed(peer)
+            else if (_unreachable.value != MeshCopyV2.Retry.None) stopRetrying()
+        } else if (_unreachable.value != MeshCopyV2.Retry.None) {
+            // Moving again: it is reachable.
+            synchronized(this) { record = record.retryNow() }
+            stopRetrying()
         }
+        _progress.value = l
         return l
     }
 
@@ -124,8 +144,55 @@ class MeshCopyStarter internal constructor(
     suspend fun start(peer: String, linkWs: String, name: String): Result {
         if (current == peer) return Result.Started
         _progress.value = null
-        synchronized(this) { record = record.copy(pending = MeshCopyV2.Record.Pending(peer, name, freshStart = true)) }
+        stopRetrying()
+        synchronized(this) {
+            record = record.copy(pending = MeshCopyV2.Record.Pending(peer, name, freshStart = true), unreachableSince = null)
+        }
         return lock.withLock { run(peer, linkWs, name, fresh = true) }
+    }
+
+    /** The failed state's Try again: a fresh few minutes of tries. */
+    fun tryAgain() {
+        val peer = record.pending?.peer ?: return
+        synchronized(this) { record = record.retryNow() }
+        stopRetrying()
+        scope.launch(io) { retryOnce(peer) }
+    }
+
+    private fun stopRetrying() {
+        retryJob?.cancel()
+        retryJob = null
+        _unreachable.value = MeshCopyV2.Retry.None
+    }
+
+    /** The pending copy with [peer] missed its device: try again shortly, or after a few minutes show it failed. */
+    private fun missed(peer: String) {
+        val next = synchronized(this) {
+            record = record.missed(peer, nowS())
+            record.retry(nowS())
+        }
+        retryJob?.cancel()
+        _unreachable.value = next
+        retryJob = (next as? MeshCopyV2.Retry.After)?.let { after ->
+            scope.launch(io) {
+                delay(after.seconds * 1000)
+                retryJob = null
+                retryOnce(peer)
+            }
+        }
+    }
+
+    /** One more try at the pending copy with [peer]; a try that can't reach it counts as a miss. */
+    internal suspend fun retryOnce(peer: String) {
+        if (current != null || !lock.tryLock()) return
+        try {
+            val p = record.pending?.takeIf { it.peer == peer } ?: return
+            val url = link(p.peer) ?: return missed(peer)
+            val r = run(p.peer, url, p.name, p.freshStart)
+            if ((r as? Result.Failed)?.code == "unreachable") missed(peer)
+        } finally {
+            lock.unlock()
+        }
     }
 
     /** The relay came up or the app came back: the pending copy resumes, else a copied device that is due gets a catch-up. */
@@ -138,6 +205,9 @@ class MeshCopyStarter internal constructor(
         try {
             val r = record
             r.pending?.let { p ->
+                // The relay came up or the app came back: a fresh window of tries.
+                synchronized(this) { record = record.retryNow() }
+                stopRetrying()
                 val url = link(p.peer) ?: return
                 run(p.peer, url, p.name, p.freshStart)
                 return

@@ -226,6 +226,33 @@ enum MeshCopyV2 {
     /// A catch-up with one linked device at most this often.
     static let syncEvery = 15 * 60
 
+    /// A copy the other device can't be reached for (`unreachable`, after the
+    /// engine's own ~20 s) is tried again this often, for `unreachableRetryFor`
+    /// from the first miss; then it has failed and waits for Try again (Logen,
+    /// 2026-11-06). Before, it sat on "Waiting" until a reconnect.
+    static let unreachableRetryEvery = 15
+    static let unreachableRetryFor = 5 * 60
+
+    /// What B does next about a copy it can't reach.
+    enum Retry: Equatable {
+        /// Nothing to retry: no copy pending, or it isn't unreachable.
+        case none
+        /// Try again in this many seconds.
+        case after(Int)
+        /// Tried for `unreachableRetryFor`: failed, Try again starts over.
+        case gaveUp
+    }
+
+    /// The copy screen's line while B keeps trying, and once it has failed.
+    static func unreachableLine(_ r: Retry, name: String) -> String? {
+        let who = displayName(name)
+        switch r {
+        case .none: return nil
+        case .after: return "Can't reach \(who) yet. Trying again…"
+        case .gaveUp: return "Couldn't reach \(who). Make sure it's on and Nostr Vault is open, then try again."
+        }
+    }
+
     /// Kept in UserDefaults on B. No token, no address: the engine keeps the
     /// token, and the base is dialled fresh each time.
     struct Record: Codable, Equatable {
@@ -239,14 +266,23 @@ enum MeshCopyV2 {
         var pending: Pending?
         /// Peers copied from, with the last catch-up time.
         var copied: [String: Int] = [:]
+        /// When the pending copy first couldn't reach its device (nil while it
+        /// can, or no copy is pending). Older saves decode it as nil.
+        var unreachableSince: Int?
 
         /// A finished `COPY` line from `peer`, applied to the record.
         mutating func finished(_ p: Progress, peer: String, now: Int) {
             guard p.isFinished else { return }
             if p.stage == "done" {
                 pending = nil
+                unreachableSince = nil
                 copied[peer] = now
                 return
+            }
+            if p.error == "unreachable", pending?.peer == peer {
+                unreachableSince = unreachableSince ?? now
+            } else {
+                unreachableSince = nil
             }
             switch MeshCopyV2.error(p.error)?.action {
             case .resumeNextReconnect?, .keepState?, .wait?:
@@ -261,8 +297,27 @@ enum MeshCopyV2 {
 
         /// A device taken out of My Devices: no resume, no catch-up with it.
         mutating func forget(_ peer: String) {
-            if pending?.peer == peer { pending = nil }
+            if pending?.peer == peer {
+                pending = nil
+                unreachableSince = nil
+            }
             copied[peer] = nil
+        }
+
+        /// A try that never reached the engine (no mesh link to the device):
+        /// counts as a miss like the engine's `unreachable` line.
+        mutating func missed(peer: String, now: Int) {
+            guard pending?.peer == peer else { return }
+            unreachableSince = unreachableSince ?? now
+        }
+
+        /// Try again, the device came back, or a new start: a fresh window.
+        mutating func retryNow() { unreachableSince = nil }
+
+        /// What to do about the pending copy now (see `Retry`).
+        func retry(now: Int) -> Retry {
+            guard pending != nil, let since = unreachableSince else { return .none }
+            return now - since >= MeshCopyV2.unreachableRetryFor ? .gaveUp : .after(MeshCopyV2.unreachableRetryEvery)
         }
 
         /// The linked devices due a catch-up now: copied before, not the one

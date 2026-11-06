@@ -19,6 +19,9 @@ final class MeshCopyV2Service: ObservableObject {
     @Published private(set) var peerName = ""
     /// The start is being made (dialling, signing, waiting for the relay).
     @Published private(set) var starting = false
+    /// The other device can't be reached: `.after` while B keeps trying,
+    /// `.gaveUp` once it has tried for a few minutes (then `tryAgain`).
+    @Published private(set) var unreachable: MeshCopyV2.Retry = .none
 
     private static let recordKey = "meshCopyV2.record"
     private var record: MeshCopyV2.Record {
@@ -27,6 +30,8 @@ final class MeshCopyV2Service: ObservableObject {
     /// The peer the running copy (or catch-up) is with.
     private var current: String?
     private var watchers: Set<AnyCancellable> = []
+    /// The next try at an unreachable copy, while one is waiting.
+    private var retryTask: Task<Void, Never>?
 
     private static var now: Int { Int(Date().timeIntervalSince1970) }
 
@@ -80,13 +85,49 @@ final class MeshCopyV2Service: ObservableObject {
             return .busy
         }
         record.pending = .init(peer: peer, name: name, freshStart: true)
+        record.retryNow()
+        stopRetrying()
         peerName = name
         progress = nil
         return await run(peer: peer, fresh: true)
     }
 
+    /// The failed state's Try again: a fresh few minutes of tries.
+    func tryAgain() {
+        guard let p = record.pending, !starting, current == nil else { return }
+        record.retryNow()
+        stopRetrying()
+        peerName = p.name
+        Task { await run(peer: p.peer, fresh: p.freshStart) }
+    }
+
     func cancel() {
+        stopRetrying()
         _ = CancelCopyC()
+    }
+
+    private func stopRetrying() {
+        retryTask?.cancel()
+        retryTask = nil
+        unreachable = .none
+    }
+
+    /// The pending copy with `peer` missed its device: try again shortly,
+    /// or, after `unreachableRetryFor`, show it failed.
+    private func missed(peer: String) {
+        record.missed(peer: peer, now: Self.now)
+        let next = record.retry(now: Self.now)
+        retryTask?.cancel()
+        retryTask = nil
+        unreachable = next
+        guard case .after(let seconds) = next else { return }
+        retryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.retryTask = nil
+            guard let p = self.record.pending, p.peer == peer, !self.starting, self.current == nil else { return }
+            await self.run(peer: p.peer, fresh: p.freshStart)
+        }
     }
 
     /// Remove device, both sides (any device can be A or B; Tron's review of
@@ -97,6 +138,7 @@ final class MeshCopyV2Service: ObservableObject {
         let revoked = peer.withCString { RevokeCopyTokensC(mutating($0)) }
         if revoked == 0 { RelayProcessManager.shared.addLog("Mesh copy: a removed device's copy access was revoked") }
         if current == peer { cancel() }
+        if record.pending?.peer == peer { stopRetrying() }
         record.forget(peer)
     }
 
@@ -104,6 +146,9 @@ final class MeshCopyV2Service: ObservableObject {
     private func reconnect() {
         guard !starting, current == nil, RelayProcessManager.shared.isRunning else { return }
         if let p = record.pending {
+            // The relay came up or the app came back: a fresh window of tries.
+            record.retryNow()
+            stopRetrying()
             peerName = p.name
             Task { await run(peer: p.peer, fresh: p.freshStart) }
             return
@@ -163,6 +208,8 @@ final class MeshCopyV2Service: ObservableObject {
             if record.pending?.peer == peer { record.pending?.freshStart = false }
         } else if !dialled {
             Self.log(.noMeshLink(seconds: Self.now - startedAt), peer: peer)
+            // No COPY line comes for a try that never reached the engine.
+            if unreachable != .none { missed(peer: peer) }
         } else {
             RelayProcessManager.shared.addLog("Mesh copy: not started (\(result))", level: "ERROR")
         }
@@ -206,18 +253,34 @@ final class MeshCopyV2Service: ObservableObject {
 
     func handle(_ lines: [MeshCopyV2.Progress]) {
         for line in lines {
-            if current != nil || record.pending != nil { progress = line }
-            guard line.isFinished else { continue }
-            if let peer = current ?? record.pending?.peer {
-                record.finished(line, peer: peer, now: Self.now)
+            let following = current != nil || record.pending != nil
+            let peer = current ?? record.pending?.peer
+            if line.isFinished {
+                if let peer { record.finished(line, peer: peer, now: Self.now) }
+                current = nil
             }
-            current = nil
+            // Set before `progress`, which the copy screen follows.
+            followReach(line, peer: peer)
+            if following { progress = line }
+            guard line.isFinished else { continue }
             // The engine leaves the copied settings (first copy and every
             // catch-up winner) in copy-settings.json: apply them now.
             CopySettingsSync.shared.applyFromFile()
             // And the accounts it brought over (§3.4): asked, never added
             // on their own.
             CopyAccountsSync.shared.refreshOffer()
+        }
+    }
+
+    /// Can't reach the device: keep trying every ~15 s for a few minutes,
+    /// then show it failed. A copy moving again, or ending any other way,
+    /// stops the tries.
+    private func followReach(_ line: MeshCopyV2.Progress, peer: String?) {
+        if line.isFinished, line.error == "unreachable", let peer, record.pending?.peer == peer {
+            missed(peer: peer)
+        } else if unreachable != .none {
+            if !line.isFinished { record.retryNow() }
+            stopRetrying()
         }
     }
 }

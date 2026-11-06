@@ -66,6 +66,8 @@ class OtherDeviceViewModel @Inject constructor(
         data class CheckWords(val words: List<String>, val shortAddress: String, val name: String, val tapped: Boolean) : Ui
         /** Linked; importing from the other device now ([status]: the import's own line). */
         data class Copying(val name: String, val status: String = "") : Ui
+        /** The other device couldn't be reached for a few minutes: [line], Try again, or go on to the relays. */
+        data class CopyFailed(val name: String, val line: String) : Ui
         /** Copied, and the copy brought accounts this phone lacks: ask before setup goes on (Logen, 2026-11-06). */
         data class AskAccounts(val accounts: List<com.nostrvault.fips.CopyAccounts.Account>) : Ui
         /** Copied (all or part): setup goes on to the normal relay import. */
@@ -247,7 +249,23 @@ class OtherDeviceViewModel @Inject constructor(
     private suspend fun followCopy(name: String): Boolean {
         var last = now()
         var seen: MeshCopyV2.Line? = null
+        skipCopy = false
         while (true) {
+            // Can't reach it: the starter keeps trying (that is not a stall), then says it failed.
+            when (val u = copyStarter.unreachable.value) {
+                MeshCopyV2.Retry.None -> Unit
+                is MeshCopyV2.Retry.After -> {
+                    last = now()
+                    _ui.value = Ui.Copying(name, MeshCopyV2.unreachableLine(u, name).orEmpty())
+                }
+                MeshCopyV2.Retry.GaveUp -> {
+                    last = now()
+                    if (skipCopy) return false
+                    _ui.value = Ui.CopyFailed(name, MeshCopyV2.unreachableLine(u, name).orEmpty())
+                    delay(1000)
+                    continue
+                }
+            }
             val l = copyStarter.progress.value
             if (l != null && l != seen) {
                 seen = l
@@ -262,6 +280,7 @@ class OtherDeviceViewModel @Inject constructor(
                         return true
                     }
                     "failed" -> {
+                        if (copyStarter.unreachable.value != MeshCopyV2.Retry.None) continue
                         MeshCopyV2.failedLine(l, name).takeIf { it.isNotEmpty() }?.let { notificationManager.showToast(it, PillTone.WARNING) }
                         return false
                     }
@@ -270,6 +289,18 @@ class OtherDeviceViewModel @Inject constructor(
             if (BringItOver.isStalled(last, now())) return false
             delay(1000)
         }
+    }
+
+    /** The failed state's Continue: the relays, without the copy. */
+    @Volatile private var skipCopy = false
+
+    fun tryAgainCopy() {
+        (_ui.value as? Ui.CopyFailed)?.let { _ui.value = Ui.Copying(it.name) }
+        copyStarter.tryAgain()
+    }
+
+    fun continueWithoutCopy() {
+        skipCopy = true
     }
 
     private suspend fun seedFromOtherVault(url: String) {
