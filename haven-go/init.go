@@ -536,6 +536,8 @@ func initRelays(ctx context.Context) error {
 	outboxRelay.StoreEvent = append(outboxRelay.StoreEvent, outboxDB.SaveEvent, noteStoredForMeshBlobs, blastStored)
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(outboxRelay, outboxDB)
+	// Brought-over accounts are stored, never served to strangers (brought_reads.go).
+	hideBroughtOnOutbox(outboxRelay)
 	outboxRelay.DeleteEvent = append(outboxRelay.DeleteEvent, outboxDB.DeleteEvent)
 	outboxRelay.OverwriteDeletionOutcome = append(outboxRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	// khatru hands replaceable kinds (0, 3, 10002, 10063, 30023…) to ReplaceEvent,

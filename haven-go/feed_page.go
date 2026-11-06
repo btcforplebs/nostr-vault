@@ -78,7 +78,12 @@ func fetchRecentNotes(ctx context.Context, limit int) []NoteDisplay {
 	}
 
 	var notes []NoteDisplay
+	brought := broughtAccounts()
 	for ev := range ch {
+		// The public page never shows a brought-over account (brought_reads.go).
+		if _, b := brought[ev.PubKey]; b {
+			continue
+		}
 		notes = append(notes, eventToNoteDisplay(ctx, ev))
 	}
 

@@ -53,6 +53,9 @@ func (m *meshBlobIndex) add(ev *nostr.Event) {
 	if _, ok := whitelist()[ev.PubKey]; !ok {
 		return
 	}
+	if _, b := broughtAccounts()[ev.PubKey]; b {
+		return
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.set == nil {
@@ -115,8 +118,12 @@ func readPublicBlobRefs(ctx context.Context) (map[string]struct{}, error) {
 		return nil, errors.New("no outbox")
 	}
 	authors := make([]string, 0, len(whitelist()))
+	brought := broughtAccounts()
 	for pk := range whitelist() {
-		authors = append(authors, pk)
+		// A brought-over account's photos are never served (Logen, 2026-11-06).
+		if _, b := brought[pk]; !b {
+			authors = append(authors, pk)
+		}
 	}
 	set := map[string]struct{}{}
 	if len(authors) == 0 {

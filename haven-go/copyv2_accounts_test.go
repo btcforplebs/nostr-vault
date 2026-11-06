@@ -220,9 +220,9 @@ func writeAccountsZip(t *testing.T, accounts string, notes ...nostr.Event) strin
 
 // A backup restore (Settings, setup, cloud) takes a zip that shares one of
 // this vault's accounts, keeps every event it carries for every account in
-// its list, and adds none of them: they are offered to the app, which asks
-// (Logen, 2026-11-06). Refuses one sharing none, and one with a key in
-// accounts, keeping and offering nothing.
+// its list, and neither adds nor offers any of them: only a linked-device
+// copy offers (Logen, 2026-11-06). Refuses one sharing none, and one with a
+// key in accounts, keeping nothing.
 func TestRestoreKeepsEveryAccountsEventsAndAddsNone(t *testing.T) {
 	me, them, stranger := newTestKey(t), newTestKey(t), newTestKey(t)
 	openCopyVault(t, me.pk)
@@ -249,7 +249,7 @@ func TestRestoreKeepsEveryAccountsEventsAndAddsNone(t *testing.T) {
 		t.Fatalf("no shared account: %v, want errNotYourBackup", err)
 	}
 
-	// Sharing me: restored, their note kept, their account offered, not added.
+	// Sharing me: restored, their note kept, their account neither added nor offered.
 	shared := `{"v":1,"updated_at":1,"accounts":[{"npub":"` + npubOf(t, them.pk) + `","name":"Them"},{"npub":"` + npubOf(t, me.pk) + `"}]}`
 	myNote := me.sign(t, nostr.Event{Kind: 1, Content: "my note"})
 	zipPath := writeAccountsZip(t, shared, theirNote, myNote)
@@ -265,12 +265,164 @@ func TestRestoreKeepsEveryAccountsEventsAndAddsNone(t *testing.T) {
 	if countIn(t, outboxDB, nostr.Filter{IDs: []string{myNote.ID}}) != 1 {
 		t.Fatal("my own note was not restored")
 	}
-	raw, err := os.ReadFile(copyAccountsFile)
-	if err != nil || !strings.Contains(string(raw), npubOf(t, them.pk)) || !strings.Contains(string(raw), `"Them"`) {
-		t.Fatalf("their account was not offered to the app: %s %v", raw, err)
+	if raw, err := os.ReadFile(copyAccountsFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a backup zip offered accounts to the app: %s %v", raw, err)
 	}
-	if strings.Contains(string(raw), them.pk) || strings.Contains(string(raw), me.pk) {
-		t.Fatal("copy-accounts.json holds a hex key")
+}
+
+// A stranger's backup zip that names the owner's npub (Tron, Logen
+// 2026-11-06): every event it holds is stored, in case that account signs in
+// later, but none is uploaded, none is served on the public outbox (relay
+// reads, the public page, mesh photos), and no account is offered. The
+// vault's own reads still see them; the owner's own zip is unchanged.
+func TestStrangerZipIsStoredNeverUploadedServedOrOffered(t *testing.T) {
+	me, stranger := newTestKey(t), newTestKey(t)
+	openCopyVault(t, me.pk)
+	t.Cleanup(resetLiveAccounts)
+	photo := strings.Repeat("ab", 32)
+	now := nostr.Now()
+	strangerNote := stranger.sign(t, nostr.Event{Kind: 1, CreatedAt: now, Content: "https://cdn.example/" + photo + ".jpg"})
+	strangerFollows := stranger.sign(t, nostr.Event{Kind: nostr.KindFollowList, CreatedAt: now})
+	myNote := me.sign(t, nostr.Event{Kind: 1, CreatedAt: now, Content: "mine"})
+	accounts := `{"v":1,"updated_at":1,"accounts":[{"npub":"` + npubOf(t, stranger.pk) + `","name":"Stranger"},{"npub":"` + npubOf(t, me.pk) + `"}]}`
+	if err := importFromZip(context.Background(), writeAccountsZip(t, accounts, strangerNote, strangerFollows, myNote)); err != nil {
+		t.Fatalf("stranger zip naming the owner: %v", err)
+	}
+
+	// Stored.
+	theirs := nostr.Filter{IDs: []string{strangerNote.ID, strangerFollows.ID}}
+	if countIn(t, outboxDB, theirs) != 2 || countIn(t, outboxDB, nostr.Filter{IDs: []string{myNote.ID}}) != 1 {
+		t.Fatal("the zip's events were not all stored")
+	}
+	// 0 accounts offered or added.
+	if isOwnKey(stranger.pk) {
+		t.Fatal("a backup zip made the stranger's key own")
+	}
+	if raw, err := os.ReadFile(copyAccountsFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a backup zip offered accounts: %s %v", raw, err)
+	}
+
+	// 0 uploaded.
+	s := &outboxNegStore{outbox: eventstore.RelayWrapper{Store: outboxDB}, tombs: newTestTombs(t)}
+	ch, err := s.QueryEvents(context.Background(), nostr.Filter{IDs: []string{strangerNote.ID, strangerFollows.ID, myNote.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	up := map[string]bool{}
+	for ev := range ch {
+		up[ev.ID] = true
+	}
+	if up[strangerNote.ID] || up[strangerFollows.ID] || !up[myNote.ID] {
+		t.Fatalf("upload set = %v: want only my note", up)
+	}
+
+	// 0 on the public outbox: relay reads by id, by author, unfiltered, and counts.
+	query := hideBroughtQuery(func(ctx context.Context, f nostr.Filter) (chan *nostr.Event, error) {
+		return outboxDB.QueryEvents(ctx, f)
+	})
+	count := hideBroughtCount(func(ctx context.Context, f nostr.Filter) (int64, error) {
+		return int64(countIn(t, outboxDB, f)), nil
+	})
+	served := func(ctx context.Context, f nostr.Filter) map[string]bool {
+		ch, err := query(ctx, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]bool{}
+		for ev := range ch {
+			got[ev.ID] = true
+		}
+		return got
+	}
+	for _, f := range []nostr.Filter{theirs, {Authors: []string{stranger.pk}}, {Kinds: []int{1, 3}}} {
+		if got := served(context.Background(), f); got[strangerNote.ID] || got[strangerFollows.ID] {
+			t.Fatalf("filter %v served the stranger's events to a stranger: %v", f, got)
+		}
+		if n, _ := count(context.Background(), f); n != 0 && len(f.Authors) > 0 {
+			t.Fatalf("count %v = %d, want 0", f, n)
+		}
+	}
+	if n, _ := count(context.Background(), nostr.Filter{Kinds: []int{1}}); n != 1 {
+		t.Fatalf("public kind-1 count = %d, want 1 (mine)", n)
+	}
+	if got := served(context.Background(), nostr.Filter{Kinds: []int{1}}); !got[myNote.ID] {
+		t.Fatal("my own note is no longer served")
+	}
+	// Signed in with someone else's key: still a stranger.
+	if got := served(authedAs(stranger.pk), theirs); len(got) != 0 {
+		t.Fatalf("AUTH as the zip's own (not this vault's) account served %v", got)
+	}
+	// The vault's own reader still reads them.
+	if got := served(authedAs(me.pk), theirs); len(got) != 2 {
+		t.Fatalf("the owner's own read got %v, want both", got)
+	}
+	// The public page.
+	for _, n := range fetchRecentNotes(context.Background(), 20) {
+		if n.ID == strangerNote.ID {
+			t.Fatal("the public page shows the stranger's note")
+		}
+	}
+	// Mesh photos named only by the stranger's note.
+	meshBlobs.reset()
+	t.Cleanup(meshBlobs.reset)
+	if meshBlobs.has(context.Background(), photo) {
+		t.Fatal("the stranger's photo is served over the mesh")
+	}
+
+	// Signing in with that account later (AddAccountsC) makes it own, and
+	// its notes are here, but still never served to strangers.
+	addLiveAccounts([]string{stranger.pk})
+	if got := served(authedAs(stranger.pk), theirs); len(got) != 2 {
+		t.Fatalf("after sign-in, its own read got %v, want both", got)
+	}
+	if got := served(context.Background(), theirs); len(got) != 0 {
+		t.Fatalf("after sign-in, a stranger was served %v", got)
+	}
+	meshBlobs.reset()
+	if meshBlobs.has(context.Background(), photo) {
+		t.Fatal("after sign-in, its photo is served over the mesh")
+	}
+}
+
+// Positive control for the gate above: the owner's own zip (no stranger) is
+// restored, uploaded and served as before.
+func TestOwnZipStillUploadsAndServes(t *testing.T) {
+	me := newTestKey(t)
+	openCopyVault(t, me.pk)
+	t.Cleanup(resetLiveAccounts)
+	photo := strings.Repeat("cd", 32)
+	myNote := me.sign(t, nostr.Event{Kind: 1, Content: "https://cdn.example/" + photo + ".jpg"})
+	accounts := `{"v":1,"updated_at":1,"accounts":[{"npub":"` + npubOf(t, me.pk) + `"}]}`
+	if err := importFromZip(context.Background(), writeAccountsZip(t, accounts, myNote)); err != nil {
+		t.Fatal(err)
+	}
+	if len(broughtAccounts()) != 0 {
+		t.Fatalf("own zip recorded brought accounts: %v", broughtAccounts())
+	}
+	s := &outboxNegStore{outbox: eventstore.RelayWrapper{Store: outboxDB}, tombs: newTestTombs(t)}
+	ch, _ := s.QueryEvents(context.Background(), nostr.Filter{IDs: []string{myNote.ID}})
+	n := 0
+	for range ch {
+		n++
+	}
+	if n != 1 {
+		t.Fatal("own note not offered for upload")
+	}
+	query := hideBroughtQuery(func(ctx context.Context, f nostr.Filter) (chan *nostr.Event, error) {
+		return outboxDB.QueryEvents(ctx, f)
+	})
+	ch, _ = query(context.Background(), nostr.Filter{IDs: []string{myNote.ID}})
+	n = 0
+	for range ch {
+		n++
+	}
+	if n != 1 {
+		t.Fatal("own note not served publicly")
+	}
+	meshBlobs.reset()
+	t.Cleanup(meshBlobs.reset)
+	if !meshBlobs.has(context.Background(), photo) {
+		t.Fatal("own photo not served over the mesh")
 	}
 }
 
