@@ -80,6 +80,11 @@ that is neither a paired device nor (old form) the owner.
 A paired device's Blossom request carries a kind 24242 signed by **its mesh key**. It counts **only over the mesh**:
 the door, the iPhone's own-device port, or the relay port from loopback with no tunnel or LAN hop (the §1 rule). On
 the box the relay handler is also the public URL, so from there, a tunnel or the LAN a device key is 403:
+
+> **Known gap (same as /copy/v2):** anything that forwards to the relay port's loopback **without adding headers**
+> (a Tor onion service, `ssh -R`, frp) looks like the mesh. Abusing it still needs a paired device's mesh nsec. Don't
+> point such a forwarder at the relay port.
+
 - `["t", "upload" | "get" | "delete"]`: exactly one, and it must match the request (PUT/HEAD `/upload` is upload,
   GET/HEAD `/<sha256>` is get, DELETE `/<sha256>` is delete). Nothing else (list, mirror, …) is allowed: 403.
 - `["x", <sha256>]` for **each** blob acted on, no wildcard and no `server` tag stand-in. An upload whose body hashes
