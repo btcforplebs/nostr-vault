@@ -56,8 +56,7 @@ func addLiveAccounts(hexes []string) int {
 	return len(addLiveAccountsNew(hexes))
 }
 
-// addLiveAccountsNew is addLiveAccounts returning the keys that were new, so a
-// caller can take them back (removeLiveAccounts) when its work fails.
+// addLiveAccountsNew is addLiveAccounts returning the keys that were new.
 func addLiveAccountsNew(hexes []string) []string {
 	liveWLMu.Lock()
 	defer liveWLMu.Unlock()
@@ -79,25 +78,6 @@ func addLiveAccountsNew(hexes []string) []string {
 	}
 	storeLiveAccounts(base, extra)
 	return added
-}
-
-// removeLiveAccounts takes back live additions (never a configured account).
-func removeLiveAccounts(hexes []string) {
-	if len(hexes) == 0 {
-		return
-	}
-	liveWLMu.Lock()
-	defer liveWLMu.Unlock()
-	base := config.WhitelistedPubKeys
-	l := liveWL.Load()
-	if l == nil || l.base != mapID(base) {
-		return
-	}
-	extra := maps.Clone(l.extra)
-	for _, h := range hexes {
-		delete(extra, h)
-	}
-	storeLiveAccounts(base, extra)
 }
 
 func storeLiveAccounts(base, extra map[string]struct{}) {

@@ -180,6 +180,9 @@ func localCopyAccounts() copyAccountList {
 func checkCopyAccounts(raw []byte) (copyAccountList, string) {
 	theirs, why := copyAccountsRefusal(raw)
 	if why != "" {
+		// Only npub + name may travel; anything else (a key, an ncryptsec, a
+		// bunker or signer URI, a password field) is refused and said so.
+		slog.Warn("accounts refused", "reason", why)
 		return theirs, why
 	}
 	if !copySharesAccount(whitelist(), theirs.hexes()) {
@@ -188,27 +191,23 @@ func checkCopyAccounts(raw []byte) (copyAccountList, string) {
 	return theirs, ""
 }
 
-// takeCopyAccounts is where another device's accounts go in over the paired,
-// bearer-authenticated catch-up (§6): checked, made own now (no restart), and
-// merged into copy-accounts.json for the app. Returns "added" (or "same"), or
-// the refusal. Never for a zip that arrives outside a paired copy: an npub is
-// public, so sharing one proves nothing about who made the file.
+// takeCopyAccounts is the catch-up's side (§6): another device's list,
+// checked and offered to the app, never added (Logen, 2026-11-06: only the
+// accounts the person ticks become own, through AddAccountsC). Returns
+// "offered" or the refusal.
 func takeCopyAccounts(raw []byte) string {
 	theirs, why := checkCopyAccounts(raw)
 	if why != "" {
 		return why
 	}
-	added := addLiveAccounts(theirs.hexes())
-	rememberCopyAccounts(theirs)
-	if added > 0 {
-		return "added"
-	}
-	return "same"
+	offerCopyAccounts(theirs)
+	return "offered"
 }
 
-// rememberCopyAccounts merges theirs into copy-accounts.json, which the app
-// adds to its accounts and whitelist file.
-func rememberCopyAccounts(theirs copyAccountList) {
+// offerCopyAccounts merges theirs into copy-accounts.json. The app asks the
+// person which of those it lacks to add, and adds only the ticked ones
+// (AddAccountsC and its whitelist file). Merging never removes one.
+func offerCopyAccounts(theirs copyAccountList) {
 	var mine copyAccountList
 	if raw, err := os.ReadFile(copyAccountsFile); err == nil {
 		if f, why := copyAccountsRefusal(raw); why == "" {

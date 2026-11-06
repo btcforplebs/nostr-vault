@@ -22,8 +22,10 @@ Logen's picks (2026-11-05), binding:
 6. Media means **the owner's own files**: everything under a record by the vault's own keys, including what he saved
    or mirrored (Logen, 2026-11-05). Photos other people only sent him never land in B's vault (§4).
 7. DMs stay encrypted in transit and are decrypted only on B.
-8. **Accounts travel** (Logen, 2026-11-06): B takes A's accounts (look-only npubs and names, never keys) when it
-   shares at least one of them, and keeps every account's notes. Catch-ups merge accounts and never remove one (§3.4).
+8. **Accounts are offered, never added by themselves** (Logen, 2026-11-06): a copy or an own-account zip keeps every
+   event it carries, for every account in its list, and hands the list (npub + name only) to the app, which **asks
+   the person** at setup and adds only the ticked ones (§3.4). Saved credentials, nsec, ncryptsec and bunker/signer
+   URIs never travel.
 
 ## 1. Where it is served
 
@@ -143,7 +145,7 @@ The owner-signed 24242 keeps working until the apps switch (`TODO(mesh-key)`).
 5. **B checks** each chunk's sha256 against the manifest and writes it at its offset in `copy-<id>/<part>.partial`.
    It records the chunk in the state file (§3.2).
 6. **B restores `notes`** first, once that part is whole and its sha256 matches. It uses the normal restore: owner
-   check (§3.4: `accounts.json` read and taken **before any store**, so the other accounts' notes are kept), author
+   check (§3.4: `accounts.json` read **before any store**, so every listed account's notes are kept), author
    filters, deletions, blob records, bad lines counted.
 7. **B restores `media`.** Each `media/<sha256>` is hash-checked, then stored. Its record is restored only when the
    file is.
@@ -222,22 +224,23 @@ The vault's own keys are its owner and every added account (look-only included).
   (§3.1); `GET`/`PUT /copy/v2/sync/accounts` in the catch-up (§6).
 - **A writes it** from its whitelist (owner first), naming each from the app's `copy-accounts.json` in the engine's
   working dir (the same folder as `copy-settings.json`), which the app keeps current with its accounts and names.
-- **B takes it only when it shares at least one** of B's own keys. Sharing none: `wrong_owner`. Refused:
-  `bad_manifest`, nothing restored, nothing added.
-- **Only a paired copy adds accounts.** An npub is public, so "shares one" proves only that a zip *may* be ours,
-  never who made it. Over the paired, bearer-authenticated copy and catch-up, every account in it becomes B's own
-  (no relay restart): for the copy, before any store is read so their notes are kept, taken back if the restore
-  fails, and merged into B's `copy-accounts.json` only when it succeeds. A Settings › Back up zip (Settings, setup,
-  cloud restore) only checks ownership with it and **never adds a key**: its other accounts' notes are skipped from
-  the owner-only stores until the person adds those accounts in the app and restores again.
-- **B's app** watches `copy-accounts.json` and adds every npub it lacks to its accounts (look-only) and its
-  whitelist file, **before its next relay start**: a relay start reads the whitelist file again, and the engine's
-  live additions end with it (`AddAccountsC`).
+- **B takes it only when it shares at least one** of B's own keys. Sharing none: `wrong_owner` (an own-account zip
+  sharing none stays refused). Refused list: `bad_manifest`, nothing restored, nothing offered, and logged.
+- **Every event it carries is kept, no account is added** (Logen, 2026-11-06). A copy (paired, bearer-authenticated)
+  and a Settings › Back up zip restore keep each event whose author (or, for the inbox, a tagged key) is one of B's
+  own keys **or** in the list, in every store, lists and blob records included. Nothing becomes B's own: the
+  restore's author filters read the list, the whitelist does not change.
+- **Offered to the person.** After a successful restore (and on each catch-up, §6) the engine merges the list into
+  B's `copy-accounts.json`. B's app shows the accounts it lacks at setup, asks which to bring, and for each ticked
+  one calls `AddAccountsC` and writes it to its whitelist file before the next relay start (the engine's live
+  additions end there). An unticked account stays out; its notes stay in the vault, so ticking it later finds them
+  all at once.
 - **Merging** (`mergeCopyAccounts`): mine first, then theirs that are new; a name I have stays, a missing one is
   filled; **nothing is ever removed**, by a copy, a restore or a catch-up.
 - **Live add without a restart.** `int AddAccountsC(char* accountsJSON)`, same JSON: how many were new (0 or more),
-  or -1 when refused as above. For an account added on this device while a copy runs. No shared-account rule (the
-  user is adding it here); the app also writes it to its whitelist file.
+  or -1 when refused as above (and logged). The only way an account becomes own without a restart: the app calls it
+  for the accounts the person ticked. No shared-account rule (the person chose them); the app also writes them to
+  its whitelist file.
 - **Old zips** (no `accounts.json`): restored as before, only when their own notes hold one by the owner.
 
 ## 4. Media: the owner's own files
@@ -323,7 +326,8 @@ The app calls the engine when a linked device comes into reach. The engine then:
 4. **Settings** (§5).
 
 Before the notes, **accounts** (§3.4): B `GET /copy/v2/sync/accounts` and takes A's, then `PUT`s its own, which A
-takes the same way. Each side adds only when the lists share an account; neither removes one.
+takes the same way. Each side **offers** the other's list to its app (copy-accounts.json) only when the lists share an
+account; neither adds an account by itself, and neither removes one.
 
 This is an id-list diff, not NIP-77. The engine has no owner key to answer NIP-42 for `/private` and `/chat`, so it
 uses the copy token on the own-device port instead.

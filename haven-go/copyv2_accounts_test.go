@@ -218,10 +218,11 @@ func writeAccountsZip(t *testing.T, accounts string, notes ...nostr.Event) strin
 }
 
 // A backup restore (Settings, setup, cloud) takes a zip that shares one of
-// this vault's accounts but never adds its other accounts: an npub is public,
-// so anyone can write [owner, attacker] (Tron, PR #1805). Refuses one sharing
-// none, and one with a key in accounts, adding nothing.
-func TestRestoreChecksSharedAccountsAndNeverAddsThem(t *testing.T) {
+// this vault's accounts, keeps every event it carries for every account in
+// its list, and adds none of them: they are offered to the app, which asks
+// (Logen, 2026-11-06). Refuses one sharing none, and one with a key in
+// accounts, keeping and offering nothing.
+func TestRestoreKeepsEveryAccountsEventsAndAddsNone(t *testing.T) {
 	me, them, stranger := newTestKey(t), newTestKey(t), newTestKey(t)
 	openCopyVault(t, me.pk)
 	t.Cleanup(resetLiveAccounts)
@@ -229,8 +230,13 @@ func TestRestoreChecksSharedAccountsAndNeverAddsThem(t *testing.T) {
 
 	// A key where an npub goes: refused, nothing added, nothing restored.
 	keyed := `{"v":1,"updated_at":1,"accounts":[{"npub":"` + npubOf(t, me.pk) + `"},{"npub":"` + them.pk + `"}]}`
+	var logs bytes.Buffer
+	captureLog(t, &logs)
 	if err := importFromZip(context.Background(), writeAccountsZip(t, keyed, theirNote)); !errors.Is(err, errAccountsRefused) {
 		t.Fatalf("a key in accounts: %v, want errAccountsRefused", err)
+	}
+	if !strings.Contains(logs.String(), "accounts refused") || !strings.Contains(logs.String(), "secret_value") {
+		t.Fatalf("the refusal was not logged: %q", logs.String())
 	}
 	if isOwnKey(them.pk) || countIn(t, outboxDB, nostr.Filter{IDs: []string{theirNote.ID}}) != 0 {
 		t.Fatal("a refused accounts list still added an account or a note")
@@ -242,9 +248,7 @@ func TestRestoreChecksSharedAccountsAndNeverAddsThem(t *testing.T) {
 		t.Fatalf("no shared account: %v, want errNotYourBackup", err)
 	}
 
-	// Sharing me (the attack shape: my public npub beside theirs): restored,
-	// but theirs is not added, their note is not taken into my outbox, and
-	// nothing is written for the app.
+	// Sharing me: restored, their note kept, their account offered, not added.
 	shared := `{"v":1,"updated_at":1,"accounts":[{"npub":"` + npubOf(t, them.pk) + `","name":"Them"},{"npub":"` + npubOf(t, me.pk) + `"}]}`
 	myNote := me.sign(t, nostr.Event{Kind: 1, Content: "my note"})
 	zipPath := writeAccountsZip(t, shared, theirNote, myNote)
@@ -254,19 +258,22 @@ func TestRestoreChecksSharedAccountsAndNeverAddsThem(t *testing.T) {
 	if isOwnKey(them.pk) {
 		t.Fatal("a backup zip made a stranger's key own")
 	}
-	if countIn(t, outboxDB, nostr.Filter{IDs: []string{theirNote.ID}}) != 0 {
-		t.Fatal("a stranger's note went into the owner-only outbox")
+	if countIn(t, outboxDB, nostr.Filter{IDs: []string{theirNote.ID}}) != 1 {
+		t.Fatal("the other account's note was dropped: adding it later would find nothing")
 	}
 	if countIn(t, outboxDB, nostr.Filter{IDs: []string{myNote.ID}}) != 1 {
 		t.Fatal("my own note was not restored")
 	}
-	if _, err := os.Stat(copyAccountsFile); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("copy-accounts.json written by a backup restore: %v", err)
+	raw, err := os.ReadFile(copyAccountsFile)
+	if err != nil || !strings.Contains(string(raw), npubOf(t, them.pk)) || !strings.Contains(string(raw), `"Them"`) {
+		t.Fatalf("their account was not offered to the app: %s %v", raw, err)
+	}
+	if strings.Contains(string(raw), them.pk) || strings.Contains(string(raw), me.pk) {
+		t.Fatal("copy-accounts.json holds a hex key")
 	}
 }
 
-// A paired copy whose restore fails takes back the accounts it added for the
-// run and writes nothing for the app (no half-applied state).
+// A paired copy whose restore fails adds no account and offers nothing.
 func TestCopyRestoreFailureTakesAccountsBack(t *testing.T) {
 	me, them := newTestKey(t), newTestKey(t)
 	openCopyVault(t, me.pk)
@@ -287,8 +294,9 @@ func TestCopyRestoreFailureTakesAccountsBack(t *testing.T) {
 }
 
 // The copy: A (owner X, with L as an account) to B (owner L). B shares L, so
-// it takes the copy, X becomes one of B's accounts before the stores, and X's
-// notes are kept, not skipped (Tim's 22,412 skipped on 2026-11-06).
+// it takes the copy and keeps X's notes (Tim's 22,412 skipped on 2026-11-06),
+// but X is not added: it is offered, with its name, and becomes own only when
+// the person ticks it (AddAccountsC), its notes already here.
 func TestCopyBringsTheOtherAccountsAndTheirNotes(t *testing.T) {
 	x, l := newTestKey(t), newTestKey(t)
 	t.Cleanup(resetLiveAccounts)
@@ -357,8 +365,8 @@ func TestCopyBringsTheOtherAccountsAndTheirNotes(t *testing.T) {
 	if err := c.run(context.Background(), startProof(t, l, nostr.Now(), "/copy/v2/start")); err != nil {
 		t.Fatalf("copy: %v\n%s", err, logs.String())
 	}
-	if !isOwnKey(x.pk) {
-		t.Fatal("X is not one of B's accounts after the copy")
+	if isOwnKey(x.pk) {
+		t.Fatal("the copy added X by itself; only the person may")
 	}
 	if countIn(t, outboxDB, nostr.Filter{IDs: []string{xNote.ID}}) != 1 {
 		t.Fatal("X's note was skipped")
@@ -368,12 +376,17 @@ func TestCopyBringsTheOtherAccountsAndTheirNotes(t *testing.T) {
 	}
 	raw, _ := os.ReadFile(copyAccountsFile)
 	if !strings.Contains(string(raw), `"X"`) {
-		t.Fatalf("B's app was not told about X with its name: %s", raw)
+		t.Fatalf("B's app was not offered X with its name: %s", raw)
+	}
+	// The person ticks X later: its notes are already in the vault.
+	addLiveAccounts([]string{x.pk})
+	if !isOwnKey(x.pk) || countIn(t, outboxDB, nostr.Filter{Authors: []string{x.pk}}) != 1 {
+		t.Fatal("adding X after the copy did not find its notes")
 	}
 }
 
-// Catch-up: B takes A's accounts and sends its own; A's side merges B's.
-// Both only add.
+// Catch-up: each side offers the other's accounts to its app and adds none;
+// the offer only ever grows.
 func TestCatchUpMergesAccountsNeverRemoves(t *testing.T) {
 	me, a2, b2 := newTestKey(t), newTestKey(t), newTestKey(t)
 	t.Cleanup(resetLiveAccounts)
@@ -401,13 +414,14 @@ func TestCatchUpMergesAccountsNeverRemoves(t *testing.T) {
 	c := newCopyClient("npub1peer", ts.URL)
 	c.token = "t"
 	got, err := c.syncAccounts(context.Background())
-	if err != nil || got != "added" {
-		t.Fatalf("B took A's accounts: %q %v", got, err)
+	if err != nil || got != "offered" {
+		t.Fatalf("B's answer to A's accounts: %q %v", got, err)
 	}
-	for name, k := range map[string]string{"me": me.pk, "a2": a2.pk, "b2": b2.pk} {
-		if !isOwnKey(k) {
-			t.Fatalf("B is missing %s after the catch-up", name)
-		}
+	if isOwnKey(a2.pk) {
+		t.Fatal("the catch-up added A's account by itself")
+	}
+	if !isOwnKey(b2.pk) || !isOwnKey(me.pk) {
+		t.Fatal("B lost an account it had")
 	}
 	raw, _ := os.ReadFile(copyAccountsFile)
 	if !strings.Contains(string(raw), `"B2"`) || !strings.Contains(string(raw), `"A2"`) {
@@ -422,11 +436,11 @@ func TestCatchUpMergesAccountsNeverRemoves(t *testing.T) {
 	resetLiveAccounts()
 	config.WhitelistedPubKeys = map[string]struct{}{me.pk: {}, a2.pk: {}}
 	_ = os.WriteFile(copyAccountsFile, []byte(aList), 0o600)
-	if why := takeCopyAccounts(put); why != "added" {
-		t.Fatalf("A took B's accounts: %q", why)
+	if why := takeCopyAccounts(put); why != "offered" {
+		t.Fatalf("A's answer to B's accounts: %q", why)
 	}
-	if !isOwnKey(b2.pk) || !isOwnKey(a2.pk) {
-		t.Fatal("A did not merge B's account, or lost its own")
+	if isOwnKey(b2.pk) || !isOwnKey(a2.pk) {
+		t.Fatal("A added B's account by itself, or lost its own")
 	}
 	raw, _ = os.ReadFile(copyAccountsFile)
 	if !strings.Contains(string(raw), `"A2"`) || !strings.Contains(string(raw), npubOf(t, b2.pk)) {
