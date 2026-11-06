@@ -665,3 +665,36 @@ func latestEventByKindAndPubkey(ctx context.Context, events <-chan nostr.RelayEv
 	}()
 	return ch
 }
+
+// Reach reports how many of the owners' follows follow pubkey (the vouches
+// of the depth-3 pass), and whether pubkey is one of those follows. A follow
+// has no vouch count: the pass counts only the second layer. known is false
+// when the graph has no vouch counts (depth 2, or not built yet).
+func (wt *SimpleInMemory) Reach(pubkey string) (vouches int, follow bool, known bool) {
+	l := wt.layers.Load()
+	if l == nil || len(l.follows) == 0 {
+		return 0, false, false
+	}
+	if _, ok := slices.BinarySearch(l.follows, pubkey); ok {
+		return 0, true, true
+	}
+	if l.vouches == nil {
+		return 0, false, false
+	}
+	return l.vouches[pubkey], false, true
+}
+
+// MedianVouches is the middle vouch count across the second layer, 0 when
+// there is none: a stand-in reach for a follow, whose own count is not kept.
+func (wt *SimpleInMemory) MedianVouches() int {
+	l := wt.layers.Load()
+	if l == nil || len(l.vouches) == 0 {
+		return 0
+	}
+	counts := make([]int, 0, len(l.vouches))
+	for _, n := range l.vouches {
+		counts = append(counts, n)
+	}
+	slices.Sort(counts)
+	return counts[len(counts)/2]
+}

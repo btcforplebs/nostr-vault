@@ -1,0 +1,247 @@
+package main
+
+// Underrated feed (local DVM): Popular turned over. Popular puts the most
+// engaged notes first; Underrated looks for the note that did well *for its
+// author*: people who post less and are known to fewer people in your web,
+// whose likes, reposts and zaps are measured against what that person usually
+// gets, with extra weight for notes bridged in from another network (NIP-48
+// "proxy" tag), whose authors start with no Nostr audience at all.
+//
+// It reads the same engagement Popular does (the passive tally, backfilled
+// when thin) and keeps Popular's defences: only reactors inside your web of
+// trust count, the author's own engagement does not, and the feed is withheld
+// while the trust graph is not built. The bar is lower than Popular's (two
+// trusted people, not three): a note with a small audience is the point.
+
+import (
+	"context"
+	"log"
+	"math"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/fiatjaf/eventstore"
+	"github.com/nbd-wtf/go-nostr"
+)
+
+const (
+	// Distinct trusted reactors (author excluded) a note needs.
+	underratedMinReactors = 2
+	// Candidates whose bodies are looked up, most engaged first.
+	underratedMaxCandidates = 400
+	// Notes one Underrated result lists, and the most per author.
+	underratedMaxNotes       = 100
+	underratedMaxPerAuthor   = 2
+	underratedBridgeBoost    = 1.5
+	underratedPostCountLimit = 200
+)
+
+var (
+	underratedCache       []PopularNote
+	underratedCacheExpiry time.Time
+	underratedCacheMu     sync.Mutex
+)
+
+// reachModel is the part of the web of trust Underrated reads: how many of
+// your follows follow someone (pkg/wot SimpleInMemory).
+type reachModel interface {
+	Reach(pubkey string) (vouches int, follow bool, known bool)
+	MedianVouches() int
+}
+
+// isBridged reports a NIP-48 proxy tag: the note was brought over from
+// another protocol (ActivityPub, AT Protocol, RSS, ...).
+func isBridged(tags nostr.Tags) bool {
+	for _, tag := range tags {
+		if len(tag) >= 3 && tag[0] == "proxy" && tag[1] != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// underratedInputs is everything the scoring needs besides the notes and the
+// tally, so a test can drive it without stores or a graph.
+type underratedInputs struct {
+	// posts is how many posts each author made in the window, as far as the
+	// local stores know (0 = unknown).
+	posts map[string]int
+	// reach returns how many of your follows follow the author, and false
+	// when that is not known.
+	reach func(pubkey string) (int, bool)
+}
+
+// scoreUnderrated ranks resolved notes. Per note, with raw the summed weight
+// of its trusted reactors (author excluded):
+//
+//	base   = log2(1 + raw)                      engagement counts, damped
+//	lift   = (raw + 1) / (usual + 1)            against the author's own usual
+//	posts  = 1 / (1 + log2(posts))              fewer posts, more weight
+//	reach  = 1 / (1 + log2(1 + vouches))        known to fewer of your follows
+//	bridge = 1.5 for a NIP-48 bridged note
+//	decay  = Popular's: full for 12h, then down to 0.2
+//
+// usual is the author's engagement in the window over their posts in it:
+// a note that drew what the author's other posts did scores lift 1, a quiet
+// author's one good note far more.
+func scoreUnderrated(events []*nostr.Event, tally map[string]map[string]float64, in underratedInputs, now time.Time) []PopularNote {
+	type cand struct {
+		ev  *nostr.Event
+		raw float64
+	}
+	var cands []cand
+	authorTotal := map[string]float64{}
+	authorNotes := map[string]int{}
+	seen := make(map[string]struct{}, len(events))
+	for _, ev := range events {
+		if ev == nil {
+			continue
+		}
+		if _, dup := seen[ev.ID]; dup {
+			continue
+		}
+		seen[ev.ID] = struct{}{}
+		raw, distinct := scoreExcludingAuthor(tally[ev.ID], ev.PubKey)
+		if distinct < underratedMinReactors {
+			continue
+		}
+		cands = append(cands, cand{ev, raw})
+		authorTotal[ev.PubKey] += raw
+		authorNotes[ev.PubKey]++
+	}
+
+	results := make([]PopularNote, 0, len(cands))
+	for _, c := range cands {
+		pk := c.ev.PubKey
+		posts := max(in.posts[pk], authorNotes[pk], 1)
+		usual := authorTotal[pk] / float64(posts)
+		score := math.Log2(1+c.raw) *
+			((c.raw + 1) / (usual + 1)) *
+			(1 / (1 + math.Log2(float64(posts))))
+		if in.reach != nil {
+			if vouches, ok := in.reach(pk); ok {
+				score *= 1 / (1 + math.Log2(1+float64(max(vouches, 0))))
+			}
+		}
+		if isBridged(c.ev.Tags) {
+			score *= underratedBridgeBoost
+		}
+		ageHours := now.Sub(c.ev.CreatedAt.Time()).Hours()
+		score *= math.Max(0.2, 1.0-math.Max(0, ageHours-12)*0.05)
+		results = append(results, toPopularNote(c.ev, score))
+	}
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Score != results[j].Score {
+			return results[i].Score > results[j].Score
+		}
+		return results[i].ID < results[j].ID
+	})
+	results = capPerAuthor(results, underratedMaxPerAuthor)
+	if len(results) > underratedMaxNotes {
+		results = results[:underratedMaxNotes]
+	}
+	return results
+}
+
+// underratedCandidates is the ids worth resolving: at the reactor bar
+// (author not yet excluded: the author is unknown until the body is), most
+// engaged first, capped.
+func underratedCandidates(tally map[string]map[string]float64) []string {
+	ranked := rankTargets(tally, underratedMinReactors)
+	if len(ranked) > underratedMaxCandidates {
+		ranked = ranked[:underratedMaxCandidates]
+	}
+	ids := make([]string, len(ranked))
+	for i, r := range ranked {
+		ids[i] = r.id
+	}
+	return ids
+}
+
+// localPostCounts counts each author's posts in the window from the local
+// stores (feedsync keeps the follows' notes in feedDB).
+func localPostCounts(ctx context.Context, authors []string, since nostr.Timestamp) map[string]int {
+	counts := make(map[string]int, len(authors))
+	if feedDB == nil {
+		return counts
+	}
+	wdb := eventstore.RelayWrapper{Store: feedDB}
+	for _, pk := range authors {
+		if ctx.Err() != nil {
+			break
+		}
+		evs, err := wdb.QuerySync(ctx, nostr.Filter{Kinds: catchUpKinds, Authors: []string{pk}, Since: &since, Limit: underratedPostCountLimit})
+		if err == nil {
+			counts[pk] = len(evs)
+		}
+	}
+	return counts
+}
+
+// computeUnderratedNotes answers the Underrated feed.
+func computeUnderratedNotes(ctx context.Context) ([]PopularNote, error) {
+	now := time.Now()
+	underratedCacheMu.Lock()
+	if now.Before(underratedCacheExpiry) && len(underratedCache) > 0 {
+		cached := append([]PopularNote(nil), underratedCache...)
+		underratedCacheMu.Unlock()
+		return cached, nil
+	}
+	underratedCacheMu.Unlock()
+
+	// Fails closed, as Popular does (computePopularNotes).
+	model, gated := trustGraph(ctx)
+	if !gated {
+		log.Println("underrated: trust graph not ready, withholding the feed")
+		return []PopularNote{}, nil
+	}
+
+	tally := popularTally.snapshot(now)
+	local := popularTally.coverage(now) >= popularTallyMinCoverage
+	if !local {
+		if err := fetchEngagementInto(ctx, tally); err != nil && len(tally) == 0 {
+			return nil, err
+		}
+	}
+	tally = filterToTrusted(ctx, model, tally)
+	ids := underratedCandidates(tally)
+	if len(ids) == 0 {
+		return []PopularNote{}, nil
+	}
+	events := resolveNoteBodies(ctx, ids)
+
+	authors := make([]string, 0, len(events))
+	seenAuthor := map[string]struct{}{}
+	for _, ev := range events {
+		if _, ok := seenAuthor[ev.PubKey]; !ok {
+			seenAuthor[ev.PubKey] = struct{}{}
+			authors = append(authors, ev.PubKey)
+		}
+	}
+	in := underratedInputs{posts: localPostCounts(ctx, authors, nostr.Timestamp(now.Add(-popularWindow).Unix()))}
+	if rm, ok := model.(reachModel); ok {
+		median := rm.MedianVouches()
+		in.reach = func(pk string) (int, bool) {
+			vouches, follow, known := rm.Reach(pk)
+			if follow {
+				// A follow's own count is not kept; the web's middle stands in.
+				return median, true
+			}
+			return vouches, known
+		}
+	}
+	results := scoreUnderrated(events, tally, in, now)
+	log.Printf("underrated: %d candidates, %d resolved, %d ranked (%s)", len(ids), len(events), len(results),
+		map[bool]string{true: "local", false: "backfilled"}[local])
+
+	ttl := popularCacheTTL
+	if local {
+		ttl = popularLocalCacheTTL
+	}
+	underratedCacheMu.Lock()
+	underratedCache = append([]PopularNote(nil), results...)
+	underratedCacheExpiry = now.Add(ttl)
+	underratedCacheMu.Unlock()
+	return results, nil
+}
