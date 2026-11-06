@@ -31,7 +31,8 @@ func TestBlossomContentTypeByExtension(t *testing.T) {
 }
 
 // Extensionless blobs (the common Blossom case) are sniffed from the ISO-BMFF
-// ftyp box; anything else stays empty so the caller keeps the stored MIME.
+// ftyp box; anything else gets the sniffed type, never empty (never left
+// for ServeContent to take from the stored type's extension).
 func TestBlossomContentTypeSniff(t *testing.T) {
 	prev, prevFs := config, fs
 	t.Cleanup(func() { config, fs = prev, prevFs })
@@ -57,8 +58,8 @@ func TestBlossomContentTypeSniff(t *testing.T) {
 		"mp4blob": "video/mp4",
 		"qtblob":  "video/quicktime",
 		"m4vblob": "video/mp4",
-		"short":   "",
-		"gifblob": "",
+		"short":   "text/plain; charset=utf-8",
+		"gifblob": "image/gif",
 		"missing": "",
 	}
 	for name, want := range cases {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"mime"
 	"net/http"
 	"os"
 	"regexp"
@@ -787,39 +786,6 @@ var blossomExtTypes = map[string]string{
 	"avif": "image/avif",
 }
 
-// blossomContentType resolves a Content-Type for a blob that Go's sniffer
-// can't: MOV/MP4 aren't in http.DetectContentType's table, so without this
-// every video blob whose stored MIME is missing/octet-stream gets served as
-// application/octet-stream — which confuses clients that classify by MIME.
-func blossomContentType(hash string, ext string) string {
-	if ext != "" {
-		lower := strings.ToLower(ext)
-		if ct, ok := blossomExtTypes[lower]; ok {
-			return ct
-		}
-		if ct := mime.TypeByExtension("." + lower); ct != "" {
-			return ct
-		}
-	}
-	file, err := fs.Open(config.BlossomPath + hash)
-	if err != nil {
-		return ""
-	}
-	defer file.Close()
-	head := make([]byte, 12)
-	if n, _ := io.ReadFull(file, head); n < 12 {
-		return ""
-	}
-	// ISO-BMFF container: [size][ftyp][major brand]
-	if bytes.Equal(head[4:8], []byte("ftyp")) {
-		if bytes.Equal(head[8:12], []byte("qt  ")) {
-			return "video/quicktime"
-		}
-		return "video/mp4"
-	}
-	return ""
-}
-
 // meshBlobHandler is all a FIPS mesh peer gets: GET or HEAD of one blob.
 // Mesh connections arrive from 127.0.0.1, so the full mux would treat every
 // peer as the owner's own app (no auth on /feed, no connection limit, the
@@ -876,6 +842,8 @@ func dynamicRelayHandler(w http.ResponseWriter, r *http.Request) {
 			if ct := blossomContentType(m[1], m[2]); ct != "" {
 				w.Header().Set("Content-Type", ct)
 			}
+			// Browsers must not second-guess it into a page either.
+			w.Header().Set("X-Content-Type-Options", "nosniff")
 		}
 	}
 
