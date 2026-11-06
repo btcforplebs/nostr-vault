@@ -27,11 +27,11 @@ extension FeedService {
         // Articles follows its own scope: follows in Following, anyone in Global.
         let searchAuthors: [String]?
         switch feedMode {
-        case .following: searchAuthors = followedPubkeys
+        case .following, .catchUp: searchAuthors = followedPubkeys
         case .articles: searchAuthors = articlesFeedMode == .following ? followedPubkeys : nil
         case .polls: searchAuthors = pollsFeedMode == .following ? followedPubkeys : nil
         case .discovery: searchAuthors = extendedNetworkPubkeys
-        case .global, .popular, .media, .recipes, .marketplace, .live, .reels, .music, .hashtags: searchAuthors = nil
+        case .global, .popular, .underrated, .media, .recipes, .marketplace, .live, .reels, .music, .hashtags: searchAuthors = nil
         }
         if let searchAuthors, searchAuthors.isEmpty {
             searchCancellable?.cancel()

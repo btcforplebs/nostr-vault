@@ -134,7 +134,7 @@ extension FeedService {
 
     /// Load older notes (pagination) — fetches the page before the oldest note currently shown.
     func loadMore() {
-        guard feedMode != .popular else { return } // Popular is a fixed ranked set
+        guard !feedMode.isLocalDvm else { return } // a local DVM feed is a fixed set
         guard !isLoadingFeed, let oldest = notes.last?.createdAt else { return }
         let until = Int64(oldest.timeIntervalSince1970) - 1
         if (isFollowSetMode || (feedMode == .media && mediaFeedMode == .following)) && followedPubkeys.isEmpty { return }

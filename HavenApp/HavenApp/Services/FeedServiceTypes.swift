@@ -445,6 +445,8 @@ enum FeedMode: String, CaseIterable {
     case global = "Global"
     case hashtags = "Hashtags"
     case popular = "Popular"
+    case catchUp = "Catch Up"
+    case underrated = "Underrated"
     case media = "Media"
     case reels = "Reels"
     case articles = "Articles"
@@ -453,6 +455,13 @@ enum FeedMode: String, CaseIterable {
     case live = "Live"
     case polls = "Polls"
     case music = "Music"
+}
+
+extension FeedMode {
+    /// The local DVM computes this feed (Popular, Catch Up, Underrated): no
+    /// relay subscription, no paging, a fixed ordered set (LocalDvmFeed).
+    var localDvm: LocalDvmFeed? { LocalDvmFeed(rawValue: rawValue) }
+    var isLocalDvm: Bool { localDvm != nil }
 }
 
 extension FeedMode {
@@ -474,6 +483,8 @@ extension FeedMode {
         case .global: return "globe"
         case .hashtags: return "number"
         case .popular: return "flame"
+        case .catchUp: return "clock.arrow.circlepath"
+        case .underrated: return "binoculars"
         case .media: return "photo.on.rectangle"
         case .reels: return "play.rectangle"
         case .articles: return "doc.richtext"

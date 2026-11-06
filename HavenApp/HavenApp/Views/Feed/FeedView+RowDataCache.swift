@@ -27,10 +27,10 @@ extension FeedView {
         threadRebuildWork?.cancel()
         let work = DispatchWorkItem { [self] in
             let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
-            // Popular and Global hold only top-level posts, so their replies
+            // The local DVM feeds and Global hold only top-level posts, so their replies
             // are fetched separately for this view, and the feed's own order
             // is kept: a reply landing later doesn't reshuffle the posts.
-            let fetchesReplies = feedService.feedMode == .popular || feedService.feedMode == .global
+            let fetchesReplies = feedService.feedMode.isLocalDvm || feedService.feedMode == .global
             if fetchesReplies {
                 feedService.loadFeedThreadReplies(rootIds: feedService.filteredNotes.map(\.id))
             }

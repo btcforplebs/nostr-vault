@@ -136,7 +136,7 @@ extension FeedView {
                     Label("Reposts", systemImage: "arrow.2.squarepath")
                 }
                 // Same rule as the inline toolbar: Global has no replies.
-                if feedService.feedMode != .global {
+                if feedService.feedMode != .global && !feedService.feedMode.isLocalDvm {
                     Button {
                         configService.config.showReplies.toggle()
                         configService.save()

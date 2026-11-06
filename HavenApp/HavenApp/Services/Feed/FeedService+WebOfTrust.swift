@@ -225,8 +225,8 @@ extension FeedService {
                     // feed entirely until the same graph exists — re-filtering
                     // an empty list would leave the user on "Building…"
                     // forever, so ask for it again now that it can be built.
-                    if self.feedMode == .popular {
-                        self.loadPopularFeed()
+                    if self.feedMode.localDvm?.needsTrustGraph == true {
+                        self.loadLocalDvmFeed()
                         return
                     }
                     self.recomputeFilteredNotes()
@@ -276,6 +276,6 @@ extension FeedService {
     /// withholds the feed rather than ranking whatever the largest bot pool
     /// promoted. Both look identically broken — an empty list — without this.
     private var needsCuratedGraph: Bool {
-        isGlobalLikeMode || feedMode == .popular
+        isGlobalLikeMode || feedMode.localDvm?.needsTrustGraph == true
     }
 }

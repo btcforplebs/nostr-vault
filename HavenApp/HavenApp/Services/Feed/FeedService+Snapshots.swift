@@ -103,7 +103,7 @@ extension FeedService {
         noteStats.removeAll()
         popularNoteScores.removeAll()
         resetFeedThreadReplies()
-        isLoadingPopular = false
+        loadingDvmFeeds.removeAll()
         likedEventIds.removeAll()
         myReactions.removeAll()
         retractedReactionIds.removeAll()
@@ -232,7 +232,7 @@ extension FeedService {
     /// what made every launch flash an empty Following feed with a Refresh
     /// button. Subscribing is still the readiness sink's job.
     func prewarmFromCache() {
-        guard !didRestoreCachedFeed, !didStartInitialLoad, !isPaused, feedMode != .popular else { return }
+        guard !didRestoreCachedFeed, !didStartInitialLoad, !isPaused, !feedMode.isLocalDvm else { return }
 
         if restoreFromDiskIfAvailable() {
             didRestoreCachedFeed = true

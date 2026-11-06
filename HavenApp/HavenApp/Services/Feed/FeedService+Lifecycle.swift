@@ -10,10 +10,10 @@ extension FeedService {
     /// `refresh()` on first-ever launch or when no snapshot is available.
     func startInitialLoad() {
         didStartInitialLoad = true
-        if feedMode == .popular {
-            // The last ranking saved to disk shows at once; loadPopularFeed
-            // keeps it up while the new one is computed.
-            _ = restoreModeCache(for: .popular)
+        if feedMode.isLocalDvm {
+            // The last result saved shows at once; loadLocalDvmFeed keeps it
+            // up while the new one is computed.
+            _ = restoreModeCache(for: feedMode)
             recomputeFilteredNotes()
             refresh()
             return
@@ -116,9 +116,9 @@ extension FeedService {
         }
 
         // 5. Kick off relay traffic.
-        if feedMode == .popular {
-            // Popular feed is ephemeral — always re-fetch on account switch.
-            loadPopularFeed()
+        if feedMode.isLocalDvm {
+            // Local DVM feeds are ephemeral — always re-fetch on account switch.
+            loadLocalDvmFeed()
         } else if restored {
             // Block follow/unfollow until the relay re-fetch completes,
             // so we don't publish the stale snapshot contact list.
@@ -182,8 +182,8 @@ extension FeedService {
             RequestRelaySyncC()
         }
 
-        if feedMode == .popular {
-            loadPopularFeed()
+        if feedMode.isLocalDvm {
+            loadLocalDvmFeed()
             return
         }
         // Global's thread replies were fetched under the old list and trust
@@ -330,12 +330,12 @@ extension FeedService {
             // Same as Recipes: MarketplaceFeedService queries listing relays
             // itself, so the note pipeline stays idle underneath the grid.
             MarketplaceFeedService.shared.loadIfNeeded()
-        } else if mode == .popular {
+        } else if mode.isLocalDvm {
             // Computed, not streamed: a recent result is shown as it was.
             if let cachedAge, cachedAge < Self.popularCacheFreshFor {
                 connectionStatus = "Live"
             } else {
-                loadPopularFeed()
+                loadLocalDvmFeed()
             }
         } else if cachedAge != nil {
             // Back to a feed seen minutes ago: its notes are already on screen,
@@ -380,8 +380,8 @@ extension FeedService {
 
         if feedMode == .reels {
             ReelsFeedService.shared.refresh()
-        } else if feedMode == .popular {
-            loadPopularFeed()
+        } else if feedMode.isLocalDvm {
+            loadLocalDvmFeed()
         } else if isGlobalLikeMode {
             loadWotPubkeys()
             subscribeToAllRelays()
@@ -396,7 +396,7 @@ extension FeedService {
     /// The feeds whose notes stream from relay subscriptions through this
     /// service's pipeline (Popular is computed, side feeds run their own).
     static func streamsFromRelays(_ mode: FeedMode) -> Bool {
-        usesNotePipeline(mode) && mode != .popular
+        usesNotePipeline(mode) && !mode.isLocalDvm
     }
 
     /// Keeps the feed sockets open but drops this service's ties to them:
@@ -498,9 +498,9 @@ extension FeedService {
         #if DEBUG
         print("FeedService: resuming — reconnecting relay clients")
         #endif
-        if feedMode == .popular {
-            // Popular feed doesn't use relay subscriptions — re-fetch if stale
-            if notes.isEmpty { loadPopularFeed() }
+        if feedMode.isLocalDvm {
+            // Local DVM feeds don't use relay subscriptions — re-fetch if stale
+            if notes.isEmpty { loadLocalDvmFeed() }
         } else {
             // Route through the idempotent reconciler so resume reconnects the
             // right relay set and (re)subscribes with the current follow set —

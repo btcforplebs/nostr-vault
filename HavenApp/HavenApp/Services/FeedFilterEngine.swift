@@ -108,6 +108,10 @@ enum FeedFilterEngine {
         var filtered = notes.filter { note in
             if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
             if note.kind == 6 && !showReposts { return false }
+            // Catch Up: someone unfollowed since it was computed goes now.
+            if mode == .catchUp { return followedPubkeys.isEmpty || followedPubkeys.contains(note.pubkey) }
+            // Underrated holds top-level posts, as Popular does.
+            if mode == .underrated { return !note.isReply }
             if mode == .popular {
                 let isFollowed = followedPubkeys.contains(note.pubkey)
                 if popularFilter == .follows && !isFollowed { return false }
@@ -142,8 +146,9 @@ enum FeedFilterEngine {
             return showReplies || !note.isReply
         }
 
-        // Popular feed: sort by engagement score instead of chronological
-        if mode == .popular && !popularNoteScores.isEmpty {
+        // Local DVM feeds keep the relay's order: Popular and Underrated by
+        // score, Catch Up newest first (its score is created_at).
+        if mode.isLocalDvm && !popularNoteScores.isEmpty {
             filtered.sort { a, b in
                 let scoreA = popularNoteScores[a.id] ?? 0
                 let scoreB = popularNoteScores[b.id] ?? 0

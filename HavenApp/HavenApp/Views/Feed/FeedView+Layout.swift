@@ -9,7 +9,7 @@ extension FeedView {
         switch feedService.feedMode {
         case .following, .articles, .recipes, .marketplace, .live, .reels, .music, .hashtags, .polls:
             return false
-        case .discovery, .global, .popular, .media:
+        case .discovery, .global, .popular, .catchUp, .underrated, .media:
             return configService.config.useFeedCompactMode
         }
     }
@@ -18,7 +18,7 @@ extension FeedView {
     /// cycle between expanded and condensed without a threaded stop.
     var currentFeedSupportsThreading: Bool {
         switch feedService.feedMode {
-        case .following, .discovery, .global, .popular, .hashtags:
+        case .following, .discovery, .global, .popular, .catchUp, .underrated, .hashtags:
             return true
         case .media, .articles, .recipes, .marketplace, .live, .reels, .music, .polls:
             return false
@@ -146,7 +146,7 @@ extension FeedView {
     var isCompactModeActive: Bool {
         guard layoutModeForCurrentFeed.usesCondensedRows else { return false }
         switch feedService.feedMode {
-        case .following, .discovery, .global, .popular, .hashtags:
+        case .following, .discovery, .global, .popular, .catchUp, .underrated, .hashtags:
             return true
         // Articles and Media are card/grid layouts, not timeline rows —
         // compact mode has nothing to condense. Polls always show the

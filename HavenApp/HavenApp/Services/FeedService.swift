@@ -92,7 +92,10 @@ class FeedService: ObservableObject {
     /// and publishing it would replace every follow on every relay.
     @Published var contactListConfirmed = false
     @Published var isLoadingExtendedNetwork = false
-    @Published var isLoadingPopular = false
+    /// The local DVM feeds being computed now (Popular, Catch Up, Underrated).
+    @Published var loadingDvmFeeds: Set<FeedMode> = []
+    /// The local DVM feed on screen is being computed.
+    var isLoadingLocalDvm: Bool { loadingDvmFeeds.contains(feedMode) }
     @Published var popularFilter: PopularFilter = .all
     @Published var showPopularEngagement = false
     @Published var isLoadingFeed    = false
@@ -510,7 +513,7 @@ class FeedService: ObservableObject {
         snapshotPersistTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self, self.snapshotDirty, !self.isPaused,
-                      self.feedMode != .popular, !self.notes.isEmpty else { return }
+                      !self.feedMode.isLocalDvm, !self.notes.isEmpty else { return }
                 self.snapshotDirty = false
                 self.persistCurrentSnapshot()
             }
