@@ -5,8 +5,8 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * The profile picture's hold menu (Logen 2026-11-05): the accounts on top,
- * then a divider, App settings and Mesh settings at the bottom. The overlay
+ * The profile picture's hold menu (Logen 2026-11-06): App settings and Mesh
+ * settings on top, then a divider, then the accounts. The overlay
  * draws its items bottom-up, so the list starts with the bottom row.
  */
 class AccountTabPickerItemsTest {
@@ -16,12 +16,12 @@ class AccountTabPickerItemsTest {
     /** What the overlay draws top to bottom. */
     private fun drawn(npubs: List<String>) = AccountTabPicker.items(npubs).reversed()
 
-    @Test fun accountsOnTopThenAppSettingsThenMeshSettings() {
-        assertEquals(listOf(b, a, AccountTabPicker.APP_SETTINGS, AccountTabPicker.MESH_SETTINGS), drawn(listOf(a, b)))
+    @Test fun appSettingsThenMeshSettingsOnTopThenAccounts() {
+        assertEquals(listOf(AccountTabPicker.APP_SETTINGS, AccountTabPicker.MESH_SETTINGS, b, a), drawn(listOf(a, b)))
     }
 
     @Test fun oneAccountStillHasBothSettingsRows() {
-        assertEquals(listOf(a, AccountTabPicker.APP_SETTINGS, AccountTabPicker.MESH_SETTINGS), drawn(listOf(a)))
+        assertEquals(listOf(AccountTabPicker.APP_SETTINGS, AccountTabPicker.MESH_SETTINGS, a), drawn(listOf(a)))
     }
 
     @Test fun settingsIdsAreNamedAndNeverAnNpub() {

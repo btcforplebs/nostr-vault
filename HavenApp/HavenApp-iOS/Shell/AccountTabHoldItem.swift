@@ -6,8 +6,8 @@ import SwiftUI
 /// slide a little, and the accounts open in the dock's own hold menu
 /// (`DockHoldMenu`), the same rows and timing as Feed and Vault, but
 /// centered on screen, growing up from the middle button. Slide onto
-/// an account and let go to switch to it. Under the accounts, after a
-/// divider: App settings and Mesh settings (Logen 2026-11-05), so the
+/// an account and let go to switch to it. Above the accounts, then a
+/// divider: App settings and Mesh settings (Logen 2026-11-06), so the
 /// menu opens with one account too.
 ///
 /// The menu is drawn by `DockHoldMenuOverlay` over the whole screen, not
@@ -37,10 +37,10 @@ struct AccountTabHoldItem<Label: View>: View {
             }
     }
 
-    /// Drawn bottom-up, so the settings rows go first: on screen they sit
-    /// under the accounts, App settings above Mesh settings.
+    /// Drawn bottom-up, so the settings rows go last: on screen they sit at
+    /// the top, App settings above Mesh settings, then a divider, then the accounts.
     private func entries() -> [DockHoldEntry] {
-        ProfileMenuSettings.allCases.reversed().map { $0.entry } + accountEntries()
+        accountEntries() + ProfileMenuSettings.allCases.reversed().map { $0.entry }
     }
 
     private func accountEntries() -> [DockHoldEntry] {
@@ -76,7 +76,7 @@ struct AccountTabHoldItem<Label: View>: View {
 
 // MARK: - Settings rows
 
-/// App settings and Mesh settings, under the accounts in the profile
+/// App settings and Mesh settings, above the accounts in the profile
 /// picture's menus (the dock's hold menu and the iPad rail's list).
 enum ProfileMenuSettings: String, CaseIterable, Identifiable {
     case app = "menu.appSettings"
@@ -98,9 +98,10 @@ enum ProfileMenuSettings: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The dock menu row; App settings carries the divider that ends the accounts.
+    /// The dock menu row; Mesh settings, the lower of the two, carries the
+    /// divider above the accounts.
     var entry: DockHoldEntry {
-        DockHoldEntry(id: rawValue, title: title, symbol: symbol, dividerAbove: self == .app)
+        DockHoldEntry(id: rawValue, title: title, symbol: symbol, dividerBelow: self == .mesh)
     }
 }
 

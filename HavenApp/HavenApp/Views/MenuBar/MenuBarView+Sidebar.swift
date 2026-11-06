@@ -87,6 +87,14 @@ extension MenuBarView {
                                 AccountSwitcherView(configService: configService)
                             }
                             .contextMenu {
+                                // Settings first, then the accounts (Logen
+                                // 2026-11-06), as the iPhone, iPad and Android menus.
+                                Button("App settings") { selectedTab = .settings }
+                                Button("Mesh settings") {
+                                    settingsPaneRequest = .fipsMesh
+                                    selectedTab = .settings
+                                }
+                                Divider()
                                 Button("View Profile") { selectedTab = .profile }
                                 if hasMultipleAccounts {
                                     Divider()
@@ -105,14 +113,6 @@ extension MenuBarView {
                                             configService.switchActiveAccount(to: npub)
                                         }
                                     }
-                                }
-                                // Under the accounts (Logen 2026-11-05), as the
-                                // iPhone, iPad and Android menus.
-                                Divider()
-                                Button("App settings") { selectedTab = .settings }
-                                Button("Mesh settings") {
-                                    settingsPaneRequest = .fipsMesh
-                                    selectedTab = .settings
                                 }
                             }
 

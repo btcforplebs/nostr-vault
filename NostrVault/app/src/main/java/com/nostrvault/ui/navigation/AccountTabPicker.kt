@@ -12,8 +12,8 @@ import com.nostrvault.ui.theme.NostrVaultIcons
  * Hold the account picture in the bar (or slide a little), move onto an
  * account, let go: the app switches to it. Same engine and look as the Feed
  * and Vault menus ([DockHoldMenu]), but centered on screen, growing up from
- * the middle button. Under the accounts, after a divider: App settings and
- * Mesh settings (Logen 2026-11-05), so it opens with one account too.
+ * the middle button. Above the accounts, then a divider: App settings and
+ * Mesh settings (Logen 2026-11-06), so it opens with one account too.
  * iOS: BottomTabBar's account switch menu.
  */
 @Stable
@@ -26,9 +26,9 @@ object AccountTabPicker {
 
     /**
      * The rows in menu order. The overlay draws them bottom-up, so this reads
-     * top to bottom as: the accounts, a divider, App settings, Mesh settings.
+     * top to bottom as: App settings, Mesh settings, a divider, the accounts.
      */
-    fun items(npubs: List<String>): List<String> = listOf(MESH_SETTINGS, APP_SETTINGS) + npubs
+    fun items(npubs: List<String>): List<String> = npubs + listOf(MESH_SETTINGS, APP_SETTINGS)
 
     /** A settings row's name; null for an account. */
     fun settingsLabel(id: String): String? = when (id) {
@@ -52,8 +52,8 @@ fun AccountTabPickerOverlay(
         row = { id ->
             when (id) {
                 AccountTabPicker.APP_SETTINGS ->
-                    DockHoldRow(NostrVaultIcons.Settings, "App settings", current = false, dividerAbove = true)
-                AccountTabPicker.MESH_SETTINGS -> DockHoldRow(Icons.Filled.Hub, "Mesh settings", current = false)
+                    DockHoldRow(NostrVaultIcons.Settings, "App settings", current = false)
+                AccountTabPicker.MESH_SETTINGS -> DockHoldRow(Icons.Filled.Hub, "Mesh settings", current = false, dividerBelow = true)
                 else -> {
                     val a = byNpub[id]
                     DockHoldRow(

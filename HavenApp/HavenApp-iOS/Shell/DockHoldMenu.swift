@@ -15,9 +15,9 @@ struct DockHoldEntry: Identifiable, Equatable {
     /// Set for an account row: its picture replaces the symbol.
     var avatarHex: String?
     var avatarURL: URL?
-    /// A thin line above this row, as drawn: it starts a new group (the
-    /// account menu's settings rows).
-    var dividerAbove = false
+    /// A thin line under this row, as drawn: it ends a group (the account
+    /// menu's settings rows, above the accounts).
+    var dividerBelow = false
 }
 
 /// Press a dock tab and hold it briefly, or slide a little from it, and the
@@ -241,13 +241,13 @@ struct DockHoldMenuOverlay: View {
     private var list: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(menu.entries.reversed()) { entry in
-                if entry.dividerAbove {
+                row(entry)
+                if entry.dividerBelow {
                     Divider()
                         .frame(width: 190)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 3)
                 }
-                row(entry)
             }
         }
         .padding(6)
