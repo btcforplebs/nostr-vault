@@ -6,9 +6,8 @@ import Combine
 /// person which accounts a copy or catch-up brought over to add here.
 ///
 /// Logen's rule (2026-11-06): nothing is added on its own. The ticked ones
-/// become look-only accounts (public key only: no nsec, no bunker, no saved
-/// sign-in), through AddAccountsC now and the whitelist file for the next
-/// relay start. Every note the copy carried stays in the vault either way,
+/// become watch-only accounts (public key only: no nsec, no bunker, no saved
+/// sign-in), with no vault access. Every note the copy carried stays in the vault either way,
 /// and the engine never uploads anything by a brought-over account.
 @MainActor
 final class CopyAccountsSync: ObservableObject {
@@ -105,27 +104,22 @@ final class CopyAccountsSync: ObservableObject {
         offered = CopyAccounts.offered(file: readFile(), ownHex: ownHex, settledHex: settled)
     }
 
-    /// The person's answer: `ticked` become look-only accounts here; every
-    /// offered one, ticked or not, is settled and not asked again.
+    /// The person's answer: `ticked` join this device's accounts watch-only
+    /// (npub only, no key or sign-in); every offered one, ticked or not, is
+    /// settled and not asked again. A watch-only account never gets vault
+    /// access (Logen, 2026-11-06 11:37Z): it is not in the whitelist file
+    /// (`HavenConfig.vaultWhitelistNpubs`) and AddAccountsC is not called.
     func answer(ticked: [CopyAccounts.Account]) {
         let asked = offered
         let chosen = asked.filter { a in ticked.contains { $0.npub == a.npub } }
         settled.formUnion(asked.compactMap { MeshPairing.npubHex($0.npub) })
         offered = []
-        guard !chosen.isEmpty, let json = CopyAccounts.addJSON(chosen, updatedAt: Self.now) else { return }
-        // Live now, without a relay restart.
-        let added = json.withCString { AddAccountsC(UnsafeMutablePointer(mutating: $0)) }
-        guard added >= 0 else {
-            RelayProcessManager.shared.addLog("Accounts not added: the list was refused", level: "ERROR")
-            return
-        }
-        // And in the whitelist file for the next relay start. Look-only: the
-        // npub is all that is stored, no key or sign-in.
+        guard !chosen.isEmpty else { return }
         let config = ConfigService.shared
         for a in chosen where !config.config.whitelistedNpubs.contains(a.npub) {
             config.config.whitelistedNpubs.append(a.npub)
         }
         config.save()
-        RelayProcessManager.shared.addLog("Added \(chosen.count) brought-over account(s), look-only")
+        RelayProcessManager.shared.addLog("Added \(chosen.count) brought-over account(s), watch-only")
     }
 }

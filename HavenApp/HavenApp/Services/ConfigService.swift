@@ -229,11 +229,11 @@ class ConfigService: ObservableObject {
         // Missing/empty file keeps config.json's list (save() writes both, so an emptied list is empty in each); this session's mesh relay address is never the owner's own.
         config.blastrRelays = RelayConfiguration.droppingMeshAddresses(config.blastrRelays)
 
-        // Load whitelisted npubs
+        // The account list: config.json's, plus any an older build kept only
+        // in the whitelist file (that file now holds signing accounts only).
         let npubsURL = relayDataDir.appendingPathComponent(config.whitelistedNpubsFile)
-        if let data = try? Data(contentsOf: npubsURL),
-           let list = try? JSONDecoder().decode([String].self, from: data) {
-            config.whitelistedNpubs = list
+        if let data = try? Data(contentsOf: npubsURL), let list = try? JSONDecoder().decode([String].self, from: data) {
+            config.whitelistedNpubs = HavenConfig.accountList(saved: config.whitelistedNpubs, whitelistFile: list)
         }
         
         // Load blacklisted npubs
@@ -330,13 +330,9 @@ class ConfigService: ObservableObject {
              }
         }
 
-        // Save whitelisted npubs. Written even when empty: loadRelayLists reads
-        // this file back over config.json, so skipping the write when the list
-        // is emptied brings the last removed account back on the next launch.
-        let npubsURL = relayDataDir.appendingPathComponent(config.whitelistedNpubsFile)
-        if let data = try? encoder.encode(config.whitelistedNpubs) {
-            try? data.write(to: npubsURL)
-        }
+        // The vault whitelist: signing accounts only, written even when empty
+        // (ConfigService+VaultWhitelist).
+        writeVaultWhitelist(encoder: encoder)
         
         // Save blacklisted npubs. Written even when empty, for the same reason
         // as the whitelist: unblocking the last legacy entry must not come back
@@ -751,8 +747,7 @@ class ConfigService: ObservableObject {
 
     /// Returns whether a signing credential is stored for the given npub.
     func hasCredential(forNpub npub: String) -> Bool {
-        guard let stored = config.accountCredentials[npub] else { return false }
-        return !stored.isEmpty
+        config.hasStoredCredential(npub: npub)
     }
     
     /// Removes the stored credential and Keychain password for a whitelisted account.
@@ -785,8 +780,7 @@ class ConfigService: ObservableObject {
     }
 
     func hasBunkerConfig(forNpub npub: String) -> Bool {
-        guard let cfg = config.accountBunkerConfigs[npub] else { return false }
-        return !cfg.bunkerURI.isEmpty || !cfg.signerPubkey.isEmpty
+        config.hasSigner(npub: npub)
     }
 
     func removeBunkerConfig(forNpub npub: String) {

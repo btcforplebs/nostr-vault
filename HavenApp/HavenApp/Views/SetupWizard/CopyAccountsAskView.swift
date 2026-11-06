@@ -14,8 +14,8 @@ struct CopyAccountsAskView: View {
 
     static let title = "Add your other accounts?"
     static let message = "These accounts came over with the copy. Tick the ones you want here too. "
-        + "They are added look-only: just the public key, no private key or sign-in. "
-        + "Their notes are already in this vault either way."
+        + "They are added watch-only: just the public key, no private key or sign-in, "
+        + "and no access to this vault. Their notes are already here either way."
 
     private var chosen: [CopyAccounts.Account] { accounts.filter { ticked.contains($0.npub) } }
 

@@ -34,7 +34,7 @@ extension RelayProcessManager {
         if let data = try? encoder.encode(config.dmRelays) {
             try? data.write(to: relayDataDir.appendingPathComponent("relays_dm.json"))
         }
-        if let data = try? encoder.encode(config.whitelistedNpubs) {
+        if let data = try? encoder.encode(config.vaultWhitelistNpubs) {
             try? data.write(to: relayDataDir.appendingPathComponent(config.whitelistedNpubsFile))
         }
         if let data = try? encoder.encode(config.allBlockedNpubsAcrossAccounts) {
