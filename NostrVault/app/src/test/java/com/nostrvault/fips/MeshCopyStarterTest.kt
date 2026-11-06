@@ -56,8 +56,11 @@ class MeshCopyStarterTest {
         val s = starter()
         assertEquals(MeshCopyStarter.Result.Started, s.start(peer, link, "Studio Mac"))
         assertEquals(listOf(Triple(peer, link.replaceFirst("ws://", "http://"), "c2lnbmVk")), engine.starts)
-        // Signed for the base only: the link secret never leaves this phone.
-        assertEquals(listOf(listOf("u", "http://127.0.0.1:41234/copy/v2/start"), listOf("method", "POST")), signed.single())
+        // Signed for the base only (the link secret never leaves this phone), for A's mesh npub, no device tag.
+        assertEquals(
+            listOf(listOf("u", "http://127.0.0.1:41234/copy/v2/start"), listOf("method", "POST"), listOf("p", peer)),
+            signed.single(),
+        )
         // The engine holds the token now: a cut copy resumes without a new proof.
         assertEquals(MeshCopyV2.Record.Pending(peer, "Studio Mac", freshStart = false), store.r.pending)
     }

@@ -109,6 +109,8 @@ extern char* ImportJobsC(void);
 extern int RunImportJobC(char* name);
 extern int StartCopyFromC(char* peer, char* base, char* startAuth);
 extern int CopySyncC(char* peer, char* base);
+extern int SetMeshDevicesC(char* devices);
+extern int AddAccountsC(char* accountsJSON);
 extern int CancelImportJobC(char* name);
 extern char* GetNotifyLogC(void);
 extern char* GetLogLinesC(void);
@@ -610,6 +612,15 @@ Java_com_nostrvault_relay_HavenBridge_cancelImportJob(JNIEnv *env, jobject thiz,
     return rc;
 }
 
+// The vault's paired set (haven-go cshared.go SetMeshDevicesC): this device's mesh npub and My Devices.
+JNIEXPORT jint JNICALL
+Java_com_nostrvault_relay_HavenBridge_setMeshDevices(JNIEnv *env, jobject thiz, jstring devices) {
+    const char *cDevices = GET_CSTR(env, devices);
+    int rc = SetMeshDevicesC((char*)cDevices);
+    REL_CSTR(env, devices, cDevices);
+    return rc;
+}
+
 // Mesh copy v2 (haven-go copyv2_client.go): the copy from an own device, and a catch-up with one.
 JNIEXPORT jint JNICALL
 Java_com_nostrvault_relay_HavenBridge_startCopyFrom(JNIEnv *env, jobject thiz, jstring peer, jstring base, jstring startAuth) {
@@ -630,6 +641,16 @@ Java_com_nostrvault_relay_HavenBridge_copySync(JNIEnv *env, jobject thiz, jstrin
     int rc = CopySyncC((char*)cPeer, (char*)cBase);
     REL_CSTR(env, base, cBase);
     REL_CSTR(env, peer, cPeer);
+    return rc;
+}
+
+// The accounts the person ticked after a copy, live (haven-go cshared.go AddAccountsC).
+JNIEXPORT jint JNICALL
+Java_com_nostrvault_relay_HavenBridge_addAccounts(JNIEnv *env, jobject thiz, jstring accountsJson) {
+    const char *cJson = GET_CSTR(env, accountsJson);
+    if (cJson == NULL) return -1;
+    int rc = AddAccountsC((char*)cJson);
+    REL_CSTR(env, accountsJson, cJson);
     return rc;
 }
 

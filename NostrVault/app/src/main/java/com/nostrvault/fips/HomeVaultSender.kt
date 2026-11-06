@@ -62,6 +62,10 @@ class HomeVaultSender @Inject constructor(
     @Volatile
     var signer: suspend (kind: Int, content: String, tags: List<List<String>>) -> String? = { _, _, _ -> null }
 
+    /** This phone's mesh-key Blossom token for one blob on one vault ([MeshKeySigner.blossom]); swapped in tests. */
+    internal var meshToken: (verb: MeshKeyAuth.Verb, sha256: String, receiver: String, content: String, lifetimeS: Long, size: Long?) -> String? =
+        { verb, sha, receiver, content, lifetime, size -> MeshKeySigner.blossom(verb, listOf(sha), listOf(receiver), content, lifetime, size) }
+
     /** The owner's hex pubkey. Wired by NostrService. */
     @Volatile
     var ownerHex: () -> String = { "" }
@@ -184,8 +188,8 @@ class HomeVaultSender @Inject constructor(
             return false
         }
         return try {
-            // One signed "get" for this blob, before the retries: it covers every check below.
-            val check = checkAuth(sha256)
+            // One signed "get" for this blob on this vault, before the retries: it covers every check below.
+            val check = checkAuth(sha256, npub)
             // Right after launch or a network change the mesh link to the
             // vault is still coming up and the first tries are reset: keep
             // trying for a while rather than fall back on the first one.
@@ -218,7 +222,7 @@ class HomeVaultSender @Inject constructor(
         val base = FipsMediaRouter.ingressBase(npub) ?: return false
         val item = queue.items().firstOrNull { it.key == sha256 && it.type == HomeVaultQueue.TYPE_BLOB }
         if (item != null) {
-            val outcome = sendBlob(base, item, queue, ensureClient, check)
+            val outcome = sendBlob(base, item, queue, npub, ensureClient, check)
             record(item, outcome, npub, System.currentTimeMillis(), queue, DeviceRole.HOME_VAULT)
             return outcome == HomeVaultSend.SENT
         }
@@ -489,7 +493,7 @@ class HomeVaultSender @Inject constructor(
         for (item in selection.toTry) {
             val outcome = try {
                 when (item.type) {
-                    HomeVaultQueue.TYPE_BLOB -> sendBlob(base, item, queue)
+                    HomeVaultQueue.TYPE_BLOB -> sendBlob(base, item, queue, npub)
                     HomeVaultQueue.TYPE_EVENT -> sendEvent(base, item)
                     else -> HomeVaultSend.REJECTED
                 }
@@ -532,40 +536,51 @@ class HomeVaultSender @Inject constructor(
         }
     }
 
-    private suspend fun sendBlob(
+    /** One blob to [receiver] (the vault's mesh npub) through [base]. */
+    internal suspend fun sendBlob(
         base: String,
         item: HomeVaultQueue.Item,
         queue: HomeVaultQueue,
+        receiver: String,
         http: OkHttpClient = client,
         check: String? = null,
     ): HomeVaultSend {
         val sha = item.key
         val file = queue.blobFile(sha)
         // Already there (sent before a crash, or uploaded on the kiosk itself).
-        http.newCall(VaultCheck.request(base, sha, check ?: checkAuth(sha))).execute().use {
+        http.newCall(VaultCheck.request(base, sha, check ?: checkAuth(sha, receiver))).execute().use {
             if (it.isSuccessful) return HomeVaultSend.SENT
         }
         if (!file.exists()) return HomeVaultSend.REJECTED
-        // Signed per send, not when queued: Blossom auth expires.
-        val auth = uploadAuth(sha) ?: run {
+        val type = item.contentType ?: "application/octet-stream"
+        val mediaType = type.toMediaTypeOrNull() ?: return HomeVaultSend.REJECTED
+        // Signed per send, not when queued: Blossom auth expires. This phone's mesh key for this vault
+        // (docs/MESH_COPY_V2_CONTRACT.md §2.1); the owner's form only without one (TODO(mesh-key)).
+        val meshAuth = meshToken(MeshKeyAuth.Verb.UPLOAD, sha, receiver, "Upload to my vault", MeshKeyAuth.BLOSSOM_LIFETIME_S, file.length())
+        val auth = meshAuth ?: uploadAuth(sha) ?: run {
             problem("Could not sign the upload")
             return HomeVaultSend.RETRY
         }
-        val type = item.contentType ?: "application/octet-stream"
-        val mediaType = type.toMediaTypeOrNull() ?: return HomeVaultSend.REJECTED
-        val request = Request.Builder()
+        fun put(auth: String) = Request.Builder()
             .url("$base/upload")
             .put(file.asRequestBody(mediaType))
             .header("Authorization", "Nostr $auth")
             .header("Content-Type", type)
             .build()
-        return http.newCall(request).execute().use { response ->
+        val (outcome, ownerRetry) = http.newCall(put(auth)).execute().use { response ->
             val outcome = HomeVaultRules.uploadOutcome(response.code)
             if (outcome != HomeVaultSend.SENT) {
                 Log.w(TAG, "home vault upload ${sha.take(8)}: HTTP ${response.code} ${response.reason(200)}")
             }
-            outcome
+            outcome to (meshAuth != null && MeshKeyAuth.retriesWithOwnerForm(response))
         }
+        // A vault without the paired set yet (an older build, or the box before havend passes it) turns the device
+        // form down: one retry with the owner's form while vaults accept it. A vault that has its set says so
+        // (X-Mesh-Devices), and its refusal stands. TODO(mesh-key).
+        if (!ownerRetry) return outcome
+        val ownerAuth = uploadAuth(sha) ?: return outcome
+        Log.w(TAG, "home vault did not take the device key for ${sha.take(8)}, sent with the owner's")
+        return http.newCall(put(ownerAuth)).execute().use { HomeVaultRules.uploadOutcome(it.code) }
     }
 
     private suspend fun uploadAuth(sha256: String, content: String = "Upload to home vault"): String? {
@@ -584,7 +599,10 @@ class HomeVaultSender @Inject constructor(
      * the relay port My Devices reach. Only the mesh door needs it (#1050), for a sender the vault
      * does not list (Tod, Tron #1048 #2).
      */
-    private suspend fun checkAuth(sha256: String): String? {
+    private suspend fun checkAuth(sha256: String, receiver: String): String? {
+        // This phone's mesh key first, for this vault: a HEAD does not spend it. The owner's form only without a
+        // mesh key (TODO(mesh-key)).
+        meshToken(MeshKeyAuth.Verb.GET, sha256, receiver, "Check my vault", VaultCheck.AUTH_LIFETIME_S, null)?.let { return it }
         if (!signerIsLocal()) return null
         return signedAuth(VaultCheck.authTags(sha256, System.currentTimeMillis() / 1000), "Check home vault", "check")
     }

@@ -1,6 +1,5 @@
 package com.nostrvault.fips
 
-import com.nostrvault.data.local.CredentialStore
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.EventPublisher
@@ -22,8 +21,9 @@ import java.security.SecureRandom
  * Sends and receives the pairing hello and ack (kind 21195, docs/MESH_PAIRING_CONTRACT.md §3) on the finder relays.
  * Twin of iOS `MeshPairingHello.swift`.
  *
- * The only place outside the engine that reads the mesh nsec (Tron T2): read per call, never logged, never kept,
- * never handed to the UI, and it signs kind 21195 only, through no general signing function. Everything it hands
+ * With [MeshKeySigner] (the copy start and Blossom over the mesh) the only readers of the mesh nsec outside the engine
+ * (Tron T2): read per call, never logged, never kept, never handed to the UI, and it signs kind 21195 only, through no
+ * general signing function. Everything it hands
  * back is the sender's mesh pubkey and the decrypted plaintext; the session ([MeshPairingSession],
  * [MeshPairingJoiner]) judges that.
  */
@@ -110,12 +110,7 @@ class MeshPairingHello(
     }
 
     /** The mesh key for one call: read, used, dropped. Never logged (Tron T2). */
-    private fun <T> withKey(block: (secretHex: String, pubkeyHex: String) -> T?): T? {
-        val nsec = runCatching { CredentialStore.readMeshNsec() }.getOrNull() ?: return null
-        val sec = HavenBridge.decodeNsec(nsec) ?: return null
-        val pub = runCatching { HavenBridge.getPublicKey(sec) }.getOrNull()?.lowercase() ?: return null
-        return block(sec, pub)
-    }
+    private fun <T> withKey(block: (secretHex: String, pubkeyHex: String) -> T?): T? = MeshKeySigner.withKey(block)
 
     companion object {
         const val SUB_PREFIX = "nvpair-"

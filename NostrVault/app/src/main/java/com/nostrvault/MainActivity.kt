@@ -97,6 +97,7 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var homeWidgetRefresher: com.nostrvault.widget.HomeWidgetRefresher
     @Inject lateinit var relayImportService: com.nostrvault.service.RelayImportService
     @Inject lateinit var fipsMeshManager: FipsMeshManager
+    @Inject lateinit var copyAccountsSync: com.nostrvault.fips.CopyAccountsSync
 
     /** The one notification question's answer: push on only if allowed (NotificationAsk). */
     private val notificationPermissionLauncher =
@@ -290,6 +291,8 @@ class MainActivity : FragmentActivity() {
                             com.nostrvault.ui.components.AccountSwitchFlashLayer(nostrService.profiles)
                             // Tutorial cards, over every screen; only the card takes touches.
                             com.nostrvault.tutorials.TutorialStage(account = { nostrService.activeHexPubkey })
+                            // Accounts a later copy or catch-up brought over: asked, never added unasked.
+                            com.nostrvault.ui.screens.CopyAccountsAskSheet(copyAccountsSync, enabled = config.hasCompletedSetup)
                         }
                     }
                 }

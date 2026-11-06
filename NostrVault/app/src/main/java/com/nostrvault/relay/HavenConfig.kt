@@ -36,6 +36,10 @@ data class HavenConfig(
     val accountBunkerConfigs: Map<String, AccountBunkerConfig> = emptyMap(),
     val accountSigningModes: Map<String, String> = emptyMap(),
     val publishRelayListPerAccount: Map<String, Boolean> = emptyMap(),
+    // Accounts another of the owner's vaults brought over in a copy that the person ticked to add here
+    // (CopyAccountsSync, contract §3.4). Look-only (npub only). Those still in accountNpubs go in the relay's
+    // whitelist file at every start (RelayConfiguration.whitelistNpubs), as AddAccountsC made them own live.
+    val broughtAccountNpubs: List<String> = emptyList(),
 
     // Whitelisted / Blacklisted
     val whitelistedNpubsFile: String = "",

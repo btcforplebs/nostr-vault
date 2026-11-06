@@ -52,6 +52,7 @@ class OtherDeviceViewModel @Inject constructor(
     private val firstRunImport: com.nostrvault.service.FirstRunImport,
     private val otherVaultLink: OtherVaultLink,
     private val copyStarter: MeshCopyStarter,
+    private val copyAccounts: com.nostrvault.fips.CopyAccountsSync,
     private val notificationManager: NotificationManager,
     @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
@@ -65,6 +66,8 @@ class OtherDeviceViewModel @Inject constructor(
         data class CheckWords(val words: List<String>, val shortAddress: String, val name: String, val tapped: Boolean) : Ui
         /** Linked; importing from the other device now ([status]: the import's own line). */
         data class Copying(val name: String, val status: String = "") : Ui
+        /** Copied, and the copy brought accounts this phone lacks: ask before setup goes on (Logen, 2026-11-06). */
+        data class AskAccounts(val accounts: List<com.nostrvault.fips.CopyAccounts.Account>) : Ui
         /** Copied (all or part): setup goes on to the normal relay import. */
         data object Copied : Ui
         /** Didn't link: setup goes on to the relays with one plain line. */
@@ -117,8 +120,8 @@ class OtherDeviceViewModel @Inject constructor(
             is MeshPairing.Parsed.Ok -> parsed.payload
         }
         if (p.code !is MeshPairing.Code.Secret) return run { _ui.value = Ui.Scan(PairDeviceViewModel.FIRST_CODE_TEXT) }
-        // A new install has one account: anything else is another account's device.
-        if (MeshPairing.ownerCheck(p.owner, owner(), listOfNotNull(owner())) != MeshPairing.OwnerCheck.Ok) {
+        // Any account the two share will do (Logen, 2026-11-06); only accounts this phone can sign for count (Tron, PR 1809).
+        if (!MeshPairing.sharesAccount(p.owner, p.accountTags, p.code.value, configStore.signingAccountNpubs())) {
             return run { _ui.value = Ui.Scan(MeshPairing.OTHER_OWNER_TEXT) }
         }
         when (val r = MeshPairing.roleCheck(p.mesh, p.role, existing())) {
@@ -144,7 +147,7 @@ class OtherDeviceViewModel @Inject constructor(
         joiner = j
         if (!h.open(::onAck)) return fallBack()
         val name = PairDeviceViewModel.deviceName()
-        if (!h.send(a.meshHex, MeshPairing.helloJson(aSecret, name, DeviceRole.PHONE, owner().orEmpty(), now()))) return fallBack()
+        if (!h.send(a.meshHex, MeshPairing.helloJson(aSecret, name, DeviceRole.PHONE, owner().orEmpty(), now(), configStore.signingAccountNpubs()))) return fallBack()
         val code = MeshPairing.build(MeshPairing.npub(own), name, DeviceRole.PHONE, owner().orEmpty(), MeshPairing.Code.Echo(aSecret, bSecret))
         _ui.value = Ui.ShowMyCode(code, MeshPairing.displayName(a.name))
         tick { t ->
@@ -177,6 +180,13 @@ class OtherDeviceViewModel @Inject constructor(
             MeshPairingJoiner.Outcome.Expired -> fallBack()
             else -> (_ui.value as? Ui.CheckWords)?.let { _ui.value = it.copy(tapped = true) }
         }
+    }
+
+    /** The ask's answer: only [ticked] (npubs) are added, look-only; every offered account is settled. Then on. */
+    fun answerAccounts(ticked: List<String>) {
+        if (_ui.value !is Ui.AskAccounts) return
+        copyAccounts.answer(ticked)
+        _ui.value = Ui.Copied
     }
 
     /** Cancel or "They don't match", on any screen of the flow: back to the question, nothing stored. */
@@ -246,7 +256,9 @@ class OtherDeviceViewModel @Inject constructor(
                 when (l.stage) {
                     "done" -> {
                         if (l.error.isNotEmpty()) notificationManager.showToast(MeshCopyV2.statusText(l, name), PillTone.NEUTRAL)
-                        _ui.value = Ui.Copied
+                        // The copy's accounts this phone lacks are asked about before setup goes on; none are added unasked.
+                        val offered = copyAccounts.refreshOffer()
+                        _ui.value = if (offered.isEmpty()) Ui.Copied else Ui.AskAccounts(offered)
                         return true
                     }
                     "failed" -> {
@@ -280,7 +292,7 @@ class OtherDeviceViewModel @Inject constructor(
     }
 
     private fun fallBack() {
-        if (_ui.value == Ui.Copied || _ui.value == Ui.FellBack) return
+        if (_ui.value == Ui.Copied || _ui.value == Ui.FellBack || _ui.value is Ui.AskAccounts) return
         // One plain line, no error screen (§5a).
         notificationManager.showToast(BringItOver.FALLBACK_LINE, PillTone.NEUTRAL)
         quietFallBack()
@@ -288,7 +300,7 @@ class OtherDeviceViewModel @Inject constructor(
 
     /** On to the relays, the copy's own line already shown. */
     private fun quietFallBack() {
-        if (_ui.value == Ui.Copied || _ui.value == Ui.FellBack) return
+        if (_ui.value == Ui.Copied || _ui.value == Ui.FellBack || _ui.value is Ui.AskAccounts) return
         stopTicker()
         hello?.close()
         _ui.value = Ui.FellBack

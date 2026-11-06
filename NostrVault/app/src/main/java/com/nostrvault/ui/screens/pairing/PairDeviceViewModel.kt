@@ -113,8 +113,9 @@ class PairDeviceViewModel @Inject constructor(
         ownHex = own
         val now = now()
         val secret = MeshPairing.newSecret()
-        session = MeshPairingSession(secret, now, own, activeNpub(), accounts())
-        val uri = MeshPairing.build(MeshPairing.npub(own), deviceName(), DeviceRole.PHONE, activeNpub().orEmpty(), MeshPairing.Code.Secret(secret))
+        // Any shared signing account links (Logen, 2026-11-06; Tron, PR 1809); the code carries them as salted tags.
+        session = MeshPairingSession(secret, now, own, activeNpub(), accounts(), matchAnyAccount = true)
+        val uri = MeshPairing.build(MeshPairing.npub(own), deviceName(), DeviceRole.PHONE, activeNpub().orEmpty(), MeshPairing.Code.Secret(secret), accounts())
         _ui.value = Ui.ShowCode(uri, MeshPairing.CODE_LIFETIME)
         h.open(::onIncoming)
         tick { t ->
@@ -215,11 +216,8 @@ class PairDeviceViewModel @Inject constructor(
         }
         // B's code (an echo) scanned first: point at the right one.
         if (p.code !is MeshPairing.Code.Secret) { _ui.value = Ui.ScanFirst(FIRST_CODE_TEXT); return }
-        when (val o = MeshPairing.ownerCheck(p.owner, activeNpub(), accounts())) {
-            MeshPairing.OwnerCheck.OtherOwner -> return stop(MeshPairing.OTHER_OWNER_TEXT)
-            is MeshPairing.OwnerCheck.SwitchTo -> { _ui.value = Ui.SwitchAccount(MeshPairing.switchToText(accountName(o.npub)), o.npub); return }
-            MeshPairing.OwnerCheck.Ok -> Unit
-        }
+        // Any account the two devices share will do (Logen, 2026-11-06); only accounts this phone can sign for count.
+        if (!MeshPairing.sharesAccount(p.owner, p.accountTags, p.code.value, accounts())) return stop(MeshPairing.OTHER_OWNER_TEXT)
         when (val next = PairDeviceRules.afterScanFirst(MeshPairing.roleCheck(p.mesh, p.role, existing()))) {
             is PairDeviceRules.AfterScan.Refuse -> return stop(next.text)
             // Known already: the hello goes out at once so the other side can add this phone again.
@@ -262,7 +260,7 @@ class PairDeviceViewModel @Inject constructor(
         joinedSecret = aSecret
         val name = MeshPairing.displayName(a.name)
         if (!h.open(::onIncoming)) return run { _ui.value = Ui.NoMesh() }
-        val sent = h.send(a.meshHex, MeshPairing.helloJson(aSecret, deviceName(), DeviceRole.PHONE, activeNpub().orEmpty(), now()))
+        val sent = h.send(a.meshHex, MeshPairing.helloJson(aSecret, deviceName(), DeviceRole.PHONE, activeNpub().orEmpty(), now(), accounts()))
         if (!sent) return stop(SEND_FAILED_TEXT)
         val myCode = MeshPairing.build(MeshPairing.npub(own), deviceName(), DeviceRole.PHONE, activeNpub().orEmpty(), MeshPairing.Code.Echo(aSecret, bSecret))
         _ui.value = Ui.ShowMyCode(myCode, name, MeshPairing.ACK_WINDOW - (now() - scannedAt))
@@ -408,7 +406,8 @@ class PairDeviceViewModel @Inject constructor(
         return cfg.activeAccountNpub?.trim()?.takeIf { it.isNotEmpty() } ?: cfg.ownerNpub.takeIf { it.isNotEmpty() }
     }
 
-    private fun accounts(): List<String> = configStore.config.value.allAccountNpubs()
+    /** What this phone pairs on: the owner and the accounts it can sign for, never a look-only one. */
+    private fun accounts(): List<String> = configStore.signingAccountNpubs()
 
     private fun accountName(npub: String): String {
         val hex = MeshPairing.npubHex(npub)

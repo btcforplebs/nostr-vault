@@ -87,8 +87,6 @@ class UserListSignGuardTest {
         // Each of these signs a kind it is handed. A new one could sign a list; review it, then add it here.
         assertEquals(
             mapOf(
-                // The mesh copy start: NIP-98 only (27235, a constant), never a list.
-                "com/nostrvault/fips/MeshCopyStarter.kt" to setOf("MeshCopyV2.NIP98_KIND"),
                 "com/nostrvault/service/DraftService.kt" to setOf("DraftEvents.KIND"),
                 "com/nostrvault/service/EventPublisher.kt" to setOf("eventJSON"),
                 "com/nostrvault/service/FeedServiceReactions.kt" to setOf("repostKind"),

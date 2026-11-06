@@ -716,16 +716,15 @@ class BlossomService @Inject constructor(
                 if (gone) Outcome.GONE else Outcome.LEFT
             }
         }
-        // One owner signature for every mesh device, covering the DELETE and the HEAD after it.
-        // Names every mesh vault (`<npub>.fips`, which a vault takes as itself) so it is never a
-        // token without a server; it only ever goes to the owner's own devices.
-        val meshAuth = if (mesh.isEmpty()) "" else signAuthHeader(
-            "delete+get", sha256,
-            BlossomDeleteAuth.tags(sha256, "", operations = listOf("delete", "get"), servers = mesh.map { "${it.npub}.fips" }),
-        )
-        val meshOutcomes = mesh.map { target ->
-            async { target.key to (meshAuth.isNotEmpty() && deleteOverMesh(target.npub, sha256, meshAuth)) }
+        // This device's mesh key for the mesh devices (MeshDeleteAuth). The owner's fallback names every mesh vault
+        // (`<npub>.fips`, which a vault takes as itself) and covers the DELETE and the HEAD; owner's devices only.
+        val meshAuth = MeshDeleteAuth.of(sha256, mesh.map { it.npub }) {
+            signAuthHeader(
+                "delete+get", sha256,
+                BlossomDeleteAuth.tags(sha256, "", operations = listOf("delete", "get"), servers = mesh.map { "${it.npub}.fips" }),
+            ).takeIf { it.isNotEmpty() }
         }
+        val meshOutcomes = mesh.map { target -> async { target.key to deleteOnMeshDevice(target.npub, sha256, meshAuth) } }
         val served = mirrors.zip(outcomes.awaitAll())
         val all = served.filter { it.second != Outcome.SKIPPED }.map { it.first to (it.second == Outcome.GONE) } + meshOutcomes.awaitAll()
         MirrorDeleteResult(
@@ -789,41 +788,6 @@ class BlossomService @Inject constructor(
     internal var meshIngress: (String) -> String? = { com.nostrvault.fips.FipsMediaRouter.ingressBase(it) }
     internal var meshForget: (String) -> Unit = { com.nostrvault.fips.FipsMediaRouter.forget(it) }
     internal var meshRetryDelayMs = MESH_DELETE_RETRY_MS
-
-    /**
-     * BUD-02 DELETE of [sha256] on the owner's device [npub] over the mesh, through the loopback
-     * ingress the reader and [com.nostrvault.fips.HomeVaultSender] use, then a HEAD to see it gone
-     * ([com.nostrvault.fips.MeshDeleteTargets.gone]). Right after the engine starts the link is
-     * still coming up and resets the first tries, so a dropped connection is retried for
-     * [MESH_DELETE_PATIENCE_MS]. The ingress URL carries a token: logged by npub only.
-     */
-    private suspend fun deleteOverMesh(npub: String, sha256: String, auth: String): Boolean {
-        val deadline = System.currentTimeMillis() + MESH_DELETE_PATIENCE_MS
-        while (true) {
-            val base = meshIngress(npub) ?: run {
-                Log.w(TAG, "Mesh delete ${npub.take(12)}: vault not reachable")
-                return false
-            }
-            try {
-                val deleteCode = remoteClient.newCall(
-                    Request.Builder().url("$base/$sha256").delete()
-                        .header("Authorization", "Nostr $auth").build()
-                ).execute().use { it.code }
-                val checkCode = remoteClient.newCall(com.nostrvault.fips.VaultCheck.request(base, sha256, auth))
-                    .execute().use { it.code }
-                val gone = com.nostrvault.fips.MeshDeleteTargets.gone(deleteCode, checkCode)
-                if (!gone) Log.w(TAG, "Mesh delete ${npub.take(12)}: DELETE $deleteCode, then HEAD $checkCode")
-                return gone
-            } catch (e: IOException) {
-                meshForget(npub)
-                if (System.currentTimeMillis() + meshRetryDelayMs > deadline) {
-                    Log.w(TAG, "Mesh delete ${npub.take(12)} failed: ${e.message}")
-                    return false
-                }
-                delay(meshRetryDelayMs)
-            }
-        }
-    }
 
     /** @return true if the file is gone from this device (deleted, or never stored here). */
     fun deleteFromLocal(sha256: String): Boolean {
