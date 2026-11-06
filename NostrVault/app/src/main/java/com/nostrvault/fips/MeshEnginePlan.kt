@@ -52,6 +52,18 @@ internal object MeshEnginePlan {
     }
 
     /**
+     * Whether a running engine that started with [started] (and [startedHasLinkedPhone]) must restart for [config]:
+     * anything it takes at start changed (peers, own devices, finder relays, middle server), or a phone became or
+     * stopped being linked, which turns the own-devices share on or off. The serve allowance is left out: a restart
+     * carries it over anyway. No record of a start (null) restarts, as before.
+     */
+    fun restartNeeded(started: FipsStartOptions?, startedHasLinkedPhone: Boolean, config: HavenConfig, ownNpub: String?): Boolean {
+        if (started == null) return true
+        val now = options(config, ownNpub, maxServeBytes = 0)
+        return now != started.copy(maxServeBytes = 0) || hasLinkedPhone(config) != startedHasLinkedPhone
+    }
+
+    /**
      * The port sharing exports: the relay, for own devices alone (none, when the list is empty); the
      * engine sends everyone else to the door ([FipsStartOptions.strangersPort]) and refuses the two
      * being one port.

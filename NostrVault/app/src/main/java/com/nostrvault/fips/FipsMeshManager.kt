@@ -98,6 +98,9 @@ class FipsMeshManager @Inject constructor(
     /** Whether a phone was linked when the running engine started ([MeshEnginePlan.hasLinkedPhone]). */
     @Volatile private var engineHasLinkedPhone = false
 
+    /** The options the running engine started with; null before the first start. */
+    @Volatile private var engineOptions: FipsStartOptions? = null
+
     /** One restart at a time: setPeers and the My Devices watch can both ask. */
     private val restartLock = kotlinx.coroutines.sync.Mutex()
 
@@ -234,6 +237,7 @@ class FipsMeshManager @Inject constructor(
         engineGen++
         val options = MeshEnginePlan.options(config, _status.value.npub, remainingServeBytes(config.fipsServeLimitBytes, engineBase))
         engineOwnDevices = options.ownDevices
+        engineOptions = options
         return options
     }
 
@@ -286,21 +290,31 @@ class FipsMeshManager @Inject constructor(
      *
      * The library takes the list at start, so a running node is restarted to
      * apply it. The identity is persisted, so the address survives.
+     * Only when the engine would start differently: the My Devices watch restarts for the same
+     * change, so one link was two restarts, and each drops every link (Moto, 2026-11-06).
      */
     suspend fun setPeers(npubs: List<String>) = withContext(Dispatchers.IO) {
         val cleaned = npubs.map { it.trim() }.filter { it.startsWith("npub1") }.distinct()
         configStore.updateAsync { it.copy(fipsPeers = cleaned) }
-        if (_status.value.running) restartKeepingAllowance()
+        if (_status.value.running) restartKeepingAllowance(onlyIf = ::startsDifferently)
         refresh()
     }
 
-    /** Finder relays and middle server, both read at start: a running node restarts to apply them. */
+    /** The current config would start the engine with other options, or another linked-phone share, than it has. */
+    private fun startsDifferently(): Boolean = MeshEnginePlan.restartNeeded(
+        engineOptions, engineHasLinkedPhone, configStore.config.value, _status.value.npub,
+    )
+
+    /**
+     * Finder relays and middle server, both read at start: a running node restarts to apply them,
+     * and only then. Tapping the middle server that is already chosen restarts nothing.
+     */
     suspend fun setAdvanced(relays: List<String>, middleServer: String) = withContext(Dispatchers.IO) {
         val cleaned = relays.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
             // The defaults are stored as "none chosen", so a later change to them reaches this phone too.
             .takeUnless { it == FipsMeshSettings.DEFAULT_FINDER_RELAYS }.orEmpty()
         configStore.updateAsync { it.copy(fipsMesh = it.fipsMesh.copy(finderRelays = cleaned, middleServer = middleServer)) }
-        if (_status.value.running) restartKeepingAllowance()
+        if (_status.value.running) restartKeepingAllowance(onlyIf = ::startsDifferently)
         refresh()
     }
 
