@@ -35,6 +35,15 @@ enum ImportJobs {
 
     static let startingLine = "Starting your vault…"
 
+    /// Setup's wait for its start after one more pass of `pass` seconds.
+    /// A pass spent while the vault was starting (a queued start or stop, a
+    /// boot, or the last run still shutting down) does not count: on the 12
+    /// mini (2026-11-06) the start waited out a 95 s drain, setup gave up at
+    /// 60 s while it did, and the relay import never ran.
+    static func setupStartWait(after waited: TimeInterval, pass: TimeInterval, vaultStarting: Bool) -> TimeInterval {
+        vaultStarting ? waited : waited + max(0, pass)
+    }
+
     /// RunImportJobC's answer.
     enum RunResult: Int32 {
         case started = 0, unknownJob = 1, busy = 2, relayNotRunning = 3

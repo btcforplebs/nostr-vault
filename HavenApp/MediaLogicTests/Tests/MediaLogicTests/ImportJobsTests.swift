@@ -133,4 +133,24 @@ final class ImportJobsTests: XCTestCase {
         XCTAssertFalse(ImportJobs.vaultStarting(booting: false, stopping: false, applyingConfig: false), "running: nothing to say")
         XCTAssertEqual(ImportJobs.startingLine, "Starting your vault…")
     }
+
+    // MARK: Setup's start wait (12 mini, 2026-11-06)
+
+    func testSetupStartWaitSkipsTimeTheVaultSpentStarting() {
+        // The 12 mini: a 95 s drain while the start waited. None of it counts.
+        var waited: TimeInterval = 0
+        waited = ImportJobs.setupStartWait(after: waited, pass: 95, vaultStarting: true)
+        XCTAssertEqual(waited, 0, "setup gave up at 60 s while the vault was still starting")
+        waited = ImportJobs.setupStartWait(after: waited, pass: 6, vaultStarting: false)
+        XCTAssertEqual(waited, 6)
+        waited = ImportJobs.setupStartWait(after: waited, pass: 30, vaultStarting: true)
+        XCTAssertEqual(waited, 6)
+    }
+
+    func testSetupStartWaitStillEndsWhenTheVaultIsNotStarting() {
+        var waited: TimeInterval = 0
+        for _ in 0..<61 { waited = ImportJobs.setupStartWait(after: waited, pass: 1, vaultStarting: false) }
+        XCTAssertGreaterThanOrEqual(waited, 60, "a vault that is down, not starting, still gets Try again")
+        XCTAssertEqual(ImportJobs.setupStartWait(after: 3, pass: -2, vaultStarting: false), 3, "a clock step back never shortens the wait")
+    }
 }
