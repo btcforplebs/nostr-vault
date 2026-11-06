@@ -30,8 +30,7 @@ enum CopyAccounts {
 
     // MARK: The refuse check (the engine's copyAccountsRefusal)
 
-    /// The file's accounts, or why it may not be written, read or handed to
-    /// AddAccountsC. Same order as the engine: size, JSON, secrets anywhere,
+    /// The file's accounts, or why it may not be written or read. Same order as the engine: size, JSON, secrets anywhere,
     /// fields and types, version, count, npubs, names.
     static func check(_ data: Data) -> Result<[Account], Refusal> {
         guard data.count <= maxSize else { return .failure(.tooMany) }
@@ -128,12 +127,6 @@ enum CopyAccounts {
             }
             return seen.insert(hex).inserted
         }
-    }
-
-    /// The JSON for AddAccountsC: the ticked accounts in the file's shape.
-    static func addJSON(_ ticked: [Account], updatedAt: Int64) -> String? {
-        guard !ticked.isEmpty, let data = fileData(ticked, updatedAt: updatedAt) else { return nil }
-        return String(data: data, encoding: .utf8)
     }
 
     // MARK: Helpers

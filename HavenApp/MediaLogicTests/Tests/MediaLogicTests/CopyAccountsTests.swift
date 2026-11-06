@@ -80,8 +80,6 @@ final class CopyAccountsTests: XCTestCase {
         let nsec = "nsec19uqxr6xazkeed24thcl9gwl8e5alzdtma8enxekqkv3ux3m9ty3qqp49sa"
         XCTAssertNil(CopyAccounts.fileData([.init(npub: owner, name: nsec)], updatedAt: 1))
         XCTAssertNil(CopyAccounts.fileData([.init(npub: hex(owner))], updatedAt: 1))
-        XCTAssertNil(CopyAccounts.addJSON([.init(npub: nsec)], updatedAt: 1))
-        XCTAssertNil(CopyAccounts.addJSON([], updatedAt: 1))
     }
 
     // MARK: The ask
@@ -92,14 +90,6 @@ final class CopyAccountsTests: XCTestCase {
         XCTAssertEqual(got, [.init(npub: other, name: "Other")])
         XCTAssertEqual(CopyAccounts.offered(file: file, ownHex: [hex(owner)], settledHex: []).map(\.npub), [other, third])
         XCTAssertTrue(CopyAccounts.offered(file: file, ownHex: [hex(owner), hex(other), hex(third)], settledHex: []).isEmpty)
-    }
-
-    func testAddJSONIsTheFileShapeWithOnlyTheTicked() throws {
-        let json = try XCTUnwrap(CopyAccounts.addJSON([.init(npub: other, name: "Other")], updatedAt: 1_767_000_000))
-        let o = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
-        XCTAssertEqual(o["v"] as? Int, 1)
-        XCTAssertEqual(accounts(o["accounts"]), [.init(npub: other, name: "Other")])
-        XCTAssertEqual(Set(o.keys), ["v", "updated_at", "accounts"])
     }
 
     // MARK: Wiring (source checks)
@@ -118,21 +108,22 @@ final class CopyAccountsTests: XCTestCase {
         return text[r.upperBound...].prefix(length)
     }
 
-    /// Only the ticked accounts are added, live and in the whitelist file,
-    /// as npubs: no key, no signer, no stored credential.
-    func testAnswerAddsOnlyTheTickedLookOnly() throws {
+    /// Only the ticked accounts join, as watch-only accounts: no live add
+    /// (AddAccountsC), no key, no signer, no stored credential. The whitelist
+    /// file leaves them out (VaultWhitelistTests).
+    func testAnswerAddsOnlyTheTickedWatchOnly() throws {
         let text = try source("Services/Relay/CopyAccountsSync.swift")
         let answer = try body(of: "func answer(ticked: [CopyAccounts.Account]) {", in: text)
-        XCTAssertTrue(answer.contains("CopyAccounts.addJSON(chosen"), "AddAccountsC gets the ticked ones only")
-        XCTAssertTrue(answer.contains("AddAccountsC("))
+        XCTAssertTrue(answer.contains("for a in chosen where"), "only the ticked ones")
         XCTAssertTrue(answer.contains("whitelistedNpubs.append(a.npub)"))
-        for banned in ["storeNsec", "Ncryptsec", "bunker", "Credential", "Keychain", "publish"] {
+        for banned in ["AddAccountsC", "storeNsec", "Ncryptsec", "bunker", "Credential", "Keychain", "publish"] {
             XCTAssertFalse(answer.localizedCaseInsensitiveContains(banned), banned)
         }
-        // Nothing else in the app calls AddAccountsC: no account is added unasked.
+        // Nothing in the app calls AddAccountsC any more.
         for path in ["Services/Relay/MeshCopyV2Service.swift", "Services/Relay/CopySettingsSync.swift",
-                     "Views/SetupWizard/BringItOverStep.swift"] {
-            XCTAssertFalse(try source(path).contains("AddAccountsC"), path)
+                     "Services/Relay/CopyAccountsSync.swift", "Views/SetupWizard/BringItOverStep.swift",
+                     "Views/Settings/AddAccountSheetView.swift"] {
+            XCTAssertFalse(try source(path).contains("AddAccountsC("), path)
         }
     }
 
