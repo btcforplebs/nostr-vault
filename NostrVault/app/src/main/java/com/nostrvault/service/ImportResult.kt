@@ -34,7 +34,7 @@ data class ImportResult(
                 else "Imported ${"%,d".format(owner)} notes, but some may be missing. Run the import again to fill the gaps."
             Status.FAILED -> when (reasons.firstOrNull()) {
                 "no_seed_relay" -> "Couldn't reach any relay. Check your connection, then try again."
-                "already_running", "still_draining" -> "The vault was still busy. Try again in a moment."
+                "already_running", "still_draining" -> "The vault was still shutting down, so the import didn't start. Your vault is starting again; try Import notes in a moment."
                 else -> COULD_NOT_START
             }
         }

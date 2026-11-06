@@ -51,4 +51,16 @@ final class ImportResultTests: XCTestCase {
         XCTAssertNil(ImportResult.parse("✅ Import completed in C-Shared mode"))
         XCTAssertNil(ImportResult.parse(""))
     }
+
+    /// 12 mini 2026-11-05: a refused import left the vault paused with only
+    /// "still busy". It says the import didn't run and that the vault is
+    /// starting again (endImport restarts it).
+    func testARefusedStartSaysTheVaultIsStartingAgain() {
+        for reason in ["still_draining", "already_running"] {
+            let r = ImportResult.parse("IMPORT_RESULT status=failed reason=\(reason)")
+            XCTAssertEqual(r?.isRetryableStart, true, reason)
+            XCTAssertEqual(r?.summary, ImportResult.refusedStartLine, reason)
+        }
+        XCTAssertTrue(ImportResult.refusedStartLine.contains("starting again"))
+    }
 }

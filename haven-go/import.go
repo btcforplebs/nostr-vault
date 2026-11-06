@@ -601,10 +601,10 @@ func subscribeInboxAndChat(ctx context.Context) {
 			Since: &since,
 		}
 		opened := time.Now()
-		for ev := range pool.SubscribeMany(ctx, relays, filter) {
+		eventsUntilDone(ctx, pool.SubscribeMany(ctx, relays, filter), func(ev nostr.RelayEvent) {
 			processInboxEvent(ctx, ev, wdbInbox, wdbChat, nil, rejects, false)
 			advance(&lastSeen, ev.CreatedAt)
-		}
+		})
 		if ctx.Err() != nil {
 			return
 		}
