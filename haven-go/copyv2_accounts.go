@@ -26,16 +26,17 @@ const copyAccountsEntry = "accounts.json"
 
 // copyAccountsFile: the accounts the app should list, in the engine's working
 // dir, next to copy-settings.json. The app writes it on A (names included);
-// the engine merges what it is given into it on B, and the app adds any new
-// npub to its own account list (look-only) and its whitelist file.
+// the engine merges what it is given into it on B, and the app offers any new
+// npub; a ticked one is added watch-only (not to the whitelist).
 const copyAccountsFile = "copy-accounts.json"
 
 // copyBroughtFile: the engine's own record of the accounts that came from
 // another device (a copy, a catch-up or a backup zip) and were not this
-// vault's then. Once ticked they are own, but the vault only ever reads them
-// from relays and never uploads them (Logen, 2026-11-06: nothing is published
-// or changed on relays for a brought-over account). Never sent anywhere;
-// entries are never removed.
+// vault's then. While not own, the vault only ever reads them from relays and
+// never uploads or serves them (Logen, 2026-11-06: nothing is published or
+// changed on relays for a brought-over account). Signing in as one makes it
+// own and normal again (broughtAccounts). Never sent anywhere; entries are
+// never removed.
 const copyBroughtFile = "copy-brought.json"
 
 // copyKeepEntry is a copy's second list (notes.zip, right after
@@ -351,18 +352,31 @@ func readBroughtNpubs() []string {
 	return l.Accounts
 }
 
-// broughtAccounts: the hex keys of every brought-over account (never the
-// owner). The owner-event sync downloads their events but never uploads one
-// (outboxNegStore.QueryEvents).
+// broughtAccounts: the hex keys of every brought-over account that is not
+// this vault's own now (never the owner). The owner-event sync downloads
+// their events but never uploads one (outboxNegStore.QueryEvents).
+//
+// An account the person signs in as here (AddAccountsC, or the whitelist file
+// at the next start) is own from then on, so it drops out and is normal again:
+// its posts upload, its public page and mesh photos are served (Logen,
+// 2026-11-06). Read here rather than cleared from copy-brought.json, so every
+// path that makes an account own counts, and one removed again goes back to
+// read only.
 func broughtAccounts() map[string]struct{} {
 	copyBroughtMu.Lock()
 	npubs := readBroughtNpubs()
 	copyBroughtMu.Unlock()
+	own := whitelist()
 	out := make(map[string]struct{}, len(npubs))
 	for _, n := range npubs {
-		if h, ok := npubHex(n); ok && h != config.OwnerPubKey {
-			out[h] = struct{}{}
+		h, ok := npubHex(n)
+		if !ok || h == config.OwnerPubKey {
+			continue
 		}
+		if _, isOwn := own[h]; isOwn {
+			continue
+		}
+		out[h] = struct{}{}
 	}
 	return out
 }

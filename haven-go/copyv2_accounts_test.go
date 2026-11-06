@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -369,18 +370,19 @@ func TestStrangerZipIsStoredNeverUploadedServedOrOffered(t *testing.T) {
 		t.Fatal("the stranger's photo is served over the mesh")
 	}
 
-	// Signing in with that account later (AddAccountsC) makes it own, and
-	// its notes are here, but still never served to strangers.
+	// Signing in with that account later (AddAccountsC) makes it own: its
+	// notes are here and it is normal from then on, served like any own
+	// account's (Logen, 2026-11-06, after #1827; was read only for good).
 	addLiveAccounts([]string{stranger.pk})
 	if got := served(authedAs(stranger.pk), theirs); len(got) != 2 {
 		t.Fatalf("after sign-in, its own read got %v, want both", got)
 	}
-	if got := served(context.Background(), theirs); len(got) != 0 {
-		t.Fatalf("after sign-in, a stranger was served %v", got)
+	if got := served(context.Background(), theirs); len(got) != 2 {
+		t.Fatalf("after sign-in, the public outbox served %v, want both", got)
 	}
 	meshBlobs.reset()
-	if meshBlobs.has(context.Background(), photo) {
-		t.Fatal("after sign-in, its photo is served over the mesh")
+	if !meshBlobs.has(context.Background(), photo) {
+		t.Fatal("after sign-in, its photo is not served over the mesh")
 	}
 }
 
@@ -601,11 +603,12 @@ func TestCatchUpMergesAccountsNeverRemoves(t *testing.T) {
 	}
 }
 
-// A brought-over account, once ticked, is read from relays but never written
-// to them (Logen, 2026-11-06; Tron #1807): the owner sync's upload source
-// yields none of its events, lists included, while its new events still come
-// down. An account that was already own when offered is not brought over, and
-// the record never shrinks.
+// A brought-over account is read from relays but never written to them
+// (Logen, 2026-11-06; Tron #1807): the owner sync's upload source yields none
+// of its events, lists included, while its new events still come down. An
+// account that was already own when offered is not brought over, and the
+// record never shrinks. Once the person ticks it (signs in here), it is own
+// and normal again: its events upload (Logen, 2026-11-06, after #1827).
 func TestBroughtOverAccountsAreNeverUploaded(t *testing.T) {
 	owner, x, already := newTestKey(t), newTestKey(t), newTestKey(t)
 	openCopyVault(t, owner.pk)
@@ -624,12 +627,6 @@ func TestBroughtOverAccountsAreNeverUploaded(t *testing.T) {
 	brought := broughtAccounts()
 	if _, ok := brought[x.pk]; !ok || len(brought) != 1 {
 		t.Fatalf("brought = %v, want only x", brought)
-	}
-	// The person ticks x (AddAccountsC); a later offer without x keeps it.
-	addLiveAccounts([]string{x.pk})
-	offerCopyAccounts(list(owner))
-	if _, ok := broughtAccounts()[x.pk]; !ok {
-		t.Fatal("ticking or a later offer took x off the brought-over record")
 	}
 
 	now := nostr.Now()
@@ -654,6 +651,30 @@ func TestBroughtOverAccountsAreNeverUploaded(t *testing.T) {
 	}
 	if !up[ownerNote.ID] || !up[alreadyNote.ID] {
 		t.Fatalf("own events not offered for upload: %v", up)
+	}
+
+	// The person ticks x (AddAccountsC); a later offer without x keeps it on
+	// the record, but while own it is normal: its events upload.
+	addLiveAccounts([]string{x.pk})
+	offerCopyAccounts(list(owner))
+	if !slices.Contains(readBroughtNpubs(), npubOf(t, x.pk)) {
+		t.Fatal("ticking or a later offer took x off the brought-over record")
+	}
+	if _, b := broughtAccounts()[x.pk]; b {
+		t.Fatal("x is still read only after signing in")
+	}
+	// Its note now; its list goes through the usual list rule like any own
+	// account's (no relay to ask here, so not sent).
+	ch, err = s.QueryEvents(context.Background(), nostr.Filter{IDs: []string{xNote.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	up = map[string]bool{}
+	for ev := range ch {
+		up[ev.ID] = true
+	}
+	if !up[xNote.ID] {
+		t.Fatalf("after sign-in, x's note is not offered for upload: %v", up)
 	}
 
 	// Down still works for x.
