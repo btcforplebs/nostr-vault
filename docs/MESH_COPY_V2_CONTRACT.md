@@ -247,16 +247,21 @@ The vault's own keys are its owner and every added account (look-only included).
   all at once. A Settings › Back up zip restore never offers or adds an account (Logen, 2026-11-06): it keeps every
   event the zip holds and records the zip's other accounts as brought over (below) before storing anything.
 - **Read only on relays** (Logen, 2026-11-06). Every offered account, and every account a backup zip names, that is not B's own at that moment is recorded
-  in the engine's `copy-brought.json` (npubs; never sent anywhere; never shrinks). Ticked or not, nothing by such
-  an account is ever uploaded: the owner sync's upload source (`outboxNegStore.QueryEvents`) drops its events,
+  in the engine's `copy-brought.json` (npubs; never sent anywhere; never shrinks). While it is not B's own, nothing
+  by such an account is ever uploaded: the owner sync's upload source (`outboxNegStore.QueryEvents`) drops its events,
   lists included, while its new events still come down. Nor is it served on the public outbox (`brought_reads.go`):
   outbox relay reads and counts drop its events unless the reader is NIP-42 authed as one of B's own keys (or the
   browser build's owner stream), and the public page and mesh photo index skip it. The `/inbox` relay does the
   same for events that tag such an account and none of B's other own keys (one tagging the owner too stays
   visible; its count can come out low, never high). A backup zip's blob records for such an account are not
   restored, so `/list/<pubkey>` and HEAD never answer for them; a linked device's copy keeps them for the
-  accounts `accounts.json` names, not for keep-list-only accounts (recorded before the restore). Lifting this for
-  one account is a later, separate change.
+  accounts `accounts.json` names, not for keep-list-only accounts (recorded before the restore).
+- **Signing in lifts it** (Logen, 2026-11-06, after #1827). Once the person signs in on B as such an account (ticked,
+  `AddAccountsC`, or in the whitelist file at the next start), it is own and normal: `broughtAccounts()` leaves out
+  every key in `whitelist()`, so its events upload (lists through the usual list rule) and are served on the public
+  outbox, the public page and the mesh photo index like any own account's. Its entry stays in `copy-brought.json`,
+  so an account removed again is read only again. The engine sees npubs only, so a look-only add lifts it too. A
+  backup zip's skipped blob records are not rebuilt by signing in (a later restore of that zip does).
 - **Merging** (`mergeCopyAccounts`): mine first, then theirs that are new; a name I have stays, a missing one is
   filled; **nothing is ever removed**, by a copy, a restore or a catch-up.
 - **Live add without a restart.** `int AddAccountsC(char* accountsJSON)`, same JSON: how many were new (0 or more),
