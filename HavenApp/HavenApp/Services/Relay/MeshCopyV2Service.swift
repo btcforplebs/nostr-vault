@@ -60,6 +60,7 @@ final class MeshCopyV2Service: ObservableObject {
             .store(in: &watchers)
         #endif
         CopySettingsSync.shared.startWatching()
+        CopyAccountsSync.shared.startWatching()
     }
 
     // MARK: Start
@@ -209,6 +210,9 @@ final class MeshCopyV2Service: ObservableObject {
             // The engine leaves the copied settings (first copy and every
             // catch-up winner) in copy-settings.json: apply them now.
             CopySettingsSync.shared.applyFromFile()
+            // And the accounts it brought over (§3.4): asked, never added
+            // on their own.
+            CopyAccountsSync.shared.refreshOffer()
         }
     }
 }

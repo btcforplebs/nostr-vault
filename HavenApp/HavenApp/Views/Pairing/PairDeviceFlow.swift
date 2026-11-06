@@ -127,9 +127,10 @@ final class PairDeviceFlow: ObservableObject {
         guard let own = loadOwn() else { return fail("This device's mesh key couldn't be read. Open Mesh settings once, then try again.") }
         let secret = MeshPairing.newSecret()
         session = MeshPairingSession(secret: secret, createdAt: Self.now, ownMeshHex: own.hex,
-                                     active: activeNpub, accounts: config.allAccountNpubs)
+                                     active: activeNpub, accounts: config.allAccountNpubs, matchAnyAccount: true)
         startRelays(own)
-        let qr = MeshPairing.build(mesh: own.npub, name: Self.ownName, role: Self.ownRole, owner: activeNpub, code: .secret(secret))
+        let qr = MeshPairing.build(mesh: own.npub, name: Self.ownName, role: Self.ownRole, owner: activeNpub,
+                                   code: .secret(secret), accounts: config.allAccountNpubs)
         step = .showing(qr: qr)
         startTicker()
     }
@@ -194,10 +195,10 @@ final class PairDeviceFlow: ObservableObject {
         guard case .secret = payload.code else {
             return "That's the code from the second step. Scan the code on the device that showed one first."
         }
-        switch MeshPairing.ownerCheck(owner: payload.owner, active: activeNpub, accounts: config.allAccountNpubs) {
-        case .ok: break
-        case .switchTo(let npub): return MeshPairing.switchToText(accountName: MeshPairing.shortAddress(npub))
-        case .otherOwner: return MeshPairing.otherOwnerText
+        // Any account the two devices share will do (Logen, 2026-11-06).
+        guard MeshPairing.sharesAccount(owner: payload.owner, theirs: payload.accounts,
+                                        mine: config.allAccountNpubs + [activeNpub]) else {
+            return MeshPairing.otherOwnerText
         }
         if case .refuseOtherRole(let role) = MeshPairing.roleCheck(npub: payload.mesh, role: payload.role, existing: existing) {
             return MeshPairing.otherRoleText(role)
@@ -236,12 +237,13 @@ final class PairDeviceFlow: ObservableObject {
     private func sayHello() {
         guard let joiner, let own, let sB = ownSecret, case .secret(let sA) = joiner.a.code else { return }
         startRelays(own)
-        let content = MeshPairing.helloJSON(secret: sA, name: Self.ownName, role: Self.ownRole, owner: activeNpub, time: Self.now)
+        let content = MeshPairing.helloJSON(secret: sA, name: Self.ownName, role: Self.ownRole, owner: activeNpub,
+                                            time: Self.now, accounts: config.allAccountNpubs)
         guard hello?.send(content, toHex: joiner.a.meshHex) == true else {
             return fail("This device's mesh key couldn't be read. Open Mesh settings once, then try again.")
         }
         let qr = MeshPairing.build(mesh: own.npub, name: Self.ownName, role: Self.ownRole, owner: activeNpub,
-                                   code: .echo(sA, bSecret: sB))
+                                   code: .echo(sA, bSecret: sB), accounts: config.allAccountNpubs)
         let words = MeshPairing.checkWords(aHex: joiner.a.meshHex, bHex: own.hex, secret: sA) ?? []
         step = .joined(qr: qr, name: MeshPairing.displayName(joiner.a.name), words: words,
                        short: MeshPairing.shortAddress(joiner.a.mesh), needsWordsTap: false)

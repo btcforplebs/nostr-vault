@@ -57,11 +57,16 @@ enum MeshPairing {
         var owner: String
         var ownerHex: String
         var code: Code
+        /// `a`: every account on the other device (npubs), so a link works
+        /// when the two share any account. Optional: older codes and
+        /// Android send only `o`.
+        var accounts: [String] = []
     }
 
     // MARK: The QR
 
-    static func build(mesh: String, name: String, role: MeshDeviceRole, owner: String, code: Code) -> String {
+    static func build(mesh: String, name: String, role: MeshDeviceRole, owner: String, code: Code,
+                      accounts: [String] = []) -> String {
         var query = ["m=\(mesh)"]
         let n = cleanName(name)
         if !n.isEmpty { query.append("n=\(percentEncode(n))") }
@@ -73,6 +78,8 @@ enum MeshPairing {
             query.append("e=\(e)")
             query.append("b=\(b)")
         }
+        let a = wireAccounts(accounts, owner: owner)
+        if !a.isEmpty { query.append("a=" + a.joined(separator: ",")) }
         return "nvpair:v1?" + query.joined(separator: "&")
     }
 
@@ -117,7 +124,8 @@ enum MeshPairing {
         if let ownMesh, npubHex(ownMesh) == meshHex { return .failure(.init(.ownAddress)) }
         return .success(Payload(
             mesh: npub(hex: meshHex), meshHex: meshHex, name: name, role: role,
-            owner: npub(hex: ownerHex), ownerHex: ownerHex, code: s != nil ? .secret(raw) : .echo(raw, bSecret: b ?? "")
+            owner: npub(hex: ownerHex), ownerHex: ownerHex, code: s != nil ? .secret(raw) : .echo(raw, bSecret: b ?? ""),
+            accounts: readAccounts((fields["a"] ?? "").split(separator: ",").map(String.init))
         ))
     }
 
@@ -141,6 +149,39 @@ enum MeshPairing {
         if let active, npubHex(active) == hex { return .ok }
         if let match = accounts.first(where: { npubHex($0) == hex }) { return .switchTo(match) }
         return .otherOwner
+    }
+
+    /// The Apple apps' link rule (Logen, 2026-11-06): two devices may link
+    /// when they share any account, not only the active one. `owner` and
+    /// `theirs` are what the other device sent (`o` and `a`); `mine` is every
+    /// account on this device. Android still uses `ownerCheck` alone until
+    /// its half lands; the shared fixtures cover that rule.
+    static func sharesAccount(owner: String, theirs: [String], mine: [String]) -> Bool {
+        let own = Set(mine.compactMap { npubHex($0) })
+        return ([owner] + theirs).contains { npubHex($0).map(own.contains) ?? false }
+    }
+
+    /// At most this many accounts travel in `a` (a QR code has to stay
+    /// scannable).
+    static let accountsMax = 8
+
+    /// `a` as sent: npubs, without the owner (`o` carries it), no repeats.
+    private static func wireAccounts(_ accounts: [String], owner: String) -> [String] {
+        var seen: Set<String> = [npubHex(owner) ?? ""]
+        return Array(accounts.compactMap { n -> String? in
+            guard let hex = npubHex(n), seen.insert(hex).inserted else { return nil }
+            return npub(hex: hex)
+        }.prefix(accountsMax))
+    }
+
+    /// `a` as read: only the entries that are npubs, no repeats. A bad
+    /// entry is dropped, never a refusal: `a` is optional.
+    private static func readAccounts(_ raw: [Any]) -> [String] {
+        var seen = Set<String>()
+        return Array(raw.compactMap { v -> String? in
+            guard let hex = npubHex(v as? String), seen.insert(hex).inserted else { return nil }
+            return npub(hex: hex)
+        }.prefix(accountsMax))
     }
 
     enum RoleCheck: Equatable {
@@ -225,6 +266,8 @@ enum MeshPairing {
         var role: MeshDeviceRole
         var owner: String
         var time: Int
+        /// `a`, as in the code: the sender's accounts (npubs), optional.
+        var accounts: [String] = []
     }
 
     struct Ack: Equatable {
@@ -233,11 +276,14 @@ enum MeshPairing {
         var words: Bool
     }
 
-    static func helloJSON(secret: String, name: String, role: MeshDeviceRole, owner: String, time: Int) -> String {
+    static func helloJSON(secret: String, name: String, role: MeshDeviceRole, owner: String, time: Int,
+                          accounts: [String] = []) -> String {
         var parts = ["\"v\":1", "\"s\":\(jsonString(secret))"]
         let n = cleanName(name)
         if !n.isEmpty { parts.append("\"n\":\(jsonString(n))") }
         parts += ["\"r\":\(jsonString(role.rawValue))", "\"o\":\(jsonString(owner))", "\"t\":\(time)"]
+        let a = wireAccounts(accounts, owner: owner)
+        if !a.isEmpty { parts.append("\"a\":[" + a.map(jsonString).joined(separator: ",") + "]") }
         return "{" + parts.joined(separator: ",") + "}"
     }
 
@@ -255,7 +301,8 @@ enum MeshPairing {
         guard let n = rawName as? String else { return nil }
         let name = n.trimmingCharacters(in: .whitespacesAndNewlines)
         guard name.unicodeScalars.count <= nameMax else { return nil }
-        return Hello(secret: s, name: name, role: role, owner: npub(hex: ownerHex), time: t)
+        return Hello(secret: s, name: name, role: role, owner: npub(hex: ownerHex), time: t,
+                     accounts: readAccounts(d["a"] as? [Any] ?? []))
     }
 
     static func parseAck(_ text: String) -> Ack? {

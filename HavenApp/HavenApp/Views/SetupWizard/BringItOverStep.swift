@@ -10,6 +10,7 @@ struct BringItOverStep: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     @StateObject private var holder = PairDeviceFlowHolder()
     @ObservedObject private var copy = MeshCopyV2Service.shared
+    @ObservedObject private var accounts = CopyAccountsSync.shared
 
     /// Linked and copied (or copying on in the background).
     let onDone: () -> Void
@@ -27,6 +28,8 @@ struct BringItOverStep: View {
     @State private var lastMoveAt: Int?
     /// The copy stopped with a line to show; Continue goes on to the relays.
     @State private var stopLine: String?
+    /// The copy is done and brought accounts this device lacks: ask first.
+    @State private var asking = false
 
     private static var now: Int { Int(Date().timeIntervalSince1970) }
 
@@ -37,11 +40,19 @@ struct BringItOverStep: View {
             Text(OtherVaultCopy.button)
                 .font(.appSystem(size: isIOSDevice ? 24 : 28, weight: .semibold))
                 .foregroundColor(WizardColors.textPrimary)
-            BringItOverContent(flow: flow, other: other, copying: copying, progress: copy.progress,
-                               stopLine: stopLine, scanning: $scanning,
-                               scanned: scanned, confirm: confirm, onLinked: startCopy, onFailed: fallBack,
-                               onContinue: { stopLine == nil ? done() : fallBack() })
-                .environmentObject(relayManager)
+            if asking {
+                CopyAccountsAskView(accounts: accounts.offered) { ticked in
+                    accounts.answer(ticked: ticked)
+                    asking = false
+                    done()
+                }
+            } else {
+                BringItOverContent(flow: flow, other: other, copying: copying, progress: copy.progress,
+                                   stopLine: stopLine, scanning: $scanning,
+                                   scanned: scanned, confirm: confirm, onLinked: startCopy, onFailed: fallBack,
+                                   onContinue: { stopLine == nil ? done() : fallBack() })
+                    .environmentObject(relayManager)
+            }
             if !copying {
                 Button(action: relaysInstead) {
                     Text(OtherVaultCopy.lostDevice)
@@ -124,7 +135,14 @@ struct BringItOverStep: View {
     }
 
     private func done() {
-        guard !finished else { return }
+        guard !finished, !asking else { return }
+        // The copy's accounts this device lacks are asked about before
+        // setup goes on (Logen, 2026-11-06); none are added unasked.
+        accounts.refreshOffer()
+        if !accounts.offered.isEmpty {
+            asking = true
+            return
+        }
         finished = true
         onDone()
     }
