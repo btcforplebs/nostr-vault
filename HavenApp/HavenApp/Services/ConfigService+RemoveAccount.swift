@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import WidgetKit
+#endif
 
 extension ConfigService {
     /// Removes one account from this device (Delete Account on its page, or
@@ -16,6 +19,12 @@ extension ConfigService {
         // before the owner's connect, which can share the same signer session.
         if config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines) == npub {
             switchActiveAccount(to: nil)
+            #if os(iOS)
+            // The widgets showed this account; drop that and redraw them.
+            NVSharedStore.clear()
+            NVThumbnailStore.clear()
+            WidgetCenter.shared.reloadAllTimelines()
+            #endif
         }
         removeCredential(forNpub: npub)
         config.removeAccountEntries(npub: npub)
