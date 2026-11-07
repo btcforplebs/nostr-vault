@@ -9,7 +9,7 @@
   "lede": "One heading per problem: what you see, why it happens, and what to tap.",
   "description": "Fixes for common Nostr Vault problems: empty feed, signer not answering, read-only account, photo posts failing, relays not answering, mesh devices not in reach, Check sync stopping, Home vault mode paused.",
   "labels": {
-    "ios": ["Fill Your Feed", "Media Servers", "Reveal Key", "Accounts & Keys", "My Devices", "In reach", "Not in reach", "This Device", "Home vault · full history", "Check home vault sync", "Copy was interrupted", "Home vault mode", "Home vault mode paused", "Share With Others", "No Write relay"],
+    "ios": ["Fill Your Feed", "Media Servers", "Reveal Key", "Accounts & Keys", "My Devices", "Not in reach", "Link a device", "This Device", "Home vault · full history", "Check home vault sync", "Copy was interrupted", "Home vault mode", "Home vault mode paused", "Share With Others", "No Write relay"],
     "android": ["Media Servers", "Start Vault Automatically", "My Devices", "This Device", "Home vault · full history", "Home vault mode", "No Write relay",
                 "Check home vault sync", "Copy was interrupted"]
   }
@@ -72,12 +72,12 @@
 
 <section id="dot">
 <h2>A device on My Devices is never in reach</h2>
-<p>Under <span class="path">Settings &rarr; Mesh &rarr; My Devices</span> a device stays "Not in
+<p>Under <span class="path">Mesh settings &rarr; My Devices</span> a device stays "Not in
     reach" (Android shows when it was last seen). A Mac or a home vault only answers devices that are on its own
     My Devices list, and a Mac with an empty list doesn't start the mesh at all.</p>
-<p><strong>Fix:</strong> add the devices both ways. On each device, copy the address under
-    <strong>This Device</strong> and add it on the other one; on your phones, add the Mac as
-    <strong>Home vault &middot; full history</strong>. Check that Mesh is on, on both. See <a class="inline" href="/docs/mesh/#devices">My Devices</a>.</p>
+<p><strong>Fix:</strong> link the two again with <span class="ui">Link a device</span>: two scans, and both
+    devices add each other. Check that Mesh is on, on both, and that Nostr Vault is open on the Mac. See
+    <a class="inline" href="/docs/mesh/my-devices/#add">Link a device</a>.</p>
 </section>
 
 <section id="check-sync">

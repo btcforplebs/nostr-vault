@@ -22,7 +22,7 @@
     <link rel="stylesheet" href="/menu.css?v=20261025">
     <link rel="stylesheet" href="/docs/docs.css?v=20261025">
     <script src="/docs/docs.js?v=20261025" defer></script>
-    <script src="/menu.js?v=20261101" defer></script>
+    <script src="/menu.js?v=20261107" defer></script>
 </head>
 
 <body class="docs-body">
@@ -131,7 +131,7 @@
             <p class="eyebrow">Using the app</p>
             <h1>Messages and <span>notifications</span></h1>
             <p class="docs-lede">Private messages are end-to-end encrypted, and your notifications are made by your own vault on your phone. No outside push server sees them.</p>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#where-your-messages-are">Where your messages are</a></li><li><a href="#start-a-message">Start a message</a></li><li><a href="#sending-a-photo">Sending a photo</a></li><li><a href="#nip-17-and-nip-04">NIP-17 and NIP-04</a></li><li><a href="#dm-relays-and-who-can-reach-you">DM relays and who can reach you</a></li><li><a href="#your-notifications">Your notifications</a></li><li><a href="#notification-settings">Notification settings</a></li><li><a href="#no-push-server">No push server</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#where-your-messages-are">Where your messages are</a></li><li><a href="#start-a-message">Start a message</a></li><li><a href="#sending-a-photo-or-video">Sending a photo or video</a></li><li><a href="#nip-17-and-nip-04">NIP-17 and NIP-04</a></li><li><a href="#dm-relays-and-who-can-reach-you">DM relays and who can reach you</a></li><li><a href="#your-notifications">Your notifications</a></li><li><a href="#notification-settings">Notification settings</a></li><li><a href="#no-push-server">No push server</a></li></ul></div>
 
             <article class="docs-article">
                 <section id="where">
@@ -162,11 +162,12 @@
                 </section>
 
                 <section id="photos">
-                <p class="eyebrow">Photos</p>
-                <h2 id="sending-a-photo">Sending a photo</h2>
-                <p>In a conversation, tap <strong>Attach photo</strong> (Android: Attach image, web: Photo), paste one with
-                    <strong>Paste Photo</strong>, or drag it in on a Mac or iPad. The photo goes to your media server first, and
-                    its link goes in the message. Photos other than GIFs are re-saved, which removes their location.</p>
+                <p class="eyebrow">Photos and videos</p>
+                <h2 id="sending-a-photo-or-video">Sending a photo or video</h2>
+                <p>In a conversation, tap the photo button (<strong>Attach photo or video</strong>; web: Photo), paste a photo with
+                    <strong>Paste Photo</strong>, or drag it in on a Mac or iPad. On iPhone, iPad, Mac and Android the same button
+                    sends videos too; the web app sends photos only. The file goes to your media server first, and its link goes in
+                    the message. Photos other than GIFs are re-saved, which removes their location.</p>
                 <p>On iPhone, the New Message screen has no photo button: send the first message, then add photos in the
                     conversation.</p>
                 <p>You can select and copy text in a message on iPhone and Android. There is no way to delete a message.</p>
@@ -248,7 +249,8 @@
                         When you come back after a while, one pill sums it up, like "5 mentions · 2 zaps · 1 DM". Android files
                         pills you didn't see under "Missed while open".</li>
                     <li><strong>The web app</strong> shows browser notifications only while a tab is open. Turn them on with
-                        <strong>Browser notifications</strong> under <span class="path">Settings &rarr; Notifications</span>.</li>
+                        the <strong>Notifications</strong> switch under <span class="path">Settings &rarr; Notifications</span>, or
+                        <span class="ui">Turn on</span> when the app asks after you sign in.</li>
                 </ul>
                 <p>What wakes the app, and what to allow, is different on each device:
                     <a class="inline" href="/docs/notifications/">How notifications arrive</a>.</p>

@@ -9,9 +9,9 @@
   "lede": "Private messages are end-to-end encrypted, and your notifications are made by your own vault on your phone. No outside push server sees them.",
   "description": "Nostr Vault messages and notifications: where Messages is, starting a message, NIP-17 and NIP-04, photos, DM relays, who can message you, the Vault activity list, notification settings and in-app pills.",
   "labels": {
-    "ios": ["Messages", "New Message", "Attach photo", "Paste Photo", "Message", "Message seller", "NIP-17 (encrypted)", "NIP-04 (legacy)", "Switch", "Retry", "No DM relay", "Only one DM relay", "Follow Distance", "Mentions", "All", "Notifications", "New Notes in Your Feed", "Sound", "Replies", "Direct Messages", "Zaps", "Reactions", "Reposts", "New Followers", "Requests"],
-    "android": ["Messages", "New Message", "Mark all read", "Attach image", "Paste Photo", "NIP-17 (encrypted)", "NIP-04 (legacy)", "Mentions", "Notifications", "New Notes in Your Feed", "Direct Messages", "New Followers", "Missed while open"],
-    "web": ["Messages", "Notifications", "Photo", "Open", "Mentions", "Browser notifications", "Message seller", "Requests"]
+    "ios": ["Messages", "New Message", "Attach photo or video", "Paste Photo", "Message", "Message seller", "NIP-17 (encrypted)", "NIP-04 (legacy)", "Switch", "Retry", "No DM relay", "Only one DM relay", "Follow Distance", "Mentions", "All", "Notifications", "New Notes in Your Feed", "Sound", "Replies", "Direct Messages", "Zaps", "Reactions", "Reposts", "New Followers", "Requests"],
+    "android": ["Messages", "New Message", "Mark all read", "Attach photo or video", "Paste Photo", "NIP-17 (encrypted)", "NIP-04 (legacy)", "Mentions", "Notifications", "New Notes in Your Feed", "Direct Messages", "New Followers", "Missed while open"],
+    "web": ["Messages", "Notifications", "Photo", "Open", "Mentions", "Turn on", "Message seller", "Requests"]
   }
 }
 -->
@@ -44,11 +44,12 @@
 </section>
 
 <section id="photos">
-<p class="eyebrow">Photos</p>
-<h2>Sending a photo</h2>
-<p>In a conversation, tap <strong>Attach photo</strong> (Android: Attach image, web: Photo), paste one with
-    <strong>Paste Photo</strong>, or drag it in on a Mac or iPad. The photo goes to your media server first, and
-    its link goes in the message. Photos other than GIFs are re-saved, which removes their location.</p>
+<p class="eyebrow">Photos and videos</p>
+<h2>Sending a photo or video</h2>
+<p>In a conversation, tap the photo button (<strong>Attach photo or video</strong>; web: Photo), paste a photo with
+    <strong>Paste Photo</strong>, or drag it in on a Mac or iPad. On iPhone, iPad, Mac and Android the same button
+    sends videos too; the web app sends photos only. The file goes to your media server first, and its link goes in
+    the message. Photos other than GIFs are re-saved, which removes their location.</p>
 <p>On iPhone, the New Message screen has no photo button: send the first message, then add photos in the
     conversation.</p>
 <p>You can select and copy text in a message on iPhone and Android. There is no way to delete a message.</p>
@@ -130,7 +131,8 @@
         When you come back after a while, one pill sums it up, like "5 mentions · 2 zaps · 1 DM". Android files
         pills you didn't see under "Missed while open".</li>
     <li><strong>The web app</strong> shows browser notifications only while a tab is open. Turn them on with
-        <strong>Browser notifications</strong> under <span class="path">Settings &rarr; Notifications</span>.</li>
+        the <strong>Notifications</strong> switch under <span class="path">Settings &rarr; Notifications</span>, or
+        <span class="ui">Turn on</span> when the app asks after you sign in.</li>
 </ul>
 <p>What wakes the app, and what to allow, is different on each device:
     <a class="inline" href="/docs/notifications/">How notifications arrive</a>.</p>

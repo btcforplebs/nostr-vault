@@ -7,16 +7,17 @@
   "description": "Install Nostr Vault on an Android phone, choose where your notes live, create a Nostr account or bring yours, with Amber or another signer.",
   "checked": "Nostr Vault 3.1.0 (54) for Android",
   "labels": {
-    "android": ["Create an account", "I already use Nostr", "What's inside?",
+    "android": ["Create an account", "Bring an account", "What's inside?",
                 "Where should your notes live?", "Built-in Relay", "A Relay You Already Run", "Relay URL", "Blossom URL (optional)",
                 "Welcome to Nostr", "Create My Account", "Your Keys", "I saved my secret key", "Protect Your Key", "Your Profile",
                 "Skip for Now", "Welcome to Nostr!", "Start Exploring", "Who are you on Nostr?", "Read-only", "You can post",
                 "Encrypted key · you can post", "Signer link · you can post", "Use Amber", "Use a signer app", "Sign in with a signer app",
                 "Scan a QR code", "Checking your relays", "Ready to import", "Change import relays", "Start import",
-                "Bringing your notes home", "Keep it running in the background", "Next", "Enter", "Jump in",
+                "Bringing in your notes", "Keep it running in the background", "Next", "Enter", "Jump in",
                 "Citrine is on this phone", "Use Nostr Vault", "Use Citrine", "Database & Reset", "Use External Relay",
                 "Choose the servers your posts go through", "Continue", "Use recommended",
-                "Do you have a Vault backup?", "Yes, restore my backup", "No, import from my relays",
+                "New to Nostr Vault?", "Yes, bring my notes from relays", "No, copy from my other vault", "Scan its code", "Do these words match?", "They match",
+                "Try again", "Continue without it", "Also bring these accounts?", "Bring them", "Just this one", "Look up and back up my lists", "Still to bring in",
                 "Who told you about Nostr Vault?", "Find them", "Not them? Change", "Skip", "Feed", "Search", "Profile", "WoT", "Vault", "Settings", "Tutorials"]
   }
 }
@@ -34,7 +35,7 @@
 <p>The first screen has two buttons. <span class="ui">What's inside?</span>, above them, lists what the app does.</p>
 <ul>
     <li><span class="ui">Create an account</span> if you're new to Nostr.</li>
-    <li><span class="ui">I already use Nostr</span> if you have an account from another Nostr app. Your old notes come
+    <li><span class="ui">Bring an account</span> if you have an account from another Nostr app. Your old notes come
         home to your phone.</li>
 </ul>
 
@@ -91,7 +92,7 @@
 
 <h2 id="existing">Bring the account you have</h2>
 <ol class="steps">
-    <li>Tap <span class="ui">I already use Nostr</span>, choose where your notes live, and the screen asks
+    <li>Tap <span class="ui">Bring an account</span>, choose where your notes live, and the screen asks
         <strong>Who are you on Nostr?</strong></li>
     <li>Paste your npub or name@domain (<span class="ui">Read-only</span>), your nsec
         (<span class="ui">You can post</span>, and you choose a password), an ncryptsec
@@ -106,18 +107,32 @@
         </ul>
         See <a href="/docs/keys/signers/">Signers</a>.</li>
     <li><strong>Who told you about Nostr Vault?</strong> If you can post, see <a href="#who-told-you">below</a>.</li>
-    <li><strong>Do you have a Vault backup?</strong> If you have a backup .zip from Nostr Vault, tap
-        <span class="ui">Yes, restore my backup</span> and pick it: your notes come back at once and the relay import is
-        skipped. Otherwise tap <span class="ui">No, import from my relays</span>.</li>
+    <li><strong>New to Nostr Vault?</strong> Tap <span class="ui">Yes, bring my notes from relays</span>, or, if
+        Nostr Vault is already on another phone or computer of yours, <span class="ui">No, copy from my other vault</span>:
+        <ul>
+            <li>On the other device, open Vault &rsaquo; Your devices &rsaquo; Add so it shows a code. Here, tap
+                <span class="ui">Scan its code</span>, then let the other device scan this phone.</li>
+            <li><strong>Do these words match?</strong> If both screens show the same four words, tap
+                <span class="ui">They match</span>.</li>
+            <li>Your vault copies across over the mesh, on Wi-Fi or mobile data. If the other device can't be
+                reached, the copy keeps trying for a few minutes; then tap <span class="ui">Try again</span>, or
+                <span class="ui">Continue without it</span> to bring your notes from your relays instead.</li>
+            <li>If the other device has more accounts that can sign, <strong>Also bring these accounts?</strong>
+                lists them: <span class="ui">Bring them</span> or <span class="ui">Just this one</span>.</li>
+        </ul>
+        A backup .zip is restored later from <span class="path">Settings &rarr; Backup &amp; Restore</span>.</li>
     <li><strong>Checking your relays.</strong> The app looks for your notes on the import relays, and also on the
         write relays you published yourself (marked <strong>yours</strong>; read for this import only, never saved).
         When it's done the title says <span class="ui">Ready to import</span>.
-        <span class="ui">Change import relays</span> lets you turn relays off or add one. Tap
-        <span class="ui">Start import</span>.</li>
-    <li><strong>Bringing your notes home.</strong> A few cards explain the import: <span class="ui">Next</span> moves
+        <span class="ui">Change import relays</span> lets you turn relays off or add one.
+        <span class="ui">Look up and back up my lists</span> (on to start) also looks for older copies of your
+        follow list and other lists, so a list another app emptied can be brought back; see
+        <a href="/docs/backup/">Backups</a>. Tap <span class="ui">Start import</span>.</li>
+    <li><strong>Bringing in your notes.</strong> A few cards explain the import: <span class="ui">Next</span> moves
         on, and the last card has <span class="ui">Enter</span>. On the last card you can also tap
         <span class="ui">Keep it running in the background</span> and start using the app; when the import is done,
-        tap <span class="ui">Jump in</span>.</li>
+        tap <span class="ui">Jump in</span>. Replies, slower relays and old list versions keep coming in
+        afterwards; the Vault dashboard shows them under <span class="ui">Still to bring in</span>.</li>
 </ol>
 
 <div class="shots">

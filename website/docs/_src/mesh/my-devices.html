@@ -4,87 +4,101 @@
   "nav": "My Devices",
   "section": "mesh",
   "order": 2,
-  "description": "Connect your iPhone, Android phone, Mac, home vault and browser vault over the mesh, by address or QR code, so they sync with each other.",
-  "checked": "Nostr Vault 3.0.0 (41)",
+  "description": "Link your iPhone, iPad, Android phone, Mac, home vault and browser vault over the mesh with two scans, so they share your posts and media.",
+  "checked": "Nostr Vault 3.2.0",
   "labels": {
-    "ios": ["Mesh", "This Device", "Mesh address", "Copy", "Show QR", "My Devices", "Add a device", "Show my code", "Scan a code", "Paste instead",
-            "Name (optional)", "Home vault · full history", "Phone", "Home vault · new posts", "Browser vault", "In reach", "Not in reach"],
-    "android": ["Mesh", "This Device", "Mesh address", "Mesh IP", "Copy", "Show QR", "My Devices", "Add a device by address",
-                "Add a Device", "Scan its QR code", "This Is", "Name (optional)", "In reach", "Not in reach", "What It Gets", "Send new notes",
-                "Send new media"],
-    "mac": ["This Device", "My Devices", "Add a device by address", "Add this address on your phones under Mesh → My Devices, as Home vault · full history."]
+    "ios": ["Mesh", "Mesh settings", "This Device", "Mesh address", "Link a device", "Add a device", "Show my code", "Scan a code", "Paste instead",
+            "They match", "Add", "Done", "Start again", "My Devices", "Not in reach", "Home vault · full history", "Copy", "Remove from My Devices"],
+    "android": ["Mesh", "Mesh settings", "This Device", "Link a device", "Add a device", "Scan its code", "Show this phone's code instead",
+                "Add it", "Do these words match?", "They match", "They don't match", "Done", "Start again", "My Devices", "In reach", "Not in reach",
+                "Home vault · full history", "This Device's Address", "Copy", "What It Gets", "Send new notes", "Send new media"],
+    "mac": ["Mesh settings", "This Device", "My Devices", "Link a device", "Show my code", "Scan a code", "Paste instead", "Copy mesh address"],
+    "web": ["Mesh settings", "Show my code", "Scan a code", "They match", "Show this browser's code instead"]
   }
 }
 -->
-<p><strong>My Devices</strong> is the list of your own phones, Macs, home vault and browser vault that reach each other
-    over the mesh. They don't need a public IP or a domain: the mesh finds each device by its key, at home or on
-    mobile data.</p>
-<p>Devices on the list sync with each other: your notes, your photos and your history. Anyone not on the list can
-    only read the photos in your public posts.</p>
+<p><strong>My Devices</strong> is the list of your own phones, iPads, Macs, home vault and browser vault that reach
+    each other over the mesh. They don't need a public IP or a domain: the mesh finds each device by its key, at home
+    on Wi-Fi or out on mobile data.</p>
+<p>Devices on the list share your posts and media with each other. Anyone not on the list can only read the photos
+    in your public posts.</p>
 
-<h2>Turn the mesh on</h2>
-<p>On each device, open Mesh (on iPhone and iPad <span class="path">Profile &rarr; Mesh</span>, elsewhere
-    <span class="path">Settings &rarr; Mesh</span>) and switch on
-    <span class="ui">Mesh</span>. Under <span class="ui">This Device</span> you'll see its
-    <span class="ui">Mesh address</span>, a long key starting with <code>npub</code>. That's how your other devices
-    find this one.</p>
+<h2>Find Mesh settings</h2>
+<ul>
+    <li><strong>iPhone and iPad:</strong> the Mesh button at the top of the Profile tab, next to Settings. Or hold your
+        profile picture in the tab bar and pick <span class="ui">Mesh settings</span>.</li>
+    <li><strong>Android:</strong> hold your account picture and pick <span class="ui">Mesh settings</span>, or
+        <span class="path">Settings &rarr; Mesh</span>.</li>
+    <li><strong>Mac:</strong> <span class="ui">Mesh settings</span> under Advanced on the Vault dashboard.</li>
+    <li>Everywhere, the Vault dashboard has a <strong>Your devices</strong> card with
+        <span class="ui">Mesh settings</span> and <span class="ui">Add</span>.</li>
+</ul>
+<p>Switch on <span class="ui">Mesh</span>. <span class="ui">This Device</span> shows this device's
+    <span class="ui">Mesh address</span>, a long key starting with <code>npub</code>.</p>
 
 <div class="shots">
     <figure><img src="/docs/img/ios/fips-mesh.webp" alt="Mesh on iPhone" width="900" height="1957" loading="lazy"><figcaption>Mesh on iPhone</figcaption></figure>
     <figure><img src="/docs/img/android/fips-mesh.webp" alt="Mesh on Android" width="900" height="2000" loading="lazy"><figcaption>Mesh on Android</figcaption></figure>
 </div>
 
-<h2 id="add">Add a device</h2>
-<p><strong>On iPhone and iPad</strong>, tap <span class="ui">Add a device</span> under My Devices. One device taps
-    <span class="ui">Show my code</span>, the other <span class="ui">Scan a code</span>, then they swap; both add each
-    other. Each code also shows as text with <span class="ui">Copy</span>, and every scan step has
-    <span class="ui">Paste instead</span> for the other device's code. A Linux box or the browser relay page shows
-    only its mesh address: paste that under <span class="ui">Paste instead</span>, pick what it is, and tap
-    <span class="ui">Add</span>.</p>
-<p><strong>On Android and the Mac</strong>, add it by address:</p>
+<h2 id="add">Link a device</h2>
+<p>Two devices link with two scans: one shows a code, the other scans it, then they swap. Both end up on each
+    other's list, so you only do it once.</p>
 <ol class="steps">
-    <li>On the device you want to add, open <span class="ui">Mesh</span> and, under
-        <span class="ui">This Device</span>, tap <span class="ui">Copy</span>, or <span class="ui">Show QR</span> to
-        scan it from the other device.</li>
-    <li>On the other device, tap <span class="ui">Add a device by address</span>. Paste the address (on Android you
-        can also scan it).</li>
-    <li>Pick what it is:
-        <ul>
-            <li><span class="ui">Home vault &middot; full history</span>: Nostr Vault on your Mac. Your new notes and photos go to it, and
-                your history syncs back. See <a href="/docs/mesh/sync/">Home vault sync</a>.</li>
-            <li><span class="ui">Phone</span>: another phone of yours.</li>
-            <li><span class="ui">Home vault &middot; new posts</span>: a spare phone in Home vault mode, or a box, that keeps your new posts. See
-                <a href="/docs/mesh/home-vault/">Home vault</a>.</li>
-            <li><span class="ui">Browser vault</span>: a Nostr Vault page in a browser that keeps a copy of your
-                notes.</li>
-        </ul></li>
-    <li>Give it a name if you like, and tap <span class="ui">Add</span>.</li>
-    <li><strong>Do it in both directions.</strong> Add the Mac on each phone, and each phone on the Mac. A device only
-        lets in the devices on its own list.</li>
+    <li>On both devices, turn the mesh on. On one of them tap <span class="ui">Link a device</span> under This Device,
+        or <span class="ui">Add</span> under Your devices.</li>
+    <li><strong>iPhone, iPad and Mac:</strong> tap <span class="ui">Show my code</span> on one device and
+        <span class="ui">Scan a code</span> on the other. <strong>Android</strong> opens on its own code; tap
+        <span class="ui">Scan its code</span> to scan the other one first, or
+        <span class="ui">Show this phone's code instead</span> to go back. <strong>Web:</strong> the Your devices card
+        has <span class="ui">Show my code</span> and <span class="ui">Scan a code</span>.</li>
+    <li>The first device scans the second one's screen back. Each code lasts a few minutes.</li>
+    <li>Check the words. Both devices show the same four words. If they match, tap <span class="ui">They match</span>
+        (on Android, <strong>Do these words match?</strong>; tap <span class="ui">They don't match</span> if they
+        don't). A browser with no camera links by the words alone.</li>
+    <li>Confirm with <span class="ui">Add</span> (Android: <span class="ui">Add it</span>). The screen says
+        <strong>Linked ✓</strong> and the device's name. Tap <span class="ui">Done</span>.</li>
 </ol>
+<p>No camera? On iPhone, iPad and Mac every scan step has <span class="ui">Paste instead</span>, and every code also
+    shows as text with <span class="ui">Copy</span>. A Linux box or the browser relay page has no code, only a mesh
+    address: paste that under <span class="ui">Paste instead</span>. To add this device to one of those, copy its
+    address from Mesh &rarr; Advanced (<span class="ui">Copy mesh address</span> on the Mac,
+    <span class="ui">This Device's Address</span> on Android).</p>
+<p>Something went wrong? <span class="ui">Start again</span> shows a fresh code.</p>
 <div class="shots">
     <figure><img src="/docs/img/ios/add-device.webp" alt="Add a Device" width="900" height="1957" loading="lazy"><figcaption>Add a Device</figcaption></figure>
     <figure><img src="/docs/img/ios/device.webp" alt="A device on the list" width="900" height="1957" loading="lazy"><figcaption>A device on the list</figcaption></figure>
 </div>
 
-<div class="done"><p><strong>You're done when</strong> the phone shows the other device as <span class="ui">In reach</span>
-    under My Devices (the Mac's list doesn't show reach). It can take a moment after the mesh turns on.</p></div>
+<div class="done"><p><strong>You're done when</strong> the other device shows a green dot under Your devices. It can
+    take a moment once both are on the mesh.</p></div>
 
 <div class="shots mac">
     <figure><img src="/docs/img/mac/fips-mesh.webp" alt="Mesh on Mac, with a phone in My Devices" width="1200" height="1102" loading="lazy"><figcaption>Mesh on Mac, with a phone in My Devices</figcaption></figure>
 </div>
 
+<h2 id="copy">Copy your vault to a new device</h2>
+<p>Setting up a new phone, iPad or Mac? Choose <strong>Copy from my other vault</strong> when setup asks
+    <strong>New to Nostr Vault?</strong> The two devices link with two scans as above, then the new one copies the
+    whole vault across over the mesh: your notes, photos and videos, on Wi-Fi or mobile data. Every account on the
+    old device that can sign is offered too. Keep Nostr Vault open on the old device while it copies. If it can't be
+    reached, the new one tries again every 15 seconds for five minutes, then offers Try again. The steps are on
+    <a href="/docs/start/iphone/#existing">iPhone</a> and <a href="/docs/start/android/#existing">Android</a>.
+    The web app links the same way, but takes your notes from your relays.</p>
+
 <h2 id="list">The list</h2>
 <ul>
-    <li>On a phone, each device shows <span class="ui">In reach</span>, or <span class="ui">Not in reach</span>
-        (Android shows when it was last seen instead, and Not in reach on the device's own page). The Mac's list
-        shows only each device's role and a short address. A Mac is in reach
-        while Nostr Vault is open on it; a phone while the app is open or in Home vault mode.</li>
-    <li>Tap a device to rename it, copy its address, or remove it. On Android, <span class="ui">What It Gets</span>
-        chooses whether it gets <span class="ui">Send new notes</span> and <span class="ui">Send new media</span>.</li>
+    <li>Under <span class="ui">My Devices</span>, a phone shows each device's role and whether it is connected now,
+        or <span class="ui">Not in reach</span>. Android shows <span class="ui">In reach</span> or when it was last
+        seen. A Mac is in reach while Nostr Vault is open on it; a phone while the app is open or in Home vault mode.</li>
+    <li>A linked Mac is your <span class="ui">Home vault &middot; full history</span>: your new notes and photos go to
+        it, and your history syncs back. See <a href="/docs/mesh/sync/">Home vault sync</a>. Your iPhone and
+        Android phones also send new notes and media to every linked phone.</li>
+    <li>Tap a device to rename it, copy its address, or remove it (<span class="ui">Remove from My Devices</span> on
+        iPhone). On Android, <span class="ui">What It Gets</span> chooses whether it gets
+        <span class="ui">Send new notes</span> and <span class="ui">Send new media</span>.</li>
     <li>Once a device is on the list, only the devices on the list learn this phone's address. Anyone else on the mesh
-        gets public photos only. On Android, until you add your first device, anyone on the mesh can learn this
-        phone's address.</li>
+        gets public photos only.</li>
 </ul>
 
 <h2>Next</h2>

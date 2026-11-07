@@ -22,7 +22,7 @@
     <link rel="stylesheet" href="/menu.css?v=20261025">
     <link rel="stylesheet" href="/docs/docs.css?v=20261025">
     <script src="/docs/docs.js?v=20261025" defer></script>
-    <script src="/menu.js?v=20261101" defer></script>
+    <script src="/menu.js?v=20261107" defer></script>
 </head>
 
 <body class="docs-body">
@@ -131,7 +131,7 @@
             <p class="eyebrow">Your vault</p>
             <h1>Keep a copy <span>you can restore</span>.</h1>
             <p class="docs-lede">Save your vault's notes and media as files, roll your follow list back to an earlier version, and bring back a post you deleted by mistake.</p>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#backup-restore">Backup &amp; Restore</a></li><li><a href="#following-backup">Following Backup</a></li><li><a href="#recently-deleted">Recently Deleted</a></li><li><a href="#backups-on-the-web">Backups on the web</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#backup-restore">Backup &amp; Restore</a></li><li><a href="#following-backup">Following Backup</a></li><li><a href="#list-backups">List backups</a></li><li><a href="#recently-deleted">Recently Deleted</a></li><li><a href="#backups-on-the-web">Backups on the web</a></li></ul></div>
 
             <article class="docs-article">
                 <section id="backup">
@@ -171,6 +171,21 @@
                 </ol>
                 <p>If your list was wiped somewhere else, <strong>Scan Relays</strong> looks for older copies of it on your
                     relays.</p>
+                </section>
+
+                <section id="lists">
+                <p class="eyebrow">Every list you keep</p>
+                <h2 id="list-backups">List backups</h2>
+                <p>Your vault also keeps the old versions of your other lists: mutes, bookmarks, relays, follow sets and more.
+                    Open <strong>List backups</strong> from the Vault dashboard or Settings (on the web, <strong>Recover a
+                    List</strong>). Each version says which app saved it and what changed. If a list suddenly shrinks, a banner
+                    warns you, and <span class="ui">Merge</span> puts the old entries back alongside the new ones, so nothing you
+                    added since is lost.</p>
+                <p><span class="ui">Look up and back up my lists</span> (on by default, on the Vault dashboard; on Android also
+                    while you set up) goes further back: it asks history relays for older copies of your lists, the way the
+                    Lazarus spec finds them, and saves them in your list history. A follow list another app emptied months ago can
+                    still come back. It runs from the Vault's Still to bring in card, as <span class="ui">Old versions of your
+                    lists</span>.</p>
                 </section>
 
                 <section id="deleted">

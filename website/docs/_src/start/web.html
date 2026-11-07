@@ -14,7 +14,9 @@
             "Sign out and delete this browser's copy", "Reset Everything", "Database & Reset", "In your vault", "Who Can Reach You",
             "Create My Account", "Skip for Now", "Your posts will be shared through these servers", "Continue", "Change",
             "Sign in read-only", "Getting your vault ready", "Open now, finish in the background", "Import Notes",
-            "Import from my relays", "Relays", "Save and publish", "Accounts & Keys", "Add Account", "Just look around"]
+            "Import from my relays", "Relays", "Yes, create an account", "No, I already use Nostr", "Who showed you this app?", "Fill Your Feed", "Not now", "Turn on",
+            "I have a password-locked key (ncryptsec)", "New to Nostr Vault?", "Yes, bring my notes from relays", "No, copy from my other vault", "Scan your other device", "They match",
+            "Getting your vault ready", "Open now, finish in the background", "Save and publish", "Accounts & Keys", "Add Account", "Just look around"]
   }
 }
 -->
@@ -24,22 +26,27 @@
     storage.</p>
 
 <h2 id="create">New to Nostr</h2>
-<p>Click <span class="ui">Create an account</span>, then <span class="ui">Create My Account</span>. The web app makes
+<p>The first screen asks <strong>New to Nostr?</strong> Click <span class="ui">Yes, create an account</span>, then
+    <span class="ui">Create My Account</span>. The web app makes
     your keys in this browser and shows both. Save the secret key somewhere safe, tick
     <span class="ui">I saved my secret key</span>, and choose a password of at least 8 characters, typed twice. Add a
-    name and photo if you like, or <span class="ui">Skip for Now</span>. Pick some people to follow. The next screen,
+    name and photo if you like, or <span class="ui">Skip for Now</span>. <strong>Who showed you this app?</strong> finds the person who told you
+    about it, so you can follow them, or <span class="ui">Skip</span>. On <strong>Fill Your Feed</strong>, pick some
+    people to follow. The next screen,
     <strong>Your posts will be shared through these servers</strong>, lists the relays your posts go out to:
     <span class="ui">Continue</span> keeps them, <span class="ui">Change</span> picks others. Then click
-    <span class="ui">Start Exploring</span>.</p>
+    <span class="ui">Start Exploring</span>. A three-card tour follows, then one question: get notified about replies,
+    mentions and messages while Nostr Vault is open? <span class="ui">Turn on</span> or
+    <span class="ui">Not now</span>.</p>
 <p>The secret key stays in this browser, locked with your password; it is never sent anywhere. To see it again, open
     <span class="path">Settings &rarr; Your Secret Key</span> and type your password. Signing out, or the browser
-    clearing this site's data, deletes it from this browser, and nobody can recover it for you. The web app can't sign
-    in with a secret key, so to use the account again, add the copy you saved to a Nostr browser extension and click
-    <span class="ui">I already use Nostr</span>, or import it in the Nostr Vault app.</p>
+    clearing this site's data, deletes it from this browser, and nobody can recover it for you. To use the account again,
+    add the copy you saved to a Nostr browser extension, or sign in with it locked with a password (below), or import
+    it in the Nostr Vault app.</p>
 
 <h2>Sign in</h2>
-<p>Already use Nostr? Click <span class="ui">I already use Nostr</span>. The web app never asks for the secret key of
-    an account you already have. Sign in with something that holds the key for you:</p>
+<p>Already use Nostr? Click <span class="ui">No, I already use Nostr</span>. The web app never asks for your plain
+    secret key. Sign in with something that holds the key for you, or with a key locked with a password:</p>
 <ul>
     <li><strong>A browser extension.</strong> Click <span class="ui">Sign in with extension</span> and approve in the
         extension. If this browser has no Nostr extension, the button shows which one to install instead: Sidecar for
@@ -50,6 +57,8 @@
     <li><strong>A remote signer.</strong> Paste a bunker:// link (or your name@domain) from your signer app into
         <span class="ui">Bunker link (NIP-46)</span>, click <span class="ui">Connect bunker</span>, and approve the
         connection in your signer. See <a href="/docs/keys/signers/">Signers</a>.</li>
+    <li><strong>A password-locked key.</strong> Click <span class="ui">I have a password-locked key (ncryptsec)</span>,
+        paste your ncryptsec and type its password. The Nostr Vault apps can copy your key this way.</li>
     <li><strong>Read-only.</strong> Type your npub or name@domain and click
         <span class="ui">Sign in read-only</span>, or type a plain name and click <span class="ui">Find me</span> to pick
         yourself from the results. You can read your feed but not post.</li>
@@ -57,6 +66,13 @@
 <div class="shots wide">
     <figure><img src="/docs/img/web/signin.webp" alt="The sign-in screen in a desktop browser" width="900" height="563" loading="lazy"><figcaption>The sign-in screen in a desktop browser</figcaption></figure>
 </div>
+
+<p>The first time you sign in, the web app asks <strong>New to Nostr Vault?</strong>
+    <span class="ui">Yes, bring my notes from relays</span> fetches them. If Nostr Vault is on another of your devices,
+    <span class="ui">No, copy from my other vault</span> links this browser to it with two scans
+    (<strong>Scan your other device</strong>, then <span class="ui">They match</span>); the notes still come from
+    your relays, because the web app can't copy over the mesh. <strong>Getting your vault ready</strong> shows each
+    step; <span class="ui">Open now, finish in the background</span> lets you in straight away.</p>
 
 <p>Accounts you've used in this browser are listed at the top next time, so one click signs you back in. To keep
     several accounts signed in, use <span class="path">Settings &rarr; Accounts &amp; Keys &rarr; Add Account</span>.</p>

@@ -22,7 +22,7 @@
     <link rel="stylesheet" href="/menu.css?v=20261025">
     <link rel="stylesheet" href="/docs/docs.css?v=20261025">
     <script src="/docs/docs.js?v=20261025" defer></script>
-    <script src="/menu.js?v=20261101" defer></script>
+    <script src="/menu.js?v=20261107" defer></script>
 </head>
 
 <body class="docs-body">
@@ -130,7 +130,7 @@
         <main class="docs-main">
             <p class="eyebrow">Keys and accounts</p>
             <h1>Your keys and accounts</h1>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#two-keys">Two keys</a></li><li><a href="#where">Where to find them</a></li><li><a href="#add">Add another account</a></li><li><a href="#switch">Switch accounts</a></li><li><a href="#backup">Back up your secret key</a></li><li><a href="#method">Change how an account signs</a></li><li><a href="#remove">Remove a key or an account</a></li><li><a href="#relay-list">Your relay list</a></li><li><a href="#next">Next</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#two-keys">Two keys</a></li><li><a href="#where">Where to find them</a></li><li><a href="#add">Add another account</a></li><li><a href="#switch">Switch accounts</a></li><li><a href="#backup">Back up your secret key</a></li><li><a href="#method">Change how an account signs</a></li><li><a href="#remove">Remove a key or an account</a></li><li><a href="#leave">Leave Nostr Forever</a></li><li><a href="#relay-list">Your relay list</a></li><li><a href="#next">Next</a></li></ul></div>
 
             <article class="docs-article">
                 <p>A Nostr account is a pair of keys. Nostr Vault keeps them on your device, or leaves the secret one with a signer
@@ -229,9 +229,29 @@
                         gone for good.</li>
                     <li><span class="ui">Disconnect Remote Signer</span> drops the signer's connection. Reconnecting needs a fresh
                         bunker link.</li>
-                    <li><span class="ui">Remove Account</span> takes the account, and any key or signer for it, off this device.
-                        Nothing on the relays changes, but you need the key again to sign back in.</li>
+                    <li><strong>iPhone, iPad and Mac:</strong> <span class="ui">Delete Account</span>, at the bottom of the account's
+                        page, deletes the account, and any key or signer for it, from this device. For your main account it deletes
+                        this device's vault too. Type DELETE to confirm (<span class="ui">Type DELETE to confirm</span>). Nothing is
+                        sent to relays, so your account and posts carry on everywhere else, and you need the key again to sign back
+                        in.</li>
+                    <li><strong>Android and web:</strong> <span class="ui">Remove Account</span> does the same: it takes the account,
+                        and any key or signer for it, off this device. Nothing on the relays changes.</li>
                 </ul>
+
+                <h2 id="leave">Leave Nostr Forever</h2>
+                <p>On iPhone, iPad and Mac only, <span class="path">Settings &rarr; Advanced &rarr; Danger Zone &rarr; Leave Nostr
+                    Forever</span> closes your main account for good, not just on this device:</p>
+                <ul>
+                    <li>It publishes an empty profile, marked deleted, and a NIP-62 request asking every relay to erase the
+                        account's events, to every relay the account uses and to your vault. Then it wipes everything on this
+                        device.</li>
+                    <li>Three warning screens come first. On the last, type the account's name (or the first 12 characters of its
+                        npub) and hold <span class="ui">Hold to Leave Nostr Forever</span> for three seconds.</li>
+                    <li>A relay may ignore the request, and copies other people or apps saved can't be called back. If no relay
+                        takes it, you can try again or delete from this device only.</li>
+                </ul>
+                <div class="note"><p>This can't be undone. Your key still exists, but the account shows as deleted. To stop using
+                    Nostr Vault on one device only, use <span class="ui">Delete Account</span> instead.</p></div>
 
                 <h2 id="relay-list">Your relay list</h2>
                 <p>Your relay list (NIP-65) tells other Nostr apps which relays you read from and write to, so they can find your
@@ -244,7 +264,7 @@
                     <li><a href="/docs/keys/signers/">Signers</a>: Amber, Clave, bunker links and browser extensions.</li>
                 </ul>
             </article>
-            <p class="docs-checked">Checked against Nostr Vault 3.1.0 (51) and the web app.</p>
+            <p class="docs-checked">Checked against Nostr Vault 3.2.0 and the web app.</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
                 <a class="prev" href="/docs/start/web/"><span>Previous</span>Web browser</a>
                 <a class="next" href="/docs/keys/signers/"><span>Next</span>Signers</a>

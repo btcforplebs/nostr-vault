@@ -11,9 +11,9 @@
   "checked": "the apps and web app on master, October 2026",
   "labels": {
     "ios": ["Notifications"],
-    "android": ["Notifications", "Enable Notifications", "Your Vault", "Vault running", "Stop Vault", "Start Vault Automatically", "Missed while open"],
+    "android": ["Notifications", "Your Vault", "Vault running", "Stop Vault", "Start Vault Automatically", "Missed while open"],
     "mac": ["Notifications", "Launch at Login", "Start Vault Automatically"],
-    "web": ["Notifications", "Browser notifications"]
+    "web": ["Notifications", "Turn on"]
   }
 }
 -->
@@ -81,8 +81,8 @@
     <li><strong>Using another app's relay</strong> (such as Citrine) instead of the built-in one: Nostr Vault makes
         no alerts.</li>
 </ul>
-<p><strong>What to allow:</strong> notifications. On Android 13 and newer, setup asks with
-    <strong>Enable Notifications</strong>, and turning on <span class="path">Settings &rarr; Notifications</span>
+<p><strong>What to allow:</strong> notifications. On Android 13 and newer, Android asks once, just after
+    setup, and turning on <span class="path">Settings &rarr; Notifications</span>
     asks again if you said no.</p>
 <p><strong>The honest limit:</strong> some phones' battery savers close background apps anyway, and the app
     doesn't ask to be left alone. If alerts stop, set Nostr Vault's battery use to Unrestricted in Android's
@@ -123,9 +123,9 @@
     <li><strong>Every tab closed:</strong> nothing arrives. The next time you open the app, your Vault list has it
         all, but there is no alert for it.</li>
 </ul>
-<p><strong>What to allow:</strong> turn on <strong>Browser notifications</strong> under
-    <span class="path">Settings &rarr; Notifications</span>. It is off until you do, and turning it on is when your
-    browser asks for permission. The kinds to alert on are listed below the switch. On iPhone and iPad, add Nostr
+<p><strong>What to allow:</strong> after you first sign in, the web app asks once whether to notify you
+    while it's open; <span class="ui">Turn on</span> is when your browser asks for permission. Or turn on the
+    <strong>Notifications</strong> switch under <span class="path">Settings &rarr; Notifications</span>. The kinds to alert on are listed below the switch. On iPhone and iPad, add Nostr
     Vault to the Home Screen first: Safari can't show notifications from an ordinary tab.</p>
 <p><strong>The honest limit:</strong> the web app is for checking in, not for being reached. Message alerts need a
     signer that can open messages, so a read-only sign-in gets none.</p>

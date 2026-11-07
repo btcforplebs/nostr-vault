@@ -5,15 +5,18 @@
   "section": "start",
   "order": 1,
   "description": "Install Nostr Vault on an iPhone or iPad, create a Nostr account or bring the one you have, and find your way around.",
-  "checked": "Nostr Vault 3.1.0 (51) for iOS",
+  "checked": "Nostr Vault 3.2.0 for iOS",
   "labels": {
-    "ios": ["New to Nostr?", "Yes, create an account", "No, I already use Nostr", "What's inside?", "Welcome to Nostr", "Create My Account", "Your Keys",
+    "ios": ["Create an account", "Bring an account", "What's inside?", "Welcome to Nostr", "Create My Account", "Your Keys",
             "I saved my secret key", "Protect Your Key", "Your Profile", "Skip for Now", "Welcome to Nostr!", "Start Exploring",
             "Let's fill it", "Not now", "Who are you on Nostr?", "Read-only", "You can post", "Encrypted key · you can post",
             "Signer link · you can post", "Who told you about Nostr Vault?", "Scan their profile code", "Not them? Try another", "Skip, nobody told me", "Use a signer app", "Sign in with Clave", "Scan a QR code", "Choose where your posts go", "Use recommended", "Skip for now", "Continue",
             "New to Nostr Vault?", "Yes, bring my notes from my relays", "Copy from my other vault", "Lost your other device? We'll bring your notes from relays", "Ready to import", "Change import relays",
-            "Checking your relays", "Start import", "Bringing your notes home", "Keep it running in the background",
-            "Feed", "Search", "WoT", "Vault", "Profile", "Settings", "Tutorials"]
+            "Checking your relays", "Start import", "Skip", "Bringing your notes home", "Keep it running in the background", "Jump in",
+            "Scan its code", "Add", "Show my code", "They match", "Try again", "Continue without it", "Add your other accounts?", "Add selected",
+            "Still to bring in", "Look up and back up my lists", "Restore from a backup",
+            "Feed", "Search", "WoT", "Vault", "Profile", "Settings", "Tutorials",
+            "Edit rail", "Your space", "Live Vault", "Web of Trust", "Messages", "My devices", "Live now", "On this day", "Edit Your space", "Fold Your space"]
   }
 }
 -->
@@ -21,20 +24,19 @@
     copies go out to public relays so people can see them.</p>
 
 <h2>Install</h2>
-<p>Nostr Vault needs <strong>iOS 17</strong> or later, on an iPhone or an iPad. Join the beta on
-    <a href="https://testflight.apple.com/join/kN3zE1H1">TestFlight</a>, install it, and open it.</p>
+<p>Nostr Vault needs <strong>iOS 17</strong> or later, on an iPhone or an iPad. Get it from the
+    <a href="https://apps.apple.com/us/app/nostr-vault/id6759681282">App Store</a> and open it.</p>
 
 <div class="shots">
     <figure><img src="/docs/img/ios/welcome.webp" alt="The first screen on iPhone" width="900" height="1957" loading="lazy"><figcaption>The first screen on iPhone</figcaption></figure>
 </div>
 
 <h2>Pick a way in</h2>
-<p>The first screen asks <strong>New to Nostr?</strong> <span class="ui">What's inside?</span> above the
-    buttons lists what the app does.</p>
+<p>The first screen has two buttons. <span class="ui">What's inside?</span> above them lists what the app does.</p>
 <ul>
-    <li><span class="ui">Yes, create an account</span> if you're new to Nostr. You get a new key, a password for it and a
+    <li><span class="ui">Create an account</span> if you're new to Nostr. You get a new key, a password for it and a
         profile.</li>
-    <li><span class="ui">No, I already use Nostr</span> if you have an account from another Nostr app. You bring that
+    <li><span class="ui">Bring an account</span> if you have an account from another Nostr app. You bring that
         account, and your old notes come home to your phone.</li>
 </ul>
 
@@ -75,7 +77,7 @@
 
 <h2 id="existing">Bring the account you have</h2>
 <ol class="steps">
-    <li>Tap <span class="ui">No, I already use Nostr</span>. The screen asks <strong>Who are you on Nostr?</strong></li>
+    <li>Tap <span class="ui">Bring an account</span>. The screen asks <strong>Who are you on Nostr?</strong></li>
     <li>Paste one of these into the box, or tap the QR icon (<span class="ui">Scan a QR code</span>) to scan one.
         The app tells you what you'll be able to do:
         <div class="docs-table-wrap"><table>
@@ -92,25 +94,45 @@
         </table></div>
         To use a signer app instead, tap <span class="ui">Use a signer app</span>, then
         <span class="ui">Sign in with Clave</span>. See <a href="/docs/keys/signers/">Signers</a>.</li>
-    <li><strong>New to Nostr Vault?</strong> Tap <span class="ui">Yes, bring my notes from my relays</span>. If
-        Nostr Vault is already on another of your devices, tap <span class="ui">Copy from my other vault</span>
-        and link the two with two scans. If it can't be reached, or you tap
-        <span class="ui">Lost your other device? We'll bring your notes from relays</span>, your notes come from your
-        relays. A backup .zip is restored later from the Vault tab
-        (<span class="ui">Restore from a backup</span>).</li>
+    <li><strong>New to Nostr Vault?</strong> Tap <span class="ui">Yes, bring my notes from my relays</span>, or, if
+        Nostr Vault is already on another of your devices, <span class="ui">Copy from my other vault</span>:
+        <ul>
+            <li>On your other device, open <strong>Your devices</strong> on its Vault dashboard, tap
+                <span class="ui">Add</span> and then <span class="ui">Show my code</span> (see
+                <a href="/docs/mesh/my-devices/#add">Link a device</a>). Here, tap <span class="ui">Scan its code</span>
+                and point the camera at it, then let the other device scan this one.</li>
+            <li>If you're asked, check both screens show the same four words, and tap
+                <span class="ui">They match</span>.</li>
+            <li>Your vault copies across over the mesh, on Wi-Fi or mobile data, with a moving bar and counts. If the
+                other device can't be reached, the copy keeps trying for a while; then tap
+                <span class="ui">Try again</span>, or <span class="ui">Continue without it</span> to bring your notes
+                from your relays instead.</li>
+            <li>If the other device has more accounts that can sign, <span class="ui">Add your other accounts?</span>
+                lists them. Tick the ones you want and tap <span class="ui">Add selected</span>, or
+                <span class="ui">Skip</span>.</li>
+        </ul>
+        Lost your other device? Tap <span class="ui">Lost your other device? We'll bring your notes from relays</span>.
+        A backup .zip is restored later from the Vault tab (<span class="ui">Restore from a backup</span>).</li>
     <li><strong>Checking your relays.</strong> The app looks for your notes on the import relays, and also on the
         write relays you published yourself (marked <strong>yours</strong>; read for this import only, never saved).
         When it's done the title says <span class="ui">Ready to import</span>.
         <span class="ui">Change import relays</span> lets you turn relays off or add one. Tap
-        <span class="ui">Start import</span>.</li>
+        <span class="ui">Start import</span>, or <span class="ui">Skip</span> to start with nothing imported.</li>
     <li><strong>Bringing your notes home.</strong> A few cards explain what's happening while your notes are copied to
         your phone. A long history takes a while. Wait, or tap
-        <span class="ui">Keep it running in the background</span> and start using the app; the import carries on.</li>
+        <span class="ui">Keep it running in the background</span> and start using the app; the import carries on.
+        When it's done, tap <span class="ui">Jump in</span>.</li>
 </ol>
 <div class="shots">
     <figure><img src="/docs/img/ios/use-nostr.webp" alt="Who are you on Nostr?, with an npub pasted" width="900" height="1957" loading="lazy"><figcaption>Who are you on Nostr?, with an npub pasted</figcaption></figure>
     <figure><img src="/docs/img/ios/use-nostr-relays.webp" alt="Checking your relays" width="900" height="1957" loading="lazy"><figcaption>Checking your relays</figcaption></figure>
 </div>
+
+<p>Replies to you, older or slower relays and old versions of your lists come in afterwards. The Vault tab
+    shows them under <span class="ui">Still to bring in</span>, with a button to run each one again. With
+    <span class="ui">Look up and back up my lists</span> on (it is by default, on the vault dashboard), the app also
+    looks for older copies of your follow list and other lists, so a list another app emptied can be brought back.
+    See <a href="/docs/backup/">Backups</a>.</p>
 
 <div class="note"><p>Pasting a secret key into any app is a risk. A signer keeps the key out of Nostr Vault
     altogether. If you do paste it, Nostr Vault keeps it encrypted on this phone only.</p></div>
@@ -141,7 +163,12 @@
         globe.</li>
     <li><span class="ui">Vault</span>: everything your relay keeps on this phone, and your messages.</li>
 </ul>
-<p>On iPad the same places are in the sidebar, Settings included.</p>
+<p>On iPad the same places are in a slim rail down the left side, Settings included. Pin your favourite feeds to
+    the rail with <span class="ui">Edit rail</span>. In landscape, <span class="ui">Your space</span> opens a column
+    of panels beside the feed: <span class="ui">Live Vault</span>, <span class="ui">Web of Trust</span>,
+    <span class="ui">Messages</span>, <span class="ui">My devices</span>, <span class="ui">Live now</span> and
+    <span class="ui">On this day</span>. <span class="ui">Edit Your space</span> adds, removes and orders them, and
+    <span class="ui">Fold Your space</span> tucks it away.</p>
 <p>Some pages show a short tour the first time you open them. Replay any of them from
     <span class="path">Settings &rarr; Help &rarr; Tutorials</span>.</p>
 
