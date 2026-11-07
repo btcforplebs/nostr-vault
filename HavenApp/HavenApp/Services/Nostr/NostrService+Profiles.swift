@@ -90,11 +90,13 @@ extension NostrService {
         var relays = ConfigService.shared.config.readRelays
         relays += Self.profileIndexRelays
 
-        // A lookup that found nothing must be able to run again, or a profile
-        // missed once stays a bare key until the app restarts.
+        // A lookup must be able to run again once it is over: one that found
+        // nothing, or one that found the profile unchanged (a kind 0 only
+        // clears its key when something changed), would otherwise block every
+        // later lookup of that person, forced or not, until the app restarts.
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
             guard let self else { return }
-            for pubkey in pubkeys where self.profiles[pubkey] == nil {
+            for pubkey in pubkeys {
                 self.profilesInFlight.remove(pubkey)
             }
         }

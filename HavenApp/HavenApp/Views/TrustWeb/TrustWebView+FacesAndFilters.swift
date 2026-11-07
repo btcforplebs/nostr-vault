@@ -190,6 +190,8 @@ extension TrustWebView {
                                                  count: TrustGlobeCanvas.faces(TrustMap.faceCandidateCount))
         faceCandidates[key] = candidates
         nostrService.fetchMissingProfiles(for: candidates, force: forceProfiles)
+        // Faces whose profiles are cached still get a daily look for a new picture.
+        if key == me { nostrService.refreshChangedProfiles(candidates, scope: "wot-faces") }
         pictureLoader?.cancel()
         pictureLoader = loadPictures(candidates)
     }

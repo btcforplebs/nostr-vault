@@ -83,6 +83,9 @@ class NostrService: ObservableObject {
     /// so the Viewer/Relay "Loading notes…" overlay can never latch indefinitely.
     var fetchWatchdogTask: Task<Void, Never>?
     var profilesInFlight = Set<String>()
+    /// Scopes with a daily profile refresh on the wire, so a second trigger
+    /// while one runs doesn't send it twice (NostrService+ProfileRefresh).
+    var profileRefreshesRunning = Set<String>()
     var profileFetchQueue = Set<String>()
     var profileFlushCancellable: AnyCancellable?
     /// One profile lookup socket per relay, kept between batches so a tick is

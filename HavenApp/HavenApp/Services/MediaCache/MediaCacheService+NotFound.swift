@@ -20,7 +20,9 @@ extension MediaCacheService {
         return Set(notFoundURLs.keys)
     }
 
-    func markNotFound(url: URL) {
+    /// `announce: false` records the link without posting
+    /// `.mediaNotFoundChanged`, for links no media screen shows (avatars).
+    func markNotFound(url: URL, announce: Bool = true) {
         notFoundLock.lock()
         let inserted = notFoundURLs.updateValue(Date(), forKey: url.absoluteString) == nil
         if notFoundURLs.count > notFoundMaxCount {
@@ -34,7 +36,9 @@ extension MediaCacheService {
         notFoundLock.unlock()
         guard inserted else { return }
         UserDefaults.standard.set(snapshot, forKey: notFoundDefaultsKey)
-        NotificationCenter.default.post(name: .mediaNotFoundChanged, object: url)
+        if announce {
+            NotificationCenter.default.post(name: .mediaNotFoundChanged, object: url)
+        }
     }
 
     func unmarkNotFound(url: URL) {
