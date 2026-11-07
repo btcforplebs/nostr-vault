@@ -79,7 +79,7 @@ docker buildx build -f linux/mesh/Dockerfile --platform linux/arm64 --target run
 
 The build changes nothing in `fips-v2`, `fips-v2-android` or `fips-bridge`. It reads `fips-v2/src/stack.rs`,
 `fips-v2-android` and `web-relay-vault` by path, with `Cargo.lock` copied from `fips-v2-android`, so
-both use the same fips rev (`e831d6d5`).
+both use the same fips rev (`786e2b42`).
 
 ## Link test (throwaway keys, no owner key)
 
