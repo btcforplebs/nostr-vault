@@ -9,10 +9,10 @@
   "lede": "Save your vault's notes and media as files, roll your follow list back to an earlier version, and bring back a post you deleted by mistake.",
   "description": "How to back up and restore Nostr Vault: export and import notes and media in Backup & Restore, restore an old follow list from Following Backup, un-delete posts in Recently Deleted, and the web backup.",
   "labels": {
-    "ios": ["Backup & Restore", "Export Notes", "Import Notes", "Export Media", "Import Media", "Following Backup", "Restore This List", "Scan Relays", "Up to 50 are kept", "Recently Deleted", "Un-delete", "Delete Forever", "Back up media"],
-    "android": ["Backup & Restore", "Notes (JSONL)", "Media", "Export Notes", "Import Notes", "Export Media", "Import Media", "Restore This List", "Un-delete", "Delete Forever"],
+    "ios": ["Backup & Restore", "Export Notes", "Import Notes", "Export Media", "Import Media", "Following Backup", "Restore This List", "Scan Relays", "Up to 50 are kept", "Recently Deleted", "Un-delete", "Delete Forever", "Back up media", "List backups", "Merge", "Look up and back up my lists", "Old versions of your lists"],
+    "android": ["Backup & Restore", "Notes (JSONL)", "Media", "Export Notes", "Import Notes", "Export Media", "Import Media", "Restore This List", "Un-delete", "Delete Forever", "List backups", "Merge", "Look up and back up my lists", "Old versions of your lists"],
     "mac": ["Backup & Restore", "Save JSONL Backup", "Save Media Backup"],
-    "web": ["Backup & Restore", "Export notes", "Import notes", "Save backup file", "Back up media", "Restore This List", "Un-delete"]
+    "web": ["Recover a List", "Look up and back up my lists", "Old versions of your lists", "Backup & Restore", "Export notes", "Import notes", "Save backup file", "Back up media", "Restore This List", "Un-delete"]
   }
 }
 -->
@@ -54,6 +54,21 @@
 </ol>
 <p>If your list was wiped somewhere else, <strong>Scan Relays</strong> looks for older copies of it on your
     relays.</p>
+</section>
+
+<section id="lists">
+<p class="eyebrow">Every list you keep</p>
+<h2>List backups</h2>
+<p>Your vault also keeps the old versions of your other lists: mutes, bookmarks, relays, follow sets and more.
+    Open <strong>List backups</strong> from the Vault dashboard or Settings (on the web, <strong>Recover a
+    List</strong>). Each version says which app saved it and what changed. If a list suddenly shrinks, a banner
+    warns you, and <span class="ui">Merge</span> puts the old entries back alongside the new ones, so nothing you
+    added since is lost.</p>
+<p><span class="ui">Look up and back up my lists</span> (on by default, on the Vault dashboard; on Android also
+    while you set up) goes further back: it asks history relays for older copies of your lists, the way the
+    Lazarus spec finds them, and saves them in your list history. A follow list another app emptied months ago can
+    still come back. It runs from the Vault's Still to bring in card, as <span class="ui">Old versions of your
+    lists</span>.</p>
 </section>
 
 <section id="deleted">

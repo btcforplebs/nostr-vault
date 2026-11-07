@@ -6,14 +6,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>What's new — Nostr Vault Docs</title>
-    <meta name="description" content="Nostr Vault release notes for iPhone, Mac and Android: 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.">
+    <meta name="description" content="Nostr Vault release notes for iPhone, iPad, Mac, Android and the web: 3.2.0 with two-scan device linking and vault copy, 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.">
     <link rel="canonical" href="https://nostrvault.app/docs/whats-new/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/whats-new/">
     <meta property="og:title" content="What's new — Nostr Vault Docs">
-    <meta property="og:description" content="Nostr Vault release notes for iPhone, Mac and Android: 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.">
+    <meta property="og:description" content="Nostr Vault release notes for iPhone, iPad, Mac, Android and the web: 3.2.0 with two-scan device linking and vault copy, 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -22,7 +22,7 @@
     <link rel="stylesheet" href="/menu.css?v=20261025">
     <link rel="stylesheet" href="/docs/docs.css?v=20261025">
     <script src="/docs/docs.js?v=20261025" defer></script>
-    <script src="/menu.js?v=20261101" defer></script>
+    <script src="/menu.js?v=20261107" defer></script>
 </head>
 
 <body class="docs-body">
@@ -130,10 +130,93 @@
         <main class="docs-main">
             <p class="eyebrow">Help</p>
             <h1>What's new in <span>Nostr Vault</span></h1>
-            <p class="docs-lede">The release notes for iPhone, Mac and Android, newest first. Where a change is on only some of the apps, it says which.</p>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#3-1-0">3.1.0</a></li><li><a href="#3-0-0">3.0.0</a></li><li><a href="#2-7-2-build-40">2.7.2 (build 40)</a></li><li><a href="#2-7-2-build-39">2.7.2 (build 39)</a></li><li><a href="#2-7-2-first-builds">2.7.2 (first builds)</a></li></ul></div>
+            <p class="docs-lede">The release notes for iPhone, iPad, Mac, Android and the web, newest first. Where a change is on only some of the apps, it says which.</p>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#3-2-0">3.2.0</a></li><li><a href="#3-1-0">3.1.0</a></li><li><a href="#3-0-0">3.0.0</a></li><li><a href="#2-7-2-build-40">2.7.2 (build 40)</a></li><li><a href="#2-7-2-build-39">2.7.2 (build 39)</a></li><li><a href="#2-7-2-first-builds">2.7.2 (first builds)</a></li></ul></div>
 
             <article class="docs-article">
+                <section id="v3-2-0">
+                <p class="eyebrow">App Store and Zapstore &middot; iPhone, iPad, Mac, Android and the web</p>
+                <h2 id="3-2-0">3.2.0</h2>
+                <p>Nostr Vault is now on the <a class="inline" href="https://apps.apple.com/us/app/nostr-vault/id6759681282">App
+                    Store</a> for iPhone, iPad and Mac, and on <a class="inline" href="https://zapstore.dev/apps/com.nostrvault.app">Zapstore</a>
+                    for Android (build 76).</p>
+                <ul>
+                    <li><strong>Link your devices with two scans.</strong> <strong>Link a device</strong> in Mesh settings, or
+                        <strong>Add</strong> under Your devices on the Vault dashboard: one device shows a code, the other scans it,
+                        then they swap and check four words. Both devices add each other, so it's done once. No more copying
+                        addresses. Mesh settings are now on the Profile tab on iPhone and iPad, and in the profile-picture hold
+                        menu everywhere. See <a class="inline" href="/docs/mesh/my-devices/#add">Link a device</a>.</li>
+                    <li><strong>Copy your whole vault to a new device.</strong> When setup asks <strong>New to Nostr
+                        Vault?</strong>, <strong>Copy from my other vault</strong> links the two and copies your notes, photos and
+                        videos across over the mesh, on Wi-Fi or mobile data, with a moving bar and counts. Every account on the old
+                        device that can sign comes too, if you tick it. If the old device can't be reached it tries again every 15
+                        seconds, then offers Try again. See <a class="inline" href="/docs/mesh/my-devices/#copy">Copy your
+                        vault</a>.</li>
+                    <li><strong>Your new posts reach every linked phone.</strong> iPhones and Android phones send new notes and media
+                        to your other linked phones, not just to the Mac.</li>
+                    <li><strong>A simpler front door.</strong> <strong>Create an account</strong> or <strong>Bring an
+                        account</strong>. Setup asks two questions, then gets out of the way; what's left to import shows on the
+                        Vault tab under Still to bring in.</li>
+                    <li><strong>Get your old lists back.</strong> Moving in now has <strong>Look up and back up my lists</strong>,
+                        on by default: it finds older versions of your follow list and other lists on history relays (the Lazarus
+                        spec) and keeps them in your list history. <strong>List backups</strong> shows who saved each version, and
+                        Merge brings back what a buggy app removed. See <a class="inline" href="/docs/backup/#lists">List
+                        backups</a>.</li>
+                    <li><strong>Catch Up and Underrated feeds.</strong> Catch Up shows the newest post from each person you follow.
+                        Underrated finds good posts from people one step out, never your own follows. Both are worked out by your
+                        own vault, on the device. (iPhone, iPad, Mac and Android.) See <a class="inline" href="/docs/feeds/">Feeds</a>.</li>
+                    <li><strong>Big media imports.</strong> <strong>Import media</strong> on the Vault dashboard copies the photos and
+                        videos from every one of your notes into your vault, writing each file straight to disk, so long videos no
+                        longer run the app out of memory. It runs once by itself after your notes come in. See
+                        <a class="inline" href="/docs/media/#import-media">Import media</a>.</li>
+                    <li><strong>Videos in messages.</strong> The photo button in a conversation sends videos too. (iPhone, iPad, Mac
+                        and Android.)</li>
+                    <li><strong>Live now and On this day widgets.</strong> Live now shows people you follow who are live, tap to
+                        watch. On this day shows your own notes from this date one and two years ago. (iPhone, iPad and
+                        Android.)</li>
+                    <li><strong>iPad: Your space.</strong> A slim rail down the left, with the feeds you pin (Edit rail), and in
+                        landscape a column of panels beside the feed: Live Vault, Web of Trust, Messages, My devices, Live now and On
+                        this day. Edit it to add, remove and order them.</li>
+                    <li><strong>Picture in picture</strong> for live streams and feed videos, on iPhone, iPad, Mac and Android, and
+                        for live streams on the web. See <a class="inline" href="/docs/media/#pip">Picture in picture</a>.</li>
+                    <li><strong>Delete Account and Leave Nostr Forever.</strong> <strong>Delete Account</strong> deletes an account
+                        from this device and sends nothing. <strong>Leave Nostr Forever</strong>, under Settings &rarr; Advanced,
+                        publishes an empty profile and a request to every relay to erase the account, then wipes the device. (iPhone,
+                        iPad and Mac.) See <a class="inline" href="/docs/keys/#leave">Leave Nostr Forever</a>.</li>
+                    <li><strong>The share sheet does more.</strong> Share to Nostr Vault to make a picture or video post, keep an
+                        encrypted private copy, save for later, follow or mute a profile, pay or zap, or send privately. (iPhone,
+                        iPad, Mac and Android.)</li>
+                    <li><strong>Bookmarks.</strong> <strong>Bookmark</strong> in a note's &bull;&bull;&bull; menu, and Vault &rarr;
+                        Bookmarks to read them.</li>
+                    <li><strong>Messages</strong> moved into the Vault menu, with a <strong>Requests</strong> tray for people you
+                        don't follow and search that runs on the device.</li>
+                    <li><strong>Search</strong> shows who's <strong>Live now</strong> at the top.</li>
+                    <li><strong>Replies follow your web.</strong> Replies, quotes, article comments and live chat are screened by
+                        your web of trust, like the feeds.</li>
+                    <li><strong>Hide Nostr Vault logo on posts</strong>, under Settings &rarr; Appearance (off by default).</li>
+                    <li><strong>The web app catches up.</strong> It now has Your space and the slim rail on a desktop-size window,
+                        diVines, Polls, Bookmarks, the Feed Dashboard, Recipe, Highlight and diVine composers, Sell something in
+                        Marketplace, the Notifications page, the full Settings pages, Requests and search in Messages, Look up and
+                        back up my lists, saving your wallet connection to your account, and sign-in with a password-locked key
+                        (<strong>I have a password-locked key (ncryptsec)</strong>). It refreshes on its own like other Nostr
+                        apps.</li>
+                </ul>
+                <h3>Fixes</h3>
+                <ul>
+                    <li>Imports fetch everything: a relay that goes quiet no longer stalls the import, and the result says honestly
+                        what came in.</li>
+                    <li>Events too big for one database write are saved instead of dropped.</li>
+                    <li>Factory Reset waits for an import or a copy to finish, and forgets the old feed and follow list.</li>
+                    <li>Backup restore checks the backup is this vault's, and the Mac won't quit mid backup or restore.</li>
+                    <li>Paired devices sign over the mesh with their own device key, not your account key.</li>
+                    <li>A refused or unsent message never looks sent, and a send carries on if you leave the conversation.</li>
+                    <li>Fewer requests to your signer app: one vault sign-in per session.</li>
+                    <li>The feed no longer jumps to the top while you read; new posts slide in at the top.</li>
+                    <li>Uploads check with the media server first and show its reason if it refuses.</li>
+                    <li>The Relays page says why a relay didn't connect.</li>
+                </ul>
+                </section>
+
                 <section id="v3-1-0">
                 <p class="eyebrow">iPhone, Mac and Android</p>
                 <h2 id="3-1-0">3.1.0</h2>

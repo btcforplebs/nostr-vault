@@ -22,7 +22,7 @@
     <link rel="stylesheet" href="/menu.css?v=20261025">
     <link rel="stylesheet" href="/docs/docs.css?v=20261025">
     <script src="/docs/docs.js?v=20261025" defer></script>
-    <script src="/menu.js?v=20261101" defer></script>
+    <script src="/menu.js?v=20261107" defer></script>
 </head>
 
 <body class="docs-body">
@@ -131,7 +131,7 @@
             <p class="eyebrow">Media and sharing</p>
             <h1>Where your <span>photos</span> go.</h1>
             <p class="docs-lede">A note on Nostr is text. The photos in it live on media servers, and the note links to them. This page explains which servers Nostr Vault uses, how to change them, and how to keep your own copies.</p>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#what-a-media-server-is">What a media server is</a></li><li><a href="#where-a-photo-goes-when-you-post">Where a photo goes when you post</a></li><li><a href="#add-or-remove-a-media-server">Add or remove a media server</a></li><li><a href="#mirroring">Mirroring</a></li><li><a href="#deleting-a-photo">Deleting a photo</a></li><li><a href="#media-cache">Media &amp; Cache</a></li><li><a href="#uploading-from-the-share-sheet">Uploading from the share sheet</a></li><li><a href="#your-device-as-a-photo-server">Your device as a photo server</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#what-a-media-server-is">What a media server is</a></li><li><a href="#where-a-photo-goes-when-you-post">Where a photo goes when you post</a></li><li><a href="#add-or-remove-a-media-server">Add or remove a media server</a></li><li><a href="#mirroring">Mirroring</a></li><li><a href="#deleting-a-photo">Deleting a photo</a></li><li><a href="#media-cache">Media &amp; Cache</a></li><li><a href="#uploading-from-the-share-sheet">Uploading from the share sheet</a></li><li><a href="#import-media">Import media</a></li><li><a href="#picture-in-picture">Picture in picture</a></li><li><a href="#your-device-as-a-photo-server">Your device as a photo server</a></li></ul></div>
 
             <article class="docs-article">
                 <section id="servers">
@@ -236,8 +236,19 @@
                 <section id="share">
                 <p class="eyebrow">From other apps</p>
                 <h2 id="uploading-from-the-share-sheet">Uploading from the share sheet</h2>
-                <p>You can send photos and videos to Nostr Vault from your gallery or any other app, using the system
-                    share button. The two phones handle it differently:</p>
+                <p>You can send photos, videos, links and text to Nostr Vault from your gallery or any other app, using the
+                    system share button. Pick Nostr Vault and it offers what fits what you shared:</p>
+                <ul>
+                    <li><span class="ui">Picture or video post</span>: a new post with the photo or video.</li>
+                    <li><span class="ui">Keep a private copy</span>: an encrypted copy only you can open, listed under Private
+                        copies.</li>
+                    <li><span class="ui">Save for later</span>: a bookmark, in Vault &rarr; Bookmarks.</li>
+                    <li>A shared profile: <span class="ui">Follow, mute or add to a list</span> (Android:
+                        <span class="ui">Open profile</span>).</li>
+                    <li>A Lightning invoice or address: <span class="ui">Pay or zap</span> (Android: <span class="ui">Pay</span>).</li>
+                    <li><span class="ui">Send privately</span>: a direct message to someone you talk to.</li>
+                </ul>
+                <p>Plain uploads still work. The two phones handle them differently:</p>
                 <div class="docs-table-wrap">
                 <table>
                     <thead>
@@ -253,6 +264,38 @@
                 </div>
                 <p>On iPhone the upload happens in the app, not in the share sheet. That keeps your key out of the share
                     sheet, and a big video doesn't depend on the sheet staying open.</p>
+                </section>
+
+                <section id="import-media">
+                <p class="eyebrow">Bring your media home</p>
+                <h2 id="import-media">Import media</h2>
+                <p>On iPhone, iPad, Mac and Android, <span class="path">Vault Dashboard &rarr; Keep it full &rarr; Import media</span>
+                    goes through every one of your notes and copies the photos and videos they link into your vault. Tap
+                    <span class="ui">Import</span>. It runs once by itself after your notes first come in.</p>
+                <ul>
+                    <li>Each file is written straight to disk as it downloads, so big videos come in without running the app out
+                        of memory. Big files go one at a time.</li>
+                    <li>It checks free space first, and skips a file there's no room for.</li>
+                    <li>It works for read-only accounts too.</li>
+                    <li>The web app can't take files from your media servers; <strong>Back up media</strong> saves them to a file
+                        instead.</li>
+                </ul>
+                </section>
+
+                <section id="pip">
+                <p class="eyebrow">Keep watching</p>
+                <h2 id="picture-in-picture">Picture in picture</h2>
+                <p>Keep a video playing in a small window while you scroll or use another app.</p>
+                <ul>
+                    <li><strong>iPhone and iPad:</strong> the <span class="ui">Picture in Picture</span> button next to mute on a feed
+                        video, or the PiP button in the full-screen and live player. A live stream reopened from the mini player
+                        can go to PiP too, and closing PiP leaves it playing in the mini player. The PiP window keeps clear of the
+                        dock.</li>
+                    <li><strong>Mac:</strong> the PiP button in the full-screen player.</li>
+                    <li><strong>Android:</strong> <span class="ui">Picture in picture</span> next to Full screen on a live stream,
+                        or the PiP chip on a feed video. Going to the home screen while a stream plays also opens it in PiP.</li>
+                    <li><strong>Web:</strong> the PiP button on the live stream player.</li>
+                </ul>
                 </section>
 
                 <section id="mesh">

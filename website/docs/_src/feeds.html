@@ -9,9 +9,9 @@
   "lede": "Nostr has no algorithm picking for you. Nostr Vault gives you a set of feeds, each a different way to look at Nostr, and you decide which ones you see and in what order.",
   "description": "Nostr Vault feeds: Following, Discover, Global, Popular, Media and the rest; Edit Feeds; the Web of Trust shield; languages; reposts, replies and auto-load; and how a new account fills its feed.",
   "labels": {
-    "ios": ["Following", "Discover", "Global", "Hashtags", "Popular", "Media", "diVines", "Articles", "Recipes", "Marketplace", "Live", "Polls", "Music", "Edit Feeds", "Reset to Default", "Web of Trust", "Everyone", "Everyone is locked", "All languages", "Auto-load", "Reposts", "Replies", "Expanded View", "Compact View", "Threaded View", "Feed & Display", "Show Reposts", "Show Replies", "Auto-Load New Posts", "Send Delay", "Reload Feed", "New Posts Pill", "Zaps Only", "Show ranks", "Report Post", "Block User", "Let's fill it", "Your Feeds", "Fill Your Feed"],
-    "android": ["Following", "Discover", "Global", "Hashtags", "Popular", "Media", "diVines", "Articles", "Recipes", "Marketplace", "Live", "Polls", "Music", "Edit Feeds", "Reset to Default", "Everyone", "Sensitive Content Warning", "All languages", "Show Reposts", "Show Replies", "Auto-Load New Posts", "Send Delay", "Reload Feed", "New Posts Pill", "Zaps Only"],
-    "web": ["Following", "Discover", "Global", "Popular", "Media", "Articles", "Recipes", "Marketplace", "Live", "Music", "Edit Feeds", "Reset to Default"]
+    "ios": ["Following", "Catch Up", "Underrated", "Collapse Menu on Scroll", "Discover", "Global", "Hashtags", "Popular", "Media", "diVines", "Articles", "Recipes", "Marketplace", "Live", "Polls", "Music", "Edit Feeds", "Reset to Default", "Web of Trust", "Everyone", "Everyone is locked", "All languages", "Auto-load", "Reposts", "Replies", "Expanded View", "Compact View", "Threaded View", "Feed & Display", "Show Reposts", "Show Replies", "Auto-Load New Posts", "Send Delay", "Reload Feed", "New Posts Pill", "Zaps Only", "Show ranks", "Report Post", "Block User", "Let's fill it", "Your Feeds", "Fill Your Feed"],
+    "android": ["Following", "Catch Up", "Underrated", "Discover", "Global", "Hashtags", "Popular", "Media", "diVines", "Articles", "Recipes", "Marketplace", "Live", "Polls", "Music", "Edit Feeds", "Reset to Default", "Everyone", "Sensitive Content Warning", "All languages", "Show Reposts", "Show Replies", "Auto-Load New Posts", "Send Delay", "Reload Feed", "New Posts Pill", "Zaps Only"],
+    "web": ["Following", "Discover", "Global", "Popular", "Media", "diVines", "Polls", "Articles", "Recipes", "Marketplace", "Live", "Music", "Edit Feeds", "Reset to Default"]
   }
 }
 -->
@@ -22,7 +22,11 @@
     slide up.</p>
 <ul>
     <li><strong>Following</strong>: people you follow. It's always on.</li>
+    <li><strong>Catch Up</strong>: the newest post from each person you follow, one each, from the last two weeks.
+        Quiet people don't get lost under busy ones.</li>
     <li><strong>Discover</strong>: the people your follows follow.</li>
+    <li><strong>Underrated</strong>: good posts from people one step out, never your own follows. Ranked by the
+        likes, reposts and zaps they get from your web, with a lift for people who post less.</li>
     <li><strong>Global</strong>: everyone in your <a class="inline" href="/docs/web-of-trust/">web of trust</a>,
         without replies.</li>
     <li><strong>Hashtags</strong>: the hashtags you follow.</li>
@@ -143,8 +147,13 @@
     <li><strong>iPhone, iPad and Android</strong> have everything on this page. Android puts Live before
         Marketplace and Send Delay under Appearance.</li>
     <li><strong>Mac</strong> has the same feeds and Edit Feeds.</li>
-    <li><strong>The web app</strong> has Following, Discover, Global, Hashtag, Popular, Media, Articles,
-        Recipes, Marketplace, Live and Music, and Edit Feeds. It doesn't have diVines, Polls, the shield or the
-        language filter.</li>
+    <li><strong>Catch Up and Underrated</strong> are worked out by your own vault on the device, so they're on
+        iPhone, iPad, Mac and Android, not the web app.</li>
+    <li><strong>iPhone and iPad:</strong> the tab bar shrinks while you scroll. Turn that off with
+        <span class="path">Settings &rarr; Appearance &rarr; Collapse Menu on Scroll</span> (the web app has it for
+        phone-size windows).</li>
+    <li><strong>The web app</strong> has Following, Discover, Global, Hashtag, Popular, Media, diVines, Articles,
+        Recipes, Marketplace, Live, Polls and Music, Edit Feeds, and the Web of Trust shield on Global. It doesn't
+        have Catch Up, Underrated or the language filter.</li>
 </ul>
 </section>

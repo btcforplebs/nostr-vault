@@ -21,9 +21,9 @@
             ['/#relay', 'Relay'],
         ] },
         { title: 'Get the app', links: [
-            ['https://testflight.apple.com/join/kN3zE1H1', 'iPhone and iPad (TestFlight)'],
+            ['https://apps.apple.com/us/app/nostr-vault/id6759681282', 'iPhone and iPad (App Store)'],
             ['https://zapstore.dev/apps/com.nostrvault.app', 'Android (Zapstore)'],
-            ['https://github.com/btcforplebs/nostr-vault/releases/latest', 'Mac'],
+            ['https://apps.apple.com/us/app/nostr-vault/id6759681282', 'Mac (App Store)'],
         ] },
         { title: 'More', links: [
             ['https://github.com/btcforplebs/nostr-vault', 'GitHub'],

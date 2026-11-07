@@ -5,15 +5,16 @@
   "section": "keys",
   "order": 1,
   "description": "What your Nostr keys are, where Nostr Vault keeps them, and how to add accounts, switch between them, back up your secret key and remove a key.",
-  "checked": "Nostr Vault 3.1.0 (51) and the web app",
+  "checked": "Nostr Vault 3.2.0 and the web app",
   "labels": {
     "ios": ["Accounts & Keys", "Add Account", "Npub", "Owner", "Remote Signer", "Local Key", "Switch to This Account", "Sign With",
             "Reveal Key", "Reveal Private Key", "Import Private Key", "Import Key", "Encrypt with Password", "Connect Remote Signer",
-            "Disconnect Remote Signer", "Remove Local Key", "Remove Account", "Tutorials", "Relays", "Save", "No signing key"],
+            "Disconnect Remote Signer", "Remove Local Key", "Delete Account", "Type DELETE to confirm", "Leave Nostr Forever", "Danger Zone",
+            "Hold to Leave Nostr Forever", "Tutorials", "Relays", "Save", "No signing key"],
     "android": ["Accounts & Keys", "Add Account", "Owner", "Remote Signer", "Amber", "Local Key", "Switch to this account", "Signing",
                 "Reveal Private Key", "Import Private Key", "Encrypt with Password", "Connect Remote Signer (NIP-46)", "Connect Remote Signer",
                 "Disconnect Remote Signer", "Remove Local Key", "Remove Account", "Relays"],
-    "mac": ["Accounts & Keys", "Add Account", "Switch account"],
+    "mac": ["Accounts & Keys", "Add Account", "Switch account", "Delete Account", "Leave Nostr Forever"],
     "web": ["Accounts & Keys", "Add Account", "Switch to This Account", "Sign out", "Remove Account", "Save and publish"]
   }
 }
@@ -114,9 +115,29 @@
         gone for good.</li>
     <li><span class="ui">Disconnect Remote Signer</span> drops the signer's connection. Reconnecting needs a fresh
         bunker link.</li>
-    <li><span class="ui">Remove Account</span> takes the account, and any key or signer for it, off this device.
-        Nothing on the relays changes, but you need the key again to sign back in.</li>
+    <li><strong>iPhone, iPad and Mac:</strong> <span class="ui">Delete Account</span>, at the bottom of the account's
+        page, deletes the account, and any key or signer for it, from this device. For your main account it deletes
+        this device's vault too. Type DELETE to confirm (<span class="ui">Type DELETE to confirm</span>). Nothing is
+        sent to relays, so your account and posts carry on everywhere else, and you need the key again to sign back
+        in.</li>
+    <li><strong>Android and web:</strong> <span class="ui">Remove Account</span> does the same: it takes the account,
+        and any key or signer for it, off this device. Nothing on the relays changes.</li>
 </ul>
+
+<h2 id="leave">Leave Nostr Forever</h2>
+<p>On iPhone, iPad and Mac only, <span class="path">Settings &rarr; Advanced &rarr; Danger Zone &rarr; Leave Nostr
+    Forever</span> closes your main account for good, not just on this device:</p>
+<ul>
+    <li>It publishes an empty profile, marked deleted, and a NIP-62 request asking every relay to erase the
+        account's events, to every relay the account uses and to your vault. Then it wipes everything on this
+        device.</li>
+    <li>Three warning screens come first. On the last, type the account's name (or the first 12 characters of its
+        npub) and hold <span class="ui">Hold to Leave Nostr Forever</span> for three seconds.</li>
+    <li>A relay may ignore the request, and copies other people or apps saved can't be called back. If no relay
+        takes it, you can try again or delete from this device only.</li>
+</ul>
+<div class="note"><p>This can't be undone. Your key still exists, but the account shows as deleted. To stop using
+    Nostr Vault on one device only, use <span class="ui">Delete Account</span> instead.</p></div>
 
 <h2 id="relay-list">Your relay list</h2>
 <p>Your relay list (NIP-65) tells other Nostr apps which relays you read from and write to, so they can find your

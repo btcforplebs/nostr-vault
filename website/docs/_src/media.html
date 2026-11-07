@@ -9,9 +9,9 @@
   "lede": "A note on Nostr is text. The photos in it live on media servers, and the note links to them. This page explains which servers Nostr Vault uses, how to change them, and how to keep your own copies.",
   "description": "Media servers (Blossom) in Nostr Vault: where photos go when you post, adding and removing servers, mirroring copies back to your device, the Media & Cache settings, and uploading from the share sheet.",
   "labels": {
-    "ios": ["Media Servers", "Media & Cache", "Waiting to send", "Try sending now", "Mirror Now", "Auto-Mirror Media", "Autoplay Videos", "Prefetch Profile Pictures", "Disable Media Cache", "Keep Media For", "Clear Media Cache", "Home vault sync", "Add to the upload queue", "Suggested", "Delete from media servers", "Delete everywhere"],
+    "ios": ["Import media", "Import", "Keep it full", "Picture or video post", "Keep a private copy", "Follow, mute or add to a list", "Save for later", "Pay or zap", "Send privately", "Add to the upload queue", "Picture in Picture", "Media Servers", "Media & Cache", "Waiting to send", "Try sending now", "Mirror Now", "Auto-Mirror Media", "Autoplay Videos", "Prefetch Profile Pictures", "Disable Media Cache", "Keep Media For", "Clear Media Cache", "Home vault sync", "Add to the upload queue", "Suggested", "Delete from media servers", "Delete everywhere"],
     "mac": ["Media Servers", "Media & Cache", "Waiting to send", "Try sending now", "Mirror Now", "Auto-Mirror Media", "Autoplay Videos", "Prefetch Profile Pictures", "Disable Media Cache", "Keep Media For", "Clear Media Cache"],
-    "android": ["Media Servers", "Media & Cache", "Try sending now", "Mirror Now", "Auto-Mirror Media", "Autoplay Videos", "Prefetch Profile Pictures", "Disable Media Cache", "Keep Media For", "Clear Media Cache", "Use Local Blossom Cache", "Home vault sync", "Delete from media servers", "Delete everywhere"],
+    "android": ["Import media", "Import", "Keep it full", "Picture or video post", "Keep a private copy", "Open profile", "Save for later", "Pay", "Send privately", "Picture in picture", "Media Servers", "Media & Cache", "Try sending now", "Mirror Now", "Auto-Mirror Media", "Autoplay Videos", "Prefetch Profile Pictures", "Disable Media Cache", "Keep Media For", "Clear Media Cache", "Use Local Blossom Cache", "Home vault sync", "Delete from media servers", "Delete everywhere"],
     "web": ["Media Servers", "Add", "Remove", "Save and publish", "Discard changes", "Test", "Load photos over the mesh", "Delete from media servers"]
   }
 }
@@ -119,8 +119,19 @@
 <section id="share">
 <p class="eyebrow">From other apps</p>
 <h2>Uploading from the share sheet</h2>
-<p>You can send photos and videos to Nostr Vault from your gallery or any other app, using the system
-    share button. The two phones handle it differently:</p>
+<p>You can send photos, videos, links and text to Nostr Vault from your gallery or any other app, using the
+    system share button. Pick Nostr Vault and it offers what fits what you shared:</p>
+<ul>
+    <li><span class="ui">Picture or video post</span>: a new post with the photo or video.</li>
+    <li><span class="ui">Keep a private copy</span>: an encrypted copy only you can open, listed under Private
+        copies.</li>
+    <li><span class="ui">Save for later</span>: a bookmark, in Vault &rarr; Bookmarks.</li>
+    <li>A shared profile: <span class="ui">Follow, mute or add to a list</span> (Android:
+        <span class="ui">Open profile</span>).</li>
+    <li>A Lightning invoice or address: <span class="ui">Pay or zap</span> (Android: <span class="ui">Pay</span>).</li>
+    <li><span class="ui">Send privately</span>: a direct message to someone you talk to.</li>
+</ul>
+<p>Plain uploads still work. The two phones handle them differently:</p>
 <div class="docs-table-wrap">
 <table>
     <thead>
@@ -136,6 +147,38 @@
 </div>
 <p>On iPhone the upload happens in the app, not in the share sheet. That keeps your key out of the share
     sheet, and a big video doesn't depend on the sheet staying open.</p>
+</section>
+
+<section id="import-media">
+<p class="eyebrow">Bring your media home</p>
+<h2>Import media</h2>
+<p>On iPhone, iPad, Mac and Android, <span class="path">Vault Dashboard &rarr; Keep it full &rarr; Import media</span>
+    goes through every one of your notes and copies the photos and videos they link into your vault. Tap
+    <span class="ui">Import</span>. It runs once by itself after your notes first come in.</p>
+<ul>
+    <li>Each file is written straight to disk as it downloads, so big videos come in without running the app out
+        of memory. Big files go one at a time.</li>
+    <li>It checks free space first, and skips a file there's no room for.</li>
+    <li>It works for read-only accounts too.</li>
+    <li>The web app can't take files from your media servers; <strong>Back up media</strong> saves them to a file
+        instead.</li>
+</ul>
+</section>
+
+<section id="pip">
+<p class="eyebrow">Keep watching</p>
+<h2>Picture in picture</h2>
+<p>Keep a video playing in a small window while you scroll or use another app.</p>
+<ul>
+    <li><strong>iPhone and iPad:</strong> the <span class="ui">Picture in Picture</span> button next to mute on a feed
+        video, or the PiP button in the full-screen and live player. A live stream reopened from the mini player
+        can go to PiP too, and closing PiP leaves it playing in the mini player. The PiP window keeps clear of the
+        dock.</li>
+    <li><strong>Mac:</strong> the PiP button in the full-screen player.</li>
+    <li><strong>Android:</strong> <span class="ui">Picture in picture</span> next to Full screen on a live stream,
+        or the PiP chip on a feed video. Going to the home screen while a stream plays also opens it in PiP.</li>
+    <li><strong>Web:</strong> the PiP button on the live stream player.</li>
+</ul>
 </section>
 
 <section id="mesh">
