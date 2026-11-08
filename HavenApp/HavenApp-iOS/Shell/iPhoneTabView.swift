@@ -35,22 +35,14 @@ struct iPhoneTabView: View {
     @State private var windowSize: CGSize = .zero
     @State private var leadingInset: CGFloat = 0
 
-    /// Debug builds only: `-NVFoldLayout YES` shows the open folding iPhone's
-    /// layout on an iPad simulator, as there is no simulator for that phone.
-    private static var forceFold: Bool {
-        #if DEBUG
-        UserDefaults.standard.bool(forKey: "NVFoldLayout")
-        #else
-        false
-        #endif
-    }
-
     /// iPad (regular width): every tab's list sits in a `NoteSplitPane`, in
     /// both orientations. An opened note covers the list, with ‹ Back, as on
     /// the web's desktop layout; landscape gives the right side to "Your
-    /// space" (`SpaceColumn`) instead. An open folding iPhone puts "Your
-    /// space" on the left half and the app on the right (`ShellLayout.fold`).
-    /// Always the same view tree, so rotating or unfolding keeps the tab, its
+    /// space" (`SpaceColumn`) instead. The iPhone Duo open on its side puts
+    /// "Your space" on the left half and the app on the right
+    /// (`ShellLayout.fold`); closed, it is the phone with the dock as a rail
+    /// on the right; open upright, the phone as is. Always the same view
+    /// tree, so rotating, folding or unfolding keeps the tab, its
     /// scroll position and any sheet open in it (the composer, with its text
     /// and photos). `horizontalSizeClass` is read before `body` sets every
     /// screen to compact, so it is the real one.
@@ -58,8 +50,7 @@ struct iPhoneTabView: View {
         ShellLayout.pick(
             isPhone: UIDevice.current.userInterfaceIdiom == .phone,
             regularWidth: horizontalSizeClass == .regular,
-            window: windowSize,
-            forceFold: Self.forceFold
+            window: windowSize
         )
     }
 
@@ -84,8 +75,9 @@ struct iPhoneTabView: View {
     }
 
     /// iPad in landscape: a slim rail left of the app (in place of the
-    /// dock) and "Your space" right of it. Open folding iPhone: "Your space"
-    /// left of the fold, the app right of it, the rail on the far right.
+    /// dock) and "Your space" right of it. iPhone Duo open on its side:
+    /// "Your space" left of the fold, the app right of it, the rail on the
+    /// far right. iPhone Duo closed: the app, the rail on the right.
     private var showsSpace: Bool { layout.hasSideRail }
 
     private var dockPlacement: DockInset.Placement {
@@ -170,7 +162,7 @@ struct iPhoneTabView: View {
                 SpaceColumn()
                     .transition(.move(edge: .trailing))
             }
-            if layout == .fold { sideRail(onRight: true) }
+            if layout.railOnRight { sideRail(onRight: true) }
         }
         .background {
             GeometryReader { geo in
