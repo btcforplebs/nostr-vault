@@ -153,8 +153,11 @@ The owner-signed 24242 keeps working until the apps switch (`TODO(mesh-key)`).
    B's relay root (the parent of `DATABASE_PATH`, the folder holding `.env`; Apple: `haven_database/copy-settings.json`),
    and the app applies it (§5).
 9. **Relays.** The relay import job then runs as in setup, for anything A lacked.
-10. **Done.** B calls `POST /copy/v2/<id>/done`. A deletes `copy-<id>/`, now or 24 h after the build, whichever
-    comes first. B deletes its parts once they are restored.
+10. **Done.** Only when B wrote everything it restored (§3.2 partial). B calls `POST /copy/v2/<id>/done`. A
+    deletes `copy-<id>/`, now or 24 h after the build, whichever comes first. B deletes its parts once they are
+    restored, and records the copy's `created_at` as the last good catch-up, unless a file the manifest counts did
+    not come (damaged in the zip, or missing from it) or a store's entry could not be read to the end: then B drops
+    any catch-up it had recorded for A, so the first catch-up compares everything and asks A for what is missing.
 
 ### 3.1 Manifest (`GET /copy/v2/<id>`)
 
@@ -197,6 +200,11 @@ B's state file `copy-<id>.state.json` holds:
 - **Whole parts:** once a part is whole, B checks its sha256. On a mismatch, B clears that part's chunks and fetches
   it once more. A second mismatch is `hash_mismatch`.
 - **Restores re-run safely:** everything dedupes by event id and sha256.
+- **Partial:** an event, file or blob record B fails to write (a store error, a full disk) leaves the copy partial,
+  not done: the run ends with `partial`, B keeps both parts and the state (which names what failed in `partial`),
+  never calls `/done` and records no catch-up. The next attempt resumes with the held token, reuses the whole parts
+  B kept, and restores again. A file that arrives damaged inside a part that passed its hash can't come right from
+  the same zip, so it does not make the copy partial (step 10).
 
 ### 3.3 Progress lines (`progress-v2-lines.json`)
 
@@ -349,8 +357,13 @@ The app calls the engine when a linked device comes into reach. The engine then:
 2. **Every event either side stores from the other** passes the same checks as a restore: id hash, signature,
    author filter per store. An event marked deleted on the receiver is not stored. One that the sender's own
    deletions mark is not sent (fixes #14 and #15).
-3. **Media.** `GET /copy/v2/sync/files?since=<t>` lists the owner's own files (§4) added since then. Each missing one is
-   fetched with `GET /copy/v2/sync/file/<sha256>` and hash-checked.
+3. **Media.** `GET /copy/v2/sync/files?since=<t>` lists the owner's own files (§4) added since then:
+   `{files: […], more: bool}`, newest first (a second's files by sha256), at most 2000 per answer. With `more`, B
+   asks again with `&until=<created_at>&after=<sha256>` of the last file it got. Each missing one is fetched with
+   `GET /copy/v2/sync/file/<sha256>` and hash-checked: a 404 (not an own file, or gone) or a hash mismatch is
+   skipped, any other answer ends the round unrecorded. B records the catch-up only when it read every page: an A
+   that ignores the cursor (an older engine) sends the same page again, and B stops there without recording, so
+   older files stay in the next round's window.
 4. **Settings** (§5).
 
 Before the notes, **accounts** (§3.4): B `GET /copy/v2/sync/accounts` and takes A's, then `PUT`s its own, which A
@@ -379,6 +392,7 @@ Every code, where it comes from, and what B does.
 | `hash_mismatch` | 3 bad tries on one chunk, or a whole part twice | stops; the next reconnect starts over |
 | `unreachable` | no link | the pending copy tries again every 15 s (resuming with the held token) for 5 min from the first miss, then shows a failed state with Try again (a fresh 5 min); a reconnect also resumes it. A catch-up is not retried |
 | `nothing_restored` | the restore stored nothing | shows the error, never "Done" |
+| `partial` | B failed to write some of what it restored (§3.2) | keeps both parts and the state, never "Done"; the next reconnect resumes and restores again |
 | `settings_refused` | §5 | finishes without settings, one line saying so |
 | `cancelled` | the user stopped it | keeps the state for a later resume |
 

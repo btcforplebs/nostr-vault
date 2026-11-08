@@ -192,6 +192,7 @@ object MeshCopyV2 {
         "hash_mismatch" to Err(null, Action.RESTART_NEXT_RECONNECT, "The copy from {name} arrived damaged; it starts over next time"),
         "unreachable" to Err(null, Action.RESUME_NEXT_RECONNECT, "Waiting for {name}"),
         "nothing_restored" to Err(null, Action.STOP, "Nothing in the copy could be restored"),
+        "partial" to Err(null, Action.RESUME_NEXT_RECONNECT, "Some of the copy from {name} didn't save; it tries again next time"),
         "settings_refused" to Err(null, Action.CONTINUE, "Settings weren't copied: they held something that must stay on {name}"),
         "cancelled" to Err(null, Action.KEEP_STATE, "Copy stopped"),
     )
