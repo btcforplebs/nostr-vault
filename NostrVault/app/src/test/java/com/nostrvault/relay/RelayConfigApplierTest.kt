@@ -30,7 +30,6 @@ class RelayConfigApplierTest {
     @Test
     fun `app-side settings leave the relay's start unchanged`() {
         val appSide = listOf(
-            base.copy(feedRelays = listOf("wss://feed.example")),
             base.copy(activeAccountNpub = "npub1other"),
             base.copy(blockedNpubs = listOf("npub1blocked")),
             base.copy(autoplayVideos = !base.autoplayVideos),
@@ -51,6 +50,8 @@ class RelayConfigApplierTest {
             base.copy(relayPort = 4000),
             base.copy(logLevel = "debug"),
             base.copy(importSeedRelays = base.importSeedRelays + "wss://seed.example"),
+            // The vault reads the owner's read relays now (VaultSeedRelays).
+            base.copy(feedRelays = listOf("wss://feed.example")),
             base.copy(blastrRelays = base.blastrRelays + "wss://blast.example"),
             base.copy(dmRelays = base.dmRelays + "wss://dm.example"),
             // The relay copies from the Mac itself (MAC_RELAY_URL), as on iOS.
@@ -91,7 +92,7 @@ class RelayConfigApplierTest {
     @Test
     fun `an app-side save never restarts the relay`() = runTest {
         val h = Harness(this)
-        h.save(base.copy(feedRelays = listOf("wss://feed.example")))
+        h.save(base.copy(cacheTTLDays = base.cacheTTLDays + 1))
         advanceUntilIdle()
         assertTrue(h.restartStarts.isEmpty())
     }
@@ -129,7 +130,7 @@ class RelayConfigApplierTest {
         h.save(changed)
         repeat(10) { n ->
             advanceTimeBy(500)
-            h.save(changed.copy(feedRelays = listOf("wss://feed$n.example")))
+            h.save(changed.copy(cacheTTLDays = base.cacheTTLDays + n + 1))
         }
         advanceUntilIdle()
         assertEquals(listOf(QUIET), h.restartStarts)

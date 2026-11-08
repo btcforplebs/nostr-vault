@@ -7,6 +7,7 @@ import com.nostrvault.data.remote.LocalTls
 import com.nostrvault.relay.AccountBunkerConfig
 import com.nostrvault.relay.DamusDefaults
 import com.nostrvault.relay.DeadRelays
+import com.nostrvault.relay.VaultSeedRelays
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.relay.RelayConfigApplier
@@ -217,6 +218,8 @@ class ConfigStore @Inject constructor(
         // Saved below: the marker means it never runs again, so the file must change too.
         val beforeDamus = loaded
         loaded = DamusDefaults.droppingOnce(loaded, File(context.filesDir, "damus_import_dropped"))
+        // The vault reads the owner's own list; saved import seeds keep only their picks.
+        loaded = VaultSeedRelays.keepingOnlyPicks(loaded)
         val droppedDamus = loaded !== beforeDamus
 
         // Multi-account migration: seed the owner's signing mode so

@@ -9,7 +9,18 @@ import org.junit.Test
 /** Mirrors iOS FeedOutboxPlanTests (#227). */
 class FeedOutboxPlanTest {
     private val feed = listOf("wss://relay.primal.net", "wss://nostr-pub.wellorder.net")
-    private val fallback = FeedOutboxPlan.FALLBACK_RELAY
+    /** The fallback mechanism, tested with a relay of the test's own: the app passes none (Logen 2026-11-08). */
+    private val fallback = "wss://fallback.example"
+
+    /** No hidden relay: a follow with no list is reached only through the owner's own relays. */
+    @Test
+    fun `no fallback relay by default`() {
+        val plan = FeedOutboxPlan.plan(
+            follows = listOf("a", "b"), writeRelays = mapOf("b" to listOf("wss://relay.damus.io")), feedRelays = feed,
+        )
+        assertEquals(mapOf("wss://relay.damus.io" to listOf("b")), plan)
+        assertTrue(plan.keys.none { "ditto" in it })
+    }
 
     /**
      * A follow who writes to a feed relay is already covered and costs no
@@ -20,7 +31,7 @@ class FeedOutboxPlanTest {
         val plan = FeedOutboxPlan.plan(
             follows = listOf("a", "b", "c"),
             writeRelays = mapOf("a" to listOf("wss://nostr-pub.wellorder.net/"), "b" to listOf("wss://relay.damus.io"), "c" to emptyList()),
-            feedRelays = feed,
+            feedRelays = feed, fallbackRelay = fallback,
         )
         assertEquals(mapOf("wss://relay.damus.io" to listOf("b"), fallback to listOf("c")), plan)
     }
@@ -75,7 +86,7 @@ class FeedOutboxPlanTest {
                 "wss://192.168.1.4", "wss://localhost", "wss://box.local",
             ),
         )
-        val plan = FeedOutboxPlan.plan(follows = listOf("a"), writeRelays = lists, feedRelays = feed)
+        val plan = FeedOutboxPlan.plan(follows = listOf("a"), writeRelays = lists, feedRelays = feed, fallbackRelay = fallback)
         assertEquals("no usable relay = no list", mapOf(fallback to listOf("a")), plan)
     }
 
@@ -95,7 +106,7 @@ class FeedOutboxPlanTest {
         assertEquals(mapOf("wss://relay.damus.io" to listOf("a")), plan)
         val onlyDown = FeedOutboxPlan.plan(
             follows = listOf("b"), writeRelays = mapOf("b" to listOf("wss://relay.damus.io")),
-            feedRelays = feed, unreachableRelays = listOf("wss://relay.damus.io"),
+            feedRelays = feed, unreachableRelays = listOf("wss://relay.damus.io"), fallbackRelay = fallback,
         )
         assertEquals("never pick a down relay", mapOf(fallback to listOf("b")), onlyDown)
     }
@@ -109,13 +120,13 @@ class FeedOutboxPlanTest {
         val plan = FeedOutboxPlan.plan(
             follows = listOf("a", "b", "c"),
             writeRelays = mapOf("b" to listOf(fallback, "wss://relay.damus.io"), "c" to listOf("wss://relay.damus.io")),
-            feedRelays = feed,
+            feedRelays = feed, fallbackRelay = fallback,
         )
         assertEquals(listOf("a", "b"), plan[fallback])
         assertEquals(listOf("c"), plan["wss://relay.damus.io"])
         assertTrue(
             "a fallback already among the feed relays costs nothing",
-            FeedOutboxPlan.plan(follows = listOf("a"), writeRelays = emptyMap(), feedRelays = feed + fallback).isEmpty(),
+            FeedOutboxPlan.plan(follows = listOf("a"), writeRelays = emptyMap(), feedRelays = feed + fallback, fallbackRelay = fallback).isEmpty(),
         )
         assertTrue(
             FeedOutboxPlan.plan(follows = listOf("a"), writeRelays = emptyMap(), feedRelays = feed, fallbackRelay = null).isEmpty(),
@@ -125,7 +136,7 @@ class FeedOutboxPlanTest {
     @Test
     fun `the fallback counts toward the cap`() {
         val lists = (0 until 20).associate { "p$it" to listOf("wss://r$it.example") }
-        val plan = FeedOutboxPlan.plan(follows = lists.keys + "unlisted", writeRelays = lists, feedRelays = feed)
+        val plan = FeedOutboxPlan.plan(follows = lists.keys + "unlisted", writeRelays = lists, feedRelays = feed, fallbackRelay = fallback)
         assertEquals(FeedOutboxPlan.MAX_EXTRA_RELAYS, plan.size)
         assertEquals(listOf("unlisted"), plan[fallback])
     }

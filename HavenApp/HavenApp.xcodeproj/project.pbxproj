@@ -26,6 +26,7 @@
 		02AE51ADC7667C23ACBD9030 /* FeedMenuEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF46EC38139B1B7E27E8114C /* FeedMenuEditor.swift */; };
 		02C56DADF8359B80C31AFCF8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 915DF9A0796218139DE0703E /* Assets.xcassets */; };
 		02CE0ED0297D5285BF75D076 /* MeshCopyV2Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B9E478F433669EF4773A33E /* MeshCopyV2Service.swift */; };
+		02D60A05486E27106615465D /* VaultSeedRelays.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCCEF6A04471A1EE6CC26A7 /* VaultSeedRelays.swift */; };
 		02DDC26D86827A85D18DD2BA /* VaultDataProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB0CF7D47686F1256BEF99DB /* VaultDataProcessing.swift */; };
 		02E4607DB895BC1BF47BC315 /* DMService+Persistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAC81DE3E07D6D955930EB56 /* DMService+Persistence.swift */; };
 		030FF35B36CBFC4F36DB234A /* FIPSDetectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAD62347E7E49CB5F2D3C53B /* FIPSDetectionService.swift */; };
@@ -1514,6 +1515,7 @@
 		BC149F5EF1080D3A330334B6 /* Bolt11.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC971B12438093F727E8967F /* Bolt11.swift */; };
 		BC9069B485D3CCF79BDD4AC7 /* HighlightPageLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66E432CD99DC05DA1799FCF /* HighlightPageLink.swift */; };
 		BD5A27165C17582AFFB599EF /* AvatarThumbnail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0802E590CDCCA7978BB8D2C6 /* AvatarThumbnail.swift */; };
+		BD5BFB3341B91B7CD9B412CE /* VaultSeedRelays.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCCEF6A04471A1EE6CC26A7 /* VaultSeedRelays.swift */; };
 		BDA2EED14D678BC16890F89F /* BlossomDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3B2353A9CF349D2A6B43DA8 /* BlossomDashboardView.swift */; };
 		BDA363DC95254A47E3D4703E /* HavenConfig+RelayRoles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 327390102914F7A1B1AED7A0 /* HavenConfig+RelayRoles.swift */; };
 		BDA371CA11607DA757613AFB /* ReturnSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0039FDA639F750CD6823F0C /* ReturnSummary.swift */; };
@@ -2165,6 +2167,7 @@
 		0DB5A549483647677783FDC9 /* PollCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollCardView.swift; sourceTree = "<group>"; };
 		0DCBFE5F177EF3E08A2B49DF /* NVWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVWidgetSnapshot.swift; sourceTree = "<group>"; };
 		0DCC058D0D2E82973E7CFE31 /* FeedService+NoteBatching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+NoteBatching.swift"; sourceTree = "<group>"; };
+		0DCCEF6A04471A1EE6CC26A7 /* VaultSeedRelays.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultSeedRelays.swift; sourceTree = "<group>"; };
 		0DD61BE8DFF662A086B42872 /* NIP17Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP17Service.swift; sourceTree = "<group>"; };
 		0DD7883731DDC979352C81DE /* DashboardView+StatusHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DashboardView+StatusHeader.swift"; sourceTree = "<group>"; };
 		0DEF13C08E09135E0133D49F /* HighlightRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightRow.swift; sourceTree = "<group>"; };
@@ -4328,6 +4331,7 @@
 				2EEB872564518AF0F379EEA9 /* VaultMeter.swift */,
 				17D5FD74D905BFF2FB07AFF4 /* VaultNoteScope.swift */,
 				60872FCCCF59C889353D525F /* VaultSearchLogic.swift */,
+				0DCCEF6A04471A1EE6CC26A7 /* VaultSeedRelays.swift */,
 				1C421342CE309F6D5E901538 /* VaultSessionCore.swift */,
 				FF21CF6914CD51F0FB36D7B3 /* VaultTopics.swift */,
 				0B5E98764373253F27F8526F /* VertexReputation.swift */,
@@ -6043,6 +6047,7 @@
 				0503E16608673524E6FB14EC /* VaultSearchBar.swift in Sources */,
 				305543D05B24677D3185A8E9 /* VaultSearchLogic.swift in Sources */,
 				3553989FE5735CE97BCB1848 /* VaultSearchResults.swift in Sources */,
+				02D60A05486E27106615465D /* VaultSeedRelays.swift in Sources */,
 				3A942403FE036CEE30A317C9 /* VaultSessionCore.swift in Sources */,
 				D47D70ECF006E3E8495E8F7F /* VaultSocket.swift in Sources */,
 				877A4D383E8C194407386DBC /* VaultTabHoldItem.swift in Sources */,
@@ -7056,6 +7061,7 @@
 				7490BB8400281B5F1160493C /* VaultSearchBar.swift in Sources */,
 				AFADB5BDCA19AECC36373E4C /* VaultSearchLogic.swift in Sources */,
 				734DE40CDD82756ED3875A94 /* VaultSearchResults.swift in Sources */,
+				BD5BFB3341B91B7CD9B412CE /* VaultSeedRelays.swift in Sources */,
 				E5439312A59DE5AFE1C0FF61 /* VaultSessionCore.swift in Sources */,
 				0A2BC17BD50DA203AF274ECD /* VaultSocket.swift in Sources */,
 				B0EE7DC4594BAA8CB1C4ACEF /* VaultTabView.swift in Sources */,

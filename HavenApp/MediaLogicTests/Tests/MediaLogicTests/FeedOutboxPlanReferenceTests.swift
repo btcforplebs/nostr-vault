@@ -6,6 +6,9 @@ import XCTest
 /// list: a few big relays shared by many follows, a long tail of small ones,
 /// down relays, follows with no list, and a fallback some listed follows use.
 final class FeedOutboxPlanReferenceTests: XCTestCase {
+    /// The mechanism's fallback, the test's own (the app passes none).
+    static let fallback = "wss://fallback.example"
+
     func testMatchesTheSetBasedGreedyOnRandomFollowLists() {
         var rng = SeededGenerator(seed: 0x5eed)
         for round in 0..<200 {
@@ -13,7 +16,7 @@ final class FeedOutboxPlanReferenceTests: XCTestCase {
             let cap = round % 5 == 0 ? Int.random(in: 0...3, using: &rng) : FeedOutboxPlan.maxExtraRelays
             let fast = FeedOutboxPlan.plan(follows: inputs.follows, writeRelays: inputs.writeRelays,
                                            feedRelays: inputs.feedRelays, unreachableRelays: inputs.down,
-                                           maxExtraRelays: cap)
+                                           fallbackRelay: Self.fallback, maxExtraRelays: cap)
             let slow = Self.referencePlan(follows: inputs.follows, writeRelays: inputs.writeRelays,
                                           feedRelays: inputs.feedRelays, unreachableRelays: inputs.down,
                                           maxExtraRelays: cap)
@@ -30,7 +33,7 @@ final class FeedOutboxPlanReferenceTests: XCTestCase {
 
     private static func randomInputs(_ rng: inout SeededGenerator, follows count: Int) -> RandomInputs {
         let big = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net",
-                   "wss://relay.nostr.band", FeedOutboxPlan.fallbackRelay]
+                   "wss://relay.nostr.band", Self.fallback]
         let tail = (0..<60).map { "wss://r\($0).example" }
         let follows = (0..<count).map { "p\($0)" }
         var lists: [String: [String]] = [:]
@@ -53,7 +56,7 @@ final class FeedOutboxPlanReferenceTests: XCTestCase {
                                       writeRelays: [String: [String]],
                                       feedRelays: [String],
                                       unreachableRelays: [String],
-                                      fallbackRelay: String? = FeedOutboxPlan.fallbackRelay,
+                                      fallbackRelay: String? = FeedOutboxPlanReferenceTests.fallback,
                                       maxExtraRelays: Int) -> [String: [String]] {
         let normalizedKey = FeedOutboxPlan.normalizedKey
         let down = Set(unreachableRelays.compactMap(normalizedKey))

@@ -258,8 +258,10 @@ func ownerFollowListAt() time.Time {
 
 // feedSyncRelays picks the external relay set to reconcile the feed against:
 // FEED_SYNC_RELAYS_FILE when configured, otherwise blastr ∪ import seed
-// relays (the same relays the clients read their feeds from), minus the
-// bulkReadExcludedHosts.
+// relays (the owner's own write and read relays and their picks, the same
+// relays the clients read their feeds from), minus the
+// bulkReadExcludedHosts. The follows' own write relays are added per round
+// on top of these (feedOutboxPlan).
 func feedSyncRelays() []string {
 	if len(config.FeedSyncRelays) > 0 {
 		return config.FeedSyncRelays
@@ -428,6 +430,21 @@ func syncFeed(ctx context.Context) {
 		if len(fallback) > 0 && ctx.Err() == nil {
 			log.Println("📚 feed catch-up pull since", time.Unix(int64(fsince), 0).Format(time.RFC3339), "on", len(fallback), "relays")
 			complete = feedFallbackPull(ctx, fallback, commonFilter, func(ev *nostr.Event) { store.Publish(ctx, *ev) }, feedShortRounds)
+			if ctx.Err() != nil {
+				return
+			}
+		}
+
+		// The follows the owner's relays don't reach, where they post
+		// (feedsync_outbox.go): at most feedOutboxMaxExtra extra relays.
+		if ctx.Err() == nil {
+			plan := feedOutboxPlan(authors, followWriteRelays(ctx, authors, relays), relays, feedOutboxMaxExtra)
+			if len(plan) > 0 {
+				log.Println("📚 feed outbox pull on", len(plan), "of the follows' own relays")
+				if !pullFeedOutbox(ctx, plan, rsince, fsince, func(ev *nostr.Event) { store.Publish(ctx, *ev) }, feedShortRounds) {
+					complete = false
+				}
+			}
 			if ctx.Err() != nil {
 				return
 			}

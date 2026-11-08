@@ -16,14 +16,15 @@ import java.net.URI
  * greedy cover picks the few relays that reach the most uncovered follows,
  * and each is asked only for the follows it was picked for.
  *
- * Most follows publish no relay list at all (581 of those 992), so they go
- * to one fallback relay. Of their notes over three hours, the feed relays
- * had 53 of 59; relay.ditto.pub had all 59. Re-measure before changing it.
+ * Most follows publish no relay list at all (581 of those 992). They are
+ * reached only through the owner's own read relays: the hidden fallback relay
+ * (relay.ditto.pub) is gone, so the feed asks no relay the owner did not pick
+ * or a follow did not list (Logen 2026-11-08). [plan]'s `fallbackRelay` stays
+ * for tests of the mechanism. Same as iOS.
  */
 object FeedOutboxPlan {
-    /** Extra sockets the feed may open on top of the feed relays, fallback included. */
+    /** Extra sockets the feed may open on top of the feed relays. */
     const val MAX_EXTRA_RELAYS = 8
-    const val FALLBACK_RELAY = "wss://relay.ditto.pub"
 
     /**
      * @param follows the authors the feed shows.
@@ -32,7 +33,7 @@ object FeedOutboxPlan {
      * @param unreachableRelays relays failing right now. A follow whose only
      *   feed relay is down is not reached by it, and a down relay is never picked.
      * @param fallbackRelay asked for the follows with no usable relay list;
-     *   null to skip them.
+     *   null (the default) skips them.
      * @return extra relay URL → the follows to ask it for (sorted). Each follow
      *   appears under one relay only: the first pick that reached them.
      */
@@ -59,7 +60,7 @@ object FeedOutboxPlan {
         writeRelays: Map<String, List<String>>,
         feedRelays: Collection<String>,
         unreachableRelays: Collection<String> = emptyList(),
-        fallbackRelay: String? = FALLBACK_RELAY,
+        fallbackRelay: String? = null,
         maxExtraRelays: Int = MAX_EXTRA_RELAYS,
     ): Map<String, List<String>> {
         val down = unreachableRelays.mapNotNull(::normalizedKey).toSet()

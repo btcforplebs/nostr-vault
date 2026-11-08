@@ -84,14 +84,8 @@ data class HavenConfig(
     // Import
     val importStartDate: String = "2023-01-01",
     val importSeedRelaysFile: String = "relays_import.json",
-    // relay.damus.io replaced nos.lol and nostr.mom (2026-10-07) and left
-    // again on 2026-10-31: damus bans and publicly lists an IP that sends it
-    // too many requests in a day, and this list is asked every inbox round.
-    val importSeedRelays: List<String> = listOf(
-        "wss://relay.primal.net",
-        "wss://relay.btcforplebs.com",
-        "wss://nostr-pub.wellorder.net",
-    ),
+    /** Extra relays the owner picked to import from, on top of their own read and write relays ([vaultSeedRelays]). Empty by default: the vault reads only the owner's own list (Logen 2026-11-08; [VaultSeedRelays]). */
+    val importSeedRelays: List<String> = emptyList(),
 
     // Backup
     val backupProvider: String = "",
@@ -557,10 +551,14 @@ data class HavenConfig(
             write = blastrRelays,
         )
 
+    /** What the vault reads from: the owner's read and write relays plus their own extra importing picks. No hidden seed list ([VaultSeedRelays]). */
+    val vaultSeedRelays: List<String>
+        get() = VaultSeedRelays.vaultSeeds(feedRelays ?: activeInboxRelays, blastrRelays, importSeedRelays)
+
     /** Active import seed relays, including the Haven relay if configured. */
     val activeImportSeedRelays: List<String>
         get() {
-            val relays = importSeedRelays.toMutableList()
+            val relays = vaultSeedRelays.toMutableList()
             val macWss = macRelayWssURL
             if (macWss.isNotEmpty() && macWss !in relays) {
                 relays.add(0, macWss)

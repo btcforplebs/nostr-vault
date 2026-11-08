@@ -147,13 +147,13 @@ struct RelayCheckStep: View {
     // MARK: Actions
 
     private func runCheck() async {
-        // Their relay list says where their notes are; the defaults are
-        // where most people's notes also land.
+        // Their relay list says where their notes are; setup's suggested
+        // relays (the starter list) are where most people's notes also land.
         // The indexers too: a list made in another app may live only there.
         let list = await NostrService.shared.fetchNewestReplaceable(
-            kind: 10002, for: pubkey, alsoAsk: configService.config.importSeedRelays + RelayDraft.indexers
+            kind: 10002, for: pubkey, alsoAsk: configService.config.vaultSeedRelays + RelayDraft.indexers
         )
-        rows = RelayCheck.rows(relayListTags: list?.tags ?? [], defaults: HavenConfig().importSeedRelays)
+        rows = RelayCheck.rows(relayListTags: list?.tags ?? [], defaults: HavenConfig.starterRelays)
         await withTaskGroup(of: (String, RelayCheck.Result).self) { group in
             for row in rows {
                 group.addTask { @MainActor in
@@ -184,7 +184,7 @@ struct RelayCheckStep: View {
     }
 
     private func start() {
-        let picks = RelayCheck.splitPicks(rows, defaults: HavenConfig().importSeedRelays)
+        let picks = RelayCheck.splitPicks(rows, defaults: HavenConfig.starterRelays)
         if !picks.fixed.isEmpty { configService.config.importSeedRelays = picks.fixed }
         configService.save()
         onStart(picks.own)

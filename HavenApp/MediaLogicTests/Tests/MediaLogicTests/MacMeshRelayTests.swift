@@ -56,7 +56,8 @@ final class MacMeshRelayTests: XCTestCase {
         XCTAssertEqual(config.macRelayHttpsURL, "")
         XCTAssertEqual(config.activeFeedRelays, ["wss://a.example"])
         XCTAssertEqual(config.activeBlastrRelays, ["wss://w.example"])
-        XCTAssertEqual(config.activeImportSeedRelays, [])
+        // The vault reads the owner's own lists (VaultSeedRelays), never the mesh npub.
+        XCTAssertEqual(config.activeImportSeedRelays, ["wss://a.example", "wss://w.example"])
         XCTAssertFalse(config.ownPublicRelays.contains { $0.contains("npub1") })
     }
 

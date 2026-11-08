@@ -185,9 +185,15 @@ extension HavenConfig {
         return relays
     }
 
+    /// What the vault reads from: the owner's read and write relays plus
+    /// their own extra importing picks. No hidden seed list (VaultSeedRelays).
+    var vaultSeedRelays: [String] {
+        VaultSeedRelays.vaultSeeds(read: feedRelays, write: blastrRelays, chosen: importSeedRelays)
+    }
+
     /// Active import seed relays, including the Mac relay if configured.
     var activeImportSeedRelays: [String] {
-        var relays = importSeedRelays
+        var relays = vaultSeedRelays
         let macWss = macRelayWssURL
         if !macWss.isEmpty {
             if !relays.contains(macWss) {

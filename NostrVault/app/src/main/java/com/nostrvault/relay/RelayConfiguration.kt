@@ -316,7 +316,7 @@ object RelayConfiguration {
         resolveMacMeshRelay(config, dial)
         return LaunchInputs(
             env = generateEnvDictionary(config, relayDataDir),
-            importSeedRelays = config.importSeedRelays,
+            importSeedRelays = config.vaultSeedRelays,
             blastrRelays = blastrRelays(config, macMeshRelay),
             dmRelays = config.dmRelays,
             whitelist = VaultWhitelist.npubs(config),

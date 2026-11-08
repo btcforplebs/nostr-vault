@@ -70,7 +70,7 @@ import java.net.URL
 
                     // Write seed relays JSON and set env to ABSOLUTE path
                     val seedRelaysFile = File(relayDataDir, "relays_import.json")
-                    val seedRelays = config.importSeedRelays
+                    val seedRelays = config.vaultSeedRelays
                     val relaysJson = buildString {
                         append("[")
                         append(seedRelays.joinToString(",") { "\"$it\"" })
