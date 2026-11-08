@@ -30,18 +30,40 @@ struct iPhoneTabView: View {
         buttonRow.update(tabBarOnlyHeight: tabBarOnlyHeight)
     }
 
-    /// The window is wider than tall. Measured on the whole window, so the
-    /// keyboard coming up doesn't change it.
-    @State private var isLandscape = false
+    /// The whole window (safe area included) and the safe area on its left.
+    /// Measured on the whole window, so the keyboard coming up doesn't change it.
+    @State private var windowSize: CGSize = .zero
+    @State private var leadingInset: CGFloat = 0
+
+    /// Debug builds only: `-NVFoldLayout YES` shows the open folding iPhone's
+    /// layout on an iPad simulator, as there is no simulator for that phone.
+    private static var forceFold: Bool {
+        #if DEBUG
+        UserDefaults.standard.bool(forKey: "NVFoldLayout")
+        #else
+        false
+        #endif
+    }
 
     /// iPad (regular width): every tab's list sits in a `NoteSplitPane`, in
     /// both orientations. An opened note covers the list, with ‹ Back, as on
     /// the web's desktop layout; landscape gives the right side to "Your
-    /// space" (`SpaceColumn`) instead. Always the same view tree, so
-    /// rotating keeps the tab, its scroll position and any sheet open in it
-    /// (the composer, with its text and photos). `horizontalSizeClass` is read
-    /// before `body` sets every screen to compact, so it is the real one.
-    private var usesNoteSplit: Bool { horizontalSizeClass == .regular }
+    /// space" (`SpaceColumn`) instead. An open folding iPhone puts "Your
+    /// space" on the left half and the app on the right (`ShellLayout.fold`).
+    /// Always the same view tree, so rotating or unfolding keeps the tab, its
+    /// scroll position and any sheet open in it (the composer, with its text
+    /// and photos). `horizontalSizeClass` is read before `body` sets every
+    /// screen to compact, so it is the real one.
+    private var layout: ShellLayout {
+        ShellLayout.pick(
+            isPhone: UIDevice.current.userInterfaceIdiom == .phone,
+            regularWidth: horizontalSizeClass == .regular,
+            window: windowSize,
+            forceFold: Self.forceFold
+        )
+    }
+
+    private var usesNoteSplit: Bool { layout.usesNoteSplit }
 
     /// The tab's list in a `NoteSplitPane` when `usesNoteSplit`, otherwise as is.
     @ViewBuilder
@@ -62,8 +84,9 @@ struct iPhoneTabView: View {
     }
 
     /// iPad in landscape: a slim rail left of the app (in place of the
-    /// dock) and "Your space" right of it.
-    private var showsSpace: Bool { usesNoteSplit && isLandscape }
+    /// dock) and "Your space" right of it. Open folding iPhone: "Your space"
+    /// left of the fold, the app right of it, the rail on the far right.
+    private var showsSpace: Bool { layout.hasSideRail }
 
     private var dockPlacement: DockInset.Placement {
         DockInset.placement(dockShown: DockInset.shown(keyboardUp: keyboardUp, sideRail: showsSpace), keyboardUp: keyboardUp)
@@ -132,33 +155,35 @@ struct iPhoneTabView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            if showsSpace {
-                // The dock's items down the left side; the dock itself goes.
-                BottomTabBar(
-                    selectedTab: $selectedTab,
-                    searchPath: $searchPath,
-                    profilePath: $profilePath,
-                    mediaPath: $mediaPath,
-                    relayPath: $relayPath,
-                    configService: configService,
-                    relayManager: relayManager,
-                    nostrService: nostrService,
-                    dmService: dmService,
-                    feedService: feedService,
-                    vertical: true
-                )
+            if layout == .padLandscape { sideRail(onRight: false) }
+            if layout == .fold {
+                SpaceColumn(fillsFoldHalf: true)
+                    .frame(width: ShellLayout.foldLeftWidth(windowWidth: windowSize.width, leadingInset: leadingInset))
+                // Nothing on the crease.
+                Color.black
+                    .frame(width: ShellLayout.foldGutter)
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
             }
             tabs
-            if showsSpace {
+            if layout == .padLandscape {
                 SpaceColumn()
                     .transition(.move(edge: .trailing))
+            }
+            if layout == .fold { sideRail(onRight: true) }
+        }
+        .background {
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { leadingInset = geo.safeAreaInsets.leading }
+                    .onChange(of: geo.safeAreaInsets.leading) { _, inset in leadingInset = inset }
             }
         }
         .background {
             GeometryReader { geo in
                 Color.clear
-                    .onAppear { isLandscape = geo.size.width > geo.size.height }
-                    .onChange(of: geo.size) { _, size in isLandscape = size.width > size.height }
+                    .onAppear { windowSize = geo.size }
+                    .onChange(of: geo.size) { _, size in windowSize = size }
             }
             .ignoresSafeArea()
         }
@@ -166,6 +191,24 @@ struct iPhoneTabView: View {
         // no system toolbar row. Screens branch on the width class for that,
         // so every one below sees compact.
         .environment(\.horizontalSizeClass, .compact)
+    }
+
+    /// The dock's items down a side of the window; the dock itself goes.
+    private func sideRail(onRight: Bool) -> some View {
+        BottomTabBar(
+            selectedTab: $selectedTab,
+            searchPath: $searchPath,
+            profilePath: $profilePath,
+            mediaPath: $mediaPath,
+            relayPath: $relayPath,
+            configService: configService,
+            relayManager: relayManager,
+            nostrService: nostrService,
+            dmService: dmService,
+            feedService: feedService,
+            vertical: true,
+            railOnRight: onRight
+        )
     }
 
     private var tabs: some View {
