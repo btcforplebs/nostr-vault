@@ -1080,6 +1080,7 @@
 		881FF9D0BB68F04B0B0757D3 /* TrustWebView+LiveArcs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F2F07F17344362A67CFDF3A /* TrustWebView+LiveArcs.swift */; };
 		882F2AC7BF561F047511CDA1 /* NIP10Thread.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFA1340FD03E8DB6CA418503 /* NIP10Thread.swift */; };
 		884745C92BED138C5DAB0B07 /* NostrService+Connection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A294586C6E51A688A12CD2FE /* NostrService+Connection.swift */; };
+		885C8D829A568D5CAB109C3E /* MediaServersLeaveGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BC93ACBD97D55524099AE93 /* MediaServersLeaveGuard.swift */; };
 		886A82BE80C7ED6A5BBF085B /* TutorialStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90C7DCAD2158E32953277AED /* TutorialStage.swift */; };
 		88749853DF01C4222FC0CFD3 /* MediaCacheService+Playback.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF318FF14D794C94750A566D /* MediaCacheService+Playback.swift */; };
 		88BF1B94F99F153E14977D4A /* BackupSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0489624951EA3E66D2956960 /* BackupSettingsView.swift */; };
@@ -1277,6 +1278,7 @@
 		A0CEC635016806F2F27B35F8 /* NoteMediaURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = A040CB55969B89915509B7E4 /* NoteMediaURL.swift */; };
 		A0D8D9ED7C42C9933AB4888F /* ZapInvoiceCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5D2CE6DFCDE4E46DC7C6BB3 /* ZapInvoiceCheck.swift */; };
 		A1692EAF2AD8BD03C1191EE3 /* PrivateCopyReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 579A1C5EC941EABED1012F88 /* PrivateCopyReviewView.swift */; };
+		A1C7DEA58EB254B294CB8794 /* MediaServersDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEAE224EF3A8A96C61DF7CC0 /* MediaServersDraft.swift */; };
 		A23830E08BFDAE516043A625 /* StartupSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F93CB9AC3A12C978695F2627 /* StartupSettingsView.swift */; };
 		A24366F094575B0776593231 /* HomeVaultLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4DFF0F3B08146C008FD0857 /* HomeVaultLogic.swift */; };
 		A2466D5E5282712286740FE2 /* DraftService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3800D9290BD369F4F26BC5C3 /* DraftService.swift */; };
@@ -1662,6 +1664,7 @@
 		CFAC954EF7DFDE57D1667878 /* TrustWebView+MyWeb.swift in Sources */ = {isa = PBXBuildFile; fileRef = D069FB5194A04D262C4C449C /* TrustWebView+MyWeb.swift */; };
 		CFE920F1073C8063C4907027 /* RelayCountSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E80C9464564EDE937ADDFDDC /* RelayCountSession.swift */; };
 		D016ED896705E2C8A0C450E5 /* RelayStatusCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC6553829D621A65D21C14F7 /* RelayStatusCard.swift */; };
+		D0299BB67190AD393D2C4155 /* MediaServersDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEAE224EF3A8A96C61DF7CC0 /* MediaServersDraft.swift */; };
 		D04D39305F6A1088ECFBE1AE /* AudioPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7170B65E0299D14E11CEE3D8 /* AudioPlayerView.swift */; };
 		D060107D62CCECE6BE12F68D /* OpenInWebButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0E9EC6033EC8D3F3C783BC /* OpenInWebButton.swift */; };
 		D069D243CE1F93EB93C4BD7B /* NVLiveNowStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45A77B14EF0831DFFDED69C2 /* NVLiveNowStore.swift */; };
@@ -1838,6 +1841,7 @@
 		E3987DF06D639FD7B1B73D96 /* VideoScrubber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D905EF47BCDDE11DC1373D0 /* VideoScrubber.swift */; };
 		E39D3F9F80B7ED124F5AE5FA /* MacFipsMeshSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 621A96E074FD92012D0EEB20 /* MacFipsMeshSettingsView.swift */; };
 		E3B5AD952BB758EC71579187 /* MeshPairingConfirmWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F0E74199E8E25A07F27928B /* MeshPairingConfirmWindow.swift */; };
+		E3D6E6B3B28AF2245050EC56 /* MediaServersLeaveGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BC93ACBD97D55524099AE93 /* MediaServersLeaveGuard.swift */; };
 		E3E261106E739296E6F290C4 /* ContactManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4EFE6422E6E0A896809308 /* ContactManager.swift */; };
 		E405ECA10E10787620830F3F /* NVShareAction+Display.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11DACF33881364138C48F3B4 /* NVShareAction+Display.swift */; };
 		E449E2E084666AD88A404F90 /* RailPinsColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 667070BF7CD9F4EA19D897B6 /* RailPinsColumn.swift */; };
@@ -2626,6 +2630,7 @@
 		7AF18504D84D1E58D74B502E /* ImportJobsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportJobsService.swift; sourceTree = "<group>"; };
 		7B4C145BD660E4F7A185A677 /* WalletSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletSettingsView.swift; sourceTree = "<group>"; };
 		7B5E1DFD8D4BF82783CEDFDD /* PollComposeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollComposeView.swift; sourceTree = "<group>"; };
+		7BC93ACBD97D55524099AE93 /* MediaServersLeaveGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaServersLeaveGuard.swift; sourceTree = "<group>"; };
 		7BE7C8BF88EE91C6E05CD3DF /* GlobalFeedEmptyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalFeedEmptyState.swift; sourceTree = "<group>"; };
 		7C27B2F22F799426D3D276B3 /* BlossomDashboardComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDashboardComponents.swift; sourceTree = "<group>"; };
 		7C7A2A3CB521D10A7E697FAB /* UserStatusPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserStatusPublisher.swift; sourceTree = "<group>"; };
@@ -3178,6 +3183,7 @@
 		FE2060B412DD17816F0495D8 /* MediaItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaItem.swift; sourceTree = "<group>"; };
 		FE245B1EAB0D95B313A96D6B /* MeshKeyAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshKeyAuth.swift; sourceTree = "<group>"; };
 		FE65F95458326DF0C43FCEAC /* FilterButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterButton.swift; sourceTree = "<group>"; };
+		FEAE224EF3A8A96C61DF7CC0 /* MediaServersDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaServersDraft.swift; sourceTree = "<group>"; };
 		FEC8D69A1DD319E0BBC022F1 /* MediaDateGrouping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaDateGrouping.swift; sourceTree = "<group>"; };
 		FF21CF6914CD51F0FB36D7B3 /* VaultTopics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultTopics.swift; sourceTree = "<group>"; };
 		FF788B89ACD8B1FE30E03676 /* ComposerContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerContext.swift; sourceTree = "<group>"; };
@@ -3821,6 +3827,7 @@
 				C0CBC949CCC069EF2C665689 /* LockedKeyCopyButton.swift */,
 				B94D10CDC71BCC7F67AC26E1 /* MacRelayDomainSettingsView.swift */,
 				1576DDD7998A44384715676C /* MacRelaySettingsView.swift */,
+				7BC93ACBD97D55524099AE93 /* MediaServersLeaveGuard.swift */,
 				5446B1B39133DA8A4668484D /* MediaSettingsView.swift */,
 				E517737B5E573CFCD02EE444 /* MeshMediaServersSection.swift */,
 				9B276A92BC9E7E7EEBF20724 /* PrivacySettingsView.swift */,
@@ -4238,6 +4245,7 @@
 				FE2060B412DD17816F0495D8 /* MediaItem.swift */,
 				78947C68D9C77DF8F43687BF /* MediaNoteMatch.swift */,
 				177153C4A2D4AFBC483689BE /* MediaPostRetry.swift */,
+				FEAE224EF3A8A96C61DF7CC0 /* MediaServersDraft.swift */,
 				70378B160E275AD7443C4260 /* MediaShareLink.swift */,
 				64BBE97369E66B2804EFFC5F /* MediaVaultLink.swift */,
 				41CF6E91B459C440D659F195 /* MeshCopyV2.swift */,
@@ -5605,6 +5613,8 @@
 				C5363E6B50201CB7802A45E1 /* MediaPostShareHandler.swift in Sources */,
 				9287CB5F68BAC5CD06CD1FF0 /* MediaPostShareTags.swift in Sources */,
 				D6D7B75E3B62CB8764254858 /* MediaPrivacy.swift in Sources */,
+				D0299BB67190AD393D2C4155 /* MediaServersDraft.swift in Sources */,
+				885C8D829A568D5CAB109C3E /* MediaServersLeaveGuard.swift in Sources */,
 				534A6A8C88AC4C715A31F92A /* MediaServersPage.swift in Sources */,
 				4E97E650FA9A20975EF820C2 /* MediaSettingsView.swift in Sources */,
 				70C09988B3009E817EE8EC43 /* MediaShareLink.swift in Sources */,
@@ -6650,6 +6660,8 @@
 				B3C732E56C5484EA9CAF99BF /* MediaPostShareHandler.swift in Sources */,
 				1CB925192845B8F8219CD4B4 /* MediaPostShareTags.swift in Sources */,
 				6B1C126C919BE5871E5977CD /* MediaPrivacy.swift in Sources */,
+				A1C7DEA58EB254B294CB8794 /* MediaServersDraft.swift in Sources */,
+				E3D6E6B3B28AF2245050EC56 /* MediaServersLeaveGuard.swift in Sources */,
 				EAC0A530327415264CAD67A2 /* MediaServersPage.swift in Sources */,
 				5ECBE5A5F20F52564E1EB939 /* MediaSettingsView.swift in Sources */,
 				8554512043129BA9F169F86B /* MediaShareLink.swift in Sources */,

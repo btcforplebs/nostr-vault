@@ -182,20 +182,20 @@ struct SettingsView: View {
         // Already on screen (including the separate Settings window, which
         // gets no paneRequest): switch here too.
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenFeedRelaySettings)) { _ in
-            selectedTab = .relays
+            select(.relays)
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenFipsMeshSettings)) { _ in
-            selectedTab = .fipsMesh
+            select(.fipsMesh)
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenMediaServerSettings)) { _ in
-            selectedTab = .blossom
+            select(.blossom)
         }
         #endif
     }
 
     private func takePaneRequest() {
         guard let pane = paneRequest.wrappedValue else { return }
-        selectedTab = pane
+        select(pane)
         paneRequest.wrappedValue = nil
     }
 
@@ -363,9 +363,7 @@ struct SettingsView: View {
             
             ForEach(items) { item in
                 Button(action: {
-                    withAnimation(Motion.control) {
-                        selectedTab = item
-                    }
+                    select(item, animated: true)
                 }) {
                     HStack(spacing: 8) {
                         ZStack {
@@ -566,7 +564,7 @@ struct SettingsView: View {
         #if os(iOS)
         if usesTwoPane {
             Button {
-                selectedTab = tab
+                select(tab)
             } label: {
                 HStack(spacing: 0) {
                     tabLabel(tab)
@@ -578,10 +576,10 @@ struct SettingsView: View {
             .buttonStyle(.plain)
             .listRowBackground(selectedTab == tab ? Color.havenPurple.opacity(0.18) : nil)
         } else {
-            NavigationLink(destination: destinationFor(tab)) { tabLabel(tab) }
+            NavigationLink(destination: destinationFor(tab, pushed: true)) { tabLabel(tab) }
         }
         #else
-        NavigationLink(destination: destinationFor(tab)) { tabLabel(tab) }
+        NavigationLink(destination: destinationFor(tab, pushed: true)) { tabLabel(tab) }
         #endif
     }
 
@@ -646,8 +644,23 @@ struct SettingsView: View {
         relayManager.applySavedConfig(configService.config)
     }
     
+    /// Switches the page beside the sidebar (Mac, iPad). Leaving Media
+    /// Servers with unsaved changes asks Save / Discard first.
+    private func select(_ tab: SettingsTab, animated: Bool = false) {
+        guard tab != selectedTab else { return }
+        let go = {
+            if animated {
+                withAnimation(Motion.control) { selectedTab = tab }
+            } else {
+                selectedTab = tab
+            }
+        }
+        if selectedTab == .blossom { MediaServersLeaveGuard.shared.requestLeave(go) } else { go() }
+    }
+
+    /// `pushed`: on a navigation stack (iPhone) rather than beside the sidebar.
     @ViewBuilder
-    private func destinationFor(_ tab: SettingsTab) -> some View {
+    private func destinationFor(_ tab: SettingsTab, pushed: Bool = false) -> some View {
         Group {
             switch tab {
             case .accounts: AccountsSettingsView()
@@ -670,7 +683,7 @@ struct SettingsView: View {
             case .backup: BackupSettingsView()
             case .followingBackup: FollowingBackupSettingsView()
             case .listBackups: ListBackupView()
-            case .blossom: BlossomSettingsView()
+            case .blossom: BlossomSettingsView(pushed: pushed)
             case .macRelay:
                 #if os(iOS)
                 MacRelaySettingsView()
