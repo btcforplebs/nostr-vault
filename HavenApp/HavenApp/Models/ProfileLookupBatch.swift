@@ -1,7 +1,8 @@
 import Foundation
 
-/// The rules for the reusable profile lookup sockets
-/// (NostrService+Profiles.swift), kept pure so they can be tested.
+/// The rules for profile lookups (NostrService+Profiles.swift) and for the
+/// shared lookup sockets they ride on (WebSocketClient+LookupConnection.swift),
+/// kept pure so they can be tested.
 enum ProfileLookupBatch {
     /// Authors per profile REQ. One REQ asks for 5 kinds per author, and many
     /// relays stop at about 500 events a subscription: the Hashtags feed sent

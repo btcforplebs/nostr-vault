@@ -21,9 +21,6 @@ enum RelayRequestBudget {
 
     /// How often queued profile lookups go out as one batch. Was 0.5 s.
     static let profileFlushInterval: TimeInterval = 2
-    /// A profile lookup socket nothing has used for this long is closed; the
-    /// next batch opens it again.
-    static let profileSocketIdle: TimeInterval = 30
     /// A profile REQ is closed after this, answered or not.
     static let profileSubscriptionSeconds: TimeInterval = 5
 

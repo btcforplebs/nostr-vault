@@ -106,83 +106,15 @@ extension NostrService {
         #endif
 
         let uniqueRelays = Array(Set(relays)).compactMap { URL(string: $0) }
-        profileLookupLastUse = Date()
         for url in uniqueRelays {
-            sendProfileLookup(pubkeys, to: url)
-        }
-        scheduleProfileSocketIdleCheck()
-    }
-
-    /// Sends one batch on `url`'s lookup socket, opening it first if needed.
-    /// The socket stays open for the next batch: a new connection per tick was
-    /// most of what relay.damus.io counted against us (2026-10-31).
-    private func sendProfileLookup(_ pubkeys: [String], to url: URL) {
-        let key = url.absoluteString
-        if let client = profileLookupClients[key] {
-            switch client.connectionState {
-            case .connected:
-                sendProfileRequest(to: client, pubkeys: pubkeys)
-                return
-            case .connecting:
-                profileLookupPending[key, default: []].append(pubkeys)
-                return
-            case .disconnected, .error:
-                profileLookupClients.removeValue(forKey: key)
-            }
-        }
-
-        let client = WebSocketClient()
-        client.isTemporary = true
-        profileLookupClients[key] = client
-        profileLookupPending[key] = [pubkeys]
-
-        client.messageSubject
-            .receive(on: processingQueue)
-            .sink { [weak self] message in
-                self?.processMessage(message, from: key)
-            }
-            .store(in: &cancellables)
-
-        // The .disconnected a new client publishes before .connecting is not
-        // a close: taking it for one threw every first batch away.
-        var watch = ProfileLookupBatch.OpenWatch()
-        client.$connectionState
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self, weak client] state in
-                guard let self, let client else { return }
-                if state == .connected {
-                    for batch in self.profileLookupPending.removeValue(forKey: key) ?? [] {
-                        self.sendProfileRequest(to: client, pubkeys: batch)
-                    }
-                }
-                // Only forget it if it is still the socket on file.
-                if watch.isClosed(state.lookupState), self.profileLookupClients[key] === client {
-                    self.profileLookupClients.removeValue(forKey: key)
-                    self.profileLookupPending.removeValue(forKey: key)
-                }
-            }
-            .store(in: &cancellables)
-
-        client.connect(url: url)
-        trackTemporaryClient(client)
-    }
-
-    /// Closes the lookup sockets once no batch has used them for
-    /// `profileSocketIdle`; the next batch opens them again.
-    private func scheduleProfileSocketIdleCheck() {
-        let idle = RelayRequestBudget.profileSocketIdle
-        DispatchQueue.main.asyncAfter(deadline: .now() + idle + 0.5) { [weak self] in
-            guard let self else { return }
-            guard Date().timeIntervalSince(self.profileLookupLastUse) >= idle else { return }
-            self.closeProfileLookupSockets()
+            sendProfileRequest(pubkeys, to: url)
         }
     }
 
+    /// Lookup sockets are shared (`LookupSocketPool`) and close themselves
+    /// when idle; this drops them all at once (background).
     func closeProfileLookupSockets() {
-        let clients = Array(profileLookupClients.values)
-        profileLookupClients.removeAll()
-        profileLookupPending.removeAll()
-        clients.forEach { $0.disconnect() }
+        LookupSocketPool.shared.closeAll()
     }
 
     func loadProfiles() {
@@ -223,41 +155,23 @@ extension NostrService {
     }
 
 
-    /// One REQ per `ProfileLookupBatch.authorsPerRequest` authors.
-    private func sendProfileRequest(to client: WebSocketClient, pubkeys: [String]) {
+    /// One REQ per `ProfileLookupBatch.authorsPerRequest` authors, on
+    /// `url`'s shared lookup socket. The socket stays open for the next batch
+    /// and for the other lookups: a new connection per tick was most of what
+    /// relay.damus.io counted against us (2026-10-31).
+    private func sendProfileRequest(_ pubkeys: [String], to url: URL) {
+        let key = url.absoluteString
         for chunk in ProfileLookupBatch.chunks(pubkeys) {
-            sendProfileChunk(to: client, pubkeys: chunk)
-        }
-    }
-
-    private func sendProfileChunk(to client: WebSocketClient, pubkeys: [String]) {
-        let subscriptionId = "meta-\(UUID().uuidString.prefix(8))"
-        let filter: [String: Any] = [
-            "kinds": [0, 10002, 10050, 10000, 10063],
-            "authors": pubkeys
-        ]
-
-        let req = ["REQ", subscriptionId, filter] as [Any]
-
-        if let reqData = try? JSONSerialization.data(withJSONObject: req),
-           let reqString = String(data: reqData, encoding: .utf8) {
-            client.send(text: reqString)
-            // The socket stays open, so close the subscription itself once
-            // the answers are in (or not).
-            DispatchQueue.main.asyncAfter(deadline: .now() + RelayRequestBudget.profileSubscriptionSeconds) { [weak client] in
-                client?.send(text: "[\"CLOSE\",\"\(subscriptionId)\"]")
-            }
-        }
-    }
-}
-
-private extension WebSocketClient.ConnectionState {
-    var lookupState: ProfileLookupBatch.SocketState {
-        switch self {
-        case .disconnected: return .disconnected
-        case .connecting: return .connecting
-        case .connected: return .connected
-        case .error: return .error
+            let filter: [String: Any] = [
+                "kinds": [0, 10002, 10050, 10000, 10063],
+                "authors": chunk
+            ]
+            LookupSocketPool.shared.query(
+                url: url, subId: "meta-\(UUID().uuidString.prefix(8))", filters: [filter],
+                timeout: RelayRequestBudget.profileSubscriptionSeconds,
+                onMessage: { [weak self] message in
+                    self?.processingQueue.async { self?.processMessage(message, from: key) }
+                })
         }
     }
 }

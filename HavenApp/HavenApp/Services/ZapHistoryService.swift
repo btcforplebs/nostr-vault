@@ -142,6 +142,11 @@ enum ZapHistoryService {
     /// finishes, on the main queue, before the final result. `onAnswered` is
     /// called when a relay sends EOSE, so a caller can tell "nothing matched"
     /// from "no relay answered".
+    ///
+    /// Main actor: the lookups ride `LookupSocketPool.shared`, which is main
+    /// queue only. Without it this nonisolated async body ran on the global
+    /// executor and raced the profile and live-ring lookups on the pool.
+    @MainActor
     static func query(filters: [[String: Any]], relays: [URL], timeout: TimeInterval = 5,
                       onProgress: (([[String: Any]]) -> Void)? = nil,
                       onAnswered: (() -> Void)? = nil) async -> [[String: Any]] {
@@ -151,8 +156,10 @@ enum ZapHistoryService {
             var events: [String: [String: Any]] = [:]
             var pending = relays.count
             var done = false
-            var clients: [WebSocketClient] = []
-            var subscriptions: [AnyCancellable] = []
+            // One socket per relay, shared with every other lookup: the
+            // dashboard runs three of these at once, and each used to dial
+            // every relay again (NV_HEALTH_C3).
+            var lookups: [LookupSocketPool.Lookup] = []
             let subId = "zaphist-\(UUID().uuidString.prefix(8))"
             let parseQueue = DispatchQueue(label: "zaphist.parse", qos: .userInitiated)
             // Ids main has already kept: a later copy is not checked again,
@@ -167,8 +174,8 @@ enum ZapHistoryService {
             func finish() {
                 guard !done else { return }
                 done = true
-                clients.forEach { $0.disconnect() }
-                subscriptions.removeAll()
+                lookups.forEach { $0.cancel() }
+                lookups.removeAll()
                 continuation.resume(returning: Array(events.values))
             }
 
@@ -178,67 +185,53 @@ enum ZapHistoryService {
             }
 
             for url in relays {
-                let client = WebSocketClient()
-                client.isTemporary = true
-                clients.append(client)
                 var relayDone = false
                 var received = 0
+                var lookup: LookupSocketPool.Lookup?
 
-                client.messageSubject
-                    // Parsing and the signature check run here, not on the
-                    // main thread: opening the globe asks for up to 2,000
-                    // events, a trust path for ~240 follow lists, and each
-                    // one stalled the UI (Mac sweep 11-01 #8).
-                    .receive(on: parseQueue)
-                    .compactMap { RelayReply($0, subId: subId, verify: verifyOnce) }
-                    .receive(on: DispatchQueue.main)
-                    .sink { reply in
-                        guard !done, !relayDone else { return }
-                        switch reply {
-                        case .event(let id, let event, let isValid):
-                            received += 1
-                            if received > perRelayCap {
-                                // Past what it was asked for: stop listening.
-                                relayDone = true
-                                client.disconnect()
-                                relayFinished()
-                                return
-                            }
-                            if events[id] == nil, isValid {
-                                events[id] = event
-                                stored.insert(id)
-                            }
-                        case .end(let answered):
-                            if answered { onAnswered?() }
+                // Parsing and the signature check run on parseQueue, not on
+                // the main thread: opening the globe asks for up to 2,000
+                // events, a trust path for ~240 follow lists, and each one
+                // stalled the UI (Mac sweep 11-01 #8). A socket failure takes
+                // the same hop, so it can't overtake events still being parsed.
+                let handle: (RelayReply?) -> Void = { reply in
+                    guard !done, !relayDone, let reply else { return }
+                    switch reply {
+                    case .event(let id, let event, let isValid):
+                        received += 1
+                        if received > perRelayCap {
+                            // Past what it was asked for: stop listening.
                             relayDone = true
+                            lookup?.cancel()
                             relayFinished()
+                            return
                         }
-                    }
-                    .store(in: &subscriptions)
-
-                client.$connectionState
-                    .removeDuplicates()
-                    .dropFirst()
-                    .receive(on: DispatchQueue.main)
-                    .sink { state in
-                        guard !done, !relayDone else { return }
-                        switch state {
-                        case .connected:
-                            let req: [Any] = ["REQ", subId] + filters
-                            if let data = try? JSONSerialization.data(withJSONObject: req),
-                               let str = String(data: data, encoding: .utf8) {
-                                client.send(text: str)
-                            }
-                        case .error, .disconnected:
-                            relayDone = true
-                            relayFinished()
-                        default:
-                            break
+                        if events[id] == nil, isValid {
+                            events[id] = event
+                            stored.insert(id)
                         }
+                    case .end(let answered):
+                        if answered { onAnswered?() }
+                        relayDone = true
+                        relayFinished()
                     }
-                    .store(in: &subscriptions)
-
-                client.connect(url: url)
+                }
+                lookup = LookupSocketPool.shared.query(
+                    url: url, subId: subId, filters: filters, timeout: timeout,
+                    onMessage: { message in
+                        parseQueue.async {
+                            let reply = RelayReply(message, subId: subId, verify: verifyOnce)
+                            DispatchQueue.main.async { handle(reply) }
+                        }
+                    },
+                    onEnd: { outcome in
+                        // EOSE and CLOSED arrive as frames above.
+                        guard outcome == .failed || outcome == .skipped || outcome == .timeout else { return }
+                        parseQueue.async {
+                            DispatchQueue.main.async { handle(.end(answered: false)) }
+                        }
+                    })
+                if let lookup { lookups.append(lookup) }
             }
 
             DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish() }

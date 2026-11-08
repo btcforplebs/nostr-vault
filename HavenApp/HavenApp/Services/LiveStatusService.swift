@@ -21,8 +21,6 @@ final class LiveStatusService: ObservableObject {
     private var pending = Set<String>()
     private var flushScheduled = false
     private var account: String?
-    /// Open lookups, each closed with its subscriptions on timeout.
-    private var lookups: [UUID: (clients: [WebSocketClient], subscriptions: [AnyCancellable])] = [:]
 
     /// Pause before a batch goes out, so a screenful of avatars is one REQ.
     private static let batchDelay = RelayRequestBudget.liveRingBatchDelay
@@ -78,27 +76,13 @@ final class LiveStatusService: ObservableObject {
             filters.append(["kinds": [30311], "authors": chunk, "limit": 50])
             filters.append(["kinds": [30311], "#p": chunk, "limit": 50])
         }
-        let message: [Any] = ["REQ", "ring-\(UUID().uuidString.prefix(8))"] + filters
-        guard let data = try? JSONSerialization.data(withJSONObject: message),
-              let req = String(data: data, encoding: .utf8) else { return }
-
-        let lookup = UUID()
-        var clients: [WebSocketClient] = []
-        var subscriptions: [AnyCancellable] = []
+        // On the shared lookup sockets: a flush used to dial every ring
+        // relay again (NV_HEALTH_C3). Each lookup ends at its EOSE.
+        let subId = "ring-\(UUID().uuidString.prefix(8))"
         let relays = RelayRequestBudget.liveRingRelays(feedRelays: ConfigService.shared.config.activeFeedRelays)
         for url in relays.compactMap({ URL(string: $0) }) {
-            let client = WebSocketClient()
-            client.isTemporary = true
-            subscriptions.append(client.messageSubject
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] message in self?.handle(message) })
-            client.connect(url: url)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { client.send(text: req) }
-            clients.append(client)
-        }
-        lookups[lookup] = (clients, subscriptions)
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.lookupTimeout) { [weak self] in
-            self?.lookups.removeValue(forKey: lookup)?.clients.forEach { $0.disconnect() }
+            LookupSocketPool.shared.query(url: url, subId: subId, filters: filters, timeout: Self.lookupTimeout,
+                                          onMessage: { [weak self] message in self?.handle(message) })
         }
     }
 

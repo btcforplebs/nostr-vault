@@ -33,8 +33,8 @@ final class RelayRequestBudgetTests: XCTestCase {
         XCTAssertEqual(RelayRequestBudget.noteFetchWindow, 1)
         // A socket closes only after several ticks without use, and a REQ is
         // closed before the next one could pile onto it twice over.
-        XCTAssertGreaterThan(RelayRequestBudget.profileSocketIdle, RelayRequestBudget.profileFlushInterval * 5)
-        XCTAssertLessThan(RelayRequestBudget.profileSubscriptionSeconds, RelayRequestBudget.profileSocketIdle)
+        XCTAssertGreaterThan(LookupSocketPool.defaultIdle, RelayRequestBudget.profileFlushInterval * 5)
+        XCTAssertLessThan(RelayRequestBudget.profileSubscriptionSeconds, LookupSocketPool.defaultIdle)
     }
 
     /// The services read the budget, not their own copies of the old numbers.
@@ -44,7 +44,7 @@ final class RelayRequestBudgetTests: XCTestCase {
         func src(_ path: String) throws -> String { try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8) }
         let profiles = try src("Nostr/NostrService+Profiles.swift")
         XCTAssertTrue(profiles.contains("Timer.publish(every: RelayRequestBudget.profileFlushInterval"))
-        XCTAssertTrue(profiles.contains("profileLookupClients[key]"))
+        XCTAssertTrue(profiles.contains("timeout: RelayRequestBudget.profileSubscriptionSeconds"))
         XCTAssertFalse(profiles.contains("for url in uniqueRelays {\n            let client = WebSocketClient()"))
         XCTAssertTrue(try src("NostrService.swift").contains("static let profileIndexRelays = RelayRequestBudget.profileIndexRelays"))
         XCTAssertTrue(try src("FeedService.swift").contains("static let fallbackNoteRelays = RelayRequestBudget.fallbackNoteRelays"))

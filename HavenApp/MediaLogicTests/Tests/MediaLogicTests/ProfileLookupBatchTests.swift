@@ -32,13 +32,16 @@ final class ProfileLookupBatchTests: XCTestCase {
         XCTAssertTrue(dropped.isClosed(.error))
     }
 
-    /// The lookup socket goes through the watch and sends chunked REQs.
-    func testProfilesUseTheWatchAndChunks() throws {
-        let path = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .appendingPathComponent("../../../HavenApp/Services/Nostr/NostrService+Profiles.swift").standardized
-        let src = try String(contentsOf: path, encoding: .utf8)
-        XCTAssertTrue(src.contains("watch.isClosed(state.lookupState)"))
-        XCTAssertTrue(src.contains("for chunk in ProfileLookupBatch.chunks(pubkeys)"))
-        XCTAssertFalse(src.contains("case .disconnected, .error:\n                    // Only forget it"))
+    /// Profiles send chunked REQs on the shared lookup sockets, and those
+    /// sockets read their state through the watch.
+    func testProfilesUseThePoolAndChunks() throws {
+        let services = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../HavenApp/Services").standardized
+        let profiles = try String(contentsOf: services.appendingPathComponent("Nostr/NostrService+Profiles.swift"), encoding: .utf8)
+        XCTAssertTrue(profiles.contains("for chunk in ProfileLookupBatch.chunks(pubkeys)"))
+        XCTAssertTrue(profiles.contains("LookupSocketPool.shared.query("))
+        XCTAssertFalse(profiles.contains("WebSocketClient()"), "profiles open no sockets of their own")
+        let bridge = try String(contentsOf: services.appendingPathComponent("WebSocketClient+LookupConnection.swift"), encoding: .utf8)
+        XCTAssertTrue(bridge.contains("watch.isClosed(state.lookupState)"))
     }
 }
