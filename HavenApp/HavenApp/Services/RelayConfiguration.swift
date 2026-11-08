@@ -121,7 +121,7 @@ enum RelayConfiguration {
     /// the finish time.
     static func macSyncRowDetail(_ status: MacSyncStatus?, macURL: String, relative: (Date) -> String) -> String {
         let url = macURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !url.isEmpty else { return "Not set up. A home vault keeps a copy that's always on." }
+        guard !url.isEmpty else { return "Not set up. A desktop vault keeps a copy that's always on." }
         guard let status, macSyncStatus(status, isFor: url) else { return "Set up. Not synced yet." }
         let when = (status.finishedAt ?? 0) > 0
             ? relative(Date(timeIntervalSince1970: TimeInterval(status.finishedAt ?? 0)))

@@ -58,7 +58,7 @@ struct SettingsView: View {
         case pushNotifications = "Notifications"
         case relays = "Relays"
         case blossom = "Media Servers"
-        case macRelay = "Home vault sync"
+        case macRelay = "Desktop vault sync"
         case relayAccess = "Who Can Reach You"
         case fipsMesh = "Mesh"
         case importNotes = "Import Notes"

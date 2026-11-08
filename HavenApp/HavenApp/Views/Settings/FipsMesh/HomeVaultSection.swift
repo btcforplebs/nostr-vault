@@ -33,7 +33,7 @@ struct HomeVaultSection: View {
         } header: {
             Text("Sending")
         } footer: {
-            Text("New notes and media also go to your home vault over the mesh, and it sends your notes on to your relays. They stay on this phone too. What can't reach it waits here and goes when Nostr Vault is open and the home vault is in reach. A home vault lists its mesh address in your media servers, in public. The home vault must let your account write to its vault.")
+            Text("New notes and media also go to your mobile vault over the mesh, and it sends your notes on to your relays. They stay on this phone too. What can't reach it waits here and goes when Nostr Vault is open and the mobile vault is in reach. To list it in your media servers, add it under Media Servers. The mobile vault must let your account write to its vault.")
         }
     }
 }

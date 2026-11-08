@@ -204,8 +204,12 @@ extension NostrService {
         UserDefaults.standard.stringArray(forKey: "serverListManaged.\(owner)") ?? []
     }
 
-    func publishServerList(fipsDetectedNpub: String? = nil) {
-        var servers = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub)
+    /// `meshAdd` / `meshRemove`: `fipsmesh://` entries the owner added or
+    /// removed on Media Servers. Nothing else changes the list's mesh
+    /// entries: linking or removing a device never does (Logen via Tod,
+    /// 2026-11-08), so a publish for a typed server keeps them as they are.
+    func publishServerList(fipsDetectedNpub: String? = nil, meshAdd: [String] = [], meshRemove: [String] = []) {
+        let servers = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub) + meshAdd
         let owner = activeHexPubkey
         // Merge into the newest list, never replace it (one rule for every
         // phone): another phone's servers and mesh entries stay; only the
@@ -216,17 +220,6 @@ extension NostrService {
         // This phone's own mesh npub is never listed (and is dropped from an
         // older list that had it): the main node is for the owner's devices.
         ownMesh = FipsMeshService.shared.ownMeshNpub
-        // The home vault this phone sends to, and the Mac it is linked to:
-        // listed by the phone, so neither needs the owner's key.
-        servers += HomeVaultLogic.phoneMeshEntries(homeVault: HomeVaultSender.shared.homeVault,
-                                                   macMeshNpub: ConfigService.shared.config.macRelayMeshNpub,
-                                                   ownerHex: owner)
-        // A vault this phone listed before stays listed while it is still in My Devices.
-        for entry in HomeVaultLogic.stillOwnedMeshEntries(previouslyManaged: Self.serverListManaged(owner: owner),
-                                                          myDevices: FipsMeshDevices.current(ConfigService.shared.config).map(\.npub))
-            where !servers.contains(entry) {
-            servers.append(entry)
-        }
         #else
         // The Mac lists its photo node, so a photo post points viewers to the
         // Mac with no setup; phones keep the entry through this same merge.
@@ -235,6 +228,9 @@ extension NostrService {
         let managedKey = "serverListManaged.\(owner)"
         let previouslyManaged = Set(Self.serverListManaged(owner: owner))
         let ownMeshNpub = ownMesh, photo = photoNpub, current = servers
+        let removed = Set(meshRemove)
+        // What this phone manages: its https servers only (mergeServerList).
+        let managed = servers.filter { !$0.hasPrefix("fipsmesh://") }
 
         Task {
             // Start from the newest list on the relays, never this phone's
@@ -273,7 +269,8 @@ extension NostrService {
                 current: current,
                 previouslyManaged: previouslyManaged,
                 ownMeshNpub: ownMeshNpub,
-                photoNpub: photo
+                photoNpub: photo,
+                removed: removed
             ) else {
                 #if DEBUG
                 print("NostrService: No usable Blossom server, skipping Kind 10063 publish")
@@ -283,7 +280,7 @@ extension NostrService {
             // Nothing changed: no new signed event on the public relays (kiosk
             // mode republishes on every app switch; readers already hold this).
             if merged == existing {
-                UserDefaults.standard.set(current, forKey: managedKey)
+                UserDefaults.standard.set(managed, forKey: managedKey)
                 return
             }
             let tags = merged.map { ["server", $0] }
@@ -295,7 +292,7 @@ extension NostrService {
                 if acceptServerListStamp(pubkey: event.pubkey, createdAt: event.created_at, id: event.id, signedByAuthor: true) {
                     serverLists[event.pubkey] = merged
                 }
-                UserDefaults.standard.set(current, forKey: managedKey)
+                UserDefaults.standard.set(managed, forKey: managedKey)
                 postEvent(event)
                 #if DEBUG
                 print("NostrService: Published Kind 10063 server list with \(tags.count) servers")

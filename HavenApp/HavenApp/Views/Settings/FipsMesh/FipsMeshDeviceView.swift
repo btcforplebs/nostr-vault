@@ -80,7 +80,7 @@ struct FipsMeshDeviceView: View {
     private func removeFooter(_ device: MeshDevice) -> String {
         switch device.role {
         case .mac: return "This phone stops syncing with your Mac over the mesh. Anything already on the Mac stays there."
-        case .homeVault: return "New notes and media stop going to it, and it leaves your media server list. Anything already on it stays there."
+        case .homeVault: return "New notes and media stop going to it. Anything already on it stays there. If it's in your media servers, remove it there."
         case .browser: return "Your notes stop going to the page. Anything already on it stays there."
         case .phone: return "It leaves your list. Anything already on it stays there."
         }

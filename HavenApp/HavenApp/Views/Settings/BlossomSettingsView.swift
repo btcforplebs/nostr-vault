@@ -72,7 +72,7 @@ struct BlossomSettingsView: View {
                         
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 8) {
-                                Text("Home vault sync")
+                                Text("Desktop vault sync")
                                     .font(.appSubheadline.bold())
                                     .foregroundColor(.white)
                                 
@@ -104,10 +104,10 @@ struct BlossomSettingsView: View {
                             .frame(width: 24, height: 24)
                         
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("No home vault sync set up")
+                            Text("No desktop vault sync set up")
                                 .font(.appSubheadline.bold())
                                 .foregroundColor(.secondary)
-                            Text("Add it under Home vault sync and it's used here automatically.")
+                            Text("Add it under Desktop vault sync and it's used here automatically.")
                                 .font(.appCaption)
                                 .foregroundColor(.secondary.opacity(0.7))
                         }
@@ -181,6 +181,8 @@ struct BlossomSettingsView: View {
             SuggestedMediaServersSection(servers: configService.config.blossomMirrors) { url in
                 addMirror(url)
             }
+
+            MeshMediaServersSection()
             
             // Section 3: Media Sync & Mirroring
             Section {

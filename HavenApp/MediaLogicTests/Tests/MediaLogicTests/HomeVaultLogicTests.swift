@@ -192,12 +192,13 @@ final class ServerListMergeTests: XCTestCase {
         XCTAssertEqual(out, ["https://a.example/", mesh(third), mesh(kiosk)])
     }
 
-    func testAChangedHomeVaultDropsTheOldOneOnly() {
-        // This phone listed kiosk before; now third. Another phone's other entry stays.
+    func testARemovedEntryDropsThatOneOnly() {
+        // This phone listed kiosk before; the owner removes it and adds third.
+        // Another phone's entry stays. Without the Remove, kiosk would stay too.
         let existing = ["https://a.example/", mesh(kiosk), mesh(fourth)]
         let out = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example/", mesh(third)],
                                                  previouslyManaged: ["https://a.example/", mesh(kiosk)],
-                                                 ownMeshNpub: me)
+                                                 ownMeshNpub: me, removed: [mesh(kiosk)])
         XCTAssertEqual(out, ["https://a.example/", mesh(fourth), mesh(third)])
     }
 
@@ -345,31 +346,57 @@ final class MacMediaVaultTests: XCTestCase {
         XCTAssertNil(HomeVaultLogic.mediaVault(homeVault: nil, macMeshNpub: macNpub, ownerHex: ""), "no account, no vault")
     }
 
-    func testThePhoneListsItsLinkedMacSoAMacWithNoKeyIsNamed() {
-        let kiosk = HomeVault(ownerHex: owner, meshNpub: kioskNpub)
-        XCTAssertEqual(HomeVaultLogic.phoneMeshEntries(homeVault: nil, macMeshNpub: macNpub, ownerHex: owner),
-                       ["fipsmesh://\(macNpub)/"])
-        XCTAssertEqual(HomeVaultLogic.phoneMeshEntries(homeVault: kiosk, macMeshNpub: macNpub, ownerHex: owner),
-                       ["fipsmesh://\(kioskNpub)/", "fipsmesh://\(macNpub)/"], "both, not one instead of the other")
-        XCTAssertEqual(HomeVaultLogic.phoneMeshEntries(homeVault: HomeVault(ownerHex: String(repeating: "b", count: 64), meshNpub: kioskNpub),
-                                                       macMeshNpub: nil, ownerHex: owner), [], "another account's vault")
-        XCTAssertEqual(HomeVaultLogic.phoneMeshEntries(homeVault: nil, macMeshNpub: macNpub, ownerHex: ""), [], "no account")
+    /// Linking a device no longer lists it (Logen via Tod, 2026-11-08): the
+    /// list's mesh entries change only by Media Servers' Add and Remove.
+    func testMeshEntriesChangeOnlyByAddOrRemove() {
+        let https = "https://logen.btcforplebs.com"
+        let mac = "fipsmesh://\(macNpub)/"
+        // A publish for a typed server: no mesh entry appears.
+        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: [https], current: [https],
+                                                      previouslyManaged: [https], ownMeshNpub: kioskNpub), [https])
+        // Add to my media servers.
+        let added = HomeVaultLogic.mergeServerList(existing: [https], current: [https, mac],
+                                                   previouslyManaged: [https], ownMeshNpub: kioskNpub)
+        XCTAssertEqual(added, [https, mac])
+        // The next typed-server publish keeps it, even though this phone
+        // listed it last time (an older build managed mesh entries).
+        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: added!, current: [https, "https://blossom.band"],
+                                                      previouslyManaged: [https, mac], ownMeshNpub: kioskNpub),
+                       [https, "https://blossom.band", mac])
+        // Remove takes it off, whoever listed it, in any address form.
+        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: added!, current: [https], previouslyManaged: [https],
+                                                      ownMeshNpub: kioskNpub, removed: ["FIPSMESH://\(macNpub)"]),
+                       [https])
+        // Added and removed at once: removed wins.
+        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: [https], current: [https, mac], previouslyManaged: [],
+                                                      ownMeshNpub: kioskNpub, removed: [mac]), [https])
+        // Mesh only: never published.
+        XCTAssertNil(HomeVaultLogic.mergeServerList(existing: [], current: [mac], previouslyManaged: [], ownMeshNpub: kioskNpub))
+    }
 
-        // Logen's case: the Mac's list names only https; the phone's publish adds the Mac.
-        let existing = ["https://logen.btcforplebs.com"]
-        XCTAssertTrue(HomeVaultLogic.photoNodeMissing(from: existing, photoNpub: macNpub))
-        let merged = HomeVaultLogic.mergeServerList(
-            existing: existing,
-            current: ["https://logen.btcforplebs.com"] + HomeVaultLogic.phoneMeshEntries(homeVault: nil, macMeshNpub: macNpub, ownerHex: owner),
-            previouslyManaged: [], ownMeshNpub: kioskNpub)
-        XCTAssertEqual(merged, ["https://logen.btcforplebs.com", "fipsmesh://\(macNpub)/"])
-        XCTAssertFalse(HomeVaultLogic.photoNodeMissing(from: merged, photoNpub: macNpub), "listed once, no republish loop")
+    func testMeshMediaServerRows() {
+        let phone = "npub1" + String(repeating: "f", count: 58)
+        let browser = "npub1" + String(repeating: "w", count: 58)
+        let stray = "npub1" + String(repeating: "s", count: 58)
+        let devices = [
+            MeshDevice(npub: macNpub, name: "Studio Mac", role: .mac),
+            MeshDevice(npub: kioskNpub, name: "", role: .homeVault),
+            MeshDevice(npub: phone, name: "Moto", role: .phone),
+            MeshDevice(npub: browser, name: "", role: .browser),
+        ]
+        let listed = ["https://a.example", "fipsmesh://\(kioskNpub)/", "fipsmesh://\(stray)/", "fipsmesh://\(phone)/", "fipsmesh://bad/"]
+        let rows = HomeVaultLogic.meshMediaServerRows(devices: devices, listed: listed, own: nil, photoNpub: nil)
+        XCTAssertEqual(rows.map(\.npub), [macNpub, kioskNpub, stray, phone], "vaults first; phones and browser only when already listed")
+        XCTAssertEqual(rows.map(\.listed), [false, true, true, true])
+        XCTAssertEqual(rows[0].name, "Studio Mac")
+        XCTAssertNil(rows[2].name, "not in My Devices")
+        XCTAssertEqual(rows[3].role, .phone, "an old listing of a phone can still be removed")
+        XCTAssertEqual(rows[1].entry, "fipsmesh://\(kioskNpub)/")
 
-        // Unlinking the Mac drops the entry this phone added.
-        let unlinked = HomeVaultLogic.mergeServerList(
-            existing: merged!, current: ["https://logen.btcforplebs.com"],
-            previouslyManaged: Set(["https://logen.btcforplebs.com", "fipsmesh://\(macNpub)/"]), ownMeshNpub: kioskNpub)
-        XCTAssertEqual(unlinked, ["https://logen.btcforplebs.com"])
+        // This device is never a row; this Mac's photo node is, not removable.
+        let mac = HomeVaultLogic.meshMediaServerRows(devices: devices, listed: ["fipsmesh://\(stray)/"], own: stray, photoNpub: kioskNpub)
+        XCTAssertEqual(mac.map(\.npub), [macNpub, kioskNpub])
+        XCTAssertEqual(mac.map(\.removable), [true, false])
     }
 
     func testForwardServerIsTheFirstPublicEntryOfTheOwnersList() {

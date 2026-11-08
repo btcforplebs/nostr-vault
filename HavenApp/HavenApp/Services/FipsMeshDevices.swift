@@ -53,8 +53,6 @@ enum FipsMeshDevices {
         }
         let owner = NostrService.shared.activeHexPubkey
         let device = MeshDevice(npub: npub, name: name.trimmingCharacters(in: .whitespacesAndNewlines), role: role)
-        // Before the setting changes: a new home vault republishes the 10063,
-        // and the old one must already be a plain device by then to stay listed.
         config.config.meshDevices = MeshDevicesLogic.adding(device, to: config.config.meshDevices)
         switch role {
         case .mac:
@@ -69,8 +67,8 @@ enum FipsMeshDevices {
             break
         }
         config.save()
-        // The Mac is listed in the 10063 by this phone (HomeVaultLogic.phoneMeshEntries).
-        if role == .mac { NostrService.shared.publishServerList() }
+        // Linking writes nothing public: a vault goes in the media server
+        // list only from Media Servers (Logen via Tod, 2026-11-08).
         FipsMeshService.shared.myDevicesChanged(from: before)
         return nil
     }
@@ -88,14 +86,11 @@ enum FipsMeshDevices {
         for role in roles {
             clearSetting(role, npub: device.npub, config: config)
         }
-        let listedBefore = NostrService.serverListManaged(owner: NostrService.shared.activeHexPubkey)
-        let wasListed = !HomeVaultLogic.stillOwnedMeshEntries(previouslyManaged: listedBefore, myDevices: [device.npub]).isEmpty
         config.config.meshDevices = MeshDevicesLogic.removing(npub: device.npub, from: config.config.meshDevices)
         config.save()
         MeshCopyV2Service.shared.forget(peer: device.npub)
-        // The Mac, or an old home vault kept listed as a plain device: unlist
-        // it now. A home vault's own setting change already republished.
-        if roles.contains(.mac) || (wasListed && roles.isEmpty) { NostrService.shared.publishServerList() }
+        // The media server list is left alone: a listed vault is removed
+        // there, on Media Servers.
         // A lost phone's mesh key stops reaching this one's vault now, not
         // at the next kiosk start (NIP-F1 revoke).
         FipsMeshService.shared.myDevicesChanged(from: before)

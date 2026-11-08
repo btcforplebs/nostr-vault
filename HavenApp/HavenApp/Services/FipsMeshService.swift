@@ -139,7 +139,7 @@ final class FipsMeshService: ObservableObject {
     /// opens the app, which turns it on again.
     private func notifyPaused() {
         let content = UNMutableNotificationContent()
-        content.title = "Home vault mode paused"
+        content.title = "Mobile vault mode paused"
         content.body = "Your vault stopped sharing on the mesh when Nostr Vault left the screen. Tap to share again."
         content.sound = .default
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
@@ -190,7 +190,7 @@ final class FipsMeshService: ObservableObject {
             relays: FipsMeshSettings.finderRelays, meshDoorPort: door,
             seeds: FipsMeshSettings.middleServer == .publicSeeds,
             serveBytes: budget.sessionLimit) else {
-            lastError = "Add your other phone or your home vault under My Devices first: home vault mode serves your own devices in full, and anyone else only the photos you post."
+            lastError = "Add your other phone or your mobile vault under My Devices first: mobile vault mode serves your own devices in full, and anyone else only the photos you post."
             return
         }
         // Always a cold start. NvFipsStart keeps a running engine and drops
@@ -538,7 +538,7 @@ final class FipsMeshService: ObservableObject {
             let rc = NvFipsRelayPush(relayNpub, eventsJSON, timeoutMs, &out)
             guard rc == 0, let out else {
                 if rc == Self.errRelayOff {
-                    return .failure(MeshError(message: "Turn home vault mode off and on again to connect the browser vault"))
+                    return .failure(MeshError(message: "Turn mobile vault mode off and on again to connect the browser vault"))
                 }
                 return .failure(MeshError(message: "Could not reach the browser vault (\(rc))"))
             }

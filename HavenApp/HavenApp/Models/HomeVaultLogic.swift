@@ -172,9 +172,15 @@ extension HomeVaultLogic {
     ///
     /// - existing: the newest signed 10063 seen for the owner.
     /// - current: this phone's own servers now (config order, https), plus
-    ///   its home vault's `fipsmesh://` entry, listed after the others.
+    ///   any `fipsmesh://` entry the owner just added on Media Servers.
     /// - previouslyManaged: what this phone published last time, so a server
-    ///   removed here is removed, while another phone's server is kept.
+    ///   removed here is removed, while another phone's server is kept. Only
+    ///   https servers: a mesh entry stays listed until the owner removes it
+    ///   (`removed`). Linking a device no longer lists it, and unlinking no
+    ///   longer unlists it (Logen via Tod, 2026-11-08); an older build's
+    ///   managed mesh entries are not dropped just because they are gone here.
+    /// - removed: entries the owner took off on Media Servers, dropped from
+    ///   the newest list whoever listed them.
     /// - ownMeshNpub: this device's own (main) mesh npub. Never listed, and
     ///   dropped if an older list carried it: the main node is for the owner's
     ///   own devices only, so naming it in public is never right (Logen, FIPS
@@ -189,15 +195,18 @@ extension HomeVaultLogic {
         current: [String],
         previouslyManaged: Set<String>,
         ownMeshNpub: String?,
-        photoNpub: String? = nil
+        photoNpub: String? = nil,
+        removed: Set<String> = []
     ) -> [String]? {
         func key(_ url: String) -> String {
             var k = url.trimmingCharacters(in: .whitespaces).lowercased()
             while k.hasSuffix("/") { k.removeLast() }
             return k
         }
-        let mine = Set(current.map(key))
-        let dropped = Set(previouslyManaged.map(key)).subtracting(mine)
+        let gone = Set(removed.map(key))
+        let mine = Set(current.map(key)).subtracting(gone)
+        let dropped = Set(previouslyManaged.filter { !$0.hasPrefix("fipsmesh://") }.map(key))
+            .subtracting(mine).union(gone)
         var out: [String] = []
         var seen = Set<String>()
         func add(_ url: String) {
@@ -210,13 +219,13 @@ extension HomeVaultLogic {
             add(url)
         }
         // This phone's servers only after theirs: new ones are appended.
-        current.filter { !$0.hasPrefix("fipsmesh://") }.forEach(add)
+        current.filter { !$0.hasPrefix("fipsmesh://") && !gone.contains(key($0)) }.forEach(add)
         for url in existing where !dropped.contains(key(url)) {
             // Malformed mesh entries are dropped: readers ignore them too.
             if let npub = meshNpub(fromEntry: url), npub != ownMeshNpub { add(url) }
         }
-        for url in current {
-            // This phone's home vault: the sender lists it, the kiosk needs no key.
+        for url in current where !gone.contains(key(url)) {
+            // A vault the owner just added on Media Servers.
             if let npub = meshNpub(fromEntry: url), npub != ownMeshNpub { add(url) }
         }
         if let photo = photoNpub.flatMap({ meshNpub(fromInput: $0) }), photo != ownMeshNpub { add("fipsmesh://\(photo)/") }
@@ -225,27 +234,6 @@ extension HomeVaultLogic {
         // reader outside could open one, and it would publish the home address.
         guard out.contains(where: isPublicServer) else { return nil }
         return out
-    }
-
-    /// The mesh entries a phone lists in its owner's 10063: the home vault it
-    /// sends to, and the Mac it is linked to by mesh npub. A phone with the
-    /// owner's key lists the Mac, so a Mac with no key is still named (Logen,
-    /// 2026-10-21). Only the active account's own devices.
-    static func phoneMeshEntries(homeVault: HomeVault?, macMeshNpub: String?, ownerHex: String) -> [String] {
-        guard !ownerHex.isEmpty else { return [] }
-        var out: [String] = []
-        if let vault = homeVault, vault.ownerHex == ownerHex { out.append("fipsmesh://\(vault.meshNpub)/") }
-        if let mac = macMeshNpub.flatMap({ meshNpub(fromInput: $0) }) { out.append("fipsmesh://\(mac)/") }
-        return out
-    }
-
-    /// The mesh entries this phone listed last time that are still in My
-    /// Devices. Switching the home vault must not unlist the old one while it
-    /// is still the owner's device (2026-10-22: Mac to Moto dropped the Mac),
-    /// so the phone keeps managing it; removing it from My Devices unlists it.
-    static func stillOwnedMeshEntries(previouslyManaged: [String], myDevices: [String]) -> [String] {
-        let devices = Set(myDevices.compactMap { meshNpub(fromInput: $0) })
-        return previouslyManaged.filter { meshNpub(fromEntry: $0).map(devices.contains) ?? false }
     }
 
     /// The photo node the Mac lists: its mesh npub only while its engine runs.
@@ -433,5 +421,52 @@ struct VaultCheckAuths {
     mutating func remember(_ auth: String, for sha256: String, now: Date = Date()) {
         byBlob = byBlob.filter { $0.value.expires > now }
         byBlob[sha256] = (auth, now.addingTimeInterval(HomeVaultLogic.vaultCheckAuthLifetime))
+    }
+}
+
+// MARK: - Media Servers › Your vaults on the mesh
+
+/// One row of Media Servers › Your Vaults on the Mesh: one of the owner's
+/// vaults from My Devices, or a mesh entry already on their published list.
+struct MeshMediaServerRow: Equatable, Identifiable {
+    let npub: String
+    /// The device's name from My Devices, when it is one.
+    let name: String?
+    let role: MeshDeviceRole?
+    /// On the owner's published media server list (10063) now.
+    let listed: Bool
+    /// False for this Mac's own photo node: the Mesh switch lists it.
+    let removable: Bool
+
+    var id: String { npub }
+    var entry: String { "fipsmesh://\(npub)/" }
+}
+
+extension HomeVaultLogic {
+    /// The roles that are vaults a media server list may name: a desktop
+    /// vault (Mac, Linux box) and a mobile vault. Never a phone or the
+    /// browser vault (Logen via Tod, 2026-11-08).
+    static let listableRoles: Set<MeshDeviceRole> = [.mac, .homeVault]
+
+    /// The section's rows: each vault in My Devices (listed or not, so it can
+    /// be added), then every other mesh entry on the published list (so the
+    /// owner can take it off). `own` is this device's mesh npub, never shown.
+    /// `photoNpub` is this Mac's photo node, shown but not removable.
+    static func meshMediaServerRows(devices: [MeshDevice], listed: [String], own: String?, photoNpub: String?) -> [MeshMediaServerRow] {
+        let listedNpubs = listed.compactMap { meshNpub(fromEntry: $0) }
+        let listedSet = Set(listedNpubs)
+        var rows: [MeshMediaServerRow] = []
+        var seen = Set<String>()
+        if let own { seen.insert(own) }
+        for device in devices where listableRoles.contains(device.role) && seen.insert(device.npub).inserted {
+            rows.append(.init(npub: device.npub, name: device.displayName, role: device.role,
+                              listed: listedSet.contains(device.npub), removable: device.npub != photoNpub))
+        }
+        for npub in listedNpubs where seen.insert(npub).inserted {
+            let device = devices.first { $0.npub == npub }
+            rows.append(.init(npub: npub, name: device?.displayName, role: device?.role,
+                              listed: true, removable: npub != photoNpub))
+        }
+        return rows
     }
 }

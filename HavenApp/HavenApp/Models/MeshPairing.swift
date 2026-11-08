@@ -22,7 +22,7 @@ enum MeshPairing {
         role == .mac && !macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && macRelayMeshNpub == nil
     }
 
-    static let macSetByWebAddressText = "This home vault is set by its web address in Home vault sync. Clear it there first, then add it here."
+    static let macSetByWebAddressText = "This desktop vault is set by its web address in Desktop vault sync. Clear it there first, then add it here."
 
     /// A hello's own time must be this close to now.
     static let helloSkew = 180

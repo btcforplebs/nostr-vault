@@ -566,8 +566,8 @@ struct VaultDashboardView: View {
                 BlossomSettingsView().settingsPage("Media Servers")
             }
             DashboardDivider()
-            SettingLink(icon: "laptopcomputer", title: "Home vault sync", value: config.macRelayURL.isEmpty ? "Off" : "On") {
-                MacSyncSettingsPage().settingsPage("Home vault sync")
+            SettingLink(icon: "laptopcomputer", title: "Desktop vault sync", value: config.macRelayURL.isEmpty ? "Off" : "On") {
+                MacSyncSettingsPage().settingsPage("Desktop vault sync")
             }
             DashboardDivider()
             Toggle(isOn: Binding(
