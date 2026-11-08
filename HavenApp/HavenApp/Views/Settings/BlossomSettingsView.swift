@@ -3,12 +3,20 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 
 struct BlossomSettingsView: View {
+    /// Pushed on a navigation stack: a Back button that asks before leaving
+    /// replaces the system one while there are unsaved changes. Sheets and
+    /// Settings sidebars ask through `MediaServersLeaveGuard` instead.
+    var pushed = true
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @ObservedObject private var mirrorService = MirrorService.shared
     @ObservedObject private var waitingPosts = MediaPostQueue.shared
 
     @State private var newMirrorURL = ""
+    /// Every add and remove is a draft: nothing is stored or published until Save.
+    @State private var draft = MediaServersDraft(mirrors: ConfigService.shared.config.blossomMirrors)
+    @ObservedObject private var leaveGuard = MediaServersLeaveGuard.shared
+    @Environment(\.dismiss) private var dismiss
     
     private func waitingLine(_ post: QueuedMediaPost) -> String {
         if let line = post.refusalLine { return line }
@@ -121,7 +129,7 @@ struct BlossomSettingsView: View {
             
             // Section 2: Additional Blossom Servers (Mirrors)
             Section {
-                let mirrors = configService.config.blossomMirrors
+                let mirrors = draft.mirrors
                 if mirrors.isEmpty {
                     Text("No other media servers added.")
                         .foregroundColor(.secondary)
@@ -137,12 +145,7 @@ struct BlossomSettingsView: View {
                                 .font(.appSystem(size: 12, design: .monospaced))
                                 .foregroundColor(.white)
                             Spacer()
-                            Button(action: {
-                                configService.config.blossomMirrors.removeAll(where: { $0 == url })
-                                configService.config.blossomMirrorsUpdatedAt = Int64(Date().timeIntervalSince1970)
-                                configService.save()
-                                NostrService.shared.publishServerList()
-                            }) {
+                            Button(action: { draft.removeMirror(url) }) {
                                 Image(systemName: "minus.circle")
                                     .foregroundColor(.red)
                             }
@@ -178,11 +181,11 @@ struct BlossomSettingsView: View {
                 Text("Other Servers").settingInfo(.shareMediaServers)
             }
 
-            SuggestedMediaServersSection(servers: configService.config.blossomMirrors) { url in
+            SuggestedMediaServersSection(servers: draft.mirrors) { url in
                 addMirror(url)
             }
 
-            MeshMediaServersSection()
+            MeshMediaServersSection(draft: $draft)
             
             // Section 3: Media Sync & Mirroring
             Section {
@@ -262,26 +265,99 @@ struct BlossomSettingsView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .safeAreaInset(edge: .bottom) { saveBar }
+        // Leaving with unsaved changes asks first: nothing was stored or published.
+        .navigationBarBackButtonHidden(pushed && draft.hasChanges)
+        .interactiveDismissDisabled(draft.hasChanges)
+        .toolbar {
+            if pushed && draft.hasChanges {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        leaveGuard.requestLeave { dismiss() }
+                    } label: {
+                        Label("Back", systemImage: "chevron.backward")
+                    }
+                    .accessibilityLabel("Back")
+                }
+            }
+        }
+        .confirmationDialog("Save \(MediaServersDraft.changesLabel(draft.changeCount))?",
+                            isPresented: Binding(get: { leaveGuard.pendingLeave != nil },
+                                                 set: { if !$0 { leaveGuard.cancel() } }),
+                            titleVisibility: .visible) {
+            Button("Save") {
+                save()
+                leaveGuard.proceed()
+            }
+            Button("Discard", role: .destructive) {
+                draft.discard()
+                leaveGuard.proceed()
+            }
+            Button("Keep Editing", role: .cancel) { leaveGuard.cancel() }
+        } message: {
+            Text("Your media server list hasn't been saved or published.")
+        }
+        .onChange(of: configService.config.blossomMirrors) { _, saved in
+            draft.savedMirrorsChanged(saved)
+        }
+        .onChange(of: draft.hasChanges, initial: true) { _, changed in
+            leaveGuard.hasChanges = changed
+        }
+        // Gone some way nothing could ask about (the window closed): nothing
+        // was stored or published, and the next screen is not held up.
+        .onDisappear {
+            leaveGuard.cancel()
+            leaveGuard.hasChanges = false
+        }
+    }
+
+    private var saveBar: some View {
+        let changes = draft.changeCount
+        return VStack(spacing: 6) {
+            Button(action: save) {
+                Text(changes == 0 ? "Save" : "Save (\(MediaServersDraft.changesLabel(changes)))")
+                    .font(.appBody.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.havenPurple)
+            .disabled(changes == 0)
+            Text("Only Save publishes your media server list.")
+                .font(.appCaption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.bar)
+    }
+
+    /// Stores the typed servers and publishes the list once, with the mesh
+    /// vaults added and removed on this screen.
+    private func save() {
+        let plan = draft.savePlan
+        guard draft.hasChanges else { return }
+        if plan.mirrorsChanged {
+            configService.config.blossomMirrors = plan.mirrors
+            // A published list older than this edit is not adopted over it.
+            configService.config.blossomMirrorsUpdatedAt = Int64(Date().timeIntervalSince1970)
+            configService.save()
+        }
+        NostrService.shared.publishServerList(meshAdd: plan.meshAdd, meshRemove: plan.meshRemove)
+        draft.didSave()
+        // The publish can change nothing (relays didn't answer): show the
+        // published list again after a while rather than a tap that didn't land.
+        if !plan.meshAdd.isEmpty || !plan.meshRemove.isEmpty {
+            Task {
+                try? await Task.sleep(for: .seconds(20))
+                draft.publishedListChanged()
+            }
+        }
     }
     
     private func addMirror(_ typed: String) {
-        var trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            if !trimmed.lowercased().hasPrefix("https://") && !trimmed.lowercased().hasPrefix("http://") {
-                trimmed = "https://" + trimmed
-            }
-            while trimmed.hasSuffix("/") {
-                trimmed = String(trimmed.dropLast())
-            }
-            if !configService.config.blossomMirrors.contains(trimmed) {
-                configService.config.blossomMirrors.append(trimmed)
-                // A published list older than this edit is not adopted over it.
-                configService.config.blossomMirrorsUpdatedAt = Int64(Date().timeIntervalSince1970)
-                configService.save()
-                NostrService.shared.publishServerList()
-                // A tapped suggestion leaves a half-typed address alone.
-                if typed == newMirrorURL { newMirrorURL = "" }
-            }
-        }
+        // A tapped suggestion leaves a half-typed address alone.
+        if draft.addMirror(typed), typed == newMirrorURL { newMirrorURL = "" }
     }
 }

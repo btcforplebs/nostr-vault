@@ -33,11 +33,11 @@ struct UploadServersLink: View {
         .padding(.horizontal, 16)
         .sheet(isPresented: $showMediaServers) {
             NavigationStack {
-                BlossomSettingsView()
+                BlossomSettingsView(pushed: false)
                     .settingsPage("Media Servers")
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { showMediaServers = false }
+                            Button("Done") { MediaServersLeaveGuard.shared.requestLeave { showMediaServers = false } }
                         }
                     }
             }

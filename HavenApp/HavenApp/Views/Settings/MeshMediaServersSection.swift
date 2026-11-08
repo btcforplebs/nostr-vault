@@ -5,13 +5,12 @@ import SwiftUI
 /// mesh entry already on their published list, with Remove. Linking a device
 /// no longer lists it: this is the one place a vault goes on the media server
 /// list (kind 10063) or comes off it (Logen via Tod, 2026-11-08). Add and
-/// Remove publish the list at once, as adding a typed server does.
+/// Remove only change the draft on screen; the page's Save publishes the
+/// list once (`MediaServersDraft`).
 struct MeshMediaServersSection: View {
     @EnvironmentObject var configService: ConfigService
     @ObservedObject private var nostr = NostrService.shared
-    /// Taps waiting for the published list to show them: npub → wanted listed.
-    /// Cleared when the list changes, or after 20 s.
-    @State private var pending: [String: Bool] = [:]
+    @Binding var draft: MediaServersDraft
 
     private var listed: [String] { nostr.serverLists[nostr.activeHexPubkey] ?? [] }
 
@@ -26,9 +25,12 @@ struct MeshMediaServersSection: View {
     }
 
     /// A list with only mesh entries is never published (NIP-F1), so Add
-    /// waits for a public media server.
+    /// waits for a public media server: one on the draft (it goes out with
+    /// the same Save) or already on the published list.
     private var hasPublicServer: Bool {
-        (configService.config.activeBlossomMirrors + listed).contains(where: HomeVaultLogic.isPublicServer)
+        var config = configService.config
+        config.blossomMirrors = draft.mirrors
+        return (config.activeBlossomMirrors + listed).contains(where: HomeVaultLogic.isPublicServer)
     }
 
     var body: some View {
@@ -43,12 +45,12 @@ struct MeshMediaServersSection: View {
                      ? "Listing a vault tells apps that speak the mesh (FIPS) where to load your media. Your media server list is public."
                      : "Add a media server above first. A list with only mesh vaults isn't published.")
             }
-            .onChange(of: listed) { _, _ in pending = [:] }
+            .onChange(of: listed) { _, _ in draft.publishedListChanged() }
         }
     }
 
     private func row(_ row: MeshMediaServerRow) -> some View {
-        let shownListed = pending[row.npub] ?? row.listed
+        let shownListed = draft.shownListed(row.entry, published: row.listed)
         return HStack(spacing: 12) {
             Image(systemName: row.role?.icon ?? "point.3.connected.trianglepath.dotted")
                 .font(.appSystem(size: 14))
@@ -83,17 +85,6 @@ struct MeshMediaServersSection: View {
     }
 
     private func set(_ row: MeshMediaServerRow, listed: Bool) {
-        pending[row.npub] = listed
-        if listed {
-            NostrService.shared.publishServerList(meshAdd: [row.entry])
-        } else {
-            NostrService.shared.publishServerList(meshRemove: [row.entry])
-        }
-        // The publish can change nothing (relays didn't answer): show the
-        // published list again after a while rather than a tap that didn't land.
-        Task {
-            try? await Task.sleep(for: .seconds(20))
-            if pending[row.npub] == listed { pending[row.npub] = nil }
-        }
+        draft.setMesh(row.entry, listed: listed, published: row.listed)
     }
 }

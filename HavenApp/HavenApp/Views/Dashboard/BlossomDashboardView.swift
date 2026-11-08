@@ -110,7 +110,7 @@ struct BlossomDashboardView: View {
 
     private var settingsSheet: some View {
         NavigationStack {
-            BlossomSettingsView()
+            BlossomSettingsView(pushed: false)
                 .environmentObject(configService)
                 .environmentObject(nostrService)
                 #if os(iOS)
@@ -118,7 +118,7 @@ struct BlossomDashboardView: View {
                 #endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { showingBlossomSettings = false }
+                        Button("Done") { MediaServersLeaveGuard.shared.requestLeave { showingBlossomSettings = false } }
                             .foregroundColor(.havenPurple)
                     }
                 }
