@@ -7,6 +7,7 @@ import { loadOwnerAccount } from "./src/fips/owner-proof.js"
 import { RELAY_NS, pageStorage, migrateRelayKeys } from "./src/page-storage.js"
 import { loadHaven } from "./src/haven/haven.js"
 import { HavenClient } from "./src/haven/client.js"
+import { createKeepAwake, ensurePersisted } from "./src/keep-awake.js"
 
 const $ = id => document.getElementById(id)
 // /relay/ shares its origin, so its localStorage, with /vault/: every key here lives under RELAY_NS.
@@ -57,20 +58,15 @@ async function addEvent(tag = "gen") {
 }
 async function refreshCount() { if (!relay) return; count = await relay.count({ kinds: [1], authors: [pk] }); $("count").textContent = $("scount").textContent = count }
 
-// ---- wake lock / screensaver
-let lock = null, saverOn = false
-async function takeLock() {
-  try {
-    lock = await navigator.wakeLock.request("screen")
-    log("wakelock-acquired")
-    lock.addEventListener("release", () => { log("wakelock-released"); lock = null; updLock() })
-  } catch (e) { log("wakelock-error", { err: String(e) }) }
-  updLock()
-}
-function updLock() { $("slock").textContent = "wake lock: " + (lock ? "held" : "NOT held") }
-$("start").onclick = async () => { saverOn = true; $("saver").classList.add("on"); LS.setItem("saver", "1"); await takeLock() }
-$("saver").onclick = () => { saverOn = false; $("saver").classList.remove("on"); LS.setItem("saver", "0"); lock?.release() }
-document.addEventListener("visibilitychange", () => { log("visibility"); if (document.visibilityState === "visible" && saverOn && !lock) takeLock() })
+// ---- wake lock / screensaver: kept on across reloads (src/keep-awake.js)
+const awake = createKeepAwake({
+  storage: LS, log,
+  onChange: ({ saverOn, held }) => { $("saver").classList.toggle("on", saverOn); $("slock").textContent = "wake lock: " + (held ? "held" : "NOT held") },
+})
+$("start").onclick = () => awake.start()
+$("saver").onclick = () => awake.stop()
+document.addEventListener("visibilitychange", () => log("visibility"))
+awake.restore()
 for (const ev of ["pagehide", "pageshow", "freeze", "resume", "online", "offline"]) addEventListener(ev, e => log(ev, { persisted: e.persisted }))
 document.addEventListener("freeze", () => log("freeze")); document.addEventListener("resume", () => log("resume"))
 
@@ -143,7 +139,7 @@ async function startHaven(owners) {
   LS.removeItem("fips-photo-vaults")
   try {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(e => log("sw-error", { err: String(e) }))
-    const persistGranted = await navigator.storage.persist()
+    const persistGranted = await ensurePersisted()
     if (!owners.size) {
       $("status").textContent = "Add your vault's npub below to start Haven"
       log("boot", { haven: false, persistGranted })
@@ -155,7 +151,7 @@ async function startHaven(owners) {
       $("status").textContent = `Haven ready (owner ${npubEncode([...owners][0]).slice(0, 16)}…)`
     }
   } catch (e) { $("status").textContent = "HAVEN FAILED TO START: " + e; log("init-error", { err: String(e) }); haven = relay = undefined }
-  mountFipsPanel({ haven, owners, log, storage: LS, bind: pk })
+  mountFipsPanel({ haven, owners, log, storage: LS, bind: pk, autoStart: true })
 
   // heartbeat every 5s; generator event every 10s; beacon a heartbeat every 60s
   let n = 0
@@ -165,6 +161,6 @@ async function startHaven(owners) {
     $("uptime").textContent = $("suptime").textContent = fmt(Date.now() - pageStart)
     if (relay && genOn && n % 2 === 0) { try { await addEvent() } catch (e) { log("event-error", { err: String(e) }) } }
     if (n % 2 === 0) await refreshCount().catch(() => {})
-    if (n % 12 === 0) beacon({ t: new Date().toISOString(), sid, type: "hb", vis: document.visibilityState, uptime: fmt(Date.now() - pageStart), count, lock: !!lock })
+    if (n % 12 === 0) beacon({ t: new Date().toISOString(), sid, type: "hb", vis: document.visibilityState, uptime: fmt(Date.now() - pageStart), count, lock: awake.held })
   }, 5000)
 })()

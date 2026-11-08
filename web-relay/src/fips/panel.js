@@ -8,6 +8,8 @@ import { parseBlobRef } from "./blob-get.js"
 import { npubEncode } from "nostr-tools/nip19"
 
 const $ = id => document.getElementById(id)
+// Set by Stop mesh, cleared by Start mesh: the page doesn't rejoin by itself after the person at it turned the mesh off.
+export const MESH_OFF_ITEM = "fips-mesh-off"
 
 /**
  * @param haven   Haven's started entry point, or undefined when it isn't running (no owner yet, or it failed)
@@ -15,9 +17,13 @@ const $ = id => document.getElementById(id)
  * @param account the signed-in user's pubkey, if any: refused as a mesh address
  * @param storage the page's storage (src/page-storage.js): paired vaults and the relay's FIPS key
  * @param bind    the relay page's own key: the owner's account proof names it (owner-proof.js)
+ * @param autoStart the /relay/ page: join the mesh by itself when vaults are saved, and again on resume/pageshow, unless
+ *                the person at the browser pressed Stop mesh (kept in storage). The web app's Relay screen leaves it off.
+ * @param win     where resume/pageshow/visibilitychange arrive (tests pass a stand-in)
+ * @param startRelay startFipsRelay, or a stand-in in tests
  */
-export function mountFipsPanel({ haven, owners, log, account, storage, bind }) {
-  let running
+export function mountFipsPanel({ haven, owners, log, account, storage, bind, autoStart = false, win = globalThis.window, startRelay = startFipsRelay }) {
+  let running, starting
   $("fipsOwners").value = [...owners].join("\n")
   // The web app's Relay screen mounts this panel without the account box (its account is the signed-in one).
   if ($("fipsAccount")) mountAccountProof({ storage, bind, log })
@@ -54,23 +60,43 @@ export function mountFipsPanel({ haven, owners, log, account, storage, bind }) {
       $("fipsStatus").textContent = String(e)
     }
   }
+  // Joining the mesh. `auto` is a rejoin nobody clicked for: it never runs after Stop mesh, and a failure only logs.
+  const start = async ({ auto = false } = {}) => {
+    if (running || starting) return
+    if (!owners.size || !haven) return render()
+    starting = true
+    try {
+      running = await startRelay({ haven, getOwners: () => owners, storage, onStatus: render })
+      $("fipsStart").textContent = "Stop mesh"
+      log(auto ? "fips-autostart" : "fips-start", { npub: running.status.npub })
+    } catch (e) {
+      log("fips-error", { err: String(e), auto })
+      $("fipsStatus").textContent = "The mesh failed to start: " + e
+    } finally {
+      starting = false
+    }
+  }
   $("fipsStart").onclick = async () => {
+    if (starting) return
     if (running) {
-      await running.stop()
+      const r = running
       running = undefined
+      if (autoStart) storage.setItem(MESH_OFF_ITEM, "1")
+      await r.stop()
       $("fipsStart").textContent = "Start mesh"
       log("fips-stop")
       return render()
     }
-    if (!owners.size || !haven) return render()
-    try {
-      running = await startFipsRelay({ haven, getOwners: () => owners, storage, onStatus: render })
-      $("fipsStart").textContent = "Stop mesh"
-      log("fips-start", { npub: running.status.npub })
-    } catch (e) {
-      log("fips-error", { err: String(e) })
-      $("fipsStatus").textContent = "The mesh failed to start: " + e
-    }
+    if (autoStart) storage.removeItem(MESH_OFF_ITEM)
+    await start()
+  }
+  // A reload, crash or tab discard loads the page again: rejoin with the saved vaults. A frozen tab that comes back
+  // (resume, a back/forward-cache pageshow, or turning visible) rejoins too if the mesh isn't up by then.
+  const rejoin = () => { if (storage.getItem(MESH_OFF_ITEM) !== "1") start({ auto: true }) }
+  if (autoStart && win) {
+    win.addEventListener("pageshow", rejoin)
+    win.document?.addEventListener("resume", rejoin)
+    win.document?.addEventListener("visibilitychange", () => { if (win.document.visibilityState === "visible") rejoin() })
   }
   // A photo by hash from a paired vault. A .fips link names the vault; a bare hash tries each paired vault in turn.
   let shown
@@ -110,4 +136,5 @@ export function mountFipsPanel({ haven, owners, log, account, storage, bind }) {
     say(errors.join("\n") || "no paired vault")
   }
   render()
+  if (autoStart) rejoin()
 }
