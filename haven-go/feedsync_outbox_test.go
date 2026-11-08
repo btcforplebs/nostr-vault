@@ -107,3 +107,42 @@ func TestFeedSyncReadsAFollowOnTheirOwnWriteRelay(t *testing.T) {
 		t.Fatalf("asked the follow's read relay %d times", inbox.asks)
 	}
 }
+
+// A follow's relay list can name any address; the vault dials only public
+// hostnames (health audit Tron §5). Every one of these passed before.
+func TestOutboxRelayKeyRefusesAddressesAFollowPicks(t *testing.T) {
+	refused := []string{
+		// the old prefix list
+		"wss://10.0.0.1", "wss://192.168.1.4", "wss://127.0.0.1:7777", "wss://localhost", "wss://box.local", "wss://abc.onion",
+		// private, CGNAT, link-local, other v4 literals
+		"wss://172.16.0.1", "wss://172.31.255.254/", "wss://100.64.0.1", "wss://100.100.100.100", "wss://169.254.169.254/latest",
+		"wss://0.0.0.0", "wss://8.8.8.8", "wss://1.2.3.4:443/path",
+		// v6 literals
+		"wss://[::1]", "wss://[fe80::1%25en0]", "wss://[fc00::1]", "wss://[fd7a:115c:a1e0::1]", "wss://[::ffff:10.0.0.1]", "wss://[2606:4700::1111]",
+		// forms a resolver may read as an address
+		"wss://127.1", "wss://0x7f.1", "wss://10.0.0.010", "wss://2130706433",
+		// private-use names, trailing dot, dotless
+		"wss://localhost.", "wss://relay.localhost", "wss://nas.lan", "wss://router.home.arpa", "wss://vault.internal", "wss://relay.test", "wss://intranet",
+		"wss://LOCALHOST", "wss://Box.Local.",
+		// not wss
+		"ws://relay.example.com", "https://relay.example.com",
+	}
+	for _, raw := range refused {
+		if k, ok := outboxRelayKey(raw); ok {
+			t.Errorf("outboxRelayKey(%q) = %q, want refused", raw, k)
+		}
+	}
+	kept := map[string]string{
+		"wss://Relay.Damus.io/":         "wss://relay.damus.io",
+		"wss://nos.lol":                 "wss://nos.lol",
+		"wss://relay.example.com:8443/": "wss://relay.example.com:8443",
+		"wss://relay.primal.net.":       "wss://relay.primal.net",
+		"wss://10.example.com":          "wss://10.example.com",
+		"wss://local.example.org/inbox": "wss://local.example.org/inbox",
+	}
+	for raw, want := range kept {
+		if k, ok := outboxRelayKey(raw); !ok || k != want {
+			t.Errorf("outboxRelayKey(%q) = %q, %v; want %q", raw, k, ok, want)
+		}
+	}
+}
