@@ -203,6 +203,16 @@ enum MeshDevicesLogic {
         return "On · \(inReach) of \(total) devices in reach"
     }
 
+    /// The Mac's status line under the Mesh switch: the iPhone's words, with
+    /// the Mac's own states. The Mac starts its engine at once (no "when
+    /// needed") and never with an empty list.
+    static func macStatusLine(enabled: Bool, running: Bool, starting: Bool, inReach: Int, total: Int) -> String {
+        guard enabled else { return "Off" }
+        guard total > 0 else { return "On · no devices yet" }
+        guard running else { return starting ? "Starting…" : "On · not running" }
+        return statusLine(enabled: true, running: true, inReach: inReach, total: total)
+    }
+
     /// Start options for the Mac's engine: only My Devices reach it (the
     /// engine's `own_devices`), each dialed at start. Nil with no devices,
     /// because an empty `own_devices` would open the Mac to anyone; the Mac

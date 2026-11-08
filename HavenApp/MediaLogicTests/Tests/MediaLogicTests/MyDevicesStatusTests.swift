@@ -33,4 +33,23 @@ final class MyDevicesStatusTests: XCTestCase {
         XCTAssertEqual(MyDevicesStatus.line(.init(state: .offline, lastSeen: 1_000_000 - 3 * 86_400), now: now), "Offline · last shared 3 d ago")
         XCTAssertEqual(MyDevicesStatus.line(.init(state: .unknown, lastSeen: nil), now: now), "Not seen on the mesh lately")
     }
+
+    func testSettingsRow() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let offline = MyDevicesStatus.Status(state: .offline, lastSeen: 1_000_000 - 3 * 86_400)
+        let unchecked = MyDevicesStatus.Status(state: .unchecked, lastSeen: nil)
+        func row(_ inReach: Bool?, _ s: MyDevicesStatus.Status) -> String? {
+            MyDevicesStatus.settingsRow(inReach: inReach, status: s, now: now).map { "\($0.on) \($0.text)" }
+        }
+        // Connected wins over an old advert.
+        XCTAssertEqual(row(true, offline), "true On the mesh · sharing your posts and media")
+        // Out of reach, or mesh off: when it last shared, as on Android.
+        XCTAssertEqual(row(false, offline), "false Offline · last shared 3 d ago")
+        XCTAssertEqual(row(nil, offline), "false Offline · last shared 3 d ago")
+        XCTAssertEqual(row(nil, .init(state: .online, lastSeen: 999_000)), "true On the mesh · sharing your posts and media")
+        XCTAssertEqual(row(false, .init(state: .unknown, lastSeen: nil)), "false Not seen on the mesh lately")
+        // Relays not asked yet: the engine's word, or nothing with it off.
+        XCTAssertEqual(row(false, unchecked), "false Not in reach")
+        XCTAssertNil(row(nil, unchecked))
+    }
 }

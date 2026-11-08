@@ -114,6 +114,14 @@ final class MeshDevicesTests: XCTestCase {
         XCTAssertEqual(MeshDevicesLogic.statusLine(enabled: true, running: true, inReach: 3, total: 4), "On · 3 of 4 devices in reach")
     }
 
+    func testMacStatusLine() {
+        XCTAssertEqual(MeshDevicesLogic.macStatusLine(enabled: false, running: true, starting: false, inReach: 1, total: 2), "Off")
+        XCTAssertEqual(MeshDevicesLogic.macStatusLine(enabled: true, running: false, starting: false, inReach: 0, total: 0), "On · no devices yet")
+        XCTAssertEqual(MeshDevicesLogic.macStatusLine(enabled: true, running: false, starting: true, inReach: 0, total: 2), "Starting…")
+        XCTAssertEqual(MeshDevicesLogic.macStatusLine(enabled: true, running: false, starting: false, inReach: 0, total: 2), "On · not running")
+        XCTAssertEqual(MeshDevicesLogic.macStatusLine(enabled: true, running: true, starting: false, inReach: 1, total: 2), "On · 1 of 2 devices in reach")
+    }
+
     func testInReachCountsOnlyListedDevices() {
         let list = [MeshDevice(npub: mac, name: "", role: .mac), MeshDevice(npub: moto, name: "", role: .phone)]
         XCTAssertEqual(MeshDevicesLogic.inReachCount(list, peers: [mac, "npub1stranger"]), 1)

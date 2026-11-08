@@ -76,6 +76,20 @@ enum MyDevicesStatus {
         }
     }
 
+    /// The My Devices row in iPhone Mesh settings: the running
+    /// engine's link first, then the device's advert, so an unreachable
+    /// device says when it last shared, as on Android and Your space.
+    /// `inReach` is nil while this device's engine is not running. Nil when
+    /// there is nothing to say (engine off, relays not asked yet).
+    static func settingsRow(inReach: Bool?, status: Status, now: Date = Date()) -> (text: String, on: Bool)? {
+        if inReach == true { return (sharingLine, true) }
+        switch status.state {
+        case .online: return (sharingLine, true)
+        case .offline, .unknown: return (line(status, now: now), false)
+        case .connected, .unchecked: return inReach == false ? ("Not in reach", false) : nil
+        }
+    }
+
     /// "just now", "12 min ago", "3 h ago", "2 d ago".
     static func agoText(_ date: Date, now: Date) -> String {
         let s = max(0, Int(now.timeIntervalSince(date)))

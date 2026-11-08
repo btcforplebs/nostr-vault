@@ -22,6 +22,8 @@ final class MacFipsMeshService: ObservableObject {
         var running: Bool
         var npub: String?
         var address: String?
+        /// Npubs the engine is connected to now: My Devices' in-reach dots.
+        var peers: [String]?
     }
 
     @Published private(set) var status: Status?

@@ -11,6 +11,8 @@ struct MacFipsMeshSettingsView: View {
     @StateObject private var detection = FIPSDetectionService()
     @State private var showPair = false
     @State private var copied = false
+    /// The device Remove asked about, until it is confirmed or cancelled.
+    @State private var removing: MeshDevice?
 
     var body: some View {
         Form {
@@ -67,10 +69,18 @@ struct MacFipsMeshSettingsView: View {
         return .gray
     }
 
+    /// The iPhone's status line (MeshDevicesLogic.statusLine): how many of
+    /// My Devices the running engine is connected to.
     private var statusText: String {
-        if mesh.running { return "On · open to \(configService.config.meshDevices.count) of your devices" }
-        if mesh.starting { return "Starting…" }
-        return "Off"
+        let devices = configService.config.meshDevices.filter { $0.npub != mesh.ownNpub }
+        return MeshDevicesLogic.macStatusLine(enabled: mesh.enabled, running: mesh.running, starting: mesh.starting,
+                                              inReach: MeshDevicesLogic.inReachCount(devices, peers: peers),
+                                              total: devices.count)
+    }
+
+    /// Who the engine is connected to now; empty while it is not running.
+    private var peers: Set<String> {
+        mesh.running ? Set(mesh.status?.peers ?? []) : []
     }
 
     // MARK: 2 This Device
@@ -118,13 +128,23 @@ struct MacFipsMeshSettingsView: View {
                             .font(.appCaption)
                             .foregroundColor(.secondary)
                             .textSelection(.enabled)
+                        // The iPhone's in-reach dot (FipsMeshDeviceRow), while the engine runs.
+                        if mesh.running {
+                            let inReach = peers.contains(device.npub)
+                            HStack(spacing: 5) {
+                                Circle()
+                                    .fill(inReach ? Color.havenOnline : Color.gray)
+                                    .frame(width: 7, height: 7)
+                                Text(inReach ? MyDevicesStatus.sharingLine : "Not in reach")
+                                    .font(.appCaption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .accessibilityElement(children: .combine)
+                        }
                     }
                     Spacer()
                     Button(role: .destructive) {
-                        configService.config.meshDevices = MeshDevicesLogic.removing(npub: device.npub, from: configService.config.meshDevices)
-                        configService.save()
-                        MeshCopyV2Service.shared.forget(peer: device.npub)
-                        mesh.sync()
+                        removing = device
                     } label: {
                         Image(systemName: "minus.circle")
                     }
@@ -147,8 +167,24 @@ struct MacFipsMeshSettingsView: View {
         } header: {
             Text("My Devices")
         } footer: {
-            Text("Your phones, home vaults and browser vault, in one list. Add a device links one with two scans, or paste its code or mesh address instead.")
+            Text(MyDevicesStatus.header)
         }
+        // Remove asks first, as on the iPhone's device page.
+        .confirmationDialog("Remove \(removing?.displayName ?? "device")?",
+                            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                            titleVisibility: .visible, presenting: removing) { device in
+            Button("Remove", role: .destructive) { remove(device) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("It can no longer reach this Mac over the mesh. Anything already on it stays there.")
+        }
+    }
+
+    private func remove(_ device: MeshDevice) {
+        configService.config.meshDevices = MeshDevicesLogic.removing(npub: device.npub, from: configService.config.meshDevices)
+        configService.save()
+        MeshCopyV2Service.shared.forget(peer: device.npub)
+        mesh.sync()
     }
 
     // MARK: 4 Sync
