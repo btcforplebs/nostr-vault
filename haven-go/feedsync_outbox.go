@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net/netip"
 	"net/url"
 	"slices"
 	"sort"
@@ -173,17 +174,21 @@ func feedOutboxPlan(follows []string, writeRelays map[string][]string, feedRelay
 }
 
 // outboxRelayKey: `wss://Host/` and `wss://host` are one relay. Only public
-// wss relays qualify (no ws://, loopback, LAN, .local or onion), as in the
-// apps' normalizedKey.
+// wss relays by hostname qualify, as in the apps' normalizedKey: no ws://, no
+// IP literal of any kind (v4, v6, or the short and hex forms a resolver may
+// still read as an address, like 127.1 or 0x7f.1), no dotless name, and no
+// localhost, .local, .onion or other private-use name. A follow's relay list
+// must not make the vault dial an address its author picks: the LAN, CGNAT
+// (100.64/10, Tailscale), link-local (169.254/16, fe80::/10) or the box
+// itself (health audit Tron §5, 2026-11-08). A hostname that resolves to a
+// private address is not caught here.
 func outboxRelayKey(raw string) (string, bool) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || strings.ToLower(u.Scheme) != "wss" {
 		return "", false
 	}
-	host := strings.ToLower(u.Hostname())
-	if !strings.Contains(host, ".") || strings.HasSuffix(host, ".onion") || strings.HasSuffix(host, ".local") ||
-		host == "localhost" || strings.HasPrefix(host, "127.") || strings.HasPrefix(host, "192.168.") ||
-		strings.HasPrefix(host, "10.") {
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if !publicRelayHost(host) {
 		return "", false
 	}
 	port := ""
@@ -191,6 +196,30 @@ func outboxRelayKey(raw string) (string, bool) {
 		port = ":" + p
 	}
 	return "wss://" + host + port + strings.TrimSuffix(u.Path, "/"), true
+}
+
+// privateUseSuffixes are names that never reach the public internet.
+var privateUseSuffixes = []string{".localhost", ".local", ".onion", ".internal", ".lan", ".home", ".home.arpa", ".corp", ".intranet", ".private", ".test", ".invalid", ".arpa"}
+
+func publicRelayHost(host string) bool {
+	if host == "" || !strings.Contains(host, ".") || strings.ContainsAny(host, ":%[]") {
+		return false // dotless names, and IPv6 literals (url.Hostname strips the brackets)
+	}
+	if _, err := netip.ParseAddr(host); err == nil {
+		return false
+	}
+	for _, s := range privateUseSuffixes {
+		if strings.HasSuffix(host, s) {
+			return false
+		}
+	}
+	// A public top-level domain is never numeric: "127.1", "10.0.0.010", "0x7f.1"
+	// and "1.2.3.4" all end in one and some resolvers read them as addresses.
+	tld := host[strings.LastIndex(host, ".")+1:]
+	if tld == "" || strings.Trim(tld, "0123456789") == "" || strings.HasPrefix(tld, "0x") {
+		return false
+	}
+	return true
 }
 
 // pullFeedOutbox asks each extra relay of the plan for its own follows only:
