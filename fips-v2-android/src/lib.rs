@@ -238,6 +238,14 @@ pub const ERR_BAD_EVENTS: i32 = -8;
 /// node's address to it.
 pub const ERR_NOT_OWN: i32 = -9;
 
+/// Inbound filter FPR cap (`node.bloom.max_inbound_fpr`). The engine default,
+/// 0.20 (fill ~0.725, ~2,100 entries on the fixed 1 KB filter), is below the
+/// public seeds' own filter now: theirs arrives at fpr ~0.21 (fill 0.735) and
+/// was refused every time (429 times in one 2026-11-08 run), so a stranger's
+/// npub was never in any filter and never looked up. 0.30 is fill ~0.786,
+/// ~2,500 entries. A saturated, poisoned filter (fpr near 1) is still refused.
+const MAX_INBOUND_FPR: f64 = 0.30;
+
 /// Every caller string is decoded or quoted before it reaches the template:
 /// the nsec and npubs are re-encoded from their decoded keys, and relay URLs
 /// are JSON strings (valid YAML), so no input can add keys or peers.
@@ -290,6 +298,8 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
   leaf_only: true
   control:
     enabled: false
+  bloom:
+    max_inbound_fpr: {MAX_INBOUND_FPR}
 {native_api}  rendezvous:
     nostr:
       enabled: true
@@ -1053,6 +1063,22 @@ mod tests {
         assert_eq!(cfg.peers.len(), 1);
         assert_eq!(cfg.peers[0].npub, npub);
         assert!(cfg.peers[0].alias.is_none());
+    }
+
+    #[test]
+    fn the_inbound_filter_cap_admits_the_public_seeds_filter() {
+        // The seed's FilterAnnounce measured 2026-11-08: fill 0.735, fpr 0.21.
+        let seed_fpr = 0.735_f64.powi(5);
+        let nsec = generate_nsec();
+        let opts = StartOptions { public_seeds: true, ..Default::default() };
+        let cfg = mesh_config(&config_yaml(&nsec, &opts).unwrap()).unwrap();
+        assert!(
+            cfg.node.bloom.max_inbound_fpr > seed_fpr,
+            "cap {} refuses the seed's filter (fpr {seed_fpr:.3})",
+            cfg.node.bloom.max_inbound_fpr
+        );
+        // Still an antipoison cap: a near-saturated filter is refused.
+        assert!(cfg.node.bloom.max_inbound_fpr < 0.9_f64.powi(5));
     }
 
     #[test]

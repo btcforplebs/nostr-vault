@@ -17,7 +17,7 @@ crate-type = ["cdylib", "rlib"]
 # cache_identity control command. Must be the same rev as web-relay-vault, so
 # the app links one fips. Back to a jmcorgan/fips tag once they land in a
 # release.
-fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev = "786e2b42" }
+fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev = "97024428" }
 # The browser relay protocol (NIP-01 over TCP/FIPS 7447), over this node's
 # datagram API: relay_link.rs.
 web-relay-vault = { path = "../web-relay-vault" }
