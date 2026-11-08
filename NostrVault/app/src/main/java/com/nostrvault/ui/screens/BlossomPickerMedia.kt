@@ -109,7 +109,7 @@ class BlossomPickerMedia @Inject constructor(
                         // A server knows the real type and upload time; the local file doesn't.
                         items[sha] = existing.copy(
                             mimeType = blob.type?.takeIf { '/' in it } ?: existing.mimeType,
-                            uploaded = blob.uploaded ?: existing.uploaded,
+                            uploaded = oldestUploaded(existing.uploaded, blob.uploaded),
                         )
                         return@forEach
                     }
@@ -137,6 +137,12 @@ class BlossomPickerMedia @Inject constructor(
         }
     }
 }
+
+/**
+ * The upload date to keep when two servers list the same blob: the oldest,
+ * so the order the servers answer in never changes a file's date.
+ */
+internal fun oldestUploaded(a: Long?, b: Long?): Long? = listOfNotNull(a, b).minOrNull()
 
 /**
  * The link to send for a picked file. A mirror URL is the bare
