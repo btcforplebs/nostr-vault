@@ -32,10 +32,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -65,14 +61,13 @@ fun FipsMeshScreen(
     onBack: () -> Unit,
     onOpenDevice: (String) -> Unit,
     onOpenAdvanced: () -> Unit,
-    /** The two-scan link (PairDeviceScreen), the same as Vault › Your devices › Add. */
+    /** The two-scan link (PairDeviceScreen), the same as Vault › Your devices › Add; also My Devices › Add a device. */
     onLinkDevice: () -> Unit = {},
     viewModel: FipsMeshViewModel = hiltViewModel(),
 ) {
     val status by viewModel.status.collectAsState()
     val lastError by viewModel.lastError.collectAsState()
     val devices by viewModel.devices.collectAsState()
-    var adding by rememberSaveable { mutableStateOf(false) }
 
     // Polled, not pushed: the bridge never calls back into the JVM, so state is read while this screen is on top.
     LaunchedEffect(status.running) {
@@ -113,7 +108,7 @@ fun FipsMeshScreen(
             // Others stay usable when it is off: taking a lost phone out, or turning kiosk mode off, must never need
             // the mesh on first, which would announce this phone and let that phone dial in (Tron, #981).
             if (status.running) ThisDeviceSection(status, onLinkDevice)
-            MyDevicesSection(devices, status.running, onOpenDevice) { adding = true }
+            MyDevicesSection(devices, status.running, onOpenDevice, onLinkDevice)
             SyncSection(viewModel)
             ShareSection(viewModel, status)
             MeshSection(title = null) {
@@ -122,8 +117,6 @@ fun FipsMeshScreen(
             Spacer(Modifier.height(24.dp))
         }
     }
-
-    if (adding) AddDeviceSheet(viewModel, onDismiss = { adding = false })
 }
 
 /**
@@ -157,6 +150,11 @@ private fun ThisDeviceSection(status: FipsStatus, onLinkDevice: () -> Unit) {
 }
 
 internal const val LINK_A_DEVICE = "Link a device"
+/**
+ * My Devices › Add a device: the same two scans, with Paste instead for a Linux box or the browser relay page, which
+ * show only a mesh address (iPhone, 11-05). The old by-address sheet is gone.
+ */
+internal const val ADD_A_DEVICE = "Add a device"
 internal const val THIS_DEVICE_FOOTER = "Link a device shows a code to scan, then scans the other device's. Two scans and both are linked."
 
 @Composable
@@ -186,7 +184,7 @@ private fun MyDevicesSection(devices: List<MyDevice>, running: Boolean, onOpen: 
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(onClick = onAdd).padding(vertical = 14.dp)) {
             Icon(Icons.Filled.AddCircle, contentDescription = null, tint = colors.primary, modifier = Modifier.size(26.dp))
             Spacer(Modifier.width(12.dp))
-            Text("Add a device by address", color = colors.primary, fontSize = 16.sp)
+            Text(ADD_A_DEVICE, color = colors.primary, fontSize = 16.sp)
         }
     }
 }
