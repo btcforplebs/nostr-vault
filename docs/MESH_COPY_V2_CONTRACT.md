@@ -156,8 +156,8 @@ The owner-signed 24242 keeps working until the apps switch (`TODO(mesh-key)`).
 10. **Done.** Only when B wrote everything it restored (§3.2 partial). B calls `POST /copy/v2/<id>/done`. A
     deletes `copy-<id>/`, now or 24 h after the build, whichever comes first. B deletes its parts once they are
     restored, and records the copy's `created_at` as the last good catch-up, unless a file the manifest counts did
-    not come (damaged in the zip, or missing from it): then nothing is recorded, so the first catch-up compares
-    everything and asks A for that file again.
+    not come (damaged in the zip, or missing from it) or a store's entry could not be read to the end: then B drops
+    any catch-up it had recorded for A, so the first catch-up compares everything and asks A for what is missing.
 
 ### 3.1 Manifest (`GET /copy/v2/<id>`)
 
@@ -360,7 +360,8 @@ The app calls the engine when a linked device comes into reach. The engine then:
 3. **Media.** `GET /copy/v2/sync/files?since=<t>` lists the owner's own files (§4) added since then:
    `{files: […], more: bool}`, newest first (a second's files by sha256), at most 2000 per answer. With `more`, B
    asks again with `&until=<created_at>&after=<sha256>` of the last file it got. Each missing one is fetched with
-   `GET /copy/v2/sync/file/<sha256>` and hash-checked. B records the catch-up only when it read every page: an A
+   `GET /copy/v2/sync/file/<sha256>` and hash-checked: a 404 (not an own file, or gone) or a hash mismatch is
+   skipped, any other answer ends the round unrecorded. B records the catch-up only when it read every page: an A
    that ignores the cursor (an older engine) sends the same page again, and B stops there without recording, so
    older files stay in the next round's window.
 4. **Settings** (§5).

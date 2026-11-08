@@ -198,6 +198,7 @@ type fakeFilesA struct {
 	pageSize    int
 	ignoreUntil bool
 	pages       atomic.Int64
+	status      map[string]int // sha256 -> status for its file request
 }
 
 func (f *fakeFilesA) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -220,7 +221,12 @@ func (f *fakeFilesA) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"files": out, "more": more})
 	case strings.HasPrefix(r.URL.Path, "/copy/v2/sync/file/"):
-		data, ok := f.data[strings.TrimPrefix(r.URL.Path, "/copy/v2/sync/file/")]
+		sha := strings.TrimPrefix(r.URL.Path, "/copy/v2/sync/file/")
+		if code := f.status[sha]; code != 0 {
+			http.Error(w, "no", code)
+			return
+		}
+		data, ok := f.data[sha]
 		if !ok {
 			http.NotFound(w, r)
 			return
@@ -232,6 +238,15 @@ func (f *fakeFilesA) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func catchUpWithFakeFiles(t *testing.T, n, pageSize int, ignoreUntil bool) (*fakeFilesA, []string) {
+	t.Helper()
+	fake, shas, err := catchUpWithFakeFilesHook(t, n, pageSize, ignoreUntil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fake, shas
+}
+
+func catchUpWithFakeFilesHook(t *testing.T, n, pageSize int, ignoreUntil bool, hook func(*fakeFilesA, []string)) (*fakeFilesA, []string, error) {
 	t.Helper()
 	owner := newTestKey(t)
 	openCopyVault(t, owner.pk) // B
@@ -269,13 +284,14 @@ func catchUpWithFakeFiles(t *testing.T, n, pageSize int, ignoreUntil bool) (*fak
 		}
 		return fake.files[i].SHA256 < fake.files[j].SHA256
 	})
+	if hook != nil {
+		hook(fake, shas)
+	}
 	ts := httptest.NewServer(fake)
 	t.Cleanup(ts.Close)
 	saveCopyPeerToken("npub1peer", token)
-	if _, err := newCopyClient("npub1peer", ts.URL).sync(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	return fake, shas
+	_, err := newCopyClient("npub1peer", ts.URL).sync(context.Background())
+	return fake, shas, err
 }
 
 // More own files than one list page: the catch-up pages back through all of
@@ -335,5 +351,83 @@ func TestCopyOwnFilesListPages(t *testing.T) {
 	}
 	if more || len(rest) != 3 || len(seen) != copySyncMaxFiles+3 {
 		t.Fatalf("second page: %d files, more=%v; %d of %d seen", len(rest), more, len(seen), copySyncMaxFiles+3)
+	}
+}
+
+// Tron #1864 (1): every store failing its writes (a full disk at the start)
+// is partial, not nothing_restored: that one stops and forgets the copy.
+func TestCopyEveryStoreFailingIsPartialNotNothingRestored(t *testing.T) {
+	owner, other := newTestKey(t), newTestKey(t)
+	srcDir, built, _ := buildOnA(t, owner, other, []byte("a photo"))
+	ts, aCache, _ := copyFromA(t, srcDir, built, nil)
+	openCopyVault(t, owner.pk) // B
+	copyPollEvery = 10 * time.Millisecond
+	t.Cleanup(func() { copyPollEvery = 2 * time.Second })
+	wrap := func(db DBBackend) DBBackend {
+		f := &failingDB{DBBackend: db}
+		f.fail.Store(true)
+		return f
+	}
+	outboxDB, privateDB, chatDB, inboxDB, blossomDB = wrap(outboxDB), wrap(privateDB), wrap(chatDB), wrap(inboxDB), wrap(blossomDB)
+	for name, db := range map[string]DBBackend{"outbox": outboxDB, "private": privateDB, "chat": chatDB, "inbox": inboxDB, "blossom": blossomDB} {
+		dbs[name] = db
+	}
+	c := newCopyClient("npub1peer", ts.URL)
+	c.free = func(string) (uint64, bool) { return 1 << 40, true }
+	err := c.run(context.Background(), startProof(t, owner, nostr.Now(), "/copy/v2/start"))
+	if copyErrorCode(err) != "partial" {
+		t.Fatalf("no store could be written: %v, want partial", err)
+	}
+	if copyCacheEntries(aCache) == 0 {
+		t.Fatal("A was told done")
+	}
+}
+
+// Tron #1864 (2): a file A can't serve right now (5xx) keeps the round
+// unrecorded; only a 404 is a skip.
+func TestCopyCatchUpFileErrorKeepsTheRoundUnrecorded(t *testing.T) {
+	_, _, err := catchUpWithFakeFilesHook(t, 4, 10, false, func(f *fakeFilesA, shas []string) {
+		f.status = map[string]int{shas[2]: http.StatusServiceUnavailable}
+	})
+	if err == nil {
+		t.Fatal("a 503 for a listed file was taken as done")
+	}
+	if loadCopySync()[copyPeerKey("npub1peer")] != 0 {
+		t.Fatal("the cursor moved past a file A could not serve")
+	}
+}
+
+func TestCopyCatchUpSkipsAFileANoLongerHas(t *testing.T) {
+	_, shas, err := catchUpWithFakeFilesHook(t, 4, 10, false, func(f *fakeFilesA, shas []string) {
+		f.status = map[string]int{shas[2]: http.StatusNotFound}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if copyBlobFile(shas[0]) == "" || copyBlobFile(shas[3]) == "" {
+		t.Fatal("the other files did not come")
+	}
+	if loadCopySync()[copyPeerKey("npub1peer")] == 0 {
+		t.Fatal("a 404 held the cursor back")
+	}
+}
+
+// Tron #1864 (3): a copy with a file left out drops a marker an earlier
+// link left, so the first catch-up compares everything.
+func TestCopyLeftOutFileDropsAnEarlierCatchUpMarker(t *testing.T) {
+	owner, other := newTestKey(t), newTestKey(t)
+	srcDir, built, _ := buildOnA(t, owner, other, []byte("a photo"))
+	ts, _, _ := copyFromA(t, srcDir, built, func(m *copyManifest) { m.Files.Count++ })
+	openCopyVault(t, owner.pk) // B
+	copyPollEvery = 10 * time.Millisecond
+	t.Cleanup(func() { copyPollEvery = 2 * time.Second })
+	markCopySynced("npub1peer", time.Now().Add(-90*24*time.Hour).Unix()) // an earlier link
+	c := newCopyClient("npub1peer", ts.URL)
+	c.free = func(string) (uint64, bool) { return 1 << 40, true }
+	if err := c.run(context.Background(), startProof(t, owner, nostr.Now(), "/copy/v2/start")); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadCopySync()[copyPeerKey("npub1peer")]; got != 0 {
+		t.Fatalf("the earlier marker (%d) survived a copy with a file left out", got)
 	}
 }

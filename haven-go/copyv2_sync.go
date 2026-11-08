@@ -118,7 +118,12 @@ func (s *copyServer) serveSync(w http.ResponseWriter, r *http.Request, what stri
 	case strings.HasPrefix(what, "file/") && r.Method == http.MethodGet:
 		sha := strings.TrimPrefix(what, "file/")
 		own, err := copyOwnMediaSet(ctx)
-		if err != nil || !own[sha] {
+		if err != nil {
+			// Not a 404: B keeps the file in its window and asks again.
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if !own[sha] {
 			// Only the owner's own files leave over this path (pick 6, §4).
 			http.NotFound(w, r)
 			return
@@ -301,6 +306,23 @@ func markCopySynced(peer string, t int64) {
 	defer copySyncMu.Unlock()
 	all := loadCopySync()
 	all[copyPeerKey(peer)] = t
+	raw, _ := json.Marshal(all)
+	tmp := copySyncFile + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o600); err == nil {
+		_ = os.Rename(tmp, copySyncFile)
+	}
+}
+
+// clearCopySynced drops peer's catch-up marker: its next catch-up compares
+// everything (since 0).
+func clearCopySynced(peer string) {
+	copySyncMu.Lock()
+	defer copySyncMu.Unlock()
+	all := loadCopySync()
+	if _, ok := all[copyPeerKey(peer)]; !ok {
+		return
+	}
+	delete(all, copyPeerKey(peer))
 	raw, _ := json.Marshal(all)
 	tmp := copySyncFile + ".tmp"
 	if err := os.WriteFile(tmp, raw, 0o600); err == nil {
@@ -552,8 +574,10 @@ func (c *copyClient) syncFiles(ctx context.Context, since int64) (int, bool, err
 }
 
 // syncFile fetches one own file A listed, unless it is here already. False
-// when A doesn't serve it or it doesn't match its hash: retrying would bring
-// the same, so it does not hold the round back.
+// when A answers 404 (not its own file, or gone) or the bytes don't match
+// the hash: retrying would bring the same, so it does not hold the round
+// back. Any other answer (a 5xx, a busy A) is an error, so the round stays
+// unrecorded and the file stays in the window (Tron #1864).
 func (c *copyClient) syncFile(ctx context.Context, f copyFile) (bool, error) {
 	if !isBlobHash(f.SHA256) || copyBlobFile(f.SHA256) != "" {
 		return false, nil
@@ -562,11 +586,15 @@ func (c *copyClient) syncFile(ctx context.Context, f copyFile) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	ok := false
-	if resp.StatusCode == http.StatusOK {
-		ok, err = storeCopyBlob(f.SHA256, resp.Body)
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusNotFound:
+		return false, nil
+	default:
+		return false, statusError(resp.StatusCode)
 	}
-	resp.Body.Close()
+	ok, err := storeCopyBlob(f.SHA256, resp.Body)
 	if err != nil || !ok {
 		return false, err
 	}

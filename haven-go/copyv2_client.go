@@ -351,18 +351,29 @@ type copyRestoreStats struct {
 	notes, messages, files int
 }
 
+// copyNotesResult: the stores restoreCopyNotes could not finish. failed:
+// stores holding events this vault failed to write; a re-run stores them
+// (everything dedupes by id), so the run keeps the copy as partial.
+// unreadable: stores whose entry could not be read to the end (a bad CRC, a
+// line past the scanner's limit). The part passed its hash, so the same zip
+// fails the same way: like a damaged file, the copy is done but records no
+// catch-up, and the first catch-up compares everything (Tron #1864).
+type copyNotesResult struct {
+	failed, unreadable []string
+}
+
 // restoreNotes restores every store but the blob index (whose records go in
 // only with their files), and leaves the checked settings for the app.
-// Returns the settings state: "included", "none" or "refused", and the
-// stores not fully restored here: one that could not be read to the end, or
-// held events this vault failed to write. A re-run stores what is missing
-// (everything dedupes by id), so the run keeps the copy as partial for it.
+// Returns the settings state ("included", "none" or "refused") and what it
+// could not finish. nothing_restored only when nothing went in and nothing
+// failed to write: a store B can't write (a full disk at the start) is
+// partial, not a stop (Tron #1864).
 // ctx carries the restore's keys (withRestoreKeys): the run has already
 // checked the zip's accounts.
-func restoreCopyNotes(ctx context.Context, path string, stats *copyRestoreStats) (settings string, failed []string, err error) {
+func restoreCopyNotes(ctx context.Context, path string, stats *copyRestoreStats) (settings string, res copyNotesResult, err error) {
 	zr, err := zip.OpenReader(path)
 	if err != nil {
-		return "", nil, err
+		return "", res, err
 	}
 	defer zr.Close()
 	var total importStats
@@ -390,15 +401,22 @@ func restoreCopyNotes(ctx context.Context, path string, stats *copyRestoreStats)
 		case "chat", "private":
 			stats.messages += st.stored + st.dup
 		}
-		if err != nil || st.failed > 0 {
-			slog.Error("copy: store not fully restored", "store", name, "failed", st.failed, "error", err)
-			failed = append(failed, name)
+		if st.failed > 0 {
+			slog.Error("copy: store not fully written", "store", name, "failed", st.failed)
+			res.failed = append(res.failed, name)
+		}
+		if err != nil {
+			slog.Error("copy: store could not be read to the end", "store", name, "error", err)
+			res.unreadable = append(res.unreadable, name)
 		}
 	}
-	if known == 0 || total.stored+total.dup == 0 {
-		return settings, failed, copyErr("nothing_restored")
+	if len(res.failed) > 0 {
+		return settings, res, nil
 	}
-	return settings, failed, nil
+	if known == 0 || total.stored+total.dup == 0 {
+		return settings, res, copyErr("nothing_restored")
+	}
+	return settings, res, nil
 }
 
 // applyCopySettings checks the copied settings.json and, when it passes and
@@ -681,7 +699,7 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 		}
 		rctx = withRestoreKeys(ctx, append(theirs.hexes(), keep...))
 	}
-	settings, failedStores, err := restoreCopyNotes(rctx, paths["notes"], &stats)
+	settings, notes, err := restoreCopyNotes(rctx, paths["notes"], &stats)
 	if err != nil {
 		return err
 	}
@@ -706,13 +724,13 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 	// and the state stay, A is not told, and the peer is not marked synced,
 	// so the next attempt restores again from the parts here (it dedupes)
 	// and stores what is missing (§3.2 partial).
-	if len(failedStores) > 0 || media.failed > 0 {
-		st.Partial = slices.Clone(failedStores)
+	if len(notes.failed) > 0 || media.failed > 0 {
+		st.Partial = slices.Clone(notes.failed)
 		if media.failed > 0 {
 			st.Partial = append(st.Partial, fmt.Sprintf("files:%d", media.failed))
 		}
 		_ = c.saveState(st)
-		slog.Warn("copy: partial, kept for the next attempt", "stores", failedStores, "files_failed", media.failed)
+		slog.Warn("copy: partial, kept for the next attempt", "stores", notes.failed, "files_failed", media.failed)
 		return copyErr("partial")
 	}
 	st.Restored = []string{"notes", "media"}
@@ -732,10 +750,14 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 	if missing := m.Files.Count - stats.files - media.failed - media.leftOut; missing > 0 {
 		leftOut += missing
 	}
-	if leftOut == 0 {
+	// A store that could not be read to the end is left out the same way.
+	// Any marker an earlier link left is dropped too, or the first catch-up
+	// would start a week before it and skip anything older (Tron #1864).
+	if leftOut == 0 && len(notes.unreadable) == 0 {
 		markCopySynced(c.peer, m.CreatedAt)
 	} else {
-		slog.Warn("copy: files left out, the catch-up asks for them again", "files", leftOut)
+		clearCopySynced(c.peer)
+		slog.Warn("copy: left out, the first catch-up compares everything", "files", leftOut, "stores", notes.unreadable)
 	}
 
 	if c.relays != nil {
