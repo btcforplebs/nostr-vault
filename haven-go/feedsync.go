@@ -154,10 +154,25 @@ func feedFallbackPull(ctx context.Context, relays []string, filter nostr.Filter,
 	if ctx.Err() != nil {
 		return false
 	}
+	held := stepShortStreaks(relays, res.Short, shortRounds)
+	for key := range shortRounds {
+		if !asked[key] {
+			delete(shortRounds, key)
+		}
+	}
+	return !held && len(res.Silent) < len(relays)
+}
+
+// stepShortStreaks moves the streaks of the relays just asked: one that
+// stopped partway (in short) counts one more round, one that read to the
+// end drops out. True while one of them may still hold the watermark (its
+// streak is at most feedShortHoldRounds). Streaks of relays not in relays
+// are left alone.
+func stepShortStreaks(relays, short []string, shortRounds map[string]int) bool {
 	held := false
 	for _, url := range relays {
 		key := nostr.NormalizeURL(url)
-		if !slices.Contains(res.Short, url) {
+		if !slices.Contains(short, url) {
 			delete(shortRounds, key)
 			continue
 		}
@@ -168,12 +183,46 @@ func feedFallbackPull(ctx context.Context, relays []string, filter nostr.Filter,
 			log.Println("📚 feed catch-up: relay keeps stopping partway, no longer holding the watermark for it:", key)
 		}
 	}
-	for key := range shortRounds {
-		if !asked[key] {
-			delete(shortRounds, key)
+	return held
+}
+
+// feedRoundStreaks: per relay, rounds in a row it stopped partway
+// (stepShortStreaks), the owner's relays and the follows' own relays kept
+// apart. In one map, each per-relay outbox pull dropped the owner relays'
+// streaks (feedFallbackPull forgets relays it wasn't asked), so the #1721
+// escape never fired (#1843 regression, health audit B1 2026-11-08).
+type feedRoundStreaks struct {
+	owner, outbox map[string]int
+}
+
+func newFeedRoundStreaks() feedRoundStreaks {
+	return feedRoundStreaks{owner: map[string]int{}, outbox: map[string]int{}}
+}
+
+// feedCatchupPulls is one round's paged catch-up: the owner's relays that
+// need the fallback (feedFallbackPull), then the follows' own relays of
+// plan (pullFeedOutbox; plan is only built when ctx is still live). True
+// when the round read everything, so the watermark may move.
+func feedCatchupPulls(ctx context.Context, fallback []string, commonFilter nostr.Filter, plan func() map[string][]string,
+	rareSince, commonSince nostr.Timestamp, publish func(*nostr.Event), streaks feedRoundStreaks) bool {
+	complete := true
+	if len(fallback) > 0 && ctx.Err() == nil {
+		log.Println("📚 feed catch-up pull since", time.Unix(int64(commonSince), 0).Format(time.RFC3339), "on", len(fallback), "relays")
+		complete = feedFallbackPull(ctx, fallback, commonFilter, publish, streaks.owner)
+		if ctx.Err() != nil {
+			return false
 		}
 	}
-	return !held && len(res.Silent) < len(relays)
+	if ctx.Err() != nil {
+		return false
+	}
+	if p := plan(); len(p) > 0 {
+		log.Println("📚 feed outbox pull on", len(p), "of the follows' own relays")
+		if !pullFeedOutbox(ctx, p, rareSince, commonSince, publish, streaks.outbox) {
+			complete = false
+		}
+	}
+	return complete
 }
 
 // ownerFollowSet derives the follow set from the owner's newest kind-3 in the
@@ -313,9 +362,10 @@ func syncFeed(ctx context.Context) {
 	// gets the whole window of articles and polls in its first round, which
 	// is a few dozen events, not the hours of notes the common pull starts
 	// with.
-	// Per relay: rounds in a row it stopped partway (feedFallbackPull).
-	// Only runFeedSync touches it, one round at a time.
-	feedShortRounds := map[string]int{}
+	// Per relay: rounds in a row it stopped partway, owner's relays and
+	// follows' relays apart (feedRoundStreaks). Only runFeedSync touches
+	// them, one round at a time.
+	streaks := newFeedRoundStreaks()
 
 	var lastSeenRare atomic.Int64
 	lastSeenRare.Store(state.mark("feed_rare", int64(windowSince()), int64(windowSince())))
@@ -426,28 +476,15 @@ func syncFeed(ctx context.Context) {
 			fsince = since
 		}
 		commonFilter := feedCommonFilter(authors, fsince)
-		complete := true
-		if len(fallback) > 0 && ctx.Err() == nil {
-			log.Println("📚 feed catch-up pull since", time.Unix(int64(fsince), 0).Format(time.RFC3339), "on", len(fallback), "relays")
-			complete = feedFallbackPull(ctx, fallback, commonFilter, func(ev *nostr.Event) { store.Publish(ctx, *ev) }, feedShortRounds)
-			if ctx.Err() != nil {
-				return
-			}
-		}
-
 		// The follows the owner's relays don't reach, where they post
 		// (feedsync_outbox.go): at most feedOutboxMaxExtra extra relays.
-		if ctx.Err() == nil {
-			plan := feedOutboxPlan(authors, followWriteRelays(ctx, authors, relays), relays, feedOutboxMaxExtra)
-			if len(plan) > 0 {
-				log.Println("📚 feed outbox pull on", len(plan), "of the follows' own relays")
-				if !pullFeedOutbox(ctx, plan, rsince, fsince, func(ev *nostr.Event) { store.Publish(ctx, *ev) }, feedShortRounds) {
-					complete = false
-				}
-			}
-			if ctx.Err() != nil {
-				return
-			}
+		plan := func() map[string][]string {
+			return feedOutboxPlan(authors, followWriteRelays(ctx, authors, relays), relays, feedOutboxMaxExtra)
+		}
+		complete := feedCatchupPulls(ctx, fallback, commonFilter, plan, rsince, fsince,
+			func(ev *nostr.Event) { store.Publish(ctx, *ev) }, streaks)
+		if ctx.Err() != nil {
+			return
 		}
 
 		pruneFeed(ctx, wdbFeed)
