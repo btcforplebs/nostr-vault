@@ -271,6 +271,49 @@ class WebSocketClientSocketTest {
         waitFor("dropped and redialled", timeoutMs = 4_000) { server.requestCount == 2 }
     }
 
+    /**
+     * Answers a REQ with EOSE only when it has no "limit", like
+     * relay.btcforplebs.com and nostr-pub.wellorder.net, which never answer
+     * "limit":0.
+     */
+    private fun relayIgnoringLimit() = MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+        override fun onMessage(webSocket: WebSocket, text: String) {
+            if (text.startsWith("[\"REQ\"") && !text.contains("\"limit\"")) {
+                val subId = text.substringAfter(",\"").substringBefore('"')
+                webSocket.send("[\"EOSE\",\"$subId\"]")
+            }
+        }
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            webSocket.close(1000, null)
+        }
+    })
+
+    @Test
+    fun `a relay that never answers limit 0 still answers the probe and is not redialled`() {
+        repeat(2) { server.enqueue(relayIgnoringLimit()) }
+        server.start(InetAddress.getByName("127.0.0.1"), 0)
+        val c = client(wsUrl(), autoReconnect = true, idleMs = 200, replyMs = 300)
+        c.connect()
+        waitFor("open") { c.connectionState.value == WebSocketClient.ConnectionState.CONNECTED }
+        Thread.sleep(2_000)
+        assertEquals(WebSocketClient.ConnectionState.CONNECTED, c.connectionState.value)
+        assertEquals("redials", 1, server.requestCount)
+    }
+
+    @Test
+    fun `the probe has no limit`() {
+        assertTrue(!WebSocketClient.probe("nv-wd-1").contains("limit"))
+    }
+
+    @Test
+    fun `the probe goes out well before the shortest relay idle close`() {
+        // wellorder closes after 30 s of silence; a 30 s probe lost that race.
+        assertTrue(
+            "idle ${WebSocketClient.WATCHDOG_IDLE_MS} ms",
+            WebSocketClient.SHORTEST_RELAY_IDLE_CLOSE_MS - WebSocketClient.WATCHDOG_IDLE_MS >= 5_000,
+        )
+    }
+
     @Test
     fun `only an open lendable socket is lent, and not after it closes`() {
         repeat(2) { server.enqueue(upgrade()) }
