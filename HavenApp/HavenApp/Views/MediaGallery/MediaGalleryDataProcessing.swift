@@ -75,15 +75,8 @@ extension MediaGalleryView {
 
             // Build hash -> event timestamp lookup from ALL noteMedia (unfiltered)
             // so blossom items get correct dates even when no noteMedia match survives filtering
-            var eventTimestamps: [String: Date] = [:]
-            for item in currentNoteMedia {
-                let key = self.normalizedKeyStatic(for: item.url)
-                if let existing = eventTimestamps[key] {
-                    if item.dateAdded > existing { eventTimestamps[key] = item.dateAdded }
-                } else {
-                    eventTimestamps[key] = item.dateAdded
-                }
-            }
+            let eventTimestamps = CopiedInDate.newestByKey(
+                currentNoteMedia, key: { self.normalizedKeyStatic(for: $0.url) }, date: { $0.dateAdded })
 
             // Track every URL we've seen per hash so we can later prefer a mirror URL
             // for display (and for the Blossom/Cache/404 classification).
@@ -132,12 +125,13 @@ extension MediaGalleryView {
                 recordURL(key, item.url)
                 if let existing = latestItems[key] {
                     // Blossom item exists — keep its superior mime detection
-                    // but use the nostr event's created_at as the authoritative date
+                    // but use the nostr event's created_at as the authoritative date.
+                    // The newest note for this hash, so a photo in two notes keeps one date.
                     latestItems[key] = MediaItem(
                         id: existing.id,
                         url: existing.url,
                         type: existing.type,
-                        dateAdded: item.dateAdded,
+                        dateAdded: eventTimestamps[key] ?? item.dateAdded,
                         pubkey: item.pubkey ?? existing.pubkey,
                         tags: item.tags ?? existing.tags,
                         mimeType: existing.mimeType ?? item.mimeType

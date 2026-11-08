@@ -12,8 +12,10 @@ extension BlossomService {
     ///   - mirrorToExternal: Whether to also push the blob to configured external Blossom mirrors.
     ///     Pass `true` for user-initiated "Mirror to Blossom" actions so all configured servers receive the blob.
     ///     Defaults to `false` for internal/batch operations where only local storage is needed.
+    ///   - date: The photo's own date (note created_at). Set as the stored file's
+    ///     modified time so the Media grid doesn't move the copy to Today.
     /// - Returns: true if the blob was successfully downloaded and stored locally
-    func downloadFromURL(url: URL, mirrorToExternal: Bool = false) async -> Bool {
+    func downloadFromURL(url: URL, mirrorToExternal: Bool = false, date: Date? = nil) async -> Bool {
         var request = URLRequest(url: url)
         request.timeoutInterval = 120  // 2 minutes — 30s was too short for video files
 
@@ -28,6 +30,7 @@ extension BlossomService {
             // Upload to local relay via BUD-02 spec (HTTP PUT with kind 24242 auth), from the file.
             let success = await saveToLocalRelay(fileURL: file.url, sha256: file.sha256, contentType: file.contentType, mirrorToExternal: mirrorToExternal)
             if success {
+                await stampCopiedIn(sha256: file.sha256, date: date)
                 logger.info("Successfully mirrored \(file.sha256.prefix(8)) from \(url.host ?? "remote") (\(file.size) bytes)")
             }
             return success
@@ -36,8 +39,9 @@ extension BlossomService {
 
     /// Download a blob from configured mirrors and store it in the local Blossom server
     /// - Parameter sha256: The SHA256 hash of the blob to download
+    /// - Parameter date: The blob's real date (BUD-02 `uploaded`), set on the stored file.
     /// - Returns: true if the blob was successfully downloaded and stored locally
-    func downloadFromMirrors(sha256: String) async -> Bool {
+    func downloadFromMirrors(sha256: String, date: Date? = nil) async -> Bool {
         let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
         guard !mirrors.isEmpty else {
             logger.warning("No Blossom mirrors configured for download")
@@ -84,6 +88,7 @@ extension BlossomService {
             // Skip external mirroring — the blob came FROM a configured mirror.
             let success = await saveToLocalRelay(fileURL: file.url, sha256: sha256, contentType: file.contentType, mirrorToExternal: false)
             if success {
+                await stampCopiedIn(sha256: sha256, date: date)
                 logger.info("Successfully mirrored \(sha256.prefix(8)) from \(mirror) (\(file.size) bytes)")
                 return true
             } else {
@@ -94,5 +99,14 @@ extension BlossomService {
 
         logger.error("Failed to download \(sha256.prefix(8)) from any mirror")
         return false
+    }
+
+    /// Give a just-copied blob its real date on disk (see CopiedInDate).
+    private func stampCopiedIn(sha256: String, date: Date?) async {
+        guard let date else { return }
+        let dir = await MainActor.run { configService.relayDataDir.appendingPathComponent(configService.config.blossomPath) }
+        if !CopiedInDate.stamp(sha256: sha256, in: dir, date: date) {
+            logger.info("Copied \(sha256.prefix(8)) kept its write time (no stored file or future date)")
+        }
     }
 }

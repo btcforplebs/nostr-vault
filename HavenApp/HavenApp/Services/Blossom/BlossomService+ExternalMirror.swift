@@ -33,6 +33,8 @@ extension BlossomService {
         // Discover blobs from mirrors using BUD-02 /list endpoint with cursor pagination
         // Queries each pubkey (owner + whitelisted) on each mirror
         var remoteBlobHashes: Set<String> = []
+        // Each blob's server upload time, so a copy keeps its real date.
+        var descriptorDates: [(sha256: String?, uploaded: Int?)] = []
         for mirror in mirrors {
             guard var mirrorURL = URL(string: mirror) else { continue }
 
@@ -85,6 +87,7 @@ extension BlossomService {
                         if let hash = desc.sha256 {
                             remoteBlobHashes.insert(hash)
                         }
+                        descriptorDates.append((desc.sha256, desc.uploaded))
                     }
                     totalForPubkey = descriptors.count
                 } catch {
@@ -111,6 +114,7 @@ extension BlossomService {
         logger.info("Found \(missingHashes.count) blobs to mirror from external servers")
         logMessage?("\(missingHashes.count) blob(s) missing locally — downloading from mirrors...", "INFO")
         let sortedHashes = Array(missingHashes).sorted()
+        let uploadedDates = CopiedInDate.uploadedByHash(descriptorDates)
         var mirrored = 0
         var completedCount = 0
         let total = sortedHashes.count
@@ -133,7 +137,7 @@ extension BlossomService {
                     try? await Task.sleep(nanoseconds: 150_000_000)
                 }
                 group.addTask {
-                    await self.downloadFromMirrors(sha256: hash)
+                    await self.downloadFromMirrors(sha256: hash, date: uploadedDates[hash.lowercased()])
                 }
                 queued += 1
             }
@@ -178,6 +182,8 @@ extension BlossomService {
 
         // Find remote media URLs from owner or whitelisted accounts that aren't stored locally
         var urlsToMirror: [URL] = []
+        // The note's created_at goes on the copied file (newest note wins, as in the grid).
+        let noteDates = CopiedInDate.newestByKey(noteMedia, key: { $0.url.absoluteString }, date: { $0.dateAdded })
         for item in noteMedia {
             guard let pubkey = item.pubkey,
                   pubkey == ownerPubkey ||
@@ -227,7 +233,7 @@ extension BlossomService {
                     try? await Task.sleep(nanoseconds: 150_000_000)
                 }
                 group.addTask {
-                    await self.downloadFromURL(url: url)
+                    await self.downloadFromURL(url: url, date: noteDates[url.absoluteString])
                 }
                 queued += 1
             }
