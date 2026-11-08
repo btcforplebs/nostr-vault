@@ -162,7 +162,7 @@ fun HavenRelaySettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Home vault sync") },
+                title = { Text("Desktop vault sync") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(NostrVaultIcons.Back, contentDescription = "Back")
@@ -373,7 +373,7 @@ internal fun MacSyncSection(
         ) {
             Icon(NostrVaultIcons.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
-            Text("Check home vault sync", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("Check desktop vault sync", fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

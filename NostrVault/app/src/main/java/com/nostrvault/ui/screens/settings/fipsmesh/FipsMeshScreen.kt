@@ -94,7 +94,7 @@ fun FipsMeshScreen(
             MeshSection(
                 title = null,
                 footer = if (status.running) "Your devices reach each other over the mesh, with no public IP or domain."
-                else "Turn the mesh on to reach your home vault, your other phones and your browser vault from this phone.",
+                else "Turn the mesh on to reach your mobile and desktop vaults, your other phones and your browser vault from this phone.",
             ) {
                 MeshSwitchRow(
                     "Mesh", null, status.running, enabled = viewModel.isAvailable,

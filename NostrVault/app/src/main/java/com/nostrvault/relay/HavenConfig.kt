@@ -154,17 +154,15 @@ data class HavenConfig(
     // media over the mesh: its mesh npub, from their 10063. Null for none.
     val homeVaultNpub: String? = null,
 
-    // Mesh npubs this phone listed in the owner's 10063 (home vault, linked
-    // Macs) that left My Devices or the home vault since. Only Save in Media
-    // servers publishes the 10063, so the next Save drops these, then clears them.
+    // Mesh vaults the owner chose on Media Servers to add to (or take off) their
+    // 10063. Nothing else changes the mesh entries there: linking or removing a
+    // vault does not (Logen 2026-11-08). Cleared once the list goes out.
+    val serverListAddMesh: List<String> = emptyList(),
     val serverListDropMesh: List<String> = emptyList(),
 
-    // What one sharing session may send to the mesh before sharing stops (NIP-F1).
-    val fipsServeLimitBytes: Long = 1L shl 30,
-
-    // Bytes this sharing session has sent the mesh, across engine restarts and
-    // app launches. Reset when sharing is switched off or on.
-    val fipsServedBytes: Long = 0,
+    // What strangers on the mesh pulled from this phone today, across sessions and
+    // app launches (KioskDailyBudget). Not reset by switching sharing off and on.
+    val fipsStrangersBudget: com.nostrvault.fips.KioskDailyBudget = com.nostrvault.fips.KioskDailyBudget(),
 
     // The FIPS Mesh screen's own settings: device names and roles, sharing
     // choices, finder relays and middle server.

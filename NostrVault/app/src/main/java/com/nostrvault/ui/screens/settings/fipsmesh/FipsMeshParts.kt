@@ -42,6 +42,7 @@ import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 import com.nostrvault.ui.theme.SeparatorColor
 import com.nostrvault.ui.theme.SuccessGreen
+import com.nostrvault.ui.theme.WarningYellow
 
 // The grouped-list pieces the FIPS Mesh pages share: a titled card, its rows and the footnote under it, laid out as
 // the iPhone's inset grouped list (OUTBOX/NV_FIPS_SETTINGS).
@@ -106,9 +107,9 @@ internal fun MeshValueRow(title: String, value: String, chevron: Boolean = false
 
 /** A coloured dot and a short line: "On · 3 of 4 devices in reach", "In reach", "2 h ago". */
 @Composable
-internal fun StatusDot(text: String, on: Boolean, modifier: Modifier = Modifier) {
+internal fun StatusDot(text: String, on: Boolean, modifier: Modifier = Modifier, warning: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = modifier) {
-        Box(Modifier.size(8.dp).background(if (on) SuccessGreen else SecondaryText, CircleShape))
+        Box(Modifier.size(8.dp).background(if (!on) SecondaryText else if (warning) WarningYellow else SuccessGreen, CircleShape))
         Text(text, color = SecondaryText, fontSize = 13.sp)
     }
 }
@@ -133,6 +134,3 @@ internal fun bytesLabel(bytes: Long): String {
     val mb = bytes shr 20
     return if (mb >= 1024 && mb % 1024 == 0L) "${mb / 1024} GB" else if (mb >= 1) "$mb MB" else "$bytes B"
 }
-
-/** The limits offered for one sharing session, as in the iOS kiosk picker. */
-internal val SERVE_LIMITS = listOf(250L shl 20, 1L shl 30, 5L shl 30)

@@ -9,16 +9,16 @@ internal data class MeshDeleteTarget(val npub: String, val name: String) {
 }
 
 /**
- * Where Delete everywhere goes over the FIPS mesh: the devices [MeshSendTargets] sends the owner's
- * media to (the home vault, then each Mac and each linked phone in My Devices), whatever their Send
- * media switch, since a device holds what was uploaded on it too. A Mac with no public address was never reached before: its
+ * Where Delete everywhere goes over the FIPS mesh: the owner's devices ([MeshSendTargets.ownDevices]: the
+ * mobile vault, then each Mac and each linked phone in My Devices), since a device holds what was sent or
+ * uploaded on it. A Mac with no public address was never reached before: its
  * copy stayed (Tod, 2026-10-31). "Delete from mirrors" keeps these copies. iOS reaches the same Mac
  * through `HavenConfig.blossomDeleteTargets`' FIPS address. Pure for the tests.
  */
 internal object MeshDeleteTargets {
     fun of(config: HavenConfig, includeHomeVault: Boolean): List<MeshDeleteTarget> {
         if (!includeHomeVault) return emptyList()
-        return MeshSendTargets.of(config).map { t ->
+        return MeshSendTargets.ownDevices(config).map { t ->
             // Its My Devices name, else "your Mac" / "the home vault": "Still on blossom.primal.net and your Mac".
             val name = config.fipsMesh.devices.firstOrNull { it.npub == t.npub }?.name?.trim().orEmpty()
             MeshDeleteTarget(t.npub, name.ifEmpty { MeshSendTargets.destination(t.role) })

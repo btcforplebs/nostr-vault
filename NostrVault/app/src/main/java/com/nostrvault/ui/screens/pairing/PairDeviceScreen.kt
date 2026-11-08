@@ -382,7 +382,7 @@ private fun ByAddressStep(npub: String, onAdd: (String, String, DeviceRole) -> S
         Text(role.blurb, color = SecondaryText, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 6.dp))
         if (role == DeviceRole.HOME_VAULT) {
             Text(
-                "A home vault's mesh address is listed in your media servers, in public. It must let your account write to its relay. " +
+                "To let others fetch your photos from it, add it on Media Servers: its mesh address is then public. It must let your account write to its relay. " +
                     "Direct-message attachments are never sent there.",
                 color = SecondaryText, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 6.dp),
             )

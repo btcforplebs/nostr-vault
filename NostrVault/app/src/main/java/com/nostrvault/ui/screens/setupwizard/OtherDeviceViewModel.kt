@@ -11,7 +11,6 @@ import com.nostrvault.fips.MeshPairing
 import com.nostrvault.fips.MeshPairingHello
 import com.nostrvault.fips.MeshPairingJoiner
 import com.nostrvault.fips.MyDevicesRules
-import com.nostrvault.service.serverListDropsAfter
 import com.nostrvault.ui.screens.pairing.PairDeviceViewModel
 import com.nostrvault.fips.MeshCopyStarter
 import com.nostrvault.fips.MeshCopyV2
@@ -319,7 +318,7 @@ class OtherDeviceViewModel @Inject constructor(
         configStore.updateAsync { it.copy(fipsMesh = it.fipsMesh.copy(devices = change.labels)) }
         if (change.peers != before.fipsPeers) mesh.setPeers(change.peers)
         if (change.homeVault != before.homeVaultNpub) homeVault.setHomeVault(change.homeVault)
-        configStore.updateAsync { it.copy(serverListDropMesh = serverListDropsAfter(before, it)) }
+        // The 10063 is left alone: the owner adds a vault to it on Media Servers (Logen 2026-11-08).
     }
 
     private fun fallBack() {

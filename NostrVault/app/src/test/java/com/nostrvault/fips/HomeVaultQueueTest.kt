@@ -113,14 +113,14 @@ class HomeVaultQueueTest {
     }
 
     @Test
-    fun `a phone republishing keeps the Mac's photo node entry, with or without a home vault`() {
+    fun `a phone republishing keeps the Mac's photo node entry, with or without a vault added`() {
         // The Mac lists its photo node (blob npub) in the 10063; a phone that knows nothing of it must not drop it.
         val photo = "npub1" + "z".repeat(58)
         val macList = listOf("https://a.example", "fipsmesh://$photo/")
         assertEquals(listOf("https://a.example", "https://b.example", "fipsmesh://$photo/"),
             HomeVaultRules.mergeServerList(macList, listOf("https://a.example", "https://b.example")))
         assertEquals(listOf("https://a.example", "fipsmesh://$photo/", "fipsmesh://$kiosk/"),
-            HomeVaultRules.mergeServerList(macList, listOf("https://a.example"), homeVault = kiosk))
+            HomeVaultRules.mergeServerList(macList, listOf("https://a.example"), addMesh = listOf(kiosk)))
     }
 
     /** NIP-F1 (iOS #999): never a 10063 only the mesh or this home network can open. */
@@ -139,62 +139,41 @@ class HomeVaultQueueTest {
         for (managed in noPublic) {
             assertEquals(managed.toString(), null, HomeVaultRules.mergeServerList(emptyList(), managed))
         }
-        assertEquals(null, HomeVaultRules.mergeServerList(emptyList(), emptyList(), homeVault = kiosk))
-        // Next to a real public server, the home vault and a LAN entry still go out.
+        assertEquals(null, HomeVaultRules.mergeServerList(emptyList(), emptyList(), addMesh = listOf(kiosk)))
+        // Next to a real public server, an added vault and a LAN entry still go out.
         assertEquals(
             listOf("https://a.example", "http://192.168.1.5:4443", "fipsmesh://$kiosk/"),
-            HomeVaultRules.mergeServerList(emptyList(), listOf("https://a.example", "http://192.168.1.5:4443"), homeVault = kiosk),
+            HomeVaultRules.mergeServerList(emptyList(), listOf("https://a.example", "http://192.168.1.5:4443"), addMesh = listOf(kiosk)),
         )
         assertTrue(HomeVaultRules.isPublicServer("https://blossom.primal.net"))
         assertTrue(HomeVaultRules.isPublicServer("https://fips.example.com/"))
     }
 
-    /** iOS 8af86b0d: a Mac without the owner's key cannot list itself; the phone lists it. */
+    /** Logen 2026-11-08: only the owner's Add / Take off on Media Servers changes the mesh entries. */
     @Test
-    fun `a phone lists its linked Macs and drops one that was unlinked`() {
+    fun `the owner's added vaults go after the kept ones, and a taken-off one goes`() {
         val mac = "npub1" + "m".repeat(58)
         val gone = "npub1" + "g".repeat(58)
         val newest = listOf("https://a.example", "fipsmesh://$gone/")
         assertEquals(
             listOf("https://a.example", "fipsmesh://$kiosk/", "fipsmesh://$mac/"),
-            HomeVaultRules.mergeServerList(newest, listOf("https://a.example"), homeVault = kiosk, dropMesh = setOf(gone), macs = listOf(mac)),
+            HomeVaultRules.mergeServerList(newest, listOf("https://a.example"), addMesh = listOf(kiosk, mac), dropMesh = setOf(gone)),
         )
+        // Already listed: once. Taken off and added at once: taking off wins.
+        assertEquals(listOf("https://a.example", "fipsmesh://$gone/"),
+            HomeVaultRules.mergeServerList(newest, listOf("https://a.example"), addMesh = listOf(gone)))
+        assertEquals(listOf("https://a.example"),
+            HomeVaultRules.mergeServerList(newest, listOf("https://a.example"), addMesh = listOf(gone), dropMesh = setOf(gone)))
         assertEquals(listOf(mac), HomeVaultRules.unlisted(listOf("https://a.example", "fipsmesh://$kiosk/"), listOf(kiosk, mac)))
         assertEquals(emptyList<String>(), HomeVaultRules.unlisted(listOf("fipsmesh://$mac/"), listOf(mac)))
     }
 
-    /** Tim 2026-10-22: switching the home vault Mac→Moto dropped the Mac though it was still in My Devices. */
+    /** A vault no longer in My Devices stays listed until the owner takes it off: nothing is dropped behind their back. */
     @Test
-    fun `a vault that stops being the home vault stays listed while it is in My Devices`() {
+    fun `a listed vault stays without a choice on Media Servers`() {
         val mac = "npub1" + "m".repeat(58)
-        val moto = "npub1" + "t".repeat(58)
         val newest = listOf("https://a.example", "fipsmesh://$mac/")
-        assertEquals(
-            listOf("https://a.example", "fipsmesh://$mac/", "fipsmesh://$moto/"),
-            HomeVaultRules.mergeServerList(newest, listOf("https://a.example"), homeVault = moto,
-                dropMesh = setOf(mac), myDevices = listOf(mac, moto)),
-        )
-        // Removed from My Devices: it goes.
-        assertEquals(
-            listOf("https://a.example", "fipsmesh://$moto/"),
-            HomeVaultRules.mergeServerList(newest, listOf("https://a.example"), homeVault = moto,
-                dropMesh = setOf(mac), myDevices = listOf(moto)),
-        )
-    }
-
-    @Test
-    fun `a sender lists its home vault and drops the one it replaced`() {
-        val other = "npub1" + "z".repeat(58)
-        val newest = listOf("https://a.example", "fipsmesh://$kiosk/", "fipsmesh://$self/")
-        assertEquals(
-            listOf("https://a.example", "fipsmesh://$self/", "fipsmesh://$other/"),
-            HomeVaultRules.mergeServerList(newest, listOf("https://a.example"), homeVault = other, dropMesh = setOf(kiosk)),
-        )
-        // Already listed: once.
-        assertEquals(
-            listOf("https://a.example", "fipsmesh://$kiosk/", "fipsmesh://$self/"),
-            HomeVaultRules.mergeServerList(newest, listOf("https://a.example"), homeVault = kiosk),
-        )
+        assertEquals(newest, HomeVaultRules.mergeServerList(newest, listOf("https://a.example")))
     }
 
     @Test

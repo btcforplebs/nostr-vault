@@ -88,7 +88,7 @@ class HomeVaultSender @Inject constructor(
 
     private val queue = HomeVaultQueue(File(context.filesDir, "home_vault_queue"))
 
-    /** One queue per Mac and per linked phone in My Devices ([MeshSendTargets]), each sent on its own. */
+    /** One queue for the mobile vault and per Mac in My Devices ([MeshSendTargets]), each sent on its own. */
     private val macQueues = java.util.concurrent.ConcurrentHashMap<String, HomeVaultQueue>()
     private val macQueueRoot get() = File(filesDir, "mesh_send_queue")
     private fun macQueue(npub: String) = macQueues.getOrPut(npub) { HomeVaultQueue(File(macQueueRoot, npub)) }
@@ -336,7 +336,7 @@ class HomeVaultSender @Inject constructor(
     /** Also send this signed event to the home vault and each Mac taking notes, if it is the owner's. */
     fun offerEvent(eventId: String, pubkey: String, eventJson: String) {
         if (pubkey.isEmpty() || pubkey != ownerHex()) return
-        val queues = lanes().filter { it.first.notes }.map { it.second }
+        val queues = lanes().map { it.second }
         if (queues.isEmpty()) return
         // Off the caller's thread: postEvent runs on the main thread.
         scope.launch {
@@ -368,7 +368,7 @@ class HomeVaultSender @Inject constructor(
 
     /** Synchronous (the caller's source may be deleted next), and never throws into an upload. */
     private fun offer(sha256: String, contentType: String, byteCount: Long, writeTo: (File) -> Unit) {
-        val queues = lanes().filter { it.first.media }.map { it.second }
+        val queues = lanes().map { it.second }
         if (queues.isEmpty()) return
         val queued = queues.map { q ->
             try {
