@@ -7,11 +7,11 @@
   "eyebrow": "Mesh and your devices",
   "h1": "Your phone is your <span>photo server</span> now.",
   "lede": "Nostr Vault can serve your photos straight from your own phone or Mac, over a mesh network that finds devices by their Nostr key. No cloud bucket, no domain, no port forwarding, and no third party holding your files.",
-  "description": "How Nostr Vault's mesh works: your phone or Mac serves your own photos over the mesh, with no public IP, domain or cloud. My Devices, Home vault mode, share pages and privacy.",
+  "description": "How Nostr Vault's mesh works: your phone or Mac serves your own photos over the mesh, with no public IP, domain or cloud. My Devices, Mobile vault mode, share pages and privacy.",
   "aliases": { "#mesh": "#mesh", "#server": "#server", "#devices": "#devices", "#kiosk": "#kiosk", "#share": "#share", "#privacy": "#privacy", "#status": "#status" },
   "labels": {
-    "ios": ["Mesh", "This Device", "My Devices", "Link a device", "Add a device", "Paste instead", "Home vault · full history", "Home vault · new posts", "Share With Others", "Home vault mode"],
-    "android": ["Mesh", "This Device", "My Devices", "Link a device", "Add a device", "Paste instead", "Home vault · full history", "Home vault · new posts", "Share With Others", "Home vault mode"]
+    "ios": ["Mesh", "This Device", "My Devices", "Link a device", "Add a device", "Paste instead", "Desktop vault · full history", "Mobile vault · new posts", "Share With Others", "Mobile vault mode"],
+    "android": ["Mesh", "This Device", "My Devices", "Link a device", "Add a device", "Paste instead", "Desktop vault · full history", "Mobile vault · new posts", "Share With Others", "Mobile vault mode"]
   }
 }
 -->
@@ -34,9 +34,10 @@
 <section id="server">
 <p class="eyebrow">Your own server</p>
 <h2>Your phone or Mac as your photo server</h2>
-<p>Your Nostr profile already keeps a list of where your media lives. Nostr Vault adds one more entry to
-    that list: your home vault (your Mac or a spare phone), written as its mesh address. Your
-    everyday phone isn't listed. It goes after your normal media servers, so
+<p>Your Nostr profile already keeps a list of where your media lives. You can add one more entry to
+    that list: your mobile or desktop vault (a spare phone or your Mac), written as its mesh address. Add it under
+    <span class="path">Settings &rarr; Media Servers</span> &rarr; <span class="ui">Your Vaults</span>;
+    linking a device doesn't list it. Your everyday phone isn't listed. It goes after your normal media servers, so
     apps that don't know about the mesh carry on as before.</p>
 <p>An app that does know about it can ask your device for a photo directly, by its fingerprint, the same
     way it would ask any media server. Your photos still go to your normal servers too. Your device is one
@@ -45,9 +46,9 @@
     <li><strong>On a Mac</strong>, the Nostr Vault app serves while it's open. Leave it running and your
         Mac is an always-on photo server.</li>
     <li><strong>On a phone</strong>, it serves while the app is open, or full-time in
-        <a class="inline" href="#kiosk">Home vault mode</a> on a spare phone.</li>
+        <a class="inline" href="#kiosk">Mobile vault mode</a> on a spare phone.</li>
     <li>Step by step: <a class="inline" href="/docs/mesh/photo-server/">your Mac as your photo server</a>,
-        <a class="inline" href="/docs/mesh/home-vault/">home vault</a>.</li>
+        <a class="inline" href="/docs/mesh/home-vault/">mobile or desktop vault</a>.</li>
 </ul>
 <p>To turn it on, open <span class="path">Settings &rarr; Mesh</span> and switch on
     <strong>Mesh</strong>. Serving is off until you turn it on.</p>
@@ -56,7 +57,7 @@
 <section id="devices">
 <p class="eyebrow">Your devices, together</p>
 <h2>My Devices</h2>
-<p><strong>My Devices</strong> is the list of your own phones, Macs, home vault and browser vault that reach
+<p><strong>My Devices</strong> is the list of your own phones, Macs, mobile vault and browser vault that reach
     each other over the mesh. Devices on this list sync with each other in full: your notes, your photos and
     your history.</p>
 <ol>
@@ -73,8 +74,8 @@
 
 <section id="kiosk">
 <p class="eyebrow">An always-on vault</p>
-<h2>Home vault mode</h2>
-<p>Home vault mode turns a phone into a small always-on vault. Put an old phone on a charger at home, turn Home vault
+<h2>Mobile vault mode</h2>
+<p>Mobile vault mode turns a phone into a small always-on vault. Put an old phone on a charger at home, turn Mobile vault
     mode on under <strong>Share With Others</strong>, and it keeps serving.</p>
 <ul>
     <li>On iPhone it keeps the screen on, pauses when you leave the app and turns on again when you come
@@ -85,8 +86,8 @@
         Android, Pause after sets the total for one session (1 GB to start). They can't read your notes or
         change anything.</li>
 </ul>
-<p>Add it on your other phones as <strong>Home vault &middot; new posts</strong>, and your new notes and photos go to the
-    home vault over the mesh, which sends your notes on to your relays.</p>
+<p>Add it on your other phones as <strong>Mobile vault &middot; new posts</strong>, and your new notes and photos go to the
+    mobile vault over the mesh, which sends your notes on to your relays.</p>
 </section>
 
 <section id="share">
@@ -149,7 +150,7 @@
         <ul>
             <li>Mesh on iPhone, Android and Mac.</li>
             <li>My Devices, sync and Check sync.</li>
-            <li>Home vault mode and home vault.</li>
+            <li>Mobile vault mode, mobile vaults and desktop vaults.</li>
             <li>Photos from people you follow.</li>
         </ul>
     </div>

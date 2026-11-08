@@ -50,11 +50,11 @@ final class MirrorsDeleteReportTests: XCTestCase {
 }
 
 /// Mesh settings explain where new photos go instead of offering a picker
-/// whose value nothing read (Logen 2026-11-05). The website's home vault help
+/// whose value nothing read (Logen 2026-11-05). The website's mobile vault help
 /// page carries the same words.
 final class MeshPhotoPathTests: XCTestCase {
     func testTheAgreedWords() {
-        XCTAssertEqual(MeshPhotoPath.explainer, "New photos are saved on this device first. If you have a home vault, a copy goes to it over the mesh, and the home vault puts it on your public media server for you. If this device has its own media server, it uploads there itself.")
+        XCTAssertEqual(MeshPhotoPath.explainer, "New photos are saved on this device first. If you have a mobile vault, a copy goes to it over the mesh, and the mobile vault puts it on your public media server for you. If this device has its own media server, it uploads there itself.")
     }
 
     func testHelpPageSaysTheSame() throws {

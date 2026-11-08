@@ -126,14 +126,14 @@ def role_check(npub_, role, existing):
     return "add"
 
 # ---- words people read ----
-ROLE_WORD = {"phone": "phone", "mac": "Mac", "homeVault": "home vault", "browser": "browser vault"}
+ROLE_WORD = {"phone": "phone", "mac": "Mac", "homeVault": "mobile vault", "browser": "browser vault"}
 def display(name): return name.strip() if name and name.strip() else "this device"
 def role_confirm_text(role, name, setup=False):
     n = display(name)
     if setup: return f"Add {n} as another of your devices: your vault copies between them."
     return {
         "mac": f"Add {n} as your Mac: your vault syncs to it and it keeps a full copy.",
-        "homeVault": f"Add {n} as your home vault: your new posts and media are sent to it.",
+        "homeVault": f"Add {n} as your mobile vault: your new posts and media are sent to it.",
         "browser": f"Add {n} as your browser vault: it gets your new notes while it's open.",
         "phone": f"Add {n} as another of your phones.",
     }[role]

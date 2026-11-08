@@ -185,7 +185,10 @@ export function serverTags(urls, previous) {
 
 export const addServer = (urls, url) => urls.includes(url) ? urls : [...urls, url]
 export const removeServer = (urls, url) => urls.filter(u => u !== url)
-export const serverProblem = urls => urls.length ? "" : "Keep at least one server, or photos have nowhere to go."
+/** A NIP-F1 mesh vault entry (`fipsmesh://<npub>/`): listed with the servers, but nothing uploads to it from here. */
+export const isMeshServer = url => /^fipsmesh:\/\//i.test(String(url ?? "").trim())
+/** A list with only mesh vaults left isn't published (NIP-F1), so it needs a server besides them. */
+export const serverProblem = urls => urls.some(u => !isMeshServer(u)) ? "" : "Keep at least one server, or photos have nowhere to go."
 
 // ---- Plain relay lists: DM inbox (kind 10050, NIP-17) and Never Connect (kind 10006, NIP-51) ----
 

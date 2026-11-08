@@ -94,7 +94,7 @@ test("the delete button says Delete from media servers, names every server it go
   assert.doesNotMatch(src, /"Delete everywhere"/)
   assert.match(src, /deleteBlob\(blob, \{ ctx, servers \}\)/)
   assert.match(src, /targets\.map\(hostOf\)\.join/)
-  assert.match(src, /If your home vault has a copy, it stays: the web can't delete from it/)
+  assert.match(src, /If your mobile or desktop vault has a copy, it stays: the web can't delete from it/)
 })
 
 test("opening Media again in the same visit draws the kept list without asking the servers; the Vault's own look or an old list asks", () => {

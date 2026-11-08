@@ -11,10 +11,10 @@
   "labels": {
     "ios": ["Link a device", "Copy from my other vault", "Look up and back up my lists", "Catch Up", "Underrated", "Import media", "Attach photo or video",
             "Live now", "On this day", "Your space", "Edit rail", "Picture in Picture", "Delete Account", "Leave Nostr Forever", "Bookmark", "Bookmarks", "Requests",
-            "Hide Nostr Vault logo on posts", "Save for later", "Send privately", "Create an account", "Bring an account", "Add a comment (optional)", "Plebs vs Zombies", "Preview", "Edit", "Use recommended", "Mesh", "Home vault · full history", "Check home vault sync", "Open in Fanfares", "Already unlocked?", "Save", "Delete from media servers", "Delete everywhere", "Share as a note", "No signing key"],
-    "mac": ["Mesh", "Home vault · full history", "Open in Fanfares", "Already unlocked?"],
+            "Hide Nostr Vault logo on posts", "Save for later", "Send privately", "Create an account", "Bring an account", "Add a comment (optional)", "Plebs vs Zombies", "Preview", "Edit", "Use recommended", "Mesh", "Desktop vault · full history", "Check desktop vault sync", "Open in Fanfares", "Already unlocked?", "Save", "Delete from media servers", "Delete everywhere", "Share as a note", "No signing key"],
+    "mac": ["Mesh", "Desktop vault · full history", "Open in Fanfares", "Already unlocked?"],
     "android": ["Link a device", "No, copy from my other vault", "Look up and back up my lists", "Catch Up", "Underrated", "Import media", "Attach photo or video",
-                "Live now", "On this day", "Picture in picture", "Bookmarks", "Requests", "Hide Nostr Vault logo on posts", "Create an account", "Bring an account", "Add a comment (optional)", "Plebs vs Zombies", "Preview", "Edit", "Use recommended", "Mesh", "Home vault · full history", "Pause after", "Delete from media servers", "Delete everywhere", "Share as a note"],
+                "Live now", "On this day", "Picture in picture", "Bookmarks", "Requests", "Hide Nostr Vault logo on posts", "Create an account", "Bring an account", "Add a comment (optional)", "Plebs vs Zombies", "Preview", "Edit", "Use recommended", "Mesh", "Desktop vault · full history", "Pause after", "Delete from media servers", "Delete everywhere", "Share as a note"],
     "web": ["Delete from media servers", "Share as a note", "Your space", "Bookmarks", "Requests", "Look up and back up my lists", "I have a password-locked key (ncryptsec)", "Hide Nostr Vault logo on posts"]
   }
 }
@@ -173,17 +173,17 @@
     <a class="inline" href="/docs/mesh/">mesh</a>, with no server in between.</p>
 <ul>
     <li><strong>Your devices, connected.</strong> Turn on <strong>Mesh</strong> in Settings and add your
-        devices by address or QR code. On Android you can add your Mac, your other phones or a home vault.
+        devices by address or QR code. On Android you can add your Mac, your other phones or a mobile vault.
         See <a class="inline" href="/docs/mesh/#devices">My Devices</a>.</li>
     <li><strong>iPhone and Mac:</strong> the mesh engine runs inside the Mac app, so there is nothing else to
         install. The Mac serves your photos to your own devices, and your public photos to anyone else who
         asks. See <a class="inline" href="/docs/mesh/#server">your own photo server</a>.</li>
-    <li><strong>Notes and photos to your Mac.</strong> Add your Mac as <strong>Home vault &middot; full history</strong> and each
+    <li><strong>Notes and photos to your Mac.</strong> Add your Mac as <strong>Desktop vault &middot; full history</strong> and each
         new note and photo goes to it over the mesh. Your notes and history also sync back from the Mac.</li>
-    <li><strong>iPhone and Mac:</strong> <strong>Check home vault sync</strong> now ends on
+    <li><strong>iPhone and Mac:</strong> <strong>Check desktop vault sync</strong> now ends on
         "Done" with counts, or says why it stopped.</li>
-    <li><strong>Home vault.</strong> A spare phone can be your home vault. It gets your new posts and media
-        and passes them on. See <a class="inline" href="/docs/mesh/#kiosk">Home vault mode</a>.</li>
+    <li><strong>Mobile vault.</strong> A spare phone can be your mobile vault. It gets your new posts and media
+        and passes them on. See <a class="inline" href="/docs/mesh/#kiosk">Mobile vault mode</a>.</li>
     <li><strong>Photos over the mesh.</strong> Photos kept on your devices load over the mesh in the feed,
         the Vault and profiles.</li>
     <li><strong>Your address stays private.</strong> Once you add a device, only your devices learn this
@@ -360,7 +360,7 @@
 <ul>
     <li><strong>One inbox on every device.</strong> <strong>iPhone and Mac:</strong> your copy of a sent
         message could land on relays no device reads messages from. There is now one message inbox list for
-        every device, with your home vault first, and messages stranded by earlier builds are fetched back
+        every device, with your mobile or desktop vault first, and messages stranded by earlier builds are fetched back
         once. A private Mac address is never published. <strong>Android:</strong> one message list across all
         your devices, and messages you sent from another app are caught up once.</li>
     <li><strong>Alerts.</strong> No alert for your own sent messages. Tapping an alert opens the chat.

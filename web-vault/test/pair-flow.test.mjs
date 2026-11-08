@@ -165,7 +165,7 @@ test("a device known under another role is refused before anything is sent", asy
   p.sb.setItem("nv-vault:fips-owner-meta", JSON.stringify({ [aHex]: { name: "x", role: "homeVault" } }))
   const before = p.b.log.length
   await p.B.scanned(p.A.view.qr)
-  assert.equal(p.B.view.notice, "This device is already added as your home vault. Remove it in Mesh settings first.")
+  assert.equal(p.B.view.notice, "This device is already added as your mobile vault. Remove it in Mesh settings first.")
   assert.equal(p.b.log.length, before)
 })
 
