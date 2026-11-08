@@ -768,7 +768,13 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 	if settings == "refused" || m.Settings == "refused" {
 		done.Error = "settings_refused"
 	}
-	log.Printf("%s notes=%d messages=%d files=%d left_out=%d", formatCopyLine(done), stats.notes, stats.messages, stats.files, leftOut)
+	// A left-out store the catch-up does not cover (feed, lists) stays
+	// missing for good: said on the done line rather than implied done.
+	lost := copyNotCaughtUp(notes.unreadable)
+	if len(lost) > 0 {
+		slog.Warn("copy: left out, and no catch-up brings these stores over", "stores", lost)
+	}
+	log.Printf("%s notes=%d messages=%d files=%d left_out=%d not_caught_up=%s", formatCopyLine(done), stats.notes, stats.messages, stats.files, leftOut, strings.Join(lost, ","))
 	return nil
 }
 

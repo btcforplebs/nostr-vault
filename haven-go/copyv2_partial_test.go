@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -429,5 +430,20 @@ func TestCopyLeftOutFileDropsAnEarlierCatchUpMarker(t *testing.T) {
 	}
 	if got := loadCopySync()[copyPeerKey("npub1peer")]; got != 0 {
 		t.Fatalf("the earlier marker (%d) survived a copy with a file left out", got)
+	}
+}
+
+// A store left out of the copy that no catch-up covers is named, so the
+// done line does not imply it will arrive later (Tron #1864).
+func TestCopyNotCaughtUpNamesOnlyStoresOutsideTheCatchUp(t *testing.T) {
+	got := copyNotCaughtUp([]string{"outbox", "feed", "chat", "lists"})
+	if !slices.Equal(got, []string{"feed", "lists"}) {
+		t.Fatalf("got %v, want [feed lists]", got)
+	}
+	if got := copyNotCaughtUp([]string{"private", "inbox"}); len(got) != 0 {
+		t.Fatalf("caught-up stores named: %v", got)
+	}
+	if got := copyNotCaughtUp(nil); len(got) != 0 {
+		t.Fatalf("nothing left out, got %v", got)
 	}
 }
