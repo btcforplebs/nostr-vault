@@ -182,7 +182,7 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
       {thread === null ? <SkeletonRows count={3} label="Opening the thread…" />
         : <>
             {rootBlocked ? <p class="empty">This note is from someone you blocked.</p>
-              : thread.root ? <Focus on={thread.root.id === focused?.id}><NoteCard event={thread.root} footer={stats(thread.root)} /></Focus>
+              : thread.root ? <Focus on={thread.root.id === focused?.id} anchor><NoteCard event={thread.root} footer={stats(thread.root)} /></Focus>
               : syncing ? <SkeletonRows count={1} label="Finding the note this thread starts from…" />
               : rootId && <p class="empty">The note this thread starts from wasn't found.</p>}
             {(rows.length > 0 || thread.root) && <h3 class="thread-replies-label">Replies</h3>}
@@ -197,8 +197,6 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
             </button>}
             {showOutside && split.outside.map(event => <div key={event.id} class="thread-outside"><NoteCard event={event} footer={stats(event)} /></div>)}
             {!rows.length && !split.outside.length && thread.root && (syncing ? <SkeletonRows count={2} label={LOADING} /> : <p class="empty">No replies yet.</p>)}
-            {/* Room under a short thread, so a reply opened near its end can still reach the tap line (NoteDetailView, feeds.css). */}
-            {focused && focused.id !== thread.root?.id && <div class="tap-room" aria-hidden="true" />}
           </>}
     </main>
   )
@@ -221,15 +219,15 @@ function useChunks(total, focusAt, key) {
 }
 
 // The focused note (the iPhone's orange border and glow, styled as `.note-card.focused` with the note rows), marked for
-// screen readers. On a phone its top goes on the tap line, 20 px under the bar's
-// buttons, as the iPhone's note detail lands it: the root and a reply further down alike. It is put back there each
-// time the thread above it grows (replies streaming in, images sizing), until the reader scrolls. The desktop pane
-// scrolls on its own, so there it is only scrolled into view.
-function Focus({ on, children }) {
+// screen readers. The thread always opens at its first post (`anchor`, the root only): a reply tapped in a thread card is
+// highlighted where it sits, not scrolled to (Logen's fix A, 2026-11-08). On a phone the root's top goes on the tap line,
+// 20 px under the bar's buttons, and is put back there each time the thread grows (images sizing), until the reader
+// scrolls. The desktop pane scrolls on its own, so there it is only scrolled into view.
+function Focus({ on, anchor = false, children }) {
   const el = useRef(null)
   useLayoutEffect(() => {
     const card = el.current
-    if (!on || !card?.closest) return
+    if (!anchor || !card?.closest) return
     if (card.closest(".desk-app")) { card.scrollIntoView?.({ block: "center" }); return }
     const screen = card.closest(".thread-screen")
     let held = true
@@ -239,9 +237,9 @@ function Focus({ on, children }) {
     grows?.observe(screen)
     const stop = onReaderScroll(() => { held = false; grows?.disconnect() })
     return () => { stop(); grows?.disconnect() }
-  }, [on])
-  if (!on) return children
-  return <div class="note-card focused" aria-current="true" ref={el}>{children}</div>
+  }, [anchor])
+  if (!on && !anchor) return children
+  return on ? <div class="note-card focused" aria-current="true" ref={el}>{children}</div> : <div ref={el}>{children}</div>
 }
 
 /** The focused note's reactions as chips, as under the iPhone's focused note: each emoji with how many people sent it,

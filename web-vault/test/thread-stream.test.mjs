@@ -168,6 +168,7 @@ globalThis.document = {
   createElementNS: (_, name) => new Node(1, name),
   createTextNode: data => Object.assign(new Node(3, "#text"), { data: String(data) }),
 }
+const scrolledTo = []
 const replyRows = el => (el.textContent.match(/reply \d+/g) ?? []).length
 
 test("the screen draws the stored thread at once, then the relays' replies as they land, before the stuck relay ends", async t => {
@@ -244,5 +245,36 @@ test("every note carries its reactions inside its own card, asked for in one req
   const reactionAsks = asks.filter(f => f.kinds?.includes(7))
   assert.equal(reactionAsks.length, 1, "one request for the thread's reactions, not one per note")
   assert.deepEqual(new Set(reactionAsks[0]["#e"]), new Set([root.id, ...replies.map(r => r.id)]))
+  render(null, el)
+})
+
+test("a reply tapped in a thread card opens the thread at its first post, the reply only highlighted (Logen fix A, 2026-11-08)", async t => {
+  Object.defineProperty(globalThis.navigator, "onLine", { value: false, configurable: true })
+  stubRelays(t, {})
+  const replies = Array.from({ length: 30 }, (_, i) => replyTo(root, i))
+  const tapped = replies[25]
+  const ctx = { vault: { feed: feedOf([root, ...replies]) }, account: { follows, relays: { read: [] } } }
+  const pane = document.createElement("div")
+  pane.setAttribute("class", "desk-app")
+  const el = pane.appendChild(document.createElement("div"))
+  // Only here: the desktop pane, where the thread scrolls its focus into view (Focus in ThreadScreen.jsx).
+  Node.prototype.closest = function (sel) { for (let n = this; n; n = n.parentNode) if ((n.attributes?.class ?? "").split(" ").includes(sel.slice(1))) return n; return null }
+  Node.prototype.scrollIntoView = function () { scrolledTo.push(this) }
+  t.after(() => { delete Node.prototype.closest; delete Node.prototype.scrollIntoView })
+  scrolledTo.length = 0
+  render(h(ThreadScreen, { ctx, id: tapped.id }), el)
+  await until(() => replyRows(el) === 30, "the whole thread")
+  const all = (n, out = []) => { out.push(n); n.childNodes.forEach(c => all(c, out)); return out }
+  const cls = n => n.attributes?.class ?? ""
+  const highlighted = all(el).filter(n => cls(n) === "note-card focused")
+  assert.equal(highlighted.length, 1, "one highlighted note")
+  assert.match(highlighted[0].textContent, /reply 25/, "the tapped reply is the highlighted one")
+  assert.equal(highlighted[0].attributes["aria-current"], "true")
+  assert.ok(scrolledTo.length > 0, "the thread is scrolled to a note")
+  for (const n of scrolledTo) {
+    assert.match(n.textContent, /the root note/, "only the first post is scrolled to")
+    assert.doesNotMatch(n.textContent, /reply 25/)
+  }
+  assert.equal(all(el).filter(n => cls(n) === "tap-room").length, 0, "no room added under the thread for the tapped reply")
   render(null, el)
 })
