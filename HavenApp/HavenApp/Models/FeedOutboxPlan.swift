@@ -14,15 +14,14 @@ import Foundation
 /// greedy cover picks the few relays that reach the most uncovered follows,
 /// and each is asked only for the follows it was picked for.
 ///
-/// Most follows publish no relay list at all (581 of those 992), so they go
-/// to one fallback relay. Of their notes over three hours, the feed relays
-/// had 53 of 59; relay.ditto.pub had all 59 (relay.nostr.net 56, damus 39 and
-/// answering 503 that day). Re-measure before changing it.
+/// Most follows publish no relay list at all (581 of those 992). They are
+/// reached only through the owner's own read relays: the hidden fallback
+/// relay (relay.ditto.pub) is gone, so the feed asks no relay the owner did
+/// not pick or a follow did not list (Logen 2026-11-08). `fallbackRelay`
+/// stays as a parameter for tests of the mechanism.
 enum FeedOutboxPlan {
-    /// Extra sockets the feed may open on top of the feed relays, fallback
-    /// included.
+    /// Extra sockets the feed may open on top of the feed relays.
     static let maxExtraRelays = 8
-    static let fallbackRelay = "wss://relay.ditto.pub"
 
     /// What a plan is built from. Equal inputs give the same plan, so a
     /// caller can keep the last plan instead of rebuilding it.
@@ -48,14 +47,14 @@ enum FeedOutboxPlan {
     ///     feed relay is down is not reached by it, and a down relay is never
     ///     picked.
     ///   - fallbackRelay: asked for the follows with no usable relay list;
-    ///     nil to skip them.
+    ///     nil (the default) skips them.
     /// - Returns: extra relay URL → the follows to ask it for (sorted). Each
     ///   follow appears under one relay only: the first pick that reached them.
     static func plan(follows: [String],
                      writeRelays: [String: [String]],
                      feedRelays: [String],
                      unreachableRelays: [String] = [],
-                     fallbackRelay: String? = fallbackRelay,
+                     fallbackRelay: String? = nil,
                      maxExtraRelays: Int = maxExtraRelays) -> [String: [String]] {
         let down = Set(unreachableRelays.compactMap(normalizedKey))
         let asked = Set(feedRelays.compactMap(normalizedKey)).subtracting(down)

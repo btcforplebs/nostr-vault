@@ -41,7 +41,7 @@ enum RelayConfiguration {
     static func writeImportSeedRelays(config: HavenConfig, under root: URL, alsoFrom: [String] = []) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
-        if let data = try? encoder.encode(RelayCheck.importSeeds(fixed: config.importSeedRelays, own: alsoFrom)) {
+        if let data = try? encoder.encode(RelayCheck.importSeeds(fixed: config.vaultSeedRelays, own: alsoFrom)) {
             try? data.write(to: root.appendingPathComponent(config.importSeedRelaysFile))
         }
     }
@@ -256,7 +256,7 @@ enum RelayConfiguration {
     static func launchInputs(config: HavenConfig, relayDataDir: URL) -> LaunchInputs {
         LaunchInputs(
             env: generateEnvDictionary(config: config, relayDataDir: relayDataDir),
-            importSeedRelays: config.importSeedRelays,
+            importSeedRelays: config.vaultSeedRelays,
             blastrRelays: blastrRelays(config: config, mesh: {
                 #if os(iOS)
                 return macMeshRelay

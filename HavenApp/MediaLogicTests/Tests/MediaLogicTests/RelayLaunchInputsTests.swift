@@ -26,13 +26,15 @@ final class RelayLaunchInputsTests: XCTestCase {
     func testAppSideSettingsDoNotRestart() {
         XCTAssertFalse(restarts { $0.themeColor = $0.themeColor + "-other" })
         XCTAssertFalse(restarts { $0.textSizeScale = 1.3 })
-        XCTAssertFalse(restarts { $0.feedRelays = ["wss://feed.example"] })
         XCTAssertFalse(restarts { $0.activeAccountNpub = "npub1other" })
         // Reaches a running relay live through UpdateBlacklistC.
         XCTAssertFalse(restarts { $0.blacklistedNpubs = ["npub1blocked"] })
     }
 
     func testRelayFacingSettingsRestart() {
+        // The vault reads the owner's read relays now (VaultSeedRelays), so a
+        // new read list reaches it on restart.
+        XCTAssertTrue(restarts { $0.feedRelays = ["wss://feed.example"] })
         XCTAssertTrue(restarts { $0.logLevel = "DEBUG" })
         XCTAssertTrue(restarts { $0.relayPort = 4455 })
         XCTAssertTrue(restarts { $0.relayURL = "relay.example.com" })

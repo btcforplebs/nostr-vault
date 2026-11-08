@@ -212,7 +212,7 @@ struct ImportNotesStep: View {
         guard let pubkey = NpubValidation.hexPubkey(fromNpub: configService.config.ownerNpub) else { return }
         // The indexers too: a list made in another app may live only there.
         let list = await NostrService.shared.fetchNewestReplaceable(
-            kind: 10002, for: pubkey, alsoAsk: configService.config.importSeedRelays + RelayDraft.indexers
+            kind: 10002, for: pubkey, alsoAsk: configService.config.vaultSeedRelays + RelayDraft.indexers
         )
         ownRelays = RelayCheck.ownWriteRelays(relayListTags: list?.tags ?? [])
     }

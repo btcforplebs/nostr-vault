@@ -96,10 +96,6 @@ class ConfigService: ObservableObject {
             print("ConfigService: Successfully loaded configuration from disk")
             #endif
 
-            // Ensure defaults are applied for empty arrays
-            if config.importSeedRelays.isEmpty {
-                config.importSeedRelays = HavenConfig.default.importSeedRelays
-            }
             // blastrRelays is left alone: an empty write list is a choice the
             // owner can save (Relays shows "Your posts fall back to ..."), and
             // filling it here put back every write relay they had removed.
@@ -172,10 +168,6 @@ class ConfigService: ObservableObject {
                 print("ConfigService: Successfully reloaded configuration from disk")
                 #endif
 
-                // Ensure defaults are applied for empty arrays
-                if config.importSeedRelays.isEmpty {
-                    config.importSeedRelays = HavenConfig.default.importSeedRelays
-                }
                 // blastrRelays is left alone: an empty write list is a choice the
                 // owner can save (Relays shows "Your posts fall back to ..."), and
                 // filling it here put back every write relay they had removed.
@@ -209,16 +201,12 @@ class ConfigService: ObservableObject {
     private func loadRelayLists() {
         // Use separate data dir
         let importURL = relayDataDir.appendingPathComponent(config.importSeedRelaysFile)
+        var savedImport = config.importSeedRelays
         if let data = try? Data(contentsOf: importURL),
            let list = try? JSONDecoder().decode([String].self, from: data),
            !list.isEmpty {
-            // Older builds wrote the Mac relay into this file and read it back
-            // as one of the user's own seed relays. The relay adds the Mac
-            // itself now (MAC_RELAY_URL), so drop that leaked copy.
-            let mac = config.macRelayWssURL
-            config.importSeedRelays = mac.isEmpty ? list : list.filter { $0 != mac }
+            savedImport = list
         }
-        // If file doesn't exist or is empty, keep the defaults from HavenConfig
 
         let blastrURL = relayDataDir.appendingPathComponent(config.blastrRelaysFile)
         if let data = try? Data(contentsOf: blastrURL),
@@ -228,6 +216,13 @@ class ConfigService: ObservableObject {
         }
         // Missing/empty file keeps config.json's list (save() writes both, so an emptied list is empty in each); this session's mesh relay address is never the owner's own.
         config.blastrRelays = RelayConfiguration.droppingMeshAddresses(config.blastrRelays)
+
+        // The import file holds what the vault reads: the owner's own read
+        // and write relays plus their extra picks. Only the picks are kept
+        // as importSeedRelays; the old hidden defaults and the Mac relay
+        // (which older builds leaked into the file) are dropped.
+        config.importSeedRelays = VaultSeedRelays.chosenImportRelays(
+            savedImport, own: config.feedRelays + config.blastrRelays, mac: config.macRelayWssURL)
 
         // The account list: config.json's, plus any an older build kept only
         // in the whitelist file (that file now holds signing accounts only).

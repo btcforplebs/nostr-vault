@@ -39,9 +39,9 @@ import kotlinx.coroutines.launch
             _isCheckingRelays.value = true
             // The indexers too: a list made in another app may live only there (RelayDraft.INDEXERS).
             val list = runCatching {
-                nostrService.fetchNewestReplaceable(10002, pubkey, alsoAsk = configStore.config.value.importSeedRelays + RelayDraft.INDEXERS)
+                nostrService.fetchNewestReplaceable(10002, pubkey, alsoAsk = configStore.config.value.vaultSeedRelays + RelayDraft.INDEXERS)
             }.getOrNull()
-            _relayRows.value = RelayCheck.rows(list?.tags ?: emptyList(), HavenConfig().importSeedRelays)
+            _relayRows.value = RelayCheck.rows(list?.tags ?: emptyList(), HavenConfig.DEFAULT_READ_RELAYS)
             _relayRows.value.map { row ->
                 launch { probeRelayRow(row.url, pubkey) }
             }.joinAll()
