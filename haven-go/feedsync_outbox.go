@@ -195,8 +195,14 @@ func outboxRelayKey(raw string) (string, bool) {
 
 // pullFeedOutbox asks each extra relay of the plan for its own follows only:
 // the rare kinds since rareSince, then the common kinds since commonSince
-// (paged, as the owner's relays' fallback pull). Reports whether every
-// common pull read to the end.
+// (paged, as the owner's relays' fallback pull). True unless one of them
+// stopped partway and may still hold the watermark (stepShortStreaks, the
+// same #1721 escape as the owner's relays, in its own shortRounds).
+//
+// A follow's relay that never answers is skipped, not counted against the
+// round: dead relays in follows' lists are common, and one of them used to
+// keep every round incomplete, so each hourly round re-read the whole
+// window from every relay (#1843 regression, health audit B1 2026-11-08).
 func pullFeedOutbox(ctx context.Context, plan map[string][]string, rareSince, commonSince nostr.Timestamp, publish func(*nostr.Event), shortRounds map[string]int) bool {
 	urls := slices.Sorted(func(yield func(string) bool) {
 		for u := range plan {
@@ -205,7 +211,8 @@ func pullFeedOutbox(ctx context.Context, plan map[string][]string, rareSince, co
 			}
 		}
 	})
-	complete := true
+	held := false
+	asked := map[string]bool{}
 	for _, u := range urls {
 		if ctx.Err() != nil {
 			return false
@@ -213,13 +220,28 @@ func pullFeedOutbox(ctx context.Context, plan map[string][]string, rareSince, co
 		if relayBanned(u) {
 			continue
 		}
+		asked[nostr.NormalizeURL(u)] = true
 		authors := plan[u]
 		rctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		fetchPaged(rctx, []string{u}, feedRareFilter(authors, rareSince), 1, publish)
 		cancel()
-		if !feedFallbackPull(ctx, []string{u}, feedCommonFilter(authors, commonSince), publish, shortRounds) {
-			complete = false
+		res := fetchPaged(ctx, []string{u}, feedCommonFilter(authors, commonSince), importMaxPages, publish)
+		if ctx.Err() != nil {
+			return false
+		}
+		if slices.Contains(res.Silent, u) {
+			delete(shortRounds, nostr.NormalizeURL(u))
+			log.Println("📚 feed outbox: relay did not answer, skipped this round:", u)
+			continue
+		}
+		if stepShortStreaks([]string{u}, res.Short, shortRounds) {
+			held = true
 		}
 	}
-	return complete
+	for key := range shortRounds {
+		if !asked[key] {
+			delete(shortRounds, key)
+		}
+	}
+	return !held
 }
