@@ -46,7 +46,7 @@ internal fun SyncSection(viewModel: FipsMeshViewModel, mac: HavenRelaySettingsVi
         if (configuredMac.isNotEmpty()) {
             MacSyncSection(MacSync.view(macSync, configuredMac, checkRequested, pollNow), checkRequested, relayReady, mac::checkSyncWithMac, showHeader = false)
         } else if (!hasHome) {
-            Text("Nothing to sync yet. Set up Home vault sync, or add a home vault under My Devices.", color = SecondaryText, fontSize = 13.sp)
+            Text("Add a home vault under My Devices to sync with it.", color = SecondaryText, fontSize = 13.sp)
         }
         if (hasHome) {
             if (configuredMac.isNotEmpty()) Spacer(Modifier.height(10.dp))
@@ -74,7 +74,7 @@ internal fun ShareSection(viewModel: FipsMeshViewModel, status: FipsStatus) {
         "Share With Others",
         footer = "Sharing pauses once the mesh has downloaded the amount above; one visitor gets at most 256 MB of it.",
     ) {
-        MeshSwitchRow("Home vault mode", "Share this vault on the mesh", shareRelay, enabled = viewModel.isAvailable, onChange = viewModel::setShareRelay)
+        MeshSwitchRow("Home vault mode", "Share this vault on the mesh while the app stays open", shareRelay, enabled = viewModel.isAvailable, onChange = viewModel::setShareRelay)
         MeshDivider()
         // The library takes the limit at start, so it is fixed while sharing.
         Picker("Pause after", serveLimit, SERVE_LIMITS.map { it to bytesLabel(it) }, enabled = !shareRelay && !busy) { viewModel.setServeLimit(it) }

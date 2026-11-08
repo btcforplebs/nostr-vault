@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -58,6 +60,8 @@ fun FipsMeshDeviceScreen(npub: String, onBack: () -> Unit, viewModel: FipsMeshVi
     val colors = LocalNostrVaultColors.current
     // Leaving once: Remove goes back itself, so the "it is gone" effect below must not pop a second screen.
     var leaving by remember { mutableStateOf(false) }
+    // Remove asks first, as on iPhone: it cuts the device off this phone's vault.
+    var confirmRemove by rememberSaveable(npub) { mutableStateOf(false) }
     val leave = { if (!leaving) { leaving = true; onBack() } }
     // Gone (removed elsewhere): back to the list.
     LaunchedEffect(device == null) { if (device == null && devices.isNotEmpty()) leave() }
@@ -124,11 +128,21 @@ fun FipsMeshDeviceScreen(npub: String, onBack: () -> Unit, viewModel: FipsMeshVi
                 MeshValueRow("Last seen", MyDevicesRules.lastSeenText(d.lastSeen, d.inReach && status.running, System.currentTimeMillis() / 1000))
             }
 
-            MeshSection(null, footer = "It can no longer reach this phone's vault. Anything it already has stays on it.") {
+            MeshSection(null, footer = MyDevicesRules.removeFooter(d.role)) {
                 Text("Remove from My Devices", color = ErrorRed, fontSize = 16.sp,
-                    modifier = Modifier.fillMaxWidth().clickable { viewModel.removeDevice(npub); leave() }.padding(vertical = 14.dp))
+                    modifier = Modifier.fillMaxWidth().clickable { confirmRemove = true }.padding(vertical = 14.dp))
             }
             Spacer(Modifier.height(24.dp))
+        }
+        if (confirmRemove) {
+            AlertDialog(
+                onDismissRequest = { confirmRemove = false },
+                title = { Text("Remove ${d.title}?") },
+                confirmButton = {
+                    TextButton(onClick = { confirmRemove = false; viewModel.removeDevice(npub); leave() }) { Text("Remove", color = ErrorRed) }
+                },
+                dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Cancel") } },
+            )
         }
     }
 }
