@@ -72,6 +72,14 @@ extension FeedView {
         // No dark scroll-edge band behind the top pills (iOS 26+): the
         // pills carry their own glass, the band read as a black bar.
         .hidingTopScrollEdge()
+        // With the bar's fill and edge both off, posts ran under the clock.
+        // The page colour sits behind it instead, fading under the pills.
+        .overlay(alignment: .top) {
+            if FeedTopFade.shows(isReels: feedService.feedMode == .reels,
+                                 floatingBar: noteDetailSelection != nil) {
+                FeedTopFadeBand()
+            }
+        }
         .feedTopBar(floating: noteDetailSelection != nil) {
             feedLeadingBarItem
         } trailing: {
@@ -266,3 +274,40 @@ extension FeedView {
     }
     #endif
 }
+
+#if os(iOS)
+/// The page colour behind the clock, fading to clear under the feed's top
+/// pills (FeedTopFade). Sits under the navigation bar, so the pills stay on
+/// top and keep their taps; takes no taps itself.
+private struct FeedTopFadeBand: View {
+    var body: some View {
+        GeometryReader { geo in
+            // Reaching up past the safe area, the reader still reports it:
+            // the feed's top inset, the clock plus the bar.
+            let total = geo.safeAreaInsets.top
+            LinearGradient(
+                stops: FeedTopFade.stops(statusBar: geo.windowStatusBarHeight, total: total).map {
+                    .init(color: Color.platformWindowBackground.opacity($0.opacity), location: $0.location)
+                },
+                startPoint: .top, endPoint: .bottom
+            )
+            .frame(height: total)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+private extension GeometryProxy {
+    /// The window's own top inset: the status bar (or Dynamic Island) alone,
+    /// without the navigation bar.
+    @MainActor var windowStatusBarHeight: Double {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+            .first
+        return Double(window?.safeAreaInsets.top ?? 0)
+    }
+}
+#endif

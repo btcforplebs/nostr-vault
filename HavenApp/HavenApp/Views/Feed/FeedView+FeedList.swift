@@ -355,7 +355,6 @@ extension FeedView {
                     }
                 }
                 .scrollDirectionTracking(feedService: feedService, isAtTop: $isAtTop)
-                .softTopScrollEdge()
                 .onChange(of: feedService.isLoadingFeed) { _, isLoading in
                     if !isLoading && feedService.shouldScrollToTopOnLoad {
                         // Always cleared, so a leftover never fires later; the
