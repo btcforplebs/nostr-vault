@@ -104,13 +104,13 @@ export function roleConfirmText(role, name, setup = false) {
   if (setup) return `Add ${n} as another of your devices: your vault copies between them.`
   return {
     mac: `Add ${n} as your Mac: your vault syncs to it and it keeps a full copy.`,
-    homeVault: `Add ${n} as your home vault: your new posts and media are sent to it.`,
+    homeVault: `Add ${n} as your mobile vault: your new posts and media are sent to it.`,
     browser: `Add ${n} as your browser vault: it gets your new notes while it's open.`,
     phone: `Add ${n} as another of your phones.`,
   }[role]
 }
 
-const ROLE_WORD = { phone: "phone", mac: "Mac", homeVault: "home vault", browser: "browser vault" }
+const ROLE_WORD = { phone: "phone", mac: "Mac", homeVault: "mobile vault", browser: "browser vault" }
 const UNREADABLE = "That code didn't read correctly. Try scanning again."
 const TEXTS = {
   notPairing: "That isn't a Nostr Vault pairing code.",

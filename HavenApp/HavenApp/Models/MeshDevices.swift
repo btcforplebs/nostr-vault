@@ -68,7 +68,7 @@ struct LossyMeshDevice: Decodable {
 /// and the website's home vault help page. There is no choice to make: the
 /// "Photos go to" picker set a value nothing read (Logen 2026-11-05).
 enum MeshPhotoPath {
-    static let explainer = "New photos are saved on this device first. If you have a home vault, a copy goes to it over the mesh, and the home vault puts it on your public media server for you. If this device has its own media server, it uploads there itself."
+    static let explainer = "New photos are saved on this device first. If you have a mobile vault, a copy goes to it over the mesh, and the mobile vault puts it on your public media server for you. If this device has its own media server, it uploads there itself."
 }
 
 /// Kept so an older config still decodes; nothing reads or shows it any more

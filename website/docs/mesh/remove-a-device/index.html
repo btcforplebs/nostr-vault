@@ -85,8 +85,8 @@
                 <ul>
                     <li><a href="/docs/mesh/">The mesh</a></li>
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
-                    <li><a href="/docs/mesh/sync/">Home vault sync</a></li>
-                    <li><a href="/docs/mesh/home-vault/">Home vault</a></li>
+                    <li><a href="/docs/mesh/sync/">Desktop vault sync</a></li>
+                    <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
                     <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/" aria-current="page">Remove a device</a></li>
                     <li><a href="/docs/mesh/advanced/">Advanced mesh settings</a></li>
@@ -150,13 +150,13 @@
                 <p>What changes:</p>
                 <ul>
                     <li>It can no longer reach this device's vault, or learn its address.</li>
-                    <li>New notes and media stop going to it. A home vault also leaves your media server list.</li>
+                    <li>New notes and media stop going to it. If it's on your media server list, it stays there until you remove it under <span class="path">Settings &rarr; Media Servers</span> &rarr; <span class="ui">Your Vaults</span>.</li>
                     <li>Anything it already has stays on it. Removing a device doesn't wipe it.</li>
                 </ul>
 
                 <h2 id="lost">A lost or stolen phone</h2>
                 <ol class="steps">
-                    <li><strong>Remove it from My Devices</strong> on your Mac, your home vault and your other phones, as above.</li>
+                    <li><strong>Remove it from My Devices</strong> on your Mac, your mobile vault and your other phones, as above.</li>
                     <li><strong>Signer:</strong> if the phone signed through a signer app, revoke its connection in the signer. Your key
                         was never on the phone.</li>
                     <li><strong>Local key:</strong> if your secret key was on the phone, it's locked with your key password. Someone with
@@ -164,11 +164,11 @@
                         changed, so make a new account and tell people to follow it.</li>
                     <li><strong>Set up the new phone</strong>: sign in with your key or signer
                         (<a href="/docs/start/iphone/#existing">iPhone</a>, <a href="/docs/start/android/#existing">Android</a>), then
-                        add it to My Devices on your other devices. Your notes come back from your relays, your Mac or your home
+                        add it to My Devices on your other devices. Your notes come back from your relays, your Mac or your mobile
                         vault.</li>
                 </ol>
                 <div class="note"><p>Your public posts are on public relays and stay there. A lost phone loses only what nothing else
-                    holds a copy of, which is why a Mac or home vault is worth having.</p></div>
+                    holds a copy of, which is why a mobile or desktop vault is worth having.</p></div>
             </article>
             <p class="docs-checked">Checked against Nostr Vault 3.0.0 (41).</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">

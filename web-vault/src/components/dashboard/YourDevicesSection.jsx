@@ -24,7 +24,7 @@ export function YourDevicesSection({ ctx, onPair, load = loadMyDevices }) {
     <Section title="Your devices" detail={rows.length ? `${onMesh} of ${rows.length} on the mesh` : undefined}>
       <div class="my-devices">
         {!data ? <div class="dash-row"><span class="dash-sub">Checking the mesh…</span></div>
-          : !rows.length ? <div class="dash-row"><span class="dash-sub">No devices linked yet. Link your phone, Mac or home vault to this browser vault.</span></div>
+          : !rows.length ? <div class="dash-row"><span class="dash-sub">No devices linked yet. Link your phone, or your mobile or desktop vault, to this browser vault.</span></div>
           : rows.map(({ d, s }) => (
             <div key={d.hex} class="dash-row">
               <span class={`md-dot ${s.state}`} role="img" aria-label={s.state} />

@@ -48,9 +48,9 @@ test("the device name is the browser and the device it runs on", () => {
 
 test("Your devices rows: pairing's name where it gave one, else role and address end", () => {
   const h1 = "11".repeat(32), h2 = "22".repeat(32)
-  const devices = [{ hex: h1, npub: npubEncode(h1), role: "Home vault" }, { hex: h2, npub: npubEncode(h2), role: "Paired vault" }]
+  const devices = [{ hex: h1, npub: npubEncode(h1), role: "Mesh vault" }, { hex: h2, npub: npubEncode(h2), role: "Paired vault" }]
   const rows = deviceRows(devices, [{ hex: h2, name: "Logen's iPhone", role: "phone" }])
-  assert.equal(rows[0].title, `Home vault ${npubEncode(h1).slice(0, 9)}…${npubEncode(h1).slice(-4)}`)
+  assert.equal(rows[0].title, `Mesh vault ${npubEncode(h1).slice(0, 9)}…${npubEncode(h1).slice(-4)}`)
   assert.equal(rows[1].title, "Logen's iPhone")
   assert.equal(rows[1].kind, "Phone")
 })

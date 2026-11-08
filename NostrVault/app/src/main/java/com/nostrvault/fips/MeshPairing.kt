@@ -227,7 +227,7 @@ object MeshPairing {
         if (setup) return "Add $n as another of your devices: your vault copies between them."
         return when (role) {
             DeviceRole.MAC -> "Add $n as your Mac: your vault syncs to it and it keeps a full copy."
-            DeviceRole.HOME_VAULT -> "Add $n as your home vault: your new posts and media are sent to it."
+            DeviceRole.HOME_VAULT -> "Add $n as your mobile vault: your new posts and media are sent to it."
             DeviceRole.BROWSER -> "Add $n as your browser vault: it gets your new notes while it's open."
             DeviceRole.PHONE -> "Add $n as another of your phones."
         }
@@ -258,7 +258,7 @@ object MeshPairing {
     fun roleWord(role: DeviceRole): String = when (role) {
         DeviceRole.PHONE -> "phone"
         DeviceRole.MAC -> "Mac"
-        DeviceRole.HOME_VAULT -> "home vault"
+        DeviceRole.HOME_VAULT -> "mobile vault"
         DeviceRole.BROWSER -> "browser vault"
     }
 

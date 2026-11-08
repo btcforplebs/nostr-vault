@@ -16,7 +16,7 @@ export function PostResult({ result }) {
       {failed.map(r => <div key={r.url} class="error small">✗ {host(r.url)}: {r.message}</div>)}
       <div class="muted small">✓ Saved to your vault in this browser</div>
       {result.relays.filter(r => r.local).map(r => (
-        <div key={r.url} class="muted small">{r.ok ? "✓ Also on your home vault" : `Your home vault (${host(r.url)}) didn't answer. That doesn't change the relays above.`}</div>
+        <div key={r.url} class="muted small">{r.ok ? "✓ Also on your mobile or desktop vault" : `Your mobile or desktop vault (${host(r.url)}) didn't answer. That doesn't change the relays above.`}</div>
       ))}
       <a href="#/profile">See it on your profile</a>
     </div>

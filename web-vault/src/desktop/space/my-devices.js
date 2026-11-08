@@ -62,7 +62,7 @@ export function statusLine(status, now) {
   }
 }
 
-/** The user's devices this browser knows: the home vaults their newest 10063 lists (fipsmesh:// entries), then the
+/** The user's devices this browser knows: the mobile and desktop vaults their newest 10063 lists (fipsmesh:// entries), then the
  *  vaults paired in Who Can Reach You. Each once, as x-only hex, with a name to show. */
 export function deviceList(serverList, owners) {
   const out = []
@@ -72,7 +72,7 @@ export function deviceList(serverList, owners) {
     seen.add(hex)
     out.push({ hex, npub: npubEncode(hex), role })
   }
-  for (const hex of meshVaults(serverList)) add(hex, "Home vault")
+  for (const hex of meshVaults(serverList)) add(hex, "Mesh vault")
   for (const hex of owners ?? []) add(String(hex).toLowerCase(), "Paired vault")
   return out
 }

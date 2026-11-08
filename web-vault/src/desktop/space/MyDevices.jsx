@@ -1,4 +1,4 @@
-// My devices: a "Your space" panel. Each of the user's own devices (home vaults from their media server list, vaults
+// My devices: a "Your space" panel. Each of the user's own devices (mobile and desktop vaults from their media server list, vaults
 // paired in Who Can Reach You) with whether it is on the mesh and when it last was (my-devices.js). Twin of the iPad's
 // MyDevicesPanel.swift. Reads only.
 import { useEffect, useState } from "preact/hooks"
@@ -27,7 +27,7 @@ export function MyDevices({ ctx, open: shown = true, tools = null }) {
       </header>
       <ul class="sp-rows">
         {!data ? <li class="sp-empty">Checking the mesh…</li>
-          : !rows.length ? <li class="sp-empty">No devices yet. Pair a vault in Who Can Reach You, or set up a home vault in Nostr Vault.</li>
+          : !rows.length ? <li class="sp-empty">No devices yet. Pair a vault in Who Can Reach You, or set up a mobile or desktop vault in Nostr Vault.</li>
           : [<li key="header" class="sp-empty md-header">{MESH_HEADER}</li>, ...rows.map(({ d, s }) => (
             <li key={d.hex} class="sp-row md-row">
               <span class={`md-dot ${s.state}`} role="img" aria-label={s.state} />

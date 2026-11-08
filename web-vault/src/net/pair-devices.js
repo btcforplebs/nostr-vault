@@ -143,7 +143,7 @@ export function browserDeviceName(ua = globalThis.navigator?.userAgent ?? "") {
   return os ? `${browser} on ${os}` : browser
 }
 
-const ROLE_LABEL = { phone: "Phone", mac: "Mac", homeVault: "Home vault", browser: "Browser vault" }
+const ROLE_LABEL = { phone: "Phone", mac: "Mac", homeVault: "Mobile vault", browser: "Browser vault" }
 
 /** The Your devices rows: my-devices.js deviceList entries (home vaults from the media server list, then the owner
  *  set), named by pairing where it named them, else by role and the end of the address as before. */

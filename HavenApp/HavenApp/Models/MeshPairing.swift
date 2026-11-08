@@ -248,7 +248,7 @@ enum MeshPairing {
         if setup { return "Add \(n) as another of your devices: your vault copies between them." }
         switch role {
         case .mac: return "Add \(n) as your Mac: your vault syncs to it and it keeps a full copy."
-        case .homeVault: return "Add \(n) as your home vault: your new posts and media are sent to it."
+        case .homeVault: return "Add \(n) as your mobile vault: your new posts and media are sent to it."
         case .browser: return "Add \(n) as your browser vault: it gets your new notes while it's open."
         case .phone: return "Add \(n) as another of your phones."
         }
@@ -285,7 +285,7 @@ enum MeshPairing {
         switch role {
         case .phone: return "phone"
         case .mac: return "Mac"
-        case .homeVault: return "home vault"
+        case .homeVault: return "mobile vault"
         case .browser: return "browser vault"
         }
     }

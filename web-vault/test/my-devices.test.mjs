@@ -1,5 +1,5 @@
 // My devices (src/desktop/space/my-devices.js): the same status rule as the iPad's MyDevicesStatus.swift, against the
-// same fixtures, plus the web's device list (home vaults from the 10063, then paired vaults) and loading.
+// same fixtures, plus the web's device list (mesh vaults from the 10063, then paired vaults) and loading.
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
@@ -34,9 +34,9 @@ test("lines read as on the iPad", () => {
 const A = "a".repeat(64), B = "b".repeat(64)
 const list = (...hexes) => ({ kind: 10063, tags: hexes.map(h => ["server", `fipsmesh://${npubEncode(h)}/`]).concat([["server", "https://blossom.example/"]]) })
 
-test("devices: home vaults from the 10063 first, then paired vaults, each once", () => {
+test("devices: mesh vaults from the 10063 first, then paired vaults, each once", () => {
   const d = deviceList(list(A), new Set([B, A]))
-  assert.deepEqual(d.map(x => [x.hex, x.role]), [[A, "Home vault"], [B, "Paired vault"]])
+  assert.deepEqual(d.map(x => [x.hex, x.role]), [[A, "Mesh vault"], [B, "Paired vault"]])
   assert.deepEqual(deviceList(undefined, undefined), [])
   assert.deepEqual(deviceList(undefined, ["not hex"]), [])
 })

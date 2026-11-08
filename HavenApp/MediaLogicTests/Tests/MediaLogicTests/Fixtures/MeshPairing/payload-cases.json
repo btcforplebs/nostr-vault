@@ -643,21 +643,21 @@
    "role": "homeVault",
    "name": "Logen's Mac",
    "setup": false,
-   "expect": "Add Logen's Mac as your home vault: your new posts and media are sent to it."
+   "expect": "Add Logen's Mac as your mobile vault: your new posts and media are sent to it."
   },
   {
    "kind": "confirm",
    "role": "homeVault",
    "name": "  ",
    "setup": false,
-   "expect": "Add this device as your home vault: your new posts and media are sent to it."
+   "expect": "Add this device as your mobile vault: your new posts and media are sent to it."
   },
   {
    "kind": "confirm",
    "role": "homeVault",
    "name": "",
    "setup": false,
-   "expect": "Add this device as your home vault: your new posts and media are sent to it."
+   "expect": "Add this device as your mobile vault: your new posts and media are sent to it."
   },
   {
    "kind": "confirm",
@@ -787,7 +787,7 @@
    "kind": "refusal",
    "code": "refuseOtherRole",
    "role": "homeVault",
-   "expect": "This device is already added as your home vault. Remove it in Mesh settings first."
+   "expect": "This device is already added as your mobile vault. Remove it in Mesh settings first."
   },
   {
    "kind": "refusal",

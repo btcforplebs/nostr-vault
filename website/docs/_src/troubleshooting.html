@@ -7,11 +7,11 @@
   "eyebrow": "Help",
   "h1": "When something <span>isn't working</span>",
   "lede": "One heading per problem: what you see, why it happens, and what to tap.",
-  "description": "Fixes for common Nostr Vault problems: empty feed, signer not answering, read-only account, photo posts failing, relays not answering, mesh devices not in reach, Check sync stopping, Home vault mode paused.",
+  "description": "Fixes for common Nostr Vault problems: empty feed, signer not answering, read-only account, photo posts failing, relays not answering, mesh devices not in reach, Check sync stopping, Mobile vault mode paused.",
   "labels": {
-    "ios": ["Fill Your Feed", "Media Servers", "Reveal Key", "Accounts & Keys", "My Devices", "Not in reach", "Link a device", "This Device", "Home vault · full history", "Check home vault sync", "Copy was interrupted", "Home vault mode", "Home vault mode paused", "Share With Others", "No Write relay"],
-    "android": ["Media Servers", "Start Vault Automatically", "My Devices", "This Device", "Home vault · full history", "Home vault mode", "No Write relay",
-                "Check home vault sync", "Copy was interrupted"]
+    "ios": ["Fill Your Feed", "Media Servers", "Reveal Key", "Accounts & Keys", "My Devices", "Not in reach", "Link a device", "This Device", "Desktop vault · full history", "Check desktop vault sync", "Copy was interrupted", "Mobile vault mode", "Mobile vault mode paused", "Share With Others", "No Write relay"],
+    "android": ["Media Servers", "Start Vault Automatically", "My Devices", "This Device", "Desktop vault · full history", "Mobile vault mode", "No Write relay",
+                "Check desktop vault sync", "Copy was interrupted"]
   }
 }
 -->
@@ -73,7 +73,7 @@
 <section id="dot">
 <h2>A device on My Devices is never in reach</h2>
 <p>Under <span class="path">Mesh settings &rarr; My Devices</span> a device stays "Not in
-    reach" (Android shows when it was last seen). A Mac or a home vault only answers devices that are on its own
+    reach" (Android shows when it was last seen). A mobile or desktop vault only answers devices that are on its own
     My Devices list, and a Mac with an empty list doesn't start the mesh at all.</p>
 <p><strong>Fix:</strong> link the two again with <span class="ui">Link a device</span>: two scans, and both
     devices add each other. Check that Mesh is on, on both, and that Nostr Vault is open on the Mac. See
@@ -82,7 +82,7 @@
 
 <section id="check-sync">
 <h2>Check sync stops early</h2>
-<p>On iPhone and Android, <strong>Check home vault sync</strong> ends on "Stopped · N still missing", "Copy didn't
+<p>On iPhone and Android, <strong>Check desktop vault sync</strong> ends on "Stopped · N still missing", "Copy didn't
     finish" with a reason, or "Copy was interrupted". The button is greyed out while a copy is running or when
     your vault isn't running.</p>
 <p><strong>Fix:</strong> read the reason line. "Copy was interrupted" means the app closed during the copy; it
@@ -100,11 +100,11 @@
 </section>
 
 <section id="kiosk">
-<h2>Home vault mode paused</h2>
-<p>On iPhone you get "Home vault mode paused". Leaving the app pauses Home vault mode.</p>
-<p><strong>Fix:</strong> tap the notification or open the app again; Home vault mode turns back on by itself. If it
+<h2>Mobile vault mode paused</h2>
+<p>On iPhone you get "Mobile vault mode paused". Leaving the app pauses Mobile vault mode.</p>
+<p><strong>Fix:</strong> tap the notification or open the app again; Mobile vault mode turns back on by itself. If it
     won't start, add your other phone or your Mac under My Devices first. If it says the mesh downloaded today's
-    limit, others can read again at the time it shows; your own devices are never limited. See <a class="inline" href="/docs/mesh/#kiosk">Home vault mode</a>.</p>
+    limit, others can read again at the time it shows; your own devices are never limited. See <a class="inline" href="/docs/mesh/#kiosk">Mobile vault mode</a>.</p>
 </section>
 
 <section id="more">

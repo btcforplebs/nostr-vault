@@ -1,14 +1,16 @@
 // Settings › Media Servers (iPhone BlossomSettingsView, "Other Servers"): the account's Blossom servers (BUD-03,
 // kind 10063), where Compose uploads photos, with Remove and Add. Saving signs and publishes the new list. Each saved
-// server is tested as the page opens, as the phone's MediaServersPage does.
+// server is tested as the page opens, as the phone's MediaServersPage does. Mesh vault entries (fipsmesh://) aren't
+// tested or shown with them: they get their own rows (MeshVaultRows.jsx).
 import { useEffect, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
 import { serverUrl, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
 import { testServer, SERVER_STATES } from "../net/blossom-gallery.js"
-import { latestList, publishList, ListNotSaved, NO_RELAY_LIST, serverEntries, serverTags, addServer, removeServer, serverProblem, sameRows } from "../net/list-edit.js"
+import { latestList, publishList, ListNotSaved, NO_RELAY_LIST, serverEntries, serverTags, addServer, removeServer, serverProblem, sameRows, isMeshServer } from "../net/list-edit.js"
 import { SkeletonList } from "../components/Loading.jsx"
 import { MeshPhotosSwitch } from "../components/MeshPhotosSwitch.jsx"
 import { SuggestedServers } from "../components/SuggestedServers.jsx"
+import { MeshVaultRows } from "./MeshVaultRows.jsx"
 
 const loopback = url => { try { return /^(localhost|127\.|\[::1\])/.test(new URL(url).hostname) } catch { return false } }
 
@@ -32,12 +34,13 @@ export function MediaServersPage({ ctx }) {
   // over a list that exists.
   const start = r => r?.event ? serverEntries(r.event) : r?.checked ? DEFAULT_MEDIA_SERVERS : []
   useEffect(() => {
-    latestList(ctx, 10063).then(r => { setLoaded(r); setUrls(start(r)); start(r).forEach(test) }).catch(e => { setLoaded({ event: undefined, checked: false }); setUrls([]); setErr(String(e?.message ?? e)) })
+    latestList(ctx, 10063).then(r => { setLoaded(r); setUrls(start(r)); start(r).filter(u => !isMeshServer(u)).forEach(test) }).catch(e => { setLoaded({ event: undefined, checked: false }); setUrls([]); setErr(String(e?.message ?? e)) })
   }, [])
 
   const saved = start(loaded)
   const dirty = !!loaded && !sameRows(urls, saved)
   const problem = serverProblem(urls)
+  const servers = urls.filter(u => !isMeshServer(u))
 
   const add = e => {
     e.preventDefault()
@@ -50,7 +53,7 @@ export function MediaServersPage({ ctx }) {
     try {
       const { event, relays } = await publishList(ctx, 10063, serverTags(urls, loaded.event), { previous: loaded.event })
       setLoaded({ event, checked: true }); setUrls(serverEntries(event))
-      setStatus(`Published to ${relays.filter(r => r.ok).length} of ${relays.length} relays. New photos go to ${serverEntries(event)[0]} first.`)
+      setStatus(`Published to ${relays.filter(r => r.ok).length} of ${relays.length} relays. New photos go to ${serverEntries(event).find(u => !isMeshServer(u))} first.`)
     } catch (e) {
       if (e instanceof ListNotSaved && e.checked) { const r = { event: e.latest, checked: true }; setLoaded(r); setUrls(start(r)) }
       setErr(String(e?.message ?? e))
@@ -64,7 +67,7 @@ export function MediaServersPage({ ctx }) {
       {!loaded.checked && loaded.noRelayList && <p class="settings-note small error">{NO_RELAY_LIST}</p>}
       {!loaded.checked && !loaded.noRelayList && <p class="settings-note small error">Your relays couldn't be checked, so this may not be your newest list. Go online before you change it.</p>}
       {!loaded.event && loaded.checked && <p class="settings-note muted small">You haven't published a list, so the defaults below are used. Saving publishes them with your changes.</p>}
-      {urls.map((url, i) => (
+      {servers.map((url, i) => (
         <div key={url} class="settings-row static relay-edit-row">
           <span class="settings-title mono" title={url}>{url}<Health h={health[url]} /></span>
           <span class="settings-tags">
@@ -76,6 +79,7 @@ export function MediaServersPage({ ctx }) {
           </span>
         </div>
       ))}
+      <MeshVaultRows urls={urls} readOnly={readOnly} busy={busy} onRemove={url => { setUrls(removeServer(urls, url)); setErr(""); setStatus("") }} />
       {readOnly ? <p class="settings-note muted small">{READ_ONLY}</p> : (
         <>
           <form class="settings-row static relay-add" onSubmit={add}>
