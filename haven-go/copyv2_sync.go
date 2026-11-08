@@ -40,6 +40,19 @@ const (
 	copySyncMaxFiles = 2000
 )
 
+// copyNotCaughtUp: the stores in unreadable that no catch-up covers. A copy
+// that left one of them out is done, but nothing later brings its events
+// over, so the done line names them (Tron #1864).
+func copyNotCaughtUp(unreadable []string) []string {
+	var out []string
+	for _, store := range unreadable {
+		if !slices.Contains(copySyncStores, store) {
+			out = append(out, store)
+		}
+	}
+	return out
+}
+
 func copySyncDB(store string) DBBackend {
 	if !slices.Contains(copySyncStores, store) {
 		return nil
