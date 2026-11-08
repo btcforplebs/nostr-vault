@@ -11,10 +11,6 @@ struct MacFipsMeshSettingsView: View {
     @StateObject private var detection = FIPSDetectionService()
     @State private var showPair = false
     @State private var copied = false
-    @State private var newAddress = ""
-    @State private var newName = ""
-    @State private var newRole: MeshDeviceRole = .phone
-    @State private var addError: String?
 
     var body: some View {
         Form {
@@ -136,53 +132,23 @@ struct MacFipsMeshSettingsView: View {
                     .accessibilityLabel("Remove \(device.displayName)")
                 }
             }
-            VStack(alignment: .leading, spacing: 8) {
-                TextField("npub1… mesh address", text: $newAddress)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.appSystem(size: 12, design: .monospaced))
-                    .autocorrectionDisabled()
-                HStack {
-                    Picker("This is", selection: $newRole) {
-                        ForEach(MeshDeviceRole.allCases) { role in
-                            Text(role.label).tag(role)
-                        }
-                    }
-                    .frame(maxWidth: 220)
-                    TextField("Name (optional)", text: $newName)
-                        .textFieldStyle(.roundedBorder)
-                    Button("Add a device by address", action: addDevice)
-                        .disabled(HomeVaultLogic.meshNpub(fromInput: newAddress) == nil)
-                }
-                if let addError {
-                    Text(addError)
-                        .font(.appCaption)
-                        .foregroundColor(.red)
-                }
+            // The iPhone's twin is FipsMeshMyDevicesSection: Add a device is
+            // the two-scan pairing (PairDeviceView), with Copy code and Paste
+            // instead; a Linux box or browser relay page is pasted there by
+            // its mesh address (Logen via Tod, 2026-11-08).
+            Button {
+                showPair = true
+            } label: {
+                Label("Add a device", systemImage: "plus.circle.fill")
+                    .font(.appBody)
+                    .foregroundColor(.havenPurple)
             }
-            .padding(.vertical, 4)
+            .buttonStyle(.plain)
         } header: {
             Text("My Devices")
         } footer: {
-            Text("Your phones, home vaults and browser vault, in one list. Copy each one's address from Mesh → This Device on that device.")
+            Text("Your phones, home vaults and browser vault, in one list. Add a device links one with two scans, or paste its code or mesh address instead.")
         }
-    }
-
-    private func addDevice() {
-        guard let npub = HomeVaultLogic.meshNpub(fromInput: newAddress) else {
-            addError = "That isn't a mesh address."
-            return
-        }
-        guard npub != mesh.ownNpub, npub != detection.detectedNpub else {
-            addError = "That is this Mac's own address."
-            return
-        }
-        let device = MeshDevice(npub: npub, name: newName.trimmingCharacters(in: .whitespacesAndNewlines), role: newRole)
-        configService.config.meshDevices = MeshDevicesLogic.adding(device, to: configService.config.meshDevices)
-        configService.save()
-        mesh.sync()
-        newAddress = ""
-        newName = ""
-        addError = nil
     }
 
     // MARK: 4 Sync
