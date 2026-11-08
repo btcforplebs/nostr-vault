@@ -1,7 +1,7 @@
 // Settings › Media Servers › Your Vaults on the Mesh (iPhone/Mac MeshMediaServersSection): the `fipsmesh://<npub>/`
 // entries already on the account's media server list (kind 10063, NIP-F1), each with its device name, a mesh tag
 // and Remove. This browser can't reach the mesh to test them, so there's no health line. Adding a vault happens on
-// the phone or Mac that links it; Remove here goes out with the rest of the list on Save and publish.
+// the phone or Mac that links it; Remove here goes out with the rest of the list on Save.
 import { pairedDevices } from "../net/pair-devices.js"
 import { meshVaultRows } from "../net/mesh-vault-rows.js"
 
