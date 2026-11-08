@@ -93,8 +93,14 @@ class WebSocketClient(
          * and the app died with NPE / "closed" / AIOOBE size=0 inside Buffer
          * (Moto, 4 crashes on 10-31). So pings are off, and a socket quiet for
          * this long gets a tiny REQ that every relay answers (EOSE or CLOSED).
+         * 25 s, not 30: nostr-pub.wellorder.net closes a socket silent for 30 s,
+         * so a 30 s probe lost that race and the DM socket redialled every
+         * minute all night with the screen off.
          */
-        internal const val WATCHDOG_IDLE_MS = 30_000L
+        internal const val WATCHDOG_IDLE_MS = 25_000L
+
+        /** The shortest idle close seen on a default relay (wellorder). */
+        internal const val SHORTEST_RELAY_IDLE_CLOSE_MS = 30_000L
 
         /**
          * No frame at all this long after the probe: the link is dead. The
@@ -106,9 +112,13 @@ class WebSocketClient(
         /** Subscription ids of watchdog probes; their replies never reach [messages]. */
         internal const val PROBE_PREFIX = "nv-wd-"
 
-        /** A REQ that matches nothing: the relay just sends EOSE. */
+        /**
+         * A REQ that matches nothing: the relay just sends EOSE. No "limit":
+         * relay.btcforplebs.com and wellorder never answer a REQ with
+         * "limit":0, so the watchdog dropped them 50 s after every open.
+         */
         internal fun probe(subId: String): String =
-            "[\"REQ\",\"$subId\",{\"ids\":[\"${"0".repeat(64)}\"],\"limit\":0}]"
+            "[\"REQ\",\"$subId\",{\"ids\":[\"${"0".repeat(64)}\"]}]"
 
         /** Whether [text] is a relay's answer to a watchdog probe. */
         internal fun isProbeReply(text: String): Boolean =
