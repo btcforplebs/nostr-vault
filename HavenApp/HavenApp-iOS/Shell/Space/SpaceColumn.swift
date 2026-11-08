@@ -8,7 +8,12 @@ import SwiftUI
 /// then one icon per widget, which opens just that widget, full height. A
 /// tap on the open one folds the column; any tap while folded opens it. The
 /// fold stays on this device, per account.
+///
+/// On an open folding iPhone it fills the left half instead
+/// (`fillsFoldHalf`): the rail on the screen's outer (left) edge, the panels
+/// as wide as the half, and no fold, so the app never runs across the crease.
 struct SpaceColumn: View {
+    var fillsFoldHalf = false
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @ObservedObject private var store = SpaceLayoutStore.shared
@@ -16,7 +21,9 @@ struct SpaceColumn: View {
     @ObservedObject private var feedService = FeedService.shared
     @StateObject private var liveVault = LiveVaultModel()
     @StateObject private var liveNow = LiveNowModel()
-    @State private var folded = false
+    @State private var foldedSaved = false
+    /// The half of an open folding iPhone never folds.
+    private var folded: Bool { foldedSaved && !fillsFoldHalf }
     @State private var editing = false
     /// The widget the rail opened on its own, or nil for the dashboard.
     @State private var selected: String?
@@ -29,18 +36,20 @@ struct SpaceColumn: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            if fillsFoldHalf {
+                rail
+                railRule
+            }
             if !folded {
                 VStack(spacing: 0) {
                     spaceBar
                     if let id = selected { single(id) } else { panels }
                 }
-                .frame(width: LiveVaultLayout.openWidth)
-                Rectangle()
-                    .fill(Color.white.opacity(0.06))
-                    .frame(width: 1)
-                    .ignoresSafeArea()
+                .frame(width: fillsFoldHalf ? nil : LiveVaultLayout.openWidth)
+                .frame(maxWidth: fillsFoldHalf ? .infinity : nil)
+                if !fillsFoldHalf { railRule }
             }
-            rail
+            if !fillsFoldHalf { rail }
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background {
@@ -54,13 +63,15 @@ struct SpaceColumn: View {
             .ignoresSafeArea()
         }
         .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(Color.white.opacity(0.08))
-                .frame(width: 1)
-                .ignoresSafeArea()
+            if !fillsFoldHalf {
+                Rectangle()
+                    .fill(Color.white.opacity(0.08))
+                    .frame(width: 1)
+                    .ignoresSafeArea()
+            }
         }
         .onChange(of: owner, initial: true) { _, hex in
-            folded = UserDefaults.standard.bool(forKey: LiveVault.foldedKey(hex))
+            foldedSaved = UserDefaults.standard.bool(forKey: LiveVault.foldedKey(hex))
             editing = false
             selected = nil
             liveVault.attach(hex)
@@ -109,7 +120,9 @@ struct SpaceColumn: View {
                 .font(.appSystem(size: 17, weight: .bold))
             Spacer()
             if selected != nil {
-                barButton("sidebar.right", label: "Fold Your space") { setFolded(true) }
+                if !fillsFoldHalf {
+                    barButton("sidebar.right", label: "Fold Your space") { setFolded(true) }
+                }
             } else if editing {
                 Button("Done") { withAnimation(.easeInOut(duration: 0.2)) { editing = false } }
                     .font(.appSystem(size: 15, weight: .semibold))
@@ -119,7 +132,9 @@ struct SpaceColumn: View {
                 barButton("pencil", label: "Edit Your space") {
                     withAnimation(.easeInOut(duration: 0.2)) { editing = true }
                 }
-                barButton("sidebar.right", label: "Fold Your space") { setFolded(true) }
+                if !fillsFoldHalf {
+                    barButton("sidebar.right", label: "Fold Your space") { setFolded(true) }
+                }
             }
         }
         .padding(.leading, 18)
@@ -249,7 +264,15 @@ struct SpaceColumn: View {
 
     // MARK: Rail
 
-    /// The icon rail: always on the column's right edge.
+    /// The hairline between the rail and the panels.
+    private var railRule: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.06))
+            .frame(width: 1)
+            .ignoresSafeArea()
+    }
+
+    /// The icon rail: always on the column's right edge (its left edge on a fold's half).
     private var rail: some View {
         VStack(spacing: 6) {
             railButton(nil, symbol: "square.grid.2x2", title: "Your space")
@@ -292,7 +315,7 @@ struct SpaceColumn: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isOpen ? "Fold \(title)" : (badge > 0 ? "\(title), \(badge)" : title))
+        .accessibilityLabel(isOpen && !fillsFoldHalf ? "Fold \(title)" : (badge > 0 ? "\(title), \(badge)" : title))
         .help(title)
     }
 
@@ -303,7 +326,8 @@ struct SpaceColumn: View {
                 selected = id
                 setFolded(false)
             } else if selected == id {
-                setFolded(true)
+                // The fold's half has no fold: the open icon stays open.
+                if !fillsFoldHalf { setFolded(true) }
             } else {
                 selected = id
                 editing = false
@@ -325,7 +349,7 @@ struct SpaceColumn: View {
     }
 
     private func setFolded(_ value: Bool) {
-        folded = value
+        foldedSaved = value
         if value { editing = false }
         UserDefaults.standard.set(value, forKey: LiveVault.foldedKey(owner))
     }

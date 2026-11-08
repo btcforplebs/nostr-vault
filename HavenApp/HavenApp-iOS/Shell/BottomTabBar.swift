@@ -17,6 +17,9 @@ struct BottomTabBar: View {
     @ObservedObject var feedService: FeedService
     /// iPad landscape: the same items stacked down a slim sidebar, no fold.
     var vertical = false
+    /// The rail sits on the window's right edge (the open folding iPhone),
+    /// so its rule goes on its left.
+    var railOnRight = false
 
     /// Scroll-linked fold, 0 = full tab bar, 1 = avatar + compose capsule.
     private var chrome: ChromeCollapse { .shared }
@@ -58,7 +61,7 @@ struct BottomTabBar: View {
         .frame(width: Self.railWidth)
         .frame(maxHeight: .infinity)
         .background(Color.platformWindowBackground.ignoresSafeArea())
-        .overlay(alignment: .trailing) {
+        .overlay(alignment: railOnRight ? .leading : .trailing) {
             Rectangle()
                 .fill(Color.white.opacity(0.08))
                 .frame(width: 1)
