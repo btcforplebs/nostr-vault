@@ -238,9 +238,6 @@ pub const ERR_BAD_EVENTS: i32 = -8;
 /// node's address to it.
 pub const ERR_NOT_OWN: i32 = -9;
 
-/// Every caller string is decoded or quoted before it reaches the template:
-/// the nsec and npubs are re-encoded from their decoded keys, and relay URLs
-/// are JSON strings (valid YAML), so no input can add keys or peers.
 /// Inbound filter FPR cap (`node.bloom.max_inbound_fpr`). The engine default,
 /// 0.20 (fill ~0.725, ~2,100 entries on the fixed 1 KB filter), is below the
 /// public seeds' own filter now: theirs arrives at fpr ~0.21 (fill 0.735) and
@@ -249,6 +246,9 @@ pub const ERR_NOT_OWN: i32 = -9;
 /// ~2,500 entries. A saturated, poisoned filter (fpr near 1) is still refused.
 const MAX_INBOUND_FPR: f64 = 0.30;
 
+/// Every caller string is decoded or quoted before it reaches the template:
+/// the nsec and npubs are re-encoded from their decoded keys, and relay URLs
+/// are JSON strings (valid YAML), so no input can add keys or peers.
 fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
     let nsec = Zeroizing::new(encode_nsec(&decode_nsec(nsec).context("nsec")?));
     let relays = if opts.relays.is_empty() {
