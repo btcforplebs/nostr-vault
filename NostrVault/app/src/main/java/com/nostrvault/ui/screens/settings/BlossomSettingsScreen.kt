@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.settings
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -63,8 +64,9 @@ class BlossomSettingsViewModel @Inject constructor(
 
     fun retryWaitingPosts() = mediaPostQueue.sendNow()
 
-    private val _mirrors = MutableStateFlow<List<String>>(emptyList())
-    val mirrors = _mirrors.asStateFlow()
+    /** The list on screen. Nothing here is stored or published until [save] (Logen 2026-11-08). */
+    private val _draft = MutableStateFlow(MediaServersDraft(configStore.config.value.blossomMirrors))
+    val draft = _draft.asStateFlow()
 
     private val _newMirrorUrl = MutableStateFlow("")
     val newMirrorUrl = _newMirrorUrl.asStateFlow()
@@ -75,64 +77,62 @@ class BlossomSettingsViewModel @Inject constructor(
     private val _publishStatus = MutableStateFlow("")
     val publishStatus = _publishStatus.asStateFlow()
 
-    /** Your mobile and desktop vaults, listed in your 10063 or not (MediaServerVaults). */
+    private fun publishedList() = nostrService.serverLists.value[nostrService.ownerHexPubkey].orEmpty()
+
+    /** Your mobile and desktop vaults, listed in your 10063 or not, as the draft would leave them (MediaServerVaults). */
     val vaults: StateFlow<List<com.nostrvault.fips.MediaServerVault>> =
-        kotlinx.coroutines.flow.combine(configStore.config, nostrService.serverLists) { cfg, lists ->
-            com.nostrvault.fips.MediaServerVaults.rows(cfg, lists[nostrService.ownerHexPubkey].orEmpty())
+        kotlinx.coroutines.flow.combine(configStore.config, nostrService.serverLists, _draft) { cfg, lists, draft ->
+            com.nostrvault.fips.MediaServerVaults.rows(draft.applyVaults(cfg), lists[nostrService.ownerHexPubkey].orEmpty())
         }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptyList())
 
     init {
         val config = configStore.config.value
-        _mirrors.value = config.blossomMirrors
         _macRelayHttps.value = config.macRelayHttpsURL.takeIf { it.isNotBlank() }
         // What the published list holds now, for the vaults' Add / Take off.
         nostrService.ownerHexPubkey.takeIf { it.isNotEmpty() }?.let { nostrService.fetchServerList(it) }
+        // Another device's list adopted while this screen is open: follow it unless there are unsaved edits.
+        viewModelScope.launch {
+            configStore.config.collect { cfg -> _draft.value = _draft.value.savedMirrorsChanged(cfg.blossomMirrors) }
+        }
     }
 
-    /** "Add to my media servers" ([list] true) or "Take off": the owner's choice, published as any change here is. */
+    /** "Add to my media servers" ([list] true) or "Take off": changes the list on screen only. */
     fun setVaultListed(npub: String, list: Boolean) {
-        configStore.update { com.nostrvault.fips.MediaServerVaults.choose(it, npub, list) }
-        saveAndPublish()
+        val listedNow = com.nostrvault.fips.MediaServerVaults.rows(configStore.config.value, publishedList())
+            .firstOrNull { it.npub == npub }?.listed ?: false
+        _draft.value = _draft.value.setVault(npub, list, listedNow)
     }
 
     fun setNewMirrorUrl(url: String) { _newMirrorUrl.value = url }
 
     fun addMirror() {
-        val url = _newMirrorUrl.value.trim().let {
-            if (!it.startsWith("https://") && !it.startsWith("http://")) "https://$it" else it
-        }
-        if (url.isBlank()) return
-        if (url in _mirrors.value) return
-
-        _mirrors.value = _mirrors.value + url
-        _newMirrorUrl.value = ""
-        saveAndPublish()
+        val before = _draft.value
+        _draft.value = before.addMirror(_newMirrorUrl.value)
+        if (_draft.value != before) _newMirrorUrl.value = ""
     }
 
     /** Media Servers › Suggested. Leaves a half-typed address alone. */
-    fun addSuggested(url: String) {
-        if (url in _mirrors.value) return
-        _mirrors.value = _mirrors.value + url
-        saveAndPublish()
-    }
+    fun addSuggested(url: String) { _draft.value = _draft.value.addMirror(url) }
 
-    fun removeMirror(url: String) {
-        _mirrors.value = _mirrors.value - url
-        saveAndPublish()
-    }
+    fun removeMirror(url: String) { _draft.value = _draft.value.removeMirror(url) }
 
-    private fun saveAndPublish() {
-        viewModelScope.launch {
-            configStore.update { it.copy(blossomMirrors = _mirrors.value, blossomMirrorsUpdatedAt = System.currentTimeMillis() / 1000) }
-            try {
-                _publishStatus.value = "Server list published"
-                // Nothing goes out over a list that isn't known (no relay list, or the relays didn't answer): say why.
-                nostrService.publishServerList(onRefused = { why -> _publishStatus.value = "Not published. $why" })
-            } catch (e: Exception) {
-                _publishStatus.value = "Failed to publish: ${e.message}"
-            }
+    /** Save: store the typed servers and the vault choices, then publish the 10063 once. */
+    fun save() {
+        val draft = _draft.value
+        if (!draft.hasChanges) return
+        configStore.update { draft.saveInto(it, System.currentTimeMillis() / 1000) }
+        _draft.value = draft.saved()
+        try {
+            _publishStatus.value = "Server list published"
+            // Nothing goes out over a list that isn't known (no relay list, or the relays didn't answer): say why.
+            nostrService.publishServerList(onRefused = { why -> _publishStatus.value = "Not published. $why" })
+        } catch (e: Exception) {
+            _publishStatus.value = "Failed to publish: ${e.message}"
         }
     }
+
+    /** Discard: back to the saved list; nothing stored or published. */
+    fun discard() { _draft.value = _draft.value.discarded() }
 
     fun dismissStatus() {
         _publishStatus.value = ""
@@ -146,7 +146,9 @@ fun BlossomSettingsScreen(
     onOpenFipsMesh: () -> Unit = {},
     viewModel: BlossomSettingsViewModel = hiltViewModel(),
 ) {
-    val mirrors by viewModel.mirrors.collectAsState()
+    val draft by viewModel.draft.collectAsState()
+    val mirrors = draft.mirrors
+    val changes = draft.changeCount
     val newMirrorUrl by viewModel.newMirrorUrl.collectAsState()
     val macRelayHttps by viewModel.macRelayHttps.collectAsState()
     val publishStatus by viewModel.publishStatus.collectAsState()
@@ -155,6 +157,11 @@ fun BlossomSettingsScreen(
     val autoMirror by viewModel.autoMirror.collectAsState()
     val vaults by viewModel.vaults.collectAsState()
     val colors = LocalNostrVaultColors.current
+    var leaving by remember { mutableStateOf(false) }
+
+    // Leaving with unsaved changes asks Save or Discard: nothing is stored or published without Save.
+    BackHandler(enabled = changes > 0) { leaving = true }
+    val back = { if (changes > 0) leaving = true else onBack() }
     val offlineCopies: @Composable () -> Unit = {
         OfflineCopiesSection(
             run = mirrorRun,
@@ -170,7 +177,7 @@ fun BlossomSettingsScreen(
             TopAppBar(
                 title = { Text("Media Servers") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = back) {
                         Icon(NostrVaultIcons.Back, contentDescription = "Back")
                     }
                 },
@@ -181,6 +188,7 @@ fun BlossomSettingsScreen(
                 ),
             )
         },
+        bottomBar = { MediaServersSaveBar(changes, colors.primary, viewModel::save) },
         containerColor = WindowBackground,
     ) { padding ->
         Column(
@@ -368,6 +376,37 @@ fun BlossomSettingsScreen(
                 item { FipsSection(onOpenFipsMesh) }
             }
         }
+    }
+
+    if (leaving) {
+        AlertDialog(
+            onDismissRequest = { leaving = false },
+            title = { Text("Save ${changes.changesLabel()}?") },
+            text = { Text("Your media server list is not published until you save.") },
+            confirmButton = {
+                TextButton(onClick = { leaving = false; viewModel.save(); onBack() }) { Text("Save", color = colors.primary) }
+            },
+            dismissButton = {
+                TextButton(onClick = { leaving = false; viewModel.discard(); onBack() }) { Text("Discard", color = ErrorRed) }
+            },
+        )
+    }
+}
+
+/** Save at the foot of Media Servers: the one place the 10063 goes out. */
+@Composable
+private fun MediaServersSaveBar(changes: Int, accent: androidx.compose.ui.graphics.Color, onSave: () -> Unit) {
+    Column(Modifier.fillMaxWidth().background(Surface1).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Button(
+            onClick = onSave,
+            enabled = changes > 0,
+            colors = ButtonDefaults.buttonColors(containerColor = accent),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (changes == 0) "No changes" else "Save (${changes.changesLabel()})", fontWeight = FontWeight.SemiBold)
+        }
+        Text("Adding or taking off a server only changes this list. Save publishes it.",
+            color = SecondaryText, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
     }
 }
 
