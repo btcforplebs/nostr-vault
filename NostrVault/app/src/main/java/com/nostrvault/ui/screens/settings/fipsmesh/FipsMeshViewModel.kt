@@ -7,7 +7,6 @@ import com.nostrvault.fips.DeviceRole
 import com.nostrvault.fips.FipsDevice
 import com.nostrvault.fips.FipsMeshManager
 import com.nostrvault.fips.FipsMeshSettings
-import com.nostrvault.fips.HomeVaultRules
 import com.nostrvault.fips.HomeVaultSender
 import com.nostrvault.fips.MyDevicesRules
 import com.nostrvault.service.NostrService
@@ -54,12 +53,6 @@ class FipsMeshViewModel @Inject constructor(
         MyDevicesRules.list(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, st.peers, cfg.ownerNpub)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    /** The owner's kiosks in their 10063 that are not in My Devices yet: offered in Add a Device. */
-    val suggestions = combine(nostrService.serverLists, mesh.status, devices) { lists, st, devs ->
-        HomeVaultRules.candidates(lists[nostrService.ownerHexPubkey].orEmpty(), st.npub)
-            .filter { c -> devs.none { it.npub == c } }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-
     init {
         viewModelScope.launch { mesh.refresh() }
         nostrService.ownerHexPubkey.takeIf { it.isNotEmpty() }?.let { nostrService.fetchServerList(it) }
@@ -92,18 +85,6 @@ class FipsMeshViewModel @Inject constructor(
     fun setShareRelay(enabled: Boolean) = queued { if (configStore.config.value.fipsShareRelay != enabled) mesh.setShareRelay(enabled) }
     fun setServeLimit(bytes: Long) = queued { if (configStore.config.value.fipsServeLimitBytes != bytes) mesh.setServeLimit(bytes) }
     fun sendHomeVaultNow() = homeVault.drainSoon(userInitiated = true)
-
-    /** Add a device: into the allowlist, and the home vault when that is its role. -> false when not a mesh address. */
-    fun addDevice(npub: String, role: DeviceRole, name: String): Boolean {
-        val own = mesh.status.value.npub
-        if (!MyDevicesRules.isMeshNpub(npub) || npub == own) return false
-        change { cfg ->
-            // Linked by the account active now (Logen 2026-11-05).
-            val linkedBy = cfg.activeAccountNpub?.trim()?.takeIf { it.isNotEmpty() } ?: cfg.ownerNpub
-            MyDevicesRules.add(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, own, npub, role, name, linkedBy, cfg.ownerNpub)
-        }
-        return true
-    }
 
     fun removeDevice(npub: String) =
         change { cfg -> MyDevicesRules.remove(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, npub) }

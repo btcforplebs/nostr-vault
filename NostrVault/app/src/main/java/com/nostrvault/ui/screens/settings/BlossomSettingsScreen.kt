@@ -354,29 +354,16 @@ fun BlossomSettingsScreen(
     }
 }
 
-/** True when the phone's active network goes through a VPN (iOS checkVPNActive). */
-internal fun isVpnActive(context: android.content.Context): Boolean {
-    val cm = context.getSystemService(android.net.ConnectivityManager::class.java) ?: return false
-    val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
-    return caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)
-}
-
 /**
- * "FIPS": whether a VPN is up, and how to reach media on .fips servers.
- * Same as the iOS Media Servers screen (the Mac's own FIPS server is Mac only).
+ * "Mesh": how to reach media on .fips servers. The mesh is built into the app, not a VPN, so there is no
+ * VPN status row (iOS dropped its own, b8a13e558). Same as the iOS Media Servers screen.
  * Your own mesh lives in Settings → FIPS Mesh: one link to it here.
  */
+internal const val FIPS_SERVERS_TEXT =
+    "To load media from a .fips server, turn on Mesh, then add the server's .fips address under Additional Blossom Servers above."
+
 @Composable
 private fun FipsSection(onOpenFipsMesh: () -> Unit) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    var vpnActive by remember { mutableStateOf(false) }
-    // Checked on open and on every return to the screen (iOS: onAppear).
-    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(lifecycle) {
-        lifecycle.currentStateFlow.collect {
-            if (it == androidx.lifecycle.Lifecycle.State.RESUMED) vpnActive = isVpnActive(context)
-        }
-    }
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)) {
             Text(
@@ -390,18 +377,8 @@ private fun FipsSection(onOpenFipsMesh: () -> Unit) {
         }
         Surface(color = SecondaryGroupedBg, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier
-                            .size(8.dp)
-                            .background(if (vpnActive) SuccessGreen else TertiaryText, androidx.compose.foundation.shape.CircleShape),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (vpnActive) "VPN active" else "No VPN detected", color = SecondaryText, fontSize = 13.sp)
-                }
                 Text(
-                    "To access media from .fips servers, enable your FIPS VPN (e.g. nostr-vpn) and add the " +
-                        "server's .fips address as an Additional Server above.",
+                    FIPS_SERVERS_TEXT,
                     color = SecondaryText,
                     fontSize = 13.sp,
                 )

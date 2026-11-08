@@ -64,6 +64,8 @@ class PairDeviceViewModel @Inject constructor(
         /** B: A linked by Accept, so this side checks the words too (Tron 2). */
         data class CheckWords(val words: List<String>, val shortAddress: String, val name: String, val tapped: Boolean) : Ui
         data class SwitchAccount(val text: String, val npub: String) : Ui
+        /** A pasted mesh address (a Linux box, the browser relay page): say what it is, then a one-way add. */
+        data class ByAddress(val npub: String) : Ui
         /**
          * [keepOpen]: A shares its vault for the other device's copy, so this device should stay open meanwhile.
          * [copy]: B, the copy from the device just linked (its own line), or empty.
@@ -161,15 +163,20 @@ class PairDeviceViewModel @Inject constructor(
 
     /** B: scan the other device's code instead of showing this one. */
     fun scanInstead() {
+        if (becomeScanner()) _openCamera.tryEmit(Unit)
+    }
+
+    /** This phone plays B from here: its own code is put away. -> false when there is no mesh key. */
+    private fun becomeScanner(): Boolean {
         reset()
         val own = newHello().ownHex()
         if (own == null) {
             _ui.value = Ui.NoMesh()
-            return
+            return false
         }
         ownHex = own
         _ui.value = Ui.ScanFirst()
-        _openCamera.tryEmit(Unit)
+        return true
     }
 
     fun onScanned(raw: String?) {
@@ -226,6 +233,43 @@ class PairDeviceViewModel @Inject constructor(
         }
         pending = Pending.JoinA(p, now())
         _ui.value = Ui.ConfirmRole(MeshPairing.roleConfirmText(p.role, p.name), MeshPairing.shortAddress(p.mesh))
+    }
+
+    // ---- Paste instead ----
+
+    /**
+     * What was pasted on the code or a scan step (iOS `PairDeviceFlow.pasted`): the other device's code, the same as
+     * scanning it, or a plain mesh address for the one-way add. -> null when taken (the screen moves on or shows its
+     * own note), else words to show under the field.
+     */
+    fun pasted(text: String): String? {
+        when (val p = PairDeviceRules.paste(text, ownHex?.let(MeshPairing::npub))) {
+            is PairDeviceRules.Paste.Refuse -> return p.text
+            is PairDeviceRules.Paste.Code -> when (_ui.value) {
+                is Ui.ScanTheirs, is Ui.ScanFirst -> onScanned(p.uri)
+                // Showing this phone's code: the pasted one is the other device's first code, so this phone is B.
+                is Ui.ShowCode -> if (becomeScanner()) onScanned(p.uri)
+                else -> Unit
+            }
+            is PairDeviceRules.Paste.Address -> {
+                reset()
+                _ui.value = Ui.ByAddress(p.npub)
+            }
+        }
+        return null
+    }
+
+    /**
+     * The one-way add, for what can't do the two scans: a Linux/Pi box (linux/mesh/README.md) or the browser relay
+     * page. Stored on this side only, in the same queue as the two-scan add. -> null when stored, else why not.
+     */
+    fun addByAddress(npub: String, name: String, role: DeviceRole): String? {
+        if ((_ui.value as? Ui.ByAddress)?.npub != npub) return null
+        val check = MeshPairing.roleCheck(npub, role, existing())
+        if (check is MeshPairing.RoleCheck.RefuseOtherRole) return MeshPairing.otherRoleText(check.role)
+        store(npub, role, name.trim())
+        _ui.value = Ui.Linked(MeshPairing.displayName(name))
+        return null
     }
 
     // ---- The role confirm ----
@@ -357,7 +401,7 @@ class PairDeviceViewModel @Inject constructor(
         }
     }
 
-    // ---- Storing: the same add as Mesh settings › Add a device ----
+    // ---- Storing: one add for the two scans and Paste instead ----
 
     /** [shareAfter]: A, so the device just linked can copy from this one (after the store's own restart). */
     private fun store(npub: String, role: DeviceRole, name: String, shareAfter: Boolean = false) {

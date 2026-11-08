@@ -64,7 +64,7 @@ fun FipsMeshAdvancedScreen(onBack: () -> Unit, viewModel: FipsMeshViewModel = hi
         containerColor = WindowBackground,
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-            // The by-address path (Add a device by address on another device): copy this phone's mesh address. The
+            // The by-address path (Add a device, then Paste instead, on another device): copy this phone's mesh address. The
             // two-scan Link a device on Mesh settings is the way for your own devices (Logen 2026-11-05).
             val status by viewModel.status.collectAsState()
             status.npub?.let { npub ->

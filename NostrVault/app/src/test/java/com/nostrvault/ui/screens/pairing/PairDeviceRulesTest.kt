@@ -24,4 +24,31 @@ class PairDeviceRulesTest {
         assertEquals(MeshPairing.OTHER_OWNER_TEXT, PairDeviceRules.helloRefusalText("otherOwner", null))
         assertEquals(MeshPairing.OTHER_OWNER_TEXT, PairDeviceRules.helloRefusalText("switchTo", null))
     }
+
+    // Random bytes with a good checksum: no one's key (generated for this test).
+    private val box = "npub1mzurdfw86hd5y8rhy0n4g45tq4wwckgmatwuw8n54lc0g80k7a0s9g40k8"
+    private val own = "npub1y5lv05ucrenq8q9nzvh4ghjz8wxvgv7ncf9fj62qd44eynah7nrskewhcc"
+
+    /** Logen 2026-11-08: Paste instead takes the other device's code, the same as scanning it. */
+    @Test
+    fun `a pasted pairing code goes in like a scan`() {
+        assertEquals(PairDeviceRules.Paste.Code("nvpair:v1?m=x"), PairDeviceRules.paste("  nvpair:v1?m=x \n", own))
+        assertEquals(PairDeviceRules.Paste.Code("NVPAIR:v1?m=x"), PairDeviceRules.paste("NVPAIR:v1?m=x", own))
+    }
+
+    /** A Linux box or the browser relay page shows only its mesh address: that is the one-way add. */
+    @Test
+    fun `a pasted mesh address opens the one-way add`() {
+        assertEquals(PairDeviceRules.Paste.Address(box), PairDeviceRules.paste(box, own))
+        assertEquals(PairDeviceRules.Paste.Address(box), PairDeviceRules.paste("nostr:$box", own))
+        assertEquals(PairDeviceRules.Paste.Address(box), PairDeviceRules.paste("fipsmesh://$box/", null))
+    }
+
+    @Test
+    fun `a typo, junk or this phone's own address is refused`() {
+        val typo = box.dropLast(1) + if (box.last() == 'q') 'p' else 'q'
+        assertEquals(PairDeviceRules.Paste.Refuse(PairDeviceRules.NOT_A_CODE_TEXT), PairDeviceRules.paste(typo, own))
+        assertEquals(PairDeviceRules.Paste.Refuse(PairDeviceRules.NOT_A_CODE_TEXT), PairDeviceRules.paste("hello", own))
+        assertEquals(PairDeviceRules.Paste.Refuse(PairDeviceRules.OWN_ADDRESS_TEXT), PairDeviceRules.paste(own, own))
+    }
 }

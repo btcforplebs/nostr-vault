@@ -1,6 +1,8 @@
 package com.nostrvault.ui.screens.pairing
 
+import com.nostrvault.fips.HomeVaultRules
 import com.nostrvault.fips.MeshPairing
+import com.nostrvault.fips.MyDevicesRules
 
 /** The pairing screen's choices that aren't the phase-0 session's, pure for the tests. */
 internal object PairDeviceRules {
@@ -30,4 +32,28 @@ internal object PairDeviceRules {
      */
     fun helloRefusalText(why: String, switchToName: String?): String =
         if (why == "switchTo" && switchToName != null) MeshPairing.switchToText(switchToName) else MeshPairing.OTHER_OWNER_TEXT
+
+    sealed interface Paste {
+        /** The other device's pairing code as text: the same as scanning it. */
+        data class Code(val uri: String) : Paste
+        /** A plain mesh address (a Linux box, the browser relay page): the one-way add. */
+        data class Address(val npub: String) : Paste
+        data class Refuse(val text: String) : Paste
+    }
+
+    const val NOT_A_CODE_TEXT = "That isn't a pairing code or a mesh address."
+    const val OWN_ADDRESS_TEXT = "That is this device's own address."
+
+    /**
+     * "Paste instead", on the code and scan steps (iOS `PairDeviceFlow.pasted`): an `nvpair:` code, or a mesh
+     * address (`npub1…`, `nostr:npub1…`, `fipsmesh://npub1…/`) whose checksum holds, since a one-character typo
+     * would be a dead entry in the allowlist. [ownNpub]: this phone's mesh address, never added to itself.
+     */
+    fun paste(text: String, ownNpub: String?): Paste {
+        val t = text.trim()
+        if (t.startsWith("nvpair:", ignoreCase = true)) return Paste.Code(t)
+        val npub = HomeVaultRules.meshNpubFromInput(t)?.takeIf(MyDevicesRules::isMeshNpub) ?: return Paste.Refuse(NOT_A_CODE_TEXT)
+        if (npub == ownNpub) return Paste.Refuse(OWN_ADDRESS_TEXT)
+        return Paste.Address(npub)
+    }
 }
