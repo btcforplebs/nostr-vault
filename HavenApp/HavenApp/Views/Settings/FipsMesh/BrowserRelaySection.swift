@@ -60,7 +60,7 @@ struct BrowserRelaySection: View {
         } header: {
             Text("Sending")
         } footer: {
-            Text("Your new notes also go to your browser vault, a Nostr Vault page in a browser, over the mesh, while this app is open. The page keeps no key: it stores notes you already signed and checks each one. To connect, this phone joins the middle server (Mesh → Advanced), which sees its IP address the way any server does. While a browser vault is set up, it joins whenever the mesh is on, home vault mode included. Nothing is listed in public.")
+            Text("Your new notes also go to your browser vault, a Nostr Vault page in a browser, over the mesh, while this app is open. The page keeps no key: it stores notes you already signed and checks each one. To connect, this phone joins the middle server (Mesh → Advanced), which sees its IP address the way any server does. While a browser vault is set up, it joins whenever the mesh is on, mobile vault mode included. Nothing is listed in public.")
         }
     }
 }

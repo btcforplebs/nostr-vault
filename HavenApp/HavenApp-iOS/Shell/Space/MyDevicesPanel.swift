@@ -18,7 +18,7 @@ struct MyDevicesPanel: View {
         let devices = devices
         VStack(alignment: .leading, spacing: 10) {
             if devices.isEmpty {
-                Text("No devices yet. Add your Mac, phones or home vault with two scans.")
+                Text("No devices yet. Add your Mac, phones or mobile vault with two scans.")
                     .font(.appSystem(size: 13))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

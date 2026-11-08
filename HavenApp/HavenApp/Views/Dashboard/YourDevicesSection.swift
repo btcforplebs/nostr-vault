@@ -29,7 +29,7 @@ struct YourDevicesSection: View {
             ForEach(devices) { device in
                 if device.role == .mac {
                     DashboardRowLink(icon: device.role.icon, title: device.displayName, detail: macDetail, state: dotState(device)) {
-                        MacSyncSettingsPage().settingsPage("Home vault sync")
+                        MacSyncSettingsPage().settingsPage("Desktop vault sync")
                     }
                 } else {
                     DashboardRowLink(icon: device.role.icon, title: device.displayName, detail: line(device), state: dotState(device)) {
@@ -45,7 +45,7 @@ struct YourDevicesSection: View {
             DashboardRow(
                 icon: "plus",
                 title: "Add a device",
-                detail: devices.isEmpty ? "Link your other phones, Mac or home vault. Two scans." : "Two scans: one shows a code, the other scans it.",
+                detail: devices.isEmpty ? "Link your other phones, Mac or mobile vault. Two scans." : "Two scans: one shows a code, the other scans it.",
                 state: .info
             ) {
                 RowButton(title: "Add", isLoading: false) { showPairing = true }

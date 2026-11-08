@@ -83,7 +83,7 @@ struct FipsMeshAdvancedView: View {
             } header: {
                 Text("Middle Server")
             } footer: {
-                Text("How this phone reaches anyone outside My Devices: the photos of people you follow, a browser vault, and visitors to your home vault. They never get this phone's address; the middle server does see it. With None, follows' photos load from their web addresses instead, a browser vault only connects on the same network, and the home vault takes no visitors.")
+                Text("How this phone reaches anyone outside My Devices: the photos of people you follow, a browser vault, and visitors to your mobile vault. They never get this phone's address; the middle server does see it. With None, follows' photos load from their web addresses instead, a browser vault only connects on the same network, and the home vault takes no visitors.")
             }
 
             Section {

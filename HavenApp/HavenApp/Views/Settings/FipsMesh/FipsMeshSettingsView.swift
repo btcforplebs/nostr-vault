@@ -51,7 +51,7 @@ struct FipsMeshSettingsView: View {
         } footer: {
             Text(enabled
                  ? "Your devices reach each other over the mesh, with no public IP or domain."
-                 : "Turn the mesh on to reach your home vault, your other phones and your browser vault from this phone.")
+                 : "Turn the mesh on to reach your mobile and desktop vaults, your other phones and your browser vault from this phone.")
         }
     }
 
@@ -82,7 +82,7 @@ struct FipsMeshSettingsView: View {
             }
             if hasHomeVault {
                 HStack {
-                    Text(homeVault.queue.isEmpty ? "Home vault: nothing waiting" : "Home vault: \(homeVault.queue.count) waiting until it's in reach")
+                    Text(homeVault.queue.isEmpty ? "Mobile vault: nothing waiting" : "Mobile vault: \(homeVault.queue.count) waiting until it's in reach")
                         .font(.appCaption)
                         .foregroundColor(.secondary)
                     Spacer()
@@ -95,7 +95,7 @@ struct FipsMeshSettingsView: View {
                 }
             }
             if !hasMac && !hasHomeVault {
-                Text("Add a home vault under My Devices to sync with it.")
+                Text("Add a mobile or desktop vault under My Devices to sync with it.")
                     .font(.appCaption)
                     .foregroundColor(.secondary)
             }

@@ -77,8 +77,8 @@ final class HomeVaultSender: ObservableObject {
             UserDefaults.standard.removeObject(forKey: Self.vaultKey)
         }
         lastResult = nil
-        // List it (or stop listing it) in this account's 10063.
-        NostrService.shared.publishServerList()
+        // Not listed in the 10063 from here: the owner adds it on Media
+        // Servers if they want it there (Logen via Tod, 2026-11-08).
         drainSoon()
     }
 
@@ -132,7 +132,7 @@ final class HomeVaultSender: ObservableObject {
         guard let vault = mediaVault, signer == vault.ownerHex else { return false }
         guard byteCount <= Self.maxBlobBytes else {
             appLog("\(sha256.prefix(8)) is \(byteCount) bytes, over the \(Self.maxBlobBytes) the kiosk takes — kept on this phone only", level: "WARN")
-            lastResult = "A file over 256 MB stays on this phone only: the home vault doesn't take files that big."
+            lastResult = "A file over 256 MB stays on this phone only: the mobile vault doesn't take files that big."
             return false
         }
         return add(HomeVaultItem(kind: .blob, id: sha256, ownerHex: signer, eventJSON: nil, contentType: contentType, added: Date(), attempts: 0, notBefore: nil, server: forwardTo))
@@ -204,7 +204,7 @@ final class HomeVaultSender: ObservableObject {
         guard HomeVaultLogic.hasRoom(for: item, in: queue, max: Self.maxQueue) else {
             appLog("queue full (\(Self.maxQueue)) — \(item.kind.rawValue) \(item.id.prefix(8)) not queued\(item.target == nil ? "" : " for a linked phone")", level: "WARN")
             lastResult = item.target == nil
-                ? "The queue is full: new notes and media aren't going to your home vault. Tap Send now when it's in reach."
+                ? "The queue is full: new notes and media aren't going to your mobile vault. Tap Send now when it's in reach."
                 : "The queue for your other phone is full: open Nostr Vault on it so it can catch up."
             return false
         }
@@ -257,7 +257,7 @@ final class HomeVaultSender: ObservableObject {
             appLog("gave up on \(item.kind.rawValue) \(item.id.prefix(8)) after \(item.attempts) tries", level: "WARN")
             gaveUp.append(item.kind == .mirror
                 ? "a photo a note links never reached your media servers"
-                : "a \(item.kind == .event ? "note" : "photo") never reached your \(item.target == nil ? "home vault" : "other phone")")
+                : "a \(item.kind == .event ? "note" : "photo") never reached your \(item.target == nil ? "mobile vault" : "other phone")")
             remove(item)
         }
         // A phone no longer linked gets nothing more: its lane goes.
@@ -312,7 +312,7 @@ final class HomeVaultSender: ObservableObject {
                     if let url = await FipsMeshService.shared.ingressURL(meshNpub: vault.meshNpub) {
                         bases[lane] = url
                     } else if item.target == nil || meshWhy == nil {
-                        meshWhy = item.target == nil ? "the mesh did not reach your home vault"
+                        meshWhy = item.target == nil ? "the mesh did not reach your mobile vault"
                             : "your other phone isn't in reach (it takes them while Nostr Vault is open on it)"
                     }
                 }
@@ -522,13 +522,13 @@ enum HomeVaultTransport {
         do {
             try await socket.send(.string("[\"EVENT\",\(json)]"))
         } catch {
-            return .unreachable("the home vault did not answer")
+            return .unreachable("the mobile vault did not answer")
         }
         return await withTaskGroup(of: SendResult.self) { group in
             group.addTask {
                 while true {
                     guard let message = try? await socket.receive() else {
-                        return .unreachable("the home vault closed the connection")
+                        return .unreachable("the mobile vault closed the connection")
                     }
                     guard case .string(let text) = message, let result = HomeVaultLogic.okResult(text, id: id) else { continue }
                     return result
@@ -536,7 +536,7 @@ enum HomeVaultTransport {
             }
             group.addTask {
                 try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                return .unreachable("the home vault did not confirm in time")
+                return .unreachable("the mobile vault did not confirm in time")
             }
             let first = await group.next() ?? .unreachable("no answer")
             group.cancelAll()
@@ -569,7 +569,7 @@ enum HomeVaultTransport {
             return (HomeVaultLogic.uploadResult(status: (response as? HTTPURLResponse)?.statusCode ?? 0),
                     MeshKeyAuth.retriesWithOwnerForm(response))
         } catch {
-            return (.unreachable("the home vault did not take the upload"), false)
+            return (.unreachable("the mobile vault did not take the upload"), false)
         }
     }
 

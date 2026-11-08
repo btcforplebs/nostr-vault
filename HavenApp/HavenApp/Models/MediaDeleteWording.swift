@@ -5,8 +5,8 @@ import Foundation
 /// 2026-11-05). "This device" fits a phone and a Mac alike.
 /// `MediaDeleteWordingTests` fails when the two apps drift apart.
 enum MediaDeleteWording {
-    static let mirrors = "Removes this file from your media servers. This device and your home vault keep their copies."
-    static let everywhere = "Permanently removes this file from this device, your home vault and your media servers. This cannot be undone."
+    static let mirrors = "Removes this file from your media servers. This device and your mobile or desktop vault keep their copies."
+    static let everywhere = "Permanently removes this file from this device, your mobile or desktop vault and your media servers. This cannot be undone."
 
     static let noMirrors = "No mirrors to delete from"
 

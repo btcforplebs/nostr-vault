@@ -964,6 +964,7 @@
 		7A308820A6095AF7E150647B /* ProofOfWorkSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83D64C528C3BBCD856610AB5 /* ProofOfWorkSettingsView.swift */; };
 		7A31799E988CDADE27DACA06 /* TenorGifService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5A22ED51531ABDF7FF411DA /* TenorGifService.swift */; };
 		7A44C40A74B01F8BF5B56DB4 /* MusicArtistPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5947F392DFBF2A9CC90CEB91 /* MusicArtistPage.swift */; };
+		7A555753BECBDBF06206A97A /* MeshMediaServersSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E517737B5E573CFCD02EE444 /* MeshMediaServersSection.swift */; };
 		7A72249CE1285026E02942EE /* ConfigService+RemoveAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44DC7DB305AB98F165B93248 /* ConfigService+RemoveAccount.swift */; };
 		7AA9F15E3F8CAB48E6333BD4 /* DashboardView+StatusHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD7883731DDC979352C81DE /* DashboardView+StatusHeader.swift */; };
 		7AB9FA44B5825B002BE8C4EB /* YourDevicesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AECCABC32A83B0C40919AAF8 /* YourDevicesSection.swift */; };
@@ -1295,6 +1296,7 @@
 		A3CCC04107C32E7C02BEAF0D /* PayShareForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = A75FE05CE13125B81BFA4E18 /* PayShareForm.swift */; };
 		A3D6E0A7DE89A876AB480F5D /* ReactionTapback.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7634DBEF7C0811783DC804 /* ReactionTapback.swift */; };
 		A3F1C6042EDEF326CAFB8963 /* SignerRequestGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 551F03CBB7840B853EDD301A /* SignerRequestGate.swift */; };
+		A420C76916D73A54B2EB2612 /* MeshMediaServersSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E517737B5E573CFCD02EE444 /* MeshMediaServersSection.swift */; };
 		A42BB0A69E3B9BCFCD1F7D55 /* NostrService+FilterQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53310FE0EAE603E4DDC5EA39 /* NostrService+FilterQuery.swift */; };
 		A42CB5C975C2F3ADAE17DC9B /* MediaPagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95ECDB003F4997CEABAC3644 /* MediaPagerView.swift */; };
 		A436B1BB31644F27B9A151CC /* FeedVisibleRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBB8668F5703C081765EC7C1 /* FeedVisibleRows.swift */; };
@@ -3076,6 +3078,7 @@
 		E4B4F101243738073676072E /* DMService+Listening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+Listening.swift"; sourceTree = "<group>"; };
 		E4C707992FF01377282675E8 /* BlossomURIFetch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomURIFetch.swift; sourceTree = "<group>"; };
 		E4E3B844DF3DFEDC00802292 /* NostrService+ProfileRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+ProfileRefresh.swift"; sourceTree = "<group>"; };
+		E517737B5E573CFCD02EE444 /* MeshMediaServersSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshMediaServersSection.swift; sourceTree = "<group>"; };
 		E5847FCB8D5923D4758DFB15 /* NWCService+Balance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NWCService+Balance.swift"; sourceTree = "<group>"; };
 		E6123D97505D017C00A6C40C /* MyDevicesCheckGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyDevicesCheckGate.swift; sourceTree = "<group>"; };
 		E662ABBCA6DC83B396C0F5CE /* UseNostrKeyStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UseNostrKeyStep.swift; sourceTree = "<group>"; };
@@ -3815,6 +3818,7 @@
 				B94D10CDC71BCC7F67AC26E1 /* MacRelayDomainSettingsView.swift */,
 				1576DDD7998A44384715676C /* MacRelaySettingsView.swift */,
 				5446B1B39133DA8A4668484D /* MediaSettingsView.swift */,
+				E517737B5E573CFCD02EE444 /* MeshMediaServersSection.swift */,
 				9B276A92BC9E7E7EEBF20724 /* PrivacySettingsView.swift */,
 				4D23AE1DBF82F4B0BE4C6DE8 /* RecentlyDeletedSettingsView.swift */,
 				A881B1453D48D90B2F1242FA /* RelayAccessSettingsView.swift */,
@@ -5622,6 +5626,7 @@
 				91D8535DDBF9D7C987938E9B /* MeshKeySigner.swift in Sources */,
 				AB7F8F34512CA3C52285854B /* MeshMediaRouter+Live.swift in Sources */,
 				EC13B7C36B4880936A026AEF /* MeshMediaRouter.swift in Sources */,
+				7A555753BECBDBF06206A97A /* MeshMediaServersSection.swift in Sources */,
 				3B9D13413C7F42654D623F08 /* MeshPairing.swift in Sources */,
 				EE76C23E2DC144E7215B1433 /* MeshPairingConfirmWindow.swift in Sources */,
 				5E2125B2E5F8233D2E409AE4 /* MeshPairingHello.swift in Sources */,
@@ -6665,6 +6670,7 @@
 				2B1D116ED7EBAD6EDCD11CF1 /* MeshKeySigner.swift in Sources */,
 				A497F168AB85DD029F0035BF /* MeshMediaRouter+Live.swift in Sources */,
 				5A1B91D8416D9D5428D2B6DB /* MeshMediaRouter.swift in Sources */,
+				A420C76916D73A54B2EB2612 /* MeshMediaServersSection.swift in Sources */,
 				675CECFBD727F743B63C51EF /* MeshPairing.swift in Sources */,
 				E3B5AD952BB758EC71579187 /* MeshPairingConfirmWindow.swift in Sources */,
 				048795A999A68CA108C02108 /* MeshPairingHello.swift in Sources */,

@@ -24,7 +24,7 @@ final class MeshDeleteTargetsTests: XCTestCase {
     func testEverywhereReachesHomeVaultMacAndPhonesNotSelfOrBrowser() {
         let targets = MeshDeleteTargets.of(devices: devices, ownNpub: own, includeHomeVault: true)
         XCTAssertEqual(targets.map(\.npub), [home, mac, phone])
-        XCTAssertEqual(targets.map(\.name), ["the home vault", "Studio Mac", "your other phone"])
+        XCTAssertEqual(targets.map(\.name), ["the mobile vault", "Studio Mac", "your other phone"])
         XCTAssertEqual(targets.first?.key, "fipsmesh://\(home)/")
     }
 

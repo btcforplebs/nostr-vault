@@ -7,16 +7,16 @@ import XCTest
 final class MediaDeleteWordingTests: XCTestCase {
     func testTheAgreedWords() {
         XCTAssertEqual(MediaDeleteWording.mirrors,
-                       "Removes this file from your media servers. This device and your home vault keep their copies.")
+                       "Removes this file from your media servers. This device and your mobile or desktop vault keep their copies.")
         XCTAssertEqual(MediaDeleteWording.everywhere,
-                       "Permanently removes this file from this device, your home vault and your media servers. This cannot be undone.")
+                       "Permanently removes this file from this device, your mobile or desktop vault and your media servers. This cannot be undone.")
     }
 
     /// Fits a Mac as well as a phone, and names the home vault.
     func testWordingFitsEveryDevice() {
         for text in [MediaDeleteWording.mirrors, MediaDeleteWording.everywhere] {
             XCTAssertFalse(text.contains("phone"), text)
-            XCTAssertTrue(text.contains("home vault"), text)
+            XCTAssertTrue(text.contains("mobile or desktop vault"), text)
         }
     }
 }

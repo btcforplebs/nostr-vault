@@ -37,12 +37,12 @@ enum MeshDeleteTargets {
         return out
     }
 
-    /// The same words Android uses: "Still on blossom.primal.net and your home vault".
+    /// The same words Android uses: "Still on blossom.primal.net and your desktop vault".
     static func defaultName(_ role: MeshDeviceRole) -> String {
         switch role {
-        case .mac: return "your home vault"
+        case .mac: return "your desktop vault"
         case .phone: return "your other phone"
-        default: return "the home vault"
+        default: return "the mobile vault"
         }
     }
 
