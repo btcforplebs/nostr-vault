@@ -1,0 +1,35 @@
+# Standalone UI test for the iPhone feed top bar. It drives the installed
+# Nostr Vault app (com.havenapp.relay) on a simulator; the Host app exists
+# only because a UI test bundle needs one. See README.md.
+name: FeedTopBarUITests
+options:
+  deploymentTarget:
+    iOS: "18.0"
+targets:
+  Host:
+    type: application
+    platform: iOS
+    sources: [Host]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.havenapp.feedtopbaruitests.host
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
+  UIT:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UIT]
+    dependencies:
+      - target: Host
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.havenapp.feedtopbaruitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Host
+        CODE_SIGNING_ALLOWED: NO
+schemes:
+  UIT:
+    build:
+      targets: {UIT: all, Host: all}
+    test:
+      targets: [UIT]

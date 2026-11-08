@@ -455,11 +455,10 @@ extension FeedView {
             }
             .padding(.vertical, 4)
         }
-        // The bar sizes this item from its widest form (the full row), so
-        // when ViewThatFits falls back to the menu the narrower pill would be
-        // centred in that slot, well in from the edge on a 12 mini. Pin it
-        // to the trailing edge, where the left pill mirrors it.
-        .frame(maxWidth: .infinity, alignment: .trailing)
+        // No flexible frame here: in feedTopBar's row the Spacer puts this
+        // pill on the trailing edge, and a frame as wide as it can grow
+        // would split the free width with the Spacer and drop the full row
+        // to the menu.
         .tutorialAnchor(TutorialContent.feedToolbar)
     }
 }
@@ -468,41 +467,70 @@ extension FeedView {
 /// the Your space bar on the right share it, so both halves line up.
 enum PadTopBar {
     static let height: CGFloat = 52
+    /// The iPhone's row: the navigation bar's height, where the pills sat
+    /// before they moved into this bar of our own.
+    static let phoneHeight: CGFloat = 44
 }
 
 extension View {
-    /// The feed's top bar. On the iPhone its pills sit in the navigation
-    /// bar. On the iPad (`floating`) they float over the feed in a bar of
-    /// our own: iPadOS 26.2+ paints a backdrop behind the system bar (a grey
+    /// The feed's top bar: the pills float over the feed in a bar of our
+    /// own, the navigation bar hidden, on the iPad and the iPhone alike.
+    /// iPad: iPadOS 26.2+ paints a backdrop behind the system bar (a grey
     /// strip and a dark band) that the hidden toolbar background does not
-    /// remove, and the clear glass turned into grey slabs over it.
-    @ViewBuilder
+    /// remove, and the clear glass turned into grey slabs over it. iPhone
+    /// (Logen 2026-11-08): in the system bar's trailing slot the right pill
+    /// landed about 3/4 across on some feeds. UIKit sizes that slot from a
+    /// row it measured earlier, and the pill can only pin inside the slot it
+    /// gets; here the Spacer puts it on the edge every time.
+    /// `fade`: the page-colour band behind the clock and the pills
+    /// (FeedTopFade), drawn as the bar's own background.
     func feedTopBar<Leading: View, Trailing: View>(
-        floating: Bool,
+        height: CGFloat,
+        fade: Bool,
         @ViewBuilder leading: () -> Leading,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
-        if floating {
-            let bar = HStack(spacing: 12) {
-                leading()
-                Spacer(minLength: 0)
-                trailing()
-            }
-            .padding(.horizontal, 16)
-            .frame(height: PadTopBar.height)
-            self
-                .toolbar(.hidden, for: .navigationBar)
-                .floatingTopBar { bar }
-        } else {
-            self.toolbar {
-                ToolbarItem(placement: .navigationBarLeading) { leading() }
-                    .hidingSharedToolbarBackground()
-                ToolbarItem(placement: .navigationBarTrailing) { trailing() }
-                    .hidingSharedToolbarBackground()
-            }
+        let bar = HStack(spacing: 12) {
+            leading()
+            Spacer(minLength: 0)
+            trailing()
         }
+        .padding(.horizontal, 16)
+        .frame(height: height)
+        .background(alignment: .bottom) {
+            if fade { FeedTopFadeBand(barHeight: height) }
+        }
+        return self
+            .toolbar(.hidden, for: .navigationBar)
+            .floatingTopBar { bar }
     }
 
+}
+
+/// The page colour behind the clock, fading to clear under the feed's top
+/// pills (FeedTopFade). The bar's background, reaching up past the safe area
+/// to the screen's top edge: its height is the clock plus the bar, so the
+/// clock's part is what lies above the bar. Takes no taps.
+private struct FeedTopFadeBand: View {
+    let barHeight: CGFloat
+
+    var body: some View {
+        GeometryReader { geo in
+            let total = geo.size.height
+            LinearGradient(
+                stops: FeedTopFade.stops(statusBar: total - barHeight, total: total).map {
+                    .init(color: Color.platformWindowBackground.opacity($0.opacity), location: $0.location)
+                },
+                startPoint: .top, endPoint: .bottom
+            )
+        }
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+extension View {
     /// A bar the content scrolls under, with the soft scroll edge the
     /// system bar gives.
     @ViewBuilder
