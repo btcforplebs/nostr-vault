@@ -30,7 +30,7 @@ class MyDevicesRulesTest {
         val list = MyDevicesRules.list(listOf(mac, phone, kiosk, me), null, emptyList(), listOf(mac, phone, kiosk))
         assertEquals("On · 3 of 4 devices in reach", MyDevicesRules.statusLine(true, list))
         assertEquals("On · 0 of 1 device in reach", MyDevicesRules.statusLine(true, list.take(1).map { it.copy(inReach = false) }))
-        assertEquals("On", MyDevicesRules.statusLine(true, emptyList()))
+        assertEquals("On · no devices yet", MyDevicesRules.statusLine(true, emptyList()))
         assertEquals("Off", MyDevicesRules.statusLine(false, list))
     }
 
@@ -114,5 +114,15 @@ class MyDevicesRulesTest {
         val set = old.copy(fipsMesh = FipsMeshSettings(devices = listOf(FipsDevice(mac, DeviceRole.MAC, "Mac")), photosGoTo = FipsMeshSettings.PHOTOS_BOTH,
             finderRelays = listOf("wss://relay.example"), middleServer = FipsMeshSettings.MIDDLE_PUBLIC))
         assertEquals(set, json.decodeFromString(HavenConfig.serializer(), json.encodeToString(HavenConfig.serializer(), set)))
+    }
+
+    @Test fun `remove footer says what each role loses, as on iPhone`() {
+        assertEquals("This phone stops syncing with your Mac over the mesh. Anything already on the Mac stays there.", MyDevicesRules.removeFooter(DeviceRole.MAC))
+        assertEquals(
+            "New notes and media stop going to it, and it leaves your media server list the next time you save Media Servers. Anything already on it stays there.",
+            MyDevicesRules.removeFooter(DeviceRole.HOME_VAULT),
+        )
+        assertEquals("Your notes stop going to the page. Anything already on it stays there.", MyDevicesRules.removeFooter(DeviceRole.BROWSER))
+        assertEquals("It leaves your list. Anything already on it stays there.", MyDevicesRules.removeFooter(DeviceRole.PHONE))
     }
 }

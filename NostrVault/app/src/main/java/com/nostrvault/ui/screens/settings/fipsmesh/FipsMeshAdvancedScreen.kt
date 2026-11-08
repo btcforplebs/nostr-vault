@@ -68,7 +68,7 @@ fun FipsMeshAdvancedScreen(onBack: () -> Unit, viewModel: FipsMeshViewModel = hi
             // two-scan Link a device on Mesh settings is the way for your own devices (Logen 2026-11-05).
             val status by viewModel.status.collectAsState()
             status.npub?.let { npub ->
-                MeshSection("This Device's Address", footer = "For adding this phone by address. To link your own devices, use Link a device.") {
+                MeshSection("Mesh Address", footer = "For a device that can't scan, such as a Linux box: add this address there. Your phones, iPads and Macs link with Link a device instead.") {
                     Text(npub, color = PrimaryText, fontSize = 13.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                         lineHeight = 18.sp, modifier = Modifier.padding(top = 12.dp))
                     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
@@ -79,7 +79,7 @@ fun FipsMeshAdvancedScreen(onBack: () -> Unit, viewModel: FipsMeshViewModel = hi
             }
             MeshSection(
                 "Finder Relays",
-                footer = "Your devices post where they are here, so the others can find them. They see this phone's IP address the way any relay does.",
+                footer = "Your devices post where they are here, so the others can find them. They see this phone's IP address the way any relay does. One must stay.",
             ) {
                 relays.forEach { r ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -106,7 +106,7 @@ fun FipsMeshAdvancedScreen(onBack: () -> Unit, viewModel: FipsMeshViewModel = hi
 
             MeshSection(
                 "Middle Server",
-                footer = "Links two devices that can't reach each other directly. A browser vault always needs one. With None, only devices on the same network can connect.",
+                footer = "How this phone reaches anyone outside My Devices: the photos of people you follow, a browser vault, and visitors to your home vault. They never get this phone's address; the middle server does see it. With None, follows' photos load from their web addresses instead, a browser vault only connects on the same network, and the home vault takes no visitors.",
             ) {
                 MIDDLE_SERVERS.forEachIndexed { i, (key, label) ->
                     if (i > 0) MeshDivider()

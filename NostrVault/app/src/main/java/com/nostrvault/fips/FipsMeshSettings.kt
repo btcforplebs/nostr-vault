@@ -104,10 +104,10 @@ object MyDevicesRules {
         }
     }
 
-    /** "On · 3 of 4 devices in reach", "On", "Off". */
+    /** "On · 3 of 4 devices in reach", "On · no devices yet", "Off" (iOS MeshDevicesLogic.statusLine). */
     fun statusLine(running: Boolean, devices: List<MyDevice>): String = when {
         !running -> "Off"
-        devices.isEmpty() -> "On"
+        devices.isEmpty() -> "On · no devices yet"
         else -> "On · ${devices.count { it.inReach }} of ${devices.size} ${if (devices.size == 1) "device" else "devices"} in reach"
     }
 
@@ -141,6 +141,17 @@ object MyDevicesRules {
     private fun byNpubSeen(labels: List<FipsDevice>, npub: String) = labels.firstOrNull { it.npub == npub }?.lastSeen ?: 0
 
     /** Removing a device: out of the allowlist, its label gone, and no home vault if it was that. */
+    /**
+     * The footer under Remove, by role (iOS FipsMeshDeviceView.removeFooter). The home vault line says when it leaves
+     * the media server list: on Android that is the next Save in Media servers, not at once (Logen 2026-10-31).
+     */
+    fun removeFooter(role: DeviceRole): String = when (role) {
+        DeviceRole.MAC -> "This phone stops syncing with your Mac over the mesh. Anything already on the Mac stays there."
+        DeviceRole.HOME_VAULT -> "New notes and media stop going to it, and it leaves your media server list the next time you save Media Servers. Anything already on it stays there."
+        DeviceRole.BROWSER -> "Your notes stop going to the page. Anything already on it stays there."
+        DeviceRole.PHONE -> "It leaves your list. Anything already on it stays there."
+    }
+
     fun remove(peers: List<String>, homeVault: String?, labels: List<FipsDevice>, npub: String): Change =
         Change(peers = peers - npub, homeVault = homeVault.takeIf { it != npub }, labels = labels.filter { it.npub != npub })
 
