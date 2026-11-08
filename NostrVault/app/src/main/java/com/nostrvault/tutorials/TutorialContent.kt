@@ -175,7 +175,7 @@ object TutorialContent {
         ),
         TutorialStep(
             RELAY_ADDRESS, "Personal vs public",
-            "Public relays are shared servers that anyone can post to. Your vault is personal: only you can use it, from this phone and your own devices in My Devices. Want it always on? Set up a home vault, a computer, box or spare phone that stays on. That part is optional.",
+            "Public relays are shared servers that anyone can post to. Your vault is personal: only you can use it, from this phone and your own devices in My Devices. Want it always on? Set up a mobile or desktop vault, a computer, box or spare phone that stays on. That part is optional.",
         ),
     )
 
@@ -198,7 +198,7 @@ object TutorialContent {
         ),
         TutorialStep(
             null, "Want it always on?",
-            "Set up a home vault: a computer, box or spare phone that stays on and keeps a copy of your vault. This is optional: your vault works fine on its own.",
+            "Set up a mobile or desktop vault: a computer, box or spare phone that stays on and keeps a copy of your vault. This is optional: your vault works fine on its own.",
         ),
         TutorialStep(
             null, "Your feed, your rules",
