@@ -15,6 +15,9 @@ struct FipsMeshMyDevicesSection: View {
     /// Linux box or browser relay page is pasted there by its address.
     @Binding var showPair: Bool
     @ObservedObject private var mesh = FipsMeshService.shared
+    /// Each device's advert on the finder relays, as Your space reads it, so
+    /// a device out of reach says when it last shared (MyDevicesStatus).
+    @StateObject private var model = MyDevicesPanelModel()
 
     var body: some View {
         Section {
@@ -22,7 +25,7 @@ struct FipsMeshMyDevicesSection: View {
                 NavigationLink {
                     FipsMeshDeviceView(npub: device.npub)
                 } label: {
-                    FipsMeshDeviceRow(device: device, inReach: isInReach(device))
+                    FipsMeshDeviceRow(device: device, inReach: isInReach(device), status: status(device))
                 }
             }
             Button {
@@ -37,6 +40,17 @@ struct FipsMeshMyDevicesSection: View {
         } footer: {
             Text(MyDevicesStatus.header)
         }
+        .task(id: devices.map(\.npub).joined(separator: ",")) {
+            while !Task.isCancelled {
+                await model.refresh(devices)
+                try? await Task.sleep(for: .seconds(MyDevicesPanelModel.refreshEvery))
+            }
+        }
+    }
+
+    private func status(_ device: MeshDevice) -> MyDevicesStatus.Status {
+        MyDevicesStatus.status(adverts: model.adverts[device.npub] ?? [], now: Int(Date().timeIntervalSince1970),
+                               connected: false, checked: model.checked)
     }
 
     private func isInReach(_ device: MeshDevice) -> Bool? {
@@ -46,10 +60,12 @@ struct FipsMeshMyDevicesSection: View {
 }
 
 /// One device in My Devices: role icon, name, role, and whether the running
-/// engine is connected to it (nil: the engine is not running).
+/// engine is connected to it (nil: the engine is not running), else what its
+/// advert says ("Offline · last shared 3 d ago"), as on Android.
 struct FipsMeshDeviceRow: View {
     let device: MeshDevice
     let inReach: Bool?
+    var status = MyDevicesStatus.Status(state: .unchecked, lastSeen: nil)
 
     var body: some View {
         HStack(spacing: 12) {
@@ -67,12 +83,12 @@ struct FipsMeshDeviceRow: View {
                     .font(.appCaption)
                     .foregroundColor(.secondary)
                 // Under the role: the sharing line is too long for the row's end.
-                if let inReach {
+                if let row = MyDevicesStatus.settingsRow(inReach: inReach, status: status) {
                     HStack(spacing: 5) {
                         Circle()
-                            .fill(inReach ? Color.havenOnline : Color.gray)
+                            .fill(row.on ? Color.havenOnline : Color.gray)
                             .frame(width: 7, height: 7)
-                        Text(inReach ? MyDevicesStatus.sharingLine : "Not in reach")
+                        Text(row.text)
                             .font(.appCaption)
                             .foregroundColor(.secondary)
                     }

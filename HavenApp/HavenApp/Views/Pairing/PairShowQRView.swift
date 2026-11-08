@@ -75,7 +75,7 @@ struct PairCodeText: View {
                 PlatformClipboard.copy(code)
                 copied = true
             } label: {
-                Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                Label(copied ? "Copied" : "Copy code", systemImage: copied ? "checkmark" : "doc.on.doc")
             }
             .buttonStyle(.bordered)
             .tint(.havenPurple)
