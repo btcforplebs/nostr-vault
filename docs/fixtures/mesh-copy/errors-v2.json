@@ -79,6 +79,12 @@
       "line": "Nothing in the copy could be restored"
     },
     {
+      "code": "partial",
+      "http": null,
+      "b": "resume_next_reconnect",
+      "line": "Some of the copy from {name} didn't save; it tries again next time"
+    },
+    {
       "code": "settings_refused",
       "http": null,
       "b": "continue",

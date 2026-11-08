@@ -97,6 +97,8 @@ enum MeshCopyV2 {
               line: "The copy from {name} arrived damaged; it starts over next time"),
         .init(code: "unreachable", action: .resumeNextReconnect, line: "Waiting for {name}"),
         .init(code: "nothing_restored", action: .stop, line: "Nothing in the copy could be restored"),
+        .init(code: "partial", action: .resumeNextReconnect,
+              line: "Some of the copy from {name} didn't save; it tries again next time"),
         .init(code: "settings_refused", action: .continue,
               line: "Settings weren't copied: they held something that must stay on {name}"),
         .init(code: "cancelled", action: .keepState, line: "Copy stopped"),

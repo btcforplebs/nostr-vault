@@ -122,6 +122,10 @@ var errNothingRestored = errors.New("nothing in this backup could be restored")
 // else's, deleted, ephemeral); bad are lines that would not parse or store.
 type importStats struct {
 	stored, dup, skipped, bad int
+	// failed: events this vault could not write (a store error, a full
+	// disk), counted in bad too. Unlike a bad line from the source, a retry
+	// can store them (mesh copy v2 keeps the copy as partial for that).
+	failed int
 }
 
 func (a *importStats) add(b importStats) {
@@ -129,6 +133,7 @@ func (a *importStats) add(b importStats) {
 	a.dup += b.dup
 	a.skipped += b.skipped
 	a.bad += b.bad
+	a.failed += b.failed
 }
 
 func importFromZip(ctx context.Context, zipFileName string) error {
@@ -283,6 +288,9 @@ func importDBStats(ctx context.Context, db DBBackend, r io.Reader) (importStats,
 			st.skipped++
 		case restoreBad:
 			st.bad++
+		case restoreFailed:
+			st.bad++
+			st.failed++
 		}
 	}
 
@@ -297,6 +305,8 @@ const (
 	restoreDup
 	restoreSkipped
 	restoreBad
+	// restoreFailed: a good event this vault failed to write.
+	restoreFailed
 )
 
 func importOne(ctx context.Context, db DBBackend, event *nostr.Event, now time.Time) restoreOutcome {
@@ -367,7 +377,7 @@ func importOne(ctx context.Context, db DBBackend, event *nostr.Event, now time.T
 		return restoreSkipped
 	default:
 		slog.Warn("⏭️ event not restored", "id", event.ID, "error", err)
-		return restoreBad
+		return restoreFailed
 	}
 	applyImportedDeletion(ctx, db, event)
 	return restoreStored
@@ -459,7 +469,7 @@ func importBlobRecord(ctx context.Context, db DBBackend, event *nostr.Event, now
 	event = record
 	ch, err := db.QueryEvents(ctx, nostr.Filter{Authors: []string{event.PubKey}, Kinds: []int{24242}, Tags: nostr.TagMap{"x": []string{event.Tags[0][1]}}, Limit: 1})
 	if err != nil {
-		return restoreBad
+		return restoreFailed
 	}
 	exists := false
 	for range ch {
@@ -473,7 +483,7 @@ func importBlobRecord(ctx context.Context, db DBBackend, event *nostr.Event, now
 			return restoreDup
 		}
 		slog.Warn("⏭️ blob record not restored", "id", event.ID, "error", err)
-		return restoreBad
+		return restoreFailed
 	}
 	return restoreStored
 }

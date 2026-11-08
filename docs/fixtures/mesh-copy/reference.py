@@ -200,6 +200,7 @@ write("errors-v2.json", {"errors": [
     {"code": "hash_mismatch", "http": None, "b": "restart_next_reconnect", "line": "The copy from {name} arrived damaged; it starts over next time"},
     {"code": "unreachable", "http": None, "b": "resume_next_reconnect", "line": "Waiting for {name}"},
     {"code": "nothing_restored", "http": None, "b": "stop", "line": "Nothing in the copy could be restored"},
+    {"code": "partial", "http": None, "b": "resume_next_reconnect", "line": "Some of the copy from {name} didn't save; it tries again next time"},
     {"code": "settings_refused", "http": None, "b": "continue", "line": "Settings weren't copied: they held something that must stay on {name}"},
     {"code": "cancelled", "http": None, "b": "keep_state", "line": "Copy stopped"},
 ]})

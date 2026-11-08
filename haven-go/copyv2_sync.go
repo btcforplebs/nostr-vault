@@ -108,12 +108,13 @@ func (s *copyServer) serveSync(w http.ResponseWriter, r *http.Request, what stri
 		copyJSON(w, http.StatusOK, map[string]int{"stored": st.stored, "dup": st.dup, "skipped": st.skipped, "bad": st.bad})
 	case what == "files" && r.Method == http.MethodGet:
 		since, _ := strconv.ParseInt(q.Get("since"), 10, 64)
-		files, err := copyOwnFilesSince(ctx, since)
+		until, _ := strconv.ParseInt(q.Get("until"), 10, 64)
+		files, more, err := copyOwnFilesSince(ctx, since, until, q.Get("after"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		copyJSON(w, http.StatusOK, map[string]any{"files": files})
+		copyJSON(w, http.StatusOK, map[string]any{"files": files, "more": more})
 	case strings.HasPrefix(what, "file/") && r.Method == http.MethodGet:
 		sha := strings.TrimPrefix(what, "file/")
 		own, err := copyOwnMediaSet(ctx)
@@ -242,17 +243,22 @@ func copyOwnMediaSet(ctx context.Context) (map[string]bool, error) {
 	return copyOwnMedia(uploaders, accounts), nil
 }
 
-// copyOwnFilesSince: own files whose record is at or after since, newest first, capped.
-func copyOwnFilesSince(ctx context.Context, since int64) ([]copyFile, error) {
+// copyOwnFilesSince: own files whose record is at or after since, newest
+// first (a second's files by sha256), at most copySyncMaxFiles. With until
+// set, only files after the cursor (until, after) in that order: older than
+// until, or of that second with a sha256 above after. more: older ones were
+// cut; the caller asks again with the last file it got as the cursor.
+func copyOwnFilesSince(ctx context.Context, since, until int64, after string) ([]copyFile, bool, error) {
 	accounts := copyAccounts()
 	uploaders, records, err := copyOwnBlobRecords(ctx, accounts)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	own := copyOwnMedia(uploaders, accounts)
 	var out []copyFile
 	for sha, rec := range records {
-		if int64(rec.CreatedAt) < since || !own[sha] || copyBlobFile(sha) == "" {
+		at := int64(rec.CreatedAt)
+		if at < since || (until > 0 && (at > until || (at == until && sha <= after))) || !own[sha] || copyBlobFile(sha) == "" {
 			continue
 		}
 		f := copyFile{SHA256: sha, Pubkey: rec.PubKey, CreatedAt: int64(rec.CreatedAt)}
@@ -264,11 +270,17 @@ func copyOwnFilesSince(ctx context.Context, since int64) ([]copyFile, error) {
 		}
 		out = append(out, f)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt > out[j].CreatedAt })
-	if len(out) > copySyncMaxFiles {
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt != out[j].CreatedAt {
+			return out[i].CreatedAt > out[j].CreatedAt
+		}
+		return out[i].SHA256 < out[j].SHA256
+	})
+	more := len(out) > copySyncMaxFiles
+	if more {
 		out = out[:copySyncMaxFiles]
 	}
-	return out, nil
+	return out, more, nil
 }
 
 // ─── B: the client ─────────────────────────────────────────────────────────
@@ -340,13 +352,17 @@ func (c *copyClient) sync(ctx context.Context) (copySyncResult, error) {
 			return res, err
 		}
 	}
-	files, err := c.syncFiles(ctx, since)
+	files, allFiles, err := c.syncFiles(ctx, since)
 	res.Files = files
 	if err != nil {
 		return res, err
 	}
 	res.Settings, _ = c.syncSettings(ctx)
-	markCopySynced(c.peer, started)
+	// Marked only when every listed page was read: otherwise the next round
+	// would start a week before now and never list the older files again.
+	if allFiles {
+		markCopySynced(c.peer, started)
+	}
 	slog.Info("copy catch-up done", "got", res.Got, "sent", res.Sent, "files", res.Files, "settings", res.Settings, "accounts", res.Accounts)
 	return res, nil
 }
@@ -479,52 +495,89 @@ func (c *copyClient) syncStore(ctx context.Context, store string, db DBBackend, 
 	return got, sent, nil
 }
 
-func (c *copyClient) syncFiles(ctx context.Context, since int64) (int, error) {
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/copy/v2/sync/files?since=%d", since), nil, nil)
-	if err != nil {
-		return 0, err
-	}
-	var list struct{ Files []copyFile }
-	err = func() error {
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return statusError(resp.StatusCode)
-		}
-		return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&list)
-	}()
-	if err != nil {
-		return 0, err
-	}
+func (c *copyClient) syncFiles(ctx context.Context, since int64) (int, bool, error) {
 	n := 0
-	for _, f := range list.Files {
-		if !isBlobHash(f.SHA256) || copyBlobFile(f.SHA256) != "" {
-			continue
+	seen := map[string]bool{}
+	until, after := int64(0), ""
+	for {
+		path := fmt.Sprintf("/copy/v2/sync/files?since=%d", since)
+		if until > 0 {
+			path += fmt.Sprintf("&until=%d&after=%s", until, after)
 		}
-		resp, err := c.do(ctx, http.MethodGet, "/copy/v2/sync/file/"+f.SHA256, nil, nil)
+		resp, err := c.do(ctx, http.MethodGet, path, nil, nil)
 		if err != nil {
-			return n, err
+			return n, false, err
 		}
-		ok := false
-		if resp.StatusCode == http.StatusOK {
-			ok, err = storeCopyBlob(f.SHA256, resp.Body)
+		var list struct {
+			Files []copyFile
+			More  bool
 		}
-		resp.Body.Close()
+		err = func() error {
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return statusError(resp.StatusCode)
+			}
+			return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&list)
+		}()
 		if err != nil {
-			return n, err
+			return n, false, err
 		}
-		if !ok {
-			continue
+		fresh := 0
+		for _, f := range list.Files {
+			if seen[f.SHA256] {
+				continue
+			}
+			seen[f.SHA256] = true
+			fresh++
+			got, err := c.syncFile(ctx, f)
+			if err != nil {
+				return n, false, err
+			}
+			if got {
+				n++
+			}
 		}
-		// Its record, in Keep's shape, only now that the file is here.
-		rec := &nostr.Event{PubKey: f.Pubkey, Kind: 24242, CreatedAt: nostr.Timestamp(f.CreatedAt),
-			Tags: nostr.Tags{{"x", f.SHA256}, {"type", f.Type}, {"size", f.Size}}}
-		rec.ID = rec.GetID()
-		if blossomDB != nil {
-			importBlobRecord(ctx, blossomDB, rec, time.Now())
+		if !list.More {
+			return n, true, nil
 		}
-		n++
+		// An A that ignores the cursor sends the same page again: stop, not
+		// done, so the round is not marked and older files stay in reach.
+		if fresh == 0 || len(list.Files) == 0 {
+			slog.Warn("copy catch-up: file list did not page, older files wait for the next round")
+			return n, false, nil
+		}
+		last := list.Files[len(list.Files)-1]
+		until, after = last.CreatedAt, last.SHA256
 	}
-	return n, nil
+}
+
+// syncFile fetches one own file A listed, unless it is here already. False
+// when A doesn't serve it or it doesn't match its hash: retrying would bring
+// the same, so it does not hold the round back.
+func (c *copyClient) syncFile(ctx context.Context, f copyFile) (bool, error) {
+	if !isBlobHash(f.SHA256) || copyBlobFile(f.SHA256) != "" {
+		return false, nil
+	}
+	resp, err := c.do(ctx, http.MethodGet, "/copy/v2/sync/file/"+f.SHA256, nil, nil)
+	if err != nil {
+		return false, err
+	}
+	ok := false
+	if resp.StatusCode == http.StatusOK {
+		ok, err = storeCopyBlob(f.SHA256, resp.Body)
+	}
+	resp.Body.Close()
+	if err != nil || !ok {
+		return false, err
+	}
+	// Its record, in Keep's shape, only now that the file is here.
+	rec := &nostr.Event{PubKey: f.Pubkey, Kind: 24242, CreatedAt: nostr.Timestamp(f.CreatedAt),
+		Tags: nostr.Tags{{"x", f.SHA256}, {"type", f.Type}, {"size", f.Size}}}
+	rec.ID = rec.GetID()
+	if blossomDB != nil {
+		importBlobRecord(ctx, blossomDB, rec, time.Now())
+	}
+	return true, nil
 }
 
 // syncSettings: newest updated_at wins, a tie keeps each side's own.

@@ -437,7 +437,7 @@ func TestCopyRestoreFailureTakesAccountsBack(t *testing.T) {
 	// Only a note nobody's store takes: nothing restored.
 	bad := nostr.Event{Kind: 1, Content: "unsigned", PubKey: them.pk, ID: strings.Repeat("0", 64), Sig: strings.Repeat("0", 128)}
 	var stats copyRestoreStats
-	if _, err := restoreCopyNotes(context.Background(), writeAccountsZip(t, shared, bad), &stats); err == nil {
+	if _, _, err := restoreCopyNotes(context.Background(), writeAccountsZip(t, shared, bad), &stats); err == nil {
 		t.Fatal("restore of nothing succeeded")
 	}
 	if isOwnKey(them.pk) {

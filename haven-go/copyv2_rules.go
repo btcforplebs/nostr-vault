@@ -142,6 +142,9 @@ type copyState struct {
 	Failures map[string]int   `json:"failures"`
 	// Restored: parts already restored, so a resume does not run them again.
 	Restored []string `json:"restored,omitempty"`
+	// Partial: what the last restore could not write (store names, and
+	// "files:<n>"). The copy is kept for the next attempt (§3.2 partial).
+	Partial []string `json:"partial,omitempty"`
 }
 
 // copyPlan: which chunks of each part B still needs. restart: the state was
