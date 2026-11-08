@@ -116,7 +116,7 @@ class FipsMeshRestartTest {
         assertTrue(MeshEnginePlan.restartNeeded(null, false, base, null))
         assertTrue(MeshEnginePlan.restartNeeded(started, false, base.copy(fipsPeers = listOf(mac, phone)), null))
         assertTrue(MeshEnginePlan.restartNeeded(started, false, base.copy(homeVaultNpub = phone), null))
-        assertTrue(MeshEnginePlan.restartNeeded(started, false, base.copy(fipsMesh = FipsMeshSettings(middleServer = FipsMeshSettings.MIDDLE_PUBLIC)), null))
+        assertTrue(MeshEnginePlan.restartNeeded(started, false, base.copy(fipsMesh = FipsMeshSettings(middleServer = FipsMeshSettings.MIDDLE_NONE)), null))
         assertTrue(MeshEnginePlan.restartNeeded(started, false, base.copy(fipsMesh = FipsMeshSettings(finderRelays = listOf("wss://relay.example"))), null))
         assertTrue(MeshEnginePlan.restartNeeded(started, true, base, null))
     }

@@ -21,13 +21,13 @@ class ServerListRelaysTest {
         assertEquals(emptyList<String>(), ServerListRelays.extra(null, listOf("wss://purplepag.es/")))
     }
 
-    /** The 10063 publish uses both: the extra relays, and My Devices as what is never dropped. */
+    /** The 10063 publish uses both: the extra relays, and the owner's Media Servers choices. */
     @Test
     fun `the server list publish is wired to both`() {
         val src = File("src/main/java/com/nostrvault/service/nostr/NostrServiceListPublishing.kt").readText()
         val impl = src.substringAfter("fun NostrService.publishServerListImpl").substringBefore("\n    }\n")
         assertTrue("extra relays", impl.contains("ServerListRelays.extra(_outboxRelays.value[ownerHexPubkey]"))
         assertTrue("publish passes them", impl.contains("publishOwnerEntryList(10063, \"server\", mirrors, extraRelays, publishedFirst = true, onPosted = cleared, onRefused = onRefused)"))
-        assertTrue("My Devices kept", impl.contains("myDevices = config.fipsPeers"))
+        assertTrue("the owner's Media Servers choices", impl.contains("mergeServerList(servers, servers, add, drop)"))
     }
 }

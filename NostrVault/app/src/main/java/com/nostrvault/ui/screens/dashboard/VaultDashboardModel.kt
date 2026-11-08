@@ -97,7 +97,7 @@ internal object VaultDashboardModel {
             ?: "Not saved yet. If a client wipes it, you can't get it back."
 
     fun macSyncDetail(macConfigured: Boolean, finishedAtSeconds: Long?, nowMs: Long): String = when {
-        !macConfigured -> "Not set up. A home vault keeps a copy that's always on."
+        !macConfigured -> "Not set up. A desktop vault keeps a copy that's always on."
         finishedAtSeconds == null || finishedAtSeconds <= 0 -> "Set up. Not synced yet."
         else -> "Last synced ${relative(finishedAtSeconds * 1000, nowMs)}."
     }

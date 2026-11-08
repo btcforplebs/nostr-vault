@@ -10,14 +10,14 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class FipsMeshSettings(
-    /** Name, role and switches per device, by mesh npub. The list itself is fipsPeers plus the home vault. */
+    /** Name and role per device, by mesh npub. The list itself is fipsPeers plus the home vault. */
     val devices: List<FipsDevice> = emptyList(),
     /** Where new photos go: "public" server, "mac", or "both". Stored only for now. */
     @SerialName("photos_go_to") val photosGoTo: String = PHOTOS_PUBLIC,
     /** Finder relays the mesh posts its address to. Empty means [DEFAULT_FINDER_RELAYS]. */
     @SerialName("finder_relays") val finderRelays: List<String> = emptyList(),
-    /** Middle server: "public" (the fips1/fips2.iris.to seeds) or "none". None by default: Android never joined them. */
-    @SerialName("middle_server") val middleServer: String = MIDDLE_NONE,
+    /** Middle server: "public" (the fips1/fips2.iris.to seeds) or "none". Public by default, as on iPhone (Logen 2026-11-08). */
+    @SerialName("middle_server") val middleServer: String = MIDDLE_PUBLIC,
 ) {
     /** The relays the engine is started with: the user's, or the same three as iPhone and Mac. */
     val engineFinderRelays: List<String> get() = finderRelays.ifEmpty { DEFAULT_FINDER_RELAYS }
@@ -42,8 +42,6 @@ data class FipsDevice(
     val npub: String,
     val role: DeviceRole = DeviceRole.PHONE,
     val name: String = "",
-    @SerialName("send_notes") val sendNotes: Boolean = true,
-    @SerialName("send_media") val sendMedia: Boolean = true,
     /** Unix seconds this device was last in reach, or 0 when never seen. */
     @SerialName("last_seen") val lastSeen: Long = 0,
     /**
@@ -56,9 +54,9 @@ data class FipsDevice(
 @Serializable
 enum class DeviceRole(val label: String, val blurb: String) {
     // Labels and lines as iOS MeshDeviceRole, so the three apps say the same thing.
-    @SerialName("mac") MAC("Home vault · full history", "Keeps all your history. Syncs both ways."),
+    @SerialName("mac") MAC("Desktop vault · full history", "Keeps all your history. Syncs both ways."),
     @SerialName("phone") PHONE("Phone", "Another phone of yours on the mesh."),
-    @SerialName("home_vault") HOME_VAULT("Home vault · new posts", "Keeps your new posts and media, and sends your notes on."),
+    @SerialName("home_vault") HOME_VAULT("Mobile vault · new posts", "Keeps your new posts and media, and sends your notes on."),
     @SerialName("browser") BROWSER("Browser vault", "Gets your new notes while this app is open."),
 }
 
@@ -69,8 +67,6 @@ data class MyDevice(
     val name: String,
     val inReach: Boolean,
     val lastSeen: Long,
-    val sendNotes: Boolean,
-    val sendMedia: Boolean,
 ) {
     /** Its name, or its role when it has none (iOS MeshDevice.title). */
     val title: String get() = name.trim().ifBlank { role.label }
@@ -98,8 +94,6 @@ object MyDevicesRules {
                 name = label?.name.orEmpty(),
                 inReach = npub in connected,
                 lastSeen = label?.lastSeen ?: 0,
-                sendNotes = label?.sendNotes ?: true,
-                sendMedia = label?.sendMedia ?: true,
             )
         }
     }

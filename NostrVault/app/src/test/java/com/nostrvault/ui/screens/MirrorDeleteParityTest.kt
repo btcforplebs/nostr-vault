@@ -120,8 +120,8 @@ class MirrorDeleteParityTest {
     @Test
     fun `the share section says where new photos go`() {
         assertEquals(
-            "New photos are saved on this device first. If you have a home vault, a copy goes to it over the mesh, " +
-                "and the home vault puts it on your public media server for you. If this device has its own media " +
+            "New photos are saved on this device first. If you have a mobile vault, a copy goes to it over the mesh, " +
+                "and the mobile vault puts it on your public media server for you. If this device has its own media " +
                 "server, it uploads there itself.",
             PHOTOS_ROUTE_LINE,
         )

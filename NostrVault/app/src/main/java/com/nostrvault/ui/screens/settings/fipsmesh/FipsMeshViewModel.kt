@@ -40,7 +40,7 @@ class FipsMeshViewModel @Inject constructor(
     val lastError = mesh.lastError
     val isAvailable get() = mesh.isAvailable
     val shareRelay = mesh.shareRelay
-    val serveLimit = mesh.serveLimitBytes
+    val pausedUntil = mesh.pausedUntil
     val homeVaultState = homeVault.state
 
     private val _busy = MutableStateFlow(false)
@@ -83,7 +83,6 @@ class FipsMeshViewModel @Inject constructor(
     // Each switch says what it wants, so a queued tap that is already true by its turn does nothing.
     fun setEnabled(enabled: Boolean) = queued { if (mesh.status.value.running != enabled) { if (enabled) mesh.start() else mesh.stop() } }
     fun setShareRelay(enabled: Boolean) = queued { if (configStore.config.value.fipsShareRelay != enabled) mesh.setShareRelay(enabled) }
-    fun setServeLimit(bytes: Long) = queued { if (configStore.config.value.fipsServeLimitBytes != bytes) mesh.setServeLimit(bytes) }
     fun sendHomeVaultNow() = homeVault.drainSoon(userInitiated = true)
 
     fun removeDevice(npub: String) =
@@ -105,7 +104,7 @@ class FipsMeshViewModel @Inject constructor(
 
     fun setFinderRelays(relays: List<String>) = queued { mesh.setAdvanced(relays, configStore.config.value.fipsMesh.middleServer) }
     fun setMiddleServer(key: String) = queued { mesh.setAdvanced(configStore.config.value.fipsMesh.finderRelays, key) }
-    fun resetAdvanced() = queued { mesh.setAdvanced(emptyList(), FipsMeshSettings.MIDDLE_NONE) }
+    fun resetAdvanced() = queued { mesh.setAdvanced(emptyList(), FipsMeshSettings.MIDDLE_PUBLIC) }
 
     /**
      * Apply one My Devices change, start to finish, read from the config as the change before it left it. Queued: Remove
@@ -118,9 +117,8 @@ class FipsMeshViewModel @Inject constructor(
         configStore.updateAsync { it.copy(fipsMesh = it.fipsMesh.copy(devices = change.labels)) }
         if (change.peers != before.fipsPeers) mesh.setPeers(change.peers)
         if (change.homeVault != before.homeVaultNpub) homeVault.setHomeVault(change.homeVault)
-        // The 10063 is not republished here: only Save in Media servers publishes it (Logen 2026-10-31).
-        // What left is kept for that Save to drop, or an unlinked Mac stays on the owner's list (Tron #1451).
-        configStore.updateAsync { it.copy(serverListDropMesh = com.nostrvault.service.serverListDropsAfter(before, it)) }
+        // The 10063 is left alone, now and at the next Save: the owner adds or takes off a vault on Media
+        // Servers (Logen 2026-11-08).
     }
 
     /**

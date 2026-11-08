@@ -174,7 +174,7 @@ val SETTINGS_GROUPS: List<SettingsGroup> = listOf(
         SettingsRow("Media Servers", NostrVaultIcons.SettingsMediaServers, SettingsTile.Green, Screen.BlossomSettings),
     )),
     SettingsGroup("Your Vault", listOf(
-        SettingsRow("Home vault sync", NostrVaultIcons.SettingsMacRelay, SettingsTile.Teal, Screen.HavenRelaySettings),
+        SettingsRow("Desktop vault sync", NostrVaultIcons.SettingsMacRelay, SettingsTile.Teal, Screen.HavenRelaySettings),
         SettingsRow("Who Can Reach You", NostrVaultIcons.SettingsRelayAccess, SettingsTile.Blue, Screen.RelayAccessSettings),
         SettingsRow("Import Notes", NostrVaultIcons.Import, SettingsTile.Orange, Screen.ImportSettings),
         SettingsRow("Backup & Restore", NostrVaultIcons.SettingsBackup, SettingsTile.Indigo, Screen.BackupSettings),

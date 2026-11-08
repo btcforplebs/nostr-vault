@@ -40,7 +40,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.nostrvault.fips.MeshSendTargets
 import com.nostrvault.fips.MyDevicesRules
 import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.LocalNostrVaultColors
@@ -49,7 +48,7 @@ import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 import com.nostrvault.ui.theme.WindowBackground
 
-/** One of My Devices: its address, what it gets, Remove (07_device.png). */
+/** One of My Devices: its role, name, address and Remove, as on iPhone. No per-device Send switches (Logen 2026-11-08). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FipsMeshDeviceScreen(npub: String, onBack: () -> Unit, viewModel: FipsMeshViewModel = hiltViewModel()) {
@@ -103,6 +102,8 @@ fun FipsMeshDeviceScreen(npub: String, onBack: () -> Unit, viewModel: FipsMeshVi
                 }
                 MeshDivider()
                 Text(d.role.blurb, color = SecondaryText, fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
+                MeshDivider()
+                MeshValueRow("Last seen", MyDevicesRules.lastSeenText(d.lastSeen, d.inReach && status.running, System.currentTimeMillis() / 1000))
             }
             OutlinedTextField(value = name, onValueChange = { name = it; nameLoaded = true }, singleLine = true, label = { Text("Name") },
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp))
@@ -115,17 +116,6 @@ fun FipsMeshDeviceScreen(npub: String, onBack: () -> Unit, viewModel: FipsMeshVi
                     Spacer(Modifier.width(12.dp))
                     Text("Copy address", color = colors.primary, fontSize = 16.sp)
                 }
-            }
-
-            MeshSection("What It Gets") {
-                // Only roles that are sent anything (MeshSendTargets): a phone's or browser's switches did nothing.
-                if (MeshSendTargets.receivesSends(d.role)) {
-                    MeshSwitchRow("Send new notes", null, d.sendNotes) { on -> viewModel.updateDevice(npub) { it.copy(sendNotes = on) } }
-                    MeshDivider()
-                    MeshSwitchRow("Send new media", null, d.sendMedia) { on -> viewModel.updateDevice(npub) { it.copy(sendMedia = on) } }
-                    MeshDivider()
-                }
-                MeshValueRow("Last seen", MyDevicesRules.lastSeenText(d.lastSeen, d.inReach && status.running, System.currentTimeMillis() / 1000))
             }
 
             MeshSection(null, footer = MyDevicesRules.removeFooter(d.role)) {

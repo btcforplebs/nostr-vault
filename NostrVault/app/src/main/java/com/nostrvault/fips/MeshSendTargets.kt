@@ -2,17 +2,23 @@ package com.nostrvault.fips
 
 import com.nostrvault.relay.HavenConfig
 
-/** A device of the owner's that gets their new notes and media over the mesh. */
-internal data class MeshSendTarget(val npub: String, val role: DeviceRole, val notes: Boolean, val media: Boolean)
+/** A device of the owner's on the mesh: one that gets their new notes and media, or (a phone) one Delete everywhere reaches. */
+internal data class MeshSendTarget(val npub: String, val role: DeviceRole)
 
 /**
- * Where [HomeVaultSender] sends: the home vault, then each Mac and each phone in My Devices, each with its
- * own Send notes / Send media switches (a home vault with no label gets both). A Mac or a linked phone takes
- * the same owner-signed Blossom upload and EVENT the home vault does: every linked phone gets new photos and
- * notes (Logen 2026-11-05). Pure for the tests.
+ * Where [HomeVaultSender] sends: the mobile vault, then each Mac in My Devices. Every one gets both notes and media:
+ * the per-device Send switches are gone, and phones are not sent to, as on iPhone (Logen 2026-11-08). A Mac takes the
+ * same owner-signed Blossom upload and EVENT the mobile vault does. Pure for the tests.
  */
 internal object MeshSendTargets {
-    fun of(config: HavenConfig): List<MeshSendTarget> {
+    fun of(config: HavenConfig): List<MeshSendTarget> = ownDevices(config).filter { receivesSends(it.role) }
+
+    /**
+     * The owner's mobile vault, Macs and linked phones, as [of] sent to before phones stopped getting sends. A phone
+     * still holds what was sent or uploaded on it, so Delete everywhere reaches it, and a linked phone still keeps
+     * own-devices sharing on ([MeshEnginePlan.hasLinkedPhone]).
+     */
+    fun ownDevices(config: HavenConfig): List<MeshSendTarget> {
         // Linked devices belong to the account that linked them; the sender sends the owner's posts, so only the
         // owner's devices get them (Logen 2026-11-05).
         val owners = config.fipsMesh.devices.filter { MyDevicesRules.isOwners(it.linkedBy, config.ownerNpub) }
@@ -20,23 +26,16 @@ internal object MeshSendTargets {
             config.fipsMesh.devices.none { it.npub == h && !MyDevicesRules.isOwners(it.linkedBy, config.ownerNpub) }
         }
         val others = owners
-            .filter { receivesSends(it.role) && it.role != DeviceRole.HOME_VAULT }
+            .filter { (it.role == DeviceRole.MAC || it.role == DeviceRole.PHONE) }
             .filter { it.npub in config.fipsPeers && it.npub != home && MyDevicesRules.isMeshNpub(it.npub) }
             .distinctBy { it.npub }
-            .map { MeshSendTarget(it.npub, it.role, notes = it.sendNotes, media = it.sendMedia) }
-        val homeLabel = home?.let { h -> config.fipsMesh.devices.firstOrNull { it.npub == h } }
-        val homeTarget = home?.let { MeshSendTarget(it, DeviceRole.HOME_VAULT, notes = homeLabel?.sendNotes ?: true, media = homeLabel?.sendMedia ?: true) }
+            .map { MeshSendTarget(it.npub, it.role) }
         // Macs before phones: a Mac keeps the full history, so it is the first copy worth having.
-        return listOfNotNull(homeTarget) + others.sortedBy { if (it.role == DeviceRole.MAC) 0 else 1 }
+        return listOfNotNull(home?.let { MeshSendTarget(it, DeviceRole.HOME_VAULT) }) + others.sortedBy { if (it.role == DeviceRole.MAC) 0 else 1 }
     }
 
-    /**
-     * Whether a device in this role is sent anything, so its Send switches mean something. Phones are
-     * (Logen 2026-11-05: every linked phone gets new photos and notes); browsers are not, since a
-     * browser vault only holds what it gets while its page is open.
-     */
-    fun receivesSends(role: DeviceRole): Boolean =
-        role == DeviceRole.HOME_VAULT || role == DeviceRole.MAC || role == DeviceRole.PHONE
+    /** Whether a device in this role is sent the owner's new notes and media: the mobile vault and Macs. */
+    fun receivesSends(role: DeviceRole): Boolean = role == DeviceRole.HOME_VAULT || role == DeviceRole.MAC
 
     /**
      * After queueing one item on each lane: drain if any lane took it, so one full or broken lane
@@ -46,15 +45,15 @@ internal object MeshSendTargets {
 
     /** How a target is named in the card's problem line. */
     fun label(role: DeviceRole): String = when (role) {
-        DeviceRole.MAC -> "Home vault · full history"
+        DeviceRole.MAC -> "Desktop vault · full history"
         DeviceRole.PHONE -> "Your other phone"
-        else -> "Home vault · new posts"
+        else -> "Mobile vault · new posts"
     }
 
-    /** The same, mid-sentence: "the home vault", "your Mac", "your other phone". */
+    /** The same, mid-sentence: "the mobile vault", "your desktop vault", "your other phone". */
     fun destination(role: DeviceRole): String = when (role) {
-        DeviceRole.MAC -> "your home vault"
+        DeviceRole.MAC -> "your desktop vault"
         DeviceRole.PHONE -> "your other phone"
-        else -> "the home vault"
+        else -> "the mobile vault"
     }
 }

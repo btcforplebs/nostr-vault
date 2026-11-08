@@ -180,32 +180,21 @@ enum class HomeVaultSend {
 /** The pure decisions [HomeVaultSender] makes, kept apart so they can be tested. */
 object HomeVaultRules {
     /**
-     * The owner's own mesh vaults this phone can send to: the `fipsmesh://`
-     * entries in the owner's 10063, minus this phone's own address.
-     */
-    /**
-     * The 10063 a phone publishes: it merges, never replaces. [newest] is the
-     * newest signed list (any device's); [managed] the servers this phone
-     * manages, which replace every non-mesh entry. Every `fipsmesh://` entry
-     * is kept, in order, since other devices put those there, and they go
-     * after the public servers (NIP-F1): BUD-03 clients try servers in order.
-     * The home vault is the setting, not a list position.
+     * The 10063 a phone publishes: it merges, never replaces. [newest] is the newest signed list (any device's);
+     * [managed] the servers this phone manages, which replace every non-mesh entry. Every `fipsmesh://` entry is
+     * kept, in order, after the public servers (NIP-F1: BUD-03 clients try servers in order), except the ones the
+     * owner took off on Media Servers ([dropMesh]); the ones they added there ([addMesh]) go after them. Nothing is
+     * added or dropped for a vault linked or removed in My Devices (Logen 2026-11-08).
      */
     fun mergeServerList(
         newest: List<String>,
         managed: List<String>,
-        homeVault: String? = null,
+        addMesh: List<String> = emptyList(),
         dropMesh: Collection<String> = emptyList(),
-        macs: List<String> = emptyList(),
-        myDevices: Collection<String> = emptyList(),
     ): List<String>? {
-        // This phone lists its own home vault and the Macs linked in My Devices (a Mac without the owner's
-        // key cannot sign the 10063 itself; iOS 8af86b0d), and drops the ones it listed before when the
-        // setting changes. A device still in My Devices is never dropped: a vault that stopped being the
-        // home vault still holds and serves what it was sent (Mac→Moto switch, Tim 2026-10-22).
-        val listed = (listOfNotNull(homeVault) + macs).map { "fipsmesh://$it/" }
-        val drop = dropMesh.toSet() - myDevices.toSet()
-        val mesh = newest.filter { val n = FipsMediaRouter.meshNpubIn(it); n != null && n !in drop } + listed
+        val drop = dropMesh.toSet()
+        val mesh = newest.filter { val n = FipsMediaRouter.meshNpubIn(it); n != null && n !in drop } +
+            addMesh.filter { it !in drop }.map { "fipsmesh://$it/" }
         val out = (managed.filter { FipsMediaRouter.meshNpubIn(it) == null } + mesh).distinct()
         // NIP-F1: never a list only the mesh or this home network can open. It reaches no outside reader
         // and would publish a home address (iOS #999, Tod: a real public server, not just reachable).

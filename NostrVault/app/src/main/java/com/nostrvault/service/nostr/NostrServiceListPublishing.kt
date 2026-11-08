@@ -551,15 +551,10 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
     internal fun NostrService.publishServerListImpl(dropMesh: Collection<String> = emptyList(), onRefused: (String) -> Unit = {}) {
         val config = configStore.config.value
         val mirrors = config.activeBlossomMirrors
-        val home = config.homeVaultNpub
-        val macs = linkedMacs(config)
-        // What unlinks left for this Save to take off (FipsMeshViewModel records them; Tron #1451).
+        // Only what the owner chose on Media Servers changes the mesh entries (Logen 2026-11-08).
+        val add = config.serverListAddMesh
         val drop = (dropMesh + config.serverListDropMesh).distinct()
-        if (mirrors.isEmpty() && home == null && macs.isEmpty() && drop.isEmpty()) return
-        // Every fipsmesh:// entry on the published list is kept (a kiosk put
-        // it there), after the public servers; this phone's home vault and
-        // linked Macs are added and the ones it listed before ([dropMesh])
-        // removed. With no public server nothing is published (NIP-F1).
+        if (mirrors.isEmpty() && add.isEmpty() && drop.isEmpty()) return
         // Every write relay the owner's 10002 names, and purplepag.es, not only this phone's broadcast
         // list: readers look a 10063 up on the author's write relays (Logen 2026-10-22: each list landed
         // on one relay).
@@ -568,34 +563,18 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         }
         // Their published order stays first (BUD-03: the first server is their default); a server
         // only this device has goes after it.
-        // Cleared only once the list went out, so a Save that published nothing drops them next time.
-        val cleared = { configStore.update { it.copy(serverListDropMesh = it.serverListDropMesh - drop.toSet()) } }
+        // Cleared only once the list went out, so a Save that published nothing keeps them for the next one.
+        val cleared = {
+            configStore.update { it.copy(serverListAddMesh = it.serverListAddMesh - add.toSet(), serverListDropMesh = it.serverListDropMesh - drop.toSet()) }
+            fetchServerList(ownerHexPubkey)
+        }
         publishOwnerEntryList(10063, "server", mirrors, extraRelays, publishedFirst = true, onPosted = cleared, onRefused = onRefused) { tags ->
             val servers = tags.filter { it.size >= 2 && it[0] == "server" }.map { it[1] }
-            val merged = com.nostrvault.fips.HomeVaultRules.mergeServerList(
-                servers, servers, home, drop, macs, myDevices = config.fipsPeers,
-            ) ?: return@publishOwnerEntryList null
+            val merged = com.nostrvault.fips.HomeVaultRules.mergeServerList(servers, servers, add, drop)
+                ?: return@publishOwnerEntryList null
             merged.map { listOf("server", it) } + tags.filter { it.isNotEmpty() && it[0] != "server" }
         }
     }
-
-    /**
-     * The mesh npubs the next Save takes off the owner's 10063 after a My Devices change from [before] to
-     * [after]: the [pending] ones plus the home vault or linked Macs that went, less any listed again.
-     */
-    internal fun serverListDropsAfter(
-        before: com.nostrvault.relay.HavenConfig,
-        after: com.nostrvault.relay.HavenConfig,
-        pending: List<String> = after.serverListDropMesh,
-    ): List<String> {
-        val listedBefore = listOfNotNull(before.homeVaultNpub) + linkedMacs(before)
-        val listedAfter = (listOfNotNull(after.homeVaultNpub) + linkedMacs(after)).toSet()
-        return (pending + listedBefore).distinct().filter { it !in listedAfter }
-    }
-
-    /** The Macs in My Devices this phone lists in the owner's 10063 (iOS 8af86b0d). */
-    internal fun linkedMacs(config: com.nostrvault.relay.HavenConfig): List<String> =
-        com.nostrvault.fips.MeshSendTargets.of(config).filter { it.role == com.nostrvault.fips.DeviceRole.MAC }.map { it.npub }
 
 /** Where a 10063 goes besides the broadcast relays. Pure for the tests. */
 internal object ServerListRelays {

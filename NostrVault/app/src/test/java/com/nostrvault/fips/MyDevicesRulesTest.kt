@@ -23,7 +23,7 @@ class MyDevicesRulesTest {
         assertEquals(listOf(DeviceRole.MAC, DeviceRole.PHONE, DeviceRole.HOME_VAULT), list.map { it.role })
         assertEquals("MacBook", list[0].title)
         assertTrue(list[0].inReach); assertFalse(list[2].inReach)
-        assertEquals("a device with no name goes by its role, as on iPhone", "Home vault · new posts", list[2].title)
+        assertEquals("a device with no name goes by its role, as on iPhone", "Mobile vault · new posts", list[2].title)
     }
 
     @Test fun `status line counts devices in reach`() {
@@ -95,7 +95,7 @@ class MyDevicesRulesTest {
     @Test fun `the engine starts with the iPhone's three finder relays unless the user picked others`() {
         assertEquals(listOf("wss://relay.nostr.net", "wss://nostr.bitcoiner.social", "wss://relay.btcforplebs.com"), FipsMeshSettings().engineFinderRelays)
         assertEquals(listOf("wss://relay.example"), FipsMeshSettings(finderRelays = listOf("wss://relay.example")).engineFinderRelays)
-        assertEquals("Android never joined the public seeds: None until the user picks Public", FipsMeshSettings.MIDDLE_NONE, FipsMeshSettings().middleServer)
+        assertEquals("Public by default, as on iPhone (Logen 2026-11-08)", FipsMeshSettings.MIDDLE_PUBLIC, FipsMeshSettings().middleServer)
     }
 
     @Test fun `finder relays must be wss hosts`() {

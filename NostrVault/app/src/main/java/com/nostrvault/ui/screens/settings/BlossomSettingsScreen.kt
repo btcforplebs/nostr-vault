@@ -27,6 +27,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -74,10 +75,24 @@ class BlossomSettingsViewModel @Inject constructor(
     private val _publishStatus = MutableStateFlow("")
     val publishStatus = _publishStatus.asStateFlow()
 
+    /** Your mobile and desktop vaults, listed in your 10063 or not (MediaServerVaults). */
+    val vaults: StateFlow<List<com.nostrvault.fips.MediaServerVault>> =
+        kotlinx.coroutines.flow.combine(configStore.config, nostrService.serverLists) { cfg, lists ->
+            com.nostrvault.fips.MediaServerVaults.rows(cfg, lists[nostrService.ownerHexPubkey].orEmpty())
+        }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptyList())
+
     init {
         val config = configStore.config.value
         _mirrors.value = config.blossomMirrors
         _macRelayHttps.value = config.macRelayHttpsURL.takeIf { it.isNotBlank() }
+        // What the published list holds now, for the vaults' Add / Take off.
+        nostrService.ownerHexPubkey.takeIf { it.isNotEmpty() }?.let { nostrService.fetchServerList(it) }
+    }
+
+    /** "Add to my media servers" ([list] true) or "Take off": the owner's choice, published as any change here is. */
+    fun setVaultListed(npub: String, list: Boolean) {
+        configStore.update { com.nostrvault.fips.MediaServerVaults.choose(it, npub, list) }
+        saveAndPublish()
     }
 
     fun setNewMirrorUrl(url: String) { _newMirrorUrl.value = url }
@@ -138,6 +153,7 @@ fun BlossomSettingsScreen(
     val waitingPosts by viewModel.waitingPosts.collectAsState()
     val mirrorRun by viewModel.mirrorRun.collectAsState()
     val autoMirror by viewModel.autoMirror.collectAsState()
+    val vaults by viewModel.vaults.collectAsState()
     val colors = LocalNostrVaultColors.current
     val offlineCopies: @Composable () -> Unit = {
         OfflineCopiesSection(
@@ -346,6 +362,7 @@ fun BlossomSettingsScreen(
                         )
                     }
                 }
+                if (vaults.isNotEmpty()) item { YourVaultsSection(vaults, viewModel::setVaultListed) }
                 item { SuggestedMediaServersSection(mirrors, viewModel::addSuggested) }
                 item { offlineCopies() }
                 item { FipsSection(onOpenFipsMesh) }
@@ -470,6 +487,52 @@ private fun OfflineCopiesSection(
                 colors = SwitchDefaults.colors(checkedTrackColor = colors.primary),
             )
         }
+    }
+}
+
+/** Under Your Vaults: how a vault gets on the list, and that nothing else puts it there. */
+internal const val YOUR_VAULTS_FOOTER = "Readers can fetch your photos from a vault you add here, over the mesh. " +
+    "Linking or removing a vault in Mesh does not change this list; only your choice here does."
+
+/**
+ * "Your Vaults": the owner's mobile and desktop vaults, each with "Add to my media servers" or "Take off"
+ * (Logen 2026-11-08). Phones and the browser vault are never listed here.
+ */
+@Composable
+private fun YourVaultsSection(vaults: List<com.nostrvault.fips.MediaServerVault>, onChoose: (String, Boolean) -> Unit) {
+    val colors = LocalNostrVaultColors.current
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "YOUR VAULTS",
+            color = SecondaryText,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp,
+            modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp),
+        )
+        vaults.forEach { v ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(v.title, color = PrimaryText, fontSize = 15.sp, maxLines = 1)
+                    Text(if (v.listed) "${v.kind} · in your media servers" else v.kind, color = SecondaryText, fontSize = 12.sp)
+                }
+                if (v.listed) {
+                    TextButton(onClick = { onChoose(v.npub, false) }) { Text("Take off", color = ErrorRed, fontSize = 13.sp) }
+                } else {
+                    TextButton(onClick = { onChoose(v.npub, true) }) { Text("Add to my media servers", color = colors.primary, fontSize = 13.sp) }
+                }
+            }
+            HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp, modifier = Modifier.padding(start = 16.dp))
+        }
+        Text(
+            YOUR_VAULTS_FOOTER,
+            color = SecondaryText,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
     }
 }
 

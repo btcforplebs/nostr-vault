@@ -75,8 +75,8 @@ internal object MeshEnginePlan {
      */
     fun sharesWithLinkedPhones(config: HavenConfig): Boolean = !config.fipsShareRelay && hasLinkedPhone(config)
 
-    /** A phone of the owner's is in My Devices, one that gets their sends ([MeshSendTargets]). */
-    fun hasLinkedPhone(config: HavenConfig): Boolean = MeshSendTargets.of(config).any { it.role == DeviceRole.PHONE }
+    /** A phone of the owner's is in My Devices ([MeshSendTargets.ownDevices]). */
+    fun hasLinkedPhone(config: HavenConfig): Boolean = MeshSendTargets.ownDevices(config).any { it.role == DeviceRole.PHONE }
 
     @Suppress("UNUSED_PARAMETER")
     fun sharePort(config: HavenConfig, ownDevices: List<String>): Int = config.relayPort

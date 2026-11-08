@@ -93,7 +93,7 @@ class VaultDashboardModelTest {
     fun `safety details`() {
         assertEquals("Not saved yet. If a client wipes it, you can't get it back.", m.followListDetail(null, now))
         assertEquals("Last saved 2 hours ago.", m.followListDetail(ago(7200), now))
-        assertEquals("Not set up. A home vault keeps a copy that's always on.", m.macSyncDetail(false, 123, now))
+        assertEquals("Not set up. A desktop vault keeps a copy that's always on.", m.macSyncDetail(false, 123, now))
         assertEquals("Set up. Not synced yet.", m.macSyncDetail(true, null, now))
         assertEquals("Set up. Not synced yet.", m.macSyncDetail(true, 0, now))
         assertEquals("Last synced yesterday.", m.macSyncDetail(true, (now / 1000) - 86_400, now))

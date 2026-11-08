@@ -19,7 +19,7 @@ class SettingsGroupsTest {
                 "Feed", "Appearance", "Media & Cache",
                 "Notifications",
                 "Relays", "Media Servers",
-                "Home vault sync", "Who Can Reach You", "Import Notes", "Backup & Restore",
+                "Desktop vault sync", "Who Can Reach You", "Import Notes", "Backup & Restore",
                 "Mesh",
                 "Tutorials",
                 "Proof of Work", "Database & Reset", "Bitcoin On-Chain", "Logs",
