@@ -391,6 +391,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 		wt.builtAt.Store(started)
 		wt.SaveCache()
 		wt.saveLinks(nil, nil)
+		wt.saveLists(nil, 0, 0)
 		phase, size = "saved", len(newWot)
 		return
 	}
@@ -406,11 +407,9 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 
 	slog.Info("🛜 fetching Nostr events to build WoT")
 
-	events := wt.Pool.FetchMany(timeoutCtx, wt.SeedRelays, filter)
-	ownerLists := make(map[string]*nostr.Event)
-	for ev := range latestEventByKindAndPubkey(timeoutCtx, events, &eventsAnalysed) {
-		ownerLists[ev.PubKey] = ev
-	}
+	got := fetchLatestLists(timeoutCtx, wt.Pool, wt.SeedRelays, filter)
+	eventsAnalysed.Add(got.received)
+	ownerLists := got.lists
 	if wt.LocalFollowLists != nil {
 		for _, ev := range wt.LocalFollowLists() {
 			if _, owner := wt.WhitelistedPubKeys[ev.PubKey]; !owner || ev.Kind != nostr.KindFollowList {
@@ -455,16 +454,14 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 		wt.builtAt.Store(started)
 		wt.SaveCache()
 		wt.saveLinks(nil, nil)
+		wt.saveLists(nil, 0, 0)
 		phase, size = "saved", len(newWot)
 		return
 	}
 
 	slog.Info("🕸️ analysing Nostr events", "count", eventsAnalysed.Load())
 
-	// Split analysis into batches of listBatchSize pubkeys and process them sequentially
-	// Process sequentially with yielding to avoid blocking the host app's UI/Events
 	keys := follows
-	ownerListCount := eventsAnalysed.Load()
 	// Someone is in at MinFollowers; 0 and 1 both mean "any one follow".
 	bar := max(int64(wt.MinFollowers), 1)
 	followIndex := make(map[string]int, len(follows))
@@ -472,63 +469,140 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 		followIndex[pk] = i
 	}
 	links := make(map[string][]int)
-	slog.Info("🕸️ starting deeper Web of Trust analysis", "total_keys", len(keys))
-	updateProgress(func(p *Progress) {
-		p.Phase = "lists"
-		p.Batches = (len(keys) + listBatchSize - 1) / listBatchSize
-		p.Lists = eventsAnalysed.Load()
-	})
-
-	for batch := range slices.Chunk(keys, listBatchSize) {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
-
-			filter := nostr.Filter{
-				Authors: batch,
-				Kinds:   []int{nostr.KindFollowList},
+	// tally counts one follow's list: its people's follower counts, the
+	// links file's "who follows them", and anyone clearing the bar, the
+	// moment they do, so the apps can show the web filling in.
+	tally := func(pk string, l followList) {
+		from := followIndex[pk]
+		for _, contact := range l.contacts {
+			// One list's tags are counted together, so a repeated tag is
+			// always the last index added.
+			if lk := links[contact]; contact != pk && (len(lk) == 0 || lk[len(lk)-1] != from) {
+				links[contact] = append(lk, from)
 			}
-
-			events := wt.Pool.FetchMany(timeoutCtx, wt.SeedRelays, filter)
-			for ev := range latestEventByKindAndPubkey(timeoutCtx, events, &eventsAnalysed) {
-				from, isFollow := followIndex[ev.PubKey]
-				for contact := range ev.Tags.FindAll("p") {
-					if len(contact) > 1 {
-						// One list's tags arrive together, so a repeated tag
-						// is always the last index added.
-						if l := links[contact[1]]; isFollow && contact[1] != ev.PubKey && (len(l) == 0 || l[len(l)-1] != from) {
-							links[contact[1]] = append(l, from)
-						}
-						followers, _ := pubkeyFollowers.LoadOrStore(contact[1], &atomic.Int64{})
-						// Report the moment someone clears the bar, so the
-						// apps can show the web filling in instead of waiting
-						// out the whole rebuild.
-						if followers.Add(1) == bar && !newWot[contact[1]] {
-							found(contact[1], previous)
-						}
-					}
-				}
+			followers, _ := pubkeyFollowers.LoadOrStore(contact, &atomic.Int64{})
+			if followers.Add(1) == bar && !newWot[contact] {
+				found(contact, previous)
 			}
-			cancel()
-			updateProgress(func(p *Progress) {
-				p.BatchesDone++
-				p.Lists = eventsAnalysed.Load()
-			})
-
-			// Only log every batch to avoid flooding the UI thread
-			slog.Info("🕸️ verified identities in community", "count", eventsAnalysed.Load())
-
-			// Yield to the OS scheduler and other goroutines to keep the host app responsive
-			time.Sleep(100 * time.Millisecond)
 		}
 	}
 
-	// Same rule for the follows' lists: a pass that was cut short, or that
-	// fetched none of them and would leave a smaller web, keeps the web we
-	// have. (Follows with no lists anywhere still grow it, so they save.)
-	if ctx.Err() != nil || (len(keys) > 0 && eventsAnalysed.Load() == ownerListCount && len(newWot) < len(previous)) {
+	// Start from the lists the last rebuild kept (wot_lists.json) and ask
+	// relays only for what changed since it, plus every list of a follow it
+	// has none for. A first build, a graph of just the owners, a week since
+	// the last full fetch, or a fetch that never completed asks for them all.
+	stored, since, fullAt, haveStored := wt.loadLists()
+	incremental := haveStored && since > 0 && hasPeople(previous, wt.WhitelistedPubKeys) &&
+		time.Since(time.Unix(fullAt, 0)) < fullListsEvery
+	lists := make(map[string]followList, len(follows))
+	var fresh, known []string
+	for _, pk := range follows {
+		if l, ok := stored[pk]; ok && incremental {
+			lists[pk] = l
+			known = append(known, pk)
+		} else {
+			fresh = append(fresh, pk)
+		}
+	}
+	type listJob struct {
+		authors []string
+		since   int64 // 0: every list, not only changes
+	}
+	var jobs []listJob
+	for batch := range slices.Chunk(fresh, listBatchSize) {
+		jobs = append(jobs, listJob{authors: batch})
+	}
+	for batch := range slices.Chunk(known, listBatchSize) {
+		jobs = append(jobs, listJob{authors: batch, since: max(since-sinceSlack, 1)})
+	}
+
+	slog.Info("🕸️ starting deeper Web of Trust analysis", "total_keys", len(keys), "incremental", incremental, "new_lists", len(fresh), "changed_since", len(known))
+	updateProgress(func(p *Progress) {
+		p.Phase = "lists"
+		p.Batches = len(jobs)
+		p.Lists = eventsAnalysed.Load()
+	})
+
+	// Every batch is in flight at once (up to maxParallelBatches), and each
+	// ends once enough relays have answered (fetchLatestLists). Results are
+	// counted here, on this goroutine, as each batch lands.
+	results := make(chan struct {
+		job listJob
+		got listFetch
+	}, len(jobs))
+	slots := make(chan struct{}, maxParallelBatches)
+	for _, job := range jobs {
+		go func() {
+			var got listFetch
+			// Always answer, even after a panic: the loop below waits for
+			// one result per batch.
+			defer func() {
+				results <- struct {
+					job listJob
+					got listFetch
+				}{job, got}
+			}()
+			runsafe.Run("wot.listBatch", func() {
+				slots <- struct{}{}
+				defer func() { <-slots }()
+				batchCtx, cancel := context.WithTimeout(ctx, timeout)
+				defer cancel()
+				filter := nostr.Filter{Authors: job.authors, Kinds: []int{nostr.KindFollowList}}
+				if job.since > 0 {
+					s := nostr.Timestamp(job.since)
+					filter.Since = &s
+				}
+				got = fetchLatestLists(batchCtx, wt.Pool, wt.SeedRelays, filter)
+			})
+		}()
+	}
+	freshComplete, changesComplete := true, true
+	fetched := 0
+	for range jobs {
+		r := <-results
+		eventsAnalysed.Add(r.got.received)
+		if !r.got.complete {
+			if r.job.since > 0 {
+				changesComplete = false
+			} else {
+				freshComplete = false
+			}
+		}
+		for pk, ev := range r.got.lists {
+			if _, isFollow := followIndex[pk]; !isFollow {
+				continue
+			}
+			if old, ok := lists[pk]; ok && int64(ev.CreatedAt) <= old.at {
+				continue
+			}
+			lists[pk] = listFromEvent(ev)
+			fetched++
+			if !incremental {
+				tally(pk, lists[pk])
+			}
+		}
+		updateProgress(func(p *Progress) {
+			p.BatchesDone++
+			p.Lists = eventsAnalysed.Load()
+		})
+		slog.Info("🕸️ verified identities in community", "count", eventsAnalysed.Load())
+	}
+	// Changed lists replace stored ones, so the counts start over from the
+	// merged set once everything has landed.
+	if incremental {
+		for _, pk := range follows {
+			if l, ok := lists[pk]; ok {
+				tally(pk, l)
+			}
+		}
+	}
+
+	// Same rule for the follows' lists: a pass that was cut short, or a full
+	// pass that fetched none of them and would leave a smaller web, keeps the
+	// web we have. (Follows with no lists anywhere still grow it, so they
+	// save.) An incremental pass that fetched nothing found nothing changed:
+	// the stored lists still count.
+	if ctx.Err() != nil || (!incremental && len(keys) > 0 && fetched == 0 && len(newWot) < len(previous)) {
 		slog.Warn("🚫 WoT rebuild got none of the follows' lists; keeping the saved web")
 		return
 	}
@@ -625,45 +699,20 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	wt.builtAt.Store(started)
 	wt.SaveCache()
 	wt.saveLinks(follows, links)
+	// The next rebuild asks for changes since this one only if every
+	// changes fetch here was complete; a full pass that wasn't complete
+	// leaves the next one full too.
+	switch {
+	case incremental && changesComplete:
+		since = started
+	case !incremental && freshComplete:
+		since, fullAt = started, started
+	case !incremental:
+		since = 0
+	}
+	wt.saveLists(lists, since, fullAt)
 	phase, size = "saved", len(newWot)
 	debug.FreeOSMemory()
-}
-
-func latestEventByKindAndPubkey(ctx context.Context, events <-chan nostr.RelayEvent, counter *atomic.Int64) <-chan *nostr.Event {
-	ch := make(chan *nostr.Event)
-	go func() {
-		// ch must close even if the body panics, otherwise the consumer
-		// in Refresh() blocks forever.
-		defer close(ch)
-		runsafe.Run("wot.latestEventByKindAndPubkey", func() {
-			latestEvents := make(map[string]*nostr.Event)
-		collect:
-			for ev := range events {
-				select {
-				case <-ctx.Done():
-					// Stop collecting, but keep what arrived (see below).
-					break collect
-				default:
-					counter.Add(1)
-					key := fmt.Sprintf("%d:%s", ev.Kind, ev.PubKey)
-					if old, ok := latestEvents[key]; !ok || ev.CreatedAt > old.CreatedAt {
-						latestEvents[key] = ev.Event
-					}
-				}
-			}
-			// Hand over everything collected, even when ctx has expired. ctx is
-			// the fetch timeout: FetchMany only closes once every seed relay
-			// has sent EOSE, so one slow or dead relay makes the timeout the
-			// normal way a batch ends. Selecting on ctx.Done here dropped what
-			// the healthy relays had already sent (Go picks a ready case at
-			// random), which emptied the depth-3 graph. The consumer in
-			// Refresh always drains ch, so these sends cannot block for good.
-			for _, ev := range latestEvents {
-				ch <- ev
-			}
-		})
-	}()
-	return ch
 }
 
 // Reach reports how many of the owners' follows follow pubkey (the vouches
