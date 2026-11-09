@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"maps"
+	"net"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -402,5 +403,52 @@ func TestListFetchGraceGrowsWithASlowQuorum(t *testing.T) {
 		nostr.Filter{Kinds: []int{nostr.KindFollowList}, Authors: []string{a.pk, b.pk}})
 	if got.lists[b.pk] == nil {
 		t.Error("the slow relay's list, sent within the quorum's own time after it, was dropped")
+	}
+}
+
+// A relay that accepts the TCP connection but never finishes the websocket
+// handshake must not hold the fetch: EnsureRelay waits up to 15 s on it.
+func TestListFetchDoesNotWaitForAStuckConnect(t *testing.T) {
+	a, x := newTestKey(t), newTestKey(t)
+	var good []*liveRelay
+	for range listQuorum {
+		good = append(good, newLiveRelay(t, a.followList(t, x)))
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	var held []net.Conn
+	var heldMu sync.Mutex
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			heldMu.Lock()
+			held = append(held, c) // never answer the handshake
+			heldMu.Unlock()
+		}
+	}()
+	t.Cleanup(func() {
+		heldMu.Lock()
+		defer heldMu.Unlock()
+		for _, c := range held {
+			c.Close()
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	start := time.Now()
+	got := fetchLatestLists(ctx, nostr.NewSimplePool(ctx), append(urls(good...), "ws://"+ln.Addr().String()),
+		nostr.Filter{Kinds: []int{nostr.KindFollowList}, Authors: []string{a.pk}})
+	if took := time.Since(start); took > listGrace+3*time.Second {
+		t.Fatalf("fetch took %v waiting on a relay stuck connecting", took)
+	}
+	if !got.complete || got.lists[a.pk] == nil {
+		t.Errorf("complete %v, list %v: the three good relays answered", got.complete, got.lists[a.pk] != nil)
 	}
 }

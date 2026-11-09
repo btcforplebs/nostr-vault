@@ -58,6 +58,9 @@ func fetchLatestLists(ctx context.Context, pool *nostr.SimplePool, relays []stri
 
 	var mu sync.Mutex
 	eosed, finished := 0, 0
+	// ended is set when the fetch returns; a relay still connecting (that
+	// can take EnsureRelay's own 15 s) or sending must not touch out after.
+	ended := false
 	allDone := make(chan struct{})
 	quorumReached := make(chan struct{})
 	finish := func(eose bool) {
@@ -77,17 +80,17 @@ func fetchLatestLists(ctx context.Context, pool *nostr.SimplePool, relays []stri
 	keep := func(ev *nostr.Event) {
 		mu.Lock()
 		defer mu.Unlock()
+		if ended {
+			return
+		}
 		out.received++
 		if old, ok := out.lists[ev.PubKey]; !ok || ev.CreatedAt > old.CreatedAt {
 			out.lists[ev.PubKey] = ev
 		}
 	}
 
-	var wg sync.WaitGroup
 	for _, url := range relays {
-		wg.Add(1)
 		go func() {
-			defer wg.Done()
 			eose := false
 			defer func() { finish(eose) }()
 			runsafe.Run("wot.fetchLatestLists", func() {
@@ -135,12 +138,13 @@ func fetchLatestLists(ctx context.Context, pool *nostr.SimplePool, relays []stri
 		case <-time.After(max(listGrace, time.Since(start))):
 		}
 	}
+	// Not waiting for the relay goroutines: one stuck connecting would hold
+	// the fetch for up to 15 s. They end on their own once fctx is done.
 	cancel()
-	wg.Wait()
-
 	mu.Lock()
+	defer mu.Unlock()
+	ended = true
 	out.complete = eosed >= quorum
-	mu.Unlock()
 	return out
 }
 
