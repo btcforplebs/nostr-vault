@@ -16,7 +16,7 @@ const wanted = () => notifyOn() && permission() === "granted" && readTypes().dms
  * Message notifications while the tab is open: with browser notifications and Messages on, the inbox is read and
  * listened to as the Messages screen does it (dms.js loadMessages + watchMessages, so the signer opens new messages
  * while the tab is open, and the Vault tab's dot counts them), and each new message from someone in your network
- * raises "Message from X". Off, nothing here asks the signer.
+ * raises "New message" from X (never the text). Off, nothing here asks the signer.
  */
 export function useDmNotify(ctx) {
   const me = ctx.session?.pubkey

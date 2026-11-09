@@ -89,10 +89,11 @@ test("Move vault to…: asks for a folder, sends it, says what the box answered"
   render(null, el)
 })
 
-test("Update: the box's answer and its rollback note", async () => {
+test("Update: says updates are manual, never 'started', no rollback promise (audit K2)", async () => {
   const el = await mount()
   fire(button(el, "Check for update and install"), "click"); await tick(30)
-  assert.match(el.textContent, /Updating 1\.0\.0 to 1\.0\.1\. Version 1\.0\.0 is kept/)
+  assert.match(el.textContent, /Updates are manual for now\. On the box, run the installer again: curl .*linux\/install\.sh \| sh/)
+  assert.ok(!/Update started|go back to it|goes back/.test(el.textContent), el.textContent)
   render(null, el)
 })
 

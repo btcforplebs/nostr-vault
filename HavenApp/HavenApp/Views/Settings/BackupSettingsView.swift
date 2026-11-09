@@ -170,11 +170,11 @@ struct BackupSettingsView: View {
                     clearStatus()
                     return
                 }
-                VaultHistory.lastNotesBackup = Date()
+                // "Last backup" only once the file is really saved or shared, not on a cancel.
                 #if os(macOS)
-                presentSavePanel(title: "Save JSONL Backup", defaultName: "nostrvault-backup.zip", tempPath: tempPath)
+                presentSavePanel(title: "Save JSONL Backup", defaultName: "nostrvault-backup.zip", tempPath: tempPath) { VaultHistory.lastNotesBackup = Date() }
                 #else
-                shareFile(at: tempPath)
+                shareFile(at: tempPath) { VaultHistory.lastNotesBackup = Date() }
                 statusMessage = ""
                 #endif
             }
@@ -248,11 +248,11 @@ struct BackupSettingsView: View {
                     clearStatus()
                     return
                 }
-                VaultHistory.lastMediaBackup = Date()
+                // "Last backup" only once the file is really saved or shared, not on a cancel.
                 #if os(macOS)
-                presentSavePanel(title: "Save Media Backup", defaultName: "blossom-backup.zip", tempPath: tempPath)
+                presentSavePanel(title: "Save Media Backup", defaultName: "blossom-backup.zip", tempPath: tempPath) { VaultHistory.lastMediaBackup = Date() }
                 #else
-                shareFile(at: tempPath)
+                shareFile(at: tempPath) { VaultHistory.lastMediaBackup = Date() }
                 statusMessage = ""
                 #endif
             }
@@ -310,7 +310,7 @@ struct BackupSettingsView: View {
     // MARK: - Helpers
     
     #if os(macOS)
-    private func presentSavePanel(title: String, defaultName: String, tempPath: String) {
+    private func presentSavePanel(title: String, defaultName: String, tempPath: String, onSaved: () -> Void) {
         let panel = NSSavePanel()
         panel.title = title
         panel.nameFieldStringValue = defaultName
@@ -324,6 +324,7 @@ struct BackupSettingsView: View {
                     try FileManager.default.removeItem(at: destURL)
                 }
                 try FileManager.default.moveItem(at: srcURL, to: destURL)
+                onSaved()
                 statusMessage = "Saved to \(destURL.lastPathComponent)"
             } catch {
                 statusMessage = "Failed to save: \(error.localizedDescription)"
@@ -337,9 +338,12 @@ struct BackupSettingsView: View {
     #endif
     
     #if os(iOS)
-    private func shareFile(at path: String) {
+    private func shareFile(at path: String, onShared: @escaping () -> Void) {
         let fileURL = URL(fileURLWithPath: path)
         let activityVC = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+        activityVC.completionWithItemsHandler = { _, completed, _, error in
+            if completed && error == nil { onShared() }
+        }
         
         guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let window = scene.windows.first,

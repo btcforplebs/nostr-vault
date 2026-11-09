@@ -503,3 +503,34 @@ func TestRestoreRebuildsBlobRecordShape(t *testing.T) {
 		t.Fatalf("List gave %d records, want 1", n)
 	}
 }
+
+// unwritableStore refuses every write, as a full disk would.
+type unwritableStore struct{ DBBackend }
+
+func (unwritableStore) SaveEvent(context.Context, *nostr.Event) error {
+	return errors.New("no space left on device")
+}
+func (unwritableStore) ReplaceEvent(context.Context, *nostr.Event) error {
+	return errors.New("no space left on device")
+}
+
+// Audit I R1: a restore where good events could not be written says so,
+// instead of "restored" with part of the backup missing.
+func TestRestoreWithFailedWritesIsAnError(t *testing.T) {
+	f := newRestoreFixture(t)
+	dbs["private"] = unwritableStore{f.private}
+	path := f.zip(map[string][]string{
+		"outbox.jsonl":  lines(f.note(f.sk, time.Now(), "kept")),
+		"private.jsonl": lines(f.note(f.sk, time.Now(), "lost")),
+	})
+	err := importFromZip(f.ctx, path)
+	if !errors.Is(err, errRestoreIncomplete) {
+		t.Fatalf("restore with a failed store: %v, want errRestoreIncomplete", err)
+	}
+	if got := f.contents(f.outbox, nostr.Filter{}); len(got) != 1 {
+		t.Fatalf("the store that could write still restores, got %q", got)
+	}
+	if err := importDB(f.ctx, unwritableStore{f.feed}, strings.NewReader(lines(f.note(f.sk, time.Now(), "x"))[0]+"\n")); !errors.Is(err, errRestoreIncomplete) {
+		t.Fatalf("jsonl import with failed writes: %v, want errRestoreIncomplete", err)
+	}
+}

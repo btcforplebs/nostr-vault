@@ -10,19 +10,30 @@ import (
 	"strings"
 )
 
-// ZipDirectory creates a zip archive of the source directory.
+// ZipDirectory creates a zip archive of the source directory. The archive's
+// index is written on Close, so both closes are checked: a full disk there
+// leaves a zip that won't open, and that must not count as a backup.
 func ZipDirectory(source, target string) error {
 	zipFile, err := os.Create(target)
 	if err != nil {
 		return err
 	}
-	defer zipFile.Close()
+	if err := zipDirectoryTo(source, zipFile); err != nil {
+		return fmt.Errorf("zip %s: %w", target, err)
+	}
+	return nil
+}
 
-	archive := zip.NewWriter(zipFile)
-	defer archive.Close()
+// zipDirectoryTo writes source's zip to out and closes out.
+func zipDirectoryTo(source string, out io.WriteCloser) error {
+	archive := zip.NewWriter(out)
+	walkErr := zipWalk(archive, filepath.Clean(source))
+	closeErr := archive.Close()
+	fileErr := out.Close()
+	return errors.Join(walkErr, closeErr, fileErr)
+}
 
-	source = filepath.Clean(source)
-
+func zipWalk(archive *zip.Writer, source string) error {
 	return filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err

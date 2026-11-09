@@ -5,7 +5,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { TYPES, readTypes, setType, lineWanted, typeOfLine } from "../src/net/notify-prefs.js"
 import { noticesFor, getVaultUnread, setVaultUnread, onVaultUnread, unreadLines, unreadFrom } from "../src/net/notify-watch.js"
-import { dmNotices, readDmMark, dmOnScreen, DM_BODY } from "../src/net/dm-notify.js"
+import { dmNotices, readDmMark, dmOnScreen } from "../src/net/dm-notify.js"
 import { showNotice, listenNoticeClicks } from "../src/net/notify-show.js"
 
 const ME = "a".repeat(64), B = "b".repeat(64), C = "c".repeat(64), D = "d".repeat(64)
@@ -41,8 +41,8 @@ test("messages: new ones to the user from their network pop up, not their own, R
     ["5", { id: "5", from: B, peer: B, content: "old", at: 90 }],
   ])
   const out = dmNotices(msgs, ME, { mark: 100, hidden: new Set([D]), nameOf, now: 1000 })
-  assert.deepEqual(out.notices.map(n => [n.title, n.href]), [["Message from Bob", `#/dm/${C}`], ["Message from Ann", `#/dm/${B}`]])
-  assert.equal(out.notices[1].body, "hi there"); assert.equal([...out.notices[0].body].length, DM_BODY)
+  assert.deepEqual(out.notices.map(n => [n.title, n.body, n.href]), [["New message", "From Bob", `#/dm/${C}`], ["New message", "From Ann", `#/dm/${B}`]])
+  for (const n of out.notices) assert.ok(!/hi|there|x{3}/.test(`${n.title} ${n.body}`), "the decrypted text never goes in a notification")
   assert.equal(out.mark, 140, "the stranger's message moved the mark too")
   assert.equal(dmNotices(msgs, ME, { mark: 100, hidden: new Set([D]), onScreen: C, nameOf }).notices.length, 1, "the open conversation doesn't pop up")
   const many = new Map(Array.from({ length: 5 }, (_, i) => [`m${i}`, { id: `m${i}`, from: i % 2 ? B : C, peer: i % 2 ? B : C, content: "x", at: 200 + i }]))

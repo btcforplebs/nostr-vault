@@ -63,7 +63,8 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                 }
 
                 if (result == 0 && outputFile.exists()) {
-                    vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.NOTES_BACKUP)
+                    // No "Last backup" stamp here: the share sheet can't tell a save from a cancel.
+                    // Settings > Backup saves through the file picker and stamps once the copy lands.
                     val uri = androidx.core.content.FileProvider.getUriForFile(
                         context,
                         "${context.packageName}.fileprovider",
@@ -113,7 +114,8 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
                 }
 
                 if (outputFile.exists()) {
-                    vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.MEDIA_BACKUP)
+                    // No "Last backup" stamp here: the share sheet can't tell a save from a cancel.
+                    // Settings > Backup saves through the file picker and stamps once the copy lands.
                     val uri = androidx.core.content.FileProvider.getUriForFile(
                         context,
                         "${context.packageName}.fileprovider",

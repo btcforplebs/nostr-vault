@@ -23,7 +23,7 @@ export function mockBox({ now = () => Date.now() } = {}) {
     })
     if (method === "GET" && name === "storage") return answer(200, { path: state.path, used: state.used, free: state.total - state.used, total: state.total })
     if (method === "GET" && name === "devices") return answer(200, { box: { npub: npub("z"), name: "Box" }, devices: state.devices })
-    if (method === "POST" && name === "update") return answer(200, { started: true, from: state.version, to: "1.0.1", rollback: `Version ${state.version} is kept. If 1.0.1 doesn't start, the box goes back to it.` })
+    if (method === "POST" && name === "update") return answer(200, { started: false, manual: true, via: "manual", from: state.version })
     if (method === "POST" && name === "move") {
       const { path } = JSON.parse(body ?? "{}")
       if (!/^\/\S+/.test(path ?? "")) return answer(400, { message: "Give a full folder path, like /mnt/disk/nostr-vault." })

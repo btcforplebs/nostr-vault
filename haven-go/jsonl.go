@@ -117,6 +117,10 @@ var errNotYourBackup = errors.New("this backup holds no notes by this account")
 // events could go in.
 var errNothingRestored = errors.New("nothing in this backup could be restored")
 
+// errRestoreIncomplete: some good events in the backup could not be written
+// (a full disk, a store error), so the vault holds only part of it.
+var errRestoreIncomplete = errors.New("part of this backup could not be written")
+
 // importStats counts one restore. stored + dup is what the vault now holds
 // from the backup; skipped are lines refused on purpose (forged, someone
 // else's, deleted, ephemeral); bad are lines that would not parse or store.
@@ -205,6 +209,9 @@ func importFromZip(ctx context.Context, zipFileName string) error {
 	if known == 0 || total.stored+total.dup == 0 {
 		return errors.Join(append([]error{errNothingRestored}, errs...)...)
 	}
+	if total.failed > 0 {
+		errs = append([]error{fmt.Errorf("%w: %d events not written, %d stored", errRestoreIncomplete, total.failed, total.stored)}, errs...)
+	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -256,7 +263,10 @@ func importFromJSONL(ctx context.Context, relayName, jsonlFileName string) error
 }
 
 func importDB(ctx context.Context, db DBBackend, r io.Reader) error {
-	_, err := importDBStats(ctx, db, r)
+	st, err := importDBStats(ctx, db, r)
+	if err == nil && st.failed > 0 {
+		err = fmt.Errorf("%w: %d events not written, %d stored", errRestoreIncomplete, st.failed, st.stored)
+	}
 	return err
 }
 
