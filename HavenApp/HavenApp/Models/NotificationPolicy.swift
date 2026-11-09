@@ -205,6 +205,20 @@ enum NotificationPolicy {
         isDM(type) ? dmFiledBody : body
     }
 
+    /// The title of a DM's system alert (lock screen, Notification Center):
+    /// who it is from, when known. Any other alert keeps `title`.
+    static func systemAlertTitle(type: String, name: String?, title: String) -> String {
+        guard isDM(type) else { return title }
+        guard let name, !name.isEmpty else { return dmFiledTitle }
+        return "\(dmFiledTitle) from \(name)"
+    }
+
+    /// The body of a system alert. A DM's decrypted text never goes there,
+    /// only the generic line; it shows in the app's own pill only.
+    static func systemAlertBody(type: String, body: String) -> String {
+        filedPillBody(type: type, body: body)
+    }
+
     private static func isDM(_ type: String) -> Bool { type == "dm" || type == "giftwrap" }
 
     static let dmFiledTitle = "New message"

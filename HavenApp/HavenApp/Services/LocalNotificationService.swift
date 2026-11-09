@@ -689,7 +689,8 @@ final class LocalNotificationService {
     private func post(id: String, type: String, name: String?, preview: String, npub: String,
                       carried: [String: String]) {
         let (title, body) = titleAndBody(type: type, name: name, preview: preview)
-        post(id: id, type: type, title: title, body: body, npub: npub, extra: carried)
+        post(id: id, type: type, title: NotificationPolicy.systemAlertTitle(type: type, name: name, title: title),
+             body: body, npub: npub, extra: carried)
     }
 
     private func post(id: String, type: String, title: String, body: String, npub: String,
@@ -703,7 +704,8 @@ final class LocalNotificationService {
                       extra: [String: Any] = [:], quiet: Bool = false) async {
         let content = UNMutableNotificationContent()
         content.title = title
-        content.body = body
+        // Every system alert passes here: a DM's text stays in the app.
+        content.body = NotificationPolicy.systemAlertBody(type: type, body: body)
         if !quiet {
             let sound = NotificationSound(rawValue: ConfigService.shared.config.notificationSoundName) ?? .defaultSound
             content.sound = UNNotificationSound(named: UNNotificationSoundName(sound.systemSoundName))

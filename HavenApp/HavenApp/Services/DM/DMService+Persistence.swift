@@ -22,6 +22,9 @@ extension DMService {
         }
 
         guard let data = try? Data(contentsOf: fileURL) else { return }
+        // A cache written before PrivateFile is left out of backups now;
+        // its file protection follows on the next save.
+        PrivateFile.excludeFromBackup(fileURL)
         conversations = (try? JSONDecoder().decode([DMConversation].self, from: data)) ?? []
 
         // Seed seenGiftWrapIds from cached messages to prevent duplicates on reconnect
@@ -34,7 +37,7 @@ extension DMService {
 
     func saveUnreadableGiftWrapIds() {
         guard let data = try? JSONEncoder().encode(Array(unreadableGiftWrapIds)) else { return }
-        try? data.write(to: unreadableFileURL())
+        try? PrivateFile.write(data, to: unreadableFileURL())
     }
 
     /// Beside the conversation cache, same per-account suffix.
@@ -47,7 +50,7 @@ extension DMService {
     func saveConversations() {
         let fileURL = cacheFileURL()
         guard let data = try? JSONEncoder().encode(conversations) else { return }
-        try? data.write(to: fileURL)
+        try? PrivateFile.write(data, to: fileURL)
     }
 
     private func cacheFileURL(forPubkey pubkey: String? = nil) -> URL {

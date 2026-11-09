@@ -181,6 +181,17 @@ final class NotificationPolicyTests: XCTestCase {
         XCTAssertEqual(NotificationPolicy.filedPillBody(type: "mention", body: "gm"), "gm")
     }
 
+    /// A DM's lock-screen alert says who it is from, never what it says.
+    func testSystemAlertDMIsGeneric() {
+        XCTAssertEqual(NotificationPolicy.systemAlertTitle(type: "giftwrap", name: "Alice", title: "Message from Alice"), "New message from Alice")
+        XCTAssertEqual(NotificationPolicy.systemAlertTitle(type: "dm", name: nil, title: "New message"), "New message")
+        XCTAssertEqual(NotificationPolicy.systemAlertTitle(type: "dm", name: "", title: "Message from Someone"), "New message")
+        XCTAssertEqual(NotificationPolicy.systemAlertTitle(type: "mention", name: "Alice", title: "Alice mentioned you"), "Alice mentioned you")
+        XCTAssertEqual(NotificationPolicy.systemAlertBody(type: "giftwrap", body: "meet at 6"), NotificationPolicy.dmFiledBody)
+        XCTAssertEqual(NotificationPolicy.systemAlertBody(type: "dm", body: "meet at 6"), NotificationPolicy.dmFiledBody)
+        XCTAssertEqual(NotificationPolicy.systemAlertBody(type: "reply", body: "gm"), "gm")
+    }
+
     /// A decrypted DM becomes one readable banner line.
     func testDMPreviewIsOneLine() {
         XCTAssertEqual(NotificationPolicy.dmPreview("hey\n\n  are you  around?\t"), "hey are you around?")

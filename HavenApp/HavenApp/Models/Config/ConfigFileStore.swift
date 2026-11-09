@@ -31,7 +31,7 @@ struct ConfigFileStore {
                 let data = try Data(contentsOf: url)
                 let value = try JSONDecoder().decode(type, from: data)
                 if hasKey(value) || !backupHasKey(type, hasKey: hasKey) {
-                    try? data.write(to: backupURL, options: .atomic)
+                    try? PrivateFile.write(data, to: backupURL)
                 }
                 return .loaded(value, fromBackup: false)
             } catch {
@@ -59,7 +59,7 @@ struct ConfigFileStore {
     /// Replaces config.json in one step, so a crash leaves the old file or the
     /// new one, never half of either.
     func write(_ data: Data) throws {
-        try data.write(to: url, options: .atomic)
+        try PrivateFile.write(data, to: url)
     }
 
     /// Copies a config.json that would not load to config.json.unreadable-<time>
@@ -72,6 +72,7 @@ struct ConfigFileStore {
         let copy = url.deletingLastPathComponent().appendingPathComponent(name)
         if !fileManager.fileExists(atPath: copy.path) {
             try fileManager.copyItem(at: url, to: copy)
+            PrivateFile.excludeFromBackup(copy)
         }
         return copy
     }
@@ -115,7 +116,7 @@ struct ConfigFileStore {
                   var text = String(data: data, encoding: .utf8) else { continue }
             let before = text
             for needle in needles { text = text.replacingOccurrences(of: needle, with: "") }
-            guard text != before, (try? Data(text.utf8).write(to: file, options: .atomic)) != nil else { continue }
+            guard text != before, (try? PrivateFile.write(Data(text.utf8), to: file)) != nil else { continue }
             rewritten.append(file)
         }
         return rewritten

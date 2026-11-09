@@ -1949,6 +1949,7 @@
 		F00A894E046067CFE613FBCE /* ProfileLoaders.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAFAB741BC14D1DD7D596EA9 /* ProfileLoaders.swift */; };
 		F026AFD6E39A3E289A293E56 /* GlobeLive.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFF3B13B96C33F298EC93D3C /* GlobeLive.swift */; };
 		F0A25A9631B2DA7F4906AB39 /* Ping.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = C375F066296CAA325CD86CFE /* Ping.mp3 */; };
+		F0E4251FF6A3F353D5921BF8 /* PrivateFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE008AD1483461B16759A40F /* PrivateFile.swift */; };
 		F0FDE2B37884AA6B6C008AA3 /* FeedService+DeletedNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80146D638D2E00F6CDCFB382 /* FeedService+DeletedNotes.swift */; };
 		F10135C9F1B704EF4CFDCDB7 /* MempoolAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71CC7FAABBAB90283299F087 /* MempoolAPIService.swift */; };
 		F11DF1086DA8F6B030403814 /* QuoteReferenceIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */; };
@@ -2073,6 +2074,7 @@
 		FD5E837F1BF269C6A816BB02 /* VideoControlBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A64F14DD4D2F4DA10D102C /* VideoControlBar.swift */; };
 		FD819DD8DD0F76DF6CAEF815 /* PublishTargets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34A3EE75F17D363C0E2C9E44 /* PublishTargets.swift */; };
 		FD903E770481FA264D565C4B /* ProfileContent+Header.swift in Sources */ = {isa = PBXBuildFile; fileRef = A74DC08C4C796F5023B17EB8 /* ProfileContent+Header.swift */; };
+		FDA68745C0613E1A4EAA1350 /* PrivateFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE008AD1483461B16759A40F /* PrivateFile.swift */; };
 		FDBAD23B7919007B1AFF10F6 /* BrowserRelaySender.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09FE947064FD17B7489222A4 /* BrowserRelaySender.swift */; };
 		FDCC7C8569643F6A70486C33 /* CopyAccountsAskView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25CD84D7B568943171E90C8E /* CopyAccountsAskView.swift */; };
 		FDD973C62857863133B22BAC /* HighlightSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606AB572251938C1D2B3590A /* HighlightSheet.swift */; };
@@ -2875,6 +2877,7 @@
 		AD9598AC95E957F23D982BBE /* VaultContents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultContents.swift; sourceTree = "<group>"; };
 		ADE20F9D5EC5160587318D28 /* AccountUnread.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountUnread.swift; sourceTree = "<group>"; };
 		ADF8F3164C22102D0F9E9EAA /* ShareInputReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInputReader.swift; sourceTree = "<group>"; };
+		AE008AD1483461B16759A40F /* PrivateFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivateFile.swift; sourceTree = "<group>"; };
 		AE1A64222EFDE647C6491CFB /* NostrWebLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrWebLink.swift; sourceTree = "<group>"; };
 		AE2E558FEC2B0ED374B04E74 /* FeedLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedLanguage.swift; sourceTree = "<group>"; };
 		AE90DEB009D5712F5E377FEE /* ProfileFeedLoader+Loading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProfileFeedLoader+Loading.swift"; sourceTree = "<group>"; };
@@ -3629,6 +3632,7 @@
 				59F6845B323C2C85A306A8D6 /* HavenConfig+Secrets.swift */,
 				8222E11107724B191437998C /* HavenConfig+Signing.swift */,
 				F15FF0204E747F1C394AD0BB /* HavenConfig+VaultWhitelist.swift */,
+				AE008AD1483461B16759A40F /* PrivateFile.swift */,
 				26298D9F25210DA7D5ED7418 /* RevealKeyGate.swift */,
 			);
 			path = Config;
@@ -5839,6 +5843,7 @@
 				84C86BF7BA4433D27B798FC1 /* PrivateCopyRecord.swift in Sources */,
 				4F35B26C60E2623398A0EE57 /* PrivateCopyReviewView.swift in Sources */,
 				AB8E2C1FF9E85E1D5865F182 /* PrivateCopyShareHandler.swift in Sources */,
+				F0E4251FF6A3F353D5921BF8 /* PrivateFile.swift in Sources */,
 				A74B963EE33362EE5336AA5E /* ProfileActions.swift in Sources */,
 				FD903E770481FA264D565C4B /* ProfileContent+Header.swift in Sources */,
 				A3B0613EBDF7D1451A50B6C3 /* ProfileContent+Media.swift in Sources */,
@@ -6868,6 +6873,7 @@
 				0C93C25CDA66FB7E0E16B6F3 /* PrivateCopyRecord.swift in Sources */,
 				A1692EAF2AD8BD03C1191EE3 /* PrivateCopyReviewView.swift in Sources */,
 				E93909235CB3D63F5CDACDAE /* PrivateCopyShareHandler.swift in Sources */,
+				FDA68745C0613E1A4EAA1350 /* PrivateFile.swift in Sources */,
 				711BFD75450E7D351ACB2690 /* ProfileActions.swift in Sources */,
 				4588E6C2BB47FACE97191F2E /* ProfileContent+Header.swift in Sources */,
 				91AD0D7C8DB7D526C523DB67 /* ProfileContent+Media.swift in Sources */,
