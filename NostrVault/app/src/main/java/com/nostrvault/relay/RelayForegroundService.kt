@@ -331,6 +331,7 @@ class RelayForegroundService : Service() {
         fun meshCopyStarter(): com.nostrvault.fips.MeshCopyStarter
         fun copySettingsSync(): com.nostrvault.fips.CopySettingsSync
         fun copyAccountsSync(): com.nostrvault.fips.CopyAccountsSync
+        fun dmService(): com.nostrvault.service.DMService
     }
 
     // ── Lifecycle state machine (replaces bare `relayStarted` boolean) ──
@@ -378,6 +379,21 @@ class RelayForegroundService : Service() {
         EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java)
             .fipsMeshManager()
             .restoreIfEnabled(serviceScope)
+    }
+
+    /**
+     * DM alerts come back with the relay too. Gift-wrap markers only alert once
+     * DMService has decrypted them, and before this only the app's screen
+     * started it, so after a reboot or an update DMs stayed silent until the
+     * app was opened. Main thread: MainActivity starts it there as well, and
+     * [com.nostrvault.service.DMService.startIfNeeded] is a plain flag check.
+     */
+    internal fun restoreDmListening() {
+        val dms = EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java).dmService()
+        serviceScope.launch(Dispatchers.Main) {
+            runCatching { dms.startFromBackground() }
+                .onFailure { Log.w(TAG, "DM listening did not start: ${it.message}") }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

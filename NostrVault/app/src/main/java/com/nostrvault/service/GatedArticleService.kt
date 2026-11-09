@@ -322,13 +322,15 @@ class GatedArticleService @Inject constructor(
 
         /**
          * True only when the zap moved no money: LNURL, invoice or signing
-         * failures, no wallet, a request that never reached the wallet, or a
-         * wallet that refused before paying (insufficient balance and the
-         * like). Anything else, a wallet timeout included, may have paid.
+         * failures (a wrong-amount invoice included), no wallet, a request
+         * that never reached the wallet, or a wallet that refused before
+         * paying (insufficient balance and the like). Anything else, a wallet
+         * timeout included, may have paid.
          */
         fun failedBeforePaying(error: Throwable): Boolean = when (error) {
             is ZapSendService.ZapError.LnurlFailed,
             is ZapSendService.ZapError.InvoiceFailed,
+            is ZapSendService.ZapError.WrongInvoiceAmount,
             is ZapSendService.ZapError.SignFailed,
             is ZapSendService.ZapError.NoWallet -> true
             is ZapSendService.ZapError.PaymentFailed -> error.notPaid

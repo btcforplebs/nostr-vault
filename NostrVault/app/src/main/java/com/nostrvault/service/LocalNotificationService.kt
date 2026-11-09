@@ -213,6 +213,22 @@ class LocalNotificationService @Inject constructor(
             if (type == "reaction") preview else NostrMentions.toPlainText(preview, profiles)
 
         /**
+         * What a phone notification says. A DM never carries its decrypted
+         * text into the tray: Android shows the full notification on the lock
+         * screen by default, so the sender's name and "New message" are all
+         * it gets (audit J §1, iOS NotificationPolicy). The in-app pill still
+         * shows the text, with the app open and unlocked.
+         */
+        fun trayText(type: String, title: String, text: String): String = when {
+            !isDm(type) -> text
+            title == DM_TITLE_UNNAMED -> "You have a new encrypted message"
+            else -> DM_TITLE_UNNAMED
+        }
+
+        /** The DM title with no name to show; also the tray's DM body. */
+        internal const val DM_TITLE_UNNAMED = "New message"
+
+        /**
          * A decrypted DM as notification text: one line, cut to fit. Null when
          * there is nothing to read, so the caller keeps the generic line.
          */
@@ -799,7 +815,7 @@ class LocalNotificationService @Inject constructor(
             "reply" -> "$who replied to your note" to preview.ifBlank { "Tap to view the reply" }
             "quote" -> "$who quoted your note" to preview.ifBlank { "Tap to view the quote" }
             "dm", "giftwrap" -> {
-                val title = if (name != null) "Message from $who" else "New message"
+                val title = if (name != null) "Message from $who" else DM_TITLE_UNNAMED
                 title to preview.ifBlank { "You have a new encrypted message" }
             }
             "zap" -> "⚡ New zap" to if (name != null) "$who zapped you" else "You received a zap"
@@ -911,14 +927,17 @@ class LocalNotificationService @Inject constructor(
             npub, configStore.config.value.allAccountNpubs(),
             nostr.npubToHex(npub)?.let { nostr.profiles.value[it]?.bestName },
         )
+        val shownText = trayText(type, title, text)
         val notification = NotificationCompat.Builder(context, channelId)
             // Status-bar icons are drawn from alpha only, so use the
             // purpose-built 24dp silhouette rather than the full-colour
             // foreground, which flattens to a solid blob.
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
-            .setContentText(text)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentText(shownText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(shownText))
+            // With "hide sensitive content" on, the lock screen drops the name too.
+            .apply { if (isDm(type)) setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setPublicVersion(dmPublicVersion(channelId)) }
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_SOCIAL)
@@ -935,6 +954,13 @@ class LocalNotificationService @Inject constructor(
         if (type == "followers") NotificationManagerCompat.from(context).cancel(id.hashCode())
         if (BuildConfig.DEBUG) Log.i(TAG, "posted notification: \"$title\"")
     }
+
+    /** A DM as the lock screen shows it when sensitive content is hidden: no name, no text. */
+    private fun dmPublicVersion(channelId: String) = NotificationCompat.Builder(context, channelId)
+        .setSmallIcon(R.drawable.ic_notification)
+        .setContentTitle(DM_TITLE_UNNAMED)
+        .setCategory(NotificationCompat.CATEGORY_SOCIAL)
+        .build()
 
     /** Load the sender's avatar into a software bitmap via Coil; null on any failure. */
     private suspend fun loadAvatar(url: String?): Bitmap? {

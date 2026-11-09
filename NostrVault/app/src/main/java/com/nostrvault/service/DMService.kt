@@ -40,6 +40,16 @@ class DMService @Inject constructor(
 ) {
     companion object {
         internal const val TAG = "DMService"
+
+        /**
+         * Whether [startFromBackground] may start listening for this config.
+         * The owner counts too: the /chat AUTH is signed as the owner.
+         */
+        internal fun listensInBackground(config: com.nostrvault.relay.HavenConfig): Boolean =
+            config.hasCompletedSetup &&
+                config.activeSigningMode() != "amber" &&
+                config.effectiveSigningMode(config.ownerNpub) != "amber"
+
         internal const val EXTERNAL_FETCH_MAX_RELAYS = 15
         /** Events per filter per relay in one catch-up pass. */
         internal const val EXTERNAL_FETCH_LIMIT = 500
@@ -250,6 +260,18 @@ class DMService @Inject constructor(
     fun startIfNeeded() {
         if (hasStarted) return
         startListening()
+    }
+
+    /**
+     * Start listening from the relay service, with no app on screen: after a
+     * reboot, an app update or a sticky restart the relay comes back on its
+     * own, and without this nothing decrypted gift wraps, so DM alerts stayed
+     * silent until the app was opened (audit J §2). Not in Amber mode: Amber
+     * signs the /chat AUTH and decrypts only with the app in front.
+     */
+    fun startFromBackground() {
+        if (!listensInBackground(configStore.config.value)) return
+        startIfNeeded()
     }
 
     fun syncOnForeground() {

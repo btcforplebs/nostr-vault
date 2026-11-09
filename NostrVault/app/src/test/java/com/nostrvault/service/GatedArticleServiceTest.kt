@@ -154,6 +154,7 @@ class GatedArticleServiceTest {
         assertTrue(GatedArticleService.failedBeforePaying(ZapSendService.ZapError.PaymentFailed("Encryption failed", notPaid = true)))
         assertFalse(GatedArticleService.failedBeforePaying(RuntimeException("socket closed")))
         assertTrue(GatedArticleService.failedBeforePaying(ZapSendService.ZapError.SignFailed()))
+        assertTrue(GatedArticleService.failedBeforePaying(ZapSendService.ZapError.WrongInvoiceAmount()))
     }
 
     @Test fun aRecordedShareIsNeverOfferedOrPaidAgain() = runBlocking {
