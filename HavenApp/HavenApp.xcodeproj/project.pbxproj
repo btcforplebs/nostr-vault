@@ -338,6 +338,7 @@
 		2A10DB96353A7C3563E2E185 /* RelayProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105E5C471F2CCABE27A5E705 /* RelayProbe.swift */; };
 		2A158B439B79BA956648F917 /* WelcomeWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34B22EE405098B9706D5B1D8 /* WelcomeWindowView.swift */; };
 		2A2F6CC44894D37523DF2C4D /* NewProfileStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D6D26983405B254844C21F /* NewProfileStep.swift */; };
+		2A3F0685B93B4FD43AB33FFD /* LookupSocketPool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E6332D0F94F277B7B5DB49F /* LookupSocketPool.swift */; };
 		2A59CD4AE14246A1A71ED262 /* FeedNoteRow+Menus.swift in Sources */ = {isa = PBXBuildFile; fileRef = E79CD4DE72C6E05600AC2D9F /* FeedNoteRow+Menus.swift */; };
 		2A769E6CEC1A3AF98D1629F4 /* RecipeLdParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC5D3B60854E6910103D57D3 /* RecipeLdParser.swift */; };
 		2ACE6DF4CEED409CBE5FD594 /* ListBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22FE21A74271B43AAD2C18F3 /* ListBackupView.swift */; };
@@ -1010,6 +1011,7 @@
 		7F8DF1438A5A80E5574BD0EE /* FillYourFeedOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56E533DEBEA3CB947C850BC5 /* FillYourFeedOverlay.swift */; };
 		7FAB7CD96E8A1E46EB82A71D /* EventInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D343EC33764F0FED0D74697A /* EventInspector.swift */; };
 		7FB412FA203429864C4F25C5 /* ImportTourArt.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE064EFEE0F4D583DE7484A2 /* ImportTourArt.swift */; };
+		7FD9D8FB6010447F28657CEB /* WebSocketClient+LookupConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5A5080BEBFB65F83A8E757 /* WebSocketClient+LookupConnection.swift */; };
 		7FE48AE78C682880DD70123F /* PushNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75ED38A5B67740F711EB5C45 /* PushNotificationService.swift */; };
 		80279D6A57EA7D21982B4AA0 /* NostrService+MuteList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23082A59191D1E9993BAE72B /* NostrService+MuteList.swift */; };
 		80CD34C18669E6058254A790 /* InlinePlayerLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6EEA633D3639AB7EE2C3BFC /* InlinePlayerLayer.swift */; };
@@ -1295,6 +1297,7 @@
 		A35A0C243436DD3ED5ECD9A7 /* MuteListStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCCAC7159663216216258B08 /* MuteListStore.swift */; };
 		A35A3AD1BE0BE23D09D06739 /* FeedService+LocalRelayInjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5101A381AFB18BEE714448F1 /* FeedService+LocalRelayInjection.swift */; };
 		A35B722F9DE3752E563ACABE /* NostrService+Fetching.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EEEB312609C0778CCD93D44 /* NostrService+Fetching.swift */; };
+		A35F90A84D9356F573F9576C /* WebSocketClient+LookupConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5A5080BEBFB65F83A8E757 /* WebSocketClient+LookupConnection.swift */; };
 		A36D3F7A908A749F7B34206D /* LiveChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21B9BEF9DAADA51C5B8C4D3 /* LiveChat.swift */; };
 		A387306E9E0D09798B5653E9 /* ReturnPillManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A760EE9AFBDB368CEFB3ECB3 /* ReturnPillManager.swift */; };
 		A3AA91BCDE3AAC086CFFC1AE /* IdentifiableString.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68B2994F2A95D651708846D6 /* IdentifiableString.swift */; };
@@ -1713,6 +1716,7 @@
 		D4B365B7F713A9A69966A8F5 /* Juntos.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = B16BA3C0FD98FA86CA181B2C /* Juntos.mp3 */; };
 		D4CBD50DD844C82D618664BA /* SignInWithClaveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51BD3B4068A03F5AF468D320 /* SignInWithClaveView.swift */; };
 		D4CBE6AF3405EF25C9A0AD6C /* PushNotificationStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76BAFE194F5C54218E6F3555 /* PushNotificationStep.swift */; };
+		D4EE933EA1927793E34D6695 /* LookupSocketPool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E6332D0F94F277B7B5DB49F /* LookupSocketPool.swift */; };
 		D4FEBF02D25AA17670907C36 /* DMService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 775FD3A0FC8C2289FB4BBFE3 /* DMService.swift */; };
 		D50939A6B0EB9A8CEED1E6D6 /* DMService+Reconnect.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5AF9325362206BD88D81991 /* DMService+Reconnect.swift */; };
 		D525568D9FB0D4B94082A93B /* ProfileShareReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3BAD623C758946DC5D1406 /* ProfileShareReviewView.swift */; };
@@ -2301,6 +2305,7 @@
 		2D4A5E0A00149D7F14271708 /* FreshAccountKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreshAccountKeys.swift; sourceTree = "<group>"; };
 		2D72FDD1119ACE2C1EADE758 /* FeedHighlight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedHighlight.swift; sourceTree = "<group>"; };
 		2DC3CF62D154BEFC6898E6F7 /* ComposeView+Uploads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ComposeView+Uploads.swift"; sourceTree = "<group>"; };
+		2E6332D0F94F277B7B5DB49F /* LookupSocketPool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LookupSocketPool.swift; sourceTree = "<group>"; };
 		2E884308913F1B4723D26D1C /* VideoPlaybackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlaybackService.swift; sourceTree = "<group>"; };
 		2E96162F29A4D24806FDDE07 /* BlossomService+OwnerImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlossomService+OwnerImport.swift"; sourceTree = "<group>"; };
 		2E99782528D592E9CE48E330 /* BookmarkShareHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkShareHandler.swift; sourceTree = "<group>"; };
@@ -3173,6 +3178,7 @@
 		FB0E9EC6033EC8D3F3C783BC /* OpenInWebButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenInWebButton.swift; sourceTree = "<group>"; };
 		FB431D810E209891157D10ED /* OrderedMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderedMerge.swift; sourceTree = "<group>"; };
 		FB4AF522091B10161BB09ED4 /* ZapValidationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapValidationService.swift; sourceTree = "<group>"; };
+		FB5A5080BEBFB65F83A8E757 /* WebSocketClient+LookupConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WebSocketClient+LookupConnection.swift"; sourceTree = "<group>"; };
 		FB947292C26D0CE438FD67F6 /* ListVersionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListVersionsView.swift; sourceTree = "<group>"; };
 		FBB8668F5703C081765EC7C1 /* FeedVisibleRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedVisibleRows.swift; sourceTree = "<group>"; };
 		FC0256D9CC9FF9955E7D6AE9 /* SearchView+Results.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SearchView+Results.swift"; sourceTree = "<group>"; };
@@ -4631,6 +4637,7 @@
 				48CA2811713E8B33E246FC55 /* LocalNotificationService.swift */,
 				A79C96E2BA9033BBD4457347 /* LocalNotificationService+Readiness.swift */,
 				49F43AE6D03159B7716D9F71 /* LogStore.swift */,
+				2E6332D0F94F277B7B5DB49F /* LookupSocketPool.swift */,
 				DD5FA4141163EFF726CBBBD1 /* MacFipsMeshService.swift */,
 				AECAA69E57DB3F7947D9032C /* MarketplaceFeedService.swift */,
 				950DEF1556C6F464FAF31F81 /* MediaCache */,
@@ -4698,6 +4705,7 @@
 				C9A5B72667467B8FA335AF4A /* VaultSocket.swift */,
 				2E884308913F1B4723D26D1C /* VideoPlaybackService.swift */,
 				3CB15AE080BDC0999543399A /* WebSocketClient.swift */,
+				FB5A5080BEBFB65F83A8E757 /* WebSocketClient+LookupConnection.swift */,
 				9BA557D10C9E58C90C37C72A /* ZapHistoryService.swift */,
 				A6DAA5E7383F9175577A61C7 /* ZapService.swift */,
 				FB4AF522091B10161BB09ED4 /* ZapValidationService.swift */,
@@ -5570,6 +5578,7 @@
 				25ECCEBF4F6DD214E5813735 /* LongFormComposeView.swift in Sources */,
 				2994C3A0BE9AFB6C41AD71FA /* LongFormContent.swift in Sources */,
 				C2B745C62BE0ABD77308B82F /* LongFormPreviewSection.swift in Sources */,
+				D4EE933EA1927793E34D6695 /* LookupSocketPool.swift in Sources */,
 				C696526E01A20FFAFD69FEC8 /* MacFipsMeshService.swift in Sources */,
 				AAFF0C3ABA9668AE9FC3E94C /* MacFipsMeshSettingsView.swift in Sources */,
 				B214FDD53C7C0AD906BCEC1B /* MacModeComposeButton.swift in Sources */,
@@ -6106,6 +6115,7 @@
 				13F5AD97D4722D42C522E076 /* WalletSetupStep.swift in Sources */,
 				C2F3A9B7A6FD0B42164286EB /* Wavlake.swift in Sources */,
 				244F6D570738547E17EAC33E /* WavlakeTrackCard.swift in Sources */,
+				7FD9D8FB6010447F28657CEB /* WebSocketClient+LookupConnection.swift in Sources */,
 				4F12CB28845F57A334AECA84 /* WebSocketClient.swift in Sources */,
 				3F5A4D6AD2BDD2CECDF2D268 /* WelcomeStepView.swift in Sources */,
 				F909E9664DAB54DA38575736 /* WelcomeWindowView.swift in Sources */,
@@ -6618,6 +6628,7 @@
 				F7DA9A4C222DB17EAA3826A6 /* LongFormComposeView.swift in Sources */,
 				1DE283F1E6062C16E37DAAD5 /* LongFormContent.swift in Sources */,
 				43E57289E37F9E02582EB8D9 /* LongFormPreviewSection.swift in Sources */,
+				2A3F0685B93B4FD43AB33FFD /* LookupSocketPool.swift in Sources */,
 				DADD47CE66A0FE71FD19A897 /* MacFipsMeshService.swift in Sources */,
 				E39D3F9F80B7ED124F5AE5FA /* MacFipsMeshSettingsView.swift in Sources */,
 				31409DF40877139C30BAAF30 /* MacModeComposeButton.swift in Sources */,
@@ -7125,6 +7136,7 @@
 				13FDBCE7E18749AB453C7A9F /* WalletSetupStep.swift in Sources */,
 				BC01754B87DBF7DC16BFBA8E /* Wavlake.swift in Sources */,
 				DB75AAC26D68BF70E8867A40 /* WavlakeTrackCard.swift in Sources */,
+				A35F90A84D9356F573F9576C /* WebSocketClient+LookupConnection.swift in Sources */,
 				8ADB489FAB643EBB11BB577E /* WebSocketClient.swift in Sources */,
 				E67D7091060430CABF7FDD5F /* WelcomeStepView.swift in Sources */,
 				2A158B439B79BA956648F917 /* WelcomeWindowView.swift in Sources */,

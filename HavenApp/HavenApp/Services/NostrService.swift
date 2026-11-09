@@ -88,12 +88,6 @@ class NostrService: ObservableObject {
     var profileRefreshesRunning = Set<String>()
     var profileFetchQueue = Set<String>()
     var profileFlushCancellable: AnyCancellable?
-    /// One profile lookup socket per relay, kept between batches so a tick is
-    /// a REQ, not a new connection. Closed when idle and in the background.
-    var profileLookupClients: [String: WebSocketClient] = [:]
-    /// Batches waiting for their relay's lookup socket to connect.
-    var profileLookupPending: [String: [[String]]] = [:]
-    var profileLookupLastUse: Date = .distantPast
     /// The UI is hidden (`enterBackground`): profiles queue up, and the fetch
     /// timer waits for `enterForeground` instead of starting on enqueue.
     var profileFetchPaused = false

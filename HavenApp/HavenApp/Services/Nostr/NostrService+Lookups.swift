@@ -47,8 +47,9 @@ extension NostrService {
             // signed now would lose to it on every relay.
             let latestAllowed = skipAhead ? Int64(Date().timeIntervalSince1970) + ListMerge.maxSkew : Int64.max
             var resumed = false
-            var clients: [WebSocketClient] = []
-            var subs = Set<AnyCancellable>()
+            // On the shared lookup sockets (one per relay, NV_HEALTH_C3):
+            // this used to open a socket per call per relay.
+            var lookups: [LookupSocketPool.Lookup] = []
 
             func finish() {
                 lock.lock()
@@ -60,20 +61,32 @@ extension NostrService {
                                                from: Set(from), ahead: ahead)
                 lock.unlock()
                 DispatchQueue.main.async {
-                    clients.forEach { $0.disconnect() }
-                    subs.removeAll()
+                    lookups.forEach { $0.cancel() }
+                    lookups.removeAll()
                 }
                 continuation.resume(returning: result)
             }
 
+            /// `index` is done: EOSE, CLOSED, or its socket failed.
+            /// The pool only hands this request's own frames over, so an
+            /// EOSE here is an answer to it.
+            func relayDone(_ index: Int, answered didAnswer: Bool) {
+                lock.lock()
+                if didAnswer, !finished.contains(index) { answered.insert(index) }
+                finished.insert(index)
+                let all = finished.count >= targets.count
+                lock.unlock()
+                if all { finish() }
+            }
+
             DispatchQueue.main.async {
                 for (index, url) in targets.enumerated() {
-                    let client = WebSocketClient()
-                    client.isTemporary = true
-                    clients.append(client)
                     let subId = "repl-\(UUID().uuidString.prefix(6))"
-                    client.messageSubject
-                        .sink { message in
+                    var filter: [String: Any] = ["kinds": [kind], "authors": [pubkey], "limit": 1]
+                    if let dTag { filter["#d"] = [dTag] }
+                    let lookup = LookupSocketPool.shared.query(
+                        url: url, subId: subId, filters: [filter], timeout: timeout,
+                        onMessage: { message in
                             guard let data = message.data(using: .utf8),
                                   let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
                                   let type = json.first as? String else { return }
@@ -93,30 +106,14 @@ extension NostrService {
                                 }
                                 lock.unlock()
                             } else if type == "EOSE" || type == "CLOSED" {
-                                lock.lock()
-                                if type == "EOSE", json[safe: 1] as? String == subId, !finished.contains(index) {
-                                    answered.insert(index)
-                                }
-                                finished.insert(index)
-                                let all = finished.count >= targets.count
-                                lock.unlock()
-                                if all { finish() }
+                                relayDone(index, answered: type == "EOSE")
                             }
-                        }
-                        .store(in: &subs)
-                    client.$connectionState
-                        .sink { state in
-                            guard state == .connected else { return }
-                            var filter: [String: Any] = ["kinds": [kind], "authors": [pubkey], "limit": 1]
-                            if let dTag { filter["#d"] = [dTag] }
-                            let req = ["REQ", subId, filter] as [Any]
-                            if let data = try? JSONSerialization.data(withJSONObject: req),
-                               let str = String(data: data, encoding: .utf8) {
-                                client.send(text: str)
-                            }
-                        }
-                        .store(in: &subs)
-                    client.connect(url: url)
+                        },
+                        onEnd: { outcome in
+                            // A relay that can't be reached is done, not answered.
+                            if outcome == .failed || outcome == .skipped { relayDone(index, answered: false) }
+                        })
+                    if let lookup { lookups.append(lookup) }
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish() }
             }
