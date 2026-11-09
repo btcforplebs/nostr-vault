@@ -2,6 +2,7 @@ package com.nostrvault.service
 
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.util.Bolt11
 import com.nostrvault.util.RelayGiven
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
@@ -33,6 +34,8 @@ class ZapSendService @Inject constructor(
         class LnurlFailed : ZapError("Failed to resolve lightning address")
         class SignFailed : ZapError("Failed to sign zap request")
         class InvoiceFailed : ZapError("Failed to fetch invoice from provider")
+        /** The provider's invoice is not for the amount the user chose; nothing was paid. */
+        class WrongInvoiceAmount : ZapError("The provider returned an invoice for a different amount, so nothing was sent.")
         /** [notPaid]: the wallet never paid (it was never asked, or refused), so trying again can't pay twice. */
         class PaymentFailed(val detail: String, val notPaid: Boolean = false) : ZapError("Payment failed: $detail")
     }
@@ -148,6 +151,15 @@ class ZapSendService @Inject constructor(
         } catch (e: Exception) {
             Log.w(TAG, "Invoice fetch failed: ${e.message}")
             return Result.failure(ZapError.InvoiceFailed())
+        }
+
+        // LUD-06 / NIP-57: never pay an invoice for a different amount than
+        // the one asked for. A provider that swaps it is broken or stealing,
+        // and the wallet would pay up to its whole budget. Exact msat, the
+        // same check the wallet's own pay paths make (WalletScreen.kt).
+        if (Bolt11.msat(invoice) != amountMsat) {
+            Log.w(TAG, "Invoice amount mismatch, not paying")
+            return Result.failure(ZapError.WrongInvoiceAmount())
         }
 
         // 4. Pay via NWC.

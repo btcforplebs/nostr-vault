@@ -253,6 +253,7 @@ import kotlinx.coroutines.withTimeoutOrNull
             updateNotification(RelayStatus.RUNNING)
             Log.i(TAG, "Go relay started successfully and health check passed")
             restoreMesh()
+            restoreDmListening()
 
             // Clients may connect now. The health check above already had the
             // relay answer its NIP-11 document as this app's relay, so it is
