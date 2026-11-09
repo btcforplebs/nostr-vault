@@ -34,6 +34,14 @@ struct iPhoneTabView: View {
     /// Measured on the whole window, so the keyboard coming up doesn't change it.
     @State private var windowSize: CGSize = .zero
     @State private var leadingInset: CGFloat = 0
+    /// The window's own safe area on the right (`WindowTrailingInsetReader`),
+    /// so drawing the rail into it (`stripRail`) doesn't change the reading.
+    @State private var trailingInset: CGFloat = 0
+
+    /// The closed iPhone Duo: the rail inside iOS's camera strip on the right.
+    private var stripRail: ShellLayout.StripRail? {
+        ShellLayout.stripRail(layout: layout, trailingInset: trailingInset, railWidth: BottomTabBar.railWidth)
+    }
 
     /// iPad (regular width): every tab's list sits in a `NoteSplitPane`, in
     /// both orientations. An opened note covers the list, with ‹ Back, as on
@@ -162,8 +170,15 @@ struct iPhoneTabView: View {
                 SpaceColumn()
                     .transition(.move(edge: .trailing))
             }
-            if layout.railOnRight { sideRail(onRight: true) }
+            if layout.railOnRight {
+                sideRail(onRight: true)
+                    .padding(.top, stripRail?.topClearance ?? 0)
+                    .frame(width: stripRail?.width)
+            }
         }
+        // Closed Duo: the rail takes the strip, the feed the width it freed.
+        .ignoresSafeArea(.container, edges: stripRail == nil ? [] : .trailing)
+        .background(WindowTrailingInsetReader(inset: $trailingInset))
         .background {
             GeometryReader { geo in
                 Color.clear
@@ -317,5 +332,54 @@ struct iPhoneTabView: View {
             VaultSection.shared.isOnScreen = tab == 4
         }
         .onDisappear { buttonRow.update(chromeHeight: 0) }
+    }
+}
+
+/// Reads the window's safe area on its right edge from UIKit. A SwiftUI
+/// reading moves once the rail is drawn into that area, and one that ignores
+/// the safe area reports zero.
+private struct WindowTrailingInsetReader: UIViewRepresentable {
+    @Binding var inset: CGFloat
+
+    func makeUIView(context: Context) -> Reader {
+        let reader = Reader()
+        reader.report = { value in
+            DispatchQueue.main.async { if inset != value { inset = value } }
+        }
+        return reader
+    }
+
+    func updateUIView(_ reader: Reader, context: Context) {}
+
+    final class Reader: UIView {
+        var report: ((CGFloat) -> Void)?
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+            isHidden = true
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            send()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            send()
+        }
+
+        override func safeAreaInsetsDidChange() {
+            super.safeAreaInsetsDidChange()
+            send()
+        }
+
+        private func send() {
+            guard let window else { return }
+            report?(window.safeAreaInsets.right)
+        }
     }
 }
