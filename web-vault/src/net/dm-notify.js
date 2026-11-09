@@ -1,10 +1,10 @@
-// Message notifications while the tab is open (the phone's "Message from X"). The messages are the ones Messages
+// Message notifications while the tab is open: "New message" from X. The text itself never goes in one: the
+// browser keeps it in the system notification centre (and on the lock screen) after the tab closes. The messages are the ones Messages
 // opens (dms.js, decrypted by the user's signer, held in memory only); this picks which new ones to show. Requests
 // (strangers, dm-trust.js) and blocked people never raise one, as they never raise the badge.
 
 const MARK = "nv-notify-dm-mark"
 export const DM_AT_ONCE = 3
-export const DM_BODY = 160
 
 /** The newest message time already raised; the first time, now, so the messages a first load opens never pop up. */
 export function readDmMark(me, { storage = globalThis.localStorage, now = Math.floor(Date.now() / 1000) } = {}) {
@@ -17,8 +17,6 @@ export function readDmMark(me, { storage = globalThis.localStorage, now = Math.f
 export function writeDmMark(me, at, storage = globalThis.localStorage) {
   try { storage?.setItem(`${MARK}:${me}`, String(at)) } catch {}
 }
-
-const body = s => { const t = [...String(s ?? "").replace(/\s+/g, " ").trim()]; return t.length > DM_BODY ? `${t.slice(0, DM_BODY - 1).join("")}…` : t.join("") }
 
 /**
  * Which messages to raise: sent to the user (not by them) after `mark`, not from `hidden` (blocked people and
@@ -36,7 +34,7 @@ export function dmNotices(messages, me, { mark, hidden = new Set(), onScreen = n
     const peers = new Set(fresh.map(m => m.peer))
     return { notices: [{ title: `${fresh.length} new messages`, body: `From ${who(fresh[0].peer)}${peers.size > 1 ? ` and ${peers.size - 1} more` : ""}`, tag: "nv:dm-summary", href: "#/messages" }], mark: next }
   }
-  return { notices: fresh.map(m => ({ title: `Message from ${who(m.peer)}`, body: body(m.content), tag: `nv:dm:${m.id}`, href: `#/dm/${m.peer}` })), mark: next }
+  return { notices: fresh.map(m => ({ title: "New message", body: `From ${who(m.peer)}`, tag: `nv:dm:${m.id}`, href: `#/dm/${m.peer}` })), mark: next }
 }
 
 /** The conversation the user is looking at now, or null. */

@@ -2,11 +2,9 @@ package box
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sync"
 	"time"
 )
@@ -16,8 +14,9 @@ import (
 //
 //   - NV_UPDATE_HOOK set: that program runs (detached from the request,
 //     10 minute limit) with NV_UPDATE_REQUESTED_AT in its environment.
-//   - otherwise: box/update-request.json is written for the container side
-//     (a host timer or a watcher) to act on and delete.
+//   - otherwise nothing on the host can do it (install.sh sets up no hook or
+//     watcher), so the answer is Manual: re-run the installer. Nothing is
+//     written, and the box never says an update started.
 
 // UpdateResult is the API's answer.
 type UpdateResult struct {
@@ -26,8 +25,11 @@ type UpdateResult struct {
 	Started bool   `json:"started"`
 	From    string `json:"from,omitempty"`
 
+	// Manual: nothing here can run an update; the owner re-runs install.sh.
+	Manual bool `json:"manual,omitempty"`
+
 	Queued bool   `json:"queued"`
-	Via    string `json:"via"` // "hook" or "file"
+	Via    string `json:"via"` // "hook" or "manual"
 	At     int64  `json:"requestedAt"`
 }
 
@@ -44,14 +46,7 @@ var ErrUpdateBusy = errors.New("an update is already running")
 func (u *Updater) Request() (UpdateResult, error) {
 	now := time.Now().Unix()
 	if u.Hook == "" {
-		b, _ := json.Marshal(map[string]int64{"requestedAt": now})
-		if err := os.MkdirAll(u.BoxDir, 0o700); err != nil {
-			return UpdateResult{}, err
-		}
-		if err := os.WriteFile(filepath.Join(u.BoxDir, "update-request.json"), b, 0o600); err != nil {
-			return UpdateResult{}, err
-		}
-		return UpdateResult{Started: true, Queued: true, Via: "file", At: now}, nil
+		return UpdateResult{Manual: true, Via: "manual", At: now}, nil
 	}
 	u.mu.Lock()
 	if u.running {

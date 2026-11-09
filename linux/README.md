@@ -34,7 +34,7 @@ Also `NV_PORT` (8080), `NV_IMAGE`, `NV_HOME` (`/opt/nostr-vault`).
 | Logs | `sudo docker logs -f nostr-vault-linux` |
 | Stop / start | `sudo docker compose --project-directory /opt/nostr-vault down` / `up -d` |
 | Settings | `/opt/nostr-vault/.env` (owner, data path, port, image) |
-| Update | run the installer again, or **Update** in the app |
+| Update | run the installer again (updates are manual for now; the app's **Update** says so) |
 
 The container gets at most 1.5 GB of memory and low CPU priority, restarts by itself (`unless-stopped`), and keeps
 3 × 10 MB of logs. It shares the machine's network, so the mesh can offer your devices its real LAN address: the

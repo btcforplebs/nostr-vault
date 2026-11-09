@@ -112,4 +112,17 @@ class BlossomArchiveTest {
         assertEquals("mp4", ext(0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6F, 0x6D))
         assertNull(ext(0x01, 0x02, 0x03, 0x04))
     }
+
+    // Audit I R3: a file that isn't a zip, or an empty zip, restores nothing and says so.
+    @Test
+    fun `a restore that puts nothing back is a failure`() {
+        val dir = tmp.newFolder("restore-none")
+        val notZip = tmp.newFile().apply { writeText("hello, not a zip") }
+        val none = BlossomArchive.import(notZip, dir)
+        assertEquals(BlossomArchive.ImportResult(imported = 0, skipped = 0), none)
+        assertEquals("No media files in this backup", none.failure())
+        assertEquals("No media files in this backup", BlossomArchive.import(zip(emptyMap()), dir).failure())
+        assertEquals("No media in this backup could be restored", BlossomArchive.import(zip(mapOf("bad.jpg" to jpeg)), dir).failure())
+        assertNull(BlossomArchive.import(zip(mapOf("${sha(jpeg)}.jpg" to jpeg)), dir).failure())
+    }
 }

@@ -21,7 +21,15 @@ import java.util.zip.ZipOutputStream
  */
 object BlossomArchive {
 
-    data class ImportResult(val imported: Int, val skipped: Int)
+    data class ImportResult(val imported: Int, val skipped: Int) {
+        /** Why this restore put nothing back, or null when it restored something. A file that isn't a
+         *  zip, or an empty one, reads as 0/0 and must not show "Media restored". */
+        fun failure(): String? = when {
+            imported > 0 -> null
+            skipped > 0 -> "No media in this backup could be restored"
+            else -> "No media files in this backup"
+        }
+    }
 
     private val SHA256_NAME = Regex("^[a-f0-9]{64}$")
 

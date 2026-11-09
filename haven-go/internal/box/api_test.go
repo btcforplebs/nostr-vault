@@ -124,14 +124,16 @@ func TestAPIMissingMeshStatus(t *testing.T) {
 	}
 }
 
-func TestAPIUpdateWritesRequest(t *testing.T) {
+// Audit K2: with no hook nothing reads a request file, so the box says the
+// update is manual instead of "started".
+func TestAPIUpdateWithoutHookIsManual(t *testing.T) {
 	srv, owner, api := newTestAPI(t)
 	code, res := call(t, srv, &owner, "POST", "/api/box/update", nil)
-	if code != 202 || res["via"] != "file" || res["started"] != true || res["from"] != "test-1" {
+	if code != 200 || res["via"] != "manual" || res["manual"] != true || res["started"] != false || res["from"] != "test-1" {
 		t.Fatalf("update %d %v", code, res)
 	}
-	if _, err := os.Stat(filepath.Join(api.Updater.BoxDir, "update-request.json")); err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(filepath.Join(api.Updater.BoxDir, "update-request.json")); !os.IsNotExist(err) {
+		t.Fatalf("a request file nobody reads was written (%v)", err)
 	}
 }
 

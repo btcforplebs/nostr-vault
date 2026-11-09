@@ -79,7 +79,7 @@ class BackupSettingsViewModel @Inject constructor(
 
     fun importMedia(src: Uri) = run("Restoring media…", "Media restored", src = src) { tmp ->
         val result = BlossomArchive.import(tmp, File(blossomDir))
-        if (result.imported == 0 && result.skipped > 0) error("No media files in this backup")
+        result.failure()?.let { error(it) }
         0
     }
 

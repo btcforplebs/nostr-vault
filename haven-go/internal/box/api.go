@@ -63,6 +63,10 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		res.From = a.Version
 		log.Printf("box: update requested via %s", res.Via)
+		if !res.Started {
+			writeJSON(w, http.StatusOK, res)
+			return
+		}
 		writeJSON(w, http.StatusAccepted, res)
 	case "POST /api/box/move":
 		var req struct {
