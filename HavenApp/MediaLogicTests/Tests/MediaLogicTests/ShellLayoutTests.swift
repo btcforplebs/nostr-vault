@@ -59,6 +59,23 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertFalse(ShellLayout.phone.hasSideRail)
     }
 
+    /// Closed Duo: the rail sits inside iOS's camera strip on the right,
+    /// below the camera, as wide as the strip.
+    func testDuoClosedRailGoesInsideTheCameraStrip() {
+        let rail = ShellLayout.stripRail(layout: .duoClosed, trailingInset: 85, railWidth: 68)
+        XCTAssertEqual(rail, ShellLayout.StripRail(topClearance: ShellLayout.duoStripTopClearance, width: 85))
+        XCTAssertEqual(ShellLayout.stripRail(layout: .duoClosed, trailingInset: 40, railWidth: 68)?.width, 68,
+                       "never narrower than the rail")
+    }
+
+    func testNoStripRailWithoutAStripOnTheRight() {
+        XCTAssertNil(ShellLayout.stripRail(layout: .duoClosed, trailingInset: 0, railWidth: 68),
+                     "the closed Duo turned so the strip is elsewhere")
+        for layout in [ShellLayout.fold, .phone, .padLandscape, .padUpright] {
+            XCTAssertNil(ShellLayout.stripRail(layout: layout, trailingInset: 85, railWidth: 68), "\(layout)")
+        }
+    }
+
     /// The left half stops half a gutter short of the screen's middle, after
     /// whatever safe area is already on the left.
     func testLeftHalfEndsBeforeTheFold() {
