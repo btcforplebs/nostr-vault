@@ -382,3 +382,25 @@ func TestIncompleteFullPassStaysFull(t *testing.T) {
 		t.Errorf("incomplete full pass stored since %d (ok %v); want 0 so the next pass is full", since, ok)
 	}
 }
+
+// On a slow link every relay is slow: when the quorum itself took longer
+// than listGrace, the others get as long again, not a fixed 1.5 s.
+func TestListFetchGraceGrowsWithASlowQuorum(t *testing.T) {
+	a, b, x := newTestKey(t), newTestKey(t), newTestKey(t)
+	var quorum []*liveRelay
+	for range listQuorum {
+		r := newLiveRelay(t, a.followList(t, x))
+		r.delay = 2 * time.Second
+		quorum = append(quorum, r)
+	}
+	slow := newLiveRelay(t, b.followList(t, x))
+	slow.delay = 3800 * time.Millisecond // after quorum + listGrace, inside quorum + quorum time
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	got := fetchLatestLists(ctx, nostr.NewSimplePool(ctx), urls(append(quorum, slow)...),
+		nostr.Filter{Kinds: []int{nostr.KindFollowList}, Authors: []string{a.pk, b.pk}})
+	if got.lists[b.pk] == nil {
+		t.Error("the slow relay's list, sent within the quorum's own time after it, was dropped")
+	}
+}

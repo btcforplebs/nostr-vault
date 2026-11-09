@@ -11,7 +11,9 @@ import (
 )
 
 // listQuorum and listGrace end a list fetch early: once listQuorum seed
-// relays have sent EOSE, the rest get listGrace more and the fetch ends.
+// relays have sent EOSE, the rest get listGrace more, or as long again as the
+// quorum took if that is longer (a slow link slows every relay, and a fixed
+// grace there cut off relays still sending), and the fetch ends.
 // Waiting for every relay made each batch as slow as the slowest one: on
 // 2026-11-08 one relay took 7.6 s where the other six took under 1 s, and
 // dropping it left the same 5,059-person graph (NV_HEALTH_G_WOT.md), because
@@ -50,6 +52,7 @@ func fetchLatestLists(ctx context.Context, pool *nostr.SimplePool, relays []stri
 	}
 	quorum := min(listQuorum, len(relays))
 
+	start := time.Now()
 	fctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -129,7 +132,7 @@ func fetchLatestLists(ctx context.Context, pool *nostr.SimplePool, relays []stri
 		select {
 		case <-allDone:
 		case <-ctx.Done():
-		case <-time.After(listGrace):
+		case <-time.After(max(listGrace, time.Since(start))):
 		}
 	}
 	cancel()
