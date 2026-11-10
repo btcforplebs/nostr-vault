@@ -20,6 +20,44 @@ extension ConfigService {
             RelayProcessManager.shared.addLog("NIP-46: config.json held an app key the signer was not paired with; using the paired one from the keychain", level: "WARNING")
         }
         nip46Sync = NIP46SecretSync(synced: stored)
+
+        // The wallet, backup and signer-link secrets (HavenConfig+ConfigSecrets).
+        plaintextConfigSecrets = Array(Set(plaintextConfigSecrets).union(config.configSecrets.values))
+        var storedOther: [String: String] = [:]
+        config.attachConfigSecrets { account in
+            let value = CredentialStore.get(account: account)
+            storedOther[account] = value
+            return value
+        }
+        configSecretSync = NIP46SecretSync(synced: storedOther)
+    }
+
+    /// The config as config.json gets it: without each secret the keychain holds.
+    var diskConfig: HavenConfig {
+        config.withoutNIP46ClientSecrets(inKeychain: nip46InKeychain)
+            .withoutConfigSecrets(inKeychain: configSecretsInKeychain)
+    }
+
+    /// Writes the wallet, backup and signer-link secrets to the keychain
+    /// before a save, so `diskConfig` leaves out each one it took.
+    func syncConfigSecretsToKeychain() {
+        configSecretsInKeychain = configSecretSync.sync(config.configSecrets,
+                                                        store: { CredentialStore.store($0, account: $1) },
+                                                        delete: { CredentialStore.delete(account: $0) })
+    }
+
+    /// Those secrets come out of the backup copies once config.json has been
+    /// written without them: each one the keychain now holds, and each one
+    /// the config no longer has at all (a wallet since disconnected or
+    /// replaced), which no copy needs to keep.
+    func scrubPlaintextConfigSecrets(_ store: ConfigFileStore) {
+        guard !plaintextConfigSecrets.isEmpty else { return }
+        let held = Set(configSecretsInKeychain.compactMap { configSecretSync.synced[$0] })
+        let live = Set(config.configSecrets.values)
+        let done = plaintextConfigSecrets.filter { held.contains($0) || !live.contains($0) }
+        guard !done.isEmpty else { return }
+        store.scrub(HavenConfig.scrubNeedles(for: done), replacingWith: HavenConfig.emptyJSONString)
+        plaintextConfigSecrets.removeAll { done.contains($0) }
     }
 
     /// The hex pubkey of a NIP-46 client key, or nil if it is not one.

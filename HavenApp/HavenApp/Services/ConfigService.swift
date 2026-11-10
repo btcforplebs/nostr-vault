@@ -44,6 +44,11 @@ class ConfigService: ObservableObject {
     /// load (see attachNIP46ClientSecrets). Never paired, but still keys:
     /// scrubbed from the backup copies once config.json is written without them.
     var droppedNIP46Secrets: [String] = []
+    /// The same three for the wallet, backup and signer-link secrets; see
+    /// HavenConfig+ConfigSecrets and ConfigService+Secrets.
+    var configSecretSync = NIP46SecretSync()
+    var configSecretsInKeychain: Set<String> = []
+    var plaintextConfigSecrets: [String] = []
     /// Explicit @Published hex pubkey for the active account. Computed properties
     /// on ObservableObject don't reliably trigger SwiftUI re-renders in all
     /// hosting contexts (e.g. macOS MenuBarExtra). This property is updated
@@ -269,14 +274,16 @@ class ConfigService: ObservableObject {
         nip46InKeychain = nip46Sync.sync(config.nip46ClientSecrets,
                                          store: { CredentialStore.store($0, account: $1) },
                                          delete: { CredentialStore.delete(account: $0) })
+        syncConfigSecretsToKeychain()
 
         do {
-            let data = try JSONEncoder().encode(config.withoutNIP46ClientSecrets(inKeychain: nip46InKeychain))
+            let data = try JSONEncoder().encode(diskConfig)
             try store.write(data)
             store.forgetBackupIfKeyRemoved(hadKey: savedHasKey, hasKey: config.hasKeyMaterial,
                                            setupDone: config.hasCompletedSetup)
             savedHasKey = config.hasKeyMaterial
             scrubPlaintextNIP46Secrets(store)
+            scrubPlaintextConfigSecrets(store)
 
             #if DEBUG
             print("ConfigService: Saved config with \(config.blossomMirrors.count) mirrors: \(config.blossomMirrors)")
@@ -314,7 +321,7 @@ class ConfigService: ObservableObject {
         
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
-        if let data = try? encoder.encode(config.withoutNIP46ClientSecrets(inKeychain: nip46InKeychain)) {
+        if let data = try? encoder.encode(diskConfig) {
             try? ConfigFileStore(url: configURL).write(data) // Save main config again just in case
         }
         
@@ -470,6 +477,9 @@ class ConfigService: ObservableObject {
         nip46InKeychain = []
         plaintextNIP46Secrets = []
         droppedNIP46Secrets = []
+        configSecretSync = NIP46SecretSync()
+        configSecretsInKeychain = []
+        plaintextConfigSecrets = []
 
         // 3. Keychain passwords, notifications and widget data
         ResetLeftovers.clear()

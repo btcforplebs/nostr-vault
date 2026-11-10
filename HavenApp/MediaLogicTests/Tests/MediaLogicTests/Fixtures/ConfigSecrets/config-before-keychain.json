@@ -1,0 +1,38 @@
+{
+  "ownerNpub": "npub1fixtureowner",
+  "relayURL": "127.0.0.1",
+  "relayPort": 3355,
+  "hasCompletedSetup": true,
+  "ownerNcryptsec": "ncryptsec1fixtureencryptedkey",
+  "signingMode": "nip46",
+  "nwcURI": "nostr+walletconnect:\/\/fixture-wallet-pubkey?relay=wss:\/\/relay.example.invalid&secret=fixture-nwc-secret",
+  "defaultZapAmount": 21000,
+  "nip46BunkerURI": "bunker:\/\/fixture-signer-pubkey?relay=wss:\/\/signer.example.invalid&secret=fixture-connect-secret",
+  "nip46SignerPubkey": "fixture-signer-pubkey",
+  "nip46RelayURL": "wss:\/\/signer.example.invalid",
+  "nip46Secret": "fixture-connect-secret",
+  "nip46ClientPubkey": "fixture-client-pubkey",
+  "s3AccessKeyId": "FIXTUREACCESSKEYID",
+  "s3SecretKey": "fixture-s3-secret-key",
+  "s3Endpoint": "https:\/\/s3.example.invalid",
+  "s3BucketName": "fixture-bucket",
+  "backupProvider": "s3",
+  "accountBunkerConfigs": {
+    "npub1fixtureowner": {
+      "bunkerURI": "bunker:\/\/fixture-signer-pubkey?relay=wss:\/\/signer.example.invalid&secret=fixture-connect-secret",
+      "signerPubkey": "fixture-signer-pubkey",
+      "relayURL": "wss:\/\/signer.example.invalid",
+      "secret": "fixture-connect-secret",
+      "clientSecretKey": "",
+      "clientPubkey": "fixture-client-pubkey"
+    },
+    "npub1fixturesecond": {
+      "bunkerURI": "bunker:\/\/fixture-second-signer?relay=wss:\/\/signer.example.invalid&secret=fixture-second-secret",
+      "signerPubkey": "fixture-second-signer",
+      "relayURL": "wss:\/\/signer.example.invalid",
+      "secret": "fixture-second-secret",
+      "clientSecretKey": "",
+      "clientPubkey": "fixture-second-client"
+    }
+  }
+}
