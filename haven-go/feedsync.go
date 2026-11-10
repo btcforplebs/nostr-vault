@@ -204,7 +204,7 @@ func newFeedRoundStreaks() feedRoundStreaks {
 // plan (pullFeedOutbox; plan is only built when ctx is still live). True
 // when the round read everything, so the watermark may move.
 func feedCatchupPulls(ctx context.Context, fallback []string, commonFilter nostr.Filter, plan func() map[string][]string,
-	rareSince, commonSince nostr.Timestamp, publish func(*nostr.Event), streaks feedRoundStreaks) bool {
+	rare *feedRareRound, commonSince nostr.Timestamp, publish func(*nostr.Event), streaks feedRoundStreaks) bool {
 	complete := true
 	if len(fallback) > 0 && ctx.Err() == nil {
 		log.Println("📚 feed catch-up pull since", time.Unix(int64(commonSince), 0).Format(time.RFC3339), "on", len(fallback), "relays")
@@ -218,7 +218,7 @@ func feedCatchupPulls(ctx context.Context, fallback []string, commonFilter nostr
 	}
 	if p := plan(); len(p) > 0 {
 		log.Println("📚 feed outbox pull on", len(p), "of the follows' own relays")
-		if !pullFeedOutbox(ctx, p, rareSince, commonSince, publish, streaks.outbox) {
+		if !pullFeedOutbox(ctx, p, rare, commonSince, publish, streaks.outbox) {
 			complete = false
 		}
 	}
@@ -358,17 +358,10 @@ func syncFeed(ctx context.Context) {
 		}
 	}
 
-	// The rare kinds' watermark starts at the window's edge: a fresh cache
-	// gets the whole window of articles and polls in its first round, which
-	// is a few dozen events, not the hours of notes the common pull starts
-	// with.
 	// Per relay: rounds in a row it stopped partway, owner's relays and
 	// follows' relays apart (feedRoundStreaks). Only runFeedSync touches
 	// them, one round at a time.
 	streaks := newFeedRoundStreaks()
-
-	var lastSeenRare atomic.Int64
-	lastSeenRare.Store(state.mark("feed_rare", int64(windowSince()), int64(windowSince())))
 
 	runFeedSync := func() {
 		// Captured before any fetching so events arriving mid-round aren't
@@ -392,34 +385,20 @@ func syncFeed(ctx context.Context) {
 		since := windowSince()
 		filter := nostr.Filter{Authors: authors, Kinds: feedKinds, Since: &since}
 
-		rareDone := false
-		rsince := nostr.Timestamp(lastSeenRare.Load() - 60)
-		if rsince < since {
-			rsince = since
-		}
-		rareFilter := feedRareFilter(authors, rsince)
-		// The rare kinds go first, on their own clock: the common pull can
-		// run for minutes (one round on a phone, 1,031 follows: over four)
-		// and nothing behind it may wait on that. Every relay, not only the
-		// fallback ones: a negentropy round against a relay that trims what
-		// it lists would still miss them. A few dozen events a round.
+		// The rare kinds go first, each relay from its own mark
+		// (feedsync_rare.go): the common pull can run for minutes (one
+		// round on a phone, 1,031 follows: over four) and nothing behind it
+		// may wait on that. Every relay, not only the fallback ones: a
+		// negentropy round against a relay that trims what it lists would
+		// still miss them. A few dozen events a round. A fresh cache, or a
+		// relay with no mark, reads from the window's edge.
+		rare := &feedRareRound{state: state, floor: since, start: roundStart}
 		if ctx.Err() == nil {
-			rctx, cancel := context.WithTimeout(ctx, 90*time.Second)
-			received := 0
-			for ev := range pool.FetchMany(rctx, relays, rareFilter) {
-				received++
-				store.Publish(ctx, *ev.Event)
-			}
-			timedOut := rctx.Err() != nil
-			cancel()
+			received := pullFeedRare(ctx, relays, authors, rare, func(ev *nostr.Event) { store.Publish(ctx, *ev) })
 			if ctx.Err() != nil {
 				return
 			}
-			log.Printf("📚 feed rare-kinds pull since %s on %d relays: %d events", time.Unix(int64(rsince), 0).Format(time.RFC3339), len(relays), received)
-			// Only a pass that finished moves the rare watermark.
-			if !timedOut {
-				rareDone = true
-			}
+			log.Printf("📚 feed rare-kinds pull on %d relays: %d events", len(relays), received)
 		}
 
 		var fallback []string
@@ -481,13 +460,14 @@ func syncFeed(ctx context.Context) {
 		plan := func() map[string][]string {
 			return feedOutboxPlan(authors, followWriteRelays(ctx, authors, relays), relays, feedOutboxMaxExtra)
 		}
-		complete := feedCatchupPulls(ctx, fallback, commonFilter, plan, rsince, fsince,
+		complete := feedCatchupPulls(ctx, fallback, commonFilter, plan, rare, fsince,
 			func(ev *nostr.Event) { store.Publish(ctx, *ev) }, streaks)
 		if ctx.Err() != nil {
 			return
 		}
 
-		pruneFeed(ctx, wdbFeed)
+		// Deleting alone gives no disk back: compact after a prune.
+		compactAfterPrune(feedDB, pruneFeed(ctx, wdbFeed), time.Now())
 		// Advance the fallback watermark to the start of this round when the
 		// round read everything, whether or not anything was cached:
 		// otherwise a quiet round leaves lastSeenFeed pinned in the past and
@@ -503,11 +483,8 @@ func syncFeed(ctx context.Context) {
 			} else {
 				log.Println("📚 feed catch-up did not read everything; asking from the same point next round")
 			}
-			if rareDone {
-				lastSeenRare.Store(int64(roundStart))
-			}
 			state.setMark("feed", lastSeenFeed.Load())
-			state.setMark("feed_rare", lastSeenRare.Load())
+			rare.tidy()
 			state.save()
 		}
 		// Same rationale as runCatchup: the vector build materializes the whole
@@ -567,8 +544,9 @@ func syncFeed(ctx context.Context) {
 
 // pruneFeed deletes cached feed events older than the sync window (plus one
 // day of slack so reconciliation never sees a locally-pruned event as
-// missing). Keeps the phone's feedDB footprint proportional to the window.
-func pruneFeed(ctx context.Context, wdb eventstore.RelayWrapper) {
+// missing). Keeps the phone's feedDB footprint proportional to the window,
+// with compactAfterPrune. Returns how many it deleted.
+func pruneFeed(ctx context.Context, wdb eventstore.RelayWrapper) int {
 	cutoff := nostr.Timestamp(time.Now().Add(-time.Duration(config.FeedSyncWindowDays+1) * 24 * time.Hour).Unix())
 	deleted := 0
 	for range 20 { // bounded rounds so a huge backlog can't stall the loop
@@ -578,7 +556,7 @@ func pruneFeed(ctx context.Context, wdb eventstore.RelayWrapper) {
 		}
 		for _, ev := range evs {
 			if ctx.Err() != nil {
-				return
+				return deleted
 			}
 			if err := feedDB.DeleteEvent(ctx, ev); err == nil {
 				deleted++
@@ -591,4 +569,5 @@ func pruneFeed(ctx context.Context, wdb eventstore.RelayWrapper) {
 	if deleted > 0 {
 		slog.Info("feed cache pruned", "deleted", deleted)
 	}
+	return deleted
 }

@@ -223,7 +223,8 @@ func publicRelayHost(host string) bool {
 }
 
 // pullFeedOutbox asks each extra relay of the plan for its own follows only:
-// the rare kinds since rareSince, then the common kinds since commonSince
+// the rare kinds since that relay's own rare mark (feedsync_rare.go), then
+// the common kinds since commonSince
 // (paged, as the owner's relays' fallback pull). True unless one of them
 // stopped partway and may still hold the watermark (stepShortStreaks, the
 // same #1721 escape as the owner's relays, in its own shortRounds).
@@ -232,7 +233,7 @@ func publicRelayHost(host string) bool {
 // round: dead relays in follows' lists are common, and one of them used to
 // keep every round incomplete, so each hourly round re-read the whole
 // window from every relay (#1843 regression, health audit B1 2026-11-08).
-func pullFeedOutbox(ctx context.Context, plan map[string][]string, rareSince, commonSince nostr.Timestamp, publish func(*nostr.Event), shortRounds map[string]int) bool {
+func pullFeedOutbox(ctx context.Context, plan map[string][]string, rare *feedRareRound, commonSince nostr.Timestamp, publish func(*nostr.Event), shortRounds map[string]int) bool {
 	urls := slices.Sorted(func(yield func(string) bool) {
 		for u := range plan {
 			if !yield(u) {
@@ -251,8 +252,10 @@ func pullFeedOutbox(ctx context.Context, plan map[string][]string, rareSince, co
 		}
 		asked[nostr.NormalizeURL(u)] = true
 		authors := plan[u]
-		rctx, cancel := context.WithTimeout(ctx, 90*time.Second)
-		fetchPaged(rctx, []string{u}, feedRareFilter(authors, rareSince), 1, publish)
+		// Paged to the end, or a relay with a page of them would never
+		// count as read and its mark would never move.
+		rctx, cancel := context.WithTimeout(ctx, feedRarePullWait)
+		rare.read(feedRareMarkOutbox, u, fetchPaged(rctx, []string{u}, feedRareFilter(authors, rare.since(feedRareMarkOutbox, u)), importMaxPages, publish))
 		cancel()
 		res := fetchPaged(ctx, []string{u}, feedCommonFilter(authors, commonSince), importMaxPages, publish)
 		if ctx.Err() != nil {

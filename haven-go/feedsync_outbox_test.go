@@ -93,7 +93,7 @@ func TestFeedSyncReadsAFollowOnTheirOwnWriteRelay(t *testing.T) {
 	follows := []string{follow.pk, reached.pk}
 	plan := feedOutboxPlan(follows, followWriteRelays(ctx, follows, owners), owners, feedOutboxMaxExtra)
 	got := map[string]int{}
-	complete := pullFeedOutbox(ctx, plan, 0, 0, func(ev *nostr.Event) { got[ev.PubKey]++ }, map[string]int{})
+	complete := pullFeedOutbox(ctx, plan, nil, 0, func(ev *nostr.Event) { got[ev.PubKey]++ }, map[string]int{})
 	if !complete {
 		t.Fatal("a pull that read everything was not complete")
 	}

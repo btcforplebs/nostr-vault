@@ -30,6 +30,10 @@ type gatedDB struct {
 	closing bool          // no new calls; inner closes when active reaches 0
 	stop    chan struct{} // closed with closing: open queries stop forwarding
 	closed  chan struct{}
+
+	// writes: every write holds it shared; a compaction holds it alone while
+	// the store flushes, when Badger would refuse writes (store_compact.go).
+	writes sync.RWMutex
 }
 
 func newGatedDB(inner DBBackend) *gatedDB {
@@ -112,6 +116,8 @@ func (g *gatedDB) DeleteEvent(ctx context.Context, evt *nostr.Event) error {
 		return errDBClosing
 	}
 	defer g.leave()
+	g.writes.RLock()
+	defer g.writes.RUnlock()
 	return g.inner.DeleteEvent(ctx, evt)
 }
 
@@ -125,6 +131,8 @@ func (g *gatedDB) SaveEvent(ctx context.Context, evt *nostr.Event) error {
 		return errDBClosing
 	}
 	defer g.leave()
+	g.writes.RLock()
+	defer g.writes.RUnlock()
 	return g.inner.SaveEvent(ctx, evt)
 }
 
@@ -138,6 +146,8 @@ func (g *gatedDB) ReplaceEvent(ctx context.Context, evt *nostr.Event) error {
 		return errDBClosing
 	}
 	defer g.leave()
+	g.writes.RLock()
+	defer g.writes.RUnlock()
 	return g.inner.ReplaceEvent(ctx, evt)
 }
 
