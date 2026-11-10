@@ -1,5 +1,6 @@
-// The web app refreshes on its own like other Nostr clients (Logen 2026-11-04): no "N new" pill and no Refresh button
-// anywhere, and screens look again through components/auto-look.js.
+// The web app refreshes on its own like other Nostr clients (Logen 2026-11-04): no Refresh button anywhere, and screens
+// look again through components/auto-look.js. The "N new" pill is back (Logen 2026-11-10) behind Feed Auto-load: on, new
+// notes go straight in; off, they wait behind it. So the pill is no longer a refresh control; a Refresh control still is.
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync, readdirSync, statSync } from "node:fs"
@@ -12,10 +13,10 @@ import { lookInFront, useAutoLook } from "../src/components/auto-look.js"
 const SRC = fileURLToPath(new URL("../src", import.meta.url))
 const files = dir => readdirSync(dir).flatMap(f => { const p = join(dir, f); return statSync(p).isDirectory() ? files(p) : /\.jsx?$/.test(f) ? [p] : [] })
 
-// What a refresh control looks like in this code: a Refresh label or aria-label, the ↻ glyph, or the pill.
-const CONTROL = /aria-label="Refresh|title="Refresh"|>\s*(↻\s*)?Refresh\s*<|>↻<|NewPostsPill|class="new-posts|"Refresh history"|"Refresh balance"|"Refresh messages"/
+// What a refresh control looks like in this code: a Refresh label or aria-label, or the ↻ glyph.
+const CONTROL = /aria-label="Refresh|title="Refresh"|>\s*(↻\s*)?Refresh\s*<|>↻<|"Refresh history"|"Refresh balance"|"Refresh messages"/
 
-test("no Refresh button and no new-posts pill left in the web app", () => {
+test("no Refresh button left in the web app", () => {
   const all = files(SRC)
   assert.ok(all.length > 200 && all.some(f => f.endsWith("FeedScreen.jsx")), `scanned ${all.length} files`)
   const hits = all.flatMap(f => readFileSync(f, "utf8").split("\n").map((l, i) => [f, i + 1, l]).filter(([, , l]) => CONTROL.test(l)))
@@ -24,9 +25,12 @@ test("no Refresh button and no new-posts pill left in the web app", () => {
 
 test("the scan can fail: it catches each shape a refresh control took before", () => {
   for (const line of ['<button aria-label="Refresh" />', '<a title="Refresh">', "<button>Refresh</button>", "<button>↻ Refresh</button>", "<b>↻</b>",
-    "<NewPostsPill count={n} />", '<button class="new-posts">', 'aria-label="Refresh history"'])
+    'aria-label="Refresh history"'])
     assert.ok(CONTROL.test(line), line)
   assert.ok(!CONTROL.test("const refresh = () => load()"), "a function named refresh is fine")
+  // The pill is back by design (Logen 2026-11-10), not a refresh control: the scan would be wrong to call it one.
+  assert.ok(!CONTROL.test("<NewPostsPill count={newCount} onShow={showPending} />"))
+  assert.ok(!CONTROL.test('<button type="button" class="new-posts"'))
 })
 
 // A tiny document and window for the hook: visibility, online, and timers it can be driven by.
@@ -112,7 +116,9 @@ test("lookInFront: nothing while hidden or offline, one look on coming back, and
     assert.equal(looks, hiddenAt, "nothing while the page is hidden")
     e.doc.hidden = false
     e.docOn.get("visibilitychange")()
-    await new Promise(r => setTimeout(r, 0))
+    // Flush microtasks, not a timer: `run` looks on a microtask, and a 20 ms interval tick due while the event loop was
+    // blocked would land on a `setTimeout(0)` too, adding a look that is not this event's (it made the full suite flake).
+    await Promise.resolve()
     assert.equal(looks, hiddenAt + 1, "back in front: one look at once")
 
     Object.defineProperty(globalThis, "navigator", { value: { onLine: false }, configurable: true, writable: true })
@@ -121,7 +127,7 @@ test("lookInFront: nothing while hidden or offline, one look on coming back, and
     assert.equal(looks, offlineAt, "nothing while offline")
     Object.defineProperty(globalThis, "navigator", { value: { onLine: true }, configurable: true, writable: true })
     e.on.get("online")()
-    await new Promise(r => setTimeout(r, 0))
+    await Promise.resolve()
     assert.equal(looks, offlineAt + 1, "back online: one look at once")
 
     stop()

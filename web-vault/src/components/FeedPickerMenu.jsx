@@ -32,13 +32,14 @@ const LAYOUT_ICON = {
   threaded: "M4 5h.01M8 5h12M8 10h.01M12 10h8M8 15h.01M12 15h8M4 20h.01M8 20h12",
 }
 const TOGGLE_ICON = {
+  autoLoad: "M13 2 4 14h6l-1 8 9-12h-6l1-8z", // bolt (the iPhone's bolt.circle / bolt.circle.fill)
   reposts: "M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4",
   replies: "M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.8-.9L3 21l1.9-5.2A8.4 8.4 0 0 1 12 3.5a8.4 8.4 0 0 1 9 8z",
 }
 // Media's scope buttons (FeedView+Toolbar.swift): person.2(.fill) and globe.
 const SCOPE_ICON = { following: FEED_ICON.following, global: FEED_ICON.global }
 const SCOPE_NAME = { following: "Following", global: "Global" }
-const TOGGLE_NAME = { reposts: "Reposts", replies: "Replies" }
+const TOGGLE_NAME = { autoLoad: "Auto-load", reposts: "Reposts", replies: "Replies" }
 // Global's shield (iPhone checkmark.shield / shield.slash) and Popular's flame (flame / flame.fill).
 const SHIELD = { trust: "M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6zM9 12l2 2 4-4", everyone: "M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6zM4 4l16 16", locked: "M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6zM10 11V9.5a2 2 0 0 1 4 0V11M9 11h6v4H9z" }
 const FLAME = "M12 22c4 0 7-3 7-7 0-5-5-7-5-12-3 2-5 5-5 8-1-1-2-2-2-4-2 2-2 5-2 8 0 4 3 7 7 7z"
@@ -98,8 +99,9 @@ export function FeedModeMenu({ feeds, choice, onPick, onEdit, onDashboard }) {
   )
 }
 
-/** The right capsule. `layout`: null when this feed has one layout. `toggles`: which filters this feed offers.
- *  No Refresh: new notes come in on their own. `scope`: Media's "following" | "global", null elsewhere; `onScope(scope)` picks one. */
+/** The right capsule. `layout`: null when this feed has one layout. `toggles`: which filters this feed offers (Auto-load,
+ *  Reposts, Replies). No Refresh: new notes come in on their own, or wait behind the pill with Auto-load off. `scope`:
+ *  Media's "following" | "global", null elsewhere; `onScope(scope)` picks one. */
 /** `shield` ({ everyone, locked }): Global's Web of Trust / Everyone button. `audience` ("all" | "follows" |
  *  "nonFollows") and `ranks` (boolean): Popular's audience menu and rank line switch. Null leaves each out. */
 export function FeedToolbar({ layout, onCycleLayout, filters, onFilters, toggles = [], scope = null, onScope, shield = null, onShield, audience = null, onAudience, ranks = null, onRanks }) {

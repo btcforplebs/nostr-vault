@@ -35,6 +35,29 @@ export const scrollTopOf = pane => (pane ? pane.scrollTop : globalThis.scrollY ?
 /** Back to the top of `pane` (feedScroller), or of the window when it is null. */
 export const scrollToTop = (pane, behavior = "smooth") => (pane ?? globalThis).scrollTo?.({ top: 0, behavior })
 
+/** New notes held back (Auto-load off, or a post open in place). Small (a count) once the feed is scrolled, as the
+ *  iPhone's folds when you scroll. `text`: the label for a count, when what is held isn't posts. */
+export function NewPostsPill({ count, onShow, text = n => `${n} New ${n === 1 ? "Post" : "Posts"}` }) {
+  const ref = useRef(null)
+  const [scrolled, setScrolled] = useState(false)
+  const showing = count > 0
+  // The list's own scroll: the desktop's pane, else the window (feedScroller).
+  useEffect(() => {
+    if (!showing) return
+    const pane = feedScroller(ref.current), target = pane ?? globalThis
+    const on = () => setScrolled(scrollTopOf(pane) > 200)
+    on()
+    target.addEventListener?.("scroll", on, { passive: true })
+    return () => target.removeEventListener?.("scroll", on)
+  }, [showing])
+  if (!showing) return null
+  const n = count > 99 && scrolled ? "99+" : count
+  return <button ref={ref} type="button" class={`new-posts${scrolled ? " small" : ""}`} onClick={onShow} aria-label={`${text(count)}, tap to load`}>
+    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+    {scrolled ? n : text(count)}
+  </button>
+}
+
 /** Reposts and Replies (not on Global, which has none, as on the iPhone). */
 export function FilterMenu({ filters, onChange, replies = true }) {
   const [open, setOpen] = useState(false)

@@ -114,16 +114,27 @@ test("the layout components load", async () => {
 })
 
 test("Replies and Reposts switches, and the notes the New Posts pill holds", async () => {
-  const { applyFilters, loadFilters, saveFilters, newerNotes, FILTER_DEFAULTS } = await import("../src/net/feed-filters.js")
+  const { applyFilters, layoutFilters, loadFilters, saveFilters, newerNotes, FILTER_DEFAULTS } = await import("../src/net/feed-filters.js")
   const note = { id: "a", kind: 1, created_at: 10, tags: [] }
   const reply = { id: "b", kind: 1, created_at: 11, tags: [["e", "a".repeat(64), "", "reply"]] }
   const repost = { id: "c", kind: 6, created_at: 12, tags: [] }
   const all = [note, reply, repost]
   assert.deepEqual(applyFilters(all, FILTER_DEFAULTS).map(n => n.id), ["a", "b", "c"])
   assert.deepEqual(applyFilters(all, { replies: false, reposts: false }).map(n => n.id), ["a"])
-  assert.deepEqual(applyFilters(all, { replies: false, reposts: true }, { threaded: true }).map(n => n.id), ["a", "b", "c"])
+  // Threaded is a layout, not a filter: as on the iPhone, the Replies switch still filters a threaded feed
+  // (FeedView+Layout.swift:88). Threading turns replies on when it is picked (layoutFilters), so the reader never lands
+  // on roots only, and the switch can turn them back off.
+  assert.deepEqual(applyFilters(all, { replies: false, reposts: true }, { threaded: true }).map(n => n.id), ["a", "c"])
+  assert.deepEqual(layoutFilters("threaded", { replies: false, reposts: true }), { replies: true, reposts: true })
+  assert.deepEqual(layoutFilters("expanded", { replies: false, reposts: true }), { replies: false, reposts: true })
+  assert.deepEqual(layoutFilters("threaded", { replies: true, reposts: false }), { replies: true, reposts: false })
   const mem = new Map(), storage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) }
   assert.deepEqual(loadFilters(storage), FILTER_DEFAULTS)
+  assert.equal(FILTER_DEFAULTS.autoLoad, true, "Auto-load is on until it is turned off")
+  // A browser from before the switch came back has no autoLoad saved: it reads as on, not as off.
+  storage.setItem("nv:feed-filters", JSON.stringify({ replies: false, reposts: true }))
+  assert.equal(loadFilters(storage).autoLoad, true)
+  assert.equal(loadFilters(storage).replies, false)
   saveFilters({ ...FILTER_DEFAULTS, reposts: false }, storage)
   assert.equal(loadFilters(storage).reposts, false)
   assert.deepEqual(newerNotes([note, reply], [{ id: "d", created_at: 20 }, reply, { id: "e", created_at: 5 }, { id: "f", created_at: 30 }]).map(n => n.id), ["f", "d"])

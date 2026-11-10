@@ -6,7 +6,7 @@ import { FeedRows, rootFetcher } from "../components/FeedRows.jsx"
 import { MediaGrid } from "../components/MediaGrid.jsx"
 import { feedPostOpen, savedFeedSpot, useFeedSpot } from "../components/feed-tap.js"
 import { AT_TOP_PX, holdSpot, readingSpot, rebasePins } from "../components/feed-stay.js"
-import { MAX_NOTES, DRAW_NOTES, GROW_PX, capNotes, capOlder, readLimit, drawNotes, nextDraw, mergeReload } from "../net/feed-window.js"
+import { MAX_NOTES, DRAW_NOTES, GROW_PX, capNotes, capOlder, readLimit, drawNotes, nextDraw, freshNotes, insertNotes, mergeReload } from "../net/feed-window.js"
 import { FeedModeMenu, FeedToolbar } from "../components/FeedPickerMenu.jsx"
 import { EditFeeds } from "../components/EditFeeds.jsx"
 import { FeedDashboard } from "../components/FeedDashboard.jsx"
@@ -30,12 +30,13 @@ import { READERS } from "../readers/index.js"
 import { withParam } from "../desktop/routes.js"
 import { resolveList } from "../net/list-feed.js"
 import { hasLayouts, loadLayout, nextLayout, saveLayout } from "../net/feed-layout.js"
-import { applyFilters, loadFilters, newerNotes, saveFilters } from "../net/feed-filters.js"
-import { EmptyFollowing, OlderButton, PullIndicator, SkeletonRows, usePullToRefresh, feedScroller, scrollTopOf } from "../components/FeedExtras.jsx"
+import { applyFilters, layoutFilters, loadFilters, newerNotes, saveFilters } from "../net/feed-filters.js"
+import { EmptyFollowing, NewPostsPill, OlderButton, PullIndicator, SkeletonRows, usePullToRefresh, feedScroller, scrollTopOf, scrollToTop } from "../components/FeedExtras.jsx"
 
 if (import.meta.env) import("../styles/feeds.css")
 
 const PAGE = 100
+const LIVE_SINCE_S = 60 // a live REQ opens this far back, so a note whose author's clock is a little behind still arrives
 const POPULAR_RECHECK_MS = 10 * 60_000 // Popular is ranked again this often while it is on screen
 const OPEN_RETRY_MS = 1500 // new notes wait while a post is open in place; looked at again this often
 const EMPTY_RETRY_MS = 60_000 // an empty Discover asks its relays again this often while it is on screen
@@ -66,10 +67,18 @@ export function FeedScreen({ ctx }) {
   // Expanded / Compact / Threaded, one per feed (FeedView+Layout). Re-read when the feed changes.
   const [layouts, setLayouts] = useState({})
   const layout = layouts[choice.mode] ?? loadLayout(choice.mode)
-  const cycleLayout = () => { const l = nextLayout(layout); saveLayout(choice.mode, l); setLayouts({ ...layouts, [choice.mode]: l }) }
   // Replies, Reposts and Auto-load (FeedView+ToolbarMenu), for every feed of notes.
   const [filters, setFilters] = useState(loadFilters)
   const changeFilters = f => { saveFilters(f); setFilters(f) }
+  const cycleLayout = () => {
+    const l = nextLayout(layout)
+    saveLayout(choice.mode, l)
+    setLayouts({ ...layouts, [choice.mode]: l })
+    // As the iPhone (FeedView+Layout.swift): a threaded feed with Replies off would show only the roots, which is the
+    // layout the reader just left. Threading turns them on; the Replies switch can turn them back off.
+    const next = layoutFilters(l, filters)
+    if (next !== filters) changeFilters(next)
+  }
   // New notes a background sync found, held behind the pill until it is tapped (or loaded at once with Auto-load).
   const [pending, setPending] = useState([])
   // The same for Global, Hashtag, Discover (live, net/feed-live.js) and Popular (ranked again): held in memory, as their
@@ -228,12 +237,15 @@ export function FeedScreen({ ctx }) {
     setNotes(prev => capOlder([...(prev ?? []), ...more.filter(m => !prev?.some(n => n.id === m.id))], MAX_NOTES, { protect: spot?.id }))
     return more.length
   })
-  // While the Feed is on screen, the follows' new notes arrive live (net/feed-live.js), are saved to /feed and wait
-  // behind the pill: the list never moves under the reader. With Auto-load on they go straight in (the iPhone's); below
-  // the top the post being read is held at its height (components/feed-stay.js, Logen 2026-11-04). A dropped
-  // subscription opens again and syncs what it missed.
+  // While the Feed is on screen, the follows' new notes arrive live (net/feed-live.js), are saved to /feed and either go
+  // straight in (Auto-load on: the iPhone's) or wait behind the pill (Auto-load off, Logen 2026-11-10). With Auto-load on
+  // the list never moves under the reader: below the top the post being read is held at its height
+  // (components/feed-stay.js, Logen 2026-11-04). A dropped subscription opens again and syncs what it missed.
   const notesNow = useRef(notes)
   notesNow.current = notes
+  // The switches as they are now, for the watch above: turning Auto-load off must not re-open the subscription.
+  const filtersNow = useRef(filters)
+  filtersNow.current = filters
   // The Feed's <main>, to find what it scrolls in: its pane on the desktop layout, the window on the phone
   // (FeedExtras feedScroller). Auto-load and the pill read that, not always the window (desktop, Logen 2026-11-03).
   const screen = useRef(null)
@@ -257,23 +269,30 @@ export function FeedScreen({ ctx }) {
     const show = async (batch = [], { unsaved = false } = {}) => {
       if (!notesNow.current) return // the first read is still coming and will have them
       const read = await readFeed(vault, follows, { limit: PAGE }).catch(e => { if (unsaved) return []; throw e })
-      // The same watermark a reload uses: a note the ceiling has already dropped from the top is not new, and must not
-      // come back in above the reader (feed-window.js mergeReload).
-      const fresh = (unsaved ? [...batch.filter(b => !read.some(r => r.id === b.id)), ...read] : read).filter(n => n.created_at > seenTop.current)
+      // A note the subscription just handed us is new to this screen whatever its `created_at` (freshNotes): relays
+      // deliver late and a sender's clock can be behind, and the watermark was dropping those in silence ("the posts
+      // are not dropping in", Logen 2026-11-10). The watermark still guards the page a reload reads back.
+      const fresh = freshNotes({ read, live: batch, seenTop: seenTop.current })
       if (!fresh.length) return
-      setPending(prev => newerNotes([], [...fresh, ...prev.filter(p => !fresh.some(f => f.id === p.id))]))
+      if (filtersNow.current.autoLoad && !feedPostOpen()) {
+        const pane = feedScroller(screen.current)
+        stay.current = scrollTopOf(pane) < AT_TOP_PX ? null : readingSpot(screen.current, pane)
+        setNotes(prev => insertNotes(prev, fresh, { protect: stay.current?.id }))
+      } else setPending(prev => insertNotes(prev, fresh))
     }
     const catchUp = async () => {
       if (!navigator.onLine) return
       try { await syncFeed(vault, follows, relays, {}); markSynced(me, follows); await show() } catch {}
     }
-    const close = watchFollowing({ vault, follows, relays, onNotes: (evs, o) => show(evs, o).catch(() => {}), onReopen: catchUp })
+    const close = watchFollowing({ vault, follows, relays, since: Math.floor(Date.now() / 1000) - LIVE_SINCE_S,
+      onNotes: (evs, o) => show(evs, o).catch(() => {}), onReopen: catchUp })
     globalThis.addEventListener?.("online", catchUp)
     return () => { close(); globalThis.removeEventListener?.("online", catchUp) }
   }, [following, follows.length])
-  // New notes go in on their own, as in other Nostr clients (no pill, Logen 2026-11-04). Below the top the post being
-  // read is held at its height (components/feed-stay.js). While a post is open in place they wait, and go in once it
-  // closes: the open post never moves (the iPhone holds auto-load the same way).
+  // New notes go in on their own with Auto-load on, as in other Nostr clients (Logen 2026-11-04). Below the top the
+  // post being read is held at its height (components/feed-stay.js). While a post is open in place they wait, and go in
+  // once it closes: the open post never moves (the iPhone holds auto-load the same way). Auto-load off leaves them
+  // behind the pill until it is tapped (Logen 2026-11-10). The other feeds' live notes always go in (putIn above).
   const putIn = (fresh, set) => {
     const pane = feedScroller(screen.current)
     stay.current = scrollTopOf(pane) < AT_TOP_PX ? null : readingSpot(screen.current, pane)
@@ -283,13 +302,14 @@ export function FeedScreen({ ctx }) {
     if (!pending.length && !strangePending.length) return
     let timer = null
     const tryIn = () => {
+      if (following && !filtersNow.current.autoLoad) return // the pill holds them
       if (feedPostOpen()) { timer = setTimeout(tryIn, OPEN_RETRY_MS); return }
-      if (following && pending.length) putIn(pending, fresh => { setNotes(prev => capNotes([...fresh.filter(f => !prev?.some(n => n.id === f.id)), ...(prev ?? [])], MAX_NOTES, { protect: stay.current?.id })); setPending([]) })
+      if (following && pending.length) putIn(pending, fresh => { setNotes(prev => insertNotes(prev, fresh, { protect: stay.current?.id })); setPending([]) })
       else if (!following && strangePending.length) putIn(strangePending, () => showStrangePending())
     }
     tryIn()
     return () => clearTimeout(timer)
-  }, [pending, strangePending, following])
+  }, [pending, strangePending, following, filters.autoLoad])
 
   // New posts on Global, Hashtag and Discover: their filters stay open from the first page on (the iPhone keeps its feed
   // REQ open) and what comes in goes in on its own (putIn above). Nothing is saved.
@@ -342,6 +362,12 @@ export function FeedScreen({ ctx }) {
     holdNotes(choice, all)
     setStrange(all)
     setStrangePending([])
+  }
+  // The pill's tap: what was held goes in and the reader is taken to it (the iPhone's "N New Posts").
+  const showPending = () => {
+    setNotes(prev => insertNotes(prev, pending))
+    setPending([])
+    scrollToTop(feedScroller(screen.current))
   }
 
   // Global, Hashtag and Popular. Each load is for one feed: once the picker has moved on, a late answer is dropped.
@@ -408,6 +434,9 @@ export function FeedScreen({ ctx }) {
   const threaded = layout === "threaded" && hasLayouts(choice.mode)
   const followSet = new Set(follows)
   const shown = list && visibleNotes(media ? list : applyFilters(popular ? list.filter(n => audienceKeeps(n, audience, followSet)) : list, filters, { threaded }), blocked)
+  // What the pill holds: the notes a sync or a live watch brought that are not on screen yet (Auto-load off, or a post
+  // open in place). Media shows no pill, as before.
+  const newCount = media ? 0 : visibleNotes(applyFilters(following ? pending : strangePending, filters, { threaded }), blocked).length
   // What is drawn: at most the window (feed-window.js). The whole list stays in memory under the ceiling; only this
   // many cards are in the DOM.
   const drawn = shown ? drawNotes(shown, drawCount) : shown
@@ -464,10 +493,10 @@ export function FeedScreen({ ctx }) {
   const tiles = media && drawn && mediaTiles(drawn.filter(n => n.kind === 1 || n.kind === 6)) // notes, as the iPhone's grid
   // Back from a thread finds the list where it was left (the phone layout draws the Feed again).
   useFeedSpot(spotKey, !!drawn?.length)
-  // The same toggles the old Feed options menu offered, Auto-load aside (new notes always go in now): Replies off on
-  // Global and Threaded.
+  // The same toggles the old Feed options menu offered: Auto-load on Following, Replies off on Global only (the iPhone
+  // shows them on a threaded feed too, and the switch filters there as well).
   const toggles = Reader || !hasLayouts(choice.mode) ? []
-    : ["reposts", !global && !threaded && "replies"].filter(Boolean)
+    : [following && "autoLoad", "reposts", !global && "replies"].filter(Boolean)
   return (
     <main class="screen" ref={screen}>
       <header class="screen-head feed-head">
@@ -488,6 +517,7 @@ export function FeedScreen({ ctx }) {
       <div class="status-line keep">{status}</div>
       {hashtagScreened(choice) && <div class="status-line muted small">{SCREENED_LINE}</div>}
       {privateNote && !ctx.signer?.readOnly && <div class="status-line">Your private blocks weren't read ({privateNote}), so those people may still show.</div>}
+      {newCount > 0 && <NewPostsPill count={newCount} onShow={following ? showPending : showStrangePending} />}
       {following
         ? !follows.length ? account.loaded ? <EmptyFollowing /> : <SkeletonRows label="Loading your follows…" />
           : notes === null ? <SkeletonRows label="Opening your vault…" />
