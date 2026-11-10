@@ -137,7 +137,7 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// khatru streams the body to disk through sha256; this paces it,
-			// and meshBlobCovered refuses a token signed for another blob
+			// and blobCovered refuses a token signed for another blob
 			// before anything is kept (blob_spool.go).
 			r.Body = newMeshPacedBody(w, r.Body)
 			r.Header.Set("Content-Length", strconv.FormatInt(r.ContentLength, 10))

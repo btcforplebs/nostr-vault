@@ -88,6 +88,55 @@ func TestUploadOwnerStored(t *testing.T) {
 	}
 }
 
+// A token whose x tag names file A cannot put body B in through the relay
+// port: a public Blossom server that holds the owner's token for A could
+// otherwise park any 256 MB file here until the token expires.
+func TestUploadWrongBlobRefused(t *testing.T) {
+	h := startHaven(t)
+	body := bytes.Repeat([]byte("b"), 1<<20)
+	req, _ := http.NewRequest(http.MethodPut, httpBase(h)+"/upload", bytes.NewReader(body))
+	req.Header.Set("Authorization", blossomUploadAuth(t, h.ownerSK, []byte("file A")))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("upload of another blob: %d %s, want 403", resp.StatusCode, resp.Header.Get("X-Reason"))
+	}
+	if left, _ := afero.Glob(fs, config.BlossomPath+"*"); len(left) != 0 {
+		t.Fatalf("files left: %v", left)
+	}
+}
+
+// An owner token without x tags still uploads through the relay port.
+func TestUploadOwnerNoXTagStored(t *testing.T) {
+	h := startHaven(t)
+	body := []byte("no x tag on this token")
+	ev := nostr.Event{
+		Kind:      24242,
+		CreatedAt: nostr.Now(),
+		Tags: nostr.Tags{
+			{"t", "upload"},
+			{"expiration", fmt.Sprint(time.Now().Add(10 * time.Minute).Unix())},
+		},
+	}
+	if err := ev.Sign(h.ownerSK); err != nil {
+		t.Fatal(err)
+	}
+	j, _ := json.Marshal(ev)
+	req, _ := http.NewRequest(http.MethodPut, httpBase(h)+"/upload", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Nostr "+base64.StdEncoding.EncodeToString(j))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("owner upload without x: %d %s", resp.StatusCode, resp.Header.Get("X-Reason"))
+	}
+}
+
 func mirrorAuth(t *testing.T, sk string, body []byte) string {
 	t.Helper()
 	sum := sha256.Sum256(body)

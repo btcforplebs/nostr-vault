@@ -70,13 +70,16 @@ func (s *fileSpool) Discard() {
 	_ = s.fsys.Remove(s.f.Name())
 }
 
-// meshBlobCovered: over the mesh door, a token signed for another blob (a
-// public mirror holds one for its hour) cannot put anything else here.
-func meshBlobCovered(ctx context.Context, auth *nostr.Event, sha string, _ int) (bool, string, int) {
-	if ctx.Value(meshPeerKey{}) == nil {
+// blobCovered: a token that names its blobs (x tags) covers only those, on
+// every port. Without it a public Blossom server holding one of the owner's
+// upload tokens could park any 256 MB file here until the token expires.
+// Over the mesh door a token must name the blob: a public mirror holds one
+// for its hour, and it cannot put anything else here.
+func blobCovered(ctx context.Context, auth *nostr.Event, sha string, _ int) (bool, string, int) {
+	if auth.Tags.FindWithValue("x", sha) != nil {
 		return false, "", 0
 	}
-	if auth.Tags.FindWithValue("x", sha) == nil {
+	if ctx.Value(meshPeerKey{}) != nil || auth.Tags.Find("x") != nil {
 		return true, "authorization does not cover this blob", 403
 	}
 	return false, "", 0
@@ -100,5 +103,5 @@ func wireBlobReceive(bs *blossom.BlossomServer) {
 		}
 		return nil
 	})
-	bs.RejectBlob = append(bs.RejectBlob, meshBlobCovered)
+	bs.RejectBlob = append(bs.RejectBlob, blobCovered)
 }
