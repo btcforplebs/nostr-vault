@@ -10,6 +10,11 @@ let kept = { openId: null }
 const spots = new Map() // feed key -> { id, top }: the first post at or under the tap line, and its window y
 export const forgetFeedTap = () => { kept = { openId: null }; spots.clear() } // tests
 
+/** The spot saved for `key` (the first note at or under the tap line, and its y), or null. The Feed reads it to open
+ *  its draw window wide enough to hold that note: a note that is not drawn cannot be pinned, and Back would land at the
+ *  top of the list instead of where the reader was. */
+export const savedFeedSpot = key => spots.get(key) ?? null
+
 /** Is a post open in place in the Feed on screen now? New notes don't go in above it while one is (the iPhone holds auto-load). */
 export const feedPostOpen = () => !!kept.openId && !!globalThis.document?.querySelector("[data-tap-open]")
 

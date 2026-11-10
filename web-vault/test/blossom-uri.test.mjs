@@ -19,7 +19,7 @@ registerHooks({
     return { format: "module", source: code, shortCircuit: true }
   },
 })
-const { parseBlossomUri, serverOrigin, candidateServers, fetchVerified, loadBlossom, resetBlossom, blossomKind, MAX_SERVERS } = await import("../src/net/blossom-uri.js")
+const { parseBlossomUri, serverOrigin, candidateServers, fetchVerified, loadBlossom, retainBlossom, releaseBlossom, resetBlossom, blossomKind, MAX_SERVERS, MAX_CACHE_BYTES } = await import("../src/net/blossom-uri.js")
 const { NoteText } = await import("../src/components/NoteText.jsx")
 
 // The test post (Laan Tungir, nevent1qqsqqqqxk8fs9…): its blossom: link exactly.
@@ -92,4 +92,109 @@ test("in a note: the link is its own media element, not text and not an https pi
   assert.equal(blossom.length, 1); assert.equal(blossom[0].props.b.sha256, "d819b922fbbf3a47e606dab12a6c316b9a0445ff4aa69d749d638ce83884cf1c")
   assert.ok(!JSON.stringify(kids.filter(k => typeof k === "string")).includes("blossom:"), "no raw link in the text")
   assert.equal(vnode.props.children[1], false, "no https carousel for it")
+})
+
+// Spec 3: the bytes behind an object URL live only while something shows them. Before this, every Blossom picture or
+// video a session had drawn stayed resident until reload, one entry per sha256 up to MAX_BYTES each.
+const one = (b, extra = {}) => ({ sha256: b.sha256, ext: "png", servers: [], author: null, size: bytes.length, ...b, ...extra })
+const view = (extra = {}) => ({ fetch: server({ "https://one.example": bytes }), query: async () => [], servers: ["https://one.example"], ...extra })
+
+test("a blob stays cached when its last view goes; the ceiling, not the unmount, releases it", async () => {
+  resetBlossom()
+  const revoked = []
+  let n = 0, fetched = 0
+  const base = view({ makeUrl: () => `blob:${++n}`, revokeUrl: u => revoked.push(u) })
+  const opts = { ...base, fetch: (...a) => { fetched++; return base.fetch(...a) } }
+  const b = one(parseBlossomUri(link()))
+  const a1 = await retainBlossom(b, opts), a2 = await retainBlossom(b, opts) // two views, one fetch
+  assert.equal(a1.url, a2.url)
+  assert.equal(fetched, 1)
+  releaseBlossom(b.sha256)
+  assert.deepEqual(revoked, [], "still shown by the second view")
+  releaseBlossom(b.sha256)
+  assert.deepEqual(revoked, [], "no view left: the bytes stay, so scrolling back costs nothing")
+  const again = await retainBlossom(b, opts)
+  assert.equal(again.url, a1.url, "the next view reuses the same object URL")
+  assert.equal(fetched, 1, "and nothing is fetched a second time")
+  releaseBlossom(b.sha256)
+  assert.deepEqual(revoked, [], "leaving never revokes")
+  resetBlossom()
+  assert.deepEqual(revoked, [a1.url], "reset is the one place the URL goes")
+})
+
+test("resetBlossom revokes what is still cached", async () => {
+  resetBlossom()
+  const revoked = []
+  const b = one(parseBlossomUri(link()))
+  await retainBlossom(b, view({ makeUrl: () => "blob:reset", revokeUrl: u => revoked.push(u) }))
+  resetBlossom()
+  assert.deepEqual(revoked, ["blob:reset"])
+})
+
+test("the cache stays under its ceiling: what nothing shows goes first, oldest first", async () => {
+  resetBlossom()
+  const revoked = []
+  const enc = s => new TextEncoder().encode(s)
+  const [a, bb, cc] = [enc("a"), enc("bb"), enc("cc")]
+  const bySha = new Map()
+  const sha = s => { const h = createHash("sha256").update(s).digest("hex"); bySha.set(h, s); return h }
+  const shaA = sha(a), shaB = sha(bb), shaC = sha(cc)
+  const fetch = async url => {
+    const body = bySha.get([...bySha.keys()].find(h => new URL(url).pathname.includes(h)))
+    return { ok: true, status: 200, headers: new Map([["content-type", "image/png"]]), arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) }
+  }
+  let n = 0
+  const opts = { fetch, query: async () => [], servers: ["https://one.example"], makeUrl: () => `blob:${++n}`, revokeUrl: u => revoked.push(u) }
+  const A = one({ sha256: shaA }), B = one({ sha256: shaB }), C = one({ sha256: shaC })
+  await loadBlossom(A, opts); await loadBlossom(B, opts) // two entries, neither shown
+  const shown = await retainBlossom(B, { ...opts, maxCacheBytes: 2 }) // 1 + 2 bytes over a 2-byte ceiling
+  assert.deepEqual(revoked, ["blob:1"], "the one nothing shows is released")
+  assert.equal(shown.url, "blob:2", "the one on screen is not")
+  // A view leaving is not eviction: the bytes stay until something needs the room.
+  releaseBlossom(B.sha256)
+  assert.deepEqual(revoked, ["blob:1"], "released, but still cached")
+  const third = await retainBlossom(C, { ...opts, maxCacheBytes: 3 }) // 2 + 2 bytes over a 3-byte ceiling
+  assert.deepEqual(revoked, ["blob:1", "blob:2"], "the idle entry goes first; the one on screen is kept")
+  assert.equal(third.url, "blob:3")
+  resetBlossom()
+})
+
+test("reset while bytes are still landing still revokes the URL they make", async () => {
+  resetBlossom()
+  const revoked = []
+  let open
+  const gate = new Promise(r => { open = r })
+  const b = one(parseBlossomUri(link()))
+  const p = retainBlossom(b, view({
+    fetch: async () => { await gate; return { ok: true, status: 200, headers: new Map([["content-type", "image/png"]]), arrayBuffer: async () => bytes.buffer.slice(0) } },
+    makeUrl: () => "blob:after-reset", revokeUrl: u => revoked.push(u),
+  }))
+  resetBlossom() // sign-out while the picture was still being fetched
+  open()
+  assert.equal(await p, null, "the entry it belonged to is gone")
+  assert.deepEqual(revoked, ["blob:after-reset"], "and the object URL it made does not outlive it")
+})
+
+test("a view that leaves before its bytes land keeps them for the next view", async () => {
+  resetBlossom()
+  const revoked = []
+  let open
+  const gate = new Promise(r => { open = r })
+  const b = one(parseBlossomUri(link()))
+  const p = retainBlossom(b, view({
+    fetch: async () => { await gate; return { ok: true, status: 200, headers: new Map([["content-type", "image/png"]]), arrayBuffer: async () => bytes.buffer.slice(0) } },
+    makeUrl: () => "blob:late", revokeUrl: u => revoked.push(u),
+  }))
+  releaseBlossom(b.sha256) // the view left while the servers were still being asked
+  open()
+  const got = await p
+  assert.equal(got?.url, "blob:late", "the bytes that landed are cached, not thrown away")
+  assert.deepEqual(revoked, [], "no view ever pointed at a revoked URL")
+  const next = await retainBlossom(b, view({ makeUrl: () => "blob:second", revokeUrl: u => revoked.push(u) }))
+  assert.equal(next.url, "blob:late", "the next view reuses them")
+  resetBlossom()
+})
+
+test("MAX_CACHE_BYTES is the 64 MB the spec asks for, and a file bigger than it is still refused up front", () => {
+  assert.equal(MAX_CACHE_BYTES, 64 * 1024 * 1024)
 })

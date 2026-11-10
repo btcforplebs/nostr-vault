@@ -4,8 +4,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks"
 import { FeedRows, rootFetcher } from "../components/FeedRows.jsx"
 import { MediaGrid } from "../components/MediaGrid.jsx"
-import { feedPostOpen, useFeedSpot } from "../components/feed-tap.js"
-import { AT_TOP_PX, holdSpot, readingSpot } from "../components/feed-stay.js"
+import { feedPostOpen, savedFeedSpot, useFeedSpot } from "../components/feed-tap.js"
+import { AT_TOP_PX, holdSpot, readingSpot, rebasePins } from "../components/feed-stay.js"
+import { MAX_NOTES, DRAW_NOTES, GROW_PX, capNotes, capOlder, readLimit, drawNotes, nextDraw, mergeReload } from "../net/feed-window.js"
 import { FeedModeMenu, FeedToolbar } from "../components/FeedPickerMenu.jsx"
 import { EditFeeds } from "../components/EditFeeds.jsx"
 import { FeedDashboard } from "../components/FeedDashboard.jsx"
@@ -54,6 +55,9 @@ export function FeedScreen({ ctx }) {
   const me = ctx.session?.pubkey
   const relays = uniq([...account.relays.read, ...DEFAULT_RELAYS])
   const [notes, setNotes] = useState(null)
+  // How many of the notes to draw (Spec 2): the list in memory is capped at MAX_NOTES and the DOM at this window, which
+  // grows in DRAW_NOTES steps as the reader nears the bottom (feed-window.js).
+  const [drawCount, setDrawCount] = useState(DRAW_NOTES)
   const [status, setStatus] = useState("")
   const [syncing, setSyncing] = useState(false)
   const { blocked, privateNote } = useBlocks(ctx)
@@ -101,7 +105,11 @@ export function FeedScreen({ ctx }) {
   // One number per feed shown: picking a feed or starting a stranger load bumps it, and work started under an older
   // number (a Following sync, a Global page) no longer writes the status line.
   const seq = useRef(0)
-  const pick = c => { c = withScope(c); seq.current++; saveChoice(c); setChoice(c); setStrange(heldNotes(c)); setStrangePending([]); setStatus(""); setOlderState("") }
+  // The newest note this screen has ever shown. Only notes newer than this may join above the list: once "Older" has
+  // trimmed the top (the ceiling), a reload's page is newer than the list's own top, and without the watermark the
+  // whole page would go back in above the reader and push them down by every page they had scrolled past (mergeReload).
+  const seenTop = useRef(0)
+  const pick = c => { c = withScope(c); seq.current++; seenTop.current = 0; saveChoice(c); setChoice(c); setStrange(heldNotes(c)); setStrangePending([]); setStatus(""); setOlderState("") }
   // Media's Following / Global buttons (FeedView+Toolbar.swift).
   const pickScope = scope => { if (scope !== choice.scope) { saveMediaScope(scope); pick({ ...choice, scope }) } }
   const sayer = () => statusGate(seq, setStatus)
@@ -130,7 +138,35 @@ export function FeedScreen({ ctx }) {
     return () => removeEventListener("hashchange", take)
   }, [])
 
-  const reload = async () => { const read = await readFeed(vault, follows, { limit: Math.max(shownNow.current.page, shownNow.current.have) }); setNotes(read); setPending([]); return read }
+  // A sync reloads what Haven has without rebuilding the list. It used to replace it (`setNotes(read)`): every card
+  // above the reader was thrown away and drawn again on each reload and the page jumped (145 px measured). What is
+  // already on screen keeps its note object and its row; only the notes that are new go in above, through the same
+  // anchored path the live notes use (`putIn`), and the read is clamped at the ceiling so its cost stops growing
+  // (feed-window.js readLimit, mergeReload).
+  const reload = async () => {
+    const read = await readFeed(vault, follows, { limit: readLimit(shownNow.current.page, shownNow.current.have) })
+    const prev = notesNow.current
+    setPending([])
+    if (!prev?.length) {
+      setNotes(capNotes(read))
+      seenTop.current = Math.max(seenTop.current, read[0]?.created_at ?? 0)
+      return read
+    }
+    const top = seenTop.current
+    // The note the reader is on, taken before the list changes: it decides which end the ceiling gives way at, and it is
+    // the row the anchor below puts back (`stay.current` is only set on the putIn path, which is not the only one).
+    const spot = readingSpot(screen.current, feedScroller(screen.current))
+    const merged = mergeReload(prev, read, { max: MAX_NOTES, protect: spot?.id, seenTop: top })
+    // What is on screen, not what was read: a note the ceiling had to drop (the reader is at the bottom, so the
+    // newest gives way) must still count as new on the next reload rather than be forgotten for good.
+    seenTop.current = Math.max(top, merged.notes[0]?.created_at ?? 0)
+    // New notes go in through putIn, which records the row the reader is on before the list changes (feed-stay.js).
+    // A merge that only moved rows (the ceiling trimmed the top because the reader is at the bottom) is anchored the
+    // same way: without a spot, those rows going would shift the reader by their height.
+    if (merged.fresh.length) putIn(merged.fresh, () => setNotes(p => mergeReload(p, read, { max: MAX_NOTES, protect: stay.current?.id, seenTop: top }).notes))
+    else if (merged.changed) putIn([], () => setNotes(merged.notes))
+    return read
+  }
   // `have`: how many notes are on screen, when the caller has just read them (the render that shows them may not have run).
   const sync = async ({ have } = {}) => {
     // No follow list yet (still loading, or nobody followed): there is nothing to sync, so nothing is "up to date".
@@ -186,7 +222,10 @@ export function FeedScreen({ ctx }) {
       }
       more = await readFeed(vault, follows, { limit: page, until })
     }
-    setNotes(prev => [...(prev ?? []), ...more.filter(m => !prev?.some(n => n.id === m.id))])
+    // Older joins at the bottom, so the ceiling trims the newest (feed-window.js capOlder): the page just read stays,
+    // and the next `until` moves on. Capping the head here dropped exactly the page Older had fetched, every time (D1).
+    const spot = readingSpot(screen.current, feedScroller(screen.current))
+    setNotes(prev => capOlder([...(prev ?? []), ...more.filter(m => !prev?.some(n => n.id === m.id))], MAX_NOTES, { protect: spot?.id }))
     return more.length
   })
   // While the Feed is on screen, the follows' new notes arrive live (net/feed-live.js), are saved to /feed and wait
@@ -204,14 +243,23 @@ export function FeedScreen({ ctx }) {
     const spot = stay.current
     stay.current = null
     if (spot) holdSpot(screen.current, feedScroller(screen.current), spot)
+    // Any list change resizes <main> (an "Older" page, a trim), which wakes the ResizeObserver of every live pin — the
+    // one just made here and any older one still inside its 5 s. Re-point them all at the row the reader is on now, or an
+    // older pin re-applies a spot they have left and drags them back: growing below must move nobody (R4).
+    rebasePins(screen.current, feedScroller(screen.current))
   }, [notes])
+  // The watermark only ever moves forward, whatever path put the notes on screen (a live note, "Older", a reload): what
+  // it must never do is come back down when the ceiling drops the newest notes off the top.
+  useLayoutEffect(() => { const top = notes?.[0]?.created_at; if (top) seenTop.current = Math.max(seenTop.current, top) }, [notes])
   useEffect(() => {
     if (!following || !follows.length) return
     // `batch`, `unsaved`: notes Haven didn't save (net/feed-live.js), shown from memory beside what /feed has.
     const show = async (batch = [], { unsaved = false } = {}) => {
       if (!notesNow.current) return // the first read is still coming and will have them
       const read = await readFeed(vault, follows, { limit: PAGE }).catch(e => { if (unsaved) return []; throw e })
-      const fresh = newerNotes(notesNow.current, unsaved ? [...batch.filter(b => !read.some(r => r.id === b.id)), ...read] : read)
+      // The same watermark a reload uses: a note the ceiling has already dropped from the top is not new, and must not
+      // come back in above the reader (feed-window.js mergeReload).
+      const fresh = (unsaved ? [...batch.filter(b => !read.some(r => r.id === b.id)), ...read] : read).filter(n => n.created_at > seenTop.current)
       if (!fresh.length) return
       setPending(prev => newerNotes([], [...fresh, ...prev.filter(p => !fresh.some(f => f.id === p.id))]))
     }
@@ -236,7 +284,7 @@ export function FeedScreen({ ctx }) {
     let timer = null
     const tryIn = () => {
       if (feedPostOpen()) { timer = setTimeout(tryIn, OPEN_RETRY_MS); return }
-      if (following && pending.length) putIn(pending, fresh => { setNotes(prev => [...fresh.filter(f => !prev?.some(n => n.id === f.id)), ...(prev ?? [])]); setPending([]) })
+      if (following && pending.length) putIn(pending, fresh => { setNotes(prev => capNotes([...fresh.filter(f => !prev?.some(n => n.id === f.id)), ...(prev ?? [])], MAX_NOTES, { protect: stay.current?.id })); setPending([]) })
       else if (!following && strangePending.length) putIn(strangePending, () => showStrangePending())
     }
     tryIn()
@@ -360,6 +408,50 @@ export function FeedScreen({ ctx }) {
   const threaded = layout === "threaded" && hasLayouts(choice.mode)
   const followSet = new Set(follows)
   const shown = list && visibleNotes(media ? list : applyFilters(popular ? list.filter(n => audienceKeeps(n, audience, followSet)) : list, filters, { threaded }), blocked)
+  // What is drawn: at most the window (feed-window.js). The whole list stays in memory under the ceiling; only this
+  // many cards are in the DOM.
+  const drawn = shown ? drawNotes(shown, drawCount) : shown
+  // The window grows as the reader nears the bottom of what is drawn (below, and in the effect after it), so the DOM
+  // stops at DRAW_NOTES · 41 nodes a card rather than 1,000 cards' worth.
+  const windowNow = useRef({ drawn: 0, total: 0 })
+  windowNow.current = { drawn: drawn?.length ?? 0, total: shown?.length ?? 0 }
+  const growWindow = () => {
+    const { drawn: have, total } = windowNow.current
+    if (have >= total) return
+    const pane = feedScroller(screen.current)
+    const el = pane ?? globalThis.document?.scrollingElement ?? globalThis.document?.documentElement
+    if (!el?.scrollHeight) return // no layout yet: the next draw asks again
+    const gap = el.scrollHeight - (scrollTopOf(pane) + (pane ? pane.clientHeight : globalThis.innerHeight ?? 0))
+    if (gap > GROW_PX) return
+    // R4: this growth resizes <main>, which wakes the ResizeObserver of any live putIn/holdSpot pin (a sync prepend, a
+    // live note). Re-point those pins at the row the reader is on now first, so none of them re-applies a spot the reader
+    // has left: growing the window must never move them (feed-stay.js rebasePins).
+    rebasePins(screen.current, pane)
+    setDrawCount(n => nextDraw(n, total))
+  }
+  const growNow = useRef(growWindow)
+  growNow.current = growWindow
+  // D2: not only on a scroll. At exactly a window's worth of notes the page cannot scroll any further, so no scroll
+  // event ever comes and the list would stop at DRAW_NOTES for good; every draw asks again.
+  useEffect(() => { growNow.current() }, [drawn?.length, shown?.length])
+  useEffect(() => {
+    if (!globalThis.addEventListener) return
+    let raf = 0
+    // Scroll events do not bubble: capture gets the desktop pane's too (FeedExtras feedScroller).
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; growNow.current() }) }
+    addEventListener("scroll", onScroll, { capture: true, passive: true })
+    return () => { removeEventListener("scroll", onScroll, { capture: true }); cancelAnimationFrame(raf) }
+  }, [])
+  // A feed switch starts the window over; Back from a thread opens it wide enough to hold the note the reader was on
+  // (feed-tap.js pins by note id, and a note that is not drawn cannot be pinned: the reader would land at the top).
+  const spotKey = `${feedKey(choice)}:${layout}`
+  useEffect(() => { setDrawCount(DRAW_NOTES) }, [spotKey])
+  useEffect(() => {
+    const spot = savedFeedSpot(spotKey)
+    if (!spot || !shown) return
+    const i = shown.findIndex(n => n.id === spot.id)
+    if (i >= 0) setDrawCount(n => Math.max(n, Math.min(MAX_NOTES, i + 1)))
+  }, [spotKey, shown?.length])
   // "🔥 #3 · 1.2k" above each scored note while ranks are on, numbered in the order shown (PopularRanking).
   const rankMap = popular && ranks && shown ? popularRanks(shown.map(n => n.id), popularScores.current) : null
   const rankOf = rankMap ? id => (rankMap.has(id) ? { rank: rankMap.get(id), score: popularScores.current.get(id) } : null) : null
@@ -369,9 +461,9 @@ export function FeedScreen({ ctx }) {
     else setShieldAsk(everyoneLocked(follows, ctx.session?.pubkey) ? "lock" : "warn")
   }
   const proceedEveryone = () => { setShieldAsk(null); setEveryone(true); pick({ ...choice, everyone: true }) }
-  const tiles = media && shown && mediaTiles(shown.filter(n => n.kind === 1 || n.kind === 6)) // notes, as the iPhone's grid
+  const tiles = media && drawn && mediaTiles(drawn.filter(n => n.kind === 1 || n.kind === 6)) // notes, as the iPhone's grid
   // Back from a thread finds the list where it was left (the phone layout draws the Feed again).
-  useFeedSpot(`${feedKey(choice)}:${layout}`, !!shown?.length)
+  useFeedSpot(spotKey, !!drawn?.length)
   // The same toggles the old Feed options menu offered, Auto-load aside (new notes always go in now): Replies off on
   // Global and Threaded.
   const toggles = Reader || !hasLayouts(choice.mode) ? []
@@ -401,7 +493,7 @@ export function FeedScreen({ ctx }) {
           : notes === null ? <SkeletonRows label="Opening your vault…" />
           : !notes.length ? syncing ? <SkeletonRows label="Fetching notes from the people you follow…" /> : <p class="empty">No notes saved yet.</p>
           : media ? <Media tiles={tiles} blockedAll={!shown.length} onOlder={older} olderState={olderState} />
-          : <Notes shown={shown} onOlder={older} olderState={olderState} layout={layout} fetchRoots={rootFetcher(vault, relays)} />
+          : <Notes shown={drawn} onOlder={older} olderState={olderState} layout={layout} fetchRoots={rootFetcher(vault, relays)} />
         : choice.mode === "hashtag" && !choice.tag ? <p class="empty">Type a hashtag to see notes tagged with it.</p>
           : popular && !follows.length ? <p class="empty">{account.loaded ? "Popular counts what the people you follow, and the people they follow, liked. Follow someone first." : "Loading your follows…"}</p>
           : global && !follows.length ? <p class="empty">{account.loaded ? "Follow people to build your web of trust" : "Loading your follows…"}</p>
@@ -414,7 +506,7 @@ export function FeedScreen({ ctx }) {
               onOlder={() => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} olderState={olderState} />
           : !strange.length && choice.mode === "list" && choice.authors && !choice.authors.length ? <p class="empty">This list has no one in it, or it didn't come back from your relays.</p>
           : !strange.length ? <p class="empty">{popular ? "Nothing popular in the last day yet: a note needs likes, reposts or zaps from three people your follows follow." : global && !choice.everyone ? "No notes from your web of trust on these relays yet." : "No notes found."}</p>
-          : <Notes shown={shown} memoryOnly layout={layout} keepFeedOrder rankOf={rankOf} fetchRoots={rootFetcher(vault, account.relays.read, { save: false })}
+          : <Notes shown={drawn} memoryOnly layout={layout} keepFeedOrder rankOf={rankOf} fetchRoots={rootFetcher(vault, account.relays.read, { save: false })}
               olderState={olderState} onOlder={popular ? null : () => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} />}
       </>}
     </main>
