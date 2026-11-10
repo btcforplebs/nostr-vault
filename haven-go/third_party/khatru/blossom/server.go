@@ -14,16 +14,31 @@ type BlossomServer struct {
 	ServiceURL string
 	Store      BlobIndex
 
-	StoreBlob     []func(ctx context.Context, sha256 string, ext string, body []byte) error
+	// StoreBlob files a received blob. Unused when SpoolBlob is set: the
+	// spool's Commit stores it.
+	StoreBlob     []func(ctx context.Context, sha256 string, ext string, body io.Reader) error
 	LoadBlob      []func(ctx context.Context, sha256 string, ext string) (io.ReadSeeker, error)
 	DeleteBlob    []func(ctx context.Context, sha256 string, ext string) error
 	ReceiveReport []func(ctx context.Context, reportEvt *nostr.Event) error
 	RedirectGet   []func(ctx context.Context, sha256 string, ext string) (url string, code int, err error)
 
+	// RejectUpload runs on /upload and /mirror before any body byte is read
+	// or any URL fetched: size is the declared length (0 when unknown), ext
+	// what the request headers say.
 	RejectUpload []func(ctx context.Context, auth *nostr.Event, size int, ext string) (bool, string, int)
+	// RejectBlob runs once the bytes are received and hashed, before
+	// anything is kept or stored.
+	RejectBlob   []func(ctx context.Context, auth *nostr.Event, sha256 string, size int) (bool, string, int)
 	RejectGet    []func(ctx context.Context, auth *nostr.Event, sha256 string, ext string) (bool, string, int)
 	RejectList   []func(ctx context.Context, auth *nostr.Event, pubkey string) (bool, string, int)
 	RejectDelete []func(ctx context.Context, auth *nostr.Event, sha256 string, ext string) (bool, string, int)
+
+	// SpoolBlob, when set, gives each receive a place for its bytes so a
+	// blob is never held whole in memory. Unset: a memory spool.
+	SpoolBlob func(ctx context.Context) (Spool, error)
+	// MaxUploadSize caps one blob in bytes, 0 for no cap. Over it: 413 with
+	// TooLargeReason as X-Reason.
+	MaxUploadSize int64
 }
 
 // ServerOption represents a functional option for configuring a BlossomServer

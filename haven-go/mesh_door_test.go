@@ -23,6 +23,7 @@ import (
 
 	"github.com/fiatjaf/khatru"
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/spf13/afero"
 )
 
 func startMeshDoor(t *testing.T) string {
@@ -583,11 +584,17 @@ func TestMeshListenerCapAndLifetime(t *testing.T) {
 	}
 }
 
-// Tron round 3: a real upload costs about the blob twice (the door's chunks,
-// then khatru's copy), not the doubling-buffer churn on top.
+// A real upload streams to disk: it costs a few buffers, not the blob. On a
+// real disk (the test's in-memory filesystem would count its own copy).
 func TestMeshUploadAllocation(t *testing.T) {
 	h := startHaven(t)
 	door := startMeshDoor(t)
+	prevFs := fs
+	fs = afero.NewBasePathFs(afero.NewOsFs(), t.TempDir())
+	defer func() { fs = prevFs }()
+	if err := fs.MkdirAll(config.BlossomPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	body := bytes.Repeat([]byte("v"), 32<<20)
 	auth := blossomUploadAuth(t, h.ownerSK, body)
 	runtime.GC()
@@ -597,11 +604,12 @@ func TestMeshUploadAllocation(t *testing.T) {
 		t.Fatalf("owner upload: %d", code)
 	}
 	runtime.ReadMemStats(&after)
-	// 96 MB expected: the door's chunks, khatru's buffer, and the test's
-	// in-memory filesystem copy (the base commit measured 64 without the door's).
-	// Doubling-buffer churn or a late EOF (khatru then doubles) pushes it past 150.
-	if grew := int64(after.TotalAlloc) - int64(before.TotalAlloc); grew > 100<<20 {
+	if grew := int64(after.TotalAlloc) - int64(before.TotalAlloc); grew > 8<<20 {
 		t.Fatalf("a 32 MB upload allocated %d MB", grew>>20)
+	}
+	sum := sha256.Sum256(body)
+	if info, err := fs.Stat(config.BlossomPath + hex.EncodeToString(sum[:])); err != nil || info.Size() != int64(len(body)) {
+		t.Fatalf("stored blob: %v %v", info, err)
 	}
 }
 
