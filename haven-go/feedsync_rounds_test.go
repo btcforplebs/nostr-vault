@@ -38,7 +38,7 @@ func TestFeedRoundEscapeStillWorksWithFollowRelays(t *testing.T) {
 	got := 0
 	// Spelled out, not read from the constant: holding forever must fail here.
 	for round, want := range []bool{false, false, true, true, true} {
-		complete := feedCatchupPulls(context.Background(), []string{"wss://tired.example"}, ownFilter, plan, 0, 0,
+		complete := feedCatchupPulls(context.Background(), []string{"wss://tired.example"}, ownFilter, plan, nil, 0,
 			func(ev *nostr.Event) {
 				if ev.PubKey == follow.pk {
 					got++
@@ -67,7 +67,7 @@ func TestFeedRoundSkipsADeadFollowRelay(t *testing.T) {
 	streaks := newFeedRoundStreaks()
 	for round := 1; round <= 3; round++ {
 		got := 0
-		complete := feedCatchupPulls(context.Background(), []string{"wss://own.example"}, ownFilter, planOf(plan), 0, 0,
+		complete := feedCatchupPulls(context.Background(), []string{"wss://own.example"}, ownFilter, planOf(plan), nil, 0,
 			func(ev *nostr.Event) {
 				if ev.PubKey == other.pk {
 					got++
@@ -81,7 +81,7 @@ func TestFeedRoundSkipsADeadFollowRelay(t *testing.T) {
 		}
 	}
 	// The outbox pull on its own says the same.
-	if !pullFeedOutbox(context.Background(), map[string][]string{"wss://dead.example": {follow.pk}}, 0, 0,
+	if !pullFeedOutbox(context.Background(), map[string][]string{"wss://dead.example": {follow.pk}}, nil, 0,
 		func(*nostr.Event) {}, map[string]int{}) {
 		t.Fatal("pullFeedOutbox counted a silent relay as an unread round")
 	}
@@ -98,7 +98,7 @@ func TestFeedRoundFollowRelayStoppingPartwayGetsTheEscape(t *testing.T) {
 	plan := planOf(map[string][]string{"wss://tired.example": {follow.pk}})
 	streaks := newFeedRoundStreaks()
 	for round, want := range []bool{false, false, true, true} {
-		complete := feedCatchupPulls(context.Background(), []string{"wss://own.example"}, ownFilter, plan, 0, 0,
+		complete := feedCatchupPulls(context.Background(), []string{"wss://own.example"}, ownFilter, plan, nil, 0,
 			func(*nostr.Event) {}, streaks)
 		if complete != want {
 			t.Fatalf("round %d: complete=%v, want %v (outbox streaks %v)", round+1, complete, want, streaks.outbox)
