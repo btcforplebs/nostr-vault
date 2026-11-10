@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -15,13 +13,13 @@ import (
 	"time"
 
 	"github.com/fiatjaf/khatru"
+	"github.com/fiatjaf/khatru/blossom"
 	"github.com/nbd-wtf/go-nostr"
 )
 
-// meshMaxUploadBytes caps one blob pushed over the mesh. khatru's Blossom
-// upload allocates Content-Length bytes up front and holds the whole blob in
-// memory, so the cap is checked before the body is touched.
-const meshMaxUploadBytes = 256 << 20
+// meshMaxUploadBytes caps one blob pushed over the mesh: the same cap as
+// every other port (blob_spool.go), checked before the body is touched.
+const meshMaxUploadBytes = maxBlobBytes
 
 // Mesh server limits. A peer that sends headers and then goes quiet must not
 // hold a goroutine or a connection open indefinitely. Vars so tests can shrink them.
@@ -41,8 +39,8 @@ var (
 	meshConnMaxLifetime = 30 * time.Minute
 )
 
-// meshUploadSlots: one owner upload at a time. khatru holds the whole blob
-// in memory, so this bounds the kiosk at one meshMaxUploadBytes buffer.
+// meshUploadSlots: one owner upload at a time over the mesh. The blob
+// streams to disk (blob_spool.go); the slot bounds the kiosk's disk and IO.
 var meshUploadSlots = make(chan struct{}, 1)
 
 // newMeshServer is the mesh port's HTTP server.
@@ -77,8 +75,8 @@ func isMeshConn(ctx context.Context) bool {
 // owner's:
 //   - GET/HEAD /<sha256>[.ext]: read one blob (meshBlobHandler).
 //   - PUT/HEAD /upload: Blossom upload, owner-signed kind 24242 or 403
-//     (checked here, before khatru allocates), at most meshMaxUploadBytes,
-//     one at a time.
+//     (checked here, before the body is read), at most meshMaxUploadBytes,
+//     one at a time, streamed to disk.
 //   - websocket on /: outbox relay, EVENTs signed by the owner only
 //     (meshOwnerEventsOnly), no queries.
 //
@@ -103,9 +101,9 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case r.URL.Path == "/upload" && (r.Method == http.MethodPut || r.Method == http.MethodHead):
-		// Check whose key signed the upload before khatru sees it: khatru
-		// allocates Content-Length bytes before its RejectUpload whitelist
-		// runs, so a throwaway key could make the kiosk hold 256 MB.
+		// Check whose key signed the upload before khatru sees it, so a
+		// throwaway key is refused at the door (khatru checks again before
+		// it reads the body).
 		auth, code, msg := meshUploadAuthorized(r)
 		if code != 0 {
 			http.Error(w, msg, code)
@@ -117,7 +115,9 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if r.ContentLength > meshMaxUploadBytes {
-				http.Error(w, "blob too large for the mesh", http.StatusRequestEntityTooLarge)
+				reason := blossom.TooLargeReason(meshMaxUploadBytes)
+				w.Header().Set("X-Reason", reason)
+				http.Error(w, reason, http.StatusRequestEntityTooLarge)
 				return
 			}
 			select {
@@ -136,20 +136,10 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "authorization already used", http.StatusConflict)
 				return
 			}
-			// Read the body here, so memory grows with bytes that actually
-			// arrive rather than with the Content-Length a peer claims.
-			body, hash, err := readMeshBody(w, r)
-			if err != nil {
-				http.Error(w, "upload body: "+err.Error(), http.StatusBadRequest)
-				return
-			}
-			if auth.Tags.FindWithValue("x", hash) == nil {
-				// A token signed for another blob (a public mirror holds
-				// one for its hour) cannot put anything else here.
-				http.Error(w, "authorization does not cover this blob", http.StatusForbidden)
-				return
-			}
-			r.Body = body
+			// khatru streams the body to disk through sha256; this paces it,
+			// and meshBlobCovered refuses a token signed for another blob
+			// before anything is kept (blob_spool.go).
+			r.Body = newMeshPacedBody(w, r.Body)
 			r.Header.Set("Content-Length", strconv.FormatInt(r.ContentLength, 10))
 		}
 		// Keep the request on the Blossom mux: khatru routes websocket,
@@ -255,74 +245,42 @@ func meshAuthUse(ev *nostr.Event) bool {
 	return true
 }
 
-// readMeshBody reads a PUT body of exactly Content-Length bytes into 1 MB
-// chunks (no doubling copies) and hashes it on the way. Each read must make
-// progress within meshIdleRead, the average must stay above meshMinRate
+// meshPacedBody passes a PUT body through as it arrives. Each read must
+// make progress within meshIdleRead, the average must stay above meshMinRate
 // after meshRateGrace, all inside the overall transfer deadline.
-func readMeshBody(w http.ResponseWriter, r *http.Request) (io.ReadCloser, string, error) {
+type meshPacedBody struct {
+	io.ReadCloser
+	rc    *http.ResponseController
+	start time.Time
+	end   time.Time
+	got   int64
+}
+
+func newMeshPacedBody(w http.ResponseWriter, body io.ReadCloser) *meshPacedBody {
 	rc := http.NewResponseController(w)
 	start := time.Now()
 	end := start.Add(meshTransferTimeout)
 	_ = rc.SetWriteDeadline(end)
-	limited := io.LimitReader(r.Body, r.ContentLength+1)
-	h := sha256.New()
-	var chunks [][]byte
-	var got int64
-	for {
-		next := time.Now().Add(meshIdleRead)
-		if next.After(end) {
-			next = end
-		}
-		_ = rc.SetReadDeadline(next)
-		if len(chunks) == 0 || len(chunks[len(chunks)-1]) == cap(chunks[len(chunks)-1]) {
-			chunks = append(chunks, make([]byte, 0, min(r.ContentLength-got+1, 1<<20)))
-		}
-		last := chunks[len(chunks)-1]
-		n, err := limited.Read(last[len(last):cap(last)])
-		chunks[len(chunks)-1] = last[:len(last)+n]
-		h.Write(last[len(last) : len(last)+n])
-		got += int64(n)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, "", err
-		}
-		if elapsed := time.Since(start); elapsed > meshRateGrace &&
-			float64(got) < meshMinRate*(elapsed-meshRateGrace).Seconds() {
-			return nil, "", errors.New("upload too slow")
-		}
-	}
-	if got != r.ContentLength {
-		return nil, "", errors.New("length does not match Content-Length")
-	}
-	return &chunkReader{chunks: chunks}, hex.EncodeToString(h.Sum(nil)), nil
+	return &meshPacedBody{ReadCloser: body, rc: rc, start: start, end: end}
 }
 
-// chunkReader hands the chunks to khatru and drops each once read, so the
-// door's copy shrinks while khatru's grows.
-type chunkReader struct{ chunks [][]byte }
-
-func (c *chunkReader) Read(p []byte) (int, error) {
-	for len(c.chunks) > 0 && len(c.chunks[0]) == 0 {
-		c.chunks[0] = nil
-		c.chunks = c.chunks[1:]
+func (b *meshPacedBody) Read(p []byte) (int, error) {
+	next := time.Now().Add(meshIdleRead)
+	if next.After(b.end) {
+		next = b.end
 	}
-	if len(c.chunks) == 0 {
-		return 0, io.EOF
+	_ = b.rc.SetReadDeadline(next)
+	n, err := b.ReadCloser.Read(p)
+	b.got += int64(n)
+	if err != nil {
+		return n, err
 	}
-	n := copy(p, c.chunks[0])
-	c.chunks[0] = c.chunks[0][n:]
-	if len(c.chunks[0]) == 0 && len(c.chunks) == 1 {
-		// EOF with the last bytes: khatru grows its full-size buffer when
-		// a read fills it and EOF only comes on the next call.
-		c.chunks = nil
-		return n, io.EOF
+	if elapsed := time.Since(b.start); elapsed > meshRateGrace &&
+		float64(b.got) < meshMinRate*(elapsed-meshRateGrace).Seconds() {
+		return n, errors.New("upload too slow")
 	}
 	return n, nil
 }
-
-func (c *chunkReader) Close() error { c.chunks = nil; return nil }
 
 // meshListener caps the mesh port at meshMaxConns connections at once (every
 // peer is 127.0.0.1, so only a global cap means anything) and closes any

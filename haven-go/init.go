@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -577,22 +575,10 @@ func initRelays(ctx context.Context) error {
 	blossomServer = blossom.New(outboxRelay, getHTTPScheme(config.RelayURL)+config.RelayURL)
 	// A paired device's upload or delete is filed under the owner (mesh_devices.go).
 	blossomServer.Store = meshOwnerIndex{blossom.EventStoreBlobIndexWrapper{Store: blossomDB, ServiceURL: blossomServer.ServiceURL}}
-	blossomServer.StoreBlob = append(blossomServer.StoreBlob, func(ctx context.Context, sha256 string, ext string, body []byte) error {
-		slog.Debug("storing blob", "sha256", sha256, "ext", ext)
-		// Write to a temp file and rename into place: an interrupted write must
-		// never leave a truncated blob sitting at the final hash-named path,
-		// where it would shadow the healthy remote copy on every client forever.
-		// A temp file per call (writeBlobFile): an upload overlapping another
-		// write of the same blob can't rename a half-written file into place.
-		ok, err := writeBlobFile(fs, sha256, bytes.NewReader(body))
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return errors.New("blob does not match its sha256")
-		}
-		return nil
-	})
+	// Uploads and mirrors stream to a temp file and are renamed into place
+	// (blob_spool.go): an interrupted write never leaves a truncated blob at
+	// the hash-named path, and a blob is never held whole in memory.
+	wireBlobReceive(blossomServer)
 	blossomServer.LoadBlob = append(blossomServer.LoadBlob, loadBlob)
 	// Over the mesh, only blobs a public note names (mesh_safety.go).
 	guardMeshBlobs(blossomServer)

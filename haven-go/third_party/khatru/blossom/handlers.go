@@ -2,10 +2,9 @@ package blossom
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"io"
+	"math"
 	"mime"
 	"net/http"
 	"regexp"
@@ -41,6 +40,10 @@ func (bs BlossomServer) handleUploadCheck(w http.ResponseWriter, r *http.Request
 
 	// get the file size from the incoming header
 	size, _ := strconv.Atoi(r.Header.Get("X-Content-Length"))
+	if bs.tooLarge(int64(size)) {
+		blossomError(w, TooLargeReason(bs.MaxUploadSize), 413)
+		return
+	}
 
 	for _, rb := range bs.RejectUpload {
 		reject, reason, code := rb(r.Context(), auth, size, ext)
@@ -67,20 +70,32 @@ func (bs BlossomServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// get the file size from the incoming header
-	size, _ := strconv.Atoi(r.Header.Get("Content-Length"))
-	if size == 0 {
+	size := declaredLength(r)
+	if size <= 0 {
 		blossomError(w, "missing \"Content-Length\" header", 400)
 		return
 	}
 
+	// who may upload is decided before a single body byte is read
+	if reject, reason, code := bs.authorizeUpload(r.Context(), auth, int(min(size, int64(math.MaxInt))), getExtension(r.Header.Get("Content-Type"))); reject {
+		blossomError(w, reason, code)
+		return
+	}
+	if bs.tooLarge(size) {
+		blossomError(w, TooLargeReason(bs.MaxUploadSize), 413)
+		return
+	}
+
 	// read first bytes of upload so we can find out the filetype
-	b := make([]byte, min(50, size), size)
-	if n, err := r.Body.Read(b); err != nil && n != size {
+	head := make([]byte, min(50, size))
+	n, err := io.ReadFull(r.Body, head)
+	head = head[:n]
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 		blossomError(w, "failed to read initial bytes of upload body: "+err.Error(), 400)
 		return
 	}
 	var ext string
-	if ft, _ := magic.Lookup(b); ft != nil {
+	if ft, _ := magic.Lookup(head); ft != nil {
 		ext = "." + ft.Extension
 	} else {
 		// if we can't find, use the filetype given by the upload header
@@ -93,39 +108,22 @@ func (bs BlossomServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 		ext = ".apk"
 	}
 
-	// run the reject hooks
-	for _, ru := range bs.RejectUpload {
-		reject, reason, code := ru(r.Context(), auth, size, ext)
-		if reject {
-			blossomError(w, reason, code)
-			return
-		}
-	}
-
-	// if it passes then we have to read the entire thing into memory so we can compute the sha256
-	for {
-		var n int
-		n, err = r.Body.Read(b[len(b):cap(b)])
-		b = b[:len(b)+n]
-		if err != nil {
-			if err == io.EOF {
-				err = nil
-			}
-			break
-		}
-		if len(b) == cap(b) {
-			// add more capacity (let append pick how much)
-			// if Content-Length was correct we shouldn't reach this
-			b = append(b, 0)[:len(b)]
-		}
+	// stream the rest through sha256 into the spool, never holding it whole
+	sp, hhash, got, err := bs.spoolBody(r.Context(), head, r.Body, size)
+	if err == errTooLarge {
+		blossomError(w, TooLargeReason(bs.MaxUploadSize), 413)
+		return
 	}
 	if err != nil {
 		blossomError(w, "failed to read upload body: "+err.Error(), 400)
 		return
 	}
+	defer sp.Discard()
+	if reject, reason, code := bs.rejectBlob(r.Context(), auth, hhash, got); reject {
+		blossomError(w, reason, code)
+		return
+	}
 
-	hash := sha256.Sum256(b)
-	hhash := hex.EncodeToString(hash[:])
 	mimeType := mime.TypeByExtension(ext)
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
@@ -135,7 +133,7 @@ func (bs BlossomServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 	bd := BlobDescriptor{
 		URL:      bs.ServiceURL + "/" + hhash + ext,
 		SHA256:   hhash,
-		Size:     len(b),
+		Size:     int(got),
 		Type:     mimeType,
 		Uploaded: nostr.Now(),
 	}
@@ -145,11 +143,9 @@ func (bs BlossomServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// save actual blob
-	for _, sb := range bs.StoreBlob {
-		if err := sb(r.Context(), hhash, ext, b); err != nil {
-			blossomError(w, "failed to save: "+err.Error(), 500)
-			return
-		}
+	if err := sp.Commit(r.Context(), hhash, ext); err != nil {
+		blossomError(w, "failed to save: "+err.Error(), 500)
+		return
 	}
 
 	// return response
@@ -432,31 +428,60 @@ func (bs BlossomServer) handleMirror(w http.ResponseWriter, r *http.Request) {
 		blossomError(w, "invalid \"Authorization\" event \"t\" tag", 403)
 		return
 	}
+	if auth.Tags.Find("x") == nil {
+		blossomError(w, "\"Authorization\" event has no \"x\" tag", 403)
+		return
+	}
+
+	// who may mirror is decided before the body is read or any URL fetched
+	if reject, reason, code := bs.authorizeUpload(r.Context(), auth, 0, ""); reject {
+		blossomError(w, reason, code)
+		return
+	}
 
 	var body struct {
 		URL string `json:"url"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&body); err != nil {
 		blossomError(w, "invalid request body: "+err.Error(), 400)
 		return
 	}
 
 	// download the blob
-	resp, err := http.Get(body.URL)
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, body.URL, nil)
+	if err != nil {
+		blossomError(w, "invalid blob URL: "+err.Error(), 400)
+		return
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		blossomError(w, "failed to download blob: "+err.Error(), 400)
 		return
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
+	if bs.tooLarge(resp.ContentLength) {
+		blossomError(w, TooLargeReason(bs.MaxUploadSize), 413)
+		return
+	}
+	head := make([]byte, 50)
+	n, err := io.ReadFull(resp.Body, head)
+	head = head[:n]
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 		blossomError(w, "failed to read blob: "+err.Error(), 400)
 		return
 	}
 
-	// calculate sha256 hash
-	hash := sha256.Sum256(b)
-	hhash := hex.EncodeToString(hash[:])
+	// stream it through sha256 into the spool, never holding it whole
+	sp, hhash, got, err := bs.spoolBody(r.Context(), head, resp.Body, resp.ContentLength)
+	if err == errTooLarge {
+		blossomError(w, TooLargeReason(bs.MaxUploadSize), 413)
+		return
+	}
+	if err != nil {
+		blossomError(w, "failed to read blob: "+err.Error(), 400)
+		return
+	}
+	defer sp.Discard()
 
 	// verify hash matches x tag in auth event
 	if auth.Tags.FindWithValue("x", hhash) == nil {
@@ -469,26 +494,23 @@ func (bs BlossomServer) handleMirror(w http.ResponseWriter, r *http.Request) {
 	contentType := resp.Header.Get("Content-Type")
 	if contentType != "" { // First try to get the extension from the Content-Type header
 		ext = getExtension(contentType)
-	} else if ft, _ := magic.Lookup(b); ft != nil { // Else try to infer extension from the file content
+	} else if ft, _ := magic.Lookup(head); ft != nil { // Else try to infer extension from the file content
 		ext = "." + ft.Extension
 	} else if idx := strings.LastIndex(body.URL, "."); idx >= 0 { // Else, try to get the extension from the URL
 		ext = body.URL[idx:]
 	}
 
 	// run reject hooks
-	for _, ru := range bs.RejectUpload {
-		reject, reason, code := ru(r.Context(), auth, len(b), ext)
-		if reject {
-			blossomError(w, reason, code)
-			return
-		}
+	if reject, reason, code := bs.rejectBlob(r.Context(), auth, hhash, got); reject {
+		blossomError(w, reason, code)
+		return
 	}
 
 	// create blob descriptor
 	bd := BlobDescriptor{
 		URL:      bs.ServiceURL + "/" + hhash + ext,
 		SHA256:   hhash,
-		Size:     len(b),
+		Size:     int(got),
 		Type:     contentType,
 		Uploaded: nostr.Now(),
 	}
@@ -500,11 +522,9 @@ func (bs BlossomServer) handleMirror(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// store actual blob
-	for _, sb := range bs.StoreBlob {
-		if err := sb(r.Context(), hhash, ext, b); err != nil {
-			blossomError(w, "failed to save blob: "+err.Error(), 500)
-			return
-		}
+	if err := sp.Commit(r.Context(), hhash, ext); err != nil {
+		blossomError(w, "failed to save blob: "+err.Error(), 500)
+		return
 	}
 
 	json.NewEncoder(w).Encode(bd)
