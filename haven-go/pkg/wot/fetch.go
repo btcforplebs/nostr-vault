@@ -35,16 +35,38 @@ type listFetch struct {
 	lists    map[string]*nostr.Event
 	received int64
 	// complete is true when listQuorum relays (or every relay, if fewer were
-	// asked) sent EOSE before ctx ended. A since-fetch that isn't complete
-	// may have missed a change, so the stored lists keep their old stamp.
+	// asked) sent EOSE before ctx ended.
 	complete bool
+	// cut lists the relays still connecting or sending when the fetch ended:
+	// a list only they hold is missing from lists. A fetch with any cut
+	// relay is not the whole answer, even when complete.
+	cut []string
 }
+
+// whole is true when the quorum answered and no relay was cut: the answer
+// holds everything the relays asked will give. Only a whole since-fetch may
+// move the stored lists' since stamp; a quorum alone may have cut the one
+// relay holding a change, and the next pass would never ask for it again.
+func (f listFetch) whole() bool { return f.complete && len(f.cut) == 0 }
 
 // fetchLatestLists asks every relay for filter at once and returns the newest
 // event per author. It ends when listQuorum relays have sent EOSE plus
 // listGrace, when every relay is done (EOSE, CLOSED or unreachable), or when
 // ctx ends; what arrived before then is kept either way.
 func fetchLatestLists(ctx context.Context, pool *nostr.SimplePool, relays []string, filter nostr.Filter) listFetch {
+	return fetchLists(ctx, pool, relays, filter, false)
+}
+
+// fetchListsFromEvery is fetchLatestLists without the quorum cut: it waits
+// for every relay (EOSE, CLOSED or unreachable) or ctx. The owners' own lists
+// are fetched this way, since every other list hangs off them, and so are the
+// follow-up asks of relays a quorum cut.
+func fetchListsFromEvery(ctx context.Context, pool *nostr.SimplePool, relays []string, filter nostr.Filter) listFetch {
+	return fetchLists(ctx, pool, relays, filter, true)
+}
+
+// fetchLists is both: waitAll turns the quorum cut off.
+func fetchLists(ctx context.Context, pool *nostr.SimplePool, relays []string, filter nostr.Filter, waitAll bool) listFetch {
 	out := listFetch{lists: make(map[string]*nostr.Event)}
 	relays = uniqueRelays(relays)
 	if len(relays) == 0 {
@@ -58,18 +80,23 @@ func fetchLatestLists(ctx context.Context, pool *nostr.SimplePool, relays []stri
 
 	var mu sync.Mutex
 	eosed, finished := 0, 0
+	done := make([]bool, len(relays))
 	// ended is set when the fetch returns; a relay still connecting (that
 	// can take EnsureRelay's own 15 s) or sending must not touch out after.
 	ended := false
 	allDone := make(chan struct{})
 	quorumReached := make(chan struct{})
-	finish := func(eose bool) {
+	finish := func(i int, eose bool) {
 		mu.Lock()
 		defer mu.Unlock()
+		if ended {
+			return // already counted as cut
+		}
+		done[i] = true
 		finished++
 		if eose {
 			eosed++
-			if eosed == quorum {
+			if eosed == quorum && !waitAll {
 				close(quorumReached)
 			}
 		}
@@ -89,10 +116,10 @@ func fetchLatestLists(ctx context.Context, pool *nostr.SimplePool, relays []stri
 		}
 	}
 
-	for _, url := range relays {
+	for i, url := range relays {
 		go func() {
 			eose := false
-			defer func() { finish(eose) }()
+			defer func() { finish(i, eose) }()
 			runsafe.Run("wot.fetchLatestLists", func() {
 				relay, err := pool.EnsureRelay(url)
 				if err != nil {
@@ -145,6 +172,11 @@ func fetchLatestLists(ctx context.Context, pool *nostr.SimplePool, relays []stri
 	defer mu.Unlock()
 	ended = true
 	out.complete = eosed >= quorum
+	for i, url := range relays {
+		if !done[i] {
+			out.cut = append(out.cut, url)
+		}
+	}
 	return out
 }
 

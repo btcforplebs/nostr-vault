@@ -4,28 +4,48 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
 	"golang.org/x/exp/constraints"
 )
 
-const MAX_LOCKS = 50
+var json = jsoniter.ConfigFastest
+
+// HAVEN PATCH: namedLock used to hash names into 50 shared mutexes, and
+// EnsureRelay holds its lock across the whole dial (up to 15 s). A relay
+// stuck connecting then held up every other relay that hashed into its
+// bucket, so a healthy seed's connect waited the full 15 s whenever it
+// collided with a dead one (the hash seed is per process, so 1 run in ~10).
+// Each name now has its own mutex, freed once nobody holds or waits on it.
+type nameLock struct {
+	mu   sync.Mutex
+	refs int
+}
 
 var (
-	namedMutexPool = make([]sync.Mutex, MAX_LOCKS)
-	json           = jsoniter.ConfigFastest
+	namedLocksMu sync.Mutex
+	namedLocks   = map[string]*nameLock{}
 )
 
-//go:noescape
-//go:linkname memhash runtime.memhash
-func memhash(p unsafe.Pointer, h, s uintptr) uintptr
-
 func namedLock(name string) (unlock func()) {
-	sptr := unsafe.StringData(name)
-	idx := uint64(memhash(unsafe.Pointer(sptr), 0, uintptr(len(name)))) % MAX_LOCKS
-	namedMutexPool[idx].Lock()
-	return namedMutexPool[idx].Unlock
+	namedLocksMu.Lock()
+	l := namedLocks[name]
+	if l == nil {
+		l = &nameLock{}
+		namedLocks[name] = l
+	}
+	l.refs++
+	namedLocksMu.Unlock()
+
+	l.mu.Lock()
+	return func() {
+		l.mu.Unlock()
+		namedLocksMu.Lock()
+		if l.refs--; l.refs == 0 {
+			delete(namedLocks, name)
+		}
+		namedLocksMu.Unlock()
+	}
 }
 
 func similar[E constraints.Ordered](as, bs []E) bool {

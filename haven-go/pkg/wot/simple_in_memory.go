@@ -407,7 +407,11 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 
 	slog.Info("🛜 fetching Nostr events to build WoT")
 
-	got := fetchLatestLists(timeoutCtx, wt.Pool, wt.SeedRelays, filter)
+	// The owners' lists wait for every relay: no quorum cut. Every other
+	// list hangs off them, and a first build has no saved web to fall back
+	// on if the one relay holding them was cut.
+	got := fetchListsFromEvery(timeoutCtx, wt.Pool, wt.SeedRelays, filter)
+	ownersWhole := got.whole()
 	eventsAnalysed.Add(got.received)
 	ownerLists := got.lists
 	if wt.LocalFollowLists != nil {
@@ -526,22 +530,18 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	// Every batch is in flight at once (up to maxParallelBatches), and each
 	// ends once enough relays have answered (fetchLatestLists). Results are
 	// counted here, on this goroutine, as each batch lands.
-	results := make(chan struct {
+	type listResult struct {
 		job listJob
 		got listFetch
-	}, len(jobs))
+	}
+	results := make(chan listResult, len(jobs))
 	slots := make(chan struct{}, maxParallelBatches)
-	for _, job := range jobs {
+	run := func(job listJob, relays []string, retry bool) {
 		go func() {
 			var got listFetch
-			// Always answer, even after a panic: the loop below waits for
+			// Always answer, even after a panic: the loops below wait for
 			// one result per batch.
-			defer func() {
-				results <- struct {
-					job listJob
-					got listFetch
-				}{job, got}
-			}()
+			defer func() { results <- listResult{job, got} }()
 			runsafe.Run("wot.listBatch", func() {
 				slots <- struct{}{}
 				defer func() { <-slots }()
@@ -552,23 +552,28 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 					s := nostr.Timestamp(job.since)
 					filter.Since = &s
 				}
-				got = fetchLatestLists(batchCtx, wt.Pool, wt.SeedRelays, filter)
+				if retry {
+					got = fetchListsFromEvery(batchCtx, wt.Pool, relays, filter)
+				} else {
+					got = fetchLatestLists(batchCtx, wt.Pool, relays, filter)
+				}
 			})
 		}()
 	}
-	freshComplete, changesComplete := true, true
-	fetched := 0
-	for range jobs {
-		r := <-results
-		eventsAnalysed.Add(r.got.received)
-		if !r.got.complete {
-			if r.job.since > 0 {
-				changesComplete = false
-			} else {
-				freshComplete = false
-			}
+	// An owners' fetch that did not finish leaves the full pass unstamped,
+	// like an incomplete batch.
+	freshComplete, changesComplete := ownersWhole, true
+	incomplete := func(job listJob) {
+		if job.since > 0 {
+			changesComplete = false
+		} else {
+			freshComplete = false
 		}
-		for pk, ev := range r.got.lists {
+	}
+	fetched := 0
+	merge := func(got listFetch) {
+		eventsAnalysed.Add(got.received)
+		for pk, ev := range got.lists {
 			if _, isFollow := followIndex[pk]; !isFollow {
 				continue
 			}
@@ -586,6 +591,57 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 			p.Lists = eventsAnalysed.Load()
 		})
 		slog.Info("🕸️ verified identities in community", "count", eventsAnalysed.Load())
+	}
+	for _, job := range jobs {
+		run(job, wt.SeedRelays, false)
+	}
+	// A quorum may cut the one relay holding a list (a follow's kind 3 is
+	// only on the relays it was sent to). Each batch that cut relays asks
+	// just those once more, waiting for them: a full batch for the follows
+	// still without a list, a changes batch for its whole window, so its
+	// since stamp can move.
+	type retryJob struct {
+		job    listJob
+		relays []string
+	}
+	var retries []retryJob
+	for range jobs {
+		r := <-results
+		merge(r.got)
+		if !r.got.complete {
+			incomplete(r.job)
+			continue
+		}
+		if len(r.got.cut) == 0 {
+			continue
+		}
+		retry := listJob{since: r.job.since}
+		if r.job.since > 0 {
+			retry.authors = r.job.authors
+		} else {
+			for _, pk := range r.job.authors {
+				if _, ok := lists[pk]; !ok {
+					retry.authors = append(retry.authors, pk)
+				}
+			}
+		}
+		if len(retry.authors) > 0 {
+			retries = append(retries, retryJob{retry, r.got.cut})
+		}
+	}
+	if len(retries) > 0 {
+		updateProgress(func(p *Progress) { p.Batches += len(retries) })
+		slog.Info("🕸️ asking the relays a quorum cut", "batches", len(retries))
+	}
+	for _, r := range retries {
+		run(r.job, r.relays, true)
+	}
+	for range retries {
+		r := <-results
+		merge(r.got)
+		if len(r.got.cut) > 0 {
+			incomplete(r.job)
+		}
 	}
 	// Changed lists replace stored ones, so the counts start over from the
 	// merged set once everything has landed.
@@ -700,8 +756,8 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	wt.SaveCache()
 	wt.saveLinks(follows, links)
 	// The next rebuild asks for changes since this one only if every
-	// changes fetch here was complete; a full pass that wasn't complete
-	// leaves the next one full too.
+	// changes fetch here was whole (no relay cut, or the cut ones answered
+	// when asked again); a full pass that wasn't leaves the next one full too.
 	switch {
 	case incremental && changesComplete:
 		since = started
