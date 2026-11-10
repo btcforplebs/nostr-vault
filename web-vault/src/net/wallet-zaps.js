@@ -54,6 +54,8 @@ export function paymentHashOf(invoice) {
 export function receiptOf(ev) {
   const tag = name => ev?.tags?.find(t => t.length >= 2 && t[0] === name)?.[1]
   const bolt11 = tag("bolt11")?.toLowerCase()
+  // zapDetailOf re-verifies the request's own signature on its signed fields; an unsigned or tampered request
+  // ("refund me at …") has no detail, so the row keeps only what the wallet itself said.
   const detail = zapDetailOf(tag("description") ?? "")
   if (!bolt11 || !detail) return null
   return { paymentHash: paymentHashOf(bolt11), bolt11, detail }

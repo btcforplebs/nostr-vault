@@ -22,6 +22,8 @@ export function putProfile(ev) {
 }
 
 function store(ev) {
+  // Safe only because this event came through pool.js (nostr-tools SimplePool passes verifyEvent).
+  // If you ever call this with an event from another source, check `signed` first — `lud16` decides who the Zap button pays.
   if (ev?.kind !== 0) return false
   const have = cache.get(ev.pubkey)
   if (have && have.created_at >= ev.created_at) return false

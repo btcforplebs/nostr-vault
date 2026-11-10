@@ -275,7 +275,7 @@ export function FeedScreen({ ctx }) {
     const t = setInterval(async () => {
       if (document.hidden || !navigator.onLine) return
       try {
-        const got = await fetchPopular({ me, follows, relays, vault, blocked })
+        const got = await fetchPopular({ me, follows, relays, vault, blocked, ctx })
         const next = got.notes
         if (keyNow.current !== "popular") return
         popularScores.current = got.scores
@@ -307,7 +307,7 @@ export function FeedScreen({ ctx }) {
       : c.mode === "discovery" && !network.current ? "Finding the people your follows follow…" : "Loading…")
     try {
       const page = c.mode === "popular"
-        ? await fetchPopular({ me: ctx.session?.pubkey, follows, relays, vault, blocked }).then(got => { popularScores.current = got.scores; return got.notes })
+        ? await fetchPopular({ me: ctx.session?.pubkey, follows, relays, vault, blocked, ctx }).then(got => { popularScores.current = got.scores; return got.notes })
         : c.mode === "discovery" ? await fetchDiscover(await discoverPeople(), account.relays.read, { until })
         : await fetchStrangerFeed(c, account.relays.read, { until, limit: c.mode === "media" ? MEDIA_PAGE : PAGE, trust: trustScoped(c) ? await globalTrust(ctx.session?.pubkey, follows) : null,
           // Under the Everyone lock a hashtag opens screened (feeds.js screenedHashtag), so a new account can find people.

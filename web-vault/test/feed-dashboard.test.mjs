@@ -131,6 +131,9 @@ test("dashboardFilters: follows in chunks of 500, the iPhone's kinds and limits"
 
 test("fetchDashboard over mock relays: one answer per relay group, a dead relay gives nothing, popular notes fetched by id", async () => {
   const liked = sign(stranger, 1, { content: "an older banger", at: now - 3 * 86400 })
+  // A receipt only counts sats when the payee's zap service published it and the request inside it verifies: this
+  // dashboard load has no ctx, so the service can't be looked up and the request check alone decides.
+  const zapRequest = sign(a, 9734, { tags: [["p", me.pk]] })
   const asked = []
   const query = async (relays, f) => {
     asked.push({ relays, f })
@@ -138,7 +141,7 @@ test("fetchDashboard over mock relays: one answer per relay group, a dead relay 
     if (f.kinds.includes(7)) return [sign(a, 7, { tags: [["e", liked.id]] }), sign(b, 7, { tags: [["e", liked.id]] })]
     if (f.kinds.includes(1)) return [sign(a, 1, { content: "hi" })]
     if (f.kinds.includes(30402)) throw new Error("relay down")
-    if (f.kinds.includes(9735)) return [sign(stranger, 9735, { tags: [["p", me.pk], ["bolt11", "lnbc10u1p"]] })]
+    if (f.kinds.includes(9735)) return [sign(stranger, 9735, { tags: [["p", me.pk], ["bolt11", "lnbc10u1p"], ["description", JSON.stringify(zapRequest)]] })]
     return []
   }
   const s = await fetchDashboard({ follows: [a.pk, b.pk], owner: me.pk, readRelays: ["wss://r1.example/", "wss://r2.example"], blocked: new Set(), now, query })

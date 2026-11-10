@@ -59,7 +59,7 @@ export function FeedDashboard({ ctx, blocked = new Set(), onPick, onClose }) {
     try {
       const now = Math.floor(Date.now() / 1000)
       const newFollowers = newFollowersSince(followersOf(readLists(me), me, blocked), now - WINDOW_S)
-      const s = await fetchDashboard({ follows, owner: me, readRelays: read, blocked, newFollowers, now })
+      const s = await fetchDashboard({ follows, owner: me, readRelays: read, blocked, newFollowers, now, ctx })
       if (n !== seq.current) return
       Object.assign(kept, { key, at: Date.now(), snapshot: s })
       setSnap(s)

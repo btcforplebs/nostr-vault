@@ -21,12 +21,14 @@ test("the note is the last e tag, so a like on a reply credits the reply, not th
 })
 
 test("a zap counts for the zapper in the signed zap request, not the wallet that signed the receipt", () => {
-  const sk = generateSecretKey()
-  const req = finalizeEvent({ kind: 9734, created_at: 1, tags: [["e", N1]], content: "" }, sk)
-  const receipt = { kind: 9735, pubkey: hex("f"), tags: [["e", N1], ["description", JSON.stringify(req)]] }
+  const sk = generateSecretKey(), payee = hex("9")
+  const req = finalizeEvent({ kind: 9734, created_at: 1, tags: [["p", payee], ["e", N1]], content: "" }, sk)
+  const receipt = { kind: 9735, pubkey: hex("f"), tags: [["p", payee], ["e", N1], ["description", JSON.stringify(req)]] }
   assert.equal(reactorOf(receipt), getPublicKey(sk))
-  assert.equal(reactorOf({ ...receipt, tags: [["e", N1], ["description", JSON.stringify({ ...req, pubkey: R1 })]] }), "", "a forged request counts for nobody")
-  assert.equal(reactorOf({ ...receipt, tags: [["e", N1]] }), "")
+  assert.equal(reactorOf({ ...receipt, tags: [["p", payee], ["e", N1], ["description", JSON.stringify({ ...req, pubkey: R1 })]] }), "", "a forged request counts for nobody")
+  assert.equal(reactorOf({ ...receipt, tags: [["p", payee], ["e", N1]] }), "", "a receipt with no request counts for nobody")
+  // The request has to be for this note: a real one wrapped in a receipt naming another note credits neither.
+  assert.equal(reactorOf({ ...receipt, tags: [["p", payee], ["e", N2], ["description", JSON.stringify(req)]] }), "")
 })
 
 test("only trusted people count, once per note, at the strongest thing they did", () => {
@@ -100,10 +102,14 @@ test("a big follow list asks for its contact lists in chunks of 250, all at once
 test("a stranger's zap is dropped before its signature is checked", () => {
   let verified = 0
   const verify = () => (verified++, true)
-  const zap = who => ({ kind: 9735, pubkey: hex("f"), tags: [["e", N1], ["description", JSON.stringify({ kind: 9734, pubkey: who, tags: [], content: "", sig: "x" })]] })
-  const t = tally([zap(STRANGER), zap(STRANGER), zap(R1)], new Set([R1]), verify)
+  const payee = hex("9"), trustedSk = generateSecretKey(), strangerSk = generateSecretKey()
+  const zap = sk => {
+    const req = finalizeEvent({ kind: 9734, created_at: 1, tags: [["p", payee], ["e", N1]], content: "" }, sk)
+    return { kind: 9735, pubkey: hex("f"), tags: [["p", payee], ["e", N1], ["description", JSON.stringify(req)]] }
+  }
+  const t = tally([zap(strangerSk), zap(strangerSk), zap(trustedSk)], new Set([getPublicKey(trustedSk)]), verify)
   assert.equal(verified, 1, "only the trusted zapper's request is verified")
-  assert.deepEqual([...t.get(N1)], [[R1, 3]])
+  assert.deepEqual([...t.get(N1)], [[getPublicKey(trustedSk), 3]])
 })
 
 test("blocked people's likes, reposts and zaps don't count, even when they're trusted", () => {
