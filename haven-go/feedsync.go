@@ -466,7 +466,8 @@ func syncFeed(ctx context.Context) {
 			return
 		}
 
-		pruneFeed(ctx, wdbFeed)
+		// Deleting alone gives no disk back: compact after a prune.
+		compactAfterPrune(feedDB, pruneFeed(ctx, wdbFeed), time.Now())
 		// Advance the fallback watermark to the start of this round when the
 		// round read everything, whether or not anything was cached:
 		// otherwise a quiet round leaves lastSeenFeed pinned in the past and
@@ -543,8 +544,9 @@ func syncFeed(ctx context.Context) {
 
 // pruneFeed deletes cached feed events older than the sync window (plus one
 // day of slack so reconciliation never sees a locally-pruned event as
-// missing). Keeps the phone's feedDB footprint proportional to the window.
-func pruneFeed(ctx context.Context, wdb eventstore.RelayWrapper) {
+// missing). Keeps the phone's feedDB footprint proportional to the window,
+// with compactAfterPrune. Returns how many it deleted.
+func pruneFeed(ctx context.Context, wdb eventstore.RelayWrapper) int {
 	cutoff := nostr.Timestamp(time.Now().Add(-time.Duration(config.FeedSyncWindowDays+1) * 24 * time.Hour).Unix())
 	deleted := 0
 	for range 20 { // bounded rounds so a huge backlog can't stall the loop
@@ -554,7 +556,7 @@ func pruneFeed(ctx context.Context, wdb eventstore.RelayWrapper) {
 		}
 		for _, ev := range evs {
 			if ctx.Err() != nil {
-				return
+				return deleted
 			}
 			if err := feedDB.DeleteEvent(ctx, ev); err == nil {
 				deleted++
@@ -567,4 +569,5 @@ func pruneFeed(ctx context.Context, wdb eventstore.RelayWrapper) {
 	if deleted > 0 {
 		slog.Info("feed cache pruned", "deleted", deleted)
 	}
+	return deleted
 }
