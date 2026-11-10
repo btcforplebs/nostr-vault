@@ -228,7 +228,7 @@ extension DMService {
             guard self.switchGeneration == generation else { return }
 
             let isNIP46 = ConfigService.shared.config.activeSigningMode() == "nip46"
-            let ownPrivkey: String = isNIP46 ? "" : try getActivePrivateKey()
+            let ownPrivkey: String = isNIP46 ? "" : try await activePrivateKey()
 
             let ownPubkey = self.loadedAccountPubkey
             let isFromMe = event.pubkey == ownPubkey

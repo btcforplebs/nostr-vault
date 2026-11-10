@@ -2,34 +2,29 @@ import Foundation
 import Combine
 
 extension DMService {
-    func getActivePrivateKey() throws -> String {
-        let config = ConfigService.shared.config
-        let activeNpub = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        let signingAsOwner = activeNpub.isEmpty || activeNpub == config.ownerNpub
-
-        if signingAsOwner {
-            if !config.ownerNcryptsec.isEmpty {
-                guard let password = NIP49Service.getPasswordFromKeychain() else {
-                    throw NSError(domain: "DMService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Password required for encrypted key"])
-                }
-                return try config.getDecryptedHexKey(password: password)
-            } else {
-                guard let key = config.ownerHexKey, !key.isEmpty else {
-                    throw NSError(domain: "DMService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Sender private key not available"])
-                }
-                return key
+    /// The active account's private key, opened once a session and never on
+    /// the main thread (SigningKeyCache): every DM sent and opened used to run
+    /// the NIP-49 scrypt again, on the main actor.
+    func activePrivateKey() async throws -> String {
+        let source: SigningKeySource
+        switch ConfigService.shared.activeKeySource() {
+        case .found(let found):
+            source = found
+        case .passwordMissing:
+            throw NSError(domain: "DMService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Password required for encrypted key"])
+        case .noKey:
+            let config = ConfigService.shared.config
+            let activeNpub = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+            if activeNpub.isEmpty || activeNpub == config.ownerNpub {
+                throw NSError(domain: "DMService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Sender private key not available"])
             }
-        } else {
-            if let hexKey = try ConfigService.shared.getCredentialHexKey(forNpub: activeNpub) {
-                return hexKey
-            } else {
-                throw NSError(domain: "DMService", code: -1, userInfo: [NSLocalizedDescriptionKey: "No private key credential stored for active account \(activeNpub.prefix(8))"])
-            }
+            throw NSError(domain: "DMService", code: -1, userInfo: [NSLocalizedDescriptionKey: "No private key credential stored for active account \(activeNpub.prefix(8))"])
         }
+        return try await SigningKeyCache.shared.hexKeyOffMain(for: source)
     }
 
     /// Whether inbound NIP-04 DMs can be decrypted for the active account.
-    /// Mirrors getActivePrivateKey()'s branching but only checks that key
+    /// Mirrors activePrivateKey()'s branching but only checks that key
     /// material is *present* — it never decrypts (no scrypt), so it is cheap to
     /// call per event. NIP-46 decrypts via the bunker; local mode needs a key.
     func canDecryptNIP04() -> Bool {
@@ -71,7 +66,7 @@ extension DMService {
 
         // ── Step 1: key and both gift wraps (throws on any signer failure) ──
         let isNIP46 = ConfigService.shared.config.activeSigningMode() == "nip46"
-        let senderPrivkey: String? = isNIP46 ? nil : try getActivePrivateKey()
+        let senderPrivkey: String? = isNIP46 ? nil : try await activePrivateKey()
         let rumorPTags = [["p", recipientHexPubkey]]
         async let recipientWrap = NIP17Service.createGiftWrapAsync(
             content: content,
@@ -160,7 +155,7 @@ extension DMService {
         if isNIP46 {
             encryptedContent = try await NIP04Service.encryptAsync(plaintext: content, remotePubkey: recipientHexPubkey)
         } else {
-            let senderPrivkey = try getActivePrivateKey()
+            let senderPrivkey = try await activePrivateKey()
             encryptedContent = try NIP04Service.encrypt(plaintext: content, remotePubkey: recipientHexPubkey, localPrivkey: senderPrivkey)
         }
 

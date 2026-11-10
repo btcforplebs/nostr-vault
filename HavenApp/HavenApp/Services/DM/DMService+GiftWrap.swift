@@ -68,7 +68,7 @@ extension DMService {
             guard self.switchGeneration == generation else { return }
 
             let isNIP46 = ConfigService.shared.config.activeSigningMode() == "nip46"
-            let recipientPrivkey: String? = isNIP46 ? nil : try getActivePrivateKey()
+            let recipientPrivkey: String? = isNIP46 ? nil : try await activePrivateKey()
 
             let (senderPubkey, content, timestamp, rumorTags) = try await NIP17Service.unwrapGiftWrapAsync(event, recipientPrivkey: recipientPrivkey)
 

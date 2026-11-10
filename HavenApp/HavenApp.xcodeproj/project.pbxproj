@@ -910,6 +910,7 @@
 		73DA5629CDA66CE308B85186 /* ArticleClipReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BCCF93729CB6A3A2DD9C2B3 /* ArticleClipReviewView.swift */; };
 		73DF2F6C863A8187F012AEDF /* FeedView+Toolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3530A78B65463AB53A515D98 /* FeedView+Toolbar.swift */; };
 		73EAFB57B852A6E9E57ECFD1 /* SearchView+Results.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0256D9CC9FF9955E7D6AE9 /* SearchView+Results.swift */; };
+		7403636C0857528211AF52E0 /* SigningKeyCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95A127DD2A70200F458E9D25 /* SigningKeyCache.swift */; };
 		741FA84BBE033DB172644990 /* AvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032FB98745404C41FF8B8FFF /* AvatarView.swift */; };
 		7425E1DDA8D4ECC44A11E858 /* FeedService+Follow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C28CF4FEF54D4C0FE1E90 /* FeedService+Follow.swift */; };
 		7427E754C38609A8A1B344D5 /* BringItOverStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE6DCB37E979F242074190A /* BringItOverStep.swift */; };
@@ -965,6 +966,7 @@
 		79E5F958610428D6003D787F /* PairShowQRView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CD384C3591A5893EF389394 /* PairShowQRView.swift */; };
 		79F598189DD72F85357A9D64 /* ComposeView+RelayMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5274A812424C7D0CF407E92 /* ComposeView+RelayMedia.swift */; };
 		7A1150CE373429DACC50BDC7 /* MeshDevices.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDFEEEE3A5F4A53B832E01EE /* MeshDevices.swift */; };
+		7A204259567C1C46048BCF41 /* SigningKeyCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95A127DD2A70200F458E9D25 /* SigningKeyCache.swift */; };
 		7A308820A6095AF7E150647B /* ProofOfWorkSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83D64C528C3BBCD856610AB5 /* ProofOfWorkSettingsView.swift */; };
 		7A31799E988CDADE27DACA06 /* TenorGifService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5A22ED51531ABDF7FF411DA /* TenorGifService.swift */; };
 		7A44C40A74B01F8BF5B56DB4 /* MusicArtistPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5947F392DFBF2A9CC90CEB91 /* MusicArtistPage.swift */; };
@@ -2753,6 +2755,7 @@
 		9410075B1BE7FC5BBAA601AD /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		950A4AEC4559ADDDA57CEE49 /* StatusShareTags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusShareTags.swift; sourceTree = "<group>"; };
 		9537B19D8281AE9ABF41514C /* NVDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVDeepLink.swift; sourceTree = "<group>"; };
+		95A127DD2A70200F458E9D25 /* SigningKeyCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SigningKeyCache.swift; sourceTree = "<group>"; };
 		95A69FF314C01604E9AB69A9 /* LiveStreamPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveStreamPlayerView.swift; sourceTree = "<group>"; };
 		95CEF2310C98ACF1EC0E34C6 /* RailEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RailEditSheet.swift; sourceTree = "<group>"; };
 		95D067C84E080273BBCC96B7 /* VaultAccountScope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultAccountScope.swift; sourceTree = "<group>"; };
@@ -4340,6 +4343,7 @@
 				E0C0296140A1B912CA95CB33 /* SetupRelayChoice.swift */,
 				55812FB11A77C917BDE1A406 /* ShellLayout.swift */,
 				B66050958913C4DFE7CAABBA /* SignerWaitGate.swift */,
+				95A127DD2A70200F458E9D25 /* SigningKeyCache.swift */,
 				9C76774A7C1421B8D5ECFCE5 /* SnoObject.swift */,
 				A04E0F5ADF9DEBE1B0772D48 /* SnoScene.swift */,
 				8248B12343E570FA1A759186 /* SpaceLayout.swift */,
@@ -5989,6 +5993,7 @@
 				F34E2131558134F8708AB50E /* SignInWithClaveView.swift in Sources */,
 				2D64BAF82A0A8FF79F93CF1B /* SignerRequestGate.swift in Sources */,
 				B4458685AE82CBDC247405F4 /* SignerWaitGate.swift in Sources */,
+				7A204259567C1C46048BCF41 /* SigningKeyCache.swift in Sources */,
 				F54A606BD7416C56D334ADD5 /* SleepWakeMonitor.swift in Sources */,
 				CE09C2DE853C0503379AD064 /* SnoObject.swift in Sources */,
 				8B934BB78D24822FC72CF081 /* SnoObjectView.swift in Sources */,
@@ -7014,6 +7019,7 @@
 				D4CBD50DD844C82D618664BA /* SignInWithClaveView.swift in Sources */,
 				A3F1C6042EDEF326CAFB8963 /* SignerRequestGate.swift in Sources */,
 				4DBA35F131CB3140A800A69A /* SignerWaitGate.swift in Sources */,
+				7403636C0857528211AF52E0 /* SigningKeyCache.swift in Sources */,
 				DFDA2D4ADCC88506D3F07CF0 /* SleepWakeMonitor.swift in Sources */,
 				CA8DFE048D6F57D3792197C5 /* SnoObject.swift in Sources */,
 				C8D4226C9C55AFA64A6B7CB2 /* SnoObjectView.swift in Sources */,

@@ -45,6 +45,8 @@ class AppDelegate: NSObject, ObservableObject {
         // in Time Machine and Migration Assistant, so the Mac gains an
         // encrypted key with its password in the keychain, not device binding.
         ConfigService.shared.secureOwnerKeyAtRest()
+        // Open the signing key once, off the main thread (SigningKeyCache).
+        ConfigService.shared.warmActiveSigningKey()
         RelayProcessManager.shared.appendLaunchLine("Keychain: \(CredentialStore.locationReport())",
                                                     in: ConfigService.shared.relayDataDir)
 

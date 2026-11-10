@@ -36,57 +36,62 @@ extension NostrService {
     }
 
     private func signEventLocal(kind: Int, content: String, tags: [[String]], password: String?, forceOwner: Bool, signAsNpub: String?, notBefore: Int64?) -> NostrEvent? {
-        var sk: String?
+        guard let plan = localSigningPlan(kind: kind, content: content, tags: tags, password: password,
+                                          forceOwner: forceOwner, signAsNpub: signAsNpub, notBefore: notBefore),
+              let sk = Self.secretKey(plan) else { return nil }
+        return EventPublisher.signWithGoBackend(eventJSON: plan.json, secretKey: sk)
+    }
+
+    /// `signEventLocal` with the key opened (once a session, see SigningKeyCache)
+    /// and the event signed off the main thread.
+    private func signEventLocalAsync(kind: Int, content: String, tags: [[String]], password: String?, forceOwner: Bool, signAsNpub: String?, notBefore: Int64?) async -> NostrEvent? {
+        guard let plan = localSigningPlan(kind: kind, content: content, tags: tags, password: password,
+                                          forceOwner: forceOwner, signAsNpub: signAsNpub, notBefore: notBefore) else { return nil }
+        return await Task.detached(priority: .userInitiated) {
+            guard let sk = Self.secretKey(plan) else { return nil }
+            return EventPublisher.signWithGoBackend(eventJSON: plan.json, secretKey: sk)
+        }.value
+    }
+
+    /// What a local signature needs, read on the main actor: where the key
+    /// comes from (no derivation here) and the unsigned event's JSON.
+    struct LocalSigningPlan: Sendable {
+        let source: SigningKeySource
+        let signingAsOwner: Bool
+        let json: String
+    }
+
+    private func localSigningPlan(kind: Int, content: String, tags: [[String]], password: String?, forceOwner: Bool, signAsNpub: String?, notBefore: Int64?) -> LocalSigningPlan? {
         let config = ConfigService.shared.config
 
         // Determine which account is signing
         let activeNpub = (signAsNpub ?? config.activeAccountNpub).trimmingCharacters(in: .whitespacesAndNewlines)
         let signingAsOwner = forceOwner || activeNpub.isEmpty || activeNpub == config.ownerNpub
-        
+
+        let source: SigningKeySource
         if signingAsOwner {
-            // ── Owner signing path (existing logic) ──────────────────────────
-            if !config.ownerNcryptsec.isEmpty {
-                let pwd = password ?? NIP49Service.getPasswordFromKeychain()
-                if let pwd = pwd {
-                    do {
-                        sk = try config.getDecryptedHexKey(password: pwd)
-                    } catch {
-                        Self.reportOwnerSigningFailure("the stored password did not decrypt the owner key (\(error.localizedDescription))")
-                        return nil
-                    }
-                } else {
-                    Self.reportOwnerSigningFailure("the owner key is encrypted and its password could not be read from the keychain")
-                    return nil
-                }
-            } else {
-                sk = config.ownerHexKey
-            }
-        } else {
-            // ── Whitelisted account signing path ─────────────────────────────
-            do {
-                if let hexKey = try ConfigService.shared.getCredentialHexKey(forNpub: activeNpub) {
-                    sk = hexKey
-                } else {
-                    // No credential stored — do NOT fall back to owner key, as that
-                    // would silently post from the wrong account.
-                    #if DEBUG
-                    print("NostrService: No credential for active account \(activeNpub.prefix(16))..., cannot sign")
-                    #endif
-                    return nil
-                }
-            } catch {
+            switch ConfigService.shared.ownerKeySource(password: password) {
+            case .found(let found):
+                source = found
+            case .passwordMissing:
+                Self.reportOwnerSigningFailure("the owner key is encrypted and its password could not be read from the keychain")
+                return nil
+            case .noKey:
                 #if DEBUG
-                print("NostrService: Failed to decrypt whitelisted account key: \(error.localizedDescription)")
+                print("NostrService: Cannot sign - no private key available")
                 #endif
                 return nil
             }
-        }
-
-        guard let sk = sk, !sk.isEmpty else {
-            #if DEBUG
-            print("NostrService: Cannot sign - no private key available")
-            #endif
-            return nil
+        } else {
+            // A whitelisted account: no credential stored means no signature.
+            // Never the owner key, which would post from the wrong account.
+            guard case .found(let found) = ConfigService.shared.credentialKeySource(forNpub: activeNpub) else {
+                #if DEBUG
+                print("NostrService: No credential for active account \(activeNpub.prefix(16))..., cannot sign")
+                #endif
+                return nil
+            }
+            source = found
         }
 
         // Use the signing account's pubkey for the event — decoded directly from
@@ -104,8 +109,27 @@ extension NostrService {
             #endif
             return nil
         }
+        return LocalSigningPlan(source: source, signingAsOwner: signingAsOwner, json: jsonStr)
+    }
 
-        return EventPublisher.signWithGoBackend(eventJSON: jsonStr, secretKey: sk)
+    /// The plan's secret key, from the session cache or derived on the calling
+    /// thread (the async paths call this off the main thread).
+    nonisolated private static func secretKey(_ plan: LocalSigningPlan) -> String? {
+        do {
+            let sk = try SigningKeyCache.shared.hexKey(for: plan.source)
+            return sk.isEmpty ? nil : sk
+        } catch {
+            if plan.signingAsOwner {
+                Task { @MainActor in
+                    reportOwnerSigningFailure("the stored password did not decrypt the owner key (\(error.localizedDescription))")
+                }
+            } else {
+                #if DEBUG
+                print("NostrService: Failed to decrypt whitelisted account key: \(error.localizedDescription)")
+                #endif
+            }
+            return nil
+        }
     }
 
     /// Async variant of signEvent that supports both local key and NIP-46 remote signing.
@@ -137,7 +161,7 @@ extension NostrService {
                 #endif
                 return nil
             }
-            return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: forceOwner, signAsNpub: target, notBefore: notBefore)
+            return await signEventLocalAsync(kind: kind, content: content, tags: tags, password: password, forceOwner: forceOwner, signAsNpub: target, notBefore: notBefore)
         }
 
         #if DEBUG
@@ -154,7 +178,7 @@ extension NostrService {
             // The session is looked up by the key the Go core files it under
             // (the link's host), not the account's own signerPubkey.
             guard config.ownerSignsWithBunker, let ownerSigner = config.ownerSessionKey else {
-                return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: true, notBefore: notBefore)
+                return await signEventLocalAsync(kind: kind, content: content, tags: tags, password: password, forceOwner: true, signAsNpub: nil, notBefore: notBefore)
             }
             let finalTags = EventPublisher.appendClientTag(to: tags, kind: kind)
             let eventDict = EventPublisher.buildUnsignedEvent(pubkey: ownerHexPubkey, kind: kind, content: content, tags: finalTags, notBefore: notBefore)
@@ -238,96 +262,32 @@ extension NostrService {
                 return nil
             }
         } else {
-            return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: forceOwner, signAsNpub: signAsNpub, notBefore: notBefore)
+            return await signEventLocalAsync(kind: kind, content: content, tags: tags, password: password, forceOwner: forceOwner, signAsNpub: signAsNpub, notBefore: notBefore)
         }
     }
 
     // MARK: - Proof of Work Mining + Signing
 
-    /// Resolves the secret key and builds the unsigned-event JSON for local signing.
-    /// Runs on the main actor (touches config/Keychain); returns Sendable primitives so
-    /// the heavy mine+sign can be handed to a background executor without crossing actors.
-    private func prepareLocalSigning(kind: Int, content: String, tags: [[String]], password: String?, forceOwner: Bool) -> (jsonStr: String, secretKey: String)? {
-        var sk: String?
-        let config = ConfigService.shared.config
-
-        let activeNpub = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        let signingAsOwner = forceOwner || activeNpub.isEmpty || activeNpub == config.ownerNpub
-
-        if signingAsOwner {
-            if !config.ownerNcryptsec.isEmpty {
-                let pwd = password ?? NIP49Service.getPasswordFromKeychain()
-                if let pwd = pwd {
-                    do {
-                        sk = try config.getDecryptedHexKey(password: pwd)
-                    } catch {
-                        Self.reportOwnerSigningFailure("the stored password did not decrypt the owner key (\(error.localizedDescription))")
-                        return nil
-                    }
-                } else {
-                    Self.reportOwnerSigningFailure("the owner key is encrypted and its password could not be read from the keychain")
-                    return nil
-                }
-            } else {
-                sk = config.ownerHexKey
-            }
-        } else {
-            do {
-                if let hexKey = try ConfigService.shared.getCredentialHexKey(forNpub: activeNpub) {
-                    sk = hexKey
-                } else {
-                    #if DEBUG
-                    print("NostrService: No credential for active account \(activeNpub.prefix(16))..., cannot sign")
-                    #endif
-                    return nil
-                }
-            } catch {
-                #if DEBUG
-                print("NostrService: Failed to decrypt whitelisted account key: \(error.localizedDescription)")
-                #endif
-                return nil
-            }
-        }
-
-        guard let sk = sk, !sk.isEmpty else {
-            #if DEBUG
-            print("NostrService: Cannot sign - no private key available")
-            #endif
-            return nil
-        }
-
-        let signingPubkey = signingAsOwner ? ownerHexPubkey : activeHexPubkey
-        let finalTags = EventPublisher.appendClientTag(to: tags, kind: kind)
-        let eventDict = EventPublisher.buildUnsignedEvent(pubkey: signingPubkey, kind: kind, content: content, tags: finalTags)
-
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
-              let jsonStr = String(data: jsonData, encoding: .utf8) else {
-            #if DEBUG
-            print("NostrService: Failed to serialize event to JSON")
-            #endif
-            return nil
-        }
-
-        return (jsonStr, sk)
-    }
-
     /// Signs an event with NIP-13 Proof of Work mining via the Go backend.
     /// When difficulty > 0, mines a nonce tag before signing. Falls back to plain signing on failure.
     ///
     /// NOTE: PoW mining is a tight CPU loop (up to `maxAttempts` SHA256 hashes). This synchronous
-    /// entry point runs it on the calling thread — for the main actor, prefer `mineAndSignEventAsync`,
-    /// which offloads the mine to a background executor so the UI/run loop stays responsive.
+    /// entry point runs it, and any key derivation, on the calling thread — for the main actor,
+    /// prefer `mineAndSignEventAsync`, which runs both on a background executor.
     func mineAndSignEvent(kind: Int, content: String, tags: [[String]] = [], difficulty: Int = 0, maxAttempts: Int = 10_000_000, password: String? = nil, forceOwner: Bool = false) -> NostrEvent? {
-        guard let prep = prepareLocalSigning(kind: kind, content: content, tags: tags, password: password, forceOwner: forceOwner) else {
+        guard let plan = localSigningPlan(kind: kind, content: content, tags: tags, password: password,
+                                          forceOwner: forceOwner, signAsNpub: nil, notBefore: nil),
+              let sk = Self.secretKey(plan) else {
             return nil
         }
-        return EventPublisher.mineAndSignWithGoBackend(eventJSON: prep.jsonStr, secretKey: prep.secretKey, difficulty: difficulty, maxAttempts: maxAttempts)
+        return EventPublisher.mineAndSignWithGoBackend(eventJSON: plan.json, secretKey: sk, difficulty: difficulty, maxAttempts: maxAttempts)
     }
 
     /// Async variant of mineAndSignEvent that supports NIP-46 remote signing.
     /// For NIP-46 mode: skips PoW (no secret key available) and delegates to signEventAsync.
-    /// For local mode: mines PoW and signs via the Go backend on a background executor so the
-    /// main thread is never blocked by the mining loop (which would otherwise trip the iOS watchdog).
+    /// For local mode: opens the key (once a session) and mines + signs via the Go backend on a
+    /// background executor, so the main thread is never blocked by either (the mining loop would
+    /// otherwise trip the iOS watchdog).
     func mineAndSignEventAsync(kind: Int, content: String, tags: [[String]] = [], difficulty: Int = 0, maxAttempts: Int = 10_000_000, password: String? = nil) async -> NostrEvent? {
         let config = ConfigService.shared.config
         let mode = config.activeSigningMode()
@@ -337,16 +297,15 @@ extension NostrService {
             return await signEventAsync(kind: kind, content: content, tags: tags, password: password)
         }
 
-        // Resolve key + build JSON on the main actor (Keychain/config access)…
-        guard let prep = prepareLocalSigning(kind: kind, content: content, tags: tags, password: password, forceOwner: false) else {
+        // Read where the key comes from + build JSON on the main actor (Keychain/config access)…
+        guard let plan = localSigningPlan(kind: kind, content: content, tags: tags, password: password,
+                                          forceOwner: false, signAsNpub: nil, notBefore: nil) else {
             return nil
         }
-        // …then mine + sign off the main thread. `mineAndSignWithGoBackend` is a non-isolated
-        // static func operating only on the Sendable Strings we pass in.
-        let jsonStr = prep.jsonStr
-        let secretKey = prep.secretKey
+        // …then open the key and mine + sign off the main thread.
         return await Task.detached(priority: .userInitiated) {
-            EventPublisher.mineAndSignWithGoBackend(eventJSON: jsonStr, secretKey: secretKey, difficulty: difficulty, maxAttempts: maxAttempts)
+            guard let sk = Self.secretKey(plan) else { return nil }
+            return EventPublisher.mineAndSignWithGoBackend(eventJSON: plan.json, secretKey: sk, difficulty: difficulty, maxAttempts: maxAttempts)
         }.value
     }
 }

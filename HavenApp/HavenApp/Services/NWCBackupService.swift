@@ -100,7 +100,7 @@ enum NWCBackupService {
         if usesRemoteSigner {
             return try await NIP44Service.encryptAsync(plaintext: plaintext, recipientPubkey: me)
         }
-        guard let sk = try? DMService.shared.getActivePrivateKey() else { throw BackupError.noKey }
+        guard let sk = try? await DMService.shared.activePrivateKey() else { throw BackupError.noKey }
         return try NIP44Service.encrypt(plaintext: plaintext, recipientPubkey: me, senderPrivkey: sk)
     }
 
@@ -108,7 +108,7 @@ enum NWCBackupService {
         if usesRemoteSigner {
             return try await NIP44Service.decryptAsync(ciphertext: ciphertext, senderPubkey: me)
         }
-        guard let sk = try? DMService.shared.getActivePrivateKey() else { throw BackupError.noKey }
+        guard let sk = try? await DMService.shared.activePrivateKey() else { throw BackupError.noKey }
         return try NIP44Service.decrypt(ciphertext: ciphertext, senderPubkey: me, recipientPrivkey: sk)
     }
 }
