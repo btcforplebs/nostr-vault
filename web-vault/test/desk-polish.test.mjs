@@ -61,7 +61,7 @@ test("the desktop sections are a slim left rail in the iPad's order, and the Fee
 // Your space's column (--dock-w), not at the window's edge.
 test("the desktop Vault capsule stays out of Your space", () => {
   const css = src("styles/settings.css")
-  assert.match(css, /^\.vault-status\.desk \{ right: calc\(var\(--dock-w, 0px\) \+ 24px\); bottom: 20px; \}/m)
+  assert.match(css, /^\.vault-status\.desk-float \{ right: calc\(var\(--dock-w, 0px\) \+ 24px\); bottom: 20px; \}/m)
   assert.match(src("styles/desktop.css"), /\.desk-app:has\(\.desk\.space\) \{ --dock-w: 436px; \}/, "--dock-w is Your space's width (panels + icon rail)")
 })
 
