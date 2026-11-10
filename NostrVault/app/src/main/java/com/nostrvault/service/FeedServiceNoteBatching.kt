@@ -265,10 +265,10 @@ import com.nostrvault.service.FeedService.Companion.MAX_SEEN_IDS
     }
 
     /**
-     * Insert notes directly into the visible feed, re-sorting newest-first and capping size.
+     * Insert notes directly into the visible feed, newest-first ([FeedNoteMerge]), capped in size.
      *
-     * The merge copies, dedupes and sorts the whole feed (up to MAX_FEED_NOTES),
-     * so it runs on [processingDispatcher]; doing it on Main cost a frame per
+     * The merge copies and dedupes the whole feed (up to MAX_FEED_NOTES), so it
+     * runs on [processingDispatcher]; doing it on Main cost a frame per
      * relay batch. One worker does every merge: batches that land while it is
      * busy are folded into its next pass instead of racing it (on Global a
      * batch lands every 50 ms, and parallel merges kept invalidating each
@@ -293,10 +293,9 @@ import com.nostrvault.service.FeedService.Companion.MAX_SEEN_IDS
                     while (true) {
                         val base = _notes.value
                         val merged = withContext(processingDispatcher) {
-                            val m = (base + newNotes)
-                                .distinctBy { it.id } // LazyColumn keys on id — duplicates crash the UI
-                                .sortedByDescending { it.createdAt }
-                            if (m.size > MAX_FEED_NOTES) m.take(MAX_FEED_NOTES) else m
+                            // Deduped by id (LazyColumn keys on id — duplicates
+                            // crash the UI), newest-first, inserted in order.
+                            FeedNoteMerge.mergeNewestFirst(base, newNotes, MAX_FEED_NOTES)
                         }
                         if (_notes.value === base) {
                             _notes.value = merged
