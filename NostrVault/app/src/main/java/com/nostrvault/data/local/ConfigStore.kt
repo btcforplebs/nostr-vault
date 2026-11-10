@@ -81,6 +81,35 @@ class ConfigStore @Inject constructor(
         fun forgetEverything() {}
     }
 
+    /** Where the config's secrets are kept (ConfigSecrets), by account. Tests put their own here. */
+    internal interface SecretVault {
+        fun read(account: String): String?
+        fun write(account: String, value: String): Boolean
+        fun delete(account: String): Boolean
+    }
+
+    internal var secretVault: SecretVault = object : SecretVault {
+        override fun read(account: String): String? {
+            CredentialStore.init(context)
+            return CredentialStore.getConfigSecret(account)
+        }
+        override fun write(account: String, value: String): Boolean {
+            CredentialStore.init(context)
+            return CredentialStore.storeConfigSecret(value, account)
+        }
+        override fun delete(account: String): Boolean {
+            CredentialStore.init(context)
+            return CredentialStore.deleteConfigSecret(account)
+        }
+    }
+
+    /** What [secretVault] is known to hold. */
+    @Volatile private var secretSync = ConfigSecretSync()
+    /** Accounts whose secret [secretVault] holds now, left out of the file. */
+    @Volatile private var secretsInVault: Set<String> = emptySet()
+    /** Secrets the file held as plaintext at load: scrubbed from set-aside copies once stored. */
+    private val plaintextSecrets = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
     internal var keyVault: KeyVault = object : KeyVault {
         override fun read(hexPubkey: String): String? {
             CredentialStore.init(context)
@@ -184,6 +213,17 @@ class ConfigStore @Inject constructor(
             keyInFile = null
             HavenConfig()
         }
+        // The wallet and signer-link secrets (ConfigSecrets): filled in from the
+        // credential store; any the file still holds move there on the save below.
+        val secretsInFile = ConfigSecrets.of(loaded).values
+        plaintextSecrets += secretsInFile
+        val stored = mutableMapOf<String, String>()
+        loaded = ConfigSecrets.attach(loaded) { account ->
+            val value = try { secretVault.read(account) } catch (_: Exception) { null }
+            value?.let { stored[account] = it }
+            value
+        }
+        secretSync = ConfigSecretSync(stored)
         loaded = loaded.copy(
             ownerHexKey = keyInFile ?: hexPubkey(loaded.ownerNpub)?.let { pub ->
                 try { keyVault.read(pub) } catch (_: Exception) { null }
@@ -253,7 +293,7 @@ class ConfigStore @Inject constructor(
         }
 
         setConfig(loaded)
-        if (removedStarterPicks || droppedDamus || keyInFile != null) CoroutineScope(Dispatchers.IO).launch { save() }
+        if (removedStarterPicks || droppedDamus || keyInFile != null || secretsInFile.isNotEmpty()) CoroutineScope(Dispatchers.IO).launch { save() }
 
     }
 
@@ -306,17 +346,52 @@ class ConfigStore @Inject constructor(
         saveLock.withLock {
             val cfg = _config.value
             try {
+                secretsInVault = secretSync.sync(
+                    ConfigSecrets.of(cfg),
+                    store = { account, value -> try { secretVault.write(account, value) } catch (_: Exception) { false } },
+                    delete = { account -> try { secretVault.delete(account) } catch (_: Exception) { false } },
+                )
+                val onDisk = ConfigSecrets.stripped(cfg, secretsInVault)
                 val tmp = File(configFile.parentFile, configFile.name + ".tmp")
                 tmp.outputStream().use { out ->
-                    out.write(encodeForDisk(cfg, ownerKeyForFile(cfg)).toByteArray())
+                    out.write(encodeForDisk(onDisk, ownerKeyForFile(cfg)).toByteArray())
                     out.fd.sync()
                 }
                 Files.move(tmp.toPath(), configFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
+                scrubSetAsideCopies(cfg)
             } catch (e: Exception) {
                 Log.e("ConfigStore", "config save failed: ${e.message}")
             }
         }
     }
+
+    /**
+     * Secrets the file held as plaintext come out of the copies set aside
+     * beside it (`.unreadable-<ms>`) once the file is written without them:
+     * each one the store now holds, and each one the config no longer has at
+     * all (a wallet since disconnected or replaced).
+     */
+    private fun scrubSetAsideCopies(cfg: HavenConfig) {
+        if (plaintextSecrets.isEmpty()) return
+        val held = secretsInVault.mapNotNull { secretSync.synced[it] }.toSet()
+        val live = ConfigSecrets.of(cfg).values.toSet()
+        val done = synchronized(plaintextSecrets) { plaintextSecrets.filter { it in held || it !in live } }
+        if (done.isEmpty()) return
+        for (copy in setAsideCopies()) {
+            try {
+                val text = copy.readText()
+                val scrubbed = ConfigSecrets.scrub(text, done)
+                if (scrubbed != text) copy.writeText(scrubbed)
+            } catch (e: Exception) {
+                Log.e("ConfigStore", "could not scrub ${copy.name}: ${e.message}")
+                return
+            }
+        }
+        plaintextSecrets -= done.toSet()
+    }
+
+    private fun setAsideCopies(): List<File> =
+        configFile.parentFile?.listFiles()?.filter { it.name.startsWith("${configFile.name}.unreadable-") }.orEmpty()
 
     /**
      * Puts the owner's key in [keyVault]. Returns the key only if the vault
@@ -558,6 +633,9 @@ class ConfigStore @Inject constructor(
             wipeAppFiles(context.filesDir)
             try { wipeOutsideFiles() } catch (_: Exception) { }
             vaulted = null
+            secretSync = ConfigSecretSync()
+            secretsInVault = emptySet()
+            plaintextSecrets.clear()
             // The relay's certificate goes with its data; a new one is coming.
             LocalTls.forgetAll()
             forgetListState(context.filesDir, clearPrefs)
