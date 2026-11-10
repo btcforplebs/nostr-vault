@@ -346,23 +346,26 @@ class FeedViewModel @Inject constructor(
         _feedMode,
         _layoutModeToggle,
         configStore.config,
-    ) { mode, _, config ->
+    ) { mode, _, config -> resolveLayoutMode(mode, config) }
+        // Starts as the stored layout, so the first frame draws the feed in it.
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), resolveLayoutMode(_feedMode.value, configStore.config.value))
+
+    private fun resolveLayoutMode(mode: FeedMode, config: com.nostrvault.relay.HavenConfig): FeedLayoutMode =
         FeedLayoutMode.resolve(
             storedLayout = config.feedLayoutModes[mode.name],
             storedCompact = config.feedCompactModes[mode.name],
             defaultCompact = defaultCompact(mode),
         ).clamped(supportsThreading = feedSupportsThreading(mode))
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FeedLayoutMode.EXPANDED)
 
     /** Condensed rows are active — either of the two condensed layouts. */
     val compactModeEnabled: StateFlow<Boolean> = layoutMode
         .map { it.usesCondensedRows }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), layoutMode.value.usesCondensedRows)
 
     /** Whole conversations instead of loose rows. */
     val threadedModeEnabled: StateFlow<Boolean> = layoutMode
         .map { it == FeedLayoutMode.THREADED }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), layoutMode.value == FeedLayoutMode.THREADED)
 
     /** Advance the current feed one step around expanded -> condensed -> threaded and persist it. */
     fun cycleLayoutMode() {
@@ -468,7 +471,29 @@ class FeedViewModel @Inject constructor(
         configStore.config.map { it.blockedForActiveAccount() }.distinctUntilChanged(),
         // A resort() bump re-runs this with the frozen order dropped.
         feedService.feedThreadReplies.combine(threadResorts) { replies, _ -> replies },
-    ) { notes, threaded, _, _, fetchedReplies ->
+    ) { notes, threaded, _, _, fetchedReplies -> buildFeedThreads(notes, threaded, fetchedReplies) }
+        .flowOn(Dispatchers.Default)
+        // A launch that restored the saved feed draws its threads in the first frame.
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), initialFeedThreads())
+
+    /**
+     * The threads for the cached feed the screen opens on, built here on
+     * main so the first frame has them; the flow above takes over from its
+     * first emission. Global and Popular fetch their replies first, so they
+     * start empty, as before.
+     */
+    private fun initialFeedThreads(): List<FeedThread> {
+        val notes = feedService.filteredNotes.value
+        if (notes.isEmpty() || !threadedModeEnabled.value) return emptyList()
+        if (FeedThreadReplies.fetchesReplies(feedService.feedMode.value)) return emptyList()
+        return buildFeedThreads(notes, threaded = true, fetchedReplies = emptyMap())
+    }
+
+    private fun buildFeedThreads(
+        notes: List<FeedNote>,
+        threaded: Boolean,
+        fetchedReplies: Map<String, FeedNote>,
+    ): List<FeedThread> =
         // Hashtags groups its own sections (HashtagsFeed).
         if (!threaded || _feedMode.value == FeedMode.HASHTAGS) emptyList<FeedThread>().also { threadOrder.resort() } else {
             val blocked = feedService.blockedHexForActiveAccount()
@@ -493,8 +518,6 @@ class FeedViewModel @Inject constructor(
             // Popular and Global already keep the feed's order.
             if (fetchesReplies) threads else threadOrder.apply(threads)
         }
-    }.flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun fetchMissingNote(id: String) = feedService.fetchMissingNote(id)
 

@@ -52,6 +52,7 @@ import com.nostrvault.service.NoteTranslationPolicy
 import com.nostrvault.service.NoteTranslator
 import com.nostrvault.service.PendingPostManager
 import com.nostrvault.service.sharedStreamUris
+import com.nostrvault.service.showLaunchSnapshot
 import com.nostrvault.service.music.MusicPlayer
 import com.nostrvault.ui.components.FullScreenMediaHost
 import com.nostrvault.ui.components.LocalNoteTranslation
@@ -143,6 +144,12 @@ class MainActivity : FragmentActivity() {
         // closed, each widget asks on the launcher's own update period.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) { homeWidgetRefresher.runWhileOpen() }
+        }
+
+        // The saved feed, read while the app started, goes in before the
+        // first frame is built, so that frame shows notes, not an empty feed.
+        if (configStore.config.value.hasCompletedSetup) {
+            feedService.showLaunchSnapshot(maxWaitMs = LAUNCH_SNAPSHOT_WAIT_MS)
         }
 
         setContent {
@@ -512,6 +519,9 @@ class MainActivity : FragmentActivity() {
         AmberResultBridge.detach()
     }
 }
+
+/** At most this long on main for a snapshot read still under way; past it the feed restores as before. */
+private const val LAUNCH_SNAPSHOT_WAIT_MS = 200L
 
 /** Lets the main screen draw before Android's notification question covers it. */
 private const val NOTIFICATION_ASK_DELAY_MS = 1_000L

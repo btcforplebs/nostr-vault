@@ -18,55 +18,18 @@ import com.nostrvault.service.FeedService.Companion.AVATAR_PREWARM_COUNT
     internal suspend fun FeedService.restoreFromDiskIfAvailable(): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                val key = currentSnapshotKey()
-                val dir = configStore.config.value.appSupportDir ?: return@withContext false
-                val file = File(dir, "feed_snapshot_$key.json")
+                val file = snapshotFile() ?: return@withContext false
                 if (!file.exists()) return@withContext false
 
                 val content = file.readText()
                 val snapshot = json.decodeFromString(DiskFeedSnapshot.serializer(), content)
 
-                // Check age
-                if (System.currentTimeMillis() - snapshot.savedAt > SNAPSHOT_MAX_AGE_MS) {
+                if (snapshotTooOld(snapshot)) {
                     file.delete()
                     return@withContext false
                 }
 
-                // Populate seenIds from restored notes to prevent duplicates on top-up
-                seenIdsLock.withLock {
-                    for (note in snapshot.notes) {
-                        seenIds.add(note.id)
-                    }
-                }
-
-                withContext(Dispatchers.Main.immediate) {
-                    // The snapshot is whatever list was on screen, not one feed's.
-                    forgetFeedNotesKey()
-                    // distinctBy: a snapshot written while _notes briefly held a
-                    // duplicate id would otherwise crash-loop every launch
-                    // (LazyColumn duplicate key on first render).
-                    // A snapshot saved before a delete still holds the post.
-                    _notes.value = withoutDeletedNotes(snapshot.notes.distinctBy { it.id })
-                    _followedPubkeys.value = snapshot.followedPubkeys
-                    _noteStats.value = snapshot.noteStats
-                    contactListContent = snapshot.contactListContent
-                    _likedEventIds.value = snapshot.likedEventIds
-                    _zappedEventIds.value = snapshot.zappedEventIds
-                    _hasAttemptedContactLoad.value = true
-
-                    // Restore scroll position so the feed opens where the user left off
-                    if (snapshot.scrollIndex > 0) {
-                        _restoredScrollPosition.value = ScrollPosition(
-                            snapshot.scrollIndex,
-                            snapshot.scrollOffset,
-                        )
-                    }
-
-                    // Warm avatar memory cache before UI renders the list
-                    prewarmAvatarCache(snapshot.notes)
-
-                    recomputeFilteredNotes()
-                }
+                withContext(Dispatchers.Main.immediate) { applyDiskSnapshot(snapshot) }
 
                 true
             } catch (e: Exception) {
@@ -74,6 +37,76 @@ import com.nostrvault.service.FeedService.Companion.AVATAR_PREWARM_COUNT
                 false
             }
         }
+    }
+
+    /** The active account's saved feed: what [persistCurrentSnapshot] writes. */
+    internal fun FeedService.snapshotFile(): File? {
+        val dir = configStore.config.value.appSupportDir ?: return null
+        return File(dir, "feed_snapshot_${currentSnapshotKey()}.json")
+    }
+
+    internal fun snapshotTooOld(snapshot: DiskFeedSnapshot): Boolean =
+        System.currentTimeMillis() - snapshot.savedAt > SNAPSHOT_MAX_AGE_MS
+
+    /**
+     * Puts the snapshot [FeedSnapshotPreload] read during app start on screen
+     * now, filtered, so the first frame shows notes instead of an empty feed.
+     * Main thread, from MainActivity.onCreate before setContent. Does nothing
+     * where the launch prewarm would not run, for Discover and the computed
+     * feeds (they restore their own saved notes), or when the read is not
+     * ready within [maxWaitMs]; [prewarmFromCache] and [resumeFeed] then
+     * restore it as before.
+     */
+    internal fun FeedService.showLaunchSnapshot(maxWaitMs: Long): Boolean {
+        val mode = _feedMode.value
+        if (mode in FeedModeCacheDisk.MODES) return false
+        if (!shouldPrewarm(mode, _notes.value.isEmpty(), cachedFeedRestored, initialLoadStarted)) return false
+        val file = snapshotFile() ?: return false
+        val snapshot = FeedSnapshotPreload.take(file, maxWaitMs) ?: return false
+        // A stale one is left for the normal restore, which deletes it.
+        if (snapshotTooOld(snapshot)) return false
+        applyDiskSnapshot(snapshot)
+        // The first frame reads the filtered list: build it now, not after the debounce.
+        recomputeJob?.cancel()
+        doRecomputeFilteredNotes()
+        cachedFeedRestored = true
+        return true
+    }
+
+    /** The snapshot's notes and state into the feed. Main thread. */
+    internal fun FeedService.applyDiskSnapshot(snapshot: DiskFeedSnapshot) {
+        // Populate seenIds from restored notes to prevent duplicates on top-up
+        seenIdsLock.withLock {
+            for (note in snapshot.notes) {
+                seenIds.add(note.id)
+            }
+        }
+        // The snapshot is whatever list was on screen, not one feed's.
+        forgetFeedNotesKey()
+        // distinctBy: a snapshot written while _notes briefly held a
+        // duplicate id would otherwise crash-loop every launch
+        // (LazyColumn duplicate key on first render).
+        // A snapshot saved before a delete still holds the post.
+        _notes.value = withoutDeletedNotes(snapshot.notes.distinctBy { it.id })
+        _followedPubkeys.value = snapshot.followedPubkeys
+        _noteStats.value = snapshot.noteStats
+        contactListContent = snapshot.contactListContent
+        _likedEventIds.value = snapshot.likedEventIds
+        _zappedEventIds.value = snapshot.zappedEventIds
+        _hasAttemptedContactLoad.value = true
+
+        // Restore scroll position so the feed opens where the user left off
+        if (snapshot.scrollIndex > 0) {
+            _restoredScrollPosition.value = ScrollPosition(
+                snapshot.scrollIndex,
+                snapshot.scrollOffset,
+            )
+        }
+
+        // Warm avatar memory cache before UI renders the list
+        prewarmAvatarCache(snapshot.notes)
+
+        recomputeFilteredNotes()
     }
 
     /**

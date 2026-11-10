@@ -62,6 +62,8 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         warmUpOffMain()
+        // The saved feed is read while Hilt builds the app, for the first frame.
+        com.nostrvault.service.FeedSnapshotPreload.start(this)
         super.onCreate()
         ProfileRepository.init(this)
         com.nostrvault.service.OwnListEdits.init(this)
