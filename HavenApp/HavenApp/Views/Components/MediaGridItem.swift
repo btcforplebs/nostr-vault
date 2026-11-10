@@ -260,3 +260,16 @@ struct MediaGridItem: View {
     }
     #endif
 }
+
+/// A parent rebuild hands the cell new closures, and SwiftUI cannot compare
+/// closures, so without this every visible cell re-ran on every parent update.
+/// The cell's look depends on the item and on which actions exist; the
+/// closures only reach the parent's state, which lives outside this struct.
+extension MediaGridItem: Equatable {
+    static func == (lhs: MediaGridItem, rhs: MediaGridItem) -> Bool {
+        lhs.item == rhs.item
+            && (lhs.onDeleteFromMirrors == nil) == (rhs.onDeleteFromMirrors == nil)
+            && (lhs.onDeleteEverywhere == nil) == (rhs.onDeleteEverywhere == nil)
+            && (lhs.onMirrorComplete == nil) == (rhs.onMirrorComplete == nil)
+    }
+}

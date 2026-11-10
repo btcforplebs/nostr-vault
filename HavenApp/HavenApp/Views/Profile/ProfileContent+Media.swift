@@ -57,6 +57,7 @@ extension ProfileContent {
                             selectedMedia = mediaItem
                         }
                     }
+                    .equatable()
                 }
             }
             .padding(.horizontal, 8)
