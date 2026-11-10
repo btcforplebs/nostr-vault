@@ -21,7 +21,7 @@ export async function toggleFollow(ctx, pk, follow) {
   await ctx.reloadAccount?.()
 }
 
-export function AvatarMenu({ pubkey, size = 40 }) {
+export function AvatarMenu({ pubkey, size = 40, load = true }) {
   const ctx = actionContext()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -42,7 +42,7 @@ export function AvatarMenu({ pubkey, size = 40 }) {
     <span class="avatar-menu" ref={ref} onClick={e => e.stopPropagation()}>
       <a href={`#/profile/${pubkey}`} class="avatar-menu-photo" onClick={click} aria-haspopup={own ? undefined : "menu"} aria-expanded={own ? undefined : open}
         aria-label={own ? "Your profile" : "Profile picture: Follow, Web of Trust, Block"}>
-        <Avatar pubkey={pubkey} size={size} />
+        <Avatar pubkey={pubkey} size={size} load={load} />
       </a>
       {open && <QuickMenu ctx={ctx} pubkey={pubkey} onClose={() => setOpen(false)} />}
     </span>

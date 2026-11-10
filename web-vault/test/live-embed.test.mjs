@@ -37,7 +37,7 @@ test("on air plays; ended, stale, or with nothing to play shows ENDED", () => {
 
 test("the quote card hands a stream to the embed, and the tile has an ENDED state that can't be tapped", () => {
   const quoted = readFileSync(new URL("../src/components/QuotedNote.jsx", import.meta.url), "utf8")
-  assert.match(quoted, /const stream = embeddedStream\(ev\)\n\s*if \(stream\) return <LiveEmbed stream=\{stream\} \/>/)
+  assert.match(quoted, /const stream = embeddedStream\(ev\)\n\s*if \(stream\) return <LiveEmbed stream=\{stream\}( load=\{[^}]+\})? \/>/)
   const live = readFileSync(new URL("../src/readers/LiveScreen.jsx", import.meta.url), "utf8")
   assert.match(live, /if \(ended\) onOpen = null/)
   assert.match(live, /<span class="live-badge live-ended">ENDED<\/span>/)

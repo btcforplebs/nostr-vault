@@ -35,9 +35,11 @@ export function AuthorName({ pubkey }) {
 /** A kind 1 note, or a kind 6 repost shown as the reposted note with a "reposted" line. Floating card, as on iOS
  *  (VaultNoteRow), with the iPhone's action row under it: reply, repost, quote, like. A repost's actions act on the
  *  note inside it, zap included. `memoryOnly`: a stranger's note (Global, Hashtag), so quotes and @names inside it
- *  aren't written to Haven /feed. */
-export function NoteCard({ event, memoryOnly = false, showParent = false, footer = null }) {
-  return <Undeleted ids={gateIds(event)}>{card(event, memoryOnly, showParent, footer)}</Undeleted>
+ *  aren't written to Haven /feed. `trusted(pubkey)`: given (the Vault lists), whose avatar, pictures, link-card
+ *  previews and quoted notes load; a stranger's wait, or drawing the card would tell their server your IP. Not given
+ *  (the feeds), everything loads as before. */
+export function NoteCard({ event, memoryOnly = false, showParent = false, footer = null, trusted }) {
+  return <Undeleted ids={gateIds(event)}>{card(event, memoryOnly, showParent, footer, trusted)}</Undeleted>
 }
 
 /** Its children, until this account deletes one of `ids` (a post, or the note a repost carries): then nothing, at
@@ -53,8 +55,8 @@ export function Undeleted({ ids, children }) {
 }
 
 // `footer`: drawn inside the card under the actions (a thread note's reactions).
-function card(event, memoryOnly, showParent, footer) {
-  if (event.kind === GENERIC_REPOST_KIND) return genericRepost(event, memoryOnly, footer)
+function card(event, memoryOnly, showParent, footer, trusted) {
+  if (event.kind === GENERIC_REPOST_KIND) return genericRepost(event, memoryOnly, footer, trusted)
   if (event.kind === 6) {
     // The embedded note is only as good as whoever reposted it: unsigned or tampered, it is fetched by id instead,
     // so its pubkey never stands in as the author (whose mesh vault a photo would dial).
@@ -65,8 +67,8 @@ function card(event, memoryOnly, showParent, footer) {
     return (
       <article class="note note-card" data-note-id={target?.id} onClick={open && openThread(open)} onAuxClick={open && openThread(open)}>
         {repostLine(event)}
-        {inner?.pubkey ? <NoteBody event={inner} memoryOnly={memoryOnly} />
-          : repostedId(event) ? <FetchedRepost q={{ type: "note", id: repostedId(event), relays: [] }} memoryOnly={memoryOnly} />
+        {inner?.pubkey ? <NoteBody event={inner} memoryOnly={memoryOnly} trusted={trusted} />
+          : repostedId(event) ? <FetchedRepost q={{ type: "note", id: repostedId(event), relays: [] }} memoryOnly={memoryOnly} trusted={trusted} />
           : <div class="note-text muted">Repost of a note not included</div>}
         {target && <NoteActions note={target} />}
         {footer}
@@ -74,7 +76,7 @@ function card(event, memoryOnly, showParent, footer) {
     )
   }
   rememberNote(event)
-  return <article class="note note-card" data-note-id={event.id} onClick={openThread(event.id)} onAuxClick={openThread(event.id)}><NoteBody event={event} memoryOnly={memoryOnly} showParent={showParent} /><NoteActions note={event} />{footer}</article>
+  return <article class="note note-card" data-note-id={event.id} onClick={openThread(event.id)} onAuxClick={openThread(event.id)}><NoteBody event={event} memoryOnly={memoryOnly} showParent={showParent} trusted={trusted} /><NoteActions note={event} />{footer}</article>
 }
 
 // Tapping a card opens its thread; a tap on a link, a button or a playing video stays with it. A ⌘/Ctrl-click or a
@@ -95,7 +97,7 @@ const repostLine = event =>
  *  a 6 and draws the original. The embedded copy is used only when its signature checks out (an article, poll or
  *  picture is not a note's text, so an unchecked copy could put words in someone's mouth); else it is fetched by its
  *  e tag or a coordinate. */
-function genericRepost(event, memoryOnly, footer) {
+function genericRepost(event, memoryOnly, footer, trusted) {
   const inner = genericRepostInner(event)
   const ref = repostRef(event)
   if (inner) rememberNote(inner)
@@ -103,8 +105,8 @@ function genericRepost(event, memoryOnly, footer) {
   return (
     <article class="note note-card" data-note-id={inner?.id} onClick={open && openThread(open)} onAuxClick={open && openThread(open)}>
       {repostLine(event)}
-      {inner ? <><NoteBody event={inner} memoryOnly={memoryOnly} /><NoteActions note={inner} /></>
-        : ref ? <FetchedRepost q={ref} memoryOnly={memoryOnly} kinds={SHOWN_REPOST_KINDS} />
+      {inner ? <><NoteBody event={inner} memoryOnly={memoryOnly} trusted={trusted} /><NoteActions note={inner} /></>
+        : ref ? <FetchedRepost q={ref} memoryOnly={memoryOnly} kinds={SHOWN_REPOST_KINDS} trusted={trusted} />
         : <div class="note-text muted">Repost of a post not included</div>}
       {footer}
     </article>
@@ -115,25 +117,27 @@ function genericRepost(event, memoryOnly, footer) {
  *  at, from Haven /feed or the relays, with its own actions. `kinds`: what it may be (a kind 6: a note; a kind 16:
  *  any kind a timeline draws). */
 const NOTE_ONLY = new Set([1])
-function FetchedRepost({ q, memoryOnly, kinds = NOTE_ONLY }) {
+function FetchedRepost({ q, memoryOnly, kinds = NOTE_ONLY, trusted }) {
   const ev = useQuote(q, memoryOnly), state = repostState(ev, kinds, useBlocked())
   if (state === "loading") return <div class="note-text muted">Loading the reposted note…</div>
   if (state === "missing") return <div class="note-text muted">The reposted note couldn't be found</div>
   if (state === "blocked") return <div class="note-text muted">Repost of someone you blocked</div>
   rememberNote(ev)
-  return <><NoteBody event={ev} memoryOnly={memoryOnly} /><NoteActions note={ev} /></>
+  return <><NoteBody event={ev} memoryOnly={memoryOnly} trusted={trusted} /><NoteActions note={ev} /></>
 }
 
-/** A note's head and body as the feed draws it, without the card's actions (also the composer's live preview). */
-export function NoteBody({ event, memoryOnly, showParent = false }) {
+/** A note's head and body as the feed draws it, without the card's actions (also the composer's live preview).
+ *  `trusted`: as NoteCard's; the gate is the note's author (a repost's: the reposted note's). */
+export function NoteBody({ event, memoryOnly, showParent = false, trusted }) {
+  const ok = trusted ? !!trusted(event.pubkey) : true
   const replyTo = replyToPubkey(event) ?? commentParentAuthor(event)
   const parent = showParent && event.kind === 1 ? replyRefs(event).parent : null
   const hint = parent && (event.tags ?? []).find(t => t[0] === "e" && t[1] === parent)?.[2]
   return (
     <>
-      {parent && <ParentPreview id={parent} relay={/^wss?:\/\//.test(hint ?? "") ? hint : null} memoryOnly={memoryOnly} />}
+      {parent && <ParentPreview id={parent} relay={/^wss?:\/\//.test(hint ?? "") ? hint : null} memoryOnly={memoryOnly} trusted={trusted} />}
       <div class="note-head">
-        <AvatarMenu pubkey={event.pubkey} />
+        <AvatarMenu pubkey={event.pubkey} load={ok} />
         <div class="note-byline">
           <div class="note-nameline">
             <a class="author-link" href={profileHref(event.pubkey)}>
@@ -146,7 +150,7 @@ export function NoteBody({ event, memoryOnly, showParent = false }) {
           {replyTo && <div class="reply-to"><ReplyIcon />reply to <Mention pubkey={replyTo} memoryOnly={memoryOnly} /></div>}
         </div>
       </div>
-      {event.kind === SNO_KIND ? <SnoBody event={event} /> : hasKindBody(event) ? <KindBody event={event} memoryOnly={memoryOnly} /> : <NoteText content={event.content} tags={event.tags} author={event.pubkey} memoryOnly={memoryOnly} linkCards />}
+      {event.kind === SNO_KIND ? <SnoBody event={event} /> : hasKindBody(event) ? <KindBody event={event} memoryOnly={memoryOnly} /> : <NoteText content={event.content} tags={event.tags} author={event.pubkey} memoryOnly={memoryOnly} linkCards images={ok} trusted={trusted} />}
       {event.kind === 1 && <TranslateButton id={event.id} content={event.content} />}
     </>
   )

@@ -13,13 +13,14 @@ if (import.meta.env) { import("./readers.css"); import("./live.css") }
 /** The stream an event is, for an embed, or null when it isn't one. */
 export const embeddedStream = ev => (ev?.kind === LIVE_KIND ? parseStream(ev) : null)
 
-export function LiveEmbed({ stream, now = Math.floor(Date.now() / 1000) }) {
+/** `load` false: the tile draws without its picture (a stranger's stream quoted in a Vault list note). */
+export function LiveEmbed({ stream, now = Math.floor(Date.now() / 1000), load = true }) {
   const [playing, setPlaying] = useState(false)
   const live = isPlayableLive(stream, now)
   const ctx = actionContext()
   return (
     <div class="live-embed" onClick={e => e.stopPropagation()}>
-      <LiveTile stream={stream} ended={!live} onOpen={() => setPlaying(true)} />
+      <LiveTile stream={stream} ended={!live} load={load} onOpen={() => setPlaying(true)} />
       {playing && live && ctx && <LiveSheet ctx={ctx} stream={stream} onClose={() => setPlaying(false)} />}
     </div>
   )

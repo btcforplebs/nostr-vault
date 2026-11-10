@@ -82,10 +82,11 @@ const LiveEmpty = ({ title, message, action, onGlobal, onRetry }) =>
 
 /** A tile: the live frame (else the cover), LIVE and viewers over it, then title and host. The title is also a real
  *  link to zap.stream for right-click or middle-click. */
-/** `ended`: a stream quoted in a note that is no longer on air (LiveStreamEmbedView): an ENDED pill, dimmed, no tap. */
-export function LiveTile({ stream: s, onOpen, ended = false }) {
+/** `ended`: a stream quoted in a note that is no longer on air (LiveStreamEmbedView): an ENDED pill, dimmed, no tap.
+ *  `load` false: the blank frame instead of the picture (LiveEmbed's, for a stranger's stream). */
+export function LiveTile({ stream: s, onOpen, ended = false, load = true }) {
   const [pic, setPic] = useState(0)
-  const src = s.previews[pic]
+  const src = load ? s.previews[pic] : undefined
   if (ended) onOpen = null
   return (
     <article class={`live-tile${ended ? " ended" : ""}`} tabindex={ended ? undefined : "0"} aria-label={ended ? `${s.title || "Untitled stream"}, this stream has ended` : undefined}

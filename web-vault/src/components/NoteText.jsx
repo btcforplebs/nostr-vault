@@ -32,9 +32,11 @@ const MAX_QUOTE_DEPTH = 1
  *  as iOS FeedNoteRow does. `author`: the note's pubkey, for a photo on the author's mesh vault (MediaImage). */
 /*  `linkCards`: a feed card's links (not media, not nostr:) become up to three link cards under the text and leave it,
  *  as iOS LinkCards does. */
+/*  `trusted(pubkey)`: given (the Vault lists), a quoted note's avatar and pictures load only for its author in it
+ *  (QuotedNote). With images off, link cards stay plain links: their preview is this browser fetching the page. */
 /*  `streams`: the kind 30311 events of the live streams the text embeds (live-note.js), filled in by LiveNoteText. */
 export function NoteText(props) {
-  const { content, tags, author, depth = 0, dm = false, memoryOnly = false, images = !dm, linkCards = false, streams } = props
+  const { content, tags, author, depth = 0, dm = false, memoryOnly = false, images = !dm, linkCards = false, streams, trusted } = props
   const lives = depth < MAX_QUOTE_DEPTH ? liveRefs(content) : []
   if (lives.length && !streams) return <LiveNoteText {...props} refs={lives} />
   let parts = String(content).split(TOKEN)
@@ -62,7 +64,7 @@ export function NoteText(props) {
     <div class="note-text">
       {parts.map((s, i) => {
         if (i % 2 === 0) return withMarks(s, i)
-        if (s.startsWith("nostr:")) return nostrRef(s.slice(6), i, depth, dm, memoryOnly)
+        if (s.startsWith("nostr:")) return nostrRef(s.slice(6), i, depth, dm, memoryOnly, trusted)
         if (/^blossom:/i.test(s)) { const b = parseBlossomUri(s); return b ? <BlossomMedia key={i} b={b} author={author} images={images} dm={dm} /> : <span key={i}>{s}</span> }
         // A .fips link left in the text (a DM, or images off) stays plain text: as an <img>, <video> or <a> it would
         // send the name to DNS.
@@ -74,7 +76,7 @@ export function NoteText(props) {
         return <a key={i} href={s} target="_blank" rel="noopener noreferrer">{label.slice(0, 48)}{label.length > 48 ? "…" : ""}</a>
       })}
       {media.length > 0 && <NoteMedia items={media} author={author} />}
-      {cards.map(url => <LinkCard key={url} url={url} />)}
+      {cards.map(url => <LinkCard key={url} url={url} load={images} />)}
     </div>
   )
 }
@@ -141,10 +143,10 @@ export function TapImage({ src }) {
   return <button type="button" class="small tap-image" title={src} onClick={e => { e.stopPropagation(); setOn(true) }}>Show image{host ? ` from ${host}` : ""}</button>
 }
 
-function nostrRef(ref, key, depth, dm, memoryOnly) {
+function nostrRef(ref, key, depth, dm, memoryOnly, trusted) {
   const q = parseRef(ref)
   if (q?.type === "profile") return dm ? <span key={key} class="mention">{shortRef(ref)}</span> : <Mention key={key} pubkey={q.pubkey} memoryOnly={memoryOnly} />
-  if (q && depth < MAX_QUOTE_DEPTH) return <QuotedNote key={key} q={q} short={shortRef(ref)} depth={depth} memoryOnly={memoryOnly} />
+  if (q && depth < MAX_QUOTE_DEPTH) return <QuotedNote key={key} q={q} short={shortRef(ref)} depth={depth} memoryOnly={memoryOnly} trusted={trusted} />
   return <span key={key} class="mention">{shortRef(ref)}</span>
 }
 
