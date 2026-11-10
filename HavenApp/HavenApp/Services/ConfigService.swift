@@ -16,6 +16,13 @@ class ConfigService: ObservableObject {
     @Published var config: HavenConfig {
         didSet {
             if config.blockedRelays != oldValue.blockedRelays { RelayBlocklist.set(config.blockedRelays) }
+            let lockedKeys = config.lockedKeyTexts
+            if lockedKeys != oldValue.lockedKeyTexts {
+                SigningKeyCache.shared.retainOnly(lockedKeys)
+                warmActiveSigningKey()
+            } else if config.activeAccountNpub != oldValue.activeAccountNpub {
+                warmActiveSigningKey()
+            }
         }
     }
     @Published var isSwitchingAccount: Bool = false
@@ -711,25 +718,40 @@ class ConfigService: ObservableObject {
     
     /// Returns the decrypted hex private key for a whitelisted account.
     /// Looks up the Keychain password automatically; returns nil if no credential is stored.
+    /// Opened once a session (SigningKeyCache); a first call derives on the calling thread.
     func getCredentialHexKey(forNpub npub: String) throws -> String? {
-        guard let ncryptsec = config.accountCredentials[npub], !ncryptsec.isEmpty else {
-            return nil
-        }
-        guard let password = CredentialStore.getPassword(forNpub: npub) else {
-            return nil
-        }
-        let nsec = try NIP49Service.decrypt(ncryptsec: ncryptsec, password: password)
-        // Decode nsec → hex
-        let clean = nsec.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let decoded = Bech32.decode(clean), decoded.hrp == "nsec" {
-            return decoded.hexString
-        }
-        if clean.count == 64, clean.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil {
-            return clean
-        }
-        return nil
+        guard case .found(let source) = credentialKeySource(forNpub: npub) else { return nil }
+        return try SigningKeyCache.shared.hexKey(for: source)
     }
-    
+
+    // MARK: - Signing key sources (SigningKeyCache)
+
+    /// The owner's key source. Reads the keychain; derives nothing.
+    func ownerKeySource(password: String? = nil) -> SigningKeyLookup {
+        config.ownerKeySource(password: password, storedPassword: NIP49Service.getPasswordFromKeychain)
+    }
+
+    /// A whitelisted account's key source. Reads the keychain; derives nothing.
+    func credentialKeySource(forNpub npub: String) -> SigningKeyLookup {
+        config.credentialKeySource(forNpub: npub, storedPassword: { CredentialStore.getPassword(forNpub: $0) })
+    }
+
+    /// The active account's key source (the owner's when no other is active).
+    func activeKeySource() -> SigningKeyLookup {
+        let active = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+        if active.isEmpty || active == config.ownerNpub { return ownerKeySource() }
+        return credentialKeySource(forNpub: active)
+    }
+
+    /// Opens the active account's key in the background (at launch and on a
+    /// switch), so the first like, post or relay AUTH finds it ready instead
+    /// of deriving it. Nothing for a bunker account or one with no key here.
+    func warmActiveSigningKey() {
+        guard config.activeSigningMode() != "nip46",
+              case .found(let source) = activeKeySource() else { return }
+        SigningKeyCache.shared.warm(source)
+    }
+
     /// Undoes what the old Discover Accounts step did: it saved the people
     /// picked there as extra accounts instead of following them. Removes those
     /// starter-pack npubs from the account list unless this device holds a key

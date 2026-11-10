@@ -215,7 +215,7 @@ extension NostrService {
               vertexCache.shouldAsk(now: now),
               ConfigService.shared.config.activeSigningMode() == "local",
               let url = URL(string: VertexReputation.relayURL),
-              let request = signEvent(kind: VertexReputation.requestKind, content: "",
+              let request = await signEventAsync(kind: VertexReputation.requestKind, content: "",
                                       tags: VertexReputation.requestTags(target: target)),
               let requestData = try? JSONEncoder().encode(request),
               let requestDict = try? JSONSerialization.jsonObject(with: requestData) else { return nil }

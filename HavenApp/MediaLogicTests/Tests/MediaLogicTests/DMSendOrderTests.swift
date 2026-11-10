@@ -29,7 +29,7 @@ final class DMSendOrderTests: XCTestCase {
     func testAGiftWrappedDMIsSignedBeforeItJoinsTheThread() throws {
         let fn = try body(of: "sendNIP17DM", in: try sendingSource())
         let append = try offset("messages.append(message)", in: fn)
-        XCTAssertLessThan(try offset("getActivePrivateKey()", in: fn), append)
+        XCTAssertLessThan(try offset("activePrivateKey()", in: fn), append)
         XCTAssertLessThan(try offset("try await (recipientWrap, selfWrap)", in: fn), append)
         XCTAssertLessThan(try offset("switchGeneration == generation", in: fn), append)
         XCTAssertFalse(fn.contains("} catch {"), "a signer failure must reach the caller, not a debug print")

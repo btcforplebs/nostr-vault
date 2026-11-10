@@ -175,7 +175,7 @@ final class MuteListStore {
                 ? try await NIP04Service.decryptAsync(ciphertext: ciphertext, remotePubkey: me)
                 : try await NIP44Service.decryptAsync(ciphertext: ciphertext, senderPubkey: me)
         }
-        let sk = try await MainActor.run { try DMService.shared.getActivePrivateKey() }
+        let sk = try await DMService.shared.activePrivateKey()
         return nip04
             ? try NIP04Service.decrypt(ciphertext: ciphertext, remotePubkey: me, localPrivkey: sk)
             : try NIP44Service.decrypt(ciphertext: ciphertext, senderPubkey: me, recipientPrivkey: sk)
@@ -190,7 +190,7 @@ final class MuteListStore {
                 ? try await NIP04Service.encryptAsync(plaintext: plaintext, remotePubkey: me)
                 : try await NIP44Service.encryptAsync(plaintext: plaintext, recipientPubkey: me)
         }
-        let sk = try await MainActor.run { try DMService.shared.getActivePrivateKey() }
+        let sk = try await DMService.shared.activePrivateKey()
         return nip04
             ? try NIP04Service.encrypt(plaintext: plaintext, remotePubkey: me, localPrivkey: sk)
             : try NIP44Service.encrypt(plaintext: plaintext, recipientPubkey: me, senderPrivkey: sk)
