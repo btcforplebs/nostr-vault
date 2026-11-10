@@ -548,7 +548,7 @@ export async function sendMessage(ctx, peer, text, { crypto, query, chat, publis
     // Both seals at once, as the iPhone makes both wraps concurrently.
     ;[toMe, toThem] = await Promise.all([wrapFor(rumor, env, me), self ? null : wrapFor(rumor, env, peer)])
     if (self) toThem = toMe
-  } catch (e) { return fail(sendError(e?.wrongAccount ? WRONG_ACCOUNT : e?.unreachable ? SEND_FAILED.unreachable : SEND_FAILED.signer), content) }
+  } catch (e) { return fail(e?.fixed ? e : sendError(e?.wrongAccount ? WRONG_ACCOUNT : e?.unreachable ? SEND_FAILED.unreachable : SEND_FAILED.signer), content) }
   const send = (urls, ev, to) => {
     const ms = wait ?? (ctx.session.method === "nip46" ? PUBLISH_WAIT.nip46 : PUBLISH_WAIT.other)
     const asked = new Set() // relays that asked for AUTH on this send
