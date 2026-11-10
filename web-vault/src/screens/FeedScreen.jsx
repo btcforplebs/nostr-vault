@@ -259,7 +259,7 @@ export function FeedScreen({ ctx }) {
     // one just made here and any older one still inside its 5 s. Re-point them all at the row the reader is on now, or an
     // older pin re-applies a spot they have left and drags them back: growing below must move nobody (R4).
     rebasePins(screen.current, feedScroller(screen.current))
-  }, [notes])
+  }, [notes, strange])
   // The watermark only ever moves forward, whatever path put the notes on screen (a live note, "Older", a reload): what
   // it must never do is come back down when the ceiling drops the newest notes off the top.
   useLayoutEffect(() => { const top = notes?.[0]?.created_at; if (top) seenTop.current = Math.max(seenTop.current, top) }, [notes])
@@ -357,7 +357,8 @@ export function FeedScreen({ ctx }) {
     return () => clearInterval(t)
   }, [popular, strange !== null, follows.length])
   const showStrangePending = () => {
-    const all = popular && popularNext.current ? popularNext.current : mergePage(strangePending, strange ?? [])
+    // New posts go in on top, so past the ceiling the oldest give way (capNotes), or the bottom would sit undrawn.
+    const all = popular && popularNext.current ? popularNext.current : capNotes(mergePage(strangePending, strange ?? []))
     popularNext.current = null
     holdNotes(choice, all)
     setStrange(all)
@@ -387,7 +388,13 @@ export function FeedScreen({ ctx }) {
           // Under the Everyone lock a hashtag opens screened (feeds.js screenedHashtag), so a new account can find people.
           screened: hashtagScreened(c), follows })
       if (n !== seq.current) return
-      const all = until ? mergePage(heldNotes(c) ?? [], page) : page
+      // Older joins at the bottom, so past the ceiling the newest give way (feed-window.js capOlder), as Following's
+      // Older does. Uncapped, this list grew past MAX_NOTES while the draw window stops there: Older kept fetching pages
+      // nobody could see, until "No older notes" sat under note 500. The rows dropped above the reader would pull the
+      // page up, so the note being read is pinned where it is (stay, the list's layout effect).
+      const spot = until ? readingSpot(screen.current, feedScroller(screen.current)) : null
+      const all = until ? capOlder(mergePage(heldNotes(c) ?? [], page), MAX_NOTES, { protect: spot?.id }) : page
+      if (spot && all.length && all[0].id !== (heldNotes(c) ?? [])[0]?.id) stay.current = spot
       holdNotes(c, all)
       setStrange(all)
       if (!until) setStrangePending([]) // a fresh first page has them
