@@ -33,11 +33,23 @@ const { QuotedNote, QuoteCard } = await import("../src/components/QuotedNote.jsx
 const { ParentPreview, ParentCard } = await import("../src/components/ParentPreview.jsx")
 const { LinkCard } = await import("../src/components/LinkCard.jsx")
 const { fetchQuote } = await import("../src/net/quotes.js")
+const { LiveEmbed } = await import("../src/readers/LiveEmbed.jsx")
+const { LiveTile } = await import("../src/readers/LiveScreen.jsx")
+const { AvatarMenu } = await import("../src/components/AuthorQuickMenu.jsx")
+const { NoteText } = await import("../src/components/NoteText.jsx")
 
-const sk = generateSecretKey(), STRANGER = getPublicKey(sk) // a throwaway key
+const sk = generateSecretKey(), STRANGER = getPublicKey(sk) // throwaway keys
+const fk = generateSecretKey(), FRIEND = getPublicKey(fk)
 const trusted = () => false
+const friendOnly = pk => pk === FRIEND
 const signed = finalizeEvent({ kind: 1, created_at: 1000, content: "the quoted note https://tracker.example/p.png", tags: [] }, sk)
-await fetchQuote({ type: "note", id: signed.id, relays: ["wss://relay.example"] }, { save: false, query: async () => [signed] })
+const friendNote = finalizeEvent({ kind: 1, created_at: 1000, content: "a follow's note https://media.example/p.png", tags: [] }, fk)
+const stream = finalizeEvent({ kind: 30311, created_at: 1000, content: "", tags: [["d", "s1"], ["title", "On air"], ["status", "live"],
+  ["image", "https://tracker.example/cover.jpg"], ["streaming", "https://tracker.example/live.m3u8"]] }, sk)
+const cache = async (q, ev) => fetchQuote({ ...q, relays: ["wss://relay.example"] }, { save: false, query: async () => [ev] })
+await cache({ type: "note", id: signed.id }, signed)
+await cache({ type: "note", id: friendNote.id }, friendNote)
+await cache({ type: "addr", kind: 30311, pubkey: STRANGER, d: "s1" }, stream)
 
 function find(node, type, out = []) {
   if (!node || typeof node !== "object") return out
@@ -46,6 +58,37 @@ function find(node, type, out = []) {
   find(node.props?.children, type, out)
   return out
 }
+
+/** What a note body draws, expanded: whether its avatar and pictures load. */
+const gate = body => { const t = NoteBody(body.props); return { avatar: find(t, AvatarMenu)[0].props.load, images: find(t, NoteText)[0].props.images } }
+/** The NoteBody a card draws, through a fetched repost if it is one. */
+function bodyOf(card) {
+  const article = card.props.children
+  const direct = find(article, NoteBody)
+  if (direct.length) return direct[0]
+  const holder = article.props.children.find(c => c?.props?.q) // FetchedRepost
+  return find(holder.type(holder.props), NoteBody)[0]
+}
+const embed = (kind, inner, by = FRIEND) => ({ id: "6".repeat(64), kind, pubkey: by, created_at: 1001, content: JSON.stringify(inner),
+  tags: [["e", inner.id], ["p", inner.pubkey], ...(kind === 16 ? [["k", "1"]] : [])], sig: "" })
+const byId = (kind, inner, by = FRIEND) => ({ ...embed(kind, inner, by), content: "" })
+
+test("Reposts in the Vault Notes list are gated on the reposted author, not the reposter", () => {
+  for (const kind of [6, 16]) for (const shape of [embed, byId]) {
+    const name = `kind ${kind} ${shape === embed ? "embedded" : "fetched by id"}`
+    assert.deepEqual(gate(bodyOf(NoteCard({ event: shape(kind, signed), trusted: friendOnly }))), { avatar: false, images: false }, `${name}: a follow reposting a stranger`)
+    assert.deepEqual(gate(bodyOf(NoteCard({ event: shape(kind, friendNote, STRANGER), trusted: friendOnly }))), { avatar: true, images: true }, `${name}: a stranger reposting a follow`)
+  }
+})
+
+test("A stranger's live stream quoted in a Vault note draws its tile without the picture; a follow's or a feed's has it", () => {
+  const q = { type: "addr", kind: 30311, pubkey: STRANGER, d: "s1", relays: [] }
+  const imgs = t => { const e = QuotedNote({ q, short: "naddr1…", trusted: t }); assert.equal(e.type, LiveEmbed)
+    const tile = find(LiveEmbed(e.props), LiveTile)[0]; return find(LiveTile(tile.props), "img").length }
+  assert.equal(imgs(trusted), 0, "no <img> for a stranger's stream")
+  assert.equal(imgs(pk => pk === STRANGER), 1)
+  assert.equal(imgs(undefined), 1, "feeds pass no trust")
+})
 
 test("QuotedNote hands its trust to the quote card it draws", () => {
   const tree = QuotedNote({ q: { type: "note", id: signed.id, relays: [] }, short: "note1…", trusted })
@@ -57,16 +100,6 @@ test("ParentPreview hands its trust to the parent card it draws", () => {
   const tree = ParentPreview({ id: signed.id, trusted })
   assert.equal(tree.type, ParentCard)
   assert.equal(tree.props.trusted, trusted)
-})
-
-test("A repost carrying only the e tag: the fetched note's body gets the trust", () => {
-  const repost = { id: "6".repeat(64), kind: 6, pubkey: "1".repeat(64), created_at: 1001, content: "", tags: [["e", signed.id], ["p", STRANGER]], sig: "" }
-  const article = NoteCard({ event: repost, trusted }).props.children
-  const holder = find(article, NoteBody).length ? null : article.props.children.find(c => c?.props?.q) // FetchedRepost
-  assert.ok(holder, "an e-tag-only repost is fetched by id")
-  assert.equal(holder.props.trusted, trusted, "FetchedRepost gets the trust")
-  const body = find(holder.type(holder.props), NoteBody)[0]
-  assert.equal(body.props.trusted, trusted, "and hands it to the note's body")
 })
 
 test("LinkCard off draws the plain card, no preview image", () => {

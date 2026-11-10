@@ -56,9 +56,10 @@ export function QuotedNote({ q, short, depth = 0, memoryOnly = false, trusted })
   if (ev === null) return <div class="quote quote-missing"><span class="quote-ref">{short}</span> Note not found</div>
   if (blocked && isBlockedNote(ev, blocked)) return <div class="quote quote-missing">Quote from someone you blocked</div>
 
-  // A live stream is its Live tile, ENDED once it is off air (LiveStreamEmbedView).
+  // A live stream is its Live tile, ENDED once it is off air (LiveStreamEmbedView). A stranger's, in the Vault lists,
+  // draws without its picture: the tile's <img> would tell their image host your IP.
   const stream = embeddedStream(ev)
-  if (stream) return <LiveEmbed stream={stream} />
+  if (stream) return <LiveEmbed stream={stream} load={trusted ? !!trusted(ev.pubkey) : true} />
 
   return <QuoteCard ev={ev} depth={depth} memoryOnly={memoryOnly} trusted={trusted} />
 }

@@ -22,9 +22,9 @@ export function LinkCard({ url, load = true }) {
     setMeta(cachedPreview(url)); setBadImage(false)
     if (!mayFetchPreview(url, load)) return
     let live = true
-    const load = () => loadPreview(url).then(m => { if (live) setMeta(m) })
-    if (!ref.current || !globalThis.IntersectionObserver) { load(); return () => { live = false } }
-    const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); load() } }, { rootMargin: "300px" })
+    const ask = () => loadPreview(url).then(m => { if (live) setMeta(m) })
+    if (!ref.current || !globalThis.IntersectionObserver) { ask(); return () => { live = false } }
+    const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); ask() } }, { rootMargin: "300px" })
     io.observe(ref.current)
     return () => { live = false; io.disconnect() }
   }, [url, load])
