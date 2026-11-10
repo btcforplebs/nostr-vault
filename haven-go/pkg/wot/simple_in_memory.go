@@ -545,7 +545,11 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 			runsafe.Run("wot.listBatch", func() {
 				slots <- struct{}{}
 				defer func() { <-slots }()
-				batchCtx, cancel := context.WithTimeout(ctx, timeout)
+				wait := timeout
+				if retry {
+					wait = min(timeout, listRetryWait)
+				}
+				batchCtx, cancel := context.WithTimeout(ctx, wait)
 				defer cancel()
 				filter := nostr.Filter{Authors: job.authors, Kinds: []int{nostr.KindFollowList}}
 				if job.since > 0 {

@@ -23,6 +23,14 @@ const (
 	listGrace  = 1500 * time.Millisecond
 )
 
+// listRetryWait caps the follow-up ask of relays a quorum cut. The cut relay
+// is often just slow, and it is still working through the asks it was cut
+// from: on 2026-11-10 waiting it out took a follow-up 43 s on an 859-follow
+// build whose main batches took 2 s, for the same 13,181-person graph. A
+// follow-up still cut at the cap leaves the pass unstamped, so the next one
+// asks again.
+const listRetryWait = 8 * time.Second
+
 // maxParallelBatches is how many list batches are in flight at once. Batches
 // went one after another, so a build took (follows / 250) times the slowest
 // relay; four at a time covers 1,000 follows in one round.

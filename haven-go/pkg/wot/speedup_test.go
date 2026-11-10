@@ -27,6 +27,9 @@ type liveRelay struct {
 	filters []nostr.Filter
 	delay   time.Duration
 	hang    bool // never EOSE: QueryEvents blocks until the request ends
+	// hangOn, when set, picks requests that get nothing at all, not even
+	// EOSE, until they end.
+	hangOn func(nostr.Filter) bool
 }
 
 func newLiveRelay(t *testing.T, events ...*nostr.Event) *liveRelay {
@@ -43,6 +46,9 @@ func newLiveRelay(t *testing.T, events ...*nostr.Event) *liveRelay {
 			}
 		}
 		delay, hang := lr.delay, lr.hang
+		if lr.hangOn != nil && lr.hangOn(f) {
+			match, delay, hang = nil, 0, true
+		}
 		lr.mu.Unlock()
 		ch := make(chan *nostr.Event, len(match))
 		go func() {

@@ -77,6 +77,45 @@ func TestFullBuildAsksTheCutRelayAgain(t *testing.T) {
 	}
 }
 
+// A cut relay that is still stuck when asked again holds the build for
+// listRetryWait, not the whole fetch timeout, and the pass stays unstamped so
+// the next one asks again.
+func TestFollowUpAskOfACutRelayIsCapped(t *testing.T) {
+	owner, a, b, x := newTestKey(t), newTestKey(t), newTestKey(t), newTestKey(t)
+	fast, slow := cutFixture(t)
+	slow.delay = 0
+	// The owners' fetch answers; every follows' ask hangs.
+	slow.hangOn = func(f nostr.Filter) bool { return !slices.Contains(f.Authors, owner.pk) }
+	fast[0].put(a.followList(t, x))
+	slow.put(b.followList(t, x))
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	wt, _ := newCutWot(ctx, t, owner, append(fast, slow), 1, 60)
+	ownerList := owner.followList(t, a, b)
+	wt.LocalFollowLists = func() []*nostr.Event { return []*nostr.Event{ownerList} }
+	start := time.Now()
+	wt.Refresh(ctx)
+	took := time.Since(start)
+	if limit := listRetryWait + 10*time.Second; took > limit {
+		t.Errorf("build took %v with the cut relay stuck; want under %v (fetch timeout is 60 s)", took, limit)
+	}
+	if !wt.Has(ctx, x.pk) {
+		t.Fatal("x, from the relays that answered, is missing")
+	}
+	var again int
+	for _, f := range slow.asked() {
+		if slices.Equal(f.Authors, []string{b.pk}) {
+			again++
+		}
+	}
+	if again != 1 {
+		t.Errorf("the cut relay was asked again for b %d times; want 1", again)
+	}
+	if _, since, fullAt, _ := wt.loadLists(); since != 0 || fullAt != 0 {
+		t.Errorf("the follow-up was cut at the cap, yet the pass stored since %d, full %d", since, fullAt)
+	}
+}
+
 // MF1: a change only the cut relay holds is found by the incremental pass,
 // and since moves only once the cut relay has answered.
 func TestIncrementalPassFindsAChangeOnTheCutRelay(t *testing.T) {
