@@ -30,8 +30,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -99,6 +97,12 @@ class RelayForegroundService : Service() {
 
         private val _isPortConflict = MutableStateFlow(false)
         val isPortConflict: StateFlow<Boolean> = _isPortConflict.asStateFlow()
+
+        /** The Go stop from the last [onDestroy], off the main thread ([RelayStopper]). */
+        internal val stopper = RelayStopper()
+
+        /** Waits for the last service's Go stop; every `startRelay()` calls this first. */
+        suspend fun awaitPendingStop() = stopper.awaitPending()
 
         /** The relay's open websocket connections, polled by [LogStore]. */
         fun updateConnections(count: Int) {
@@ -579,36 +583,32 @@ class RelayForegroundService : Service() {
             _readyForConnections.value = false
         }
 
-        // Block until the Go relay shuts down (or we time out).
-        // We must NOT cancel serviceScope before the shutdown coroutine finishes,
-        // and the wake lock must stay held until databases are closed.
-        try {
-            runBlocking {
-                withTimeoutOrNull(SHUTDOWN_TIMEOUT_MS) {
-                    withContext(Dispatchers.IO) {
-                        try {
-                            if (HavenBridge.isLoaded) {
-                                HavenBridge.stopRelay()
-                            }
-                        } catch (e: Throwable) {
-                            Log.e(TAG, "Error stopping relay: ${e.message}")
-                        }
-                    }
-                } ?: Log.w(TAG, "stopRelay() timed out after ${SHUTDOWN_TIMEOUT_MS}ms, force-resetting state")
+        serviceAlive = false
+
+        // Never on the main thread: stopRelay() waits for Go's lifecycle lock, which a booting
+        // relay holds for its whole start, and a JNI call can't be cut by a timeout, so blocking
+        // here froze the UI for as long as Go took (RelayStopper). The next start waits for it.
+        val stop = stopper.stopAsync {
+            try {
+                if (HavenBridge.isLoaded) HavenBridge.stopRelay()
+            } catch (e: Throwable) {
+                Log.e(TAG, "Error stopping relay: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Shutdown block failed: ${e.message}")
         }
 
-        lifecycleState = LifecycleState.IDLE
-        isShuttingDown = false
-        launchedInputs = null
-
-        // Release resources only after the Go side has stopped (or timed out)
-        releaseWakeLock()
-        serviceScope.cancel()
-        _connections.value = 0 // the poller that kept it current died with the scope
-        serviceAlive = false
+        // The wake lock stays held, and serviceScope alive, until the Go side has stopped
+        // (databases closed) or the timeout passes, as before; now on a background thread.
+        stopper.scope.launch {
+            withTimeoutOrNull(SHUTDOWN_TIMEOUT_MS) { stop.join() }
+                ?: Log.w(TAG, "stopRelay() still running after ${SHUTDOWN_TIMEOUT_MS}ms, releasing the service")
+            lifecycleState = LifecycleState.IDLE
+            isShuttingDown = false
+            launchedInputs = null
+            releaseWakeLock()
+            serviceScope.cancel()
+            // The poller that kept it current died with the scope; a new service counts again.
+            if (!serviceAlive) _connections.value = 0
+        }
         super.onDestroy()
     }
 

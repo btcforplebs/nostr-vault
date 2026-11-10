@@ -190,6 +190,9 @@ class RelayImportService @Inject constructor(
                         pollImportProgress()
                     }
 
+                    // The stopped service's Go stop runs off the main thread; a start that won
+                    // Go's lock first would be torn down by it (RelayStopper).
+                    RelayForegroundService.awaitPendingStop()
                     // This blocks until import completes
                     HavenBridge.startRelay(importMode = true)
 

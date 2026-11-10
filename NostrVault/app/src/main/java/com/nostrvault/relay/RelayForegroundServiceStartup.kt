@@ -235,6 +235,8 @@ import kotlinx.coroutines.withTimeoutOrNull
             // Start the relay
             Log.i(TAG, "Starting Go relay on port ${config.relayPort} (attempt ${retryCount + 1})")
             withContext(Dispatchers.IO) {
+                // An earlier service's stop still queued would tear this run down (RelayStopper).
+                RelayForegroundService.awaitPendingStop()
                 HavenBridge.startRelay(importMode = false)
             }
 
