@@ -105,9 +105,10 @@ struct ConfigFileStore {
     /// Removes each of `secrets` from the backup and the unreadable copies,
     /// as text, so it works on a file that will not decode too. Only values
     /// that now live somewhere safer belong in `secrets`: anything else in a
-    /// copy (another key, say) is left alone. Returns the files rewritten.
+    /// copy (another key, say) is left alone. Each is replaced by
+    /// `replacement`. Returns the files rewritten.
     @discardableResult
-    func scrub(_ secrets: [String]) -> [URL] {
+    func scrub(_ secrets: [String], replacingWith replacement: String = "") -> [URL] {
         let needles = secrets.filter { !$0.isEmpty }
         guard !needles.isEmpty else { return [] }
         var rewritten: [URL] = []
@@ -115,7 +116,7 @@ struct ConfigFileStore {
             guard let data = try? Data(contentsOf: file),
                   var text = String(data: data, encoding: .utf8) else { continue }
             let before = text
-            for needle in needles { text = text.replacingOccurrences(of: needle, with: "") }
+            for needle in needles { text = text.replacingOccurrences(of: needle, with: replacement) }
             guard text != before, (try? PrivateFile.write(Data(text.utf8), to: file)) != nil else { continue }
             rewritten.append(file)
         }

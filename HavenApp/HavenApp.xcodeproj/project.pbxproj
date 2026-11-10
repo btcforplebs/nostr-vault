@@ -211,6 +211,7 @@
 		19DE6A06577C5C1E1BB9FF23 /* NotReadyShareReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CABE1283B9C60079654F154 /* NotReadyShareReviewView.swift */; };
 		19DE705D1A987D9C2F2AF4AF /* Confident.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4B5A4A8F28D8FA1A5E59F7EC /* Confident.mp3 */; };
 		1AB45C5CED3A1E6F20B9DC8C /* CalendarShareHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ADC40DC429546740845C49A /* CalendarShareHandler.swift */; };
+		1AE379FFA133164DF9D9612A /* HavenConfig+ConfigSecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 692CD6D93D1D798D71FE0AA4 /* HavenConfig+ConfigSecrets.swift */; };
 		1AE80BECD4D48E91C29D0EC2 /* GenericRepost.swift in Sources */ = {isa = PBXBuildFile; fileRef = D199DA259B7DA070C714E363 /* GenericRepost.swift */; };
 		1AEBBB148ACA1D8A09E4810F /* ListWipeWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30B10189BB85A90260B86AE9 /* ListWipeWatcher.swift */; };
 		1B2B43EEF51EC229CC47FDF8 /* NVThumbnails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0419EB3F68D0DEFEAAB8BEC5 /* NVThumbnails.swift */; };
@@ -233,6 +234,7 @@
 		1E2828F26763ED13DC2FDC5A /* FipsMeshLinkRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = EADBC80221586A37AA61328F /* FipsMeshLinkRow.swift */; };
 		1E3DDE06240C163C9491FCCF /* LiveVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61A8FEF30B0D5D1A39FF6D6 /* LiveVault.swift */; };
 		1E5B35A461A1BD40F233CC7B /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15E148493559966A697AB361 /* ProfileView.swift */; };
+		1EB09048429B0E5CE363175F /* ConfigService+Secrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE409C648E0E33182E082142 /* ConfigService+Secrets.swift */; };
 		1EECC33A8227DE8F3B0F06CF /* IdentityInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54BCCF618B0F0045B3B8C3EB /* IdentityInput.swift */; };
 		1EF0BABFD80641A8F6A25BCE /* AccountsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 251CF8F576FE6FC7D5A2306B /* AccountsSettingsView.swift */; };
 		1F0315108A5D302DAF9B00E3 /* ProfileEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A18F26C050E4BFA86B818A60 /* ProfileEditView.swift */; };
@@ -391,6 +393,7 @@
 		2F3548B942679F5213A7F7C6 /* ModePostPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1613215C4C17A2C82C64F4 /* ModePostPublisher.swift */; };
 		2FA24FBB818321C2129380F1 /* HavenConfig+VaultWhitelist.swift in Sources */ = {isa = PBXBuildFile; fileRef = F15FF0204E747F1C394AD0BB /* HavenConfig+VaultWhitelist.swift */; };
 		300FF8BE2E8CD6AA3EC9F969 /* NVThumbnails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0419EB3F68D0DEFEAAB8BEC5 /* NVThumbnails.swift */; };
+		301F1D136C485BD4679F9EA6 /* ConfigService+Secrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE409C648E0E33182E082142 /* ConfigService+Secrets.swift */; };
 		305543D05B24677D3185A8E9 /* VaultSearchLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60872FCCCF59C889353D525F /* VaultSearchLogic.swift */; };
 		309A02659B324862A4C40D5F /* FeedNoteSkeletonRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98D86B19A51EEB1A211A1F3 /* FeedNoteSkeletonRow.swift */; };
 		309B32F737870929628309E8 /* NostrService+RelayListSave.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3418518C726F177780E29385 /* NostrService+RelayListSave.swift */; };
@@ -1126,6 +1129,7 @@
 		8C7C53EF872DAA983AB900AF /* TrustWebView+Breadcrumbs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ECCB260673A3292601A6F39 /* TrustWebView+Breadcrumbs.swift */; };
 		8CB50EB40D0CFF605F7C7AE4 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15E148493559966A697AB361 /* ProfileView.swift */; };
 		8CD108EE31A75D260DAE6884 /* RelayProcessManager+Import.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99DEF13CE5C8F624796A5B4F /* RelayProcessManager+Import.swift */; };
+		8CF2E111E0B7452F13EAE721 /* HavenConfig+ConfigSecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 692CD6D93D1D798D71FE0AA4 /* HavenConfig+ConfigSecrets.swift */; };
 		8D50299E3726C3F13A184C8D /* FeedNoteRow+Menus.swift in Sources */ = {isa = PBXBuildFile; fileRef = E79CD4DE72C6E05600AC2D9F /* FeedNoteRow+Menus.swift */; };
 		8D5284BD7B49353800E6A9B5 /* PiPRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9990F939B002B9E85B8A3BB8 /* PiPRules.swift */; };
 		8D62AC5434B7F6FE0F9EF680 /* OwnerNotePager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69B591DE0CDCA55A810631A2 /* OwnerNotePager.swift */; };
@@ -2566,6 +2570,7 @@
 		68B2994F2A95D651708846D6 /* IdentifiableString.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentifiableString.swift; sourceTree = "<group>"; };
 		68F6A51F203F8AE84E266FB5 /* WalletLightningTab+Actions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WalletLightningTab+Actions.swift"; sourceTree = "<group>"; };
 		6904793B4B9F38D1A474FBBD /* PayShareHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayShareHandler.swift; sourceTree = "<group>"; };
+		692CD6D93D1D798D71FE0AA4 /* HavenConfig+ConfigSecrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HavenConfig+ConfigSecrets.swift"; sourceTree = "<group>"; };
 		695189082F11554D2BAC80B1 /* ListWipeAlarmRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListWipeAlarmRule.swift; sourceTree = "<group>"; };
 		6986294C2B9AC5332FFCB4DB /* AddAccountSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddAccountSheetView.swift; sourceTree = "<group>"; };
 		69B591DE0CDCA55A810631A2 /* OwnerNotePager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnerNotePager.swift; sourceTree = "<group>"; };
@@ -3068,6 +3073,7 @@
 		DDB3FEB452DBB79FE900D89B /* ZappersListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZappersListView.swift; sourceTree = "<group>"; };
 		DDC2FBF6CDE5043844A3DFA3 /* FeedService+SubscriptionReconciliation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+SubscriptionReconciliation.swift"; sourceTree = "<group>"; };
 		DE2003F8C6D98618A746D1E7 /* SwiftNIP46Handshake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftNIP46Handshake.swift; sourceTree = "<group>"; };
+		DE409C648E0E33182E082142 /* ConfigService+Secrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ConfigService+Secrets.swift"; sourceTree = "<group>"; };
 		DE6D6B06C0C9271F3BCBE081 /* SharePageFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharePageFetcher.swift; sourceTree = "<group>"; };
 		DEE3815CD7DB160F1716E43F /* DMService+Conversations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+Conversations.swift"; sourceTree = "<group>"; };
 		DEF0159EC6004E767A239389 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
@@ -3626,6 +3632,7 @@
 				115B057D5AE75AA77A29F3B2 /* AccountBunkerConfig.swift */,
 				CF8E202D004E4592BA82BC0F /* ConfigFileStore.swift */,
 				EFC519F29A70073D2E13FFEC /* HavenConfig+ActiveRelays.swift */,
+				692CD6D93D1D798D71FE0AA4 /* HavenConfig+ConfigSecrets.swift */,
 				8F3F697CC1A3F0653BB6D0B3 /* HavenConfig+DMInbox.swift */,
 				24C33761D243B306C9D6A5A1 /* HavenConfig+MacRelay.swift */,
 				3F3EF8E9C5B0D5EB2E673007 /* HavenConfig+OwnerKeys.swift */,
@@ -4598,6 +4605,7 @@
 				09FE947064FD17B7489222A4 /* BrowserRelaySender.swift */,
 				1810634848EE1957C7E49DAF /* ConfigService.swift */,
 				44DC7DB305AB98F165B93248 /* ConfigService+RemoveAccount.swift */,
+				DE409C648E0E33182E082142 /* ConfigService+Secrets.swift */,
 				C941E98AF9A4C26BB5CB2CE4 /* ConfigService+VaultWhitelist.swift */,
 				4E4EFE6422E6E0A896809308 /* ContactManager.swift */,
 				F8A73E431CE524CF64925E0D /* CredentialStore.swift */,
@@ -5254,6 +5262,7 @@
 				C8F706D1FAECE83D36322A6E /* CondensedNoteLine.swift in Sources */,
 				57BF98E0375DB253352AD39F /* ConfigFileStore.swift in Sources */,
 				A5260DF54304F7D0526CBCC2 /* ConfigService+RemoveAccount.swift in Sources */,
+				301F1D136C485BD4679F9EA6 /* ConfigService+Secrets.swift in Sources */,
 				B5262519D53519AF9645EA65 /* ConfigService+VaultWhitelist.swift in Sources */,
 				2B53A7CA9AAD906D7AE89502 /* ConfigService.swift in Sources */,
 				5225EC4BD08C0F185F7B7B30 /* ConnectSignerSheetView.swift in Sources */,
@@ -5467,6 +5476,7 @@
 				3C87BD1637BAF76B322EA8AE /* HashtagsFeedViews.swift in Sources */,
 				317391DCBA9DF606C5BD6011 /* HavenApp_iOS.swift in Sources */,
 				B506ECECE9F95658914E48EB /* HavenConfig+ActiveRelays.swift in Sources */,
+				1AE379FFA133164DF9D9612A /* HavenConfig+ConfigSecrets.swift in Sources */,
 				AB35AA025EAB58C3A52C7D41 /* HavenConfig+DMInbox.swift in Sources */,
 				8C4F67BE1DD0C21EC3D711EA /* HavenConfig+MacRelay.swift in Sources */,
 				A01AE7A841456CFE286E720B /* HavenConfig+OwnerKeys.swift in Sources */,
@@ -6313,6 +6323,7 @@
 				AD09CAB3FDA4AF35E77DEE62 /* CondensedNoteLine.swift in Sources */,
 				C48006CA3A66EB3BFA31E905 /* ConfigFileStore.swift in Sources */,
 				7A72249CE1285026E02942EE /* ConfigService+RemoveAccount.swift in Sources */,
+				1EB09048429B0E5CE363175F /* ConfigService+Secrets.swift in Sources */,
 				584CCA512626ED6224155B28 /* ConfigService+VaultWhitelist.swift in Sources */,
 				68B9084DB6D148FEFCE2C608 /* ConfigService.swift in Sources */,
 				CACFB26B1BB6D4A49C303D8B /* ConnectSignerSheetView.swift in Sources */,
@@ -6522,6 +6533,7 @@
 				783AA267F0219A0C6DC2A847 /* HashtagsFeedViews.swift in Sources */,
 				AF4BFB028BF32397C9E696EF /* HavenApp.swift in Sources */,
 				71F6E797CE55D8AB98FB386F /* HavenConfig+ActiveRelays.swift in Sources */,
+				8CF2E111E0B7452F13EAE721 /* HavenConfig+ConfigSecrets.swift in Sources */,
 				8F5A474B71C88E7CC52941EB /* HavenConfig+DMInbox.swift in Sources */,
 				BABDA5FCF122C81D469907CB /* HavenConfig+MacRelay.swift in Sources */,
 				06F2063CF0C9109C87AC1656 /* HavenConfig+OwnerKeys.swift in Sources */,

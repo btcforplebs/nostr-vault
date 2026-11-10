@@ -34,16 +34,21 @@ class ConfigService: ObservableObject {
     /// save never deletes config.json.bak.
     private var savedHasKey = false
     /// The NIP-46 client keys the keychain holds; see HavenConfig+Secrets.
-    private var nip46Sync = NIP46SecretSync()
+    var nip46Sync = NIP46SecretSync()
     /// Accounts whose client key the keychain holds now, left out of config.json.
-    private var nip46InKeychain: Set<String> = []
+    var nip46InKeychain: Set<String> = []
     /// Client keys config.json held as plaintext when it loaded. Once the
     /// keychain holds them they are scrubbed from the backup copies too.
-    private var plaintextNIP46Secrets: [String] = []
+    var plaintextNIP46Secrets: [String] = []
     /// Client keys config.json held that lost to the paired keychain key at
     /// load (see attachNIP46ClientSecrets). Never paired, but still keys:
     /// scrubbed from the backup copies once config.json is written without them.
-    private var droppedNIP46Secrets: [String] = []
+    var droppedNIP46Secrets: [String] = []
+    /// The same three for the wallet, backup and signer-link secrets; see
+    /// HavenConfig+ConfigSecrets and ConfigService+Secrets.
+    var configSecretSync = NIP46SecretSync()
+    var configSecretsInKeychain: Set<String> = []
+    var plaintextConfigSecrets: [String] = []
     /// Explicit @Published hex pubkey for the active account. Computed properties
     /// on ObservableObject don't reliably trigger SwiftUI re-renders in all
     /// hosting contexts (e.g. macOS MenuBarExtra). This property is updated
@@ -269,14 +274,16 @@ class ConfigService: ObservableObject {
         nip46InKeychain = nip46Sync.sync(config.nip46ClientSecrets,
                                          store: { CredentialStore.store($0, account: $1) },
                                          delete: { CredentialStore.delete(account: $0) })
+        syncConfigSecretsToKeychain()
 
         do {
-            let data = try JSONEncoder().encode(config.withoutNIP46ClientSecrets(inKeychain: nip46InKeychain))
+            let data = try JSONEncoder().encode(diskConfig)
             try store.write(data)
             store.forgetBackupIfKeyRemoved(hadKey: savedHasKey, hasKey: config.hasKeyMaterial,
                                            setupDone: config.hasCompletedSetup)
             savedHasKey = config.hasKeyMaterial
             scrubPlaintextNIP46Secrets(store)
+            scrubPlaintextConfigSecrets(store)
 
             #if DEBUG
             print("ConfigService: Saved config with \(config.blossomMirrors.count) mirrors: \(config.blossomMirrors)")
@@ -314,7 +321,7 @@ class ConfigService: ObservableObject {
         
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
-        if let data = try? encoder.encode(config.withoutNIP46ClientSecrets(inKeychain: nip46InKeychain)) {
+        if let data = try? encoder.encode(diskConfig) {
             try? ConfigFileStore(url: configURL).write(data) // Save main config again just in case
         }
         
@@ -361,52 +368,6 @@ class ConfigService: ObservableObject {
         #endif
     }
     
-    /// Fills in the NIP-46 client keys config.json leaves out, from the
-    /// keychain, and notes any the file still held as plaintext.
-    private func attachKeychainSecrets() {
-        // Added to, not replaced: a reload before the save that moves them
-        // must not forget a scrub still owed.
-        plaintextNIP46Secrets = Array(Set(plaintextNIP46Secrets).union(config.nip46ClientSecrets.values))
-        var stored: [String: String] = [:]
-        let dropped = config.attachNIP46ClientSecrets({ account in
-            let value = CredentialStore.get(account: account)
-            stored[account] = value
-            return value
-        }, pubkeyOf: Self.nip46ClientPubkey(ofSecret:))
-        droppedNIP46Secrets = Array(Set(droppedNIP46Secrets).union(dropped))
-        if !dropped.isEmpty {
-            RelayProcessManager.shared.addLog("NIP-46: config.json held an app key the signer was not paired with; using the paired one from the keychain", level: "WARNING")
-        }
-        nip46Sync = NIP46SecretSync(synced: stored)
-    }
-
-    /// The hex pubkey of a NIP-46 client key, or nil if it is not one.
-    static func nip46ClientPubkey(ofSecret hex: String) -> String? {
-        guard !hex.isEmpty, let pk = withCStrings([hex], { p in GetPublicKeyC(p[0]) }) else { return nil }
-        defer { free(pk) }
-        let value = String(cString: pk)
-        return value.isEmpty ? nil : value
-    }
-
-    /// Client keys that were plaintext in config.json come out of the backup
-    /// copies once the keychain holds them and config.json has been written
-    /// without them.
-    private func scrubPlaintextNIP46Secrets(_ store: ConfigFileStore) {
-        if !droppedNIP46Secrets.isEmpty {
-            let live = Set(config.nip46ClientSecrets.values)
-            let gone = droppedNIP46Secrets.filter { !live.contains($0) }
-            store.scrub(gone)
-            droppedNIP46Secrets.removeAll()
-            plaintextNIP46Secrets.removeAll { gone.contains($0) }
-        }
-        guard !plaintextNIP46Secrets.isEmpty else { return }
-        let held = Set(nip46InKeychain.compactMap { nip46Sync.synced[$0] })
-        let done = plaintextNIP46Secrets.filter { held.contains($0) }
-        guard !done.isEmpty else { return }
-        store.scrub(done)
-        plaintextNIP46Secrets.removeAll { held.contains($0) }
-    }
-
     /// Takes a plaintext owner key out of config.json and every copy beside
     /// it: encrypts it into ownerNcryptsec (HavenConfig.encryptPlaintextOwnerKey),
     /// saves, and, once config.json on disk no longer holds it, scrubs it from
@@ -516,6 +477,9 @@ class ConfigService: ObservableObject {
         nip46InKeychain = []
         plaintextNIP46Secrets = []
         droppedNIP46Secrets = []
+        configSecretSync = NIP46SecretSync()
+        configSecretsInKeychain = []
+        plaintextConfigSecrets = []
 
         // 3. Keychain passwords, notifications and widget data
         ResetLeftovers.clear()
