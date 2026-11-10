@@ -85,12 +85,43 @@ export function payEndpoint(ln) {
   return `https://${domain.toLowerCase()}/.well-known/lnurlp/${encodeURIComponent(name.toLowerCase())}`
 }
 
+/** The most a zap service may answer with. A pay request or an invoice is a few KB; this is generous. */
+export const MAX_REPLY_BYTES = 64 * 1024
+
+/**
+ * The reply's JSON, read with a byte cap. `res.json()` would buffer whatever the lightning host sends — a hostile
+ * one can answer with a gigabyte — so a declared length over the cap is refused unread and a streamed body is cut
+ * off the moment it passes it. A fetch with no readable stream (the tests' doubles) falls back to `res.json()`.
+ */
+async function replyJson(res) {
+  const tooBig = new Error("Their zap service sent an answer too large to read, so the wallet stopped.")
+  const declared = Number(res.headers?.get?.("content-length"))
+  if (Number.isFinite(declared) && declared > MAX_REPLY_BYTES) throw tooBig
+  if (typeof res.body?.getReader !== "function") return res.json().catch(() => null)
+  const reader = res.body.getReader(), chunks = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value?.byteLength ?? 0
+    if (total > MAX_REPLY_BYTES) {
+      await reader.cancel().catch(() => {})
+      throw tooBig
+    }
+    if (value?.byteLength) chunks.push(value)
+  }
+  const bytes = new Uint8Array(total)
+  let at = 0
+  for (const c of chunks) { bytes.set(c, at); at += c.byteLength }
+  try { return JSON.parse(new TextDecoder().decode(bytes)) } catch { return null }
+}
+
 // Every LNURL request goes through here: the URL asked for and the one it ended on after redirects.
 async function getJson(u, fetchImpl) {
   if (!isAllowedEndpoint(u)) throw new Error("Their zap service doesn't use a secure (https) connection, so the wallet won't pay it.")
   const res = await fetchImpl(u, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(10_000) })
   if (res.url && !isAllowedEndpoint(res.url)) throw new Error("Their zap service redirected to an insecure address, so the wallet won't pay it.")
-  const body = await res.json().catch(() => null)
+  const body = await replyJson(res)
   if (body?.status?.toUpperCase?.() === "ERROR") throw new Error(`Their zap service said: ${String(body.reason ?? "no").slice(0, 200)}`)
   if (!res.ok || !body) throw new Error("Their zap service didn't answer properly.")
   return body
@@ -255,8 +286,10 @@ export const TRUST_PARALLEL = 8
 /** The zap service pubkey that publishes `recipient`'s receipts (their LNURL's nostrPubkey), or null when it doesn't
  *  resolve. Asked once per recipient per session. */
 export const zapPublisherOf = (ctx, recipient, fetchImpl = globalThis.fetch) => publisherOf(recipient, pk => lightningAddressOf(ctx, pk), fetchImpl)
-/** trustedReceipts for this account's screens. */
-export const receiptTrust = ctx => evs => trustedReceipts(evs, pk => lightningAddressOf(ctx, pk))
+/** trustedReceipts for this account's screens. Without a ctx the payee's zap service can't be looked up, so the
+ *  publisher check fails open exactly as it does for a service that doesn't resolve; the request check never does. */
+export const receiptTrust = ctx => evs =>
+  trustedReceipts(evs, ctx ? pk => lightningAddressOf(ctx, pk) : async () => null)
 
 let queue = new Set(), timer = null
 /** Ask for `id`'s zap total from the account's read relays. Asked once per note per session. */

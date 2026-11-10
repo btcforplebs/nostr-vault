@@ -6,6 +6,8 @@
 import { verifyEvent } from "nostr-tools/pure"
 import { pool, PROFILE_RELAYS, uniq } from "./pool.js"
 import { followLists } from "./wot.js"
+import { zapRequest } from "./notifications.js"
+import { receiptTrust } from "./zaps.js"
 
 export const WINDOW = 24 * 3600 // seconds of engagement asked for
 export const MIN_REACTORS = 3 // distinct trusted people, not counting the author (dvm.go minTrustedReactors)
@@ -22,21 +24,17 @@ export function targetOf(ev) {
   return id
 }
 
-/** The zap request inside a zap receipt (9735), unverified: the payee's wallet signs the receipt, the zapper
- *  signs this. null when there isn't one. */
-function zapRequest(ev) {
-  try {
-    const req = JSON.parse(ev.tags.find(t => t[0] === "description")?.[1] ?? "")
-    return req?.kind === 9734 && typeof req.pubkey === "string" ? req : null
-  } catch { return null }
-}
-
-/** Who did it: the author, or for a zap the signer of its zap request; a receipt without a valid one counts for
- *  nobody. `counts` (who may vote) is checked before the signature, so a stranger's zap costs no verify. */
+/**
+ * Who did it: the author, or for a zap the signer of its zap request; a receipt without a valid one counts for
+ * nobody. `counts` (who may vote) is checked before the signature, so a stranger's zap costs no verify.
+ * The request must also be for this note: a real request for note A wrapped in a fresh receipt whose `e` says B
+ * would otherwise credit B, which is the whole trick. `counts` runs first so it still costs no verify.
+ */
 export function reactorOf(ev, verify = verifyEvent, counts = () => true) {
   if (ev.kind !== 9735) return counts(ev.pubkey) ? ev.pubkey : ""
   const req = zapRequest(ev)
-  return req && counts(req.pubkey) && verify(req) ? req.pubkey : ""
+  const forThisNote = (req?.tags ?? []).some(t => t[0] === "e" && t[1] === targetOf(ev))
+  return req && forThisNote && counts(req.pubkey) && verify(req) ? req.pubkey : ""
 }
 
 /** note id -> Map(reactor -> weight), only trusted reactors who aren't blocked, each at the strongest thing they did. */
@@ -105,10 +103,12 @@ export async function trustSet(me, follows, { relays = PROFILE_RELAYS, query = (
 /**
  * The Popular page: notes ranked from the last day's engagement on these relays. Asks once for everyone's
  * engagement (as the iPhone does) and once for the follows' own, since a busy relay's 5,000 can miss them.
- * Blocked people's likes, reposts and zaps don't count. -> { notes, trusted, scores } (trusted: how many people count,
+ * Blocked people's likes, reposts and zaps don't count. A zap receipt counts only if the payee's own zap service
+ * published it and its signed request holds up (`trust`, zaps.js trustedReceipts; `ctx` is this account's, and
+ * `trust` is for the tests). -> { notes, trusted, scores } (trusted: how many people count,
  * so the screen can say why it's empty; scores: note id -> its score, for the rank line). `query` is for tests.
  */
-export async function fetchPopular({ me, follows, relays, vault, blocked = new Set(), now = Math.floor(Date.now() / 1000), query = (r, f, o) => pool.querySync(r, f, o) }) {
+export async function fetchPopular({ me, follows, relays, vault, blocked = new Set(), now = Math.floor(Date.now() / 1000), ctx, trust = receiptTrust(ctx), query = (r, f, o) => pool.querySync(r, f, o) }) {
   const trusted = await trustSet(me, follows, { query })
   const urls = uniq(relays)
   const since = now - WINDOW, kinds = [7, 6, 9735]
@@ -116,7 +116,11 @@ export async function fetchPopular({ me, follows, relays, vault, blocked = new S
   for (let i = 0; i < follows.length; i += 250) asks.push(query(urls, { kinds: [7, 6], authors: follows.slice(i, i + 250), since, limit: 2000 }, { maxWait: 10000 }))
   const byId = new Map()
   for (const evs of await Promise.all(asks)) for (const ev of evs) if (ev?.id) byId.set(ev.id, ev)
-  const t = tally(byId.values(), trusted, verifyEvent, blocked)
+  // A receipt is anyone's event, so it is filtered before it can vote: only the payee's zap service's own, with a
+  // signed request. Whatever survives still has to name this note (reactorOf).
+  const all = [...byId.values()]
+  const okZaps = new Set((await trust(all.filter(e => e.kind === 9735)).catch(() => [])).map(e => e.id))
+  const t = tally(all.filter(e => e.kind !== 9735 || okZaps.has(e.id)), trusted, verifyEvent, blocked)
   const ids = rankTargets(t)
   if (!ids.length) return { notes: [], trusted: trusted.size, scores: new Map() }
   // Bodies: Haven /feed first (read only), the relays for the rest.

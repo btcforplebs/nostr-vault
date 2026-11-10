@@ -423,6 +423,8 @@ export async function fetchOwnExtras(vault, me, relays, { limit = 200, since, qu
 
 /** Kind 3 lists naming the user, from the network, each relay's handed to `on` as it lands (compactLists). */
 export async function fetchFollowerLists(me, relays, { limit = 500, since, on = () => {}, query, onSettled } = {}) {
+  // Safe only because this event came through pool.js (nostr-tools SimplePool passes verifyEvent).
+  // If you ever call this with an event from another source, check `signed` first — a forged kind 3 invents followers.
   // `followedAt` is this browser's own note (mergeLists): a relay can add any key to an event's JSON, and the
   // signature does not cover it.
   return eachRelay(relays, { kinds: [3], "#p": [me], limit, ...sinceOf(since) }, evs => on(compactLists(evs.map(({ followedAt, ...ev }) => ev), me)), { query, onSettled })

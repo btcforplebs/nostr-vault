@@ -4,6 +4,7 @@
 // buildDashboard, which is pure so the tests pin it. Nothing is saved: the dashboard only reads.
 import { pool, uniq } from "./pool.js"
 import { bolt11Sats } from "./notifications.js"
+import { receiptTrust } from "./zaps.js"
 import { LIVE_KIND, STREAM_RELAY, isPlayableLive, parseStream } from "../readers/live.js"
 import { MARKET_KINDS, MARKET_RELAYS, parseListing } from "../readers/market.js"
 import { RECIPE_TOPICS } from "../readers/longform.js"
@@ -160,18 +161,21 @@ export function dashboardFilters({ follows, owner, since }) {
 
 /**
  * One load: the day's events from your follows on your read relays, listings on the market relays, streams on the live
- * relays and zaps to you on your own, then the snapshot. A relay that doesn't answer gives nothing; it never fails the
- * load. `query(relays, filter)` is for tests.
+ * relays and zaps to you on your own, then the snapshot. The zap receipts are filtered first (`trust`, zaps.js
+ * trustedReceipts: the payee's own zap service published it, and its request holds up), so no receipt anyone can
+ * publish inflates the sats total; `ctx` is this account's and `trust` is for the tests. A relay that doesn't answer
+ * gives nothing; it never fails the load. `query(relays, filter)` is for tests.
  */
 export async function fetchDashboard({ follows, owner, readRelays, blocked, newFollowers = 0, now = Math.floor(Date.now() / 1000),
-  query = (r, f) => pool.querySync(r, f, { maxWait: 8000 }) }) {
+  ctx, trust = receiptTrust(ctx), query = (r, f) => pool.querySync(r, f, { maxWait: 8000 }) }) {
   const since = now - WINDOW_S
   const f = dashboardFilters({ follows, owner, since })
   const ask = (relays, filters) => Promise.all(filters.map(x => query(relays, x).catch(() => []))).then(r => r.flat())
   const read = cap(readRelays)
   const [notes, listings, live, zaps] = await Promise.all([
     ask(read, f.notes), ask(cap(MARKET_RELAYS), f.listings), ask(cap([STREAM_RELAY, ...readRelays]), f.live), ask(read, f.zaps)])
-  const snapshot = buildDashboard({ events: [...notes, ...listings, ...live], zapReceipts: zaps, follows, owner, blocked, since, now, newFollowers })
+  const zapReceipts = zaps.length ? await trust(zaps).catch(() => []) : zaps
+  const snapshot = buildDashboard({ events: [...notes, ...listings, ...live], zapReceipts, follows, owner, blocked, since, now, newFollowers })
   const missing = snapshot.popular.filter(p => !p.note).map(p => p.id)
   if (!missing.length) return snapshot
   return attachPopular(snapshot, await query(read, { ids: missing, limit: missing.length }).catch(() => []))

@@ -109,6 +109,8 @@ export async function dmRelaysFor(pubkey, lookupRelays, { fallback = DEFAULT_REL
 
 /** dmRelaysFor's choice from the lists found: 10050 inbox, else 10002 read list, else `fallback`. */
 function pickDmRelays(evs, pubkey, fallback) {
+  // Safe only because this event came through pool.js (nostr-tools SimplePool passes verifyEvent).
+  // If you ever call this with an event from another source, check `signed` first — a forged 10050 picks where DMs go.
   const newest = k => evs.filter(e => e.kind === k && e.pubkey === pubkey).sort((a, b) => b.created_at - a.created_at)[0]
   const inbox = (newest(10050)?.tags ?? []).filter(t => t[0] === "relay" && /^wss?:\/\//.test(t[1] ?? "")).map(t => t[1].replace(/\/+$/, ""))
   const usable = list => uniq(list.filter(u => !isLoopback(u)))
