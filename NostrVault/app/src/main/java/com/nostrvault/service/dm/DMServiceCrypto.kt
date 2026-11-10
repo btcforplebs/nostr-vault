@@ -98,6 +98,8 @@ internal suspend fun DMService.createGiftWrappedDMWithBunker(
     content: String,
     senderPubkey: String,
     recipientPubkey: String,
+    /** See [NIP17Service.createGiftWrappedDM]: your own copy is sealed to you, filed under [recipientPubkey]. */
+    giftWrapRecipient: String = recipientPubkey,
 ): String? = withContext(Dispatchers.IO) {
     try {
         if (!ensureDmBunkerConnected(senderPubkey)) return@withContext null
@@ -109,7 +111,7 @@ internal suspend fun DMService.createGiftWrappedDMWithBunker(
             tags = listOf(listOf("p", recipientPubkey)),
         )
 
-        val sealedContent = NIP46Service.nip44Encrypt(recipientPubkey, rumorJson)
+        val sealedContent = NIP46Service.nip44Encrypt(giftWrapRecipient, rumorJson)
             ?: run { Log.e(TAG, "Bunker NIP-44 encrypt failed for seal"); return@withContext null }
 
         val sealEventJson = EventPublisher.buildUnsignedEvent(
@@ -126,7 +128,7 @@ internal suspend fun DMService.createGiftWrappedDMWithBunker(
         // own impersonation guard would then drop the message. Refuse here.
         if (!sealSignedAsRequested(sealEventJson, signedSeal)) return@withContext null
 
-        wrapSealWithEphemeralKey(signedSeal, recipientPubkey)
+        wrapSealWithEphemeralKey(signedSeal, giftWrapRecipient)
     } catch (e: Exception) {
         Log.e(TAG, "Bunker gift wrap creation failed: ${e.message}")
         null

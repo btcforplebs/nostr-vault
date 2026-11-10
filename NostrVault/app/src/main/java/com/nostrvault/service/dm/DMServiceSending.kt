@@ -47,7 +47,8 @@ import com.nostrvault.service.DMService.Companion.TAG
                         selfEvent = NIP17Service.createGiftWrappedDMWithAmber(
                             content = content,
                             senderPubkey = ownHexPubkey,
-                            recipientPubkey = ownHexPubkey,
+                            recipientPubkey = recipientHexPubkey,
+                            giftWrapRecipient = ownHexPubkey,
                             amberSignerService = amberSignerService,
                         ) ?: throw Exception("Failed to create self wrap via Amber")
                     }
@@ -62,7 +63,8 @@ import com.nostrvault.service.DMService.Companion.TAG
                         selfEvent = createGiftWrappedDMWithBunker(
                             content = content,
                             senderPubkey = ownHexPubkey,
-                            recipientPubkey = ownHexPubkey,
+                            recipientPubkey = recipientHexPubkey,
+                            giftWrapRecipient = ownHexPubkey,
                         ) ?: throw Exception("Your signer could not seal your own copy")
                     }
                     DMCrypto.NONE -> throw Exception(
@@ -85,7 +87,8 @@ import com.nostrvault.service.DMService.Companion.TAG
                                 content = content,
                                 senderSecretKey = privkey,
                                 senderPubkey = ownHexPubkey,
-                                recipientPubkey = ownHexPubkey,
+                                recipientPubkey = recipientHexPubkey,
+                                giftWrapRecipient = ownHexPubkey,
                             )
                         }
 

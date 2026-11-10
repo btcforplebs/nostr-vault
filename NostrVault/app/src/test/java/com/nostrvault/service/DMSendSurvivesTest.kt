@@ -62,7 +62,7 @@ class DMSendSurvivesTest {
         every { CredentialStore.getCredentialHexKey(any()) } returns null
         mockkObject(NIP17Service)
         // Amber holding the seal until the test answers for it.
-        coEvery { NIP17Service.createGiftWrappedDMWithAmber(any(), any(), any(), any()) } coAnswers { signer.await() }
+        coEvery { NIP17Service.createGiftWrappedDMWithAmber(any(), any(), any(), any(), any()) } coAnswers { signer.await() }
 
         val config = MutableStateFlow(
             HavenConfig(
