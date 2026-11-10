@@ -90,8 +90,12 @@ a.settings-row:hover { background: var(--s2); }
 .vault-status.connected { --reach: #30d158; }
 .vault-status.error { --reach: #ff453a; }
 /* Desktop: inside the page's column, left of Your space (--dock-w, desktop.css; 0 when there is none), so it never
-   covers a Your space panel (Logen, 2026-11-04: it sat on Messages' "Open Messages"). */
-.vault-status.desk { right: calc(var(--dock-w, 0px) + 24px); bottom: 20px; }
+   covers a Your space panel (Logen, 2026-11-04: it sat on Messages' "Open Messages").
+   The modifier is `desk-float`, not `desk`: desktop.css:12's `.desk` is the shell's own grid (`display: grid;
+   height: 100dvh`) and a bare `desk` here matched it, which turned the capsule into a 496 x viewport-tall green
+   stadium over the feed (Logen's Safari screenshot, 2026-11-10, 1376 x 1032). A modifier only moves the capsule; it
+   must never share a name with another component's class. */
+.vault-status.desk-float { right: calc(var(--dock-w, 0px) + 24px); bottom: 20px; }
 
 /* Vault lists. */
 .note.tappable { cursor: pointer; }

@@ -19,7 +19,7 @@ export function VaultButton({ desk = false }) {
   const state = useConnectionState()
   const { text } = STATES[state]
   return (
-    <a class={`vault-status ${state}${desk ? " desk" : ""}`} href={dashboardHref()} aria-label={`Vault Dashboard: ${text}`} title={text}
+    <a class={`vault-status ${state}${desk ? " desk-float" : ""}`} href={dashboardHref()} aria-label={`Vault Dashboard: ${text}`} title={text}
       onClick={e => { if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); openDashboard() }}>
       <LockStack /><b>Vault</b>
     </a>
