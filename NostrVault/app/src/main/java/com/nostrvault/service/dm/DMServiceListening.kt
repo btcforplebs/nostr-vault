@@ -7,6 +7,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 import com.nostrvault.service.DMService.Companion.PERIODIC_SYNC_INTERVAL_MS
+import com.nostrvault.relay.vaultAuthRelayTag
 import com.nostrvault.service.DMService.Companion.TAG
 
     /** Saves the old account's inbox under its own key, then starts the new one's. */
@@ -197,13 +198,13 @@ import com.nostrvault.service.DMService.Companion.TAG
         if (parsed.size < 2) return
         val challenge = parsed[1].jsonPrimitive.contentOrNull ?: return
         val config = configStore.config.value
-        // The NIP-42 relay tag must match the chat relay's ServiceURL. The Go relay
-        // now builds that from the same scheme this device actually serves locally
-        // over (ws://, since Android never enables local TLS — see
-        // haven-go/init.go's relayServiceURL), so config.nostrURL's own scheme is
-        // already correct here — no need to force wss:// against the client's real
-        // connection scheme like this used to.
-        val relayUrl = config.localRelayURL("chat") ?: return
+        // The NIP-42 relay tag must match the chat relay's ServiceURL, not the
+        // socket: the app always sets RELAY_URL, so haven-go's relayServiceURL
+        // (init.go) answers wss:// even though the socket is plain ws:// on
+        // loopback. A ws:// tag failed every owner AUTH, the kind-1059 REQ was
+        // never sent, and no DM history held in this phone's relay loaded.
+        // vaultAuthRelayTag is the same rule List backups signs with.
+        val relayUrl = config.vaultAuthRelayTag(config.localRelayURL("chat") ?: return)
 
         scope.launch(Dispatchers.IO) {
             // After a restart with another account active, only that account's

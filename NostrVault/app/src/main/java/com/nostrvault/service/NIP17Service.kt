@@ -23,7 +23,12 @@ object NIP17Service {
      * @param content The plaintext DM content
      * @param senderSecretKey Sender's secret key hex
      * @param senderPubkey Sender's public key hex
-     * @param recipientPubkey Recipient's public key hex
+     * @param recipientPubkey Recipient's public key hex (the rumor's `p` tag: the conversation)
+     * @param giftWrapRecipient Whose key the seal and wrap are encrypted to. Your
+     *   own copy passes your key here but keeps [recipientPubkey] as the
+     *   conversation, like iOS `createGiftWrap(rumorPTags:giftWrapRecipient:)`.
+     *   Sealing a DM *to yourself* instead put your own key in the rumor's `p`
+     *   tag, so every sent message came back filed as a chat with yourself.
      * @return Gift-wrapped event JSON string ready to publish, or null on failure
      */
     fun createGiftWrappedDM(
@@ -31,6 +36,7 @@ object NIP17Service {
         senderSecretKey: String,
         senderPubkey: String,
         recipientPubkey: String,
+        giftWrapRecipient: String = recipientPubkey,
     ): String? {
         try {
             // Step 1: Build the rumor (unsigned kind 14)
@@ -42,7 +48,7 @@ object NIP17Service {
             )
 
             // Step 2: Seal with NIP-44 (encrypt rumor for recipient)
-            val sealedContent = NIP44Service.encrypt(rumorJson, recipientPubkey, senderSecretKey)
+            val sealedContent = NIP44Service.encrypt(rumorJson, giftWrapRecipient, senderSecretKey)
                 ?: run {
                     Log.e(TAG, "Failed to NIP-44 encrypt rumor")
                     return null
@@ -77,7 +83,7 @@ object NIP17Service {
             val ephemeralPk = parts[1]
 
             // Encrypt the signed seal for the recipient
-            val wrappedContent = NIP44Service.encrypt(signedSeal, recipientPubkey, ephemeralSk)
+            val wrappedContent = NIP44Service.encrypt(signedSeal, giftWrapRecipient, ephemeralSk)
                 ?: run {
                     Log.e(TAG, "Failed to NIP-44 encrypt seal for gift wrap")
                     return null
@@ -87,7 +93,7 @@ object NIP17Service {
                 pubkey = ephemeralPk,
                 kind = 1059,
                 content = wrappedContent,
-                tags = listOf(listOf("p", recipientPubkey)),
+                tags = listOf(listOf("p", giftWrapRecipient)),
             )
 
             return EventPublisher.signWithGoBackend(giftWrapJson, ephemeralSk)
@@ -114,6 +120,7 @@ object NIP17Service {
         senderPubkey: String,
         recipientPubkey: String,
         amberSignerService: AmberSignerService,
+        giftWrapRecipient: String = recipientPubkey,
     ): String? {
         try {
             // Step 1: Build the rumor (unsigned kind 14)
@@ -125,7 +132,7 @@ object NIP17Service {
             )
 
             // Step 2: Amber NIP-44 encrypts the rumor for the recipient
-            val sealedContent = amberSignerService.nip44Encrypt(rumorJson, recipientPubkey)
+            val sealedContent = amberSignerService.nip44Encrypt(rumorJson, giftWrapRecipient)
                 ?: run {
                     Log.e(TAG, "Amber NIP-44 encrypt failed for seal")
                     return null
@@ -161,7 +168,7 @@ object NIP17Service {
             val ephemeralPk = parts[1]
 
             // Encrypt the signed seal for the recipient (ephemeral key -- no Amber needed)
-            val wrappedContent = NIP44Service.encrypt(signedSeal, recipientPubkey, ephemeralSk)
+            val wrappedContent = NIP44Service.encrypt(signedSeal, giftWrapRecipient, ephemeralSk)
                 ?: run {
                     Log.e(TAG, "Failed to NIP-44 encrypt seal for gift wrap")
                     return null
@@ -171,7 +178,7 @@ object NIP17Service {
                 pubkey = ephemeralPk,
                 kind = 1059,
                 content = wrappedContent,
-                tags = listOf(listOf("p", recipientPubkey)),
+                tags = listOf(listOf("p", giftWrapRecipient)),
             )
 
             return EventPublisher.signWithGoBackend(giftWrapJson, ephemeralSk)
