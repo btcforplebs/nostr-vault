@@ -605,15 +605,17 @@ export async function readOwn(vault, pubkey, kinds, limit = 100) {
  * What the signer sent back must be the event asked for, validly signed by the signed-in account. Haven doesn't
  * check the author on its own: the outbox connection is authed with the whitelisted device key, so an event from
  * another key (an extension switched to another account mid-session) would be stored and published as this one's.
+ * Each throw carries `fixed`: our own sentence, which is safe for the Messages screen to show as it is (dms.js
+ * sendFailure). A signer's or a relay's own text never does.
  */
 export function checkSigned(event, template, pubkey) {
-  if (event?.pubkey !== pubkey) throw new Error("Your signer signed with a different account than the one signed in here. Switch it back, or sign out and sign in again.")
+  if (event?.pubkey !== pubkey) throw Object.assign(new Error("Your signer signed with a different account than the one signed in here. Switch it back, or sign out and sign in again."), { fixed: true })
   if (event.kind !== template.kind || event.content !== template.content || event.created_at !== template.created_at || JSON.stringify(event.tags) !== JSON.stringify(template.tags))
-    throw new Error("Your signer changed the note before signing it, so it wasn't posted.")
+    throw Object.assign(new Error("Your signer changed the note before signing it, so it wasn't posted."), { fixed: true })
   // A fresh copy: verifyEvent trusts a "verified" flag a signed event object carries, and that flag survives a spread.
   const { id, created_at, kind, tags, content, sig } = event
   const copy = { id, pubkey, created_at, kind, tags, content, sig }
-  if (!verifyEvent(copy)) throw new Error("Your signer sent back a note with a bad signature, so it wasn't posted.")
+  if (!verifyEvent(copy)) throw Object.assign(new Error("Your signer sent back a note with a bad signature, so it wasn't posted."), { fixed: true })
   // A list this browser signed is the owner's own edit: the wipe alarm stays quiet for it (list-wipe-alarm.js).
   recordOwnList(copy)
   return copy

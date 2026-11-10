@@ -17,11 +17,20 @@ export async function extensionSignIn() {
   return { signer: extensionSigner(pubkey), session: { method: "nip07", pubkey } }
 }
 
+/** A failure the Messages screen may show as it is (dms.js `sendFailure` reads `fixed`): our sentence about what the
+ *  extension did or didn't do, never the extension's own error text (a hostile signer could write a link into it). */
+const ours = message => Object.assign(new Error(message), { fixed: true })
+
 export function extensionSigner(pubkey) {
   return {
     method: "nip07",
     crypto: extensionCrypto(pubkey),
-    signEvent: async t => (await findExtension())?.signEvent(t) ?? Promise.reject(new Error("Nostr extension is gone")),
+    signEvent: async t => {
+      const ext = await findExtension()
+      if (!ext) throw ours("Your browser's Nostr extension isn't answering, so nothing was signed. Reload the page, or check that the extension is allowed on this site.")
+      if (typeof ext.signEvent !== "function") throw ours("Your extension can't sign for this site, so nothing was signed. Allow this site in the extension, or use one that signs.")
+      try { return await ext.signEvent(t) } catch { throw ours("Your extension didn't sign it, so nothing was signed. Open the extension, approve the request, then try again.") }
+    },
   }
 }
 
@@ -61,9 +70,11 @@ export function onAccount(ext, expected) {
 export function extensionCrypto(expected) {
   const call = async (scheme, fn, peer, text) => {
     const ext = await findExtension()
-    if (!ext) throw new Error("Nostr extension is gone")
-    if (!(await onAccount(ext, expected))) throw wrongAccount()
-    if (typeof ext[scheme]?.[fn] !== "function") throw new Error(`your extension doesn't offer ${scheme.toUpperCase()} ${fn === "encrypt" ? "encryption" : "decryption"}`)
+    if (!ext) throw ours("Your browser's Nostr extension isn't answering, so nothing was sealed. Reload the page, or check that the extension is allowed on this site.")
+    let onIt
+    try { onIt = await onAccount(ext, expected) } catch { throw ours("Your extension wouldn't say which account it's on, so nothing was sealed. Open it and try again.") }
+    if (!onIt) throw wrongAccount()
+    if (typeof ext[scheme]?.[fn] !== "function") throw ours(`Your extension doesn't offer ${scheme.toUpperCase()} ${fn === "encrypt" ? "encryption" : "decryption"}, which this needs. Use an extension that does, or another sign-in.`)
     return ext[scheme][fn](peer, text)
   }
   return {

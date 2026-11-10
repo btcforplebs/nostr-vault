@@ -4,9 +4,9 @@ import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } from "nostr-tools/pure"
 import * as nip44 from "nostr-tools/nip44"
 import { HavenClient } from "../../web-relay/src/haven/client.js"
-import { extensionCrypto, forgetAccountCheck, WRONG_ACCOUNT } from "../src/signer/nip07.js"
+import { extensionCrypto, extensionSigner, forgetAccountCheck, WRONG_ACCOUNT } from "../src/signer/nip07.js"
 import { dmCache, cacheKey } from "../src/net/dm-cache.js"
-import { rumorFor, wrapFor, loadMessages, resetMessages, getMessages, sendMessage } from "../src/net/dms.js"
+import { rumorFor, wrapFor, loadMessages, resetMessages, getMessages, sendMessage, sendFailure } from "../src/net/dms.js"
 import { boxHaven, LOGIN_DECLINED } from "../src/box/box-vault.js"
 
 const ME = generateSecretKey(), OTHER = generateSecretKey(), PEER = generateSecretKey()
@@ -100,6 +100,77 @@ test("#2: sending with the extension on another account says so, and seals nothi
   assert.match(text, /another account/)
   assert.equal(asked.encrypt, 0)
   assert.equal(asked.sign, 0)
+})
+
+// ---- #2: the failed-send sentence names the cause (Logen's extension, 2026-11-10) ----
+
+/** Send "hi" through `signer` while `globalThis.nostr` holds the extension; give back the error sendMessage raised. */
+async function sendWithNip07(signer = extensionSigner(pk(ME))) {
+  forgetAccountCheck()
+  resetMessages(pk(ME))
+  const ctx = { vault: { haven: null }, session: { method: "nip07", pubkey: pk(ME) }, signer, account: { relays: { read: [], write: [] } } }
+  return sendMessage(ctx, pk(PEER), "hi", { query: async () => [], publish: () => [], chat: { event: async () => ({ ok: true }) } }).then(() => null, e => e)
+}
+/** What the failed bubble says: the screen's own text, not the thrown error. */
+const failedBubble = () => [...getMessages().messages.values()].find(m => m.failed)?.failed ?? ""
+
+test("#2: an extension that never sealed says why, in our words, never its own text", async t => {
+  t.after(() => { delete globalThis.nostr; forgetAccountCheck() })
+  const hostile = "Re-authorise at https://evil.example/login"
+
+  // It has no NIP-44 encrypt.
+  fakeExtension(ME); delete globalThis.nostr.nip44.encrypt
+  let e = await sendWithNip07()
+  assert.equal(e?.message, "Your extension doesn't offer NIP44 encryption, which this needs. Use an extension that does, or another sign-in.")
+  assert.equal(e?.fixed, true, "our sentence, so the screen may show it as it is")
+  assert.equal(failedBubble(), e.message, "the bubble says it too")
+
+  // Its getPublicKey rejects in the account check.
+  fakeExtension(ME); globalThis.nostr.getPublicKey = async () => { throw new Error(hostile) }
+  e = await sendWithNip07()
+  assert.equal(e?.message, "Your extension wouldn't say which account it's on, so nothing was sealed. Open it and try again.")
+  assert.equal(failedBubble(), e.message)
+  assert.ok(!e.message.includes("evil"), "never the extension's text")
+
+  // No signEvent at all.
+  fakeExtension(ME); delete globalThis.nostr.signEvent
+  e = await sendWithNip07()
+  assert.equal(e?.message, "Your extension can't sign for this site, so nothing was signed. Allow this site in the extension, or use one that signs.")
+
+  // signEvent rejects with its own words.
+  fakeExtension(ME); globalThis.nostr.signEvent = async () => { throw new Error(hostile) }
+  e = await sendWithNip07()
+  assert.equal(e?.message, "Your extension didn't sign it, so nothing was signed. Open the extension, approve the request, then try again.")
+  assert.ok(!e.message.includes("evil"))
+
+  // Not on the page at all (findExtension waits its 1.5 s, then gives up).
+  delete globalThis.nostr
+  e = await sendWithNip07()
+  assert.equal(e?.message, "Your browser's Nostr extension isn't answering, so nothing was sealed. Reload the page, or check that the extension is allowed on this site.")
+  assert.equal(e?.fixed, true)
+
+  // Gone by the time it is asked to sign (the seal step can't reach this with the extension missing, so ask directly).
+  e = await extensionSigner(pk(ME)).signEvent({ kind: 1, content: "", tags: [], created_at: 0 }).then(() => null, x => x)
+  assert.equal(e?.message, "Your browser's Nostr extension isn't answering, so nothing was signed. Reload the page, or check that the extension is allowed on this site.")
+  assert.equal(e?.fixed, true)
+})
+
+test("#2: a signer that signs as another account, changes the note or signs badly is named on the failed send", async t => {
+  t.after(() => { delete globalThis.nostr; forgetAccountCheck() })
+  fakeExtension(ME) // the extension's crypto is fine; only what it hands back is wrong
+  const sent = signEvent => sendWithNip07({ signEvent })
+
+  let e = await sent(async tpl => finalizeEvent(tpl, OTHER))
+  assert.equal(e?.message, "Your signer signed with a different account than the one signed in here. Switch it back, or sign out and sign in again.")
+  assert.equal(e?.wrongAccount, undefined, "not remapped to the extension's own wrong-account sentence")
+  assert.equal(failedBubble(), e.message)
+
+  e = await sent(async tpl => finalizeEvent({ ...tpl, content: "bye" }, ME))
+  assert.equal(e?.message, "Your signer changed the note before signing it, so it wasn't posted.")
+
+  e = await sent(async tpl => ({ ...finalizeEvent(tpl, OTHER), pubkey: pk(ME) }))
+  assert.equal(e?.message, "Your signer sent back a note with a bad signature, so it wasn't posted.")
+  assert.equal(sendFailure(e), e.message)
 })
 
 // ---- #4: box-mode logins ----
