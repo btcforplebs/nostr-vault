@@ -193,7 +193,10 @@ test("a follow's new note arrives live, is saved and goes in on its own (no pill
   // One REQ per 250 follows, from now on, for the feed's kinds.
   const open = relays.live.filter(s => !s.closed)
   assert.deepEqual(open.map(s => s.filter.authors.length), [250, 250, 195])
-  assert.ok(open.every(s => s.filter.kinds.includes(1) && s.filter.since >= now - 5))
+  // Opened `LIVE_SINCE_S` (60 s) back rather than at this instant: a note whose author's clock is a little behind still
+  // matches the REQ instead of never arriving (Logen 2026-11-10, "posts not dropping in").
+  assert.ok(open.every(s => s.filter.kinds.includes(1) && s.filter.since <= now + 1 && s.filter.since >= now - 65),
+    `since ${open.map(s => now - s.filter.since).join(",")} s back`)
   const fresh = { id: hex(9_999_999), pubkey: follows[300], kind: 1, created_at: now + 60, tags: [], content: "live from a follow", sig: "" }
   open[1].params.onevent(fresh)
   open[1].params.onevent(fresh) // a second relay's copy

@@ -35,6 +35,45 @@ export function capOlder(notes, max = MAX_NOTES, { protect = null } = {}) {
 /** What reload() may ask Haven for: never more than the ceiling, whatever the reader has loaded. */
 export const readLimit = (page, have, max = MAX_NOTES) => Math.min(max, Math.max(page, have))
 
+/**
+ * The notes an update may put in front of the reader: `read`, a reload's page from Haven, and `live`, what a live
+ * subscription just handed us.
+ *
+ * `seenTop` (the newest `created_at` this screen has ever shown) guards the reload page only: a page read after the
+ * ceiling trimmed the top is newer than the list's own top and must not go back in above the reader (mergeReload).
+ * A note the subscription just delivered is new to this screen whatever its `created_at`: a relay can deliver it late,
+ * after a newer note from someone else already moved the top, and its author's clock can be behind — and those were
+ * being dropped in silence ("the posts are not dropping in", Logen 2026-11-10; measured on nostrvault.app: a note
+ * stamped 15 s back reached the page in 2 relay frames and never drawn, only after a reload).
+ * Deduped by id, newest first. -> notes
+ */
+export function freshNotes({ read = [], live = [], seenTop = 0 } = {}) {
+  const out = new Map()
+  for (const n of read) if (n?.id && n.created_at > seenTop) out.set(n.id, n)
+  for (const n of live) if (n?.id) out.set(n.id, n)
+  return [...out.values()].sort((a, b) => b.created_at - a.created_at)
+}
+
+/**
+ * `fresh` joining `list` (newest first) at its place: a note can be older than the top and still be new (see
+ * freshNotes), so it is merged by `created_at` instead of always being put on top, and nothing already shown is added
+ * twice. The tail gives way at the ceiling, as capNotes does; `protect`: the note the reader is on. -> notes
+ */
+export function insertNotes(list, fresh, { max = MAX_NOTES, protect = null } = {}) {
+  const base = list ?? []
+  const have = new Set(base.map(n => n.id))
+  const add = (fresh ?? []).filter(n => n?.id && !have.has(n.id)).sort((a, b) => b.created_at - a.created_at)
+  if (!add.length) return base
+  const out = []
+  let i = 0, j = 0
+  while (i < add.length || j < base.length) {
+    // A tie keeps the list's own order: what is already on screen never moves under the reader.
+    if (j >= base.length || (i < add.length && add[i].created_at > base[j].created_at)) out.push(add[i++])
+    else out.push(base[j++])
+  }
+  return capNotes(out, max, { protect })
+}
+
 /** What the screen draws: the window, grown as the reader nears the bottom. */
 export const drawNotes = (notes, shown = DRAW_NOTES, max = MAX_NOTES) => (notes ?? []).slice(0, Math.min(shown, max))
 
