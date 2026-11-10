@@ -1,6 +1,8 @@
 import Foundation
 #if os(iOS)
 import UIKit
+#elseif os(macOS)
+import AppKit
 #endif
 import Combine
 
@@ -118,6 +120,20 @@ class DMService: ObservableObject {
     var authRetry = PendingAuthRetry()
     var isAuthenticated = false
     var loadedAccountPubkey: String = ""
+    /// Saves of the DM cache, off the main thread and coalesced (`DMCacheFile`).
+    let cacheWriter = DMCacheWriter { data, url in
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try PrivateFile.write(data, to: url)
+    }
+    /// False while this account's cache is still being read (launch, account
+    /// switch). Saves wait — the file holds history not in memory yet — and so
+    /// do gift wraps, whose cached ids say which are already open.
+    var cacheLoaded = false
+    /// A save asked for while `cacheLoaded` was false; done once it is.
+    var cacheSaveWanted = false
+    /// Which `loadConversations` call may apply its result: the newest.
+    var cacheLoadGeneration: UInt64 = 0
     var switchGeneration: UInt64 = 0 // incremented on each account switch to invalidate stale callbacks
 
     // Watch-only (local signing with no usable key) can neither decrypt NIP-04
@@ -165,6 +181,20 @@ class DMService: ObservableObject {
         NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.resumeSignerWorkInFront() }
+            .store(in: &cancellables)
+        #endif
+
+        // Saves wait up to a second to coalesce; leaving the app writes them now.
+        #if os(iOS)
+        NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
+            .sink { [weak self] _ in self?.cacheWriter.flush() }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: UIApplication.willTerminateNotification)
+            .sink { [weak self] _ in self?.cacheWriter.flushAndWait() }
+            .store(in: &cancellables)
+        #elseif os(macOS)
+        NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
+            .sink { [weak self] _ in self?.cacheWriter.flushAndWait() }
             .store(in: &cancellables)
         #endif
 
