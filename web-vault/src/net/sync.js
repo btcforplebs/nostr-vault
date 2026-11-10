@@ -37,17 +37,62 @@ function account(evs) {
 }
 
 const norm = url => { try { return normalizeURL(url) } catch { return url } }
-const accountQuery = (relays, pubkey) => pool.querySync(relays, { kinds: ACCOUNT_KINDS, authors: [pubkey] }, { maxWait: 6000 })
+
+/** A relay that has the account's profile (kind 0) or follow list (kind 3) has the account. */
+const hasAccount = evs => evs.some(e => e.kind === 0 || e.kind === 3)
+/** How long the relays still to answer get after the first one that has the account, before the account is used. */
+export const ACCOUNT_GRACE_MS = 400
+/** The backstop: a relay that never answers is given up on at this point (the same 6 s as before). */
+export const ACCOUNT_MAX_WAIT_MS = 6000
+
+/**
+ * The account's ACCOUNT_KINDS from `relays`, one relay at a time. -> { events, all }
+ * `events` resolves on the first relay that has the account plus ACCOUNT_GRACE_MS for the relays still to answer (a
+ * newer kind 0 or 3 on another relay still wins), instead of holding every answer until the last relay answers or
+ * times out. One relay whose socket never connected (relay.primal.net) otherwise held the account 2.5 s on every cold
+ * start: 5.37 s in, 9 of 11 runs (NV_HEALTH_F_WEB).
+ * `all` is every relay's answer, once the last one has answered or timed out (maxWait): the relays still going when
+ * the grace ends are not in `events`, so a caller that stores the account takes `all` as well, or a Never Connect list
+ * that only a slow relay has would be dropped for that refresh. Nothing waits on it.
+ */
+export const accountQuery = (relays, pubkey, { graceMs = ACCOUNT_GRACE_MS, maxWait = ACCOUNT_MAX_WAIT_MS } = {}) => {
+  const urls = uniq(relays.filter(Boolean)), events = []
+  let left = urls.length, grace, done = false, settle
+  const all = new Promise(r => { settle = r })
+  const eventsP = new Promise(resolve => {
+    const finish = () => { if (done) return; done = true; clearTimeout(grace); resolve(events.slice()) }
+    if (!left) { settle([]); return finish() }
+    for (const url of urls) {
+      pool.querySync([url], { kinds: ACCOUNT_KINDS, authors: [pubkey] }, { maxWait }).then(evs => {
+        events.push(...evs)
+        // The first relay with the account starts the grace period; the relays still to answer have that long.
+        if (!done && grace === undefined && hasAccount(evs)) grace = setTimeout(finish, graceMs)
+      }, () => {}).then(() => { if (--left === 0) { finish(); settle(events.slice()) } })
+    }
+  })
+  return { events: eventsP, all }
+}
 
 /**
  * The account's ACCOUNT_KINDS from `relays`, asked before Haven is up: boot starts this while haven.wasm
  * downloads, so the relays are connected and the answer is in hand when Haven starts. Hand it to refreshAccount.
  */
 export function fetchAccount(pubkey, relays) {
-  const events = accountQuery(relays, pubkey).catch(() => [])
-  // The feed asks the account's read relays next: open them now as well.
-  events.then(evs => { for (const url of account(evs).relays.read) pool.ensureRelay(url, { connectionTimeout: 5000 }).catch(() => {}) })
-  return { relays, events }
+  const q = accountQuery(relays, pubkey)
+  const events = q.events.catch(() => [])
+  // The feed asks the account's read relays next: open them now as well, from the early answer and from what a slow
+  // relay adds later (a read list only that relay has).
+  const opened = new Set()
+  const open = evs => {
+    for (const url of account(evs).relays.read) {
+      if (opened.has(url)) continue
+      opened.add(url)
+      pool.ensureRelay(url, { connectionTimeout: 5000 }).catch(() => {})
+    }
+  }
+  events.then(open)
+  q.all.then(open)
+  return { relays, events, all: q.all }
 }
 
 /**
@@ -57,10 +102,25 @@ export function fetchAccount(pubkey, relays) {
 export async function refreshAccount(vault, pubkey, hintRelays, { log = () => {}, early } = {}) {
   const asked = new Set(early?.relays.map(norm))
   const rest = hintRelays.filter(u => !asked.has(norm(u)))
-  const evs = (await Promise.all([early?.events ?? [], rest.length ? accountQuery(rest, pubkey) : []])).flat()
+  const q = rest.length ? accountQuery(rest, pubkey) : null
+  const evs = (await Promise.all([early?.events ?? [], q?.events ?? []])).flat()
+  // A relay slower than the grace is not in `evs`: what it sends is saved when it lands, without holding the account
+  // up for it (Haven keeps the newest of each kind, so a late older answer changes nothing). Without this a Never
+  // Connect list or a read-relay list that only that relay had would be dropped for this refresh.
+  const seen = new Set(evs.map(e => e.id))
+  Promise.all([early?.all, q?.all].filter(Boolean)).then(l => storeAccount(vault, l.flat().filter(e => !seen.has(e.id)), log)).catch(() => {})
   // A save Haven doesn't answer (it runs on the page's thread and can be slow: "no answer to EVENT in 15000 ms") is
   // skipped and logged, not thrown: thrown, it ended the whole boot and the app stopped refreshing (Logen, 2026-11-03).
   // What wasn't saved still counts for this visit; Haven gets it on the next refresh. A refusal stays out, as before.
+  const unsaved = await storeAccount(vault, evs, log)
+  if (!unsaved.length) return readAccount(vault, pubkey)
+  const held = await vault.outbox.query({ kinds: ACCOUNT_KINDS, authors: [pubkey] })
+    .catch(e => { log("account-read-failed", { err: String(e?.message ?? e) }); return [] })
+  return account([...held, ...unsaved])
+}
+
+/** Saves the newest of each ACCOUNT_KIND in `evs` to Haven -> the ones it didn't take. */
+async function storeAccount(vault, evs, log) {
   const unsaved = []
   for (const k of ACCOUNT_KINDS) {
     const ev = newest(evs.filter(e => e.kind === k))
@@ -73,10 +133,7 @@ export async function refreshAccount(vault, pubkey, hintRelays, { log = () => {}
     }
     if (!r.ok && !/^duplicate:/.test(r.message)) log("account-store-refused", { kind: k, message: r.message })
   }
-  if (!unsaved.length) return readAccount(vault, pubkey)
-  const held = await vault.outbox.query({ kinds: ACCOUNT_KINDS, authors: [pubkey] })
-    .catch(e => { log("account-read-failed", { err: String(e?.message ?? e) }); return [] })
-  return account([...held, ...unsaved])
+  return unsaved
 }
 
 /** The Following feed from Haven /feed, newest first. */

@@ -2,7 +2,9 @@
 // skSealed? }. Never the user's secret key in the clear: a "local" key (made here, signer/local.js) is kept as an ncryptsec
 // and sealed. "nv-session" is the active account; "nv-accounts" every account this browser remembers (Accounts screen), the
 // active one included. A bunker account's client key is sealed (signer/keyring.js), never stored as plain hex.
-const KEY = "nv-session"
+/** The key the active account is saved under. index.html's wasm preload checks it too (nv-preload.js). */
+export const SESSION_KEY = "nv-session"
+const KEY = SESSION_KEY
 const ACCOUNTS = "nv-accounts"
 const PUBKEY = /^[0-9a-f]{64}$/
 

@@ -2,6 +2,7 @@
 // build web-relay's wasm first (../web-relay/tools/build-haven-wasm.sh) and `npm ci` there for the @fips packages.
 import { execSync } from "node:child_process"
 import { precompress } from "../web-relay/vite.config.js"
+import { preloadHaven } from "./nv-preload.js"
 
 // The commit About shows: NV_COMMIT from the site build (website/Dockerfile, set by deploy.sh; the image has no .git),
 // else this checkout's own, else none.
@@ -19,5 +20,5 @@ export default {
   resolve: { dedupe: ["nostr-tools", "preact"] },
   define: { __NV_COMMIT__: JSON.stringify(commit), __NV_BOX__: JSON.stringify(box) },
   server: { fs: { allow: [".."] } },
-  plugins: [precompress()], // haven.wasm's preload: main.jsx, for someone signed in (src/haven/vault.js preloadHaven)
+  plugins: [precompress(), ...(box ? [] : [preloadHaven()])], // haven.wasm's preload: index.html, for someone signed in
 }

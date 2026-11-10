@@ -20,7 +20,6 @@ import { putProfile } from "./src/net/profiles.js"
 import { setActionContext } from "./src/net/actions.js"
 import { setQuoteSource } from "./src/net/quotes.js"
 import { setMeshPeople } from "./src/net/fips-media.js"
-import { GuestApp } from "./src/guest/GuestApp.jsx"
 import { SetupBringOver } from "./src/screens/SetupBringOver.jsx"
 import { WelcomeTour } from "./src/components/WelcomeTour.jsx"
 import { NotifyAsk } from "./src/components/NotifyAsk.jsx"
@@ -28,21 +27,9 @@ import { markTourDone, tourDone } from "./src/net/first-run.js"
 import { runAndWait, resumeImportJobs } from "./src/net/import-jobs.js"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { startNavDepth } from "./src/components/nav-depth.js"
-import { ComposeScreen } from "./src/screens/ComposeScreen.jsx"
-import { ProfileScreen } from "./src/screens/ProfileScreen.jsx"
-import { RelayScreen } from "./src/screens/RelayScreen.jsx"
-import { SearchScreen } from "./src/screens/SearchScreen.jsx"
-import { NotificationsScreen } from "./src/screens/NotificationsScreen.jsx"
-import { ThreadScreen } from "./src/screens/ThreadScreen.jsx"
-import { MessagesScreen } from "./src/screens/MessagesScreen.jsx"
-import { ConversationScreen } from "./src/screens/ConversationScreen.jsx"
-import { PersonScreen } from "./src/screens/PersonScreen.jsx"
-import { VaultScreen } from "./src/screens/VaultScreen.jsx"
+import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, RelayScreen, DesktopShell, VaultDashboard } from "./src/screens/lazy-screens.js"
+import { GuestApp } from "./src/guest/GuestApp.jsx"
 import { SettingsScreen, resetBrowser } from "./src/screens/SettingsScreen.jsx"
-import { AccountsScreen } from "./src/screens/AccountsScreen.jsx"
-import { WalletScreen } from "./src/screens/WalletScreen.jsx"
-import { WotScreen } from "./src/screens/WotScreen.jsx"
-import { BookmarksScreen } from "./src/screens/BookmarksScreen.jsx"
 import { TabBar, PostButton } from "./src/components/TabBar.jsx"
 import { tabOf } from "./src/components/tabs.js"
 import { startChromeFold } from "./src/components/chrome-fold.js"
@@ -53,14 +40,12 @@ import { FloatingPlayer } from "./src/readers/FloatingPlayer.jsx"
 import { watchUpdates } from "./src/sw-update.js"
 import { VaultReady } from "./src/components/VaultReady.jsx"
 import { hasLocalData, markPrepared, prepareVault, wasPrepared } from "./src/net/vault-ready.js"
-import { DesktopShell } from "./src/desktop/DesktopShell.jsx"
 import { deskModeFor, deskRedirect, phoneRedirect, isListHash, withParam } from "./src/desktop/routes.js"
 import "./src/styles/app.css"
 import "./src/styles/quotes.css"
 import "./src/styles/dms.css"
 import "./src/styles/settings.css"
 import { NotifyWatch } from "./src/components/useNotifyWatch.js"
-import { VaultDashboard } from "./src/screens/VaultDashboard.jsx"
 import { isDashboardOpen } from "./src/net/dashboard-route.js"
 
 const ROUTES = ["feed", "search", "wot", "notifications", "compose", "profile", "relay", "thread", "messages", "dm", "vault", "bookmarks", "settings", "accounts", "wallet", ...(BOX ? ["box"] : [])]
@@ -140,6 +125,10 @@ function App() {
   useEffect(() => { setRoute(settle(mode)) }, [mode === "phone"])
   // The phone's bars fold as you scroll, as on the iPhone (chrome-fold.js); the desktop layout has none.
   useEffect(() => mode === "phone" && session ? startChromeFold() : undefined, [mode === "phone", !!session])
+  // Who Can Reach You (the FIPS panel) is fetched, and mounted, the first time it is opened, then stays mounted: its
+  // panel finds its elements once, by id, and the mesh keeps running while the user is elsewhere in the app.
+  const [relayShown, setRelayShown] = useState(route === "relay")
+  useEffect(() => { if (route === "relay") setRelayShown(true) }, [route])
 
   useEffect(() => {
     if (!session) return
@@ -279,7 +268,7 @@ function App() {
       {desk ? <DesktopShell ctx={ctx} mode={mode} hash={location.hash} lastList={lastList} /> : <PhoneScreens ctx={ctx} route={route} arg={arg} other={other} />}
       {/* A box has its own mesh and no in-page relay: its Box screen (src/box) instead of the browser relay's. */}
       {BOX ? (route === "box" || route === "relay") && <div class="box-host"><BoxScreen ctx={ctx} /></div>
-        : <div class="relay-host" hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>}
+        : <div class="relay-host" hidden={route !== "relay"}>{relayShown && <RelayScreen ctx={ctx} log={log} />}</div>}
       {!desk && (route === "feed" || route === "search" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
       {!desk && <TabBar ctx={ctx} route={tabOf(route, other)} pubkey={session.pubkey} />}
       <FloatingPlayer />

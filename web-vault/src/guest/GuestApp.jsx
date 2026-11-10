@@ -3,8 +3,7 @@
 // vaults. A bar offers sign-in; signing in keeps the address, so the app opens on the same post. Any other address
 // shows the welcome screen.
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
-import { ThreadScreen } from "../screens/ThreadScreen.jsx"
-import { PersonScreen } from "../screens/PersonScreen.jsx"
+import { ThreadScreen, PersonScreen } from "../screens/lazy-screens.js"
 import { SignInScreen } from "../screens/SignInScreen.jsx"
 import { WelcomeScreen } from "../screens/WelcomeScreen.jsx"
 import { CreateAccount } from "../screens/CreateAccount.jsx"

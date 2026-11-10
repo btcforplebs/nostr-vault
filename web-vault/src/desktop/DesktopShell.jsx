@@ -5,20 +5,10 @@
 // can't drift apart.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { FeedScreen } from "../screens/FeedScreen.jsx"
-import { ComposeScreen } from "../screens/ComposeScreen.jsx"
-import { ProfileScreen } from "../screens/ProfileScreen.jsx"
-import { PersonScreen } from "../screens/PersonScreen.jsx"
-import { SearchScreen } from "../screens/SearchScreen.jsx"
-import { NotificationsScreen } from "../screens/NotificationsScreen.jsx"
-import { ThreadScreen } from "../screens/ThreadScreen.jsx"
-import { MessagesScreen } from "../screens/MessagesScreen.jsx"
-import { ConversationScreen } from "../screens/ConversationScreen.jsx"
-import { VaultScreen } from "../screens/VaultScreen.jsx"
 import { SettingsScreen } from "../screens/SettingsScreen.jsx"
-import { AccountsScreen } from "../screens/AccountsScreen.jsx"
-import { WalletScreen } from "../screens/WalletScreen.jsx"
-import { WotScreen } from "../screens/WotScreen.jsx"
-import { BookmarksScreen } from "../screens/BookmarksScreen.jsx"
+// Every other screen comes as its own chunk, when it is first shown (screens/lazy.jsx), the same wrappers the phone
+// layout uses: the boot bundle carries the desktop layout and the Feed, not Compose's editors or the Vault's gallery.
+import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen } from "../screens/lazy-screens.js"
 import { compose } from "../net/actions.js"
 import { parseHash, withParam, sideOf, SPLIT, FULL } from "./routes.js"
 import { keyCommand, SHEET } from "./keys.js"
