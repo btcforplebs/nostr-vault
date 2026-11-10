@@ -36,6 +36,9 @@ import { VaultButton } from "../components/VaultButton.jsx"
 import { dashboardHref, openDashboard } from "../net/dashboard-route.js"
 import { ICONS, filterIcon, Icon, Chevron, Menu, MenuItem } from "./vault-ui.jsx"
 import { VaultPagesMenu } from "./VaultPagesMenu.jsx"
+// ActivityRow is the Notifications row (Faces, notif-who, the unread dot), so its layout has to ship with this screen too:
+// the sheet used to arrive only with NotificationsScreen's chunk, and Vault activity faces stacked one per row.
+import "../styles/notifications.css"
 
 const nowSec = () => Math.floor(Date.now() / 1000)
 const VAULT_RECHECK_MS = 60_000 // the list looks for new answers this often while it is on screen

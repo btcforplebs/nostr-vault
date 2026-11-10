@@ -11,6 +11,7 @@ import { transformSync } from "rolldown/utils"
 
 registerHooks({
   load(url, context, next) {
+    if (url.endsWith(".css")) return { format: "module", source: "", shortCircuit: true } // styles are the browser's
     if (!url.endsWith(".jsx")) return next(url, context)
     const path = fileURLToPath(url)
     const { code, errors } = transformSync(path, readFileSync(path, "utf8"), { jsx: { runtime: "automatic", importSource: "preact" } })
