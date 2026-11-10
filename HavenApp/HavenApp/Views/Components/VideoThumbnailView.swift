@@ -12,7 +12,7 @@ struct VideoThumbnailView: View {
         self.url = url
         self.mimeType = mimeType
         // Seed from cache so we never show a loading flash on subsequent renders.
-        let cached = MediaCacheService.shared.cachedThumbnail(for: url)
+        let cached = MediaCacheService.shared.memoryThumbnail(for: url)
         _thumbnail = State(initialValue: cached)
         _isLoading = State(initialValue: cached == nil)
     }

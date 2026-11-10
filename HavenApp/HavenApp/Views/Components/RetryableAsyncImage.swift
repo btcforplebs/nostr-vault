@@ -120,23 +120,20 @@ struct RetryableAsyncImage: View {
             return
         }
 
-        // 2. Try to load it directly from disk cache (General cache or Blossom)
-        if let data = MediaCacheService.shared.loadFromCache(url: url) {
-            Task {
+        // 2. Try the disk cache (general cache or Blossom). Read off the main
+        // thread: it reads the whole file and may hash it.
+        Task {
+            let url = url
+            if let data = await Task.detached(priority: .userInitiated, operation: {
+                MediaCacheService.shared.loadFromCache(url: url)
+            }).value {
                 if let image = await decode(data: data) {
-                    await MainActor.run {
-                        self.cachedImage = image
-                        // Cache in memory for next time
-                        MediaCacheService.shared.cacheImage(image, for: url)
-                    }
-                } else {
-                    await handleMissedCache()
+                    self.cachedImage = image
+                    // Cache in memory for next time
+                    MediaCacheService.shared.cacheImage(image, for: url)
+                    return
                 }
             }
-            return
-        }
-
-        Task {
             await handleMissedCache()
         }
     }
