@@ -11,6 +11,7 @@ import { Relay } from "nostr-tools/relay"
 import { finalizeEvent, getPublicKey } from "nostr-tools/pure"
 import { encrypt, decrypt } from "nostr-tools/nip04"
 import { hexToBytes } from "nostr-tools/utils"
+import { invoiceAmountless, invoiceMsat } from "./bolt11.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const SCHEME = "nostr+walletconnect:"
@@ -104,8 +105,26 @@ const paidListeners = new Set()
 export function onPaid(f) { paidListeners.add(f); return () => paidListeners.delete(f) }
 function paid() { for (const f of [...paidListeners]) try { f() } catch {} }
 
-/** Pay a bolt11 invoice (NIP-47 pay_invoice) -> the preimage, or "" when the wallet didn't send one. */
+/** The most one payment from this app may send, in sats: the iPhone's zap limit (ZapService.zapNote), held for every
+ *  payment, zaps and Send alike. payInvoice is where it is enforced, since every payment goes through it. */
+export const MAX_SEND_SATS = 10_000_000
+
+/**
+ * Why `invoice` may not be paid, or "" when it may: it asks for more than MAX_SEND_SATS, or names an amount this app
+ * can't read (so the cap can't be checked: fails closed). An amountless invoice passes: it carries no amount, and
+ * nothing here sends one, so the wallet has none to pay.
+ */
+export function sendCapRefusal(invoice) {
+  const msat = invoiceMsat(invoice)
+  if (msat != null) return msat > MAX_SEND_SATS * 1000 ? `That's more than ${MAX_SEND_SATS.toLocaleString("en-US")} sats, the most Nostr Vault sends in one payment.` : ""
+  return invoiceAmountless(invoice) ? "" : "Nostr Vault can't read this invoice's amount, so it won't pay it."
+}
+
+/** Pay a bolt11 invoice (NIP-47 pay_invoice) -> the preimage, or "" when the wallet didn't send one. Nothing is asked
+ *  of the wallet when sendCapRefusal refuses the invoice. */
 export async function payInvoice(conn, invoice, { recheckMs = PAID_RECHECK_MS, ...opts } = {}) {
+  const refusal = sendCapRefusal(invoice)
+  if (refusal) throw new Error(refusal)
   let preimage
   try {
     ({ preimage } = await walletRequest(conn, "pay_invoice", { invoice }, opts))

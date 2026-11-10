@@ -109,17 +109,22 @@ export async function trustSet(me, follows, { relays = PROFILE_RELAYS, query = (
  * so the screen can say why it's empty; scores: note id -> its score, for the rank line). `query` is for tests.
  */
 export async function fetchPopular({ me, follows, relays, vault, blocked = new Set(), now = Math.floor(Date.now() / 1000), ctx, trust = receiptTrust(ctx), query = (r, f, o) => pool.querySync(r, f, o) }) {
-  const trusted = await trustSet(me, follows, { query })
   const urls = uniq(relays)
   const since = now - WINDOW, kinds = [7, 6, 9735]
+  // The trust set and the day's engagement don't depend on each other, so they are asked at the same time.
   const asks = [query(urls, { kinds, since, limit: 5000 }, { maxWait: 10000 })]
   for (let i = 0; i < follows.length; i += 250) asks.push(query(urls, { kinds: [7, 6], authors: follows.slice(i, i + 250), since, limit: 2000 }, { maxWait: 10000 }))
+  const [trusted, answers] = await Promise.all([trustSet(me, follows, { query }), Promise.all(asks)])
   const byId = new Map()
-  for (const evs of await Promise.all(asks)) for (const ev of evs) if (ev?.id) byId.set(ev.id, ev)
+  for (const evs of answers) for (const ev of evs) if (ev?.id) byId.set(ev.id, ev)
   // A receipt is anyone's event, so it is filtered before it can vote: only the payee's zap service's own, with a
-  // signed request. Whatever survives still has to name this note (reactorOf).
+  // signed request (`trust`, which looks each payee's zap service up). Only receipts that could vote are sent to it:
+  // a trusted, unblocked zapper's verified request for this very note (reactorOf, the same test tally applies), so
+  // a stranger's zap costs no lookup. Each payee is looked up once per load, all before anything is ranked.
   const all = [...byId.values()]
-  const okZaps = new Set((await trust(all.filter(e => e.kind === 9735)).catch(() => [])).map(e => e.id))
+  const counts = pk => trusted.has(pk) && !blocked.has(pk)
+  const canVote = all.filter(e => e.kind === 9735 && reactorOf(e, verifyEvent, counts))
+  const okZaps = new Set(canVote.length ? (await trust(canVote).catch(() => [])).map(e => e.id) : [])
   const t = tally(all.filter(e => e.kind !== 9735 || okZaps.has(e.id)), trusted, verifyEvent, blocked)
   const ids = rankTargets(t)
   if (!ids.length) return { notes: [], trusted: trusted.size, scores: new Map() }

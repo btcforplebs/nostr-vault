@@ -11,3 +11,6 @@ export function invoiceMsat(invoice) {
   const msat = { "": v * 100_000_000_000n, m: v * 100_000_000n, u: v * 100_000n, n: v * 100n, p: v % 10n ? -1n : v / 10n }[m[2]]
   return msat > 0n && msat < 21_000_000n * 100_000_000_000n ? Number(msat) : null
 }
+
+/** Whether `invoice` is a well-formed bolt11 that names no amount (Bolt11.amount's unspecified case). */
+export const invoiceAmountless = invoice => /^ln(bcrt|bc|tbs|tb)1[02-9ac-hj-np-z]+$/.test((invoice ?? "").trim().toLowerCase())

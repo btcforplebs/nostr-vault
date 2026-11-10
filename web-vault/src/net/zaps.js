@@ -2,6 +2,8 @@
 // -> their LNURL pay endpoint -> a kind 9734 zap request signed by the user -> an invoice from the endpoint -> paid
 // by the connected wallet (net/wallet.js). Totals are the kind 9735 receipts that tag a note, as the iPhone counts
 // them (PostEngagementQuery), a receipt from anyone but the recipient's own zap service left out (ZapValidationService).
+// Unlike the iPhone, a receipt whose zap service can't be looked up is left out too (fails closed): anyone can publish
+// a 9735, so one nobody can check proves nothing.
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, isLoopback, uniq } from "./pool.js"
 import { checkSigned } from "./sync.js"
 import { getProfile } from "./profiles.js"
@@ -70,14 +72,33 @@ export function decodeLnurl(s) {
  * A person's lightning address from their newest kind 0: Haven /feed first, then their profile relays. The profile
  * cache only keeps lud16, and lud06 comes first. -> { lud06 } | { lud16 } | null
  */
-export async function lightningAddressOf(ctx, pubkey, { query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
-  const newest = evs => evs.filter(e => e?.kind === 0 && e.pubkey === pubkey).sort((a, b) => b.created_at - a.created_at)[0]
-  let ev = newest(await ctx.vault.feed.query({ kinds: [0], authors: [pubkey] }).catch(() => []))
-  if (!ev && globalThis.navigator?.onLine !== false)
-    ev = newest(await query(uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS]), { kinds: [0], authors: [pubkey] }, { maxWait: 6000 }).catch(() => []))
-  let content = null
-  try { content = JSON.parse(ev?.content ?? "null") } catch {}
-  return lightningOf(content ?? getProfile(pubkey))
+export const lightningAddressOf = async (ctx, pubkey, opts) => (await lightningAddressesOf(ctx, [pubkey], opts)).get(pubkey)
+
+/** How many authors one profile read asks for. */
+const AUTHORS_PER_ASK = 250
+/**
+ * lightningAddressOf for many people in one read: Haven /feed once, then one relay ask per AUTHORS_PER_ASK of the
+ * rest, not one ask per person (each waits up to 6 s on the slowest relay). -> Map(pubkey -> { lud06 } | { lud16 } | null)
+ */
+export async function lightningAddressesOf(ctx, pubkeys, { query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+  const want = new Set(pubkeys), newest = new Map()
+  const keep = evs => {
+    for (const e of evs) if (e?.kind === 0 && want.has(e.pubkey) && !(newest.get(e.pubkey)?.created_at >= e.created_at)) newest.set(e.pubkey, e)
+  }
+  keep(await ctx.vault.feed.query({ kinds: [0], authors: [...want] }).catch(() => []))
+  const missing = [...want].filter(pk => !newest.has(pk))
+  if (missing.length && globalThis.navigator?.onLine !== false) {
+    const relays = uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])
+    const asks = []
+    for (let i = 0; i < missing.length; i += AUTHORS_PER_ASK)
+      asks.push(query(relays, { kinds: [0], authors: missing.slice(i, i + AUTHORS_PER_ASK) }, { maxWait: 6000 }).catch(() => []).then(keep))
+    await Promise.all(asks)
+  }
+  return new Map([...want].map(pk => {
+    let content = null
+    try { content = JSON.parse(newest.get(pk)?.content ?? "null") } catch {}
+    return [pk, lightningOf(content ?? getProfile(pk))]
+  }))
 }
 
 /** The LNURL pay endpoint behind a lightning address, or null. */
@@ -208,18 +229,31 @@ function add(id, sats, mine) {
 }
 function markZapped(id, sats) { add(id, sats, true) }
 
-// The pubkey a recipient's zap service publishes receipts with, once per session; null when it can't be known.
-const publishers = new Map()
-function publisherOf(recipient, lnOf, fetchImpl) {
-  if (!publishers.has(recipient))
-    publishers.set(recipient, lnOf(recipient).then(ln => ln ? resolvePay(ln, fetchImpl).then(p => p.nostrPubkey) : null).catch(() => null))
-  return publishers.get(recipient)
+// The pubkey a recipient's zap service publishes receipts with; null when it can't be known. A key, once found, is
+// kept for the session. A miss is kept PUBLISHER_RETRY_MS and then asked again: receipts fail closed on a miss, so a
+// lookup that failed once (a slow relay, a flaky host) must not hide that person's zaps for the rest of the visit.
+export const PUBLISHER_RETRY_MS = 5 * 60_000
+const publishers = new Map() // recipient -> { p: Promise<pubkey|null>, at, ok }
+const publisherHeld = (recipient, now = Date.now()) => {
+  const hit = publishers.get(recipient)
+  return !!hit && (hit.ok || now - hit.at < PUBLISHER_RETRY_MS)
 }
+function publisherOf(recipient, lnOf, fetchImpl, now = Date.now()) {
+  if (publisherHeld(recipient, now)) return publishers.get(recipient).p
+  const entry = { at: now, ok: false }
+  entry.p = Promise.resolve().then(() => lnOf(recipient))
+    .then(ln => ln ? resolvePay(ln, fetchImpl).then(p => p.nostrPubkey) : null).catch(() => null)
+    .then(pk => { entry.ok = !!pk; return pk ?? null })
+  publishers.set(recipient, entry)
+  return entry.p
+}
+/** Whether `ev` was published by the payee's zap service, `publisher` (null when unknown: never). */
+const fromPublisher = (ev, publisher) => !!publisher && publisher === ev.pubkey
 
 /**
  * Count the receipts in `events` toward the notes in `ids`. A receipt counts once, on the note its `e` tag names,
- * for the sats its invoice states; one published by anyone but the recipient's zap service is skipped. Like the
- * iPhone, a recipient whose zap service can't be resolved is trusted (fails open).
+ * for the sats its invoice states; one published by anyone but the recipient's zap service is skipped, and so is one
+ * whose recipient's zap service can't be resolved (fails closed; the iPhone fails open here).
  */
 export async function countReceipts(events, ids, me, lnOf, fetchImpl = globalThis.fetch) {
   const want = new Set(ids)
@@ -233,7 +267,7 @@ export async function countReceipts(events, ids, me, lnOf, fetchImpl = globalThi
     const counted = seen.get(target)
     if (counted.has(ev.id)) continue
     const publisher = await publisherOf(recipient, lnOf, fetchImpl)
-    if (publisher && publisher !== ev.pubkey) continue
+    if (!fromPublisher(ev, publisher)) continue
     if (counted.has(ev.id)) continue // counted while the publisher was being resolved
     counted.add(ev.id)
     // Who zapped is the zap request's signer, never the receipt's publisher; a receipt without a valid request still
@@ -250,38 +284,37 @@ export async function countReceipts(events, ids, me, lnOf, fetchImpl = globalThi
 /**
  * `events` without the zap receipts their payee's zap service didn't publish (the iPhone's ZapValidationService):
  * the receipt's author must be the `nostrPubkey` of the LNURL endpoint in the payee's profile, and its zap request
- * must hold up (notifications.js zapRequest). Other kinds pass untouched. As countReceipts does, a payee whose zap
- * service can't be resolved is trusted (fails open) for the author check; the request check never fails open.
+ * must hold up (notifications.js zapRequest). Other kinds pass untouched. A payee whose zap service can't be resolved
+ * (no lightning address, no nostrPubkey, a lookup that failed) has its receipts left out: both checks fail closed.
+ * Each payee is looked up once per call, side by side, before any receipt is judged. `lnOfMany(pubkeys)` -> Map
+ * (lightningAddressesOf) reads every payee not already known in one go; without it each is read with `lnOf`.
  */
-export async function trustedReceipts(events, lnOf, fetchImpl = globalThis.fetch) {
+export async function trustedReceipts(events, lnOf, fetchImpl = globalThis.fetch, { lnOfMany } = {}) {
   const payeeOf = ev => ev.tags.find(t => t[0] === "p" && HEX64.test(t[1] ?? ""))?.[1]
-  // Every payee's zap service at once, a few at a time, not one after another: each is a profile read and an LNURL
-  // request, and 60 payees in turn took ~20 s.
-  const payees = [...new Set(events.filter(ev => ev?.kind === 9735 && zapRequest(ev)).map(payeeOf))]
-  const next = payees.values()
+  // Every payee's zap service before any receipt is judged: their profiles in one read (lnOfMany), then the LNURL
+  // requests TRUST_PARALLEL at a time. A profile read per payee, 8 at a time, kept Popular waiting 3 to 49 s on ~70
+  // payees (live relays, 2026-11-10): each read waits up to 6 s on the slowest relay.
+  const payees = [...new Set(events.filter(ev => ev?.kind === 9735 && zapRequest(ev)).map(payeeOf).filter(Boolean))]
+  const due = lnOfMany ? payees.filter(pk => !publisherHeld(pk)) : []
+  const read = due.length ? lnOfMany(due).catch(() => new Map()) : null
+  const ln = read ? async pk => (await read).get(pk) ?? null : lnOf
+  const next = payees.values(), resolved = new Map()
   await Promise.all(Array.from({ length: Math.min(TRUST_PARALLEL, payees.length) }, async () => {
-    for (const payee of next) await publisherOf(payee, lnOf, fetchImpl)
+    for (const payee of next) resolved.set(payee, await publisherOf(payee, ln, fetchImpl))
   }))
-  const out = []
-  for (const ev of events) {
-    if (ev?.kind !== 9735) { out.push(ev); continue }
-    if (!zapRequest(ev)) continue
-    const payee = payeeOf(ev)
-    const publisher = await publisherOf(payee, lnOf, fetchImpl)
-    if (publisher && publisher !== ev.pubkey) continue
-    out.push(ev)
-  }
-  return out
+  return events.filter(ev => ev?.kind !== 9735 || (zapRequest(ev) && fromPublisher(ev, resolved.get(payeeOf(ev)))))
 }
 /** How many payees' zap services trustedReceipts asks at once. */
-export const TRUST_PARALLEL = 8
+export const TRUST_PARALLEL = 16
 /** The zap service pubkey that publishes `recipient`'s receipts (their LNURL's nostrPubkey), or null when it doesn't
  *  resolve. Asked once per recipient per session. */
 export const zapPublisherOf = (ctx, recipient, fetchImpl = globalThis.fetch) => publisherOf(recipient, pk => lightningAddressOf(ctx, pk), fetchImpl)
-/** trustedReceipts for this account's screens. Without a ctx the payee's zap service can't be looked up, so the
- *  publisher check fails open exactly as it does for a service that doesn't resolve; the request check never does. */
-export const receiptTrust = ctx => evs =>
-  trustedReceipts(evs, ctx ? pk => lightningAddressOf(ctx, pk) : async () => null)
+/** trustedReceipts for this account's screens. Without a ctx the payee's zap service can't be looked up, so every
+ *  receipt is left out (fails closed), without asking: a miss recorded here would hide that payee's zaps from the
+ *  screens that do have a ctx until the retry window ran out. */
+export const receiptTrust = ctx => async evs =>
+  ctx ? trustedReceipts(evs, pk => lightningAddressOf(ctx, pk), undefined, { lnOfMany: pks => lightningAddressesOf(ctx, pks) })
+    : evs.filter(ev => ev?.kind !== 9735)
 
 let queue = new Set(), timer = null
 /** Ask for `id`'s zap total from the account's read relays. Asked once per note per session. */

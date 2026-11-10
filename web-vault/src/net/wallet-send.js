@@ -3,7 +3,7 @@
 // bare or behind lightning: or inside a BIP21 bitcoin: link. THIS SPENDS MONEY: every path ends in pay_invoice, and
 // only after the screen has shown the amount and the user has confirmed it.
 import { decodeLnurl, invoiceMsat, isAllowedEndpoint } from "./zaps.js"
-import { payInvoice } from "./wallet.js"
+import { MAX_SEND_SATS, payInvoice } from "./wallet.js"
 
 /**
  * What was pasted -> { kind: "invoice", invoice } | { kind: "address", address } | { kind: "lnurl", url }, or null
@@ -59,14 +59,19 @@ export function invoiceAmount(invoice) {
   return /^ln(bcrt|bc|tbs|tb)1[02-9ac-hj-np-z]+$/.test((invoice ?? "").trim().toLowerCase()) ? { unspecified: true } : { unreadable: true }
 }
 
-/** The range an LNURL service takes, in whole sats, and whether `sats` fits it (LNURLAmountRange.check). */
+/** The range an LNURL service takes, in whole sats, and whether `sats` fits it (LNURLAmountRange.check). The top is
+ *  never above MAX_SEND_SATS (`capped` on tooLarge: the cap, not the service, set it); a service whose least is over it is
+ *  `overCap`. */
 export function checkAmount({ minMsat, maxMsat }, sats) {
+  const capped = maxMsat > MAX_SEND_SATS * 1000
+  if (capped) maxMsat = MAX_SEND_SATS * 1000
   const minSats = Math.ceil(minMsat / 1000), maxSats = Math.floor(maxMsat / 1000)
+  if (capped && minMsat > maxMsat) return { overCap: true, minSats, maxSats, capped }
   // A range with no whole sat in it (2,500 msat fixed; 500 to 900 msat): nothing typed can fit, so say that once
   // instead of "too small" and "too large" for neighbouring numbers. iOS LNURLAmountRange has the same gap.
   if (minSats > maxSats) return { unpayable: true, minSats, maxSats }
   if (!(Number.isInteger(sats) && sats > 0)) return { invalid: true, minSats, maxSats }
-  if (sats > maxSats) return { tooLarge: true, minSats, maxSats }
+  if (sats > maxSats) return { tooLarge: true, minSats, maxSats, ...(capped ? { capped } : {}) }
   if (sats * 1000 < minMsat) return { tooSmall: true, minSats, maxSats }
   return { ok: true, msat: sats * 1000, minSats, maxSats }
 }
@@ -116,6 +121,7 @@ export async function resolvePayTarget(target, fetchImpl = globalThis.fetch) {
  */
 export async function payLnurl(conn, pay, { sats, comment = "" }, { fetchImpl = globalThis.fetch, pay: payImpl = payInvoice } = {}) {
   const check = checkAmount(pay, sats)
+  if (check.overCap) throw new Error(`It only takes more than ${MAX_SEND_SATS.toLocaleString("en-US")} sats, the most Nostr Vault sends in one payment.`)
   if (check.unpayable) throw new Error("It only takes amounts that aren't a whole number of sats, so this wallet can't pay it.")
   if (!check.ok) throw new Error(`It takes ${check.minSats.toLocaleString()} to ${check.maxSats.toLocaleString()} sats.`)
   const cb = new URL(pay.callback)
