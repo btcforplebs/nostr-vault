@@ -32,8 +32,7 @@ extension MediaCacheService {
         // Exact-name lookups only: no directory scan on the fetch path.
         if let blobHash = Self.blossomHash(in: url),
            let vaultFile = blossomFile(named: blobHash) ?? blossomFile(named: "\(blobHash).\(url.pathExtension)"),
-           let verified = verifiedHashNamedFile(vaultFile, expectedHash: blobHash),
-           let vaultData = cachedFileData(at: verified) {
+           let vaultData = verifiedHashNamedFileData(vaultFile, expectedHash: blobHash) {
             return vaultData
         }
         if let cachedData = cachedFileData(at: cacheDirectory.appendingPathComponent(filename)) {
@@ -146,7 +145,7 @@ extension MediaCacheService {
 
     /// Reads a cache file, memory-mapping large ones so a cached video returns
     /// file-backed (evictable) pages instead of hundreds of MB of dirty heap.
-    private func cachedFileData(at path: URL) -> Data? {
+    func cachedFileData(at path: URL) -> Data? {
         let size = ((try? FileManager.default.attributesOfItem(atPath: path.path))?[.size] as? NSNumber)?.intValue
         guard let size = size else { return nil }
         if size > 8 << 20 {

@@ -61,17 +61,22 @@ struct CustomEmojiText: View {
         return out
     }
 
+    /// Off the main thread: a view's static method runs on the main actor,
+    /// and this reads and decodes a whole file.
     private static func image(at url: URL) async -> PlatformImage? {
         if let cached = MediaCacheService.shared.cachedImage(for: url) { return cached }
-        if let data = MediaCacheService.shared.loadFromCache(url: url), let image = PlatformImage(data: data) {
-            MediaCacheService.shared.cacheImage(image, for: url)
+        return await Task.detached(priority: .utility) { () -> PlatformImage? in
+            let cache = MediaCacheService.shared
+            if let data = cache.loadFromCache(url: url), let image = PlatformImage(data: data) {
+                cache.cacheImage(image, for: url)
+                return image
+            }
+            guard let (data, _) = try? await MediaSessionService.shared.session.data(from: url),
+                  let image = PlatformImage(data: data) else { return nil }
+            cache.saveToCache(url: url, data: data)
+            cache.cacheImage(image, for: url)
             return image
-        }
-        guard let (data, _) = try? await MediaSessionService.shared.session.data(from: url),
-              let image = PlatformImage(data: data) else { return nil }
-        MediaCacheService.shared.saveToCache(url: url, data: data)
-        MediaCacheService.shared.cacheImage(image, for: url)
-        return image
+        }.value
     }
 
     /// `Text(Image)` draws at the image's own size, so it is drawn to fit a

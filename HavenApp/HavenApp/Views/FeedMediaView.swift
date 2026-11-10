@@ -523,7 +523,7 @@ private struct FeedVideoThumbnailView: View {
     }
 
     private func loadThumbnail() {
-        if let cached = MediaCacheService.shared.cachedThumbnail(for: url) {
+        if let cached = MediaCacheService.shared.memoryThumbnail(for: url) {
             self.thumbnail = cached
             reportAspect(cached)
             return

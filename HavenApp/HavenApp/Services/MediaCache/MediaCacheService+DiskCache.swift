@@ -50,11 +50,9 @@ extension MediaCacheService {
         }
     }
 
+    /// Reads the disk (and may hash the file): never call on the main thread.
     func loadFromCache(url: URL) -> Data? {
-        if let localURL = internalLocalFileURL(for: url) {
-            return try? Data(contentsOf: localURL)
-        }
-        return nil
+        loadLocalFileData(for: url)
     }
 
     /// What `clearCache()` did, so the UI can say it.

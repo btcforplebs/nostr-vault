@@ -8,8 +8,14 @@ import Combine
 extension MediaCacheService {
     // MARK: - Video Thumbnails
 
-    /// Returns a thumbnail synchronously if we have one in memory or on disk. Cheap; safe
-    /// to call from view init or onAppear before async work kicks off.
+    /// A thumbnail already decoded in memory. No disk I/O: the one to call
+    /// from a view's init or onAppear on the main thread.
+    func memoryThumbnail(for url: URL) -> PlatformImage? {
+        thumbnailMemoryCache.object(forKey: hash(url: url) as NSString)
+    }
+
+    /// A thumbnail from memory, or read and decoded from disk. Reads the
+    /// disk: never call on the main thread (`generateThumbnail` calls it off it).
     func cachedThumbnail(for url: URL) -> PlatformImage? {
         let key = hash(url: url)
         let nsKey = key as NSString
