@@ -59,6 +59,7 @@ export async function followLists(me, follows, { relays = PROFILE_RELAYS, query 
     cache.checkedAt = checkedAt
   })
   if (cache.disk) await cache.disk
+  notifyProgress(slot)
   const keep = (evs, always = false, misses = []) => { if (store && (evs.length || misses.length || always)) return store.save(evs, cache.checkedAt ||= Math.floor(t / 1000), misses, Math.floor(t / 1000)) }
   if (store && cache.checkedAt && !cache.refreshed && t - cache.checkedAt * 1000 > refreshMs) {
     cache.refreshed = true
@@ -90,7 +91,9 @@ export async function followLists(me, follows, { relays = PROFILE_RELAYS, query 
         const cut = now() - started >= LISTS_WAIT_MS - 100 || evs.length >= chunk.length
         const misses = !cut && evs.some(ev => wanted.has(ev?.pubkey)) ? chunk.filter(pk => !lists.has(pk)) : []
         for (const pk of misses) cache.missed.set(pk, Math.floor(t / 1000))
-        return keep(got, false, misses)
+        const saved = keep(got, false, misses)
+        notifyProgress(slot)
+        return saved
       })
     for (const pk of chunk) inflight.set(pk, job)
     waits.add(job)
@@ -142,6 +145,13 @@ export const missingLists = (follows, slot = "home") => uniq(follows).filter(pk 
 /** Of those, the ones not known to be missing: still on their way, or cut off and due to be asked again after
  *  RETRY_MS. A relay that has no list for someone (a known miss) doesn't count: asking again won't bring it. */
 export const unsettledLists = (follows, slot = "home") => uniq(follows).filter(pk => !caches[slot].lists.has(pk) && !caches[slot].missed.has(pk)).length
+
+// Whoever draws "640 of 1,054 follows' lists" listens here: each group that lands and the kept copy on disk notify once,
+// so the line moves with the download instead of a timer scanning every follow once a second (WotMini.jsx).
+const progressListeners = new Set()
+/** cb(slot) after each group of lists lands, and after the copy kept in this browser is read. -> unsubscribe. */
+export const onListsProgress = cb => { progressListeners.add(cb); return () => progressListeners.delete(cb) }
+const notifyProgress = slot => { for (const cb of progressListeners) { try { cb(slot) } catch {} } }
 
 const followedBy = ev => uniq((ev?.tags ?? []).filter(t => t[0] === "p" && HEX64.test(t[1] ?? "")).map(t => t[1]))
 

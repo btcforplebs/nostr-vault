@@ -7,7 +7,7 @@ import { registerHooks } from "node:module"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils" // Vite 8's own transformer
-import { followLists, missingLists, unsettledLists, buildWeb, filterWeb, shownByKey, trustPath, trustPathText, layerCounts, LAYERS, SHOWN_BRIDGES, fraction, hexPrefix, EXTENDED_MIN, RETRY_MS } from "../src/net/wot.js"
+import { followLists, missingLists, unsettledLists, onListsProgress, buildWeb, filterWeb, shownByKey, trustPath, trustPathText, layerCounts, LAYERS, SHOWN_BRIDGES, fraction, hexPrefix, EXTENDED_MIN, RETRY_MS } from "../src/net/wot.js"
 import { direction, LAYER_WEIGHTS } from "../src/net/wot-globe.js"
 
 const hex = (c, i = 0) => (c.repeat(63) + i.toString(16)).slice(-64)
@@ -245,4 +245,20 @@ test("unsettled lists: a cut-off answer leaves them unsettled, one the relay doe
   // The relay answered with f1's list and not f2's: f2 is a known miss, so nothing is left to wait for.
   await followLists(me, [f1, f2], { query: async () => [list(f1, [hex("6")])], retryMs: 0, now: () => 2_000_000 })
   assert.deepEqual([missingLists([f1, f2]), unsettledLists([f1, f2])], [1, 0])
+})
+
+// WotMini draws "Loading your web: 640 of 1,054 follows' lists" from wot.js onListsProgress instead of scanning every
+// follow once a second: each group that lands says so.
+test("onListsProgress: a word as each group of follows' lists lands, and nothing after unsubscribing", async () => {
+  const me = hex("c", 123), fs = Array.from({ length: 300 }, (_, i) => hex("1", 1000 + i)) // two groups of 250
+  let told = 0
+  const off = onListsProgress(slot => { if (slot === "home") told++ })
+  const query = async (r, f) => f.authors.map(a => list(a, []))
+  try {
+    const got = await followLists(me, fs, { query, now: () => 5_000_000 })
+    assert.equal(got.size, 300)
+    assert.equal(told, 3, "the copy kept in this browser, then one word per group — not a scan a second")
+  } finally { off() }
+  await followLists(hex("c", 124), [hex("1", 2000)], { query })
+  assert.equal(told, 3, "nothing after the panel went")
 })

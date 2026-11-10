@@ -37,6 +37,8 @@ const SLOT_POLL_MS = 50
 // was half of what an open tab sent damus. A relay heard from within the last ping interval is plainly alive, so it is
 // not pinged; in a hidden tab, not until it has been quiet for HIDDEN_PING_MS.
 export const HIDDEN_PING_MS = 5 * 60_000
+// A reconnect the pool makes itself gives up on the handshake after this and tries again, like the callers' opens.
+const RETRY_CONNECT_TIMEOUT_MS = 5000
 
 export class LivePool extends SimplePool {
   signerRelays = new Set()
@@ -48,8 +50,43 @@ export class LivePool extends SimplePool {
   neverConnect = blocklist([])
   budget = relayBudget() // relay-budget.js: hosts that ban busy addresses get a minute's and a day's share
   heard = new WeakMap() // socket -> when it last sent us anything
+  // A relay nostr-tools reconnects by itself is charged and gated in watch(); one the gates refuse waits here for
+  // its next try. Keyed by normalizeURL, cleared when the relay is dropped, closed or reconnects.
+  retryTimers = new Map() // url -> timeout
+  retryCounts = new Map() // url -> attempts, for the backoff
+  rawConnect = new WeakMap() // relay -> its own connect, before watch() wrapped it
   isHidden = () => globalThis.document?.visibilityState === "hidden"
+  isOffline = () => globalThis.navigator?.onLine === false
   pageProtocol = () => globalThis.location?.protocol ?? ""
+  /**
+   * [10, 10, 10, 20, 20, 30, 60] s: the backoff nostr-tools used for its own reconnects (abstract-relay.js:116), so
+   * a reconnect the gates refuse is retried by the pool on the same schedule instead of being dropped.
+   */
+  static RECONNECT_BACKOFF = [10e3, 10e3, 10e3, 20e3, 20e3, 30e3, 60e3]
+
+  constructor(opts) {
+    super(opts)
+    // Back from sleep, or wifi again after a dead patch: try the relays that were waiting out a backoff at once
+    // instead of up to a minute later. `online` is the only signal a browser gives; while offline nothing is tried
+    // at all (attemptReconnect leaves it to this event), so a flapping link spends no budget on connects that can't open.
+    this.onOnline = () => { this.retryAllNow() }
+    globalThis.addEventListener?.("online", this.onOnline)
+  }
+
+  destroy() {
+    globalThis.removeEventListener?.("online", this.onOnline)
+    for (const t of this.retryTimers.values()) clearTimeout(t)
+    this.retryTimers.clear()
+    this.retryCounts.clear()
+    // nostr-tools holds its own 10-60 s reconnect timer per dropped relay (abstract-relay.js:187): a destroyed pool
+    // must not leave those to open sockets after it is gone.
+    for (const r of this.relays.values()) {
+      if (r.reconnectTimeoutHandle) clearTimeout(r.reconnectTimeoutHandle)
+      r.reconnectTimeoutHandle = undefined
+    }
+    super.destroy()
+  }
+
   /** Relays a signer (a bunker link) named: neither the dead list nor Never Connect refuses these. */
   keepForSigner(urls) { for (const u of urls ?? []) try { this.signerRelays.add(normalizeURL(u)) } catch {} }
   /** The user's Never Connect list (kind 10006, never-connect.js): refused from now on, and closed if open. */
@@ -58,15 +95,33 @@ export class LivePool extends SimplePool {
     for (const [key, r] of this.relays) {
       if (!this.neverConnect(key) || this.signerRelays.has(key)) continue
       this.relays.delete(key)
+      this.forgetReconnect(key)
       r.close()
     }
   }
+  /**
+   * Every gate an open goes through: the dead list, Never Connect, a plain `ws://` on an https page, and the budget.
+   * `n` is what the open will send (one REQ for a fresh relay, one per open subscription for a reconnect that
+   * re-fires them). A signer's own relay is exempt from the lists and the budget, but not from the plain-ws rule.
+   * -> null when it may go, else the refusal message.
+   */
+  refuse(url, n = 1, where = "request") {
+    const signer = this.signerRelays.has(normalizeURL(url))
+    if (isDead(url) && !signer) return `dead relay skipped: ${url}`
+    if (this.neverConnect(url) && !signer) return `on your Never Connect list: ${url}`
+    if (blockedPlain(url, this.pageProtocol())) return `plain ws:// relay skipped on an https page: ${url}`
+    if (!signer && !this.budget.takeMany(url, n)) return `relay skipped, ${where} budget used: ${url}`
+    return null
+  }
   async ensureRelay(url, params) {
     const key = normalizeURL(url)
-    if (isDead(url) && !this.signerRelays.has(key)) throw new Error(`dead relay skipped: ${url}`)
-    if (this.neverConnect(url) && !this.signerRelays.has(key)) throw new Error(`on your Never Connect list: ${url}`)
-    if (blockedPlain(url, this.pageProtocol())) throw new Error(`plain ws:// relay skipped on an https page: ${url}`)
-    if (!this.signerRelays.has(key) && !this.budget.take(url)) throw new Error(`relay skipped, request budget used: ${url}`)
+    const held = this.relays.get(key)
+    // A relay nostr-tools is reconnecting by itself is gated in watch(), which charges what that reconnect re-fires.
+    // Taking a unit here too would spend two on one open.
+    if (!(held && held.reconnectAttempts > 0)) {
+      const no = this.refuse(url, 1)
+      if (no) throw new Error(no)
+    }
     const deadline = Date.now() + (this.strictCap ? SLOT_WAIT_MS : 0)
     // Nothing is awaited between the last check and super.ensureRelay, which adds the relay to this.relays
     // synchronously, so relays opening at the same moment can't all take the same free slot.
@@ -79,7 +134,16 @@ export class LivePool extends SimplePool {
     }
     const opening = super.ensureRelay(url, params), fresh = this.relays.get(key)
     if (fresh) { this.watch(fresh); this.lastUsed.set(fresh, Date.now()) }
-    const relay = await opening
+    let relay
+    try {
+      relay = await opening
+    } catch (err) {
+      // super.ensureRelay drops a relay whose connect threw. A refusal from watch() must not: the feed, DM and
+      // notification subscriptions are still open on that relay and would be orphaned, so keep it for the retry.
+      if (err?.refused && held && !this.relays.has(key)) this.relays.set(key, held)
+      throw err
+    }
+    this.retryCounts.delete(key)
     this.lastUsed.set(relay, Date.now())
     this.listen(relay)
     return relay
@@ -90,8 +154,34 @@ export class LivePool extends SimplePool {
     this.watched.add(r)
     const keep = () => { if (r.ws && r.ws.readyState !== 3) this.closing.add(r.ws) }
     const close = r.close.bind(r), hardClose = r.handleHardClose.bind(r)
-    r.close = () => { keep(); close() }
+    // A relay the pool closes on purpose is not coming back, so a retry waiting for it would only fire into nothing.
+    r.close = () => { keep(); this.forgetReconnect(normalizeURL(r.url)); close() }
     r.handleHardClose = reason => { keep(); hardClose(reason) }
+    // nostr-tools reconnects by itself (abstract-relay.js:184-192) and re-fires every open REQ on the new socket
+    // (:251-262) without passing ensureRelay, so none of the gates above ever saw a reconnect. Charge what it will
+    // send and refuse what the gates would have refused; a refused one is retried by retryReconnect, never dropped.
+    const key = normalizeURL(r.url), connect = r.connect.bind(r)
+    this.rawConnect.set(r, connect)
+    r.connect = async opts => {
+      // reconnectAttempts is the reliable signal: nostr-tools sets it in reconnect() before scheduling connect() and
+      // resets it in the socket's onopen. A first connect has it at 0. An open already in flight is already paid for.
+      const reconnecting = r.reconnectAttempts > 0 && !r.connectionPromise
+      if (reconnecting) {
+        const no = this.refuse(r.url, Math.max(1, r.openSubs.size), "reconnect")
+        if (no) {
+          // Take over the retry: nostr-tools' own timer would try again outside the gates' accounting, and its
+          // reconnect() does not reschedule after a refused connect, so nothing else is coming.
+          if (r.reconnectTimeoutHandle) { clearTimeout(r.reconnectTimeoutHandle); r.reconnectTimeoutHandle = undefined }
+          this.retryReconnect(r)
+          const err = new Error(no)
+          err.refused = true
+          throw err
+        }
+      }
+      const relay = await connect(opts)
+      if (reconnecting) this.retryCounts.delete(key)
+      return relay
+    }
     const ping = r.pingpong.bind(r)
     r.pingpong = () => {
       this.listen(r)
@@ -100,6 +190,50 @@ export class LivePool extends SimplePool {
       if (!this.budget.take(r.url)) return
       return ping()
     }
+  }
+  /** Try a refused (or offline-parked) reconnect now, if the gates pass. Never throws: the relay stays in the pool. */
+  attemptReconnect(r) {
+    const key = normalizeURL(r.url)
+    if (this.relays.get(key) !== r) return // dropped, replaced or closed meanwhile: nothing left to reconnect
+    const connect = this.rawConnect.get(r)
+    if (!connect) return
+    // Offline: `online` calls retryAllNow, so waiting costs nothing and a connect that can't open spends no budget.
+    if (this.isOffline()) { this.retryReconnect(r); return }
+    const no = this.refuse(r.url, Math.max(1, r.openSubs.size), "reconnect")
+    if (no) { this.retryReconnect(r); return }
+    try {
+      // A timeout, or a relay that black-holes the handshake holds connectionPromise forever and is never retried.
+      connect({ timeout: RETRY_CONNECT_TIMEOUT_MS }).then(() => this.retryCounts.delete(key), () => {})
+    } catch { this.retryReconnect(r) }
+  }
+  /** Retry a reconnect the gates refused, after the backoff nostr-tools used. One timer per relay. */
+  retryReconnect(r) {
+    const key = normalizeURL(r.url)
+    if (this.retryTimers.has(key)) return
+    const n = (this.retryCounts.get(key) ?? 0) + 1
+    this.retryCounts.set(key, n)
+    const backoff = LivePool.RECONNECT_BACKOFF
+    const t = setTimeout(() => { this.retryTimers.delete(key); this.attemptReconnect(r) }, backoff[Math.min(n - 1, backoff.length - 1)])
+    t?.unref?.() // node (the tests) only
+    this.retryTimers.set(key, t)
+  }
+  /** Back online: every relay waiting out a backoff (or parked while offline) is tried at once, gates first. */
+  retryAllNow() {
+    for (const r of this.relays.values()) {
+      if (r.connected || r.connectionPromise) continue
+      const key = normalizeURL(r.url)
+      const t = this.retryTimers.get(key)
+      if (t) clearTimeout(t)
+      this.retryTimers.delete(key)
+      this.retryCounts.delete(key)
+      this.attemptReconnect(r)
+    }
+  }
+  forgetReconnect(key) {
+    const t = this.retryTimers.get(key)
+    if (t) clearTimeout(t)
+    this.retryTimers.delete(key)
+    this.retryCounts.delete(key)
   }
   /** Notes when the relay's current socket last sent anything (a reconnect brings a new socket). */
   listen(r) {
@@ -131,6 +265,7 @@ export class LivePool extends SimplePool {
     for (const [, url, r] of idle) {
       if (this.relays.size < this.maxOpenRelays) break
       this.relays.delete(url)
+      this.forgetReconnect(url)
       r.close()
     }
     return this.openSockets() < this.maxOpenRelays

@@ -4,9 +4,13 @@
 // stream in "nip01" mode on the outbox route; the page picks the route, the stream can't.
 import { FipsTcpEndpoint, Segment, FlagSet, Flags } from "@fips/tcp"
 import { isOwner, xOnly } from "./owners.js"
+import { pollPump, IDLE_MS } from "./pump.js"
 
 export const RELAY_SERVICE_PORT = 7447
+/** A tick every 50 ms while a connection is open: the socket's reads and writes go out on it. */
 const POLL_MS = 50
+/** No connection open: nothing to pump, so the tick slows to IDLE_MS (pump.js) and a datagram wakes it. */
+export const IDLE_POLL_MS = IDLE_MS
 const READ_CHUNK = 64 * 1024
 const MAX_PENDING_OUT = 4 * 1024 * 1024
 // Inbound bytes without a "\n" before the stream is aborted. Haven's own 512000-byte message cap sits on
@@ -24,10 +28,12 @@ export const HAVEN_ROUTE = "/"
 const CLOSE_GRACE_MS = 5_000
 
 /** Wrap a FIPS datagram endpoint so service handlers only ever see datagrams from owners. */
-export function ownerGatedEndpoint(endpoint, getOwners, onReject = () => {}, onDrop = () => {}, onReset = () => {}) {
+export function ownerGatedEndpoint(endpoint, getOwners, onReject = () => {}, onDrop = () => {}, onReset = () => {}, onActivity = () => {}) {
   return {
     registerService(port, handler) {
       return endpoint.registerService(port, async ctx => {
+        // A datagram is work: wake the pump now rather than at the next tick, which is slow while the relay is idle.
+        onActivity()
         if (!isOwner(getOwners(), ctx.src)) return onReject(ctx)
         // The TCP stack throws on a segment it refuses (an owner's SYN past the connection limits) instead of
         // resetting it, and @fips/core doesn't catch service handler errors. Drop it here, and answer a
@@ -80,19 +86,19 @@ export class TcpFipsRelayServer {
       this.stats.droppedSegments++
       this.#dropped(`segment from ${xOnly(ctx.src)?.slice(0, 12) ?? "?"}${refusedSyn ? " (SYN refused, sending RST)" : ""}`, e)
     }
-    const gated = ownerGatedEndpoint(endpoint, getOwners, () => this.stats.rejectedDatagrams++, onDrop, () => this.stats.refusedSyns++)
+    // 50 ms while a peer is connected, 500 ms when idle, and a datagram wakes it at once (pump.js).
+    this.pump = pollPump(() => this.tick(), () => this.conns.size > 0, POLL_MS)
+    const gated = ownerGatedEndpoint(endpoint, getOwners, () => this.stats.rejectedDatagrams++, onDrop, () => this.stats.refusedSyns++, () => this.pump.wake())
     this.tcp = new FipsTcpEndpoint(gated, port, { maxConnections: MAX_CONNECTIONS, maxConnectionsPerPeer: MAX_CONNECTIONS_PER_PEER, ...tcpConfig })
-    this.timer = undefined
     this.busy = false
   }
 
   start(intervalMs = POLL_MS) {
-    this.timer ??= setInterval(() => this.tick(), intervalMs)
+    this.pump.start(intervalMs)
   }
 
   async stop() {
-    clearInterval(this.timer)
-    this.timer = undefined
+    this.pump.stop()
     for (const c of this.conns.values()) c.stream.close()
     this.conns.clear()
     await this.tcp.dispose()

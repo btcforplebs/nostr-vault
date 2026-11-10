@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
 import { useProfile } from "../components/useProfile.js"
+import { lookInFront } from "../components/auto-look.js"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
 import { badgeCount, useUnreadTotal } from "../components/useUnreadTotal.js"
 import { useVaultUnread } from "../components/useVaultUnread.js"
@@ -166,10 +167,10 @@ function RelayFoot({ ctx, rail }) {
       if (live) setCount((Number(own) || 0) + (Number(feed) || 0))
     }
     tick()
-    const t = setInterval(tick, 15_000)
+    const stop = lookInFront(tick, { every: 15_000 })
     const net = () => setOnline(navigator.onLine)
     addEventListener("online", net); addEventListener("offline", net)
-    return () => { live = false; clearInterval(t); removeEventListener("online", net); removeEventListener("offline", net) }
+    return () => { live = false; stop(); removeEventListener("online", net); removeEventListener("offline", net) }
   }, [])
   const state = online ? "Running" : "Running · offline"
   return (

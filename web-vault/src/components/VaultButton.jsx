@@ -2,17 +2,16 @@
 // it: by the app's own relay connections (net/connection-color.js). A tap opens the Vault Dashboard sheet. On a phone
 // it sits above the tab bar; on a wide window, 20 px from the bottom as on an iPad.
 import { useEffect, useState } from "preact/hooks"
+import { lookInFront } from "./auto-look.js"
 import { pool } from "../net/pool.js"
 import { STATES, poolState, withGrace } from "../net/connection-color.js"
 import { dashboardHref, openDashboard } from "../net/dashboard-route.js"
 
-/** The button's state, read from the pool every second. */
+/** The button's state, read from the pool every second while the page is in front (a hidden tab draws nothing, and
+ *  comes back with a fresh colour at once). */
 export function useConnectionState(every = 1000) {
   const [g, setG] = useState(() => withGrace(null, poolState(pool)))
-  useEffect(() => {
-    const t = setInterval(() => setG(prev => { const next = withGrace(prev, poolState(pool)); return next.shown === prev.shown && next.dropAt === prev.dropAt ? prev : next }), every)
-    return () => clearInterval(t)
-  }, [])
+  useEffect(() => lookInFront(() => setG(prev => { const next = withGrace(prev, poolState(pool)); return next.shown === prev.shown && next.dropAt === prev.dropAt ? prev : next }), { every }), [every])
   return g.shown
 }
 

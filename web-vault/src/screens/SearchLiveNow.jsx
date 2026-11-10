@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from "preact/hooks"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
+import { lookInFront } from "../components/auto-look.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { LiveSheet } from "../readers/LiveEmbed.jsx"
@@ -27,8 +28,8 @@ export function useLiveNow(ctx, blocked) {
       })
       .catch(() => {})
     look()
-    const timer = setInterval(look, REFRESH_MS)
-    return () => { live = false; clearInterval(timer) }
+    const stop = lookInFront(look, { every: REFRESH_MS })
+    return () => { live = false; stop() }
   }, [me, follows.length, follows[0], blocked?.size])
   return streams
 }

@@ -3,6 +3,7 @@
 // (PairDevice.jsx): show this browser's code, or scan the other device's.
 import { useEffect, useState } from "preact/hooks"
 import { Section } from "./parts.jsx"
+import { lookInFront } from "../auto-look.js"
 import { loadMyDevices, deviceStatus, statusLine, REFRESH_MS } from "../../desktop/space/my-devices.js"
 import { deviceRows, pairedDevices } from "../../net/pair-devices.js"
 import "../../styles/my-devices.css"
@@ -14,8 +15,8 @@ export function YourDevicesSection({ ctx, onPair, load = loadMyDevices }) {
     let alive = true
     const look = () => load(ctx).then(d => { if (alive) setData(d) }).catch(() => { if (alive) setData(d => d ?? { devices: [], adverts: new Map(), checked: false }) })
     look()
-    const timer = setInterval(look, REFRESH_MS)
-    return () => { alive = false; clearInterval(timer) }
+    const stop = lookInFront(look, { every: REFRESH_MS })
+    return () => { alive = false; stop() }
   }, [ctx.session.pubkey])
   const now = Math.floor(Date.now() / 1000)
   const rows = deviceRows(data?.devices, pairedDevices()).map(d => ({ d, s: deviceStatus(data.adverts.get(d.hex), now, { checked: data.checked }) }))

@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from "preact/hooks"
 import { Avatar } from "../../components/Avatar.jsx"
 import { AuthorName } from "../../components/NoteCard.jsx"
+import { lookInFront } from "../../components/auto-look.js"
 import { useBlocks } from "../../components/useBlocks.js"
 import { fetchProfiles } from "../../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../../net/pool.js"
@@ -32,8 +33,8 @@ export function LiveNow({ ctx, open = true, tools = null }) {
       })
       .catch(() => { if (live) setStreams(s => s ?? []) })
     look()
-    const timer = setInterval(look, REFRESH_MS)
-    return () => { live = false; clearInterval(timer) }
+    const stop = lookInFront(look, { every: REFRESH_MS, on: open })
+    return () => { live = false; stop() }
   }, [open, me, follows.length, follows[0], blocked.size])
   const { rows, more } = rowsOf(streams ?? [])
   const count = streams?.length ?? 0

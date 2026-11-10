@@ -21,7 +21,7 @@ test("a live stream alone is enough to leave the Search hint for the start page"
 test("the section reuses the panel's ask, rows and refresh", () => {
   const live = src("SearchLiveNow.jsx")
   assert.match(live, /from "\.\.\/desktop\/space\/live-now\.js"/)
-  assert.match(live, /setInterval\(look, REFRESH_MS\)/)
+  assert.match(live, /lookInFront\(look, \{ every: REFRESH_MS \}\)/, "asks again on the panel's period, and not while hidden")
   assert.equal(REFRESH_MS, 2 * 60 * 1000)
   const many = Array.from({ length: MAX_ROWS + 2 }, (_, i) => ({ address: `a${i}` }))
   assert.deepEqual(rowsOf(many).more, 2)

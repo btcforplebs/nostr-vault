@@ -24,15 +24,21 @@ export function relayBudget({ budgets = RELAY_BUDGETS, storage = globalThis.loca
   }
   const write = all => { memory = all; try { storage?.setItem(KEY, JSON.stringify(all)) } catch {} }
   return {
-    take(url) {
+    take(url) { return this.takeMany(url, 1) },
+    /**
+     * takeMany(url, n) -> whether `n` requests to `url` may go now (and counts them), all or nothing: a reconnect
+     * re-fires one REQ per open subscription, so it must pay for every one of them or not go at all. Hosts without
+     * a budget always may. `storage` holds { [host]: { day, n, minute, m } }; `now` is for tests.
+     */
+    takeMany(url, n = 1) {
       const host = hostOf(url), cap = budgets[host]
       if (!cap) return true
       const t = now(), day = dayOf(t), minute = Math.floor(t / 60_000)
       const all = read()
       const s = all[host] ?? {}
-      const n = s.day === day ? s.n : 0, m = s.minute === minute ? s.m : 0
-      if (n >= cap.perDay || m >= cap.perMinute) return false
-      write({ ...all, [host]: { day, n: n + 1, minute, m: m + 1 } })
+      const d = s.day === day ? s.n : 0, m = s.minute === minute ? s.m : 0
+      if (d + n > cap.perDay || m + n > cap.perMinute) return false
+      write({ ...all, [host]: { day, n: d + n, minute, m: m + n } })
       return true
     },
     /** What is left today and this minute for `url`'s host, or null when it has no budget. */

@@ -6,9 +6,13 @@
 import { FipsTcpEndpoint } from "@fips/tcp"
 import { ipv6ShimEndpoint } from "./ipv6-shim.js"
 import { xOnly } from "./owners.js"
+import { pollPump, IDLE_MS } from "./pump.js"
 
 export const MESH_DOOR_PORT = 80
+/** A tick every 20 ms while a connection is open: the door's reads and writes go out on it. */
 const POLL_MS = 20
+/** No connection open: nothing to pump, so the tick slows to IDLE_MS (pump.js) and a datagram wakes it. */
+export const IDLE_POLL_MS = IDLE_MS
 const READ_CHUNK = 64 * 1024
 // The native door's meshMaxConns. Haven caps its side the same way and closes the extra.
 export const MESH_DOOR_MAX_CONNECTIONS = 32
@@ -31,19 +35,22 @@ export class MeshDoorServer {
     this.haven = haven
     this.log = log
     this.conns = new Map()
+    // 20 ms while a peer is connected, 500 ms when idle, and a datagram wakes it at once (pump.js).
+    this.pump = pollPump(() => this.tick(), () => this.conns.size > 0, POLL_MS)
     this.shim = ipv6ShimEndpoint(node, selfKey, { allow: () => true, acceptSyn: true, onDrop: () => this.stats.dropped++ })
+    // A segment from a peer is work: wake the pump now rather than at the next tick, which is slow while the door is idle.
+    const register = this.shim.registerService.bind(this.shim)
+    this.shim.registerService = (port, handler) => register(port, ctx => { this.pump.wake(); return handler(ctx) })
     this.tcp = new FipsTcpEndpoint(this.shim, MESH_DOOR_PORT, { maxConnections: MESH_DOOR_MAX_CONNECTIONS, ...tcpConfig })
-    this.timer = undefined
     this.busy = false
   }
 
   start(intervalMs = POLL_MS) {
-    this.timer ??= setInterval(() => this.tick(), intervalMs)
+    this.pump.start(intervalMs)
   }
 
   async stop() {
-    clearInterval(this.timer)
-    this.timer = undefined
+    this.pump.stop()
     for (const c of this.conns.values()) c.stream.close()
     this.conns.clear()
     await this.tcp.dispose()
