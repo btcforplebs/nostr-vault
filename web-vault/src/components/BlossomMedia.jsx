@@ -1,8 +1,9 @@
 // A BUD-10 blossom: link in a note, drawn like an https picture or video once its bytes are fetched and checked against
 // the sha256 it names (net/blossom-uri.js). Until then a quiet "Loading media…"; when no server has it, "Media
 // unavailable", never the raw link. In a stranger's DM (`images` false) nothing is fetched until it is tapped, as an
-// https picture there waits (NoteText TapImage). Its bytes are held only while it is drawn: unmounting releases them
-// (retainBlossom / releaseBlossom), so a long timeline does not keep every picture it has shown in memory.
+// https picture there waits (NoteText TapImage). Its bytes are retained while it is drawn (retainBlossom on mount,
+// releaseBlossom on unmount); released bytes stay cached up to net/blossom-uri.js's 64 MB ceiling, so scrolling back to
+// a picture reuses it instead of fetching it again, and an idle one is evicted when the cache goes over.
 import { useEffect, useState } from "preact/hooks"
 import { releaseBlossom, retainBlossom } from "../net/blossom-uri.js"
 import { quoteSource } from "../net/quotes.js"

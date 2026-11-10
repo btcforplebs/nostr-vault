@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks"
 import { FeedRows, rootFetcher } from "../components/FeedRows.jsx"
 import { MediaGrid } from "../components/MediaGrid.jsx"
 import { feedPostOpen, savedFeedSpot, useFeedSpot } from "../components/feed-tap.js"
-import { AT_TOP_PX, holdSpot, readingSpot } from "../components/feed-stay.js"
+import { AT_TOP_PX, holdSpot, readingSpot, rebasePins } from "../components/feed-stay.js"
 import { MAX_NOTES, DRAW_NOTES, GROW_PX, capNotes, capOlder, readLimit, drawNotes, nextDraw, mergeReload } from "../net/feed-window.js"
 import { FeedModeMenu, FeedToolbar } from "../components/FeedPickerMenu.jsx"
 import { EditFeeds } from "../components/EditFeeds.jsx"
@@ -153,13 +153,18 @@ export function FeedScreen({ ctx }) {
       return read
     }
     const top = seenTop.current
-    const merged = mergeReload(prev, read, { max: MAX_NOTES, protect: stay.current?.id, seenTop: top })
+    // The note the reader is on, taken before the list changes: it decides which end the ceiling gives way at, and it is
+    // the row the anchor below puts back (`stay.current` is only set on the putIn path, which is not the only one).
+    const spot = readingSpot(screen.current, feedScroller(screen.current))
+    const merged = mergeReload(prev, read, { max: MAX_NOTES, protect: spot?.id, seenTop: top })
     // What is on screen, not what was read: a note the ceiling had to drop (the reader is at the bottom, so the
     // newest gives way) must still count as new on the next reload rather than be forgotten for good.
     seenTop.current = Math.max(top, merged.notes[0]?.created_at ?? 0)
     // New notes go in through putIn, which records the row the reader is on before the list changes (feed-stay.js).
+    // A merge that only moved rows (the ceiling trimmed the top because the reader is at the bottom) is anchored the
+    // same way: without a spot, those rows going would shift the reader by their height.
     if (merged.fresh.length) putIn(merged.fresh, () => setNotes(p => mergeReload(p, read, { max: MAX_NOTES, protect: stay.current?.id, seenTop: top }).notes))
-    else if (merged.changed) setNotes(merged.notes)
+    else if (merged.changed) putIn([], () => setNotes(merged.notes))
     return read
   }
   // `have`: how many notes are on screen, when the caller has just read them (the render that shows them may not have run).
@@ -238,6 +243,10 @@ export function FeedScreen({ ctx }) {
     const spot = stay.current
     stay.current = null
     if (spot) holdSpot(screen.current, feedScroller(screen.current), spot)
+    // Any list change resizes <main> (an "Older" page, a trim), which wakes the ResizeObserver of every live pin — the
+    // one just made here and any older one still inside its 5 s. Re-point them all at the row the reader is on now, or an
+    // older pin re-applies a spot they have left and drags them back: growing below must move nobody (R4).
+    rebasePins(screen.current, feedScroller(screen.current))
   }, [notes])
   // The watermark only ever moves forward, whatever path put the notes on screen (a live note, "Older", a reload): what
   // it must never do is come back down when the ceiling drops the newest notes off the top.
@@ -414,6 +423,10 @@ export function FeedScreen({ ctx }) {
     if (!el?.scrollHeight) return // no layout yet: the next draw asks again
     const gap = el.scrollHeight - (scrollTopOf(pane) + (pane ? pane.clientHeight : globalThis.innerHeight ?? 0))
     if (gap > GROW_PX) return
+    // R4: this growth resizes <main>, which wakes the ResizeObserver of any live putIn/holdSpot pin (a sync prepend, a
+    // live note). Re-point those pins at the row the reader is on now first, so none of them re-applies a spot the reader
+    // has left: growing the window must never move them (feed-stay.js rebasePins).
+    rebasePins(screen.current, pane)
     setDrawCount(n => nextDraw(n, total))
   }
   const growNow = useRef(growWindow)

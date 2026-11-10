@@ -88,9 +88,11 @@ export async function fetchVerified(b, servers, { fetch = globalThis.fetch, maxB
 
 // One author's media server list per session, and one fetch per file: the same link in two notes is fetched once.
 const lists = new Map()
-/** sha256 -> { promise, views, bytes, url, last, revoke }. The bytes behind `url` (an object URL) live only while some
- *  view shows them: before this, every Blossom picture or video a session had drawn stayed resident until reload, up to
- *  MAX_BYTES each, and a photo-heavy timeline walked the tab into Safari's memory kill (Spec 3). */
+/** sha256 -> { promise, views, bytes, url, last, revoke }. The bytes behind `url` (an object URL) are bounded: a picture
+ *  nothing shows any more stays cached up to MAX_CACHE_BYTES, so scrolling back does not re-download it, and the ceiling
+ *  evicts the idle ones, oldest first, when it is exceeded (Spec 3). Before this, every Blossom picture or video a
+ *  session had drawn stayed resident until reload, up to MAX_BYTES each, and a photo-heavy timeline walked the tab into
+ *  Safari's memory kill. */
 const files = new Map()
 /** What the cache may hold in object URLs at once. An entry something is still showing is never released to meet it. */
 export const MAX_CACHE_BYTES = 64 * 1024 * 1024
@@ -112,7 +114,7 @@ export function authorServers(pubkey, relays, { query = (r, f, o) => pool.queryS
 }
 
 /** The cache entry for a link, fetching it once. `revokeUrl` (tests) releases an object URL; `makeUrl` makes one. */
-function entryFor(b, { author, relays, fetch, query, usual = DEFAULT_MEDIA_SERVERS, servers = usual, makeUrl = (bytes, mime) => URL.createObjectURL(new Blob([bytes], { type: mime })), revokeUrl = revokeDefault } = {}) {
+function entryFor(b, { author, relays, fetch, query, usual = DEFAULT_MEDIA_SERVERS, servers = usual, maxCacheBytes = MAX_CACHE_BYTES, makeUrl = (bytes, mime) => URL.createObjectURL(new Blob([bytes], { type: mime })), revokeUrl = revokeDefault } = {}) {
   let e = files.get(b.sha256)
   if (e) return e
   e = { views: 0, bytes: 0, url: null, last: 0, revoke: revokeUrl, promise: null }
@@ -131,6 +133,9 @@ function entryFor(b, { author, relays, fetch, query, usual = DEFAULT_MEDIA_SERVE
     if (files.get(b.sha256) !== e) { e.revoke(url); return null }
     e.url = url
     e.bytes = got.bytes?.byteLength ?? 0
+    // The ceiling is checked again now the bytes are counted: `retain` asked before they landed, when this file still
+    // weighed nothing, so an entry one file over the cap would otherwise sit there until the next retain.
+    keepUnderCap(maxCacheBytes)
     return { url, kind: blossomKind(b) || (got.mime.startsWith("video/") ? "video" : "image"), server: got.server }
   })()
   return e
@@ -164,22 +169,24 @@ export function loadBlossom(b, opts = {}) {
   return entryFor(b, opts).promise
 }
 
-/** The same, for a view that is now on screen: its bytes stay until `releaseBlossom` is called, once per view. */
+/** The same, for a view that is now on screen: its bytes stay cached until `releaseBlossom` drops the view count, and
+ *  past that up to the ceiling, so coming back to it does not fetch it again. */
 export function retainBlossom(b, { maxCacheBytes = MAX_CACHE_BYTES, ...opts } = {}) {
-  const e = entryFor(b, opts)
+  const e = entryFor(b, { ...opts, maxCacheBytes })
   e.views++
   e.last = ++clock
   keepUnderCap(maxCacheBytes)
   return e.promise
 }
 
-/** A view left: when the last one goes, its object URL is revoked and its bytes are let go (the next view fetches it
- *  again, as it must: a revoked blob: URL shows nothing). */
-export function releaseBlossom(sha256) {
+/** A view left. Its bytes stay cached, up to the ceiling, so scrolling back to a picture does not fetch it again on the
+ *  reader's data; an entry nothing shows is what the ceiling evicts when the cache is over it (Spec 3). Revoking on
+ *  unmount would be strictly cheaper in memory and strictly worse in network, every return to the feed paying again. */
+export function releaseBlossom(sha256, { maxCacheBytes = MAX_CACHE_BYTES } = {}) {
   const e = files.get(sha256)
   if (!e) return
   e.views = Math.max(0, e.views - 1)
-  if (!e.views) drop(sha256, e)
+  if (!e.views) { e.last = ++clock; keepUnderCap(maxCacheBytes) } // idle now: first in line when the cache is over
 }
 
 /** Tests: forget what this session fetched, releasing whatever it still holds. */

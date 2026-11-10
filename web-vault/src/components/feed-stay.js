@@ -27,25 +27,43 @@ export function readingSpot(root, pane, { attr = NOTE } = {}) {
 /** How far to scroll so the post back at `spot.top` again: 0 when it is already there (or within a pixel). */
 export const pinDelta = (spot, nowTop) => (Math.abs(nowTop - spot.top) >= 1 ? nowTop - spot.top : 0)
 
+const selFor = spot => `[${spot.attr ?? NOTE}="${globalThis.CSS?.escape ? CSS.escape(spot.id) : spot.id}"]`
+
+/** The pins alive right now. */
+const live = new Set()
+
+/**
+ * Re-points every live pin at the row the reader is on now, at the height it is at now. The Feed calls this before it
+ * grows its draw window: the growth resizes `main`, which wakes every pin's ResizeObserver, and a pin whose reader has
+ * moved on would re-apply a spot they have left and pull the page back to it — the scroll jump a grow must never cause
+ * (NV_WEB_FIX_SPECS_2026_11_10 check 3 / R4). Pinning what is in view now is what the pin was for anyway.
+ */
+export function rebasePins(root, pane) {
+  for (const pin of [...live]) pin.rebase(root, pane)
+}
+
 /**
  * Puts the post `spot` back at its height in `root` and holds it there as the cards above it grow, until the reader
  * scrolls or PIN_MS passes. -> a stop function.
  */
 export function holdSpot(root, pane, spot, { ms = PIN_MS } = {}) {
-  const sel = `[${spot.attr ?? NOTE}="${globalThis.CSS?.escape ? CSS.escape(spot.id) : spot.id}"]`
-  const el = root?.querySelector?.(sel)
-  if (!el) return () => {}
+  if (!root?.querySelector?.(selFor(spot))) return () => {}
+  let cur = { ...spot }
   const scroller = pane ?? globalThis
+  // Looked up every time: `rebasePins` may move the pin to another row, and a row can be redrawn under the same id.
   const pin = () => {
-    if (el.isConnected === false) return
-    const d = pinDelta(spot, el.getBoundingClientRect().top)
+    const el = root.querySelector(selFor(cur))
+    if (!el || el.isConnected === false) return
+    const d = pinDelta(cur, el.getBoundingClientRect().top)
     if (d) scroller.scrollBy?.({ top: d, behavior: "instant" })
   }
   pin()
   const grows = globalThis.ResizeObserver ? new ResizeObserver(pin) : null
   grows?.observe(root)
+  const handle = { rebase(r, p) { const now = readingSpot(r ?? root, p ?? pane, { attr: cur.attr }); if (now) cur = now } }
+  live.add(handle)
   let cap = 0, stopScroll = () => {}
-  const done = () => { stopScroll(); grows?.disconnect(); clearTimeout(cap) }
+  const done = () => { live.delete(handle); stopScroll(); grows?.disconnect(); clearTimeout(cap) }
   stopScroll = globalThis.addEventListener ? onReaderScroll(done) : () => {}
   cap = setTimeout(done, ms)
   cap?.unref?.() // node (the tests) only
