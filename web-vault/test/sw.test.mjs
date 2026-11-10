@@ -36,8 +36,10 @@ function cacheStorage() {
 }
 
 // Loads sw.js into a worker-like global. `files` is what the network serves (url -> body); offline rejects every
-// fetch, and `drop(n)` rejects the n-th one (counted from 1), like a network that dies mid-install.
-function worker({ files = {}, offline = false, drop = () => false } = {}) {
+// fetch, and `drop(n)` rejects the n-th one (counted from 1), like a network that dies mid-install. `gate(url)` lets a
+// test hold a fetch open (it resolves to a promise the test settles), for a network that is slow rather than down.
+// The timers are the test's, shortened: the navigation timeout (NAV_TIMEOUT_MS) fires in milliseconds here.
+function worker({ files = {}, offline = false, drop = () => false, gate = () => null } = {}) {
   const listeners = {}, fetched = []
   const caches = cacheStorage()
   const self = {
@@ -47,20 +49,38 @@ function worker({ files = {}, offline = false, drop = () => false } = {}) {
   const fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
     fetched.push(url)
+    const hold = gate(url)
+    if (hold) await hold
     if (offline || drop(fetched.length)) throw new TypeError("Failed to fetch")
     const f = files[new URL(url).pathname]
     if (!f) return new Response("missing", { status: 404 })
     return new Response(f.body, { status: 200, headers: { "Content-Type": f.type, ETag: f.etag || `"${f.body.length}"` } })
   }
-  const ctx = { self, caches, fetch, location: new URL("sw.js", SCOPE), Request, Response, URL, console }
+  const ctx = {
+    self, caches, fetch, location: new URL("sw.js", SCOPE), Request, Response, URL, console,
+    setTimeout: (f, ms) => setTimeout(f, Math.min(ms, 20)), clearTimeout,
+  }
   ctx.globalThis = ctx
   vm.runInNewContext(SW, ctx)
-  const fire = (type, ev) => {
-    const waits = [], responses = []
-    listeners[type]({ ...ev, waitUntil: p => waits.push(p), respondWith: p => responses.push(p) })
-    return Promise.all(waits).then(() => Promise.all(responses))
+  // The event's own promises, unresolved: `responses` answers a navigation the test is still holding the network open
+  // for, where waiting for `waits` first would wait for that network. `settle` waits for every waitUntil promise,
+  // including one the worker registers only once the network answers (net() stores the answer then).
+  const pending = []
+  const fireNow = (type, ev) => {
+    const responses = []
+    listeners[type]({ ...ev, waitUntil: p => pending.push(p), respondWith: p => responses.push(p) })
+    return { responses }
   }
-  return { fire, caches, fetched }
+  const settle = async () => {
+    let seen = -1
+    while (seen !== pending.length) { seen = pending.length; await Promise.all(pending.slice()) }
+  }
+  const fire = async (type, ev) => {
+    const { responses } = fireNow(type, ev)
+    await settle()
+    return Promise.all(responses)
+  }
+  return { fire, fireNow, settle, caches, fetched }
 }
 
 // Node's Request refuses mode "navigate"; the worker only reads url, method and mode off a navigation request.
@@ -139,6 +159,34 @@ test("a page not served offline is still an error, not an empty response, when t
   const off = worker({ offline: true })
   const [page] = await off.fire("fetch", { request: nav(SCOPE) })
   assert.equal(page, undefined)
+})
+
+// The navigation is network first with no timeout before this: a weak link that never fails outright held a reload on
+// a blank page for as long as the network took (NV_HEALTH_F_WEB). Past NAV_TIMEOUT_MS the cached shell answers.
+test("a navigation slower than the timeout is answered with the cached shell, not held on the network", async () => {
+  let release
+  const w = worker({ files: site, gate: () => new Promise(r => { release = r }) })
+  const c = await w.caches.open("nv-web-vault-v2")
+  await c.put(new Request(SCOPE), new Response(OLD, { headers: { "Content-Type": "text/html" } }))
+  const { responses } = w.fireNow("fetch", { request: nav(SCOPE) })
+  const [page] = await Promise.all(responses)
+  assert.equal(await page.text(), OLD, "the cached shell answered while the network was still going")
+  release()
+  await w.settle()
+  assert.equal(await (await c.match(SCOPE)).text(), INDEX, "the network's answer is still stored when it arrives")
+})
+
+test("a slow navigation with nothing cached still waits for the network, as before", async () => {
+  let release
+  const w = worker({ files: site, gate: () => new Promise(r => { release = r }) })
+  const { responses } = w.fireNow("fetch", { request: nav(SCOPE) })
+  let answered = false
+  Promise.all(responses).then(() => { answered = true })
+  await new Promise(r => setTimeout(r, 60)) // past the (shortened) timeout: nothing to answer with yet
+  assert.equal(answered, false, "a first visit has no shell to fall back to")
+  release()
+  const [page] = await Promise.all(responses)
+  assert.equal(await page.text(), INDEX)
 })
 
 test("activate moves the v1 cache into v2 and deletes it", async () => {

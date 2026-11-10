@@ -2,6 +2,10 @@
 // stored and are fetched only once. Everything else is network first, with the cached copy when offline, so a
 // reload works without a network.
 const C = "nv-web-vault-v2"
+// A navigation the network takes longer than this over is answered with the cached shell instead (the fetch handler).
+const NAV_TIMEOUT_MS = 3000
+/** The navigation timeout's answer: not a Response, so it can't be mistaken for the network's. */
+const SLOW = Symbol("slow network")
 // A first install starts at once. A new build waits beside the worker serving open pages (whose lazy chunks
 // activate's prune would drop) until a page asks: "Update ready, tap to reload" (src/sw-update.js).
 self.addEventListener("install", e => e.waitUntil(precache().then(() => self.registration?.active ? undefined : self.skipWaiting())))
@@ -82,7 +86,23 @@ self.addEventListener("fetch", e => {
   if (asset) return e.respondWith(caches.match(e.request, { ignoreSearch: true }).then(hit => hit || net()))
   // Offline, a page URL not seen before (a deep link, a stale tab) gets the shell, as the server would send index.html.
   const shellPage = () => e.request.mode === "navigate" ? caches.match(new URL("./", location).href) : undefined
-  e.respondWith(net().catch(async () => (await caches.match(e.request, { ignoreSearch: true })) || shellPage()))
+  const cached = async () => (await caches.match(e.request, { ignoreSearch: true })) || shellPage()
+  const page = net()
+  if (e.request.mode !== "navigate") return e.respondWith(page.catch(cached))
+  // A navigation is network first, but a network that is slow rather than down (a weak link that never fails
+  // outright) would hold a reload on a blank page for as long as it takes: past NAV_TIMEOUT_MS the cached app shell
+  // answers instead, and the network's answer is still stored if it does arrive. A first visit has no cached shell,
+  // so it keeps waiting for the network, as before.
+  let timer
+  const slow = new Promise(r => { timer = setTimeout(() => r(SLOW), NAV_TIMEOUT_MS) })
+  // Keeps this event alive until the network answers even when the cached shell answered first: net() stores that
+  // answer with waitUntil, which throws once the event has finished, so without this the late answer is never kept.
+  e.waitUntil(page.then(() => {}, () => {}))
+  e.respondWith(Promise.race([page.catch(() => null), slow]).then(async first => {
+    clearTimeout(timer)
+    if (first !== SLOW) return first || await cached() // the network answered, or failed: as before
+    return (await cached()) || page.catch(cached)
+  }))
 })
 
 // Unchanged files (same ETag) aren't rewritten. A new build's hashed .wasm replaces its older versions
