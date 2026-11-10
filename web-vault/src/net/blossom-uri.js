@@ -88,7 +88,14 @@ export async function fetchVerified(b, servers, { fetch = globalThis.fetch, maxB
 
 // One author's media server list per session, and one fetch per file: the same link in two notes is fetched once.
 const lists = new Map()
+/** sha256 -> { promise, views, bytes, url, last, revoke }. The bytes behind `url` (an object URL) live only while some
+ *  view shows them: before this, every Blossom picture or video a session had drawn stayed resident until reload, up to
+ *  MAX_BYTES each, and a photo-heavy timeline walked the tab into Safari's memory kill (Spec 3). */
 const files = new Map()
+/** What the cache may hold in object URLs at once. An entry something is still showing is never released to meet it. */
+export const MAX_CACHE_BYTES = 64 * 1024 * 1024
+const revokeDefault = url => globalThis.URL?.revokeObjectURL?.(url)
+let clock = 0
 
 /** The servers on `pubkey`'s newest kind 10063 from `relays`, or []. `query` is for tests. */
 export function authorServers(pubkey, relays, { query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
@@ -104,26 +111,79 @@ export function authorServers(pubkey, relays, { query = (r, f, o) => pool.queryS
   return lists.get(pubkey)
 }
 
+/** The cache entry for a link, fetching it once. `revokeUrl` (tests) releases an object URL; `makeUrl` makes one. */
+function entryFor(b, { author, relays, fetch, query, usual = DEFAULT_MEDIA_SERVERS, servers = usual, makeUrl = (bytes, mime) => URL.createObjectURL(new Blob([bytes], { type: mime })), revokeUrl = revokeDefault } = {}) {
+  let e = files.get(b.sha256)
+  if (e) return e
+  e = { views: 0, bytes: 0, url: null, last: 0, revoke: revokeUrl, promise: null }
+  files.set(b.sha256, e)
+  e.promise = (async () => {
+    // The link's own servers first, before the author's list is even read: most links say where the file is.
+    const first = candidateServers(b, [], [])
+    let got = await fetchVerified(b, first, { fetch })
+    if (!got) {
+      const listed = await authorServers(b.author ?? author, relays, { query })
+      got = await fetchVerified(b, candidateServers(b, listed, servers).filter(s => !first.includes(s)), { fetch })
+    }
+    if (!got) { if (files.get(b.sha256) === e) files.delete(b.sha256); return null } // another note may link it with servers that have it
+    const url = makeUrl(got.bytes, got.mime)
+    // Released while the bytes were still coming: nothing may keep the object URL alive now.
+    if (files.get(b.sha256) !== e) { e.revoke(url); return null }
+    e.url = url
+    e.bytes = got.bytes?.byteLength ?? 0
+    return { url, kind: blossomKind(b) || (got.mime.startsWith("video/") ? "video" : "image"), server: got.server }
+  })()
+  return e
+}
+
+/** Drops an entry and releases its bytes. The one place an object URL is revoked. */
+function drop(sha256, e) {
+  files.delete(sha256)
+  if (e.url) e.revoke(e.url)
+  e.url = null
+}
+
+/** While the cache is over its ceiling, the least recently shown entry nothing is showing is released. */
+function keepUnderCap(max = MAX_CACHE_BYTES) {
+  let total = 0
+  for (const e of files.values()) total += e.bytes ?? 0
+  if (total <= max) return
+  const idle = [...files].filter(([, e]) => !e.views).sort((a, b) => a[1].last - b[1].last)
+  for (const [sha, e] of idle) {
+    if (total <= max) break
+    total -= e.bytes ?? 0
+    drop(sha, e)
+  }
+}
+
 /**
  * A blossom: link as something to show: an object URL of its checked bytes. -> Promise<{ url, kind } | null>.
  * `author`: the note's author, used when the link has no `as`. `relays`: where to read their server list.
  */
-export function loadBlossom(b, { author, relays, fetch, query, usual = DEFAULT_MEDIA_SERVERS, makeUrl = (bytes, mime) => URL.createObjectURL(new Blob([bytes], { type: mime })) } = {}) {
-  if (!files.has(b.sha256)) {
-    files.set(b.sha256, (async () => {
-      // The link's own servers first, before the author's list is even read: most links say where the file is.
-      const first = candidateServers(b, [], [])
-      let got = await fetchVerified(b, first, { fetch })
-      if (!got) {
-        const listed = await authorServers(b.author ?? author, relays, { query })
-        got = await fetchVerified(b, candidateServers(b, listed, usual).filter(s => !first.includes(s)), { fetch })
-      }
-      if (!got) { files.delete(b.sha256); return null } // another note may link it with servers that have it
-      return { url: makeUrl(got.bytes, got.mime), kind: blossomKind(b) || (got.mime.startsWith("video/") ? "video" : "image"), server: got.server }
-    })())
-  }
-  return files.get(b.sha256)
+export function loadBlossom(b, opts = {}) {
+  return entryFor(b, opts).promise
 }
 
-/** Tests: forget what this session fetched. */
-export const resetBlossom = () => { lists.clear(); files.clear() }
+/** The same, for a view that is now on screen: its bytes stay until `releaseBlossom` is called, once per view. */
+export function retainBlossom(b, { maxCacheBytes = MAX_CACHE_BYTES, ...opts } = {}) {
+  const e = entryFor(b, opts)
+  e.views++
+  e.last = ++clock
+  keepUnderCap(maxCacheBytes)
+  return e.promise
+}
+
+/** A view left: when the last one goes, its object URL is revoked and its bytes are let go (the next view fetches it
+ *  again, as it must: a revoked blob: URL shows nothing). */
+export function releaseBlossom(sha256) {
+  const e = files.get(sha256)
+  if (!e) return
+  e.views = Math.max(0, e.views - 1)
+  if (!e.views) drop(sha256, e)
+}
+
+/** Tests: forget what this session fetched, releasing whatever it still holds. */
+export const resetBlossom = () => {
+  lists.clear()
+  for (const [sha, e] of [...files]) drop(sha, e)
+}
