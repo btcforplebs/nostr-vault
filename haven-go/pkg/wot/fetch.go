@@ -127,7 +127,15 @@ func fetchLists(ctx context.Context, pool *nostr.SimplePool, relays []string, fi
 	for i, url := range relays {
 		go func() {
 			eose := false
-			defer func() { finish(i, eose) }()
+			defer func() {
+				// Stopped by our own deadline, not by the relay: it is cut.
+				// Counting it done here races the fetch's return and can
+				// make a timed-out fetch look whole.
+				if !eose && fctx.Err() != nil {
+					return
+				}
+				finish(i, eose)
+			}()
 			runsafe.Run("wot.fetchLatestLists", func() {
 				relay, err := pool.EnsureRelay(url)
 				if err != nil {
