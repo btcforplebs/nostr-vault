@@ -84,7 +84,7 @@ test("pay_invoice sends the invoice and returns the preimage", async () => {
 
 test("the wallet's error comes back with its code", async () => {
   const w = fakeWallet({ answer: () => ({ result_type: "pay_invoice", error: { code: "INSUFFICIENT_BALANCE", message: "Not enough sats" } }) })
-  await assert.rejects(payInvoice(conn, "lnbc1", { connect: w.connect }), e => e instanceof WalletError && e.code === "INSUFFICIENT_BALANCE" && e.message === "Not enough sats")
+  await assert.rejects(payInvoice(conn, "lnbc210n1fake", { connect: w.connect }), e => e instanceof WalletError && e.code === "INSUFFICIENT_BALANCE" && e.message === "Not enough sats")
   assert.ok(w.seen.closed)
 })
 
@@ -94,7 +94,7 @@ test("an answer from anyone but the wallet, or for another request, is ignored u
     sub.onevent(reply(req, { result: { preimage: "forged" } }, stranger))
     sub.onevent(finalizeEvent({ kind: 23195, created_at: 1, tags: [["e", "0".repeat(64)]], content: nip04.encrypt(walletSk, req.pubkey, '{"result":{}}') }, walletSk))
   } })
-  await assert.rejects(payInvoice(conn, "lnbc1", { connect: w.connect, timeoutMs: 50 }),
+  await assert.rejects(payInvoice(conn, "lnbc210n1fake", { connect: w.connect, timeoutMs: 50 }),
     e => e instanceof WalletTimeout && /may still go through/.test(e.message))
   assert.ok(w.seen.closed)
 })

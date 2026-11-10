@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils" // Vite 8's own transformer
 import { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } from "nostr-tools/pure"
 import {
-  lightningOf, payEndpoint, decodeLnurl, isAllowedEndpoint, invoiceMsat, resolvePay, receiptRelays, zap, countReceipts, trustedReceipts, TRUST_PARALLEL,
+  lightningOf, payEndpoint, decodeLnurl, isAllowedEndpoint, invoiceMsat, resolvePay, receiptRelays, zap, countReceipts, trustedReceipts, TRUST_PARALLEL, PUBLISHER_RETRY_MS,
   zapTotal, wantTotals, lightningAddressOf, zapComment, ZAP_COMMENT_MAX,
 } from "../src/net/zaps.js"
 
@@ -186,10 +186,31 @@ test("totals: each receipt once, only from the recipient's zap service, mine mar
   assert.equal(s.asked.length, 1)
 })
 
-test("totals: a recipient whose zap service can't be resolved is trusted, as on the iPhone", async () => {
+test("totals: a recipient whose zap service can't be resolved counts nothing (fails closed, unlike the iPhone)", async () => {
   const a = note(), stranger = generateSecretKey()
   await countReceipts([receipt({ target: a.id, sats: 3, by: forger, sender: bob, recipient: pk(stranger) })], [a.id], pk(me), async () => null)
-  assert.deepEqual(zapTotal(a.id), { sats: 3, mine: false })
+  assert.deepEqual(zapTotal(a.id), { sats: 0, mine: false })
+  // A lookup that throws is no better than one that finds nothing.
+  const b = note(), other = generateSecretKey()
+  await countReceipts([receipt({ target: b.id, sats: 5, recipient: pk(other) })], [b.id], pk(me), async () => { throw new Error("relay down") })
+  assert.deepEqual(zapTotal(b.id), { sats: 0, mine: false })
+})
+
+test("a zap service lookup that missed is asked again after the retry window; a found one is kept", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_000_000 })
+  const payee = generateSecretKey(), s = fakeService()
+  let asks = 0, up = false
+  const lnOf = async () => { asks++; return up ? { lud16: "bob@zaps.example" } : null }
+  const r = receipt({ target: note().id, sats: 1, recipient: pk(payee) })
+  assert.deepEqual(await trustedReceipts([r], lnOf, s.fetchImpl), [], "down: left out")
+  up = true
+  assert.deepEqual(await trustedReceipts([r], lnOf, s.fetchImpl), [], "inside the window the miss is kept")
+  assert.equal(asks, 1)
+  t.mock.timers.tick(PUBLISHER_RETRY_MS)
+  assert.deepEqual((await trustedReceipts([r], lnOf, s.fetchImpl)).map(e => e.id), [r.id], "asked again, now found")
+  t.mock.timers.tick(PUBLISHER_RETRY_MS * 10)
+  await trustedReceipts([r], lnOf, s.fetchImpl)
+  assert.equal(asks, 2, "a found key is not asked again")
 })
 
 test("trusted receipts: only the payee's own zap service may publish one, and only with a real signed request", async () => {
@@ -203,15 +224,21 @@ test("trusted receipts: only the payee's own zap service may publish one, and on
   assert.deepEqual(kept.map(e => e.id), [real.id, other.id])
 })
 
-test("trusted receipts: a payee whose zap service can't be resolved keeps receipts with a valid request (fails open)", async () => {
+test("trusted receipts: a payee whose zap service can't be resolved loses its receipts, valid request or not (fails closed)", async () => {
   const stranger = generateSecretKey(), a = note()
   const r = receipt({ target: a.id, sats: 3, by: forger, recipient: pk(stranger) })
-  assert.deepEqual((await trustedReceipts([r], async () => null)).map(e => e.id), [r.id])
+  assert.deepEqual(await trustedReceipts([r], async () => null), [])
+  // No nostrPubkey from the service (allowsNostr off) is the same: nobody is known to publish their receipts.
+  const r2 = receipt({ target: a.id, sats: 3, recipient: pk(generateSecretKey()) })
+  assert.deepEqual(await trustedReceipts([r2], bobLn, fakeService({ pay: { allowsNostr: false } }).fetchImpl), [])
+  // And a receipt with no payee at all is never kept.
+  const noPayee = { ...r, tags: r.tags.filter(t => t[0] !== "p") }
+  assert.deepEqual(await trustedReceipts([noPayee], async () => assert.fail("nothing to look up")), [])
 })
 
 test("trusted receipts: payees' zap services are asked side by side, not one after another", async () => {
-  // Ten payees nobody has asked yet, each lookup held open until all of them have started.
-  const payees = Array.from({ length: 10 }, () => generateSecretKey())
+  // More payees than TRUST_PARALLEL nobody has asked yet, each lookup held open until TRUST_PARALLEL have started.
+  const payees = Array.from({ length: TRUST_PARALLEL + 4 }, () => generateSecretKey())
   const rs = payees.map(p => receipt({ target: note().id, sats: 1, by: forger, recipient: pk(p) }))
   let inFlight = 0, most = 0, release
   const gate = new Promise(r => { release = r })
@@ -224,7 +251,7 @@ test("trusted receipts: payees' zap services are asked side by side, not one aft
   }
   const kept = await trustedReceipts(rs, lnOf)
   assert.equal(most, TRUST_PARALLEL, "payees were looked up one at a time")
-  assert.deepEqual(kept.map(e => e.id), rs.map(e => e.id), "order changed")
+  assert.deepEqual(kept, [], "none resolved, so none kept")
 })
 
 test("totals are asked in groups of ten, one filter per call, once per note", async () => {
@@ -285,7 +312,8 @@ test("zappers: each is the zap request's signer with sats and comment, biggest f
     tags: [["p", RECIPIENT], ["e", N], ["bolt11", `lnbc${msat / 100}n1x`], ["description", description]],
   })
   const events = [receipt(req(aSk, " thanks! "), 21_000), receipt(req(bSk, ""), 1_000_000), receipt("{not a request", 5_000)]
-  await countReceipts(events, [N], "0".repeat(64), async () => null)
+  // The receipts' publisher, "f"*64, is the recipient's zap service.
+  await countReceipts(events, [N], "0".repeat(64), bobLn, fakeService({ pay: { nostrPubkey: "f".repeat(64) } }).fetchImpl)
   assert.equal(zapTotal(N).sats, 21 + 1000 + 5)
   assert.deepEqual(zappersOf(N).map(z => [z.sender, z.sats, z.comment]), [
     [getPublicKey(bSk), 1000, ""],

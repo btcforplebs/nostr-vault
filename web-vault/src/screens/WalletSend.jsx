@@ -2,7 +2,7 @@
 // THIS SPENDS MONEY. The amount is shown before anything happens, and a second "Pay" in a confirm step is the only
 // thing that pays; a timeout clears the box, since paying again could pay twice.
 import { useEffect, useState } from "preact/hooks"
-import { WalletTimeout } from "../net/wallet.js"
+import { MAX_SEND_SATS, WalletTimeout, sendCapRefusal } from "../net/wallet.js"
 import { checkAmount, invoiceAmount, parsePayTarget, payBolt11, payLnurl, resolvePayTarget } from "../net/wallet-send.js"
 
 const IRREVERSIBLE = "Lightning payments cannot be reversed."
@@ -46,6 +46,8 @@ export function WalletSend({ wallet, resolve = resolvePayTarget, payInvoiceText 
   const n = Math.floor(Number(sats))
   const check = pay ? checkAmount(pay, n) : null
   const amount = target?.kind === "invoice" ? invoiceAmount(target.invoice) : null
+  // The send cap (wallet.js MAX_SEND_SATS) and an unreadable amount stop an invoice here, before Pay is offered.
+  const refusal = target?.kind === "invoice" ? sendCapRefusal(target.invoice) : ""
   const stakes = target?.kind === "invoice"
     ? amount.sats != null ? `This sends ${amount.sats.toLocaleString()} sats from your wallet. ${IRREVERSIBLE}`
       : amount.unspecified ? `This invoice names no amount, so your wallet decides what to send, and it may refuse it. ${IRREVERSIBLE}`
@@ -67,7 +69,7 @@ export function WalletSend({ wallet, resolve = resolvePayTarget, payInvoiceText 
       else setErr(String(e?.message ?? e))
     } finally { setBusy(false) }
   }
-  const ready = !busy && (target?.kind === "invoice" || check?.ok)
+  const ready = !busy && (target?.kind === "invoice" ? !refusal : check?.ok)
 
   return (
     <section class="card wallet-card">
@@ -77,12 +79,15 @@ export function WalletSend({ wallet, resolve = resolvePayTarget, payInvoiceText 
       {text.trim() && !target && <p class="muted small">Not something this wallet can pay. Paste a lightning invoice, a lightning address (name@domain.com) or an LNURL.</p>}
       {target?.kind === "invoice" && (amount.sats != null
         ? <p class="wallet-paying">Paying {amount.sats.toLocaleString()} sats</p>
-        : <p class="muted small">{amount.unspecified ? "This invoice names no amount, and Nostr Vault can't set one. Your wallet will probably refuse it." : "Not an invoice this app can read. Check it before you pay."}</p>)}
+        : amount.unspecified && <p class="muted small">This invoice names no amount, and Nostr Vault can't set one. Your wallet will probably refuse it.</p>)}
+      {refusal && <p class="error" role="alert">{refusal}</p>}
       {looking && <p class="muted small">Looking it up…</p>}
       {lookErr && <p class="error" role="alert">{lookErr}</p>}
       {pay && <div class="wallet-lnurl">
         <p class="wallet-to"><strong>To {target?.address ?? pay.host}</strong>{pay.note && <span class="muted small">{pay.note}</span>}</p>
-        {check.unpayable
+        {check.overCap
+          ? <p class="error">This service only takes more than {MAX_SEND_SATS.toLocaleString()} sats, the most Nostr Vault sends in one payment.</p>
+          : check.unpayable
           ? <p class="error">This service only takes amounts that aren't a whole number of sats, so this wallet can't pay it.</p>
           : check.minSats === check.maxSats
           ? <p class="wallet-paying">Amount: {check.minSats.toLocaleString()} sats</p>
@@ -91,7 +96,7 @@ export function WalletSend({ wallet, resolve = resolvePayTarget, payInvoiceText 
                 onInput={e => { setSats(e.currentTarget.value); setConfirming(false) }} aria-label="Amount in sats" /></label>
             <p class={`small ${check.tooSmall || check.tooLarge ? "error" : "muted"}`}>
               {/* The iPhone's range hints (+LNURL rangeCaption). */}
-              {check.tooSmall ? `The smallest amount it accepts is ${check.minSats.toLocaleString()} sats.` : check.tooLarge ? `The largest amount it accepts is ${check.maxSats.toLocaleString()} sats.` : `Between ${check.minSats.toLocaleString()} and ${check.maxSats.toLocaleString()} sats.`}</p></>}
+              {check.tooSmall ? `The smallest amount it accepts is ${check.minSats.toLocaleString()} sats.` : check.tooLarge ? (check.capped ? `The most Nostr Vault sends in one payment is ${check.maxSats.toLocaleString()} sats.` : `The largest amount it accepts is ${check.maxSats.toLocaleString()} sats.`) : `Between ${check.minSats.toLocaleString()} and ${check.maxSats.toLocaleString()} sats.`}</p></>}
         {pay.commentAllowed > 0 && <label class="wallet-row"><span>Comment</span>
           <input type="text" maxLength={pay.commentAllowed} placeholder="Optional" value={comment} onInput={e => setComment(e.currentTarget.value)} /></label>}
       </div>}

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import { AUTHORS_PER_FILTER, WINDOW_S, attachPopular, buildDashboard, compact, dashboardFilters, fetchDashboard, hasWavlakeTrack, newFollowersSince, oneLine, profilesOf } from "../src/net/feed-dashboard.js"
+import { trustedReceipts } from "../src/net/zaps.js"
 
 registerHooks({
   load(url, context, next) {
@@ -132,7 +133,8 @@ test("dashboardFilters: follows in chunks of 500, the iPhone's kinds and limits"
 test("fetchDashboard over mock relays: one answer per relay group, a dead relay gives nothing, popular notes fetched by id", async () => {
   const liked = sign(stranger, 1, { content: "an older banger", at: now - 3 * 86400 })
   // A receipt only counts sats when the payee's zap service published it and the request inside it verifies: this
-  // dashboard load has no ctx, so the service can't be looked up and the request check alone decides.
+  // dashboard load has no ctx, so the service can't be looked up and the receipt counts nothing (fails closed). The
+  // second load looks the service up (it names `stranger`, the receipt's publisher) and counts it.
   const zapRequest = sign(a, 9734, { tags: [["p", me.pk]] })
   const asked = []
   const query = async (relays, f) => {
@@ -146,7 +148,11 @@ test("fetchDashboard over mock relays: one answer per relay group, a dead relay 
   }
   const s = await fetchDashboard({ follows: [a.pk, b.pk], owner: me.pk, readRelays: ["wss://r1.example/", "wss://r2.example"], blocked: new Set(), now, query })
   assert.equal(s.posts, 1)
-  assert.equal(s.satsReceived, 1000)
+  assert.equal(s.satsReceived, 0, "no ctx: the zap service can't be checked, so nothing counts")
+  const service = async () => ({ ok: true, url: "https://zaps.example/x", json: async () => ({ tag: "payRequest", callback: "https://zaps.example/cb", allowsNostr: true, nostrPubkey: stranger.pk }) })
+  const checked = await fetchDashboard({ follows: [a.pk, b.pk], owner: me.pk, readRelays: ["wss://r1.example/"], blocked: new Set(), now, query,
+    trust: evs => trustedReceipts(evs, async () => ({ lud16: "me@zaps.example" }), service) })
+  assert.equal(checked.satsReceived, 1000)
   assert.deepEqual(s.popular.map(p => [p.id, p.people, p.note?.content]), [[liked.id, 2, "an older banger"]])
   assert.deepEqual(asked.find(x => x.f.kinds?.includes(1)).relays, ["wss://r1.example", "wss://r2.example"])
   assert.equal(asked.find(x => x.f.kinds?.includes(30311)).relays[0], "wss://relay.zap.stream")
