@@ -43,7 +43,7 @@ export function useQuote(q, memoryOnly = false) {
   return ev
 }
 
-export function QuotedNote({ q, short, depth = 0, memoryOnly = false }) {
+export function QuotedNote({ q, short, depth = 0, memoryOnly = false, trusted }) {
   const ev = useQuote(q, memoryOnly)
   // Someone you blocked says nothing inside another's note either (QuotedNoteView's blocked placeholder).
   const blocked = useBlocked()
@@ -60,6 +60,13 @@ export function QuotedNote({ q, short, depth = 0, memoryOnly = false }) {
   const stream = embeddedStream(ev)
   if (stream) return <LiveEmbed stream={stream} />
 
+  return <QuoteCard ev={ev} depth={depth} memoryOnly={memoryOnly} trusted={trusted} />
+}
+
+/** The quoted note, once loaded. `trusted(pubkey)` (the Vault lists): its avatar and pictures load only for a quoted
+ *  author in it; not given (the feeds), they load. */
+export function QuoteCard({ ev, depth = 0, memoryOnly = false, trusted }) {
+  const ok = trusted ? !!trusted(ev.pubkey) : true
   const open = e => {
     if (e.target.closest("a, button, video, audio, .media-box")) return
     e.stopPropagation() // the card around this one opens its own thread on a tap
@@ -69,13 +76,13 @@ export function QuotedNote({ q, short, depth = 0, memoryOnly = false }) {
   return (
     <div class="quote" role="link" tabIndex={0} onClick={open} onKeyDown={e => e.key === "Enter" && open(e)}>
       <div class="note-head">
-        <Avatar pubkey={ev.pubkey} size={24} />
+        <Avatar pubkey={ev.pubkey} size={24} load={ok} />
         <AuthorName pubkey={ev.pubkey} />
         <time class="note-time" datetime={new Date(ev.created_at * 1000).toISOString()}>{ago(ev.created_at)}</time>
       </div>
       {ev.kind === SNO_KIND ? <SnoCard event={ev} /> : <>
       {title && <strong class="quote-title">{title}</strong>}
-      <NoteText content={title ? ev.tags.find(t => t[0] === "summary")?.[1] || ev.content : ev.content} tags={title ? undefined : ev.tags} author={ev.pubkey} depth={depth + 1} memoryOnly={memoryOnly} />
+      <NoteText content={title ? ev.tags.find(t => t[0] === "summary")?.[1] || ev.content : ev.content} tags={title ? undefined : ev.tags} author={ev.pubkey} depth={depth + 1} memoryOnly={memoryOnly} images={ok} trusted={trusted} />
       </>}
     </div>
   )

@@ -338,7 +338,7 @@ function merge(prev, fresh) {
 
 const Grid = ({ children }) => <div class="vault-grid">{children}</div>
 
-function List({ ctx, mode, filter, items, me, followers, notes, trusted, unreadSince = Infinity, refreshes = 0, fetched = true, page = { shown: Infinity, onMore: () => {} }, onFollowers }) {
+export function List({ ctx, mode, filter, items, me, followers, notes, trusted, unreadSince = Infinity, refreshes = 0, fetched = true, page = { shown: Infinity, onMore: () => {} }, onFollowers }) {
   // Nothing in this browser's relay yet, but the relays are still being asked: placeholders, not "nothing here".
   const Empty = ({ text }) => fetched ? <p class="empty">{text}</p> : <VaultSkeleton mode={mode} />
   // A call, not a component made here: a new component type each render would draw every row again.
@@ -351,7 +351,7 @@ function List({ ctx, mode, filter, items, me, followers, notes, trusted, unreadS
     }
     case "notes": {
       const list = items
-      return (list.length || page.older) ? paged(list, n => <NoteCard key={n.id} event={n} />) : <Empty text={filter === "tagged" ? "No notes tag you yet." : "No notes yet."} />
+      return (list.length || page.older) ? paged(list, n => <NoteCard key={n.id} event={n} trusted={trusted} />) : <Empty text={filter === "tagged" ? "No notes tag you yet." : "No notes yet."} />
     }
     case "articles": {
       const list = items

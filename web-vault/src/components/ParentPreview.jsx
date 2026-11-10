@@ -12,11 +12,12 @@ import { plainText } from "./CondensedNote.jsx"
 import { mediaType, mediaUrls } from "../net/media.js"
 import { imageItem } from "../net/note-media.js"
 import { MediaImage } from "./MediaImage.jsx"
+import { fipsRef } from "../net/fips-ref.js"
 import { fetchQuote, forgetQuote, quoteSource } from "../net/quotes.js"
 
 export const PARENT_TIMEOUT_MS = 12_000
 
-export function ParentPreview({ id, relay, memoryOnly = false }) {
+export function ParentPreview({ id, relay, memoryOnly = false, trusted }) {
   const q = { type: "note", id, relays: relay ? [relay] : [] }
   const ev = useQuote(q, memoryOnly)
   const [late, setLate] = useState(false)
@@ -33,25 +34,8 @@ export function ParentPreview({ id, relay, memoryOnly = false }) {
     if (src) fetchQuote(q, { ...src, save: !memoryOnly }).catch(() => {})
     setTries(tries + 1)
   }
-  if (ev?.kind === 1) {
-    const media = mediaUrls(ev).filter(u => mediaType(u) !== "video") // a .fips photo link has no extension
-    const text = plainText(ev.content)
-    const open = e => { if (e.target.closest("a, button")) return; e.stopPropagation(); location.hash = `#/thread/${ev.id}` }
-    return (
-      <div class="parent-preview" role="link" tabIndex={0} aria-label="Open the note this replies to" onClick={open} onKeyDown={e => e.key === "Enter" && open(e)}>
-        <div class="parent-rail"><AvatarMenu pubkey={ev.pubkey} /><span class="parent-line" aria-hidden="true" /></div>
-        <div class="parent-main">
-          <div class="parent-head">
-            <a class="parent-name" href={`#/profile/${ev.pubkey}`} onClick={e => e.stopPropagation()}><AuthorName pubkey={ev.pubkey} /></a>
-            <Badges pubkey={ev.pubkey} note={ev} />
-            <time datetime={new Date(ev.created_at * 1000).toISOString()}>{ago(ev.created_at)}</time>
-          </div>
-          {text && <p class="parent-text">{text}</p>}
-          {media[0] && <MediaImage item={imageItem(media[0], ev.tags)} author={ev.pubkey} class="parent-media" loading="lazy" onError={e => e.currentTarget.remove()} />}
-        </div>
-      </div>
-    )
-  }
+  if (ev?.kind === 1) return <ParentCard ev={ev} trusted={trusted} />
+
   if (ev === null || late) {
     return (
       <div class="parent-failed">
@@ -65,6 +49,31 @@ export function ParentPreview({ id, relay, memoryOnly = false }) {
     <div class="parent-preview loading" aria-label="Loading original note" aria-busy="true">
       <div class="parent-rail"><span class="sk-avatar" /><span class="parent-line" aria-hidden="true" /></div>
       <div class="parent-main"><span class="sk-bar" style="width: 110px; margin-top: 6px" /><span class="sk-bar" /><span class="sk-bar" style="width: 70%" /></div>
+    </div>
+  )
+}
+
+/** The parent once loaded. `trusted(pubkey)` (the Vault lists): a stranger's avatar stays blank and their https photo
+ *  is left out; a .fips one stays with MediaImage, whose mesh gate holds a stranger's back. Not given (the feeds), they
+ *  load. */
+export function ParentCard({ ev, trusted }) {
+  const ok = trusted ? !!trusted(ev.pubkey) : true
+  const media = mediaUrls(ev).filter(u => mediaType(u) !== "video") // a .fips photo link has no extension
+  const shown = !!media[0] && (ok || !!fipsRef(media[0]))
+  const text = plainText(ev.content)
+  const open = e => { if (e.target.closest("a, button")) return; e.stopPropagation(); location.hash = `#/thread/${ev.id}` }
+  return (
+    <div class="parent-preview" role="link" tabIndex={0} aria-label="Open the note this replies to" onClick={open} onKeyDown={e => e.key === "Enter" && open(e)}>
+      <div class="parent-rail"><AvatarMenu pubkey={ev.pubkey} load={ok} /><span class="parent-line" aria-hidden="true" /></div>
+      <div class="parent-main">
+        <div class="parent-head">
+          <a class="parent-name" href={`#/profile/${ev.pubkey}`} onClick={e => e.stopPropagation()}><AuthorName pubkey={ev.pubkey} /></a>
+          <Badges pubkey={ev.pubkey} note={ev} />
+          <time datetime={new Date(ev.created_at * 1000).toISOString()}>{ago(ev.created_at)}</time>
+        </div>
+        {text && <p class="parent-text">{text}</p>}
+        {shown && <MediaImage item={imageItem(media[0], ev.tags)} author={ev.pubkey} class="parent-media" loading="lazy" onError={e => e.currentTarget.remove()} />}
+      </div>
     </div>
   )
 }

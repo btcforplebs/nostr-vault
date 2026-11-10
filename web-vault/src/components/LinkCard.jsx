@@ -5,22 +5,29 @@
 import { useEffect, useRef, useState } from "preact/hooks"
 import { cachedPreview, canPreview, loadPreview } from "./link-preview.js"
 
+/** Whether the card asks the page for its preview: a public https page not yet read, and the note's author trusted. */
+export const mayFetchPreview = (url, load) => !!load && cachedPreview(url) === undefined && canPreview(url)
+/** The preview the card draws: none when `load` is off, even one read earlier for a trusted note's card. */
+export const previewShown = (meta, load) => load ? meta : undefined
+
 const domain = url => { try { return new URL(url).hostname.replace(/^www\./, "") } catch { return url } }
 
-export function LinkCard({ url }) {
+/** `load` false (a stranger's note in the Vault lists): the plain card only, nothing fetched, no cached og:image. */
+export function LinkCard({ url, load = true }) {
   const ref = useRef(null)
-  const [meta, setMeta] = useState(() => cachedPreview(url))
+  const [got, setMeta] = useState(() => cachedPreview(url))
+  const meta = previewShown(got, load)
   const [badImage, setBadImage] = useState(false)
   useEffect(() => {
     setMeta(cachedPreview(url)); setBadImage(false)
-    if (cachedPreview(url) !== undefined || !canPreview(url)) return
+    if (!mayFetchPreview(url, load)) return
     let live = true
     const load = () => loadPreview(url).then(m => { if (live) setMeta(m) })
     if (!ref.current || !globalThis.IntersectionObserver) { load(); return () => { live = false } }
     const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); load() } }, { rootMargin: "300px" })
     io.observe(ref.current)
     return () => { live = false; io.disconnect() }
-  }, [url])
+  }, [url, load])
 
   const stop = e => e.stopPropagation()
   if (meta?.title) {
