@@ -10,7 +10,11 @@ struct MediaGridItem: View {
     var onMirrorComplete: (() -> Void)? = nil
     let onSelect: () -> Void
     @EnvironmentObject var configService: ConfigService
-    @EnvironmentObject var nostrService: NostrService
+    /// Read, not watched. The cell shows nothing NostrService publishes,
+    /// and watching it re-ran every cell on the screen on each relay-list
+    /// or event burst. The one body read, activeHexPubkey, comes from
+    /// ConfigService, which the cell does watch.
+    private var nostrService: NostrService { NostrService.shared }
     @State private var isHovered = false
     @State private var showingReportDialog = false
     @State private var pendingDelete: MediaDeleteScope?
