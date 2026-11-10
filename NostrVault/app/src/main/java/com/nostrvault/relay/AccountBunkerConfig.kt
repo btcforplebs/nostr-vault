@@ -3,8 +3,9 @@ package com.nostrvault.relay
 /**
  * Per-account NIP-46 remote-signer (bunker) configuration.
  * Mirrors iOS AccountBunkerConfig. Non-secret metadata is persisted in config
- * JSON; the clientSecretKey is sensitive but kept here for parity with iOS
- * (the bunker session needs it to reconnect on account switch).
+ * JSON; bunkerURI, secret and clientSecretKey are kept in the credential store
+ * and left out of the file ([com.nostrvault.data.local.ConfigSecrets]), but stay
+ * here in memory (the bunker session needs them to reconnect on account switch).
  */
 @kotlinx.serialization.Serializable
 data class AccountBunkerConfig(

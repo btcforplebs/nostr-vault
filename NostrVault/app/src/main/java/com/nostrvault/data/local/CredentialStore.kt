@@ -253,6 +253,14 @@ object CredentialStore {
     fun deleteCredentialHexKey(npub: String): Boolean =
         delete(credHexKey(npub))
 
+    // ---- Config secrets (wallet and signer links; see ConfigSecrets) ----
+
+    fun storeConfigSecret(value: String, account: String): Boolean = store(value, account)
+
+    fun getConfigSecret(account: String): String? = get(account)
+
+    fun deleteConfigSecret(account: String): Boolean = delete(account)
+
     // ---- FIPS mesh network identity ----
     //
     // Deliberately not one of the account keys above: the mesh address should
