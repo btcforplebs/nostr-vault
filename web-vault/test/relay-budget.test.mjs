@@ -54,9 +54,10 @@ test("storage that refuses (private mode) still keeps count in the tab", () => {
 
 // An in-memory relay: answers every REQ with EOSE and counts them.
 const sent = []
+const opened = [] // sockets this file's tests created, in order
 class FakeSocket {
   static CONNECTING = 0; static OPEN = 1; static CLOSING = 2; static CLOSED = 3
-  constructor(url) { this.url = url; this.readyState = 0; setTimeout(() => { this.readyState = 1; this.onopen?.() }) }
+  constructor(url) { this.url = url; this.readyState = 0; opened.push(url); setTimeout(() => { this.readyState = 1; this.onopen?.() }) }
   send(raw) {
     const [type, id] = JSON.parse(raw)
     sent.push({ url: this.url, type })
@@ -66,10 +67,25 @@ class FakeSocket {
 }
 const newPool = budgets => {
   sent.length = 0
+  opened.length = 0
   const p = new LivePool({ websocketImplementation: FakeSocket })
   p.budget = relayBudget({ budgets, storage: memory() })
   return p
 }
+// A pool that reconnects by itself, as the app's own pool is built (pool.js: net/pool.js pool = new LivePool({...,
+// enableReconnect: true})). Only these tests need it: the others patch handleHardClose' reconnect away by not enabling it.
+const newReconnectPool = budgets => {
+  sent.length = 0
+  opened.length = 0
+  const p = new LivePool({ websocketImplementation: FakeSocket, enableReconnect: true })
+  p.budget = relayBudget({ budgets, storage: memory() })
+  return p
+}
+const reqs = () => sent.filter(s => s.type === "REQ").length
+const flush = () => new Promise(r => setTimeout(r, 0)) // nostr-tools sends on a promise tick (abstract-relay.js send)
+// A relay opens, then the socket drops: what nostr-tools does on a flapping link (abstract-relay.js handleHardClose ->
+// reconnect, :208-209). ConnectionPromise is cleared, reconnectAttempts is 1, and a 10 s timer now holds connect().
+const drop = r => r.ws.close()
 
 test("over budget, the query skips damus and still answers from the others", async () => {
   const p = newPool({ "relay.damus.io": { perMinute: 2, perDay: 100 } })
@@ -142,4 +158,93 @@ test("the Vault poll waits longer in a hidden tab and asks at once on coming bac
   assert.equal(pollOnReturn({ polling: false, lastPoll: now - POLL_MS, now }), true)
   assert.equal(pollOnReturn({ polling: false, lastPoll: now - 10_000, now }), false, "just polled")
   assert.equal(pollOnReturn({ polling: true, lastPoll: 0, now }), false, "one already running")
+})
+
+test("takeMany reserves all or nothing", () => {
+  const c = clock(Date.parse("2026-10-31T10:00:00Z"))
+  const b = relayBudget({ budgets: { "relay.damus.io": { perMinute: 5, perDay: 100 } }, storage: memory(), now: c.now })
+  assert.equal(b.takeMany(DAMUS, 4), true)
+  assert.equal(b.takeMany(DAMUS, 2), false)
+  assert.deepEqual(b.left(DAMUS), { day: 96, minute: 1 }, "the refused reservation spent nothing")
+  assert.equal(b.takeMany(DAMUS, 1), true)
+  assert.equal(b.takeMany("wss://relay.primal.net", 10_000), true, "no budget: any number may go")
+})
+
+test("a reconnect pays for every REQ it will re-fire, and is refused when the budget is out", async () => {
+  const p = newReconnectPool({ "relay.damus.io": { perMinute: 2, perDay: 100 } })
+  try {
+    const r = await p.ensureRelay(DAMUS) // 1 unit
+    const sub = r.subscribe([{ kinds: [1] }], { onevent() {} }) // one open sub -> one REQ on the new socket
+    await flush()
+    const before = reqs()
+    assert.equal(before, 1, "the first connect's one REQ")
+
+    drop(r) // nostr-tools: handleHardClose -> reconnect(), connectionPromise cleared, reconnectAttempts 1
+    assert.equal(r.reconnectAttempts, 1)
+    await r.connect() // the 2nd unit, and the socket re-fires the open sub
+    await flush()
+    assert.equal(reqs(), before + 1, "the reconnect went through and re-fired the sub")
+    assert.equal(r.reconnectAttempts, 0, "nostr-tools reset it on open")
+
+    drop(r)
+    await assert.rejects(() => r.connect(), /reconnect budget used/) // 2 + 1 > 2
+    await flush()
+    assert.equal(reqs(), before + 1, "the refused reconnect sent nothing")
+    assert.equal(p.retryTimers.size, 1, "and the pool holds a retry for it instead of dropping the relay")
+    sub.close()
+  } finally { p.destroy() }
+})
+
+test("a refused reconnect is retried by the pool at once when the minute turns over", async () => {
+  const c = clock(Date.parse("2026-10-31T10:00:00Z"))
+  const p = newReconnectPool({ "relay.damus.io": { perMinute: 1, perDay: 100 } })
+  p.budget = relayBudget({ budgets: { "relay.damus.io": { perMinute: 1, perDay: 100 } }, storage: memory(), now: c.now })
+  try {
+    const r = await p.ensureRelay(DAMUS) // the minute's only unit
+    const sub = r.subscribe([{ kinds: [1] }], { onevent() {} })
+    await flush()
+    const before = reqs()
+    drop(r)
+    await assert.rejects(() => r.connect(), /reconnect budget used/)
+    assert.equal(opened.length, 1, "no socket for the refused reconnect")
+
+    c.add(60_000) // the next minute's share
+    p.retryAllNow() // what `online` does (see pool.js): try the waiting relays at once
+    await flush()
+    assert.equal(opened.length, 2, "retried at once, no backoff wait")
+    await flush()
+    assert.equal(reqs(), before + 1, "and re-fired the open sub")
+    assert.equal(p.retryCounts.size, 0, "the backoff resets once it is through")
+    sub.close()
+  } finally { p.destroy() }
+})
+
+test("a reconnect checks Never Connect, the dead list and the plain-ws rule, not just the budget", async () => {
+  const p = newReconnectPool({})
+  try {
+    const r = await p.ensureRelay("wss://quiet.example")
+    p.neverConnect = url => url.includes("quiet.example") // the user's kind 10006 list, arriving after the relay opened
+    drop(r)
+    await assert.rejects(() => r.connect(), /Never Connect/)
+    assert.equal(p.relays.get(r.url), r, "a relay refused mid-reconnect is not dropped")
+
+    const plain = await p.ensureRelay("ws://plain.example") // allowed while the page is not https
+    p.pageProtocol = () => "https:" // a redirect to https, or the page was opened over it all along
+    drop(plain)
+    await assert.rejects(() => plain.connect(), /plain ws:\/\//)
+  } finally { p.destroy() }
+})
+
+test("a reconnect the pool cannot open keeps the subscriptions it was re-firing", async () => {
+  const p = newReconnectPool({ "relay.damus.io": { perMinute: 1, perDay: 100 } })
+  try {
+    const r = await p.ensureRelay(DAMUS)
+    r.subscribe([{ kinds: [1] }], { onevent() {} })
+    await flush()
+    drop(r)
+    await assert.rejects(() => p.ensureRelay(DAMUS), /reconnect budget used/)
+    // ensureRelay drops a relay whose connect threw; a refusal must not, or the feed's open subs are orphaned.
+    assert.equal(p.relays.get(r.url), r, "still the same relay, still in the pool")
+    assert.equal(r.openSubs.size, 1, "and its subscription is still open")
+  } finally { p.destroy() }
 })

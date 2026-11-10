@@ -7,7 +7,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { h, render } from "preact"
 import { act } from "preact/test-utils"
-import { useAutoLook } from "../src/components/auto-look.js"
+import { lookInFront, useAutoLook } from "../src/components/auto-look.js"
 
 const SRC = fileURLToPath(new URL("../src", import.meta.url))
 const files = dir => readdirSync(dir).flatMap(f => { const p = join(dir, f); return statSync(p).isDirectory() ? files(p) : /\.jsx?$/.test(f) ? [p] : [] })
@@ -94,4 +94,59 @@ test("coming back to the front looks at once, without waiting for the next perio
     assert.equal(looks, 2, "back online: one look")
     await act(() => render(null, host))
   } finally { e.restore() }
+})
+
+// The plain helper the panels use (components/auto-look.js lookInFront): one call per period in front, none while the
+// page is hidden or offline, one at once when it comes back, and nothing left running after stop().
+test("lookInFront: nothing while hidden or offline, one look on coming back, and it stops clean", async () => {
+  const e = env()
+  const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator")
+  let looks = 0
+  try {
+    const stop = lookInFront(() => { looks++ }, { every: 20 })
+    await new Promise(r => setTimeout(r, 60))
+    assert.ok(looks >= 1, `looked ${looks} times in ~3 periods`)
+    e.doc.hidden = true
+    const hiddenAt = looks
+    await new Promise(r => setTimeout(r, 60))
+    assert.equal(looks, hiddenAt, "nothing while the page is hidden")
+    e.doc.hidden = false
+    e.docOn.get("visibilitychange")()
+    await new Promise(r => setTimeout(r, 0))
+    assert.equal(looks, hiddenAt + 1, "back in front: one look at once")
+
+    Object.defineProperty(globalThis, "navigator", { value: { onLine: false }, configurable: true, writable: true })
+    const offlineAt = looks
+    await new Promise(r => setTimeout(r, 60))
+    assert.equal(looks, offlineAt, "nothing while offline")
+    Object.defineProperty(globalThis, "navigator", { value: { onLine: true }, configurable: true, writable: true })
+    e.on.get("online")()
+    await new Promise(r => setTimeout(r, 0))
+    assert.equal(looks, offlineAt + 1, "back online: one look at once")
+
+    stop()
+    const stoppedAt = looks
+    await new Promise(r => setTimeout(r, 60))
+    assert.equal(looks, stoppedAt, "stops when the panel goes")
+    assert.ok(!e.on.has("online") && !e.docOn.has("visibilitychange"), "listeners removed")
+  } finally {
+    if (nav) Object.defineProperty(globalThis, "navigator", nav)
+    e.restore()
+  }
+})
+
+// Every panel that asks relays or reads the vault on a timer goes through auto-look.js, so a hidden tab asks nothing.
+test("no panel left polling on its own timer, past visibility", () => {
+  const pollers = [
+    "desktop/space/LiveNow.jsx", "screens/SearchLiveNow.jsx", "desktop/space/MyDevices.jsx",
+    "components/dashboard/YourDevicesSection.jsx", "components/VaultButton.jsx", "desktop/Sidebar.jsx",
+    "desktop/space/useVaultLines.js", "desktop/space/WotMini.jsx",
+  ]
+  for (const f of pollers) {
+    const src = readFileSync(join(SRC, f), "utf8")
+    assert.ok(!/\bsetInterval\(/.test(src), `${f} ticks on a bare timer; use lookInFront (components/auto-look.js)`)
+  }
+  for (const f of ["desktop/space/LiveNow.jsx", "screens/SearchLiveNow.jsx", "desktop/space/MyDevices.jsx", "components/dashboard/YourDevicesSection.jsx", "components/VaultButton.jsx", "desktop/Sidebar.jsx", "desktop/space/useVaultLines.js"])
+    assert.match(readFileSync(join(SRC, f), "utf8"), /lookInFront\(/, f)
+  assert.match(readFileSync(join(SRC, "desktop/space/WotMini.jsx"), "utf8"), /onListsProgress\(/, "the web's loading line moves with the download, not a 1 s scan")
 })

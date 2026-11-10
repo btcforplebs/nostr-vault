@@ -7,6 +7,7 @@
 // wait for the poll (Logen, 2026-11-04). A like or repost of a note of yours Haven doesn't hold yet shows at once;
 // that note is fetched from your relays so its text fills in.
 import { useEffect, useRef, useState } from "preact/hooks"
+import { lookInFront } from "../../components/auto-look.js"
 import { readInbound, readOwn, readLists, fetchInbound, fetchFollowerLists, keepLists, mergeLists, OWN_NOTE_KINDS } from "../../net/vault-lists.js"
 import { onSaved, throttle } from "../../net/vault-saved.js"
 import { receiptTrust } from "../../net/zaps.js"
@@ -74,10 +75,12 @@ export function useVaultLines(ctx) {
     const again = () => { read().catch(() => {}) }
     const offUnread = onVaultUnread(again)
     const offSeen = onSeen(again)
-    const timer = setInterval(again, POLL_MS)
+    // Every POLL_MS while the page is in front, and once on coming back: a hidden panel nobody can see reads nothing
+    // (auto-look.js; the saved and unread events above still bring a line in).
+    const stop = lookInFront(again, { every: POLL_MS })
     const soon = throttle(again, SAVED_GAP_MS)
     const offSaved = onSaved(route => { if (route === "/" || route === "/inbox") soon.call() })
-    return () => { stopped = true; offUnread(); offSeen(); offSaved(); soon.stop(); clearInterval(timer) }
+    return () => { stopped = true; offUnread(); offSeen(); offSaved(); soon.stop(); stop() }
   }, [me, blocked, network.size])
   return state
 }

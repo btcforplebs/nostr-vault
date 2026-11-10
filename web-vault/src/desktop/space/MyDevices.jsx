@@ -1,7 +1,9 @@
 // My devices: a "Your space" panel. Each of the user's own devices (mobile and desktop vaults from their media server list, vaults
-// paired in Who Can Reach You) with whether it is on the mesh and when it last was (my-devices.js). Twin of the iPad's
+// paired in Who Can Reach You) with whether it is on the mesh and when it last was (my-devices.js), asked again every
+// REFRESH_MS while the page is in front and not while it is hidden (auto-look.js). Twin of the iPad's
 // MyDevicesPanel.swift. Reads only.
 import { useEffect, useState } from "preact/hooks"
+import { lookInFront } from "../../components/auto-look.js"
 import { loadMyDevices, deviceStatus, statusLine, deviceName, REFRESH_MS, MESH_HEADER } from "./my-devices.js"
 import "../../styles/my-devices.css"
 
@@ -11,8 +13,8 @@ export function MyDevices({ ctx, open: shown = true, tools = null }) {
     let alive = true
     const look = () => loadMyDevices(ctx).then(d => { if (alive) setData(d) }).catch(() => { if (alive) setData(d => d ?? { devices: [], adverts: new Map(), checked: false }) })
     look()
-    const timer = setInterval(look, REFRESH_MS)
-    return () => { alive = false; clearInterval(timer) }
+    const stop = lookInFront(look, { every: REFRESH_MS })
+    return () => { alive = false; stop() }
   }, [ctx.session.pubkey])
   const now = Math.floor(Date.now() / 1000)
   const rows = (data?.devices ?? []).map(d => ({ d, s: deviceStatus(data.adverts.get(d.hex), now, { checked: data.checked }) }))
