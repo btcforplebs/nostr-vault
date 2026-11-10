@@ -8,9 +8,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName, NoteCard } from "../components/NoteCard.jsx"
 import { ArticleCard } from "../components/ArticleCard.jsx"
-import { NoteText } from "../components/NoteText.jsx"
+import { NoteText, TapImage } from "../components/NoteText.jsx"
 import { MediaImage } from "../components/MediaImage.jsx"
 import { imageItem } from "../net/note-media.js"
+import { fipsRef } from "../net/fips-ref.js"
 import { ago } from "../components/time.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { useDmTrust } from "../components/useDmTrust.js"
@@ -400,9 +401,17 @@ export function ActivityRow({ row, trusted = () => false, unread = false, onFoll
       {["reply", "mention", "quote", "article", "highlight"].includes(row.kind)
         ? <NoteText content={row.preview} images={ok} />
         : row.preview ? <div class="repost-line vault-about"><span>{cut(row.preview)}</span></div> : null}
-      {row.images.length > 0 && <div class="vault-thumbs">{row.images.slice(0, 4).map(u => <MediaImage key={u} item={imageItem(u)} author={row.imagesBy} loading="lazy" />)}</div>}
+      {row.images.length > 0 && <div class="vault-thumbs">{row.images.slice(0, 4).map(u => <ActivityThumb key={u} url={u} by={row.imagesBy} load={trusted(row.imagesBy)} />)}</div>}
     </article>
   )
+}
+
+/** A row's picture. Yours or a follow's loads; a stranger's https picture waits for a tap (NoteText TapImage), or
+ *  drawing the row would tell their server your IP and when you read it. A .fips link goes to MediaImage, whose own
+ *  gate (meshAllowed) already holds a stranger's back. */
+export function ActivityThumb({ url, by, load = false }) {
+  if (load || fipsRef(url)) return <MediaImage item={imageItem(url)} author={by} loading="lazy" />
+  return <TapImage src={url} />
 }
 
 /** What they did, in the phone's words (VaultActivityList verb). */

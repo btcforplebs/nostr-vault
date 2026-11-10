@@ -49,6 +49,9 @@
 .lightbox-page .media-mesh { color: #ccc; }
 /* In a small square (Media grid, Compact thumb, Vault) it fills the square; "not reachable" is the tooltip only. */
 .media-tile .media-mesh, .condensed-thumb .media-mesh, .vault-thumb .media-mesh { height: 100%; min-height: 0; }
+/* A stranger's picture in a Vault row waits behind its "Show image" button (VaultScreen ActivityThumb). */
+.vault-thumbs:has(.tap-image) { flex-wrap: wrap; }
+.vault-thumbs .tap-image { margin: 0; }
 .vault-thumbs .media-mesh { width: 72px; height: 72px; min-height: 0; border-radius: 8px; background: var(--s2); }
 .media-mesh-text:is(.media-tile *, .condensed-thumb *, .vault-thumb *, .vault-thumbs *) { position: absolute;
   width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } /* spinner alone; text for readers */

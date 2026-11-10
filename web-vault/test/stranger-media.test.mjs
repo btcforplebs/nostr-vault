@@ -19,7 +19,10 @@ registerHooks({
   },
 })
 const { Row, Faces } = await import("../src/screens/NotificationsScreen.jsx")
-const { ActivityRow } = await import("../src/screens/VaultScreen.jsx")
+const { ActivityRow, ActivityThumb } = await import("../src/screens/VaultScreen.jsx")
+const { activityRows } = await import("../src/net/vault-lists.js")
+const { MediaImage } = await import("../src/components/MediaImage.jsx")
+const { TapImage } = await import("../src/components/NoteText.jsx")
 const { Avatar } = await import("../src/components/Avatar.jsx")
 const { NoteText } = await import("../src/components/NoteText.jsx")
 
@@ -32,6 +35,7 @@ function find(node, type, out = []) {
   if (Array.isArray(node)) { for (const n of node) find(n, type, out); return out }
   if (node.type === type) out.push(node)
   if (node.type === Faces) find(Faces(node.props), type, out) // the row's stacked faces
+  if (node.type === ActivityThumb) find(ActivityThumb(node.props), type, out) // a Vault row's picture
   find(node.props?.children, type, out)
   return out
 }
@@ -71,4 +75,33 @@ test("NoteText: with images off, a video link stays a link, so a stranger's serv
   const off = NoteText({ content: url, depth: 1, images: false })
   assert.equal(find(off, "video").length, 0, "no <video> when images are off")
   assert.deepEqual(find(off, "a").map(a => a.props.href), [url])
+})
+
+// Sweep 2026-11-10 §3: a stranger's mention carrying an imeta picture drew <MediaImage>, which sets <img src> at once.
+test("Vault activity: a stranger's picture thumbnails wait for a tap; a follow's and your own load", () => {
+  const ME = "1".repeat(64), PIX = "https://tracker.example/pixel.png", MINE = "https://media.example/mine.png"
+  const mention = who => ({ id: who.slice(0, 2).padEnd(64, "0"), kind: 1, pubkey: who, created_at: 1000, content: `hi ${PIX}`,
+    tags: [["p", ME], ["imeta", `url ${PIX}`, "m image/png"]] })
+  const myNote = { id: "9".repeat(64), kind: 1, pubkey: ME, created_at: 900, content: MINE, tags: [] }
+  const like = { id: "8".repeat(64), kind: 7, pubkey: STRANGER, created_at: 1001, content: "+", tags: [["e", myNote.id], ["p", ME]] }
+  const rows = activityRows([mention(STRANGER), mention(FRIEND), like], ME, { mine: [myNote] })
+  const trust = pk => pk === ME || pk === FRIEND
+  const draw = row => { const t = ActivityRow({ row, trusted: trust }); return { img: find(t, MediaImage), tap: find(t, TapImage), raw: find(t, "img") } }
+
+  const stranger = draw(rows.find(r => r.kind === "mention" && r.actors[0] === STRANGER))
+  assert.equal(stranger.img.length, 0, "no MediaImage (it would set src) for a stranger's picture")
+  assert.equal(stranger.raw.length, 0, "no <img> for a stranger's picture")
+  assert.deepEqual(stranger.tap.map(t => t.props.src), [PIX], "it waits behind Show image")
+
+  const friend = draw(rows.find(r => r.kind === "mention" && r.actors[0] === FRIEND))
+  assert.deepEqual(friend.img.map(i => i.props.item.url), [PIX], "a follow's picture loads")
+
+  const liked = draw(rows.find(r => r.kind === "like"))
+  assert.deepEqual(liked.img.map(i => i.props.item.url), [MINE], "your own note's picture loads under a stranger's like")
+})
+
+test("Vault activity: a stranger's .fips picture stays with MediaImage, whose mesh gate holds it", () => {
+  const FIPS = "http://npub1qqxjlqqqlr465efdc65pdqjzlm0tew3f3ca34u6p4yh6yn0edu6s79wkc6.fips/" + "e4".repeat(32)
+  const tree = ActivityThumb({ url: FIPS, by: STRANGER, load: false })
+  assert.equal(tree.type, MediaImage)
 })

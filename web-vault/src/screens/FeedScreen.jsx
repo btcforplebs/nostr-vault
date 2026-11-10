@@ -233,8 +233,14 @@ export function FeedScreen({ ctx }) {
     }
     // Older joins at the bottom, so the ceiling trims the newest (feed-window.js capOlder): the page just read stays,
     // and the next `until` moves on. Capping the head here dropped exactly the page Older had fetched, every time (D1).
+    // The rows dropped above the reader would pull the page up by their height, so once the head goes the note being
+    // read is pinned where it is (stay, the list's layout effect), as the Global and Hashtag Older does.
     const spot = readingSpot(screen.current, feedScroller(screen.current))
-    setNotes(prev => capOlder([...(prev ?? []), ...more.filter(m => !prev?.some(n => n.id === m.id))], MAX_NOTES, { protect: spot?.id }))
+    setNotes(prev => {
+      const all = capOlder([...(prev ?? []), ...more.filter(m => !prev?.some(n => n.id === m.id))], MAX_NOTES, { protect: spot?.id })
+      if (spot && all.length && all[0].id !== prev?.[0]?.id) stay.current = spot
+      return all
+    })
     return more.length
   })
   // While the Feed is on screen, the follows' new notes arrive live (net/feed-live.js), are saved to /feed and either go

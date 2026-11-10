@@ -25,7 +25,7 @@ const { mediaFor, activityRows } = await import("../src/net/vault-lists.js")
 const { MediaImage } = await import("../src/components/MediaImage.jsx")
 const { MediaGrid } = await import("../src/components/MediaGrid.jsx")
 const { Thumb } = await import("../src/components/CondensedNote.jsx")
-const { ActivityRow } = await import("../src/screens/VaultScreen.jsx")
+const { ActivityRow, ActivityThumb } = await import("../src/screens/VaultScreen.jsx")
 
 const HASH = "e40a76df2e154784d6d159ddca808c295eb514274b965d53e1f27575a6c8ee0e"
 const OTHER = "ab".repeat(32)
@@ -39,6 +39,7 @@ function find(node, type, out = []) {
   if (!node || typeof node !== "object") return out
   if (Array.isArray(node)) { for (const n of node) find(n, type, out); return out }
   if (node.type === type) out.push(node)
+  if (node.type === ActivityThumb) find(ActivityThumb(node.props), type, out) // a Vault row's picture
   find(node.props?.children, type, out)
   return out
 }

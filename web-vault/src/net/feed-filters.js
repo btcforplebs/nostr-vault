@@ -3,7 +3,7 @@
 // replies and reposts on. Auto-load off holds the new notes behind the pill until it is tapped (Logen 2026-11-10, the
 // pre-ea93264f5 behaviour); on, they go in on their own (Logen 2026-11-04).
 import { replyRefs } from "./thread.js"
-import { commentParent, isRepost, timelineShows } from "./feed-kinds.js"
+import { commentParent, embedded, isRepost, repostRef, timelineShows } from "./feed-kinds.js"
 
 const KEY = "nv:feed-filters"
 export const FILTER_DEFAULTS = { replies: true, reposts: true, autoLoad: true }
@@ -26,8 +26,40 @@ export const isReply = ev => (ev?.kind === 1 && !!replyRefs(ev).parent) || !!com
  *  only: the iPhone's Replies switch still filters a threaded feed (FeedView+Layout.swift:88 — threading turns replies
  *  on rather than pinning them on, and "the Replies filter still switches them back off"). */
 export function applyFilters(notes, { replies, reposts }, { threaded = false } = {}) {
-  return notes.filter(n => timelineShows(n) && (reposts || !isRepost(n)) && (replies || !isReply(n)))
+  return oncePerNote(notes.filter(n => timelineShows(n) && (reposts || !isRepost(n)) && (replies || !isReply(n))))
 }
+
+/** What a repost shows: the note its e tag names (else the one it embeds), or the article its a tag names; null when
+ *  it names nothing. */
+export function repostKey(ev) {
+  const ref = repostRef(ev)
+  if (ref?.type === "note") return ref.id
+  if (ref?.type === "addr") return `${ref.kind}:${ref.pubkey}:${ref.d}`
+  const id = embedded(ev)?.id
+  return typeof id === "string" ? id : null
+}
+
+/** Each note drawn once. Two follows reposting one note, or a follow's note and someone's repost of it, drew the same
+ *  card twice in one view. A repost of a note already listed goes (the note shows itself); several reposts of the
+ *  same note keep the first, which is the newest in a newest-first list. The Vault applies the same rule
+ *  (VaultDataProcessing.swift, Android VaultRepostDedupe). The same event listed twice draws once. `notes` keeps its
+ *  order. */
+export function oncePerNote(notes) {
+  const listed = new Set()
+  for (const n of notes) if (!isRepost(n)) { listed.add(n.id); if (n.kind === 30023) listed.add(addrOf(n)) }
+  const shown = new Set(), ids = new Set()
+  return notes.filter(n => {
+    if (ids.has(n.id)) return false // one event twice (two merges racing): drawn once, under one key
+    ids.add(n.id)
+    if (!isRepost(n)) return true
+    const key = repostKey(n)
+    if (!key) return true
+    if (listed.has(key) || shown.has(key)) return false
+    shown.add(key)
+    return true
+  })
+}
+const addrOf = ev => `${ev.kind}:${ev.pubkey}:${(ev.tags ?? []).find(t => t[0] === "d")?.[1] ?? ""}`
 
 /** The switches in effect when the layout becomes `layout`: as the iPhone (FeedView+Layout.swift:88), a threaded feed
  *  with Replies off would show nothing but the roots the reader just came from, so threading turns them on. The switch
