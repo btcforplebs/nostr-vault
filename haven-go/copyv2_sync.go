@@ -32,13 +32,16 @@ import (
 var copySyncStores = []string{"outbox", "private", "chat", "inbox"}
 
 const (
-	copySyncPage     = 5000
-	copySyncBatch    = 500
-	copySyncMaxBody  = 32 << 20
-	copySyncOverlap  = 7 * 24 * time.Hour // gift wraps backdate up to 2 days
-	copySyncFile     = "copy_sync.json"
-	copySyncMaxFiles = 2000
+	copySyncPageDefault = 5000
+	copySyncBatch       = 500
+	copySyncMaxBody     = 32 << 20
+	copySyncOverlap     = 7 * 24 * time.Hour // gift wraps backdate up to 2 days
+	copySyncFile        = "copy_sync.json"
+	copySyncMaxFiles    = 2000
 )
+
+// copySyncPage: ids per page of A's list (a var so a test can page small).
+var copySyncPage = copySyncPageDefault
 
 // copyNotCaughtUp: the stores in unreadable that no catch-up covers. A copy
 // that left one of them out is done, but nothing later brings its events
@@ -85,7 +88,12 @@ func (s *copyServer) serveSync(w http.ResponseWriter, r *http.Request, what stri
 		}
 		since, _ := strconv.ParseInt(q.Get("since"), 10, 64)
 		until, _ := strconv.ParseInt(q.Get("until"), 10, 64)
-		ids, more, err := copyListIDs(ctx, db, since, until)
+		after := q.Get("after")
+		if after != "" && !copyIsHex(after, 64) {
+			http.Error(w, "bad cursor", http.StatusBadRequest)
+			return
+		}
+		ids, more, err := copyListIDs(ctx, db, since, until, after)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -178,40 +186,114 @@ func (s *copyServer) serveSync(w http.ResponseWriter, r *http.Request, what stri
 	}
 }
 
-// copyListIDs: [id, created_at] newest first in (since..until], one page.
-func copyListIDs(ctx context.Context, db DBBackend, since, until int64) ([][2]any, bool, error) {
-	f := nostr.Filter{Limit: copySyncPage}
-	if since > 0 {
-		ts := nostr.Timestamp(since)
-		f.Since = &ts
-	}
-	if until > 0 {
-		ts := nostr.Timestamp(until)
-		f.Until = &ts
-	}
-	ch, err := db.QueryEvents(eventstore.SetNegentropy(ctx), f)
-	if err != nil {
-		return nil, false, err
-	}
+// copyListIDs: one page of [id, created_at], newest first and, within one
+// second, by id. With until and after set, only what comes after that
+// cursor: of second until with an id above after, or older. With until
+// alone (a B from before the cursor), second until and older. A page never
+// ends partway into a second it did not read whole, so the cursor of its
+// last entry loses nothing: the store's own limit cuts its oldest second
+// anywhere, not by id, and paging on created_at alone skipped or never got
+// past a second with more events than a page.
+func copyListIDs(ctx context.Context, db DBBackend, since, until int64, after string) ([][2]any, bool, error) {
 	var evs []*nostr.Event
-	for ev := range ch {
-		evs = append(evs, ev)
-	}
-	sort.Slice(evs, func(i, j int) bool {
-		if evs[i].CreatedAt != evs[j].CreatedAt {
-			return evs[i].CreatedAt > evs[j].CreatedAt
+	more := false
+	older := until // the older read's until, inclusive (0: none)
+	if until > 0 && after != "" {
+		same, err := copySecond(ctx, db, until)
+		if err != nil {
+			return nil, false, err
 		}
-		return evs[i].ID < evs[j].ID
-	})
-	more := len(evs) >= copySyncPage
+		for _, ev := range same {
+			if ev.ID > after {
+				evs = append(evs, ev)
+			}
+		}
+		older = until - 1
+	}
+	if room := copySyncPage + 1 - len(evs); room <= 0 {
+		more = true
+	} else if (until == 0 || older > 0) && (since == 0 || older == 0 || older >= since) {
+		f := nostr.Filter{Limit: room}
+		if since > 0 {
+			ts := nostr.Timestamp(since)
+			f.Since = &ts
+		}
+		if older > 0 {
+			ts := nostr.Timestamp(older)
+			f.Until = &ts
+		}
+		got, err := copyQuery(ctx, db, f)
+		if err != nil {
+			return nil, false, err
+		}
+		if len(got) == room {
+			// The store may have cut its oldest second: drop it, or, when
+			// the whole read is that one second, read it whole.
+			more = true
+			copySortIDs(got)
+			edge := got[len(got)-1].CreatedAt
+			if got[0].CreatedAt == edge {
+				if got, err = copySecond(ctx, db, int64(edge)); err != nil {
+					return nil, false, err
+				}
+			} else {
+				got = slices.DeleteFunc(got, func(ev *nostr.Event) bool { return ev.CreatedAt == edge })
+			}
+		}
+		evs = append(evs, got...)
+	}
+	copySortIDs(evs)
 	if len(evs) > copySyncPage {
 		evs = evs[:copySyncPage]
+		more = true
 	}
 	out := make([][2]any, len(evs))
 	for i, ev := range evs {
 		out[i] = [2]any{ev.ID, int64(ev.CreatedAt)}
 	}
 	return out, more, nil
+}
+
+// copySecondMax: the most events copySecond reads in one second. A second
+// that holds more is refused, not listed short.
+const copySecondMax = 40_000
+
+// copySecond: every event stamped at, whole.
+func copySecond(ctx context.Context, db DBBackend, at int64) ([]*nostr.Event, error) {
+	ts := nostr.Timestamp(at)
+	evs, err := copyQuery(ctx, db, nostr.Filter{Since: &ts, Until: &ts, Limit: copySecondMax})
+	if err != nil {
+		return nil, err
+	}
+	if len(evs) >= copySecondMax {
+		return nil, fmt.Errorf("copy catch-up: more than %d events in second %d", copySecondMax-1, at)
+	}
+	return evs, nil
+}
+
+func copyQuery(ctx context.Context, db DBBackend, f nostr.Filter) ([]*nostr.Event, error) {
+	ch, err := db.QueryEvents(eventstore.SetNegentropy(ctx), f)
+	if err != nil {
+		return nil, err
+	}
+	var evs []*nostr.Event
+	for ev := range ch {
+		evs = append(evs, ev)
+	}
+	// Close cuts an open query short without an error.
+	if g, ok := db.(*gatedDB); ok && g.isClosing() {
+		return nil, errDBClosing
+	}
+	return evs, nil
+}
+
+func copySortIDs(evs []*nostr.Event) {
+	sort.Slice(evs, func(i, j int) bool {
+		if evs[i].CreatedAt != evs[j].CreatedAt {
+			return evs[i].CreatedAt > evs[j].CreatedAt
+		}
+		return evs[i].ID < evs[j].ID
+	})
 }
 
 // copyWriteEvents writes the events of ids as JSONL. Kind 5 first: a
@@ -375,16 +457,20 @@ func (c *copyClient) sync(ctx context.Context) (copySyncResult, error) {
 	// Accounts first, both ways, so each side keeps the other's new accounts'
 	// notes in this same round (§3.4, §6). They only ever merge.
 	res.Accounts, _ = c.syncAccounts(ctx)
+	allIDs := true
 	for _, store := range copySyncStores {
 		db := c.store(store)
 		if db == nil {
 			continue
 		}
-		got, sent, err := c.syncStore(ctx, store, db, since)
+		got, sent, complete, err := c.syncStore(ctx, store, db, since)
 		res.Got += got
 		res.Sent += sent
 		if err != nil {
 			return res, err
+		}
+		if !complete {
+			allIDs = false
 		}
 	}
 	files, allFiles, err := c.syncFiles(ctx, since)
@@ -394,25 +480,30 @@ func (c *copyClient) sync(ctx context.Context) (copySyncResult, error) {
 	}
 	res.Settings, _ = c.syncSettings(ctx)
 	// Marked only when every listed page was read: otherwise the next round
-	// would start a week before now and never list the older files again.
-	if allFiles {
+	// would start a week before now and never list the older notes and
+	// files again.
+	if allFiles && allIDs {
 		markCopySynced(c.peer, started)
 	}
 	slog.Info("copy catch-up done", "got", res.Got, "sent", res.Sent, "files", res.Files, "settings", res.Settings, "accounts", res.Accounts)
 	return res, nil
 }
 
-func (c *copyClient) remoteIDs(ctx context.Context, store string, since int64) (map[string]bool, error) {
-	out := map[string]bool{}
-	until := int64(0)
+// remoteIDs lists A's ids in store since since, paged on (created_at, id).
+// complete is false when A's list stopped paging (an A from before the
+// cursor, stuck on a second fuller than a page): the round then syncs what
+// it got but is not marked, so the rest stays in reach.
+func (c *copyClient) remoteIDs(ctx context.Context, store string, since int64) (out map[string]bool, complete bool, err error) {
+	out = map[string]bool{}
+	until, after := int64(0), ""
 	for {
 		path := fmt.Sprintf("/copy/v2/sync/ids?store=%s&since=%d", store, since)
 		if until > 0 {
-			path += fmt.Sprintf("&until=%d", until)
+			path += fmt.Sprintf("&until=%d&after=%s", until, after)
 		}
 		resp, err := c.do(ctx, http.MethodGet, path, nil, nil)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		var page struct {
 			IDs  [][2]json.RawMessage `json:"ids"`
@@ -426,25 +517,27 @@ func (c *copyClient) remoteIDs(ctx context.Context, store string, since int64) (
 			return json.NewDecoder(io.LimitReader(resp.Body, 64<<20)).Decode(&page)
 		}()
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		oldest := int64(0)
+		lastAt, lastID := int64(0), ""
 		for _, pair := range page.IDs {
 			var id string
 			var at int64
-			if json.Unmarshal(pair[0], &id) != nil || json.Unmarshal(pair[1], &at) != nil {
+			if json.Unmarshal(pair[0], &id) != nil || json.Unmarshal(pair[1], &at) != nil || !copyIsHex(id, 64) || at <= 0 {
 				continue
 			}
 			out[id] = true
-			if oldest == 0 || at < oldest {
-				oldest = at
-			}
+			lastAt, lastID = at, id
 		}
-		// A page of one second only would never move: step past it.
-		if !page.More || oldest == 0 || (until > 0 && oldest >= until) {
-			return out, nil
+		if !page.More {
+			return out, true, nil
 		}
-		until = oldest
+		// No step forward: the cursor would ask for the same page again.
+		if lastAt == 0 || (lastAt == until && lastID <= after) || (until > 0 && lastAt > until) {
+			slog.Warn("copy catch-up: id list did not page, the rest waits for the next round", "store", store)
+			return out, false, nil
+		}
+		until, after = lastAt, lastID
 	}
 }
 
@@ -465,14 +558,14 @@ func copyLocalIDs(ctx context.Context, db DBBackend, since int64) (map[string]bo
 	return out, nil
 }
 
-func (c *copyClient) syncStore(ctx context.Context, store string, db DBBackend, since int64) (got, sent int, err error) {
-	theirs, err := c.remoteIDs(ctx, store, since)
+func (c *copyClient) syncStore(ctx context.Context, store string, db DBBackend, since int64) (got, sent int, complete bool, err error) {
+	theirs, complete, err := c.remoteIDs(ctx, store, since)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, false, err
 	}
 	mine, err := copyLocalIDs(ctx, db, since)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, false, err
 	}
 	var want, give []string
 	for id := range theirs {
@@ -492,42 +585,42 @@ func (c *copyClient) syncStore(ctx context.Context, store string, db DBBackend, 
 		body, _ := json.Marshal(map[string]any{"store": store, "ids": batch})
 		resp, err := c.do(ctx, http.MethodPost, "/copy/v2/sync/events", map[string]string{"Content-Type": "application/json"}, body)
 		if err != nil {
-			return got, sent, err
+			return got, sent, false, err
 		}
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
-			return got, sent, statusError(resp.StatusCode)
+			return got, sent, false, statusError(resp.StatusCode)
 		}
 		// Through the restore's checks: id, signature, author rule, deletions.
 		st, err := importDBStats(ctx, db, io.LimitReader(resp.Body, copySyncMaxBody))
 		resp.Body.Close()
 		got += st.stored
 		if err != nil {
-			return got, sent, err
+			return got, sent, false, err
 		}
 	}
 	for start := 0; start < len(give); start += copySyncBatch {
 		batch := give[start:min(start+copySyncBatch, len(give))]
 		var buf bytes.Buffer
 		if err := copyWriteEvents(ctx, db, batch, &buf); err != nil {
-			return got, sent, err
+			return got, sent, false, err
 		}
 		if buf.Len() == 0 {
 			continue
 		}
 		resp, err := c.do(ctx, http.MethodPost, "/copy/v2/sync/put?store="+store, map[string]string{"Content-Type": "application/x-ndjson"}, buf.Bytes())
 		if err != nil {
-			return got, sent, err
+			return got, sent, false, err
 		}
 		var out struct{ Stored int }
 		_ = json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&out)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			return got, sent, statusError(resp.StatusCode)
+			return got, sent, false, statusError(resp.StatusCode)
 		}
 		sent += out.Stored
 	}
-	return got, sent, nil
+	return got, sent, complete, nil
 }
 
 func (c *copyClient) syncFiles(ctx context.Context, since int64) (int, bool, error) {
