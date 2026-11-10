@@ -1,5 +1,5 @@
 // Who did it, as the phone's Vault and notification rows show it (VaultActivityRow): the faces and the names. Styled by
-// styles/notifications.css, which the app loads with the Notifications screen.
+// styles/notifications.css, which the app loads with the Notifications and Vault screens.
 import { Avatar } from "./Avatar.jsx"
 import { AuthorName } from "./NoteCard.jsx"
 
