@@ -98,8 +98,13 @@ export function fetchAccount(pubkey, relays) {
 /**
  * Fetch the account's replaceable events from the network into Haven, then read it back from Haven. `early`, a
  * fetchAccount already under way, counts as asking its relays: only the hint relays it didn't ask are asked now.
+ * `onLate(account)`: when the account comes back with no follow list, it is called once every relay has answered (or
+ * timed out), with the account read again. The grace starts on the first relay with a profile or a follow list, so a
+ * fast relay with only the profile used to end the wait before a slower one sent the follow list: a first sign-in
+ * opened on "No Following Feed", and nothing read the list that landed after. A caller that passes `onLate` can say
+ * "Loading your follows…" until then.
  */
-export async function refreshAccount(vault, pubkey, hintRelays, { log = () => {}, early } = {}) {
+export async function refreshAccount(vault, pubkey, hintRelays, { log = () => {}, early, onLate } = {}) {
   const asked = new Set(early?.relays.map(norm))
   const rest = hintRelays.filter(u => !asked.has(norm(u)))
   const q = rest.length ? accountQuery(rest, pubkey) : null
@@ -108,15 +113,21 @@ export async function refreshAccount(vault, pubkey, hintRelays, { log = () => {}
   // up for it (Haven keeps the newest of each kind, so a late older answer changes nothing). Without this a Never
   // Connect list or a read-relay list that only that relay had would be dropped for this refresh.
   const seen = new Set(evs.map(e => e.id))
-  Promise.all([early?.all, q?.all].filter(Boolean)).then(l => storeAccount(vault, l.flat().filter(e => !seen.has(e.id)), log)).catch(() => {})
+  const late = Promise.all([early?.all, q?.all].filter(Boolean))
+    .then(l => storeAccount(vault, l.flat().filter(e => !seen.has(e.id)), log)).catch(() => [])
   // A save Haven doesn't answer (it runs on the page's thread and can be slow: "no answer to EVENT in 15000 ms") is
   // skipped and logged, not thrown: thrown, it ended the whole boot and the app stopped refreshing (Logen, 2026-11-03).
   // What wasn't saved still counts for this visit; Haven gets it on the next refresh. A refusal stays out, as before.
   const unsaved = await storeAccount(vault, evs, log)
-  if (!unsaved.length) return readAccount(vault, pubkey)
-  const held = await vault.outbox.query({ kinds: ACCOUNT_KINDS, authors: [pubkey] })
-    .catch(e => { log("account-read-failed", { err: String(e?.message ?? e) }); return [] })
-  return account([...held, ...unsaved])
+  const readBack = async extra => {
+    const held = await vault.outbox.query({ kinds: ACCOUNT_KINDS, authors: [pubkey] })
+      .catch(e => { log("account-read-failed", { err: String(e?.message ?? e) }); return [] })
+    return account([...held, ...extra])
+  }
+  const got = unsaved.length ? await readBack(unsaved) : await readAccount(vault, pubkey)
+  if (onLate && !got.contacts) late.then(lateUnsaved => readBack([...unsaved, ...lateUnsaved]))
+    .then(onLate, e => log("account-late-failed", { err: String(e?.message ?? e) }))
+  return got
 }
 
 /** Saves the newest of each ACCOUNT_KIND in `evs` to Haven -> the ones it didn't take. */

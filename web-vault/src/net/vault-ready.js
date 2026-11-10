@@ -63,7 +63,7 @@ function within(p, ms) {
  * its authors' names are stored (or the feed step's limit passes); the steps carry on after it and keep reporting.
  * -> { account as refreshAccount read it back, fresh, filled: settles once every step has ended }
  */
-export async function prepareVault({ vault, pubkey, local, early, log = () => {}, onStep = () => {}, limits = STEP_LIMIT_MS, setup = null }) {
+export async function prepareVault({ vault, pubkey, local, early, log = () => {}, onStep = () => {}, limits = STEP_LIMIT_MS, setup = null, onLate }) {
   // A step that has reported its end stays ended: a slow sync still counting in the background doesn't reopen it.
   const ended = new Set()
   const say = (id, s) => {
@@ -72,7 +72,8 @@ export async function prepareVault({ vault, pubkey, local, early, log = () => {}
     onStep(id, s)
   }
   say("account", { state: "active" })
-  const accountRun = refreshAccount(vault, pubkey, uniq([...local.relays.read, ...local.relays.write, ...DEFAULT_RELAYS, ...PROFILE_RELAYS]), { log, early })
+  // `onLate` (sync.js refreshAccount): the follow list a relay slower than the grace sends, once every relay has answered.
+  const accountRun = refreshAccount(vault, pubkey, uniq([...local.relays.read, ...local.relays.write, ...DEFAULT_RELAYS, ...PROFILE_RELAYS]), { log, early, onLate })
   const accountState = await within(accountRun, limits.account)
   // Too slow or failed: go on with what Haven has, and the boot's own refresh brings the rest.
   const account = accountState === "done" ? await accountRun : local

@@ -45,6 +45,7 @@ import "./src/styles/app.css"
 import "./src/styles/quotes.css"
 import "./src/styles/dms.css"
 import "./src/styles/settings.css"
+import "./src/styles/boot-sheets.js" // after app.css: the sheets the boot components would add later (styles/boot-sheets.js)
 import { NotifyWatch } from "./src/components/useNotifyWatch.js"
 import { isDashboardOpen } from "./src/net/dashboard-route.js"
 
@@ -144,7 +145,19 @@ function App() {
     if (firstTime) setPrep({ relay: { state: "active" } })
     // Open now: the app opens on what Haven has (as soon as Haven is up), and the steps carry on in the background.
     let opened = !firstTime, shown = null
-    openNow.current = () => { if (opened) return; opened = true; setPrep(null); if (shown) setAccount(shown) }
+    // The account came back with no follow list while a relay was still to answer (sync.js refreshAccount onLate): this
+    // is it once they all have. Loaded either way then: a list nobody has is an account that follows no one.
+    // It can land before prepareVault returns (its setup runs on), so the account set after that keeps it.
+    let late = null
+    const lateAccount = acc => {
+      if (!live) return
+      late = acc
+      putProfile(acc.profileEvent)
+      setAccount({ ...acc, loaded: true })
+      log("account", { follows: acc.follows.length, late: true })
+    }
+    const settled = acc => late ? { ...late, loaded: true } : { ...acc, loaded: !!acc.contacts }
+    openNow.current = () => { if (opened) return; opened = true; setPrep(null); if (shown) setAccount(late ? { ...late, loaded: true } : shown) }
     ;(async () => {
       const v = BOX ? startBoxVault({ signer: { signEvent: e => signerNow.current.signEvent(e) }, routeClient, deviceKey }) : await startVault({ pubkey: session.pubkey, log })
       if (!live) return
@@ -170,11 +183,11 @@ function App() {
           if (!live) return
         }
         const { account: ready, fresh } = await prepareVault({ vault: v, pubkey: session.pubkey, local, early, log, onStep: step,
-          setup: c => runAndWait(c, "setup") })
+          setup: c => runAndWait(c, "setup"), onLate: lateAccount })
         if (!live) return
         if (fresh) {
           putProfile(ready.profileEvent)
-          setAccount({ ...ready, loaded: true })
+          setAccount(settled(ready)) // no follow list yet: "Loading your follows…" until onLate
           setPrep(null)
           log("account", { follows: ready.follows.length, cachedFollows: local.follows.length, prepared: true })
           return
@@ -183,11 +196,11 @@ function App() {
       }
       if (firstTime) markPrepared(session.pubkey)
       setPrep(null)
-      setAccount(shown)
+      setAccount(late ? { ...late, loaded: true } : shown)
       if (!navigator.onLine) return
-      const fresh = await refreshAccount(v, session.pubkey, uniq([...local.relays.read, ...local.relays.write, ...DEFAULT_RELAYS, ...PROFILE_RELAYS]), { log, early })
+      const fresh = await refreshAccount(v, session.pubkey, uniq([...local.relays.read, ...local.relays.write, ...DEFAULT_RELAYS, ...PROFILE_RELAYS]), { log, early, onLate: lateAccount })
       putProfile(fresh.profileEvent)
-      if (live) setAccount({ ...fresh, loaded: true })
+      if (live) setAccount(settled(fresh))
       log("account", { follows: fresh.follows.length, cachedFollows: local.follows.length })
     })().catch(e => { log("boot-error", { err: String(e) }); setError(String(e?.message ?? e)) })
     return () => { live = false }
