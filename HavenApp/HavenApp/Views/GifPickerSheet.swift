@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// GIF keyboard with nostr.build and Tenor. Type a search, get a grid, tap
+/// GIF keyboard backed by nostr.build. Type a search, get a grid, tap
 /// one to hand it back to the caller as a `GifItem`.
 struct GifPickerSheet: View {
     var onSelect: (GifItem) -> Void
@@ -26,7 +26,7 @@ struct GifPickerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
-    @State private var source: GifSource = GifSource.available.first ?? .tenor
+    @State private var source: GifSource = GifSource.available.first ?? .nostrBuild
     @ObservedObject private var configService = ConfigService.shared
     @State private var states: [GifSource: SourceState] = [:]
     @State private var isSearching = false
@@ -40,8 +40,8 @@ struct GifPickerSheet: View {
     @ScaledMetric(relativeTo: .footnote) private var captionLineHeight: Double = 15
     @ScaledMetric(relativeTo: .caption2) private var subcaptionLineHeight: Double = 13
     @ScaledMetric(relativeTo: .footnote) private var captionBlockPadding: Double = 16
-    /// Cells revealed per step. Deliberately smaller than either source's page
-    /// -- Tenor returns 50 -- because every revealed cell pulls its
+    /// Cells revealed per step. Deliberately smaller than a source's page
+    /// because every revealed cell pulls its
     /// own preview GIF.
     private let revealStep = 8
     /// Hard ceiling on pages requested per search, for sources that page at
@@ -260,7 +260,7 @@ struct GifPickerSheet: View {
         }
     }
 
-    /// Waterfall grid, not a `LazyVGrid`: cells differ in height -- a Tenor GIF
+    /// Waterfall grid, not a `LazyVGrid`: cells differ in height -- a GIF
     /// takes its own shape and a captioned clip carries a caption of its own
     /// depth -- and a row-based grid sizes each row to its tallest cell, which
     /// leaves a hole under every shorter one. Columns are filled shortest-first
@@ -404,12 +404,6 @@ struct GifPickerSheet: View {
                 switch requested {
                 case .nostrBuild:
                     items = try await NostrBuildGifService.search(text, page: page).map(GifItem.init)
-                case .tenor:
-                    #if TENOR_SIDELOAD
-                    items = try await TenorGifService.search(text).map(GifItem.init)
-                    #else
-                    items = []
-                    #endif
                 }
                 guard !Task.isCancelled else { return }
                 await MainActor.run { apply(items, for: requested, page: page, query: text) }
@@ -437,8 +431,7 @@ struct GifPickerSheet: View {
         // The field may have moved on while the request was in flight.
         guard states[requested]?.query == text else { return }
         // A later page can hand back GIFs we already hold. Dedupe,
-        // and treat an all-duplicate page as the end. Tenor answers once, so
-        // its end is simply the page it gave us.
+        // and treat an all-duplicate page as the end.
         states[requested]?.hasSearched = true
         let known = Set(states[requested]?.items.map(\.id) ?? [])
         let fresh = items.filter { !known.contains($0.id) }
@@ -512,7 +505,7 @@ private struct GifResultCell: View {
         .contentShape(RoundedRectangle(cornerRadius: 12))
         .help(item.accessibilityText)
         // A caption is clamped to two lines and one, so the rendered text is
-        // not the whole of it, and a Tenor cell renders no text at all. Read
+        // not the whole of it, and a cell without a caption renders no text at all. Read
         // the full description out either way.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(item.accessibilityText))

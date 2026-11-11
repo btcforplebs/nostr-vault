@@ -113,7 +113,7 @@ extension ComposeView {
                     .help("Paste media from the clipboard")
 
 // Hidden when no GIF source is available in this build (no nostr.build
-                    // key, and Tenor not opted in): never show a picker that finds nothing.
+                    // key): never show a picker that finds nothing.
                     if !GifSource.available.isEmpty {
                         Button(action: { showingGifPicker = true }) {
                             Group {
@@ -132,7 +132,7 @@ extension ComposeView {
                         }
                         .buttonStyle(.plain)
                         .disabled(isAttachmentLimitReached || isFetchingGif)
-                        .help("Search GIFs from nostr.build or Tenor")
+                        .help("Search GIFs from nostr.build")
                     }
 
                     Spacer()

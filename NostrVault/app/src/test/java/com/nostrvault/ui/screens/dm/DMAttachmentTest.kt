@@ -26,7 +26,7 @@ class DMAttachmentTest {
     }
 
     @Test fun gifAndQueryStringCount() {
-        val gif = "https://media.tenor.com/abc/cat.GIF?width=200"
+        val gif = "https://media.example.com/abc/cat.GIF?width=200"
         assertEquals(listOf(gif), DMAttachment.split(gif).images)
     }
 

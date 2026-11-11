@@ -42,7 +42,7 @@ final class DMAttachmentTests: XCTestCase {
     }
 
     func testGifAndQueryStringCount() {
-        let gif = "https://media.tenor.com/abc/cat.GIF?width=200"
+        let gif = "https://media.example.com/abc/cat.GIF?width=200"
         XCTAssertEqual(DMAttachment.split(gif).images.map(\.absoluteString), [gif])
     }
 

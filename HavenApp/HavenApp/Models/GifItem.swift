@@ -2,33 +2,22 @@ import Foundation
 
 /// Where the GIF picker is searching.
 ///
-/// The sources are not interchangeable, and the picker leans on the
-/// differences rather than flattening them: nostr.build pages on request,
-/// Tenor returns fifty GIFs of every shape in a single request.
-///
-/// getyarn (movie and TV quote clips) was removed on 2026-10-03: we have no
-/// permission to use the site (Logen).
+/// nostr.build (an official API, paged on request) is the only source.
+/// getyarn (movie and TV quote clips) was removed on 2026-10-03 and the
+/// scraped GIF search on 2026-11-11: we have no permission to use either
+/// site (Logen).
 enum GifSource: String, CaseIterable, Identifiable, Hashable {
     case nostrBuild
-    case tenor
 
     /// Sources this build offers, in picker order. Safe by default:
     ///
     /// - nostr.build (an official API) only when the build carries its API key
     ///   (`NostrBuildGIFAPIKey`, from the gitignored Secrets.xcconfig).
-    /// - Tenor, whose search page is read without the service's permission,
-    ///   only in builds that opt in with `TENOR_SIDELOAD`. Nothing sets that
-    ///   for the App Store, so an archive made straight from Xcode has no
-    ///   Tenor. (The old `APPSTORE` opt-out was only set by release_all.sh,
-    ///   and build 17 shipped Tenor because it was archived from Xcode.)
     ///
     /// Empty means the composer hides its GIF button.
     static var available: [GifSource] {
         var sources: [GifSource] = []
         if NostrBuildGifService.isConfigured { sources.append(.nostrBuild) }
-        #if TENOR_SIDELOAD
-        sources.append(.tenor)
-        #endif
         return sources
     }
 
@@ -38,7 +27,6 @@ enum GifSource: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .nostrBuild: return "nostr.build"
-        case .tenor: return "Tenor"
         }
     }
 
@@ -46,7 +34,6 @@ enum GifSource: String, CaseIterable, Identifiable, Hashable {
     var searchPrompt: String {
         switch self {
         case .nostrBuild: return "Search nostr.build for a GIF"
-        case .tenor: return "Search Tenor for a GIF"
         }
     }
 
@@ -54,7 +41,6 @@ enum GifSource: String, CaseIterable, Identifiable, Hashable {
     var fieldPrompt: String {
         switch self {
         case .nostrBuild: return "Search GIFs, then press return"
-        case .tenor: return "Search GIFs, then press return"
         }
     }
 
@@ -63,31 +49,25 @@ enum GifSource: String, CaseIterable, Identifiable, Hashable {
     var moreLabel: String {
         switch self {
         case .nostrBuild: return "Show more GIFs"
-        case .tenor: return "Show more GIFs"
         }
     }
 
     func noResults(for query: String) -> String {
         switch self {
         case .nostrBuild: return "No GIFs found for \u{201C}\(query)\u{201D}"
-        case .tenor: return "No GIFs found for \u{201C}\(query)\u{201D}"
         }
     }
 
     var attribution: String {
         switch self {
         case .nostrBuild: return "GIFs from nostr.build"
-        case .tenor: return "GIFs via Tenor"
         }
     }
 
-    /// nostr.build serves pages; Tenor's search page renders one set of 50 and
-    /// ignores a request for a second, so "show more" there only ever reveals
-    /// what is already in hand.
+    /// nostr.build serves pages.
     var supportsPaging: Bool {
         switch self {
         case .nostrBuild: return true
-        case .tenor: return false
         }
     }
 }
@@ -104,8 +84,7 @@ struct GifItem: Identifiable, Hashable {
     let stillURL: URL?
     /// Full-quality GIF to download when the cell is picked.
     let attachURL: URL
-    /// Drawn over the art when present. Tenor items have none: their
-    /// descriptions are long alt-text sentences that would bury the GIF.
+    /// Drawn over the art when present.
     let caption: String?
     let subcaption: String?
     /// Read out in place of the art. Always populated, caption or not.
@@ -128,17 +107,4 @@ struct GifItem: Identifiable, Hashable {
         aspectRatio = gif.aspectRatio
     }
 
-    #if TENOR_SIDELOAD
-    init(_ gif: TenorGif) {
-        source = .tenor
-        sourceID = gif.id
-        previewURL = gif.previewURL
-        stillURL = gif.stillURL
-        attachURL = gif.attachURL
-        caption = nil
-        subcaption = nil
-        accessibilityText = gif.description.isEmpty ? "GIF from Tenor" : gif.description
-        aspectRatio = gif.aspectRatio
-    }
-    #endif
 }
