@@ -17,7 +17,7 @@
 .reaction-chip { display: inline-flex; align-items: center; gap: 10px; padding: 5px 10px; border-radius: 10px;
   background: var(--s2); font: 600 13px/1 var(--font); color: var(--text-2); }
 .reaction-item { display: inline-flex; align-items: center; gap: 4px; }
-.reaction-emoji { font-size: 15px; }
+.reaction-summary .reaction-emoji { font-size: 15px; }
 .reaction-reposts { color: var(--verified); gap: 6px; }
 
 /* The iPhone's plain uppercase section label above the replies. */

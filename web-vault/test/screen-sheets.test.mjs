@@ -168,3 +168,56 @@ test("every class a screen draws is styled by a sheet loaded with it", () => {
   const say = gaps.map(g => `${g.file} draws .${g.cls} in chunk ${g.chunk}${g.from ? ` (opened from ${g.from})` : ""}; only ${g.sheets.join(", ")} define it`)
   assert.deepEqual(say, [], "import the sheet from the screen (or the component) that draws the class")
 })
+
+// The #1880 shape: both sheets are loaded and the later one wins. A chunk's sheet stays in the page once its chunk has
+// loaded, so a bare `.x { … }` in it, at the same specificity as a boot sheet's `.x`, restyles every `.x` the boot
+// bundle draws from then on: the Feed looked one way until the first Thread was opened and another way after. A
+// screen's sheet that means only its own rows scopes the selector (`.reaction-summary .reaction-emoji`).
+
+/** class -> the properties bare `.class { … }` rules set in `css` (top level or inside @media, selector exactly `.x`). */
+function bareRules(css) {
+  const out = new Map()
+  const src = read(css).replace(/\/\*[\s\S]*?\*\//g, "")
+  for (const m of src.matchAll(/([^{}@;]+)\{([^{}]*)\}/g))
+    for (const sel of m[1].split(",")) {
+      const b = sel.trim().match(/^\.(-?[A-Za-z_][\w-]*)$/)
+      if (!b) continue
+      const props = [...m[2].matchAll(/(?:^|;)\s*([\w-]+)\s*:/g)].map(x => x[1])
+      out.set(b[1], new Set([...(out.get(b[1]) ?? []), ...props]))
+    }
+  return out
+}
+
+/** Boot-drawn classes a chunk's sheet restyles, at bare-class specificity, after the boot sheet set them. -> strings */
+function lateOverrides() {
+  const boot = chunk(path.join(root, "main.jsx"))
+  const drawn = new Set([...boot.mods].filter(f => f.endsWith(".jsx")).flatMap(f => [...classesOf(f)]))
+  const bootProps = new Map()
+  for (const s of boot.sheets) for (const [c, ps] of bareRules(s)) bootProps.set(c, new Set([...(bootProps.get(c) ?? []), ...ps]))
+  const found = new Set(), seen = new Set()
+  const visit = entry => {
+    if (seen.has(entry)) return
+    seen.add(entry)
+    const c = chunk(entry)
+    for (const s of c.sheets) {
+      if (boot.sheets.has(s)) continue
+      for (const [cls, ps] of bareRules(s)) {
+        if (!drawn.has(cls) || !bootProps.has(cls)) continue
+        const both = [...ps].filter(p => bootProps.get(cls).has(p))
+        if (both.length) found.add(`.${cls} { ${both.join(", ")} } in ${rel(s)} (chunk ${rel(entry)}) overrides the boot sheet's`)
+      }
+    }
+    for (const l of c.lazy) visit(l)
+  }
+  for (const f of boot.mods) for (const l of edges(f).lazy) visit(l)
+  return [...found]
+}
+
+test("bare-class rules are read from the sheets (the late-override check can see a rule)", () => {
+  const na = bareRules(path.join(root, "src/styles/note-actions.css"))
+  assert.ok(na.get("reaction-emoji")?.has("font-size"), "note-actions.css sets .reaction-emoji's font-size")
+})
+
+test("a screen's sheet doesn't restyle, after it loads, a class the boot bundle draws (#1880 shape)", () => {
+  assert.deepEqual(lateOverrides(), [], "scope the chunk's rule to the screen's own rows")
+})
