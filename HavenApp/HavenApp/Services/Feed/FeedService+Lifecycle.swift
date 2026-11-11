@@ -174,6 +174,12 @@ extension FeedService {
 
     // MARK: - Public API
 
+    /// refresh(), or, while contacts are loading (refresh() refuses then),
+    /// once they finish. For a re-ask that nothing would repeat if dropped.
+    func refreshAfterContactLoad() {
+        if isLoadingContacts { refreshQueuedForMode = feedMode } else { refresh() }
+    }
+
     func refresh() {
         guard !isLoadingContacts, !isPaused else { return }
         // Music has no relay feed to reload; Hashtags reloads its own.

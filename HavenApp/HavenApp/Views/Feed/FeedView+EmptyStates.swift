@@ -338,7 +338,7 @@ private struct UnderratedEmptyAction: View {
         .onAppear { jobs.refresh() }
         // The job swaps the wider web in when it ends: ask again.
         .onChange(of: building) { wasBuilding, isBuilding in
-            if wasBuilding && !isBuilding && feedService.feedMode == .underrated { feedService.refresh() }
+            if wasBuilding && !isBuilding && feedService.feedMode == .underrated { feedService.refreshAfterContactLoad() }
         }
     }
 }
