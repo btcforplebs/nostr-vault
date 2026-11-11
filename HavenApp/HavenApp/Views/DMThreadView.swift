@@ -498,6 +498,17 @@ struct MessageBubbleView: View {
     /// Opens a photo the message carries; the second argument is all of them.
     var onOpenImage: ((URL, [URL]) -> Void)? = nil
 
+    /// The text with its links marked; on a sent (purple) bubble they are
+    /// underlined white rather than tinted, so they still read as links.
+    static func linked(_ text: String, fromMe: Bool) -> AttributedString {
+        var out = ProfileBioLinks.attributed(text)
+        guard fromMe else { return out }
+        for run in out.runs where run.link != nil {
+            out[run.range].underlineStyle = .single
+        }
+        return out
+    }
+
     /// The message's photos and videos, and its text without their links.
     private var parts: (text: String, images: [URL], videos: [URL]) { DMAttachment.split(message.content, withVideos: true) }
 
@@ -557,12 +568,16 @@ struct MessageBubbleView: View {
                     }
 
                     if !split.text.isEmpty || (split.images.isEmpty && split.videos.isEmpty) {
-                        Text(split.text)
+                        // Links found as in a bio (no markdown read), and a tap
+                        // opens the in-app browser by the post-link rules.
+                        Text(Self.linked(split.text, fromMe: message.isFromMe))
                             .font(.appSystem(size: 15))
                             .foregroundColor(message.isFromMe ? .white : .primary)
+                            .tint(message.isFromMe ? .white : .havenPurple)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .textSelection(.enabled)
+                            .environment(\.openURL, OpenURLAction { InAppBrowser.route($0) })
                     }
 
                     if message.isNIP04 {

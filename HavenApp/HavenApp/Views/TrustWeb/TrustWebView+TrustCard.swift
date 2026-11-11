@@ -78,7 +78,7 @@ extension TrustWebView {
                     .accessibilityHint(Text("Shows \(name(pubkey)) on your web in the WOT tab"))
                     if let web = TrustCardWebButton.forPerson(pubkey) {
                         cardButton(web.title, short: web.short, icon: "safari", filled: false) {
-                            PlatformURL.open(web.url)
+                            PlatformURL.openLink(web.url)
                         }
                     }
                 }

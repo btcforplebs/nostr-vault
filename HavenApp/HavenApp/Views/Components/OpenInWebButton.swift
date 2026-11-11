@@ -1,14 +1,14 @@
 import SwiftUI
 
-/// "Open in zap.cooking" and friends: a menu item that hands the content to
-/// the system browser. Every screen uses this one, so the wording and the
+/// "Open in zap.cooking" and friends: a menu item that opens the content in
+/// the in-app browser. Every screen uses this one, so the wording and the
 /// icon are the same wherever it shows up.
 struct OpenInWebButton: View {
     let link: NostrWebLink
 
     var body: some View {
         Button {
-            PlatformURL.open(link.url)
+            PlatformURL.openLink(link.url)
         } label: {
             Label("Open in \(link.siteName)", systemImage: "safari")
         }

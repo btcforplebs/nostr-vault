@@ -44,7 +44,7 @@ struct LinkPreviewCard: View {
     @ViewBuilder
     private func cardContent(_ meta: LinkPreviewMetadata) -> some View {
         Button {
-            PlatformURL.open(url)
+            PlatformURL.openLink(url)
         } label: {
             HStack(alignment: .top, spacing: 10) {
                 // OG image thumbnail
@@ -173,7 +173,7 @@ struct LinkFallbackCard: View {
 
     var body: some View {
         Button {
-            PlatformURL.open(url)
+            PlatformURL.openLink(url)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "link")

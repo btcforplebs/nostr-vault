@@ -190,7 +190,6 @@ struct MarketplaceListingSheet: View {
 
     @EnvironmentObject var nostrService: NostrService
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
     @State private var showingEventInfo = false
     @State private var showingMessage = false
     @State private var photoIndex = 0
@@ -377,7 +376,7 @@ struct MarketplaceListingSheet: View {
     private var buyButtons: some View {
         VStack(spacing: 10) {
             if let url = listing.plebeianURL {
-                Button { openURL(url) } label: {
+                Button { PlatformURL.openLink(url) } label: {
                     Label(listing.hasPlebeianPage ? "Buy on Plebeian" : "Seller on Plebeian",
                           systemImage: listing.hasPlebeianPage ? "cart" : "person.crop.circle")
                         .font(.appSystem(size: 15, weight: .bold))

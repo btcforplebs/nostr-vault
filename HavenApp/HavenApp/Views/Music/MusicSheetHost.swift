@@ -139,7 +139,7 @@ struct MusicTrackActions: View {
             }
         }
         if let page = track.pageURL {
-            Button { PlatformURL.open(page) } label: {
+            Button { PlatformURL.openLink(page) } label: {
                 Label("Open on Wavlake", systemImage: "safari")
             }
         }
