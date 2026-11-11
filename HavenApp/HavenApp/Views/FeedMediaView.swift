@@ -131,6 +131,7 @@ struct FeedMediaView: View {
                     url: url,
                     showPlayOverlay: !isThumbnail,
                     avoidFullDownload: isThumbnail,
+                    fills: isThumbnail && !fitsThumbnail,
                     onAspectRatio: { ratio in if ratio > 0 { videoAspectRatio = ratio } }
                 )
                 .aspectRatio(thumbnailRatio, contentMode: isThumbnail && !fitsThumbnail ? .fill : .fit)
@@ -486,6 +487,9 @@ private struct FeedVideoThumbnailView: View {
     /// byte-range requests instead of downloading the entire video first. Used by
     /// condensed views so scrolling past a video never autoloads it.
     var avoidFullDownload: Bool = false
+    /// True for a square cropped tile: the frame fills it, cropped, like the
+    /// photo tiles next to it. Otherwise the frame sits whole on black.
+    var fills: Bool = false
     /// Reports the extracted frame's aspect ratio (width / height) once known,
     /// so the container can size the video to its natural shape.
     var onAspectRatio: ((CGFloat) -> Void)? = nil
@@ -494,12 +498,14 @@ private struct FeedVideoThumbnailView: View {
 
     var body: some View {
         ZStack {
-            Color.platformTertiaryGroupedBackground
+            // The frame sits whole on black, like the playing clip, unless it
+            // fills a cropped tile.
+            if thumbnail != nil && !fills { Color.black } else { Color.platformTertiaryGroupedBackground }
 
             if let thumb = thumbnail {
                 Image(platformImage: thumb)
                     .resizable()
-                    .scaledToFill()
+                    .aspectRatio(contentMode: fills ? .fill : .fit)
                     .transition(.opacity.animation(Motion.media))
             } else if loadFailed {
                 // Couldn't extract a frame without a full download — show a video

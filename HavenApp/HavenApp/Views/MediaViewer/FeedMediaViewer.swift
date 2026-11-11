@@ -302,16 +302,8 @@ struct FeedMediaViewer: View {
             updateMirrorStatus()
         }
         #if os(iOS)
-        .onAppear {
-            AppDelegate.allowLandscape = true
-        }
-        .onDisappear {
-            AppDelegate.allowLandscape = false
-            // Force back to portrait when leaving the viewer
-            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-                windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
-            }
-        }
+        .allowsLandscapeWhileShown()
+        .turnsSidewaysForWideClip(isVideo ? url : nil)
         #endif
     }
 

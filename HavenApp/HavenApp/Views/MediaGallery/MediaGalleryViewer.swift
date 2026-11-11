@@ -29,6 +29,9 @@ struct MediaItemRenderer: View {
                     .tint(.white)
             } else if resolvedType == .video || isVideoByMime {
                 VideoPlayerView(url: mediaItem.url, mimeType: mediaItem.mimeType)
+                    #if os(iOS)
+                    .turnsSidewaysForWideClip(mediaItem.url)
+                    #endif
             } else if resolvedType == .audio {
                 AudioPlayerView(url: mediaItem.url)
             } else if resolvedType == .unknown {
@@ -58,6 +61,10 @@ struct MediaItemRenderer: View {
         .onAppear {
             detectType()
         }
+        #if os(iOS)
+        // Only the full-screen gallery and profile viewers show this.
+        .allowsLandscapeWhileShown()
+        #endif
     }
 
     private func detectType() {

@@ -18,8 +18,9 @@ struct PendingNotificationAction {
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
-    /// When `true`, the app allows landscape orientation (used by media viewers).
-    static var allowLandscape = false
+    /// When `true`, the app allows landscape orientation: a full-screen media
+    /// viewer or live full screen is open (`LandscapeAllowance`).
+    static var allowLandscape: Bool { LandscapeAllowance.isAllowed }
 
     /// Stores a pending notification action when the relay isn't ready yet.
     /// ContentView replays this once the relay is running and views are mounted.

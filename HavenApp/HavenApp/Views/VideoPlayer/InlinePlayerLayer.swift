@@ -7,7 +7,9 @@ import AVFoundation
 #if os(macOS)
 struct InlinePlayerLayer: NSViewRepresentable {
     let player: AVPlayer
-    var videoGravity: AVLayerVideoGravity = .resizeAspectFill
+    /// Whole frame by default, on black: a clip whose shape is not known yet
+    /// (or whose `dim` is wrong) shows bars, never a crop.
+    var videoGravity: AVLayerVideoGravity = .resizeAspect
     /// Called with the backing AVPlayerLayer once created (used to wire up PiP on iOS).
     var onLayerReady: ((AVPlayerLayer) -> Void)? = nil
     /// iOS only: macOS keeps a layer's player playing in the background.
@@ -17,6 +19,7 @@ struct InlinePlayerLayer: NSViewRepresentable {
         let view = PlayerNSView()
         view.playerLayer.player = player
         view.playerLayer.videoGravity = videoGravity
+        view.playerLayer.backgroundColor = CGColor(gray: 0, alpha: 1)
         onLayerReady?(view.playerLayer)
         return view
     }
@@ -64,7 +67,9 @@ class PlayerNSView: NSView {
 #else
 struct InlinePlayerLayer: UIViewRepresentable {
     let player: AVPlayer
-    var videoGravity: AVLayerVideoGravity = .resizeAspectFill
+    /// Whole frame by default, on black: a clip whose shape is not known yet
+    /// (or whose `dim` is wrong) shows bars, never a crop.
+    var videoGravity: AVLayerVideoGravity = .resizeAspect
     /// Called with the backing AVPlayerLayer once created (used to wire up PiP).
     var onLayerReady: ((AVPlayerLayer) -> Void)? = nil
     /// For a player whose sound carries on without its picture — the mini
@@ -80,6 +85,7 @@ struct InlinePlayerLayer: UIViewRepresentable {
         view.keepsPlayingInBackground = keepsPlayingInBackground
         view.attach(player)
         view.playerLayer.videoGravity = videoGravity
+        view.playerLayer.backgroundColor = CGColor(gray: 0, alpha: 1)
         onLayerReady?(view.playerLayer)
         return view
     }
