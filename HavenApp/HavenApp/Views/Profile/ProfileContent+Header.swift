@@ -145,8 +145,10 @@ extension ProfileContent {
 
     // MARK: - Bio
 
+    /// The bio as written, with every link tappable (https, `<npub>.fips`).
+    /// A tap goes where a post's link goes: the in-app browser and its rules.
     func bioBlock(_ about: String) -> some View {
-        Text(about)
+        Text(ProfileBioLinks.attributed(about))
             .font(.appSystem(size: 13))
             .foregroundColor(.primary.opacity(0.85))
             .multilineTextAlignment(.leading)
@@ -154,6 +156,9 @@ extension ProfileContent {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.top, 12)
+            // Set here, not inherited: a profile sheet can sit outside the
+            // app root's link handler.
+            .environment(\.openURL, OpenURLAction { InAppBrowser.route($0) })
     }
 
     // MARK: - Action row
