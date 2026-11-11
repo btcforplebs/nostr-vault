@@ -22,6 +22,7 @@ extension FeedView {
         guard isThreadedModeActive, feedService.feedMode != .hashtags else {
             threadRebuildWork?.cancel()
             rowStore.threadGeneration &+= 1
+            rowStore.threadFloor = rowStore.threadGeneration &+ 1
             if !feedThreads.isEmpty { feedThreads = [] }
             frozenThreadKeys = [:]
             return
@@ -45,6 +46,7 @@ extension FeedView {
             rowStore.threadGeneration &+= 1
             let generation = rowStore.threadGeneration
             if immediate {
+                rowStore.appliedThreadGeneration = generation
                 applyThreads(Self.groupThreads(notes: notes, keepFeedOrder: fetchesReplies, blocked: blocked,
                                                parents: parents, index: index),
                              fetchesReplies: fetchesReplies)
@@ -55,8 +57,15 @@ extension FeedView {
             FeedThreadRegroup.offMain({
                 Self.groupThreads(notes: notes, keepFeedOrder: fetchesReplies, blocked: blocked,
                                   parents: parents, index: index)
-            }, isCurrent: { generation == rowStore.threadGeneration },
-               apply: { applyThreads($0, fetchesReplies: fetchesReplies) })
+            }, isCurrent: {
+                FeedThreadRegroup.shouldApply(generation: generation, current: rowStore.threadGeneration,
+                                              floor: rowStore.threadFloor,
+                                              lastApplied: rowStore.appliedThreadGeneration,
+                                              showingNothing: feedThreads.isEmpty)
+            }, apply: {
+                rowStore.appliedThreadGeneration = generation
+                applyThreads($0, fetchesReplies: fetchesReplies)
+            })
         }
         threadRebuildWork = work
 
@@ -75,6 +84,9 @@ extension FeedView {
     func regroupForFeedSwitch() {
         frozenThreadKeys = [:]
         if isThreadedModeActive, !feedThreads.isEmpty { feedThreads = [] }
+        // rebuildThreadsIfNeeded bumps the generation once: this switch's
+        // grouping is the first that may fill the cleared feed.
+        rowStore.threadFloor = rowStore.threadGeneration &+ 1
         rebuildThreadsIfNeeded(offMainNow: true)
     }
 
@@ -139,6 +151,7 @@ extension FeedView {
                 )
             }
             rowStore.drafts.removeAll()
+            rowStore.draftNotes = [:]
             rowDataCache = newCache
         }
 
@@ -175,6 +188,7 @@ extension FeedView {
     func reconcileRowDataCache() {
         cacheRebuildWork?.cancel()
         let work = DispatchWorkItem { [self] in
+            rowStore.draftNotes = [:]
             rowDataCache = FeedRowDataFill.reconcile(
                 notes: feedService.filteredNotes,
                 id: \.id,
@@ -200,16 +214,17 @@ extension FeedView {
     /// (triggering a SwiftUI update) only if something actually changed —
     /// `FeedNoteRowData: Equatable` makes that comparison free.
     private func resolveRows(matching ids: Set<String>) {
-        // Before the guard: a drawn row these paths cannot find (one outside
-        // `filteredNotes`) may still be affected.
-        dropAllDrafts()
         guard !ids.isEmpty else { return }
         // A repost row shows its original's likes, zaps and counts, which are
         // keyed by the original's id, not the row's.
         var ids = ids
-        for note in feedService.filteredNotes where note.kind == 6 {
+        for note in rowNotesToScan where note.kind == 6 {
             if let refId = note.repostedEventId, ids.contains(refId) { ids.insert(note.id) }
         }
+        // A drawn row not filed yet (one outside `filteredNotes` is never
+        // filed) resolves fresh on its next draw. Only matching drafts go, so
+        // an update that changes no row still costs nothing.
+        if rowStore.drafts.remove(ids: ids) { rowStore.objectWillChange.send() }
         var updated = rowDataCache
         var didChange = false
         for id in ids {
@@ -223,18 +238,12 @@ extension FeedView {
         if didChange { rowDataCache = updated }
     }
 
-    /// Any change to what rows show drops every draft and redraws, so a drawn
-    /// row not filed yet resolves fresh. The update paths find their rows by
-    /// scanning `filteredNotes` and the cache; a drawn thread-card row outside
-    /// them (a root pulled in from the caches, a Global reply, a Hashtags
-    /// note, a repost of a liked note) would otherwise keep older data. Drafts
-    /// are never filed here, only by reconcile, so the cache keeps holding
-    /// only `filteredNotes`. Only drawn rows are drafts: a screenful of
-    /// resolves at most, what every uncached row cost before drafts existed.
-    private func dropAllDrafts() {
-        guard !rowStore.drafts.rows.isEmpty else { return }
-        rowStore.drafts.removeAll()
-        rowStore.objectWillChange.send()
+    /// The notes the update paths scan for affected rows: the feed's, plus
+    /// drafted rows outside it (a root pulled in from the caches, a Global
+    /// reply, a Hashtags note), which would otherwise keep older data.
+    private var rowNotesToScan: [FeedNote] {
+        let drafted = rowStore.draftedNotes
+        return drafted.isEmpty ? feedService.filteredNotes : feedService.filteredNotes + drafted
     }
 
     /// likedEventIds is keyed by `note.id`, so the symmetric difference is exactly
@@ -269,7 +278,7 @@ extension FeedView {
         let changedKeys = old.symmetricDifference(new)
         guard !changedKeys.isEmpty else { return }
         var ids = Set<String>()
-        for note in feedService.filteredNotes {
+        for note in rowNotesToScan {
             let repostCheckId = note.repostedEventId ?? note.id
             if changedKeys.contains(repostCheckId) { ids.insert(note.id) }
         }
@@ -282,7 +291,7 @@ extension FeedView {
     func refreshRowsForPubkeys(_ pubkeys: Set<String>) {
         guard !pubkeys.isEmpty else { return }
         var ids = Set<String>()
-        for note in feedService.filteredNotes {
+        for note in rowNotesToScan {
             if pubkeys.contains(note.pubkey)
                 || (note.repostedBy.map(pubkeys.contains) ?? false)
                 || (note.replyToPubkey.map(pubkeys.contains) ?? false) {
@@ -313,7 +322,7 @@ extension FeedView {
     /// unrelated change to force a rebuild.
     func refreshRowsForReferencedNotes(_ arrivedIds: Set<String>) {
         resolveRows(matching: ReferencedNoteRepair.rowsNeedingRepair(
-            notes: feedService.filteredNotes, arrivedIds: arrivedIds))
+            notes: rowNotesToScan, arrivedIds: arrivedIds))
     }
 
     /// A fetched ancestor changes the *shape* of the timeline, not just a row:

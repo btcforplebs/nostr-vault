@@ -17,4 +17,17 @@ enum FeedThreadRegroup {
             }
         }
     }
+
+    /// Whether a finished grouping is shown. The current one always is. While
+    /// the feed shows nothing, any newer one is too: notes streaming in faster
+    /// than one grouping takes would otherwise overtake every result, and the
+    /// feed would stay blank for the whole fill. `floor` is the first
+    /// generation of the feed on screen, so a grouping of the feed just left
+    /// never lands on the new one. A result older than one already shown is
+    /// dropped.
+    static func shouldApply(generation: Int, current: Int, floor: Int,
+                            lastApplied: Int, showingNothing: Bool) -> Bool {
+        guard generation >= floor, generation > lastApplied else { return false }
+        return generation == current || showingNothing
+    }
 }

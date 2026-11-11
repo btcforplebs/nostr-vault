@@ -274,8 +274,11 @@ extension FeedView {
                         }
                         }
 
-                        // Infinite scroll sentinel — triggers loadMore when visible
-                        if !feedService.filteredNotes.isEmpty {
+                        // Infinite scroll sentinel — triggers loadMore when visible.
+                        // Threaded: gated on the cards, which a feed switch clears
+                        // while `filteredNotes` stays full; else the sentinel sits in
+                        // view during that blank and pages an older window.
+                        if isThreadedModeActive ? !feedThreads.isEmpty : !feedService.filteredNotes.isEmpty {
                             Color.clear
                                 .frame(height: 1)
                                 .onAppear { feedService.loadMore() }

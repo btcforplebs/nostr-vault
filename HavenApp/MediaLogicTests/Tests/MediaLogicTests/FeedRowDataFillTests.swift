@@ -109,4 +109,17 @@ final class FeedRowDataFillTests: XCTestCase {
         XCTAssertEqual(drafts.row(id: "a", cached: filed) { resolve(Note(id: "a")) }, filed)
         XCTAssertEqual(reconcile([Note(id: "a")], cache: ["a": filed], drafts: &drafts)["a"], filed)
     }
+
+    /// Tron's #1911 follow-up: an update drops only the drafts it names, and
+    /// says nothing changed when none matched, so the feed is not redrawn.
+    func testRemoveDropsOnlyMatchingDrafts() {
+        var drafts = FeedRowDrafts<Row>()
+        _ = drafts.row(id: "a", cached: nil) { resolve(Note(id: "a")) }
+        _ = drafts.row(id: "b", cached: nil) { resolve(Note(id: "b")) }
+        XCTAssertFalse(drafts.remove(ids: ["z"]))
+        XCTAssertFalse(drafts.remove(ids: []))
+        XCTAssertEqual(Set(drafts.rows.keys), ["a", "b"])
+        XCTAssertTrue(drafts.remove(ids: ["a", "z"]))
+        XCTAssertEqual(Set(drafts.rows.keys), ["b"])
+    }
 }

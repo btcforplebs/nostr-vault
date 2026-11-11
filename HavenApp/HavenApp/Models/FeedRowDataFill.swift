@@ -54,4 +54,12 @@ struct FeedRowDrafts<Row> {
     }
 
     mutating func removeAll() { rows = [:] }
+
+    /// Drops the drafts among `ids`, so those rows resolve fresh on their next
+    /// draw. True when one was dropped, i.e. the feed must redraw.
+    mutating func remove(ids: Set<String>) -> Bool {
+        var dropped = false
+        for id in ids where rows.removeValue(forKey: id) != nil { dropped = true }
+        return dropped
+    }
 }

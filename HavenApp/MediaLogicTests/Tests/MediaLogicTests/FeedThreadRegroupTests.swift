@@ -114,4 +114,40 @@ final class FeedThreadRegroupTests: XCTestCase {
         await task.value
         XCTAssertTrue(applied.isEmpty)
     }
+
+    /// Tron's #1911 fix: notes stream in faster than one grouping takes, so
+    /// each grouping is overtaken by the next before it lands. A cleared feed
+    /// still shows the first one that finishes, not nothing until the stream
+    /// goes quiet. Each step is (generation started, generations finished).
+    func testStreamingFillShowsAGroupingWhileTheFeedIsEmpty() {
+        var current = 0, applied = 0, shown: [Int] = []
+        let floor = 1 // the switch's own grouping is generation 1
+        for gen in 1...5 {
+            current = gen // a newer rebuild started before the last one landed
+            let finished = gen - 1
+            guard finished >= floor else { continue }
+            if FeedThreadRegroup.shouldApply(generation: finished, current: current, floor: floor,
+                                             lastApplied: applied, showingNothing: shown.isEmpty) {
+                applied = finished
+                shown.append(finished)
+            }
+        }
+        XCTAssertEqual(shown, [1], "the first finished grouping fills the empty feed")
+        // Once something shows, overtaken results drop as before; the current one applies.
+        XCTAssertFalse(FeedThreadRegroup.shouldApply(generation: 4, current: 5, floor: floor,
+                                                     lastApplied: applied, showingNothing: false))
+        XCTAssertTrue(FeedThreadRegroup.shouldApply(generation: 5, current: 5, floor: floor,
+                                                    lastApplied: applied, showingNothing: false))
+    }
+
+    /// A grouping of the feed just left never fills the new, empty one, and an
+    /// older result never replaces a newer one already shown (even an empty one).
+    func testOldFeedAndOlderResultsNeverFillTheEmptyFeed() {
+        XCTAssertFalse(FeedThreadRegroup.shouldApply(generation: 3, current: 5, floor: 4,
+                                                     lastApplied: 0, showingNothing: true))
+        XCTAssertFalse(FeedThreadRegroup.shouldApply(generation: 4, current: 6, floor: 4,
+                                                     lastApplied: 5, showingNothing: true))
+        XCTAssertTrue(FeedThreadRegroup.shouldApply(generation: 5, current: 6, floor: 4,
+                                                    lastApplied: 4, showingNothing: true))
+    }
 }
