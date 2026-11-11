@@ -163,13 +163,12 @@ struct iPhoneTabView: View {
                 SpaceColumn(fillsFoldHalf: true, onFoldedChange: { foldSpaceFolded = $0 })
                     .frame(width: foldSpaceFolded ? nil
                            : ShellLayout.foldLeftWidth(windowWidth: windowSize.width, leadingInset: leadingInset))
-                if !foldSpaceFolded {
-                    // Nothing on the crease.
-                    Color.black
-                        .frame(width: ShellLayout.foldGutter)
-                        .ignoresSafeArea()
-                        .accessibilityHidden(true)
-                }
+                // The hairline between Your space and the app, as on the rails.
+                Rectangle()
+                    .fill(Color.white.opacity(0.08))
+                    .frame(width: 1)
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
             }
             tabs
             if layout == .padLandscape {

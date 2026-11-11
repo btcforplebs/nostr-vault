@@ -110,8 +110,9 @@ struct SpaceColumn: View {
         railIds.contains(LiveNow.panelId)
     }
 
-    /// One rail icon per widget the layout shows, in its order.
-    private var railIds: [String] { store.layout.shownPanels(ids).map(\.id) }
+    /// One rail icon per widget, in the layout's order, including the ones
+    /// taken off Your space: those are hidden there only (Logen, 2026-11-11).
+    private var railIds: [String] { store.layout.railPanelIds(ids) }
 
     private var relayReady: Bool { relayManager.isRunning && !relayManager.isBooting }
 
@@ -295,35 +296,63 @@ struct SpaceColumn: View {
             Spacer(minLength: 0)
         }
         .padding(.top, (PadTopBar.height - 40) / 2)
-        .frame(width: LiveVaultLayout.foldedWidth)
+        // On a fold's half, as wide as the dock's rail on the other edge.
+        .frame(width: fillsFoldHalf ? BottomTabBar.railWidth : LiveVaultLayout.foldedWidth)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private func railButton(_ id: String?, symbol: String, title: String, badge: Int = 0) -> some View {
         let isOpen = !folded && selected == id
         return Button { tapRail(id) } label: {
-            Image(systemName: symbol)
-                .font(.appSystem(size: 17, weight: .semibold))
-                .foregroundColor(isOpen ? .havenPurple : .secondary)
-                .frame(width: 40, height: 40)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isOpen ? Color.havenPurple.opacity(0.16) : Color.clear))
-                .overlay(alignment: .topTrailing) {
-                    if let text = AccountUnread.badge(badge) {
-                        Text(text)
-                            .font(.appSystem(size: 10, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 4)
-                            .frame(minWidth: 16, minHeight: 16)
-                            .background(Capsule().fill(Color.havenPurple))
-                            .offset(x: 4, y: -4)
-                    }
-                }
-                .contentShape(Rectangle())
+            if fillsFoldHalf {
+                railLabeledItem(symbol: symbol, title: title, isOpen: isOpen, badge: badge)
+            } else {
+                Image(systemName: symbol)
+                    .font(.appSystem(size: 17, weight: .semibold))
+                    .foregroundColor(isOpen ? .havenPurple : .secondary)
+                    .frame(width: 40, height: 40)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isOpen ? Color.havenPurple.opacity(0.16) : Color.clear))
+                    .overlay(alignment: .topTrailing) { railBadge(badge) }
+                    .contentShape(Rectangle())
+            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isOpen ? "Fold \(title)" : (badge > 0 ? "\(title), \(badge)" : title))
         .help(title)
+    }
+
+    @ViewBuilder
+    private func railBadge(_ badge: Int) -> some View {
+        if let text = AccountUnread.badge(badge) {
+            Text(text)
+                .font(.appSystem(size: 10, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 4)
+                .frame(minWidth: 16, minHeight: 16)
+                .background(Capsule().fill(Color.havenPurple))
+                .offset(x: 4, y: -4)
+        }
+    }
+
+    /// A fold's half: icon over its name, sized like the dock's rail items
+    /// (`BottomTabBar.tabItemLabel`), so both edges of the screen match.
+    private func railLabeledItem(symbol: String, title: String, isOpen: Bool, badge: Int) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: symbol)
+                .font(.appSystem(size: 20, weight: isOpen ? .semibold : .regular))
+                .frame(height: 24)
+                .overlay(alignment: .topTrailing) { railBadge(badge) }
+            Text(title)
+                .font(.appSystem(size: 10, weight: isOpen ? .semibold : .regular))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .foregroundStyle(isOpen ? Color.havenPurple : .white)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
     }
 
     /// Folded: open on that icon. Open on it already: fold. Otherwise switch to it.

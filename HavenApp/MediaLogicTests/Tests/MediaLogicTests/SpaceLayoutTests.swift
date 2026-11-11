@@ -128,6 +128,17 @@ final class SpaceLayoutTests: XCTestCase {
         XCTAssertEqual(moved.at, 20)
     }
 
+    /// A panel taken off Your space keeps its place on the rail.
+    func testRailKeepsPanelsTakenOff() {
+        var layout = SpaceLayout.defaultLayout(panelIds: panelIds)
+        layout = layout.settingPanel("wot-mini", on: false, at: 1)
+        XCTAssertFalse(layout.shownPanels(panelIds).contains { $0.id == "wot-mini" })
+        XCTAssertEqual(layout.railPanelIds(panelIds), layout.panels.map(\.id).filter { panelIds.contains($0) })
+        XCTAssertTrue(layout.railPanelIds(panelIds).contains("wot-mini"))
+        layout.panels.removeAll { $0.id == "messages" }
+        XCTAssertEqual(layout.railPanelIds(panelIds).last, "messages", "a panel the layout lacks goes last")
+    }
+
     func testPanelEditsMoveAmongDrawnOnly() {
         var layout = SpaceLayout.defaultLayout(panelIds: panelIds)
         layout = layout.settingPanel("wot-mini", on: false, at: 1)

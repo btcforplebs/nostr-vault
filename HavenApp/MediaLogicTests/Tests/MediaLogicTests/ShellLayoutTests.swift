@@ -84,13 +84,13 @@ final class ShellLayoutTests: XCTestCase {
         }
     }
 
-    /// The left half stops half a gutter short of the screen's middle, after
-    /// whatever safe area is already on the left.
+    /// The left half ends on the screen's middle, after whatever safe area is
+    /// already on the left.
     func testLeftHalfEndsBeforeTheFold() {
         let w: CGFloat = 1000
         let left = ShellLayout.foldLeftWidth(windowWidth: w, leadingInset: 0)
-        XCTAssertEqual(left + ShellLayout.foldGutter / 2, w / 2)
-        XCTAssertEqual(ShellLayout.foldLeftWidth(windowWidth: w, leadingInset: 24) + 24 + ShellLayout.foldGutter / 2, w / 2)
+        XCTAssertEqual(left, w / 2)
+        XCTAssertEqual(ShellLayout.foldLeftWidth(windowWidth: w, leadingInset: 24) + 24, w / 2)
         XCTAssertEqual(ShellLayout.foldLeftWidth(windowWidth: 0, leadingInset: 24), 0)
     }
 }
