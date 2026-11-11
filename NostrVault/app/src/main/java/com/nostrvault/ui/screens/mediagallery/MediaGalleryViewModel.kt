@@ -54,8 +54,18 @@ class MediaGalleryViewModel @Inject constructor(
 
     private val httpClient = buildHttpClient()
 
+    /** The vault folder watch that puts each new file on the list as it lands (MediaLiveUpdates.kt). */
+    private var vaultWatch: VaultFolderWatch? = null
+
+    /** Files that landed while a full load ran, put back on its result so the load can't hide them. */
+    private val landedDuringLoad = java.util.concurrent.ConcurrentHashMap<String, BlossomMediaItem>()
+
+    /** A delete's full reload (a server may still have the file), a moment after the last one. */
+    private var reloadJob: Job? = null
+
     init {
         loadBlossomMedia()
+        watchVaultFolder()
         // Auto-Mirror Media: pull own media from the mirrors, at most every
         // 3 hours (iOS triggerAutoMirrorIfEnabled).
         if (configStore.config.value.autoMirrorMedia) blossomService.runAutoMirrorIfDue()
@@ -149,6 +159,8 @@ class MediaGalleryViewModel @Inject constructor(
             _isLoading.value = true
             try {
                 withContext(Dispatchers.IO) {
+                    watchVaultFolder()
+                    landedDuringLoad.clear()
                     val items = mutableMapOf<String, BlossomMediaItem>()
 
                     // 1. Scan local blossom directory
@@ -182,10 +194,12 @@ class MediaGalleryViewModel @Inject constructor(
                         }
                     }
 
-                    _mediaItems.value = items.values
-                        .filter { it.isImage || it.isVideo || it.isAudio || it.mimeType == null }
+                    var loaded = items.values
+                        .filter(MediaLiveRules::shown)
                         .sortedByDescending { it.sortTime }
                         .toList()
+                    for (item in landedDuringLoad.values) loaded = MediaLiveRules.landed(loaded, item)
+                    _mediaItems.value = loaded
                 }
             } finally {
                 _isLoading.value = false
@@ -193,32 +207,78 @@ class MediaGalleryViewModel @Inject constructor(
         }
     }
 
-    private fun loadLocalBlossomFiles(items: MutableMap<String, BlossomMediaItem>) {
+    private fun vaultFolder(): File? {
         val config = configStore.config.value
-        val blossomDir = config.relayDataDir?.let { File(it, config.blossomPath) } ?: return
+        return config.relayDataDir?.let { File(it, config.blossomPath) }
+    }
+
+    /**
+     * Starts the folder watch once the folder exists (it doesn't before the
+     * relay's first start, so each load tries again), and moves it when the
+     * folder does.
+     */
+    private fun watchVaultFolder() {
+        val dir = vaultFolder()?.takeIf { it.isDirectory } ?: return
+        synchronized(this) {
+            if (vaultWatch?.dir == dir) return
+            vaultWatch?.stop()
+            vaultWatch = VaultFolderWatch(dir, ::onVaultChange).also { it.start() }
+        }
+    }
+
+    private fun onVaultChange(change: MediaLiveRules.Change) {
+        when (change) {
+            is MediaLiveRules.Change.Landed -> viewModelScope.launch(Dispatchers.IO) {
+                val dir = vaultFolder() ?: return@launch
+                val file = File(dir, change.sha256).takeIf { it.isFile }
+                    ?: dir.listFiles { f -> f.isFile && MediaLiveRules.blobHash(f.name) == change.sha256 }?.firstOrNull()
+                    ?: return@launch
+                val item = localItem(file, change.sha256)
+                if (_isLoading.value) landedDuringLoad[item.sha256] = item
+                _mediaItems.update { MediaLiveRules.landed(it, item) }
+            }
+            is MediaLiveRules.Change.Removed -> {
+                landedDuringLoad.remove(change.sha256)
+                _mediaItems.update { MediaLiveRules.removed(it, change.sha256) }
+                // A server may still hold it: the full load brings that tile back.
+                reloadJob?.cancel()
+                reloadJob = viewModelScope.launch {
+                    delay(RELOAD_AFTER_DELETE_MS)
+                    loadBlossomMedia()
+                }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        synchronized(this) { vaultWatch?.stop(); vaultWatch = null }
+        super.onCleared()
+    }
+
+    private fun localItem(file: File, hash: String): BlossomMediaItem = BlossomMediaItem(
+        sha256 = hash,
+        displayUrl = file.absolutePath,
+        localFile = file,
+        mimeType = when (statsService.detectFileType(file)) {
+            FileType.IMAGE -> "image"
+            FileType.VIDEO -> "video"
+            else -> null
+        },
+        size = file.length(),
+        uploaded = null,
+        lastModified = file.lastModified(),
+        isLocal = true,
+    )
+
+    private fun loadLocalBlossomFiles(items: MutableMap<String, BlossomMediaItem>) {
+        val blossomDir = vaultFolder() ?: return
         if (!blossomDir.exists()) return
 
         blossomDir.listFiles()?.forEach { file ->
             if (!file.isFile) return@forEach
             val hash = file.nameWithoutExtension
             if (hash.length != 64 || !hash.all { it in "0123456789abcdef" }) return@forEach
-
-            val fileType = statsService.detectFileType(file)
-
-            items[hash] = BlossomMediaItem(
-                sha256 = hash,
-                displayUrl = file.absolutePath,
-                localFile = file,
-                mimeType = when (fileType) {
-                    FileType.IMAGE -> "image"
-                    FileType.VIDEO -> "video"
-                    else -> null
-                },
-                size = file.length(),
-                uploaded = null,
-                lastModified = file.lastModified(),
-                isLocal = true,
-            )
+            items[hash] = localItem(file, hash)
         }
     }
 
@@ -404,6 +464,8 @@ class MediaGalleryViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "MediaGalleryVM"
+        /** Several deletes in a row (Delete everywhere, a mesh delete) make one reload. */
+        private const val RELOAD_AFTER_DELETE_MS = 500L
 
         /** The gallery's client. A seam so a test can check what it refuses. */
         // The app's shared pool ([ImageHttp]), not a new one per screen.
