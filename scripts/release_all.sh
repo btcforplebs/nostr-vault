@@ -7,11 +7,11 @@
 # HavenApp/RELEASE_NOTES.md, APK + macOS zip attached).
 #
 # Usage:
-#   ./release_all.sh                 # build everything, then confirm each publish step
-#   ./release_all.sh --check        # print versions/tooling status and exit
-#   ./release_all.sh --skip-publish # build all three, publish nothing
-#   ./release_all.sh --skip-ios --skip-macos   # Android-only release
-#   ./release_all.sh --yes          # no confirmation prompts (CI / hands-off)
+#   ./scripts/release_all.sh                 # build everything, then confirm each publish step
+#   ./scripts/release_all.sh --check        # print versions/tooling status and exit
+#   ./scripts/release_all.sh --skip-publish # build all three, publish nothing
+#   ./scripts/release_all.sh --skip-ios --skip-macos   # Android-only release
+#   ./scripts/release_all.sh --yes          # no confirmation prompts (CI / hands-off)
 #
 # Secrets (never committed) are read from .release.env at the repo root:
 #   SIGN_WITH="bunker://..."        # zapstore publish signing (zsp)
@@ -20,7 +20,7 @@
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="$ROOT/dist"
 XCODE_DIR="$ROOT/HavenApp"
 ANDROID_DIR="$ROOT/NostrVault"

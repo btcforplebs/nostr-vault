@@ -61,13 +61,13 @@ API_LEVEL=26
 # Deliberately NOT an associative array: macOS ships bash 3.2, which has no
 # `declare -A`, so this script aborted at parse time with
 # "declare: -A: invalid option" whenever it was invoked directly — including
-# from release_all.sh, which meant the Android stage of a release never ran.
+# from scripts/release_all.sh, which meant the Android stage of a release never ran.
 # It only appeared to work because `just android-build` cross-compiles inline
 # and never calls this file.
 ALL_ABIS="arm64-v8a armeabi-v7a x86_64"
 
 # Accepts the jniLibs ABI names and the GOARCH-style shorthands the usage text
-# above advertises. release_all.sh passes "arm64", which the old lookup rejected
+# above advertises. scripts/release_all.sh passes "arm64", which the old lookup rejected
 # outright — so even once the parse error was fixed the Android stage still
 # failed on its own documented invocation.
 normalize_abi() {

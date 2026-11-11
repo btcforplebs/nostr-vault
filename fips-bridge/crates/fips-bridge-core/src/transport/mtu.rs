@@ -1,6 +1,6 @@
 //! What actually fits in one FIPS datagram.
 //!
-//! This module exists because FIPS_INTEGRATION_ROADMAP.md §2.2 got the number
+//! This module exists because docs/fips/FIPS_INTEGRATION_ROADMAP.md §2.2 got the number
 //! wrong, in the direction that hides the problem. It budgeted:
 //!
 //! ```text
