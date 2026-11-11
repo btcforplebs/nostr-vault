@@ -295,6 +295,15 @@ extension FeedView {
                             }
                         }
 
+                        // Popular, Catch Up and Underrated are fixed sets: say
+                        // the list ended rather than stop on the background.
+                        if let dvm = feedService.feedMode.localDvm,
+                           LocalDvmFeed.showsEndOfList(mode: dvm,
+                                                       hasNotes: isThreadedModeActive ? !feedThreads.isEmpty : !feedService.filteredNotes.isEmpty,
+                                                       isLoading: feedService.isLoadingFeed || feedService.isLoadingLocalDvm) {
+                            LocalDvmEndOfListFooter(feed: dvm) { feedService.refresh() }
+                        }
+
                         // Room under the last posts while one is open, so a
                         // tapped post near the end still reaches the line.
                         if expandedNoteId != nil {

@@ -22,4 +22,17 @@ final class LocalDvmFeedTests: XCTestCase {
     func testRawValuesMatchTheFeedPicker() {
         XCTAssertEqual(LocalDvmFeed.allCases.map(\.rawValue), ["Popular", "Catch Up", "Underrated"])
     }
+    /// Logen 2026-11-11: Underrated ran out onto the background.
+    func testEndOfListOnlyOnALoadedLocalDvmFeedWithNotes() {
+        XCTAssertTrue(LocalDvmFeed.showsEndOfList(mode: .underrated, hasNotes: true, isLoading: false))
+        XCTAssertFalse(LocalDvmFeed.showsEndOfList(mode: nil, hasNotes: true, isLoading: false), "Home, Articles, Global")
+        XCTAssertFalse(LocalDvmFeed.showsEndOfList(mode: .popular, hasNotes: false, isLoading: false), "empty state owns it")
+        XCTAssertFalse(LocalDvmFeed.showsEndOfList(mode: .catchUp, hasNotes: true, isLoading: true))
+    }
+
+    func testEndOfListCopyIsPerFeed() {
+        XCTAssertEqual(LocalDvmFeed.underrated.endOfListStatus + " Pull to refresh",
+                       "That's today's underrated list. Pull to refresh")
+        XCTAssertEqual(Set(LocalDvmFeed.allCases.map(\.endOfListStatus)).count, 3)
+    }
 }
