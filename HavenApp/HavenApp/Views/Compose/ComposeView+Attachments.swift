@@ -348,12 +348,6 @@ extension ComposeView {
                     let file = try await NostrBuildGifService.download(item.attachURL)
                     data = file.data
                     if file.isWebP { type = .webP }
-                case .tenor:
-                    #if TENOR_SIDELOAD
-                    data = try await TenorGifService.downloadGIF(url: item.attachURL)
-                    #else
-                    throw URLError(.unsupportedURL)
-                    #endif
                 }
                 await MainActor.run {
                     appendAttachment(Attachment(data: data, fileURL: nil, type: type))

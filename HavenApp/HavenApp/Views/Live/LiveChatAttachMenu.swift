@@ -173,12 +173,6 @@ struct LiveChatAttachMenu: View {
                 switch item.source {
                 case .nostrBuild:
                     data = try await NostrBuildGifService.download(item.attachURL).data
-                case .tenor:
-                    #if TENOR_SIDELOAD
-                    data = try await TenorGifService.downloadGIF(url: item.attachURL)
-                    #else
-                    throw URLError(.unsupportedURL)
-                    #endif
                 }
                 let blob = try await ModePostPublisher.upload(
                     data: data, mimeType: "image/gif",

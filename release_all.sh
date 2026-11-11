@@ -240,9 +240,7 @@ IOS_ARCHIVE="$DIST/xcarchive/HavenApp-iOS-b${BUILD}.xcarchive"
 if [ "$SKIP_IOS" = 0 ]; then
     log "iOS: archiving HavenApp-iOS"
     rm -rf "$IOS_ARCHIVE"
-    # The App Store build is the default build: Tenor (read from its website
-    # without permission) only compiles in with TENOR_SIDELOAD, which nothing
-    # here sets, and the nostr.build GIF key comes from the gitignored
+    # The nostr.build GIF key comes from the gitignored
     # HavenApp/Config/Secrets.xcconfig -- see GifSource.available.
     xcodebuild archive -project "$XCODE_DIR/HavenApp.xcodeproj" -scheme HavenApp-iOS \
         -configuration Release -destination 'generic/platform=iOS' \
