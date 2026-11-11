@@ -494,12 +494,13 @@ private struct FeedVideoThumbnailView: View {
 
     var body: some View {
         ZStack {
-            Color.platformTertiaryGroupedBackground
+            // The frame sits whole on black, like the playing clip.
+            if thumbnail != nil { Color.black } else { Color.platformTertiaryGroupedBackground }
 
             if let thumb = thumbnail {
                 Image(platformImage: thumb)
                     .resizable()
-                    .scaledToFill()
+                    .scaledToFit()
                     .transition(.opacity.animation(Motion.media))
             } else if loadFailed {
                 // Couldn't extract a frame without a full download — show a video
