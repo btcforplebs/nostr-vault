@@ -580,6 +580,18 @@ fun FeedScreen(
             } else if (notes.isEmpty() && feedMode == FeedMode.DISCOVERY && isRelayBooting) {
                 // iOS emptyDiscoveryStateView while the relay boots.
                 RelayStartingPlaceholder(relayBootStatus)
+            } else if (notes.isEmpty() && feedMode == FeedMode.UNDERRATED) {
+                // Underrated alone: a follows-only web offers to build the
+                // wider network instead of a Refresh that cannot help.
+                val underratedReason by viewModel.underratedEmptyReason.collectAsState()
+                val widerNetworkBuilding by viewModel.widerNetworkBuilding.collectAsState()
+                LaunchedEffect(Unit) { viewModel.refreshImportJobs() }
+                UnderratedEmptyPlaceholder(
+                    reason = underratedReason,
+                    building = widerNetworkBuilding,
+                    onRefresh = viewModel::refresh,
+                    onBuildWiderNetwork = viewModel::buildWiderNetwork,
+                )
             } else if (notes.isEmpty()) {
                 // "Analyzing your extended network..." is only true while it is
                 // actually analyzing. Once it has finished and come back with

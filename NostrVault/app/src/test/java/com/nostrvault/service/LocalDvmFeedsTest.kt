@@ -77,4 +77,40 @@ class LocalDvmFeedsTest {
         )
         assertEquals(listOf("out"), shown.map { it.id })
     }
+
+    // ── Underrated's empty state (haven-go underratedEmptyReason) ──
+
+    @Test
+    fun `Underrated reason is read from the relay's empty answer`() {
+        assertEquals(UnderratedEmptyReason.WEB_INCOMPLETE, UnderratedEmptyReason.parse("""{"reason":"web_incomplete"}"""))
+        assertEquals(UnderratedEmptyReason.NOTHING_QUALIFIED, UnderratedEmptyReason.parse("""{"reason":"nothing_qualified"}"""))
+        assertEquals(UnderratedEmptyReason.WEB_NOT_READY, UnderratedEmptyReason.parse("""{"reason":"web_not_ready"}"""))
+        // A list of notes, an error, or a reason this build doesn't know: none.
+        for (json in listOf("""[{"id":"x"}]""", "[]", """{"error":"relay not running"}""", """{"reason":"something_new"}""", "", null)) {
+            assertEquals(json, null, UnderratedEmptyReason.parse(json))
+        }
+    }
+
+    /** Logen 2026-11-11: a follows-only web offered Refresh, which cannot help. */
+    @Test
+    fun `Underrated empty state picks the button from the reason`() {
+        val incomplete = UnderratedEmptyState.of(UnderratedEmptyReason.WEB_INCOMPLETE, building = false)
+        assertEquals("Underrated needs your wider web", incomplete.title)
+        assertEquals(UnderratedEmptyState.Action.BUILD_WIDER_NETWORK, incomplete.action)
+        for (reason in listOf(UnderratedEmptyReason.NOTHING_QUALIFIED, UnderratedEmptyReason.WEB_NOT_READY, null)) {
+            val state = UnderratedEmptyState.of(reason, building = false)
+            // Today's words and Refresh Feed: no overrides.
+            assertEquals(UnderratedEmptyState(null, null, UnderratedEmptyState.Action.REFRESH_FEED), state)
+        }
+        assertEquals(UnderratedEmptyState.Action.BUILDING_WIDER_NETWORK, UnderratedEmptyState.of(UnderratedEmptyReason.WEB_INCOMPLETE, building = true).action)
+        assertEquals(UnderratedEmptyState.Action.BUILDING_WIDER_NETWORK, UnderratedEmptyState.of(null, building = true).action)
+    }
+
+    /** Same words as iOS (UnderratedEmptyState in LocalDvmFeed.swift). */
+    @Test
+    fun `Underrated wider web words match iOS`() {
+        assertEquals("Underrated shows people your follows follow, and your vault only knows your follows so far.", UnderratedEmptyState.WIDER_WEB_SUBTITLE)
+        assertEquals("Build your wider network", UnderratedEmptyState.BUILD_TITLE)
+        assertEquals("Building your wider network\u2026", UnderratedEmptyState.BUILDING_TITLE)
+    }
 }

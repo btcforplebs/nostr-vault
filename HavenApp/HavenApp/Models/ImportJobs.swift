@@ -9,6 +9,8 @@ import Foundation
 /// Pure Foundation so MediaLogicTests can test it.
 enum ImportJobs {
     static let setup = "setup"
+    /// The full web of trust (follows of follows): Underrated needs it.
+    static let widerNetwork = "wider_network"
     /// The Vault card's jobs, in the engine's order. `setup` is not one: it
     /// is the way in, and resumes by itself if it was cut.
     static let cardJobs = ["replies", "older_relays", "wider_network", "list_history"]

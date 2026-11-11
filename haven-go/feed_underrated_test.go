@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -169,4 +170,65 @@ func (f fakeReach) Reach(pk string) (int, bool, bool) {
 		return 0, true, true
 	}
 	return f.vouches[pk], false, f.known
+}
+
+// fakeShape is a web of trust that says how far it reaches.
+type fakeShape struct{ depth, follows, vouched int }
+
+func (f fakeShape) WebShape() (int, int, int) { return f.depth, f.follows, f.vouched }
+
+// Logen's phone, 2026-11-11: a depth-2 web (wider_network never run) gave
+// 0 ranked with no word why. Depth 2 must say "web incomplete", depth 3 must
+// not.
+func TestUnderratedEmptyReasonTellsAFollowsOnlyWebFromNothingQualified(t *testing.T) {
+	depth2 := fakeShape{depth: 2, follows: 400}
+	d, _, v := webShapeOf(depth2)
+	if got := underratedEmptyReason(true, d, v); got != underratedWebIncomplete {
+		t.Fatalf("depth 2: reason %q, want %q", got, underratedWebIncomplete)
+	}
+	depth3 := fakeShape{depth: 3, follows: 400, vouched: 21020}
+	d, _, v = webShapeOf(depth3)
+	if got := underratedEmptyReason(true, d, v); got != underratedNothingQualified {
+		t.Fatalf("depth 3: reason %q, want %q", got, underratedNothingQualified)
+	}
+	// Depth 3 that has no vouch layer yet is still follows only.
+	if got := underratedEmptyReason(true, 3, 0); got != underratedWebIncomplete {
+		t.Fatalf("depth 3, no vouches: reason %q, want %q", got, underratedWebIncomplete)
+	}
+	// A model that cannot say how far it reaches counts as follows only.
+	d, _, v = webShapeOf(fakeReach{})
+	if got := underratedEmptyReason(true, d, v); got != underratedWebIncomplete {
+		t.Fatalf("unshaped model: reason %q, want %q", got, underratedWebIncomplete)
+	}
+	if got := underratedEmptyReason(false, 3, 21020); got != underratedWebNotReady {
+		t.Fatalf("graph not built: reason %q, want %q", got, underratedWebNotReady)
+	}
+	if got := underratedEmptyJSON(underratedWebIncomplete); got != `{"reason":"web_incomplete"}` {
+		t.Fatalf("bridge answer %s", got)
+	}
+}
+
+// The drop counts are counting only: the same notes rank the same with or
+// without them, and each left-out note is counted once, under its reason.
+func TestUnderratedDropCountsDoNotChangeTheRanking(t *testing.T) {
+	now := time.Now()
+	follow, out := dvmPK('f'), dvmPK('o')
+	events := []*nostr.Event{
+		dvmNote("1", follow, now), // a follow: not one step out
+		dvmNote("2", out, now),    // three trusted people: ranks
+		dvmNote("3", out, now),    // two: below the bar
+	}
+	tally := map[string]map[string]float64{
+		"1": dvmReactors("r", 3), "2": dvmReactors("s", 3), "3": dvmReactors("t", 2),
+	}
+	web := fakeReach{follows: map[string]bool{follow: true}, vouches: map[string]int{out: 2}, known: true}
+	plain := scoreUnderrated(events, tally, underratedInputs{oneStepOut: oneStepOutFrom(web)}, now)
+	var drops underratedDrops
+	counted := scoreUnderrated(events, tally, underratedInputs{oneStepOut: oneStepOutFrom(web), drops: &drops}, now)
+	if !reflect.DeepEqual(plain, counted) {
+		t.Fatalf("counting changed the result: %v vs %v", plain, counted)
+	}
+	if want := (underratedDrops{notOneStepOut: 1, belowBar: 1}); drops != want {
+		t.Fatalf("drops %+v, want %+v", drops, want)
+	}
 }

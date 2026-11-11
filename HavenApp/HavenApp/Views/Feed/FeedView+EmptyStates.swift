@@ -204,8 +204,9 @@ extension FeedView {
             return ("clock.arrow.circlepath", "All caught up",
                     "Nobody you follow posted in the last two weeks, or their posts haven't reached your vault yet.")
         case .underrated:
-            return ("binoculars", "Nothing underrated yet",
-                    "Underrated shows people your follows follow and you don't, once a few people in your web like, repost or zap them. Check back later.")
+            let state = UnderratedEmptyState.of(reason: feedService.underratedEmptyReason,
+                                                building: ImportJobsService.shared.runningJob == ImportJobs.widerNetwork)
+            return ("binoculars", state.title, state.subtitle)
         default:
             return ("chart.line.uptrend.xyaxis", String(localized: "feed.empty.popular.title"),
                     String(localized: "feed.empty.popular.subtitle"))
@@ -238,30 +239,106 @@ extension FeedView {
                 }
             }
 
-            Button {
-                feedService.refresh()
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "arrow.clockwise")
-                    Text(String(localized: "feed.action.refresh"))
-                }
-                .font(.appSystem(size: 14, weight: .semibold))
-                .foregroundColor(.black)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(
-                    LinearGradient(
-                        gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .cornerRadius(10)
+            if feedService.feedMode == .underrated {
+                // Underrated alone: a follows-only web offers to build the
+                // wider network instead of a Refresh that cannot help.
+                UnderratedEmptyAction(feedService: feedService)
+            } else {
+                dvmRefreshButton
             }
-            .buttonStyle(.plain)
         }
         .padding(max(16, min(48, 24)))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.platformControlBackground)
+    }
+
+    private var dvmRefreshButton: some View {
+        Button {
+            feedService.refresh()
+        } label: {
+            DvmEmptyButtonLabel(icon: "arrow.clockwise", title: String(localized: "feed.action.refresh"))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// The empty DVM feed's purple button face.
+private struct DvmEmptyButtonLabel: View {
+    let icon: String?
+    let title: String
+    var busy = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if busy {
+                ProgressView().controlSize(.small).tint(.black)
+            } else if let icon {
+                Image(systemName: icon)
+            }
+            Text(title)
+        }
+        .font(.appSystem(size: 14, weight: .semibold))
+        .foregroundColor(.black)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .cornerRadius(10)
+        .opacity(busy ? 0.7 : 1)
+    }
+}
+
+/// Underrated's empty-screen button (UnderratedEmptyState): Refresh Feed, or
+/// for a follows-only web Build your wider network, which runs the Vault's
+/// `wider_network` job through ImportJobsService, shows it running, and
+/// reloads Underrated when it ends.
+private struct UnderratedEmptyAction: View {
+    @ObservedObject var feedService: FeedService
+    @ObservedObject private var jobs = ImportJobsService.shared
+
+    private var building: Bool { jobs.runningJob == ImportJobs.widerNetwork }
+
+    var body: some View {
+        let state = UnderratedEmptyState.of(reason: feedService.underratedEmptyReason, building: building)
+        VStack(spacing: 10) {
+            switch state.action {
+            case .refreshFeed:
+                Button {
+                    feedService.refresh()
+                } label: {
+                    DvmEmptyButtonLabel(icon: "arrow.clockwise", title: String(localized: "feed.action.refresh"))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("underrated.refreshFeed")
+            case .buildWiderNetwork:
+                Button {
+                    jobs.run(ImportJobs.widerNetwork)
+                } label: {
+                    DvmEmptyButtonLabel(icon: "globe", title: UnderratedEmptyState.buildTitle)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("underrated.buildWiderNetwork")
+            case .buildingWiderNetwork:
+                DvmEmptyButtonLabel(icon: nil, title: UnderratedEmptyState.buildingTitle, busy: true)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("underrated.buildingWiderNetwork")
+            }
+            if let refusal = jobs.runRefusal, state.action != .refreshFeed {
+                Text(refusal)
+                    .font(.appSystem(size: 12))
+                    .foregroundColor(.orange)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .onAppear { jobs.refresh() }
+        // The job swaps the wider web in when it ends: ask again.
+        .onChange(of: building) { wasBuilding, isBuilding in
+            if wasBuilding && !isBuilding && feedService.feedMode == .underrated { feedService.refreshAfterContactLoad() }
+        }
     }
 }

@@ -80,7 +80,19 @@ class FeedService: ObservableObject {
     /// freezing a partial network in place for the full hour.
     var extendedNetworkWasPartial = false
     static let partialExtendedNetworkCacheAge: TimeInterval = 300 // 5 minutes
-    @Published var isLoadingContacts = false
+    @Published var isLoadingContacts = false {
+        // refresh() refuses while contacts load; a refresh queued meanwhile
+        // (refreshAfterContactLoad) runs once the load ends, on its feed only.
+        didSet {
+            guard oldValue, !isLoadingContacts, let mode = refreshQueuedForMode else { return }
+            refreshQueuedForMode = nil
+            DispatchQueue.main.async { [weak self] in
+                if let self, self.feedMode == mode { self.refresh() }
+            }
+        }
+    }
+    /// The feed a refresh was asked for while contacts were loading.
+    var refreshQueuedForMode: FeedMode?
     /// True once contact loading has completed at least once (success, empty, or timeout).
     /// Used to gate follow/unfollow so we don't publish before the kind-3 has had a chance to arrive,
     /// and — published, because the view needs it — to keep the Following feed from telling you that
@@ -96,6 +108,10 @@ class FeedService: ObservableObject {
     @Published var loadingDvmFeeds: Set<FeedMode> = []
     /// The local DVM feed on screen is being computed.
     var isLoadingLocalDvm: Bool { loadingDvmFeeds.contains(feedMode) }
+    /// Why the last Underrated answer was empty (nil once it had notes):
+    /// a follows-only web turns its empty screen's button into Build your
+    /// wider network (UnderratedEmptyState).
+    @Published var underratedEmptyReason: UnderratedEmptyReason?
     @Published var popularFilter: PopularFilter = .all
     @Published var showPopularEngagement = false
     @Published var isLoadingFeed    = false

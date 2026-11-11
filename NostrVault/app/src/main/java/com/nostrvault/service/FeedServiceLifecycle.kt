@@ -359,6 +359,8 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
                     forgetFollowListForAccountSwitch()
                     pendingFollowActions.clear()
                     notificationManager.clearPendingFollows()
+                    // Whether the web is complete was the previous account's answer.
+                    _underratedEmptyReason.value = null
                     forceReload()
                     // Likes and zaps are the account's own: the previous
                     // one's showed under Relay > Given (iOS loads them per

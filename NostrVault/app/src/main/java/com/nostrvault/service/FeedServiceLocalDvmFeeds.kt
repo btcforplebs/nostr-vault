@@ -54,6 +54,56 @@ internal object LocalDvmFeeds {
 }
 
 /**
+ * Why the relay's Underrated answer is empty (haven-go feed_underrated.go underratedEmptyReason):
+ * ComputeUnderratedNotesC answers `{"reason": ...}` instead of an empty list. iOS UnderratedEmptyReason.
+ */
+enum class UnderratedEmptyReason(val wire: String) {
+    /** The web is follows only (the wider network was never built): nobody can be one step out. */
+    WEB_INCOMPLETE("web_incomplete"),
+    /** The web is whole and still nothing cleared the bar. */
+    NOTHING_QUALIFIED("nothing_qualified"),
+    /** The trust graph is not built yet: the relay withholds the feed. */
+    WEB_NOT_READY("web_not_ready");
+
+    companion object {
+        /** The reason in a relay answer; null for a list of notes, an error, or a reason this build doesn't know. */
+        fun parse(json: String?): UnderratedEmptyReason? {
+            val text = json?.trim() ?: return null
+            if (!text.startsWith("{")) return null
+            val raw = runCatching {
+                (kotlinx.serialization.json.Json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject)
+                    ?.get("reason")?.let { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+            }.getOrNull() ?: return null
+            return entries.firstOrNull { it.wire == raw }
+        }
+    }
+}
+
+/**
+ * Underrated's empty screen from the reason the relay gave (iOS UnderratedEmptyState). A follows-only web offers to
+ * build the wider network (the Vault's `wider_network` job, ImportJobService); anything else keeps today's Refresh
+ * Feed and words (null overrides). Popular and Catch Up never read this.
+ */
+data class UnderratedEmptyState(val title: String?, val subtitle: String?, val action: Action) {
+    enum class Action { REFRESH_FEED, BUILD_WIDER_NETWORK, BUILDING_WIDER_NETWORK }
+
+    companion object {
+        const val WIDER_WEB_TITLE = "Underrated needs your wider web"
+        const val WIDER_WEB_SUBTITLE = "Underrated shows people your follows follow, and your vault only knows your follows so far."
+        const val BUILD_TITLE = "Build your wider network"
+        const val BUILDING_TITLE = "Building your wider network\u2026"
+        const val REFRESH_TITLE = "Refresh Feed"
+
+        fun of(reason: UnderratedEmptyReason?, building: Boolean): UnderratedEmptyState = when {
+            building -> UnderratedEmptyState(WIDER_WEB_TITLE, WIDER_WEB_SUBTITLE, Action.BUILDING_WIDER_NETWORK)
+            reason == UnderratedEmptyReason.WEB_INCOMPLETE ->
+                UnderratedEmptyState(WIDER_WEB_TITLE, WIDER_WEB_SUBTITLE, Action.BUILD_WIDER_NETWORK)
+            else -> UnderratedEmptyState(null, null, Action.REFRESH_FEED)
+        }
+    }
+}
+
+/**
  * Computes [mode] on the relay. One computation per feed at a time: a second
  * pull or tab tap would race the first, and whichever landed last would win
  * (iOS loadPopularFeed). Each feed has its own guard, so leaving Popular
@@ -88,7 +138,14 @@ internal fun FeedService.loadLocalDvmFeed(mode: FeedMode) {
                 FeedMode.UNDERRATED -> HavenBridge.computeUnderratedNotes()
                 else -> HavenBridge.computePopularNotes()
             }
-            if (resultJson.isNullOrEmpty()) {
+            // Underrated's empty answer says why ({"reason": ...}).
+            val emptyReason = if (mode == FeedMode.UNDERRATED) UnderratedEmptyReason.parse(resultJson) else null
+            if (emptyReason != null) {
+                withContext(Dispatchers.Main.immediate) {
+                    if (nostrService.activeHexPubkey == account) _underratedEmptyReason.value = emptyReason
+                }
+                emptyList<FeedNote>() to emptyMap()
+            } else if (resultJson.isNullOrEmpty()) {
                 emptyList<FeedNote>() to emptyMap()
             } else {
                 val results = json.decodeFromString<List<PopularNoteResult>>(resultJson)
@@ -121,6 +178,7 @@ internal fun FeedService.loadLocalDvmFeed(mode: FeedMode) {
                 return@withContext
             }
             val (notes, scores) = loaded
+            if (mode == FeedMode.UNDERRATED && notes.isNotEmpty()) _underratedEmptyReason.value = null
             _notes.value = notes
             _popularNoteScores.value = scores
             _connectionStatus.value = if (notes.isNotEmpty()) {
