@@ -159,7 +159,7 @@ extension RelayProcessManager {
         try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
 
         var configEnv = generateEnvDictionary(config: config)
-        // Always set: the Go side keeps the process environment between imports.
+        // Always set: Go keeps these settings between imports.
         configEnv[ListHistoryScan.optInEnv] = request.listHistory ? "1" : "0"
         // Only the account moving in: never the device's other accounts.
         let movingIn = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
@@ -169,14 +169,7 @@ extension RelayProcessManager {
         configEnv[ImportRequest.otherVaultEnv] = request.otherVault ?? ""
         listHistoryScanning = false
         listHistoryNote = nil
-        for (key, value) in configEnv {
-            setenv(key, value, 1)
-            if let cKey = strdup(key), let cValue = strdup(value) {
-                SetHavenEnvC(cKey, cValue)
-                free(cKey)
-                free(cValue)
-            }
-        }
+        Self.handToGo(configEnv)
 
         FileManager.default.changeCurrentDirectoryPath(relayDataDir.path)
         captureOutput(in: relayDataDir)

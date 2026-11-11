@@ -193,9 +193,9 @@ final class MacFipsMeshService: ObservableObject {
     nonisolated private static func startAndShare(options: String, port: UInt16) -> String? {
         guard let nsec = meshNsec() else { return "Could not create the mesh key" }
         // FIPS's per-peer connected UDP socket stops rx on this Mac about a
-        // second after the handshake (seen 2026-10-13), so the
-        // link to a phone drops and redials. The helper ran with this off.
-        setenv("FIPS_MACOS_CONNECTED_UDP", "0", 1)
+        // second after the handshake (seen 2026-10-13). Our fips fork keeps
+        // it off on macOS unless FIPS_MACOS_CONNECTED_UDP=1 is set
+        // (src/node/dataplane/connected_udp.rs), so nothing is set here.
         let rc = NvFipsStart(nsec, options)
         guard rc == 0 else { return "Mesh did not start (\(rc))" }
         // Strangers' door: Haven's mesh port listens only while sharing.

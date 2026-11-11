@@ -134,6 +134,54 @@ func TestNoDirectProcessEnvInRelay(t *testing.T) {
 	}
 }
 
+// The relay package is not the only Go linked into the app: internal/, pkg/,
+// idbstore/ and the vendored third_party/ (go-nostr, khatru, ristretto) run on
+// the same threads. None of them may write the process environment either.
+// Reads stay allowed there: os.Getenv reads Go's own copy, never libc.
+func TestNoProcessEnvWritesInLinkedPackages(t *testing.T) {
+	fset := token.NewFileSet()
+	scanned := 0
+	err := filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if path == "cmd" || path == "templates" || path == "docs" {
+				return filepath.SkipDir // standalone binaries, no Go
+			}
+			return nil
+		}
+		if filepath.Dir(path) == "." || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		f, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			return err
+		}
+		scanned++
+		ast.Inspect(f, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if pkg, ok := sel.X.(*ast.Ident); ok && (pkg.Name == "os" || pkg.Name == "syscall") {
+				switch sel.Sel.Name {
+				case "Setenv", "Unsetenv", "Clearenv":
+					t.Errorf("%s: %s.%s reaches libc setenv(3) while other threads read environ", fset.Position(sel.Pos()), pkg.Name, sel.Sel.Name)
+				}
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scanned < 100 {
+		t.Fatalf("scanned only %d files outside the relay package; the guard would pass vacuously", scanned)
+	}
+}
+
 func callsIdent(body *ast.BlockStmt, name string) bool {
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
