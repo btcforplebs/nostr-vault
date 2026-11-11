@@ -8,15 +8,22 @@ import { commentParent, embedded, isRepost, repostRef, timelineShows } from "./f
 const KEY = "nv:feed-filters"
 export const FILTER_DEFAULTS = { replies: true, reposts: true, autoLoad: true }
 
+// Builds before 11-04 had Auto-load off by default and saved `autoLoad: false` with any switch the reader touched, so
+// that old value would hold the pill on with the switch never turned off (Logen 2026-11-11 "fix now"). Only an Auto-load
+// saved by this build (marked `v`) counts; an older one reads as the default, on.
+const SAVED_V = 2
 export function loadFilters(storage = globalThis.localStorage) {
   let saved = {}
   try { saved = JSON.parse(storage?.getItem(KEY) ?? "{}") ?? {} } catch {}
   const out = { ...FILTER_DEFAULTS }
-  for (const k of Object.keys(out)) if (typeof saved[k] === "boolean") out[k] = saved[k]
+  for (const k of Object.keys(out)) {
+    if (k === "autoLoad" && saved.v !== SAVED_V) continue
+    if (typeof saved[k] === "boolean") out[k] = saved[k]
+  }
   return out
 }
 export function saveFilters(filters, storage = globalThis.localStorage) {
-  try { storage?.setItem(KEY, JSON.stringify(filters)) } catch {}
+  try { storage?.setItem(KEY, JSON.stringify({ ...filters, v: SAVED_V })) } catch {}
 }
 
 /** A kind 1 that answers another note (NIP-10), or a comment that answers one (NIP-22). */

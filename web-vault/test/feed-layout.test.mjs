@@ -135,8 +135,16 @@ test("Replies and Reposts switches, and the notes the New Posts pill holds", asy
   storage.setItem("nv:feed-filters", JSON.stringify({ replies: false, reposts: true }))
   assert.equal(loadFilters(storage).autoLoad, true)
   assert.equal(loadFilters(storage).replies, false)
+  // A browser from before 11-04, when Auto-load was off by default, saved autoLoad: false with every switch: it reads
+  // as on too, keeping its other switches. Turned off with this build, it stays off.
+  storage.setItem("nv:feed-filters", JSON.stringify({ replies: true, reposts: false, autoLoad: false }))
+  assert.deepEqual(loadFilters(storage), { replies: true, reposts: false, autoLoad: true })
+  saveFilters({ ...FILTER_DEFAULTS, autoLoad: false }, storage)
+  assert.equal(loadFilters(storage).autoLoad, false)
+  assert.equal("v" in loadFilters(storage), false, "the marker stays in storage")
   saveFilters({ ...FILTER_DEFAULTS, reposts: false }, storage)
   assert.equal(loadFilters(storage).reposts, false)
+  assert.equal(loadFilters(storage).autoLoad, true)
   assert.deepEqual(newerNotes([note, reply], [{ id: "d", created_at: 20 }, reply, { id: "e", created_at: 5 }, { id: "f", created_at: 30 }]).map(n => n.id), ["f", "d"])
 })
 
