@@ -5,55 +5,13 @@ extension VaultView {
     // MARK: - Header View
 
     @ViewBuilder
-    func headerView(isNarrow: Bool) -> some View {
+    var headerView: some View {
         VStack(spacing: 12) {
             #if os(macOS)
-            if isNarrow {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        modeView
-                        Spacer()
-                        searchToggleButton
-                    }
-                    if viewMode == .notes {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            filterView
-                        }
-                    } else if viewMode == .likes {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            likesFilterView
-                        }
-                    } else if viewMode == .zaps {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            zapsFilterView
-                        }
-                    } else if viewMode == .followers {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            followersFilterView
-                        }
-                    }
-                    searchBar
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        modeView
-                        Spacer()
-                        if viewMode == .notes {
-                            filterView
-                        } else if viewMode == .likes {
-                            likesFilterView
-                        } else if viewMode == .zaps {
-                            zapsFilterView
-                        } else if viewMode == .followers {
-                            followersFilterView
-                        }
-                        searchToggleButton
-                        compactToggleButton
-                    }
-                    searchBar
-                }
-            }
+            // One row for every width: it steps down to icons, then to a
+            // scrolling filter row, so it never sets the column's width.
+            macModeFilterRow
+            searchBar
             #endif
         }
         .frame(maxWidth: .infinity)
