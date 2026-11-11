@@ -19,8 +19,12 @@ struct LocalDvmEndOfListFooter: View {
             #else
             Text(feed.endOfListStatus)
                 .multilineTextAlignment(.center)
-            Button("Refresh", action: onRefresh)
-                .buttonStyle(.link)
+            Button(action: onRefresh) {
+                Label(String(localized: "feed.action.refresh"), systemImage: "arrow.clockwise")
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .foregroundColor(Color.havenPurple)
+            }
+            .buttonStyle(.plain)
             #endif
         }
         .font(.appSystem(size: 13))
