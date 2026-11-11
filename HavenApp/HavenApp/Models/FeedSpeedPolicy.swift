@@ -77,6 +77,27 @@ enum FeedSpeedPolicy {
         current == Int.max ? 0 : current + 1
     }
 
+    /// What a note lookup asks for: notes by id (`ids`), or one addressable
+    /// event by its kind:author:d coordinate (an naddr quote).
+    enum LookupKind { case notes, address }
+
+    /// The sub id for a note lookup. Lookups are often sent on a feed socket
+    /// that is already open, so their replies arrive mixed in with the feed's.
+    /// Every kind shares one prefix, so the feed socket hands all of them to
+    /// the lookup handler (which checks each reply against what was asked
+    /// for). naddr lookups used to have their own prefix that only the feed
+    /// knew: their replies went into the feed, and the quote card never filled.
+    static func lookupSubId(_ kind: LookupKind, suffix: String) -> String {
+        "\(lookupSubPrefix)\(kind == .notes ? "t" : "a")-\(suffix)"
+    }
+
+    /// A reply on a feed socket that belongs to a lookup, not to the feed.
+    static func isLookupReply(subId: String) -> Bool {
+        subId.hasPrefix(lookupSubPrefix)
+    }
+
+    private static let lookupSubPrefix = "lookup-"
+
     /// A frame for a feed subscription from an earlier generation: the old
     /// feed, still arriving on a socket kept across the switch. Dropped, or
     /// Global's strangers would land in Discover and its EOSE would end the

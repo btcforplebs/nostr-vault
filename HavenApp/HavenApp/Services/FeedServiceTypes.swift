@@ -688,4 +688,16 @@ extension FeedNote {
     /// (`haven-go/feedsync.go` `feedKinds`).
     static let timelineKinds = [1, 6, 30023, NIP10Thread.commentKind, NIP88Poll.kind,
                                 GenericRepost.kind, pictureKind, highlightKind]
+
+    /// The feed's spam check for an event of `kind`. Long-form posts are
+    /// markdown: blank-line runs, `-----` rules and `.....` leaders are normal
+    /// there, and the repeated-character rule threw real articles away (an
+    /// article with 25 blank lines in a row, 2026-11-11).
+    static func isFeedNoise(kind: Int, content: String, tags: [[String]]) -> Bool {
+        if longFormKinds.contains(kind) { return false }
+        return isNoiseOrSpam(content: content, tags: tags)
+    }
+
+    /// NIP-23 long-form article and its draft.
+    static let longFormKinds: Set<Int> = [30023, 30024]
 }

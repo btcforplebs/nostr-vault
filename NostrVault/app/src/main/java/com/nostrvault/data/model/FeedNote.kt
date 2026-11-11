@@ -74,10 +74,13 @@ data class FeedNote(
      * it is valid NIP-18 and its row fetches the note it points at. 2 of the 9
      * notes missing from two hours of a Following feed on 2026-10-04 were
      * these (iOS #227). Nor is a picture post (NIP-68): its pictures are in
-     * `imeta` tags and its caption may well be empty.
+     * `imeta` tags and its caption may well be empty. Nor is an article:
+     * its markdown has blank-line runs and `-----` rules, and the
+     * repeated-character rule dropped one with 25 blank lines (2026-11-11).
      */
     val isNoise: Boolean by lazy(LazyThreadSafetyMode.PUBLICATION) {
         !isBareRepost && !(displayKind == PICTURE_KIND && mediaURLs.isNotEmpty()) &&
+            displayKind !in LONG_FORM_KINDS &&
             Companion.isNoiseOrSpam(content, tags)
     }
 
@@ -173,6 +176,9 @@ data class FeedNote(
 
         /** NIP-68 picture post. */
         const val PICTURE_KIND = 20
+
+        /** NIP-23 long-form article and its draft. iOS `FeedNote.longFormKinds`. */
+        val LONG_FORM_KINDS = setOf(30023, 30024)
 
         /**
          * Every kind the timelines (Following, Discovery, Global, Popular) ask

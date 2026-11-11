@@ -60,7 +60,7 @@ extension FeedService {
         guard let (kind, pubkey, dTag) = QuoteReference.parseCoordinate(coordinate) else { return }
 
         let filter: [String: Any] = ["kinds": [kind], "authors": [pubkey], "#d": [dTag], "limit": 1]
-        let subId = "naddr-\(UUID().uuidString.prefix(6))"
+        let subId = FeedSpeedPolicy.lookupSubId(.address, suffix: String(UUID().uuidString.prefix(6)))
         let req = ["REQ", subId, filter] as [Any]
         guard let reqData = try? JSONSerialization.data(withJSONObject: req),
               let reqStr = String(data: reqData, encoding: .utf8) else { return }
@@ -209,7 +209,7 @@ extension FeedService {
         }
 
         for (url, ids) in requests {
-            let subId = "tfetch-\(UUID().uuidString.prefix(6))"
+            let subId = FeedSpeedPolicy.lookupSubId(.notes, suffix: String(UUID().uuidString.prefix(6)))
             let filter: [String: Any] = ["ids": ids]
             let req = ["REQ", subId, filter] as [Any]
             guard let reqData = try? JSONSerialization.data(withJSONObject: req),
