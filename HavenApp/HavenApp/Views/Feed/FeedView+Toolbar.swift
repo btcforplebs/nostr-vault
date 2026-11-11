@@ -482,11 +482,8 @@ extension View {
     /// landed about 3/4 across on some feeds. UIKit sizes that slot from a
     /// row it measured earlier, and the pill can only pin inside the slot it
     /// gets; here the Spacer puts it on the edge every time.
-    /// `fade`: the page-colour band behind the clock and the pills
-    /// (FeedTopFade), drawn as the bar's own background.
     func feedTopBar<Leading: View, Trailing: View>(
         height: CGFloat,
-        fade: Bool,
         @ViewBuilder leading: () -> Leading,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
@@ -497,37 +494,11 @@ extension View {
         }
         .padding(.horizontal, 16)
         .frame(height: height)
-        .background(alignment: .bottom) {
-            if fade { FeedTopFadeBand(barHeight: height) }
-        }
         return self
             .toolbar(.hidden, for: .navigationBar)
             .floatingTopBar { bar }
     }
 
-}
-
-/// The page colour behind the clock, fading to clear under the feed's top
-/// pills (FeedTopFade). The bar's background, reaching up past the safe area
-/// to the screen's top edge: its height is the clock plus the bar, so the
-/// clock's part is what lies above the bar. Takes no taps.
-private struct FeedTopFadeBand: View {
-    let barHeight: CGFloat
-
-    var body: some View {
-        GeometryReader { geo in
-            let total = geo.size.height
-            LinearGradient(
-                stops: FeedTopFade.stops(statusBar: total - barHeight, total: total).map {
-                    .init(color: Color.platformWindowBackground.opacity($0.opacity), location: $0.location)
-                },
-                startPoint: .top, endPoint: .bottom
-            )
-        }
-        .ignoresSafeArea(edges: .top)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
 }
 
 extension View {
