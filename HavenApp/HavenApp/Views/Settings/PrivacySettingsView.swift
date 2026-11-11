@@ -5,6 +5,7 @@ import SwiftUI
 /// turned on here. Android: PrivacySettingsScreen.kt.
 struct PrivacySettingsView: View {
     @EnvironmentObject var configService: ConfigService
+    @AppStorage(InAppBrowser.openLinksKey) private var openLinksInApp = true
 
     var body: some View {
         Form {
@@ -16,6 +17,14 @@ struct PrivacySettingsView: View {
                 Text("Profiles")
             } footer: {
                 Text("Off, a profile's follower count comes from your relays, which may count fewer.")
+            }
+
+            Section {
+                Toggle("Open Links in Nostr Vault", isOn: $openLinksInApp)
+            } header: {
+                Text("Links")
+            } footer: {
+                Text("On, web links open in Nostr Vault's own browser, which keeps nothing after you close it. Off, they open in your default browser. .fips sites always open in Nostr Vault, over the mesh, so their address never goes to the internet.")
             }
 
             Section {

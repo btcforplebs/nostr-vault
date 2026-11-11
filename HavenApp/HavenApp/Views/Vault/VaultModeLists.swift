@@ -75,7 +75,7 @@ extension VaultView {
                 inheritedOpenURL(url)
                 return .handled
             }
-            guard url.scheme == "nostr" else { return .systemAction }
+            guard url.scheme == "nostr" else { return InAppBrowser.route(url) }
             let id = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
             if id.hasPrefix("npub1") || id.hasPrefix("nprofile1") {
                 if let pubkey = QuoteReference.profilePubkey(fromBech32: id) {

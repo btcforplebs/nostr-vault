@@ -412,23 +412,38 @@ final class FipsMeshService: ObservableObject {
     /// shares: the relay's mesh door stays shut unless kiosk mode opened it.
     /// Can take ~10 s (the node finds the vault through its advert).
     func ingressURL(meshNpub: String) async -> URL? {
-        guard FipsMeshSettings.enabled else { return nil }
+        await siteIngress(meshNpub: meshNpub).url
+    }
+
+    /// `ingressURL`, saying why when there is none: the in-app browser tells
+    /// "mesh off" from "mesh not ready yet" from "no route".
+    func siteIngress(meshNpub: String) async -> MeshSiteIngress {
+        guard FipsMeshSettings.enabled else { return .meshOff }
         let sharing = kioskActive || starting
         let clientOptions = clientOptionsJSON()
         let previous = engineOp
-        let op = Task.detached(priority: .userInitiated) { () -> URL? in
+        let op = Task.detached(priority: .userInitiated) { () -> MeshSiteIngress in
             await previous?.value
             return Self.startClientAndIngress(meshNpub: meshNpub, closeDoor: !sharing, clientOptions: clientOptions)
         }
         engineOp = Task { _ = await op.value }
         clientOps += 1
-        let url = await op.value
+        let reply = await op.value
         clientOps -= 1
-        if url != nil { refresh() }
-        // The dial failed but the engine may be up: nothing else needs it.
-        if url == nil, !kioskActive, !starting, !clientActive { stopEngine() }
-        if url != nil { markClientActive() }
-        return url
+        switch reply {
+        case .ready:
+            refresh()
+            markClientActive()
+        case .notReady:
+            // Up, but still finding its tree parent: keep it running, or the
+            // next ask starts from nothing again and never gets one.
+            markClientActive()
+        default:
+            // The dial failed but the engine may be up: nothing else needs it.
+            if !kioskActive, !starting, !clientActive { stopEngine() }
+        }
+        if case .notReady = reply, FipsMeshSettings.middleServer != .publicSeeds { return .noSeeds }
+        return reply
     }
 
     /// The local websocket address of the Haven relay at `meshNpub` (the
@@ -620,23 +635,23 @@ final class FipsMeshService: ObservableObject {
         }
     }
 
-    nonisolated private static func startClientAndIngress(meshNpub: String, closeDoor: Bool, clientOptions: String) -> URL? {
-        guard let nsec = meshNsec() else { return nil }
+    nonisolated private static func startClientAndIngress(meshNpub: String, closeDoor: Bool, clientOptions: String) -> MeshSiteIngress {
+        guard let nsec = meshNsec() else { return .failed }
         // Idempotent: a running engine (kiosk or an earlier client start) is
         // reused. A client answers and dials only My Devices; anyone else's
         // vault is read through the seeds without learning this phone's
         // address (MeshDevicesLogic.clientEngineOptions).
-        guard NvFipsStart(nsec, clientOptions) == 0 else { return nil }
+        guard NvFipsStart(nsec, clientOptions) == 0 else { return .failed }
         if closeDoor { SetMeshServingC(0) }
         var out: UnsafeMutablePointer<CChar>?
         let rc = NvFipsIngress(meshNpub, &out)
         guard rc == 0, let out else {
             print("FipsMesh: ingress to \(meshNpub.prefix(16)) failed (\(rc))")
-            return nil
+            return MeshSiteIngress(failure: rc)
         }
         defer { NvFipsFreeString(out) }
         // Never log this: the path holds the token that keeps other apps out.
-        return URL(string: String(cString: out))
+        return URL(string: String(cString: out)).map(MeshSiteIngress.ready) ?? .failed
     }
 
     func refresh() {

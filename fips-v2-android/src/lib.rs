@@ -237,6 +237,10 @@ pub const ERR_BAD_EVENTS: i32 = -8;
 /// `ingress` to an npub outside `own_devices`: the dial would send this
 /// node's address to it.
 pub const ERR_NOT_OWN: i32 = -9;
+/// `ingress` over the mesh while this node has no tree parent (it is its own
+/// root): no route to anyone it is not peered with, so the read would only
+/// time out. Ask again once the mesh is up.
+pub const ERR_NO_TREE: i32 = -10;
 
 /// Inbound filter FPR cap (`node.bloom.max_inbound_fpr`). The engine default,
 /// 0.20 (fill ~0.725, ~2,100 entries on the fixed 1 KB filter), is below the
@@ -519,6 +523,13 @@ pub fn ingress(npub: &str) -> Result<String, i32> {
         // Unseeded, the read is no-route: fail like a dial that failed, so the
         // app falls back to the URL instead of keeping a dead mesh one (Tron, #1030 F5).
         IngressRoute::ViaMesh => {
+            // Checked on every ask: the parent can drop at any time (§5 of the
+            // 2026-11-08 reach test lost it 31 s in).
+            let tree = control_request(&control, "tree_parent", serde_json::json!({}));
+            if !has_tree_parent(tree.as_ref().ok().and_then(|d| d.as_ref())) {
+                tracing::info!("mesh ingress {npub}: no tree parent yet");
+                return Err(ERR_NO_TREE);
+            }
             if let Err(e) = seed_identity(&control, npub) {
                 tracing::warn!("mesh seed identity {npub}: {e:#}");
                 return Err(ERR_START);
@@ -603,6 +614,13 @@ fn seed_identity(
     npub: &str,
 ) -> Result<()> {
     control_request(control, "cache_identity", serde_json::json!({ "npub": npub })).map(|_| ())
+}
+
+/// The fork's `tree_parent` answer says this node hangs off a tree. Anything
+/// else (an error, no data, an older fork without the command) is no parent:
+/// the read is refused rather than sent into no route.
+fn has_tree_parent(data: Option<&serde_json::Value>) -> bool {
+    data.map_or(false, |d| d["is_root"] == false && d["depth"].as_u64().map_or(false, |n| n > 0))
 }
 
 /// One control command, answered by the node's rx loop. Its data on "ok".
@@ -1129,6 +1147,16 @@ mod tests {
         assert_ne!(second.url(), first.url(), "and a fresh token");
         ctl.close_connect("fd00::2".parse().unwrap()); // never opened: no-op
         assert_eq!(ctl.connect_ports(), vec![(peer, second.port)]);
+    }
+
+    #[test]
+    fn a_mesh_read_waits_for_a_tree_parent() {
+        use serde_json::json;
+        assert!(has_tree_parent(Some(&json!({"is_root": false, "depth": 4}))));
+        assert!(!has_tree_parent(Some(&json!({"is_root": true, "depth": 0}))), "its own root: no route");
+        assert!(!has_tree_parent(Some(&json!({"is_root": false, "depth": 0}))));
+        assert!(!has_tree_parent(Some(&json!({}))), "an answer without the fields is no parent");
+        assert!(!has_tree_parent(None), "no answer (old fork, node busy) is no parent");
     }
 
     #[test]
