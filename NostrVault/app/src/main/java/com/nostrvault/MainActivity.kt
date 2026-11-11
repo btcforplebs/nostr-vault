@@ -245,7 +245,11 @@ class MainActivity : FragmentActivity() {
                         replaceSlot = emojiPalette::replaceSlot,
                     )
                 }
+                // Every uriHandler.openUri tap goes through the in-app browser's routing first.
+                val systemUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                val uriHandler = remember(systemUriHandler) { com.nostrvault.ui.screens.browser.InAppBrowser.Handler(this@MainActivity, systemUriHandler) }
                 CompositionLocalProvider(
+                    androidx.compose.ui.platform.LocalUriHandler provides uriHandler,
                     LocalNoteTranslation provides noteTranslation,
                     com.nostrvault.ui.components.LocalReactionActions provides reactionActions,
                     LocalNotificationManager provides notificationManager,

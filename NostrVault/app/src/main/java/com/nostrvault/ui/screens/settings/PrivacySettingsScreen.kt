@@ -17,6 +17,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -72,7 +73,29 @@ fun PrivacySettingsScreen(
             ToggleRow("Check Fanfares Articles", config.fanfaresAutoCheck, viewModel::setFanfaresAutoCheck, SettingsHelp.PRIVACY_FANFARES)
             Caption("Off, a locked Fanfares article opens when you tap Already paid?")
 
+            Spacer(Modifier.height(20.dp))
+
+            OpenLinksSection()
+
             Spacer(Modifier.height(32.dp))
         }
     }
+}
+
+/** Links: the in-app browser's switch (iOS PrivacySettingsView "Links"). */
+@Composable
+private fun OpenLinksSection() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var on by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(com.nostrvault.ui.screens.browser.InAppBrowser.opensLinksInApp(context))
+    }
+    SectionLabel("Links")
+    ToggleRow("Open Links in Nostr Vault", on, {
+        on = it
+        com.nostrvault.ui.screens.browser.InAppBrowser.setOpensLinksInApp(context, it)
+    })
+    Caption(
+        "On, web links open in Nostr Vault's own browser, which keeps nothing after you close it. Off, they open in " +
+            "your default browser. .fips sites always open in Nostr Vault, over the mesh, so their address never goes to the internet.",
+    )
 }

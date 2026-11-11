@@ -1,7 +1,5 @@
 package com.nostrvault.ui.components
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -95,7 +93,7 @@ fun GifPickerSheet(
                     text = "GIFs from nostr.build",
                     color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(vertical = 8.dp)
-                        .clickable { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://nostr.build"))) } },
+                        .clickable { com.nostrvault.ui.components.NostrWebLinks.open(ctx, "https://nostr.build") },
                 )
                 Spacer(Modifier.weight(1f))
                 // nostr.build GIFs are already hosted; this decides whether
