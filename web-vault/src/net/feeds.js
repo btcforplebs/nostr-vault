@@ -98,7 +98,7 @@ export const readsHaven = choice => choice.mode === "following" || (choice.mode 
 /** Global, and Media on Global: read from everyone, kept to the web of trust (global-trust.js). */
 export const globalLike = choice => choice.mode === "global" || (choice.mode === "media" && choice.scope === "global")
 /** The stranger feeds read through your web of trust: Global, and Hashtag and Relay like it (only notes by people in
- *  your web, global-trust.js trustShows; Logen 2026-11-04). They take `trust` and show nothing without it. */
+ *  your web, global-trust.js trustShows; Logen 2026-11-04, reposts on the reposter since 2026-11-11). They take `trust` and show nothing without it. */
 export const trustScoped = choice => (globalLike(choice) && !choice.everyone) || choice.mode === "hashtag" || choice.mode === "relay"
 const KEY = "nv-feed"
 
