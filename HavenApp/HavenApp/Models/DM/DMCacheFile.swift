@@ -8,27 +8,10 @@ import Foundation
 /// launch decode happens off the main thread. Both used to run on main, the
 /// whole history for every message, so the stutter grew with the history.
 enum DMCacheFile {
-    /// Newest messages kept on disk per conversation. Loading never drops
-    /// anything: a larger file written by an older build loads in full, and the
-    /// cap applies from its next save. Older messages stay on the relay.
-    static let maxStoredMessagesPerConversation = 2_000
-
-    /// What gets written: each conversation's newest `limit` messages.
-    /// `messages` is kept oldest first (`DMService` sorts on insert), so the
-    /// newest are the suffix.
-    static func capped(_ conversations: [DMConversation],
-                       limit: Int = maxStoredMessagesPerConversation) -> [DMConversation] {
-        conversations.map { conversation in
-            guard conversation.messages.count > limit else { return conversation }
-            var trimmed = conversation
-            trimmed.messages = Array(conversation.messages.suffix(limit))
-            return trimmed
-        }
-    }
-
-    static func encode(_ conversations: [DMConversation],
-                       limit: Int = maxStoredMessagesPerConversation) throws -> Data {
-        try JSONEncoder().encode(capped(conversations, limit: limit))
+    /// Every message is written: there is no cap. The inbox has no paged
+    /// "load older" fetch, so a message cut from this file would not come back.
+    static func encode(_ conversations: [DMConversation]) throws -> Data {
+        try JSONEncoder().encode(conversations)
     }
 
     /// nil when the file is missing or unreadable; never throws at the caller.
@@ -38,8 +21,9 @@ enum DMCacheFile {
 
     /// The cache as loaded, plus whatever reached memory while it was being
     /// read (a send, or a message from the relay). Nothing from either side is
-    /// dropped: messages are unioned by id, the cached copy wins a tie, and the
-    /// unread counts add — the live count only ever counts arrivals.
+    /// dropped: messages are unioned by id and the cached copy wins a tie.
+    /// Unread is added only for messages the cache did not already hold — a
+    /// re-delivered message is not new, so it cannot come back unread.
     static func merge(loaded: [DMConversation], live: [DMConversation]) -> [DMConversation] {
         guard !live.isEmpty else { return loaded }
         var result = loaded
@@ -52,12 +36,14 @@ enum DMCacheFile {
             }
             var known = Set(result[at].messages.map(\.id))
             var messages = result[at].messages
+            var newIncoming = 0
             for message in conversation.messages where known.insert(message.id).inserted {
                 messages.append(message)
+                if !message.isFromMe { newIncoming += 1 }
             }
             messages.sort { $0.timestamp < $1.timestamp }
             result[at].messages = messages
-            result[at].unreadCount += conversation.unreadCount
+            result[at].unreadCount += min(conversation.unreadCount, newIncoming)
         }
         return result
     }

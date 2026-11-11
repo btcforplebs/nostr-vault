@@ -33,6 +33,7 @@ extension DMService {
         seenGiftWrapIds.removeAll()
         unreadableGiftWrapIds.removeAll()
         pendingGiftWraps.removeAll()
+        pendingNIP04.removeAll()
         clearSignerWaiting()
         injectedDmIds.removeAll()
         isAuthenticated = false

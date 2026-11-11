@@ -60,17 +60,14 @@ final class DMCacheFileTests: XCTestCase {
         XCTAssertNil(DMCacheFile.decode(Data("not json".utf8)))
     }
 
-    // MARK: The cap
+    // MARK: No cap
 
-    func testTheCapKeepsEachConversationsNewestMessages() throws {
+    /// Nothing re-fetches older DMs, so a message cut from the file is gone.
+    func testALongConversationIsWrittenInFull() throws {
         let long = DMConversation(id: "p0", messages: (0..<2_500).map { message($0, conversation: 0) }, unreadCount: 0)
-        let short = DMConversation(id: "p1", messages: (0..<10).map { message($0, conversation: 1) }, unreadCount: 0)
-        let stored = try XCTUnwrap(DMCacheFile.decode(try DMCacheFile.encode([long, short])))
-        XCTAssertEqual(DMCacheFile.maxStoredMessagesPerConversation, 2_000)
-        XCTAssertEqual(stored[0].messages.count, 2_000)
-        XCTAssertEqual(stored[0].messages.first?.id, "m0-500")
-        XCTAssertEqual(stored[0].messages.last?.id, "m0-2499")
-        XCTAssertEqual(stored[1].messages.count, 10)
+        let stored = try XCTUnwrap(DMCacheFile.decode(try DMCacheFile.encode([long])))
+        XCTAssertEqual(stored[0].messages.count, 2_500)
+        XCTAssertEqual(stored[0].messages.first?.id, "m0-0")
     }
 
     // MARK: Merging what arrived during the load
@@ -78,14 +75,24 @@ final class DMCacheFileTests: XCTestCase {
     func testArrivalsDuringTheLoadAreKept() {
         let cached = DMConversation(id: "p0", messages: [message(1, conversation: 0), message(3, conversation: 0)], unreadCount: 1)
         let live = [
-            DMConversation(id: "p0", messages: [message(2, conversation: 0), message(3, conversation: 0)], unreadCount: 1),
+            DMConversation(id: "p0", messages: [message(5, conversation: 0), message(3, conversation: 0)], unreadCount: 1),
             DMConversation(id: "new", messages: [message(9, conversation: 9)], unreadCount: 1),
         ]
         let merged = DMCacheFile.merge(loaded: [cached], live: live)
         XCTAssertEqual(merged.map(\.id), ["p0", "new"])
-        XCTAssertEqual(merged[0].messages.map(\.id), ["m0-1", "m0-2", "m0-3"])
+        XCTAssertEqual(merged[0].messages.map(\.id), ["m0-1", "m0-3", "m0-5"])
         XCTAssertEqual(merged[0].unreadCount, 2)
         XCTAssertEqual(merged[1].messages.map(\.id), ["m9-9"])
+    }
+
+    /// A read message the relay re-delivers before the cache applies is not
+    /// new: it must not come back unread.
+    func testARedeliveredCachedMessageStaysRead() {
+        let cached = DMConversation(id: "p0", messages: [message(1, conversation: 0)], unreadCount: 0)
+        let live = DMConversation(id: "p0", messages: [message(1, conversation: 0)], unreadCount: 1)
+        let merged = DMCacheFile.merge(loaded: [cached], live: [live])
+        XCTAssertEqual(merged[0].messages.map(\.id), ["m0-1"])
+        XCTAssertEqual(merged[0].unreadCount, 0)
     }
 
     func testNothingLiveLeavesTheCacheAsLoaded() throws {

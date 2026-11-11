@@ -12,6 +12,7 @@ extension DMService {
         cacheLoadGeneration &+= 1
         let load = cacheLoadGeneration
         cacheLoaded = false
+        pendingNIP04.removeAll()
 
         cacheWriter.flushThen { [weak self] in
             // Legacy migration: the old shared cache contained messages from ALL accounts.
@@ -70,6 +71,9 @@ extension DMService {
             saveUnreadableGiftWrapIds()
         }
         resumeGiftWrapsAfterCacheLoad(known: known.union(unreadableGiftWrapIds))
+        let heldNIP04 = pendingNIP04
+        pendingNIP04.removeAll()
+        for event in heldNIP04 { handleIncomingNIP04(event) }
     }
 
     func saveUnreadableGiftWrapIds() {

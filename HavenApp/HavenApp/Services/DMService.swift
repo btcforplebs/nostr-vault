@@ -103,6 +103,9 @@ class DMService: ObservableObject {
     /// `maxGiftWrapWorkers` at a time: the backlog used to start one Task per
     /// wrap at once, which flooded a remote signer with decrypt requests.
     var pendingGiftWraps: [NostrEvent] = []
+    /// NIP-04 DMs that arrived before this account's cache loaded. Held, like
+    /// gift wraps, because only the cache says which are already in the inbox.
+    var pendingNIP04: [NostrEvent] = []
     var giftWrapWorkers = 0
     let maxGiftWrapWorkers = 1
 

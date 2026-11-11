@@ -192,6 +192,13 @@ extension DMService {
     func handleIncomingNIP04(_ event: NostrEvent) {
         guard event.kind == 4 else { return }
         guard !seenGiftWrapIds.contains(event.id) else { return }
+        // Until the cache loads, `seenGiftWrapIds` does not know which DMs are
+        // already in the inbox; deciding now would decrypt a cached message
+        // again and count it unread. Held and replayed by `applyLoadedCache`.
+        guard cacheLoaded else {
+            if !pendingNIP04.contains(where: { $0.id == event.id }) { pendingNIP04.append(event) }
+            return
+        }
         // Checked before marking the id seen, so a forged copy carrying a real
         // event's id cannot shadow the real one.
         guard Self.isAuthentic(event) else { return }
