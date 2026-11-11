@@ -196,18 +196,13 @@ struct VaultSearchResults: View {
         let event = NostrEvent(id: note.id, pubkey: note.pubkey,
                                created_at: Int64(note.createdAt.timeIntervalSince1970),
                                kind: note.kind, tags: note.tags, content: note.content, sig: "")
-        #if os(iOS)
-        NoteNavigationLink(note: note) {
-            NoteRow(event: event, truncate: true)
-                .padding(.horizontal, 16)
-        }
-        .buttonStyle(.plain)
-        #else
+        // Every platform opens through the Vault's openNote (onNote): one
+        // push path, never a NavigationLink that can fail to activate.
         NoteRow(event: event, truncate: true)
             .padding(.horizontal, 16)
             .contentShape(Rectangle())
             .onTapGesture { onNote(note.id) }
-        #endif
+            .accessibilityAddTraits(.isButton)
     }
 
     private func hashtagRow(_ tag: String) -> some View {

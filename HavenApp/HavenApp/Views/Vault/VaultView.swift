@@ -16,6 +16,8 @@ struct VaultView: View {
     @Environment(\.openURL) var inheritedOpenURL
 
     @State var navigationPath = NavigationPath()
+    /// The push in flight, for `pushWatched`. A class so marking it does not redraw.
+    @State var pushWatch = NotePushWatch()
     /// Whether the search bar is open. While it is, the Vault shows what
     /// the search found in place of its list.
     @State var isSearchActive = false
@@ -145,12 +147,47 @@ struct VaultView: View {
             noteDetailSelection.select(id: id)
         } else {
             #if os(iOS)
-            navigationPath.pushNote(id: id)
+            pushWatched(id) { navigationPath.pushNote(id: id) }
             #else
             showingNoteId = id
             #endif
         }
     }
+
+    /// The same, for a row that already holds the note: it draws at once.
+    /// Every Vault note row opens through here or `openNote(_ id:)`.
+    func openNote(_ note: FeedNote) {
+        if let noteDetailSelection {
+            noteDetailSelection.select(note)
+        } else {
+            #if os(iOS)
+            pushWatched(note.id) { navigationPath.pushNote(note) }
+            #else
+            showingNoteId = note.id
+            #endif
+        }
+    }
+
+    #if os(iOS)
+    /// Pushes, then checks the pushed screen appeared. If it did not (the
+    /// stack had no destination for it, Logen 2026-11-11), the push is taken
+    /// back and the note opens in the sheet: never a dead tap or a bare
+    /// yellow triangle.
+    private func pushWatched(_ id: String, push: () -> Void) {
+        let before = navigationPath.count
+        push()
+        // NotePushGuard turned a double tap away: nothing to watch.
+        guard navigationPath.count > before else { return }
+        let watch = pushWatch
+        watch.landing.began(id)
+        Task { @MainActor in
+            try? await Task.sleep(for: NotePushLanding.window)
+            guard watch.landing.missed(id) else { return }
+            if navigationPath.count > before { navigationPath.removeLast() }
+            showingNoteId = id
+        }
+    }
+    #endif
     @State var showingProfilePubkey: String?
     @State var maxDisplayedItems: Int = 100
     @State var isCopied = false
@@ -266,30 +303,31 @@ struct VaultView: View {
     }
 
     #if os(iOS)
-    @ViewBuilder
+    /// One view tree on every device: the stack and its destinations are
+    /// always there, so no row can be drawn without them, whatever flips the
+    /// environment. On iPad the enclosing NoteSplitPane owns the detail
+    /// column: rows select into it (`openNote`), nothing pushes here, and
+    /// this stack only carries the list's toolbar.
     private var iOSBody: some View {
-        if noteDetailSelection != nil {
-            // iPad two-pane layout: the enclosing NoteSplitPane owns the detail
-            // column, so the vault list must not wrap itself in a stack.
+        NavigationStack(path: $navigationPath) {
             iOSContent
                 .navigationTitle("")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
-        } else {
-            NavigationStack(path: $navigationPath) {
-                iOSContent
-                    .navigationTitle("")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbarBackground(.hidden, for: .navigationBar)
-                    .navigationDestination(for: FeedNote.self) { note in
-                        NoteDetailView(note: note)
-                    }
-                    .navigationDestination(for: NotificationNoteRoute.self) { route in
-                        NoteDetailViewWrapper(noteId: route.id, pushed: true)
-                    }
-            }
-            .environment(\.pushNoteID, PushNoteAction(stack: "vault") { navigationPath.pushNote(id: $0) })
+                .navigationDestination(for: FeedNote.self) { note in
+                    NoteDetailView(note: note)
+                        .onAppear { pushWatch.landing.landed(note.id) }
+                }
+                .navigationDestination(for: NotificationNoteRoute.self) { route in
+                    NoteDetailViewWrapper(noteId: route.id, pushed: true)
+                        .onAppear { pushWatch.landing.landed(route.id) }
+                }
         }
+        // iPad keeps its sheets for id-only opens, as before: nothing pushes
+        // over the list there.
+        .environment(\.pushNoteID, noteDetailSelection == nil
+            ? PushNoteAction(stack: "vault") { navigationPath.pushNote(id: $0) }
+            : nil)
     }
     #endif
 
@@ -585,4 +623,11 @@ struct VaultView: View {
             DashboardView()
         }
     }
+}
+
+/// Holds the Vault's `NotePushLanding` by reference, so marking a push
+/// landed from a destination's onAppear does not redraw the Vault.
+@MainActor
+final class NotePushWatch {
+    var landing = NotePushLanding()
 }

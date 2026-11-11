@@ -129,15 +129,16 @@ extension VaultView {
             Button { openActivity(line, account: account) } label: { row }
                 .buttonStyle(.plain)
         } else if let id = line.openId, let event = nostrService.events.first(where: { $0.id == id }) {
-            NoteNavigationLink(note: FeedNote(
-                id: event.id,
-                pubkey: event.pubkey,
-                content: event.content,
-                createdAt: event.createdAtDate,
-                tags: event.tags,
-                kind: event.kind
-            )) { row }
-            .buttonStyle(.plain)
+            row
+            .contentShape(Rectangle())
+            // A tap, not a Button: the row's own Buttons would die inside one
+            // (NoteNavigationLink.swift). Not a NavigationLink: every Vault
+            // row opens through openNote, one push path.
+            .onTapGesture {
+                openNote(FeedNote(id: event.id, pubkey: event.pubkey, content: event.content,
+                                  createdAt: event.createdAtDate, tags: event.tags, kind: event.kind))
+            }
+            .accessibilityAddTraits(.isButton)
         } else {
             Button { openActivity(line) } label: { row }
                 .buttonStyle(.plain)
