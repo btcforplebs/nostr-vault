@@ -31,10 +31,15 @@ extension MenuBarView {
                         onNewPost: { showingCompose = true }
                     )
 
+                    // minWidth 0: the column takes its width from the window.
+                    // A page whose bar is wider than its share (the Vault's
+                    // six labelled pages beside a Thread) used to widen the
+                    // column and run under the Thread instead of fitting.
                     mainContent
-                        .frame(maxWidth: Self.pageReadsNarrow(selectedTab) ? MacShellLayout.readingWidth : .infinity)
+                        .frame(minWidth: 0, maxWidth: Self.pageReadsNarrow(selectedTab) ? MacShellLayout.readingWidth : .infinity)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .frame(maxWidth: .infinity)
+                        .frame(minWidth: 0, maxWidth: .infinity)
+                        .layoutPriority(-1)
 
                     if threadOpen {
                         MacThreadPane(selection: noteSelection)

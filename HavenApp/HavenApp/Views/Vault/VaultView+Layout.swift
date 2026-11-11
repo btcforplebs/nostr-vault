@@ -143,7 +143,7 @@ extension VaultView {
                     }
                     .clipped()
                 } else {
-                    compactViewContent(isNarrow: geometry.size.width < 500)
+                    compactViewContent
                 }
             }
         }
@@ -153,9 +153,9 @@ extension VaultView {
     // MARK: - Compact View (narrow macOS / fallback)
 
     @ViewBuilder
-    func compactViewContent(isNarrow: Bool) -> some View {
+    var compactViewContent: some View {
         VStack(spacing: 0) {
-            headerView(isNarrow: isNarrow)
+            headerView
 
             Divider()
 
@@ -220,28 +220,11 @@ extension VaultView {
     @ViewBuilder
     var desktopHeaderView: some View {
         VStack(spacing: 12) {
-            HStack(spacing: 16) {
-                modeView
-
-                Spacer()
-
-                if viewMode == .notes {
-                    filterView
-                } else if viewMode == .likes {
-                    likesFilterView
-                } else if viewMode == .zaps {
-                    zapsFilterView
-                } else if viewMode == .followers {
-                    followersFilterView
-                }
-
-                searchToggleButton
-                #if os(macOS)
-                // iOS rows are always full (`rowLayoutMode`), so on a wide
-                // iPad this button switched nothing. iPhone has no switch.
-                compactToggleButton
-                #endif
-            }
+            #if os(macOS)
+            // iOS rows are always full (`rowLayoutMode`), so on a wide iPad
+            // the condensed toggle switched nothing; the Mac row carries it.
+            macModeFilterRow
+            #endif
 
             searchBar
         }

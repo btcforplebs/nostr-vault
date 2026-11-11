@@ -396,6 +396,93 @@ extension VaultView {
         .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.platformSeparator, lineWidth: 0.8))
     }
 
+    #if os(macOS)
+    /// The Mac's top bar: pages, the page's filters, search and the condensed
+    /// toggle. The column's width comes from the window, never from this bar:
+    /// with the Thread column open it can be ~560 pt, narrower than the six
+    /// labelled pages. So the bar steps down until it fits: labelled pages,
+    /// then icon pages, then icon pages over a scrolling filter row.
+    var macModeFilterRow: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) {
+                modeView
+                Spacer(minLength: 8)
+                pageFilterView
+                searchToggleButton
+                compactToggleButton
+            }
+            HStack(spacing: 12) {
+                iconModeView
+                Spacer(minLength: 8)
+                pageFilterView
+                searchToggleButton
+                compactToggleButton
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    ScrollView(.horizontal, showsIndicators: false) { iconModeView }
+                    searchToggleButton
+                    compactToggleButton
+                }
+                ScrollView(.horizontal, showsIndicators: false) { pageFilterView }
+            }
+        }
+    }
+
+    /// The pages as icons, in `modeView`'s pill. The selected one keeps its
+    /// name, so the row still says where you are; new things keep their dot.
+    var iconModeView: some View {
+        HStack(spacing: 2) {
+            iconModeButton(.notes, icon: "doc.text", title: "Notes", news: hasNewNotes)
+            if !configService.config.zapsOnlyMode {
+                iconModeButton(.likes, icon: "heart.fill", title: "Likes", news: hasNewLikes) { fetchMissingLikedNotes() }
+            }
+            iconModeButton(.zaps, icon: "bolt.fill", title: "Zaps", news: hasNewZaps)
+            iconModeButton(.bookmarks, icon: "bookmark.fill", title: "Bookmarks", news: false)
+            iconModeButton(.followers, icon: "person.2.fill", title: "Followers", news: hasNewFollowers)
+            iconModeButton(.messages, icon: VaultMode.messages.symbol, title: "Messages",
+                           news: DMService.shared.totalUnreadCount > 0)
+        }
+        .padding(4)
+        .background(Color.platformTertiaryGroupedBackground)
+        .cornerRadius(20)
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.platformSeparator, lineWidth: 0.8))
+    }
+
+    private func iconModeButton(_ mode: ViewMode, icon: String, title: String, news: Bool,
+                                then extra: @escaping () -> Void = {}) -> some View {
+        IconFilterButton(icon: icon, tooltip: title, isSelected: viewMode == mode, color: .havenPurple, label: title) {
+            withAnimation(Motion.toggle) { viewMode = mode }
+            extra()
+        }
+        .overlay(alignment: .topTrailing) {
+            if news && viewMode != mode {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 8, height: 8)
+                    .offset(x: -5, y: 6)
+                    .allowsHitTesting(false)
+            }
+        }
+        .accessibilityLabel(title)
+        .accessibilityValue(news ? "New" : "")
+    }
+
+    /// The filters of the page on show, if it has any.
+    @ViewBuilder
+    var pageFilterView: some View {
+        if viewMode == .notes {
+            filterView
+        } else if viewMode == .likes {
+            likesFilterView
+        } else if viewMode == .zaps {
+            zapsFilterView
+        } else if viewMode == .followers {
+            followersFilterView
+        }
+    }
+    #endif
+
     // `ModeButton` (labeled, filled-pill-when-selected) is the language for
     // *navigation*: which of Notes/Likes/Zaps you're looking at. This is a
     // display option, not a destination, so it used to read as a fourth mode
