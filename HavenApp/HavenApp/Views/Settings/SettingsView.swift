@@ -26,6 +26,11 @@ struct SettingsView: View {
     #endif
     #if os(macOS)
     @Environment(\.openWindow) private var openWindow
+    /// The page open in the Mac sidebar.
+    @State private var macGroup: MacGroup = .account
+    /// A pane on that page to scroll to (a jump-bar click, or a request
+    /// from elsewhere in the app for a pane by name).
+    @State private var macScrollTarget: SettingsTab?
     #endif
     @Environment(\.dismiss) private var dismiss
     var isEmbedded: Bool = false
@@ -121,10 +126,10 @@ struct SettingsView: View {
     }
 
     /// The settings grouped by what someone is trying to do, not by which
-    /// process owns the value. Both the iPhone list and the Mac sidebar read
-    /// this, so the two can't drift into different orders.
+    /// process owns the value: the iPhone list and the iPad column. The Mac
+    /// sidebar has six pages instead (`MacGroup`).
     ///
-    /// Startup is a page on the Mac (auto-start plus launch at login) but a
+    /// Startup is a pane on the Mac (auto-start plus launch at login) but a
     /// single inline switch on iPhone, where a page for one toggle is a
     /// dead end.
     static var groups: [(title: String, tabs: [SettingsTab])] {
@@ -199,37 +204,120 @@ struct SettingsView: View {
         paneRequest.wrappedValue = nil
     }
 
+    #if os(macOS)
+    /// The Mac's Settings: six pages, one per job, in place of a column of
+    /// two dozen. Each page stacks the panes it holds, so everything that
+    /// used to be one click away still is, and a whole job (say, keeping
+    /// the vault reachable) reads top to bottom on one page.
+    ///
+    /// Your Vault opens with Startup: for a relay that runs all day, Launch
+    /// at Login and Start Vault Automatically are the switches that matter
+    /// most. iPhone and iPad keep `groups`, where a pane is its own page.
+    enum MacGroup: String, CaseIterable, Identifiable {
+        case account = "Account"
+        case vault = "Your Vault"
+        case relaysMedia = "Relays & Media"
+        case backups = "Backups"
+        case reading = "Reading"
+        case help = "Help"
+
+        var id: String { rawValue }
+
+        var tabs: [SettingsTab] {
+            switch self {
+            case .account: return [.accounts, .wallet, .bitcoin, .privacy, .blocked]
+            case .vault: return [.startup, .macRelay, .relayAccess, .fipsMesh, .advanced]
+            case .relaysMedia: return [.relays, .blossom, .media]
+            case .backups: return [.backup, .followingBackup, .listBackups, .recentlyDeleted, .importNotes]
+            case .reading: return [.feed, .appearance, .pushNotifications, .proofOfWork]
+            case .help: return [.tutorials, .logs]
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .account: return "person.crop.circle"
+            case .vault: return "lock.shield"
+            case .relaysMedia: return "point.3.connected.trianglepath.dotted"
+            case .backups: return "clock.arrow.circlepath"
+            case .reading: return "text.book.closed"
+            case .help: return "questionmark.circle"
+            }
+        }
+
+        @MainActor
+        var color: Color {
+            switch self {
+            case .account: return .blue
+            case .vault: return .green
+            case .relaysMedia: return .havenPurple
+            case .backups: return .indigo
+            case .reading: return .pink
+            case .help: return .gray
+            }
+        }
+
+        /// What the page holds, under its name in the sidebar. Help also
+        /// carries About, which is not a pane of its own.
+        var summary: String {
+            let names = tabs.map(\.title) + (self == .help ? ["About"] : [])
+            return names.joined(separator: ", ")
+        }
+
+        static func containing(_ tab: SettingsTab) -> MacGroup {
+            allCases.first { $0.tabs.contains(tab) } ?? .account
+        }
+    }
+
+    /// Where About sits on the Help page; not a `SettingsTab`.
+    private static let aboutAnchor = "settings.about"
+
     private var macOSBody: some View {
         HStack(spacing: 0) {
-            settingsSidebar
-            
-            Divider()
-                .background(Color.platformSeparator)
-            
-            // CONTENT VIEW DETAIL PANEL
+            macSidebar
+
             ZStack {
                 Color.platformWindowBackground
                     .ignoresSafeArea()
-                
+
                 VStack(alignment: .leading, spacing: 0) {
-                    // Header of active settings panel
-                    HStack {
-                        Text(selectedTab.title)
-                            .font(.appTitle2.bold())
-                            .foregroundColor(.white)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 16)
-                    
+                    macPageHeader
+
                     Divider()
                         .background(Color.platformSeparator)
-                    
-                    ScrollView {
-                        destinationFor(selectedTab)
-                            .environmentObject(configService)
-                            .environmentObject(relayManager)
+
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 0) {
+                                ForEach(Array(macGroup.tabs.enumerated()), id: \.element) { index, tab in
+                                    if index > 0 {
+                                        Divider()
+                                            .background(Color.platformSeparator)
+                                            .padding(.vertical, 28)
+                                    }
+                                    macPaneSection(tab)
+                                        .id(tab)
+                                }
+                                if macGroup == .help {
+                                    Divider()
+                                        .background(Color.platformSeparator)
+                                        .padding(.vertical, 28)
+                                    macAboutSection
+                                        .id(Self.aboutAnchor)
+                                }
+                            }
                             .padding(24)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        // A new page starts at its top, not at the old page's offset.
+                        .id(macGroup)
+                        .task(id: macScrollTarget) {
+                            guard let target = macScrollTarget else { return }
+                            // The page has to lay out before it can scroll to a pane on it.
+                            try? await Task.sleep(nanoseconds: 60_000_000)
+                            withAnimation(Motion.control) { proxy.scrollTo(target, anchor: .top) }
+                            macScrollTarget = nil
+                        }
                     }
                 }
             }
@@ -238,33 +326,154 @@ struct SettingsView: View {
         .frame(maxWidth: isEmbedded ? .infinity : 900, maxHeight: isEmbedded ? .infinity : 650)
     }
 
-    private var settingsSidebar: some View {
+    /// The page name, and a jump bar to each pane on it. The bar floats over
+    /// the page as chrome, so it is the one glass surface here; the panes
+    /// themselves stay on the plain dark page.
+    private var macPageHeader: some View {
+        HStack(alignment: .center, spacing: 16) {
+            Text(macGroup.rawValue)
+                .font(.appTitle2.bold())
+                .foregroundColor(.white)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 8)
+            if macGroup.tabs.count > 1 {
+                ViewThatFits(in: .horizontal) {
+                    macJumpBar(showsTitles: true)
+                    macJumpBar(showsTitles: false)
+                }
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
+    }
+
+    private func macJumpBar(showsTitles: Bool) -> some View {
+        HStack(spacing: 2) {
+            ForEach(macGroup.tabs) { tab in
+                Button {
+                    macScrollTarget = tab
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: tab.icon)
+                            .font(.appSystem(size: 11, weight: .semibold))
+                        if showsTitles {
+                            Text(tab.title)
+                                .font(.appSystem(size: 11, weight: .medium))
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                    }
+                    .foregroundColor(.white.opacity(0.85))
+                    .padding(.horizontal, showsTitles ? 10 : 8)
+                    .padding(.vertical, 5)
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("Go to \(tab.title)")
+                .accessibilityLabel("Go to \(tab.title)")
+            }
+        }
+        .padding(3)
+        .applyGlassCapsule()
+    }
+
+    /// One pane on a page: its name, then the pane exactly as it was.
+    private func macPaneSection(_ tab: SettingsTab) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(iconBackgroundColor(for: tab))
+                        .frame(width: 22, height: 22)
+                    Image(systemName: tab.icon)
+                        .font(.appSystem(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                Text(tab.title)
+                    .font(.appSystem(size: 15, weight: .bold))
+                    .foregroundColor(.white)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
+
+            destinationFor(tab)
+                .environmentObject(configService)
+                .environmentObject(relayManager)
+        }
+    }
+
+    /// Version and abuse reporting, which used to be squeezed into the
+    /// sidebar's footer at 8pt.
+    private var macAboutSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.gray)
+                        .frame(width: 22, height: 22)
+                    Image(systemName: "info.circle")
+                        .font(.appSystem(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                Text("About")
+                    .font(.appSystem(size: 15, weight: .bold))
+                    .foregroundColor(.white)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Nostr Vault \(appVersion)")
+                    .font(.appHeadline)
+                    .foregroundColor(.white)
+
+                Text("To report objectionable content or abusive users, contact the developer on Nostr:")
+                    .font(.appCaption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 8) {
+                    Text(Self.abuseReportingNpub)
+                        .font(.appSystem(size: 11, design: .monospaced))
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Button("Copy") { PlatformClipboard.copy(Self.abuseReportingNpub) }
+                        .controlSize(.small)
+                }
+
+                Link("Privacy Policy", destination: URL(string: "https://nostrvault.app/privacy.html")!)
+                    .font(.appCaption)
+                    .foregroundColor(.havenPurple)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.platformControlBackground.opacity(0.5))
+            .cornerRadius(10)
+        }
+    }
+
+    private var macSidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header inside settings sidebar. Suppressed when embedded: the host
-            // window's own sidebar already has a row labelled "Settings" selected
-            // immediately to the left of this one, and the detail pane's header
-            // names the open tab, so this drew a third "Settings" in one window.
+            // Header suppressed when embedded: the host window's own sidebar
+            // already has a "Settings" row selected right beside this one.
             if !isEmbedded {
                 HStack(spacing: 8) {
                     Image(systemName: "gearshape.fill")
-                        .font(.appSystem(size: 16, weight: .bold))
+                        .font(.appSystem(size: 15, weight: .bold))
                         .foregroundColor(.havenPurple)
                     Text("Settings")
-                        .font(.appSystem(size: 16, weight: .bold))
+                        .font(.appSystem(size: 15, weight: .bold))
                         .foregroundColor(.white)
                     Spacer()
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 20)
-
-                Divider()
-                    .background(Color.platformSeparator)
-                    .padding(.bottom, 12)
+                .padding(.horizontal, 14)
+                .padding(.top, 16)
+                .padding(.bottom, 10)
             } else {
-                Color.clear.frame(height: 12)
+                Color.clear.frame(height: 10)
             }
 
-            #if os(macOS)
             if !configService.config.hasCompletedSetup {
                 Button(action: {
                     openWindow(id: "setup")
@@ -278,7 +487,7 @@ struct SettingsView: View {
                             Text("Setup Incomplete")
                                 .font(.appSystem(size: 12, weight: .bold))
                                 .foregroundColor(.white)
-                            Text("Tap to complete setup")
+                            Text("Click to finish setup")
                                 .font(.appSystem(size: 10))
                                 .foregroundColor(.white.opacity(0.7))
                         }
@@ -294,112 +503,104 @@ struct SettingsView: View {
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(Color.orange.opacity(0.3), lineWidth: 1)
                     )
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 8)
                 .padding(.bottom, 8)
             }
-            #endif
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    ForEach(Self.groups, id: \.title) { group in
-                        settingsSidebarSection(group.title, items: group.tabs)
-                    }
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(MacGroup.allCases) { group in
+                    macSidebarRow(group)
                 }
-                .padding(.horizontal, 8)
             }
-            
-            Spacer()
-            
-            Divider()
-                .background(Color.platformSeparator)
-            
-            // Restart status / About in sidebar bottom
-            VStack(spacing: 8) {
-                if relayManager.isApplyingConfig {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Restarting relay…")
-                            .font(.appSystem(size: 11, weight: .semibold))
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                    .accessibilityElement(children: .combine)
-                }
-                
-                VStack(spacing: 2) {
-                    Text("Nostr Vault v\(appVersion)")
-                        .font(.appSystem(size: 9, weight: .bold))
+            .padding(.horizontal, 8)
+
+            Spacer(minLength: 12)
+
+            if relayManager.isApplyingConfig {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Restarting relay…")
+                        .font(.appSystem(size: 11, weight: .semibold))
                         .foregroundColor(.secondary)
-                    Text("Abuse Reporting: npub1vxlh...g0nvx")
-                        .font(.appSystem(size: 8, design: .monospaced))
-                        .foregroundColor(.secondary.opacity(0.8))
-                        .onTapGesture {
-                            PlatformClipboard.copy("npub1vxlhjzeqjjhmqdy4e8sndt8kzklqlnxzew2mtt8mtakvalsckp3qa0gnvx")
-                        }
                 }
-                .padding(.top, 4)
+                .padding(12)
+                .accessibilityElement(children: .combine)
             }
-            .padding(12)
-            .background(Color.black.opacity(0.15))
         }
-        .frame(width: 220)
-        // Embedded, this column sits directly against the host window's own 220pt
-        // sidebar, which paints this exact colour. Two identical slabs read as one
-        // 440pt band of chrome with a rule down the middle; on the window
-        // background it reads as the tab list of the pane it belongs to.
-        .background(isEmbedded ? Color.platformWindowBackground : Color(red: 0.1, green: 0.1, blue: 0.13))
+        .frame(width: 224)
+        .frame(maxHeight: .infinity, alignment: .top)
+        // A floating glass sidebar, inset from the window edge (plain
+        // material before macOS 26), so it reads as chrome over the page.
+        .applyGlassRect(cornerRadius: 14)
+        .padding(8)
     }
 
-    private func settingsSidebarSection(_ title: String, items: [SettingsTab]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title.uppercased())
-                .font(.appSystem(size: 9, weight: .bold))
-                .foregroundColor(.secondary.opacity(0.7))
-                .padding(.horizontal, 8)
-                .padding(.bottom, 2)
-            
-            ForEach(items) { item in
-                Button(action: {
-                    select(item, animated: true)
-                }) {
-                    HStack(spacing: 8) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(iconBackgroundColor(for: item))
-                                .frame(width: 20, height: 20)
-                            Image(systemName: item.icon)
-                                .font(.appSystem(size: 11, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-                        
-                        Text(item.title)
-                            .font(.appSystem(size: 12, weight: selectedTab == item ? .semibold : .medium))
-                            .foregroundColor(selectedTab == item ? .white : .secondary)
-                        
-                        Spacer()
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(selectedTab == item ? Color.havenPurple.opacity(0.15) : Color.clear)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(selectedTab == item ? Color.havenPurple.opacity(0.3) : Color.clear, lineWidth: 1)
-                    )
-                    // A clear fill does not hit-test; this makes the whole row clickable.
-                    .contentShape(RoundedRectangle(cornerRadius: 8))
+    private func macSidebarRow(_ group: MacGroup) -> some View {
+        let isSelected = macGroup == group
+        return Button {
+            selectGroup(group)
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(group.color)
+                        .frame(width: 26, height: 26)
+                    Image(systemName: group.icon)
+                        .font(.appSystem(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
                 }
-                .buttonStyle(.plain)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(group.rawValue)
+                        .font(.appSystem(size: 13, weight: isSelected ? .semibold : .medium))
+                        .foregroundColor(isSelected ? .white : .white.opacity(0.85))
+                    Text(group.summary)
+                        .font(.appSystem(size: 10))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Color.havenPurple.opacity(0.18) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? Color.havenPurple.opacity(0.35) : Color.clear, lineWidth: 1)
+            )
+            // A clear fill does not hit-test; this makes the whole row clickable.
+            .contentShape(RoundedRectangle(cornerRadius: 8))
         }
-        .padding(.bottom, 8)
+        .buttonStyle(.plain)
+        .accessibilityLabel(group.rawValue)
+        .accessibilityHint(group.summary)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
-    
+
+    /// Opens a page. Leaving the page that holds Media Servers with unsaved
+    /// changes asks Save / Discard first.
+    private func selectGroup(_ group: MacGroup, scrollTo tab: SettingsTab? = nil) {
+        let go = {
+            withAnimation(Motion.control) { macGroup = group }
+            if let tab, tab != group.tabs.first { macScrollTarget = tab }
+        }
+        if group == macGroup {
+            if let tab { macScrollTarget = tab }
+            return
+        }
+        if macGroup.tabs.contains(.blossom) { MediaServersLeaveGuard.shared.requestLeave(go) } else { go() }
+    }
+    #endif
+
+    static let abuseReportingNpub = "npub1vxlhjzeqjjhmqdy4e8sndt8kzklqlnxzew2mtt8mtakvalsckp3qa0gnvx"
+
     #if os(iOS)
     /// iPad: the Mac's two-pane shape, with the iPhone's own list as the left
     /// column. Reusing the list rather than the Mac sidebar keeps every row,
@@ -644,9 +845,13 @@ struct SettingsView: View {
         relayManager.applySavedConfig(configService.config)
     }
     
-    /// Switches the page beside the sidebar (Mac, iPad). Leaving Media
-    /// Servers with unsaved changes asks Save / Discard first.
+    /// Switches the page beside the sidebar. On the Mac that opens the page
+    /// holding the pane and scrolls to it. Leaving Media Servers with
+    /// unsaved changes asks Save / Discard first.
     private func select(_ tab: SettingsTab, animated: Bool = false) {
+        #if os(macOS)
+        selectGroup(MacGroup.containing(tab), scrollTo: tab)
+        #else
         guard tab != selectedTab else { return }
         let go = {
             if animated {
@@ -656,6 +861,7 @@ struct SettingsView: View {
             }
         }
         if selectedTab == .blossom { MediaServersLeaveGuard.shared.requestLeave(go) } else { go() }
+        #endif
     }
 
     /// `pushed`: on a navigation stack (iPhone) rather than beside the sidebar.
