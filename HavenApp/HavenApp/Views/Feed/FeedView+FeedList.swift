@@ -410,10 +410,11 @@ extension FeedView {
                     }
                 ))
                 // Layout is stored per feed, so switching feeds can switch
-                // layout. Regroup immediately rather than waiting on the next
-                // filteredNotes change, which a cached feed may not produce.
+                // layout. Regroup now rather than waiting on the next
+                // filteredNotes change, which a cached feed may not produce;
+                // off the main thread (regroupForFeedSwitch).
                 .onChange(of: feedService.feedMode) { _, _ in
-                    resortThreads(immediate: true)
+                    regroupForFeedSwitch()
                 }
                 .onChange(of: feedService.feedThreadReplies.count) { _, _ in
                     rebuildThreadsIfNeeded()

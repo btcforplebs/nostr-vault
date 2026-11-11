@@ -14,7 +14,10 @@ extension FeedView {
     /// Regroup the feed into conversations. A no-op unless threaded mode is on,
     /// and debounced like the row-data cache so a burst of arriving notes
     /// doesn't regroup the timeline once per note.
-    func rebuildThreadsIfNeeded(immediate: Bool = false) {
+    /// `immediate` groups on the main thread before the next frame, for a
+    /// fresh view with nothing to show yet. `offMainNow` skips the debounce
+    /// but still groups off the main thread (a feed switch).
+    func rebuildThreadsIfNeeded(immediate: Bool = false, offMainNow: Bool = false) {
         // The Hashtags feed groups its own two sections (HashtagsFeedSection).
         guard isThreadedModeActive, feedService.feedMode != .hashtags else {
             threadRebuildWork?.cancel()
@@ -49,22 +52,30 @@ extension FeedView {
             }
             // Grouping the whole feed was the biggest main-thread cost while
             // a feed streamed in (Tom's sweep 11-01 #5).
-            Task.detached(priority: .userInitiated) {
-                let built = Self.groupThreads(notes: notes, keepFeedOrder: fetchesReplies, blocked: blocked,
-                                              parents: parents, index: index)
-                await MainActor.run {
-                    guard generation == rowStore.threadGeneration else { return }
-                    applyThreads(built, fetchesReplies: fetchesReplies)
-                }
-            }
+            FeedThreadRegroup.offMain({
+                Self.groupThreads(notes: notes, keepFeedOrder: fetchesReplies, blocked: blocked,
+                                  parents: parents, index: index)
+            }, isCurrent: { generation == rowStore.threadGeneration },
+               apply: { applyThreads($0, fetchesReplies: fetchesReplies) })
         }
         threadRebuildWork = work
 
-        if immediate {
+        if immediate || offMainNow {
             work.perform()
         } else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
         }
+    }
+
+    /// A feed switch: regroup the new feed off the main thread. Grouping it
+    /// synchronously here was a main-thread stall on every switch in
+    /// threaded layout. The cards on screen belong to the feed just left, so
+    /// they come down now rather than stand under the new feed's name until
+    /// its grouping lands a moment later.
+    func regroupForFeedSwitch() {
+        frozenThreadKeys = [:]
+        if isThreadedModeActive, !feedThreads.isEmpty { feedThreads = [] }
+        rebuildThreadsIfNeeded(offMainNow: true)
     }
 
     /// The feed grouped into conversations. Pure, so it can run off the main
