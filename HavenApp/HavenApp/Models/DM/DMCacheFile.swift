@@ -19,6 +19,25 @@ enum DMCacheFile {
         try? JSONDecoder().decode([DMConversation].self, from: data)
     }
 
+    /// Reads the cache at `url`. A file that is there but will not decode is
+    /// moved aside (`asideURL`) rather than left for the next save to
+    /// overwrite: the history in it may still be recoverable by hand.
+    static func read(_ url: URL, now: Date = Date(),
+                     fileManager: FileManager = .default) -> [DMConversation] {
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        if let conversations = decode(data) { return conversations }
+        try? fileManager.moveItem(at: url, to: asideURL(for: url, at: now))
+        return []
+    }
+
+    /// `dm_cache_<key>.json` → `dm_cache_<key>.unreadable-<unix time>.json`,
+    /// beside it. Never the name a save writes to.
+    static func asideURL(for url: URL, at date: Date) -> URL {
+        let stem = url.deletingPathExtension().lastPathComponent
+        return url.deletingLastPathComponent()
+            .appendingPathComponent("\(stem).unreadable-\(Int(date.timeIntervalSince1970)).json")
+    }
+
     /// The cache as loaded, plus whatever reached memory while it was being
     /// read (a send, or a message from the relay). Nothing from either side is
     /// dropped: messages are unioned by id and the cached copy wins a tie.

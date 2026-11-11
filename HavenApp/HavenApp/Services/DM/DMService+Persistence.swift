@@ -30,11 +30,12 @@ extension DMService {
             }
 
             var loaded: [DMConversation] = []
-            if let data = try? Data(contentsOf: fileURL) {
+            if FileManager.default.fileExists(atPath: fileURL.path) {
                 // A cache written before PrivateFile is left out of backups now;
                 // its file protection follows on the next save.
                 PrivateFile.excludeFromBackup(fileURL)
-                loaded = DMCacheFile.decode(data) ?? []
+                // An undecodable file is moved aside, not overwritten.
+                loaded = DMCacheFile.read(fileURL)
             }
 
             Task { @MainActor [weak self] in
