@@ -144,20 +144,33 @@ enum FipsURL {
         case refuse
         /// Another scheme (`nostr:`, `lightning:`, `mailto:`…): back to the app.
         case external
+        /// An internet page asked for from a mesh page: only after the
+        /// reader confirms it, because there the site sees this device's IP.
+        case leaveMesh(URL)
     }
 
     /// Where a load inside the browser may go. A `.fips` URL never reaches
     /// the network: top-level it becomes its mesh page, in a frame or as a
-    /// websocket it is refused (the door is HTTP on port 80 only).
-    static func navigation(to url: URL, isMainFrame: Bool) -> Navigation {
+    /// websocket it is refused (the door is HTTP on port 80 only). From a
+    /// mesh page (`fromMesh`) nothing goes to the internet by itself: a
+    /// frame is refused, a page waits for the reader (`.leaveMesh`).
+    static func navigation(to url: URL, isMainFrame: Bool, fromMesh: Bool) -> Navigation {
         let scheme = url.scheme?.lowercased() ?? ""
         switch scheme {
         case Self.scheme:
             return npub(inViewer: url) != nil ? .allow : .refuse
         case "http", "https", "ws", "wss":
-            guard isFipsHost(url.host) else { return .allow }
+            guard isFipsHost(url.host) else {
+                guard fromMesh else { return .allow }
+                return isMainFrame && scheme.hasPrefix("http") ? .leaveMesh(url) : .refuse
+            }
             guard isMainFrame, scheme.hasPrefix("http"), let viewer = viewerURL(forSite: url) else { return .refuse }
             return .load(viewer)
+        case leaveScheme:
+            // A mesh page's link off the mesh, as the page script hands it over.
+            guard isMainFrame, let target = leaveTarget(url) else { return .refuse }
+            if isFipsHost(target.host) { return viewerURL(forSite: target).map(Navigation.load) ?? .refuse }
+            return .leaveMesh(target)
         case "about":
             return .allow
         case "data", "blob":
@@ -165,6 +178,49 @@ enum FipsURL {
         default:
             return .external
         }
+    }
+
+    /// A mesh page's off-mesh link, as the browser's page script rewrites
+    /// it the moment it is clicked: `nvleave:<percent-encoded http(s) URL>`.
+    /// WebKit opens a connection to an http(s) link's host as soon as it is
+    /// clicked, before the app is asked; to this scheme it opens none.
+    static let leaveScheme = "nvleave"
+
+    static func leaveTarget(_ url: URL) -> URL? {
+        guard url.scheme?.lowercased() == leaveScheme else { return nil }
+        let encoded = url.absoluteString.dropFirst(leaveScheme.count + 1)
+        guard let text = String(encoded).removingPercentEncoding, let target = URL(string: text),
+              let s = target.scheme?.lowercased(), s == "http" || s == "https", target.host != nil else { return nil }
+        return target
+    }
+
+    // MARK: - Content rules
+
+    /// WebKit content-rule `url-filter`s that block every http(s)/ws(s) load
+    /// to a `.fips` host, with or without a trailing dot or a port. WebKit's
+    /// regex subset has no `|` or `{}`, so each shape is its own filter.
+    /// Websockets never reach `decidePolicyFor`: these are their only gate.
+    static let fipsBlockFilters: [String] = ["https?", "wss?"].flatMap { s in [
+        "^\(s)://[^/]*\\.fips[:/]", "^\(s)://[^/]*\\.fips$",
+        "^\(s)://[^/]*\\.fips\\.[:/]", "^\(s)://[^/]*\\.fips\\.$",
+    ] }
+
+    /// On a mesh page (top URL `nvfips:`), every internet load is blocked:
+    /// images, fetch, websockets, frames. The mesh page's promise is that the
+    /// site never sees this device's IP, and nothing may break it without a tap.
+    static let offMeshFilters = ["^https?://", "^wss?://"]
+    static let meshTopURL = "^\(scheme):"
+
+    /// The browser's content rules, as WebKit's JSON.
+    static var browserRulesJSON: String {
+        var rules: [[String: Any]] = fipsBlockFilters.map {
+            ["trigger": ["url-filter": $0], "action": ["type": "block"]]
+        }
+        rules += offMeshFilters.map {
+            ["trigger": ["url-filter": $0, "if-top-url": [meshTopURL]], "action": ["type": "block"]]
+        }
+        let data = try! JSONSerialization.data(withJSONObject: rules, options: [.sortedKeys])
+        return String(decoding: data, as: UTF8.self)
     }
 
     /// What the user typed in the address bar, as a URL to open: a bare

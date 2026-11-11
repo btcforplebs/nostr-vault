@@ -27,6 +27,8 @@ final class InAppBrowserModel: ObservableObject {
     @Published private(set) var meshStatus: String?
     /// A web page that failed to load, in plain words.
     @Published private(set) var failure: String?
+    /// An internet page the reader tapped from a mesh page, waiting on their yes.
+    @Published var leavingMesh: URL?
     /// False until the `.fips` block rules are in: no page loads before.
     @Published private(set) var ready = false
 
@@ -46,6 +48,8 @@ final class InAppBrowserModel: ObservableObject {
         config.setURLSchemeHandler(handler, forURLScheme: FipsURL.scheme)
         config.userContentController.addUserScript(WKUserScript(
             source: InAppBrowserNavigation.rewriteScript, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
+        config.userContentController.addUserScript(WKUserScript(
+            source: InAppBrowserNavigation.meshGuardScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         #if os(iOS)
         config.allowsInlineMediaPlayback = true
         #endif
@@ -64,6 +68,7 @@ final class InAppBrowserModel: ObservableObject {
 
         handler.onStatus = { [weak self] status in self?.meshStatus = status }
         navigation.onExternal = { [weak self] url in self?.onExternal?(url) }
+        navigation.onLeaveMesh = { [weak self] url in self?.leavingMesh = url }
         navigation.onFailure = { [weak self] error in
             self?.failure = (error as NSError).localizedDescription
         }
@@ -140,6 +145,8 @@ final class InAppBrowserModel: ObservableObject {
         case .web(let page):
             kind = .web
             address = page.absoluteString
+            // The reader asked for it: allowed even from a mesh page.
+            navigation.allowedOnce = page
             webView.load(URLRequest(url: page))
         case .refusedFips:
             kind = .mesh
@@ -156,6 +163,13 @@ final class InAppBrowserModel: ObservableObject {
         guard let url = FipsURL.typedURL(text) else { return false }
         open(url)
         return true
+    }
+
+    /// The reader said yes to leaving the mesh for `leavingMesh`.
+    func leaveMesh() {
+        guard let url = leavingMesh else { return }
+        leavingMesh = nil
+        open(url)
     }
 
     func reloadOrStop() {

@@ -86,17 +86,75 @@ final class FipsURLTests: XCTestCase {
 
     func testNothingInsideThePageReachesAFipsHostOverTheNetwork() {
         let site = url("http://\(npub).fips/a")
-        XCTAssertEqual(FipsURL.navigation(to: site, isMainFrame: true), .load(url("nvfips://\(npub)/a")))
-        XCTAssertEqual(FipsURL.navigation(to: site, isMainFrame: false), .refuse, "a .fips frame is refused, not loaded")
-        XCTAssertEqual(FipsURL.navigation(to: url("ws://\(npub).fips/"), isMainFrame: true), .refuse)
-        XCTAssertEqual(FipsURL.navigation(to: url("https://site.fips/"), isMainFrame: true), .refuse)
-        XCTAssertEqual(FipsURL.navigation(to: url("nvfips://\(npub)/x"), isMainFrame: false), .allow)
-        XCTAssertEqual(FipsURL.navigation(to: url("nvfips://site/"), isMainFrame: true), .refuse)
-        XCTAssertEqual(FipsURL.navigation(to: url("https://example.com/"), isMainFrame: false), .allow)
-        XCTAssertEqual(FipsURL.navigation(to: url("about:blank"), isMainFrame: true), .allow)
-        XCTAssertEqual(FipsURL.navigation(to: url("data:text/html,hi"), isMainFrame: true), .refuse)
-        XCTAssertEqual(FipsURL.navigation(to: url("nostr:npub1abc"), isMainFrame: true), .external)
-        XCTAssertEqual(FipsURL.navigation(to: url("lightning:lnbc1"), isMainFrame: true), .external)
+        XCTAssertEqual(FipsURL.navigation(to: site, isMainFrame: true, fromMesh: false), .load(url("nvfips://\(npub)/a")))
+        XCTAssertEqual(FipsURL.navigation(to: site, isMainFrame: false, fromMesh: false), .refuse, "a .fips frame is refused, not loaded")
+        XCTAssertEqual(FipsURL.navigation(to: url("ws://\(npub).fips/"), isMainFrame: true, fromMesh: false), .refuse)
+        XCTAssertEqual(FipsURL.navigation(to: url("https://site.fips/"), isMainFrame: true, fromMesh: false), .refuse)
+        XCTAssertEqual(FipsURL.navigation(to: url("nvfips://\(npub)/x"), isMainFrame: false, fromMesh: false), .allow)
+        XCTAssertEqual(FipsURL.navigation(to: url("nvfips://site/"), isMainFrame: true, fromMesh: false), .refuse)
+        XCTAssertEqual(FipsURL.navigation(to: url("https://example.com/"), isMainFrame: false, fromMesh: false), .allow)
+        XCTAssertEqual(FipsURL.navigation(to: url("about:blank"), isMainFrame: true, fromMesh: false), .allow)
+        XCTAssertEqual(FipsURL.navigation(to: url("data:text/html,hi"), isMainFrame: true, fromMesh: false), .refuse)
+        XCTAssertEqual(FipsURL.navigation(to: url("nostr:npub1abc"), isMainFrame: true, fromMesh: false), .external)
+        XCTAssertEqual(FipsURL.navigation(to: url("lightning:lnbc1"), isMainFrame: true, fromMesh: false), .external)
+    }
+
+    func testAMeshPageReachesNoInternetHostByItself() {
+        let web = url("https://owner.example/b")
+        XCTAssertEqual(FipsURL.navigation(to: web, isMainFrame: true, fromMesh: true), .leaveMesh(web), "a page leave waits for the reader")
+        let leave = url("nvleave:" + web.absoluteString.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!)
+        XCTAssertEqual(FipsURL.navigation(to: leave, isMainFrame: true, fromMesh: true), .leaveMesh(web), "a clicked link, handed over")
+        XCTAssertEqual(FipsURL.navigation(to: leave, isMainFrame: false, fromMesh: true), .refuse)
+        let fipsLeave = url("nvleave:" + "http://\(npub).fips/a".addingPercentEncoding(withAllowedCharacters: .alphanumerics)!)
+        XCTAssertEqual(FipsURL.navigation(to: fipsLeave, isMainFrame: true, fromMesh: true), .load(url("nvfips://\(npub)/a")))
+        XCTAssertEqual(FipsURL.navigation(to: url("nvleave:javascript%3Aalert(1)"), isMainFrame: true, fromMesh: true), .refuse)
+        XCTAssertEqual(FipsURL.navigation(to: url("nvleave:nostr%3Anpub1abc"), isMainFrame: true, fromMesh: true), .refuse)
+        XCTAssertEqual(FipsURL.navigation(to: web, isMainFrame: false, fromMesh: true), .refuse, "a frame off the mesh is refused")
+        XCTAssertEqual(FipsURL.navigation(to: url("wss://owner.example/s"), isMainFrame: true, fromMesh: true), .refuse)
+        XCTAssertEqual(FipsURL.navigation(to: url("nvfips://\(npub)/x"), isMainFrame: true, fromMesh: true), .allow)
+        XCTAssertEqual(FipsURL.navigation(to: url("http://\(npub).fips/a"), isMainFrame: true, fromMesh: true),
+                       .load(url("nvfips://\(npub)/a")))
+        XCTAssertEqual(FipsURL.navigation(to: web, isMainFrame: true, fromMesh: false), .allow, "web to web is a browser")
+    }
+
+    private func matches(_ filters: [String], _ s: String) -> Bool {
+        filters.contains { f in
+            (try! NSRegularExpression(pattern: f, options: .caseInsensitive))
+                .firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) != nil
+        }
+    }
+
+    func testTheBlockRulesCatchEveryFipsHostShape() {
+        for scheme in ["http", "https", "ws", "wss"] {
+            for host in ["\(npub).fips", "\(npub).fips.", "site.FIPS", "a.b.fips."] {
+                for tail in ["/", "/x?y", ":80/", ":443/", ""] {
+                    let s = "\(scheme)://\(host)\(tail)"
+                    XCTAssertTrue(matches(FipsURL.fipsBlockFilters, s), "not blocked: \(s)")
+                }
+            }
+            XCTAssertFalse(matches(FipsURL.fipsBlockFilters, "\(scheme)://fips.example.com/"))
+            XCTAssertFalse(matches(FipsURL.fipsBlockFilters, "\(scheme)://example.com/a.fips"))
+        }
+        for s in ["https://owner.example/b", "http://1.2.3.4/", "ws://x/", "wss://x:443/"] {
+            XCTAssertTrue(matches(FipsURL.offMeshFilters, s), "a mesh page would reach \(s)")
+        }
+        XCTAssertFalse(matches(FipsURL.offMeshFilters, "nvfips://\(npub)/"))
+        XCTAssertFalse(matches(FipsURL.offMeshFilters, "data:text/html,hi"))
+        XCTAssertTrue(matches([FipsURL.meshTopURL], "nvfips://\(npub)/"))
+        XCTAssertFalse(matches([FipsURL.meshTopURL], "https://example.com/?nvfips:"))
+    }
+
+    func testTheOffMeshRulesHoldOnlyOnMeshPages() throws {
+        let rules = try JSONSerialization.jsonObject(with: Data(FipsURL.browserRulesJSON.utf8)) as! [[String: Any]]
+        let triggers = rules.map { $0["trigger"] as! [String: Any] }
+        XCTAssertEqual(rules.count, FipsURL.fipsBlockFilters.count + FipsURL.offMeshFilters.count)
+        XCTAssertTrue(rules.allSatisfy { ($0["action"] as? [String: String])?["type"] == "block" })
+        for t in triggers where FipsURL.offMeshFilters.contains(t["url-filter"] as! String) {
+            XCTAssertEqual(t["if-top-url"] as? [String], [FipsURL.meshTopURL])
+        }
+        for t in triggers where FipsURL.fipsBlockFilters.contains(t["url-filter"] as! String) {
+            XCTAssertNil(t["if-top-url"], ".fips hosts are blocked on every page")
+        }
     }
 
     func testTypedAddressesGetAScheme() {

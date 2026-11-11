@@ -3,7 +3,9 @@ import WebKit
 
 /// The in-app browser's rules for where a page may go.
 ///
-/// - `nvfips://` (mesh pages) and http(s) load in the view.
+/// - `nvfips://` (mesh pages) and http(s) load in the view, but a mesh page
+///   reaches no internet host by itself: its loads are blocked by a content
+///   rule, and a link off the mesh is asked about natively first.
 /// - A `.fips` URL never reaches the network: a top-level one is turned into
 ///   its `nvfips://` page, and every subresource one is blocked by a content
 ///   rule, because WKWebView does not pass through URLProtocol, so
@@ -17,6 +19,11 @@ final class InAppBrowserNavigation: NSObject, WKNavigationDelegate, WKUIDelegate
     var onExternal: ((URL) -> Void)?
     /// A top-level load failed before a page came (https errors).
     var onFailure: ((Error) -> Void)?
+    /// The reader tapped a link from a mesh page to the internet: ask first.
+    var onLeaveMesh: ((URL) -> Void)?
+    /// The one internet page a mesh page may go to next: what the reader
+    /// typed, or confirmed. Used once.
+    var allowedOnce: URL?
 
     // MARK: Navigation
 
@@ -24,7 +31,8 @@ final class InAppBrowserNavigation: NSObject, WKNavigationDelegate, WKUIDelegate
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = action.request.url else { return decisionHandler(.cancel) }
         let isMain = action.targetFrame?.isMainFrame ?? true
-        switch FipsURL.navigation(to: url, isMainFrame: isMain) {
+        let fromMesh = webView.url?.scheme?.lowercased() == FipsURL.scheme
+        switch FipsURL.navigation(to: url, isMainFrame: isMain, fromMesh: fromMesh) {
         case .allow:
             decisionHandler(.allow)
         case .load(let viewer):
@@ -37,6 +45,17 @@ final class InAppBrowserNavigation: NSObject, WKNavigationDelegate, WKUIDelegate
             decisionHandler(.cancel)
             // Only what the reader tapped: a page can't fire app links by itself.
             if action.navigationType == .linkActivated { onExternal?(url) }
+        case .leaveMesh(let target):
+            if isMain, target == url, let allowed = allowedOnce, allowed == url {
+                allowedOnce = nil
+                return decisionHandler(.allow)
+            }
+            // Back/forward goes where the reader already was.
+            if isMain, target == url, action.navigationType == .backForward { return decisionHandler(.allow) }
+            decisionHandler(.cancel)
+            // A page can fake a link tap (`a.click()`), so even a tap only
+            // asks, natively; script, refresh and redirect leaves are dropped.
+            if action.navigationType == .linkActivated { onLeaveMesh?(target) }
         }
     }
 
@@ -60,31 +79,58 @@ final class InAppBrowserNavigation: NSObject, WKNavigationDelegate, WKUIDelegate
 
     // MARK: - Rules installed in every browser
 
-    /// Blocks every http(s)/ws(s) load to a `.fips` host before it leaves
-    /// the device. WebKit content rules allow only a small regex subset (no
-    /// `|` or `{}`), so each host shape is its own trigger.
-    nonisolated static let fipsBlockRules: String = {
-        let filters = [
-            #"^https?://[^/]*\.fips[:/]"#, #"^https?://[^/]*\.fips$"#, #"^https?://[^/]*\.fips\.[:/]"#,
-            #"^wss?://[^/]*\.fips[:/]"#, #"^wss?://[^/]*\.fips$"#,
-        ]
-        let rules = filters.map { filter -> [String: Any] in
-            ["trigger": ["url-filter": filter], "action": ["type": "block"]]
-        }
-        let data = try! JSONSerialization.data(withJSONObject: rules)
-        return String(decoding: data, as: UTF8.self)
-    }()
+    /// The content rules (`FipsURL.browserRulesJSON`): no `.fips` host ever
+    /// reaches the network, and a mesh page reaches no internet host at all.
+    nonisolated static var blockRules: String { FipsURL.browserRulesJSON }
 
     static func compileBlockRules() async -> WKContentRuleList? {
         await withCheckedContinuation { continuation in
             WKContentRuleListStore.default().compileContentRuleList(
-                forIdentifier: "nv-fips-block-v1", encodedContentRuleList: fipsBlockRules
+                forIdentifier: "nv-fips-block-v2", encodedContentRuleList: blockRules
             ) { list, error in
                 if let error { print("InAppBrowser: content rules failed: \(error)") }
                 continuation.resume(returning: list)
             }
         }
     }
+
+    /// Runs first in every mesh page and frame, for what content rules can't
+    /// see: WebRTC is taken away (a peer connection's STUN would show the site
+    /// this device's IP), and a click on an http(s) link becomes an
+    /// `nvleave:` link before WebKit acts on it (WebKit connects to a clicked
+    /// http(s) link's host before the app is asked).
+    nonisolated static let meshGuardScript = #"""
+    (function () {
+      var names = ['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel',
+                   'RTCIceCandidate', 'RTCSessionDescription', 'RTCRtpSender',
+                   'RTCRtpReceiver', 'RTCRtpTransceiver', 'RTCIceTransport', 'RTCDtlsTransport'];
+      function scrub(w) {
+        names.forEach(function (n) {
+          try { Object.defineProperty(w, n, { value: undefined, writable: false, configurable: false }); } catch (e) {}
+        });
+      }
+      function onMesh() {
+        try { return window.top.location.protocol === 'nvfips:'; } catch (e) { return location.protocol === 'nvfips:'; }
+      }
+      if (!onMesh()) return;
+      scrub(window);
+      window.addEventListener('click', function (e) {
+        var a = e.target && e.target.closest && e.target.closest('a[href], area[href]');
+        if (!a || !/^https?:/i.test(a.href)) return;
+        var href = a.getAttribute('href');
+        a.setAttribute('href', 'nvleave:' + encodeURIComponent(a.href));
+        setTimeout(function () { a.setAttribute('href', href); }, 0);
+      }, true);
+      // A frame the page makes itself (about:blank) gets its own copies.
+      [HTMLIFrameElement, HTMLFrameElement, HTMLObjectElement].forEach(function (K) {
+        var d = K && Object.getOwnPropertyDescriptor(K.prototype, 'contentWindow');
+        if (!d || !d.get) return;
+        Object.defineProperty(K.prototype, 'contentWindow', { configurable: false, get: function () {
+          var w = d.get.call(this); if (w) try { scrub(w); } catch (e) {} return w;
+        } });
+      });
+    })();
+    """#
 
     /// Rewrites absolute `http(s)://<npub>.fips/…` URLs in `href`, `src` and
     /// `poster` onto `nvfips://`, now and as the page adds nodes. The blocked

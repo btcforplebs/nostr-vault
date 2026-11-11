@@ -33,6 +33,16 @@ struct InAppBrowserView: View {
         .onChange(of: addressFocused) { _, focused in
             if focused { editing = model.address }
         }
+        .alert("Leave the mesh?", isPresented: leaving, presenting: model.leavingMesh) { _ in
+            Button("Open on the web", action: model.leaveMesh)
+            Button("Stay on the mesh", role: .cancel) {}
+        } message: { url in
+            Text("\(url.host ?? url.absoluteString) is on the internet. It will see your IP address, as in any browser.")
+        }
+    }
+
+    private var leaving: Binding<Bool> {
+        Binding(get: { model.leavingMesh != nil }, set: { if !$0 { model.leavingMesh = nil } })
     }
 
     // MARK: Top: close, badge, address, reload

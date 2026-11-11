@@ -64,7 +64,12 @@ final class FipsSchemeHandler: NSObject, WKURLSchemeHandler {
         guard let url = load.task.request.url, let npub = FipsURL.npub(inViewer: url) else {
             return finish(load, page: .refused)
         }
-        let isMain = load.task.request.mainDocumentURL == url
+        // Only a mesh page reads its own site: an internet page that embeds
+        // `nvfips://` must not start the engine or dial npubs by itself.
+        guard let main = load.task.request.mainDocumentURL, FipsURL.npub(inViewer: main) == npub else {
+            return fail(load, URLError(.noPermissionsToReadFile))
+        }
+        let isMain = main == url
         if isMain { pageBytes = 0 }
         let method = load.task.request.httpMethod?.uppercased() ?? "GET"
         guard method == "GET" || method == "HEAD" else {
@@ -94,7 +99,8 @@ final class FipsSchemeHandler: NSObject, WKURLSchemeHandler {
                     // The page itself moves: let WebKit navigate, so the
                     // address bar and history follow (and an off-mesh target
                     // goes through the navigation rules like any link).
-                    return finish(load, status: 200, html: Self.redirectPage(to: next))
+                    return finish(load, status: 200, html: FipsURL.scheme == next.scheme?.lowercased()
+                        ? Self.redirectPage(to: next) : Self.leavePage(to: next))
                 }
                 guard FipsURL.npub(inViewer: next) == npub else {
                     return fail(load, URLError(.redirectToNonExistentLocation))
@@ -255,6 +261,33 @@ final class FipsSchemeHandler: NSObject, WKURLSchemeHandler {
         <p>\(FipsURL.htmlEscaped(page.detail))</p>
         \(retry)
         <p><code>\(FipsURL.htmlEscaped(shown))</code></p>
+        </main></body></html>
+        """
+    }
+
+    /// A mesh page that redirects to the internet: said, not followed. Its
+    /// link is a tap like any other, so it asks before leaving the mesh.
+    nonisolated static func leavePage(to url: URL) -> String {
+        let target = FipsURL.htmlEscaped(url.absoluteString)
+        let host = FipsURL.htmlEscaped(url.host ?? url.absoluteString)
+        return """
+        <!doctype html><html><head><meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>Leaves the mesh</title>
+        <style>
+        :root{color-scheme:dark}
+        body{font:17px -apple-system,system-ui,sans-serif;background:#111;color:#eee;margin:0;
+        display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center}
+        main{max-width:30em;padding:2em}
+        h1{font-size:1.3em;margin:0 0 .6em}
+        p{color:#aaa;line-height:1.45}
+        code{color:#777;font-size:.8em;word-break:break-all}
+        .b{display:inline-block;margin-top:.6em;padding:.55em 1.2em;border-radius:999px;background:#2a2a2e;color:#fff;text-decoration:none}
+        </style></head><body><main>
+        <h1>This page sends you to \(host)</h1>
+        <p>That's on the internet, not the mesh: the site would see your IP address.</p>
+        <p><a class="b" href="\(target)">Open on the web</a></p>
+        <p><code>\(target)</code></p>
         </main></body></html>
         """
     }
