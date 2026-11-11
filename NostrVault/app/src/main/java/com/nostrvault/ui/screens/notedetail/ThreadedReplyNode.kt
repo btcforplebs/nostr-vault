@@ -88,7 +88,6 @@ internal fun ThreadCondensedLine(
         profile = viewModel.profileFor(shown.pubkey),
         profiles = profiles,
         depth = depth,
-        style = CondensedLineStyle.PLAIN,
         replyCount = replyCount,
         mediaURLs = shown.mediaURLs,
         engagement = CondensedEngagement(

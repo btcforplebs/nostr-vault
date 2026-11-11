@@ -33,11 +33,6 @@ enum FeedLayoutMode: String, Codable, CaseIterable {
         supportsThreading ? self : .expanded
     }
 
-    /// True when rows draw as condensed lines: threaded keeps that look.
-    var usesCondensedRows: Bool {
-        self == .threaded
-    }
-
     /// What Show replies becomes when the reader switches to this layout.
     /// They can still flip it by hand afterwards in either layout.
     var showsRepliesOnSwitch: Bool {

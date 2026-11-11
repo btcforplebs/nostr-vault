@@ -56,15 +56,6 @@ data class CondensedEngagement(
     }
 }
 
-/** How a [CondensedNoteLine] draws its own chrome. Mirrors iOS `CondensedNoteLine.Style`. */
-enum class CondensedLineStyle {
-    /** Standalone row in the feed: its own bordered card. */
-    CARD,
-
-    /** A line inside a thread card, which owns the chrome instead. */
-    PLAIN,
-}
-
 /**
  * The glyph that says a condensed line is not a plain note. The same symbols
  * as the feed picker and the Vault. iOS: `CondensedNoteLine.kindMarker`.
@@ -150,7 +141,6 @@ fun CondensedNoteLine(
     displayPubkey: String? = null,
     /** 0 is a root or standalone note; each step indents under a thread rail. */
     depth: Int = 0,
-    style: CondensedLineStyle = CondensedLineStyle.CARD,
     /** Draws the purple selection treatment — the focused note in a thread card. */
     isFocused: Boolean = false,
     /** Replies in this thread directly under this note. */
@@ -188,30 +178,17 @@ fun CondensedNoteLine(
     val avatarSize = if (isRoot) 32.dp else 26.dp
     val nameSize = if (isRoot) 13.sp else 12.sp
     val bodySize = if (isRoot) 14.sp else 13.sp
-    // From Settings: a feed row (CARD) is Compact View; a line in a thread
-    // card (PLAIN) is Threaded View, where replies show one fewer than the root.
-    val bodyLineLimit = LocalFeedLineLimits.current.let { limits ->
-        if (style == CondensedLineStyle.CARD) limits.compactLines else limits.threadedLines(isRoot)
-    }
+    // From Settings (Threaded View): replies show one fewer line than the root.
+    val bodyLineLimit = LocalFeedLineLimits.current.threadedLines(isRoot)
 
-    val backgroundColor = when (style) {
-        CondensedLineStyle.CARD ->
-            if (isFocused) themeColor.copy(alpha = if (isOled) 0.08f else 0.12f) else SecondaryGroupedBg
-        CondensedLineStyle.PLAIN ->
-            if (isFocused) themeColor.copy(alpha = if (isOled) 0.10f else 0.12f) else Color.Transparent
-    }
-    val borderColor = when (style) {
-        CondensedLineStyle.CARD ->
-            if (isFocused) themeColor.copy(alpha = if (isOled) 0.6f else 0.4f)
-            else themeColor.copy(alpha = if (isOled) 0.30f else 0.15f)
-        CondensedLineStyle.PLAIN ->
-            if (isFocused) themeColor.copy(alpha = if (isOled) 0.6f else 0.4f) else Color.Transparent
-    }
-    val borderWidth = when (style) {
-        CondensedLineStyle.CARD -> if (isFocused) 1.5.dp else if (isOled) 1.dp else 0.5.dp
-        CondensedLineStyle.PLAIN -> if (isFocused) 1.5.dp else 0.dp
-    }
-    val cornerRadius = if (style == CondensedLineStyle.CARD) 10.dp else 8.dp
+    // A line lives inside a thread card, which draws the chrome; only the
+    // focused line gets its own tint and outline.
+    val backgroundColor =
+        if (isFocused) themeColor.copy(alpha = if (isOled) 0.10f else 0.12f) else Color.Transparent
+    val borderColor =
+        if (isFocused) themeColor.copy(alpha = if (isOled) 0.6f else 0.4f) else Color.Transparent
+    val borderWidth = if (isFocused) 1.5.dp else 0.dp
+    val cornerRadius = 8.dp
 
     Row(
         modifier = modifier
@@ -225,10 +202,7 @@ fun CondensedNoteLine(
                 .weight(1f)
                 .background(backgroundColor, RoundedCornerShape(cornerRadius))
                 .border(borderWidth, borderColor, RoundedCornerShape(cornerRadius))
-                .padding(
-                    horizontal = if (style == CondensedLineStyle.CARD) 12.dp else 8.dp,
-                    vertical = if (style == CondensedLineStyle.CARD) 8.dp else 6.dp,
-                ),
+                .padding(horizontal = 8.dp, vertical = 6.dp),
         ) {
             Row(verticalAlignment = Alignment.Top) {
                 AvatarWithMenu(

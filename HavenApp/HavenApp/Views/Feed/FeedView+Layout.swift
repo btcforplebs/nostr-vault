@@ -15,9 +15,9 @@ extension FeedView {
     }
 
     /// Whether the layout button has anything to switch. Expanded and
-    /// threaded only change timeline rows (`isCompactModeActive`,
-    /// `isThreadedModeActive`); grids, card lists and Reels ignore them, so
-    /// the button there cycled an icon and nothing else. The Mac toolbar
+    /// threaded only change timeline rows (`isThreadedModeActive`); grids,
+    /// card lists and Reels ignore them, so the button there cycled an icon
+    /// and nothing else. The Mac toolbar
     /// already left it out for these feeds.
     var currentFeedHasLayouts: Bool { currentFeedSupportsThreading }
 
@@ -122,21 +122,6 @@ extension FeedView {
         #else
         showingNoteId = note.id
         #endif
-    }
-
-    /// Condensed rows are active: the threaded layout. Media and article
-    /// feeds are card/grid layouts with nothing to condense.
-    var isCompactModeActive: Bool {
-        guard layoutModeForCurrentFeed.usesCondensedRows else { return false }
-        switch feedService.feedMode {
-        case .following, .discovery, .global, .popular, .catchUp, .underrated, .hashtags:
-            return true
-        // Articles and Media are card/grid layouts, not timeline rows —
-        // compact mode has nothing to condense. Polls always show the
-        // full card, since the vote bars are the point of the feed.
-        case .media, .articles, .recipes, .marketplace, .live, .reels, .music, .polls:
-            return false
-        }
     }
 
     /// Whole conversations instead of loose rows.

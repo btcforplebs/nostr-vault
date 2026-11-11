@@ -26,6 +26,7 @@ import com.nostrvault.ui.components.ScrollCondenseEffect
 import com.nostrvault.ui.components.newPostsFold
 import com.nostrvault.ui.components.FoldBlocked
 import com.nostrvault.ui.components.SkeletonFeed
+import com.nostrvault.ui.components.rememberFilterNoteState
 import com.nostrvault.ui.theme.*
 import com.nostrvault.service.FeedLanguage
 
@@ -129,7 +130,6 @@ fun FeedScreen(
     // subscribe the whole screen to every metadata batch; each feed row narrows
     // its own read below instead.
     val allProfiles = viewModel.profileState
-    val isCompact by viewModel.compactModeEnabled.collectAsState()
     val layoutMode by viewModel.layoutMode.collectAsState()
     val isThreaded by viewModel.threadedModeEnabled.collectAsState()
     val feedThreadsState = viewModel.feedThreads.collectAsState()
@@ -159,11 +159,12 @@ fun FeedScreen(
     val listState = rememberLazyListState()
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
+    // The pill the layout button leaves: "Layout · Threaded, replies shown" (iOS toolbar note).
+    val layoutNote = rememberFilterNoteState()
 
-    // Inline expansion state for compact mode (iOS parity: tap expands inline first).
-    // Threaded mode's cards share this same field rather than keeping their own —
-    // one selection across both condensed layouts, and it survives a card being
-    // recycled off-screen and back by a LazyColumn (per-card `remember` would not).
+    // The line open in place in Threaded View (iOS parity: a tap opens inline first).
+    // The cards share this one field rather than keeping their own, so it survives
+    // a card being recycled off-screen and back by a LazyColumn (per-card `remember` would not).
     val expandedNote = remember { mutableStateOf<String?>(null) }
     var expandedNoteId by expandedNote
     // Holds a tapped thread line where it was when the open line above closes.
@@ -183,7 +184,7 @@ fun FeedScreen(
     }
 
     // Reset expanded note when feed mode or layout mode changes
-    LaunchedEffect(feedMode, isCompact, isThreaded) {
+    LaunchedEffect(feedMode, isThreaded) {
         expandedNoteId = null
     }
 
@@ -191,7 +192,7 @@ fun FeedScreen(
 
     // The sheets and dialogs a row or the toolbar opens (FeedScreenSheets.kt).
     val sheets = remember { FeedSheetState() }
-    // Compact and threaded lines open the same avatar menu as a full note.
+    // Threaded lines open the same avatar menu as a full note.
     val feedAvatarMenu = rememberFeedAvatarMenu(viewModel)
     var openListing by sheets::openListing
     var showFeedMenuEditor by sheets::showFeedMenuEditor
@@ -219,7 +220,7 @@ fun FeedScreen(
             prefetchItemsForThread(thread.entries.map { it.note to (it.depth == 0) }, allProfiles)
         } else {
             val note = notes.getOrNull(row) ?: return@FeedPrefetchEffect emptyList()
-            prefetchItemsFor(note, allProfiles, compact = isCompact && expandedNoteId != note.id)
+            prefetchItemsFor(note, allProfiles)
         }
     }
 
@@ -401,7 +402,7 @@ fun FeedScreen(
                 onModeChange = viewModel::setFeedMode,
                 onCycleLayoutMode = {
                     layoutAnchor = captureLayoutAnchor()?.let { it to layoutMode }
-                    viewModel.cycleLayoutMode()
+                    viewModel.cycleLayoutMode()?.let { layoutNote.show(feedLayoutNote(it)) }
                 },
                 onToggleAutoLoad = viewModel::toggleAutoLoad,
                 onToggleReposts = viewModel::toggleShowReposts,
@@ -632,7 +633,6 @@ fun FeedScreen(
                     isThreaded = isThreaded,
                     feedThreadsState = feedThreadsState,
                     notes = notes,
-                    isCompact = isCompact,
                     allProfiles = allProfiles,
                     expandedNote = expandedNote,
                     threadFolds = threadFolds,

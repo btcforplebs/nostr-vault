@@ -60,7 +60,7 @@ export function imetaMedia(tags) {
 const BLOSSOM_PATH = /\/([0-9a-f]{64})(\.[a-z0-9]{1,8})?$/i
 const pathHash = url => { try { return BLOSSOM_PATH.exec(new URL(url).pathname)?.[1].toLowerCase() } catch { return undefined } }
 
-/** One image link of a note as a MediaImage item, for the places that draw a single picture (Media grid, Compact
+/** One image link of a note as a MediaImage item, for the places that draw a single picture (Media grid, thread-line
  *  thumbs, reply previews, Vault): its imeta entry when `tags` has one, else the link. With no imeta hash, the hash
  *  a Blossom path names, so a photo whose server lost it can still come from the author's mesh vault. */
 export function imageItem(url, tags) {

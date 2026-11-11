@@ -26,9 +26,6 @@ enum class FeedLayoutMode {
     fun clamped(supportsThreading: Boolean): FeedLayoutMode =
         if (this == THREADED && !supportsThreading) EXPANDED else this
 
-    /** True when rows draw as condensed lines: only threaded does now. */
-    val usesCondensedRows: Boolean get() = this == THREADED
-
     /** Whether the feed's Show replies goes on when the user switches to this layout. */
     val showsRepliesByDefault: Boolean get() = this == THREADED
 

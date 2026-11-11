@@ -37,12 +37,6 @@ class FeedLayoutModeTest {
     }
 
     @Test
-    fun `threaded keeps its condensed rows and expanded draws full cards`() {
-        assertFalse(FeedLayoutMode.EXPANDED.usesCondensedRows)
-        assertTrue(FeedLayoutMode.THREADED.usesCondensedRows)
-    }
-
-    @Test
     fun `stored layout wins`() {
         assertEquals(FeedLayoutMode.THREADED, FeedLayoutMode.resolve("threaded"))
         assertEquals(FeedLayoutMode.EXPANDED, FeedLayoutMode.resolve("expanded"))

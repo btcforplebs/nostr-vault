@@ -1,63 +1,6 @@
 import SwiftUI
 
 extension FeedNoteRow {
-    // MARK: - Compact Layout
-
-    /// The condensed row draws through the shared `CondensedNoteLine` so the
-    /// feed, a thread's ancestors and its replies cannot drift apart again.
-    @ViewBuilder
-    var compactLayout: some View {
-        let originalMedia = rowData.resolvedOriginal?.mediaURLs ?? []
-        let override = compactContentOverride
-        // An old "Share as a note" live post: its playlist and cover go, the
-        // live card says it (LiveNoteCleanup).
-        let live = LiveNoteCleanup.cleaned(content: override ?? note.content,
-                                           mediaURLs: note.mediaURLs + originalMedia, find: actions.findNote)
-        CondensedNoteLine(
-            note: note,
-            profile: rowData.displayProfile,
-            displayPubkey: rowData.displayPubkey,
-            original: rowData.resolvedOriginal,
-            depth: 0,
-            style: .card,
-            contentOverride: live?.content ?? override,
-            postedAt: postedAt,
-            mediaURLs: live?.mediaURLs ?? note.mediaURLs + originalMedia,
-            engagement: CondensedEngagement(
-                reactions: rowData.zapsOnlyMode ? 0 : rowData.stats.reactions,
-                reposts: rowData.stats.reposts
-            ),
-            showsTranslate: note.kind != 30023,
-            quotes: CondensedQuote.resolve(
-                for: rowData.resolvedOriginal ?? note,
-                find: actions.findNote,
-                unavailable: FeedService.shared.unavailableNoteIds
-            ),
-            onMissingQuote: actions.fetchMissingNote,
-            onProfile: { onProfile?($0) },
-            onTap: { onTapRow?() }
-        )
-        // Skipped when only the feed around it redrew; see `CondensedNoteLine`.
-        .equatable()
-    }
-
-    /// What a condensed row shows instead of the raw note body: an article's
-    /// title, or the original note behind a bare repost.
-    private var compactContentOverride: String? {
-        if note.kind == 6 && note.content.isEmpty, let original = rowData.resolvedOriginal {
-            return original.condensedTitle ?? original.content
-        }
-        // A bare repost still waiting on its original said nothing at all.
-        if repostedNoteIsUnavailable {
-            return String(localized: "feed.note.repostUnavailable", defaultValue: "The reposted note is unavailable")
-        }
-        if isWaitingForRepostedNote { return String(localized: "feed.note.loadingRepost") }
-        // An article's three compact lines are worth far more spent on its
-        // title than on the first three lines of markdown; a poll's on its
-        // question.
-        return note.condensedTitle
-    }
-
     // MARK: - Full Layout
 
     @ViewBuilder

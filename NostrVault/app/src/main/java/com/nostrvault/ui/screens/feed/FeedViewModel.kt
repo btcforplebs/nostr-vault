@@ -351,7 +351,7 @@ class FeedViewModel @Inject constructor(
     // FeedFilterEngine.filterMediaNotes (media-bearing, blocked/WoT rules).
     val mediaNotes: StateFlow<List<FeedNote>> = feedService.filteredMediaNotes
 
-    // ── Feed layout mode (expanded / condensed / threaded) ──────────
+    // ── Feed layout mode (expanded / threaded) ──────────
 
     private val _layoutModeToggle = MutableStateFlow(0) // bump to trigger recomputation
 
@@ -383,32 +383,29 @@ class FeedViewModel @Inject constructor(
     private fun resolveLayoutMode(mode: FeedMode, config: com.nostrvault.relay.HavenConfig): FeedLayoutMode =
         FeedLayoutMode.resolve(config.feedLayoutModes[mode.name]).clamped(supportsThreading = feedSupportsThreading(mode))
 
-    /** Condensed rows are active: Threaded View's lines. */
-    val compactModeEnabled: StateFlow<Boolean> = layoutMode
-        .map { it.usesCondensedRows }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), layoutMode.value.usesCondensedRows)
-
     /** Whole conversations instead of loose rows. */
     val threadedModeEnabled: StateFlow<Boolean> = layoutMode
         .map { it == FeedLayoutMode.THREADED }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), layoutMode.value == FeedLayoutMode.THREADED)
 
-    /** Toggle the current feed between expanded and threaded and persist it. */
-    fun cycleLayoutMode() {
+    /**
+     * Toggle the current feed between expanded and threaded and persist it.
+     * Returns what changed, for the pill the button leaves ([feedLayoutNote]),
+     * or null when the layout stayed put.
+     */
+    fun cycleLayoutMode(): FeedLayoutSwitch? {
         val mode = _feedMode.value
-        setLayoutMode(layoutMode.value.next(supportsThreading = feedSupportsThreading(mode)))
+        return setLayoutMode(layoutMode.value.next(supportsThreading = feedSupportsThreading(mode)))
     }
 
-    /** Jump straight to a layout (used by an overflow menu, where every choice is visible at once). */
-    fun setLayoutMode(mode: FeedLayoutMode) {
+    /** Jump straight to a layout. Returns what changed, or null when nothing did. */
+    fun setLayoutMode(mode: FeedLayoutMode): FeedLayoutSwitch? {
         val feedMode = _feedMode.value
         val resolved = mode.clamped(supportsThreading = feedSupportsThreading(feedMode))
         val previous = resolveLayoutMode(feedMode, configStore.config.value)
         configStore.update { config ->
             config.copy(
                 feedLayoutModes = config.feedLayoutModes + (feedMode.name to resolved.storageKey),
-                // Keep the legacy key in step so a downgrade still lands somewhere sane.
-                feedCompactModes = config.feedCompactModes + (feedMode.name to resolved.usesCondensedRows),
             )
         }
         // Expanded starts with replies off (single posts), threaded with them
@@ -416,13 +413,13 @@ class FeedViewModel @Inject constructor(
         // hand in either layout (Logen, 2026-11-11). Only a real switch
         // moves it, and only on feeds whose layout can change.
         // Hashtags runs its own subscription; the Replies filter is not its.
-        if (resolved != previous && feedMode != FeedMode.HASHTAGS &&
+        val movesReplies = resolved != previous && feedMode != FeedMode.HASHTAGS &&
             feedService.showReplies.value != resolved.showsRepliesByDefault
-        ) {
-            feedService.setShowReplies(resolved.showsRepliesByDefault)
-        }
+        if (movesReplies) feedService.setShowReplies(resolved.showsRepliesByDefault)
         _layoutModeToggle.value++
         resortThreads()
+        if (resolved == previous) return null
+        return FeedLayoutSwitch(resolved, repliesShown = resolved.showsRepliesByDefault.takeIf { movesReplies })
     }
 
     /**

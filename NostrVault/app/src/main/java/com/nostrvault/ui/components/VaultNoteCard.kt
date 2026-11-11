@@ -39,7 +39,7 @@ import java.util.Date
 
 /**
  * Vault-style note card matching iOS VaultNoteRow exactly.
- * Two modes: compact (no engagement) and expanded (inline engagement bar).
+ * One layout: the expanded row with its inline engagement bar.
  * No parent notes, no quick-action buttons.
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -56,7 +56,6 @@ fun VaultNoteCard(
     quoterPubkeys: List<String> = emptyList(),
     zappers: List<Pair<String, Long>> = emptyList(),
     noteType: VaultNoteType = VaultNoteType.TAGGED,
-    layoutMode: VaultNoteLayoutMode = VaultNoteLayoutMode.EXPANDED,
     onNoteClick: (String) -> Unit,
     /** Where a quoted long-form post opens; the note screen shows Markdown source. */
     onArticleClick: ((String) -> Unit)? = null,
@@ -74,7 +73,6 @@ fun VaultNoteCard(
     onBlock: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val isCompact = layoutMode == VaultNoteLayoutMode.COMPACT
     var showReactors by remember { mutableStateOf(false) }
     var showReposters by remember { mutableStateOf(false) }
     var showQuoters by remember { mutableStateOf(false) }
@@ -100,7 +98,7 @@ fun VaultNoteCard(
     // which tab you were on. Matches NoteCard's treatment, including its OLED
     // bump (the outline has to work harder against true black).
     val isOled = LocalOledMode.current
-    val cardShape = RoundedCornerShape(if (isCompact) 10.dp else 12.dp)
+    val cardShape = RoundedCornerShape(12.dp)
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -123,34 +121,24 @@ fun VaultNoteCard(
             actions = menuActions,
             onDismiss = { showMenu = false },
         )
-        if (isCompact) {
-            CompactLayout(
-                note = note,
-                profile = profile,
-                profiles = profiles,
-                noteType = noteType,
-                onProfileClick = onProfileClick,
-            )
-        } else {
-            ExpandedLayout(
-                note = note,
-                quotedNotes = quotedNotes,
-                profile = profile,
-                profiles = profiles,
-                onArticleClick = onArticleClick,
-                onNoteClick = onNoteClick,
-                reactors = effectiveReactors,
-                latestReactionDate = latestReactionDate,
-                reposterPubkeys = reposterPubkeys,
-                quoterPubkeys = quoterPubkeys,
-                zappers = zappers,
-                noteType = noteType,
-                onProfileClick = onProfileClick,
-                onReactorsClick = onReactorsClick ?: { showReactors = true },
-                onRepostersClick = onRepostersClick ?: { showReposters = true },
-                onQuotersClick = onQuotersClick ?: { showQuoters = true },
-            )
-        }
+        ExpandedLayout(
+            note = note,
+            quotedNotes = quotedNotes,
+            profile = profile,
+            profiles = profiles,
+            onArticleClick = onArticleClick,
+            onNoteClick = onNoteClick,
+            reactors = effectiveReactors,
+            latestReactionDate = latestReactionDate,
+            reposterPubkeys = reposterPubkeys,
+            quoterPubkeys = quoterPubkeys,
+            zappers = zappers,
+            noteType = noteType,
+            onProfileClick = onProfileClick,
+            onReactorsClick = onReactorsClick ?: { showReactors = true },
+            onRepostersClick = onRepostersClick ?: { showReposters = true },
+            onQuotersClick = onQuotersClick ?: { showQuoters = true },
+        )
     }
 
     // The engagement bar's counts open who reacted / reposted / quoted, as on
@@ -208,155 +196,6 @@ fun VaultNoteCard(
                 TextButton(onClick = { showBlockConfirm = false }) { Text("Cancel") }
             },
         )
-    }
-}
-
-// ── Compact Layout ─────────────────────────────────────────────
-// iOS lines 128-227: 32pt avatar, name · badge · time, 2-line text, 60x60 thumbnail.
-
-@Composable
-private fun CompactLayout(
-    note: FeedNote,
-    profile: FeedProfile?,
-    profiles: Map<String, FeedProfile>,
-    noteType: VaultNoteType,
-    onProfileClick: (String) -> Unit,
-) {
-    val context = LocalContext.current
-    val firstMedia = note.mediaURLs.firstOrNull { !isAudioUrl(it) }
-    // Headed by the reposter, with the original's text below, as on iOS.
-    val headPubkey = note.repostedBy ?: note.pubkey
-    val headProfile = if (note.repostedBy != null) profiles[headPubkey] else profile
-    val displayName = headProfile?.bestName ?: "${headPubkey.take(8)}...${headPubkey.takeLast(4)}"
-
-    Row(
-        verticalAlignment = Alignment.Top,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    ) {
-        // 32dp avatar (iOS line 146)
-        AvatarImage(
-            url = headProfile?.pictureURL,
-            pubkey = headPubkey,
-            size = 32.dp,
-            displayName = headProfile?.bestName,
-            modifier = Modifier.clickable { onProfileClick(headPubkey) },
-        )
-
-        Spacer(Modifier.width(8.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            // Header row: name, badge, · time, repost/reply indicators (iOS lines 153-180)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = displayName,
-                    color = PrimaryText,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-
-                if (note.isFromNostrVault) {
-                    NostrVaultBadge(size = 10.dp, leadingGap = 4.dp)
-                }
-
-                Spacer(Modifier.width(4.dp))
-
-                Icon(
-                    imageVector = noteType.icon,
-                    contentDescription = null,
-                    tint = noteType.color,
-                    modifier = Modifier.size(9.dp),
-                )
-
-                Text(
-                    text = " · ${formatTimestamp(note.createdAt.time / 1000)}",
-                    color = SecondaryText,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 1,
-                )
-
-                Spacer(Modifier.width(4.dp))
-
-                // iOS line 170-174: repost indicator
-                if (note.repostedBy != null) {
-                    Icon(
-                        imageVector = NostrVaultIcons.Repost,
-                        contentDescription = null,
-                        tint = RepostGreen.copy(alpha = 0.7f),
-                        modifier = Modifier.size(10.dp),
-                    )
-                }
-                // iOS line 175-179: reply indicator
-                if (note.isReply) {
-                    Icon(
-                        imageVector = NostrVaultIcons.Reply,
-                        contentDescription = null,
-                        tint = LocalNostrVaultColors.current.primary.copy(alpha = 0.7f),
-                        modifier = Modifier.size(10.dp),
-                    )
-                }
-            }
-
-            // 2-line plain text (iOS lines 182-188)
-            if (note.content.isNotBlank()) {
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = remember(note.content, profiles, note.mediaURLs) {
-                        NostrMentions.toPlainText(note.content, profiles, note.mediaURLs.toSet()).replace("\n", " ")
-                    },
-                    color = PrimaryText,
-                    fontSize = 14.sp,
-                    lineHeight = 18.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-
-        // 60x60 thumbnail (iOS lines 193-211)
-        if (firstMedia != null) {
-            Spacer(Modifier.width(8.dp))
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(60.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(TertiaryGroupedBg),
-            ) {
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(firstMedia)
-                        .size(180)
-                        .crossfade(100)
-                        .build(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                if (note.mediaURLs.size > 1) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(4.dp)
-                            .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
-                            .padding(horizontal = 6.dp, vertical = 3.dp),
-                    ) {
-                        Text(
-                            text = "+${note.mediaURLs.size - 1}",
-                            color = Color.White,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -674,7 +513,3 @@ enum class VaultNoteType(
     TAGGED("Tagged", NostrVaultIcons.TagIcon, Color(0xFF5E9FFF)),
 }
 
-enum class VaultNoteLayoutMode {
-    COMPACT,
-    EXPANDED,
-}

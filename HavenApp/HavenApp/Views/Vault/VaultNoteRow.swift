@@ -6,7 +6,6 @@ struct NoteRow: View {
     /// affordance. Used by compact contexts like the likes/zaps lists.
     var truncate: Bool = false
     /// Layout mode for the note display
-    var layoutMode: VaultView.NoteLayoutMode = .expanded
     /// Optional inline engagement data rendered inside the card.
     var reactors: [(pubkey: String, emoji: String)]? = nil
     var latestReactionDate: Date? = nil
@@ -107,13 +106,7 @@ struct NoteRow: View {
     }
 
     var body: some View {
-        Group {
-            if layoutMode == .compact {
-                compactLayout
-            } else {
-                expandedLayout
-            }
-        }
+        expandedLayout
         .buttonStyle(.plain)
         .contextMenu {
             // Another account's row (Vault chips): Report and Block would act as
@@ -150,125 +143,6 @@ struct NoteRow: View {
                 nostrService.fetchMissingProfiles(for: [event.pubkey])
             }
         }
-    }
-
-    // MARK: - Compact Layout
-    /// A condensed single-row layout mirroring the Feed's compact mode:
-    /// 32pt avatar, name · time header, two lines of plain text, and a small
-    /// media thumbnail. No engagement bar — tapping the row opens the detail view.
-    private var compactLayout: some View {
-        let urls = event.mediaURLs
-        let innerUrls = repostedEvent?.mediaURLs ?? []
-        let firstMedia = urls.first ?? innerUrls.first
-        let totalMedia = urls.count + innerUrls.count
-        let contentToShow: String = {
-            if event.kind == 6, cleanContent.isEmpty, let inner = repostedEvent {
-                return inner.content.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            return cleanContent
-        }()
-
-        return HStack(alignment: .top, spacing: 8) {
-            AvatarView(
-                url: nostrService.profiles[event.pubkey]?.pictureURL,
-                pubkey: event.pubkey,
-                size: 32
-            )
-            .overlay(Circle().stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text(displayName)
-                        .font(.appSystem(size: 13, weight: .semibold))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-
-                    if event.isFromNostrVault {
-                        NostrVaultBadge(size: 10)
-                    }
-
-                    Image(systemName: noteType.icon)
-                        .font(.appSystem(size: 9))
-                        .foregroundColor(noteType.color)
-
-                    Text("· \(timeAgo(from: event.createdAtDate))")
-                        .font(.appSystem(size: 11, weight: .regular, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-
-                    Spacer(minLength: 4)
-
-                    if event.kind == 6 {
-                        Image(systemName: "arrow.2.squarepath")
-                            .font(.appSystem(size: 10))
-                            .foregroundColor(.green.opacity(0.7))
-                    }
-                    if event.isReply {
-                        Image(systemName: "arrowshape.turn.up.left.fill")
-                            .font(.appSystem(size: 10))
-                            .foregroundColor(Color.havenPurple.opacity(0.7))
-                    }
-                }
-
-                if !contentToShow.isEmpty {
-                    Text(NostrContentFormatter.resolveMentionsPlainText(contentToShow))
-                        .font(.appSystem(size: 14))
-                        .foregroundColor(.white)
-                        .lineLimit(2)
-                        .lineSpacing(1)
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            if let firstMedia = firstMedia {
-                ZStack(alignment: .bottomTrailing) {
-                    FeedMediaView(url: firstMedia, isThumbnail: true)
-                        .meshMediaNote(author: event.pubkey, tags: event.tags)
-                        .frame(width: 60, height: 60)
-                        .aspectRatio(1, contentMode: .fill)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                    if totalMedia > 1 {
-                        Text("+\(totalMedia - 1)")
-                            .font(.appSystem(size: 10, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.black.opacity(0.7))
-                            .clipShape(Capsule())
-                            .padding(4)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            ZStack {
-                Color.platformSecondaryGroupedBackground
-                Color.havenPurple.opacity(0.015)
-                Color.white.opacity(isHovered ? 0.04 : 0)
-            }
-        )
-        .cornerRadius(10)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                // Matches the feed's compact row and the note-detail parent card.
-                // This was pinned to the non-OLED values while every other post
-                // surface doubled its accent outline against black, leaving the
-                // Relay tab visibly fainter than the rest of the app.
-                .stroke(
-                    Color.havenPurple.opacity(configService.config.useOLED ? 0.30 : 0.15),
-                    lineWidth: configService.config.useOLED ? 1.0 : 0.5
-                )
-        )
-        .contentShape(Rectangle())
-        .animation(Motion.control, value: isHovered)
-        #if os(iOS)
-        .hoverEffect(.lift)
-        #endif
-        .onHover { isHovered = $0 }
     }
 
     private func avatarGradientForType(_ type: NoteType) -> LinearGradient {

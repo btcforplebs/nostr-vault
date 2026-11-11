@@ -281,7 +281,6 @@ private fun ThreadCardLine(
             profile = profileFor(shown.pubkey),
             profiles = profiles,
             depth = entry.depth,
-            style = CondensedLineStyle.PLAIN,
             isFocused = note.id == focusedNoteId,
             replyCount = replyCount,
             contentOverride = placeholder?.text,

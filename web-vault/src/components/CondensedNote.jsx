@@ -89,7 +89,7 @@ function BareRepost(props) {
   return <Row {...props} note={props.event} placeholder={PLACEHOLDER[state]} />
 }
 
-function Row({ event, note, placeholder, depth = 0, lines, card = false, onOpen }) {
+function Row({ event, note, placeholder, depth = 0, lines, onOpen }) {
   const reposter = event.kind === 6 ? event.pubkey : null
   if (!placeholder) rememberNote(note)
   const media = placeholder ? [] : mediaUrls(note)
@@ -98,7 +98,7 @@ function Row({ event, note, placeholder, depth = 0, lines, card = false, onOpen 
   const root = depth === 0
   const go = onOpen && !placeholder ? tap(note.id, () => onOpen(note)) : open(note.id)
   return (
-    <div class={`condensed${card ? " condensed-card" : ""}${root ? " root" : " reply"}`} data-note-id={note.id}
+    <div class={`condensed${root ? " root" : " reply"}`} data-note-id={note.id}
       style={depth ? `--indent: ${Math.min(depth, 4) * 14}px` : undefined} role="button" tabIndex={0}
       aria-label={label(note, depth)} onClick={go} onAuxClick={open(note.id)} onKeyDown={e => { if (e.key === "Enter") go(e) }}>
       {depth > 0 && <span class="condensed-rail" aria-hidden="true" />}

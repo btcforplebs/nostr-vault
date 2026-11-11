@@ -99,9 +99,6 @@ class AppearanceViewModel @Inject constructor(
     private val _disableTabBarAnimation = MutableStateFlow(false)
     val disableTabBarAnimation = _disableTabBarAnimation.asStateFlow()
 
-    private val _compactLines = MutableStateFlow(FeedLineLimits.DEFAULT_COMPACT)
-    val compactLines = _compactLines.asStateFlow()
-
     private val _threadedLines = MutableStateFlow(FeedLineLimits.DEFAULT_THREADED)
     val threadedLines = _threadedLines.asStateFlow()
 
@@ -131,7 +128,6 @@ class AppearanceViewModel @Inject constructor(
 
     init {
         val config = configStore.config.value
-        _compactLines.value = config.compactLineLimit.coerceIn(FeedLineLimits.RANGE)
         _threadedLines.value = config.threadedLineLimit.coerceIn(FeedLineLimits.RANGE)
         _textScale.value = config.textSizeScale
         _defaultEmoji.value = config.defaultReactionEmoji
@@ -162,12 +158,6 @@ class AppearanceViewModel @Inject constructor(
         }
     }
 
-    fun setCompactLines(lines: Int) {
-        val value = lines.coerceIn(FeedLineLimits.RANGE)
-        _compactLines.value = value
-        viewModelScope.launch { configStore.update { it.copy(compactLineLimit = value) } }
-    }
-
     fun setThreadedLines(lines: Int) {
         val value = lines.coerceIn(FeedLineLimits.RANGE)
         _threadedLines.value = value
@@ -193,7 +183,6 @@ fun AppearanceSettingsScreen(
     val defaultEmoji by viewModel.defaultEmoji.collectAsState()
     val zapsOnly by viewModel.zapsOnly.collectAsState()
     val disableTabBarAnimation by viewModel.disableTabBarAnimation.collectAsState()
-    val compactLines by viewModel.compactLines.collectAsState()
     val threadedLines by viewModel.threadedLines.collectAsState()
     val showTranslateButton by viewModel.showTranslateButton.collectAsState()
     val translateTarget by viewModel.translateTarget.collectAsState()
@@ -266,10 +255,9 @@ fun AppearanceSettingsScreen(
 
             // OLED toggle removed — OLED black is the only appearance now.
 
-            // Feed text: lines per post in the condensed layouts
+            // Feed text: lines per post in Threaded View (Compact View is gone)
             SettingHeading("Feed Text")
             Spacer(Modifier.height(8.dp))
-            LineCountRow("Compact View", compactLines, SettingsHelp.DISPLAY_COMPACT_LINES, viewModel::setCompactLines)
             LineCountRow("Threaded View", threadedLines, SettingsHelp.DISPLAY_THREADED_LINES, viewModel::setThreadedLines)
 
             Spacer(Modifier.height(32.dp))

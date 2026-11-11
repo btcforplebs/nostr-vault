@@ -15,9 +15,9 @@ struct CondensedEngagement: Equatable {
 
 /// The single condensed representation of a note.
 ///
-/// The feed's condensed and threaded layouts both draw through here, and so
-/// does the thread view's condensed mode, so the surfaces cannot disagree
-/// about how dense "condensed" is. In the thread view only the conversation
+/// The feed's threaded layout draws through here, and so does the thread
+/// view's condensed mode, so the surfaces cannot disagree about how dense
+/// "condensed" is. In the thread view only the conversation
 /// around the note goes condensed: the note you are reading stays full size
 /// with its action bar, so a reply is one tap from wherever you landed.
 ///
@@ -27,13 +27,6 @@ struct CondensedEngagement: Equatable {
 /// line under the sheet redrew on each one. Its settings and quick menu still
 /// redraw it through `configService` and its own state.
 struct CondensedNoteLine: View, Equatable {
-    enum Style {
-        /// Standalone row in the feed: its own bordered card.
-        case card
-        /// A line inside a thread card, which owns the chrome instead.
-        case plain
-    }
-
     let note: FeedNote
     let profile: FeedProfile?
     /// The author to credit when it isn't `note.pubkey` — a bare kind-6 repost
@@ -45,7 +38,6 @@ struct CondensedNoteLine: View, Equatable {
 
     /// 0 is a root or standalone note; each step indents under a thread rail.
     var depth: Int = 0
-    var style: Style = .card
     /// Draws the purple selection treatment — the focused note in a thread card.
     var isFocused: Bool = false
     /// Replies in this thread directly under this note.
@@ -78,7 +70,7 @@ struct CondensedNoteLine: View, Equatable {
     static func == (lhs: CondensedNoteLine, rhs: CondensedNoteLine) -> Bool {
         lhs.note == rhs.note && lhs.profile == rhs.profile && lhs.displayPubkey == rhs.displayPubkey
             && lhs.original == rhs.original
-            && lhs.depth == rhs.depth && lhs.style == rhs.style && lhs.isFocused == rhs.isFocused
+            && lhs.depth == rhs.depth && lhs.isFocused == rhs.isFocused
             && lhs.replyCount == rhs.replyCount && lhs.contentOverride == rhs.contentOverride
             && lhs.postedAt == rhs.postedAt && lhs.mediaURLs == rhs.mediaURLs
             && lhs.engagement == rhs.engagement && lhs.showsMediaThumbnail == rhs.showsMediaThumbnail
@@ -125,18 +117,12 @@ struct CondensedNoteLine: View, Equatable {
     }
     private var nameSize: CGFloat { isRoot ? 13 : 12 }
     private var bodySize: CGFloat { isRoot ? 14 : 13 }
-    /// From Settings: a feed row (`.card`) is Compact View; a line in a
-    /// thread card (`.plain`) is Threaded View, where replies show one fewer
-    /// line than the root.
+    /// From Settings (Threaded View lines): replies show one fewer line than
+    /// the root.
     private var bodyLineLimit: Int {
         let range = HavenConfig.lineLimitRange
-        switch style {
-        case .card:
-            return min(max(configService.config.compactLineLimit, range.lowerBound), range.upperBound)
-        case .plain:
-            let root = min(max(configService.config.threadedLineLimit, range.lowerBound), range.upperBound)
-            return isRoot ? root : max(1, root - 1)
-        }
+        let root = min(max(configService.config.threadedLineLimit, range.lowerBound), range.upperBound)
+        return isRoot ? root : max(1, root - 1)
     }
 
     private var displayContent: String {
@@ -207,8 +193,8 @@ struct CondensedNoteLine: View, Equatable {
                 }
                 quotedNotes
             }
-            .padding(.horizontal, style == .card ? 12 : 8)
-            .padding(.vertical, style == .card ? 8 : 6)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
             .background(rowBackground)
             .overlay(rowBorder)
         }
@@ -441,37 +427,18 @@ struct CondensedNoteLine: View, Equatable {
 
     @ViewBuilder
     private var rowBackground: some View {
-        switch style {
-        case .card:
-            RoundedRectangle(cornerRadius: 10)
-                .fill(isFocused ? Color.havenPurple.opacity(isOLED ? 0.08 : 0.12) : Color.platformSecondaryGroupedBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.havenPurple.opacity(0.015))
-                )
-        case .plain:
-            // Inside a thread card the rows share one surface; only the focused
-            // line is tinted, so the conversation reads as a block instead of a
-            // stack of boxes.
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isFocused ? Color.havenPurple.opacity(isOLED ? 0.10 : 0.12) : Color.clear)
-        }
+        // Inside a thread card the rows share one surface; only the focused
+        // line is tinted, so the conversation reads as a block instead of a
+        // stack of boxes.
+        RoundedRectangle(cornerRadius: 8)
+            .fill(isFocused ? Color.havenPurple.opacity(isOLED ? 0.10 : 0.12) : Color.clear)
     }
 
     @ViewBuilder
     private var rowBorder: some View {
-        switch style {
-        case .card:
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(
-                    isFocused ? Color.havenPurple.opacity(isOLED ? 0.6 : 0.4) : Color.havenPurple.opacity(isOLED ? 0.30 : 0.15),
-                    lineWidth: isFocused ? 1.5 : (isOLED ? 1.0 : 0.5)
-                )
-        case .plain:
-            if isFocused {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.havenPurple.opacity(isOLED ? 0.6 : 0.4), lineWidth: 1.5)
-            }
+        if isFocused {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.havenPurple.opacity(isOLED ? 0.6 : 0.4), lineWidth: 1.5)
         }
     }
 
