@@ -72,7 +72,7 @@ dist/
 xcuserdata/
 
 # Build-time secrets for the iOS/macOS app (see HavenApp/Config/Base.xcconfig)
-HavenApp/Config/Secrets.xcconfig
+**/Secrets.xcconfig
 
 # web-relay build output (web-relay/vite.config.js); built at deploy time, not committed
 website/relay/
