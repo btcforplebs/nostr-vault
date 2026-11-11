@@ -1,135 +1,141 @@
+# Nostr Vault
 
-# Nostr Vault - Native Mac & iOS
+Nostr Vault is a Nostr app that runs your own relay on your own device. Your notes, follows, messages and media are
+kept on your phone or computer first, then sent to the relays and media servers you choose. The people you follow
+decide who shows up in your feeds, and you decide what reaches each relay.
 
-<p align="center">
-  <img width="1008" height="1051" src="https://github.com/user-attachments/assets/3b6e4326-125c-44c7-bfec-8330bb08a703" />
-</p>
+Website and user guide: [nostrvault.app](https://nostrvault.app) and [nostrvault.app/docs](https://nostrvault.app/docs/)
 
-<p align="center">
-  <b>Your Personal Nostr Relay — Native on Mac & iOS</b><br>
-  <i>Powered by the original Go codebase from <a href="https://github.com/bitvora/Nostr Vault">bitvora/Nostr Vault</a> and forked enhancements from <a href="https://github.com/barrydeen/haven">barrydeen/haven</a>.</i>
-</p>
+## Get it
 
----
+| Platform | Where | Needs |
+|---|---|---|
+| iPhone and iPad | [App Store](https://apps.apple.com/us/app/nostr-vault/id6759681282) | iOS / iPadOS 17 or later |
+| Mac | [Mac App Store](https://apps.apple.com/us/app/nostr-vault/id6759681282) | macOS 14 or later |
+| Android | [Zapstore](https://zapstore.dev/apps/com.nostrvault.app), or the APK on [GitHub releases](https://github.com/btcforplebs/nostr-vault/releases/latest) | Android 8 or later |
+| Web | [nostrvault.app/vault](https://nostrvault.app/vault/) | A modern browser, nothing to install |
+| Linux box | [linux/README.md](linux/README.md) (one Docker container) | Raspberry Pi 4/5, mini PC or home server |
 
-> [!TIP]
-> **Join the Beta**: Nostr Vault for iOS is now available on **TestFlight**! [**Click here to join the beta**](https://testflight.apple.com/join/kN3zE1H1).
+## What it does
 
-> [!IMPORTANT]
-> **macOS Installation Note**: Nostr Vault is currently unsigned code. macOS will likely block the application from opening by default. To bypass this, open **Settings → Privacy & Security**, scroll down to **Security**, and click **Open Anyway**.
+- **Your own relay.** Every app carries a full Nostr relay (the Go relay from [Haven](https://github.com/bitvora/haven),
+  built into the app as a library). Everything you post, receive and save is stored there first. On the web the
+  same relay runs in the page as WebAssembly, so your notes stay in your browser, not on a server.
+- **A pocket relay or a home relay.** On a phone the relay is a private backup and a megaphone: it keeps a complete
+  copy and pushes your posts out, and nothing on the network can reach in. On a Mac that stays on, with a domain
+  such as `relay.yourdomain.com`, it is a full public relay that your phone, your friends and other relays can read.
+- **A private mesh between your devices.** Show a code on one device and scan it with the other, and they are linked
+  over [FIPS](https://github.com/jmcorgan/fips), an encrypted peer-to-peer mesh. No public IP, port forwarding,
+  domain or VPN needed. Your devices sync over it, a new phone can copy your whole vault across, and media can be
+  read straight from your own devices. The protocol is written up in [docs/NIP-F1.md](docs/NIP-F1.md).
+- **Web of trust, on by default.** Global feeds, search and notifications are filtered by the follow graph of the
+  people you follow, so you see accounts your graph can vouch for instead of the raw firehose. You can see who
+  vouches for anyone, drawn as a globe. Mute lists sync, and Report and Block are on every post.
+- **Your media, kept by you.** Photos and videos are kept in your own media library and copied to the
+  [Blossom](https://github.com/hzrd149/blossom) media servers you pick. The app runs its own Blossom server too.
+- **Keys that never sit in plain text.** Your key is encrypted with NIP-49 and its password kept in the system
+  keychain, or kept out of the app entirely with a NIP-46 remote signer (bunker). On the web, sign in with a
+  NIP-07 extension or a bunker.
+- **Everything else you expect.** Private messages (NIP-17, with NIP-04 for older apps), zaps through Nostr Wallet
+  Connect, threads, articles, live streams, polls, marketplace listings, music and short videos. Notifications are
+  made on the device from your own relay, with no push server.
+- **Backups you hold.** Export your notes as JSONL and your media as files, and import them on another device.
+  Every version of your follow list, mute list and bookmarks is kept, so a list another app wiped can come back.
 
-## ✨ Features
+## Repository layout
 
-### Core
-- **Native SwiftUI** — Fast, responsive, and designed for macOS and iOS.
-- **Trusted Core** — Runs the exact same battle-tested Go code as the CLI relay, ensuring 100% compatibility.
-- **Private Relay** — Run your own private Nostr relay effortlessly from your desktop or phone.
-- **Mac-to-iOS Sync** — Use your Mac as your always-on home base. Nostr Vault for iOS securely syncs missed notes directly from your Mac relay.
-- **Multi-Account Support** — Switch between multiple Nostr accounts with clean subscription teardown, per-account data isolation, and instant feed restoration from disk snapshots.
-- **Privacy First** — Secured by system-level Keychain. Encrypt your private key with NIP-49 (ncryptsec). NIP-46 remote signing via `bunker://` URIs for hardware-separated key management.
+| Path | What it is |
+|---|---|
+| `HavenApp/` | iPhone, iPad and Mac app (SwiftUI). `project.yml` generates the Xcode project |
+| `NostrVault/` | Android app (Kotlin, Jetpack Compose) |
+| `haven-go/` | The relay, built as a library for every app (fork of [bitvora/haven](https://github.com/bitvora/haven)) |
+| `fips-v2/`, `fips-v2-android/`, `fips-bridge/` | The FIPS mesh engine and its bindings (Rust) |
+| `web-vault/` | The web app at nostrvault.app/vault |
+| `web-relay/`, `web-relay-vault/` | The browser relay and its mesh side |
+| `linux/` | The Docker image and installer for a Linux box |
+| `website/` | nostrvault.app, including the user guide in `website/docs` |
+| `docs/` | Protocol, contract and build notes |
 
-### Messaging
-- **NIP-17 Private DMs** — End-to-end encrypted messaging with the NIP-17 gift wrap protocol (NIP-44 ChaCha20 + HMAC-SHA256). Three-layer privacy: rumor, seal, gift wrap with ephemeral keypairs and randomized timestamps.
-- **NIP-04 Legacy Support** — Backward-compatible NIP-04 DMs with per-conversation protocol toggle and visual warnings.
-- **DM Inbox & Threads** — Full conversation list with unread indicators, gradient chat bubbles, mark-all-as-read, and real-time message arrival.
+## Build from source
 
-### Payments
-- **Lightning Wallet (NWC)** — Send and receive zaps via Nostr Wallet Connect with real-time balance, invoice generation with QR codes, and custom zap amounts/messages.
-- **On-Chain Bitcoin** — Taproot (BIP-341) address derivation, UTXO sweeping with Schnorr signatures, and selectable fee rates via Mempool API.
+You can build every app yourself and check that what you run is the code you read. The steps below are for macOS,
+which the Apple apps need and the Android build script expects.
 
-### Feed & Content
-- **Smart Broadcasting** — Automatically discovers recipient preferred relays (kind 10002/10050) and broadcasts to their inbox.
-- **Feed Dashboard** — Centralized control panel with connection status, 4-card stats grid, feed mode selector (Following/Discovery/Global/Media), content filter toggles, relay health, and quick actions.
-- **Link Preview Cards** — Rich inline URL previews with OpenGraph metadata fetching, memory/disk caching, and request coalescing.
-- **Infinite Scroll** — Automatic pagination in both the main feed and profile note feeds with timestamp cursor-based relay queries.
-- **120fps Feed Performance** — Data-driven FeedNoteRow with pre-resolved Equatable structs, cached filtered notes, compiled regex patterns, and NSCache-backed attributed string formatting.
-- **Feed Page (Web)** — Go-powered HTML feed page for web access to your relay content.
+### Tools
 
-### Media
-- **Blossom Media Server** — Integrated BUD-02 media hosting with automatic mirroring, BUD-06 preflight checks, and smart MIME detection via magic bytes.
-- **Media Viewer** — Browse images, videos, GIFs, and audio with source filtering, glassmorphic playback controls, hardware keyboard shortcuts, and shared video player pool.
-- **Media Grid Tab** — Instagram-style 3-column grid with tap-to-open carousel, long-press note details, and video thumbnail caching.
-- **Paste & Upload** — Paste images or URLs directly into the media viewer or compose flow for instant Blossom upload.
+- [Go](https://go.dev/dl/) 1.26 or later
+- [Rust](https://rustup.rs) through rustup. The FIPS crates pin their toolchain in `rust-toolchain.toml`, and rustup
+  fetches it on the first build
+- Xcode 16 or later, for iPhone, iPad and Mac
+- For Android: Android Studio with the Android SDK and NDK, JDK 17, and `cargo install cargo-ndk`
+- For the web app: Node.js 22 or later
+- Optional: [just](https://github.com/casey/just) for the shortcuts in `justfile`, and
+  [XcodeGen](https://github.com/yonaskolb/XcodeGen) if you add or move Swift files
 
-### Social
-- **Following List Backup & Recovery** — Automatic contact list snapshots (up to 50 per account) with relay recovery scanning, chronological display, delta badges, per-user re-follow, and full list restore.
-- **Bidirectional Mute List Sync** — Kind 10000 mute list events fetched and published to relays with per-account block lists.
-- **@mention Tagging** — Live-filtered follower popup in compose with automatic npub token insertion and p-tag routing.
-- **NIP-10/18/25 Compliance** — Proper reply threading with root/reply e-tag markers, quote post tags with relay hints, and reaction events with kind tags.
+```sh
+git clone https://github.com/btcforplebs/nostr-vault.git
+cd nostr-vault
+```
 
-### Notifications
-- **On-Device Notifications** — DMs, mentions, replies, zaps, reactions, and reposts, generated on-device from your own relay's event stream. No push server, no APNs, no third party. Per-account granular toggles by event type.
-- **Zap Notification Banner** — Animated floating status pills with real-time feedback (Zapping, Zapped, Failed).
+### iPhone, iPad and Mac
 
-### Infrastructure
-- **Advanced Access Control** — Multi-pubkey whitelisting, blacklisting, and per-account block lists synced to the Go relay.
-- **Web of Trust (WoT)** — Built-in WoT with configurable depth, minimum followers, refresh intervals, and 72-hour cache TTL.
-- **JSONL Backup/Restore** — Portable JSONL export/import with cloud backup support.
+```sh
+open HavenApp/HavenApp.xcodeproj
+```
 
-## ⚙️ Divergence from Upstream
+Pick the `HavenApp-iOS` scheme for iPhone and iPad, or `HavenApp` for the Mac. Choose your own team under Signing &
+Capabilities, then run. The build compiles the Go relay and the FIPS engine for you (the `build_haven*.sh` and
+`build_fips_*.sh` scripts in `HavenApp/HavenApp/App/`). From the command line: `just ios-build` or `just macos-build`.
 
-This fork introduces several architectural changes and features to support native macOS and iOS integration:
+The GIF picker needs a nostr.build key. Without one the app still builds and the GIF button is hidden. To add one,
+copy `HavenApp/Config/Secrets.xcconfig.example` to `HavenApp/Config/Secrets.xcconfig` (gitignored) and fill it in.
 
-- **C-Shared Library Architecture** — Go relay compiled as a static library linked directly into the Swift binary.
-- **Multi-Relay Dynamic Handler** — Handles four distinct relays (**Private, Chat, Inbox, Outbox**) within a single process.
-- **barrydeen/haven Enhancements** — Multi-pubkey whitelisting, blacklisting, JSONL backups, and persistent WoT.
-- **Mobile & Sandbox Fixes** — Specialized file loading for macOS and memory optimizations for iOS.
+### Android
 
-For the full technical breakdown, see [**DIVERGENCE.md**](docs/DIVERGENCE.md).
+```sh
+just android-build      # Go relay for each ABI, the FIPS engine, then the release APK
+just android-install    # install it on a connected device with adb
+```
 
-## 📺 Video Walkthrough
+Without a release keystore the APK is unsigned. To sign it, put `KEYSTORE_PATH`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`
+and `KEY_PASSWORD` in `NostrVault/local.properties`. Debug and release builds share an app id but not a signing key,
+so installing one over the other erases the keys stored on the phone. Use the same kind each time.
 
-[Coming Soon]
+### Web app
 
-## 📸 Screenshots
+```sh
+cd web-vault
+npm install
+npm run dev       # local dev server
+npm test
+```
 
-| Mac Dashboard | Notes Viewer | iOS Dashboard |
-|:---:|:---:|:---:|
-| ![Dashboard](docs/media/screenshots/popout-dashboard.png) | ![Notes](docs/media/screenshots/menubar-viewer-notes.png) | ![iOS TestFlight](https://testflight.apple.com/join/kN3zE1H1) |
+### Linux box
 
-## 🛠️ Building from Source
+See [linux/README.md](linux/README.md) to install it or build the Docker image.
 
-Don't trust, verify. You can build HAVEN entirely from source.
+## Documentation
 
-### Quick Start (macOS)
+- [nostrvault.app/docs](https://nostrvault.app/docs/): the user guide
+- [docs/NIP-F1.md](docs/NIP-F1.md): reaching a user's own relay and media over the FIPS mesh
+- [CHANGELOG.md](CHANGELOG.md): version history
 
-1.  **Clone the repo:**
-    ```bash
-    git clone https://github.com/btcforplebs/haven-mac.git
-    cd haven-mac
-    ```
+## Contributing
 
-2.  **Build the Go backend:**
-    ```bash
-    cd haven-go && go build .
-    ```
+Issues and pull requests are welcome. Before you change code, read [AGENTS.md](AGENTS.md). It is short and covers
+the file size limits, the generated Xcode project, and keeping the Apple and Android apps in step.
 
-3.  **Open in Xcode and run:**
-    ```bash
-    open HavenApp/HavenApp.xcodeproj
-    ```
-    Press `Cmd + R` to build and run. Xcode automatically compiles the Go static library via `build_haven.sh`.
+## Credits
 
-For detailed instructions, see [BUILD_MAC.md](docs/BUILD_MAC.md), [BUILD_IOS.md](docs/BUILD_IOS.md), and [VERIFY_BUILD.md](docs/VERIFY_BUILD.md).
+Built on the relay by [bitvora](https://github.com/bitvora/haven) and the improvements by
+[barrydeen](https://github.com/barrydeen/haven). The device mesh is [FIPS](https://github.com/jmcorgan/fips) by
+jmcorgan; the apps build from a fork at [btcforplebs/fips](https://github.com/btcforplebs/fips).
 
-## 📂 Project Structure
+3D objects (kind 33331) follow [arkin0x](https://github.com/arkin0x)'s SNO format,
+[DECK-0003](https://github.com/arkin0x/cyberspace/blob/master/decks/DECK-0003-sno.md) of the Cyberspace protocol,
+including its 256-colour palette. The web vault reads them with his [sno-core](https://github.com/arkin0x/sno-core),
+used with his permission (`web-vault/src/vendor/sno-core`).
 
-| Directory | Description |
-|-----------|-------------|
-| `haven-go/` | The upstream Go relay source (forked from barrydeen/haven) |
-| `HavenApp/` | The native Swift macOS and iOS application |
-| `docs/` | Documentation and guides |
-| `website/` | Sources for the [havennostr.com](https://havennostr.com) landing page |
+## License
 
-## 📖 Documentation
-
-- [**CHANGELOG**](CHANGELOG.md) — Full version history
-- [**C-Shared Relay Architecture**](docs/C_SHARED_RELAY.md) — How we bundle Go into Swift
-- [**Build & Verify**](docs/BUILD_MAC.md) — Building from source and verifying binaries
-- [**Sync Guide**](docs/upstream-sync.md) — Staying in sync with upstream changes
-
-## Credit
-
-Built on top of the incredible work by [bitvora](https://github.com/bitvora/haven) and [barrydeen](https://github.com/barrydeen/haven).
-
-3D objects (kind 33331) follow [arkin0x](https://github.com/arkin0x)'s SNO format, [DECK-0003](https://github.com/arkin0x/cyberspace/blob/master/decks/DECK-0003-sno.md) of the Cyberspace protocol, including its 256-colour palette. The web vault reads them with his [sno-core](https://github.com/arkin0x/sno-core), used with his permission (`web-vault/src/vendor/sno-core`).
+[MIT](LICENSE)
