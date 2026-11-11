@@ -884,6 +884,7 @@
 		6FADE7F1EE93ECA61C279770 /* QuickBarRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 207340FB8D3B36C2D991C22A /* QuickBarRow.swift */; };
 		7003613F2ACF40FAC274A6D1 /* NostrService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65D86DC20FC17947852F5719 /* NostrService.swift */; };
 		7074C757D82E2F1DA9B77D5C /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B28025DEECA1DBE5C1594358 /* FeedView.swift */; };
+		708DF71CE849D28ECE7FD97B /* NotePushLanding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94054AF395C39BAEE638AD61 /* NotePushLanding.swift */; };
 		709993BB5445AD866D371C58 /* LiveNowModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 083AB9E96216A0440D26D501 /* LiveNowModel.swift */; };
 		70C09988B3009E817EE8EC43 /* MediaShareLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70378B160E275AD7443C4260 /* MediaShareLink.swift */; };
 		70F40C95D99C3DCCA40CF66F /* DMVideoAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A7402147FAE2D5DA87D95EF /* DMVideoAttachment.swift */; };
@@ -1445,6 +1446,7 @@
 		B120ED529E6E8C6FF7F86216 /* NWCBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF9413A39E4C5825C455EB73 /* NWCBackup.swift */; };
 		B13776688F9EE2460B0A5FDB /* VaultTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E465CC24BD21C2812171299B /* VaultTypes.swift */; };
 		B139C60064CD42C867B118AA /* VaultFollowers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A58EA5A96FF1042528234F /* VaultFollowers.swift */; };
+		B1652559DCB0259E5E7CC4AF /* NotePushLanding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94054AF395C39BAEE638AD61 /* NotePushLanding.swift */; };
 		B17B750BF9262026B22FA47E /* BookmarkShareHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E99782528D592E9CE48E330 /* BookmarkShareHandler.swift */; };
 		B1B790EA826AFAA926ADC444 /* BlossomService+Delete.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FBEF0271AE2E33206E9750E /* BlossomService+Delete.swift */; };
 		B1D354490E477F58BAC8F6A2 /* DMSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 981FAE57C3F293056913DDA7 /* DMSearch.swift */; };
@@ -2773,6 +2775,7 @@
 		935F68EC9A7EBD1E570211CF /* FeedThreadGrouping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedThreadGrouping.swift; sourceTree = "<group>"; };
 		937CB610C3601ECF3B4BBD0E /* LiveStatusService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveStatusService.swift; sourceTree = "<group>"; };
 		93ED6BB091A4EBC9250A7858 /* Theming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theming.swift; sourceTree = "<group>"; };
+		94054AF395C39BAEE638AD61 /* NotePushLanding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotePushLanding.swift; sourceTree = "<group>"; };
 		9410075B1BE7FC5BBAA601AD /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		950A4AEC4559ADDDA57CEE49 /* StatusShareTags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusShareTags.swift; sourceTree = "<group>"; };
 		9537B19D8281AE9ABF41514C /* NVDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVDeepLink.swift; sourceTree = "<group>"; };
@@ -4323,6 +4326,7 @@
 				6DDDBB29FDB253D22C3F8452 /* NoteDeletion.swift */,
 				41941842EAF3EFE0A1C87C96 /* NoteInvoices.swift */,
 				A040CB55969B89915509B7E4 /* NoteMediaURL.swift */,
+				94054AF395C39BAEE638AD61 /* NotePushLanding.swift */,
 				CE87DC6C17138B7274AF82BA /* NoteTagging.swift */,
 				FDB08989DAA08A101C01CEC2 /* NoteTranslation.swift */,
 				15F574998943FBDB5B63F2FC /* NotificationAsk.swift */,
@@ -5827,6 +5831,7 @@
 				691DE632A6F2142C7868CE0B /* NoteInvoices.swift in Sources */,
 				2994BC8B39F44CD67F24CC02 /* NoteMediaURL.swift in Sources */,
 				61A85468EFF7CB9C6B455D49 /* NoteNavigationLink.swift in Sources */,
+				B1652559DCB0259E5E7CC4AF /* NotePushLanding.swift in Sources */,
 				1FB591DE0A4D4D89DBA8378F /* NoteRow+EngagementBar.swift in Sources */,
 				A9BD6764846DB55ACAEBB348 /* NoteRow+ExpandedLayout.swift in Sources */,
 				93B73FF47BBBE288DEEFBB20 /* NoteSplitPane.swift in Sources */,
@@ -6870,6 +6875,7 @@
 				AE97417C4244BEE153341027 /* NoteInvoices.swift in Sources */,
 				A0CEC635016806F2F27B35F8 /* NoteMediaURL.swift in Sources */,
 				10EFE6F5CE71C1D715E1F23D /* NoteNavigationLink.swift in Sources */,
+				708DF71CE849D28ECE7FD97B /* NotePushLanding.swift in Sources */,
 				3EBEC2F605993B37DDB345AB /* NoteRow+EngagementBar.swift in Sources */,
 				E66930E311700B1D4D32D634 /* NoteRow+ExpandedLayout.swift in Sources */,
 				BE4A78A11408E800B11048E0 /* NoteTagging.swift in Sources */,

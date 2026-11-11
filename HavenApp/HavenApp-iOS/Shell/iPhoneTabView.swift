@@ -279,11 +279,9 @@ struct iPhoneTabView: View {
                 .tag(3)
 
             VaultTabView {
-                if usesNoteSplit {
-                    noteSplit("Pick a note from the relay to read it here.") {
-                        NavigationStack { VaultView() }
-                    }
-                } else {
+                // VaultView brings its own stack on every device; on iPad the
+                // split owns the detail column.
+                noteSplit("Pick a note from the relay to read it here.") {
                     VaultView()
                 }
             }
