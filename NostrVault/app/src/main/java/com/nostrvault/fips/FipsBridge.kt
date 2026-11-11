@@ -125,6 +125,8 @@ object FipsBridge {
     const val ERR_BAD_EVENTS = -8
     /** `ingress` to an npub outside [FipsStartOptions.ownDevices]: the dial would send it this device's address. */
     const val ERR_NOT_OWN = -9
+    /** `ingress` over the mesh before the node has a tree parent: no route yet, ask again. */
+    const val ERR_NO_TREE = -10
     const val ERR_UNAVAILABLE = -100
 
     private external fun nativeStart(nsec: String, optionsJson: String): Int
