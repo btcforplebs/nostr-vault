@@ -6,6 +6,12 @@ import com.nostrvault.service.BlossomService
 import com.nostrvault.service.BlossomService.MirrorPushResult
 import com.nostrvault.service.MediaCacheService
 import com.nostrvault.service.pushToMissing
+import com.nostrvault.service.mirrorToMesh
+import com.nostrvault.fips.DeviceRole
+import com.nostrvault.fips.FipsDevice
+import com.nostrvault.fips.FipsMeshSettings
+import com.nostrvault.fips.MeshMirrorOutcome
+import com.nostrvault.fips.MeshMirrorResult
 import com.nostrvault.ui.components.FeedMediaMirrorViewModel.MirrorState
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -48,6 +54,8 @@ class FeedMirrorPillTest {
     @Before fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         mockkStatic("com.nostrvault.service.BlossomServiceMirroringKt")
+        mockkStatic("com.nostrvault.service.BlossomServiceMirrorMeshKt")
+        coEvery { blossom.mirrorToMesh(any(), any(), any()) } returns emptyList()
         val store = mockk<ConfigStore>()
         every { store.config } returns config
         every { blossom.configStore } returns store
@@ -83,7 +91,7 @@ class FeedMirrorPillTest {
         coEvery { blossom.pushToMissing(sha) } returns MirrorPushResult.AllAccepted(2)
 
         val vm = viewModel().apply { onOpen(url) }
-        assertEquals(MirrorState.Mirrored(MirrorOutcome.Everywhere), vm.mirrorAndWait(url))
+        assertEquals(MirrorState.Mirrored(MirrorReport(MirrorOutcome.Everywhere)), vm.mirrorAndWait(url))
         coVerify(exactly = 1) { blossom.pushToMissing(sha) }
     }
 
@@ -94,7 +102,7 @@ class FeedMirrorPillTest {
         coEvery { blossom.pushToMissing(sha) } returns MirrorPushResult.AllAccepted(1)
 
         val vm = viewModel().apply { onOpen(plain) }
-        assertEquals(MirrorState.Mirrored(MirrorOutcome.Everywhere), vm.mirrorAndWait(plain))
+        assertEquals(MirrorState.Mirrored(MirrorReport(MirrorOutcome.Everywhere)), vm.mirrorAndWait(plain))
         coVerify(exactly = 1) { blossom.pushToMissing(sha) }
     }
 
@@ -104,7 +112,7 @@ class FeedMirrorPillTest {
         coEvery { blossom.pushToMissing(sha) } returns MirrorPushResult.Partial(1, 3)
 
         val vm = viewModel().apply { onOpen(url) }
-        assertEquals(MirrorState.Mirrored(MirrorOutcome.SomeServers(1, 3)), vm.mirrorAndWait(url))
+        assertEquals(MirrorState.Mirrored(MirrorReport(MirrorOutcome.SomeServers(1, 3))), vm.mirrorAndWait(url))
     }
 
     @Test fun `every server failing still says it is saved on this phone`() {
@@ -113,14 +121,14 @@ class FeedMirrorPillTest {
         coEvery { blossom.pushToMissing(sha) } returns MirrorPushResult.AllFailed(1)
 
         val vm = viewModel().apply { onOpen(url) }
-        assertEquals(MirrorState.Mirrored(MirrorOutcome.ServersFailed), vm.mirrorAndWait(url))
+        assertEquals(MirrorState.Mirrored(MirrorReport(MirrorOutcome.ServersFailed)), vm.mirrorAndWait(url))
     }
 
     @Test fun `no servers added stops at the phone and pushes nothing`() {
         coEvery { blossom.mirrorUrlToLocal(url) } returns sha
 
         val vm = viewModel().apply { onOpen(url) }
-        assertEquals(MirrorState.Mirrored(MirrorOutcome.OnPhoneOnly), vm.mirrorAndWait(url))
+        assertEquals(MirrorState.Mirrored(MirrorReport(MirrorOutcome.OnPhoneOnly)), vm.mirrorAndWait(url))
         coVerify(exactly = 0) { blossom.pushToMissing(any()) }
     }
 
@@ -141,15 +149,15 @@ class FeedMirrorPillTest {
         coEvery { blossom.pushToMissing(sha) } returns null // every server already had it
 
         val vm = viewModel().apply { onOpen(url) }
-        assertEquals(MirrorState.Mirrored(MirrorOutcome.InVault), vm.state.value)
-        assertEquals(MirrorState.Mirrored(MirrorOutcome.Everywhere), vm.mirrorAndWait(url))
+        assertEquals(MirrorState.Mirrored(MirrorReport(MirrorOutcome.InVault)), vm.state.value)
+        assertEquals(MirrorState.Mirrored(MirrorReport(MirrorOutcome.Everywhere)), vm.mirrorAndWait(url))
         coVerify(exactly = 0) { blossom.mirrorUrlToLocal(any(), any(), any(), any(), any()) }
     }
 
     @Test fun `already in the vault with no servers is done`() {
         every { cache.isInLocalBlossom(sha) } returns true
         val vm = viewModel().apply { onOpen(url) }
-        assertEquals(MirrorState.Mirrored(MirrorOutcome.OnPhoneOnly), vm.state.value)
+        assertEquals(MirrorState.Mirrored(MirrorReport(MirrorOutcome.OnPhoneOnly)), vm.state.value)
     }
 
     // ── Words ──
@@ -180,5 +188,54 @@ class FeedMirrorPillTest {
         assertTrue(MirrorOutcome.SomeServers(1, 2).canRetry)
         assertTrue(MirrorOutcome.ServersFailed.canRetry)
         assertTrue(MirrorOutcome.InVault.canRetry)
+    }
+    // ── Over FIPS to the mesh devices the owner's 10063 lists ──
+
+    private val mac = "npub1mac"
+    private val kiosk = "npub1kiosk"
+
+    @Test fun `each listed mesh device is reported by its My Devices name`() {
+        config.value = HavenConfig(
+            ownerNpub = "npub1owner", blossomMirrors = listOf("https://a.example.com"),
+            fipsMesh = FipsMeshSettings(devices = listOf(FipsDevice(mac, DeviceRole.MAC, name = "Office Mac"))),
+        )
+        coEvery { blossom.mirrorUrlToLocal(url) } returns sha
+        coEvery { blossom.pushToMissing(sha) } returns MirrorPushResult.AllAccepted(1)
+        coEvery { blossom.mirrorToMesh(sha, "image/jpeg", any()) } returns listOf(
+            MeshMirrorResult(mac, DeviceRole.MAC, MeshMirrorOutcome.SENT),
+            MeshMirrorResult(kiosk, DeviceRole.HOME_VAULT, MeshMirrorOutcome.WAITING),
+        )
+
+        val vm = viewModel().apply { onOpen(url) }
+        val report = (vm.mirrorAndWait(url) as MirrorState.Mirrored).report
+        assertEquals(
+            listOf(MeshDeviceLine("Office Mac", MeshMirrorOutcome.SENT), MeshDeviceLine("Mobile vault", MeshMirrorOutcome.WAITING)),
+            report.mesh,
+        )
+        assertEquals("Mirrored · 1 of 2 devices", report.label)
+        assertTrue(report.spoken, report.spoken.contains("Office Mac: sent over the mesh"))
+        assertTrue(report.spoken, report.spoken.contains("Mobile vault: waiting"))
+        assertFalse(report.complete)
+        assertTrue(report.canRetry)
+    }
+
+    @Test fun `no mesh step when the local save failed`() {
+        servers("https://a.example.com")
+        coEvery { blossom.mirrorUrlToLocal(url) } returns null
+        viewModel().apply { onOpen(url) }.mirrorAndWait(url)
+        coVerify(exactly = 0) { blossom.mirrorToMesh(any(), any(), any()) }
+    }
+
+    @Test fun `every device sent and every server is green, a refusal is not retried`() {
+        val sent = MirrorReport(MirrorOutcome.Everywhere, listOf(MeshDeviceLine("Office Mac", MeshMirrorOutcome.SENT)))
+        assertTrue(sent.complete)
+        assertFalse(sent.canRetry)
+        assertEquals("Mirrored · 1 of 1 device", sent.label)
+        val refused = MirrorReport(MirrorOutcome.Everywhere, listOf(MeshDeviceLine("Office Mac", MeshMirrorOutcome.REFUSED)))
+        assertFalse(refused.complete)
+        assertFalse(refused.canRetry)
+        val full = MirrorReport(MirrorOutcome.Everywhere, listOf(MeshDeviceLine("Office Mac", MeshMirrorOutcome.NOT_QUEUED)))
+        assertTrue(full.canRetry)
+        assertEquals("Mirrored", MirrorReport(MirrorOutcome.Everywhere).label)
     }
 }

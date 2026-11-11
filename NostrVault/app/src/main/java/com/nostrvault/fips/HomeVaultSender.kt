@@ -97,7 +97,7 @@ class HomeVaultSender @Inject constructor(
      * Where the owner's new notes and media go right now, each with its queue: the home vault,
      * then each Mac. None while another account is active.
      */
-    private fun lanes(): List<Pair<MeshSendTarget, HomeVaultQueue>> {
+    internal fun lanes(): List<Pair<MeshSendTarget, HomeVaultQueue>> {
         if (!ownerIsActive()) return emptyList()
         return MeshSendTargets.of(configStore.config.value).map { t ->
             t to (if (t.role == DeviceRole.HOME_VAULT) queue else macQueue(t.npub))
@@ -135,7 +135,7 @@ class HomeVaultSender @Inject constructor(
     private val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e -> Log.e(TAG, "home vault", e) },
     )
-    private val drainLock = Mutex()
+    internal val drainLock = Mutex()
     private var retryJob: Job? = null
 
     private val client = OkHttpClient.Builder()
@@ -148,7 +148,7 @@ class HomeVaultSender @Inject constructor(
      * For [ensureOnVault], with the composer waiting: a whole-call limit,
      * since a coroutine timeout cannot interrupt a blocking `execute()`.
      */
-    private val ensureClient = client.newBuilder().callTimeout(ENSURE_CALL_TIMEOUT_S, TimeUnit.SECONDS).build()
+    internal val ensureClient = client.newBuilder().callTimeout(ENSURE_CALL_TIMEOUT_S, TimeUnit.SECONDS).build()
 
     data class State(
         val waiting: Int = 0,
@@ -391,7 +391,7 @@ class HomeVaultSender @Inject constructor(
      * `ContentResolver.getType`), so one OkHttp can't parse is replaced
      * here, never handed to `toMediaType()` on a retry.
      */
-    private fun safeType(contentType: String): String =
+    internal fun safeType(contentType: String): String =
         contentType.takeIf { it.toMediaTypeOrNull() != null } ?: "application/octet-stream"
 
     private fun full() {
@@ -487,7 +487,7 @@ class HomeVaultSender @Inject constructor(
         // Each blob is one signer prompt; a tap approves a batch, not the whole queue.
         val selection = HomeVaultRules.select(
             items, now, userInitiated, signerIsLocal(),
-            needsSignature = { it.type == HomeVaultQueue.TYPE_BLOB },
+            needsSignature = HomeVaultRules::needsOwnerSignature,
         )
         if (selection.heldForSigner) problem("Your signer needs you: tap Send now")
         for (item in selection.toTry) {
@@ -518,7 +518,7 @@ class HomeVaultSender @Inject constructor(
     }
 
     /** Apply one send's outcome to the queue. */
-    private fun record(item: HomeVaultQueue.Item, outcome: HomeVaultSend, npub: String, now: Long, queue: HomeVaultQueue, role: DeviceRole) {
+    internal fun record(item: HomeVaultQueue.Item, outcome: HomeVaultSend, npub: String, now: Long, queue: HomeVaultQueue, role: DeviceRole) {
         when (outcome) {
             HomeVaultSend.SENT -> {
                 queue.remove(item.key)
@@ -548,7 +548,8 @@ class HomeVaultSender @Inject constructor(
         val sha = item.key
         val file = queue.blobFile(sha)
         // Already there (sent before a crash, or uploaded on the kiosk itself).
-        http.newCall(VaultCheck.request(base, sha, check ?: checkAuth(sha, receiver))).execute().use {
+        val meshOnly = item.meshKeyOnly
+        http.newCall(VaultCheck.request(base, sha, check ?: checkAuth(sha, receiver, meshOnly))).execute().use {
             if (it.isSuccessful) return HomeVaultSend.SENT
         }
         if (!file.exists()) return HomeVaultSend.REJECTED
@@ -557,6 +558,11 @@ class HomeVaultSender @Inject constructor(
         // Signed per send, not when queued: Blossom auth expires. This phone's mesh key for this vault
         // (docs/MESH_COPY_V2_CONTRACT.md §2.1); the owner's form only without one (TODO(mesh-key)).
         val meshAuth = meshToken(MeshKeyAuth.Verb.UPLOAD, sha, receiver, "Upload to my vault", MeshKeyAuth.BLOSSOM_LIFETIME_S, file.length())
+        // A mesh-key-only item (feed Mirror) waits for this device's mesh key rather than sign as the owner.
+        if (meshAuth == null && meshOnly) {
+            problem("This phone has no mesh key yet")
+            return HomeVaultSend.RETRY
+        }
         val auth = meshAuth ?: uploadAuth(sha) ?: run {
             problem("Could not sign the upload")
             return HomeVaultSend.RETRY
@@ -577,7 +583,7 @@ class HomeVaultSender @Inject constructor(
         // A vault without the paired set yet (an older build, or the box before havend passes it) turns the device
         // form down: one retry with the owner's form while vaults accept it. A vault that has its set says so
         // (X-Mesh-Devices), and its refusal stands. TODO(mesh-key).
-        if (!ownerRetry) return outcome
+        if (!ownerRetry || meshOnly) return outcome
         val ownerAuth = uploadAuth(sha) ?: return outcome
         Log.w(TAG, "home vault did not take the device key for ${sha.take(8)}, sent with the owner's")
         return http.newCall(put(ownerAuth)).execute().use { HomeVaultRules.uploadOutcome(it.code) }
@@ -599,11 +605,11 @@ class HomeVaultSender @Inject constructor(
      * the relay port My Devices reach. Only the mesh door needs it (#1050), for a sender the vault
      * does not list (Tod, Tron #1048 #2).
      */
-    private suspend fun checkAuth(sha256: String, receiver: String): String? {
+    private suspend fun checkAuth(sha256: String, receiver: String, meshKeyOnly: Boolean = false): String? {
         // This phone's mesh key first, for this vault: a HEAD does not spend it. The owner's form only without a
-        // mesh key (TODO(mesh-key)).
+        // mesh key (TODO(mesh-key)), and never for a mesh-key-only item (an unsigned check still works on the relay port).
         meshToken(MeshKeyAuth.Verb.GET, sha256, receiver, "Check my vault", VaultCheck.AUTH_LIFETIME_S, null)?.let { return it }
-        if (!signerIsLocal()) return null
+        if (meshKeyOnly || !signerIsLocal()) return null
         return signedAuth(VaultCheck.authTags(sha256, System.currentTimeMillis() / 1000), "Check home vault", "check")
     }
 
@@ -664,7 +670,7 @@ class HomeVaultSender @Inject constructor(
     }.getOrNull()
 
     /** Try again in a minute, for as long as something waits. One timer at a time. */
-    private fun scheduleRetry() {
+    internal fun scheduleRetry() {
         if (retryJob?.isActive == true) return
         retryJob = scope.launch {
             while (isActive) {
@@ -675,11 +681,15 @@ class HomeVaultSender @Inject constructor(
         }
     }
 
-    private fun problem(text: String) {
+    /** The mesh door for [npub], or null while the mesh is off or the device is not reachable; swapped in tests. */
+    internal var meshIngress: (npub: String) -> String? =
+        { npub -> if (FipsBridge.status().running) FipsMediaRouter.ingressBase(npub) else null }
+
+    internal fun problem(text: String) {
         _state.value = _state.value.copy(lastProblem = text)
     }
 
-    private fun publish() {
+    internal fun publish() {
         _state.value = _state.value.copy(waiting = waitingCount(), publicPending = publicCopies.size)
     }
 

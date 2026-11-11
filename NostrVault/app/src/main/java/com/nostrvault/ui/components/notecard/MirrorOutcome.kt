@@ -67,3 +67,41 @@ sealed interface MirrorOutcome {
         }
     }
 }
+
+/** One of the owner's mesh devices in a Mirror's result, by the name My Devices shows. */
+data class MeshDeviceLine(val name: String, val outcome: com.nostrvault.fips.MeshMirrorOutcome)
+
+/**
+ * A finished Mirror: the media servers' part ([servers]) and each mesh device the owner's 10063 lists ([mesh],
+ * empty when it lists none). The pill reads its colour, text, spoken label and whether a tap retries from here.
+ */
+data class MirrorReport(val servers: MirrorOutcome, val mesh: List<MeshDeviceLine> = emptyList()) {
+    private val meshSent get() = mesh.count { it.outcome == com.nostrvault.fips.MeshMirrorOutcome.SENT }
+
+    /** Green: every server and every listed device has it. */
+    val complete: Boolean get() = servers.complete && meshSent == mesh.size
+
+    /** A tap can still reach more: a server lacks it, or a device is waiting or was never queued. */
+    val canRetry: Boolean
+        get() = servers.canRetry || mesh.any {
+            it.outcome == com.nostrvault.fips.MeshMirrorOutcome.WAITING ||
+                it.outcome == com.nostrvault.fips.MeshMirrorOutcome.NOT_QUEUED
+        }
+
+    val label: String
+        get() = when {
+            mesh.isEmpty() -> servers.label
+            else -> "${servers.label} · $meshSent of ${mesh.size} ${if (mesh.size == 1) "device" else "devices"}"
+        }
+
+    /** The servers' sentence, then one per device: "Office Mac: sent". */
+    val spoken: String
+        get() = (listOf(servers.spoken) + mesh.map { "${it.name}: ${meshWords(it.outcome)}" }).joinToString(". ")
+
+    private fun meshWords(o: com.nostrvault.fips.MeshMirrorOutcome) = when (o) {
+        com.nostrvault.fips.MeshMirrorOutcome.SENT -> "sent over the mesh"
+        com.nostrvault.fips.MeshMirrorOutcome.WAITING -> "waiting, goes when it is reachable"
+        com.nostrvault.fips.MeshMirrorOutcome.REFUSED -> "refused it"
+        com.nostrvault.fips.MeshMirrorOutcome.NOT_QUEUED -> "not sent, the queue is full"
+    }
+}
