@@ -24,6 +24,7 @@ class QuoteTargetTest {
         tags = listOf(listOf("e", original, "wss://relay.example"), listOf("p", author)),
         createdAt = 1_700_000_000,
         kind = 6,
+        verify = { true }, // unsigned fixture; RepostTrustTest covers verification
     )
 
     private fun embedded(withTags: Boolean = true) = buildJsonObject {

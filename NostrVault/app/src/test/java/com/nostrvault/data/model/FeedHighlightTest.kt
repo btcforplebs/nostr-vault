@@ -46,7 +46,7 @@ class FeedHighlightTest {
     @Test fun `a repost of a highlight still quotes its source`() {
         val inner = """{"id":"$highlightId","pubkey":"$author","created_at":1600000000,"kind":9802,""" +
             """"tags":[["a","$coordinate"]],"content":"the passage","sig":""}"""
-        val note = FeedNote.fromEvent("e".repeat(64), sourceAuthor, inner, listOf(listOf("e", highlightId)), 1_700_000_000L, GenericRepost.KIND)
+        val note = FeedNote.fromEvent("e".repeat(64), sourceAuthor, inner, listOf(listOf("e", highlightId)), 1_700_000_000L, GenericRepost.KIND, verify = { true })
         assertEquals(FeedHighlight.KIND, note.displayKind)
         assertEquals(listOf(QuoteRef.COORDINATE_PREFIX + coordinate), note.quotedEventIds)
     }

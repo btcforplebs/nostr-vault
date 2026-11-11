@@ -86,7 +86,7 @@ enum FeedFilterEngine {
                 // Global articles trust the same graph as Global, and fail
                 // closed the same way; Following keeps to the follow set.
                 if articlesGlobal {
-                    return !globalRequiresTrust || wotPubkeys.contains(note.pubkey)
+                    return !globalRequiresTrust || wotPubkeys.contains(note.repostedBy ?? note.pubkey)
                 }
                 return note.pubkey == ownPubkey || followedPubkeys.contains(note.pubkey)
             }
@@ -99,7 +99,7 @@ enum FeedFilterEngine {
                 if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
                 guard let poll = note.poll, pollStatus.admits(poll, now: now) else { return false }
                 if pollsGlobal {
-                    return !globalRequiresTrust || wotPubkeys.contains(note.pubkey)
+                    return !globalRequiresTrust || wotPubkeys.contains(note.repostedBy ?? note.pubkey)
                 }
                 return note.pubkey == ownPubkey || followedPubkeys.contains(note.pubkey)
             }
@@ -132,7 +132,9 @@ enum FeedFilterEngine {
                 // Empty means either "not built yet" or "the owner follows
                 // nobody"; nothing else may build a graph, so both show nothing.
                 // "Everyone" (opted into behind a warning) skips the graph.
-                if globalRequiresTrust && !wotPubkeys.contains(note.pubkey) { return false }
+                // Judged on the signer: a repost's reposter, never the author
+                // its content names (an unsigned claim, as Following does).
+                if globalRequiresTrust && !wotPubkeys.contains(note.repostedBy ?? note.pubkey) { return false }
                 if note.isReply { return false }
                 // Narrowed to chosen languages: notes whose language can't
                 // be told (short, links only) stay. See FeedLanguageDetector.
@@ -184,7 +186,7 @@ enum FeedFilterEngine {
         notes.filter { note in
             if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
             // Fail closed for the same reason as the Global feed above.
-            if isGlobalMedia && globalRequiresTrust && !wotPubkeys.contains(note.pubkey) { return false }
+            if isGlobalMedia && globalRequiresTrust && !wotPubkeys.contains(note.repostedBy ?? note.pubkey) { return false }
             return !note.mediaURLs.isEmpty
         }.sorted {
             if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }

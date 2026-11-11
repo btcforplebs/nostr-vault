@@ -19,6 +19,7 @@ class RepostPostedAtTest {
 
     private fun repost(content: String) = FeedNote.fromEvent(
         "d".repeat(64), reposter, content, listOf(listOf("e", originalId), listOf("p", author)), reposted, 6,
+        verify = { true }, // unsigned fixture; RepostTrustTest covers verification
     )
 
     @Test fun `embedded repost shows the original's time and keeps its own for ordering`() {

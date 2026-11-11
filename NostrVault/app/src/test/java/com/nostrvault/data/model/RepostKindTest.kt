@@ -43,6 +43,7 @@ class RepostKindTest {
             id = repostId, pubkey = reposter, content = inner,
             createdAt = java.util.Date(1_700_000_000_000L),
             tags = listOf(listOf("e", originalId), listOf("p", author)), kind = 6,
+            verify = { true }, // unsigned fixture
         )
         assertEquals(ArticleMeta.KIND, note.displayKind)
         assertEquals(author, note.pubkey)
@@ -75,7 +76,7 @@ class RepostKindTest {
     @Test fun `a generic repost embedding an article draws the article`() {
         val inner = """{"id":"$originalId","pubkey":"$author","created_at":1600000000,"kind":30023,""" +
             """"tags":[["d","x"],["title","Hello"]],"content":"# Body","sig":""}"""
-        val note = FeedNote.fromEvent(repostId, reposter, inner, listOf(listOf("e", originalId)), 1_700_000_000L, GenericRepost.KIND)
+        val note = FeedNote.fromEvent(repostId, reposter, inner, listOf(listOf("e", originalId)), 1_700_000_000L, GenericRepost.KIND, verify = { true })
         assertEquals(6, note.kind)
         assertEquals(ArticleMeta.KIND, note.displayKind)
         assertEquals(author, note.pubkey)
