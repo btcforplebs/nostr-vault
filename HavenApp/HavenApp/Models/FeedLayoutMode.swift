@@ -1,43 +1,52 @@
 import Foundation
 
-/// How a timeline feed draws its rows. One control cycles through these in
-/// order, so the three layouts are one setting rather than three toggles.
+/// How a timeline feed draws its rows. One button switches between the two
+/// (Logen, 2026-11-11: compact view is gone).
 enum FeedLayoutMode: String, Codable, CaseIterable {
-    /// Full note cards: media, actions, engagement.
+    /// Full note cards: media, actions, engagement. Opens with replies off,
+    /// so the feed reads as single posts.
     case expanded
-    /// One note per line: avatar, name, three lines of text, a media thumbnail.
-    case condensed
     /// Condensed lines grouped into whole conversations, root plus replies.
+    /// Opens with replies on.
     case threaded
 
-    /// The next layout in the cycle. Feeds that cannot be threaded (grids and
-    /// card lists) skip straight back to expanded.
+    /// The layout `raw` names. "condensed" (compact view, removed) and
+    /// anything unknown read as expanded.
+    init(stored raw: String?) {
+        self = raw == FeedLayoutMode.threaded.rawValue ? .threaded : .expanded
+    }
+
+    /// An old config may hold "condensed"; decoding must not throw on it.
+    init(from decoder: Decoder) throws {
+        self.init(stored: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    /// The other layout. Feeds that cannot be threaded (grids and card
+    /// lists) stay expanded.
     func next(supportsThreading: Bool) -> FeedLayoutMode {
-        switch self {
-        case .expanded:
-            return .condensed
-        case .condensed:
-            return supportsThreading ? .threaded : .expanded
-        case .threaded:
-            return .expanded
-        }
+        (self == .expanded && supportsThreading) ? .threaded : .expanded
     }
 
     /// Threading only makes sense on a timeline of notes; a media grid or an
     /// article list has no replies to gather.
     func clamped(supportsThreading: Bool) -> FeedLayoutMode {
-        (self == .threaded && !supportsThreading) ? .condensed : self
+        supportsThreading ? self : .expanded
     }
 
-    /// True when rows draw as condensed lines — both condensed layouts do.
+    /// True when rows draw as condensed lines: threaded keeps that look.
     var usesCondensedRows: Bool {
-        self != .expanded
+        self == .threaded
+    }
+
+    /// What Show replies becomes when the reader switches to this layout.
+    /// They can still flip it by hand afterwards in either layout.
+    var showsRepliesOnSwitch: Bool {
+        self == .threaded
     }
 
     var symbolName: String {
         switch self {
         case .expanded:  return "rectangle.expand.vertical"
-        case .condensed: return "rectangle.compress.vertical"
         case .threaded:  return "list.bullet.indent"
         }
     }
@@ -46,7 +55,6 @@ enum FeedLayoutMode: String, Codable, CaseIterable {
     var displayName: String {
         switch self {
         case .expanded:  return "Expanded View"
-        case .condensed: return "Compact View"
         case .threaded:  return "Threaded View"
         }
     }
@@ -57,24 +65,26 @@ enum FeedLayoutMode: String, Codable, CaseIterable {
         next(supportsThreading: supportsThreading).displayName
     }
 
-    /// Resolve the stored layout for a feed, falling back to the per-feed
-    /// compact-mode boolean that shipped before this setting existed. Without
-    /// this, everyone who had chosen compact mode would silently be reset to
-    /// expanded on upgrade.
-    ///
-    /// - Parameters:
-    ///   - storedLayout: `feedLayoutModes[feed]`, once the user has cycled.
-    ///   - storedCompact: the legacy `feedCompactModes[feed]` override.
-    ///   - defaultCompact: this feed's built-in compact default.
-    static func resolve(
-        storedLayout: String?,
-        storedCompact: Bool?,
-        defaultCompact: Bool
-    ) -> FeedLayoutMode {
-        if let storedLayout, let mode = FeedLayoutMode(rawValue: storedLayout) {
-            return mode
+    /// Rewrites a saved config's compact choices as expanded. A feed saved
+    /// as "condensed", or one with no layout saved and the legacy per-feed
+    /// compact switch on, becomes "expanded". `hadCompact` says whether any
+    /// did, so the caller turns replies off once, as switching to expanded
+    /// does.
+    static func migrateCompact(
+        layouts: [String: String],
+        legacyCompact: [String: Bool]
+    ) -> (layouts: [String: String], hadCompact: Bool) {
+        var out = layouts
+        var hadCompact = false
+        for (feed, raw) in layouts where raw == "condensed" {
+            out[feed] = expanded.rawValue
+            hadCompact = true
         }
-        return (storedCompact ?? defaultCompact) ? .condensed : .expanded
+        for (feed, compact) in legacyCompact where compact && layouts[feed] == nil {
+            out[feed] = expanded.rawValue
+            hadCompact = true
+        }
+        return (out, hadCompact)
     }
 }
 
@@ -113,7 +123,7 @@ enum FeedMenuOrder {
     }
 }
 
-/// Text for a condensed or threaded line, which shows only a few lines.
+/// Text for a threaded line, which shows only a few lines.
 enum CondensedText {
     /// Drops blank lines (and lines left empty once URLs are stripped) and
     /// trims the ends. A post with blank lines between paragraphs spent the

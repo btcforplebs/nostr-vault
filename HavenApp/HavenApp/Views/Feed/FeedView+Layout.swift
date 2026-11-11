@@ -3,19 +3,8 @@ import SwiftUI
 extension FeedView {
     // MARK: - Helper Properties
 
-    /// This feed's built-in compact default: Following defaults OFF, all other
-    /// timeline feeds follow the legacy global preference.
-    private var defaultCompactForCurrentFeed: Bool {
-        switch feedService.feedMode {
-        case .following, .articles, .recipes, .marketplace, .live, .reels, .music, .hashtags, .polls:
-            return false
-        case .discovery, .global, .popular, .catchUp, .underrated, .media:
-            return configService.config.useFeedCompactMode
-        }
-    }
-
     /// Only a timeline of notes has replies to gather, so grids and card lists
-    /// cycle between expanded and condensed without a threaded stop.
+    /// stay expanded.
     var currentFeedSupportsThreading: Bool {
         switch feedService.feedMode {
         case .following, .discovery, .global, .popular, .catchUp, .underrated, .hashtags:
@@ -25,26 +14,21 @@ extension FeedView {
         }
     }
 
-    /// Whether the layout button has anything to switch. Expanded/condensed
-    /// and threaded only change timeline rows (`isCompactModeActive`,
+    /// Whether the layout button has anything to switch. Expanded and
+    /// threaded only change timeline rows (`isCompactModeActive`,
     /// `isThreadedModeActive`); grids, card lists and Reels ignore them, so
     /// the button there cycled an icon and nothing else. The Mac toolbar
     /// already left it out for these feeds.
     var currentFeedHasLayouts: Bool { currentFeedSupportsThreading }
 
-    /// The stored layout for the current feed, migrating anyone who had the
-    /// old per-feed compact boolean set.
+    /// The stored layout for the current feed (a saved compact choice was
+    /// rewritten as expanded when the config loaded).
     var layoutModeForCurrentFeed: FeedLayoutMode {
-        FeedLayoutMode.resolve(
-            storedLayout: configService.config.feedLayoutModes[feedService.feedMode.rawValue],
-            storedCompact: configService.config.feedCompactModes[feedService.feedMode.rawValue],
-            defaultCompact: defaultCompactForCurrentFeed
-        )
-        .clamped(supportsThreading: currentFeedSupportsThreading)
+        FeedLayoutMode(stored: configService.config.feedLayoutModes[feedService.feedMode.rawValue])
+            .clamped(supportsThreading: currentFeedSupportsThreading)
     }
 
-    /// Advance the current feed one step around expanded -> condensed ->
-    /// threaded and persist it.
+    /// Switch the current feed between expanded and threaded and persist it.
     func cycleLayoutModeForCurrentFeed() {
         setLayoutModeForCurrentFeed(layoutModeForCurrentFeed.next(supportsThreading: currentFeedSupportsThreading))
     }
@@ -81,16 +65,15 @@ extension FeedView {
     private func applyLayoutMode(_ resolved: FeedLayoutMode, keeping readingNoteId: String?, animation: Animation?) {
         pendingLayoutAnimation = animation
         withAnimation(animation) {
+        let changed = configService.config.feedLayoutModes[feedService.feedMode.rawValue] != resolved.rawValue
         configService.config.feedLayoutModes[feedService.feedMode.rawValue] = resolved.rawValue
-        // Keep the legacy key in step so a downgrade still lands somewhere sane.
-        configService.config.feedCompactModes[feedService.feedMode.rawValue] = resolved.usesCondensedRows
 
-        // A threaded feed with replies filtered out would show nothing but
-        // roots, which is the layout the user just left. Turn replies on with
-        // it; the Replies filter still switches them back off.
+        // Expanded reads as single posts, threaded as conversations, so the
+        // switch sets Show replies to match (Logen, 2026-11-11). The Replies
+        // filter still flips them by hand in either layout.
         var needsRefilter = false
-        if resolved == .threaded && !configService.config.showReplies {
-            configService.config.showReplies = true
+        if changed && configService.config.showReplies != resolved.showsRepliesOnSwitch {
+            configService.config.showReplies = resolved.showsRepliesOnSwitch
             needsRefilter = true
         }
 
@@ -141,8 +124,8 @@ extension FeedView {
         #endif
     }
 
-    /// Condensed rows are active — either of the two condensed layouts. Media
-    /// and article feeds are card/grid layouts with nothing to condense.
+    /// Condensed rows are active: the threaded layout. Media and article
+    /// feeds are card/grid layouts with nothing to condense.
     var isCompactModeActive: Bool {
         guard layoutModeForCurrentFeed.usesCondensedRows else { return false }
         switch feedService.feedMode {

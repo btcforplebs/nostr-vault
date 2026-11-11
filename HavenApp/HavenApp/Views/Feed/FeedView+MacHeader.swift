@@ -255,7 +255,7 @@ extension FeedView {
                     .frame(height: 20)
                     .padding(.horizontal, 8)
 
-                // Layout cycle: expanded -> condensed -> threaded
+                // Layout switch: expanded <-> threaded
                 Button(action: {
                     cycleLayoutModeForCurrentFeed()
                 }) {

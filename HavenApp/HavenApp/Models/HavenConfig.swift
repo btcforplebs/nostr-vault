@@ -42,9 +42,9 @@ struct HavenConfig: Codable, Equatable {
     var textSizeScale: Double = 1.0
     var useFeedCompactMode: Bool = true // Legacy global default; per-feed overrides live in feedCompactModes
     var feedCompactModes: [String: Bool] = [:] // Per-feed compact-mode overrides, keyed by FeedMode.rawValue
-    /// Per-feed layout choice (expanded / condensed / threaded), keyed by
-    /// FeedMode.rawValue. Supersedes `feedCompactModes`, which is still read as
-    /// the fallback so an upgrade keeps whatever compact setting was in place.
+    /// Per-feed layout choice (expanded / threaded), keyed by
+    /// FeedMode.rawValue. Supersedes `feedCompactModes`; a saved compact
+    /// choice is rewritten as expanded on load (`FeedLayoutMode.migrateCompact`).
     /// New installs open the timeline feeds in Threaded View (Logen,
     /// 2026-10-08). Saved configs keep their own, including older ones
     /// without this key (see `init(from:)`).
@@ -381,6 +381,11 @@ struct HavenConfig: Codable, Equatable {
         // Not `defaults`: a config from before this key existed keeps its
         // legacy compact choice instead of jumping to Threaded View.
         feedLayoutModes = try container.decodeIfPresent([String: String].self, forKey: .feedLayoutModes) ?? [:]
+        // Compact view is gone (Logen, 2026-11-11): a compact feed opens
+        // expanded, with replies off as switching to expanded sets them.
+        let migrated = FeedLayoutMode.migrateCompact(layouts: feedLayoutModes, legacyCompact: feedCompactModes)
+        feedLayoutModes = migrated.layouts
+        if migrated.hadCompact { showReplies = false }
         defaultReactionEmoji = try container.decodeIfPresent(String.self, forKey: .defaultReactionEmoji) ?? defaults.defaultReactionEmoji
         appIcon = try container.decodeIfPresent(String.self, forKey: .appIcon) ?? defaults.appIcon
         zapsOnlyMode = try container.decodeIfPresent(Bool.self, forKey: .zapsOnlyMode) ?? defaults.zapsOnlyMode
