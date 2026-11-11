@@ -209,7 +209,14 @@ final class VideoPlaybackService: @unchecked Sendable {
     func setMuted(_ muted: Bool, on player: AVPlayer) {
         player.isMuted = muted
         if muted {
+            // Handing the sound back deactivates the session, and iOS stops
+            // every player in a deactivated session, this one included: a
+            // feed video paused when muted. Muting only silences it.
+            // (The simulator's audio session never stops players, so this
+            // shows only on a device.)
+            let wasPlaying = player.timeControlStatus != .paused
             AudioSessionManager.shared.enableMixingWithOthers()
+            if wasPlaying { player.play() }
         } else {
             AudioSessionManager.shared.enablePlayback()
         }
