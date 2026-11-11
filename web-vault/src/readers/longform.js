@@ -1,7 +1,7 @@
 // Long-form posts (NIP-23, kind 30023): what the Articles and Recipes readers share. Ported from the iPhone app:
 // LongFormMetadata and MarkdownParser (Models/LongFormContent.swift), FeedFilterEngine.dedupeAddressable,
 // VaultNoteScope.isRecipe and NostrWebLink.longForm (Models/NostrWebLink.swift).
-import { naddrEncode } from "nostr-tools/nip19"
+import { decode, naddrEncode } from "nostr-tools/nip19"
 
 export const LONG_FORM_KIND = 30023
 /** The `t` tags that make a long-form post a recipe (zap.cooking writes both). */
@@ -92,12 +92,20 @@ export function standaloneImage(text) {
 export function parseMarkdown(body) {
   const blocks = []
   let para = [], code = [], fenced = false
+  // A block minus its quote references, then one card row for them (Logen 2026-11-11).
+  const pushQuoting = (text, make) => {
+    const split = articleQuoteSplit(text)
+    if (!split) return blocks.push(make(text))
+    if (split.text) blocks.push(make(split.text))
+    blocks.push({ type: "quotes", refs: split.refs })
+  }
   const flush = () => {
     const text = para.join(" ").trim()
     para = []
     if (!text) return
     const url = standaloneImage(text)
-    blocks.push(url ? { type: "image", url } : { type: "paragraph", text })
+    if (url) blocks.push({ type: "image", url })
+    else pushQuoting(text, text => ({ type: "paragraph", text }))
   }
   for (const raw of String(body ?? "").split(/\r?\n|\r/)) {
     const line = raw.trim()
@@ -117,16 +125,35 @@ export function parseMarkdown(body) {
       flush()
       const text = line.slice(2).trim()
       const url = standaloneImage(text)
-      blocks.push(url ? { type: "image", url } : { type: "bullet", text })
+      if (url) blocks.push({ type: "image", url })
+      else pushQuoting(text, text => ({ type: "bullet", text }))
       continue
     }
     const o = /^(\d{1,3})[.)](.*)$/.exec(line)
-    if (o && o[2].trim()) { flush(); blocks.push({ type: "ordered", index: Number(o[1]), text: o[2].trim() }); continue }
+    if (o && o[2].trim()) { flush(); pushQuoting(o[2].trim(), text => ({ type: "ordered", index: Number(o[1]), text })); continue }
     para.push(line)
   }
   if (fenced && code.length) blocks.push({ type: "code", text: code.join("\n") })
   flush()
   return blocks
+}
+
+const QUOTE_REF = /\[([^\]]*)\]\(\s*nostr:((?:note1|nevent1|naddr1)[a-z0-9]+)\s*\)|(?:nostr:|(?<![A-Za-z0-9_/:.=?&#%+~@-]))((?:note1|nevent1|naddr1)[02-9ac-hj-np-z]+)(?![A-Za-z0-9])/gi
+
+/** An article paragraph or list item split into the text left once its note/nevent/naddr references are cut out,
+ *  and those references (the part after "nostr:"), so the reader draws each as a quote card instead of a bare
+ *  "nostr:nevent1…" (iPhone QuoteReference.articleQuoteSplit). A markdown link to one keeps its label as text.
+ *  Only references that decode count. -> { text, refs } | null when the text quotes nothing. */
+export function articleQuoteSplit(text) {
+  const refs = []
+  const rest = text.replace(QUOTE_REF, (m, label, linked, plain) => {
+    const ref = (linked ?? plain).toLowerCase()
+    try { decode(ref) } catch { return m }
+    if (!refs.includes(ref)) refs.push(ref)
+    return label ?? ""
+  })
+  if (!refs.length) return null
+  return { text: rest.replace(/ {2,}/g, " ").trim(), refs }
 }
 
 /** Inline markdown -> [{ type: "text" | "strong" | "em" | "code", text } | { type: "link", text, url }].

@@ -22,7 +22,9 @@ struct MarkdownBodyView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(blocks) { block in
+            // By position: the same quote, rule or line can appear twice, and
+            // ForEach needs distinct ids. block.id still keys highlights.
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                 switch block {
                 case .heading(let level, let text):
                     inlineText(text)
@@ -84,6 +86,11 @@ struct MarkdownBodyView: View {
 
                 case .rule:
                     Divider()
+
+                case .quotes(let ids):
+                    // The same cards a note's quotes get: a skeleton while it
+                    // is fetched, "unavailable" if it never turns up.
+                    QuotedEventsView(identifiers: ids, content: markdown)
                 }
             }
         }

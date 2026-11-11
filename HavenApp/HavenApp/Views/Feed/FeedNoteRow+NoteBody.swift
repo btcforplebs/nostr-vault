@@ -152,8 +152,9 @@ extension FeedNoteRow {
             }
         }
 
-        // Quoted Notes
-        if !bodySource.quotedEventIds.isEmpty {
+        // Quoted Notes. An opened article draws its quotes in place, inside
+        // the body (MarkdownBodyView), so not again here.
+        if !bodySource.quotedEventIds.isEmpty, !(bodySource.kind == 30023 && isFocused) {
             VStack(spacing: 8) {
                 ForEach(bodySource.quotedEventIds, id: \.self) { quoteId in
                     if let quotedNote = actions.findNote(quoteId) {

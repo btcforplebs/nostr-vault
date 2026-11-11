@@ -85,6 +85,9 @@ enum MarkdownBlock: Identifiable, Equatable {
     case code(String)
     case image(URL)
     case rule
+    /// Notes or articles the body quotes (`nostr:nevent1…`, `note1`, `naddr1`),
+    /// by the id the feed looks them up by. Drawn as quote cards.
+    case quotes([String])
 
     /// The markdown of a block a reader can highlight; nil for code, images
     /// and rules.
@@ -93,7 +96,7 @@ enum MarkdownBlock: Identifiable, Equatable {
         case .heading(_, let text), .paragraph(let text), .bullet(let text),
              .ordered(_, let text), .quote(let text):
             return text
-        case .code, .image, .rule:
+        case .code, .image, .rule, .quotes:
             return nil
         }
     }
@@ -108,6 +111,7 @@ enum MarkdownBlock: Identifiable, Equatable {
         case .code(let text): return "c:\(text)"
         case .image(let url): return "i:\(url.absoluteString)"
         case .rule: return "rule"
+        case .quotes(let ids): return "n:\(ids.joined(separator: ","))"
         }
     }
 }
@@ -133,8 +137,18 @@ enum MarkdownParser {
             if let url = standaloneImageURL(in: text) {
                 blocks.append(.image(url))
             } else {
-                blocks.append(.paragraph(text))
+                appendQuoting(text, as: MarkdownBlock.paragraph)
             }
+        }
+
+        /// The block, minus its quote references, then a card row for them.
+        func appendQuoting(_ text: String, as make: (String) -> MarkdownBlock) {
+            guard let split = QuoteReference.articleQuoteSplit(text) else {
+                blocks.append(make(text))
+                return
+            }
+            if !split.text.isEmpty { blocks.append(make(split.text)) }
+            blocks.append(.quotes(split.ids))
         }
 
         for rawLine in body.components(separatedBy: .newlines) {
@@ -171,7 +185,7 @@ enum MarkdownParser {
                     let text = afterHashes.trimmingCharacters(in: .whitespaces)
                     if !text.isEmpty {
                         flushParagraph()
-                        blocks.append(.heading(level: hashes, text: text))
+                        appendQuoting(text) { .heading(level: hashes, text: $0) }
                         continue
                     }
                 }
@@ -185,7 +199,7 @@ enum MarkdownParser {
 
             if line.hasPrefix("> ") || line == ">" {
                 flushParagraph()
-                blocks.append(.quote(String(line.dropFirst(1)).trimmingCharacters(in: .whitespaces)))
+                appendQuoting(String(line.dropFirst(1)).trimmingCharacters(in: .whitespaces), as: MarkdownBlock.quote)
                 continue
             }
 
@@ -195,14 +209,14 @@ enum MarkdownParser {
                 if let url = standaloneImageURL(in: text) {
                     blocks.append(.image(url))
                 } else {
-                    blocks.append(.bullet(text))
+                    appendQuoting(text, as: MarkdownBlock.bullet)
                 }
                 continue
             }
 
             if let match = orderedListItem(line) {
                 flushParagraph()
-                blocks.append(.ordered(index: match.0, text: match.1))
+                appendQuoting(match.1) { .ordered(index: match.0, text: $0) }
                 continue
             }
 
@@ -249,7 +263,7 @@ enum MarkdownParser {
                 out.append(text)
             case .ordered(_, let text):
                 out.append(text)
-            case .code, .image, .rule:
+            case .code, .image, .rule, .quotes:
                 continue
             }
             if out.joined(separator: " ").count >= limit { break }

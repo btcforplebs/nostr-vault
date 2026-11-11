@@ -52,6 +52,9 @@ internal fun NavGraphBuilder.detailRoutes(
             onNoteClick = { id ->
                 navController.navigate(Screen.NoteDetail.createRoute(id))
             },
+            onArticleClick = { id ->
+                navController.navigate(Screen.ArticleReader.createRoute(id))
+            },
         )
     }
 

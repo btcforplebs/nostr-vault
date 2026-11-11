@@ -201,3 +201,21 @@ test("Following splits a long follow list into 250-author filters", async () => 
   await fetchArticles({ scope: "following", follows, relays: ["wss://r"], vault: fakeVault(), online: true, query: async (r, f) => { sizes.push(f.authors.length); return [] } })
   assert.deepEqual(sizes, [250, 250, 100])
 })
+
+// Logen 2026-11-11: an nevent, note or naddr written in an article body draws as a quote card.
+test("article quote references become quote blocks", () => {
+  const nevent = "nevent1qqsvd857zlh6tpqhr79u84ffhs5v4d4hq7lq0mdwuszj84j6ytushygzyqk7plaq4s34lazl5nxtj3xd8uel08l46g0ul90sr7v4z6akhdevcqcyqqqqqqguslldp"
+  const body = `Intro.\n\nnostr:${nevent}\n\nRead this: nostr:${nevent} it is good.\n\n- See [the recap](nostr:${nevent}).\n\nhttps://njump.me/${nevent}`
+  assert.deepEqual(parseMarkdown(body), [
+    { type: "paragraph", text: "Intro." },
+    { type: "quotes", refs: [nevent] },
+    { type: "paragraph", text: "Read this: it is good." },
+    { type: "quotes", refs: [nevent] },
+    { type: "bullet", text: "See the recap." },
+    { type: "quotes", refs: [nevent] },
+    { type: "paragraph", text: `https://njump.me/${nevent}` },
+  ])
+  // A reference that doesn't decode is left as text.
+  assert.deepEqual(parseMarkdown("nostr:nevent1qqqqbroken"), [{ type: "paragraph", text: "nostr:nevent1qqqqbroken" }])
+  assert.equal(plainText(`Hi nostr:${nevent}`), "Hi")
+})

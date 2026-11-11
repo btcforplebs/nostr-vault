@@ -81,6 +81,17 @@ class ArticleReaderViewModel @Inject constructor(
     val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
     val likedEventIds: StateFlow<Set<String>> = feedService.likedEventIds
 
+    // Quotes written in the body (nostr:nevent1/note1/naddr1), drawn as cards.
+    val quotedNotes: StateFlow<Map<String, FeedNote>> = feedService.quotedNotes
+
+    fun quotedNoteFor(identifier: String): FeedNote? = feedService.quotedNoteFor(identifier)
+
+    // The open article is what is on screen: not behind the feed's own lookups.
+    fun fetchMissingQuotes(identifiers: List<String>) {
+        feedService.fetchMissingQuotedNotes(identifiers, nearScreen = true)
+        feedService.fetchMissingQuotedProfiles(identifiers)
+    }
+
     /**
      * The active account's blocked people (hex), kept current so a block made
      * while the article is open takes their highlights and comments out at once.
