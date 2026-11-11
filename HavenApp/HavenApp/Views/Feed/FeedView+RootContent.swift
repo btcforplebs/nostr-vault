@@ -69,14 +69,12 @@ extension FeedView {
             if let note = new.note(changedFrom: old) { toolbarNote.show(note) }
         }
         #if os(iOS)
-        // No dark scroll-edge band behind the top pills (iOS 26+): the
-        // pills carry their own glass, the band read as a black bar.
-        .hidingTopScrollEdge()
-        // With the bar's fill and edge both off, posts ran under the clock.
-        // The page colour sits behind it instead, fading under the pills.
-        .feedTopBar(height: noteDetailSelection != nil ? PadTopBar.height : PadTopBar.phoneHeight,
-                    fade: FeedTopFade.shows(isReels: feedService.feedMode == .reels,
-                                            floatingBar: noteDetailSelection != nil)) {
+        // Posts fade out under the clock and the pills: the soft edge, as
+        // in note detail. Not the hard one (#1651: a black bar), and not a
+        // band of our own (its last ~13 pt read as a cut line).
+        .softTopScrollEdge(hidden: !FeedTopFade.shows(isReels: feedService.feedMode == .reels,
+                                                       floatingBar: noteDetailSelection != nil))
+        .feedTopBar(height: noteDetailSelection != nil ? PadTopBar.height : PadTopBar.phoneHeight) {
             feedLeadingBarItem
         } trailing: {
             feedTrailingBarItem
