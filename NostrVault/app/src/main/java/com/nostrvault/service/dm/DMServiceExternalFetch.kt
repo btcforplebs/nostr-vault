@@ -281,6 +281,7 @@ import com.nostrvault.service.DMService.Companion.TAG
         // Tear down any previous live subscriptions first.
         liveExternalClients.forEach { it.disconnect() }
         liveExternalClients.clear()
+        externalListenerJobs.cancelAll()
 
         val ownerHex = nostrService.activeHexPubkey
         if (ownerHex.isBlank()) return
@@ -301,7 +302,7 @@ import com.nostrvault.service.DMService.Companion.TAG
             val subId = "dm-live-${UUID.randomUUID().toString().take(8)}"
 
             // (Re)subscribe on every (re)connect so the filters survive drops.
-            scope.launch {
+            externalListenerJobs += scope.launch {
                 client.connectionState.collect { state ->
                     if (switchGeneration != generation) return@collect
                     if (state == WebSocketClient.ConnectionState.CONNECTED) {
@@ -312,10 +313,11 @@ import com.nostrvault.service.DMService.Companion.TAG
                 }
             }
 
-            scope.launch {
+            externalListenerJobs += scope.launch {
                 client.messages.collect { msg ->
                     if (switchGeneration != generation) return@collect
-                    launch(Dispatchers.Default) {
+                    // On scope: see connectToLocalChatRelay.
+                    scope.launch(Dispatchers.Default) {
                         handleExternalDmMessage(msg, generation)
                     }
                 }

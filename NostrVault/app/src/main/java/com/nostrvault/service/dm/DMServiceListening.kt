@@ -72,10 +72,11 @@ import com.nostrvault.service.DMService.Companion.TAG
         val chatUrl = config.localRelayURL("chat") ?: return
 
         inboxClient?.disconnect()
+        chatListenerJobs.cancelAll()
         val client = WebSocketClient(url = chatUrl, scope = scope, trustLocalhost = true)
         inboxClient = client
 
-        scope.launch {
+        chatListenerJobs += scope.launch {
             client.connectionState.collect { state ->
                 if (state == WebSocketClient.ConnectionState.CONNECTED) {
                     // NIP-42 AUTH will be needed — handled via AUTH message.
@@ -87,10 +88,12 @@ import com.nostrvault.service.DMService.Companion.TAG
             }
         }
 
-        scope.launch {
+        chatListenerJobs += scope.launch {
             client.messages.collect { msg ->
                 if (switchGeneration != generation) return@collect
-                launch(Dispatchers.Default) {
+                // On scope, not this collector: replacing the socket cancels
+                // the collector but must not cut off a message mid-handling.
+                scope.launch(Dispatchers.Default) {
                     handleChatRelayMessage(msg, generation)
                 }
             }
@@ -104,10 +107,11 @@ import com.nostrvault.service.DMService.Companion.TAG
         val inboxUrl = config.localInboxURL ?: return
 
         nip04Client?.disconnect()
+        nip04ListenerJobs.cancelAll()
         val client = WebSocketClient(url = inboxUrl, scope = scope, trustLocalhost = true)
         nip04Client = client
 
-        scope.launch {
+        nip04ListenerJobs += scope.launch {
             client.connectionState.collect { state ->
                 if (state == WebSocketClient.ConnectionState.CONNECTED) {
                     subscribeToNip04(client)
@@ -115,10 +119,12 @@ import com.nostrvault.service.DMService.Companion.TAG
             }
         }
 
-        scope.launch {
+        nip04ListenerJobs += scope.launch {
             client.messages.collect { msg ->
                 if (switchGeneration != generation) return@collect
-                launch(Dispatchers.Default) {
+                // On scope, not this collector: replacing the socket cancels
+                // the collector but must not cut off a message mid-handling.
+                scope.launch(Dispatchers.Default) {
                     handleNip04RelayMessage(msg, generation)
                 }
             }
