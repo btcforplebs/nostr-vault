@@ -141,6 +141,14 @@ enum FeedFilterEngine {
                 if globalLanguages.isEmpty { return true }
                 return FeedLanguageDetector.admits(detected: languageOf(note), allowed: globalLanguages)
             }
+            if mode == .discovery {
+                // Discover is the wider web minus your follows. The feed also
+                // pulls in every note that tags you, so a key outside the web
+                // must be dropped here or anyone could write into it by
+                // replying to you (Android FeedFilterEngine.kt DISCOVERY).
+                let author = note.repostedBy ?? note.pubkey
+                if followedPubkeys.contains(author) || !wotPubkeys.contains(author) { return false }
+            }
             if mode == .following {
                 // For reposts, membership is judged by the reposter (the follow
                 // who boosted it), not the original author. Your own notes stay
