@@ -78,8 +78,8 @@ internal class FipsWebViewClient(
         if (isMain) {
             if (allowed) allowedOnce = null
             when (decision) {
-                is FipsUrl.Request.Mesh -> { meshPage = decision.npub; MeshProxy.set(mesh = true, wait = true) }
-                FipsUrl.Request.Pass -> { meshPage = null; MeshProxy.set(mesh = false, wait = true) }
+                is FipsUrl.Request.Mesh -> { meshPage = decision.npub; MeshProxy.set(this, mesh = true, wait = true) }
+                FipsUrl.Request.Pass -> { meshPage = null; MeshProxy.set(this, mesh = false, wait = true) }
                 FipsUrl.Request.Block -> {}
             }
         }
@@ -107,10 +107,13 @@ internal class FipsWebViewClient(
         // Our own pages (data:, about:) keep the mesh rules of the page before them.
         if (!url.startsWith("data:") && !url.startsWith("about:")) {
             meshPage = FipsUrl.meshNpub(url)
-            MeshProxy.set(mesh = meshPage != null, wait = false)
+            claimProxy()
         }
         onPage(url)
     }
+
+    /** This browser is on screen again: the proxy goes back to what its page needs, whatever another set. */
+    fun claimProxy() = MeshProxy.set(this, mesh = meshPage != null, wait = false)
 
     override fun onPageFinished(view: WebView, url: String) = onFinished(url)
 

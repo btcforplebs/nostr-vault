@@ -168,6 +168,18 @@ class InAppBrowserModel(context: Context, door: (String) -> MeshSiteIngress) {
     val systemBrowserUrl: String?
         get() = address.takeIf { kind == Kind.Web && FipsUrl.route(it, inApp = true) is FipsUrl.Route.Web }
 
+    /** The browser is on screen again (activity onResume). */
+    fun resume() {
+        webView.onResume()
+        client.claimProxy()
+    }
+
+    /**
+     * Another screen covers the browser (activity onPause): animations and media pause. Scripts keep running, so a
+     * second browser closes this one ([InAppBrowserActivity]).
+     */
+    fun pause() = webView.onPause()
+
     /** The browser is closing: stop loads, and keep nothing it stored. */
     fun close() {
         webView.stopLoading()
@@ -179,7 +191,7 @@ class InAppBrowserModel(context: Context, door: (String) -> MeshSiteIngress) {
         CookieManager.getInstance().flush()
         WebStorage.getInstance().deleteAllData()
         webView.destroy()
-        // The override is WebView-wide: nothing else in the app keeps the mesh page's dead end.
-        MeshProxy.set(mesh = false, wait = false)
+        // The override is WebView-wide: it goes with this browser only if this browser set it.
+        MeshProxy.release(client)
     }
 }
