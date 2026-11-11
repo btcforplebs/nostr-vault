@@ -6,7 +6,7 @@ import { registerHooks } from "node:module"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils" // Vite 8's own transformer
-import { buildThreads, latestReplies, repliesOf, nextLayout, loadLayout, saveLayout, hasLayouts, MAX_DEPTH } from "../src/net/feed-layout.js"
+import { buildThreads, latestReplies, repliesOf, nextLayout, loadLayout, saveLayout, migrateCondensedLayouts, hasLayouts, LAYOUTS, MAX_DEPTH } from "../src/net/feed-layout.js"
 
 const id = n => String(n).padStart(64, "0")
 const note = (n, at, parent, root) => ({
@@ -15,9 +15,9 @@ const note = (n, at, parent, root) => ({
 })
 const ids = thread => thread.entries.map(e => [Number(e.note.id), e.depth])
 
-test("the layout cycles Expanded -> Compact -> Threaded and back; only note feeds have layouts", () => {
-  assert.equal(nextLayout("expanded"), "condensed")
-  assert.equal(nextLayout("condensed"), "threaded")
+test("the button toggles Expanded and Threaded (Compact View is gone); only note feeds have layouts", () => {
+  assert.deepEqual(LAYOUTS, ["expanded", "threaded"])
+  assert.equal(nextLayout("expanded"), "threaded")
   assert.equal(nextLayout("threaded"), "expanded")
   for (const m of ["following", "discovery", "global", "popular", "hashtag"]) assert.ok(hasLayouts(m), m)
   for (const m of ["media", "articles", "live"]) assert.ok(!hasLayouts(m), m)
@@ -31,6 +31,18 @@ test("each feed keeps its own layout; the defaults are the iPhone's (every timel
   assert.equal(loadLayout("global", storage), "threaded")
   store.set("nv:feed-layouts", "not json")
   assert.equal(loadLayout("following", storage), "threaded")
+})
+
+test("a saved Compact View reads as expanded and migrates once", () => {
+  const store = new Map(), storage = { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) }
+  assert.equal(migrateCondensedLayouts(storage), false)
+  store.set("nv:feed-layouts", JSON.stringify({ following: "condensed", global: "threaded" }))
+  assert.equal(loadLayout("following", storage), "expanded")
+  assert.equal(migrateCondensedLayouts(storage), true)
+  assert.deepEqual(JSON.parse(store.get("nv:feed-layouts")), { following: "expanded", global: "threaded" })
+  assert.equal(migrateCondensedLayouts(storage), false)
+  store.set("nv:feed-layouts", "not json")
+  assert.equal(migrateCondensedLayouts(storage), false)
 })
 
 test("replies gather under their root, depth first, oldest sibling first; threads sort by latest activity", () => {
@@ -122,11 +134,12 @@ test("Replies and Reposts switches, and the notes the New Posts pill holds", asy
   assert.deepEqual(applyFilters(all, FILTER_DEFAULTS).map(n => n.id), ["a", "b", "c"])
   assert.deepEqual(applyFilters(all, { replies: false, reposts: false }).map(n => n.id), ["a"])
   // Threaded is a layout, not a filter: as on the iPhone, the Replies switch still filters a threaded feed
-  // (FeedView+Layout.swift:88). Threading turns replies on when it is picked (layoutFilters), so the reader never lands
-  // on roots only, and the switch can turn them back off.
+  // (FeedView+Layout.swift:88). Switching to threaded turns replies on and to expanded turns them off (layoutFilters,
+  // Logen 2026-11-11); the switch can still flip them in either.
   assert.deepEqual(applyFilters(all, { replies: false, reposts: true }, { threaded: true }).map(n => n.id), ["a", "c"])
   assert.deepEqual(layoutFilters("threaded", { replies: false, reposts: true }), { replies: true, reposts: true })
   assert.deepEqual(layoutFilters("expanded", { replies: false, reposts: true }), { replies: false, reposts: true })
+  assert.deepEqual(layoutFilters("expanded", { replies: true, reposts: true }), { replies: false, reposts: true })
   assert.deepEqual(layoutFilters("threaded", { replies: true, reposts: false }), { replies: true, reposts: false })
   const mem = new Map(), storage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) }
   assert.deepEqual(loadFilters(storage), FILTER_DEFAULTS)

@@ -68,11 +68,13 @@ export function oncePerNote(notes) {
 }
 const addrOf = ev => `${ev.kind}:${ev.pubkey}:${(ev.tags ?? []).find(t => t[0] === "d")?.[1] ?? ""}`
 
-/** The switches in effect when the layout becomes `layout`: as the iPhone (FeedView+Layout.swift:88), a threaded feed
- *  with Replies off would show nothing but the roots the reader just came from, so threading turns them on. The switch
- *  itself is free to turn them back off. */
-export const layoutFilters = (layout, filters) =>
-  layout === "threaded" && !filters.replies ? { ...filters, replies: true } : filters
+/** The switches in effect when the reader switches the layout to `layout` (Logen, 2026-11-11): expanded starts with
+ *  Replies off, so it shows single posts; threaded with them on, so it shows whole conversations. The Replies switch
+ *  is still free to flip them in either layout. */
+export const layoutFilters = (layout, filters) => {
+  const replies = layout === "threaded"
+  return filters.replies === replies ? filters : { ...filters, replies }
+}
 
 /** Notes in `fresh` newer than everything shown and not shown yet, newest first: what the pill holds. */
 export function newerNotes(shown, fresh) {

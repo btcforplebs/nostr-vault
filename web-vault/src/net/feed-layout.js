@@ -1,35 +1,47 @@
-// The Feed's three layouts, as on the iPhone (FeedLayoutMode, FeedView+Layout, FeedThreadGrouping): full cards
-// (expanded), one line per note (condensed), or whole conversations (threaded). One setting per feed, cycled by one
-// button; kept in this browser.
+// The Feed's two layouts, as on the iPhone (FeedLayoutMode, FeedView+Layout, FeedThreadGrouping): full cards
+// (expanded) or whole conversations (threaded). One setting per feed, toggled by one button; kept in this browser.
+// Compact View is gone (Logen, 2026-11-11): a saved "condensed" reads as expanded.
 import { replyRefs } from "./thread.js"
 
-export const LAYOUTS = ["expanded", "condensed", "threaded"]
-export const LAYOUT_NAME = { expanded: "Expanded View", condensed: "Compact View", threaded: "Threaded View" }
+export const LAYOUTS = ["expanded", "threaded"]
+export const LAYOUT_NAME = { expanded: "Expanded View", threaded: "Threaded View" }
 /** Indentation stops here; deeper replies keep their order and share the last rail. */
 export const MAX_DEPTH = 4
 /** Replies a folded thread card shows: the newest ones, since a reply is what lifted the thread. */
 export const COLLAPSED_REPLIES = 3
 
-/** Feeds of note rows. Media, the readers (Articles, Live…) and grids have nothing to condense, so no layouts. */
+/** Feeds of note rows. Media, the readers (Articles, Live…) and grids cannot thread, so they stay expanded, no button. */
 export const hasLayouts = mode => ["following", "discovery", "global", "popular", "hashtag"].includes(mode)
 /** The iPhone's default for a new install: every timeline feed opens in Threaded View (HavenConfig.feedLayoutModes,
  *  Logen 2026-10-08). A layout picked in this browser is kept. */
 const DEFAULTS = { following: "threaded", discovery: "threaded", hashtag: "threaded", global: "threaded", popular: "threaded" }
 
-/** The next layout in the cycle. */
-export const nextLayout = layout => LAYOUTS[(LAYOUTS.indexOf(layout) + 1) % LAYOUTS.length]
+/** The other layout: the button toggles expanded and threaded. */
+export const nextLayout = layout => layout === "threaded" ? "expanded" : "threaded"
 
 const KEY = "nv:feed-layouts"
-/** The layout picked for `mode`, or its default. */
+const LEGACY_CONDENSED = "condensed"
+const readSaved = storage => {
+  try { return JSON.parse(storage?.getItem(KEY) ?? "{}") ?? {} } catch { return {} }
+}
+/** The layout picked for `mode`, or its default. A saved Compact View is expanded now. */
 export function loadLayout(mode, storage = globalThis.localStorage) {
-  let saved = {}
-  try { saved = JSON.parse(storage?.getItem(KEY) ?? "{}") ?? {} } catch {}
-  return LAYOUTS.includes(saved[mode]) ? saved[mode] : DEFAULTS[mode] ?? "expanded"
+  const saved = readSaved(storage)[mode]
+  if (saved === LEGACY_CONDENSED) return "expanded"
+  return LAYOUTS.includes(saved) ? saved : DEFAULTS[mode] ?? "expanded"
 }
 export function saveLayout(mode, layout, storage = globalThis.localStorage) {
-  let saved = {}
-  try { saved = JSON.parse(storage?.getItem(KEY) ?? "{}") ?? {} } catch {}
+  const saved = readSaved(storage)
   try { storage?.setItem(KEY, JSON.stringify({ ...saved, [mode]: layout })) } catch {}
+}
+/** Rewrites saved "condensed" feeds to "expanded", once. True when it did, so the caller turns Replies off with them
+ *  (expanded starts with replies off). */
+export function migrateCondensedLayouts(storage = globalThis.localStorage) {
+  const saved = readSaved(storage)
+  if (!Object.values(saved).includes(LEGACY_CONDENSED)) return false
+  const next = Object.fromEntries(Object.entries(saved).map(([k, v]) => [k, v === LEGACY_CONDENSED ? "expanded" : v]))
+  try { storage?.setItem(KEY, JSON.stringify(next)) } catch {}
+  return true
 }
 
 /** The note a kind 1 answers (NIP-10), or null. Reposts and anything else answer nothing. */

@@ -230,6 +230,12 @@ class ConfigStore @Inject constructor(
             },
         )
 
+        // Compact View is gone (2026-11-11): a saved "condensed" feed becomes
+        // expanded, which starts with replies off.
+        // Saved below, so it runs once.
+        val condensedLayouts = com.nostrvault.data.model.FeedLayoutMode.migrateCondensed(loaded.feedLayoutModes)
+        condensedLayouts?.let { loaded = loaded.copy(feedLayoutModes = it, showReplies = false) }
+
         // Ensure runtime paths are always populated — these are derived from the
         // app's filesystem and intentionally not persisted, but every service that
         // reads config.relayDataDir depends on them being present.
@@ -293,7 +299,7 @@ class ConfigStore @Inject constructor(
         }
 
         setConfig(loaded)
-        if (removedStarterPicks || droppedDamus || keyInFile != null || secretsInFile.isNotEmpty()) CoroutineScope(Dispatchers.IO).launch { save() }
+        if (removedStarterPicks || droppedDamus || condensedLayouts != null || keyInFile != null || secretsInFile.isNotEmpty()) CoroutineScope(Dispatchers.IO).launch { save() }
 
     }
 

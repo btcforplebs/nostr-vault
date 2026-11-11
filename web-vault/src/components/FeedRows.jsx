@@ -1,5 +1,5 @@
-// The Feed's notes in the layout picked for it (net/feed-layout.js): full cards, condensed lines, or thread cards.
-// In both condensed layouts a click opens a line in place into the full note, one at a time across the feed, and a
+// The Feed's notes in the layout picked for it (net/feed-layout.js): full cards or thread cards.
+// In a thread card a click opens a line in place into the full note, one at a time across the feed, and a
 // click on the open note goes to its thread (the iPhone's expandedNoteId). For threads, a root the feed doesn't carry
 // is fetched (Haven, then the read relays) into memory only; the card says "Loading the start of this thread…" until
 // it lands, and drops the line if no relay has it.
@@ -8,28 +8,18 @@ import { useEffect, useMemo, useState } from "preact/hooks"
 import { Ranked } from "./PopularRankLine.jsx"
 import { useFeedTap } from "./feed-tap.js"
 import { NoteCard } from "./NoteCard.jsx"
-import { CondensedNote } from "./CondensedNote.jsx"
 import { FeedThreadCard } from "./FeedThreadCard.jsx"
 import { hasKindBody } from "./FeedKinds.jsx"
 import { buildThreads } from "../net/feed-layout.js"
-import { tileNote } from "../net/media.js"
 import { fetchNotes } from "../net/notifications.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { replyRefs } from "../net/thread.js"
-import { lineLimit } from "../net/line-limits.js"
 
 /** `rankOf(id)` -> { rank, score } or null: Popular's rank line above a card (PopularRankLine.jsx). */
 export function FeedRows({ notes, layout, keepFeedOrder = false, memoryOnly = false, fetchRoots, rankOf = null }) {
   // The open post glides to the tap line (feed-tap.js); while one is open, room under the list lets the last ones reach it.
   const [openId, setOpenId] = useFeedTap()
   const room = openId && <div class="tap-room" aria-hidden="true" />
-  const compactLines = lineLimit("compact") // Settings › Feed Text, Compact View
-  if (layout === "condensed") return <><div class="condensed-list">{notes.map(n => {
-    const shown = tileNote(n) ?? n
-    return <Fragment key={n.id}><Ranked id={n.id} rankOf={rankOf}>{openId && shown.id === openId
-      ? <div data-tap-open><NoteCard event={n} memoryOnly={memoryOnly} /></div>
-      : <CondensedNote event={n} card lines={compactLines} onOpen={x => setOpenId(x.id)} />}</Ranked></Fragment>
-  })}</div>{room}</>
   if (layout === "threaded") return <><Threads notes={notes} keepFeedOrder={keepFeedOrder} fetchRoots={fetchRoots} memoryOnly={memoryOnly} openId={openId} setOpenId={setOpenId} rankOf={rankOf} />{room}</>
   // A reply shows the note it answers above it, unless that note is the very next row (the iPhone's parentIsNext).
   return notes.map((n, i) => <Fragment key={n.id}><Ranked id={n.id} rankOf={rankOf}><NoteCard event={n} memoryOnly={memoryOnly} showParent={n.kind === 1 && !!replyRefs(n).parent && notes[i + 1]?.id !== replyRefs(n).parent} /></Ranked></Fragment>)

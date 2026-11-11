@@ -69,7 +69,7 @@ test("#21 Popular: who it ranks, and ranks renumbered in the order shown", () =>
   scoreNotes([note("n", pk("7"))], t, { now: 1000, scores: out })
   assert.equal(out.get("n"), 6, "scoreNotes hands its scores on")
   const rows = readFileSync(new URL("../src/components/FeedRows.jsx", import.meta.url), "utf8")
-  assert.equal((rows.match(/<Ranked id=/g) ?? []).length, 3, "the rank line in every layout")
+  assert.equal((rows.match(/<Ranked id=/g) ?? []).length, 2, "the rank line in both layouts")
 })
 
 test("#28 New Highlight: the phone's link check and NIP-84 tags", () => {

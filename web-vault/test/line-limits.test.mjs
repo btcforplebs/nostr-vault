@@ -33,7 +33,6 @@ test("the feed draws with them and Settings has the Feed Text section", () => {
   const src = f => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8")
   assert.match(src("components/FeedThreadCard.jsx"), /lines = lineLimit\("threaded"\)/)
   assert.match(src("components/FeedThreadCard.jsx"), /lines=\{depth \? Math\.max\(1, lines - 1\) : lines\}/, "a reply shows one fewer")
-  assert.match(src("components/FeedRows.jsx"), /const compactLines = lineLimit\("compact"\)/)
-  assert.match(src("components/FeedRows.jsx"), /<CondensedNote event=\{n\} card lines=\{compactLines\}/)
+  assert.doesNotMatch(src("components/FeedRows.jsx"), /layout === "condensed"/, "Compact View is gone (2026-11-11)")
   assert.match(src("screens/settings/AppearancePage.jsx"), /<Section label="Feed Text"><LineLimitSteppers \/><\/Section>/, "Settings › Appearance, as the iPhone")
 })

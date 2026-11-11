@@ -29,7 +29,7 @@ import { mediaTiles } from "../net/media.js"
 import { READERS } from "../readers/index.js"
 import { withParam } from "../desktop/routes.js"
 import { resolveList } from "../net/list-feed.js"
-import { hasLayouts, loadLayout, nextLayout, saveLayout } from "../net/feed-layout.js"
+import { hasLayouts, loadLayout, migrateCondensedLayouts, nextLayout, saveLayout } from "../net/feed-layout.js"
 import { applyFilters, layoutFilters, loadFilters, newerNotes, saveFilters } from "../net/feed-filters.js"
 import { EmptyFollowing, NewPostsPill, OlderButton, PullIndicator, SkeletonRows, usePullToRefresh, feedScroller, scrollTopOf, scrollToTop } from "../components/FeedExtras.jsx"
 
@@ -64,18 +64,24 @@ export function FeedScreen({ ctx }) {
   const { blocked, privateNote } = useBlocks(ctx)
   const [choice, setChoice] = useState(pickedChoice)
   const [strange, setStrange] = useState(() => heldNotes(pickedChoice()))
-  // Expanded / Compact / Threaded, one per feed (FeedView+Layout). Re-read when the feed changes.
+  // Expanded / Threaded, one per feed (FeedView+Layout). Re-read when the feed changes.
   const [layouts, setLayouts] = useState({})
   const layout = layouts[choice.mode] ?? loadLayout(choice.mode)
   // Replies, Reposts and Auto-load (FeedView+ToolbarMenu), for every feed of notes.
-  const [filters, setFilters] = useState(loadFilters)
+  // A saved Compact View becomes expanded, which starts with Replies off (once: the rewrite is saved).
+  const [filters, setFilters] = useState(() => {
+    const f = loadFilters()
+    if (!migrateCondensedLayouts()) return f
+    const off = { ...f, replies: false }
+    saveFilters(off)
+    return off
+  })
   const changeFilters = f => { saveFilters(f); setFilters(f) }
   const cycleLayout = () => {
     const l = nextLayout(layout)
     saveLayout(choice.mode, l)
     setLayouts({ ...layouts, [choice.mode]: l })
-    // As the iPhone (FeedView+Layout.swift): a threaded feed with Replies off would show only the roots, which is the
-    // layout the reader just left. Threading turns them on; the Replies switch can turn them back off.
+    // Expanded starts with Replies off, threaded with them on; the Replies switch can still flip them.
     const next = layoutFilters(l, filters)
     if (next !== filters) changeFilters(next)
   }

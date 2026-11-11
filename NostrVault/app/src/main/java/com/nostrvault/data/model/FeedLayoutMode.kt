@@ -1,27 +1,21 @@
 package com.nostrvault.data.model
 
 /**
- * How a timeline feed draws its rows. One control cycles through these in
- * order, so the three layouts are one setting rather than three toggles.
- * Mirrors iOS `FeedLayoutMode.swift`.
+ * How a timeline feed draws its rows. The feed button toggles between the
+ * two; feeds that cannot thread stay expanded. Compact View is gone (Logen,
+ * 2026-11-11): a saved "condensed" reads back as expanded. Mirrors iOS
+ * `FeedLayoutMode.swift`.
  */
 enum class FeedLayoutMode {
-    /** Full note cards: media, actions, engagement. */
+    /** Full note cards: media, actions, engagement. Replies start off. */
     EXPANDED,
 
-    /** One note per line: avatar, name, three lines of text, a media thumbnail. */
-    CONDENSED,
-
-    /** Condensed lines grouped into whole conversations, root plus replies. */
+    /** Condensed lines grouped into whole conversations, root plus replies. Replies start on. */
     THREADED;
 
-    /**
-     * The next layout in the cycle. Feeds that cannot be threaded (grids and
-     * card lists) skip straight back to expanded.
-     */
+    /** The other layout. Feeds that cannot be threaded (grids and card lists) stay expanded. */
     fun next(supportsThreading: Boolean): FeedLayoutMode = when (this) {
-        EXPANDED -> CONDENSED
-        CONDENSED -> if (supportsThreading) THREADED else EXPANDED
+        EXPANDED -> if (supportsThreading) THREADED else EXPANDED
         THREADED -> EXPANDED
     }
 
@@ -30,22 +24,23 @@ enum class FeedLayoutMode {
      * article list has no replies to gather.
      */
     fun clamped(supportsThreading: Boolean): FeedLayoutMode =
-        if (this == THREADED && !supportsThreading) CONDENSED else this
+        if (this == THREADED && !supportsThreading) EXPANDED else this
 
-    /** True when rows draw as condensed lines — both condensed layouts do. */
-    val usesCondensedRows: Boolean get() = this != EXPANDED
+    /** True when rows draw as condensed lines: only threaded does now. */
+    val usesCondensedRows: Boolean get() = this == THREADED
+
+    /** Whether the feed's Show replies goes on when the user switches to this layout. */
+    val showsRepliesByDefault: Boolean get() = this == THREADED
 
     val storageKey: String
         get() = when (this) {
             EXPANDED -> "expanded"
-            CONDENSED -> "condensed"
             THREADED -> "threaded"
         }
 
     val displayName: String
         get() = when (this) {
             EXPANDED -> "Expanded View"
-            CONDENSED -> "Compact View"
             THREADED -> "Threaded View"
         }
 
@@ -57,26 +52,27 @@ enum class FeedLayoutMode {
         next(supportsThreading).displayName
 
     companion object {
+        /** The retired Compact View's key, still found in older configs. */
+        const val LEGACY_CONDENSED_KEY = "condensed"
+
         fun fromStorageKey(key: String?): FeedLayoutMode? =
-            entries.firstOrNull { it.storageKey == key }
+            if (key == LEGACY_CONDENSED_KEY) EXPANDED else entries.firstOrNull { it.storageKey == key }
 
         /**
-         * Resolve the stored layout for a feed, falling back to the per-feed
-         * compact-mode boolean that shipped before this setting existed.
-         * Without this, everyone who had chosen compact mode would silently
-         * be reset to expanded on upgrade.
-         *
-         * @param storedLayout `feedLayoutModes[feed]`, once the user has cycled.
-         * @param storedCompact the legacy `feedCompactModes[feed]` override.
-         * @param defaultCompact this feed's built-in compact default.
+         * Resolve the stored layout for a feed (`feedLayoutModes[feed]`).
+         * Nothing stored, an unknown value, and the legacy per-feed compact
+         * boolean all read as expanded now that Compact View is gone.
          */
-        fun resolve(
-            storedLayout: String?,
-            storedCompact: Boolean?,
-            defaultCompact: Boolean,
-        ): FeedLayoutMode {
-            fromStorageKey(storedLayout)?.let { return it }
-            return if (storedCompact ?: defaultCompact) CONDENSED else EXPANDED
+        fun resolve(storedLayout: String?): FeedLayoutMode = fromStorageKey(storedLayout) ?: EXPANDED
+
+        /**
+         * Rewrites saved "condensed" layouts to "expanded" and turns Show
+         * replies off with them, since expanded starts with replies off.
+         * Returns null when nothing was condensed, so it runs once.
+         */
+        fun migrateCondensed(layouts: Map<String, String>): Map<String, String>? {
+            if (layouts.values.none { it == LEGACY_CONDENSED_KEY }) return null
+            return layouts.mapValues { (_, v) -> if (v == LEGACY_CONDENSED_KEY) EXPANDED.storageKey else v }
         }
     }
 }
