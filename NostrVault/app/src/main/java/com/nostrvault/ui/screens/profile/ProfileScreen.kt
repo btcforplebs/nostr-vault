@@ -202,6 +202,7 @@ fun ProfileScreen(
     // Report Media / Block User from a Media grid tile's long-press menu.
     var gridReportTarget by remember { mutableStateOf<String?>(null) }
     var gridBlockTarget by remember { mutableStateOf<String?>(null) }
+    val profileFrameRatios = remember { com.nostrvault.ui.components.VideoFrameRatios() }
     // Delete from mirrors / everywhere on one of your own files: (blob hash, scope).
     var gridDelete by remember { mutableStateOf<Pair<com.nostrvault.ui.screens.BlossomMediaItem, com.nostrvault.ui.screens.DeleteScope>?>(null) }
     // Long-press on a profile zap button: choose the amount (iOS ZapSheetContext).
@@ -534,6 +535,11 @@ fun ProfileScreen(
                 // as chunked rows (nested-scroll-safe).
                 val cols = ProfileGrid.mediaColumns(gridWidthDp)
                 items(mediaItems.chunked(cols)) { row ->
+                    // A row holding a portrait video stands taller, as one.
+                    val tileAspect = profileFrameRatios.rowAspect(
+                        row.map { it.first },
+                        { com.nostrvault.ui.components.isVideoUrl(it) },
+                    )
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(ProfileGrid.MEDIA_SPACING_DP.dp),
                         modifier = Modifier
@@ -542,9 +548,10 @@ fun ProfileScreen(
                     ) {
                         row.forEach { (url, note) ->
                             val idx = mediaItems.indexOfFirst { it.first == url }
-                            Box(Modifier.weight(1f).aspectRatio(1f)) {
+                            Box(Modifier.weight(1f).aspectRatio(tileAspect)) {
                                 ProfileMediaTile(
                                     url = url,
+                                    onFrameSize = { size -> profileFrameRatios.learned(url, size.width, size.height) },
                                     author = note.pubkey,
                                     viewModel = viewModel,
                                     onOpen = {

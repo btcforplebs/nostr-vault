@@ -204,6 +204,9 @@ fun MediaGalleryScreen(
     val sections = remember(filteredItems, sortOption) {
         MediaDateGrouping.sections(filteredItems, sortOption)
     }
+    // Each tile's grid row, so a row holding a portrait video stands taller as one.
+    val gridRows = remember(sections) { vaultGridRows(sections, columns = 3) }
+    val frameRatios = remember { com.nostrvault.ui.components.VideoFrameRatios() }
 
     GlassScaffold(
         toolbar = {
@@ -434,9 +437,16 @@ fun MediaGalleryScreen(
                             contentType = { _, _ -> "media" },
                         ) { offset, item ->
                             val index = section.startIndex + offset
+                            val row = gridRows[item.sha256].orEmpty()
                             MediaGridCell(
                                 item = item,
                                 index = index,
+                                tileAspect = com.nostrvault.ui.components.mediaRowTileAspect(
+                                    row.map { if (it.isVideo) frameRatios[it.displayUrl] else null },
+                                ),
+                                onFrameSize = { size ->
+                                    if (item.isVideo) frameRatios.learned(item.displayUrl, size.width, size.height)
+                                },
                                 backup = BackupBadgeState(
                                     summary = viewModel.backupSummary(item.sha256, mirrorPresence),
                                     mirrorCount = blossomMirrors.size,

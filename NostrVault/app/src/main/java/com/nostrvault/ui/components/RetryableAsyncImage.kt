@@ -32,6 +32,8 @@ fun RetryableAsyncImage(
     contentScale: ContentScale,
     modifier: Modifier = Modifier,
     meshAuthor: String? = null,
+    /** The decoded picture's size, once it lands. */
+    onLoaded: ((androidx.compose.ui.geometry.Size) -> Unit)? = null,
 ) {
     var retryKey by remember { mutableIntStateOf(0) }
     var loadState by remember { mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty) }
@@ -47,7 +49,10 @@ fun RetryableAsyncImage(
                 .build(),
             contentDescription = contentDescription,
             contentScale = contentScale,
-            onState = { loadState = it },
+            onState = {
+                loadState = it
+                if (it is AsyncImagePainter.State.Success) onLoaded?.invoke(it.painter.intrinsicSize)
+            },
             modifier = Modifier.fillMaxSize(),
         )
 

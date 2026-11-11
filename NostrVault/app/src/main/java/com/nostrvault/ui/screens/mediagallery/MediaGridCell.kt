@@ -86,12 +86,31 @@ internal fun vaultGridImageRequest(
     .crossfade(false) // Instant rendering for grid thumbnails
     .build()
 
+/**
+ * The tiles sharing each tile's grid row, by sha256. A titled section starts a
+ * new row (its heading spans the grid); an untitled one carries on the row.
+ */
+internal fun vaultGridRows(sections: List<MediaDateSection>, columns: Int): Map<String, List<BlossomMediaItem>> {
+    val rows = mutableListOf<MutableList<BlossomMediaItem>>()
+    for (section in sections) {
+        if (section.title.isNotEmpty() || rows.isEmpty()) rows.add(mutableListOf())
+        for (item in section.items) {
+            if (rows.last().size == columns) rows.add(mutableListOf())
+            rows.last().add(item)
+        }
+    }
+    return buildMap { for (row in rows) for (item in row) put(item.sha256, row) }
+}
+
 /** Grid cell with context menu. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun MediaGridCell(
     item: BlossomMediaItem,
     index: Int,
+    /** Tile width ÷ height: square, or taller for a row with a portrait video. */
+    tileAspect: Float,
+    onFrameSize: (androidx.compose.ui.geometry.Size) -> Unit,
     backup: BackupBadgeState,
     contextMenuTarget: Int?,
     noteId: String?,
@@ -113,7 +132,7 @@ internal fun MediaGridCell(
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
-            .aspectRatio(1f)
+            .aspectRatio(tileAspect)
             .clip(RoundedCornerShape(2.dp))
             .videoTileBackground(item.isVideo)
             .combinedClickable(
@@ -128,6 +147,7 @@ internal fun MediaGridCell(
                 model = vaultGridImageRequest(context, item, moderationTarget, FipsMediaRouter.ownerHex()),
                 contentDescription = null,
                 contentScale = mediaTileContentScale(item.isVideo),
+                onSuccess = { onFrameSize(it.painter.intrinsicSize) },
                 modifier = Modifier.fillMaxSize(),
             )
             MeshMediaStatusOverlay(url = item.displayUrl, compact = true, modifier = Modifier.matchParentSize())
