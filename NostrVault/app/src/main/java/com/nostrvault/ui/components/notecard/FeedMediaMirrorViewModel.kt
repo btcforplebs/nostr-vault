@@ -11,6 +11,7 @@ import com.nostrvault.service.MediaSaveService
 import com.nostrvault.service.DELETE_NO_HASH_MESSAGE
 import com.nostrvault.service.deleteEverywhereLeftover
 import com.nostrvault.service.deleteOwnEvents
+import com.nostrvault.service.pushToMissing
 import com.nostrvault.ui.screens.DeleteScope
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -70,7 +71,8 @@ class FeedMediaMirrorViewModel @Inject constructor(
     sealed interface MirrorState {
         data object Idle : MirrorState
         data object Mirroring : MirrorState
-        data object Mirrored : MirrorState
+        /** In the vault on this phone; [outcome] says whether the media servers got it too. */
+        data class Mirrored(val outcome: MirrorOutcome) : MirrorState
         data class Failed(val message: String) : MirrorState
     }
 
@@ -80,28 +82,47 @@ class FeedMediaMirrorViewModel @Inject constructor(
     /** False when there's no local relay to back media up to — hides the button entirely. */
     val canMirror: Boolean get() = blossomService.localBlossomURL() != null
 
+    private val hasServers: Boolean
+        get() = blossomService.configStore.config.value.activeBlossomMirrors.isNotEmpty()
+
     /**
      * Called when a media URL is opened in the viewer. If the URL is hash-based and
-     * the blob is already in the local Blossom store, start in the "Mirrored" state;
-     * otherwise offer the mirror action. Mirrors iOS FeedMediaViewer.updateMirrorStatus().
+     * the blob is already in the local Blossom store, start in the "In vault" state
+     * (on this phone, servers not checked); otherwise offer the mirror action.
+     * Mirrors iOS FeedMediaViewer.updateMirrorStatus().
      */
     fun onOpen(url: String) {
         openUrl = url
         _saveState.value = SaveState.Idle
         val hash = extractSha256(url)
         _state.value = if (hash != null && mediaCacheService.isInLocalBlossom(hash)) {
-            MirrorState.Mirrored
+            MirrorState.Mirrored(if (hasServers) MirrorOutcome.InVault else MirrorOutcome.OnPhoneOnly)
         } else {
             MirrorState.Idle
         }
     }
 
+    /**
+     * Save the media to the vault on this phone, then upload it to every media
+     * server that lacks it. Port of iOS FeedMediaViewer.mirrorToBlossomTapped(),
+     * whose saveToLocalRelay pushes to activeBlossomMirrors after the local store.
+     * A file already in the vault ("In vault") is not downloaded again.
+     */
     fun mirror(url: String) {
         if (_state.value is MirrorState.Mirroring) return
         viewModelScope.launch {
             _state.value = MirrorState.Mirroring
-            val sha = withContext(Dispatchers.IO) { blossomService.mirrorUrlToLocal(url) }
-            _state.value = if (sha != null) MirrorState.Mirrored else MirrorState.Failed("Mirror failed")
+            val outcome = withContext(Dispatchers.IO) {
+                val known = extractSha256(url)?.takeIf { mediaCacheService.isInLocalBlossom(it) }
+                val sha = known ?: blossomService.mirrorUrlToLocal(url)
+                when {
+                    sha == null -> null
+                    !hasServers -> MirrorOutcome.OnPhoneOnly
+                    else -> MirrorOutcome.of(blossomService.pushToMissing(sha))
+                }
+            }
+            if (openUrl != null && openUrl != url) return@launch
+            _state.value = if (outcome != null) MirrorState.Mirrored(outcome) else MirrorState.Failed("Couldn't save to your vault")
         }
     }
 
