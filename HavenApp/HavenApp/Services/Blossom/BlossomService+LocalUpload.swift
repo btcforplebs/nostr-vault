@@ -81,6 +81,15 @@ extension BlossomService {
         return await uploadToServer(source: source, url: retryURL, sha256: sha256, contentType: contentType, useLocalhostSession: true, authBase64: authBase64)
     }
 
+    /// The Media tab shows a file the moment it is in the vault, like a new
+    /// note in the feed: it rescans on this (MediaRescanGate keeps a burst to
+    /// one scan at a time). The folder watcher sees the same write; this one
+    /// also covers a vault whose folder isn't watched yet.
+    @MainActor
+    func announceStoredInVault() {
+        NotificationCenter.default.post(name: .blossomDirectoryChanged, object: nil)
+    }
+
     func saveToLocalRelay(source: UploadSource, sha256: String, contentType: String, mirrorToExternal: Bool, progress: ((Double) -> Void)? = nil) async -> Bool {
         // A keyless vault can't sign the upload: in-process, no signer asked.
         // Nothing to push outside either, since that needs a signature too.
@@ -90,7 +99,9 @@ extension BlossomService {
         let activeIsOwner = await MainActor.run { nostrService.activeHexPubkey == nostrService.ownerHexPubkey }
         let route = OwnVaultUpload.route(keyless: keyless, bytes: Int64(source.byteCount), activeIsOwner: activeIsOwner)
         if keyless {
-            return await importToOwnVaultInProcess(source: source, sha256: sha256, contentType: contentType)
+            let stored = await importToOwnVaultInProcess(source: source, sha256: sha256, contentType: contentType)
+            if stored { await announceStoredInVault() }
+            return stored
         }
         let auth = await makeUploadAuth(sha256: sha256)
         if route == .inProcess {
@@ -106,6 +117,7 @@ extension BlossomService {
             }
         }
         logger.info("saveToLocalRelay: stored in this vault (\(source.byteCount) bytes, \(route == .inProcess ? "in-process" : "upload"))")
+        await announceStoredInVault()
 
         // Push to external mirrors — awaited to ensure uploads complete before returning.
         // Previously fire-and-forget, which caused mirrors to silently fail on iOS

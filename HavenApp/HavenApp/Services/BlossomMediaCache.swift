@@ -11,11 +11,16 @@ class BlossomDirectoryWatcher {
     private var source: DispatchSourceFileSystemObject?
     private var debounceWorkItem: DispatchWorkItem?
 
-    func start(directory: URL) {
+    /// False when the folder can't be opened, so the caller tries again later.
+    @discardableResult
+    func start(directory: URL) -> Bool {
         stop()
 
+        // A new vault has no media folder until its first file; create it so
+        // the first file is seen too.
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let fd = open(directory.path, O_EVTONLY)
-        guard fd >= 0 else { return }
+        guard fd >= 0 else { return false }
 
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
@@ -40,6 +45,7 @@ class BlossomDirectoryWatcher {
 
         source.resume()
         self.source = source
+        return true
     }
 
     func stop() {
@@ -63,6 +69,10 @@ class BlossomMediaCache: ObservableObject {
 
     @Published var items: [MediaItem] = []
     @Published var isScanning: Bool = false
+    /// Bumped when a scan finds a different set of files; the gallery redraws on it.
+    @Published var revision: Int = 0
+    /// One scan at a time without dropping a request (MediaRescanGate).
+    var rescanGate = MediaRescanGate()
 
     /// Timestamp of the last completed filesystem scan.
     var lastScanDate: Date?
@@ -82,8 +92,9 @@ class BlossomMediaCache: ObservableObject {
     /// Begin monitoring the blossom directory for external changes (e.g. phone uploads to Mac relay).
     func startWatchingIfNeeded(directory: URL) {
         guard watchedDirectory != directory else { return }
-        watchedDirectory = directory
-        directoryWatcher.start(directory: directory)
+        // Only remembered once it is watched: a folder that couldn't be opened
+        // used to be marked watched anyway, and was never watched after.
+        if directoryWatcher.start(directory: directory) { watchedDirectory = directory }
     }
 
     func stopWatching() {
