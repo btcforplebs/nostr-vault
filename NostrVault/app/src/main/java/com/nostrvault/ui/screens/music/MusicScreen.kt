@@ -1,7 +1,5 @@
 package com.nostrvault.ui.screens.music
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -409,7 +407,7 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
                 text = "Music from Wavlake",
                 color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.fillMaxWidth().padding(16.dp)
-                    .clickable { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://wavlake.com"))) } },
+                    .clickable { com.nostrvault.ui.components.NostrWebLinks.open(ctx, "https://wavlake.com") },
             )
         }
     }

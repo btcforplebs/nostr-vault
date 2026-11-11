@@ -1,7 +1,5 @@
 package com.nostrvault.ui.screens.settings
 
-import android.content.Intent
-import android.net.Uri
 import com.nostrvault.BuildConfig
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -255,7 +253,7 @@ private fun AboutSection() {
             color = LocalNostrVaultColors.current.primary,
             fontSize = 12.sp,
             modifier = Modifier.clickable {
-                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL))) }
+                com.nostrvault.ui.components.NostrWebLinks.open(context, PRIVACY_POLICY_URL)
             },
         )
     }

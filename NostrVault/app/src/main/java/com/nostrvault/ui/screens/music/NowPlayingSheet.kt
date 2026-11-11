@@ -1,7 +1,5 @@
 package com.nostrvault.ui.screens.music
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -186,7 +184,7 @@ fun NowPlayingSheet(actions: MusicActions, onDismiss: () -> Unit) {
                 )
             }
             t.pageUrl?.let { page ->
-                TextButton(onClick = { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(page))) } }) {
+                TextButton(onClick = { com.nostrvault.ui.components.NostrWebLinks.open(ctx, page) }) {
                     Text(if (t.isLive) "Open stream" else "Open on Wavlake", color = SecondaryText)
                 }
             }

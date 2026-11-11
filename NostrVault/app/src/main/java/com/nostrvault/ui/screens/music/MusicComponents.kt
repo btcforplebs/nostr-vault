@@ -1,7 +1,5 @@
 package com.nostrvault.ui.screens.music
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -201,7 +199,7 @@ fun MusicTrackRow(
                 DropdownMenuItem(text = { Text("${track.artist} on Nostr") }, onClick = { menu = false; actions.onOpenProfile(hex) })
             }
             DropdownMenuItem(text = { Text("Open on Wavlake") }, onClick = {
-                menu = false; runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(track.pageUrl))) }
+                menu = false; com.nostrvault.ui.components.NostrWebLinks.open(ctx, track.pageUrl)
             })
         }
     }

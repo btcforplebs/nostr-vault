@@ -52,11 +52,22 @@ object NostrWebLinks {
             ?.let { WebLink("Open in Brainstorm", "https://brainstorm.world/p/$it") }
 
     /**
-     * Opens [url] in the system browser. A browser selector, so an installed
-     * Nostr app that claims these hosts doesn't catch the link; any app that
-     * views it if no browser is set up.
+     * Opens [url] where a link tap goes: the in-app browser (a `.fips` site
+     * always, a web page while Open Links in Nostr Vault is on), else the
+     * system browser.
      */
     fun open(context: Context, url: String) {
+        if (!com.nostrvault.ui.screens.browser.InAppBrowser.open(context, url)) openInSystemBrowser(context, url)
+    }
+
+    /**
+     * Opens [url] in the system browser. A browser selector, so an installed
+     * Nostr app that claims these hosts doesn't catch the link; any app that
+     * views it if no browser is set up. Never a `.fips` address: there it
+     * would resolve the npub through DNS.
+     */
+    fun openInSystemBrowser(context: Context, url: String) {
+        if (com.nostrvault.fips.FipsUrl.isFipsHost(com.nostrvault.fips.FipsUrl.hostOf(url))) return
         val uri = Uri.parse(url)
         val view = Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
