@@ -40,6 +40,10 @@ enum NostrEventVerifier {
     static func isValid(_ event: [String: Any]) -> Bool {
         false
     }
+
+    static func isValid(json: String) -> Bool {
+        false
+    }
 }
 
 enum NVWidgetBridge {

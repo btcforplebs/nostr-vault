@@ -53,7 +53,10 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
     /// event. `createdAt` stays the repost's own time, which orders the feed.
     let originalCreatedAt: Date?
 
-    init(id: String, pubkey: String, content: String, createdAt: Date, tags: [[String]], kind rawKind: Int, repostedBy: String? = nil) {
+    /// `verify` checks a kind 6's embedded event (`GenericRepost.verifiedEmbedded`):
+    /// only a verified one lends the row its author.
+    init(id: String, pubkey: String, content: String, createdAt: Date, tags: [[String]], kind rawKind: Int, repostedBy: String? = nil,
+         verify: (String) -> Bool = NostrEventVerifier.isValid(json:)) {
         // A generic repost (16) is a repost of anything but a text note.
         // Every repost rule in the app (reposter-follows membership, the
         // reposts toggle, the original fetched and drawn as its own kind)
@@ -79,9 +82,16 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         let embedsOtherKind = kind == 6 && (GenericRepost.embeddedKind(content: content) ?? 1) != 1
         if embedsOtherKind { resolvedContent = "" }
 
-        if kind == 6, !embedsOtherKind,
-           let data = content.data(using: .utf8),
-           let inner = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        // The inner author is taken only from a verified event: an unsigned
+        // `pubkey` in the content would put a trusted name on anyone's text
+        // and pass the Web of Trust as them. Unverified, the repost stays
+        // bare (its own author, tags and `e` target, empty content), so the
+        // row fetches the real original by id, as for any bare repost.
+        let embedsTextNote = kind == 6 && !embedsOtherKind && GenericRepost.embeddedEvent(content: content) != nil
+        let verifiedInner = embedsTextNote ? GenericRepost.verifiedEmbedded(content: content, verify: verify) : nil
+        if embedsTextNote && verifiedInner == nil { resolvedContent = "" }
+
+        if let inner = verifiedInner,
            let innerContent = inner["content"] as? String,
            let innerPubkey = inner["pubkey"] as? String {
             resolvedPubkey = innerPubkey

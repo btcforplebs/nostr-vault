@@ -2,6 +2,7 @@ package com.nostrvault.data.model
 
 import com.nostrvault.util.findAllOnce
 import androidx.compose.runtime.Immutable
+import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenQuoteDecoder
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -323,6 +324,9 @@ data class FeedNote(
             tags: List<List<String>>,
             kind: Int,
             repostedBy: String? = null,
+            // Checks a kind 6's embedded event; only a verified one lends the
+            // row its author (iOS GenericRepost.verifiedEmbedded).
+            verify: (String) -> Boolean = { HavenBridge.verifyEvent(it) },
         ): FeedNote {
             // A generic repost (16) is a repost of anything but a text note.
             // Every repost rule (reposter-follows membership, the reposts
@@ -348,7 +352,16 @@ data class FeedNote(
                     val inner = Json.decodeFromString<JsonObject>(content)
                     val innerContent = inner["content"]?.jsonPrimitive?.contentOrNull
                     val innerPubkey = inner["pubkey"]?.jsonPrimitive?.contentOrNull
-                    if (innerContent != null && innerPubkey != null) {
+                    // The inner author is taken only from a verified event,
+                    // checked on the raw content string (the id hashes those
+                    // exact bytes). An unsigned `pubkey` would put a trusted
+                    // name on anyone's text and pass the Web of Trust as them.
+                    // Unverified, the repost stays bare: its own author, tags
+                    // and `e` target, empty content, so the row fetches the
+                    // real original by id like any bare repost.
+                    if (innerContent != null && innerPubkey != null && !verify(content)) {
+                        resolvedContent = ""
+                    } else if (innerContent != null && innerPubkey != null) {
                         resolvedPubkey = innerPubkey
                         resolvedContent = innerContent
                         // The inner event's tags, never the repost's: keeping the
@@ -476,6 +489,7 @@ data class FeedNote(
             createdAt: Long,
             kind: Int,
             repostedBy: String? = null,
+            verify: (String) -> Boolean = { HavenBridge.verifyEvent(it) },
         ): FeedNote = FeedNote(
             id = id,
             pubkey = pubkey,
@@ -484,6 +498,7 @@ data class FeedNote(
             tags = tags,
             kind = kind,
             repostedBy = repostedBy,
+            verify = verify,
         )
 
         /**

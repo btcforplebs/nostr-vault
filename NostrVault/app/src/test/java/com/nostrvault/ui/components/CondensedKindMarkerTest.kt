@@ -13,7 +13,8 @@ class CondensedKindMarkerTest {
         tags: List<List<String>> = emptyList(),
         content: String = "x",
         id: String = "n$kind",
-    ) = FeedNote(id = id, pubkey = "a".repeat(64), content = content, createdAt = Date(0), tags = tags, kind = kind)
+    ) = FeedNote(id = id, pubkey = "a".repeat(64), content = content, createdAt = Date(0), tags = tags, kind = kind,
+        verify = { true }) // unsigned fixtures; RepostTrustTest covers verification
 
     private val recipeTags = listOf(listOf("d", "soup"), listOf("t", "ZapCooking"))
 

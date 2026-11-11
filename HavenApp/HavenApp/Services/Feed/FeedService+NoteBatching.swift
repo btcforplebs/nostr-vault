@@ -156,6 +156,9 @@ extension FeedService {
         // It also holds a generic repost (16) as a 6.
         if kind == GenericRepost.kind && !GenericRepost.isShown(tags: tags, content: content) { return }
         let feedKind = kind == GenericRepost.kind ? 6 : kind
+        // Whether FeedNote verified the embedded event, so the raw-event cache
+        // below never keeps an unsigned one (verified once, here).
+        var embedVerified = false
         let note = FeedNote(
             id: id,
             pubkey: pubkey,
@@ -163,7 +166,11 @@ extension FeedService {
             createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),
             tags: tags,
             kind: feedKind,
-            repostedBy: feedKind == 6 ? pubkey : nil
+            repostedBy: feedKind == 6 ? pubkey : nil,
+            verify: { json in
+                embedVerified = NostrEventVerifier.isValid(json: json)
+                return embedVerified
+            }
         )
 
         // Filter out obvious spam/noise from being processed. A repost that
@@ -187,7 +194,9 @@ extension FeedService {
                 rawEntries.append((id: id, json: json))
             }
         }
-        if feedKind == 6, !content.isEmpty,
+        // Only a verified embedded event: this cache is what the user's own
+        // repost re-publishes, so a forged one would go out under their key.
+        if feedKind == 6, embedVerified, !content.isEmpty,
            let innerData = content.data(using: .utf8),
            let inner = try? JSONSerialization.jsonObject(with: innerData) as? [String: Any],
            let innerId = inner["id"] as? String {

@@ -16,6 +16,26 @@ enum GenericRepost {
         return inner["kind"] as? Int ?? 1
     }
 
+    /// The event a repost carries in its content, as a JSON object, or nil
+    /// when the content is empty or not a JSON object.
+    static func embeddedEvent(content: String) -> [String: Any]? {
+        guard !content.isEmpty, let data = content.data(using: .utf8) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+
+    /// The embedded event, only when `verify` accepts the content as a
+    /// signed event (its id the hash of its fields, its sig by its pubkey).
+    /// Anyone can write any `pubkey` into a repost's content; unverified, it
+    /// says nothing about who wrote the note.
+    ///
+    /// `verify` gets the raw content string, never a re-serialized
+    /// dictionary: JSONSerialization changes numbers and escapes, so a round
+    /// trip would fail every honest repost.
+    static func verifiedEmbedded(content: String, verify: (String) -> Bool) -> [String: Any]? {
+        guard let event = embeddedEvent(content: content), verify(content) else { return nil }
+        return event
+    }
+
     /// What a repost points at: its `e` tag, else its `a` coordinate in
     /// `QuoteReference`'s spelling (a repost of an article may carry only
     /// that).
