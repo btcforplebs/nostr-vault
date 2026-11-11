@@ -112,7 +112,7 @@ extension FeedService {
     /// Who counts as inside your network in the Relay tab: the relay's trust
     /// graph plus your current follows. The graph is rebuilt about once a day,
     /// so without the follows someone you just followed stayed "outside".
-    /// Empty while the graph isn't loaded, which counts nobody as outside.
+    /// Just your follows while the graph isn't loaded: everyone else is outside.
     func relayTabTrustedPubkeys() -> Set<String> {
         if wotPubkeys.isEmpty { loadWotPubkeysIfChanged() }
         return feedTrustedPubkeys
@@ -121,7 +121,7 @@ extension FeedService {
     /// The one rule every feed with a Global button follows (Global, Media,
     /// Articles, diVines, Recipes, Live, Marketplace): Global shows your Web of
     /// Trust until the shield is switched to Everyone. nil means everyone.
-    /// Fails closed like the Global feed: with no graph yet, nobody passes.
+    /// Fails closed like the Global feed: with no graph yet, only follows pass.
     func globalTrustSet() -> Set<String>? {
         guard !ConfigService.shared.config.globalShowsEveryone else { return nil }
         if wotPubkeys.isEmpty { loadWotPubkeysIfChanged() }
@@ -132,7 +132,7 @@ extension FeedService {
     /// filter against: the saved graph plus your current follows
     /// (`TrustMap.web`). The graph is rebuilt about once a day, so without the
     /// follows someone you just followed stayed filtered out of Global until
-    /// then. Empty while there is no graph, so Global still fails closed.
+    /// then. Only the follows while there is no graph, so Global still fails closed.
     var feedTrustedPubkeys: Set<String> {
         trustedWebMemo.web(saved: wotPubkeys, follows: followedPubkeys)
     }

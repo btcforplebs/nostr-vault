@@ -218,8 +218,9 @@ final class NotificationAuthorTrustTests: XCTestCase {
         XCTAssertTrue(NotificationPolicy.authorMayNotify("friend", type: "reply", trusted: trusted, own: []))
         XCTAssertFalse(NotificationPolicy.authorMayNotify("stranger", type: "reply", trusted: trusted, own: []))
         XCTAssertFalse(NotificationPolicy.authorMayNotify("stranger", type: "dm", trusted: trusted, own: []))
-        // Graph not loaded, own events, gift wraps and the summary are not held back.
-        XCTAssertTrue(NotificationPolicy.authorMayNotify("stranger", type: "reply", trusted: [], own: []))
+        // Graph not loaded: fails closed, a stranger's reply stays silent.
+        XCTAssertFalse(NotificationPolicy.authorMayNotify("stranger", type: "reply", trusted: [], own: []))
+        // Own events, gift wraps and the summary are not held back.
         XCTAssertTrue(NotificationPolicy.authorMayNotify("me", type: "zap", trusted: trusted, own: ["me"]))
         XCTAssertTrue(NotificationPolicy.authorMayNotify("throwaway", type: "giftwrap", trusted: trusted, own: []))
         // The receipt is signed by the lightning service, never in anyone's WoT.
@@ -314,5 +315,26 @@ final class NotificationAccountLabelTests: XCTestCase {
 
     func testNoLabelForAnAccountNoLongerHeld() {
         XCTAssertNil(NotificationPolicy.accountLabel(npub: second, accounts: [owner, "npub1other"], name: "Shop"))
+    }
+}
+
+/// Logen 2026-11-11: a stranger replied to his note while his saved web read
+/// empty; it notified and sat in Vault > All. It is kept on purpose, but only
+/// under Outside, and only follows notify until the web is built.
+final class EmptyWebFailsClosedTests: XCTestCase {
+    let owner = "owner", follow = "follow", stranger = "stranger"
+
+    func testStrangerReplyWithNoSavedWebIsSilentAndOutside() {
+        let trusted = TrustMap.web(saved: [], follows: [follow])
+        XCTAssertFalse(NotificationPolicy.authorMayNotify(stranger, type: "reply", trusted: trusted, own: [owner]))
+        XCTAssertFalse(NotificationPolicy.authorMayNotify(stranger, type: "mention", trusted: trusted, own: [owner]))
+        XCTAssertTrue(ContentFilter.isOutside(author: stranger, owner: owner, whitelist: [owner], trusted: trusted))
+    }
+
+    func testFollowStillNotifiesAndStaysInAllWithNoSavedWeb() {
+        let trusted = TrustMap.web(saved: [], follows: [follow])
+        XCTAssertTrue(NotificationPolicy.authorMayNotify(follow, type: "reply", trusted: trusted, own: [owner]))
+        XCTAssertFalse(ContentFilter.isOutside(author: follow, owner: owner, whitelist: [owner], trusted: trusted))
+        XCTAssertTrue(NotificationPolicy.authorMayNotify(owner, type: "reply", trusted: [], own: [owner]))
     }
 }

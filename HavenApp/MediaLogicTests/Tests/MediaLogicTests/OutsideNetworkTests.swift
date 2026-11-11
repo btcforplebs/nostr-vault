@@ -21,8 +21,14 @@ final class OutsideNetworkTests: XCTestCase {
         XCTAssertFalse(outside(listed, trusted: trusted))
     }
 
-    /// Before the graph loads nothing moves out of All.
-    func testEmptyGraphCountsNobodyAsOutside() {
-        XCTAssertFalse(outside(stranger, trusted: []))
+    /// Before the graph loads a stranger is still outside (fails closed, like
+    /// Android and the web); a follow, you and your accounts are not.
+    func testEmptyGraphStillPutsAStrangerOutside() {
+        let trusted = TrustMap.web(saved: [], follows: [friend])
+        XCTAssertTrue(outside(stranger, trusted: trusted))
+        XCTAssertTrue(outside(stranger, trusted: []))
+        XCTAssertFalse(outside(friend, trusted: trusted))
+        XCTAssertFalse(outside(owner, trusted: []))
+        XCTAssertFalse(outside(listed, trusted: []))
     }
 }

@@ -86,7 +86,8 @@ enum NotificationPolicy {
     /// open: that banner is part of the app, not a phone notification, so the
     /// switch shouldn't hide it. Everything else stays silent.
     /// Only people in your Web of Trust (or follows) notify. `trusted` empty
-    /// means the graph has not loaded, and then nobody is held back. Gift
+    /// means the graph has not loaded and you follow nobody, and then only
+    /// your own accounts pass: fails closed, like Android and the web. Gift
     /// wraps (`giftwrap`) carry a throwaway author and the catch-up summary
     /// carries none, so they are not judged here. Zaps pass too: the relay
     /// already admitted the receipt on the zapper's standing (haven-go
@@ -96,7 +97,7 @@ enum NotificationPolicy {
     /// differently (followIsNamed).
     static func authorMayNotify(_ author: String, type: String, trusted: Set<String>, own: Set<String>) -> Bool {
         if author.isEmpty || type == "giftwrap" || type == "summary" || type == "zap" || type == "follow" { return true }
-        if trusted.isEmpty || own.contains(author) { return true }
+        if own.contains(author) { return true }
         return trusted.contains(author)
     }
 

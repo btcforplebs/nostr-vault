@@ -72,9 +72,10 @@ enum ContentFilter {
 
     /// Whether a note tagging you comes from outside your network. The one
     /// definition shared by the Notes filter and a notification tap's routing.
-    /// An empty graph (not built yet) counts nobody as outside.
+    /// Fails closed like Android and the web: with no graph yet, everyone but
+    /// you, your accounts and your follows (`TrustMap.web`) is outside.
     static func isOutside(author: String, owner: String, whitelist: Set<String>, trusted: Set<String>) -> Bool {
-        author != owner && !whitelist.contains(author) && !trusted.isEmpty && !trusted.contains(author)
+        author != owner && !whitelist.contains(author) && !trusted.contains(author)
     }
 }
 
