@@ -21,12 +21,12 @@ final class FeedTopBarTests: XCTestCase {
     func testPillsSitOnTheEdgesOnEveryFeed() {
         let app = XCUIApplication(bundleIdentifier: "com.havenapp.relay")
         app.launch()
-        setUpReadOnlyIfNeeded(app)
+        FeedUITestDriving.setUpReadOnlyIfNeeded(app, npub: npub)
         for _ in 0..<3 where app.buttons["Skip"].exists { app.buttons["Skip"].firstMatch.tap(); sleep(1) }
 
         var checked = 0
         for feed in feeds {
-            guard pick(feed, in: app) else { continue }
+            guard FeedUITestDriving.pick(feed, in: app) else { continue }
             checkEdges(app, "\(feed) open")
             if fold(app) { checkEdges(app, "\(feed) folded") }
             unfold(app)
@@ -41,7 +41,7 @@ final class FeedTopBarTests: XCTestCase {
         sleep(1)
         if let shots { try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "\(shots)/\(state).png")) }
         let width = app.windows.firstMatch.frame.width
-        let picker = feedPicker(app)
+        let picker = FeedUITestDriving.feedPicker(app)
         XCTAssertTrue(picker.exists, "\(state): no feed picker")
         let barBottom = picker.frame.maxY + 4
         XCTAssertLessThanOrEqual(picker.frame.minX, edgeSlack, "\(state): left pill not on the left edge (\(picker.frame))")
@@ -68,34 +68,16 @@ final class FeedTopBarTests: XCTestCase {
 
     // MARK: - Driving
 
-    private func feedPicker(_ app: XCUIApplication) -> XCUIElement {
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Feed:'")).firstMatch
-    }
-
-    private func pick(_ feed: String, in app: XCUIApplication) -> Bool {
-        let picker = feedPicker(app)
-        guard picker.waitForExistence(timeout: 30) else { XCTFail("no feed picker"); return false }
-        picker.tap(); sleep(2)
-        var item = app.buttons[feed].firstMatch
-        if item.exists && !item.isHittable { app.swipeUp(); sleep(1); item = app.buttons[feed].firstMatch }
-        guard item.exists && item.isHittable else {
-            app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)).tap(); sleep(1)
-            return false
-        }
-        item.tap(); sleep(6)
-        return true
-    }
-
     /// Drags the feed up to fold the bars. False when the feed is too short
     /// to scroll (nothing folded).
     @discardableResult
     private func fold(_ app: XCUIApplication) -> Bool {
-        let before = feedPicker(app).frame.width
+        let before = FeedUITestDriving.feedPicker(app).frame.width
         let w = app.windows.firstMatch
         w.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
             .press(forDuration: 0.05, thenDragTo: w.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))
         sleep(2)
-        return feedPicker(app).frame.width < before - 20
+        return FeedUITestDriving.feedPicker(app).frame.width < before - 20
     }
 
     private func unfold(_ app: XCUIApplication) {
@@ -103,27 +85,5 @@ final class FeedTopBarTests: XCTestCase {
         w.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
             .press(forDuration: 0.05, thenDragTo: w.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)))
         sleep(2)
-    }
-
-    /// A fresh install: bring an account by npub (read-only) and let setup
-    /// finish. Does nothing once the feed is up.
-    private func setUpReadOnlyIfNeeded(_ app: XCUIApplication) {
-        let steps = ["Yes, bring my notes from my relays", "Start import", "Keep it running in the background",
-                     "Bring an account", "Continue", "Next", "Not now", "Skip"]
-        for _ in 0..<40 {
-            if feedPicker(app).exists { return }
-            let field = app.textFields.firstMatch
-            if field.exists, field.placeholderValue?.contains("npub") == true,
-               (field.value as? String ?? "").contains("npub1") == false {
-                field.tap(); field.typeText(npub); sleep(1)
-            }
-            var tapped = false
-            for label in steps {
-                let b = app.buttons[label].firstMatch
-                if b.exists && b.isHittable && b.isEnabled { b.tap(); tapped = true; break }
-            }
-            sleep(tapped ? 3 : 5)
-        }
-        XCTAssertTrue(feedPicker(app).waitForExistence(timeout: 30), "setup did not reach the feed")
     }
 }
