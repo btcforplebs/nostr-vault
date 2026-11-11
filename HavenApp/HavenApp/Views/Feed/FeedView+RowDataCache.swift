@@ -200,6 +200,9 @@ extension FeedView {
     /// (triggering a SwiftUI update) only if something actually changed —
     /// `FeedNoteRowData: Equatable` makes that comparison free.
     private func resolveRows(matching ids: Set<String>) {
+        // Before the guard: a drawn row these paths cannot find (one outside
+        // `filteredNotes`) may still be affected.
+        dropAllDrafts()
         guard !ids.isEmpty else { return }
         // A repost row shows its original's likes, zaps and counts, which are
         // keyed by the original's id, not the row's.
@@ -208,14 +211,9 @@ extension FeedView {
             if let refId = note.repostedEventId, ids.contains(refId) { ids.insert(note.id) }
         }
         var updated = rowDataCache
-        // A drawn row not filed yet is as stale as a cached one: resolve it
-        // fresh into the cache. The write also redraws it, since the row was
-        // drawn before this change reached here.
-        let drafted = rowStore.drafts.remove(ids)
-        var didChange = !drafted.isEmpty
+        var didChange = false
         for id in ids {
-            guard rowDataCache[id] != nil || drafted.contains(id),
-                  let note = feedService.findNote(id: id) else { continue }
+            guard rowDataCache[id] != nil, let note = feedService.findNote(id: id) else { continue }
             let resolved = FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService)
             if updated[id] != resolved {
                 updated[id] = resolved
@@ -223,6 +221,20 @@ extension FeedView {
             }
         }
         if didChange { rowDataCache = updated }
+    }
+
+    /// Any change to what rows show drops every draft and redraws, so a drawn
+    /// row not filed yet resolves fresh. The update paths find their rows by
+    /// scanning `filteredNotes` and the cache; a drawn thread-card row outside
+    /// them (a root pulled in from the caches, a Global reply, a Hashtags
+    /// note, a repost of a liked note) would otherwise keep older data. Drafts
+    /// are never filed here, only by reconcile, so the cache keeps holding
+    /// only `filteredNotes`. Only drawn rows are drafts: a screenful of
+    /// resolves at most, what every uncached row cost before drafts existed.
+    private func dropAllDrafts() {
+        guard !rowStore.drafts.rows.isEmpty else { return }
+        rowStore.drafts.removeAll()
+        rowStore.objectWillChange.send()
     }
 
     /// likedEventIds is keyed by `note.id`, so the symmetric difference is exactly

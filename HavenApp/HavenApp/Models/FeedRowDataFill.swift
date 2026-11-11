@@ -53,13 +53,5 @@ struct FeedRowDrafts<Row> {
         return rows
     }
 
-    /// Drops the drafts for `ids` and returns the ids that had one, so the
-    /// caller can resolve them fresh.
-    mutating func remove(_ ids: Set<String>) -> Set<String> {
-        var removed = Set<String>()
-        for id in ids where rows.removeValue(forKey: id) != nil { removed.insert(id) }
-        return removed
-    }
-
     mutating func removeAll() { rows = [:] }
 }

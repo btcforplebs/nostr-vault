@@ -90,12 +90,12 @@ final class FeedRowDataFillTests: XCTestCase {
         XCTAssertEqual(resolves[reply.id], 2)
     }
 
-    /// A change that reaches a drawn row before it is filed drops its draft,
-    /// so the row is never left showing the older data.
-    func testRemoveDropsOnlyDraftedIds() {
+    /// A change that reaches a drawn row before it is filed drops the drafts,
+    /// so the row resolves fresh instead of showing the older data.
+    func testDroppedDraftResolvesFresh() {
         var drafts = FeedRowDrafts<Row>()
         _ = drafts.row(id: "a", cached: nil) { resolve(Note(id: "a")) }
-        XCTAssertEqual(drafts.remove(["a", "b"]), ["a"])
+        drafts.removeAll()
         version = 2
         let again = drafts.row(id: "a", cached: nil) { resolve(Note(id: "a")) }
         XCTAssertEqual(again.version, 2)
