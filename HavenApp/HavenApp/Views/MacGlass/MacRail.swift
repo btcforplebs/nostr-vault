@@ -118,11 +118,11 @@ struct MacRail: View {
                     .shadow(color: MacVaultGlance.stateTint(relayManager).opacity(0.8), radius: 4)
                 Text(MacVaultGlance.stateLabel(relayManager))
                     .font(.appSystem(size: 9, weight: .semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color.white.opacity(0.72))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
-            .frame(width: 58, height: 34)
+            .frame(width: 58, height: 36)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

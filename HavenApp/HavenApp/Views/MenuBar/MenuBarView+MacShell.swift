@@ -91,11 +91,12 @@ extension MenuBarView {
     }
 
     /// Pages made of posts are read at `MacShellLayout.readingWidth`. Grids,
-    /// the globe, the dashboard and Settings use the whole column.
+    /// the globe, the dashboard and Settings use the whole column, and so
+    /// does the Vault: its six-tab bar is wider than the reading width.
     static func pageReadsNarrow(_ tab: Tab) -> Bool {
         switch tab {
-        case .feed, .search, .profile, .notes: return true
-        case .media, .relay, .settings, .wot: return false
+        case .feed, .search, .profile: return true
+        case .notes, .media, .relay, .settings, .wot: return false
         }
     }
 
