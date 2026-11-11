@@ -30,7 +30,7 @@ internal fun MirrorToBlossomPill(
 ) {
     val bg = when (state) {
         is FeedMediaMirrorViewModel.MirrorState.Mirrored ->
-            if (state.outcome.complete) Color(0xFF33CC99).copy(alpha = 0.85f) else Color(0xFFF59E0B).copy(alpha = 0.85f)
+            if (state.report.complete) Color(0xFF33CC99).copy(alpha = 0.85f) else Color(0xFFF59E0B).copy(alpha = 0.85f)
         is FeedMediaMirrorViewModel.MirrorState.Failed -> Color(0xFFE53935).copy(alpha = 0.85f)
         else -> Color.Black.copy(alpha = 0.6f)
     }
@@ -39,11 +39,11 @@ internal fun MirrorToBlossomPill(
     // Idle/Failed, or a file some servers lack, trigger a (re)mirror.
     val clickable = state is FeedMediaMirrorViewModel.MirrorState.Idle ||
         state is FeedMediaMirrorViewModel.MirrorState.Failed ||
-        (state is FeedMediaMirrorViewModel.MirrorState.Mirrored && state.outcome.canRetry)
+        (state is FeedMediaMirrorViewModel.MirrorState.Mirrored && state.report.canRetry)
 
     val spoken = when (state) {
         FeedMediaMirrorViewModel.MirrorState.Mirroring -> "Saving to your vault and media servers"
-        is FeedMediaMirrorViewModel.MirrorState.Mirrored -> state.outcome.spoken
+        is FeedMediaMirrorViewModel.MirrorState.Mirrored -> state.report.spoken
         is FeedMediaMirrorViewModel.MirrorState.Failed -> "Couldn't save to your vault, retry"
         FeedMediaMirrorViewModel.MirrorState.Idle -> "Mirror to your vault and media servers"
     }
@@ -69,11 +69,11 @@ internal fun MirrorToBlossomPill(
             }
             is FeedMediaMirrorViewModel.MirrorState.Mirrored -> {
                 Icon(
-                    if (state.outcome.complete) NostrVaultIcons.Check else NostrVaultIcons.Backup,
+                    if (state.report.complete) NostrVaultIcons.Check else NostrVaultIcons.Backup,
                     contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp),
                 )
                 Spacer(Modifier.width(6.dp))
-                Text(state.outcome.label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(state.report.label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
             is FeedMediaMirrorViewModel.MirrorState.Failed -> {
                 Icon(NostrVaultIcons.Dismiss, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))

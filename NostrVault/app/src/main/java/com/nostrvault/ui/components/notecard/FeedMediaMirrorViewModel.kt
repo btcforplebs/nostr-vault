@@ -12,6 +12,8 @@ import com.nostrvault.service.DELETE_NO_HASH_MESSAGE
 import com.nostrvault.service.deleteEverywhereLeftover
 import com.nostrvault.service.deleteOwnEvents
 import com.nostrvault.service.pushToMissing
+import com.nostrvault.service.mirrorToMesh
+import com.nostrvault.service.loadOwnerServerList
 import com.nostrvault.ui.screens.DeleteScope
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -71,8 +73,8 @@ class FeedMediaMirrorViewModel @Inject constructor(
     sealed interface MirrorState {
         data object Idle : MirrorState
         data object Mirroring : MirrorState
-        /** In the vault on this phone; [outcome] says whether the media servers got it too. */
-        data class Mirrored(val outcome: MirrorOutcome) : MirrorState
+        /** In the vault on this phone; [report] says which media servers and mesh devices got it too. */
+        data class Mirrored(val report: MirrorReport) : MirrorState
         data class Failed(val message: String) : MirrorState
     }
 
@@ -94,9 +96,11 @@ class FeedMediaMirrorViewModel @Inject constructor(
     fun onOpen(url: String) {
         openUrl = url
         _saveState.value = SaveState.Idle
+        // The owner's 10063 says which mesh devices a Mirror goes to; read it before the tap.
+        if (canMirror) blossomService.loadOwnerServerList()
         val hash = extractSha256(url)
         _state.value = if (hash != null && mediaCacheService.isInLocalBlossom(hash)) {
-            MirrorState.Mirrored(if (hasServers) MirrorOutcome.InVault else MirrorOutcome.OnPhoneOnly)
+            MirrorState.Mirrored(MirrorReport(if (hasServers) MirrorOutcome.InVault else MirrorOutcome.OnPhoneOnly))
         } else {
             MirrorState.Idle
         }
@@ -106,25 +110,33 @@ class FeedMediaMirrorViewModel @Inject constructor(
      * Save the media to the vault on this phone, then upload it to every media
      * server that lacks it. Port of iOS FeedMediaViewer.mirrorToBlossomTapped(),
      * whose saveToLocalRelay pushes to activeBlossomMirrors after the local store.
-     * A file already in the vault ("In vault") is not downloaded again.
+     * Then, Android's addition (Logen 2026-11-11), each mesh device the owner's
+     * 10063 lists as fipsmesh:// gets it over FIPS, signed with this phone's mesh
+     * key only. A file already in the vault ("In vault") is not downloaded again.
      */
     fun mirror(url: String) {
         if (_state.value is MirrorState.Mirroring) return
         viewModelScope.launch {
             _state.value = MirrorState.Mirroring
-            val outcome = withContext(Dispatchers.IO) {
+            val report = withContext(Dispatchers.IO) {
                 val known = extractSha256(url)?.takeIf { mediaCacheService.isInLocalBlossom(it) }
                 val sha = known ?: blossomService.mirrorUrlToLocal(url)
-                when {
-                    sha == null -> null
-                    !hasServers -> MirrorOutcome.OnPhoneOnly
-                    else -> MirrorOutcome.of(blossomService.pushToMissing(sha))
-                }
+                if (sha == null) return@withContext null
+                val servers = if (!hasServers) MirrorOutcome.OnPhoneOnly else MirrorOutcome.of(blossomService.pushToMissing(sha))
+                val type = MediaSaveService.mimeTypeForExtension(url) ?: "application/octet-stream"
+                val mesh = blossomService.mirrorToMesh(sha, type, mediaCacheService.blossomFile(forHash = sha))
+                MirrorReport(servers, mesh.map { MeshDeviceLine(deviceName(it.npub, it.role), it.outcome) })
             }
             if (openUrl != null && openUrl != url) return@launch
-            _state.value = if (outcome != null) MirrorState.Mirrored(outcome) else MirrorState.Failed("Couldn't save to your vault")
+            _state.value = if (report != null) MirrorState.Mirrored(report) else MirrorState.Failed("Couldn't save to your vault")
         }
     }
+
+    /** The name My Devices shows for a mesh device, or what kind of vault it is. */
+    private fun deviceName(npub: String, role: com.nostrvault.fips.DeviceRole): String =
+        blossomService.configStore.config.value.fipsMesh.devices.firstOrNull { it.npub == npub }?.name?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: if (role == com.nostrvault.fips.DeviceRole.MAC) "Desktop vault" else "Mobile vault"
 
     private val _deleting = MutableStateFlow(false)
     /** True while a delete from the long-press bar is running. */

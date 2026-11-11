@@ -36,6 +36,11 @@ class HomeVaultQueue(
         val nextAt: Long = 0,
         /** For [TYPE_PUBLIC_COPY]: the server the published note names. Only it counts. */
         val server: String? = null,
+        /**
+         * For [TYPE_BLOB]: sign only with this device's mesh key, never the owner's (a feed Mirror, #1920 follow-up).
+         * Such an item needs no owner signer, so it is never held for one.
+         */
+        val meshKeyOnly: Boolean = false,
     )
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -69,6 +74,7 @@ class HomeVaultQueue(
         /** The blob's size, checked before copying so an oversized one is never written. */
         byteCount: Long,
         now: Long = System.currentTimeMillis(),
+        meshKeyOnly: Boolean = false,
         writeTo: (File) -> Unit,
     ): Boolean = synchronized(lock) {
         val current = load()
@@ -88,7 +94,7 @@ class HomeVaultQueue(
             temp.delete()
             return false
         }
-        add(Item(key = sha256, type = TYPE_BLOB, contentType = contentType, queuedAt = now))
+        add(Item(key = sha256, type = TYPE_BLOB, contentType = contentType, queuedAt = now, meshKeyOnly = meshKeyOnly))
     }
 
     /**
@@ -309,6 +315,10 @@ object HomeVaultRules {
         }
         return Selection(toTry, held)
     }
+
+    /** A queued blob is signed as the owner unless it is mesh-key-only (a feed Mirror); events are already signed. */
+    fun needsOwnerSignature(item: HomeVaultQueue.Item): Boolean =
+        item.type == HomeVaultQueue.TYPE_BLOB && !item.meshKeyOnly
 
     const val MAX_AGE_MS = 14L * 24 * 60 * 60_000L
     const val MAX_ATTEMPTS = 40
