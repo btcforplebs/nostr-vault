@@ -53,6 +53,14 @@ final class InAppBrowserModel: ObservableObject {
         webView.navigationDelegate = navigation
         webView.uiDelegate = navigation
         webView.allowsBackForwardNavigationGestures = true
+        // Dark behind a page that is still loading, not a white flash.
+        #if os(iOS)
+        webView.isOpaque = false
+        webView.backgroundColor = .black
+        webView.scrollView.backgroundColor = .black
+        #else
+        webView.underPageBackgroundColor = .black
+        #endif
 
         handler.onStatus = { [weak self] status in self?.meshStatus = status }
         navigation.onExternal = { [weak self] url in self?.onExternal?(url) }
