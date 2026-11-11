@@ -17,9 +17,25 @@ extension RelayProcessManager {
         RelayConfiguration.generateEnvDictionary(config: config, relayDataDir: ConfigService.shared.relayDataDir)
     }
 
+    /// The one way relay settings reach Go: SetHavenEnvC stores them in
+    /// Go's own locked map (haven-go/host_env.go). Never libc setenv(3):
+    /// it reallocates `environ` with no lock while network threads read it
+    /// through getenv, the use-after-free behind the cold-launch getenv
+    /// SIGSEGV (#1908). Nothing outside haven-go reads these keys.
+    /// SetHavenEnvC copies both strings before it returns.
+    nonisolated static func handToGo(_ env: [String: String]) {
+        for (key, value) in env {
+            key.withCString { k in
+                value.withCString { v in
+                    SetHavenEnvC(UnsafeMutablePointer(mutating: k), UnsafeMutablePointer(mutating: v))
+                }
+            }
+        }
+    }
+
     // MARK: - Backup / Restore helpers
 
-    /// Sets environment variables and writes config files so Go's loadConfig() works.
+    /// Hands Go the settings and writes the config files its loadConfig() reads.
     private func prepareEnvForBackup(config: HavenConfig) {
         let relayDataDir = ConfigService.shared.relayDataDir
 
@@ -45,10 +61,7 @@ extension RelayProcessManager {
         let envContent = generateMinimalEnv(config: config)
         try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
 
-        let configEnv = generateEnvDictionary(config: config)
-        for (key, value) in configEnv {
-            setenv(key, value, 1)
-        }
+        Self.handToGo(generateEnvDictionary(config: config))
 
         FileManager.default.changeCurrentDirectoryPath(relayDataDir.path)
         captureOutput(in: relayDataDir)

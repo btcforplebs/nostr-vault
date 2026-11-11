@@ -51,6 +51,36 @@ func TestLookupHostEnvPrecedence(t *testing.T) {
 	}
 }
 
+// .env lands in Go's map, not the process environment (godotenv.Load did
+// os.Setenv per key), and keeps Load's order: host, then process, then file.
+func TestDotEnvNeverTouchesProcessEnv(t *testing.T) {
+	const fileOnly, inBoth, inHost = "HAVEN_TEST_DOTENV_ONLY", "HAVEN_TEST_DOTENV_BOTH", "HAVEN_TEST_DOTENV_HOST"
+	os.Unsetenv(fileOnly)
+	t.Setenv(inBoth, "from-process")
+	setHostEnv(inHost, "from-host")
+	path := filepath.Join(t.TempDir(), ".env")
+	body := fileOnly + "=from-file\n" + inBoth + "=from-file\n" + inHost + "=from-file\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { forgetHostEnv(inHost); loadDotEnv(filepath.Join(t.TempDir(), "absent")) })
+
+	loadDotEnv(path)
+
+	if v, ok := os.LookupEnv(fileOnly); ok {
+		t.Fatalf("process environment got %s=%q; .env must not reach setenv(3)", fileOnly, v)
+	}
+	for key, want := range map[string]string{fileOnly: "from-file", inBoth: "from-process", inHost: "from-host"} {
+		if got := hostGetenv(key); got != want {
+			t.Errorf("hostGetenv(%s) = %q, want %q", key, got, want)
+		}
+	}
+	loadDotEnv(filepath.Join(t.TempDir(), "absent"))
+	if v, ok := lookupHostEnv(fileOnly); ok {
+		t.Fatalf("missing .env must clear old file values, got %q", v)
+	}
+}
+
 // The app writes ~90 keys from one thread while relay goroutines read them.
 // Run with -race.
 func TestHostEnvConcurrentWritesAndReads(t *testing.T) {
@@ -115,6 +145,10 @@ func TestNoDirectProcessEnvInRelay(t *testing.T) {
 				return true
 			}
 			pkg, ok := sel.X.(*ast.Ident)
+			if ok && pkg.Name == "godotenv" && (sel.Sel.Name == "Load" || sel.Sel.Name == "Overload") {
+				t.Errorf("%s: godotenv.%s calls os.Setenv for every key (libc setenv(3)); use loadDotEnv", fset.Position(sel.Pos()), sel.Sel.Name)
+				return true
+			}
 			if !ok || (pkg.Name != "os" && pkg.Name != "syscall") {
 				return true
 			}
@@ -131,6 +165,54 @@ func TestNoDirectProcessEnvInRelay(t *testing.T) {
 	}
 	if !sawSetHavenEnvC {
 		t.Fatal("SetHavenEnvC not found; the guard would pass vacuously")
+	}
+}
+
+// The relay package is not the only Go linked into the app: internal/, pkg/,
+// idbstore/ and the vendored third_party/ (go-nostr, khatru, ristretto) run on
+// the same threads. None of them may write the process environment either.
+// Reads stay allowed there: os.Getenv reads Go's own copy, never libc.
+func TestNoProcessEnvWritesInLinkedPackages(t *testing.T) {
+	fset := token.NewFileSet()
+	scanned := 0
+	err := filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if path == "cmd" || path == "templates" || path == "docs" {
+				return filepath.SkipDir // standalone binaries, no Go
+			}
+			return nil
+		}
+		if filepath.Dir(path) == "." || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		f, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			return err
+		}
+		scanned++
+		ast.Inspect(f, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if pkg, ok := sel.X.(*ast.Ident); ok && (pkg.Name == "os" || pkg.Name == "syscall") {
+				switch sel.Sel.Name {
+				case "Setenv", "Unsetenv", "Clearenv":
+					t.Errorf("%s: %s.%s reaches libc setenv(3) while other threads read environ", fset.Position(sel.Pos()), pkg.Name, sel.Sel.Name)
+				}
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scanned < 100 {
+		t.Fatalf("scanned only %d files outside the relay package; the guard would pass vacuously", scanned)
 	}
 }
 
