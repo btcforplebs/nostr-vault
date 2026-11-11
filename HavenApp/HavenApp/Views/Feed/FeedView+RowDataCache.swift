@@ -72,19 +72,8 @@ extension FeedView {
     nonisolated static func groupThreads(notes: [FeedNote], keepFeedOrder: Bool, blocked: Set<String>,
                                          parents: [String: FeedNote],
                                          index: [String: FeedNote]) -> [FeedThread<FeedNote>] {
-        let find: (String) -> FeedNote? = { parents[$0] ?? index[$0] }
-        return FeedThreadGrouping.build(notes: notes, keepFeedOrder: keepFeedOrder) { id in
-            // Ancestors the timeline never showed still live in the feed
-            // service's caches; pulling them in keeps a conversation whole.
-            // A blocked author's post is never pulled in as context.
-            guard let note = find(id), !blocked.contains(note.pubkey) else { return nil }
-            return note
-        }.filter { thread in
-            // A conversation started by a blocked author goes entirely.
-            // Its root is withheld above, so without this the card would
-            // sit on "Loading the start of this thread…" forever.
-            guard thread.root == nil, let root = find(thread.rootId) else { return true }
-            return !blocked.contains(root.pubkey)
+        FeedThreadGrouping.groupFeed(notes: notes, keepFeedOrder: keepFeedOrder, blocked: blocked) {
+            parents[$0] ?? index[$0]
         }
     }
 

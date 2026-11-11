@@ -203,6 +203,31 @@ enum FeedThreadGrouping {
         }
     }
 
+    /// The feed's grouping as the feed view shows it: `build`, with a blocked
+    /// author's post never pulled in as context and a conversation a blocked
+    /// author started left out. Pure, so it can run off the main thread:
+    /// `find` stands in for `FeedService.findNote`.
+    static func groupFeed<Note: ThreadGroupable>(
+        notes: [Note],
+        keepFeedOrder: Bool,
+        blocked: Set<String>,
+        find: (String) -> Note?
+    ) -> [FeedThread<Note>] {
+        build(notes: notes, keepFeedOrder: keepFeedOrder) { id in
+            // Ancestors the timeline never showed still live in the feed
+            // service's caches; pulling them in keeps a conversation whole.
+            // A blocked author's post is never pulled in as context.
+            guard let note = find(id), !blocked.contains(note.authorPubkey) else { return nil }
+            return note
+        }.filter { thread in
+            // A conversation started by a blocked author goes entirely.
+            // Its root is withheld above, so without this the card would
+            // sit on "Loading the start of this thread…" forever.
+            guard thread.root == nil, let root = find(thread.rootId) else { return true }
+            return !blocked.contains(root.authorPubkey)
+        }
+    }
+
     /// Order threads by the sort key each had when it was first shown, so a
     /// reply (yours or anyone's) fills its card in place instead of lifting
     /// it to the top under the reader. A thread with no key yet sorts by its
