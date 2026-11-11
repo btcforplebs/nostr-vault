@@ -41,10 +41,6 @@ settings:
     MTL_FAST_MATH: YES
     EXCLUDED_ARCHS: x86_64
 
-packages:
-  SilentPaymentsKit:
-    path: SilentPaymentsKit
-
 targets:
 
   # ── macOS Target ──────────────────────────────────────────
@@ -152,7 +148,6 @@ targets:
       - sdk: build/libnvfips.a
         embed: false
         implicit: true
-      - package: SilentPaymentsKit
 
   # ── iOS Target ────────────────────────────────────────────
   HavenApp-iOS:
@@ -253,7 +248,6 @@ targets:
       - framework: build/ios/libnvfips.a
         embed: false
         implicit: true
-      - package: SilentPaymentsKit
       - target: NostrVaultWidgets
       - target: NostrVaultShare
 

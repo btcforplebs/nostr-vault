@@ -681,7 +681,6 @@
 		548967F3EA308D314DF3E870 /* SharePortalAccounts.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA7D07499D9FBA7756157667 /* SharePortalAccounts.swift */; };
 		54A2F3C079D53B05D9B02125 /* RecipeReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFD1A3AF031A0C2AF3F16E77 /* RecipeReviewView.swift */; };
 		54C0A8DD3924CDC531D58971 /* NWCService+Balance.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5847FCB8D5923D4758DFB15 /* NWCService+Balance.swift */; };
-		54F97D972DBA6B8091D42A07 /* SilentPaymentsKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1842DC25A3BD0352682A7B88 /* SilentPaymentsKit */; };
 		5505125CFE72327600465A23 /* ProfileMetadataMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E77ED4BBAC80594F90F2E40 /* ProfileMetadataMerge.swift */; };
 		5514476A15F2AEEE055AB6B4 /* HashtagFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F4A4333DC0FDB846ED35D74 /* HashtagFeedView.swift */; };
 		552053CBD5AFD1A42B1058FF /* VideoThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D0D1824D5ECD6975EAF3F98 /* VideoThumbnailView.swift */; };
@@ -1340,7 +1339,6 @@
 		A42BB0A69E3B9BCFCD1F7D55 /* NostrService+FilterQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53310FE0EAE603E4DDC5EA39 /* NostrService+FilterQuery.swift */; };
 		A42CB5C975C2F3ADAE17DC9B /* MediaPagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95ECDB003F4997CEABAC3644 /* MediaPagerView.swift */; };
 		A436B1BB31644F27B9A151CC /* FeedVisibleRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBB8668F5703C081765EC7C1 /* FeedVisibleRows.swift */; };
-		A48F920B274A38D5BD818EBB /* SilentPaymentsKit in Frameworks */ = {isa = PBXBuildFile; productRef = 34D407BB5082F01DD1EA2C1D /* SilentPaymentsKit */; };
 		A497F168AB85DD029F0035BF /* MeshMediaRouter+Live.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0338A6FA5F31523F34060CC /* MeshMediaRouter+Live.swift */; };
 		A49FC40BE10691F314548972 /* FipsURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C48773D215B6C7086533AEF /* FipsURL.swift */; };
 		A4B9D7D9C2964C6BC57A9CB5 /* SetupRelayChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0C0296140A1B912CA95CB33 /* SetupRelayChoice.swift */; };
@@ -2371,7 +2369,6 @@
 		327390102914F7A1B1AED7A0 /* HavenConfig+RelayRoles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HavenConfig+RelayRoles.swift"; sourceTree = "<group>"; };
 		32EA96B6514D35753903D9D6 /* QueuedMediaPost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueuedMediaPost.swift; sourceTree = "<group>"; };
 		32F57B930134EBFB88685E90 /* FeedView+ModeFeeds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedView+ModeFeeds.swift"; sourceTree = "<group>"; };
-		331ACF045B8F97CBE8B9F819 /* SilentPaymentsKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SilentPaymentsKit; path = SilentPaymentsKit; sourceTree = SOURCE_ROOT; };
 		332F03725477EEBFD25F9939 /* FeedService+Lifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+Lifecycle.swift"; sourceTree = "<group>"; };
 		336577F60AD61D4D9DC89298 /* MediaViewerPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaViewerPresentation.swift; sourceTree = "<group>"; };
 		3372E556A97C4A238D2EAF9C /* NostrService+Broadcast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+Broadcast.swift"; sourceTree = "<group>"; };
@@ -3274,7 +3271,6 @@
 			files = (
 				0731D8B3DE085946811D3C1A /* libhaven.a in Frameworks */,
 				C8BF90EF7401FB5C2772C5E4 /* libnvfips.a in Frameworks */,
-				A48F920B274A38D5BD818EBB /* SilentPaymentsKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3284,7 +3280,6 @@
 			files = (
 				4B8B584EB02021A488F995CF /* libhaven_ios.a in Frameworks */,
 				086F056B5209B2DBDFD9A3C7 /* libnvfips.a in Frameworks */,
-				54F97D972DBA6B8091D42A07 /* SilentPaymentsKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3824,7 +3819,6 @@
 				D2F039631F5DCD9EAE61B656 /* Models */,
 				44673691D4AA9379970F889B /* NostrVaultShare */,
 				3DD959E001AAEC2DE5548B04 /* NostrVaultWidgets */,
-				CE52609341FA9962E0A99870 /* Packages */,
 				81A8C0A1E1F0208B30E3EDCC /* Resources */,
 				8B350A14102DA0A322FF7875 /* Resources */,
 				E342A7707DDDD3E895FE42F9 /* Services */,
@@ -4192,14 +4186,6 @@
 				C25FBE609573C94AFC6BEE64 /* Shell */,
 			);
 			path = "HavenApp-iOS";
-			sourceTree = "<group>";
-		};
-		CE52609341FA9962E0A99870 /* Packages */ = {
-			isa = PBXGroup;
-			children = (
-				331ACF045B8F97CBE8B9F819 /* SilentPaymentsKit */,
-			);
-			name = Packages;
 			sourceTree = "<group>";
 		};
 		CF61E62505EFA08F3DA08739 /* Actions */ = {
@@ -4941,7 +4927,6 @@
 			);
 			name = "HavenApp-iOS";
 			packageProductDependencies = (
-				1842DC25A3BD0352682A7B88 /* SilentPaymentsKit */,
 			);
 			productName = "HavenApp-iOS";
 			productReference = D5EBFDB16A8828F3C12C4343 /* HavenApp-iOS.app */;
@@ -4982,7 +4967,6 @@
 			);
 			name = HavenApp;
 			packageProductDependencies = (
-				34D407BB5082F01DD1EA2C1D /* SilentPaymentsKit */,
 			);
 			productName = HavenApp;
 			productReference = 51EA54117C5443C0DA93781D /* HavenApp.app */;
@@ -5024,9 +5008,6 @@
 			);
 			mainGroup = 80B1027B0530E6A11574AD02;
 			minimizedProjectReferenceProxies = 1;
-			packageReferences = (
-				18DAB45797CB7894A3AE84A1 /* XCLocalSwiftPackageReference "SilentPaymentsKit" */,
-			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 5A21732AE3ED1711ABA42459 /* Products */;
 			projectDirPath = "";
@@ -7777,24 +7758,6 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		18DAB45797CB7894A3AE84A1 /* XCLocalSwiftPackageReference "SilentPaymentsKit" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = SilentPaymentsKit;
-		};
-/* End XCLocalSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		1842DC25A3BD0352682A7B88 /* SilentPaymentsKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = SilentPaymentsKit;
-		};
-		34D407BB5082F01DD1EA2C1D /* SilentPaymentsKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = SilentPaymentsKit;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = AE43EF833F554F033032D12B /* Project object */;
 }
