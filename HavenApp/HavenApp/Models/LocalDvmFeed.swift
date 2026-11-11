@@ -30,6 +30,23 @@ enum LocalDvmFeed: String, CaseIterable {
         }
     }
 
+    /// Shown under the last note: the set is fixed, so there is no next page
+    /// and the list stopping is the end of it, not a stall. The view adds the
+    /// way to get a new one (pull on iPhone, a button on Mac).
+    var endOfListStatus: String {
+        switch self {
+        case .popular: return "That's what's popular from the last day."
+        case .catchUp: return "You're caught up on everyone you follow from the last two weeks."
+        case .underrated: return "That's today's underrated list."
+        }
+    }
+
+    /// The end-of-list footer draws only on a local DVM feed that has notes
+    /// and is not loading; an empty feed keeps its own empty state.
+    static func showsEndOfList(mode: LocalDvmFeed?, hasNotes: Bool, isLoading: Bool) -> Bool {
+        mode != nil && hasNotes && !isLoading
+    }
+
     /// Popular and Underrated are scored against the web of trust inside
     /// the relay, which withholds them until the graph is built. Catch Up
     /// reads only your follows.

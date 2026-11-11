@@ -35,6 +35,7 @@ extension FeedView {
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .help("Switch feed")
+            .accessibilityIdentifier("feed.picker")
             .fixedSize()
 
             Spacer()
