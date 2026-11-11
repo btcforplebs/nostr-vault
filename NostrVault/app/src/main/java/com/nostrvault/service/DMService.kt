@@ -137,6 +137,14 @@ class DMService @Inject constructor(
     // where a temporary socket would have to pay for AUTH again.
     /** Persistent live subscriptions to the user's PUBLIC DM relays. */
     internal val liveExternalClients = mutableListOf<WebSocketClient>()
+    /**
+     * The collectors reading each socket above. A socket's flows never end, so
+     * replacing the socket must cancel these too, or every restart left the old
+     * collectors (and through them the old client) alive for good.
+     */
+    internal val chatListenerJobs = mutableListOf<Job>()
+    internal val nip04ListenerJobs = mutableListOf<Job>()
+    internal val externalListenerJobs = mutableListOf<Job>()
     internal var periodicSyncJob: Job? = null
     internal var chatResubJob: Job? = null
 
@@ -408,8 +416,15 @@ class DMService @Inject constructor(
         }.stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
     }
 
-    /** Start listening and load cached conversations. */
+    /**
+     * Messages calls this every time it opens. A running inbox is left alone:
+     * restarting it opened new /chat, /inbox and DM-relay sockets each visit,
+     * re-ran the /chat AUTH (an Amber prompt) and dropped the decrypt queue.
+     * It still starts when it never has, or when the /chat socket could not be
+     * made the first time (no vault address yet).
+     */
     fun loadConversations() {
+        if (hasStarted && (inboxClient != null || configStore.config.value.localRelayURL("chat") == null)) return
         startListening()
     }
 
@@ -426,4 +441,10 @@ class DMService @Inject constructor(
         saveCachedConversations()
     }
 
+}
+
+/** Cancels and forgets the socket collectors in this list (DMService listener jobs). */
+internal fun MutableList<Job>.cancelAll() {
+    forEach { it.cancel() }
+    clear()
 }
