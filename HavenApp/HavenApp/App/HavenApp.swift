@@ -78,7 +78,9 @@ struct HavenApp: App {
                 // the default 1470x956); the content scrolls below this.
                 .frame(minWidth: 800, minHeight: 640)
         }
-        .defaultSize(width: 1000, height: 860)
+        // Wide enough for the rail, a reading column and Your Space on first open.
+        .defaultSize(width: 1240, height: 860)
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands { MacAppCommands() }
         #else
         WindowGroup {

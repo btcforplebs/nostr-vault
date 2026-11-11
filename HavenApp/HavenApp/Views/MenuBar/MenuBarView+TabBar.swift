@@ -165,6 +165,9 @@ extension MenuBarView {
                                     .environmentObject(nostrService)
                                     .environmentObject(relayManager)
                                     .transition(.opacity)
+                            case .wot:
+                                // The globe is a main-window page; this narrow layout never selects it.
+                                EmptyView()
                             case .settings:
                                 VStack(spacing: 12) {
                                     Spacer()

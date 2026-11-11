@@ -4,66 +4,11 @@ extension MenuBarView {
     @ViewBuilder
     var sidebarLayout: some View {
         #if os(macOS)
-        macGlassLayout
+        macShellLayout
         #else
         classicSidebarLayout
         #endif
     }
-
-    #if os(macOS)
-    /// The Mac main window (spec §1.3): a floating glass sidebar over a soft
-    /// backdrop, New Post and Restart in the toolbar.
-    var macGlassLayout: some View {
-        ZStack(alignment: .leading) {
-            MacGlassBackdrop()
-            HStack(spacing: 0) {
-                MacGlassSidebar(
-                    configService: configService,
-                    relayManager: relayManager,
-                    selectedTab: $selectedTab,
-                    settingsPaneRequest: $settingsPaneRequest
-                )
-                .padding(MacGlassSidebar.inset)
-
-                mainContent
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .padding([.top, .bottom, .trailing], MacGlassSidebar.inset)
-            }
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                if selectedTab == .relay {
-                    Button {
-                        if relayManager.isRunning {
-                            relayManager.stopRelay {
-                                relayManager.startRelay(config: configService.config)
-                            }
-                        } else {
-                            relayManager.startRelay(config: configService.config)
-                        }
-                    } label: {
-                        Label(relayManager.isRunning ? "Restart Vault" : "Start Vault",
-                              systemImage: relayManager.isRunning ? "arrow.clockwise" : "play.fill")
-                    }
-                    .disabled(relayManager.isBooting)
-                    .help(relayManager.isRunning ? "Restart Vault" : "Start Vault")
-                }
-                // None for a read-only sign-in: it can't sign a post.
-                if configService.activeAccountCanSign {
-                    Button { showingCompose = true } label: {
-                        Label("New Post", systemImage: "square.and.pencil")
-                    }
-                    .help("New Post (⌘N)")
-                }
-            }
-        }
-        // What came in while the app was away, beside the Vault (Notes) row.
-        .overlay { ReturnPillLayer() }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenVault)) { _ in
-            selectedTab = .notes
-        }
-    }
-    #endif
 
     @ViewBuilder
     var classicSidebarLayout: some View {
@@ -362,6 +307,11 @@ extension MenuBarView {
                     .environmentObject(configService)
                     .environmentObject(nostrService)
                     .environmentObject(relayManager)
+                    .transition(.opacity)
+            case .wot:
+                WOTTabView()
+                    .environmentObject(configService)
+                    .environmentObject(nostrService)
                     .transition(.opacity)
             case .settings:
                 SettingsView(isEmbedded: true, paneRequest: $settingsPaneRequest)

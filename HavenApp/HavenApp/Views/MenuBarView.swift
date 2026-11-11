@@ -34,7 +34,12 @@ struct MenuBarView: View {
     /// click is swallowed — quoted notes and parent previews did nothing at all.
     /// Publishing a selection here gives every one of those rows the same single
     /// path the iPad two-pane layout already uses, resolved to a sheet below.
-    @StateObject private var noteSelection = NoteDetailSelection()
+    @StateObject var noteSelection = NoteDetailSelection()
+    /// The window is wide enough for an opened note to sit beside the list
+    /// (`MacShellLayout.threadBeside`): then it is a column, not a sheet.
+    @State var macThreadBeside = false
+    /// "Your space", the right-hand column. Kept across launches.
+    @AppStorage("mac.shell.showsSpace") var macShowsSpace = true
     #endif
 
     @State var activeHex: String = ConfigService.shared.activeAccountHexPubkey
@@ -63,6 +68,8 @@ struct MenuBarView: View {
         case relay
         case notes
         case settings
+        /// The Web of Trust globe. Mac window only: the iPad has its own tab.
+        case wot
     }
     
     var body: some View {
@@ -102,8 +109,10 @@ struct MenuBarView: View {
         #if os(macOS)
         .environment(\.noteDetailSelection, noteSelection)
         .sheet(isPresented: Binding(
-            get: { !noteSelection.isEmpty },
-            set: { if !$0 { noteSelection.clear() } }
+            get: { !noteSelection.isEmpty && !macThreadBeside },
+            // Only a sheet that was showing clears the note: the binding also
+            // goes false when the note moves into its own column.
+            set: { if !$0 && !macThreadBeside { noteSelection.clear() } }
         )) {
             Group {
                 if let note = noteSelection.note {

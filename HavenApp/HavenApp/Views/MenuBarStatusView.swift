@@ -291,12 +291,14 @@ struct MenuBarIconLabel: View {
 /// window had focus. ⌘, is the Settings scene's own App-menu item.
 struct MacAppCommands: Commands {
     private static let goItems: [(title: String, tab: MenuBarView.Tab, key: KeyEquivalent)] = [
+        // The rail's order (MacRail), so ⌘1–7 count down it.
         ("Feed", .feed, "1"),
         ("Search", .search, "2"),
-        ("My Profile", .profile, "3"),
-        ("Relay", .relay, "4"),
-        ("Notes", .notes, "5"),
+        ("Profile", .profile, "3"),
+        ("Web of Trust", .wot, "4"),
+        ("Vault", .notes, "5"),
         ("Media", .media, "6"),
+        ("Relay", .relay, "7"),
     ]
 
     var body: some Commands {

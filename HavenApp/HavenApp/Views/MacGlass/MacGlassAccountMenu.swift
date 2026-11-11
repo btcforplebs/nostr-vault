@@ -19,6 +19,8 @@ struct MacGlassAccountMenu: View {
     var avatarSize: CGFloat = 22
     /// Extra rows shown above the accounts (the sidebar's settings shortcuts).
     var extraItems: [(title: String, action: () -> Void)] = []
+    /// Picture only, for the 68 pt rail: no name and no chevron.
+    var compact = false
 
     @State private var activeHex: String = ConfigService.shared.activeAccountHexPubkey
 
@@ -76,12 +78,14 @@ struct MacGlassAccountMenu: View {
             .id(activeHex)
             .overlay(Circle().stroke(Color.havenPurple.opacity(isOwner ? 0.4 : 0.8), lineWidth: isOwner ? 1.5 : 2))
 
-            Text(accountName)
-                .font(.appSystem(size: 12, weight: .medium))
-                .foregroundColor(.primary)
-                .lineLimit(1)
+            if !compact {
+                Text(accountName)
+                    .font(.appSystem(size: 12, weight: .medium))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+            }
 
-            if hasMultipleAccounts || !extraItems.isEmpty {
+            if !compact, hasMultipleAccounts || !extraItems.isEmpty {
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.appSystem(size: 9))
                     .foregroundColor(.secondary)
