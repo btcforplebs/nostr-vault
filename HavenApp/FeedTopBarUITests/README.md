@@ -29,3 +29,22 @@ A fresh install is set up read-only with a public npub (no key: nothing can
 be posted). Override it with `TEST_RUNNER_TOPBAR_NPUB`. Screenshots of each
 state go to `TEST_RUNNER_TOPBAR_SHOTS` when set, and `TEST_RUNNER_TOPBAR_FEEDS`
 (comma separated, e.g. `Following,Catch Up`) checks only those feeds.
+
+## End-of-list footer (iPhone + Mac)
+
+`FeedEndOfListTests` (iPhone, scheme `UIT`) checks the footer under the last
+note of Popular and that it never draws on Home (Following). Popular can be
+slow to fill on a fresh sim, so the test keeps reopening it for up to 15
+minutes. (Not Underrated: it needs the trust graph and can stay empty on a
+read-only sim, which correctly shows its empty state and no footer.) Run it alone with `-only-testing:UIT/FeedEndOfListTests`.
+
+`FeedEndOfListMacTests` (scheme `UITMac`) is its Mac twin. It needs Automation
+Mode (`automationmodetool`, asks for an admin password once) and a Mac app
+already set up with a TEST account: a Mac app's data lives in its container,
+so never run it on a Mac that holds a real account. Point it at another
+build with `TEST_RUNNER_MAC_APP_BUNDLE_ID`.
+
+```sh
+xcodebuild test -project FeedTopBarUITests.xcodeproj -scheme UITMac \
+  -destination 'platform=macOS' -derivedDataPath /tmp/feed-uit-mac-dd
+```

@@ -5,6 +5,7 @@ name: FeedTopBarUITests
 options:
   deploymentTarget:
     iOS: "18.0"
+    macOS: "14.0"
 targets:
   Host:
     type: application
@@ -27,9 +28,35 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: Host
         CODE_SIGNING_ALLOWED: NO
+  HostMac:
+    type: application
+    platform: macOS
+    sources: [HostMac]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.havenapp.feedtopbaruitests.hostmac
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
+  UITMac:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [UITMac]
+    dependencies:
+      - target: HostMac
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.havenapp.feedtopbaruitests.mac
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: HostMac
+        CODE_SIGNING_ALLOWED: NO
 schemes:
   UIT:
     build:
       targets: {UIT: all, Host: all}
     test:
       targets: [UIT]
+  UITMac:
+    build:
+      targets: {UITMac: all, HostMac: all}
+    test:
+      targets: [UITMac]
