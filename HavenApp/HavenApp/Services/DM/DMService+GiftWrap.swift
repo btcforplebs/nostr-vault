@@ -21,6 +21,8 @@ extension DMService {
     }
 
     private func startGiftWrapWorkersIfNeeded() {
+        // The cache says which wraps are already open; wait for it.
+        guard cacheLoaded else { return }
         while giftWrapWorkers < maxGiftWrapWorkers && !pendingGiftWraps.isEmpty {
             giftWrapWorkers += 1
             let generation = switchGeneration
@@ -34,6 +36,13 @@ extension DMService {
         }
         giftWrapWorkers -= 1
         // Work queued for a new account while this worker was finishing.
+        startGiftWrapWorkersIfNeeded()
+    }
+
+    /// The cache has loaded: wraps that queued meanwhile and turn out to be
+    /// open already (or known unreadable) are dropped, the rest are opened.
+    func resumeGiftWrapsAfterCacheLoad(known: Set<String>) {
+        pendingGiftWraps.removeAll { known.contains($0.id) }
         startGiftWrapWorkersIfNeeded()
     }
 
