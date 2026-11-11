@@ -45,14 +45,25 @@ struct BottomTabBar: View {
     /// iPad landscape: a slim rail on the left edge, full height, like the
     /// web's icon rail. Your account picture on top (a tap lists your
     /// accounts), then the sections and your pinned favourites in the order
-    /// you set (`SpaceLayoutStore`), and Edit at the bottom. Plain taps only:
-    /// no hold or slide menus on the rail. Post stays the screen's floating
-    /// button, as on the iPhone.
+    /// you set (`SpaceLayoutStore`), and Edit at the bottom. Plain taps only
+    /// on the iPad: no hold or slide menus there. Post stays the screen's
+    /// floating button, as on the iPhone.
+    ///
+    /// The iPhone Duo's rail (`railOnRight`) is its dock moved to the side,
+    /// so it keeps the dock's hold-and-slide menus on the picture, Feed and
+    /// Vault (Logen, 2026-11-11), opening to the left of the rail.
     private var sidebar: some View {
         RailPinsColumn(nostrService: nostrService) { id in
             AnyView(railSectionItem(id))
         } top: {
-            RailAccountButton(configService: configService, nostrService: nostrService)
+            if railOnRight {
+                AccountTabHoldItem(configService: configService, nostrService: nostrService,
+                                   primary: {}, onRail: true) {
+                    RailAccountPicture(configService: configService, nostrService: nostrService)
+                }
+            } else {
+                RailAccountButton(configService: configService, nostrService: nostrService)
+            }
         }
         // Below the window's close/minimise/resize buttons when the app runs
         // windowed: they sit in the top-left corner, over the first item.
@@ -73,6 +84,8 @@ struct BottomTabBar: View {
     @ViewBuilder
     private func railSectionItem(_ id: String) -> some View {
         switch id {
+        case "feed" where railOnRight:
+            FeedTabHoldItem(selected: selectedTab == 0, feedService: feedService, onTap: feedTabTapped, beside: true)
         case "feed":
             tabItem(index: 0, title: "Feed", icon: RailSection.symbol("feed")) {
                 NotificationCenter.default.post(name: NSNotification.Name("FeedTabReselected"), object: nil)
@@ -86,6 +99,17 @@ struct BottomTabBar: View {
             tabItem(index: 3, title: "WoT", assetIcon: "WoTTab") {
                 NotificationCenter.default.post(name: .wotTabReselected, object: nil)
             }
+        case "vault" where railOnRight:
+            VaultTabHoldItem(
+                selected: selectedTab == 4,
+                zapsOnly: configService.config.zapsOnlyMode,
+                relayManager: relayManager,
+                onTap: vaultTabTapped,
+                beside: true
+            ) {
+                tabItemLabel(index: 4, title: "Vault", icon: VaultDashboard.symbol, hasRedBadge: vaultHasNews)
+            }
+            .vaultAnchor(.bottom)
         case "vault":
             Button(action: vaultTabTapped) {
                 tabItemLabel(index: 4, title: "Vault", icon: VaultDashboard.symbol, hasRedBadge: vaultHasNews)
@@ -94,6 +118,14 @@ struct BottomTabBar: View {
             .vaultAnchor(.bottom)
         default:
             EmptyView()
+        }
+    }
+
+    private func feedTabTapped() {
+        if selectedTab == 0 {
+            NotificationCenter.default.post(name: NSNotification.Name("FeedTabReselected"), object: nil)
+        } else {
+            selectedTab = 0
         }
     }
 

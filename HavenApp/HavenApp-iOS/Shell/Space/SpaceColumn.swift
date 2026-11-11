@@ -18,6 +18,14 @@ struct SpaceColumn: View {
     /// Told whenever the column folds or opens, so the shell can give the
     /// fold's half back to the app.
     var onFoldedChange: ((Bool) -> Void)? = nil
+    /// On a fold's half: the panels' width while open. They keep it while
+    /// the half slides shut, so nothing reflows; the half clips them.
+    var foldPanelsWidth: CGFloat? = nil
+
+    /// A fold's half folded: the rail and its hairline.
+    static let foldRailWidth: CGFloat = BottomTabBar.railWidth + 1
+    /// The fold's half sliding shut or open (the shell animates its width with this).
+    static let foldAnimation: Animation = .spring(response: 0.36, dampingFraction: 0.9)
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @ObservedObject private var store = SpaceLayoutStore.shared
@@ -42,15 +50,14 @@ struct SpaceColumn: View {
             if fillsFoldHalf {
                 rail
                 railRule
-            }
-            if !folded {
+                foldPanels
+            } else if !folded {
                 VStack(spacing: 0) {
                     spaceBar
                     if let id = selected { single(id) } else { panels }
                 }
-                .frame(width: fillsFoldHalf ? nil : LiveVaultLayout.openWidth)
-                .frame(maxWidth: fillsFoldHalf ? .infinity : nil)
-                if !fillsFoldHalf { railRule }
+                .frame(width: LiveVaultLayout.openWidth)
+                railRule
             }
             if !fillsFoldHalf { rail }
         }
@@ -73,7 +80,13 @@ struct SpaceColumn: View {
                     .ignoresSafeArea()
             }
         }
-        .onChange(of: folded, initial: true) { _, value in onFoldedChange?(value) }
+        // The shell resizes the half on the same curve; the first reading
+        // (on appear) is not animated.
+        .onChange(of: folded, initial: true) { old, value in
+            if old == value { onFoldedChange?(value) } else {
+                withAnimation(Self.foldAnimation) { onFoldedChange?(value) }
+            }
+        }
         .onChange(of: owner, initial: true) { _, hex in
             foldedSaved = UserDefaults.standard.bool(forKey: LiveVault.foldedKey(hex))
             editing = false
@@ -116,6 +129,23 @@ struct SpaceColumn: View {
 
     private var relayReady: Bool { relayManager.isRunning && !relayManager.isBooting }
 
+    /// A fold's half: the panels stay laid out at their open width and fade
+    /// while the half's edge slides over them, instead of being removed and
+    /// squeezed (Logen, 2026-11-11: the fold animation needed love).
+    private var foldPanels: some View {
+        VStack(spacing: 0) {
+            spaceBar
+            if let id = selected { single(id) } else { panels }
+        }
+        .frame(width: foldPanelsWidth)
+        .frame(maxWidth: foldPanelsWidth == nil ? .infinity : nil)
+        .opacity(folded ? 0 : 1)
+        .allowsHitTesting(!folded)
+        .accessibilityHidden(folded)
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        .clipped()
+    }
+
     // MARK: Bar
 
     /// The column's own bar, as on the web: its name, Edit, and the fold button.
@@ -149,7 +179,7 @@ struct SpaceColumn: View {
     /// Folds the column toward its rail: right on the iPad, left on a fold's half.
     private var foldButton: some View {
         barButton(fillsFoldHalf ? "sidebar.left" : "sidebar.right", label: "Fold Your space") {
-            withAnimation(.easeInOut(duration: 0.2)) { setFolded(true) }
+            withAnimation(fillsFoldHalf ? Self.foldAnimation : .easeInOut(duration: 0.2)) { setFolded(true) }
         }
     }
 
@@ -357,7 +387,7 @@ struct SpaceColumn: View {
 
     /// Folded: open on that icon. Open on it already: fold. Otherwise switch to it.
     private func tapRail(_ id: String?) {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(fillsFoldHalf ? Self.foldAnimation : .easeInOut(duration: 0.2)) {
             if folded {
                 selected = id
                 setFolded(false)

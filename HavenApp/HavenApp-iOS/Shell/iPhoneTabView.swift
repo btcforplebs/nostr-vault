@@ -160,9 +160,11 @@ struct iPhoneTabView: View {
         HStack(spacing: 0) {
             if layout == .padLandscape { sideRail(onRight: false) }
             if layout == .fold {
-                SpaceColumn(fillsFoldHalf: true, onFoldedChange: { foldSpaceFolded = $0 })
-                    .frame(width: foldSpaceFolded ? nil
-                           : ShellLayout.foldLeftWidth(windowWidth: windowSize.width, leadingInset: leadingInset))
+                let half = ShellLayout.foldLeftWidth(windowWidth: windowSize.width, leadingInset: leadingInset)
+                SpaceColumn(fillsFoldHalf: true, onFoldedChange: { foldSpaceFolded = $0 },
+                            foldPanelsWidth: max(0, half - SpaceColumn.foldRailWidth))
+                    // A width, not nil, when folded, so the slide animates.
+                    .frame(width: foldSpaceFolded ? SpaceColumn.foldRailWidth : half)
                 // The hairline between Your space and the app, as on the rails.
                 Rectangle()
                     .fill(Color.white.opacity(0.08))
@@ -198,6 +200,12 @@ struct iPhoneTabView: View {
                     .onChange(of: geo.size) { _, size in windowSize = size }
             }
             .ignoresSafeArea()
+        }
+        .overlay {
+            // The Feed, Vault and account hold menus, over the whole window:
+            // a tap anywhere off the menu (Your space and the rail on the
+            // Duo too) closes it.
+            DockHoldMenuOverlay()
         }
         // The iPad is laid out like the iPhone: same headers, same buttons,
         // no system toolbar row. Screens branch on the width class for that,
@@ -321,10 +329,6 @@ struct iPhoneTabView: View {
             if configService.config.hasCompletedSetup && relayManager.state == .idle {
                 relayManager.startRelay(config: configService.config)
             }
-        }
-        .overlay {
-            // The Feed, Vault and account hold menus.
-            DockHoldMenuOverlay()
         }
         // App settings / Mesh settings picked from the account menus.
         .profileMenuSheets()

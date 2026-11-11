@@ -17,14 +17,18 @@ struct AccountTabHoldItem<Label: View>: View {
     @ObservedObject var configService: ConfigService
     @ObservedObject var nostrService: NostrService
     let primary: () -> Void
+    /// On the Duo's side rail: the menu opens beside the picture, and a tap
+    /// opens it too (the rail's picture has no other tap).
+    var onRail = false
     @ViewBuilder let label: () -> Label
 
     @ObservedObject private var unreadStore = AccountUnreadStore.shared
 
     var body: some View {
-        DockHoldButton(onTap: primary, entries: entries, onPick: pick, centered: true, label: label)
+        DockHoldButton(onTap: primary, entries: entries, onPick: pick, centered: !onRail,
+                       beside: onRail, tapOpensMenu: onRail, label: label)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Profile")
+            .accessibilityLabel(onRail ? "Accounts" : "Profile")
             .accessibilityAddTraits(.isButton)
             .accessibilityHint("Hold for your accounts and settings")
             .accessibilityAction { primary() }

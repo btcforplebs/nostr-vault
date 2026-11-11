@@ -10,9 +10,11 @@ struct FeedTabHoldItem: View {
     let selected: Bool
     @ObservedObject var feedService: FeedService
     let onTap: () -> Void
+    /// On the Duo's side rail: the menu opens beside the tab.
+    var beside = false
 
     var body: some View {
-        DockHoldButton(onTap: onTap, entries: entries, onPick: pick) {
+        DockHoldButton(onTap: onTap, entries: entries, onPick: pick, beside: beside) {
             VStack(spacing: 4) {
                 Image(systemName: "person.2.wave.2")
                     .font(.appSystem(size: 20, weight: selected ? .semibold : .regular))
