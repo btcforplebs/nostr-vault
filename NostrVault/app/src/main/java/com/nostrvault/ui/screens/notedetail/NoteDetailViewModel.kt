@@ -533,8 +533,9 @@ class NoteDetailViewModel @Inject constructor(
 
     fun quotedNoteFor(identifier: String): FeedNote? = feedService.quotedNoteFor(identifier)
 
+    // An open thread is what is on screen: not behind the feed's own lookups.
     fun fetchMissingQuotedNotes(identifiers: List<String>) =
-        feedService.fetchMissingQuotedNotes(identifiers)
+        feedService.fetchMissingQuotedNotes(identifiers, nearScreen = true)
 
     fun fetchMissingQuotedProfiles(identifiers: List<String>) =
         feedService.fetchMissingQuotedProfiles(identifiers)
