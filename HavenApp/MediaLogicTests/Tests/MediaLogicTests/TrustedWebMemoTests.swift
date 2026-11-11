@@ -9,7 +9,7 @@ final class TrustedWebMemoTests: XCTestCase {
         XCTAssertEqual(memo.web(saved: saved, follows: ["c"]), ["a", "b", "c"])
         XCTAssertEqual(memo.web(saved: saved, follows: ["d"]), ["a", "b", "d"])
         XCTAssertEqual(memo.web(saved: saved.union(["e"]), follows: ["d"]), ["a", "b", "d", "e"])
-        // No graph yet: fails closed, as TrustMap.web does.
-        XCTAssertEqual(memo.web(saved: [], follows: ["d"]), [])
+        // No graph yet: just the follows, as TrustMap.web does.
+        XCTAssertEqual(memo.web(saved: [], follows: ["d"]), ["d"])
     }
 }

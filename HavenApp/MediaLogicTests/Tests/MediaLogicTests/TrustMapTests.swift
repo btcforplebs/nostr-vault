@@ -29,8 +29,9 @@ final class TrustMapTests: XCTestCase {
         XCTAssertEqual(TrustMap.web(saved: saved, follows: [key(1), outsider]), [key(1), key(2), outsider])
         // Unfollowing only takes back what the follow added: the saved web stays.
         XCTAssertEqual(TrustMap.web(saved: saved, follows: []), saved)
-        // No saved web: no graph, so nothing is claimed in or out.
-        XCTAssertEqual(TrustMap.web(saved: [], follows: [outsider]), [])
+        // No saved web yet: your follows still count, nobody else does.
+        XCTAssertEqual(TrustMap.web(saved: [], follows: [outsider]), [outsider])
+        XCTAssertEqual(TrustMap.web(saved: [], follows: []), [])
     }
 
     func testDirectionComesFromTheKeyAndStaysPut() {

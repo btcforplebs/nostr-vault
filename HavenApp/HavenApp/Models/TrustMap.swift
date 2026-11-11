@@ -55,9 +55,10 @@ enum TrustMap {
 
     /// Your web right now: the relay's saved web plus everyone you follow, so
     /// a follow counts the moment you make it instead of after the daily
-    /// rebuild. Empty while no web is saved: no graph, no claims either way.
+    /// rebuild. While no web is saved it is just your follows, so they still
+    /// count and everyone else stays out (as on the web app).
     static func web(saved: Set<String>, follows: Set<String>) -> Set<String> {
-        saved.isEmpty ? [] : saved.union(follows)
+        saved.union(follows)
     }
 
     /// Up to `cap` of `candidates`, picked by key so the same people show
