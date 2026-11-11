@@ -15,6 +15,9 @@ final class FeedRowStore: ObservableObject {
     /// Bumped by every thread rebuild, so an off-main grouping that a newer
     /// rebuild overtook is dropped rather than applied.
     var threadGeneration = 0
+    /// Rows drawn before they were in `rows`; see `FeedRowDrafts`. Not
+    /// published: it is written while the feed draws.
+    var drafts = FeedRowDrafts<FeedNoteRowData>()
 }
 
 extension FeedView {
@@ -22,6 +25,14 @@ extension FeedView {
     var rowDataCache: [String: FeedNoteRowData] {
         get { rowStore.rows }
         nonmutating set { rowStore.rows = newValue }
+    }
+
+    /// The row data a drawn row shows: the cache's, else resolved once and
+    /// kept as a draft until the next reconcile files it.
+    func rowData(for note: FeedNote) -> FeedNoteRowData {
+        rowStore.drafts.row(id: note.id, cached: rowStore.rows[note.id]) {
+            FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService)
+        }
     }
 
     /// Conversations built from `filteredNotes` for threaded mode. Rebuilt on

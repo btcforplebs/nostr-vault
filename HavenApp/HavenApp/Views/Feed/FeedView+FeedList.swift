@@ -234,11 +234,7 @@ extension FeedView {
                         } else {
                         ForEach(feedService.filteredNotes) { note in
                             let profile = nostrService.profiles[note.pubkey]
-                            let rowData = rowDataCache[note.id] ?? FeedNoteRowData.resolve(
-                                for: note,
-                                feedService: feedService,
-                                nostrService: nostrService
-                            )
+                            let rowData = rowData(for: note)
 
                             // Optimization: If the parent is the very next note in the feed,
                             // don't show the redundant parent header.

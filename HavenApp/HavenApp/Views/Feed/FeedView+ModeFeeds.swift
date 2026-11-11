@@ -278,13 +278,7 @@ extension FeedView {
                 }
             ),
             profileFor: { nostrService.profiles[$0] },
-            rowDataFor: { note in
-                rowDataCache[note.id] ?? FeedNoteRowData.resolve(
-                    for: note,
-                    feedService: feedService,
-                    nostrService: nostrService
-                )
-            },
+            rowDataFor: { note in rowData(for: note) },
             onOpen: { openNoteDetail($0) },
             onReply: {
                 composeContext = ComposeContext(

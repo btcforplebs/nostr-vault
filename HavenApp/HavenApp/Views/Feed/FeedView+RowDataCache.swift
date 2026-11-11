@@ -127,6 +127,7 @@ extension FeedView {
                     nostrService: nostrService
                 )
             }
+            rowStore.drafts.removeAll()
             rowDataCache = newCache
         }
 
@@ -153,33 +154,32 @@ extension FeedView {
     // resulting rowData is identical to a full rebuild.
 
     /// Reconcile the cache against `filteredNotes` after the visible set changes:
-    /// keep entries for notes still present, resolve only newly-added notes, drop
-    /// removed ones, and repair rows whose parent / reposted-original dependency
-    /// has just arrived (the only way an existing row's resolved data can change
-    /// without its own id changing). Debounced like the full rebuild.
+    /// keep entries for notes still present, file the rows drawn since the last
+    /// reconcile (`rowStore.drafts`), drop removed ones, and repair a row whose
+    /// parent / reposted-original has arrived since it was resolved (the only
+    /// way a row's resolved data can change without its own id changing).
+    /// A note never drawn is not resolved here; it resolves when it scrolls in
+    /// (`rowData(for:)`). Resolving every note here was most of the main-thread
+    /// cost of a feed switch. Debounced like the full rebuild.
     func reconcileRowDataCache() {
         cacheRebuildWork?.cancel()
         let work = DispatchWorkItem { [self] in
-            let notes = feedService.filteredNotes
-            var newCache: [String: FeedNoteRowData] = [:]
-            newCache.reserveCapacity(notes.count)
-            for note in notes {
-                if let existing = rowDataCache[note.id] {
+            rowDataCache = FeedRowDataFill.reconcile(
+                notes: feedService.filteredNotes,
+                id: \.id,
+                cache: rowDataCache,
+                drafts: rowStore.drafts.take(),
+                needsRepair: { note, known in
                     // A previously-unresolved cross-note dependency (the parent
-                    // note, or a kind-6 repost's original) may now resolve.
-                    let needsParent = note.parentEventId != nil && existing.parentNote == nil
-                    let needsOriginal = note.kind == 6 && note.content.isEmpty
-                        && note.repostedEventId != nil && existing.resolvedOriginal == nil
-                    if needsParent || needsOriginal {
-                        newCache[note.id] = FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService)
-                    } else {
-                        newCache[note.id] = existing
-                    }
-                } else {
-                    newCache[note.id] = FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService)
-                }
-            }
-            rowDataCache = newCache
+                    // note, or a kind-6 repost's original) that resolves now.
+                    let parentArrived = known.parentNote == nil
+                        && note.parentEventId.flatMap { feedService.findNote(id: $0) } != nil
+                    let originalArrived = note.kind == 6 && note.content.isEmpty && known.resolvedOriginal == nil
+                        && note.repostedEventId.flatMap { feedService.findNote(id: $0) } != nil
+                    return parentArrived || originalArrived
+                },
+                resolve: { FeedNoteRowData.resolve(for: $0, feedService: feedService, nostrService: nostrService) }
+            )
         }
         cacheRebuildWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
@@ -197,9 +197,14 @@ extension FeedView {
             if let refId = note.repostedEventId, ids.contains(refId) { ids.insert(note.id) }
         }
         var updated = rowDataCache
-        var didChange = false
+        // A drawn row not filed yet is as stale as a cached one: resolve it
+        // fresh into the cache. The write also redraws it, since the row was
+        // drawn before this change reached here.
+        let drafted = rowStore.drafts.remove(ids)
+        var didChange = !drafted.isEmpty
         for id in ids {
-            guard rowDataCache[id] != nil, let note = feedService.findNote(id: id) else { continue }
+            guard rowDataCache[id] != nil || drafted.contains(id),
+                  let note = feedService.findNote(id: id) else { continue }
             let resolved = FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService)
             if updated[id] != resolved {
                 updated[id] = resolved
