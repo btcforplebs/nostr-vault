@@ -16,10 +16,13 @@ const trust = new Set([ME, A, B])
 test("the Swift Global branch is the rule ported here", () => {
   const src = swift("Services/FeedFilterEngine.swift")
   const branch = src.slice(src.indexOf("if mode == .global {"), src.indexOf("if mode == .following {"))
-  assert.match(branch, /if globalRequiresTrust && !wotPubkeys\.contains\(note\.pubkey\) \{ return false \}/)
+  // Judged on the signer: a repost's reposter, never the author its content names (PR 1926). The web's note.pubkey
+  // is the signer too; trustShows also wants the reposted author in the web (Logen 2026-11-04).
+  assert.match(branch, /if globalRequiresTrust && !wotPubkeys\.contains\(note\.repostedBy \?\? note\.pubkey\) \{ return false \}/)
   assert.match(branch, /if note\.isReply \{ return false \}/)
-  // Fails closed: the trust set is your saved web plus follows, and empty with no web.
-  assert.match(swift("Models/TrustMap.swift"), /saved\.isEmpty \? \[\] : saved\.union\(follows\)/)
+  // Fails closed: the trust set is your saved web plus follows, so with no saved web just your follows, and empty
+  // when you follow nobody (PR 1927; the web's globalTrust does the same).
+  assert.match(swift("Models/TrustMap.swift"), /static func web\(saved: Set<String>, follows: Set<String>\) -> Set<String> \{\s*saved\.union\(follows\)\s*\}/)
   // The two filters, trusted authors capped first, then open.
   const wot = swift("Services/Feed/FeedService+WebOfTrust.swift")
   assert.match(wot, /byAuthor\["authors"\] = Array\(trust\.sorted\(\)\.prefix\(trustedAuthorsCap\)\)\s*return \[byAuthor, base\]/)
