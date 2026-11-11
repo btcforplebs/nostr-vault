@@ -60,6 +60,9 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
     @Inject
     lateinit var mediaImportAfterMovingIn: com.nostrvault.service.MediaImportAfterMovingIn
 
+    @Inject
+    lateinit var autoMirrorOnOpen: com.nostrvault.service.AutoMirrorOnOpen
+
     override fun onCreate() {
         warmUpOffMain()
         // The saved feed is read while Hilt builds the app, for the first frame.
@@ -88,6 +91,8 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
                 if (on) listWipeWatcher.onForeground()
                 // A cut mesh copy resumes, a linked device due one gets a catch-up (Tron, #1784).
                 if (on) meshCopyStarter.reconnect()
+                // Auto-Mirror on open, not only on the Media tab (Logen 2026-11-11).
+                if (on) autoMirrorOnOpen.onForeground()
             },
         )
         // GIFs downloaded for "Save to my Blossom" that a crash left behind.
@@ -101,6 +106,7 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
         profilePicturePrefetcher.start(applicationScope)
         // One Import media when the first Moving in finishes.
         mediaImportAfterMovingIn.start()
+        autoMirrorOnOpen.start()
         // The allowlisted settings file the mesh copy carries and keeps synced (docs/MESH_COPY_V2_CONTRACT.md §5).
         copySettingsSync.start()
         // And the accounts list it carries (§3.4): this device's own kept current, a copy's offered, never added unasked.

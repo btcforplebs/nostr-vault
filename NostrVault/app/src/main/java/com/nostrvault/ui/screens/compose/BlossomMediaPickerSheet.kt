@@ -80,7 +80,7 @@ internal fun BlossomMediaPickerSheet(
         }
     }
 
-    // Opens nearly full height; swipe down still closes it.
+    // Opens full height, as on iPhone; swipe down still closes it.
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -90,6 +90,7 @@ internal fun BlossomMediaPickerSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .fillMaxHeight()
                 .padding(vertical = 16.dp)
         ) {
             Text(
@@ -183,7 +184,8 @@ internal fun BlossomMediaPickerSheet(
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 8.dp),
-                    modifier = Modifier.heightIn(max = 400.dp)
+                    // The rest of the sheet, which opens full height as on iPhone.
+                    modifier = Modifier.weight(1f)
                 ) {
                     for (section in sections) {
                         if (section.title.isNotEmpty()) {
