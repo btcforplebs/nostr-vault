@@ -7,7 +7,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 )
@@ -20,7 +19,7 @@ import (
 // (blob reads, owner-signed uploads and events); the relay port stays
 // closed to them. Unset: no door, nil server.
 func startMeshDoorFromEnv() (*http.Server, error) {
-	raw := strings.TrimSpace(os.Getenv("HAVEN_MESH_PLAIN_PORT"))
+	raw := strings.TrimSpace(hostGetenv("HAVEN_MESH_PLAIN_PORT"))
 	if raw == "" {
 		return nil, nil
 	}

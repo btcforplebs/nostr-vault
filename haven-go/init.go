@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -259,7 +258,7 @@ func relayServiceURL(path string) string {
 	scheme := strings.TrimSuffix(getHTTPScheme(host), "://")
 	if host == "" {
 		host = fmt.Sprintf("127.0.0.1:%d", config.RelayPort)
-		if os.Getenv("HAVEN_ENABLE_TLS") != "1" {
+		if hostGetenv("HAVEN_ENABLE_TLS") != "1" {
 			scheme = "http"
 		}
 	}
@@ -272,7 +271,7 @@ func relayServiceURL(path string) string {
 // the mount path. One box is reached as its LAN IP, its hostname and its
 // mesh address; a pinned 127.0.0.1 URL failed every owner AUTH through it.
 func serviceURLFromHost(rl *khatru.Relay, path string) {
-	if os.Getenv("HAVEN_SERVICE_URL_FROM_HOST") != "1" || config.RelayURL != "" {
+	if hostGetenv("HAVEN_SERVICE_URL_FROM_HOST") != "1" || config.RelayURL != "" {
 		return
 	}
 	rl.ServiceURLFor = func(r *http.Request) string {

@@ -26,7 +26,7 @@ func main() {
 		return
 	}
 	config = loadConfig()
-	behindProxy = os.Getenv("HAVEN_BEHIND_PROXY") == "1"
+	behindProxy = hostGetenv("HAVEN_BEHIND_PROXY") == "1"
 	nostr.InfoLogger = log.New(io.Discard, "", 0)
 	slog.SetLogLoggerLevel(getLogLevelFromConfig())
 	green := "\033[32m"
@@ -128,7 +128,7 @@ func main() {
 		runsafe.Go("periodicCloudBackups", func() { startPeriodicCloudBackups(mainCtx) })
 		runsafe.Go("wot.PeriodicRefresh", func() { wot.PeriodicRefresh(mainCtx, config.WotRefreshInterval) })
 		// havend as B: a first copy (or its resume) asked for at start.
-		startCopyFromEnv(mainCtx, os.Getenv, runsafe.Go)
+		startCopyFromEnv(mainCtx, hostGetenv, runsafe.Go)
 		runsafe.Go("wot.RefreshWhileEmpty", func() { wot.RefreshWhileEmpty(mainCtx, wot.EmptyGraphRefreshInterval, ownerFollowListStamp) })
 		runsafe.Go("wot.RefreshOnFollowListChange", func() { wot.RefreshOnFollowListChange(mainCtx, wot.FollowListCheckInterval, ownerFollowListAt) })
 	})

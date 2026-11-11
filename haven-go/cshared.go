@@ -195,7 +195,9 @@ func isCShared() bool {
 
 //export SetHavenEnvC
 func SetHavenEnvC(key *C.char, value *C.char) {
-	os.Setenv(C.GoString(key), C.GoString(value))
+	// Never os.Setenv here: see host_env.go. The app calls this ~90 times at
+	// cold launch while its network threads are inside libc getenv.
+	setHostEnv(C.GoString(key), C.GoString(value))
 }
 
 // chdirToRelayRoot: on Android (and other embedded hosts), the process CWD
@@ -204,7 +206,7 @@ func SetHavenEnvC(key *C.char, value *C.char) {
 // relative paths (db/*, wot_cache.json, relays_*.json) resolve correctly,
 // matching the iOS subprocess behaviour. Must be called with relayLC.mu held.
 func chdirToRelayRoot() {
-	if dbPath := os.Getenv("DATABASE_PATH"); dbPath != "" {
+	if dbPath := hostGetenv("DATABASE_PATH"); dbPath != "" {
 		relayRoot := filepath.Dir(strings.TrimRight(dbPath, "/"))
 		if err := os.Chdir(relayRoot); err != nil {
 			log.Printf("⚠️ Failed to chdir to relay data root %s: %v", relayRoot, err)
@@ -365,7 +367,7 @@ func StartRelayC(importMode bool) {
 		// Only enable HTTPS when HAVEN_ENABLE_TLS=1 (iOS needs it for App Transport Security;
 		// macOS uses plain HTTP since Cloudflare handles TLS termination)
 		var certPath, keyPath string
-		if os.Getenv("HAVEN_ENABLE_TLS") == "1" {
+		if hostGetenv("HAVEN_ENABLE_TLS") == "1" {
 			var err error
 			certPath, keyPath, err = getOrCreateSelfSignedCert(".")
 			if err != nil {
