@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/nbd-wtf/go-nostr/nip19"
 )
 
@@ -103,7 +102,7 @@ const minInboxPullIntervalSeconds = 3600
 func loadConfig() Config {
 	// Live-added accounts end with the config that preceded them (whitelist.go).
 	resetLiveAccounts()
-	_ = godotenv.Load(".env")
+	loadDotEnv(".env")
 
 	defaultWotDepth := 3
 	if runtime.GOOS == "ios" || runtime.GOOS == "android" {
