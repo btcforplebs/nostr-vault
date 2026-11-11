@@ -249,6 +249,10 @@ internal fun EmptyFeedPlaceholder(
     actionLabel: String = "Refresh Feed",
     /** Replaces the feed's own icon: "Could not reach any relay" draws no-connection. */
     iconOverride: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    /** The button's icon. */
+    actionIcon: ImageVector = NostrVaultIcons.Refresh,
+    /** The button's work is under way: a spinner in place of its icon, and no tap. */
+    actionBusy: Boolean = false,
 ) {
     val colors = LocalNostrVaultColors.current
     val gradient = Brush.linearGradient(listOf(colors.primary, colors.primaryLight))
@@ -338,16 +342,20 @@ internal fun EmptyFeedPlaceholder(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(gradient, RoundedCornerShape(10.dp))
-                        .clickable(onClick = onRefresh)
+                        .clickable(enabled = !actionBusy, onClick = onRefresh)
                         .padding(vertical = 14.dp),
                 ) {
                     Spacer(Modifier.weight(1f))
-                    Icon(
-                        imageVector = NostrVaultIcons.Refresh,
-                        contentDescription = null,
-                        tint = Color.Black,
-                        modifier = Modifier.size(16.dp),
-                    )
+                    if (actionBusy) {
+                        CircularProgressIndicator(color = Color.Black, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                    } else {
+                        Icon(
+                            imageVector = actionIcon,
+                            contentDescription = null,
+                            tint = Color.Black,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
                     Text(
                         text = actionLabel,
                         color = Color.Black,
@@ -358,5 +366,40 @@ internal fun EmptyFeedPlaceholder(
                 }
             }
         }
+    }
+}
+
+/**
+ * Underrated's empty screen (UnderratedEmptyState, iOS UnderratedEmptyAction): today's words and Refresh Feed, or for
+ * a follows-only web "Underrated needs your wider web" and Build your wider network, which runs the Vault's
+ * wider_network job and shows it running.
+ */
+@Composable
+internal fun UnderratedEmptyPlaceholder(
+    reason: com.nostrvault.service.UnderratedEmptyReason?,
+    building: Boolean,
+    onRefresh: () -> Unit,
+    onBuildWiderNetwork: () -> Unit,
+) {
+    val state = com.nostrvault.service.UnderratedEmptyState.of(reason, building)
+    when (state.action) {
+        com.nostrvault.service.UnderratedEmptyState.Action.REFRESH_FEED ->
+            EmptyFeedPlaceholder(FeedMode.UNDERRATED, onRefresh = onRefresh)
+        com.nostrvault.service.UnderratedEmptyState.Action.BUILD_WIDER_NETWORK -> EmptyFeedPlaceholder(
+            FeedMode.UNDERRATED,
+            onRefresh = onBuildWiderNetwork,
+            titleOverride = state.title,
+            subtitleOverride = state.subtitle,
+            actionLabel = com.nostrvault.service.UnderratedEmptyState.BUILD_TITLE,
+            actionIcon = NostrVaultIcons.Globe,
+        )
+        com.nostrvault.service.UnderratedEmptyState.Action.BUILDING_WIDER_NETWORK -> EmptyFeedPlaceholder(
+            FeedMode.UNDERRATED,
+            onRefresh = {},
+            titleOverride = state.title,
+            subtitleOverride = state.subtitle,
+            actionLabel = com.nostrvault.service.UnderratedEmptyState.BUILDING_TITLE,
+            actionBusy = true,
+        )
     }
 }

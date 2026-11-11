@@ -96,6 +96,10 @@ class FeedService: ObservableObject {
     @Published var loadingDvmFeeds: Set<FeedMode> = []
     /// The local DVM feed on screen is being computed.
     var isLoadingLocalDvm: Bool { loadingDvmFeeds.contains(feedMode) }
+    /// Why the last Underrated answer was empty (nil once it had notes):
+    /// a follows-only web turns its empty screen's button into Build your
+    /// wider network (UnderratedEmptyState).
+    @Published var underratedEmptyReason: UnderratedEmptyReason?
     @Published var popularFilter: PopularFilter = .all
     @Published var showPopularEngagement = false
     @Published var isLoadingFeed    = false

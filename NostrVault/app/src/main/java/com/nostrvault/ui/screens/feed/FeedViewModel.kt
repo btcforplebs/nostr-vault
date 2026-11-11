@@ -63,7 +63,42 @@ class FeedViewModel @Inject constructor(
     private val interestListService: com.nostrvault.service.InterestListService,
     relayImportService: com.nostrvault.service.RelayImportService,
     logStore: com.nostrvault.relay.LogStore,
+    private val importJobService: com.nostrvault.service.ImportJobService,
 ) : ViewModel() {
+
+    /** Why Underrated came back empty: a follows-only web offers Build your wider network. */
+    val underratedEmptyReason: StateFlow<com.nostrvault.service.UnderratedEmptyReason?> = feedService.underratedEmptyReason
+
+    /** The Vault's wider_network job is running (ImportJobService, the same one Still to bring in runs). */
+    val widerNetworkBuilding: StateFlow<Boolean> = importJobService.jobs
+        .map { it?.job(com.nostrvault.service.ImportJobs.WIDER_NETWORK)?.isRunning == true }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    private var widerNetworkWatch: Job? = null
+
+    /**
+     * Underrated's Build your wider network: runs the wider_network job through ImportJobService, follows it while
+     * it runs, and reloads Underrated when it ends (the job swaps the wider web in).
+     */
+    fun buildWiderNetwork() {
+        if (widerNetworkWatch?.isActive == true) return
+        widerNetworkWatch = viewModelScope.launch {
+            val code = importJobService.run(com.nostrvault.service.ImportJobs.WIDER_NETWORK)
+            com.nostrvault.service.ImportJobs.runRefusal(code)?.let {
+                notificationManager.showToast(it, com.nostrvault.ui.notification.PillTone.WARNING)
+            }
+            if (code != com.nostrvault.service.ImportJobs.RUN_STARTED) return@launch
+            do {
+                delay(3_000L)
+                val running = importJobService.read()?.job(com.nostrvault.service.ImportJobs.WIDER_NETWORK)?.isRunning
+            } while (running == true)
+            if (_feedMode.value == FeedMode.UNDERRATED) refresh()
+        }
+    }
+
+    /** The Underrated empty screen asks for the jobs list once, so a run started elsewhere shows as running. */
+    fun refreshImportJobs() = importJobService.refresh()
 
     /** The relay is importing; an empty feed says so rather than "no notes". */
     val isRelayImporting: StateFlow<Boolean> = relayImportService.isImporting

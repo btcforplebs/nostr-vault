@@ -46,6 +46,8 @@ data class ImportJobs(
 
     companion object {
         const val SETUP = "setup"
+        /** The full web of trust (follows of follows): Underrated needs it. */
+        const val WIDER_NETWORK = "wider_network"
         const val NEVER = "never"
         const val RUNNING = "running"
         const val DONE = "done"

@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"math"
 	"sort"
@@ -80,6 +81,69 @@ type underratedInputs struct {
 	// false for anyone Underrated leaves out: people you follow, and people
 	// none of your follows follow. nil leaves everyone out (fails closed).
 	oneStepOut func(pubkey string) (int, bool)
+	// drops, when set, counts the notes left out and why (the log line).
+	drops *underratedDrops
+}
+
+// underratedDrops is why resolved notes did not make the list. Counting
+// only: nothing here changes what qualifies or how it ranks.
+type underratedDrops struct {
+	notOneStepOut int // a follow, someone no follow follows, or a web with no vouch layer
+	belowBar      int // fewer than underratedMinReactors trusted people (author excluded)
+	perAuthorCap  int // past underratedMaxPerAuthor for its author
+	overLimit     int // past underratedMaxNotes
+}
+
+// Why an Underrated answer is empty, for the apps (ComputeUnderratedNotesC
+// answers {"reason": ...} instead of an empty list).
+const (
+	// The trust graph is not built yet: the feed is withheld (the apps
+	// already say the web is being built and wait for it).
+	underratedWebNotReady = "web_not_ready"
+	// The web is follows only (depth below 3, or no vouch layer): nobody
+	// can be one step out until the wider network is built.
+	underratedWebIncomplete = "web_incomplete"
+	// The web is whole and still nothing cleared the bar.
+	underratedNothingQualified = "nothing_qualified"
+)
+
+// webShaper is the part of the web of trust that says how far it reaches
+// (pkg/wot SimpleInMemory.WebShape).
+type webShaper interface {
+	WebShape() (depth, follows, vouched int)
+}
+
+// webShapeOf reads how far model reaches. A model that cannot say counts as
+// follows only: oneStepOutFrom cannot name anyone in it either.
+func webShapeOf(model any) (depth, follows, vouched int) {
+	if ws, ok := model.(webShaper); ok {
+		return ws.WebShape()
+	}
+	return 0, 0, 0
+}
+
+// underratedWebComplete: a web Underrated can find anyone in. Its people
+// are the second layer, which only a depth-3 build with vouch counts has.
+func underratedWebComplete(depth, vouched int) bool {
+	return depth >= 3 && vouched > 0
+}
+
+// underratedEmptyJSON is the bridge's empty answer: {"reason": reason}.
+func underratedEmptyJSON(reason string) string {
+	b, _ := json.Marshal(map[string]string{"reason": reason})
+	return string(b)
+}
+
+// underratedEmptyReason says why an empty answer is empty.
+func underratedEmptyReason(ready bool, depth, vouched int) string {
+	switch {
+	case !ready:
+		return underratedWebNotReady
+	case !underratedWebComplete(depth, vouched):
+		return underratedWebIncomplete
+	default:
+		return underratedNothingQualified
+	}
 }
 
 // oneStepOutFrom reads the web of trust for Underrated: someone you do not
@@ -128,13 +192,22 @@ func scoreUnderrated(events []*nostr.Event, tally map[string]map[string]float64,
 		}
 		seen[ev.ID] = struct{}{}
 		if in.oneStepOut == nil {
+			if in.drops != nil {
+				in.drops.notOneStepOut++
+			}
 			continue
 		}
 		if _, ok := in.oneStepOut(ev.PubKey); !ok {
+			if in.drops != nil {
+				in.drops.notOneStepOut++
+			}
 			continue
 		}
 		raw, distinct := scoreExcludingAuthor(tally[ev.ID], ev.PubKey)
 		if distinct < underratedMinReactors {
+			if in.drops != nil {
+				in.drops.belowBar++
+			}
 			continue
 		}
 		cands = append(cands, cand{ev, raw})
@@ -171,8 +244,15 @@ func scoreUnderrated(events []*nostr.Event, tally map[string]map[string]float64,
 		}
 		return results[i].ID < results[j].ID
 	})
+	sorted := len(results)
 	results = capPerAuthor(results, underratedMaxPerAuthor)
+	if in.drops != nil {
+		in.drops.perAuthorCap += sorted - len(results)
+	}
 	if len(results) > underratedMaxNotes {
+		if in.drops != nil {
+			in.drops.overLimit += len(results) - underratedMaxNotes
+		}
 		results = results[:underratedMaxNotes]
 	}
 	return results
@@ -213,14 +293,15 @@ func localPostCounts(ctx context.Context, authors []string, since nostr.Timestam
 	return counts
 }
 
-// computeUnderratedNotes answers the Underrated feed.
-func computeUnderratedNotes(ctx context.Context) ([]PopularNote, error) {
+// computeUnderratedNotes answers the Underrated feed, and when the answer is
+// empty, why (underratedWebIncomplete and the rest; "" when it is not).
+func computeUnderratedNotes(ctx context.Context) ([]PopularNote, string, error) {
 	now := time.Now()
 	underratedCacheMu.Lock()
 	if now.Before(underratedCacheExpiry) && len(underratedCache) > 0 {
 		cached := append([]PopularNote(nil), underratedCache...)
 		underratedCacheMu.Unlock()
-		return cached, nil
+		return cached, "", nil
 	}
 	underratedCacheMu.Unlock()
 
@@ -228,20 +309,28 @@ func computeUnderratedNotes(ctx context.Context) ([]PopularNote, error) {
 	model, gated := trustGraph(ctx)
 	if !gated {
 		log.Println("underrated: trust graph not ready, withholding the feed")
-		return []PopularNote{}, nil
+		return []PopularNote{}, underratedEmptyReason(false, 0, 0), nil
+	}
+	depth, follows, vouched := webShapeOf(model)
+	emptyReason := func(results []PopularNote) string {
+		if len(results) > 0 {
+			return ""
+		}
+		return underratedEmptyReason(true, depth, vouched)
 	}
 
 	tally := popularTally.snapshot(now)
 	local := popularTally.coverage(now) >= popularTallyMinCoverage
 	if !local {
 		if err := fetchEngagementInto(ctx, tally); err != nil && len(tally) == 0 {
-			return nil, err
+			return nil, "", err
 		}
 	}
 	tally = filterToTrusted(ctx, model, tally)
 	ids := underratedCandidates(tally)
 	if len(ids) == 0 {
-		return []PopularNote{}, nil
+		log.Printf("underrated: 0 candidates (depth=%d follows=%d vouched=%d)", depth, follows, vouched)
+		return []PopularNote{}, emptyReason(nil), nil
 	}
 	events := resolveNoteBodies(ctx, ids)
 
@@ -253,13 +342,16 @@ func computeUnderratedNotes(ctx context.Context) ([]PopularNote, error) {
 			authors = append(authors, ev.PubKey)
 		}
 	}
-	in := underratedInputs{posts: localPostCounts(ctx, authors, nostr.Timestamp(now.Add(-popularWindow).Unix()))}
+	var drops underratedDrops
+	in := underratedInputs{posts: localPostCounts(ctx, authors, nostr.Timestamp(now.Add(-popularWindow).Unix())), drops: &drops}
 	if rm, ok := model.(reachModel); ok {
 		in.oneStepOut = oneStepOutFrom(rm)
 	}
 	results := scoreUnderrated(events, tally, in, now)
-	log.Printf("underrated: %d candidates, %d resolved, %d ranked (%s)", len(ids), len(events), len(results),
-		map[bool]string{true: "local", false: "backfilled"}[local])
+	log.Printf("underrated: %d candidates, %d resolved, %d ranked (%s) depth=%d follows=%d vouched=%d dropped: unresolved=%d not_one_step_out=%d below_bar=%d per_author_cap=%d over_limit=%d",
+		len(ids), len(events), len(results), map[bool]string{true: "local", false: "backfilled"}[local],
+		depth, follows, vouched,
+		len(ids)-len(events), drops.notOneStepOut, drops.belowBar, drops.perAuthorCap, drops.overLimit)
 
 	ttl := popularCacheTTL
 	if local {
@@ -269,5 +361,5 @@ func computeUnderratedNotes(ctx context.Context) ([]PopularNote, error) {
 	underratedCache = append([]PopularNote(nil), results...)
 	underratedCacheExpiry = now.Add(ttl)
 	underratedCacheMu.Unlock()
-	return results, nil
+	return results, emptyReason(results), nil
 }

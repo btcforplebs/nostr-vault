@@ -35,4 +35,37 @@ final class LocalDvmFeedTests: XCTestCase {
                        "That's today's underrated list. Pull to refresh.")
         XCTAssertEqual(Set(LocalDvmFeed.allCases.map(\.endOfListStatus)).count, 3)
     }
+
+    // MARK: Underrated's empty state (haven-go underratedEmptyReason)
+
+    func testUnderratedReasonIsReadFromTheRelaysEmptyAnswer() {
+        XCTAssertEqual(UnderratedEmptyReason.parse(#"{"reason":"web_incomplete"}"#), .webIncomplete)
+        XCTAssertEqual(UnderratedEmptyReason.parse(#"{"reason":"nothing_qualified"}"#), .nothingQualified)
+        XCTAssertEqual(UnderratedEmptyReason.parse(#"{"reason":"web_not_ready"}"#), .webNotReady)
+        // A list of notes, an error, or a reason this build doesn't know: none.
+        XCTAssertNil(UnderratedEmptyReason.parse(#"[{"id":"x"}]"#))
+        XCTAssertNil(UnderratedEmptyReason.parse("[]"))
+        XCTAssertNil(UnderratedEmptyReason.parse(#"{"error":"relay not running"}"#))
+        XCTAssertNil(UnderratedEmptyReason.parse(#"{"reason":"something_new"}"#))
+    }
+
+    /// Logen 2026-11-11: a follows-only web offered Refresh, which cannot
+    /// help. web_incomplete offers Build your wider network; everything else
+    /// keeps Refresh Feed.
+    func testUnderratedEmptyStatePicksTheButtonFromTheReason() {
+        let incomplete = UnderratedEmptyState.of(reason: .webIncomplete, building: false)
+        XCTAssertEqual(incomplete.title, "Underrated needs your wider web")
+        XCTAssertEqual(incomplete.action, .buildWiderNetwork)
+        XCTAssertFalse(incomplete.subtitle.contains("Check back later"))
+
+        for reason in [UnderratedEmptyReason.nothingQualified, .webNotReady, nil] {
+            let state = UnderratedEmptyState.of(reason: reason, building: false)
+            XCTAssertEqual(state.action, .refreshFeed, "\(String(describing: reason))")
+            XCTAssertEqual(state.title, "Nothing underrated yet")
+        }
+
+        // While the job runs the button says so and can't be tapped again.
+        XCTAssertEqual(UnderratedEmptyState.of(reason: .webIncomplete, building: true).action, .buildingWiderNetwork)
+        XCTAssertEqual(UnderratedEmptyState.of(reason: nil, building: true).action, .buildingWiderNetwork)
+    }
 }

@@ -60,6 +60,16 @@ extension FeedService {
             let jsonString = String(cString: resultPtr)
             free(resultPtr)
 
+            // Underrated's empty answer says why ({"reason": ...}).
+            if feed == .underrated, let reason = UnderratedEmptyReason.parse(jsonString) {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, ConfigService.shared.activeAccountHexPubkey == account else { return }
+                    self.underratedEmptyReason = reason
+                }
+                finishEmpty(feed.emptyStatus)
+                return
+            }
+
             // Check for error response
             if let errorData = jsonString.data(using: .utf8),
                let errorObj = try? JSONSerialization.jsonObject(with: errorData) as? [String: String],
@@ -109,6 +119,7 @@ extension FeedService {
                     self.popularNoteScores = scores
                     if showingOld { self.resetFeedThreadReplies() }
                 }
+                if feed == .underrated && !feedNotes.isEmpty { self.underratedEmptyReason = nil }
                 self.isLoadingFeed = false
                 self.connectionStatus = self.notes.isEmpty ? self.dvmEmptyStatus(feed) : "Live"
                 if self.notes.isEmpty && feed.needsTrustGraph && !self.curatedGraphReady {

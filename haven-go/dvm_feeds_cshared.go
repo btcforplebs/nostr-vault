@@ -39,7 +39,9 @@ func ComputeCatchUpNotesC(follows *C.char) *C.char {
 }
 
 // ComputeUnderratedNotesC answers the Underrated feed (feed_underrated.go).
-// Same JSON shape as ComputePopularNotesC.
+// Same JSON shape as ComputePopularNotesC, except that an empty answer is
+// {"reason": "web_incomplete" | "nothing_qualified" | "web_not_ready"}:
+// the apps offer to build the wider network for the first.
 //
 //export ComputeUnderratedNotesC
 func ComputeUnderratedNotesC() *C.char {
@@ -54,7 +56,11 @@ func ComputeUnderratedNotesC() *C.char {
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
 	defer cancel()
-	return dvmResultC(computeUnderratedNotes(ctx))
+	notes, reason, err := computeUnderratedNotes(ctx)
+	if err == nil && len(notes) == 0 && reason != "" {
+		return C.CString(underratedEmptyJSON(reason))
+	}
+	return dvmResultC(notes, err)
 }
 
 func dvmErrorC(msg string) *C.char {

@@ -775,6 +775,18 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	debug.FreeOSMemory()
 }
 
+// WebShape reports the depth this graph was built at, how many follows it
+// holds and how many second-layer people have a vouch count (0 at depth 2,
+// or before the graph is built). Underrated reads it to tell a follows-only
+// web from one where nobody qualified.
+func (wt *SimpleInMemory) WebShape() (depth, follows, vouched int) {
+	depth = wt.WotDepth
+	if l := wt.layers.Load(); l != nil {
+		follows, vouched = len(l.follows), len(l.vouches)
+	}
+	return depth, follows, vouched
+}
+
 // Reach reports how many of the owners' follows follow pubkey (the vouches
 // of the depth-3 pass), and whether pubkey is one of those follows. A follow
 // has no vouch count: the pass counts only the second layer. known is false

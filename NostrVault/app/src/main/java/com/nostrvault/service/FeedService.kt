@@ -318,6 +318,13 @@ class FeedService @Inject constructor(
 
     internal val _isLoadingPopular = MutableStateFlow(false)
     val isLoadingPopular: StateFlow<Boolean> = _isLoadingPopular.asStateFlow()
+    /**
+     * Why the last Underrated answer was empty (null once it had notes): a follows-only web turns its empty screen's
+     * button into Build your wider network (UnderratedEmptyState).
+     */
+    internal val _underratedEmptyReason = MutableStateFlow<UnderratedEmptyReason?>(null)
+    val underratedEmptyReason: StateFlow<UnderratedEmptyReason?> = _underratedEmptyReason.asStateFlow()
+
     /** Local DVM feeds being computed now (FeedServiceLocalDvmFeeds.kt), one at a time each. */
     internal val localDvmLoading: MutableSet<FeedMode> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 

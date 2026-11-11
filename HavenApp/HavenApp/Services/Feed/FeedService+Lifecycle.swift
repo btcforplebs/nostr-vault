@@ -39,6 +39,8 @@ extension FeedService {
         // the new account's key. Reactions still being signed are dropped.
         writeInteractionState()
         pendingReactionTokens.removeAll()
+        // Whether the web is complete is the previous account's answer.
+        underratedEmptyReason = nil
 
         // 2. Only disconnect feed clients if we need a full refresh (no snapshot available).
         // This prevents unnecessary relay disconnections when switching between accounts
