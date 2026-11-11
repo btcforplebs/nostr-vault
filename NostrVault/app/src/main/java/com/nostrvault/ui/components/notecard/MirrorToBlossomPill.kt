@@ -17,7 +17,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.nostrvault.ui.theme.*
 
-/** Capsule button / status indicator that backs up the viewed media to the local Blossom store. */
+/**
+ * Capsule button / status indicator that saves the viewed media to the vault on
+ * this phone and then to every media server, as the iPhone's Mirror does. The
+ * finished state names where the file actually went ([MirrorOutcome]).
+ */
 @Composable
 internal fun MirrorToBlossomPill(
     state: FeedMediaMirrorViewModel.MirrorState,
@@ -25,20 +29,23 @@ internal fun MirrorToBlossomPill(
     modifier: Modifier = Modifier,
 ) {
     val bg = when (state) {
-        FeedMediaMirrorViewModel.MirrorState.Mirrored -> Color(0xFF33CC99).copy(alpha = 0.85f)
+        is FeedMediaMirrorViewModel.MirrorState.Mirrored ->
+            if (state.outcome.complete) Color(0xFF33CC99).copy(alpha = 0.85f) else Color(0xFFF59E0B).copy(alpha = 0.85f)
         is FeedMediaMirrorViewModel.MirrorState.Failed -> Color(0xFFE53935).copy(alpha = 0.85f)
         else -> Color.Black.copy(alpha = 0.6f)
     }
 
-    // Tapping does nothing while in progress or already mirrored; Idle/Failed trigger a (re)mirror.
+    // Tapping does nothing while in progress or once every server has it;
+    // Idle/Failed, or a file some servers lack, trigger a (re)mirror.
     val clickable = state is FeedMediaMirrorViewModel.MirrorState.Idle ||
-        state is FeedMediaMirrorViewModel.MirrorState.Failed
+        state is FeedMediaMirrorViewModel.MirrorState.Failed ||
+        (state is FeedMediaMirrorViewModel.MirrorState.Mirrored && state.outcome.canRetry)
 
     val spoken = when (state) {
-        FeedMediaMirrorViewModel.MirrorState.Mirroring -> "Copying to your media servers"
-        FeedMediaMirrorViewModel.MirrorState.Mirrored -> "Copied to your media servers"
-        is FeedMediaMirrorViewModel.MirrorState.Failed -> "Mirror failed, retry"
-        FeedMediaMirrorViewModel.MirrorState.Idle -> "Copy to your media servers"
+        FeedMediaMirrorViewModel.MirrorState.Mirroring -> "Saving to your vault and media servers"
+        is FeedMediaMirrorViewModel.MirrorState.Mirrored -> state.outcome.spoken
+        is FeedMediaMirrorViewModel.MirrorState.Failed -> "Couldn't save to your vault, retry"
+        FeedMediaMirrorViewModel.MirrorState.Idle -> "Mirror to your vault and media servers"
     }
 
     Row(
@@ -60,10 +67,13 @@ internal fun MirrorToBlossomPill(
                 Spacer(Modifier.width(6.dp))
                 Text("Mirroring…", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
-            FeedMediaMirrorViewModel.MirrorState.Mirrored -> {
-                Icon(NostrVaultIcons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+            is FeedMediaMirrorViewModel.MirrorState.Mirrored -> {
+                Icon(
+                    if (state.outcome.complete) NostrVaultIcons.Check else NostrVaultIcons.Backup,
+                    contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp),
+                )
                 Spacer(Modifier.width(6.dp))
-                Text("Mirrored", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(state.outcome.label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
             is FeedMediaMirrorViewModel.MirrorState.Failed -> {
                 Icon(NostrVaultIcons.Dismiss, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
