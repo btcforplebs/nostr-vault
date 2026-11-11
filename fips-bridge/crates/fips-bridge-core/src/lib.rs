@@ -2,7 +2,7 @@
 //!
 //! Everything on the per-packet path lives here, in Rust. The host apps
 //! (Swift/Kotlin) only ever touch a small control-plane C ABI — see
-//! `FIPS_FFI_PLAN.md` for why that boundary is where it is.
+//! `docs/fips/FIPS_FFI_PLAN.md` for why that boundary is where it is.
 
 pub mod endpoint;
 pub mod proxy;

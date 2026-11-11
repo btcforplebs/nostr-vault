@@ -1,6 +1,6 @@
 //! What fits in one FIPS fragment, and what it costs when it doesn't.
 //!
-//! FIPS_INTEGRATION_ROADMAP.md §2.2 budgeted 1242 usable bytes at a 1280-byte
+//! docs/fips/FIPS_INTEGRATION_ROADMAP.md §2.2 budgeted 1242 usable bytes at a 1280-byte
 //! underlay MTU and concluded that ~42 bytes of margin over quinn's 1200 floor
 //! was too thin to ship. The arithmetic omitted the FMP layer. The real budget
 //! is 1170 — *below* the floor — so QUIC has been fragmenting into two FIPS

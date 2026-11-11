@@ -20,7 +20,7 @@
 RENAME_PLAN.md
 DM_PLAN.md
 
-# FIPS_FFI_PLAN.md and FIPS_INTEGRATION_ROADMAP.md are deliberately tracked:
+# docs/fips/FIPS_FFI_PLAN.md and FIPS_INTEGRATION_ROADMAP.md are deliberately tracked:
 # they are the architecture documents for fips-bridge/ and need to version
 # alongside the code they describe.
 
@@ -76,3 +76,6 @@ HavenApp/Config/Secrets.xcconfig
 
 # web-relay build output (web-relay/vite.config.js); built at deploy time, not committed
 website/relay/
+
+# Compiled Go test binaries (go test -c)
+*.test

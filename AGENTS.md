@@ -11,7 +11,6 @@ Read this before you plan or edit anything in this repo. It is short on purpose.
 | `NostrVault/app/src/main/java/com/nostrvault/` | Android app (Kotlin + Compose) |
 | `haven-go/` | The relay, compiled into the apps as `libhaven` |
 | `fips-bridge/` | Rust networking bridge |
-| `.ai-reference/` | Older deep-dive notes (start at `INDEX.md`). Written June 2026: the file paths and line counts there are out of date, the app **does** have tests now, and it does not cover Android. Use it for concepts and check the code before you trust a detail. |
 
 ## Code structure rules
 
