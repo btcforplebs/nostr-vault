@@ -1,5 +1,7 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.ui.components.mediaTileContentScale
+import com.nostrvault.ui.components.videoTileBackground
 import com.nostrvault.ui.components.MeshMediaStatusOverlay
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -113,6 +115,7 @@ internal fun MediaGridCell(
         modifier = Modifier
             .aspectRatio(1f)
             .clip(RoundedCornerShape(2.dp))
+            .videoTileBackground(item.isVideo)
             .combinedClickable(
                 onClick = onTap,
                 onLongClick = onLongPress,
@@ -124,7 +127,7 @@ internal fun MediaGridCell(
             AsyncImage(
                 model = vaultGridImageRequest(context, item, moderationTarget, FipsMediaRouter.ownerHex()),
                 contentDescription = null,
-                contentScale = ContentScale.Crop,
+                contentScale = mediaTileContentScale(item.isVideo),
                 modifier = Modifier.fillMaxSize(),
             )
             MeshMediaStatusOverlay(url = item.displayUrl, compact = true, modifier = Modifier.matchParentSize())

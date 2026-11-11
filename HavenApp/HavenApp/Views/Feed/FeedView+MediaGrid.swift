@@ -87,10 +87,16 @@ extension FeedView {
     private func gridCell(for note: FeedNote, url: URL) -> some View {
         GeometryReader { geo in
             ZStack(alignment: .topTrailing) {
-                FeedMediaView(url: url, isThumbnail: true)
-                    .meshMediaNote(author: note.pubkey, tags: note.tags)
-                    .frame(width: geo.size.width, height: geo.size.width)
-                    .clipped()
+                // A video shows its whole frame on a dark tile, a photo fills
+                // the square (VideoTileFit; Android MediaFeedGrid).
+                let isVideo = FeedMediaType.fromExtension(url) == .video
+                ZStack {
+                    if isVideo { Color.black }
+                    FeedMediaView(url: url, isThumbnail: true, thumbnailFits: isVideo)
+                        .meshMediaNote(author: note.pubkey, tags: note.tags)
+                }
+                .frame(width: geo.size.width, height: geo.size.width)
+                .clipped()
 
                 // Indicators overlay
                 HStack(spacing: 4) {

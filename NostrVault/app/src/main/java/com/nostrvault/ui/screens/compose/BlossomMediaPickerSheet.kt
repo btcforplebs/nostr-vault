@@ -1,5 +1,7 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.ui.components.mediaTileContentScale
+import com.nostrvault.ui.components.videoTileBackground
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -195,6 +197,7 @@ internal fun BlossomMediaPickerSheet(
                                             .weight(1f)
                                             .aspectRatio(1f)
                                             .clip(RoundedCornerShape(8.dp))
+                                            .videoTileBackground(item.isVideo)
                                             .combinedClickable(
                                                 onClick = { onSelect(item) },
                                                 onLongClick = {
@@ -211,7 +214,7 @@ internal fun BlossomMediaPickerSheet(
                                                 model = item.localFile ?: item.displayUrl,
                                                 contentDescription = null,
                                                 modifier = Modifier.fillMaxSize(),
-                                                contentScale = ContentScale.Crop
+                                                contentScale = mediaTileContentScale(item.isVideo)
                                             )
                                         }
 

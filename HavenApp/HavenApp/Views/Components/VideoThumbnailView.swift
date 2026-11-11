@@ -21,11 +21,12 @@ struct VideoThumbnailView: View {
         GeometryReader { geo in
             ZStack {
                 if let image = thumbnail {
+                    // The whole frame on a dark tile, not cropped to fill it (VideoTileFit).
+                    let drawn = VideoTileFit.drawnSize(image: image.size, in: geo.size)
+                    Color.black
                     Image(platformImage: image)
                         .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .clipped()
+                        .frame(width: drawn.width, height: drawn.height)
 
                     Image(systemName: "play.circle.fill")
                         .font(.appSystem(size: 40))
