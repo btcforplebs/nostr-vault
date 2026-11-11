@@ -38,7 +38,9 @@ private struct HashtagLinkHandling: ViewModifier {
                     shown = IdentifiableString(id: tag)
                     return .handled
                 }
-                return .systemAction
+                // The outermost handler (the app root has this modifier):
+                // web and .fips links open in the in-app browser.
+                return InAppBrowser.route(url)
             })
             .sheet(item: $shown) { item in
                 HashtagFeedView(tag: item.id)

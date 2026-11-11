@@ -133,7 +133,8 @@ struct FeedNoteRow: View {
                 inheritedOpenURL(url)
                 return .handled
             }
-            return .systemAction
+            // Web and .fips links: the in-app browser (or the system, per Settings).
+            return InAppBrowser.route(url)
         })
         // One sheet and one alert for the row, not a presenter per kind:
         // every row in the feed built all of them, part of the stall when
