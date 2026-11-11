@@ -10,10 +10,14 @@ import SwiftUI
 /// fold stays on this device, per account.
 ///
 /// On an open folding iPhone it fills the left half instead
-/// (`fillsFoldHalf`): the rail on the screen's outer (left) edge, the panels
-/// as wide as the half, and no fold, so the app never runs across the crease.
+/// (`fillsFoldHalf`): the rail on the screen's outer (left) edge and the
+/// panels as wide as the half. It folds there too (Logen, 2026-11-11): down
+/// to its rail, and the app takes the rest of the screen, crease and all.
 struct SpaceColumn: View {
     var fillsFoldHalf = false
+    /// Told whenever the column folds or opens, so the shell can give the
+    /// fold's half back to the app.
+    var onFoldedChange: ((Bool) -> Void)? = nil
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @ObservedObject private var store = SpaceLayoutStore.shared
@@ -22,8 +26,7 @@ struct SpaceColumn: View {
     @StateObject private var liveVault = LiveVaultModel()
     @StateObject private var liveNow = LiveNowModel()
     @State private var foldedSaved = false
-    /// The half of an open folding iPhone never folds.
-    private var folded: Bool { foldedSaved && !fillsFoldHalf }
+    private var folded: Bool { foldedSaved }
     @State private var editing = false
     /// The widget the rail opened on its own, or nil for the dashboard.
     @State private var selected: String?
@@ -70,6 +73,7 @@ struct SpaceColumn: View {
                     .ignoresSafeArea()
             }
         }
+        .onChange(of: folded, initial: true) { _, value in onFoldedChange?(value) }
         .onChange(of: owner, initial: true) { _, hex in
             foldedSaved = UserDefaults.standard.bool(forKey: LiveVault.foldedKey(hex))
             editing = false
@@ -120,9 +124,7 @@ struct SpaceColumn: View {
                 .font(.appSystem(size: 17, weight: .bold))
             Spacer()
             if selected != nil {
-                if !fillsFoldHalf {
-                    barButton("sidebar.right", label: "Fold Your space") { setFolded(true) }
-                }
+                foldButton
             } else if editing {
                 Button("Done") { withAnimation(.easeInOut(duration: 0.2)) { editing = false } }
                     .font(.appSystem(size: 15, weight: .semibold))
@@ -132,9 +134,7 @@ struct SpaceColumn: View {
                 barButton("pencil", label: "Edit Your space") {
                     withAnimation(.easeInOut(duration: 0.2)) { editing = true }
                 }
-                if !fillsFoldHalf {
-                    barButton("sidebar.right", label: "Fold Your space") { setFolded(true) }
-                }
+                foldButton
             }
         }
         .padding(.leading, 18)
@@ -143,6 +143,13 @@ struct SpaceColumn: View {
         // the title sits level with them. No rule under it; the feed's half
         // has none.
         .frame(height: PadTopBar.height)
+    }
+
+    /// Folds the column toward its rail: right on the iPad, left on a fold's half.
+    private var foldButton: some View {
+        barButton(fillsFoldHalf ? "sidebar.left" : "sidebar.right", label: "Fold Your space") {
+            withAnimation(.easeInOut(duration: 0.2)) { setFolded(true) }
+        }
     }
 
     private func barButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
@@ -315,7 +322,7 @@ struct SpaceColumn: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isOpen && !fillsFoldHalf ? "Fold \(title)" : (badge > 0 ? "\(title), \(badge)" : title))
+        .accessibilityLabel(isOpen ? "Fold \(title)" : (badge > 0 ? "\(title), \(badge)" : title))
         .help(title)
     }
 
@@ -326,8 +333,7 @@ struct SpaceColumn: View {
                 selected = id
                 setFolded(false)
             } else if selected == id {
-                // The fold's half has no fold: the open icon stays open.
-                if !fillsFoldHalf { setFolded(true) }
+                setFolded(true)
             } else {
                 selected = id
                 editing = false

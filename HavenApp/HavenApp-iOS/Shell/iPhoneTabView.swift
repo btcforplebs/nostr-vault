@@ -37,8 +37,11 @@ struct iPhoneTabView: View {
     /// The window's own safe area on the right (`WindowTrailingInsetReader`),
     /// so drawing the rail into it (`stripRail`) doesn't change the reading.
     @State private var trailingInset: CGFloat = 0
+    /// The open Duo's Your space half is folded to its rail: the app takes
+    /// the rest of the screen, crease included.
+    @State private var foldSpaceFolded = false
 
-    /// The closed iPhone Duo: the rail inside iOS's camera strip on the right.
+    /// The iPhone Duo, closed or open: the rail inside iOS's camera strip on the right.
     private var stripRail: ShellLayout.StripRail? {
         ShellLayout.stripRail(layout: layout, trailingInset: trailingInset, railWidth: BottomTabBar.railWidth)
     }
@@ -157,13 +160,16 @@ struct iPhoneTabView: View {
         HStack(spacing: 0) {
             if layout == .padLandscape { sideRail(onRight: false) }
             if layout == .fold {
-                SpaceColumn(fillsFoldHalf: true)
-                    .frame(width: ShellLayout.foldLeftWidth(windowWidth: windowSize.width, leadingInset: leadingInset))
-                // Nothing on the crease.
-                Color.black
-                    .frame(width: ShellLayout.foldGutter)
-                    .ignoresSafeArea()
-                    .accessibilityHidden(true)
+                SpaceColumn(fillsFoldHalf: true, onFoldedChange: { foldSpaceFolded = $0 })
+                    .frame(width: foldSpaceFolded ? nil
+                           : ShellLayout.foldLeftWidth(windowWidth: windowSize.width, leadingInset: leadingInset))
+                if !foldSpaceFolded {
+                    // Nothing on the crease.
+                    Color.black
+                        .frame(width: ShellLayout.foldGutter)
+                        .ignoresSafeArea()
+                        .accessibilityHidden(true)
+                }
             }
             tabs
             if layout == .padLandscape {
@@ -176,7 +182,7 @@ struct iPhoneTabView: View {
                     .frame(width: stripRail?.width)
             }
         }
-        // Closed Duo: the rail takes the strip, the feed the width it freed.
+        // Duo: the rail takes the strip, the app the width it freed.
         .ignoresSafeArea(.container, edges: stripRail == nil ? [] : .trailing)
         .background(WindowTrailingInsetReader(inset: $trailingInset))
         .background {
