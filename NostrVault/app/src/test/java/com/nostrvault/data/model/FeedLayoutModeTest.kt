@@ -2,79 +2,78 @@ package com.nostrvault.data.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Mirrors iOS `FeedLayoutModeTests.swift`. */
+/** Mirrors iOS `FeedLayoutModeTests.swift`. Compact View is gone (Logen, 2026-11-11). */
 class FeedLayoutModeTest {
 
     @Test
-    fun `cycle visits all three on a timeline`() {
-        var mode = FeedLayoutMode.EXPANDED
-        val seen = mutableListOf(mode)
-        repeat(3) {
-            mode = mode.next(supportsThreading = true)
-            seen.add(mode)
-        }
-        assertEquals(
-            listOf(FeedLayoutMode.EXPANDED, FeedLayoutMode.CONDENSED, FeedLayoutMode.THREADED, FeedLayoutMode.EXPANDED),
-            seen,
-        )
+    fun `only expanded and threaded are left`() {
+        assertEquals(listOf(FeedLayoutMode.EXPANDED, FeedLayoutMode.THREADED), FeedLayoutMode.entries)
     }
 
     @Test
-    fun `cycle skips threaded where threading is unsupported`() {
-        assertEquals(FeedLayoutMode.EXPANDED, FeedLayoutMode.CONDENSED.next(supportsThreading = false))
-        assertEquals(FeedLayoutMode.CONDENSED, FeedLayoutMode.EXPANDED.next(supportsThreading = false))
+    fun `the button toggles expanded and threaded on a timeline`() {
+        assertEquals(FeedLayoutMode.THREADED, FeedLayoutMode.EXPANDED.next(supportsThreading = true))
+        assertEquals(FeedLayoutMode.EXPANDED, FeedLayoutMode.THREADED.next(supportsThreading = true))
+        assertEquals("Threaded View", FeedLayoutMode.EXPANDED.nextDisplayName(supportsThreading = true))
+        assertEquals("Expanded View", FeedLayoutMode.THREADED.nextDisplayName(supportsThreading = true))
     }
 
     @Test
-    fun `threaded clamps to condensed on a grid feed`() {
-        assertEquals(FeedLayoutMode.CONDENSED, FeedLayoutMode.THREADED.clamped(supportsThreading = false))
+    fun `a feed that cannot thread stays expanded`() {
+        assertEquals(FeedLayoutMode.EXPANDED, FeedLayoutMode.EXPANDED.next(supportsThreading = false))
+        assertEquals(FeedLayoutMode.EXPANDED, FeedLayoutMode.THREADED.next(supportsThreading = false))
+        assertEquals(FeedLayoutMode.EXPANDED, FeedLayoutMode.THREADED.clamped(supportsThreading = false))
         assertEquals(FeedLayoutMode.THREADED, FeedLayoutMode.THREADED.clamped(supportsThreading = true))
-        assertEquals(FeedLayoutMode.EXPANDED, FeedLayoutMode.EXPANDED.clamped(supportsThreading = false))
     }
 
     @Test
-    fun `both condensed layouts use condensed rows`() {
+    fun `expanded starts with replies off and threaded with them on`() {
+        assertFalse(FeedLayoutMode.EXPANDED.showsRepliesByDefault)
+        assertTrue(FeedLayoutMode.THREADED.showsRepliesByDefault)
+    }
+
+    @Test
+    fun `threaded keeps its condensed rows and expanded draws full cards`() {
         assertFalse(FeedLayoutMode.EXPANDED.usesCondensedRows)
-        assertTrue(FeedLayoutMode.CONDENSED.usesCondensedRows)
         assertTrue(FeedLayoutMode.THREADED.usesCondensedRows)
     }
 
     @Test
     fun `stored layout wins`() {
-        assertEquals(
-            FeedLayoutMode.THREADED,
-            FeedLayoutMode.resolve(storedLayout = "threaded", storedCompact = false, defaultCompact = false),
-        )
+        assertEquals(FeedLayoutMode.THREADED, FeedLayoutMode.resolve("threaded"))
+        assertEquals(FeedLayoutMode.EXPANDED, FeedLayoutMode.resolve("expanded"))
     }
 
     @Test
-    fun `legacy compact override migrates`() {
-        // Someone who had turned compact ON for this feed must not be reset.
-        assertEquals(
-            FeedLayoutMode.CONDENSED,
-            FeedLayoutMode.resolve(storedLayout = null, storedCompact = true, defaultCompact = false),
-        )
-        // And someone who had turned it OFF against an ON default keeps expanded.
-        assertEquals(
-            FeedLayoutMode.EXPANDED,
-            FeedLayoutMode.resolve(storedLayout = null, storedCompact = false, defaultCompact = true),
-        )
+    fun `a saved condensed layout reads as expanded`() {
+        assertEquals(FeedLayoutMode.EXPANDED, FeedLayoutMode.resolve("condensed"))
+        assertEquals(FeedLayoutMode.EXPANDED, FeedLayoutMode.fromStorageKey("condensed"))
     }
 
     @Test
-    fun `falls back to the feed default when nothing is stored`() {
-        assertEquals(FeedLayoutMode.CONDENSED, FeedLayoutMode.resolve(storedLayout = null, storedCompact = null, defaultCompact = true))
-        assertEquals(FeedLayoutMode.EXPANDED, FeedLayoutMode.resolve(storedLayout = null, storedCompact = null, defaultCompact = false))
+    fun `nothing stored or an unknown value falls back to expanded rather than crashing`() {
+        assertEquals(FeedLayoutMode.EXPANDED, FeedLayoutMode.resolve(null))
+        assertEquals(FeedLayoutMode.EXPANDED, FeedLayoutMode.resolve("galaxy-brain"))
+        assertNull(FeedLayoutMode.fromStorageKey("galaxy-brain"))
     }
 
     @Test
-    fun `an unknown stored value falls back rather than crashing`() {
-        assertEquals(
-            FeedLayoutMode.CONDENSED,
-            FeedLayoutMode.resolve(storedLayout = "galaxy-brain", storedCompact = true, defaultCompact = false),
+    fun `migration rewrites condensed feeds and leaves the rest`() {
+        val migrated = FeedLayoutMode.migrateCondensed(
+            mapOf("FOLLOWING" to "condensed", "GLOBAL" to "threaded", "ARTICLES" to "expanded"),
         )
+        assertEquals(mapOf("FOLLOWING" to "expanded", "GLOBAL" to "threaded", "ARTICLES" to "expanded"), migrated)
+    }
+
+    @Test
+    fun `migration runs once`() {
+        val once = FeedLayoutMode.migrateCondensed(mapOf("FOLLOWING" to "condensed"))!!
+        assertNull(FeedLayoutMode.migrateCondensed(once))
+        assertNull(FeedLayoutMode.migrateCondensed(emptyMap()))
+        assertNull(FeedLayoutMode.migrateCondensed(mapOf("FOLLOWING" to "threaded")))
     }
 }

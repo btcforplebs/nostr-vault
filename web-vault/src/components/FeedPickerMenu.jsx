@@ -28,7 +28,6 @@ const DASHBOARD_ICON = "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"
 const EDIT_ICON = "M4 6h10M4 12h7M4 18h10M18 5v14M15 16l3 3 3-3M15 8l3-3 3 3" // arrow.up.arrow.down + list
 const LAYOUT_ICON = {
   expanded: "M4 4h16v7H4zM4 14h16v6H4z",
-  condensed: "M4 5h16M4 10h16M4 15h16M4 20h16",
   threaded: "M4 5h.01M8 5h12M8 10h.01M12 10h8M8 15h.01M12 15h8M4 20h.01M8 20h12",
 }
 const TOGGLE_ICON = {

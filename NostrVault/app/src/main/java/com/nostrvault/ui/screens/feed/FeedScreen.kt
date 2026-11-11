@@ -378,6 +378,7 @@ fun FeedScreen(
                 feedMode = feedMode,
                 connectionStatus = connectionStatus,
                 layoutMode = layoutMode,
+                canThread = viewModel.feedSupportsThreading(feedMode),
                 autoLoad = autoLoad,
                 showReposts = showReposts,
                 showReplies = showReplies,

@@ -38,6 +38,8 @@ internal fun FeedTopBar(
     feedMode: FeedMode,
     connectionStatus: String,
     layoutMode: FeedLayoutMode,
+    /** The feed can switch to Threaded View; feeds that cannot get no layout button. */
+    canThread: Boolean,
     autoLoad: Boolean,
     showReposts: Boolean,
     showReplies: Boolean,
@@ -191,25 +193,25 @@ internal fun FeedTopBar(
             }
         }
 
-        // ── Trailing pill: compact toggle + mode-dependent filters.
-        // Reels has no layout button, so folded there leaves nothing to show.
-        // The fold is read only in Reels: elsewhere its flip never recomposes
+        // ── Trailing pill: layout toggle + mode-dependent filters.
+        // Feeds that cannot thread have no layout button, so folded there
+        // leaves nothing to show.
+        // The fold is read only on those feeds: elsewhere its flip never recomposes
         // this bar (the pieces fold in layout, and FoldBlocked takes the taps).
         val folded = rememberChromeFolded()
         AnimatedVisibility(
-            visible = !(feedMode == FeedMode.REELS && folded.value),
+            visible = !(!canThread && folded.value),
             enter = fadeIn(Motion.chrome()),
             exit = fadeOut(Motion.chrome()),
         ) { GlassPill(
             horizontalArrangement = Arrangement.Start,
             modifier = Modifier.tutorialAnchor(com.nostrvault.tutorials.TutorialContent.FEED_TOOLBAR),
         ) {
-            // Layout mode toggle: expanded -> condensed -> threaded -> expanded.
-            // Reels is one video per screen — there is no layout to switch.
-            if (feedMode != FeedMode.REELS) IconButton(onClick = onCycleLayoutMode, modifier = Modifier.size(40.dp)) {
+            // Layout toggle: expanded <-> threaded. Feeds that cannot thread
+            // (grids, card lists, Reels) stay expanded and get no button.
+            if (canThread) IconButton(onClick = onCycleLayoutMode, modifier = Modifier.size(40.dp)) {
                 val icon = when (layoutMode) {
                     FeedLayoutMode.EXPANDED -> NostrVaultIcons.ExpandedView
-                    FeedLayoutMode.CONDENSED -> NostrVaultIcons.CompactView
                     FeedLayoutMode.THREADED -> NostrVaultIcons.ThreadedView
                 }
                 Icon(

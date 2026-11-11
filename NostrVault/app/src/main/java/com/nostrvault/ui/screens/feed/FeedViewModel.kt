@@ -360,21 +360,16 @@ class FeedViewModel @Inject constructor(
      * article list has no replies to gather. Mirrors iOS
      * `FeedView.currentFeedSupportsThreading`.
      */
-    private fun feedSupportsThreading(mode: FeedMode): Boolean = when (mode) {
+    /** Whether [mode] can switch to Threaded View; the rest have no layout button. */
+    fun feedSupportsThreading(mode: FeedMode): Boolean = when (mode) {
         FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR,
         FeedMode.CATCH_UP, FeedMode.UNDERRATED, FeedMode.HASHTAGS -> true
         FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.POLLS, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.REELS, FeedMode.MUSIC -> false
     }
 
-    private fun defaultCompact(mode: FeedMode): Boolean = when (mode) {
-        FeedMode.FOLLOWING -> false
-        FeedMode.MEDIA -> false
-        else -> configStore.config.value.useFeedCompactMode
-    }
-
     /**
-     * The stored layout for the current feed, migrating anyone who had the
-     * old per-feed compact boolean set. Mirrors iOS
+     * The stored layout for the current feed; anything else, including the
+     * retired Compact View, reads as expanded. Mirrors iOS
      * `FeedView.layoutModeForCurrentFeed`.
      */
     val layoutMode: StateFlow<FeedLayoutMode> = combine(
@@ -386,13 +381,9 @@ class FeedViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), resolveLayoutMode(_feedMode.value, configStore.config.value))
 
     private fun resolveLayoutMode(mode: FeedMode, config: com.nostrvault.relay.HavenConfig): FeedLayoutMode =
-        FeedLayoutMode.resolve(
-            storedLayout = config.feedLayoutModes[mode.name],
-            storedCompact = config.feedCompactModes[mode.name],
-            defaultCompact = defaultCompact(mode),
-        ).clamped(supportsThreading = feedSupportsThreading(mode))
+        FeedLayoutMode.resolve(config.feedLayoutModes[mode.name]).clamped(supportsThreading = feedSupportsThreading(mode))
 
-    /** Condensed rows are active — either of the two condensed layouts. */
+    /** Condensed rows are active: Threaded View's lines. */
     val compactModeEnabled: StateFlow<Boolean> = layoutMode
         .map { it.usesCondensedRows }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), layoutMode.value.usesCondensedRows)
@@ -402,7 +393,7 @@ class FeedViewModel @Inject constructor(
         .map { it == FeedLayoutMode.THREADED }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), layoutMode.value == FeedLayoutMode.THREADED)
 
-    /** Advance the current feed one step around expanded -> condensed -> threaded and persist it. */
+    /** Toggle the current feed between expanded and threaded and persist it. */
     fun cycleLayoutMode() {
         val mode = _feedMode.value
         setLayoutMode(layoutMode.value.next(supportsThreading = feedSupportsThreading(mode)))
@@ -412,6 +403,7 @@ class FeedViewModel @Inject constructor(
     fun setLayoutMode(mode: FeedLayoutMode) {
         val feedMode = _feedMode.value
         val resolved = mode.clamped(supportsThreading = feedSupportsThreading(feedMode))
+        val previous = resolveLayoutMode(feedMode, configStore.config.value)
         configStore.update { config ->
             config.copy(
                 feedLayoutModes = config.feedLayoutModes + (feedMode.name to resolved.storageKey),
@@ -419,12 +411,15 @@ class FeedViewModel @Inject constructor(
                 feedCompactModes = config.feedCompactModes + (feedMode.name to resolved.usesCondensedRows),
             )
         }
-        // A threaded feed with replies filtered out would show nothing but
-        // roots, which is the layout the user just left. Turn replies on with
-        // it; the Replies filter still switches them back off.
+        // Expanded starts with replies off (single posts), threaded with them
+        // on (whole conversations); the Replies filter still flips them by
+        // hand in either layout (Logen, 2026-11-11). Only a real switch
+        // moves it, and only on feeds whose layout can change.
         // Hashtags runs its own subscription; the Replies filter is not its.
-        if (resolved == FeedLayoutMode.THREADED && feedMode != FeedMode.HASHTAGS && !feedService.showReplies.value) {
-            feedService.setShowReplies(true)
+        if (resolved != previous && feedMode != FeedMode.HASHTAGS &&
+            feedService.showReplies.value != resolved.showsRepliesByDefault
+        ) {
+            feedService.setShowReplies(resolved.showsRepliesByDefault)
         }
         _layoutModeToggle.value++
         resortThreads()
