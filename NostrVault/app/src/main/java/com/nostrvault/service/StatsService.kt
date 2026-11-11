@@ -6,6 +6,7 @@ import com.nostrvault.data.local.CredentialStore
 import com.nostrvault.data.remote.LocalTls
 import com.nostrvault.data.remote.RelayConnection
 import com.nostrvault.data.remote.WebSocketClient
+import com.nostrvault.relay.vaultAuthRelayTag
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
@@ -118,12 +119,15 @@ class StatsService @Inject constructor(
         /**
          * The NIP-42 `relay` tag for an endpoint that answers COUNT only after
          * the owner's AUTH (/private, /chat), or null for one that doesn't.
-         * Built like DM's: `localRelayURL`, the relay's ServiceURL. An external
-         * relay folds every path onto one URL, so it never matches.
+         * Signed like DM's: the endpoint's `localRelayURL` through
+         * vaultAuthRelayTag (wss://, haven-go's ServiceURL); the raw ws:// socket
+         * address failed the owner AUTH. An external relay folds every path onto
+         * one URL, so it never matches.
          */
         internal fun authRelayTag(config: com.nostrvault.relay.HavenConfig, relayUrl: String): String? {
             if (config.useExternalRelay) return null
             return listOf("private", "chat").mapNotNull { config.localRelayURL(it) }.firstOrNull { it == relayUrl }
+                ?.let { config.vaultAuthRelayTag(it) }
         }
 
         /**

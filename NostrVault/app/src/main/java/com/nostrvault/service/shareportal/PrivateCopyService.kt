@@ -5,6 +5,7 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.RelayForegroundService
+import com.nostrvault.relay.vaultAuthRelayTag
 import com.nostrvault.service.AmberSignerService
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.NIP46Service
@@ -159,7 +160,7 @@ class PrivateCopyService @Inject constructor(
         nostrService.signEventAsync(
             kind = 22242,
             content = "",
-            tags = listOf(listOf("relay", url), listOf("challenge", challenge)),
+            tags = listOf(listOf("relay", configStore.config.value.vaultAuthRelayTag(url)), listOf("challenge", challenge)),
             forceOwner = true,
         )
     }.getOrNull()
