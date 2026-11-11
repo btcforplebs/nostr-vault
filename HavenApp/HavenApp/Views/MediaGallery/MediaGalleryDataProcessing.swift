@@ -326,9 +326,6 @@ extension MediaGalleryView {
         // Skip rescan if cache is fresh and this isn't a forced reload (e.g. after upload/delete)
         if !force && cache.isFresh() { return }
 
-        // Concurrency guard
-        if cache.isScanning { return }
-
         // Only load if relay is ready
         guard relayManager.isRunning && !relayManager.isBooting else {
             #if DEBUG
@@ -338,63 +335,71 @@ extension MediaGalleryView {
             return
         }
 
+        // One scan at a time; a request mid-scan runs one more scan after it
+        // (MediaRescanGate), so a file landing during a scan still shows.
+        guard cache.rescanGate.request() else { return }
         cache.isScanning = true
 
         Task {
-            let relayDataDir = configService.relayDataDir
-            let blossomPath = configService.config.blossomPath
-            let ownerHex = nostrService.activeHexPubkey
-            let webURL = configService.config.webURL
-            let rpm = relayManager
+            repeat {
+                let relayDataDir = configService.relayDataDir
+                let blossomPath = configService.config.blossomPath
+                let ownerHex = nostrService.activeHexPubkey
+                let webURL = configService.config.webURL
+                let rpm = relayManager
 
-            let result = await Task.detached(priority: .background) { () -> [MediaItem] in
-                let blossomDir = relayDataDir.appendingPathComponent(blossomPath)
-                if !FileManager.default.fileExists(atPath: blossomDir.path) {
-                    try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
-                    return []
-                }
-
-                guard let fileURLs = try? FileManager.default.contentsOfDirectory(at: blossomDir, includingPropertiesForKeys: [.creationDateKey]) else {
-                    return []
-                }
-
-                return fileURLs.compactMap { fileURL -> MediaItem? in
-                    let filename = fileURL.lastPathComponent
-                    if filename.starts(with: ".") || filename == "LOCK" { return nil }
-                    guard let serveURL = URL(string: "\(webURL)/\(filename)") else { return nil }
-
-                    let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
-                    let date = (attributes?[.modificationDate] as? Date) ?? (attributes?[.creationDate] as? Date) ?? Date()
-
-                    // Same detection pipeline as blossom export: proof (bytes) + claim (relay) -> resolve
-                    let proof = rpm.detectMimeFromBytes(for: fileURL)
-                    let resolvedMime = rpm.resolveMime(claim: nil, proof: proof)
-                    let mimeType = resolvedMime == "application/octet-stream" ? nil : resolvedMime
-
-                    let mediaType: MediaItem.MediaType
-                    if let mime = mimeType {
-                        if mime.hasPrefix("video/") { mediaType = .video }
-                        else if mime.hasPrefix("audio/") { mediaType = .audio }
-                        else if mime.hasPrefix("image/") { mediaType = .image }
-                        else { mediaType = .unknown }
-                    } else {
-                        mediaType = .unknown
+                let result = await Task.detached(priority: .background) { () -> [MediaItem] in
+                    let blossomDir = relayDataDir.appendingPathComponent(blossomPath)
+                    if !FileManager.default.fileExists(atPath: blossomDir.path) {
+                        try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
+                        return []
                     }
 
-                    return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: date, pubkey: ownerHex, tags: nil, mimeType: mimeType)
-                }
-            }.value
+                    guard let fileURLs = try? FileManager.default.contentsOfDirectory(at: blossomDir, includingPropertiesForKeys: [.creationDateKey]) else {
+                        return []
+                    }
 
-            await MainActor.run {
-                if cache.items.count != result.count {
-                    #if DEBUG
-                    print("MediaGallery: Loaded \(result.count) Blossom media items")
-                    #endif
+                    return fileURLs.compactMap { fileURL -> MediaItem? in
+                        let filename = fileURL.lastPathComponent
+                        if filename.starts(with: ".") || filename == "LOCK" { return nil }
+                        guard let serveURL = URL(string: "\(webURL)/\(filename)") else { return nil }
+
+                        let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+                        let date = (attributes?[.modificationDate] as? Date) ?? (attributes?[.creationDate] as? Date) ?? Date()
+
+                        // Same detection pipeline as blossom export: proof (bytes) + claim (relay) -> resolve
+                        let proof = rpm.detectMimeFromBytes(for: fileURL)
+                        let resolvedMime = rpm.resolveMime(claim: nil, proof: proof)
+                        let mimeType = resolvedMime == "application/octet-stream" ? nil : resolvedMime
+
+                        let mediaType: MediaItem.MediaType
+                        if let mime = mimeType {
+                            if mime.hasPrefix("video/") { mediaType = .video }
+                            else if mime.hasPrefix("audio/") { mediaType = .audio }
+                            else if mime.hasPrefix("image/") { mediaType = .image }
+                            else { mediaType = .unknown }
+                        } else {
+                            mediaType = .unknown
+                        }
+
+                        return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: date, pubkey: ownerHex, tags: nil, mimeType: mimeType)
+                    }
+                }.value
+
+                await MainActor.run {
+                    // Same files (by URL): keep the shown items, so a rescan that
+                    // found nothing new doesn't redraw the grid.
+                    if MediaRescanGate.filesChanged(old: cache.items.map(\.url), new: result.map(\.url)) {
+                        #if DEBUG
+                        print("MediaGallery: Loaded \(result.count) Blossom media items")
+                        #endif
+                        cache.items = result
+                        cache.revision &+= 1
+                    }
+                    cache.lastScanDate = Date()
                 }
-                cache.items = result
-                cache.lastScanDate = Date()
-                cache.isScanning = false
-            }
+            } while await MainActor.run(body: { cache.rescanGate.finish() })
+            await MainActor.run { cache.isScanning = false }
         }
     }
 

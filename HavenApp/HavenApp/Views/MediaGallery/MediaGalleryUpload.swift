@@ -10,15 +10,10 @@ import Photos
 
 extension MediaGalleryView {
 
-    /// Auto-Mirror lists every server and scans every note, so it runs at
-    /// most once every few hours, not on every visit to the Media tab.
-    static let autoMirrorEvery: TimeInterval = 3 * 60 * 60
-
+    /// Auto-Mirror also runs when the app opens (AutoMirrorOnOpen); this is
+    /// the same once-every-few-hours run, asked for from the Media tab.
     func triggerAutoMirrorIfEnabled() {
-        guard configService.config.autoMirrorMedia else { return }
-        if let last = VaultHistory.lastMediaImport,
-           Date().timeIntervalSince(last) < Self.autoMirrorEvery { return }
-        MirrorService.shared.runMirror(configService: configService, nostrService: nostrService)
+        AutoMirrorOnOpen.runIfDue()
     }
 
     #if os(iOS)

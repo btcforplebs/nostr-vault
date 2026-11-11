@@ -39,6 +39,9 @@ class AppDelegate: NSObject, ObservableObject {
         // over connections that are merely re-establishing after wake.
         SleepWakeMonitor.shared.start()
 
+        // Auto-Mirror runs when the app opens, not only from the Media tab.
+        AutoMirrorOnOpen.start()
+
         // A plaintext owner key in config.json is encrypted and scrubbed from
         // its copies, as on iOS. Less than iOS gets: the login keychain keeps
         // no ThisDeviceOnly class and has no access groups, and it travels

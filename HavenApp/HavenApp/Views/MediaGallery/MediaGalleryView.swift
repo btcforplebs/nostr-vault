@@ -501,7 +501,7 @@ struct MediaGalleryView: View {
             mediaLocationFilter: mediaLocationFilter,
             mediaTypeFilter: mediaTypeFilter,
             sortOption: sortOption,
-            blossomItemsCount: blossomCache.items.count,
+            blossomRevision: blossomCache.revision,
             noteMediaCount: nostrService.noteMedia.count,
             wotCount: feedService.wotPubkeys.count,
             activeAccountNpub: configService.config.activeAccountNpub,
@@ -619,7 +619,7 @@ struct MediaGalleryChangeHandlers: ViewModifier {
     let mediaLocationFilter: MediaLocationFilter
     let mediaTypeFilter: Set<MediaTypeFilter>
     let sortOption: MediaSortOption
-    let blossomItemsCount: Int
+    let blossomRevision: Int
     let noteMediaCount: Int
     let wotCount: Int
     let activeAccountNpub: String
@@ -638,7 +638,7 @@ struct MediaGalleryChangeHandlers: ViewModifier {
             .onChange(of: mediaLocationFilter) { _, _ in onScheduleUpdate() }
             .onChange(of: mediaTypeFilter) { _, _ in onScheduleUpdate() }
             .onChange(of: sortOption) { _, _ in onScheduleUpdate() }
-            .onChange(of: blossomItemsCount) { _, _ in onScheduleUpdate() }
+            .onChange(of: blossomRevision) { _, _ in onScheduleUpdate() }
             .onChange(of: noteMediaCount) { _, _ in onScheduleUpdate() }
             .onChange(of: wotCount) { _, _ in onScheduleUpdate() }
             .onChange(of: activeAccountNpub) { _, _ in onAccountChange() }

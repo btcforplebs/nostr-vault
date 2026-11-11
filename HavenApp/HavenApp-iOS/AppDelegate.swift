@@ -137,6 +137,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             // follow list is known. (HavenApp/App/iOSAppDelegate.swift is not
             // in the iOS target; this file is.)
             FillYourVaultCoordinator.shared.start()
+            // Auto-Mirror runs when the app opens, not only from the Media tab.
+            AutoMirrorOnOpen.start()
             // The mesh copy v2: resume a cut copy, catch up with linked
             // devices, keep copy-settings.json in step.
             MeshCopyV2Service.shared.startWatching()
