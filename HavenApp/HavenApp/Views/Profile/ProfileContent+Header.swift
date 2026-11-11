@@ -284,7 +284,7 @@ extension ProfileContent {
             if let website = profile?.website, !website.isEmpty,
                let url = URL(string: website.hasPrefix("http") ? website : "https://\(website)") {
                 let shown = website.replacingOccurrences(of: "https://", with: "").replacingOccurrences(of: "http://", with: "")
-                Button { openURL(url) } label: {
+                Button { PlatformURL.openLink(url) } label: {
                     linkChip(shown, icon: "globe", tint: .havenPurple)
                 }
                 .accessibilityLabel("Open \(shown)")

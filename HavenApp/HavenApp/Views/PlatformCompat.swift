@@ -264,6 +264,21 @@ struct PlatformClipboard {
 // MARK: - Open URL
 
 struct PlatformURL {
+    /// A link someone wrote or shared (a preview card, "Open in …", a shop
+    /// button): the in-app browser, by the same rules as a link in a note
+    /// (`InAppBrowser.route`). Anything the browser does not take (mailto:,
+    /// lightning:, or "Open Links in Nostr Vault" off) goes to the system.
+    @MainActor
+    static func openLink(_ url: URL) {
+        if FipsURL.route(url, inApp: InAppBrowser.opensLinksInApp) == .system {
+            open(url)
+        } else {
+            _ = InAppBrowser.route(url)
+        }
+    }
+
+    /// Straight to the system, for the app's own hand-offs (settings, help,
+    /// App Store, a signer app). User content goes through `openLink(_:)`.
     @MainActor
     static func open(_ url: URL) {
         #if canImport(AppKit)

@@ -238,7 +238,7 @@ struct ArticleReaderView: View {
             }
             .accessibilityLabel(Text("Share"))
             if let link = note.webLink {
-                Button { PlatformURL.open(link.url) } label: {
+                Button { PlatformURL.openLink(link.url) } label: {
                     actionIcon("safari", tint: .secondary)
                 }
                 .buttonStyle(.plain)

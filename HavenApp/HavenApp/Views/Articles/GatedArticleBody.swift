@@ -12,7 +12,6 @@ struct GatedArticleBody: View {
     let gated: GatedArticle
     var onImageTap: ((URL) -> Void)? = nil
     @EnvironmentObject var nostrService: NostrService
-    @Environment(\.openURL) private var openURL
 
     private enum Phase: Equatable {
         case checking, locked, unlocked(String), failed(String)
@@ -76,7 +75,7 @@ struct GatedArticleBody: View {
                 #if os(macOS)
                 if let url = fanfaresURL {
                     Button {
-                        openURL(url)
+                        PlatformURL.openLink(url)
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "arrow.up.right.square")
