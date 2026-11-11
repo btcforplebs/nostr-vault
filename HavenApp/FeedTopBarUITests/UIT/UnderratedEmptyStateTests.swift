@@ -17,6 +17,7 @@ final class UnderratedEmptyStateTests: XCTestCase {
         app.launch()
         setUpReadOnlyIfNeeded(app)
         for _ in 0..<3 where app.buttons["Skip"].exists { app.buttons["Skip"].firstMatch.tap(); sleep(1) }
+        dismissGuideCard(app)
         XCTAssertTrue(pick("Underrated", in: app), "could not open Underrated")
 
         let build = app.buttons["underrated.buildWiderNetwork"]
@@ -55,6 +56,7 @@ final class UnderratedEmptyStateTests: XCTestCase {
     private func waitForEither(_ a: XCUIElement, _ b: XCUIElement, timeout: TimeInterval) -> Bool {
         let end = Date().addingTimeInterval(timeout)
         while Date() < end {
+            dismissGuideCard(XCUIApplication(bundleIdentifier: "com.havenapp.relay"))
             if a.exists || b.exists { return true }
             sleep(2)
         }
@@ -68,6 +70,14 @@ final class UnderratedEmptyStateTests: XCTestCase {
             sleep(3)
         }
         return false
+    }
+
+    /// The "Fill your feed" card comes up on a fresh install with few follows.
+    /// It is opaque and centred, so it sits right over Underrated's empty
+    /// screen (still there behind it); close it first.
+    private func dismissGuideCard(_ app: XCUIApplication) {
+        let notNow = app.buttons["Not now"].firstMatch
+        if notNow.exists && notNow.isHittable { notNow.tap(); sleep(1) }
     }
 
     private func feedPicker(_ app: XCUIApplication) -> XCUIElement {
