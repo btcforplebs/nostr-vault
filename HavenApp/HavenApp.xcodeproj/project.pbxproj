@@ -282,6 +282,7 @@
 		23004E70DDB38018D103B675 /* ProfileShareReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3BAD623C758946DC5D1406 /* ProfileShareReviewView.swift */; };
 		235D949819FB1494455DECFE /* WOTTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87E74FE78BCF7E5FCA1AA9CF /* WOTTabView.swift */; };
 		237F591A8848414C7E5B15E3 /* RelayProcessManager+FirstRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A8787F8C6DC62731C2BC67B /* RelayProcessManager+FirstRun.swift */; };
+		2395B169C43428057243B8B4 /* VideoTileFit.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E46F82F53A3265979C7F24 /* VideoTileFit.swift */; };
 		23ABD5A29BBE5B2F598A29F2 /* ProfileSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F58012CD7192B288A68542B7 /* ProfileSection.swift */; };
 		23C61C15E3150332841E0236 /* LiveTrustPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0148FE6656C62C9C703374B7 /* LiveTrustPath.swift */; };
 		24061E0732D3F1D3B3B3650D /* ArticleClipShareHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECB765BB1B85F451DDEABBFF /* ArticleClipShareHandler.swift */; };
@@ -782,6 +783,7 @@
 		6198FAA51E82AACDD675FEDE /* NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 118DA8971CC8566F3783F1EE /* NowPlayingView.swift */; };
 		61A85468EFF7CB9C6B455D49 /* NoteNavigationLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54018888DDE538484D3BC086 /* NoteNavigationLink.swift */; };
 		61B265539F4CF2C75E71715E /* NostrService+DeletedPosts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3137A6E9972110B05584AE69 /* NostrService+DeletedPosts.swift */; };
+		61F3A3F3EF531AB5850A16CA /* VideoTileFit.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E46F82F53A3265979C7F24 /* VideoTileFit.swift */; };
 		6224CB5CF33FB1A934BF1FA8 /* SupportedMediaFormats.swift in Sources */ = {isa = PBXBuildFile; fileRef = B18859E95D1E981CB5491E8F /* SupportedMediaFormats.swift */; };
 		624396D34161DFD7AD2E9E47 /* NostrService+ServerListAdoption.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20CD71E4D4331E21582E6E2 /* NostrService+ServerListAdoption.swift */; };
 		624C04782CC198E673420D0F /* Motion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70A6C2A292B935922711F19B /* Motion.swift */; };
@@ -3100,6 +3102,7 @@
 		E0C0296140A1B912CA95CB33 /* SetupRelayChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupRelayChoice.swift; sourceTree = "<group>"; };
 		E13000616CA698B02FE82B9A /* QuotedNoteSkeleton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotedNoteSkeleton.swift; sourceTree = "<group>"; };
 		E1A58EA5A96FF1042528234F /* VaultFollowers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultFollowers.swift; sourceTree = "<group>"; };
+		E1E46F82F53A3265979C7F24 /* VideoTileFit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoTileFit.swift; sourceTree = "<group>"; };
 		E20CD71E4D4331E21582E6E2 /* NostrService+ServerListAdoption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+ServerListAdoption.swift"; sourceTree = "<group>"; };
 		E21025C4F8626E1E4FFAB180 /* FeedFilterEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedFilterEngine.swift; sourceTree = "<group>"; };
 		E21458F66BFE204CE1479D50 /* MeshPairingHello.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshPairingHello.swift; sourceTree = "<group>"; };
@@ -4408,6 +4411,7 @@
 				1C421342CE309F6D5E901538 /* VaultSessionCore.swift */,
 				FF21CF6914CD51F0FB36D7B3 /* VaultTopics.swift */,
 				0B5E98764373253F27F8526F /* VertexReputation.swift */,
+				E1E46F82F53A3265979C7F24 /* VideoTileFit.swift */,
 				C91987BAC69FE261893A95BA /* Wavlake.swift */,
 				3DEFE8FD51A67D177C07A118 /* WotNewcomers.swift */,
 				5DF3E7F03589E36F93A1077E /* WotRebuildWatch.swift */,
@@ -6157,6 +6161,7 @@
 				B53CB7BCAB2562FD102F3A82 /* VideoPlayerView.swift in Sources */,
 				E3987DF06D639FD7B1B73D96 /* VideoScrubber.swift in Sources */,
 				EF504DE874026A1BCD53E4AF /* VideoThumbnailView.swift in Sources */,
+				2395B169C43428057243B8B4 /* VideoTileFit.swift in Sources */,
 				89E3A2C4B263A881A6C1FDFD /* View+SoftTopScrollEdge.swift in Sources */,
 				235D949819FB1494455DECFE /* WOTTabView.swift in Sources */,
 				B87EB86FC886546FE7D3C67B /* WalletLightningTab+Actions.swift in Sources */,
@@ -7187,6 +7192,7 @@
 				0F45CF2888B3E2626681947B /* VideoPlayerView.swift in Sources */,
 				B5553F1FEAA80003A67C9F4A /* VideoScrubber.swift in Sources */,
 				552053CBD5AFD1A42B1058FF /* VideoThumbnailView.swift in Sources */,
+				61F3A3F3EF531AB5850A16CA /* VideoTileFit.swift in Sources */,
 				B6AE8AA4F41D4F016CC076AF /* View+SoftTopScrollEdge.swift in Sources */,
 				87E1AA7CE257791679836FEF /* WOTTabView.swift in Sources */,
 				94B611BC87589E1E37579081 /* WalletLightningTab+Actions.swift in Sources */,

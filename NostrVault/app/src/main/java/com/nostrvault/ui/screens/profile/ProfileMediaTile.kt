@@ -76,7 +76,7 @@ internal fun ProfileMediaTile(
     val tileModifier = Modifier
         .fillMaxSize()
         .clip(RoundedCornerShape(8.dp))
-        .background(if (isAudio) AudioTileBg else SecondaryGroupedBg)
+        .background(if (isAudio) AudioTileBg else if (isVideo) Color.Black else SecondaryGroupedBg)
         .combinedClickable(
             onClick = onOpen,
             onLongClick = {
@@ -92,7 +92,7 @@ internal fun ProfileMediaTile(
     } else {
         val model = remember(url, author) { profileTileImageModel(context, url, author) }
         Box(contentAlignment = Alignment.Center, modifier = tileModifier) {
-            AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+            AsyncImage(model = model, contentDescription = null, contentScale = com.nostrvault.ui.components.mediaTileContentScale(isVideo), modifier = Modifier.matchParentSize())
             MeshMediaStatusOverlay(url = url, compact = true, modifier = Modifier.matchParentSize())
             if (isVideo) {
                 // iOS VideoThumbnailView: a 40pt play.circle.fill over the frame.

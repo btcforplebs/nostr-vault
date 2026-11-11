@@ -1,5 +1,7 @@
 package com.nostrvault.ui.screens.feed
 
+import com.nostrvault.ui.components.mediaTileContentScale
+import com.nostrvault.ui.components.videoTileBackground
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -124,7 +126,8 @@ private fun MediaGridCell(
     Box(
         modifier = Modifier
             .aspectRatio(1f)
-            .mediaZoomSource(sourceKey, crop = true)
+            .videoTileBackground(isVideoUrl(url))
+            .mediaZoomSource(sourceKey, crop = !isVideoUrl(url))
             .combinedClickable(
                 onClick = onTap,
                 onLongClick = onLongPress,
@@ -133,7 +136,7 @@ private fun MediaGridCell(
         RetryableAsyncImage(
             model = url,
             contentDescription = null,
-            contentScale = ContentScale.Crop,
+            contentScale = mediaTileContentScale(isVideoUrl(url)),
             modifier = Modifier.fillMaxSize(),
             meshAuthor = author,
         )
