@@ -3,63 +3,60 @@ import XCTest
 
 final class FeedLayoutModeTests: XCTestCase {
 
-    func testCycleVisitsAllThreeOnATimeline() {
-        var mode = FeedLayoutMode.expanded
-        var seen: [FeedLayoutMode] = [mode]
-        for _ in 0..<3 {
-            mode = mode.next(supportsThreading: true)
-            seen.append(mode)
-        }
-        XCTAssertEqual(seen, [.expanded, .condensed, .threaded, .expanded])
+    func testButtonTogglesExpandedAndThreaded() {
+        XCTAssertEqual(FeedLayoutMode.allCases, [.expanded, .threaded], "compact view is gone")
+        XCTAssertEqual(FeedLayoutMode.expanded.next(supportsThreading: true), .threaded)
+        XCTAssertEqual(FeedLayoutMode.threaded.next(supportsThreading: true), .expanded)
     }
 
-    func testCycleSkipsThreadedWhereThreadingIsUnsupported() {
-        XCTAssertEqual(FeedLayoutMode.condensed.next(supportsThreading: false), .expanded)
-        XCTAssertEqual(FeedLayoutMode.expanded.next(supportsThreading: false), .condensed)
-    }
-
-    func testThreadedClampsToCondensedOnAGridFeed() {
-        XCTAssertEqual(FeedLayoutMode.threaded.clamped(supportsThreading: false), .condensed)
+    func testFeedsThatCannotThreadStayExpanded() {
+        XCTAssertEqual(FeedLayoutMode.expanded.next(supportsThreading: false), .expanded)
+        XCTAssertEqual(FeedLayoutMode.threaded.clamped(supportsThreading: false), .expanded)
         XCTAssertEqual(FeedLayoutMode.threaded.clamped(supportsThreading: true), .threaded)
-        XCTAssertEqual(FeedLayoutMode.expanded.clamped(supportsThreading: false), .expanded)
     }
 
-    func testBothCondensedLayoutsUseCondensedRows() {
+    func testSwitchingSetsReplies() {
+        XCTAssertFalse(FeedLayoutMode.expanded.showsRepliesOnSwitch, "expanded reads as single posts")
+        XCTAssertTrue(FeedLayoutMode.threaded.showsRepliesOnSwitch)
+    }
+
+    func testThreadedKeepsCondensedRows() {
         XCTAssertFalse(FeedLayoutMode.expanded.usesCondensedRows)
-        XCTAssertTrue(FeedLayoutMode.condensed.usesCondensedRows)
         XCTAssertTrue(FeedLayoutMode.threaded.usesCondensedRows)
     }
 
-    func testStoredLayoutWins() {
-        XCTAssertEqual(
-            FeedLayoutMode.resolve(storedLayout: "threaded", storedCompact: false, defaultCompact: false),
-            .threaded
-        )
+    func testStoredValuesReadSafely() {
+        XCTAssertEqual(FeedLayoutMode(stored: "threaded"), .threaded)
+        XCTAssertEqual(FeedLayoutMode(stored: "expanded"), .expanded)
+        XCTAssertEqual(FeedLayoutMode(stored: "condensed"), .expanded)
+        XCTAssertEqual(FeedLayoutMode(stored: "galaxy-brain"), .expanded)
+        XCTAssertEqual(FeedLayoutMode(stored: nil), .expanded)
     }
 
-    func testLegacyCompactOverrideMigrates() {
-        // Someone who had turned compact ON for this feed must not be reset.
-        XCTAssertEqual(
-            FeedLayoutMode.resolve(storedLayout: nil, storedCompact: true, defaultCompact: false),
-            .condensed
-        )
-        // And someone who had turned it OFF against an ON default keeps expanded.
-        XCTAssertEqual(
-            FeedLayoutMode.resolve(storedLayout: nil, storedCompact: false, defaultCompact: true),
-            .expanded
-        )
+    func testDecodingAnOldCondensedValueDoesNotThrow() throws {
+        let decoded = try JSONDecoder().decode([FeedLayoutMode].self, from: Data(#"["condensed","threaded"]"#.utf8))
+        XCTAssertEqual(decoded, [.expanded, .threaded])
+        let encoded = String(decoding: try JSONEncoder().encode([FeedLayoutMode.threaded]), as: UTF8.self)
+        XCTAssertEqual(encoded, #"["threaded"]"#)
     }
 
-    func testFallsBackToTheFeedDefaultWhenNothingIsStored() {
-        XCTAssertEqual(FeedLayoutMode.resolve(storedLayout: nil, storedCompact: nil, defaultCompact: true), .condensed)
-        XCTAssertEqual(FeedLayoutMode.resolve(storedLayout: nil, storedCompact: nil, defaultCompact: false), .expanded)
+    func testCompactChoicesMigrateToExpanded() {
+        let result = FeedLayoutMode.migrateCompact(
+            layouts: ["Global": "condensed", "Following": "threaded"],
+            legacyCompact: ["Global": true, "Following": true, "Popular": true, "Catch Up": false]
+        )
+        XCTAssertTrue(result.hadCompact)
+        XCTAssertEqual(result.layouts, ["Global": "expanded", "Following": "threaded", "Popular": "expanded"],
+                       "a saved layout beats the legacy switch; legacy compact with no layout becomes expanded")
     }
 
-    func testAnUnknownStoredValueFallsBackRatherThanCrashing() {
-        XCTAssertEqual(
-            FeedLayoutMode.resolve(storedLayout: "galaxy-brain", storedCompact: true, defaultCompact: false),
-            .condensed
+    func testNothingCompactLeavesConfigAndRepliesAlone() {
+        let result = FeedLayoutMode.migrateCompact(
+            layouts: ["Global": "expanded", "Following": "threaded"],
+            legacyCompact: ["Following": true, "Global": false]
         )
+        XCTAssertFalse(result.hadCompact)
+        XCTAssertEqual(result.layouts, ["Global": "expanded", "Following": "threaded"])
     }
 
     // MARK: - Feed picker order

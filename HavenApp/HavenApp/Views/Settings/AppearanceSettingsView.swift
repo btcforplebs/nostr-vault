@@ -48,8 +48,7 @@ struct AppearanceSettingsView: View {
             // colour-theme picker below.
 
             Section {
-                lineLimitStepper("Compact View", systemImage: "rectangle.compress.vertical",
-                                 value: $configService.config.compactLineLimit, info: .displayCompactLines)
+                // No Compact View row: that layout is gone (Logen, 2026-11-11).
                 lineLimitStepper("Threaded View", systemImage: "list.bullet.indent",
                                  value: $configService.config.threadedLineLimit, info: .displayThreadedLines)
             } header: {

@@ -117,7 +117,7 @@ extension FeedView {
         .animation(Motion.fade, value: feedService.visiblePendingCount)
     }
 
-    /// Cycles expanded → condensed → threaded. Shared by the full trailing
+    /// Switches expanded ⇄ threaded. Shared by the full trailing
     /// row and the collapsed top bar, which keeps only this button.
     var layoutModeButton: some View {
         IconFilterButton(
@@ -316,11 +316,15 @@ struct FeedToolbarState: Equatable {
         if reposts != old.reposts {
             return Self.shownOrHidden("Reposts", icon: "arrow.2.squarepath", shown: reposts)
         }
+        // The layout switch also sets replies, so its note names both.
+        if layout != old.layout {
+            let setting = replies != old.replies
+                ? "\(layout.shortName), replies \(replies ? "shown" : "hidden")"
+                : layout.shortName
+            return FilterNote(icon: layout.symbolName, title: "Layout", setting: setting)
+        }
         if replies != old.replies {
             return Self.shownOrHidden("Replies", icon: "message.fill", shown: replies)
-        }
-        if layout != old.layout {
-            return FilterNote(icon: layout.symbolName, title: "Layout", setting: layout.shortName)
         }
         if pollStatus != old.pollStatus {
             return FilterNote(icon: pollStatus.symbolName, title: "Polls", setting: pollStatus == .all ? "Open and closed" : "\(pollStatus.rawValue) only")
@@ -409,7 +413,6 @@ private extension FeedLayoutMode {
     var shortName: String {
         switch self {
         case .expanded: return "Expanded"
-        case .condensed: return "Compact"
         case .threaded: return "Threaded"
         }
     }
