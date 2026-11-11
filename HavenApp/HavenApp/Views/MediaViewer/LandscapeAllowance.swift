@@ -50,7 +50,9 @@ enum LandscapeAllowance {
     /// Reads only the clip's header; a clip that cannot be read stays upright.
     static func turnSidewaysIfWide(_ url: URL) async {
         #if os(iOS)
-        guard isPhone, count.allowsLandscape else { return }
+        guard isPhone else { return }
+        // The clip's own view can appear a moment before the viewer around it
+        // opens its slot, so the slot is checked after the read, not before.
         guard let size = await displaySize(ofVideoAt: url),
               LandscapeCount.turnsSideways(size),
               !Task.isCancelled else { return }
