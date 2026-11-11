@@ -156,6 +156,7 @@ private fun NoteDetailPane(pick: NotePick, navController: NavHostController, onP
                 onProfileClick = profile,
                 onComment = reply,
                 onNoteClick = { onPick(NotePick.Note(it)) },
+                onArticleClick = { onPick(NotePick.Article(it)) },
                 viewModel = hiltViewModel(key = "article-pane:${pick.id}"),
             )
         }

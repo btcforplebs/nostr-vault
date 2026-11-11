@@ -38,4 +38,10 @@ class ArticleQuoteSplitTest {
     @Test fun `a block with no quote is left alone`() {
         assertNull(QuoteRef.articleQuoteSplit("Plain words and https://njump.me/nevent1aaa", decoder))
     }
+
+    /** iOS and web leave code alone; a reference in a fence is code, not a quote. */
+    @Test fun `a code fence is left alone`() {
+        assertNull(QuoteRef.articleQuoteSplit("```\nnostr:nevent1aaa\n```", decoder))
+        assertNull(QuoteRef.articleQuoteSplit("~~~kotlin\nval x = \"nostr:note1aaa\"\n~~~", decoder))
+    }
 }

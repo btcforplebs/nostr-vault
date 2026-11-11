@@ -185,9 +185,12 @@ object QuoteRef {
      * cut out, and the lookup keys of what they quote, so the reader draws each
      * as a card instead of a bare `nostr:nevent1…` (Logen, 2026-11-11). A
      * markdown link to a reference (`[label](nostr:…)`) keeps its label as
-     * text. Null when the block quotes nothing. iOS `articleQuoteSplit`.
+     * text. Null when the block quotes nothing or is a code fence. iOS `articleQuoteSplit`.
      */
     fun articleQuoteSplit(block: String, decoder: Decoder): Pair<String, List<String>>? {
+        // A code fence stays code, as on iOS and web (Tara, #1938 review).
+        val head = block.trimStart()
+        if (head.startsWith("```") || head.startsWith("~~~")) return null
         val ids = resolvedIdentifiers(block, decoder)
         if (ids.isEmpty()) return null
         val rest = BareNostrRefs.prefixBare(block)

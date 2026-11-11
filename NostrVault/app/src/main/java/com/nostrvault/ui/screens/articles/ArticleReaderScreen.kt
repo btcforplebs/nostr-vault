@@ -31,6 +31,8 @@ fun ArticleReaderScreen(
     onProfileClick: (String) -> Unit,
     onComment: (String) -> Unit,
     onNoteClick: (String) -> Unit,
+    /** A quoted article in the body opens here, not on the note screen (which shows its Markdown source). */
+    onArticleClick: (String) -> Unit,
     viewModel: ArticleReaderViewModel = hiltViewModel(),
 ) {
     val note by viewModel.note.collectAsState()
@@ -144,7 +146,7 @@ fun ArticleReaderScreen(
                 quoteCard = { qid ->
                     val quoted = remember(qid, quotedNotes) { viewModel.quotedNoteFor(qid) }
                     if (quoted != null) {
-                        QuotedNoteCard(note = quoted, profile = profiles[quoted.pubkey], profiles = profiles, onClick = onNoteClick)
+                        QuotedNoteCard(note = quoted, profile = profiles[quoted.pubkey], profiles = profiles, onClick = onNoteClick, onArticleClick = onArticleClick)
                     } else {
                         QuotedNotePlaceholder(identifier = qid, onClick = onNoteClick)
                     }

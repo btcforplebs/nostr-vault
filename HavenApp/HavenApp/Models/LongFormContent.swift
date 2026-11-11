@@ -185,7 +185,7 @@ enum MarkdownParser {
                     let text = afterHashes.trimmingCharacters(in: .whitespaces)
                     if !text.isEmpty {
                         flushParagraph()
-                        blocks.append(.heading(level: hashes, text: text))
+                        appendQuoting(text) { .heading(level: hashes, text: $0) }
                         continue
                     }
                 }
@@ -199,7 +199,7 @@ enum MarkdownParser {
 
             if line.hasPrefix("> ") || line == ">" {
                 flushParagraph()
-                blocks.append(.quote(String(line.dropFirst(1)).trimmingCharacters(in: .whitespaces)))
+                appendQuoting(String(line.dropFirst(1)).trimmingCharacters(in: .whitespaces), as: MarkdownBlock.quote)
                 continue
             }
 

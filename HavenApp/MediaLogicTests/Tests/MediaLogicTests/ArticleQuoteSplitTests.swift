@@ -30,4 +30,16 @@ final class ArticleQuoteSplitTests: XCTestCase {
     func testTextWithNoQuoteIsLeftAlone() {
         XCTAssertNil(QuoteReference.articleQuoteSplit("Plain words and https://njump.me/\(nevent)"))
     }
+
+    /// Tara (#1938): a quote in a blockquote or heading draws as a card too;
+    /// the opened article no longer lists its quotes under the body.
+    func testABlockquoteOrHeadingQuoteBecomesACard() {
+        XCTAssertEqual(MarkdownParser.parse("> nostr:\(nevent)"), [.quotes([hexId])])
+        XCTAssertEqual(MarkdownParser.parse("## Read nostr:\(nevent)"),
+                       [.heading(level: 2, text: "Read"), .quotes([hexId])])
+    }
+
+    func testACodeFenceIsLeftAlone() {
+        XCTAssertEqual(MarkdownParser.parse("```\nnostr:\(nevent)\n```"), [.code("nostr:\(nevent)")])
+    }
 }
