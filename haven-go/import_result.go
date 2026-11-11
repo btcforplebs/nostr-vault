@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
 	"regexp"
 	"slices"
 	"strconv"
@@ -222,5 +221,5 @@ func observeImportLine(line string) {
 }
 
 func importOtherVaultRelay() string {
-	return strings.TrimSpace(os.Getenv(importOtherVaultEnv))
+	return strings.TrimSpace(hostGetenv(importOtherVaultEnv))
 }

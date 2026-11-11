@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -111,7 +110,7 @@ const listHistoryAccountEnv = "HAVEN_IMPORT_LIST_HISTORY_ACCOUNT"
 // scanAccount: listHistoryAccountEnv when it names one of this vault's
 // accounts, else "" (no scan).
 func scanAccount() string {
-	pk := strings.ToLower(strings.TrimSpace(os.Getenv(listHistoryAccountEnv)))
+	pk := strings.ToLower(strings.TrimSpace(hostGetenv(listHistoryAccountEnv)))
 	if !nostr.IsValidPublicKey(pk) {
 		return ""
 	}
@@ -246,7 +245,7 @@ func scanListHistory(ctx context.Context, relays, owners []string, kinds []int) 
 // several keys asked together from one IP would link them (Tron, PR 1641).
 func importListHistory(ctx context.Context) historyScanResult {
 	account := scanAccount()
-	if os.Getenv(listHistoryOptInEnv) != "1" || account == "" {
+	if hostGetenv(listHistoryOptInEnv) != "1" || account == "" {
 		historyScanStatus.Store("")
 		return historyScanResult{}
 	}

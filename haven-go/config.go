@@ -360,7 +360,7 @@ func UpdateBlacklist(pubkeys map[string]struct{}) {
 // read as "every kind" — a malformed list must not silence notifications.
 func getKindSet(key string) map[int]struct{} {
 	out := map[int]struct{}{}
-	for _, part := range strings.Split(os.Getenv(key), ",") {
+	for _, part := range strings.Split(hostGetenv(key), ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
@@ -373,7 +373,7 @@ func getKindSet(key string) map[int]struct{} {
 }
 
 func getEnv(key string) string {
-	value, exists := os.LookupEnv(key)
+	value, exists := lookupHostEnv(key)
 	if !exists {
 		log.Printf("⚠️ Environment variable %s not set", key)
 		return ""
@@ -382,7 +382,7 @@ func getEnv(key string) string {
 }
 
 func getEnvString(key string, defaultValue string) string {
-	if value, ok := os.LookupEnv(key); ok {
+	if value, ok := lookupHostEnv(key); ok {
 		return value
 	}
 	return defaultValue
@@ -401,7 +401,7 @@ func badEnv(key, value string, err error, fallback any) {
 }
 
 func getEnvInt(key string, defaultValue int) int {
-	if value, ok := os.LookupEnv(key); ok {
+	if value, ok := lookupHostEnv(key); ok {
 		intValue, err := strconv.Atoi(value)
 		if err != nil {
 			badEnv(key, value, err, defaultValue)
@@ -413,7 +413,7 @@ func getEnvInt(key string, defaultValue int) int {
 }
 
 func getEnvInt64(key string, defaultValue int64) int64 {
-	if value, ok := os.LookupEnv(key); ok {
+	if value, ok := lookupHostEnv(key); ok {
 		intValue, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
 			badEnv(key, value, err, defaultValue)
@@ -425,7 +425,7 @@ func getEnvInt64(key string, defaultValue int64) int64 {
 }
 
 func getEnvBool(key string, defaultValue bool) bool {
-	if value, ok := os.LookupEnv(key); ok {
+	if value, ok := lookupHostEnv(key); ok {
 		boolValue, err := strconv.ParseBool(value)
 		if err != nil {
 			badEnv(key, value, err, defaultValue)
@@ -437,7 +437,7 @@ func getEnvBool(key string, defaultValue bool) bool {
 }
 
 func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
-	if value, ok := os.LookupEnv(key); ok {
+	if value, ok := lookupHostEnv(key); ok {
 		durationValue, err := time.ParseDuration(value)
 		if err != nil {
 			badEnv(key, value, err, defaultValue)

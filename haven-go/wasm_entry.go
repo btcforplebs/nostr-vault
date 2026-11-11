@@ -134,7 +134,7 @@ func havenStart(cfg js.Value) error {
 		return fmt.Errorf("havenStart: ownerNpub %q is not a valid npub", ownerNpub)
 	}
 	os.Setenv("OWNER_NPUB", ownerNpub)
-	if os.Getenv("DB_ENGINE") == "" {
+	if hostGetenv("DB_ENGINE") == "" {
 		os.Setenv("DB_ENGINE", "badger") // there is no LMDB here; skip the warning
 	}
 

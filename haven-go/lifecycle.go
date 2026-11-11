@@ -7,7 +7,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"sort"
 	"strconv"
 	"sync"
@@ -261,7 +260,7 @@ func (c *relayCycle) startMeshServer() {
 	if c.meshServer != nil || c.server == nil {
 		return
 	}
-	port, err := strconv.Atoi(os.Getenv("HAVEN_MESH_PLAIN_PORT"))
+	port, err := strconv.Atoi(hostGetenv("HAVEN_MESH_PLAIN_PORT"))
 	if err != nil || port <= 0 {
 		log.Println("⚠️ mesh sharing asked for, but HAVEN_MESH_PLAIN_PORT is not set")
 		return
@@ -293,7 +292,7 @@ func (c *relayCycle) startOwnServer() {
 	if c.ownServer != nil || c.server == nil {
 		return
 	}
-	raw := os.Getenv("HAVEN_MESH_OWN_PORT")
+	raw := hostGetenv("HAVEN_MESH_OWN_PORT")
 	if raw == "" {
 		return
 	}

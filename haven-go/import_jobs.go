@@ -98,7 +98,7 @@ const jobsFileVersion = 1
 // (the process directory moves with account switches, Tron background risks).
 // Replaced in tests.
 var importJobsPath = func() string {
-	if db := os.Getenv("DATABASE_PATH"); db != "" {
+	if db := hostGetenv("DATABASE_PATH"); db != "" {
 		return filepath.Join(filepath.Dir(strings.TrimRight(db, "/")), "import_jobs.json")
 	}
 	if abs, err := filepath.Abs("import_jobs.json"); err == nil {
@@ -766,7 +766,7 @@ const firstRunEnv = "HAVEN_FIRST_RUN"
 // (Logen, answer 2); until it has, the relay keeps to the follows web, which
 // takes a second, not 90. Everyone else keeps the configured depth.
 func effectiveWotDepth() int {
-	if config.WotDepth <= 2 || (!jobsFileExists() && os.Getenv(firstRunEnv) != "1") {
+	if config.WotDepth <= 2 || (!jobsFileExists() && hostGetenv(firstRunEnv) != "1") {
 		return config.WotDepth
 	}
 	jobsMu.Lock()
