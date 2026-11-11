@@ -54,6 +54,8 @@ internal fun ProfileMediaTile(
     author: String,
     viewModel: ProfileViewModel,
     onOpen: () -> Unit,
+    /** The decoded frame's size, so a portrait video's row can stand taller. */
+    onFrameSize: (androidx.compose.ui.geometry.Size) -> Unit,
     onReport: (String) -> Unit,
     onBlock: (String) -> Unit,
     /** Asks to delete this tile's blob (by hash); only offered on your own Blossom files. */
@@ -92,7 +94,7 @@ internal fun ProfileMediaTile(
     } else {
         val model = remember(url, author) { profileTileImageModel(context, url, author) }
         Box(contentAlignment = Alignment.Center, modifier = tileModifier) {
-            AsyncImage(model = model, contentDescription = null, contentScale = com.nostrvault.ui.components.mediaTileContentScale(isVideo), modifier = Modifier.matchParentSize())
+            AsyncImage(model = model, contentDescription = null, contentScale = com.nostrvault.ui.components.mediaTileContentScale(isVideo), onSuccess = { if (isVideo) onFrameSize(it.painter.intrinsicSize) }, modifier = Modifier.matchParentSize())
             MeshMediaStatusOverlay(url = url, compact = true, modifier = Modifier.matchParentSize())
             if (isVideo) {
                 // iOS VideoThumbnailView: a 40pt play.circle.fill over the frame.

@@ -2,6 +2,7 @@ package com.nostrvault.ui.screens.feed
 
 import com.nostrvault.ui.components.mediaTileContentScale
 import com.nostrvault.ui.components.videoTileBackground
+import com.nostrvault.ui.components.VideoFrameRatios
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -55,6 +56,7 @@ internal fun MediaFeedGrid(
     // 1:1 with the grid. filterMediaNotes guarantees a non-empty mediaURLs per note.
     val gridUrls = remember(notes) { notes.map { it.mediaURLs.first() } }
     val zoomOrigin = remember { MediaZoomSources.newOrigin() }
+    val frameRatios = remember { VideoFrameRatios() }
 
     // Infinite scroll: load older media as the user nears the end of the grid.
     val shouldLoadMore by remember {
@@ -66,7 +68,7 @@ internal fun MediaFeedGrid(
     LoadMoreEffect(shouldLoadMore, isLoadingMore, notes.size, onLoadMore)
 
     LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
+        columns = GridCells.Fixed(GRID_COLUMNS),
         state = gridState,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -81,8 +83,15 @@ internal fun MediaFeedGrid(
             key = { notes[it].id },
         ) { index ->
             val note = notes[index]
+            val rowStart = index - index % GRID_COLUMNS
+            val tileAspect = frameRatios.rowAspect(
+                gridUrls.subList(rowStart, minOf(rowStart + GRID_COLUMNS, gridUrls.size)),
+                ::isVideoUrl,
+            )
             MediaGridCell(
                 url = note.mediaURLs.first(),
+                tileAspect = tileAspect,
+                onFrameSize = { size -> frameRatios.learned(note.mediaURLs.first(), size.width, size.height) },
                 mediaCount = note.mediaURLs.size,
                 sourceKey = MediaSourceKey(zoomOrigin, index),
                 author = note.pubkey,
@@ -117,6 +126,8 @@ internal fun MediaFeedGrid(
 @Composable
 private fun MediaGridCell(
     url: String,
+    tileAspect: Float,
+    onFrameSize: (androidx.compose.ui.geometry.Size) -> Unit,
     mediaCount: Int,
     sourceKey: MediaSourceKey,
     author: String,
@@ -125,7 +136,7 @@ private fun MediaGridCell(
 ) {
     Box(
         modifier = Modifier
-            .aspectRatio(1f)
+            .aspectRatio(tileAspect)
             .videoTileBackground(isVideoUrl(url))
             .mediaZoomSource(sourceKey, crop = !isVideoUrl(url))
             .combinedClickable(
@@ -139,6 +150,7 @@ private fun MediaGridCell(
             contentScale = mediaTileContentScale(isVideoUrl(url)),
             modifier = Modifier.fillMaxSize(),
             meshAuthor = author,
+            onLoaded = onFrameSize,
         )
 
         // Top-right indicator: stacked-squares for multi-media, play for a lone video.
@@ -166,3 +178,5 @@ private fun MediaGridCell(
         }
     }
 }
+
+private const val GRID_COLUMNS = 3
