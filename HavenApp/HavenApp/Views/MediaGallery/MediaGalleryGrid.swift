@@ -120,6 +120,7 @@ extension MediaGalleryView {
                                 ) {
                                     withAnimation(Motion.pick) { selectedMedia = item }
                                 }
+                                .equatable()
                                 .onAppear {
                                     if item.id == displayMedia.last?.id {
                                         loadMoreItems()

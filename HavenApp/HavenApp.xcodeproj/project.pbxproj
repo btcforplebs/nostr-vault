@@ -1256,6 +1256,7 @@
 		9B692850B1F877C9E5E76246 /* RelayProcessManager+Readiness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30FB368C842D044344C828BA /* RelayProcessManager+Readiness.swift */; };
 		9B6AD5F6E50B252F9B39DF80 /* ComposeTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3F496906984D6ECD30AED13 /* ComposeTextView.swift */; };
 		9B7EAB5161D2211D2C606077 /* VaultActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C9495BF4A2CC74326F7221 /* VaultActivity.swift */; };
+		9B8DEB4DDAD45A45805AAAF1 /* VaultFeedCounts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3686A0172DF59800612DC8BC /* VaultFeedCounts.swift */; };
 		9B8F0ADC8DA2449B457C347A /* RelayConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 674B477FC2EDC213BEA34279 /* RelayConfiguration.swift */; };
 		9BD7AD83A9CFA1F7599F3B88 /* ArticleClipReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BCCF93729CB6A3A2DD9C2B3 /* ArticleClipReviewView.swift */; };
 		9BE3DC9CC895E8B0CE69AAF8 /* GlobeEdge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F3BE28BF7980055E4D418F8 /* GlobeEdge.swift */; };
@@ -1829,6 +1830,7 @@
 		DFDA2D4ADCC88506D3F07CF0 /* SleepWakeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B403C7767568BFB3E44E0CE /* SleepWakeMonitor.swift */; };
 		DFFC01343DA4371437214187 /* MacRelayDomainSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B94D10CDC71BCC7F67AC26E1 /* MacRelayDomainSettingsView.swift */; };
 		E06E050A55097E0E672B9C3F /* QueuedMediaPost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32EA96B6514D35753903D9D6 /* QueuedMediaPost.swift */; };
+		E09604AF1783D7097CAFF881 /* VaultFeedCounts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3686A0172DF59800612DC8BC /* VaultFeedCounts.swift */; };
 		E0A5461B68AE422C1589FC94 /* BlossomMediaCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B16351ED2F5677D2447FC87 /* BlossomMediaCache.swift */; };
 		E0AEE7D87B73FF5DA4703EC1 /* NostrVaultWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D5FDEA395EFFC23FE419C55 /* NostrVaultWidgetBundle.swift */; };
 		E0B0B7229805AE34DE01C716 /* LocalRelaySearchSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CE7BC31C983DC50BC5885B2 /* LocalRelaySearchSession.swift */; };
@@ -2356,6 +2358,7 @@
 		35CEC11DFB9799BD11CD5E4F /* NIP46SessionChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP46SessionChoice.swift; sourceTree = "<group>"; };
 		3654B7BC5E734E0DC3B701E6 /* ListBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListBackupService.swift; sourceTree = "<group>"; };
 		36581F99F445CBEAF161E867 /* SharePortalReviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharePortalReviewSheet.swift; sourceTree = "<group>"; };
+		3686A0172DF59800612DC8BC /* VaultFeedCounts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultFeedCounts.swift; sourceTree = "<group>"; };
 		36FE1EDB1B925C1F07EA87C2 /* ListVersionMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListVersionMerge.swift; sourceTree = "<group>"; };
 		370D303713065845F38D3B0D /* MediaNotesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaNotesSheet.swift; sourceTree = "<group>"; };
 		37AF46E9A3FA8D16190AD62B /* RevealKeySheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevealKeySheetView.swift; sourceTree = "<group>"; };
@@ -3444,6 +3447,7 @@
 				982E5846CE3EB2461F41A4FB /* VaultChangeHandlers.swift */,
 				EB0CF7D47686F1256BEF99DB /* VaultDataProcessing.swift */,
 				F10FAB057E10D3468126BB35 /* VaultEngagement.swift */,
+				3686A0172DF59800612DC8BC /* VaultFeedCounts.swift */,
 				E1A58EA5A96FF1042528234F /* VaultFollowers.swift */,
 				8EE02D17B251A319CA3CAA1A /* VaultModeLists.swift */,
 				48F5705A371573904C7229D4 /* VaultNetworking.swift */,
@@ -6114,6 +6118,7 @@
 				02DDC26D86827A85D18DD2BA /* VaultDataProcessing.swift in Sources */,
 				B945E14E5D350FCBAD2AC481 /* VaultEngagement.swift in Sources */,
 				34BF42B63E341849F797B7AB /* VaultExporter.swift in Sources */,
+				E09604AF1783D7097CAFF881 /* VaultFeedCounts.swift in Sources */,
 				B139C60064CD42C867B118AA /* VaultFollowers.swift in Sources */,
 				AF6D3E5C03968B94B0607626 /* VaultMeter.swift in Sources */,
 				6814DBA708E44A94F8A812F1 /* VaultModeLists.swift in Sources */,
@@ -7142,6 +7147,7 @@
 				F886F6AEE134AD4080106B31 /* VaultDataProcessing.swift in Sources */,
 				3242652E93E3319F20522E09 /* VaultEngagement.swift in Sources */,
 				4D3E84359AF0633335C904A1 /* VaultExporter.swift in Sources */,
+				9B8DEB4DDAD45A45805AAAF1 /* VaultFeedCounts.swift in Sources */,
 				AC9CA321936FEDA14BAE1810 /* VaultFollowers.swift in Sources */,
 				09EE495904ECC83CD74C087B /* VaultMeter.swift in Sources */,
 				9A2AB3396D1713C352DDE23E /* VaultModeLists.swift in Sources */,

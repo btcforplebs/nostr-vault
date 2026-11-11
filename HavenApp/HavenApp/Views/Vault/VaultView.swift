@@ -7,7 +7,11 @@ struct VaultView: View {
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var relayManager: RelayProcessManager
     @ObservedObject var vaultSection = VaultSection.shared
-    @StateObject var feedService = FeedService.shared
+    /// Read, not watched: FeedService publishes on every feed and relay
+    /// change, and the Vault shows none of it but two counts.
+    /// `feedCounts` watches those.
+    var feedService: FeedService { FeedService.shared }
+    @StateObject var feedCounts = VaultFeedCounts()
     /// The openURL around this tab, for #hashtag links (see nostrLinkAction).
     @Environment(\.openURL) var inheritedOpenURL
 
@@ -417,8 +421,8 @@ struct VaultView: View {
             eventsCount: nostrService.events.count,
             blacklistedNpubs: configService.config.blockedNpubsPerAccount[configService.config.activeAccountNpub.isEmpty ? configService.config.ownerNpub : configService.config.activeAccountNpub] ?? (configService.config.activeAccountNpub.isEmpty ? configService.config.blacklistedNpubs : []),
             activeAccountNpub: configService.config.activeAccountNpub,
-            wotCount: feedService.wotPubkeys.count,
-            followCount: feedService.followedPubkeys.count,
+            wotCount: feedCounts.wot,
+            followCount: feedCounts.follows,
             onResetAndUpdate: {
                 maxDisplayedItems = 50
                 notesHasLoadedOnce = false
