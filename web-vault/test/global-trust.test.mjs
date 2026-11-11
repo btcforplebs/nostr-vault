@@ -6,6 +6,8 @@ import { readFileSync } from "node:fs"
 import { globalShows, filterGlobal } from "../src/net/global-trust.js"
 import { fetchStrangerFeed } from "../src/net/feeds.js"
 import { TRUSTED_AUTHORS_CAP } from "../src/readers/trust.js"
+import { visibleNotes } from "../src/net/blocks.js"
+import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools/pure"
 
 const swift = path => readFileSync(new URL(`../../HavenApp/HavenApp/${path}`, import.meta.url), "utf8")
 const ME = "0".repeat(64), A = "a".repeat(64), B = "b".repeat(64), S = "5".repeat(64)
@@ -17,7 +19,7 @@ test("the Swift Global branch is the rule ported here", () => {
   const src = swift("Services/FeedFilterEngine.swift")
   const branch = src.slice(src.indexOf("if mode == .global {"), src.indexOf("if mode == .following {"))
   // Judged on the signer: a repost's reposter, never the author its content names (PR 1926). The web's note.pubkey
-  // is the signer too; trustShows also wants the reposted author in the web (Logen 2026-11-04).
+  // is the signer too, and trustShows checks only it (Logen 2026-11-11).
   assert.match(branch, /if globalRequiresTrust && !wotPubkeys\.contains\(note\.repostedBy \?\? note\.pubkey\) \{ return false \}/)
   assert.match(branch, /if note\.isReply \{ return false \}/)
   // Fails closed: the trust set is your saved web plus follows, so with no saved web just your follows, and empty
@@ -38,12 +40,22 @@ test("Global shows trusted authors' notes, never a stranger's, never a reply", (
   assert.equal(globalShows(note("5", A, { kind: 1111, tags: [["e", "f".repeat(64)]] }), trust), false)
 })
 
-test("a repost shows only when the reposter and the reposted note's author are both in the web (Logen 2026-11-04)", () => {
+test("a repost shows when the reposter is in the web, whoever wrote the reposted note (Logen 2026-11-11, as iPhone/Mac/Android)", () => {
   const boostOfStranger = note("r1", A, { kind: 6, content: JSON.stringify(note("x", S)) })
   const strangerBoostsTrusted = note("r2", S, { kind: 6, content: JSON.stringify(note("y", A)) })
   const boostOfTrusted = note("r3", A, { kind: 6, content: JSON.stringify(note("z", A)) })
   const bareBoostOfStranger = note("r4", A, { kind: 6, content: "", tags: [["e", "x"], ["p", S]] })
-  assert.deepEqual(filterGlobal([boostOfStranger, strangerBoostsTrusted, boostOfTrusted, bareBoostOfStranger], trust).map(n => n.id), ["r3"])
+  // Judged on the signer only: a stranger's repost never carries a trusted name in.
+  assert.deepEqual(filterGlobal([boostOfStranger, strangerBoostsTrusted, boostOfTrusted, bareBoostOfStranger], trust).map(n => n.id), ["r1", "r3", "r4"])
+  // Blocked people stay out: a trusted person's repost of someone you blocked is still hidden, by the signed note it
+  // carries or, bare, by its p tag (blocks.js isBlockedNote).
+  const sk = generateSecretKey(), X = getPublicKey(sk)
+  const signed = finalizeEvent({ kind: 1, created_at: 100, content: "blocked person's note", tags: [] }, sk)
+  const boostOfBlocked = note("r5", A, { kind: 6, content: JSON.stringify(signed), tags: [["e", signed.id]] })
+  const bareBoostOfBlocked = note("r6", A, { kind: 6, content: "", tags: [["e", "x"], ["p", X]] })
+  const shown = filterGlobal([boostOfBlocked, bareBoostOfBlocked, boostOfTrusted], trust)
+  assert.deepEqual(shown.map(n => n.id), ["r5", "r6", "r3"])
+  assert.deepEqual(visibleNotes(shown, new Set([X])).map(n => n.id), ["r3"])
 })
 
 test("no web yet shows nothing: Global fails closed", () => {
