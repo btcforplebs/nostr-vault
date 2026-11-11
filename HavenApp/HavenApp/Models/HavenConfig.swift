@@ -40,11 +40,10 @@ struct HavenConfig: Codable, Equatable {
     /// the decoder forces it true regardless of what was saved.
     var useOLED: Bool = true
     var textSizeScale: Double = 1.0
-    var useFeedCompactMode: Bool = true // Legacy global default; per-feed overrides live in feedCompactModes
-    var feedCompactModes: [String: Bool] = [:] // Per-feed compact-mode overrides, keyed by FeedMode.rawValue
     /// Per-feed layout choice (expanded / threaded), keyed by
-    /// FeedMode.rawValue. Supersedes `feedCompactModes`; a saved compact
-    /// choice is rewritten as expanded on load (`FeedLayoutMode.migrateCompact`).
+    /// FeedMode.rawValue. A compact choice saved by an older build (here or
+    /// in the legacy `feedCompactModes` key) is rewritten as expanded on load
+    /// (`FeedLayoutMode.migrateCompact`).
     /// New installs open the timeline feeds in Threaded View (Logen,
     /// 2026-10-08). Saved configs keep their own, including older ones
     /// without this key (see `init(from:)`).
@@ -57,11 +56,8 @@ struct HavenConfig: Codable, Equatable {
     /// The floating "New Posts" pill over the feed. Off, waiting posts load
     /// on pull-to-refresh (or by themselves at the top with Auto-Load).
     var showNewPostsPill: Bool = true
-    /// Lines of note text a row shows in Compact View.
-    var compactLineLimit: Int = HavenConfig.defaultCompactLineLimit
     /// Lines of text a thread's root shows in Threaded View; replies show one fewer.
     var threadedLineLimit: Int = HavenConfig.defaultThreadedLineLimit
-    static let defaultCompactLineLimit = 3
     static let defaultThreadedLineLimit = 5
     static let lineLimitRange = 1...12
     /// ISO 639-1 codes the Global feed is narrowed to. Empty shows every language.
@@ -304,10 +300,16 @@ struct HavenConfig: Codable, Equatable {
     
     // MARK: - Decodable implementation to handle migrations
     
+    /// Keys older builds wrote for the retired Compact View; read once on
+    /// load so a compact feed migrates, never written back.
+    private enum LegacyCompactKeys: String, CodingKey {
+        case feedCompactModes
+    }
+
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
         case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, disableMediaCache, autoplayVideos, cacheTTLDays, prefetchProfilePictures, vertexLookups, fanfaresAutoCheck, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
-        case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, feedLayoutModes, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, compactLineLimit, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage, hideNostrVaultBadge
+        case useOLED, textSizeScale, feedLayoutModes, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage, hideNostrVaultBadge
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications, notifyOwnAccountTags
         case macRelayURL
@@ -376,8 +378,9 @@ struct HavenConfig: Codable, Equatable {
         // that had it switched off must not come back looking like the old theme.
         useOLED = true
         textSizeScale = try container.decodeIfPresent(Double.self, forKey: .textSizeScale) ?? defaults.textSizeScale
-        useFeedCompactMode = try container.decodeIfPresent(Bool.self, forKey: .useFeedCompactMode) ?? defaults.useFeedCompactMode
-        feedCompactModes = try container.decodeIfPresent([String: Bool].self, forKey: .feedCompactModes) ?? defaults.feedCompactModes
+        // Read only to migrate: older builds saved a per-feed compact switch.
+        let legacy = try decoder.container(keyedBy: LegacyCompactKeys.self)
+        let feedCompactModes = try legacy.decodeIfPresent([String: Bool].self, forKey: .feedCompactModes) ?? [:]
         // Not `defaults`: a config from before this key existed keeps its
         // legacy compact choice instead of jumping to Threaded View.
         feedLayoutModes = try container.decodeIfPresent([String: String].self, forKey: .feedLayoutModes) ?? [:]
@@ -391,7 +394,6 @@ struct HavenConfig: Codable, Equatable {
         zapsOnlyMode = try container.decodeIfPresent(Bool.self, forKey: .zapsOnlyMode) ?? defaults.zapsOnlyMode
         disableTabBarAnimation = try container.decodeIfPresent(Bool.self, forKey: .disableTabBarAnimation) ?? defaults.disableTabBarAnimation
         showNewPostsPill = try container.decodeIfPresent(Bool.self, forKey: .showNewPostsPill) ?? defaults.showNewPostsPill
-        compactLineLimit = try container.decodeIfPresent(Int.self, forKey: .compactLineLimit) ?? defaults.compactLineLimit
         threadedLineLimit = try container.decodeIfPresent(Int.self, forKey: .threadedLineLimit) ?? defaults.threadedLineLimit
         globalFeedLanguages = try container.decodeIfPresent([String].self, forKey: .globalFeedLanguages) ?? defaults.globalFeedLanguages
         showTranslateButton = try container.decodeIfPresent(Bool.self, forKey: .showTranslateButton) ?? defaults.showTranslateButton

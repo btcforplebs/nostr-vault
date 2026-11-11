@@ -98,11 +98,6 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
         "New Posts Pill",
         "Shows a pill with the number of new posts waiting above your feed. Turned off, pull down to refresh to load them.",
     ),
-    DISPLAY_COMPACT_LINES(
-        "display.compactLines",
-        "Compact View Lines",
-        "How many lines of a post's text show in Compact View before it is cut off.",
-    ),
     DISPLAY_THREADED_LINES(
         "display.threadedLines",
         "Threaded View Lines",

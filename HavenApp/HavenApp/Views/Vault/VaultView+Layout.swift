@@ -221,8 +221,6 @@ extension VaultView {
     var desktopHeaderView: some View {
         VStack(spacing: 12) {
             #if os(macOS)
-            // iOS rows are always full (`rowLayoutMode`), so on a wide iPad
-            // the condensed toggle switched nothing; the Mac row carries it.
             macModeFilterRow
             #endif
 

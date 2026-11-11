@@ -208,24 +208,6 @@ struct VaultView: View {
     @State var walletGivenKey: String?
     @State var walletGivenLoading = false
 
-    @AppStorage("viewerNoteLayoutMode") var noteLayoutMode: NoteLayoutMode = .expanded
-
-    enum NoteLayoutMode: String {
-        case expanded
-        case compact
-    }
-
-    /// The phone's Relay tab has no layout switch, so it always shows full
-    /// rows; a "compact" left in storage from the old toggle would otherwise
-    /// be stuck on with no way off. The Mac keeps its toggle.
-    var rowLayoutMode: NoteLayoutMode {
-        #if os(iOS)
-        return .expanded
-        #else
-        return noteLayoutMode
-        #endif
-    }
-
     // Debounce mechanism for updateDisplayData
     @State var updateTask: Task<Void, Never>?
     @State var updateGeneration: Int = 0

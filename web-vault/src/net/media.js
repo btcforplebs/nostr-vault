@@ -13,7 +13,7 @@ export function mediaType(url) {
   return VIDEO.test(path) ? "video" : IMAGE.test(path) ? "image" : ""
 }
 
-/** The note a tile or a Compact/Threaded row stands for: a kind 1 itself, or the note inside a kind 6 repost if its
+/** The note a tile or a Threaded View line stands for: a kind 1 itself, or the note inside a kind 6 repost if its
  *  signature checks. Otherwise null, and the row fetches the note by id: a forged inner pubkey is never drawn as the
  *  author (whose mesh vault a photo would dial). */
 export function tileNote(ev) {
@@ -21,7 +21,7 @@ export function tileNote(ev) {
 }
 
 /** The image and video links in a note, in order, once each: its text and its NIP-92 imeta tags. A NIP-F1 photo link
- *  (http://<npub>.fips/<sha256>) is kept, as an image: the Media grid, Compact thumbs and reply previews draw images
+ *  (http://<npub>.fips/<sha256>) is kept, as an image: the Media grid, thread-line thumbs and reply previews draw images
  *  with MediaImage, which reads it over the mesh. Any other .fips link is left out: a <video>, or an <img> MediaImage
  *  doesn't read, would look the name up over DNS. */
 export function mediaUrls(note) {

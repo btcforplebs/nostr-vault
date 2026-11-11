@@ -1,15 +1,14 @@
 // Settings › Feed Text (iPhone AppearanceSettingsView): how many lines of text a post shows before it is cut off.
-// Compact View 3 and Threaded View 5 by default, 1 to 12 (HavenConfig.compactLineLimit / threadedLineLimit); in
-// Threaded View a reply shows one line fewer than its root (FeedThreadCard). Kept in this browser.
+// Threaded View 5 by default, 1 to 12 (HavenConfig.threadedLineLimit); a reply shows one line fewer than its root
+// (FeedThreadCard). Compact View is gone (2026-11-11), and its line count with it. Kept in this browser.
 export const LINE_LIMITS = {
-  compact: { key: "display.compactLineLimit", fallback: 3, title: "Compact View" },
   threaded: { key: "display.threadedLineLimit", fallback: 5, title: "Threaded View" },
 }
 export const MIN_LINES = 1, MAX_LINES = 12
 
 const clamp = n => Math.min(MAX_LINES, Math.max(MIN_LINES, n))
 
-/** Lines for `view` ("compact" | "threaded"): the saved whole number in range, else the default. */
+/** Lines for `view` ("threaded"): the saved whole number in range, else the default. */
 export function lineLimit(view, storage = globalThis.localStorage) {
   const { key, fallback } = LINE_LIMITS[view]
   let raw = null

@@ -36,8 +36,6 @@ import com.nostrvault.data.model.FeedLayoutMode
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedThread
 import com.nostrvault.data.model.FeedThreadGrouping
-import com.nostrvault.ui.components.CompactNoteCard
-import com.nostrvault.ui.components.CondensedEngagement
 import com.nostrvault.ui.components.CondensedQuote
 import com.nostrvault.ui.components.CondensedQuoteActions
 import com.nostrvault.ui.components.FeedThreadCard
@@ -315,7 +313,7 @@ internal fun HashtagsFeed(
     viewModel: HashtagsFeedViewModel,
     listState: LazyListState,
     contentPadding: PaddingValues,
-    /** The feed's layout button: full cards, compact lines, or conversations. */
+    /** The feed's layout button: full cards or conversations. */
     layoutMode: FeedLayoutMode,
     onNoteClick: (String) -> Unit,
     onArticleClick: (String) -> Unit,
@@ -338,8 +336,6 @@ internal fun HashtagsFeed(
     val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
     val likedIds by viewModel.likedEventIds.collectAsState()
     val repostedIds by viewModel.repostedEventIds.collectAsState()
-    // Read per row through derivedStateOf: one note's stats recompose one row.
-    val statsState = viewModel.noteStats.collectAsState()
     val suggestions by viewModel.suggestions.collectAsState()
     val suggestionsLoading by viewModel.suggestionsLoading.collectAsState()
     val saving by viewModel.saving.collectAsState()
@@ -377,11 +373,9 @@ internal fun HashtagsFeed(
         )
     }
 
-    // Compact lines open in place first, like the main feed; thread cards
-    // share the same open note.
+    // Thread card lines open in place first, like the main feed's.
     var openNoteId by remember { mutableStateOf<String?>(null) }
     val threadFolds = remember { mutableStateMapOf<String, Boolean>() }
-    val isCompact = layoutMode.usesCondensedRows
     val isThreaded = layoutMode == FeedLayoutMode.THREADED
     // Both sections grouped in one pass, so replies from a follow and from
     // your network land in the same card. A card goes on top when anyone you
@@ -404,34 +398,6 @@ internal fun HashtagsFeed(
     val fullRow: @Composable (FeedNote) -> Unit = { note ->
         HashtagNote(note, quotedNotesCache, profiles, likedIds, repostedIds, viewModel,
             openNote, onArticleClick, onProfileClick, reply, quote)
-    }
-    val noteRow: @Composable (FeedNote) -> Unit = { note ->
-        if (isCompact && openNoteId != note.id) {
-            val zapsOnly = LocalZapsOnlyMode.current
-            val engagement by remember(note.id, zapsOnly) {
-                derivedStateOf {
-                    val stats = statsState.value[note.effectiveEventId]
-                    CondensedEngagement(
-                        reactions = if (zapsOnly) 0 else stats?.reactions ?: 0,
-                        reposts = stats?.reposts ?: 0,
-                    )
-                }
-            }
-            CompactNoteCard(
-                note = note,
-                profile = profiles[note.pubkey],
-                profiles = profiles,
-                engagement = engagement,
-                onNoteClick = { id -> openNoteId = id },
-                onProfileClick = onProfileClick,
-                quotes = CondensedQuote.resolve(note) { quotedNotesCache[it] },
-                quoteActions = quoteActions,
-                // iOS: 8pt sides for a compact row, 12pt between rows.
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-            )
-        } else {
-            fullRow(note)
-        }
     }
     val threadRow: @Composable (FeedThread) -> Unit = { thread ->
         FeedThreadCard(
@@ -576,7 +542,7 @@ internal fun HashtagsFeed(
             }
             items(fromFollows, key = { it.id }) { note ->
                 LaunchedEffect(note.id) { viewModel.rowAppeared(note.id, follows) }
-                noteRow(note)
+                fullRow(note)
             }
             if (loadingOlder == follows) item(key = "hashtags-follows-older") { HashtagOlderSpinner() }
             if (fromOthers.isNotEmpty() && !everyone && !unfiltered) {
@@ -584,7 +550,7 @@ internal fun HashtagsFeed(
             }
             items(fromOthers, key = { it.id }) { note ->
                 LaunchedEffect(note.id) { viewModel.rowAppeared(note.id, others) }
-                noteRow(note)
+                fullRow(note)
             }
             if (loadingOlder == others) item(key = "hashtags-others-older") { HashtagOlderSpinner() }
         }

@@ -158,7 +158,6 @@ struct FeedThreadCard: View {
             displayPubkey: original?.pubkey,
             original: original,
             depth: entry.depth,
-            style: .plain,
             isFocused: note.id == focusedNoteId,
             replyCount: replyCount,
             contentOverride: live?.content ?? override,

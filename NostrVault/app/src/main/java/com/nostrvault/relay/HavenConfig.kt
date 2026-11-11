@@ -205,12 +205,9 @@ data class HavenConfig(
     val textSizeScale: Float = 1.0f,
     /** OLED black is the only appearance now; the Appearance toggle is gone. */
     val oledMode: Boolean = true,
-    val useFeedCompactMode: Boolean = true,
-    val feedCompactModes: Map<String, Boolean> = emptyMap(),
     /**
-     * FeedLayoutMode.storageKey per feed. Supersedes [feedCompactModes], which
-     * is still read as the fallback so an upgrade keeps whatever compact
-     * setting was in place. Mirrors iOS HavenConfig.feedLayoutModes.
+     * FeedLayoutMode.storageKey per feed. A retired "condensed" is rewritten
+     * as expanded on load (ConfigStore). Mirrors iOS HavenConfig.feedLayoutModes.
      */
     val feedLayoutModes: Map<String, String> = emptyMap(),
     val noteDetailExpandedEngagement: Boolean = false,
@@ -221,7 +218,11 @@ data class HavenConfig(
     // When true, the bottom tab bar stays fully expanded and never shrinks/hides
     // on scroll. Mirrors iOS HavenConfig.disableTabBarAnimation.
     val disableTabBarAnimation: Boolean = false,
-    /** Lines of note text a row shows in Compact View. Mirrors iOS HavenConfig.compactLineLimit. */
+    /**
+     * Retired with Compact View (2026-11-11): no screen reads or sets it.
+     * MainActivity still hands it to FeedLineLimits, which ignores it; drop
+     * both once the in-flight change to MainActivity has landed.
+     */
     val compactLineLimit: Int = 3,
     /** Lines a thread's root shows in Threaded View; replies show one fewer. Mirrors iOS. */
     val threadedLineLimit: Int = 5,
@@ -358,7 +359,7 @@ data class HavenConfig(
          * config.json leaves out values equal to their default, so a saved
          * config from before this setting reads back without the key and
          * would jump to Threaded View. Only a config that never existed
-         * gets it ([newInstall]); saved ones keep their legacy compact choice.
+         * gets it ([newInstall]); saved ones open expanded.
          */
         val NEW_INSTALL_FEED_LAYOUTS: Map<String, String> = listOf(
             com.nostrvault.data.model.FeedMode.FOLLOWING,

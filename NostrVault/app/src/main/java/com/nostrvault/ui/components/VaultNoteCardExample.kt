@@ -31,7 +31,6 @@ import java.util.Date
  *             quoterPubkeys = getQuotersForNote(note.id),
  *             zappers = getZappersForNote(note.id),
  *             noteType = determineNoteType(note.pubkey),
- *             layoutMode = VaultNoteLayoutMode.EXPANDED,
  *             onNoteClick = { noteId -> navigateToNoteDetail(noteId) },
  *             onProfileClick = { pubkey -> navigateToProfile(pubkey) },
  *             onReactorsClick = { showReactorsList(note.id) },
@@ -104,14 +103,10 @@ fun VaultNoteListExample(
     onReactorsClick: (String) -> Unit,
     onRepostersClick: (String) -> Unit,
     onQuotersClick: (String) -> Unit,
-    // Layout preference
-    layoutMode: VaultNoteLayoutMode = VaultNoteLayoutMode.EXPANDED,
 ) {
     LazyColumn(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(
-            if (layoutMode == VaultNoteLayoutMode.COMPACT) 8.dp else 12.dp
-        ),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(notes, key = { it.id }) { note ->
             VaultNoteCard(
@@ -128,7 +123,6 @@ fun VaultNoteListExample(
                     whitelistedPubkeys.contains(note.pubkey) -> VaultNoteType.WHITELISTED
                     else -> VaultNoteType.TAGGED
                 },
-                layoutMode = layoutMode,
                 onNoteClick = onNoteClick,
                 onProfileClick = onProfileClick,
                 onReactorsClick = { onReactorsClick(note.id) },

@@ -14,7 +14,6 @@ import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.*
 import com.nostrvault.ui.components.SkeletonFeed
 import com.nostrvault.ui.components.VaultNoteCard
-import com.nostrvault.ui.components.VaultNoteLayoutMode
 import com.nostrvault.ui.components.VaultNoteType
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.*
@@ -117,7 +116,6 @@ internal fun NotesContent(
                     quoterPubkeys = quoteMap[note.id] ?: emptyList(),
                     zappers = zapMap[note.id] ?: emptyList(),
                     noteType = noteType,
-                    layoutMode = VaultNoteLayoutMode.EXPANDED,
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,

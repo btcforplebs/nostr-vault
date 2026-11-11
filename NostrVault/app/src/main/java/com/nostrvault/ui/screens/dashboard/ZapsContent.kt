@@ -18,7 +18,6 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.nostrvault.data.model.*
 import com.nostrvault.ui.components.VaultNoteCard
-import com.nostrvault.ui.components.VaultNoteLayoutMode
 import com.nostrvault.ui.components.VaultNoteType
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.*
@@ -135,7 +134,6 @@ internal fun ZapsContent(
                     profiles = allProfiles,
                     zappers = zapMap[note.id] ?: emptyList(),
                     noteType = noteType,
-                    layoutMode = VaultNoteLayoutMode.EXPANDED,
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,

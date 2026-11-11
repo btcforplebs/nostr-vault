@@ -232,7 +232,6 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 .desk-list .author-name { font: 600 15px/1.3 var(--font); }
 .desk-list .note-time { font: 400 12px/1.3 var(--font); }
 .desk-list .person-row { min-height: 56px; margin-bottom: 6px; padding: 8px 12px; }
-.desk-list .condensed-card { margin-bottom: 6px; }
 .desk-detail .note-text { font: 400 16px/1.5 var(--font); }
 
 /* Thin, dark scrollbars: three columns of default grey bars are the loudest thing on the page otherwise. */

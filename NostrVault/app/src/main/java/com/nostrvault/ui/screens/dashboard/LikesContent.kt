@@ -20,7 +20,6 @@ import com.nostrvault.data.model.*
 import com.nostrvault.ui.components.reactionDisplayEmoji
 import com.nostrvault.ui.components.reactionEmojiSummary
 import com.nostrvault.ui.components.VaultNoteCard
-import com.nostrvault.ui.components.VaultNoteLayoutMode
 import com.nostrvault.ui.components.VaultNoteType
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.*
@@ -132,7 +131,6 @@ internal fun LikesContent(
                     reactors = reactionMap[note.id] ?: emptyList(),
                     latestReactionDate = latestReactionDates[note.id]?.let { java.util.Date(it * 1000) },
                     noteType = noteType,
-                    layoutMode = VaultNoteLayoutMode.EXPANDED,
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,

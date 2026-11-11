@@ -79,7 +79,7 @@ struct FeedView: View {
     /// reference so view copies don't each keep their own; see FeedRowStore.
     @StateObject var rowStore = FeedRowStore()
 
-    /// Compact mode state: tracks which note is currently expanded (nil = all collapsed)
+    /// The note open in place in a thread card (nil = none).
     @State var expandedNoteId: String? = nil
     /// Thread cards whose reply fold is open, by thread root id. Held here
     /// rather than in the card because a LazyVStack discards the `@State` of
@@ -110,10 +110,8 @@ struct FeedView: View {
         }
     }
 
-    /// `proxy` lets a tap that closes a bigger note above keep the tapped row
-    /// still; feeds without row tracking pass nil.
     @ViewBuilder
-    func feedNoteRowContent(note: FeedNote, profile: FeedProfile?, rowData: FeedNoteRowData, parentIsNext: Bool, isExpanded: Bool, proxy: ScrollViewProxy? = nil) -> some View {
+    func feedNoteRowContent(note: FeedNote, profile: FeedProfile?, rowData: FeedNoteRowData, parentIsNext: Bool) -> some View {
         // The rank sits above the card, clear of the post's time and menu.
         VStack(alignment: .leading, spacing: 6) {
             if let ranked = popularRank(of: note) {
@@ -134,13 +132,10 @@ struct FeedView: View {
                     showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
                 },
                 showParent: !parentIsNext,
-                isReplyToNext: parentIsNext,
-                useCompactMode: isCompactModeActive,
-                isExpanded: isExpanded,
-                onTapRow: { toggleExpandedNote(note.id, proxy: proxy) }
+                isReplyToNext: parentIsNext
             )
         }
-        .padding(.horizontal, isCompactModeActive && !isExpanded ? 8 : 16)
+        .padding(.horizontal, 16)
     }
 
     var body: some View {

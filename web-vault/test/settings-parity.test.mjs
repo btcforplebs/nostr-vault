@@ -71,5 +71,6 @@ test("help buttons sit on the rows that have iPhone words", () => {
     ["components/NotifySwitch.jsx", "notify.enable"], ["components/NotifySwitch.jsx", "notify.perAccount"], ["screens/settings/FeedSettingsPage.jsx", "feed.relays"],
     ["screens/settings/BlockSomeone.jsx", "account.blocked"]])
     assert.match(src(file), new RegExp(`<SettingInfo topic="${topic.replace(".", "\\.")}" />`), `${file} ${topic}`)
-  assert.match(src("components/LineLimitSteppers.jsx"), /display\.compactLines.*display\.threadedLines/)
+  assert.match(src("components/LineLimitSteppers.jsx"), /display\.threadedLines/)
+  assert.doesNotMatch(src("components/LineLimitSteppers.jsx"), /compact/i, "Compact View is gone (2026-11-11)")
 })

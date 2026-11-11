@@ -65,30 +65,8 @@ struct FeedNoteRow: View {
     @State var quoteFetchStarted: Set<String> = []
     @State var quoteFetchFailed: Set<String> = []
 
-    var useCompactMode: Bool = false // Whether compact mode is active for this feed type
-    var isExpanded: Bool = false // Whether this specific note is expanded
-    var onTapRow: (() -> Void)? = nil
-
     var body: some View {
-        Group {
-            if useCompactMode {
-                // Compact mode is active for this feed - show compact or expanded based on state
-                if isExpanded {
-                    fullLayout
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .scale(scale: 0.95)),
-                            removal: .opacity
-                        ))
-                } else {
-                    compactLayout
-                        .transition(.opacity)
-                }
-            } else {
-                // Compact mode not active - always show full layout
-                fullLayout
-            }
-        }
-        .animation(Motion.panel, value: isExpanded)
+        fullLayout
         .onAppear {
             // Fetch referenced notes only when this row becomes visible (lazy).
             if note.isReply, let parentId = note.parentEventId, rowData.parentNote == nil {

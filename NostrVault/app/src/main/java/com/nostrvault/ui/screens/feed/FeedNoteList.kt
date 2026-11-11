@@ -19,22 +19,18 @@ import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.FeedThread
 import com.nostrvault.ui.components.AvatarMenuActions
-import com.nostrvault.ui.components.CondensedEngagement
 import com.nostrvault.ui.components.CondensedQuoteActions
 import com.nostrvault.ui.components.FeedThreadCard
-import com.nostrvault.ui.components.NostrMentions
-import com.nostrvault.ui.components.RankedCompactNoteCard
 import com.nostrvault.ui.components.ScrollChrome
 import com.nostrvault.ui.components.TapAnchor
 import com.nostrvault.ui.components.ThreadLineAnchor
 import com.nostrvault.ui.components.rememberCondensedQuotes
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import kotlinx.coroutines.launch
 import com.nostrvault.ui.theme.*
 
 /**
- * The note list of the text feeds: threaded cards, or expanded and condensed rows (iOS FeedView's list).
+ * The note list of the text feeds: threaded cards, or expanded rows (iOS FeedView's list).
  * State only the rows read ([feedThreadsState], [unavailableNoteIdsState], [expandedNote]) comes in as State, so a
  * change to it recomposes the rows here and not the whole FeedScreen; the list read it the same way when it lived
  * there.
@@ -51,7 +47,6 @@ internal fun FeedNoteList(
     isThreaded: Boolean,
     feedThreadsState: State<List<FeedThread>>,
     notes: List<FeedNote>,
-    isCompact: Boolean,
     allProfiles: Map<String, FeedProfile>,
     expandedNote: MutableState<String?>,
     threadFolds: SnapshotStateMap<String, Boolean>,
@@ -158,106 +153,28 @@ internal fun FeedNoteList(
                 )
             }
         } else {
-        items(
-            items = notes,
-            key = { it.id },
-            contentType = { note ->
-                if (isCompact && expandedNoteId != note.id) "compact" else "full"
-            }
-        ) { note ->
-            val isExpanded = isCompact && expandedNoteId == note.id
-            val showCompact = isCompact && !isExpanded
-
-            // Exactly the pubkeys this card can render: its author, the
-            // reposter, the reply target, and anyone the text mentions.
-            // Quoted notes and the parent are added below where they resolve.
-            val headPubkeys = remember(note.id) {
-                buildList {
-                    add(note.pubkey)
-                    note.repostedBy?.let(::add)
-                    note.replyToPubkey?.let(::add)
-                    addAll(NostrMentions.mentionedPubkeys(note.content))
-                }.distinct()
-            }
-
-            // Remove expensive Crossfade animation for better scroll performance
-            if (showCompact) {
-                val (shownNote, repostPlaceholder) = rememberBareRepostDisplay(note, viewModel)
-                // A bare repost shows its original's quotes.
-                val quotes = rememberCondensedQuotes(shownNote, viewModel.quotedNotesCache, viewModel::quotedNoteFor)
-                val quotedPubkeys = quotes.mapNotNull { it.note?.pubkey }
-                val shownPubkeys = remember(headPubkeys, shownNote.pubkey, shownNote.content, quotedPubkeys) {
-                    (headPubkeys + shownNote.pubkey + NostrMentions.mentionedPubkeys(shownNote.content) + quotedPubkeys)
-                        .distinct()
-                }
-                // derivedStateOf, not a plain read: the computation re-runs on
-                // every metadata batch, but this row only recomposes when one of
-                // *its* profiles actually changed. Reading allProfiles directly
-                // here would rebuild every visible card per batch instead.
-                val cardProfiles by remember(shownPubkeys) {
-                    derivedStateOf { shownPubkeys.resolveAgainst(allProfiles) }
-                }
-                // Same derivedStateOf reasoning: only this row's stats recompose it.
-                val zapsOnly = LocalZapsOnlyMode.current
-                val statsState = viewModel.noteStats.collectAsState()
-                val engagement by remember(note.id, zapsOnly) {
-                    derivedStateOf {
-                        val stats = statsState.value[note.effectiveEventId]
-                        CondensedEngagement(
-                            reactions = if (zapsOnly) 0 else stats?.reactions ?: 0,
-                            reposts = stats?.reposts ?: 0,
-                        )
-                    }
-                }
-                RankedCompactNoteCard(viewModel.popularRanks, rankId = note.id,
-                    note = shownNote,
-                    profile = cardProfiles[shownNote.pubkey],
-                    profiles = cardProfiles,
-                    repostPlaceholder = repostPlaceholder,
-                    // Read once the original has resolved, which is what recomposes this row.
-                    repostedOriginal = note.repostedEventId
-                        ?.takeIf { note.isBareRepost && repostPlaceholder == null }
-                        ?.let { viewModel.parentNotesCache.value[it] },
-                    engagement = engagement,
-                    onNoteClick = { id ->
-                        // Expand inline first instead of navigating
-                        onTapOpen()
-                        listState.openHoldingTappedRow(note.id, expandedNoteId, notes) {
-                            expandedNoteId = id
-                        }
-                        scope.launch { listState.glideToTapLine(note.id) }
-                    },
-                    onProfileClick = openProfile,
-                    avatarMenu = feedAvatarMenu,
-                    onTrustWeb = { author -> trustWebAuthor = author },
-                    quotes = quotes,
-                    quoteActions = quoteActions,
-                    // iOS: 8pt sides for a compact row, 12pt between rows.
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = FeedRowGap),
-                )
-            } else {
-                FeedFullNoteRow(
-                    note = note,
-                    viewModel = viewModel,
-                    allProfiles = allProfiles,
-                    onNoteClick = onNoteClick,
-                    onArticleClick = onArticleClick,
-                    onProfileClick = openProfile,
-                    onReply = onReply ?: { _ -> onCompose() },
-                    onQuote = onQuote ?: {},
-                    onZap = viewModel::quickZap,
-                    onLongPressZap = { id -> zapNoteId = id },
-                    onNoLightningAddress = { showNoLightningAddress = true },
-                    onBroadcast = { id -> broadcastNoteId = id },
-                    onTrustWeb = { author -> trustWebAuthor = author },
-                    onReport = { id -> reportNoteId = id },
-                    onBlock = { id -> blockNoteId = id },
-                    onDelete = { id -> deleteNoteId = id },
-                    onLongPressLike = { id -> emojiPickerNoteId = id },
-                    // iOS: 16pt sides, 12pt between rows.
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = FeedRowGap),
-                )
-            }
+        items(items = notes, key = { it.id }) { note ->
+            FeedFullNoteRow(
+                note = note,
+                viewModel = viewModel,
+                allProfiles = allProfiles,
+                onNoteClick = onNoteClick,
+                onArticleClick = onArticleClick,
+                onProfileClick = openProfile,
+                onReply = onReply ?: { _ -> onCompose() },
+                onQuote = onQuote ?: {},
+                onZap = viewModel::quickZap,
+                onLongPressZap = { id -> zapNoteId = id },
+                onNoLightningAddress = { showNoLightningAddress = true },
+                onBroadcast = { id -> broadcastNoteId = id },
+                onTrustWeb = { author -> trustWebAuthor = author },
+                onReport = { id -> reportNoteId = id },
+                onBlock = { id -> blockNoteId = id },
+                onDelete = { id -> deleteNoteId = id },
+                onLongPressLike = { id -> emojiPickerNoteId = id },
+                // iOS: 16pt sides, 12pt between rows.
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = FeedRowGap),
+            )
         }
         }
 

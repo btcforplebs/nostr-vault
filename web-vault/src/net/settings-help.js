@@ -6,7 +6,6 @@ export const HELP = {
   "account.blocked": ["Blocked", "Hides blocked accounts from your feed. For your main account, also blocks them from posting to your relay."],
   "feed.relays": ["Feed Relays", "Relays your feed pulls posts from. Separate from your own relay."],
   "post.sendDelay": ["Send Delay", "How long posts, replies, reposts and deletes wait before going out, so you can undo or edit them. Off sends right away with no undo."],
-  "display.compactLines": ["Compact View Lines", "How many lines of a post's text show in Compact View before it is cut off."],
   "display.threadedLines": ["Threaded View Lines", "How many lines of text show in Threaded View. Replies show one line fewer than the post that starts the thread."],
   "display.tabBarAnimation": ["Collapse Menu on Scroll", "Folds the menu and the top bar away as you scroll down, and brings them back as you scroll up. Turn it off to keep them full size."],
   "display.defaultReaction": ["Default Reaction", "Sets which emoji is used for one-tap reactions."],

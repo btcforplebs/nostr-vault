@@ -263,9 +263,7 @@ extension FeedView {
     func feedThreadCard(_ thread: FeedThread<FeedNote>, proxy: ScrollViewProxy?) -> some View {
         FeedThreadCard(
             thread: thread,
-            // One open note across both condensed
-            // layouts: the same gesture, so the same
-            // selection.
+            // One open note across every thread card.
             openNoteId: $expandedNoteId,
             isExpanded: Binding(
                 get: { expandedThreadIds.contains(thread.rootId) },
@@ -306,28 +304,19 @@ extension FeedView {
     /// whichever layout the feed's layout button picked.
     var hashtagsFeedView: some View {
         HashtagsFeedSection(threaded: isThreadedModeActive) { note in
-            let isExpanded = expandedNoteId == note.id
             let row = feedNoteRowContent(
                 note: note,
                 profile: nostrService.profiles[note.pubkey],
                 rowData: rowDataCache[note.id] ?? FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService),
-                parentIsNext: false,
-                isExpanded: isExpanded
+                parentIsNext: false
             )
             .onAppear { nostrService.fetchMissingProfiles(for: [note.pubkey]) }
             #if os(iOS)
-            // Same as the main timeline: a compact line opens in place on
-            // tap, an expanded one navigates.
-            if !isCompactModeActive || isExpanded {
-                NoteNavigationLink(note: note) { row }
-                    .buttonStyle(.plain)
-            } else {
-                row
-            }
+            // Same as the main timeline: a tap opens the note.
+            NoteNavigationLink(note: note) { row }
+                .buttonStyle(.plain)
             #else
-            row.onTapGesture {
-                if !isCompactModeActive { showingNoteId = note.id }
-            }
+            row.onTapGesture { showingNoteId = note.id }
             #endif
         } threadRow: { thread in
             feedThreadCard(thread, proxy: nil)

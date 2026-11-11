@@ -144,8 +144,7 @@ extension VaultView {
     // Each icon means one thing in every mode: the tray arrow in is what
     // others gave you, the arrow out is what you gave. The person icon used
     // to mean "my notes only" under Notes but "on my notes" under Likes and
-    // Zaps. Whitelisted notes already show in All, and the phone has no
-    // layout switch (`rowLayoutMode`).
+    // Zaps. Whitelisted notes already show in All.
     /// The right pill: this mode's filters as bare icons, then search at the
     /// right end. A filter tap says what it picked in the note under the bar.
     /// On a narrow phone (an SE in Articles has five filters) the buttons
@@ -383,12 +382,6 @@ extension VaultView {
             bookmarksButton
             followersButton
             messagesButton
-            #if os(iOS)
-            // Add compact toggle on mobile
-            if UIDevice.current.userInterfaceIdiom == .phone {
-                compactToggleButton
-            }
-            #endif
         }
         .padding(4)
         .background(Color.platformTertiaryGroupedBackground)
@@ -397,8 +390,7 @@ extension VaultView {
     }
 
     #if os(macOS)
-    /// The Mac's top bar: pages, the page's filters, search and the condensed
-    /// toggle. The column's width comes from the window, never from this bar:
+    /// The Mac's top bar: pages, the page's filters and search. The column's width comes from the window, never from this bar:
     /// with the Thread column open it can be ~560 pt, narrower than the six
     /// labelled pages. So the bar steps down until it fits: labelled pages,
     /// then icon pages, then icon pages over a scrolling filter row.
@@ -409,20 +401,17 @@ extension VaultView {
                 Spacer(minLength: 8)
                 pageFilterView
                 searchToggleButton
-                compactToggleButton
             }
             HStack(spacing: 12) {
                 iconModeView
                 Spacer(minLength: 8)
                 pageFilterView
                 searchToggleButton
-                compactToggleButton
             }
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     ScrollView(.horizontal, showsIndicators: false) { iconModeView }
                     searchToggleButton
-                    compactToggleButton
                 }
                 ScrollView(.horizontal, showsIndicators: false) { pageFilterView }
             }
@@ -482,29 +471,6 @@ extension VaultView {
         }
     }
     #endif
-
-    // `ModeButton` (labeled, filled-pill-when-selected) is the language for
-    // *navigation*: which of Notes/Likes/Zaps you're looking at. This is a
-    // display option, not a destination, so it used to read as a fourth mode
-    // sitting in the same row — `IconFilterButton` is the icon-only language
-    // the rest of the toolbar already uses for exactly that distinction (see
-    // `trailingToolbarInline`'s condensed-view toggle on iOS).
-    var compactToggleButton: some View {
-        IconFilterButton(
-            icon: noteLayoutMode == .compact ? "rectangle.expand.vertical" : "rectangle.compress.vertical",
-            tooltip: noteLayoutMode == .compact ? "Expanded View" : "Condensed View",
-            isSelected: noteLayoutMode == .compact,
-            color: .havenPurple
-        ) {
-            withAnimation(Motion.toggle) {
-                noteLayoutMode = noteLayoutMode == .compact ? .expanded : .compact
-            }
-            pendingFilterNote = nil
-            filterNote.show(noteLayoutMode == .compact
-                ? FilterNote(icon: "rectangle.compress.vertical", title: "Condensed view", setting: "on")
-                : .off("Condensed view", icon: "rectangle.compress.vertical"))
-        }
-    }
 
     // MARK: - Search
 

@@ -13,10 +13,10 @@ extension NoteRow {
     // MARK: - Expanded Layout
 
     var expandedLayout: some View {
-        let avatarSize: CGFloat = layoutMode == .compact ? 32 : 40
-        let headerSpacing: CGFloat = layoutMode == .compact ? 8 : 12
-        let contentFontSize: CGFloat = layoutMode == .compact ? 14 : 15
-        let cardSpacing: CGFloat = layoutMode == .compact ? 8 : 10
+        let avatarSize: CGFloat = 40
+        let headerSpacing: CGFloat = 12
+        let contentFontSize: CGFloat = 15
+        let cardSpacing: CGFloat = 10
 
         return VStack(alignment: .leading, spacing: cardSpacing) {
             // Header with profile and timestamp

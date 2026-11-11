@@ -20,11 +20,6 @@ final class FeedLayoutModeTests: XCTestCase {
         XCTAssertTrue(FeedLayoutMode.threaded.showsRepliesOnSwitch)
     }
 
-    func testThreadedKeepsCondensedRows() {
-        XCTAssertFalse(FeedLayoutMode.expanded.usesCondensedRows)
-        XCTAssertTrue(FeedLayoutMode.threaded.usesCondensedRows)
-    }
-
     func testStoredValuesReadSafely() {
         XCTAssertEqual(FeedLayoutMode(stored: "threaded"), .threaded)
         XCTAssertEqual(FeedLayoutMode(stored: "expanded"), .expanded)

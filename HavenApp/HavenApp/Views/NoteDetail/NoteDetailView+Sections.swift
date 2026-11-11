@@ -321,7 +321,6 @@ extension NoteDetailView {
             displayPubkey: original?.pubkey,
             original: original,
             depth: depth,
-            style: .plain,
             replyCount: replyCount,
             contentOverride: live?.content ?? override,
             postedAt: original.map { $0.originalCreatedAt ?? $0.createdAt },

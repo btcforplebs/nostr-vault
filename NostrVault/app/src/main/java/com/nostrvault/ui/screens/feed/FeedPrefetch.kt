@@ -104,22 +104,19 @@ private suspend fun load(context: Context, item: FeedPrefetchItem) {
 
 /**
  * The images a flat-feed row for [note] draws: its author's and reposter's
- * avatars, and its photos at the size the full card (800) or the compact
- * card's single thumbnail (128) decodes them.
+ * avatars, and its photos at the size the full card decodes them (800).
  */
 internal fun prefetchItemsFor(
     note: FeedNote,
     profiles: Map<String, FeedProfile>,
-    compact: Boolean,
 ): List<FeedPrefetchItem> = buildList {
     listOfNotNull(note.pubkey, note.repostedBy).forEach { pubkey ->
         profiles[pubkey]?.pictureURL?.takeIf { it.isNotBlank() }?.let { add(FeedPrefetchItem.Avatar(it)) }
     }
-    val urls = if (compact) note.mediaURLs.take(1) else note.mediaURLs
-    for (url in urls) {
+    for (url in note.mediaURLs) {
         val model = feedImageModel(note.tags, url)
         if (isVideoUrl(model)) continue
-        add(FeedPrefetchItem.Media(model, if (compact) 128 else 800))
+        add(FeedPrefetchItem.Media(model, 800))
     }
 }
 
