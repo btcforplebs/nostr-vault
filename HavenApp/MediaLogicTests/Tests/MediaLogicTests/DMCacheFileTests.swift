@@ -158,6 +158,40 @@ final class DMCacheFileTests: XCTestCase {
         wait(for: [read], timeout: 2)
     }
 
+    /// A torn or unreadable cache must survive the next save: it is moved
+    /// aside, so the save writes a fresh file instead of over it.
+    func testAnUnreadableFileIsMovedAsideNotOverwritten() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("dm_cache_test.json")
+        let (data, _) = try legacyCache()
+        let torn = data.prefix(data.count / 2)
+        try torn.write(to: url)
+
+        let when = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertEqual(DMCacheFile.read(url, now: when).count, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        let aside = DMCacheFile.asideURL(for: url, at: when)
+        XCTAssertEqual(aside.lastPathComponent, "dm_cache_test.unreadable-1800000000.json")
+        XCTAssertEqual(try Data(contentsOf: aside), torn)
+
+        // The next save lands in the cache's own name; the torn copy stays.
+        try PrivateFile.write(try DMCacheFile.encode([]), to: url)
+        XCTAssertEqual(try Data(contentsOf: aside), torn)
+    }
+
+    func testAReadableFileStaysWhereItIs() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("dm_cache_test.json")
+        let (data, written) = try legacyCache()
+        try data.write(to: url)
+        XCTAssertEqual(ids(DMCacheFile.read(url)), ids(written))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir.path), ["dm_cache_test.json"])
+    }
+
     func testARealFileRoundTrips() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: dir) }
