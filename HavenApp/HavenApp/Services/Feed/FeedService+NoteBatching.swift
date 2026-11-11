@@ -74,12 +74,14 @@ extension FeedService {
             return
         }
 
-        // Intercept parent-note fetch responses from reused active connections.
-        // These come back on the permanent feed pipeline but belong to the fast-path
-        // handler so they appear in the thread preview immediately, bypassing the
-        // 0.8 s note-flush timer.
+        // Intercept lookup responses (notes by id and naddr quotes) from reused
+        // active connections. These come back on the permanent feed pipeline
+        // but belong to the lookup handler, which matches each one against
+        // what was asked for and puts it where the quote or thread card reads
+        // it. In the feed they were run through the spam rule and, when not
+        // dropped, never reached the card.
         if type == "EVENT", json.count >= 2,
-           let subId = json[1] as? String, subId.hasPrefix("tfetch-") {
+           let subId = json[1] as? String, FeedSpeedPolicy.isLookupReply(subId: subId) {
             guard let ev = verifiedParentEvent(json: json) else { return }
             DispatchQueue.main.async { [weak self] in
                 self?.handleParentNoteFetch(ev)
@@ -179,7 +181,7 @@ extension FeedService {
         // rule threw it away: 2 of the 9 notes missing from two hours of a
         // Following feed on 2026-10-04 were these.
         let isBareRepost = note.kind == 6 && note.content.isEmpty && note.repostedEventId != nil
-        if !isBareRepost, FeedNote.isNoiseOrSpam(content: note.content, tags: note.tags) {
+        if !isBareRepost, FeedNote.isFeedNoise(kind: note.kind, content: note.content, tags: note.tags) {
             return
         }
 
