@@ -98,37 +98,87 @@ final class InAppBrowserNavigation: NSObject, WKNavigationDelegate, WKUIDelegate
     /// see: WebRTC is taken away (a peer connection's STUN would show the site
     /// this device's IP), and a click on an http(s) link becomes an
     /// `nvleave:` link before WebKit acts on it (WebKit connects to a clicked
-    /// http(s) link's host before the app is asked).
+    /// http(s) link's host before the app is asked). Links in shadow roots
+    /// count too: the click is read through `composedPath()`, every new root
+    /// (closed too) gets the same listener, and `click()` / `dispatchEvent`
+    /// find the link from the element they are called on, which also reaches
+    /// declarative closed roots the page clicks into.
     nonisolated static let meshGuardScript = #"""
     (function () {
       var names = ['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel',
                    'RTCIceCandidate', 'RTCSessionDescription', 'RTCRtpSender',
                    'RTCRtpReceiver', 'RTCRtpTransceiver', 'RTCIceTransport', 'RTCDtlsTransport'];
-      function scrub(w) {
-        names.forEach(function (n) {
-          try { Object.defineProperty(w, n, { value: undefined, writable: false, configurable: false }); } catch (e) {}
-        });
-      }
       function onMesh() {
         try { return window.top.location.protocol === 'nvfips:'; } catch (e) { return location.protocol === 'nvfips:'; }
       }
       if (!onMesh()) return;
-      scrub(window);
-      window.addEventListener('click', function (e) {
-        var a = e.target && e.target.closest && e.target.closest('a[href], area[href]');
-        if (!a || !/^https?:/i.test(a.href)) return;
+      function lock(o, n, v) {
+        try { Object.defineProperty(o, n, { value: v, writable: false, configurable: false }); } catch (e) {}
+      }
+      // Wrapped methods stay replaceable (polyfills patch them); the native
+      // ones live only in this closure, so a replacement still runs ours.
+      function wrap(o, n, v) {
+        Object.defineProperty(o, n, { value: v, writable: true, enumerable: true, configurable: true });
+      }
+      function isLink(n) {
+        return n && n.nodeType === 1 && n.hasAttribute && n.hasAttribute('href') &&
+          /^(a|area)$/i.test(n.localName);
+      }
+      function linkURL(a) {
+        var h = a.href;
+        if (h && typeof h === 'object') h = h.baseVal; // SVG <a>
+        try { return new URL(h, document.baseURI).href; } catch (e) { return ''; }
+      }
+      // Turns an http(s) link into nvleave: until this click is done.
+      function leave(a) {
+        if (!isLink(a)) return;
+        var url = linkURL(a);
+        if (!/^https?:/i.test(url)) return;
         var href = a.getAttribute('href');
-        a.setAttribute('href', 'nvleave:' + encodeURIComponent(a.href));
+        a.setAttribute('href', 'nvleave:' + encodeURIComponent(url));
         setTimeout(function () { a.setAttribute('href', href); }, 0);
-      }, true);
-      // A frame the page makes itself (about:blank) gets its own copies.
-      [HTMLIFrameElement, HTMLFrameElement, HTMLObjectElement].forEach(function (K) {
-        var d = K && Object.getOwnPropertyDescriptor(K.prototype, 'contentWindow');
-        if (!d || !d.get) return;
-        Object.defineProperty(K.prototype, 'contentWindow', { configurable: false, get: function () {
-          var w = d.get.call(this); if (w) try { scrub(w); } catch (e) {} return w;
-        } });
-      });
+      }
+      // The link a click on n activates: n or its nearest flat-tree ancestor.
+      function linkFrom(n) {
+        for (var i = 0; n && i < 512; i++) {
+          if (isLink(n)) return n;
+          n = n.assignedSlot || n.parentNode || (n.host && n.nodeType === 11 ? n.host : null);
+        }
+        return null;
+      }
+      function onClick(e) {
+        var path = e.composedPath ? e.composedPath() : [e.target];
+        for (var i = 0; i < path.length; i++) if (isLink(path[i])) { leave(path[i]); return; }
+      }
+      function guard(w) {
+        if (!w || w.__nvMeshGuard) return;
+        lock(w, '__nvMeshGuard', true);
+        names.forEach(function (n) { lock(w, n, undefined); });
+        try {
+          w.addEventListener('click', onClick, true);
+          var E = w.Element.prototype, H = w.HTMLElement.prototype, T = w.EventTarget.prototype;
+          var attach = E.attachShadow, click = H.click, dispatch = T.dispatchEvent;
+          wrap(E, 'attachShadow', function () {
+            var root = attach.apply(this, arguments);
+            root.addEventListener('click', onClick, true);
+            return root;
+          });
+          wrap(H, 'click', function () { leave(linkFrom(this)); return click.apply(this, arguments); });
+          wrap(T, 'dispatchEvent', function (ev) {
+            if (ev && ev.type === 'click' && this && this.nodeType) leave(linkFrom(this));
+            return dispatch.apply(this, arguments);
+          });
+          // A frame the page makes itself (about:blank) gets its own copies.
+          [w.HTMLIFrameElement, w.HTMLFrameElement, w.HTMLObjectElement].forEach(function (K) {
+            var d = K && Object.getOwnPropertyDescriptor(K.prototype, 'contentWindow');
+            if (!d || !d.get) return;
+            Object.defineProperty(K.prototype, 'contentWindow', { configurable: false, get: function () {
+              var f = d.get.call(this); if (f) try { guard(f); } catch (e) {} return f;
+            } });
+          });
+        } catch (e) {}
+      }
+      guard(window);
     })();
     """#
 
