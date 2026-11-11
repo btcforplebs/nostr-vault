@@ -135,8 +135,9 @@ class StatsCountAuthTest {
 
     @Test fun `only private and chat need the owner's AUTH`() {
         val config = HavenConfig(ownerNpub = "npub1test")
-        assertEquals(tag, StatsService.authRelayTag(config, tag))
-        assertEquals("ws://127.0.0.1:3355/chat", StatsService.authRelayTag(config, "ws://127.0.0.1:3355/chat"))
+        // Signed as wss://, haven-go's ServiceURL, not the ws:// socket (VaultAuthTagTest).
+        assertEquals("wss://127.0.0.1:3355/private", StatsService.authRelayTag(config, tag))
+        assertEquals("wss://127.0.0.1:3355/chat", StatsService.authRelayTag(config, "ws://127.0.0.1:3355/chat"))
         assertNull(StatsService.authRelayTag(config, "ws://127.0.0.1:3355"))
         assertNull(StatsService.authRelayTag(config, "ws://127.0.0.1:3355/inbox"))
     }

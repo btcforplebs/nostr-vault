@@ -9,6 +9,7 @@ import com.nostrvault.data.model.DraftStore
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.RelayForegroundService
+import com.nostrvault.relay.vaultAuthRelayTag
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -446,7 +447,7 @@ class DraftService @Inject constructor(
         val auth = nostrService.signEventAsync(
             kind = 22242,
             content = "",
-            tags = listOf(listOf("relay", url), listOf("challenge", challenge)),
+            tags = listOf(listOf("relay", configStore.config.value.vaultAuthRelayTag(url)), listOf("challenge", challenge)),
             forceOwner = true,
         ) ?: return
         authId.set(auth.id)
