@@ -14,11 +14,15 @@ extension FeedView {
     /// Regroup the feed into conversations. A no-op unless threaded mode is on,
     /// and debounced like the row-data cache so a burst of arriving notes
     /// doesn't regroup the timeline once per note.
-    func rebuildThreadsIfNeeded(immediate: Bool = false) {
+    /// `immediate` groups on the main thread before the next frame, for a
+    /// fresh view with nothing to show yet. `offMainNow` skips the debounce
+    /// but still groups off the main thread (a feed switch).
+    func rebuildThreadsIfNeeded(immediate: Bool = false, offMainNow: Bool = false) {
         // The Hashtags feed groups its own two sections (HashtagsFeedSection).
         guard isThreadedModeActive, feedService.feedMode != .hashtags else {
             threadRebuildWork?.cancel()
             rowStore.threadGeneration &+= 1
+            rowStore.threadFloor = rowStore.threadGeneration &+ 1
             if !feedThreads.isEmpty { feedThreads = [] }
             frozenThreadKeys = [:]
             return
@@ -42,6 +46,7 @@ extension FeedView {
             rowStore.threadGeneration &+= 1
             let generation = rowStore.threadGeneration
             if immediate {
+                rowStore.appliedThreadGeneration = generation
                 applyThreads(Self.groupThreads(notes: notes, keepFeedOrder: fetchesReplies, blocked: blocked,
                                                parents: parents, index: index),
                              fetchesReplies: fetchesReplies)
@@ -49,22 +54,40 @@ extension FeedView {
             }
             // Grouping the whole feed was the biggest main-thread cost while
             // a feed streamed in (Tom's sweep 11-01 #5).
-            Task.detached(priority: .userInitiated) {
-                let built = Self.groupThreads(notes: notes, keepFeedOrder: fetchesReplies, blocked: blocked,
-                                              parents: parents, index: index)
-                await MainActor.run {
-                    guard generation == rowStore.threadGeneration else { return }
-                    applyThreads(built, fetchesReplies: fetchesReplies)
-                }
-            }
+            FeedThreadRegroup.offMain({
+                Self.groupThreads(notes: notes, keepFeedOrder: fetchesReplies, blocked: blocked,
+                                  parents: parents, index: index)
+            }, isCurrent: {
+                FeedThreadRegroup.shouldApply(generation: generation, current: rowStore.threadGeneration,
+                                              floor: rowStore.threadFloor,
+                                              lastApplied: rowStore.appliedThreadGeneration,
+                                              showingNothing: feedThreads.isEmpty)
+            }, apply: {
+                rowStore.appliedThreadGeneration = generation
+                applyThreads($0, fetchesReplies: fetchesReplies)
+            })
         }
         threadRebuildWork = work
 
-        if immediate {
+        if immediate || offMainNow {
             work.perform()
         } else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
         }
+    }
+
+    /// A feed switch: regroup the new feed off the main thread. Grouping it
+    /// synchronously here was a main-thread stall on every switch in
+    /// threaded layout. The cards on screen belong to the feed just left, so
+    /// they come down now rather than stand under the new feed's name until
+    /// its grouping lands a moment later.
+    func regroupForFeedSwitch() {
+        frozenThreadKeys = [:]
+        if isThreadedModeActive, !feedThreads.isEmpty { feedThreads = [] }
+        // rebuildThreadsIfNeeded bumps the generation once: this switch's
+        // grouping is the first that may fill the cleared feed.
+        rowStore.threadFloor = rowStore.threadGeneration &+ 1
+        rebuildThreadsIfNeeded(offMainNow: true)
     }
 
     /// The feed grouped into conversations. Pure, so it can run off the main
@@ -72,19 +95,8 @@ extension FeedView {
     nonisolated static func groupThreads(notes: [FeedNote], keepFeedOrder: Bool, blocked: Set<String>,
                                          parents: [String: FeedNote],
                                          index: [String: FeedNote]) -> [FeedThread<FeedNote>] {
-        let find: (String) -> FeedNote? = { parents[$0] ?? index[$0] }
-        return FeedThreadGrouping.build(notes: notes, keepFeedOrder: keepFeedOrder) { id in
-            // Ancestors the timeline never showed still live in the feed
-            // service's caches; pulling them in keeps a conversation whole.
-            // A blocked author's post is never pulled in as context.
-            guard let note = find(id), !blocked.contains(note.pubkey) else { return nil }
-            return note
-        }.filter { thread in
-            // A conversation started by a blocked author goes entirely.
-            // Its root is withheld above, so without this the card would
-            // sit on "Loading the start of this thread…" forever.
-            guard thread.root == nil, let root = find(thread.rootId) else { return true }
-            return !blocked.contains(root.pubkey)
+        FeedThreadGrouping.groupFeed(notes: notes, keepFeedOrder: keepFeedOrder, blocked: blocked) {
+            parents[$0] ?? index[$0]
         }
     }
 
@@ -138,6 +150,8 @@ extension FeedView {
                     nostrService: nostrService
                 )
             }
+            rowStore.drafts.removeAll()
+            rowStore.draftNotes = [:]
             rowDataCache = newCache
         }
 
@@ -164,33 +178,33 @@ extension FeedView {
     // resulting rowData is identical to a full rebuild.
 
     /// Reconcile the cache against `filteredNotes` after the visible set changes:
-    /// keep entries for notes still present, resolve only newly-added notes, drop
-    /// removed ones, and repair rows whose parent / reposted-original dependency
-    /// has just arrived (the only way an existing row's resolved data can change
-    /// without its own id changing). Debounced like the full rebuild.
+    /// keep entries for notes still present, file the rows drawn since the last
+    /// reconcile (`rowStore.drafts`), drop removed ones, and repair a row whose
+    /// parent / reposted-original has arrived since it was resolved (the only
+    /// way a row's resolved data can change without its own id changing).
+    /// A note never drawn is not resolved here; it resolves when it scrolls in
+    /// (`rowData(for:)`). Resolving every note here was most of the main-thread
+    /// cost of a feed switch. Debounced like the full rebuild.
     func reconcileRowDataCache() {
         cacheRebuildWork?.cancel()
         let work = DispatchWorkItem { [self] in
-            let notes = feedService.filteredNotes
-            var newCache: [String: FeedNoteRowData] = [:]
-            newCache.reserveCapacity(notes.count)
-            for note in notes {
-                if let existing = rowDataCache[note.id] {
+            rowStore.draftNotes = [:]
+            rowDataCache = FeedRowDataFill.reconcile(
+                notes: feedService.filteredNotes,
+                id: \.id,
+                cache: rowDataCache,
+                drafts: rowStore.drafts.take(),
+                needsRepair: { note, known in
                     // A previously-unresolved cross-note dependency (the parent
-                    // note, or a kind-6 repost's original) may now resolve.
-                    let needsParent = note.parentEventId != nil && existing.parentNote == nil
-                    let needsOriginal = note.kind == 6 && note.content.isEmpty
-                        && note.repostedEventId != nil && existing.resolvedOriginal == nil
-                    if needsParent || needsOriginal {
-                        newCache[note.id] = FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService)
-                    } else {
-                        newCache[note.id] = existing
-                    }
-                } else {
-                    newCache[note.id] = FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService)
-                }
-            }
-            rowDataCache = newCache
+                    // note, or a kind-6 repost's original) that resolves now.
+                    let parentArrived = known.parentNote == nil
+                        && note.parentEventId.flatMap { feedService.findNote(id: $0) } != nil
+                    let originalArrived = note.kind == 6 && note.content.isEmpty && known.resolvedOriginal == nil
+                        && note.repostedEventId.flatMap { feedService.findNote(id: $0) } != nil
+                    return parentArrived || originalArrived
+                },
+                resolve: { FeedNoteRowData.resolve(for: $0, feedService: feedService, nostrService: nostrService) }
+            )
         }
         cacheRebuildWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
@@ -204,9 +218,13 @@ extension FeedView {
         // A repost row shows its original's likes, zaps and counts, which are
         // keyed by the original's id, not the row's.
         var ids = ids
-        for note in feedService.filteredNotes where note.kind == 6 {
+        for note in rowNotesToScan where note.kind == 6 {
             if let refId = note.repostedEventId, ids.contains(refId) { ids.insert(note.id) }
         }
+        // A drawn row not filed yet (one outside `filteredNotes` is never
+        // filed) resolves fresh on its next draw. Only matching drafts go, so
+        // an update that changes no row still costs nothing.
+        if rowStore.drafts.remove(ids: ids) { rowStore.objectWillChange.send() }
         var updated = rowDataCache
         var didChange = false
         for id in ids {
@@ -218,6 +236,14 @@ extension FeedView {
             }
         }
         if didChange { rowDataCache = updated }
+    }
+
+    /// The notes the update paths scan for affected rows: the feed's, plus
+    /// drafted rows outside it (a root pulled in from the caches, a Global
+    /// reply, a Hashtags note), which would otherwise keep older data.
+    private var rowNotesToScan: [FeedNote] {
+        let drafted = rowStore.draftedNotes
+        return drafted.isEmpty ? feedService.filteredNotes : feedService.filteredNotes + drafted
     }
 
     /// likedEventIds is keyed by `note.id`, so the symmetric difference is exactly
@@ -252,7 +278,7 @@ extension FeedView {
         let changedKeys = old.symmetricDifference(new)
         guard !changedKeys.isEmpty else { return }
         var ids = Set<String>()
-        for note in feedService.filteredNotes {
+        for note in rowNotesToScan {
             let repostCheckId = note.repostedEventId ?? note.id
             if changedKeys.contains(repostCheckId) { ids.insert(note.id) }
         }
@@ -265,7 +291,7 @@ extension FeedView {
     func refreshRowsForPubkeys(_ pubkeys: Set<String>) {
         guard !pubkeys.isEmpty else { return }
         var ids = Set<String>()
-        for note in feedService.filteredNotes {
+        for note in rowNotesToScan {
             if pubkeys.contains(note.pubkey)
                 || (note.repostedBy.map(pubkeys.contains) ?? false)
                 || (note.replyToPubkey.map(pubkeys.contains) ?? false) {
@@ -296,7 +322,7 @@ extension FeedView {
     /// unrelated change to force a rebuild.
     func refreshRowsForReferencedNotes(_ arrivedIds: Set<String>) {
         resolveRows(matching: ReferencedNoteRepair.rowsNeedingRepair(
-            notes: feedService.filteredNotes, arrivedIds: arrivedIds))
+            notes: rowNotesToScan, arrivedIds: arrivedIds))
     }
 
     /// A fetched ancestor changes the *shape* of the timeline, not just a row:

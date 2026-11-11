@@ -234,11 +234,7 @@ extension FeedView {
                         } else {
                         ForEach(feedService.filteredNotes) { note in
                             let profile = nostrService.profiles[note.pubkey]
-                            let rowData = rowDataCache[note.id] ?? FeedNoteRowData.resolve(
-                                for: note,
-                                feedService: feedService,
-                                nostrService: nostrService
-                            )
+                            let rowData = rowData(for: note)
 
                             // Optimization: If the parent is the very next note in the feed,
                             // don't show the redundant parent header.
@@ -278,8 +274,11 @@ extension FeedView {
                         }
                         }
 
-                        // Infinite scroll sentinel — triggers loadMore when visible
-                        if !feedService.filteredNotes.isEmpty {
+                        // Infinite scroll sentinel — triggers loadMore when visible.
+                        // Threaded: gated on the cards, which a feed switch clears
+                        // while `filteredNotes` stays full; else the sentinel sits in
+                        // view during that blank and pages an older window.
+                        if isThreadedModeActive ? !feedThreads.isEmpty : !feedService.filteredNotes.isEmpty {
                             Color.clear
                                 .frame(height: 1)
                                 .onAppear { feedService.loadMore() }
@@ -414,10 +413,11 @@ extension FeedView {
                     }
                 ))
                 // Layout is stored per feed, so switching feeds can switch
-                // layout. Regroup immediately rather than waiting on the next
-                // filteredNotes change, which a cached feed may not produce.
+                // layout. Regroup now rather than waiting on the next
+                // filteredNotes change, which a cached feed may not produce;
+                // off the main thread (regroupForFeedSwitch).
                 .onChange(of: feedService.feedMode) { _, _ in
-                    resortThreads(immediate: true)
+                    regroupForFeedSwitch()
                 }
                 .onChange(of: feedService.feedThreadReplies.count) { _, _ in
                     rebuildThreadsIfNeeded()

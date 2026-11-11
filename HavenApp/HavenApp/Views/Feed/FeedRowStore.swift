@@ -15,6 +15,23 @@ final class FeedRowStore: ObservableObject {
     /// Bumped by every thread rebuild, so an off-main grouping that a newer
     /// rebuild overtook is dropped rather than applied.
     var threadGeneration = 0
+    /// The first generation that may fill an empty threaded feed: a grouping
+    /// begun before the feed was cleared (switch, layout off) is never shown.
+    var threadFloor = 0
+    /// The newest generation shown, so an older result can't replace it.
+    var appliedThreadGeneration = 0
+    /// Rows drawn before they were in `rows`; see `FeedRowDrafts`. Not
+    /// published: it is written while the feed draws.
+    var drafts = FeedRowDrafts<FeedNoteRowData>()
+    /// The note each draft was drawn for, so the update paths can find a
+    /// drafted row that is not in `filteredNotes` (a root pulled in, a Global
+    /// reply). May hold notes whose draft is gone; read it via `draftedNotes`.
+    var draftNotes: [String: FeedNote] = [:]
+
+    /// The notes of the drafts still held.
+    var draftedNotes: [FeedNote] {
+        draftNotes.values.filter { drafts.rows[$0.id] != nil }
+    }
 }
 
 extension FeedView {
@@ -22,6 +39,15 @@ extension FeedView {
     var rowDataCache: [String: FeedNoteRowData] {
         get { rowStore.rows }
         nonmutating set { rowStore.rows = newValue }
+    }
+
+    /// The row data a drawn row shows: the cache's, else resolved once and
+    /// kept as a draft until the next reconcile files it.
+    func rowData(for note: FeedNote) -> FeedNoteRowData {
+        rowStore.drafts.row(id: note.id, cached: rowStore.rows[note.id]) {
+            rowStore.draftNotes[note.id] = note
+            return FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService)
+        }
     }
 
     /// Conversations built from `filteredNotes` for threaded mode. Rebuilt on
