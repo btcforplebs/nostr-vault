@@ -188,6 +188,13 @@
              Exported, so everything it receives is untrusted; it only queues
              a share intent and never publishes (docs/SHARE_PORTAL_CONTRACT.md).
              Photos and videos stay on MainActivity until phase 3. -->
+        <!-- The in-app browser: web links and .fips sites over the mesh (InAppBrowser). -->
+        <activity
+            android:name=".ui.screens.browser.InAppBrowserActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.NostrVault" />
         <activity
             android:name=".ui.screens.shareportal.SharePortalActivity"
             android:exported="true"
