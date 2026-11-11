@@ -31,8 +31,8 @@ final class LocalDvmFeedTests: XCTestCase {
     }
 
     func testEndOfListCopyIsPerFeed() {
-        XCTAssertEqual(LocalDvmFeed.underrated.endOfListStatus + " Pull to refresh",
-                       "That's today's underrated list. Pull to refresh")
+        XCTAssertEqual(LocalDvmFeed.underrated.endOfListStatus + " Pull to refresh.",
+                       "That's today's underrated list. Pull to refresh.")
         XCTAssertEqual(Set(LocalDvmFeed.allCases.map(\.endOfListStatus)).count, 3)
     }
 }

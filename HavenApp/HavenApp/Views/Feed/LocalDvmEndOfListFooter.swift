@@ -14,7 +14,7 @@ struct LocalDvmEndOfListFooter: View {
                 .fill(Color.secondary.opacity(0.3))
                 .frame(width: 36, height: 3)
             #if os(iOS)
-            Text(feed.endOfListStatus + " Pull to refresh")
+            Text(feed.endOfListStatus + " Pull to refresh.")
                 .multilineTextAlignment(.center)
             #else
             Text(feed.endOfListStatus)
