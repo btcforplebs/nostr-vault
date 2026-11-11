@@ -128,8 +128,6 @@ class FeedService @Inject constructor(
         // Longest a batch waits for a drag or fling to settle. Past this it
         // lands anyway, so a long slow drag still sees new pages.
         internal const val SCROLL_FLUSH_HOLD_MS = 1_500L
-        internal const val PARENT_CACHE_MAX = 500
-        internal const val PARENT_CACHE_TRIM_TO = 400
         private const val NOTE_BATCH_DELAY_MS = 150L
         internal const val STAGGER_RELAY_MS = 200L
         /** How long the feed keeps its sockets open in the background ([pauseGrace]). */
@@ -852,12 +850,11 @@ class FeedService @Inject constructor(
      */
     internal val unavailableSince = ConcurrentHashMap<String, Long>()
 
-    /** Ids queued for the next lookup, or being looked up right now. */
-    internal val noteFetchQueue = mutableSetOf<String>()
+    /** Ids queued for the next lookup (guarded by its own monitor), or being looked up right now. */
+    internal val noteFetchLanes = NoteFetchLanes()
     internal val noteFetchInFlight = ConcurrentHashMap.newKeySet<String>()
-    /** Guards [noteFetchQueue] and [noteFetchFlushJob] together. */
-    internal val noteFetchLock = Any()
-    internal var noteFetchFlushJob: Job? = null
+    /** The parent cache is trimmed once it passes this. See [ReferencedNoteCache]. */
+    @Volatile internal var parentCacheTrimAt = ReferencedNoteCache.FLOOR
 
     /** Authors whose relay list was already requested, so each is asked once. */
     internal val relayListRequested = ConcurrentHashMap.newKeySet<String>()
@@ -869,7 +866,7 @@ class FeedService @Inject constructor(
      */
     fun fetchMissingNote(id: String) = fetchMissingNotesBatch(listOf(id))
 
-    fun fetchMissingNotesBatch(ids: List<String>) { fetchMissingNotesBatchImpl(ids) }
+    fun fetchMissingNotesBatch(ids: List<String>, nearScreen: Boolean = false) { fetchMissingNotesBatchImpl(ids, nearScreen) }
 
     // ══════════════════════════════════════════════════════════════════
     // Quoted note resolution (embedded nostr:note1/nevent1 previews)
@@ -877,7 +874,7 @@ class FeedService @Inject constructor(
 
     fun quotedNoteFor(identifier: String): FeedNote? = quotedNoteForImpl(identifier)
 
-    fun fetchMissingQuotedNotes(identifiers: List<String>) { fetchMissingQuotedNotesImpl(identifiers) }
+    fun fetchMissingQuotedNotes(identifiers: List<String>, nearScreen: Boolean = false) { fetchMissingQuotedNotesImpl(identifiers, nearScreen) }
 
     suspend fun resolveAddress(coordinate: QuoteRef.Coordinate, timeoutMs: Long = 8_000, settleMs: Long = 600): FeedNote? = resolveAddressImpl(coordinate, timeoutMs, settleMs)
 

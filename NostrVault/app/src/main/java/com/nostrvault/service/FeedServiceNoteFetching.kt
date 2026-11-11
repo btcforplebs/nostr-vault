@@ -14,9 +14,6 @@ import java.util.concurrent.ConcurrentHashMap
 import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
 import com.nostrvault.data.remote.isDamus
 import com.nostrvault.service.FeedService.Companion.FALLBACK_NOTE_RELAYS
-import com.nostrvault.service.FeedService.Companion.PARENT_CACHE_MAX
-import com.nostrvault.service.FeedService.Companion.PARENT_CACHE_TRIM_TO
-import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_BATCH_DELAY_MS
 import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
 
     /**
@@ -86,15 +83,22 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
         val refs = referenceIndex(chunk)
         requestRelayListsFor(chunk, refs)
         val firstHints = hintRelays(chunk, ownRelays, cap = 12, refs).filterKeys { !isDamus(it) }
-        requestNotes(ownRelays.associateWith { chunk } + firstHints, arrived)
+        // Both passes are over when this scope ends. The first keeps its full
+        // window, but the second does not wait for it past
+        // SECOND_PASS_AFTER_MS: a relay that never answers held the second
+        // pass back 8 s, and the note was on a fallback relay all along.
+        coroutineScope {
+            val firstPass = launch { requestNotes(ownRelays.associateWith { chunk } + firstHints, arrived) }
+            withTimeoutOrNull(NoteFetchLanes.SECOND_PASS_AFTER_MS) { firstPass.join() }
 
-        val stillMissing = chunk.filter { it !in arrived && !_parentNotesCache.value.containsKey(it) }
-        if (stillMissing.isNotEmpty()) {
-            val asked = ownRelays + firstHints.keys
-            val askedKeys = asked.map { normalizeRelay(it) }.toSet()
-            val fallbacks = FALLBACK_NOTE_RELAYS.filter { normalizeRelay(it) !in askedKeys }
-            val hints = hintRelays(stillMissing, asked + fallbacks, cap = 24, refs)
-            requestNotes(fallbacks.associateWith { stillMissing } + hints, arrived)
+            val stillMissing = chunk.filter { it !in arrived && !_parentNotesCache.value.containsKey(it) }
+            if (stillMissing.isNotEmpty()) {
+                val asked = ownRelays + firstHints.keys
+                val askedKeys = asked.map { normalizeRelay(it) }.toSet()
+                val fallbacks = FALLBACK_NOTE_RELAYS.filter { normalizeRelay(it) !in askedKeys }
+                val hints = hintRelays(stillMissing, asked + fallbacks, cap = 24, refs)
+                requestNotes(fallbacks.associateWith { stillMissing } + hints, arrived)
+            }
         }
 
         val givenUp = chunk.filter { it !in arrived && !_parentNotesCache.value.containsKey(it) }.toSet()
@@ -308,27 +312,24 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
             val note = FeedNote.fromEvent(eventId, pubkey, content, tags, createdAt, kind)
             // The trim walks every feed note (up to MAX_FEED_NOTES), so it is
             // built here, off Main, and published on Main only if the cache is
-            // still the map it was built from. It trims to 400, not 500: at
-            // exactly the cap, every later arrival paid the full walk again.
+            // still the map it was built from. Everything a loaded note points
+            // at is kept (see ReferencedNoteCache), so when most of the cache
+            // is still in use the trim frees little; the next one waits for
+            // another STEP arrivals instead of paying the walk on every one.
             while (true) {
                 val base = _parentNotesCache.value
                 var updated = base + (eventId to note)
-                if (updated.size > PARENT_CACHE_MAX) {
-                    val referencedIds = FeedNote.referencedIds(_notes.value)
-                    // Keep the most recently created referenced notes.
-                    updated = updated.filter { it.key in referencedIds }
-                        .toList()
-                        .sortedByDescending { it.second.createdAt }
-                        .take(PARENT_CACHE_TRIM_TO)
-                        .toMap()
-                    // Never trim the note just fetched: it counts as arrived,
-                    // so it would not be marked unavailable, and the feed
-                    // would ask for it again on its next change.
-                    if (eventId !in updated) updated = updated + (eventId to note)
+                val trims = updated.size > parentCacheTrimAt
+                if (trims) {
+                    // The note just fetched is never trimmed: it counts as
+                    // arrived, so it would not be marked unavailable, and the
+                    // feed would ask for it again on its next change.
+                    updated = ReferencedNoteCache.trimmed(updated, FeedNote.referencedIds(_notes.value), keep = eventId)
                 }
                 val published = withContext(Dispatchers.Main.immediate) {
                     if (_parentNotesCache.value !== base) return@withContext false
                     _parentNotesCache.value = updated
+                    if (trims) parentCacheTrimAt = ReferencedNoteCache.nextTrimAt(updated.size)
                     unavailableSince.remove(eventId)
                     if (eventId in _unavailableNoteIds.value) _unavailableNoteIds.update { it - eventId }
                     true
@@ -460,7 +461,11 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
         _parentNotesCache.value = updated
     }
 
-    internal fun FeedService.fetchMissingNotesBatchImpl(ids: List<String>) {
+    /**
+     * [nearScreen]: the ids belong to rows on screen or about to be. They are
+     * sent sooner and ahead of the rest ([NoteFetchLanes]).
+     */
+    internal fun FeedService.fetchMissingNotesBatchImpl(ids: List<String>, nearScreen: Boolean = false) {
         // A post that arrived through the feed itself can be the parent (or
         // repost original, or quote) a row is waiting on. Rows read parents
         // from the cache only, so they kept their skeleton until a relay
@@ -476,22 +481,23 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
             now - since >= UNAVAILABLE_RETRY_MS
         }
         if (wanted.isEmpty()) return
-        synchronized(noteFetchLock) {
-            noteFetchQueue.addAll(wanted)
-            if (noteFetchFlushJob != null) return
-            noteFetchFlushJob = scope.launch(Dispatchers.IO) {
+        val lane = if (nearScreen) NoteFetchLanes.Lane.NEAR_SCREEN else NoteFetchLanes.Lane.REST
+        val lanes = noteFetchLanes
+        synchronized(lanes) {
+            lanes.add(wanted, lane)
+            if (lanes.jobs[lane] != null) return
+            lanes.jobs[lane] = scope.launch(Dispatchers.IO) {
                 // Drain until nothing new arrived during the wait. The lookups
                 // run outside this job: as children they kept it active for the
                 // whole fetch window, and ids queued meanwhile were never sent.
                 while (true) {
-                    delay(NOTE_FETCH_BATCH_DELAY_MS)
-                    val batch = synchronized(noteFetchLock) {
-                        val b = noteFetchQueue.toList()
-                        noteFetchQueue.clear()
+                    delay(lane.delayMs)
+                    val batch = synchronized(lanes) {
+                        val b = lanes.drain(lane)
                         // Cleared under the same lock an enqueue checks, so an
                         // id added after this either sees the job and is drained,
                         // or sees null and starts the next one.
-                        if (b.isEmpty()) noteFetchFlushJob = null
+                        if (b.isEmpty()) lanes.jobs.remove(lane)
                         b
                     }
                     if (batch.isEmpty()) break
@@ -520,12 +526,12 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
             null -> null
         }
 
-    /** Batch-fetch quoted events that aren't cached yet. */
-    internal fun FeedService.fetchMissingQuotedNotesImpl(identifiers: List<String>) {
+    /** Batch-fetch quoted events that aren't cached yet. [nearScreen] as in [fetchMissingNotesBatchImpl]. */
+    internal fun FeedService.fetchMissingQuotedNotesImpl(identifiers: List<String>, nearScreen: Boolean = false) {
         val keys = identifiers.distinct().mapNotNull { id -> QuoteRef.key(id)?.let { id to it } }
 
         val hexIds = keys.mapNotNull { (_, key) -> (key as? QuoteRef.Key.Event)?.hexId }
-        if (hexIds.isNotEmpty()) fetchMissingNotesBatch(hexIds)
+        if (hexIds.isNotEmpty()) fetchMissingNotesBatch(hexIds, nearScreen)
 
         val coordinates = keys.mapNotNull { (raw, key) ->
             (key as? QuoteRef.Key.Address)?.let { raw to it.coordinate }

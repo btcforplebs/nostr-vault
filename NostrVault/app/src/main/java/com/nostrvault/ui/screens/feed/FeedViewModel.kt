@@ -871,6 +871,12 @@ class FeedViewModel @Inject constructor(
     fun fetchMissingQuotedNotes(identifiers: List<String>) =
         feedService.fetchMissingQuotedNotes(identifiers)
 
+    /** The rows on screen and the next few: looked up ahead of the rest of the feed's. */
+    internal fun fetchNotesNearScreen(refs: NearScreenReferences) {
+        if (refs.quotes.isNotEmpty()) feedService.fetchMissingQuotedNotes(refs.quotes, nearScreen = true)
+        if (refs.others.isNotEmpty()) feedService.fetchMissingNotesBatch(refs.others, nearScreen = true)
+    }
+
     fun fetchMissingQuotedProfiles(identifiers: List<String>) =
         feedService.fetchMissingQuotedProfiles(identifiers)
 

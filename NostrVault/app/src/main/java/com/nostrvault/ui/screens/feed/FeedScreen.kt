@@ -223,6 +223,11 @@ fun FeedScreen(
         }
     }
 
+    // Their quotes and parents too, ahead of the rest of the feed's.
+    FeedNearScreenNotesEffect(listState, viewModel) { row ->
+        if (isThreaded) feedThreads.getOrNull(row)?.entries?.map { it.note }.orEmpty() else listOfNotNull(notes.getOrNull(row))
+    }
+
     // Track whether the user is at the top of the feed
     val isAtTop by remember {
         derivedStateOf {
