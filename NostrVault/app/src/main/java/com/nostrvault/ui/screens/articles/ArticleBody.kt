@@ -26,6 +26,8 @@ import com.nostrvault.data.model.ArticleHighlight
 import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.QuoteRef
+import com.nostrvault.relay.HavenQuoteDecoder
 import com.nostrvault.ui.theme.*
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import java.text.DateFormat
@@ -47,6 +49,12 @@ internal fun ArticleBody(
     outsideCount: Int = 0,
     showOutside: Boolean = false,
     onToggleOutside: () -> Unit = {},
+    /**
+     * Draws one quote (a lookup key) as a card. Set by the reader, so an
+     * nevent, note or naddr in the body draws in place as a quote card
+     * (Logen, 2026-11-11; iOS MarkdownBodyView `.quotes`).
+     */
+    quoteCard: (@Composable (String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val gated = remember(note.id, note.tags) { com.nostrvault.data.model.GatedArticle.from(note) }
@@ -54,6 +62,7 @@ internal fun ArticleBody(
     val readMinutes = remember(note.id) { ArticleMeta.readingTimeMinutes(note.content) }
     val blocks = remember(note.content) { ArticleEngagement.blocks(note.content) }
     val placed = remember(blocks, highlights) { ArticleEngagement.place(highlights, blocks) }
+    val hasQuotes = quoteCard != null && note.quotedEventIds.isNotEmpty()
     val colors = LocalNostrVaultColors.current
 
     Column(modifier = modifier) {
@@ -100,7 +109,7 @@ internal fun ArticleBody(
         val bodyStyle = TextStyle(color = PrimaryText, fontSize = 16.sp, lineHeight = 24.sp)
         if (gated != null && gatedArticles != null) {
             GatedArticleBody(note, gated, gatedArticles, author, bodyStyle)
-        } else if (onHighlightBlock == null && placed.isEmpty()) {
+        } else if (onHighlightBlock == null && placed.isEmpty() && !hasQuotes) {
             MarkdownText(
                 markdown = note.content,
                 style = bodyStyle,
@@ -111,9 +120,15 @@ internal fun ArticleBody(
             // Block by block, so a passage other people highlighted gets a
             // soft yellow tint and a count that opens who highlighted it.
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                blocks.forEachIndexed { index, block ->
+                blocks.forEachIndexed { index, rawBlock ->
                     val shown = placed[index]
-                    if (shown == null) {
+                    val split = if (hasQuotes) {
+                        remember(rawBlock) { QuoteRef.articleQuoteSplit(rawBlock, HavenQuoteDecoder) }
+                    } else null
+                    val block = split?.first ?: rawBlock
+                    if (block.isBlank()) {
+                        // Nothing but quotes: only their cards below.
+                    } else if (shown == null) {
                         MarkdownText(markdown = block, style = bodyStyle, linkColor = colors.primary,
                             modifier = Modifier.fillMaxWidth())
                     } else {
@@ -145,6 +160,7 @@ internal fun ArticleBody(
                             }
                         }
                     }
+                    split?.second?.forEach { id -> quoteCard?.invoke(id) }
                 }
             }
         } else {

@@ -84,6 +84,11 @@ struct MarkdownBodyView: View {
 
                 case .rule:
                     Divider()
+
+                case .quotes(let ids):
+                    // The same cards a note's quotes get: a skeleton while it
+                    // is fetched, "unavailable" if it never turns up.
+                    QuotedEventsView(identifiers: ids, content: markdown)
                 }
             }
         }

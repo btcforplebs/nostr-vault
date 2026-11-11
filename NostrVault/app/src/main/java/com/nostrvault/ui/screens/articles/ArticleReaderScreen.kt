@@ -19,6 +19,8 @@ import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.ui.components.CustomZapSheet
 import com.nostrvault.ui.components.NostrWebLinks
+import com.nostrvault.ui.components.QuotedNoteCard
+import com.nostrvault.ui.components.QuotedNotePlaceholder
 import com.nostrvault.ui.components.threadLink
 import com.nostrvault.ui.theme.*
 
@@ -42,6 +44,10 @@ fun ArticleReaderScreen(
 
     val isLoading by viewModel.isLoading.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
+    val quotedNotes by viewModel.quotedNotes.collectAsState()
+    LaunchedEffect(note?.id) {
+        note?.quotedEventIds?.takeIf { it.isNotEmpty() }?.let { viewModel.fetchMissingQuotes(it) }
+    }
     val highlights by viewModel.highlights.collectAsState()
     val tally by viewModel.tally.collectAsState()
     val outsideCount by viewModel.outsideCount.collectAsState()
@@ -135,6 +141,14 @@ fun ArticleReaderScreen(
                 outsideCount = outsideCount,
                 showOutside = showOutside,
                 onToggleOutside = viewModel::toggleOutside,
+                quoteCard = { qid ->
+                    val quoted = remember(qid, quotedNotes) { viewModel.quotedNoteFor(qid) }
+                    if (quoted != null) {
+                        QuotedNoteCard(note = quoted, profile = profiles[quoted.pubkey], profiles = profiles, onClick = onNoteClick)
+                    } else {
+                        QuotedNotePlaceholder(identifier = qid, onClick = onNoteClick)
+                    }
+                },
                 modifier = Modifier
                     .padding(padding)
                     .verticalScroll(rememberScrollState())

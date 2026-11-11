@@ -260,3 +260,6 @@ body:not(:has(.tabbar)) .music-player.floating { bottom: calc(16px + env(safe-ar
 .now-playing-actions .note-actions.artist-zap { margin: 0; display: inline-flex; }
 /* Marketplace: Sell something (MarketplaceScreen.jsx). */
 .market-sell { display: inline-flex; align-self: flex-start; margin: 4px 12px 8px; }
+
+/* Notes and articles an article quotes, drawn in place as cards. */
+.md-quotes { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }

@@ -64,4 +64,26 @@ extension QuoteReference {
               let decoded = Bech32.decode(id) else { return nil }
         return profilePubkey(hrp: decoded.hrp, payload: decoded.data)
     }
+
+    /// An article paragraph or list item split into the text left once its
+    /// quote references are cut out, and the ids of what they quote, so the
+    /// reader draws each one as a card instead of a bare `nostr:nevent1…`
+    /// (Logen, 2026-11-11). A markdown link to a reference (`[label](nostr:…)`)
+    /// keeps its label as text. Nil when the text quotes nothing.
+    static func articleQuoteSplit(_ text: String) -> (text: String, ids: [String])? {
+        let ids = resolvedIdentifiers(in: text)
+        guard !ids.isEmpty else { return nil }
+        var rest = prefixBare(text)
+        // A link keeps its label as text; a bare reference goes.
+        for (regex, template) in [(articleQuoteLinkRegex, "$1"), (articleQuoteRegex, "")] {
+            rest = regex.stringByReplacingMatches(in: rest, range: NSRange(location: 0, length: (rest as NSString).length), withTemplate: template)
+        }
+        rest = rest.split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
+        return (rest.trimmingCharacters(in: .whitespaces), ids)
+    }
+
+    private static let articleQuoteRegex = try! NSRegularExpression(
+        pattern: #"nostr:(?:note1|nevent1|naddr1)[a-z0-9]+"#, options: .caseInsensitive)
+    private static let articleQuoteLinkRegex = try! NSRegularExpression(
+        pattern: #"\[([^\]]*)\]\(\s*nostr:(?:note1|nevent1|naddr1)[a-z0-9]+\s*\)"#, options: .caseInsensitive)
 }

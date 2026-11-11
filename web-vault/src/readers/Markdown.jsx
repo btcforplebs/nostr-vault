@@ -5,6 +5,8 @@ import { useState } from "preact/hooks"
 import { MediaLightbox } from "../components/MediaLightbox.jsx"
 import { imageItem } from "../net/note-media.js"
 import { parseMarkdown, parseInline } from "./longform.js"
+import { QuotedNote } from "../components/QuotedNote.jsx"
+import { parseRef } from "../net/quotes.js"
 
 export function Markdown({ body }) {
   return (
@@ -18,6 +20,11 @@ export function Markdown({ body }) {
           case "quote": return <blockquote key={i}><Inline text={b.text} /></blockquote>
           case "code": return <pre key={i}><code>{b.text}</code></pre>
           case "image": return <MdImage key={i} url={b.url} />
+          // A note or article the body quotes: the same card a note's quote gets.
+          case "quotes": return <div key={i} class="md-quotes">{b.refs.map(ref => {
+            const q = parseRef(ref)
+            return q && <QuotedNote key={ref} q={q} short={`${ref.slice(0, 12)}…`} />
+          })}</div>
           default: return <hr key={i} />
         }
       })}

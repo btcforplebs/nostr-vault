@@ -181,6 +181,30 @@ object QuoteRef {
         identifiers(content).mapNotNull { resolve(it, decoder) }.distinct()
 
     /**
+     * An article block split into the text left once its quote references are
+     * cut out, and the lookup keys of what they quote, so the reader draws each
+     * as a card instead of a bare `nostr:nevent1…` (Logen, 2026-11-11). A
+     * markdown link to a reference (`[label](nostr:…)`) keeps its label as
+     * text. Null when the block quotes nothing. iOS `articleQuoteSplit`.
+     */
+    fun articleQuoteSplit(block: String, decoder: Decoder): Pair<String, List<String>>? {
+        val ids = resolvedIdentifiers(block, decoder)
+        if (ids.isEmpty()) return null
+        val rest = BareNostrRefs.prefixBare(block)
+            .replace(ARTICLE_LINK_REGEX) { it.groupValues[1] }
+            .replace(REGEX, "")
+            .lines()
+            .joinToString("\n") { it.replace(Regex(" {2,}"), " ").trimEnd() }
+            .trim()
+        return rest to ids
+    }
+
+    private val ARTICLE_LINK_REGEX = Regex(
+        """\[([^\]]*)]\(\s*nostr:(?:note1|nevent1|naddr1)[a-z0-9]+\s*\)""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /**
      * Reads a lookup key back. Returns null only for a string that is neither —
      * so a caller that gets null is looking at something it did not produce,
      * rather than at a reference it should have handled.
