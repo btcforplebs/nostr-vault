@@ -7,7 +7,7 @@ import Foundation
 /// bunker signatures in 25 minutes on an iPhone 18, nothing new saved.
 /// Written after each save, so a run cut short resumes where it stopped.
 /// Lives in the vault's data folder: starting the vault fresh forgets it too.
-/// Android twin: none yet (Android Auto-Mirror reads hash-named links only).
+/// Android twin: `BlossomService.kt` mirrorFromNoteMedia, not changed yet.
 struct AutoMirrorLedger: Codable, Equatable {
     static let fileName = "automirror_saved.json"
 
