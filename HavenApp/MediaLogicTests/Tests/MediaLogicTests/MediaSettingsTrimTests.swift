@@ -109,11 +109,16 @@ final class MediaSettingsTrimTests: XCTestCase {
     func testAvatarPrefetchIsCappedPerRun() throws {
         XCTAssertEqual(AvatarPrefetchRules.perRun, 200)
         let urls = (0..<2000).map { URL(string: "https://example.com/\($0).jpg")! }
-        XCTAssertEqual(AvatarPrefetchRules.thisRun(urls), Array(urls.prefix(200)))
-        XCTAssertEqual(AvatarPrefetchRules.thisRun(Array(urls.prefix(3))).count, 3)
+        XCTAssertEqual(AvatarPrefetchRules.thisRun(urls, fetchable: { _ in true }), Array(urls.prefix(200)))
+        XCTAssertEqual(AvatarPrefetchRules.thisRun(Array(urls.prefix(3)), fetchable: { _ in true }).count, 3)
+        // Dead or backing-off pictures load() would skip must not use up the
+        // 200, or the same dead ones fill every run and the rest never come.
+        let dead = Set(urls.prefix(300))
+        XCTAssertEqual(AvatarPrefetchRules.thisRun(urls, fetchable: { !dead.contains($0) }), Array(urls[300..<500]))
         let src = try source("HavenApp/Services/ProfilePicturePrefetchService.swift")
         XCTAssertTrue(src.contains("AvatarPrefetchRules.mayRun("), "the monitor uses the gate")
         XCTAssertTrue(src.contains("AvatarPrefetchRules.thisRun("), "the run uses the cap")
+        XCTAssertTrue(src.contains("fetchable: AvatarImageCache.shared.wouldFetch"), "skips what load() would skip")
     }
 
     // MARK: One Media Servers row and page

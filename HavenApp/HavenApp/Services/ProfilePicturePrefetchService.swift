@@ -139,7 +139,7 @@ class ProfilePicturePrefetchService {
 
             // Filter to only uncached URLs
             // Capped per run; whatever is left goes in the next day's run.
-            let uncached = AvatarPrefetchRules.thisRun(urls.filter { !AvatarImageCache.shared.hasSmallCopy(of: $0) })
+            let uncached = AvatarPrefetchRules.thisRun(urls, fetchable: AvatarImageCache.shared.wouldFetch)
 
             #if DEBUG
             print("ProfilePicturePrefetchService: \(urls.count) total URLs, \(uncached.count) uncached")

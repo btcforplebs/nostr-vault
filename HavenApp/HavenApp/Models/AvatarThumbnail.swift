@@ -69,8 +69,10 @@ enum AvatarPrefetchRules {
         satisfied && !cellular && !expensive && !constrained
     }
 
-    /// The first `perRun` uncached pictures; the rest wait for the next run.
-    static func thisRun(_ uncached: [URL]) -> [URL] {
-        Array(uncached.prefix(perRun))
+    /// The first `perRun` pictures that would actually be fetched; the rest
+    /// wait for the next run. Dead or backing-off links are dropped first so
+    /// they can't use up every run.
+    static func thisRun(_ urls: [URL], fetchable: (URL) -> Bool) -> [URL] {
+        Array(urls.lazy.filter(fetchable).prefix(perRun))
     }
 }
