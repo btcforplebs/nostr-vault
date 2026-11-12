@@ -14,38 +14,27 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import com.nostrvault.data.model.GlobeArcs
+import com.nostrvault.data.model.GlobeLive
 import com.nostrvault.data.model.LiveArcsSetting
 import com.nostrvault.ui.screens.dashboard.IconFilterButton
 
 /**
- * The live arrivals switches, kept across launches with iOS's keys
- * ([LiveArcsSetting]): the antenna (the main switch), which feeds' notes fly,
- * and which sorts. The feed and sort switches live in My Web ([MyWebSheet]),
- * as on iOS.
+ * Live arrivals, kept across launches with iOS's key ([LiveArcsSetting]):
+ * the bar's antenna is the one switch, and every feed and sort flies (My
+ * Web's feed and sort switches were cut, Logen 11/12).
  */
 @Stable
 internal class LiveArcsState(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(LiveArcsSetting.PREFS, Context.MODE_PRIVATE)
+        .also(LiveArcsSetting::retireCutSwitches)
     var on by mutableStateOf(LiveArcsSetting.isOn(prefs))
         private set
-    var rings by mutableStateOf(LiveArcsSetting.rings(prefs))
-        private set
-    var show by mutableStateOf(LiveArcsSetting.show(prefs))
-        private set
+    val rings: Set<GlobeArcs.Ring> = GlobeArcs.Ring.entries.toSet()
+    val show = GlobeLive.Show()
 
     fun switchOn(value: Boolean) {
         prefs.edit().putBoolean(LiveArcsSetting.KEY, value).apply()
         on = value
-    }
-
-    fun setRing(ring: GlobeArcs.Ring, value: Boolean) {
-        prefs.edit().putBoolean(LiveArcsSetting.key(ring), value).apply()
-        rings = LiveArcsSetting.rings(prefs)
-    }
-
-    fun setSort(sort: GlobeArcs.Sort, value: Boolean) {
-        prefs.edit().putBoolean(LiveArcsSetting.key(sort), value).apply()
-        show = LiveArcsSetting.show(prefs)
     }
 }
 

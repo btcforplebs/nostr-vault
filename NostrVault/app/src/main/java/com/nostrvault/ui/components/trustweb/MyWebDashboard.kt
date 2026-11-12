@@ -20,22 +20,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.automirrored.filled.Reply
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.SettingsInputAntenna
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Hub
-import androidx.compose.material.icons.outlined.People
-import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -58,7 +47,6 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.nostrvault.data.model.GlobeArcs
 import com.nostrvault.data.model.TrustMap
 import com.nostrvault.ui.navigation.FloatingButtonRow
 import com.nostrvault.ui.screens.dashboard.DashDivider
@@ -110,6 +98,15 @@ internal object MyWebWords {
     }
 
     fun count(value: Int?): String = value?.let(::n) ?: "–"
+
+    const val NEWCOMERS_DETAIL = "People your follows started following this week. Tap one to see how they reach you."
+
+    /** New in your web with no one in it (iOS `WotNewcomersView`). */
+    fun newcomersEmpty(noWeb: Boolean, loading: Boolean): String = when {
+        !noWeb -> "No one new in your web this week"
+        loading -> "Loading your web..."
+        else -> "Your follows' lists haven't come in yet"
+    }
 }
 
 /**
@@ -158,16 +155,17 @@ internal class MyWebNumbers(
 )
 
 /**
- * My Web: what the WOT tab's globe holds, in numbers, and the switches for
- * what flies across it. A count row puts that part of your web on the globe
- * and closes the sheet (iOS `MyWebDashboardView`).
+ * My Web: what the WOT tab's globe holds, in numbers, and who is new in it. A
+ * count row puts that part of your web on the globe and closes the sheet; a
+ * face opens that person's card (iOS `MyWebDashboardView`). No switches: the
+ * bar's antenna is the one for live arrivals (the rest were cut, Logen 11/12).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun MyWebSheet(
     numbers: MyWebNumbers,
     filters: WotFilters,
-    liveArcs: LiveArcsState,
+    newcomers: @Composable () -> Unit,
     onLayer: (TrustMap.Layer) -> Unit,
     onRebuild: () -> Unit,
     onDismiss: () -> Unit,
@@ -195,6 +193,7 @@ internal fun MyWebSheet(
                     TextButton(onClick = onDismiss) { Text("Done", color = LocalNostrVaultColors.current.primary) }
                 }
                 Headline(numbers.counts[TrustMap.Layer.EVERYONE] ?: 0)
+                if (numbers.follows > 0) DashSection(title = "New in your web") { newcomers() }
                 DashSection(title = "Who you can see") {
                     TrustMap.layers(numbers.hasVouches).forEachIndexed { index, item ->
                         if (index > 0) DashDivider()
@@ -218,7 +217,6 @@ internal fun MyWebSheet(
                         onDismiss()
                     }
                 }
-                LiveArrivalsSections(liveArcs)
                 DashSection(title = "Upkeep") {
                     DashRow(NostrVaultIcons.Refresh, "Rebuild your web",
                         MyWebWords.rebuilt(numbers.rebuilding, numbers.rebuiltAgo), RowState.INFO) {
@@ -292,59 +290,6 @@ private fun CountRow(icon: ImageVector, title: String, detail: String, count: In
             contentDescription = null,
             tint = if (selected) primary else SecondaryText,
             modifier = Modifier.size(14.dp),
-        )
-    }
-}
-
-/** Live arrivals and What flies: the feeds and sorts behind the bar's antenna. */
-@Composable
-private fun LiveArrivalsSections(state: LiveArcsState) {
-    DashSection(title = "Live arrivals") {
-        SwitchRow(Icons.Filled.SettingsInputAntenna, "Stars on the globe", "A star for each new note as it arrives",
-            state.on) { state.switchOn(it) }
-        DashDivider()
-        SwitchRow(Icons.Outlined.People, GlobeArcs.Ring.FOLLOWING.title, "Your follows' notes, from the inner ring. The fewest",
-            GlobeArcs.Ring.FOLLOWING in state.rings, enabled = state.on) { state.setRing(GlobeArcs.Ring.FOLLOWING, it) }
-        DashDivider()
-        SwitchRow(Icons.Outlined.Hub, GlobeArcs.Ring.DISCOVER.title, "Your wider web, from the next ring out. More",
-            GlobeArcs.Ring.DISCOVER in state.rings, enabled = state.on) { state.setRing(GlobeArcs.Ring.DISCOVER, it) }
-        DashDivider()
-        SwitchRow(Icons.Outlined.Public, GlobeArcs.Ring.GLOBAL.title, "The rest of Global, from the outer haze. The most",
-            GlobeArcs.Ring.GLOBAL in state.rings, enabled = state.on) { state.setRing(GlobeArcs.Ring.GLOBAL, it) }
-    }
-    DashSection(title = "What flies") {
-        SwitchRow(Icons.Outlined.ChatBubbleOutline, "New notes", "A star for each new note",
-            state.show.notes, enabled = state.on) { state.setSort(GlobeArcs.Sort.NOTE, it) }
-        DashDivider()
-        SwitchRow(Icons.AutoMirrored.Filled.Reply, "Replies", "A star from who replied to who they answered",
-            state.show.replies, enabled = state.on) { state.setSort(GlobeArcs.Sort.REPLY, it) }
-        DashDivider()
-        SwitchRow(Icons.Filled.Repeat, "Reposts", "A star from who reposted to who wrote it",
-            state.show.reposts, enabled = state.on) { state.setSort(GlobeArcs.Sort.REPOST, it) }
-        DashDivider()
-        SwitchRow(Icons.Filled.FavoriteBorder, "Reactions", "A smaller star from who reacted to who they reacted to",
-            state.show.reactions, enabled = state.on) { state.setSort(GlobeArcs.Sort.REACTION, it) }
-        DashDivider()
-        SwitchRow(Icons.Filled.Bolt, "Zaps", "A lightning bolt from the zapper. Bigger zaps strike harder",
-            state.show.zaps, enabled = state.on) { state.setSort(GlobeArcs.Sort.ZAP, it) }
-    }
-}
-
-@Composable
-private fun SwitchRow(
-    icon: ImageVector,
-    title: String,
-    detail: String,
-    checked: Boolean,
-    enabled: Boolean = true,
-    onChange: (Boolean) -> Unit,
-) {
-    DashRow(icon, title, detail, RowState.INFO) {
-        Switch(
-            checked = checked,
-            onCheckedChange = onChange,
-            enabled = enabled,
-            colors = SwitchDefaults.colors(checkedTrackColor = LocalNostrVaultColors.current.primary),
         )
     }
 }

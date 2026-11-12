@@ -654,7 +654,11 @@ internal fun TrustWebContent(
                 MyWebSheet(
                     numbers = MyWebNumbers(counts, vouches != null, layer, (myFollows - me).size, rebuilding, rebuiltAgo),
                     filters = wotFilters,
-                    liveArcs = liveArcs,
+                    newcomers = {
+                        NewInWebSection(me, feedService, nostrService, profiles) { picked ->
+                            myWebOpen = false; jump(0); if (picked != me) openCard(picked)
+                        }
+                    },
                     onLayer = { jump(0); layer = it; myWebOpen = false },
                     onRebuild = ::refresh,
                     onDismiss = { myWebOpen = false },
