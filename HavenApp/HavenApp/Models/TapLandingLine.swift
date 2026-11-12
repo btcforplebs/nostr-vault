@@ -23,4 +23,14 @@ enum TapLandingLine {
     static func bottomRoom(viewportHeight: CGFloat) -> CGFloat {
         max(0, viewportHeight - gap)
     }
+
+    /// The same room, less what already sits under the open post's top
+    /// (`contentBelowTop`: from that top to where the room starts). Only the
+    /// shortfall is added, so a long thread ends at its last reply instead of
+    /// a screen of nothing. A negative measure means not laid out yet: full room.
+    static func bottomRoom(viewportHeight: CGFloat, contentBelowTop: CGFloat) -> CGFloat {
+        let full = bottomRoom(viewportHeight: viewportHeight)
+        guard contentBelowTop >= 0 else { return full }
+        return max(0, full - contentBelowTop)
+    }
 }
