@@ -8,6 +8,8 @@ import SwiftUI
 struct YourDevicesSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     @State private var showPair = false
+    /// The own device the owner's newest 10063 names as public on the web.
+    @State private var webDevice: String?
     #if os(iOS)
     @ObservedObject private var mesh = FipsMeshService.shared
     @ObservedObject private var homeVault = HomeVaultSender.shared
@@ -19,6 +21,12 @@ struct YourDevicesSettingsView: View {
         content
             .sheet(isPresented: $showPair) {
                 PairDeviceView().environmentObject(configService)
+            }
+            // Only the server lists, not all of NostrService: it changes often.
+            .onReceive(NostrService.shared.$serverLists) { lists in
+                let owner = Bech32.decode(configService.config.ownerNpub)?.hexString.lowercased() ?? ""
+                webDevice = YourDevicesLogic.webDevice(serverList: lists[owner] ?? [],
+                                                       domains: MeshCopyV2Service.peerDomains())
             }
     }
 
@@ -73,7 +81,8 @@ struct YourDevicesSettingsView: View {
                 NavigationLink {
                     FipsMeshDeviceView(npub: device.npub)
                 } label: {
-                    YourDeviceCard(device: device, status: YourDevicesLogic.statusLine(device, peers: peers))
+                    YourDeviceCard(device: device, status: YourDevicesLogic.statusLine(device, peers: peers),
+                                   isWebDevice: device.npub == webDevice)
                 }
                 syncRow(device)
             }
@@ -134,7 +143,7 @@ struct YourDevicesSettingsView: View {
                         .foregroundColor(.secondary)
                 }
                 ForEach(devices) { device in
-                    YourDeviceCard(device: device, status: device.role.label)
+                    YourDeviceCard(device: device, status: device.role.label, isWebDevice: device.npub == webDevice)
                 }
                 Button(action: connect) {
                     Label("Connect a phone", systemImage: "qrcode")
@@ -155,6 +164,8 @@ struct YourDevicesSettingsView: View {
 struct YourDeviceCard: View {
     let device: MeshDevice
     let status: String
+    /// The one own device public on the web (multi-Mac rules §4): a badge.
+    var isWebDevice = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -163,7 +174,17 @@ struct YourDeviceCard: View {
                 .foregroundColor(.havenPurple)
                 .frame(width: 32)
             VStack(alignment: .leading, spacing: 2) {
-                Text(device.displayName).font(.appBody)
+                HStack(spacing: 6) {
+                    Text(device.displayName).font(.appBody)
+                    if isWebDevice {
+                        Text("Public on the web")
+                            .font(.appCaption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.havenPurple.opacity(0.15)))
+                            .foregroundColor(.havenPurple)
+                    }
+                }
                 Text(status)
                     .font(.appCaption)
                     .foregroundColor(.secondary)

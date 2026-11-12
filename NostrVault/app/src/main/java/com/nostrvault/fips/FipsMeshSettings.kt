@@ -49,6 +49,11 @@ data class FipsDevice(
      * 2026-11-05). "" for devices added before this: the owner's.
      */
     @SerialName("linked_by") val linkedBy: String = "",
+    /**
+     * A Mac's or box's own web domain (host, no scheme), when it has one: tells this phone which https entry in the
+     * owner's lists is one of theirs (multi-Mac rules §3.3, iOS MeshDevice.domain). "" for phones and older entries.
+     */
+    val domain: String = "",
 )
 
 @Serializable

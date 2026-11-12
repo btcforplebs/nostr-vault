@@ -59,6 +59,7 @@ type Config struct {
 	ImportSeedRelays                     []string            `json:"import_seed_relays"`
 	DmRelays                             []string            `json:"dm_relays"`
 	MacRelayURL                          string              `json:"mac_relay_url"`
+	WebDomainProof                       string              `json:"-"` // Mac app only: own https host signed with the mesh key, told to own devices over the mesh (copyv2_device.go)
 	BackupProvider                       string              `json:"backup_provider"`
 	BackupIntervalHours                  int                 `json:"backup_interval_hours"`
 	WotDepth                             int                 `json:"wot_depth"`
@@ -144,6 +145,7 @@ func loadConfig() Config {
 		ImportSeedRelays:                     getRelayListFromFile(getEnv("IMPORT_SEED_RELAYS_FILE")),
 		DmRelays:                             getRelayListFromFile(getEnvString("DM_RELAYS_FILE", "")),
 		MacRelayURL:                          getEnvString("MAC_RELAY_URL", ""),
+		WebDomainProof:                       getEnvString("WEB_DOMAIN_PROOF", ""),
 		BackupProvider:                       getEnvString("BACKUP_PROVIDER", "none"),
 		BackupIntervalHours:                  getEnvInt("BACKUP_INTERVAL_HOURS", 24),
 		WotDepth:                             getEnvInt("WOT_DEPTH", defaultWotDepth),

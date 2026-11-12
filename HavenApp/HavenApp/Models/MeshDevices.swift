@@ -44,6 +44,11 @@ struct MeshDevice: Codable, Hashable, Identifiable {
     var npub: String
     var name: String
     var role: MeshDeviceRole
+    /// A Mac's or box's own web domain (`host`, no scheme), when it has one.
+    /// Tells this device which https entry in the owner's lists is one of
+    /// theirs, so it can tell which device is public on the web (multi-Mac
+    /// rules §3.3). nil for phones and for entries saved before it.
+    var domain: String? = nil
 
     var id: String { npub }
 
@@ -119,9 +124,12 @@ enum MeshDevicesLogic {
 
     /// My Devices: the stored list, with the devices other settings point at
     /// (the Mac by its mesh address, the home vault, the browser page) kept in
-    /// step. Each of those has one source of truth elsewhere, so a stored entry
-    /// with that role whose source no longer names it is dropped, and a source
-    /// with no stored entry yet gets one. Stored order is kept; new ones go last.
+    /// step. The home vault and the browser page each have one source of truth
+    /// elsewhere, so a stored entry with that role whose source no longer names
+    /// it is dropped. Macs are not: any number of Macs and boxes are your
+    /// devices (multi-Mac rules §4), and the Mac setting names only the first,
+    /// for older callers. A source with no stored entry yet gets one. Stored
+    /// order is kept; new ones go last.
     static func merged(
         stored: [MeshDevice],
         macNpub: String?,
@@ -137,7 +145,7 @@ enum MeshDevicesLogic {
         var out: [MeshDevice] = []
         var seen = Set<String>()
         for device in stored where !seen.contains(device.npub) {
-            if device.role != .phone, source(for: device.role) != device.npub { continue }
+            if device.role != .phone, device.role != .mac, source(for: device.role) != device.npub { continue }
             seen.insert(device.npub)
             out.append(device)
         }
@@ -156,19 +164,41 @@ enum MeshDevicesLogic {
         if let i = out.firstIndex(where: { $0.npub == device.npub }) {
             out[i] = device
         } else {
-            // One Mac, one home vault and one browser page: a new one replaces
-            // the old entry, as it replaces the setting behind it. An old home
-            // vault stays one of your devices, as a plain device: switching
-            // vaults must not drop it from My Devices, its mesh access or the
-            // 10063 (2026-10-22: Mac to Moto dropped the Mac).
+            // One home vault and one browser page: a new one replaces the old
+            // entry, as it replaces the setting behind it. An old home vault
+            // stays one of your devices, as a plain device: switching vaults
+            // must not drop it from My Devices, its mesh access or the 10063
+            // (2026-10-22: Mac to Moto dropped the Mac). Macs and phones add:
+            // another Mac is another full copy (multi-Mac rules §4).
             if device.role == .homeVault {
                 for i in out.indices where out[i].role == .homeVault { out[i].role = .phone }
-            } else if device.role != .phone {
-                out.removeAll { $0.role == device.role }
+            } else if device.role == .browser {
+                out.removeAll { $0.role == .browser }
             }
             out.append(device)
         }
         return out
+    }
+
+    /// Every Mac and box in My Devices, the Mac setting's one first (older
+    /// callers know only that one), then My Devices order, each once, never
+    /// this device. A Mac set only in the setting counts too.
+    static func macs(_ devices: [MeshDevice], macNpub: String?, ownNpub: String?) -> [String] {
+        var out: [String] = []
+        if let macNpub, macNpub != ownNpub { out.append(macNpub) }
+        for device in devices where device.role == .mac && device.npub != ownNpub && !out.contains(device.npub) {
+            out.append(device.npub)
+        }
+        return out
+    }
+
+    /// What the Mac setting names after `removed` leaves My Devices: the next
+    /// Mac, so the Mac sync and older callers keep a Mac while one is left;
+    /// nil when none is. Removing a Mac the setting doesn't name changes
+    /// nothing (`.some(macNpub)`).
+    static func macSettingAfterRemoving(_ removed: String, devices: [MeshDevice], macNpub: String?) -> String? {
+        guard macNpub == removed else { return macNpub }
+        return devices.first { $0.role == .mac && $0.npub != removed }?.npub
     }
 
     /// Every role whose setting names `npub`. One address can be two of them

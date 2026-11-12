@@ -71,7 +71,9 @@ final class MeshDevicesTests: XCTestCase {
         XCTAssertEqual(vault.map(\.npub), ["npub1old", moto, home])
         XCTAssertEqual(vault.map(\.role), [.phone, .phone, .homeVault])
         let mac2 = MeshDevicesLogic.adding(MeshDevice(npub: "npub1mac2", name: "", role: .mac), to: [MeshDevice(npub: mac, name: "", role: .mac)])
-        XCTAssertEqual(mac2.map(\.npub), ["npub1mac2"], "a new Mac still replaces the old one")
+        XCTAssertEqual(mac2.map(\.npub), [mac, "npub1mac2"], "another Mac is another full copy (multi-Mac rules §4)")
+        let page2 = MeshDevicesLogic.adding(MeshDevice(npub: "npub1page2", name: "", role: .browser), to: [MeshDevice(npub: page, name: "", role: .browser)])
+        XCTAssertEqual(page2.map(\.npub), ["npub1page2"], "a new browser page still replaces the old one")
         let phones = MeshDevicesLogic.adding(MeshDevice(npub: "npub1ipad", name: "", role: .phone), to: stored)
         XCTAssertEqual(phones.count, 3)
     }

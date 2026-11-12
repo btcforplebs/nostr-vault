@@ -56,7 +56,9 @@ enum FipsMeshDevices {
         config.config.meshDevices = MeshDevicesLogic.adding(device, to: config.config.meshDevices)
         switch role {
         case .mac:
-            config.config.macRelayURL = npub
+            // Another Mac adds a card (multi-Mac rules §4); the Mac setting
+            // keeps naming the first, which the relay's Mac sync uses.
+            if config.config.macRelayMeshNpub == nil { config.config.macRelayURL = npub }
         case .homeVault:
             HomeVaultSender.shared.setHomeVault(.init(ownerHex: owner, meshNpub: npub))
         case .browser:
@@ -87,6 +89,12 @@ enum FipsMeshDevices {
             clearSetting(role, npub: device.npub, config: config)
         }
         config.config.meshDevices = MeshDevicesLogic.removing(npub: device.npub, from: config.config.meshDevices)
+        // The Mac setting moves to the next Mac, so the Mac sync keeps one
+        // while any is left.
+        if roles.contains(.mac),
+           let next = MeshDevicesLogic.macSettingAfterRemoving(device.npub, devices: before, macNpub: device.npub) {
+            config.config.macRelayURL = next
+        }
         config.save()
         MeshCopyV2Service.shared.forget(peer: device.npub)
         // The media server list is left alone: a listed vault is removed

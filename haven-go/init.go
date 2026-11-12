@@ -573,6 +573,8 @@ func initRelays(ctx context.Context) error {
 	// On the relay port, /list and HEAD of unposted blobs only to the owner's app or signed auth (relay_blob_gate.go).
 	guardRelayBlobs(blossomServer)
 	guardDeleteServer(blossomServer)
+	// Last: notes the signed delete for the delete list (copyv2_deletes.go).
+	blossomServer.RejectDelete = append(blossomServer.RejectDelete, noteCopyDeleteAuth)
 	blossomServer.DeleteBlob = append(blossomServer.DeleteBlob, func(ctx context.Context, sha256 string, ext string) error {
 		slog.Debug("deleting blob", "sha256", sha256, "ext", ext)
 		if err := deleteBlobFiles(sha256); err != nil {
@@ -580,6 +582,8 @@ func initRelays(ctx context.Context) error {
 		}
 		// Every open Media tab drops the tile (files_relay.go).
 		filesBlobGone(ctx, sha256)
+		// The owner's other devices drop it too, at their next catch-up.
+		keepOwnCopyDelete(sha256)
 		return nil
 	})
 	blossomServer.RejectUpload = append(blossomServer.RejectUpload, func(ctx context.Context, event *nostr.Event, size int, ext string) (bool, string, int) {

@@ -6,9 +6,55 @@ import SwiftUI
 /// What it has served stays on the Mesh page.
 struct YourDevicesThisPhoneSection: View {
     @ObservedObject private var mesh = FipsMeshService.shared
+    @EnvironmentObject private var configService: ConfigService
+
+    /// Keep a full copy (multi-Mac rules §3): on unless turned off, and
+    /// locked on in mobile vault mode.
+    private var fullCopy: Binding<Bool> {
+        Binding(
+            get: { YourDevicesLogic.keepsFullCopy(isDesktop: false, mobileVault: mesh.kioskActive,
+                                                  stored: configService.config.keepFullCopy) },
+            set: { on in
+                configService.config.keepFullCopy = on
+                configService.save()
+            }
+        )
+    }
+
+    private var wifiOnly: Binding<Bool> {
+        Binding(
+            get: { configService.config.fullCopyWifiOnly != false },
+            set: { on in
+                configService.config.fullCopyWifiOnly = on
+                configService.save()
+            }
+        )
+    }
 
     var body: some View {
         Section {
+            Toggle(isOn: fullCopy) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Keep a full copy on this phone").font(.appBody)
+                    Text(mesh.kioskActive ? YourDevicesLogic.fullCopyLockedLine
+                         : "Every photo and file from your other devices shows up here. Off: notes only, files when you open them.")
+                        .font(.appCaption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .tint(Color.havenPurple)
+            .disabled(YourDevicesLogic.fullCopyLocked(mobileVault: mesh.kioskActive))
+            if fullCopy.wrappedValue {
+                Toggle(isOn: wifiOnly) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Wi-Fi only").font(.appBody)
+                        Text("Catching up on files waits for Wi-Fi. What you add here always goes out right away.")
+                            .font(.appCaption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .tint(Color.havenPurple)
+            }
             Toggle(isOn: Binding(
                 get: { mesh.kioskActive || mesh.starting },
                 set: { on in on ? mesh.startKiosk() : mesh.stopKiosk() }

@@ -37,7 +37,11 @@ const (
 	copySyncMaxBody     = 32 << 20
 	copySyncOverlap     = 7 * 24 * time.Hour // gift wraps backdate up to 2 days
 	copySyncFile        = "copy_sync.json"
-	copySyncMaxFiles    = 2000
+	// copySyncNotesOnlyMark keys a light device's rounds apart from full ones.
+	copySyncNotesOnlyMark = "#notes"
+	copySyncMaxFiles      = 2000
+	// copySyncDeletesMark keys the delete-list swap's own mark.
+	copySyncDeletesMark = "#deletes"
 )
 
 // copySyncPage: ids per page of A's list (a var so a test can page small).
@@ -73,7 +77,8 @@ func (s *copyServer) store(name string) DBBackend {
 }
 
 func (s *copyServer) serveSync(w http.ResponseWriter, r *http.Request, what string) {
-	if _, ok := s.bearer(r); !ok {
+	tokenHash, ok := s.bearer(r)
+	if !ok {
 		http.Error(w, "auth_refused", http.StatusUnauthorized)
 		return
 	}
@@ -166,6 +171,10 @@ func (s *copyServer) serveSync(w http.ResponseWriter, r *http.Request, what stri
 			return
 		}
 		copyJSON(w, http.StatusOK, map[string]string{"accounts": takeCopyAccounts(raw)})
+	case what == "deletes":
+		s.serveSyncDeletes(w, r, tokenHash)
+	case what == "device":
+		s.serveSyncDevice(w, r, tokenHash)
 	case what == "settings" && r.Method == http.MethodGet:
 		raw, err := os.ReadFile(copySettingsFile)
 		if err != nil || copySettingsRefusal(raw, time.Now()) != "" {
@@ -333,14 +342,22 @@ type copyFile struct {
 	CreatedAt int64  `json:"created_at"`
 }
 
-// copyOwnMediaSet: the owner's own files (contract §4) on this device, by hash.
+// copyOwnMediaSet: the owner's own files (contract §4) on this device, by
+// hash, less those on the delete list (copyv2_deletes.go).
 func copyOwnMediaSet(ctx context.Context) (map[string]bool, error) {
 	accounts := copyAccounts()
-	uploaders, _, err := copyOwnBlobRecords(ctx, accounts)
+	uploaders, records, err := copyOwnBlobRecords(ctx, accounts)
 	if err != nil {
 		return nil, err
 	}
-	return copyOwnMedia(uploaders, accounts), nil
+	own := copyOwnMedia(uploaders, accounts)
+	deleted := copyDeletedAt()
+	for sha := range own {
+		if rec := records[sha]; rec != nil && copyIsDeleted(deleted, sha, rec.PubKey, int64(rec.CreatedAt)) {
+			delete(own, sha)
+		}
+	}
+	return own, nil
 }
 
 // copyOwnFilesSince: own files whose record is at or after since, newest
@@ -355,10 +372,11 @@ func copyOwnFilesSince(ctx context.Context, since, until int64, after string) ([
 		return nil, false, err
 	}
 	own := copyOwnMedia(uploaders, accounts)
+	deleted := copyDeletedAt()
 	var out []copyFile
 	for sha, rec := range records {
 		at := int64(rec.CreatedAt)
-		if at < since || (until > 0 && (at > until || (at == until && sha <= after))) || !own[sha] || copyBlobFile(sha) == "" {
+		if at < since || (until > 0 && (at > until || (at == until && sha <= after))) || !own[sha] || copyIsDeleted(deleted, sha, rec.PubKey, at) || copyBlobFile(sha) == "" {
 			continue
 		}
 		f := copyFile{SHA256: sha, Pubkey: rec.PubKey, CreatedAt: int64(rec.CreatedAt)}
@@ -414,10 +432,16 @@ func clearCopySynced(peer string) {
 	copySyncMu.Lock()
 	defer copySyncMu.Unlock()
 	all := loadCopySync()
-	if _, ok := all[copyPeerKey(peer)]; !ok {
+	full, notes, deletes := copyPeerKey(peer), copyPeerKey(peer+copySyncNotesOnlyMark), copyPeerKey(peer+copySyncDeletesMark)
+	_, hasFull := all[full]
+	_, hasNotes := all[notes]
+	_, hasDeletes := all[deletes]
+	if !hasFull && !hasNotes && !hasDeletes {
 		return
 	}
-	delete(all, copyPeerKey(peer))
+	delete(all, full)
+	delete(all, notes)
+	delete(all, deletes)
 	raw, _ := json.Marshal(all)
 	tmp := copySyncFile + ".tmp"
 	if err := os.WriteFile(tmp, raw, 0o600); err == nil {
@@ -428,6 +452,7 @@ func clearCopySynced(peer string) {
 // copySyncResult: what one catch-up moved.
 type copySyncResult struct {
 	Got, Sent, Files int
+	Gone             int // files removed by the peer's delete list
 	Settings         string
 	Accounts         string
 }
@@ -446,8 +471,15 @@ func (c *copyClient) sync(ctx context.Context) (copySyncResult, error) {
 	if c.token == "" {
 		return res, copyErr("auth_refused")
 	}
+	// A light device's rounds keep their own mark: turning full copy on
+	// later then starts the file pass from the beginning, not from the last
+	// notes-only round (multi-Mac rules §3, rule 7).
+	mark := c.peer
+	if c.notesOnly {
+		mark = c.peer + copySyncNotesOnlyMark
+	}
 	copySyncMu.Lock()
-	last := loadCopySync()[copyPeerKey(c.peer)]
+	last := loadCopySync()[copyPeerKey(mark)]
 	copySyncMu.Unlock()
 	started := time.Now().Unix()
 	since := int64(0)
@@ -457,6 +489,25 @@ func (c *copyClient) sync(ctx context.Context) (copySyncResult, error) {
 	// Accounts first, both ways, so each side keeps the other's new accounts'
 	// notes in this same round (§3.4, §6). They only ever merge.
 	res.Accounts, _ = c.syncAccounts(ctx)
+	// Each side's web domain, when it has one (copyv2_device.go).
+	c.syncDevice(ctx)
+	// The delete lists, before any note or file moves, on a light device
+	// too: a file the owner deleted goes everywhere (copyv2_deletes.go).
+	// Their own mark per peer: the first swap with a peer takes its whole
+	// list, even on a device whose first copy set the notes mark.
+	deletesMark := c.peer + copySyncDeletesMark
+	copySyncMu.Lock()
+	deletesSince := loadCopySync()[copyPeerKey(deletesMark)]
+	copySyncMu.Unlock()
+	if deletesSince > 0 {
+		deletesSince -= int64(copySyncOverlap / time.Second)
+	}
+	gone, err := c.syncDeletes(ctx, deletesSince)
+	res.Gone = gone
+	if err != nil {
+		return res, err
+	}
+	markCopySynced(deletesMark, started)
 	allIDs := true
 	for _, store := range copySyncStores {
 		db := c.store(store)
@@ -473,19 +524,23 @@ func (c *copyClient) sync(ctx context.Context) (copySyncResult, error) {
 			allIDs = false
 		}
 	}
-	files, allFiles, err := c.syncFiles(ctx, since)
-	res.Files = files
-	if err != nil {
-		return res, err
+	files, allFiles := 0, true
+	if !c.notesOnly {
+		var err error
+		files, allFiles, err = c.syncFiles(ctx, since)
+		res.Files = files
+		if err != nil {
+			return res, err
+		}
 	}
 	res.Settings, _ = c.syncSettings(ctx)
 	// Marked only when every listed page was read: otherwise the next round
 	// would start a week before now and never list the older notes and
 	// files again.
 	if allFiles && allIDs {
-		markCopySynced(c.peer, started)
+		markCopySynced(mark, started)
 	}
-	slog.Info("copy catch-up done", "got", res.Got, "sent", res.Sent, "files", res.Files, "settings", res.Settings, "accounts", res.Accounts)
+	slog.Info("copy catch-up done", "got", res.Got, "sent", res.Sent, "files", res.Files, "gone", res.Gone, "settings", res.Settings, "accounts", res.Accounts)
 	return res, nil
 }
 
@@ -626,6 +681,8 @@ func (c *copyClient) syncStore(ctx context.Context, store string, db DBBackend, 
 func (c *copyClient) syncFiles(ctx context.Context, since int64) (int, bool, error) {
 	n := 0
 	seen := map[string]bool{}
+	// The delete list, read once for the round (it was swapped just before).
+	deleted := copyDeletedAt()
 	until, after := int64(0), ""
 	for {
 		path := fmt.Sprintf("/copy/v2/sync/files?since=%d", since)
@@ -657,7 +714,7 @@ func (c *copyClient) syncFiles(ctx context.Context, since int64) (int, bool, err
 			}
 			seen[f.SHA256] = true
 			fresh++
-			got, err := c.syncFile(ctx, f)
+			got, err := c.syncFile(ctx, f, deleted)
 			if err != nil {
 				return n, false, err
 			}
@@ -684,8 +741,8 @@ func (c *copyClient) syncFiles(ctx context.Context, since int64) (int, bool, err
 // the hash: retrying would bring the same, so it does not hold the round
 // back. Any other answer (a 5xx, a busy A) is an error, so the round stays
 // unrecorded and the file stays in the window (Tron #1864).
-func (c *copyClient) syncFile(ctx context.Context, f copyFile) (bool, error) {
-	if !isBlobHash(f.SHA256) || copyBlobFile(f.SHA256) != "" {
+func (c *copyClient) syncFile(ctx context.Context, f copyFile, deleted map[string]int64) (bool, error) {
+	if !isBlobHash(f.SHA256) || copyBlobFile(f.SHA256) != "" || copyIsDeleted(deleted, f.SHA256, f.Pubkey, f.CreatedAt) {
 		return false, nil
 	}
 	resp, err := c.do(ctx, http.MethodGet, "/copy/v2/sync/file/"+f.SHA256, nil, nil)

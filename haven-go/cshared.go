@@ -551,7 +551,29 @@ func CopySyncC(peer *C.char, base *C.char) C.int {
 	if c == nil || c.server == nil {
 		return runRelayNotReady
 	}
-	return C.int(startCopySync(c.ctx, c.spawn, C.GoString(peer), C.GoString(base)))
+	return C.int(startCopySync(c.ctx, c.spawn, C.GoString(peer), C.GoString(base), false))
+}
+
+// CopySyncNotesOnlyC is CopySyncC for a light device: notes, accounts,
+// settings and web domains both ways, no files (multi-Mac rules §3). Its
+// rounds keep their own mark. 0 started, 2 busy, 3 relay not running.
+//
+//export CopySyncNotesOnlyC
+func CopySyncNotesOnlyC(peer *C.char, base *C.char) C.int {
+	c := relayLC.current.Load()
+	if c == nil || c.server == nil {
+		return runRelayNotReady
+	}
+	return C.int(startCopySync(c.ctx, c.spawn, C.GoString(peer), C.GoString(base), true))
+}
+
+// CopyPeerDomainsC: own devices' web domains learned over the mesh, as JSON
+// {"npub1…": "host"}, paired devices only. The caller frees the string.
+// Never published anywhere (multi-Mac rules §3.3).
+//
+//export CopyPeerDomainsC
+func CopyPeerDomainsC() *C.char {
+	return C.CString(copyPeerDomainsJSON())
 }
 
 // SetMeshDevicesC hands the engine this vault's own mesh npub and its paired
