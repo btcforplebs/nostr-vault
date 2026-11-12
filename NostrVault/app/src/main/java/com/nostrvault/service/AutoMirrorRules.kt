@@ -61,7 +61,7 @@ internal object AutoMirrorRules {
  * gets the same answer, a failed one included (asking again would be a
  * second prompt). Never signed when nothing needs it.
  */
-internal class RunSignature(private val sign: suspend () -> OwnVaultAuth?) {
+class RunSignature(private val sign: suspend () -> OwnVaultAuth?) {
     private val lock = Mutex()
     private var asked = false
     private var value: OwnVaultAuth? = null
@@ -81,7 +81,7 @@ internal class RunSignature(private val sign: suspend () -> OwnVaultAuth?) {
 }
 
 /** What one run may still do: [cap] downloads, and none after its signature runs out. */
-internal class RunLimits(
+class RunLimits(
     val signature: RunSignature,
     val cap: Int = AutoMirrorRules.MAX_PER_RUN,
     private val clock: () -> Long = System::currentTimeMillis,

@@ -61,8 +61,8 @@ class BlossomService @Inject constructor(
         /** How long a mesh delete keeps retrying a link that is still coming up, and the pause between tries. */
         internal const val MESH_DELETE_PATIENCE_MS = 20_000L
         internal const val MESH_DELETE_RETRY_MS = 1_000L
-        /** Auto-Mirror lists every server and scans every note, so it waits this long after the last import. */
-        internal const val AUTO_MIRROR_EVERY_MS = 3L * 60 * 60 * 1000
+        /** Auto-Mirror lists every server and scans every note, so it waits this long after the last start. */
+        internal const val AUTO_MIRROR_EVERY_MS = AutoMirrorRules.EVERY_MS
 
         /** Whether the Media tab's Auto-Mirror should run, given the last finished import (iOS `autoMirrorEvery`). */
         /**
@@ -76,8 +76,7 @@ class BlossomService @Inject constructor(
             return if (done != null) "$done. $missed" else missed
         }
 
-        internal fun autoMirrorDue(lastImport: Long?, now: Long): Boolean =
-            lastImport == null || now < lastImport || now - lastImport >= AUTO_MIRROR_EVERY_MS
+        internal fun autoMirrorDue(lastImport: Long?, now: Long): Boolean = AutoMirrorRules.due(lastImport, now)
     }
 
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -109,21 +108,27 @@ class BlossomService @Inject constructor(
     val mirrorRun: StateFlow<MirrorRun> = _mirrorRun.asStateFlow()
 
     /**
-     * The Media tab's Auto-Mirror: a mirror run, unless one finished in the
-     * last 3 hours. False when it didn't start.
+     * The Media tab's Auto-Mirror: a mirror run, unless one started in the
+     * last 3 hours (a relaunch mid-run does not reset that). False when it didn't start.
      */
     fun runAutoMirrorIfDue(now: Long = System.currentTimeMillis()): Boolean {
-        val last = vaultHistory.state.value[com.nostrvault.data.local.VaultHistory.Entry.MEDIA_IMPORT]
-        if (!autoMirrorDue(last, now)) return false
-        return runMirror()
+        val lastImport = vaultHistory.state.value[com.nostrvault.data.local.VaultHistory.Entry.MEDIA_IMPORT]
+        if (!autoMirrorDue(listOfNotNull(autoMirrorState.lastStart, lastImport).maxOrNull(), now)) return false
+        return runMirror(startedAt = now)
     }
 
-    /** Starts a mirror-from-servers run; false if one is already running. */
-    fun runMirror(): Boolean {
+    /**
+     * Starts a mirror-from-servers run; false if one is already running.
+     * One signature and at most [AutoMirrorRules.MAX_PER_RUN] downloads for
+     * the whole run ([RunLimits]); the rest come next run.
+     */
+    fun runMirror(startedAt: Long = System.currentTimeMillis()): Boolean {
         synchronized(_mirrorRun) {
             if (_mirrorRun.value.running) return false
             _mirrorRun.value = MirrorRun(running = true, status = "Starting...")
         }
+        autoMirrorState.recordStart(startedAt)
+        val limits = RunLimits(RunSignature { ownVaultAuth(listOf("list", "upload")) })
         scope.launch {
             val result = try {
                 var count = 0
@@ -134,6 +139,7 @@ class BlossomService @Inject constructor(
                         onProgress = { pct -> _mirrorRun.value = _mirrorRun.value.copy(progress = pct) },
                         onLogMessage = { msg -> _mirrorRun.value = _mirrorRun.value.copy(status = msg) },
                         onUnreachable = { unreachable += it },
+                        limits = limits,
                     )
                 }
                 // 2. From the media links in your notes, on any server (iOS MirrorService).
@@ -141,12 +147,15 @@ class BlossomService @Inject constructor(
                 count += mirrorFromNoteMedia(
                     onProgress = { pct -> _mirrorRun.value = _mirrorRun.value.copy(progress = pct) },
                     onLogMessage = { msg -> _mirrorRun.value = _mirrorRun.value.copy(status = msg) },
+                    limits = limits,
                 )
                 vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.MEDIA_IMPORT)
                 mirrorResultText(count, unreachable.map(::serverHost))
             } catch (e: Exception) {
                 Log.w(TAG, "Mirror run failed: ${e.message}")
                 "Mirror failed: ${e.message}"
+            } finally {
+                autoMirrorState.saveIfChanged()
             }
             _mirrorRun.value = MirrorRun(lastResult = result)
         }
@@ -525,6 +534,8 @@ class BlossomService @Inject constructor(
         onLogMessage: ((String) -> Unit)? = null,
         /** A server whose list of your files couldn't be read (no answer, or an error status). */
         onUnreachable: ((String) -> Unit)? = null,
+        /** The run's one signature and download cap; alone (setup), its own signature and no cap. */
+        limits: RunLimits = RunLimits(RunSignature { ownVaultAuth(listOf("list", "upload")) }, cap = Int.MAX_VALUE),
     ): Int = withContext(Dispatchers.IO) {
         BlobStream.sweepLeftovers()
         val mirrors = configStore.config.value.activeBlossomMirrors
@@ -539,7 +550,7 @@ class BlossomService @Inject constructor(
         // a single signer round-trip — one Amber/NIP-46 prompt for the whole pull,
         // instead of one per mirror plus one per blob.
         // A keyless vault signs nothing: its uploads go in-process (OwnVaultAuth).
-        val ownVault = ownVaultAuth(listOf("list", "upload"))
+        val ownVault = limits.signature.get()
         val batchAuth = (ownVault as? OwnVaultAuth.Signed)?.header.orEmpty()
 
         // Fetch blob lists from each mirror
@@ -579,6 +590,7 @@ class BlossomService @Inject constructor(
         val saved = java.util.concurrent.atomic.AtomicInteger(0)
         coroutineScope {
             for (hash in missing) {
+                if (!limits.take()) break
                 mirrorSemaphore.acquire()
                 launch {
                     try {
@@ -606,6 +618,7 @@ class BlossomService @Inject constructor(
     suspend fun mirrorFromNoteMedia(
         onProgress: ((Float) -> Unit)? = null,
         onLogMessage: ((String) -> Unit)? = null,
+        limits: RunLimits = RunLimits(RunSignature { ownVaultAuth(listOf("list", "upload")) }, cap = Int.MAX_VALUE),
     ): Int = withContext(Dispatchers.IO) {
         BlobStream.sweepLeftovers()
         val owner = nostrService.ownerHexPubkey
@@ -619,13 +632,17 @@ class BlossomService @Inject constructor(
             nostrService.extractMediaURLs(note.content, note.pubkey, note.tags, note.createdAt).map { it.url }
         }
         onLogMessage?.invoke("Found ${urls.size} media link(s) in ${notes.size} note(s)")
-        val toImport = NoteMediaScan.urlsToImport(urls) { mediaCacheService.isInLocalBlossom(it) }
+        // A link's hash, known before any download: its name, the note's imeta x, or an earlier run.
+        val imeta = notes.fold(HashMap<String, String>()) { acc, n -> acc.apply { putAll(AutoMirrorRules.imetaHashes(n.tags)) } }
+        val toImport = NoteMediaScan.urlsToImport(urls, knownHash = { imeta[it] ?: autoMirrorState.hashFor(it) }) {
+            mediaCacheService.isInLocalBlossom(it)
+        }
         if (toImport.isEmpty()) {
             onLogMessage?.invoke("All note media already exists locally")
             return@withContext 0
         }
-        // One signature for every upload: one signer prompt, not one per file (none when keyless).
-        val auth = ownVaultAuth(listOf("upload"))
+        // The run's one signature for every upload (none when keyless).
+        val auth = limits.signature.get()
         if (auth == null) {
             onLogMessage?.invoke("Note media skipped: could not sign the upload (signer unavailable)")
             return@withContext 0
@@ -635,10 +652,15 @@ class BlossomService @Inject constructor(
         val saved = java.util.concurrent.atomic.AtomicInteger(0)
         coroutineScope {
             for (url in toImport) {
+                if (!limits.take()) break
                 mirrorSemaphore.acquire()
                 launch {
                     try {
-                        if (mirrorUrlToLocal(url, ownVault = auth) { onLogMessage?.invoke("Skipped $url: $it") } != null) saved.incrementAndGet()
+                        val sha = mirrorUrlToLocal(url, ownVault = auth) { onLogMessage?.invoke("Skipped $url: $it") }
+                        if (sha != null) {
+                            autoMirrorState.remember(url, sha)
+                            saved.incrementAndGet()
+                        }
                     } finally {
                         mirrorSemaphore.release()
                         onProgress?.invoke(completed.incrementAndGet().toFloat() / toImport.size)
@@ -646,6 +668,7 @@ class BlossomService @Inject constructor(
                 }
             }
         }
+        autoMirrorState.saveIfChanged()
         onLogMessage?.invoke("Mirror from notes complete: ${saved.get()} new file(s)")
         saved.get()
     }
