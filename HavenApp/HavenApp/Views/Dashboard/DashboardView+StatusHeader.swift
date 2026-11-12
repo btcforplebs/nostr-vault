@@ -24,9 +24,14 @@ extension DashboardView {
     /// while the dashboard sheet is presenting, and a repeat-forever
     /// transaction there also caught the sheet's Done button, which then
     /// pulsed for as long as the sheet was open.
+    ///
+    /// It pulses only while the vault starts (StatusPulseRule): a loop for as
+    /// long as the relay ran redrew the whole Mac window every frame, and kept
+    /// on after the window closed.
     private func syncStatusPulse() {
-        statusAnimate = (relayManager.isRunning || relayManager.isBooting)
-            && Motion.ambientPulse != nil
+        statusAnimate = StatusPulseRule.pulses(isRunning: relayManager.isRunning,
+                                               isBooting: relayManager.isBooting,
+                                               reduceMotion: Motion.ambientPulse == nil)
     }
 
     private var statusIndicator: some View {
@@ -320,6 +325,7 @@ extension DashboardView {
         }
         .padding(.horizontal)
         .onAppear { syncStatusPulse() }
+        .onDisappear { statusAnimate = false }
         .onChange(of: relayManager.isRunning) { _, _ in syncStatusPulse() }
         .onChange(of: relayManager.isBooting) { _, _ in syncStatusPulse() }
     }
