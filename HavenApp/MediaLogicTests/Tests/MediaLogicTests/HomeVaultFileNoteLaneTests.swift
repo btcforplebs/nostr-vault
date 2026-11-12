@@ -74,4 +74,51 @@ final class HomeVaultFileNoteLaneTests: XCTestCase {
         XCTAssertTrue(HomeVaultLogic.needsAccountSigner(.blob))
         XCTAssertFalse(HomeVaultLogic.needsAccountSigner(.event))
     }
+    // MARK: Tron's PR 1990 follow-ups, Apple side
+
+    func testFileNotesHaveTheirOwnCap() {
+        let blobs = (0..<3).map { i in
+            HomeVaultItem(kind: .blob, id: String(format: "%064x", i), ownerHex: owner, eventJSON: nil,
+                          contentType: "image/jpeg", added: Date(), attempts: 0, notBefore: nil)
+        }
+        let notes = (0..<3).map { i in item(.add, sha: String(format: "%064x", 100 + i)) }
+        let queue = blobs + notes
+        XCTAssertTrue(HomeVaultLogic.hasRoom(for: blobs[0], in: notes + blobs.prefix(2), max: 3),
+                      "waiting notes never take a blob's place")
+        XCTAssertFalse(HomeVaultLogic.hasRoom(for: blobs[0], in: queue, max: 3))
+        XCTAssertFalse(HomeVaultLogic.hasRoom(for: item(.add, sha: String(format: "%064x", 999)), in: queue, max: 3),
+                       "notes stop at their own cap")
+        XCTAssertTrue(HomeVaultLogic.hasRoom(for: item(.add, sha: String(format: "%064x", 999)), in: blobs, max: 3))
+    }
+
+    func testTheKind5GoesOnlyWhenTheHomeVaultTookTheDelete() {
+        let home = "npub1home"
+        let homeKey = MeshDeleteTarget(npub: home, name: "").key
+        XCTAssertTrue(HomeVaultLogic.homeVaultTookDelete(homeVaultNpub: home, deleted: [homeKey, "https://nostr.build"]))
+        XCTAssertFalse(HomeVaultLogic.homeVaultTookDelete(homeVaultNpub: home, deleted: ["https://nostr.build"]),
+                       "a mirror taking it while the vault keeps the blob must not empty the room")
+        XCTAssertFalse(HomeVaultLogic.homeVaultTookDelete(homeVaultNpub: home, deleted: [MeshDeleteTarget(npub: "npub1mac", name: "").key]))
+        XCTAssertFalse(HomeVaultLogic.homeVaultTookDelete(homeVaultNpub: nil, deleted: [homeKey]))
+        XCTAssertFalse(HomeVaultLogic.homeVaultTookDelete(homeVaultNpub: "", deleted: [homeKey]))
+    }
+
+    func testWhatTheRoomsAnswerMeans() {
+        XCTAssertEqual(HomeVaultLogic.fileNoteOutcome(accepted: true, message: ""), .sent)
+        XCTAssertEqual(HomeVaultLogic.fileNoteOutcome(accepted: false, message: "duplicate: have it"), .sent)
+        XCTAssertEqual(HomeVaultLogic.fileNoteOutcome(accepted: false, message: "restricted: not paired"),
+                       .rejected("restricted: not paired"))
+        XCTAssertEqual(HomeVaultLogic.fileNoteOutcome(accepted: false, message: "blocked: deleted"),
+                       .unreachable("blocked: deleted"), "only restricted drops; anything else waits")
+        XCTAssertEqual(HomeVaultLogic.fileNoteOutcome(accepted: false, message: "error: db"), .unreachable("error: db"))
+    }
+
+    func testTheServingServerIsNamedFirst() {
+        let configured = ["https://a.example", "https://b.example"]
+        XCTAssertEqual(HomeVaultLogic.fileNoteServers(configured: configured, hosted: URL(string: "https://B.example/x.jpg")),
+                       ["https://b.example", "https://a.example"])
+        XCTAssertEqual(HomeVaultLogic.fileNoteServers(configured: configured, hosted: URL(string: "https://cdn.example/x.jpg")),
+                       configured, "a CDN answer keeps the configured order")
+        XCTAssertEqual(HomeVaultLogic.fileNoteServers(configured: configured, hosted: nil), configured)
+        XCTAssertEqual(HomeVaultLogic.fileNoteServers(configured: [], hosted: URL(string: "https://a.example/x")), [])
+    }
 }

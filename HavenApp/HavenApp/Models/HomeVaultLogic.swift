@@ -132,7 +132,10 @@ enum HomeVaultLogic {
     /// phone that is never in reach can't stop the home vault's sends (or
     /// another phone's).
     static func hasRoom(for item: HomeVaultItem, in queue: [HomeVaultItem], max: Int) -> Bool {
-        queue.lazy.filter { $0.target == item.target }.count < max
+        // File notes have their own cap: each upload queues a blob and its
+        // note, so sharing one cap halved the blobs (Tron, PR 1990).
+        let note = item.kind == .fileNote
+        return queue.lazy.filter { $0.target == item.target && ($0.kind == .fileNote) == note }.count < max
     }
 
     static func insertionIndex(for kind: HomeVaultItem.Kind, in queue: [HomeVaultItem]) -> Int? {

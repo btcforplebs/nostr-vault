@@ -243,6 +243,7 @@ struct MediaGalleryView: View {
         }
         .modifier(mediaChangeHandlers)
         .modifier(MagicPasteFromWidget { showMediaHalf(); handlePasteFromClipboard() })
+        .modifier(MediaGalleryLiveNotes { scheduleUpdateDisplayData() })
         .modifier(ShareInboxImport(isRelayReady: relayManager.isRunning && !relayManager.isBooting) { showMediaHalf(); handleUploadFileURLs($0) })
         .onReceive(NotificationCenter.default.publisher(for: .openBlossomDashboard)) { _ in
             openDashboard()
@@ -377,6 +378,7 @@ struct MediaGalleryView: View {
         }
         .modifier(mediaChangeHandlers)
         .modifier(MagicPasteFromWidget { showMediaHalf(); handlePasteFromClipboard() })
+        .modifier(MediaGalleryLiveNotes { scheduleUpdateDisplayData() })
         .modifier(ShareInboxImport(isRelayReady: relayManager.isRunning && !relayManager.isBooting) { showMediaHalf(); handleUploadFileURLs($0) })
         .modifier(mediaSheetsAndPickers)
     }

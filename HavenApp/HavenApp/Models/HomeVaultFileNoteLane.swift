@@ -37,4 +37,35 @@ extension HomeVaultLogic {
     static func needsAccountSigner(_ kind: HomeVaultItem.Kind) -> Bool {
         kind == .blob || kind == .mirror
     }
+
+    /// Whether a Delete everywhere sends this device's `/files` kind 5: only
+    /// when the home vault itself took the delete. A mirror or another device
+    /// taking it while the vault keeps the blob would empty the room of notes
+    /// for a file still there (Tron, PR 1990). The vault sends its own kind 5
+    /// for a blob it deletes (haven-go filesBlobGone). `deleted`: the delete
+    /// report's keys (`MeshDeleteTarget.key` for mesh devices).
+    static func homeVaultTookDelete(homeVaultNpub: String?, deleted: [String]) -> Bool {
+        guard let home = homeVaultNpub, !home.isEmpty else { return false }
+        return deleted.contains(MeshDeleteTarget(npub: home, name: "").key)
+    }
+
+    /// What the vault's `/files` answer to a file note means (plan gap 1):
+    /// accepted or `duplicate:` is done, `restricted:` (this device unpaired,
+    /// or a key the room never takes) is dropped, anything else waits.
+    static func fileNoteOutcome(accepted: Bool, message: String) -> HomeVaultSendResult {
+        if accepted || message.hasPrefix("duplicate:") { return .sent }
+        if message.hasPrefix("restricted:") { return .rejected(message) }
+        return .unreachable(message.isEmpty ? "the vault did not take the note" : message)
+    }
+
+    /// The servers a file note names after an upload: the configured ones,
+    /// the one that served it (`hosted`, matched by host) first. A server
+    /// may answer with a CDN host, so the note names the configured address.
+    static func fileNoteServers(configured: [String], hosted: URL?) -> [String] {
+        guard let host = hosted?.host?.lowercased(),
+              let first = configured.firstIndex(where: { URL(string: $0)?.host?.lowercased() == host }) else { return configured }
+        var ordered = configured
+        ordered.insert(ordered.remove(at: first), at: 0)
+        return ordered
+    }
 }

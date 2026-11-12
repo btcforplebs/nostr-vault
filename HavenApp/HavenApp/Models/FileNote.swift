@@ -107,6 +107,34 @@ struct FileNote: Equatable {
         return .dimmed
     }
 
+    // MARK: What the mesh key may sign
+
+    static let deletionKind = 5
+    static let authKind = 22242
+
+    /// Only `/files` events: a 1063, a kind 5 that says `k` 1063 and nothing
+    /// else, and an AUTH whose relay is a `/files` room. Kept narrow so the
+    /// mesh key still signs no posts (as Android's fileNotesAllowed): the
+    /// vault refuses the account key for all three (files_relay.go).
+    static func meshKeyMaySign(kind: Int, tags: [[String]]) -> Bool {
+        switch kind {
+        case Self.kind:
+            return true
+        case deletionKind:
+            let ks = tags.compactMap { $0.count >= 2 && $0[0] == "k" ? $0[1] : nil }
+            return !ks.isEmpty && ks.allSatisfy { $0 == String(Self.kind) }
+        case authKind:
+            return tags.contains { tag in
+                guard tag.count >= 2, tag[0] == "relay" else { return false }
+                var relay = String(tag[1].split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+                while relay.hasSuffix("/") { relay.removeLast() }
+                return relay.hasSuffix("/files")
+            }
+        default:
+            return false
+        }
+    }
+
     static func isHex64(_ s: String) -> Bool {
         s.count == 64 && s.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
     }

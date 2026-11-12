@@ -193,4 +193,19 @@ final class FileNoteTests: XCTestCase {
         XCTAssertEqual(FileNote.tileState(serverStatuses: [], vaultHas: false), .hidden)
         XCTAssertEqual(FileNote.tileState(serverStatuses: [500], vaultHas: false), .dimmed)
     }
+    // MARK: What the mesh key may sign for /files (the Swift twin of Android's fileNotesAllowed)
+
+    func testTheMeshKeySignsOnlyFilesEvents() {
+        XCTAssertTrue(FileNote.meshKeyMaySign(kind: 1063, tags: [["x", "a"]]))
+        XCTAssertTrue(FileNote.meshKeyMaySign(kind: 5, tags: [["e", "id"], ["k", "1063"]]))
+        XCTAssertFalse(FileNote.meshKeyMaySign(kind: 5, tags: [["e", "id"]]), "a kind 5 must say it is about notes")
+        XCTAssertFalse(FileNote.meshKeyMaySign(kind: 5, tags: [["e", "id"], ["k", "1063"], ["k", "1"]]),
+                       "never a kind 5 that also takes back a post")
+        XCTAssertTrue(FileNote.meshKeyMaySign(kind: 22242, tags: [["relay", "ws://npub1v.fips/files"], ["challenge", "c"]]))
+        XCTAssertTrue(FileNote.meshKeyMaySign(kind: 22242, tags: [["relay", "ws://127.0.0.1:4869/files/"], ["challenge", "c"]]))
+        XCTAssertFalse(FileNote.meshKeyMaySign(kind: 22242, tags: [["relay", "wss://relay.example/"], ["challenge", "c"]]),
+                       "AUTH for any other room is not the mesh key's to sign")
+        XCTAssertFalse(FileNote.meshKeyMaySign(kind: 1, tags: []))
+        XCTAssertFalse(FileNote.meshKeyMaySign(kind: 24242, tags: []))
+    }
 }
