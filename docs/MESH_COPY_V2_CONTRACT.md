@@ -123,6 +123,9 @@ otherwise the phone. `haven-go/mesh_publish.go`.
   answer is OK false and the device sends the note itself: not the owner's (`restricted:`), signed more than
   5 minutes ago or ephemeral (`blocked:`), already held (`duplicate:`), a replaceable the vault keeps a newer copy
   of, or no blast relays configured (`blocked:`). Old notes are never re-blasted, not even for a paired device.
+- One exception to `duplicate:`: a note the vault itself blasted as a first-hand owner write in the last 5 minutes
+  (the phone's at-once copy to a 10002 list that names this vault's public relay) gets the plain OK true, since the
+  vault is already sending it. Exactly one device blasts it. That blast is the ordinary owner-write one, in memory.
 - Without the token (a stranger, the device's catch-up, `?pulled=1`) nothing written over the mesh is blasted, as
   before (`mesh_safety.go`).
 - **Phones** (`VaultPublishHandoff`, iOS and Android) hand off only regular kinds (not 0, 3, 10000-39999) and only when
