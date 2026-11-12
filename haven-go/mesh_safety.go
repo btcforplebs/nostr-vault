@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fiatjaf/khatru"
 	"github.com/fiatjaf/khatru/blossom"
 	"github.com/nbd-wtf/go-nostr"
 )
@@ -217,6 +218,17 @@ func newBlastStored(stored func(ctx context.Context, id string) bool, send func(
 		send(ev)
 		return nil
 	}
+}
+
+// wireOutboxWrites adds the outbox store, the mesh blob index and the blast
+// (send) to relay's store chains. khatru hands replaceable kinds (0, 3,
+// 10002, 10063, 30023…) to ReplaceEvent, never StoreEvent, so they are
+// blasted there too: a phone's 10063 sent only to this relay otherwise never
+// reaches the public relays.
+func wireOutboxWrites(relay *khatru.Relay, db DBBackend, send func(*nostr.Event)) {
+	blastStored := newBlastStored(outboxHolds, send)
+	relay.StoreEvent = append(relay.StoreEvent, db.SaveEvent, noteStoredForMeshBlobs, blastStored)
+	relay.ReplaceEvent = append(relay.ReplaceEvent, db.ReplaceEvent, noteStoredForMeshBlobs, blastStored)
 }
 
 // outboxHolds reports whether the outbox store holds event id.

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/barrydeen/haven/pkg/runsafe"
 	"github.com/nbd-wtf/go-nostr"
 )
 
@@ -158,6 +159,14 @@ func blastOrKeep(ctx context.Context, q *blastQueue, ev *nostr.Event) {
 		q.add(ev)
 	} else if res.accepted == 0 {
 		slog.Warn("🗑️ every relay refused the note, not keeping it", "id", ev.ID)
+	}
+}
+
+// newBlastSender is how the outbox hands a stored note to the blastr: one
+// goroutine per note.
+func newBlastSender(ctx context.Context, q *blastQueue) func(*nostr.Event) {
+	return func(ev *nostr.Event) {
+		runsafe.Go("blast", func() { blastOrKeep(ctx, q, ev) })
 	}
 }
 
