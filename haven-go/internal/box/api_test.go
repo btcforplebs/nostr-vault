@@ -167,3 +167,16 @@ func TestAPIMove(t *testing.T) {
 		t.Fatalf("move %+v", s)
 	}
 }
+
+// The box screen's Public on the web part reads the box's own web address
+// from status: the NV_RELAY_URL it was set up with, or none.
+func TestAPIStatusCarriesTheRelayURL(t *testing.T) {
+	srv, owner, api := newTestAPI(t)
+	if _, st := call(t, srv, &owner, "GET", "/api/box/status", nil); st["relay_url"] != nil {
+		t.Errorf("no NV_RELAY_URL: relay_url %v, want none", st["relay_url"])
+	}
+	api.RelayURL = "vault.example.com"
+	if _, st := call(t, srv, &owner, "GET", "/api/box/status", nil); st["relay_url"] != "vault.example.com" {
+		t.Errorf("relay_url %v", st["relay_url"])
+	}
+}
