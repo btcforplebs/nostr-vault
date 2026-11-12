@@ -691,16 +691,7 @@ func initRelays(ctx context.Context) error {
 
 	// Reuse the outbox limiter numbers: the feed route is localhost-facing,
 	// and localhost connections bypass the connection limiter anyway.
-	feedRelay.RejectEvent = append(feedRelay.RejectEvent,
-		policies.PreventTimestampsInTheFuture(maxFutureSkew),
-		policies.RejectEventsWithBase64Media,
-		whitelistBypassEventRateLimiter(
-			outboxRelayLimits.EventIPLimiterTokensPerInterval,
-			time.Minute*time.Duration(outboxRelayLimits.EventIPLimiterInterval),
-			outboxRelayLimits.EventIPLimiterMaxTokens,
-		),
-		OnlyFeedKinds,
-	)
+	feedRelay.RejectEvent = append(feedRelay.RejectEvent, feedWriteRules(feedDB)...)
 
 	feedRelay.RejectConnection = append(feedRelay.RejectConnection,
 		bypassLocalhostConnectionLimiter(policies.ConnectionRateLimiter(

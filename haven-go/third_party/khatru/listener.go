@@ -59,6 +59,18 @@ func (rl *Relay) addListener(
 	}
 }
 
+// OpenSubscriptionIDs is the set of subscription ids ws has open (Haven fork:
+// the mesh door's per-connection cap, haven-go mesh_query_caps.go).
+func (rl *Relay) OpenSubscriptionIDs(ws *WebSocket) map[string]struct{} {
+	rl.clientsMutex.Lock()
+	defer rl.clientsMutex.Unlock()
+	out := map[string]struct{}{}
+	for _, spec := range rl.clients[ws] {
+		out[spec.id] = struct{}{}
+	}
+	return out
+}
+
 // remove a specific subscription id from listeners for a given ws client
 // and cancel its specific context
 func (rl *Relay) removeListenerId(ws *WebSocket, id string) {

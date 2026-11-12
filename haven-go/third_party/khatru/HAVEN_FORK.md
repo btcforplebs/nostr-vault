@@ -17,4 +17,5 @@ Changes from upstream are listed below. Keep every other file byte-identical to 
 
 - `listener.go`: `notifyListeners` collects matching listeners under `clientsMutex` and writes
   to them after unlocking.
-
+- `listener.go`: `OpenSubscriptionIDs(ws)` reads which subscription ids a connection holds (under
+  `clientsMutex`), for the mesh door's open-subscription cap (haven-go `mesh_query_caps.go`).

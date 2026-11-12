@@ -22,3 +22,7 @@ Changes from upstream are listed below. Keep every other file byte-identical to 
 - `relay.go`: the writer goroutine no longer sets `Connection` to nil when the connection ends
   (that write raced the read loop and `close()`); `Subscribe` also checks
   `IsConnected()`.
+- `relay.go`: when the connection context ends, subscriptions are closed with the context's cause
+  only, no longer also `r.ConnectionError`. The read loop writes that field as it hits the read
+  error, which raced the write loop's read when our own `Close` cancelled first (`go test -race`,
+  haven-go `mesh_query_caps_test.go`, 2026-11-12). The read loop's error is the cause it closes with.
