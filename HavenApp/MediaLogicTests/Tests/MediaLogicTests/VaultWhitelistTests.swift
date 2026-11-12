@@ -4,9 +4,9 @@ import XCTest
 /// The vault whitelist rule (Logen, 2026-11-12 14:19Z, undoing the 11-06
 /// key-or-signer rule): the owner, always, even npub-only (OWNER_NPUB), plus
 /// every account on this device, watch-only (npub only) included, like Haven.
-/// Reads of private/inbox still need AUTH by the account's own key, and every
-/// event still carries its author's signature, so an npub alone can neither
-/// read the vault as that account nor post as it.
+/// Access is whitelist-wide: the key of any listed npub, AUTHed, reads the
+/// whole /private store and list history, not just its own notes. An npub
+/// alone reads nothing gated and cannot post as that account.
 final class VaultWhitelistTests: XCTestCase {
     private let owner = "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w"
     private let keyed = "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap"

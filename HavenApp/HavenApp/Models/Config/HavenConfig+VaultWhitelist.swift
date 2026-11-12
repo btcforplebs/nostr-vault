@@ -3,9 +3,12 @@ import Foundation
 /// Who has vault space (Logen, 2026-11-12 14:19Z, undoing the 11-06
 /// key-or-signer rule): the device owner, always, even npub-only (the engine
 /// whitelists OWNER_NPUB itself), plus every account added on this device,
-/// watch-only (npub only) included, like Haven. What stays gated: reading
-/// /private and the inbox needs AUTH by the account's own key, and every
-/// event an account stores carries that account's own signature.
+/// watch-only (npub only) included, like Haven. Whitelist-wide, not per
+/// account: whoever holds the key of ANY listed npub can AUTH and read the
+/// whole /private store and list history (the owner's included), the full
+/// blob list and unposted blobs over the mesh (Tron, PR #1971 review). An
+/// npub alone reads nothing gated, and every stored event still carries its
+/// author's own signature.
 ///
 /// `whitelistedNpubs` is the app's account list (kept in config.json);
 /// `whitelisted_npubs.json` and the relay's launch inputs get
