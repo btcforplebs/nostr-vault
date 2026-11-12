@@ -227,7 +227,10 @@ class NetworkSyncService {
             ? config.nostrURL
             : config.nostrURL + "/inbox"
 
-        guard let url = URL(string: targetURL) else { return }
+        // The outbox address is marked as pulled: the relay stores these and
+        // never blasts them back to the relays they came from (PulledInjection).
+        // /inbox has no blast either way.
+        guard let url = isAuthoredByTracked ? PulledInjection.url(targetURL) : URL(string: targetURL) else { return }
 
         // Reuse an existing injection client when possible: send immediately
         // if connected, queue if still connecting. Only a dead client

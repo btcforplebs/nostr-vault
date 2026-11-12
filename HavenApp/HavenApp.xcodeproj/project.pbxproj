@@ -1200,6 +1200,7 @@
 		9157ACB85192A360E8EFA7E7 /* ListingDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB07D1CAEE1E5FBF436D7371 /* ListingDraft.swift */; };
 		9168F800ACC6452E701E9459 /* ComposeView+Preview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ED3CD37EE652596EC7982D0 /* ComposeView+Preview.swift */; };
 		9184E1F83695DECDCF056AD5 /* NIP10Thread.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFA1340FD03E8DB6CA418503 /* NIP10Thread.swift */; };
+		91A19FB1E609A8AE4A47C85D /* PulledInjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1AF63C93CE13871F10954F1 /* PulledInjection.swift */; };
 		91AD0D7C8DB7D526C523DB67 /* ProfileContent+Media.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AF6EB49EF70B0D69B6BF435 /* ProfileContent+Media.swift */; };
 		91D3CD68F4866F8077A59A9E /* FeedNoteSkeletonRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98D86B19A51EEB1A211A1F3 /* FeedNoteSkeletonRow.swift */; };
 		91D8535DDBF9D7C987938E9B /* MeshKeySigner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D53720BD75EE6B0C1FEBDA7 /* MeshKeySigner.swift */; };
@@ -1934,6 +1935,7 @@
 		E72FC5DBD22EF6D6F7B72FBE /* ReactionGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78FF5CDA9642898C97A55DBD /* ReactionGrouping.swift */; };
 		E735949817AB12E35DC8D8F3 /* AutoMirrorOnOpen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D33A7EA59CE0BA21608B1A2 /* AutoMirrorOnOpen.swift */; };
 		E7453F3324FA74A7FEB56F45 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 716EDC59763B44048B40E416 /* SettingsView.swift */; };
+		E7594E84A256A935FA4BFF9D /* PulledInjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1AF63C93CE13871F10954F1 /* PulledInjection.swift */; };
 		E75FCF0B1644D222EA8B7F1F /* LiveStreamPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95A69FF314C01604E9AB69A9 /* LiveStreamPlayerView.swift */; };
 		E7902FCDB1215B79E1D3D0EE /* ComposeView+Posting.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2448DA40C2E9F5497069E96 /* ComposeView+Posting.swift */; };
 		E792228433527A9CF7D14C4F /* MusicArtistPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5947F392DFBF2A9CC90CEB91 /* MusicArtistPage.swift */; };
@@ -2907,6 +2909,7 @@
 		A18F26C050E4BFA86B818A60 /* ProfileEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileEditView.swift; sourceTree = "<group>"; };
 		A19809A765C51F397B19FD14 /* FeedServiceTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedServiceTypes.swift; sourceTree = "<group>"; };
 		A1A3A9D3D2878269C564C1BA /* BlossomRefusals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomRefusals.swift; sourceTree = "<group>"; };
+		A1AF63C93CE13871F10954F1 /* PulledInjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PulledInjection.swift; sourceTree = "<group>"; };
 		A1E97DE0A79D54F91CAE7557 /* LockedKeyExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockedKeyExport.swift; sourceTree = "<group>"; };
 		A200B7EA08917B874F06B2AF /* NVShareInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVShareInbox.swift; sourceTree = "<group>"; };
 		A21B9BEF9DAADA51C5B8C4D3 /* LiveChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveChat.swift; sourceTree = "<group>"; };
@@ -4444,6 +4447,7 @@
 				C511A09C35088E157D6599AB /* ProfileWriteBatch.swift */,
 				34A3EE75F17D363C0E2C9E44 /* PublishTargets.swift */,
 				E02263EA7B83AAC9AB47B12A /* PullDownToCloseRule.swift */,
+				A1AF63C93CE13871F10954F1 /* PulledInjection.swift */,
 				32EA96B6514D35753903D9D6 /* QueuedMediaPost.swift */,
 				970FDDA6C665527B23121662 /* QuitGuard.swift */,
 				528D1E62E799D477438A8E24 /* QuoteReference.swift */,
@@ -6049,6 +6053,7 @@
 				FD819DD8DD0F76DF6CAEF815 /* PublishTargets.swift in Sources */,
 				402C9DDE13F31D1BE6B424EC /* PullDownToClose.swift in Sources */,
 				B06FA2DF88BCBEA7BBFE23A5 /* PullDownToCloseRule.swift in Sources */,
+				E7594E84A256A935FA4BFF9D /* PulledInjection.swift in Sources */,
 				7FE48AE78C682880DD70123F /* PushNotificationService.swift in Sources */,
 				44E16F1E6747845181FD3F3A /* PushNotificationSettingsView.swift in Sources */,
 				D4CBE6AF3405EF25C9A0AD6C /* PushNotificationStep.swift in Sources */,
@@ -7114,6 +7119,7 @@
 				08264D7FC961E256630D1F08 /* PublishTargets.swift in Sources */,
 				FD29733B400C52203B785137 /* PullDownToClose.swift in Sources */,
 				A7F02F4C36BA957B1746886E /* PullDownToCloseRule.swift in Sources */,
+				91A19FB1E609A8AE4A47C85D /* PulledInjection.swift in Sources */,
 				3AC2416A002144BD55B37DE1 /* PushNotificationService.swift in Sources */,
 				AFDA27A41E12259BC68B70E9 /* PushNotificationSettingsView.swift in Sources */,
 				A036232BAFC92A70B8441CCB /* PushNotificationStep.swift in Sources */,
