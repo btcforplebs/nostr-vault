@@ -32,12 +32,15 @@ internal object MediaLiveRules {
         return base
     }
 
-    /** What a folder event means for the list: the relay's rename into place or a direct write, or a delete. */
+    /**
+     * What a folder event means for the list: the relay's rename into place, a
+     * direct write or a copy-in's date stamp (ATTRIB, CopiedInDate), or a delete.
+     */
     fun change(event: Int, path: String?): Change? {
         val hash = blobHash(path) ?: return null
         val mask = event and FileObserver.ALL_EVENTS
         return when {
-            (mask and (FileObserver.MOVED_TO or FileObserver.CLOSE_WRITE)) != 0 -> Change.Landed(hash)
+            (mask and (FileObserver.MOVED_TO or FileObserver.CLOSE_WRITE or FileObserver.ATTRIB)) != 0 -> Change.Landed(hash)
             (mask and (FileObserver.DELETE or FileObserver.MOVED_FROM)) != 0 -> Change.Removed(hash)
             else -> null
         }
@@ -110,7 +113,7 @@ internal object MediaLiveRules {
 internal class VaultFolderWatch(val dir: File, private val onChange: (MediaLiveRules.Change) -> Unit) {
     private val observer = object : FileObserver(
         dir.absolutePath,
-        CLOSE_WRITE or MOVED_TO or DELETE or MOVED_FROM,
+        CLOSE_WRITE or MOVED_TO or ATTRIB or DELETE or MOVED_FROM,
     ) {
         override fun onEvent(event: Int, path: String?) {
             MediaLiveRules.change(event, path)?.let(onChange)

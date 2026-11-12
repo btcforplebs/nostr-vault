@@ -13,7 +13,7 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.*
 import com.nostrvault.ui.notification.ErrorStyle
 import com.nostrvault.ui.notification.NotificationManager
-import com.nostrvault.ui.screens.oldestUploaded
+import com.nostrvault.ui.screens.listedUploaded
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.*
@@ -332,7 +332,7 @@ class MediaGalleryViewModel @Inject constructor(
             if (existing != null) {
                 // Merge metadata from server into existing local item
                 items[hash] = existing.copy(
-                    uploaded = oldestUploaded(existing.uploaded, blob.uploaded),
+                    uploaded = listedUploaded(existing, blob.uploaded, fromThisVault = source == null),
                     mimeType = blob.type ?: existing.mimeType,
                     size = blob.size ?: existing.size,
                 )

@@ -87,4 +87,12 @@ class MediaLiveRulesTest {
         assertEquals(listOf(other), MediaLiveRules.removed(list, sha).map { it.sha256 })
         assertEquals(list, MediaLiveRules.removed(list, other))
     }
+
+    @Test
+    fun `a copy's date stamp re-reads its tile and moves it down to that date`() {
+        assertEquals(MediaLiveRules.Change.Landed(sha), MediaLiveRules.change(FileObserver.ATTRIB, sha))
+        val landedNow = listOf(local(sha, mtime = 9_000_000), local(other, mtime = 5_000_000))
+        val stamped = MediaLiveRules.landed(landedNow, local(sha, mtime = 1_000_000))
+        assertEquals(listOf(other, sha), stamped.map { it.sha256 })
+    }
 }

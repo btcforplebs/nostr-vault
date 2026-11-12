@@ -137,3 +137,13 @@ internal fun withPostDates(items: List<BlossomMediaItem>, postDates: Map<String,
         val at = postDates[item.sha256.lowercase()]
         if (at == null || at == item.postedAt) item else item.copy(postedAt = at)
     }
+
+/**
+ * The upload time to keep when a server's list names a file this phone holds.
+ * This vault's own list says when the copy landed here, which is not the
+ * photo's date: the file's modified time (stamped on copy-in, CopiedInDate)
+ * stays the date, as on iOS. An outside server's earliest time still counts.
+ */
+internal fun listedUploaded(existing: BlossomMediaItem, listed: Long?, fromThisVault: Boolean): Long? =
+    if (fromThisVault) existing.uploaded else oldestUploaded(existing.uploaded, listed)
+
