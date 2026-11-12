@@ -267,12 +267,12 @@ extension FeedView {
 
                         // Room under the last posts while one is open, so a
                         // tapped post near the end still reaches the line.
-                        if expandedNoteId != nil {
-                            Color.clear
-                                .frame(height: TapLandingLine.bottomRoom(viewportHeight: threadLineTops.viewportHeight))
+                        if let expandedNoteId {
+                            FeedBottomRoom(lineTops: threadLineTops, openId: expandedNoteId)
                         }
 
                     }
+                    .coordinateSpace(.named(ThreadLineTops.contentSpace))
                     .environment(\.feedActions, feedActionsValue)
                     .frame(maxWidth: .infinity)
                     // The first post sits on the tap landing line at rest, so
@@ -529,5 +529,36 @@ extension FeedView {
         } else {
             composeContext = ComposeContext(replyTo: nil, quoteTo: nil)
         }
+    }
+}
+
+/// Room under the last posts while one is open, so a tapped post near the
+/// end still reaches the landing line. Only what is missing: the list
+/// under the open line already counts, so the end of the feed is never a
+/// screen of nothing. Its own view, so its measuring redraws only itself.
+private struct FeedBottomRoom: View {
+    let lineTops: ThreadLineTops
+    let openId: String
+    /// This room's top in the list's content space; -1 until laid out.
+    @State private var top: CGFloat = -1
+    /// Redraw once more after a layout pass, as the open line's top may be
+    /// written after this view's in the same pass.
+    @State private var pass = 0
+
+    var body: some View {
+        let below: CGFloat = {
+            _ = pass
+            guard top >= 0, let lineTop = lineTops.contentTops[openId] else { return -1 }
+            return top - lineTop
+        }()
+        Color.clear
+            .frame(height: TapLandingLine.bottomRoom(viewportHeight: lineTops.viewportHeight,
+                                                     contentBelowTop: below))
+            .onGeometryChange(for: CGFloat.self) {
+                $0.frame(in: .named(ThreadLineTops.contentSpace)).minY
+            } action: { y in
+                top = y
+                DispatchQueue.main.async { pass &+= 1 }
+            }
     }
 }

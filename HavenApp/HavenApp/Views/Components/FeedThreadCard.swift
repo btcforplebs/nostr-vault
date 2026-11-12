@@ -140,6 +140,13 @@ struct FeedThreadCard: View {
             lineTops?.tops[id] = y
             lineTops?.lineMoved(id, to: y)
         }
+        // The same top in the list's own space, which scrolling leaves
+        // alone: how much of the list sits under an open line.
+        .onGeometryChange(for: CGFloat.self) {
+            $0.frame(in: .named(ThreadLineTops.contentSpace)).minY
+        } action: { y in
+            lineTops?.contentTops[id] = y
+        }
     }
 
     private func condensedLine(for entry: FeedThreadEntry<FeedNote>, replyCount: Int) -> some View {
@@ -339,6 +346,9 @@ final class ThreadLineTops {
     static func anchorId(for noteId: String) -> String { "thread-line-\(noteId)" }
 
     var tops: [String: CGFloat] = [:]
+    /// Line tops in the list's content space, unmoved by scrolling.
+    static let contentSpace = "feedThreadContent"
+    var contentTops: [String: CGFloat] = [:]
     var viewportHeight: CGFloat = 0
     /// The line opened by the last tap, which fades in as it appears.
     var justOpened: String?

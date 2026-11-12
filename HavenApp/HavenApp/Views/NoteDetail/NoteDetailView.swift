@@ -90,6 +90,14 @@ struct NoteDetailView: View {
     private static let landingAnchor = UnitPoint.top
     /// Height of the scroll view, for the room left under a short thread.
     @State private var viewportHeight: CGFloat = 0
+    /// Tops of the opened note and of the room under the thread, in the
+    /// scroll content's space: the content between them already counts
+    /// toward the room, so only the shortfall is added.
+    @State private var openedNoteTop: CGFloat = -1
+    @State private var bottomRoomTop: CGFloat = 0
+    private static let contentSpace = "noteDetailContent"
+    /// Space under the last row; counts toward the room above.
+    private static let bottomPadding: CGFloat = 90
 
     var threadRootId: String {
         NIP10Thread.rootEventId(kind: note.kind, tags: note.tags) ?? note.id
@@ -275,6 +283,9 @@ struct NoteDetailView: View {
                     } else {
                         // Main Note (focused hero note) + engagement merged into one card
                         mainNoteSection(proxy: proxy)
+                            .onGeometryChange(for: CGFloat.self) {
+                                $0.frame(in: .named(Self.contentSpace)).minY
+                            } action: { openedNoteTop = $0 }
 
                         // Replies Section
                         repliesSection(proxy: proxy)
@@ -286,8 +297,16 @@ struct NoteDetailView: View {
                     // up to the landing line with the posts it answers above it.
                     // Without it a reply with few replies of its own stayed at
                     // the bottom of the screen: there was nothing below to scroll into.
+                    // Only the shortfall: a full screen here was a black page
+                    // at the end of every reply's thread.
                     if !dynamicParents.isEmpty {
-                        Color.clear.frame(height: TapLandingLine.bottomRoom(viewportHeight: viewportHeight))
+                        Color.clear
+                            .frame(height: TapLandingLine.bottomRoom(
+                                viewportHeight: viewportHeight,
+                                contentBelowTop: openedNoteTop < 0 ? -1 : bottomRoomTop - openedNoteTop + Self.bottomPadding))
+                            .onGeometryChange(for: CGFloat.self) {
+                                $0.frame(in: .named(Self.contentSpace)).minY
+                            } action: { bottomRoomTop = $0 }
                     }
                 }
                 // Makes the opened note (a direct child with its id) a scroll
@@ -295,7 +314,8 @@ struct NoteDetailView: View {
                 // Without this the pin was ignored, and the posts loading in
                 // above pushed the opened reply down out of view.
                 .scrollTargetLayout()
-                .padding(.bottom, 90)
+                .coordinateSpace(.named(Self.contentSpace))
+                .padding(.bottom, Self.bottomPadding)
                 // iPad: a note's text runs to a readable measure down the
                 // middle of the pane rather than the full 13in. The scroll
                 // view and its background stay full width.
