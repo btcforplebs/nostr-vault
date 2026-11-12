@@ -50,15 +50,18 @@ export async function startVault({ pubkey, log = () => {} }) {
   const t0 = Date.now()
   const haven = await loadHaven(WASM)
   const loadMs = Date.now() - t0
+  const selfHex = await ownMeshHex(localStorage)
   await haven.start({
     ownerNpub: npubEncode(pubkey),
     whitelist: [npubEncode(getPublicKey(sk))],
-    env: { RELAY_URL: RELAY_HOST },
+    // HAVEN_MESH_NPUB: the mesh address a paired device's AUTH names over the mesh door (haven-go meshAuthURL,
+    // ws://<this npub>.fips/files). Without it every AUTH over the mesh fails (Tron, PR 1996).
+    env: { RELAY_URL: RELAY_HOST, HAVEN_MESH_NPUB: npubEncode(selfHex) },
     // One set of stores per account, so a second account on this browser never opens the first one's data.
     storePrefix: pubkey,
     // Who writes and reads /files (net/file-notes-live.js): this browser's mesh key and this account's paired devices.
     // Read at start: a device paired later writes there after the next start.
-    meshDevices: meshDevicesConfig({ selfHex: await ownMeshHex(localStorage), owners, devices: pairedDevices(localStorage, pubkey) }),
+    meshDevices: meshDevicesConfig({ selfHex, owners, devices: pairedDevices(localStorage, pubkey) }),
   })
   const open = route => routeClient(haven, route, sk)
   // /inbox holds what others sent the user (replies, likes, zaps…): the Vault tab reads it and fills it from the relays.
