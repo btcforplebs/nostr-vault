@@ -18,19 +18,24 @@ func (rl *Relay) handleRequest(ctx context.Context, id string, eose *sync.WaitGr
 		ovw(ctx, &filter)
 	}
 
-	if filter.LimitZero {
-		// don't do any queries, just subscribe to future events
-		return nil
-	}
-
 	// then check if we'll reject this filter (we apply this after overwriting
 	// because we may, for example, remove some things from the incoming filters
 	// that we know we don't support, and then if the end result is an empty
 	// filter we can just reject it)
+	//
+	// HAVEN PATCH: before the "limit":0 return, not after it. Upstream returned
+	// first, so a live-only subscription skipped every read gate (MustAuth,
+	// whitelist, web of trust) and was sent new private and chat events with
+	// no AUTH (Tron, #1966).
 	for _, reject := range rl.RejectFilter {
 		if reject, msg := reject(ctx, filter); reject {
 			return errors.New(nostr.NormalizeOKMessage(msg, "blocked"))
 		}
+	}
+
+	if filter.LimitZero {
+		// don't do any queries, just subscribe to future events
+		return nil
 	}
 
 	// run the functions to query events (generally just one,
