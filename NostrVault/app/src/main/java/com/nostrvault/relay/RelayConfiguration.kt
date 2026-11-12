@@ -331,8 +331,12 @@ object RelayConfiguration {
      */
     fun blastrRelays(config: HavenConfig, mesh: MacMeshRelay?): List<String> {
         val npub = MacSync.macMeshNpub(config)
-        if (npub == null || mesh == null || mesh.npub != npub || mesh.url in config.blastrRelays) return config.blastrRelays
-        return listOf(mesh.url) + config.blastrRelays
+        if (npub == null || mesh == null || mesh.npub != npub) return config.blastrRelays
+        // Marked second-hand: the Mac stores the phone's note and does not blast it again; the phone
+        // already did (haven-go isSecondHandConn, device sync map §4.5).
+        val marked = com.nostrvault.fips.PulledInjection.url(mesh.url)
+        if (marked in config.blastrRelays) return config.blastrRelays
+        return listOf(marked) + config.blastrRelays.filterNot { it == mesh.url }
     }
 
     /**

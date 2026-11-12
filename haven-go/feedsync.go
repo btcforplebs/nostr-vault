@@ -56,6 +56,14 @@ var rareFeedKinds = []int{nostr.KindArticle, KindPoll, nostr.KindGenericRepost, 
 
 var feedKinds = slices.Concat(commonFeedKinds, rareFeedKinds)
 
+// feedPullKinds are feedKinds plus the follows' signed deletes (kind 5): the
+// feed cache stores a follow's delete, removes what it names, and refuses
+// the note if another relay offers it again (device sync map §4.3). The
+// /feed route still takes only feedKinds (OnlyFeedKinds).
+func feedPullKinds() []int {
+	return slices.Concat(feedKinds, []int{nostr.KindDeletion})
+}
+
 // OnlyFeedKinds restricts writes on the /feed route to feed note kinds. The
 // browser build's owner streams may also cache kind 0, the names and pictures
 // of the people in the feed, which natively the apps keep themselves.
@@ -73,7 +81,7 @@ func OnlyFeedKinds(ctx context.Context, event *nostr.Event) (bool, string) {
 // set since its own watermark, so neither can push the other out of a
 // relay's per-REQ cap.
 func feedCommonFilter(authors []string, since nostr.Timestamp) nostr.Filter {
-	return nostr.Filter{Authors: authors, Kinds: commonFeedKinds, Since: &since}
+	return nostr.Filter{Authors: authors, Kinds: slices.Concat(commonFeedKinds, []int{nostr.KindDeletion}), Since: &since}
 }
 
 func feedRareFilter(authors []string, since nostr.Timestamp) nostr.Filter {
@@ -107,10 +115,22 @@ func (s *feedNegStore) QueryEvents(ctx context.Context, f nostr.Filter) (chan *n
 }
 
 func (s *feedNegStore) Publish(ctx context.Context, ev nostr.Event) error {
-	if !slices.Contains(feedKinds, ev.Kind) {
+	if !slices.Contains(feedPullKinds(), ev.Kind) {
 		return nil
 	}
 	if _, ok := s.follows[ev.PubKey]; !ok {
+		return nil
+	}
+	if ev.Kind == nostr.KindDeletion {
+		// Kept, so a note it names is refused when offered again, and
+		// applied: only the delete's author's own notes go (applyDeletion).
+		if err := s.feed.Publish(ctx, ev); err != nil {
+			return err
+		}
+		applyImportedDeletion(ctx, s.feed.Store, &ev)
+		return nil
+	}
+	if isDeleted(ctx, s.feed.Store, &ev) {
 		return nil
 	}
 	if err := s.feed.Publish(ctx, ev); err != nil {
@@ -383,7 +403,7 @@ func syncFeed(ctx context.Context) {
 		relays := feedSyncRelays()
 
 		since := windowSince()
-		filter := nostr.Filter{Authors: authors, Kinds: feedKinds, Since: &since}
+		filter := nostr.Filter{Authors: authors, Kinds: feedPullKinds(), Since: &since}
 
 		// The rare kinds go first, each relay from its own mark
 		// (feedsync_rare.go): the common pull can run for minutes (one
@@ -550,7 +570,7 @@ func pruneFeed(ctx context.Context, wdb eventstore.RelayWrapper) int {
 	cutoff := nostr.Timestamp(time.Now().Add(-time.Duration(config.FeedSyncWindowDays+1) * 24 * time.Hour).Unix())
 	deleted := 0
 	for range 20 { // bounded rounds so a huge backlog can't stall the loop
-		evs, err := wdb.QuerySync(ctx, nostr.Filter{Until: &cutoff, Kinds: feedKinds, Limit: 500})
+		evs, err := wdb.QuerySync(ctx, nostr.Filter{Until: &cutoff, Kinds: feedPullKinds(), Limit: 500})
 		if err != nil || len(evs) == 0 {
 			break
 		}

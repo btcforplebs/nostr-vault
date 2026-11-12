@@ -330,4 +330,27 @@ class HomeVaultQueueTest {
         assertEquals(listOf("https://a.example", "https://b.example"), q.items().map { it.server })
         assertEquals(listOf(sha, sha), q.items().map { HomeVaultQueue.shaOf(it.key) })
     }
+
+    // Device sync map §4.3: a signed delete takes back what still waits to be sent.
+
+    @Test
+    fun `a delete names the notes it takes back`() {
+        val del = """{"kind":5,"pubkey":"aa","tags":[["e","n1"],["e","n2"],["a","30023:aa:x"],["k","1"]]}"""
+        assertEquals(setOf("n1", "n2"), HomeVaultQueue.deletedEventIds(del))
+        assertEquals(emptySet<String>(), HomeVaultQueue.deletedEventIds("""{"kind":1,"tags":[["e","n1"]]}"""))
+        assertEquals(emptySet<String>(), HomeVaultQueue.deletedEventIds("not json"))
+    }
+
+    @Test
+    fun `a deleted note or blob is never sent`() {
+        val q = HomeVaultQueue(tmp.newFolder())
+        q.addEvent("n1", "{}")
+        q.addEvent("n2", "{}")
+        q.addPublicCopy("b1", "image/jpeg", "https://media.example")
+        q.addPublicCopy("b2", "image/jpeg", "https://media.example")
+        assertEquals(1, q.dropDeleted(eventIds = setOf("n1", "nope")))
+        assertEquals(listOf("n2", "b1@https://media.example", "b2@https://media.example").sorted(), q.items().map { it.key }.sorted())
+        assertEquals(1, q.dropDeleted(sha256 = "b1"))
+        assertEquals(listOf("n2", "b2@https://media.example").sorted(), q.items().map { it.key }.sorted())
+    }
 }

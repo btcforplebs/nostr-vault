@@ -333,13 +333,23 @@ class HomeVaultSender @Inject constructor(
         }
     }
 
+    /** A deleted blob is not sent anywhere it still waits to go: home vault, Macs, public copies (§4.3). */
+    fun forgetBlob(sha256: String) {
+        val queues = lanes().map { it.second }
+        scope.launch { queues.forEach { it.dropDeleted(sha256 = sha256.lowercase()) } }
+    }
+
     /** Also send this signed event to the home vault and each Mac taking notes, if it is the owner's. */
     fun offerEvent(eventId: String, pubkey: String, eventJson: String) {
         if (pubkey.isEmpty() || pubkey != ownerHex()) return
         val queues = lanes().map { it.second }
         if (queues.isEmpty()) return
         // Off the caller's thread: postEvent runs on the main thread.
+        // A signed delete takes back the notes it names that still wait: they are never sent
+        // (device sync map §4.3). The delete itself is queued like any note.
+        val deleted = HomeVaultQueue.deletedEventIds(eventJson)
         scope.launch {
+            if (deleted.isNotEmpty()) queues.forEach { it.dropDeleted(eventIds = deleted) }
             val queued = queues.map { q ->
                 try {
                     q.addEvent(eventId, eventJson)
@@ -652,7 +662,9 @@ class HomeVaultSender @Inject constructor(
             }
         }
         val socket = client.newWebSocket(
-            Request.Builder().url(base.replaceFirst("http://", "ws://")).build(),
+            // Marked second-hand: the vault stores the note and does not blast it again; this
+            // device published it (haven-go isSecondHandConn, device sync map §4.5).
+            Request.Builder().url(PulledInjection.url(base.replaceFirst("http://", "ws://"))).build(),
             listener,
         )
         return try {

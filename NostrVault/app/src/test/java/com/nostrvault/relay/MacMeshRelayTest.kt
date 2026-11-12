@@ -121,7 +121,8 @@ class MacMeshRelayTest {
     @Test fun aMacOnTheMeshGoesFirstInTheBroadcastList() {
         val config = HavenConfig(macRelayURL = "fipsmesh://$mac/", fipsMeshEnabled = true, blastrRelays = listOf("wss://relay.damus.io"))
         val inputs = RelayConfiguration.launchInputs(config, dir, reaches(base))
-        assertEquals(listOf(ws, "wss://relay.damus.io"), inputs.blastrRelays)
+        // Marked second-hand: the Mac stores the phone's note and does not blast it again (haven-go isSecondHandConn).
+        assertEquals(listOf("$ws?pulled=1", "wss://relay.damus.io"), inputs.blastrRelays)
     }
 
     @Test fun aVaultOnMacDeviceIsABroadcastRelayToo() {
@@ -131,7 +132,7 @@ class MacMeshRelayTest {
             fipsMesh = FipsMeshSettings(devices = listOf(FipsDevice(npub = mac, role = DeviceRole.MAC))),
             blastrRelays = listOf("wss://relay.damus.io"),
         )
-        assertEquals(listOf(ws, "wss://relay.damus.io"), RelayConfiguration.launchInputs(config, dir, reaches(base)).blastrRelays)
+        assertEquals(listOf("$ws?pulled=1", "wss://relay.damus.io"), RelayConfiguration.launchInputs(config, dir, reaches(base)).blastrRelays)
     }
 
     @Test fun noDialedMacLeavesTheBroadcastListAlone() {

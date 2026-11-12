@@ -293,10 +293,15 @@ enum RelayConfiguration {
     /// The broadcast list the relay writes to: a Mac on the mesh goes first,
     /// as a Mac with a URL does (HavenConfig.activeBlastrRelays), so the
     /// phone's notes reach it.
+    ///
+    /// The Mac's address is marked second-hand (`?pulled=1`): the Mac stores
+    /// the phone's note and does not blast it again; the phone already did
+    /// (haven-go isSecondHandConn, device sync map §4.5).
     static func blastrRelays(config: HavenConfig, mesh: MacMeshRelay?) -> [String] {
         var relays = droppingMeshAddresses(config.activeBlastrRelays)
-        if let npub = config.macRelayMeshNpub, let mesh, mesh.npub == npub, !relays.contains(mesh.url) {
-            relays.insert(mesh.url, at: 0)
+        if let npub = config.macRelayMeshNpub, let mesh, mesh.npub == npub {
+            let marked = PulledInjection.url(mesh.url)?.absoluteString ?? mesh.url
+            if !relays.contains(marked) { relays.insert(marked, at: 0) }
         }
         return relays
     }

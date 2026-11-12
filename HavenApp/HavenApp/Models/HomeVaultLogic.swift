@@ -46,6 +46,27 @@ enum HomeVaultSendResult: Equatable {
 }
 
 enum HomeVaultLogic {
+    // MARK: Signed deletes (device sync map §4.3)
+
+    /// The note ids a signed delete (kind 5) names with `e` tags; empty for
+    /// anything else.
+    static func deletedEventIDs(_ event: [String: Any]) -> Set<String> {
+        guard event["kind"] as? Int == 5, let tags = event["tags"] as? [[Any]] else { return [] }
+        return Set(tags.compactMap { tag in
+            tag.count >= 2 && tag[0] as? String == "e" ? tag[1] as? String : nil
+        })
+    }
+
+    /// `queue` without what a delete took back: the queued notes in
+    /// `eventIDs` written by `author`, and anything queued for blob `blob`.
+    static func droppingDeleted(_ queue: [HomeVaultItem], eventIDs: Set<String>, author: String?, blob: String?) -> [HomeVaultItem] {
+        queue.filter { item in
+            if item.kind == .event, let author, item.ownerHex == author, eventIDs.contains(item.id) { return false }
+            if let blob, item.kind != .event, item.id == blob { return false }
+            return true
+        }
+    }
+
     /// `fipsmesh://<npub>/` exactly, or nil — the same strict form readers use.
     static func meshNpub(fromEntry entry: String) -> String? {
         let prefix = "fipsmesh://", suffix = "/"
@@ -120,6 +141,16 @@ enum HomeVaultLogic {
         guard var c = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return nil }
         c.scheme = c.scheme == "https" ? "wss" : "ws"
         return c.url
+    }
+
+    /// websocketURL marked second-hand, for sending a note this device
+    /// already published to another of the owner's devices: it stores it and
+    /// does not blast it again (haven-go isSecondHandConn, device sync map
+    /// §4.5: only first-hand writes are published). Not for the Mac relay
+    /// address itself (MAC_RELAY_URL): the relay appends paths to that one.
+    static func eventWebsocketURL(base: URL) -> URL? {
+        guard let url = websocketURL(base: base) else { return nil }
+        return PulledInjection.url(url.absoluteString)
     }
 
     /// `["OK", id, accepted, message]` for `id`, as a result; nil for anything else.

@@ -37,6 +37,10 @@ final class HomeVaultLogicTests: XCTestCase {
         let base = URL(string: "http://127.0.0.1:41234/0123456789abcdef0123456789abcdef")!
         XCTAssertEqual(HomeVaultLogic.websocketURL(base: base)?.absoluteString,
                        "ws://127.0.0.1:41234/0123456789abcdef0123456789abcdef")
+        // A note sent on is marked second-hand: the other device stores it and
+        // does not blast it again (this device already did; haven-go isSecondHandConn).
+        XCTAssertEqual(HomeVaultLogic.eventWebsocketURL(base: base)?.absoluteString,
+                       "ws://127.0.0.1:41234/0123456789abcdef0123456789abcdef?pulled=1")
     }
 
     func testOkAnswers() {
@@ -480,5 +484,29 @@ final class HomeVaultPhoneLaneTests: XCTestCase {
         XCTAssertNil(items[0].target)
         let laned = try JSONDecoder().decode([HomeVaultItem].self, from: JSONEncoder().encode([sendItem(.blob, "b", to: "phoneA")]))
         XCTAssertEqual(laned[0].target, "phoneA")
+    }
+
+    // MARK: Signed deletes in the send queue (device sync map §4.3)
+
+    private func queued(_ kind: HomeVaultItem.Kind, _ id: String, owner: String = "aa") -> HomeVaultItem {
+        HomeVaultItem(kind: kind, id: id, ownerHex: owner, eventJSON: kind == .event ? "{}" : nil,
+                      contentType: nil, added: Date(), attempts: 0, notBefore: nil)
+    }
+
+    func testADeleteNamesItsNotes() {
+        let del: [String: Any] = ["kind": 5, "pubkey": "aa", "tags": [["e", "n1"], ["e", "n2"], ["a", "30023:aa:x"], ["k", "1"]]]
+        XCTAssertEqual(HomeVaultLogic.deletedEventIDs(del), ["n1", "n2"])
+        XCTAssertEqual(HomeVaultLogic.deletedEventIDs(["kind": 1, "tags": [["e", "n1"]]]), [])
+    }
+
+    /// A note deleted while it waited for the home vault is never sent; a
+    /// delete by someone else takes nothing; a deleted blob's sends go too.
+    func testADeleteTakesBackWhatWaits() {
+        let queue = [queued(.blob, "b1"), queued(.mirror, "b1"), queued(.blob, "b2"),
+                     queued(.event, "n1"), queued(.event, "n2"), queued(.event, "n3", owner: "bb")]
+        let afterNote = HomeVaultLogic.droppingDeleted(queue, eventIDs: ["n1", "n3"], author: "aa", blob: nil)
+        XCTAssertEqual(afterNote.map(\.id), ["b1", "b1", "b2", "n2", "n3"], "n3 is someone else's: kept")
+        let afterBlob = HomeVaultLogic.droppingDeleted(queue, eventIDs: [], author: nil, blob: "b1")
+        XCTAssertEqual(afterBlob.map(\.id), ["b2", "n1", "n2", "n3"])
     }
 }

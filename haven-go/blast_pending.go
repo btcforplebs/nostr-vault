@@ -80,6 +80,14 @@ type blastQueue struct {
 	dropped   int         // notes not kept since the queue was last below blastPendingMax
 }
 
+// deletedHere reports whether the outbox holds a signed delete for ev (by its
+// author or the owner, isDeleted). A note deleted after it was handed to the
+// blast is never sent: not by the pool, not by a later retry (device sync
+// map §4.3).
+func (q *blastQueue) deletedHere(ctx context.Context, ev *nostr.Event) bool {
+	return q.local != nil && isDeleted(ctx, q.local, ev)
+}
+
 // isVaultAccountNote: a note from the owner or any of the vault's other
 // accounts (the whitelist) is never dropped for space. The blast is how it
 // leaves this device, and a note the pool could not take has had no try yet.
@@ -284,6 +292,10 @@ func newBlastSender(ctx context.Context, q *blastQueue) (send func(*nostr.Event)
 						q.keepUntried(ev)
 						continue
 					}
+					if q.deletedHere(ctx, ev) {
+						slog.Info("🗑️ deleted before its blast, not sent", "id", ev.ID)
+						continue
+					}
 					blastOrKeep(ctx, q, ev)
 				}
 			}
@@ -353,6 +365,11 @@ func retryPendingOnce(ctx context.Context, q *blastQueue) {
 		_, whitelisted := whitelist()[ev.PubKey]
 		if ok, _ := ev.CheckSignature(); !ok || !ev.CheckID() || !whitelisted {
 			slog.Warn("🗑️ dropping a queued note that is not this account's", "id", ev.ID)
+			q.remove(ev.ID)
+			continue
+		}
+		if q.deletedHere(ctx, &ev) {
+			slog.Info("🗑️ a queued note was deleted, dropping it", "id", ev.ID)
 			q.remove(ev.ID)
 			continue
 		}

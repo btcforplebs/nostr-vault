@@ -65,6 +65,10 @@ extension BlossomService {
     /// sent a delete for a blob it was not asked about.
     func deleteFromMirrorsReport(sha256: String, photoURL: URL?, includeHomeVault: Bool,
                                  onlyServers: [String]? = nil) async -> MirrorDeleteResult {
+        #if os(iOS)
+        // Delete everywhere: a send still queued must not put it back.
+        if includeHomeVault { await MainActor.run { HomeVaultSender.shared.forget(blobSha256: sha256) } }
+        #endif
         var (targets, ownerHex) = await MainActor.run {
             (configService.config.blossomDeleteTargets(
                 ownerServerList: nostrService.serverLists[nostrService.activeHexPubkey] ?? [],
@@ -224,6 +228,10 @@ extension BlossomService {
     /// - Parameter sha256: The SHA256 hash of the media to delete
     /// - Returns: true if the file is gone (deleted, or was never stored here)
     func deleteFromLocal(sha256: String) async -> Bool {
+        #if os(iOS)
+        // Gone from this phone: nothing still queued sends it on.
+        await MainActor.run { HomeVaultSender.shared.forget(blobSha256: sha256) }
+        #endif
         let relayDataDir = await MainActor.run { configService.relayDataDir }
         let blossomPath = await MainActor.run { configService.config.blossomPath }
         let blossomDir = relayDataDir.appendingPathComponent(blossomPath)

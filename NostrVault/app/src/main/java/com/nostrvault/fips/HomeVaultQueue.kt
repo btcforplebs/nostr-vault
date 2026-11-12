@@ -3,6 +3,11 @@ package com.nostrvault.fips
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 
 /**
@@ -112,6 +117,24 @@ class HomeVaultQueue(
         save(load().map { if (it.key == item.key) item else it })
     }
 
+    /**
+     * Drops what a signed delete takes back (device sync map §4.3): the queued events [eventIds] names, and
+     * every send of blob [sha256] (the blob itself and its public copies). They are never sent. Returns how
+     * many items went.
+     */
+    fun dropDeleted(eventIds: Set<String> = emptySet(), sha256: String? = null): Int = synchronized(lock) {
+        val all = load()
+        val kept = all.filterNot { item ->
+            (item.type == TYPE_EVENT && item.key in eventIds) ||
+                (sha256 != null && item.type != TYPE_EVENT && (item.key == sha256 || item.key.startsWith("$sha256@")))
+        }
+        if (kept.size != all.size) {
+            save(kept)
+            if (sha256 != null) blobFile(sha256).delete()
+        }
+        all.size - kept.size
+    }
+
     fun remove(key: String) = synchronized(lock) {
         save(load().filterNot { it.key == key })
         blobFile(key).delete()
@@ -163,6 +186,21 @@ class HomeVaultQueue(
         const val TYPE_PUBLIC_COPY = "public-copy"
 
         fun publicCopyKey(sha256: String, server: String) = "$sha256@$server"
+
+        /** The event ids a signed delete (kind 5) names with `e` tags; empty for anything else. */
+        fun deletedEventIds(eventJson: String): Set<String> {
+            val ev = try {
+                Json.parseToJsonElement(eventJson).jsonObject
+            } catch (e: Exception) {
+                return emptySet()
+            }
+            if (ev["kind"]?.jsonPrimitive?.intOrNull != 5) return emptySet()
+            val tags = (ev["tags"] as? JsonArray) ?: return emptySet()
+            return tags.mapNotNull { tag ->
+                val t = tag as? JsonArray ?: return@mapNotNull null
+                if (t.size >= 2 && t[0].jsonPrimitive.contentOrNull == "e") t[1].jsonPrimitive.contentOrNull else null
+            }.toSet()
+        }
 
         /** The blob a key names: a public copy's key is `<sha256>@<server>`. */
         fun shaOf(key: String) = key.substringBefore('@')
