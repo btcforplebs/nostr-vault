@@ -150,29 +150,39 @@ test("a live subscription still waits the full connect: the quick cap is for one
 })
 
 // Relays that open only after the quick cap: nothing else in the ask is open, so it waits for them (Tron M1).
-const LATE = "wss://late.example"
+// A lookup relay that opens late and holds the recipient's 10050, and one that answers with nothing (Tron M1).
+const LATE = "wss://late.example", EMPTY = "wss://empty.example"
 const inboxKey = generateSecretKey()
 const inbox = finalizeEvent({ kind: 10050, created_at: Math.floor(Date.now() / 1000), tags: [["relay", "wss://their-inbox.example"]], content: "" }, inboxKey)
-class LateSocket extends GoodSocket {
+class ListSocket extends GoodSocket {
+  constructor(url, openAfter, evs) { super(url, openAfter); this.evs = evs }
   send(raw) {
     const [type, id] = JSON.parse(raw)
     if (type !== "REQ") return
-    setTimeout(() => { this.onmessage?.({ data: JSON.stringify(["EVENT", id, inbox]) }); this.onmessage?.({ data: JSON.stringify(["EOSE", id]) }) }, 5)
+    setTimeout(() => { for (const ev of this.evs) this.onmessage?.({ data: JSON.stringify(["EVENT", id, ev]) }); this.onmessage?.({ data: JSON.stringify(["EOSE", id]) }) }, 5)
   }
 }
-const latePool = (openAfter = QUICK_CONNECT_MS + 500) => {
-  const p = new LivePool({ websocketImplementation: function (url) { return url.startsWith(LATE) ? new LateSocket(url, openAfter) : new WebSocket(url) } })
+const lookupPool = ({ emptyAt, listAt }) => {
+  const p = new LivePool({ websocketImplementation: function (url) {
+    if (url.startsWith(LATE)) return new ListSocket(url, listAt, [inbox])
+    if (url.startsWith(EMPTY)) return new ListSocket(url, emptyAt, [])
+    return new WebSocket(url)
+  } })
   p.pageProtocol = () => "http:"
   return p
 }
+const lookup = p => dmRelaysFor(inbox.pubkey, [EMPTY, LATE], { fallback: ["wss://my-own-write.example"], query: (r, f, o) => p.querySync(r, f, o) })
 
-test("a DM lookup whose relays all connect after the quick cap still finds the recipient's inbox", async () => {
-  const p = latePool()
+test("a DM lookup whose list is only on the slower relay finds it, cold (2.0 s / 2.1 s)", async () => {
+  const p = lookupPool({ emptyAt: 2000, listAt: 2100 })
+  try { assert.deepEqual([...await lookup(p)], ["wss://their-inbox.example"]) } finally { p.destroy() }
+})
+
+test("a DM lookup whose list relay opens at 1.6 s, the other already open, finds it", async () => {
+  const p = lookupPool({ emptyAt: 5, listAt: 1600 })
   try {
-    const { out, ms } = await timed(() => dmRelaysFor(inbox.pubkey, [LATE, hangUrl], {
-      fallback: ["wss://my-own-write.example"], query: (r, f, o) => p.querySync(r, f, o) }))
-    assert.deepEqual([...out], ["wss://their-inbox.example"])
-    assert.ok(ms >= QUICK_CONNECT_MS, `${ms} ms`)
+    await p.ensureRelay(EMPTY)
+    assert.deepEqual([...await lookup(p)], ["wss://their-inbox.example"])
   } finally { p.destroy() }
 })
 

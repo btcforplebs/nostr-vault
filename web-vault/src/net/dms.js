@@ -103,7 +103,9 @@ export async function openLegacy(ev, crypto, me) {
 /** Relays a person's DMs go to, as the iPhone picks them: their kind 10050, else their kind 10002 read list,
  *  else `fallback`. Loopback addresses are dropped: someone else's 127.0.0.1 is this machine. `query` is for tests. */
 export async function dmRelaysFor(pubkey, lookupRelays, { fallback = DEFAULT_RELAYS, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
-  const evs = await query(uniq(lookupRelays), { kinds: [10050, 10002], authors: [pubkey] }, { maxWait: 6000 })
+  // Every lookup relay gets its full connect: under the quick cap, a list on a relay that opened late was taken for
+  // "no list" and the DM went to the fallback, the sender's own relays (Tron, PR #1995 review).
+  const evs = await query(uniq(lookupRelays), { kinds: [10050, 10002], authors: [pubkey] }, { maxWait: 6000, quickConnect: false })
   const list = pickDmRelays(evs, pubkey, fallback)
   // No list found at all: cachedDmRelays must not keep this fallback, the lists may just not have come in yet.
   if (!evs.some(e => e.pubkey === pubkey && (e.kind === 10050 || e.kind === 10002))) Object.defineProperty(list, "unanswered", { value: true })

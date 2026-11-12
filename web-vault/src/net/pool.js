@@ -156,9 +156,10 @@ export class LivePool extends SimplePool {
       })
     })
   }
-  /** querySync and the other one-shot asks come through here; their opens wait at most quickConnectMs. */
+  /** querySync and the other one-shot asks come through here; their opens wait at most quickConnectMs, unless the
+   *  caller passes quickConnect: false (a lookup that picks where something goes must hear every relay). */
   subscribeEose(relays, filter, params) {
-    return super.subscribeEose(relays, filter, { ...params, quickConnect: true })
+    return super.subscribeEose(relays, filter, { ...params, quickConnect: params?.quickConnect ?? true })
   }
   subscribeMap(requests, params) {
     // nostr-tools calls ensureRelay for every relay synchronously inside subscribeMap (each async opener runs up to
