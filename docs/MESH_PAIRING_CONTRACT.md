@@ -72,10 +72,15 @@ Unknown extra fields are ignored, so a later v1 can add one.
 - **Any number of vaults.** My Devices holds every linked `vault` (Macs and boxes) side by side. Linking another
   vault never replaces or hides one already linked, and every vault keeps the full history from the others (copy
   contract §6).
-- **A box** (a vault with no screen of its own) takes the code steps on its setup page (the box's own web page, opened in a browser
-  on the same network), always as A with Accept and
-  the check words (§5). The box's mesh key signs its hello and ack. The device linked there becomes the first
-  device in the box's paired set; the box learns the rest of My Devices from the device list (copy contract §2.2).
+- **A box** (a vault with no screen of its own) takes the code steps on its setup page, always as A with Accept and
+  the check words (§5). The page is the box's own web page, but **being on the same network is not enough**: the
+  link steps sit behind the box's owner check (the NIP-98 box API, signed by the owner's account), like the rest
+  of the box's admin. A request without it links nothing. The device linked there becomes the first device in the
+  box's paired set; the box learns the rest of My Devices from the device list (copy contract §2.2), and the same
+  page can always replace that set (copy contract §2.2, Recovery).
+- **The box's mesh key stays in nv-mesh.** The key never leaves the nv-mesh process, and nv-mesh signs only the
+  box's pairing hello and ack, never bytes havend or anything else hands it. How havend asks for the hello and ack
+  is left to P3-LNX.
 - **Role (Tron 1)**: name, role and owner all come from the other device, and the role grants access, so the person
   confirms the role in plain words before anything is stored (`roleConfirmText`). A device already known under
   another role is refused (`refuseOtherRole`); under the same role it is `alreadyLinked`. `mac`, `homeVault` and

@@ -150,25 +150,41 @@ Authorization: Nostr <base64 kind 27235>, signed by the sender's mesh key
   At most 64 entries; a body over 64 KiB is 413.
 - The box drops its own npub from the list, then checks every entry as `SetMeshDevicesC` does. One bad entry
   refuses the whole list (400) and the old set is kept.
+- `t` is **when the sender's list last changed**, never the send time: the sender stamps it when My Devices changes
+  (or when it takes the box's list, below) and keeps it with the list. A new stamp is the later of its clock and
+  the last box `t` it has seen + 1, so a device whose clock is behind still stamps past the box.
 - `t` must be later than the `t` of the last list the box accepted, and at most 10 minutes ahead of the box's clock.
-  Otherwise 409 `stale_list`, and the sender reads the box's current `t` from the answer (`{"t": <unix>}`), sends
-  again with a `t` past it (so a device whose clock is behind still gets its change in).
-- The signer must be in the box's set **when the list arrives** and must not be the box: anyone else is 403. A
-  device removed from the set can never send another list.
+  The same `t` with the same set is 204; anything else is 409 `stale_list`, answered with the box's current list:
+  `{"t": <unix>, "devices": [{"npub", "role", "name"}, …]}`.
+- **A 409 is never answered by sending again.** The sender is behind: it takes the box's list as its list for the
+  box (devices it lacks are added, devices the box dropped are removed) and keeps the box's `t`. A change the person
+  then makes gets a new stamp and is sent then. So a phone that has not heard of a newly linked device reads it from
+  the box instead of removing it.
+- The signer must be in the box's set **when the list arrives**, must not be the box, and must have the role `phone`
+  or `vault`: anyone else is 403. **A `browser` device can never send a list.** A device removed from the set can
+  never send another list.
 - The list **replaces** the set. A device that left it loses its copy tokens at once (as Unpair, §2). A list
   without the sender is allowed (it removed itself).
 - 204 when taken, also when nothing changed.
 
 **When devices send it.** After every change to My Devices that names the box, and at the start of every catch-up
-with the box (§6), so a box that was off during a change still gets it. A send that fails is retried at the next
-catch-up; there is no other retry.
+with the box (§6), so a box that was off during a change still gets it. A send that fails (no answer, 5xx) is retried at the
+next catch-up; there is no other retry. A 409 is not a failure: the sender takes the box's list (above) and does not
+resend.
 
 **On the box.** havend writes the set to `mesh-devices.json` (`[{"npub", "role"}]`: today's file plus `role`),
 which is what the mesh lets in as own devices and what the engine reads as its paired set (`MESH_DEVICES_FILE`).
 
-**Trust.** Any device in the set can rewrite the whole set, the same trust each device already has on the owner's
-other vaults through §2. A lost phone is handled by removing it from My Devices on another device: that list
-replaces the set (dropping any key the lost phone added), and from then on the lost phone's lists are 403.
+**Trust.** A `phone` or `vault` in the set can rewrite the whole set. That is **more** than §2 gives a paired
+device, which may only copy: through this list a device can also add and evict devices on the box. A stolen phone
+that sends first can drop every other device and add its own key, and the owner's next list from another device is
+then 403, because that device is no longer in the set.
+
+**Recovery: the box's own page.** The box's page (pairing contract §2), behind the box's owner check, can always
+replace the set: remove any device, or set the list from scratch, with no device signature needed. Its list takes a
+new `t` (the later of the box's clock and the last `t` + 1) and replaces the set like any other, so a removed
+phone's lists are 403 from then on. A lost phone is handled by removing it from My Devices on another device when
+that device is still in the set, and on the box's page when it is not.
 
 ## 3. The first copy
 
