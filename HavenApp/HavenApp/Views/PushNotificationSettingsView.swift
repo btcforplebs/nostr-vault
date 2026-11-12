@@ -31,6 +31,15 @@ struct PushNotificationSettingsView: View {
 
                 NotificationSoundSection()
 
+                Section {
+                    Toggle("Show message text", isOn: $configService.config.showDMTextInNotifications)
+                        .onChange(of: configService.config.showDMTextInNotifications) { _, _ in
+                            configService.save()
+                        }
+                } footer: {
+                    Text("Off: a message notification shows who it is from, not what it says.")
+                }
+
                 if configService.allAccountNpubs.count > 1 {
                     Section {
                         Toggle("Notify me when my own accounts tag each other", isOn: $configService.config.notifyOwnAccountTags)

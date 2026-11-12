@@ -72,6 +72,10 @@ class NotificationSettingsViewModel @Inject constructor(
         configStore.update { it.copy(notifyOwnAccountTags = on) }
     }
 
+    fun setShowDMText(on: Boolean) {
+        configStore.update { it.copy(showDMTextInNotifications = on) }
+    }
+
     /**
      * Picks the sound and moves notifications to its channel straight away
      * (a channel's sound can't change), then plays it, as iOS previews it.
@@ -176,6 +180,20 @@ fun NotificationSettingsScreen(
                         enabled,
                         help = SettingsHelp.NOTIFY_FEED_NOTES,
                         onToggle = viewModel::setFeedNotifications,
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+
+            // DM text in notifications (iOS showDMTextInNotifications).
+            if (enabled) {
+                Surface(shape = RoundedCornerShape(12.dp), color = SecondaryGroupedBg, modifier = Modifier.fillMaxWidth()) {
+                    NotificationToggle(
+                        "Show message text",
+                        "Off: a message notification shows who it is from, not what it says.",
+                        config.showDMTextInNotifications,
+                        enabled,
+                        onToggle = viewModel::setShowDMText,
                     )
                 }
                 Spacer(Modifier.height(16.dp))

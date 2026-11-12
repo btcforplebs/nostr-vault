@@ -42,7 +42,14 @@ struct BottomTabBar: View {
     }
 
     var body: some View {
-        if vertical { sidebar } else { dock }
+        Group {
+            if vertical { sidebar } else { dock }
+        }
+        // Reading DMs lowers what the dashboard saw, so the next one dots.
+        .onChange(of: dmService.totalUnreadCount) { _, unread in
+            let seen = VaultNewsDot.seen(relayManager.dmUnreadSeen, afterUnread: unread)
+            if seen != relayManager.dmUnreadSeen { relayManager.dmUnreadSeen = seen }
+        }
     }
 
     /// iPad landscape: a slim rail on the left edge, full height, like the
@@ -233,7 +240,8 @@ struct BottomTabBar: View {
 
     /// The Vault tab's dot: something came in, a new message included.
     private var vaultHasNews: Bool {
-        relayManager.hasNewRelayActivity || dmService.totalUnreadCount > 0
+        VaultNewsDot.isShown(newActivity: relayManager.hasNewRelayActivity,
+                             dmUnread: dmService.totalUnreadCount, dmUnreadSeen: relayManager.dmUnreadSeen)
     }
 
 

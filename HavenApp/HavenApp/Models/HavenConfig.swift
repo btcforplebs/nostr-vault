@@ -102,6 +102,10 @@ struct HavenConfig: Codable, Equatable {
     /// Off: a note from one of your accounts that tags another of your
     /// accounts on this device makes no Vault line and no alert.
     var notifyOwnAccountTags: Bool = false
+    /// DM notifications show the message text. Off by default (Logen,
+    /// 2026-11-12): sender only. A config saved before the setting existed
+    /// decodes to off; a saved choice is kept.
+    var showDMTextInNotifications: Bool = false
     var notificationPrefsPerAccount: [String: NotificationPreferences] = [:]
     var notificationSoundName: String = NotificationSound.defaultSound.rawValue
     
@@ -311,7 +315,7 @@ struct HavenConfig: Codable, Equatable {
         case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, disableMediaCache, autoplayVideos, cacheTTLDays, prefetchProfilePictures, vertexLookups, fanfaresAutoCheck, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
         case useOLED, textSizeScale, feedLayoutModes, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage, hideNostrVaultBadge
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
-        case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications, notifyOwnAccountTags
+        case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications, notifyOwnAccountTags, showDMTextInNotifications
         case macRelayURL
         case privateRelayName, privateRelayDescription, privateRelayIcon
         case chatRelayName, chatRelayDescription, chatRelayIcon, chatRelayWotDepth, chatRelayWotRefreshHours, wotRefreshInterval, chatRelayMinFollowers
@@ -413,6 +417,7 @@ struct HavenConfig: Codable, Equatable {
 
         enableFeedNotifications = try container.decodeIfPresent(Bool.self, forKey: .enableFeedNotifications) ?? defaults.enableFeedNotifications
         notifyOwnAccountTags = try container.decodeIfPresent(Bool.self, forKey: .notifyOwnAccountTags) ?? defaults.notifyOwnAccountTags
+        showDMTextInNotifications = try container.decodeIfPresent(Bool.self, forKey: .showDMTextInNotifications) ?? defaults.showDMTextInNotifications
 
         // Migrate: if enablePushNotifications was never saved, carry forward enableRemotePushServer
         if let newValue = try container.decodeIfPresent(Bool.self, forKey: .enablePushNotifications) {

@@ -232,6 +232,14 @@ class LocalNotificationService @Inject constructor(
          * A decrypted DM as notification text: one line, cut to fit. Null when
          * there is nothing to read, so the caller keeps the generic line.
          */
+        /**
+         * A DM notification's text: the message only when "Show message text"
+         * is on (HavenConfig.showDMTextInNotifications, off by default).
+         * Empty: the sender and the generic line. iOS dmNotificationText.
+         */
+        fun dmNotificationText(content: String, showsText: Boolean): String =
+            if (showsText) dmPreview(content).orEmpty() else ""
+
         fun dmPreview(content: String, limit: Int = 160): String? {
             val oneLine = content.trim().split(Regex("\\s+")).joinToString(" ")
             if (oneLine.isEmpty()) return null
@@ -772,7 +780,10 @@ class LocalNotificationService @Inject constructor(
         scope.launch {
             val profile = awaitAuthor(message.senderPubkey)
             val profiles = nostrService.get().profiles.value
-            val text = dmPreview(NostrMentions.toPlainText(message.content, profiles)).orEmpty()
+            val text = dmNotificationText(
+                NostrMentions.toPlainText(message.content, profiles),
+                configStore.config.value.showDMTextInNotifications,
+            )
             val (title, body) = buildContent(type, profile?.bestName, text)
             // Opened, so it routes as a DM with its counterparty: a tap lands in the thread.
             deliver(InAppBanner(id, title, body, "dm", counterparty, npub, profile?.pictureURL))

@@ -234,6 +234,15 @@ enum NotificationPolicy {
         return dedupKey(eventId: id)
     }
 
+    /// A DM notification's text: the message only when the person turned
+    /// "Show message text" on (`HavenConfig.showDMTextInNotifications`, off
+    /// by default, Logen 2026-11-12). Empty: the caller shows the sender and
+    /// the generic line.
+    static func dmNotificationText(_ content: String, showsText: Bool) -> String {
+        guard showsText else { return "" }
+        return dmPreview(content) ?? ""
+    }
+
     /// A decrypted DM as notification text: one line, cut to fit a banner.
     /// Nil when there is nothing to read (an empty message), so the caller
     /// keeps the generic line.
