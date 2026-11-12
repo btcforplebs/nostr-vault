@@ -130,7 +130,7 @@ func newDBBackend(path string) DBBackend {
 }
 
 func initDBs() error {
-	return GranularInitDBs([]string{"private", "chat", "outbox", "inbox", "blossom", "feed", "lists", "listsimport"})
+	return GranularInitDBs([]string{"private", "chat", "outbox", "inbox", "blossom", "feed", "lists", "listsimport", "files"})
 }
 
 // dbMu guards the dbs map and per-DB global assignment against
@@ -190,6 +190,8 @@ func GranularInitDBs(names []string) error {
 			listsDB = db
 		case "listsimport":
 			listsImportDB = db
+		case "files":
+			filesDB = db
 		}
 	}
 
@@ -296,6 +298,8 @@ func initRelays(ctx context.Context) error {
 	inboxRelay = khatru.NewRelay()
 	feedRelay = khatru.NewRelay()
 	listsRelay = initListsRelay()
+	// The owner's media file notes, mesh and this machine only (files_relay.go).
+	filesRelay = initFilesRelay()
 
 	// Serve NIP-77 negentropy so clients and other Haven instances can
 	// set-reconcile against these relays instead of replaying whole windows.
@@ -311,6 +315,8 @@ func initRelays(ctx context.Context) error {
 		return err
 	}
 	seedListHistory(ctx, outboxDB, listsDB)
+	// Once: a media note for every blob already here (files_backfill.go).
+	runsafe.Go("files-backfill", func() { backfillFileNotes(ctx) })
 
 	initRelayLimits()
 
@@ -569,7 +575,12 @@ func initRelays(ctx context.Context) error {
 	guardDeleteServer(blossomServer)
 	blossomServer.DeleteBlob = append(blossomServer.DeleteBlob, func(ctx context.Context, sha256 string, ext string) error {
 		slog.Debug("deleting blob", "sha256", sha256, "ext", ext)
-		return deleteBlobFiles(sha256)
+		if err := deleteBlobFiles(sha256); err != nil {
+			return err
+		}
+		// Every open Media tab drops the tile (files_relay.go).
+		filesBlobGone(ctx, sha256)
+		return nil
 	})
 	blossomServer.RejectUpload = append(blossomServer.RejectUpload, func(ctx context.Context, event *nostr.Event, size int, ext string) (bool, string, int) {
 		if _, ok := whitelist()[event.PubKey]; ok {
@@ -805,6 +816,8 @@ func dynamicRelayHandler(w http.ResponseWriter, r *http.Request) {
 		relay = feedRelay
 	case "/lists":
 		relay = listsRelay
+	case filesPath:
+		relay = filesRelay
 	case "":
 		relay = outboxRelay
 	default:

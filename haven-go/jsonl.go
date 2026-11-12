@@ -49,6 +49,9 @@ func exportToZip(ctx context.Context, zipFileName string) (err error) {
 	}
 
 	for name, db := range dbs {
+		if name == "files" {
+			continue // media notes are private and derivable (files_relay.go)
+		}
 		fileName := name + ".jsonl"
 		slog.Info("📦 exporting db to fileName", "fileName", fileName)
 
