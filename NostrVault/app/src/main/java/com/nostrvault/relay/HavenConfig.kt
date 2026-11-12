@@ -307,6 +307,12 @@ data class HavenConfig(
      * and no alert (iOS notifyOwnAccountTags).
      */
     val notifyOwnAccountTags: Boolean = false,
+    /**
+     * DM notifications show the message text. Off by default (Logen,
+     * 2026-11-12): sender only. A config saved before the setting existed
+     * decodes to off; a saved choice is kept (iOS showDMTextInNotifications).
+     */
+    val showDMTextInNotifications: Boolean = false,
     /** The picked notification sound's name (iOS notificationSoundName); see NotificationSound. */
     val notificationSoundName: String = "Chime",
     val pushNotifyMentions: Boolean = true,

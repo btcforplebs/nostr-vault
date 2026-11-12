@@ -57,6 +57,7 @@ struct VaultDashboardView: View {
             await refresh()
         }
         .task { await refresh() }
+        .onAppear { relayManager.markVaultDashboardViewed(dmUnread: DMService.shared.totalUnreadCount) }
         .onChange(of: relayManager.isRunning) { _, running in
             if running { Task { await refresh() } }
         }

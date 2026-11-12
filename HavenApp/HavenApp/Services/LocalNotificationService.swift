@@ -412,7 +412,9 @@ final class LocalNotificationService {
         Task { @MainActor in
             await Self.awaitAuthor(sender)
             let name = NostrService.shared.profiles[sender]?.bestName
-            let text = NotificationPolicy.dmPreview(NostrContentFormatter.resolveMentionsPlainText(opened.message.content)) ?? ""
+            let text = NotificationPolicy.dmNotificationText(
+                NostrContentFormatter.resolveMentionsPlainText(opened.message.content),
+                showsText: ConfigService.shared.config.showDMTextInNotifications)
             deliver(id: id, type: type, name: name, preview: text, npub: npub)
         }
     }

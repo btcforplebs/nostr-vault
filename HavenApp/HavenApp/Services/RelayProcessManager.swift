@@ -68,6 +68,9 @@ class RelayProcessManager: ObservableObject {
     /// while any remain; the mode pill marks which.
     @Published var newActivityModes: Set<VaultMode> = []
     var hasNewRelayActivity: Bool { !newActivityModes.isEmpty }
+    /// Unread DMs the Vault Dashboard has already shown: the tab's dot
+    /// lights for more than this (VaultNewsDot).
+    @Published var dmUnreadSeen = 0
 
     var outputPipe: Pipe?
     var stderrPipe: Pipe?
@@ -201,6 +204,13 @@ class RelayProcessManager: ObservableObject {
             return
         }
         if newActivityModes.contains(mode) { newActivityModes.remove(mode) }
+    }
+
+    /// The Vault Dashboard is on screen: like the Vault list, it sees every
+    /// list's news, and the unread DMs it shows (they stay unread).
+    func markVaultDashboardViewed(dmUnread: Int) {
+        markRelayViewed(.activity)
+        if dmUnreadSeen != dmUnread { dmUnreadSeen = dmUnread }
     }
 
     /// How long the HTTP check keeps trying once the flags say running.

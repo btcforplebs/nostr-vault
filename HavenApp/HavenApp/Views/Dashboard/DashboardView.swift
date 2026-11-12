@@ -39,6 +39,7 @@ struct DashboardView: View {
         }
         .onAppear {
             statsService.refreshStats()
+            relayManager.markVaultDashboardViewed(dmUnread: DMService.shared.totalUnreadCount)
         }
         // The Vault in Your Pocket tutorial starts the first time the dashboard opens.
         .task(id: TutorialCenter.shared.revision) {
