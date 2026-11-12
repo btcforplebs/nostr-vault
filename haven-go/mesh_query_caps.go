@@ -47,6 +47,21 @@ func wireOutboxReads(rl *khatru.Relay, db DBBackend, limits OutboxRelayLimits) {
 	if !limits.AllowComplexFilters {
 		rl.RejectFilter = append(rl.RejectFilter, policies.NoComplexFilters)
 	}
+	enableSearch(rl, db)
+	hideBroughtOnOutbox(rl)
+	wireMeshReadCaps(rl)
+}
+
+// wireMeshReadCaps adds the mesh-only read rules to rl (the outbox and,
+// sync rework M2, /inbox, /chat and private). Call it after every query is
+// wired: the byte cap wraps rl.QueryEvents as they are.
+//   - no negentropy over the mesh;
+//   - limit clamped to meshMaxLimit;
+//   - per REQ (khatru fork ReqCaps): meshMaxFilters filters, at most
+//     meshMaxSubscriptions open listeners on the connection;
+//   - one filter's answer at most meshMaxAnswerBytes;
+//   - COUNT closed.
+func wireMeshReadCaps(rl *khatru.Relay) {
 	// First: a NEG-OPEN runs these hooks with no subscription in its context.
 	rl.RejectFilter = append([]func(context.Context, nostr.Filter) (bool, string){meshNoNegentropy}, rl.RejectFilter...)
 	rl.OverwriteFilter = append(rl.OverwriteFilter, meshCapLimit)
@@ -54,8 +69,6 @@ func wireOutboxReads(rl *khatru.Relay, db DBBackend, limits OutboxRelayLimits) {
 	// open listeners per connection, reserved under its lock.
 	rl.ReqCaps = meshReqCaps
 	rl.RejectCountFilter = append(rl.RejectCountFilter, meshNoQueries)
-	enableSearch(rl, db)
-	hideBroughtOnOutbox(rl)
 	// Last, so it weighs what is really sent (after the hidden accounts).
 	for i, q := range rl.QueryEvents {
 		rl.QueryEvents[i] = meshCapAnswerBytes(q)

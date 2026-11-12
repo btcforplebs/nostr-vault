@@ -339,7 +339,9 @@ class FipsMeshManager @Inject constructor(
      */
     private fun offerRelay() {
         val port = MeshEnginePlan.sharePort(configStore.config.value, engineOwnDevices.orEmpty())
-        // The door, for strangers (or for everyone when the engine is open).
+        // The door, for strangers (or for everyone when the engine is open). Its AUTH is pinned
+        // to this device's mesh address, so Go gets the npub first.
+        HavenBridge.setMeshNpub(_status.value.npub ?: runCatching { MeshKeySigner.npub() }.getOrNull())
         HavenBridge.setMeshServing(true)
         val rc = FipsBridge.export(port)
         if (rc != 0) Log.w(TAG, "FipsBridgeExport($port) failed: $rc")

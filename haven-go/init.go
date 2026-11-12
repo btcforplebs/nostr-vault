@@ -322,6 +322,7 @@ func initRelays(ctx context.Context) error {
 	privateRelay.Info.Software = config.RelaySoftware
 	privateRelay.ServiceURL = relayServiceURL("/private")
 	serviceURLFromHost(privateRelay, "/private")
+	pinMeshAuthURL(privateRelay, "/private")
 
 	if !privateRelayLimits.AllowEmptyFilters {
 		privateRelay.RejectFilter = append(privateRelay.RejectFilter, policies.NoEmptyFilters)
@@ -363,6 +364,8 @@ func initRelays(ctx context.Context) error {
 	})
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(privateRelay, privateDB)
+	// The mesh door serves /private too (mesh_door_relays.go): AUTH as above, mesh caps.
+	wireMeshReadCaps(privateRelay)
 	privateRelay.DeleteEvent = append(privateRelay.DeleteEvent, privateDB.DeleteEvent)
 	privateRelay.OverwriteDeletionOutcome = append(privateRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	privateRelay.ReplaceEvent = append(privateRelay.ReplaceEvent, privateDB.ReplaceEvent)
@@ -399,6 +402,7 @@ func initRelays(ctx context.Context) error {
 	chatRelay.Info.Software = config.RelaySoftware
 	chatRelay.ServiceURL = relayServiceURL("/chat")
 	serviceURLFromHost(chatRelay, "/chat")
+	pinMeshAuthURL(chatRelay, "/chat")
 
 	if !chatRelayLimits.AllowEmptyFilters {
 		chatRelay.RejectFilter = append(chatRelay.RejectFilter, policies.NoEmptyFilters)
@@ -450,6 +454,8 @@ func initRelays(ctx context.Context) error {
 	})
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(chatRelay, chatDB)
+	// The mesh door serves /chat too (mesh_door_relays.go): AUTH as above, mesh caps.
+	wireMeshReadCaps(chatRelay)
 	chatRelay.DeleteEvent = append(chatRelay.DeleteEvent, chatDB.DeleteEvent)
 	chatRelay.OverwriteDeletionOutcome = append(chatRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	chatRelay.ReplaceEvent = append(chatRelay.ReplaceEvent, chatDB.ReplaceEvent)
@@ -487,6 +493,7 @@ func initRelays(ctx context.Context) error {
 	outboxRelay.Info.Software = config.RelaySoftware
 	outboxRelay.ServiceURL = relayServiceURL("")
 	serviceURLFromHost(outboxRelay, "")
+	pinMeshAuthURL(outboxRelay, "")
 
 	outboxRelay.RejectEvent = append(outboxRelay.RejectEvent,
 		policies.PreventTimestampsInTheFuture(maxFutureSkew),
@@ -587,6 +594,9 @@ func initRelays(ctx context.Context) error {
 	inboxRelay.Info.Software = config.RelaySoftware
 	inboxRelay.ServiceURL = relayServiceURL("/inbox")
 	serviceURLFromHost(inboxRelay, "/inbox")
+	pinMeshAuthURL(inboxRelay, "/inbox")
+	// Over the mesh: read only by the vault's own accounts (AUTH).
+	inboxRelay.RejectFilter = append(inboxRelay.RejectFilter, meshInboxReadsNeedAuth)
 
 	if !inboxRelayLimits.AllowEmptyFilters {
 		inboxRelay.RejectFilter = append(inboxRelay.RejectFilter, policies.NoEmptyFilters)
@@ -604,6 +614,7 @@ func initRelays(ctx context.Context) error {
 			inboxRelayLimits.EventIPLimiterMaxTokens,
 		),
 		OnlyGiftWrappedDMs,
+		meshInboxGiftWrapOnly,
 		MustNotBeBlacklistedToPost,
 		MustBeInWotToPost,
 		MustTagWhitelistedPubKey,
@@ -650,6 +661,8 @@ func initRelays(ctx context.Context) error {
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(inboxRelay, inboxDB)
 	hideBroughtOnInbox(inboxRelay)
+	// The mesh door serves /inbox too (mesh_door_relays.go): gift wraps in, mesh caps.
+	wireMeshReadCaps(inboxRelay)
 	inboxRelay.DeleteEvent = append(inboxRelay.DeleteEvent, inboxDB.DeleteEvent)
 	inboxRelay.OverwriteDeletionOutcome = append(inboxRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	inboxRelay.ReplaceEvent = append(inboxRelay.ReplaceEvent, inboxDB.ReplaceEvent)

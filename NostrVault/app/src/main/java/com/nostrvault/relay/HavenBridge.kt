@@ -89,6 +89,17 @@ object HavenBridge {
     }
 
     /**
+     * This vault's mesh npub (HAVEN_MESH_NPUB). A NIP-42 AUTH through the mesh door must name
+     * ws://<npub>.fips, never what the client put in Host (haven-go mesh_door_relays.go); with none,
+     * no AUTH over the mesh succeeds. Safe to call before the library loads.
+     */
+    fun setMeshNpub(npub: String?) {
+        if (!isLoaded) return
+        runCatching { setEnv("HAVEN_MESH_NPUB", npub.orEmpty()) }
+            .onFailure { android.util.Log.w("HavenBridge", "setMeshNpub: $it") }
+    }
+
+    /**
      * Re-run the copy from the Mac relay and its missing-events check; the
      * result lands in mac_sync_status.json. Non-blocking, coalesced, and a
      * no-op without a Mac relay or when the relay is not running.

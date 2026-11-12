@@ -1,6 +1,8 @@
 package box
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -137,5 +139,26 @@ func TestEngineEnvPassesTheCopyOrder(t *testing.T) {
 	}
 	if strings.Contains(joined, "NV_COPY_") {
 		t.Fatalf("engine env leaks box names:\n%s", joined)
+	}
+}
+
+// The engine gets the box's mesh npub, so a mesh AUTH is pinned to it
+// (haven-go mesh_door_relays.go); none written yet is none passed.
+func TestMeshNpubReachesTheEngine(t *testing.T) {
+	k := newTestKey(t)
+	c, err := ConfigFromEnv(envOf(map[string]string{"NV_OWNER": k.pk}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	npub, _ := nip19.EncodePublicKey(k.pk)
+	c.MeshNpubFile = filepath.Join(t.TempDir(), "npub")
+	if got := EngineEnv(c, "/v")["HAVEN_MESH_NPUB"]; got != "" {
+		t.Fatalf("no npub file yet, HAVEN_MESH_NPUB = %q", got)
+	}
+	if err := os.WriteFile(c.MeshNpubFile, []byte(npub+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := EngineEnv(c, "/v")["HAVEN_MESH_NPUB"]; got != npub {
+		t.Fatalf("HAVEN_MESH_NPUB = %q, want %q", got, npub)
 	}
 }
