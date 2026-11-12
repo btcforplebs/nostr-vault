@@ -128,6 +128,17 @@ final class MultiMacLogicTests: XCTestCase {
         XCTAssertNil(YourDevicesLogic.webDevice(serverList: [], domains: domains))
     }
 
+    func testTwoDevicesWithOneDomainPreferThisDeviceThenTheLowerNpub() {
+        let same = ["npub1macb": "a.example.com", "npub1maca": "a.example.com", "npub1macc": "c.example.com"]
+        for _ in 0..<20 {
+            XCTAssertEqual(YourDevicesLogic.webDevice(serverList: ["https://a.example.com"], domains: same, prefer: "npub1macb"), "npub1macb")
+            XCTAssertEqual(YourDevicesLogic.webDevice(serverList: ["https://a.example.com"], domains: same), "npub1maca")
+            XCTAssertFalse(YourDevicesLogic.standsDown(publicOnWeb: true, ownNpub: "npub1macb",
+                                                       serverList: ["https://a.example.com"], domains: same),
+                           "a Mac never stands itself down for a twin of its own domain")
+        }
+    }
+
     func testTurningItOnAsksOnlyWhenAnotherDeviceHasIt() {
         XCTAssertEqual(YourDevicesLogic.moveWebPrompt(current: macA, currentName: "Studio", this: macB, thisName: "Laptop"),
                        "Move public web from Studio to Laptop?")

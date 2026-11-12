@@ -76,9 +76,14 @@ extension YourDevicesLogic {
     /// first of the owner's https entries in the newest 10063 that is one of
     /// theirs. The list is the one source of truth. `domains`: each own
     /// device's domain (this one's included), by mesh npub. nil: none is.
-    static func webDevice(serverList: [String], domains: [String: String]) -> String? {
+    /// Two devices with the same domain: `prefer` (this device) wins, else
+    /// the lower npub, so the answer never hangs on dictionary order.
+    static func webDevice(serverList: [String], domains: [String: String], prefer: String? = nil) -> String? {
         let byHost = Dictionary(domains.compactMap { npub, domain in host(domain).map { ($0, npub) } },
-                                uniquingKeysWith: { first, _ in first })
+                                uniquingKeysWith: { a, b in
+                                    if let prefer, a == prefer || b == prefer { return prefer }
+                                    return min(a, b)
+                                })
         for entry in serverList where entry.lowercased().hasPrefix("https://") {
             if let h = host(entry), let npub = byHost[h] { return npub }
         }
@@ -97,7 +102,7 @@ extension YourDevicesLogic {
     /// name another own device as the web device. A list that names no own
     /// device (the owner took the domain out by hand) changes nothing here.
     static func standsDown(publicOnWeb: Bool, ownNpub: String, serverList: [String], domains: [String: String]) -> Bool {
-        guard publicOnWeb, let web = webDevice(serverList: serverList, domains: domains) else { return false }
+        guard publicOnWeb, let web = webDevice(serverList: serverList, domains: domains, prefer: ownNpub) else { return false }
         return web != ownNpub
     }
 

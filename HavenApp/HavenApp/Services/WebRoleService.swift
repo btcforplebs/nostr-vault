@@ -55,7 +55,7 @@ final class WebRoleService {
     /// public on the web, or nil (none, or this one).
     func otherWebDevice() -> WebDevice? {
         let doms = domains()
-        guard let web = YourDevicesLogic.webDevice(serverList: ownerServerList(NostrService.shared.serverLists), domains: doms),
+        guard let web = YourDevicesLogic.webDevice(serverList: ownerServerList(NostrService.shared.serverLists), domains: doms, prefer: ownNpub),
               web != ownNpub, let host = doms[web].flatMap(YourDevicesLogic.host) else { return nil }
         let name = ConfigService.shared.config.meshDevices.first { $0.npub == web }?.displayName ?? "your other Mac"
         return WebDevice(npub: web, name: name, host: host)
@@ -89,7 +89,7 @@ final class WebRoleService {
         let on = config.publicOnWeb ?? !config.isLocal
         guard let own = ownNpub else { return }
         if let moved = movedHereAt {
-            if YourDevicesLogic.webDevice(serverList: ownerServerList(lists), domains: domains()) == own
+            if YourDevicesLogic.webDevice(serverList: ownerServerList(lists), domains: domains(), prefer: own) == own
                 || Date().timeIntervalSince(moved) > Self.moveSettleWindow {
                 movedHereAt = nil
             } else {

@@ -45,6 +45,13 @@ class YourDevicesFullCopyRulesTest {
     }
 
     @Test
+    fun `two devices with one domain prefer this device then the lower npub`() {
+        val same = linkedMapOf("npub1macb" to "a.example.com", "npub1maca" to "a.example.com")
+        assertEquals("npub1macb", YourDevicesRules.webDevice(listOf("https://a.example.com"), same, prefer = "npub1macb"))
+        assertEquals("npub1maca", YourDevicesRules.webDevice(listOf("https://a.example.com"), same))
+    }
+
+    @Test
     fun `host drops scheme, port, path and case`() {
         assertEquals("a.example.com", YourDevicesRules.host("https://A.Example.com:8443/x"))
         assertEquals("a.example.com", YourDevicesRules.host("a.example.com"))

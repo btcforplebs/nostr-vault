@@ -14,14 +14,19 @@ package main
 // lists first, before any file is offered, each side applies the other's,
 // and a hash on the list is left out of the file list and the file GET.
 //
-// A delete beats a file whose record is no newer than it: a photo uploaded
-// again after its delete comes back (its new record is newer).
+// A delete reaches exactly as far as the original did (Tron #1997 D1): a
+// Blossom DELETE removes only one account's record of the blob, the
+// signer's, or the owner's for a paired device (meshIndexKey). Each kept
+// delete names that account, and every other device drops only that
+// account's records. A delete beats a record no newer than it: a photo
+// uploaded again after its delete comes back (its new record is newer).
 //
-// Which deletes a device takes from a peer: one signed by an own account,
-// by a device paired here (or this vault's own mesh key), or by a device
-// key whose token named this vault or the sending peer (the peer took it
-// from one of its own paired devices). Every delete arrives only behind a
-// live copy token, so only an own paired device can hand one over.
+// Which deletes a device takes from a peer, and for which account: one
+// signed by an own account (that account), by a device paired here or this
+// vault's own mesh key (the owner), or, from a peer, one the peer filed for
+// the owner (a device paired only to the peer). The peer is trusted by its
+// live copy token and files only deletes it took itself or vetted the same
+// way. A tag the signer picks never widens it.
 
 import (
 	"context"
@@ -30,6 +35,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,16 +58,49 @@ const (
 // learned it (what a peer's next catch-up asks from).
 type copyDelete struct {
 	Ev *nostr.Event `json:"ev"`
-	At int64        `json:"at"`
+	// Owner: the account whose record the original delete removed.
+	Owner string `json:"owner"`
+	At    int64  `json:"at"`
 }
 
-var copyDeletesMu sync.Mutex
+// copyDeleteKey: a kept delete is filed per hash and account.
+func copyDeleteKey(sha, owner string) string { return sha + ":" + owner }
 
+var (
+	copyDeletesMu sync.Mutex
+	// The parsed file, kept while the file on disk is unchanged: the list
+	// is read for every file a catch-up offers or takes (Tron #1997 S).
+	copyDeletesCache    map[string]copyDelete
+	copyDeletesCacheKey string
+)
+
+// copyDeletesStamp: which file, and which write of it, the cache holds.
+func copyDeletesStamp() string {
+	abs, _ := filepath.Abs(copyDeletesFile)
+	st, err := os.Stat(abs)
+	if err != nil {
+		return abs + "|none"
+	}
+	return abs + "|" + strconv.FormatInt(st.ModTime().UnixNano(), 10) + "|" + strconv.FormatInt(st.Size(), 10)
+}
+
+// loadCopyDeletes: the kept deletes (copyDeletesMu held). The map is the
+// cache: callers that change it save it.
 func loadCopyDeletes() map[string]copyDelete {
+	stamp := copyDeletesStamp()
+	if copyDeletesCache != nil && stamp == copyDeletesCacheKey {
+		return copyDeletesCache
+	}
 	out := map[string]copyDelete{}
 	if raw, err := os.ReadFile(copyDeletesFile); err == nil {
 		_ = json.Unmarshal(raw, &out)
 	}
+	for k, d := range out {
+		if d.Ev == nil || d.Owner == "" {
+			delete(out, k)
+		}
+	}
+	copyDeletesCache, copyDeletesCacheKey = out, stamp
 	return out
 }
 
@@ -81,6 +120,7 @@ func saveCopyDeletes(all map[string]copyDelete) {
 	if err := os.WriteFile(tmp, raw, 0o600); err == nil {
 		_ = os.Rename(tmp, copyDeletesFile)
 	}
+	copyDeletesCache, copyDeletesCacheKey = all, copyDeletesStamp()
 }
 
 // copyDeleteHashes: the blobs ev deletes, when it is a signed kind 24242
@@ -104,29 +144,35 @@ func copyDeleteHashes(ev *nostr.Event, now time.Time) []string {
 	return out
 }
 
-// copyDeleteSignerOK: ev's signer may delete here (see the top).
-// peer: the sending device's hex mesh key ("" for this device's own).
-func copyDeleteSignerOK(ev *nostr.Event, peer string) bool {
-	if copyAccounts()[ev.PubKey] {
-		return true
+// copyDeleteOwner: the account whose records ev deletes here, or "" when
+// it may not delete here (see the top). peer: the sending device's hex mesh
+// key ("" for this device's own); claimed: the account the peer filed it for.
+func copyDeleteOwner(ev *nostr.Event, peer, claimed string) string {
+	accounts := copyAccounts()
+	if accounts[ev.PubKey] {
+		return ev.PubKey
+	}
+	owner := config.OwnerPubKey
+	if owner == "" || !accounts[owner] {
+		return ""
 	}
 	self := meshDevices.selfKey()
 	if (self != "" && ev.PubKey == self) || meshDevices.paired(ev.PubKey) {
-		return true
+		return owner
 	}
-	for _, p := range tagValues(ev.Tags, "p") {
-		if k := meshKeyHex(p); k != "" && ((self != "" && k == self) || (peer != "" && k == peer)) {
-			return true
-		}
+	// A device paired only to the peer: the peer vouches, and only for the
+	// owner (a device's delete only ever removes the owner's record).
+	if peer != "" && claimed == owner {
+		return owner
 	}
-	return false
+	return ""
 }
 
-// keepCopyDelete files ev under each hash it deletes, unless a newer delete
-// is there already. Returns the hashes it filed (to apply).
-func keepCopyDelete(ev *nostr.Event, now time.Time) []string {
+// keepCopyDelete files ev for owner under each hash it deletes, unless a
+// newer delete is there already. Returns the hashes it filed (to apply).
+func keepCopyDelete(ev *nostr.Event, owner string, now time.Time) []string {
 	shas := copyDeleteHashes(ev, now)
-	if len(shas) == 0 {
+	if len(shas) == 0 || owner == "" {
 		return nil
 	}
 	copyDeletesMu.Lock()
@@ -134,10 +180,11 @@ func keepCopyDelete(ev *nostr.Event, now time.Time) []string {
 	all := loadCopyDeletes()
 	var filed []string
 	for _, sha := range shas {
-		if old, ok := all[sha]; ok && old.Ev.CreatedAt >= ev.CreatedAt {
+		key := copyDeleteKey(sha, owner)
+		if old, ok := all[key]; ok && old.Ev.CreatedAt >= ev.CreatedAt {
 			continue
 		}
-		all[sha] = copyDelete{Ev: ev, At: now.Unix()}
+		all[key] = copyDelete{Ev: ev, Owner: owner, At: now.Unix()}
 		filed = append(filed, sha)
 	}
 	if len(filed) > 0 {
@@ -146,46 +193,52 @@ func keepCopyDelete(ev *nostr.Event, now time.Time) []string {
 	return filed
 }
 
-// copyDeletedAt: sha256 -> the created_at of its delete.
+// copyDeletedAt: copyDeleteKey(sha256, account) -> the created_at of its
+// delete. Read once per catch-up round or request, not per file.
 func copyDeletedAt() map[string]int64 {
 	copyDeletesMu.Lock()
 	defer copyDeletesMu.Unlock()
-	out := map[string]int64{}
-	for sha, d := range loadCopyDeletes() {
-		if d.Ev != nil {
-			out[sha] = int64(d.Ev.CreatedAt)
-		}
+	all := loadCopyDeletes()
+	out := make(map[string]int64, len(all))
+	for k, d := range all {
+		out[k] = int64(d.Ev.CreatedAt)
 	}
 	return out
 }
 
-// copyIsDeleted: a file whose record is from recordAt is on the delete list.
-func copyIsDeleted(deleted map[string]int64, sha string, recordAt int64) bool {
-	at, ok := deleted[sha]
+// copyIsDeleted: pubkey's record of sha, from recordAt, is on the delete list.
+func copyIsDeleted(deleted map[string]int64, sha, pubkey string, recordAt int64) bool {
+	at, ok := deleted[copyDeleteKey(sha, pubkey)]
 	return ok && recordAt <= at
 }
 
+// copyDeleteItem: one delete on the wire, with the account it was filed for.
+type copyDeleteItem struct {
+	Ev    *nostr.Event `json:"ev"`
+	Owner string       `json:"owner"`
+}
+
 // copyDeletesSince: the deletes this device learned at or after since.
-func copyDeletesSince(since int64) []*nostr.Event {
+func copyDeletesSince(since int64) []copyDeleteItem {
 	copyDeletesMu.Lock()
 	defer copyDeletesMu.Unlock()
 	seen := map[string]bool{}
-	var out []*nostr.Event
+	var out []copyDeleteItem
 	for _, d := range loadCopyDeletes() {
-		if d.Ev == nil || d.At < since || seen[d.Ev.ID] {
+		if d.At < since || seen[d.Ev.ID+d.Owner] {
 			continue
 		}
-		seen[d.Ev.ID] = true
-		out = append(out, d.Ev)
+		seen[d.Ev.ID+d.Owner] = true
+		out = append(out, copyDeleteItem{Ev: d.Ev, Owner: d.Owner})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt > out[j].CreatedAt })
+	sort.Slice(out, func(i, j int) bool { return out[i].Ev.CreatedAt > out[j].Ev.CreatedAt })
 	return out
 }
 
-// applyCopyDelete removes, for sha, every own record no newer than at, and
-// the file once no record is left (as a Blossom DELETE does). Returns
-// whether the file went.
-func applyCopyDelete(ctx context.Context, sha string, at int64) bool {
+// applyCopyDelete removes, for sha, owner's records no newer than at, and
+// the file once no record is left (as a Blossom DELETE does). Records of
+// any other account stay, and so does the file. Returns whether it went.
+func applyCopyDelete(ctx context.Context, sha, owner string, at int64) bool {
 	if blossomDB == nil {
 		return false
 	}
@@ -195,9 +248,8 @@ func applyCopyDelete(ctx context.Context, sha string, at int64) bool {
 	}
 	var drop []*nostr.Event
 	left := false
-	accounts := copyAccounts()
 	for ev := range ch {
-		if accounts[ev.PubKey] && int64(ev.CreatedAt) <= at {
+		if ev.PubKey == owner && int64(ev.CreatedAt) <= at {
 			drop = append(drop, ev)
 		} else {
 			left = true
@@ -221,15 +273,19 @@ func applyCopyDelete(ctx context.Context, sha string, at int64) bool {
 
 // takeCopyDeletes keeps and applies a peer's deletes. Returns how many
 // files went.
-func takeCopyDeletes(ctx context.Context, evs []*nostr.Event, peer string) int {
+func takeCopyDeletes(ctx context.Context, items []copyDeleteItem, peer string) int {
 	gone := 0
 	now := time.Now()
-	for _, ev := range evs {
-		if ev == nil || !copyDeleteSignerOK(ev, peer) {
+	for _, it := range items {
+		if it.Ev == nil {
 			continue
 		}
-		for _, sha := range keepCopyDelete(ev, now) {
-			if applyCopyDelete(ctx, sha, int64(ev.CreatedAt)) {
+		owner := copyDeleteOwner(it.Ev, peer, it.Owner)
+		if owner == "" {
+			continue
+		}
+		for _, sha := range keepCopyDelete(it.Ev, owner, now) {
+			if applyCopyDelete(ctx, sha, owner, int64(it.Ev.CreatedAt)) {
 				gone++
 			}
 		}
@@ -241,32 +297,77 @@ func takeCopyDeletes(ctx context.Context, evs []*nostr.Event, peer string) int {
 
 // The Blossom DELETE hands the signed event to RejectDelete and only the
 // hash to DeleteBlob: the last RejectDelete notes it, DeleteBlob files it
-// once the file is really gone.
+// once the file is really gone. Only an own account's or a paired device's
+// delete is noted (the https port takes a DELETE from any key), an entry
+// lives copyPendingDeleteTTL at most (a DELETE that removed no file never
+// reaches DeleteBlob), and the map holds copyPendingDeleteMax at most
+// (Tron #1997 D2).
+const (
+	copyPendingDeleteTTL = 2 * time.Minute
+	copyPendingDeleteMax = 256
+)
+
+type copyPending struct {
+	ev    *nostr.Event
+	owner string
+	at    time.Time
+}
+
 var (
 	copyPendingDeleteMu sync.Mutex
-	copyPendingDelete   = map[string]*nostr.Event{}
+	copyPendingDelete   = map[string]copyPending{}
+	copyPendingNow      = time.Now
 )
 
 // noteCopyDeleteAuth is the last RejectDelete: it never refuses.
-func noteCopyDeleteAuth(_ context.Context, auth *nostr.Event, sha string, _ string) (bool, string, int) {
-	if auth != nil && isBlobHash(sha) {
-		copyPendingDeleteMu.Lock()
-		copyPendingDelete[sha] = auth
-		copyPendingDeleteMu.Unlock()
+func noteCopyDeleteAuth(ctx context.Context, auth *nostr.Event, sha string, _ string) (bool, string, int) {
+	if auth == nil || !isBlobHash(sha) {
+		return false, "", 0
 	}
+	// The account whose record this DELETE removes (meshOwnerIndex).
+	owner := ""
+	switch {
+	case isMeshDeviceAuth(ctx, auth):
+		if o := meshIndexKey(ctx, auth.PubKey); o != auth.PubKey {
+			owner = o
+		}
+	case copyAccounts()[auth.PubKey]:
+		owner = auth.PubKey
+	}
+	if owner == "" {
+		return false, "", 0
+	}
+	now := copyPendingNow()
+	copyPendingDeleteMu.Lock()
+	defer copyPendingDeleteMu.Unlock()
+	for k, p := range copyPendingDelete {
+		if now.Sub(p.at) > copyPendingDeleteTTL {
+			delete(copyPendingDelete, k)
+		}
+	}
+	if _, ok := copyPendingDelete[sha]; !ok && len(copyPendingDelete) >= copyPendingDeleteMax {
+		oldest := ""
+		for k, p := range copyPendingDelete {
+			if oldest == "" || p.at.Before(copyPendingDelete[oldest].at) {
+				oldest = k
+			}
+		}
+		delete(copyPendingDelete, oldest)
+	}
+	copyPendingDelete[sha] = copyPending{ev: auth, owner: owner, at: now}
 	return false, "", 0
 }
 
 // keepOwnCopyDelete files the delete that removed sha here (DeleteBlob).
 func keepOwnCopyDelete(sha string) {
 	copyPendingDeleteMu.Lock()
-	auth := copyPendingDelete[sha]
+	p, ok := copyPendingDelete[sha]
 	delete(copyPendingDelete, sha)
 	copyPendingDeleteMu.Unlock()
-	if auth == nil {
+	if !ok || copyPendingNow().Sub(p.at) > copyPendingDeleteTTL {
 		return
 	}
-	if len(keepCopyDelete(auth, time.Now())) == 0 {
+	if len(keepCopyDelete(p.ev, p.owner, time.Now())) == 0 {
 		slog.Debug("copy delete list: delete not kept", "sha256", sha)
 	}
 }
@@ -274,7 +375,7 @@ func keepOwnCopyDelete(sha string) {
 // ─── the catch-up ──────────────────────────────────────────────────────────
 
 type copyDeleteList struct {
-	Deletes []*nostr.Event `json:"deletes"`
+	Deletes []copyDeleteItem `json:"deletes"`
 }
 
 // serveSyncDeletes: GET hands over what this device learned since `since`;

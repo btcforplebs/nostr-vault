@@ -353,7 +353,7 @@ func copyOwnMediaSet(ctx context.Context) (map[string]bool, error) {
 	own := copyOwnMedia(uploaders, accounts)
 	deleted := copyDeletedAt()
 	for sha := range own {
-		if rec := records[sha]; rec != nil && copyIsDeleted(deleted, sha, int64(rec.CreatedAt)) {
+		if rec := records[sha]; rec != nil && copyIsDeleted(deleted, sha, rec.PubKey, int64(rec.CreatedAt)) {
 			delete(own, sha)
 		}
 	}
@@ -376,7 +376,7 @@ func copyOwnFilesSince(ctx context.Context, since, until int64, after string) ([
 	var out []copyFile
 	for sha, rec := range records {
 		at := int64(rec.CreatedAt)
-		if at < since || (until > 0 && (at > until || (at == until && sha <= after))) || !own[sha] || copyIsDeleted(deleted, sha, at) || copyBlobFile(sha) == "" {
+		if at < since || (until > 0 && (at > until || (at == until && sha <= after))) || !own[sha] || copyIsDeleted(deleted, sha, rec.PubKey, at) || copyBlobFile(sha) == "" {
 			continue
 		}
 		f := copyFile{SHA256: sha, Pubkey: rec.PubKey, CreatedAt: int64(rec.CreatedAt)}
@@ -681,6 +681,8 @@ func (c *copyClient) syncStore(ctx context.Context, store string, db DBBackend, 
 func (c *copyClient) syncFiles(ctx context.Context, since int64) (int, bool, error) {
 	n := 0
 	seen := map[string]bool{}
+	// The delete list, read once for the round (it was swapped just before).
+	deleted := copyDeletedAt()
 	until, after := int64(0), ""
 	for {
 		path := fmt.Sprintf("/copy/v2/sync/files?since=%d", since)
@@ -712,7 +714,7 @@ func (c *copyClient) syncFiles(ctx context.Context, since int64) (int, bool, err
 			}
 			seen[f.SHA256] = true
 			fresh++
-			got, err := c.syncFile(ctx, f)
+			got, err := c.syncFile(ctx, f, deleted)
 			if err != nil {
 				return n, false, err
 			}
@@ -739,8 +741,8 @@ func (c *copyClient) syncFiles(ctx context.Context, since int64) (int, bool, err
 // the hash: retrying would bring the same, so it does not hold the round
 // back. Any other answer (a 5xx, a busy A) is an error, so the round stays
 // unrecorded and the file stays in the window (Tron #1864).
-func (c *copyClient) syncFile(ctx context.Context, f copyFile) (bool, error) {
-	if !isBlobHash(f.SHA256) || copyBlobFile(f.SHA256) != "" || copyIsDeleted(copyDeletedAt(), f.SHA256, f.CreatedAt) {
+func (c *copyClient) syncFile(ctx context.Context, f copyFile, deleted map[string]int64) (bool, error) {
+	if !isBlobHash(f.SHA256) || copyBlobFile(f.SHA256) != "" || copyIsDeleted(deleted, f.SHA256, f.Pubkey, f.CreatedAt) {
 		return false, nil
 	}
 	resp, err := c.do(ctx, http.MethodGet, "/copy/v2/sync/file/"+f.SHA256, nil, nil)

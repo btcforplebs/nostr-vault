@@ -64,9 +64,19 @@ object YourDevicesRules {
      * Which own device is public on the web: the one whose domain is the first of the owner's https entries in the
      * newest 10063 that is one of theirs (multi-Mac rules §3.3). [domains]: each own device's domain by mesh npub.
      */
-    fun webDevice(serverList: List<String>, domains: Map<String, String>): String? {
+    fun webDevice(serverList: List<String>, domains: Map<String, String>, prefer: String? = null): String? {
+        // Two devices with the same domain: [prefer] (this device) wins, else the lower npub, never map order.
         val byHost = mutableMapOf<String, String>()
-        domains.forEach { (npub, domain) -> host(domain)?.let { byHost.putIfAbsent(it, npub) } }
+        domains.forEach { (npub, domain) ->
+            host(domain)?.let { h ->
+                val held = byHost[h]
+                byHost[h] = when {
+                    held == null -> npub
+                    prefer != null && (held == prefer || npub == prefer) -> prefer
+                    else -> minOf(held, npub)
+                }
+            }
+        }
         return serverList.asSequence()
             .filter { it.lowercase().startsWith("https://") }
             .mapNotNull { host(it)?.let(byHost::get) }
