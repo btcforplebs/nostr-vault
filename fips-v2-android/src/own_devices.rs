@@ -68,6 +68,19 @@ impl OwnDevices {
         PeerIdentity::from_npub(npub).is_ok_and(|id| self.npubs.contains(&id.npub()))
     }
 
+    /// The `node.limits` block that keeps a session slot for each of these
+    /// npubs however full strangers make the table (`reserved_npubs`; the
+    /// fork's v0.5.3 fix makes this node initiate to a listed key whose setup
+    /// was refused, so a forger claiming one gets nothing). Empty for no
+    /// devices: unlike the allowlist, an empty list reserves nothing.
+    pub fn reserved_yaml(&self) -> String {
+        if self.npubs.is_empty() {
+            return String::new();
+        }
+        let list: Vec<String> = self.npubs.iter().map(|n| format!("\"{n}\"")).collect();
+        format!("  limits:\n    reserved_npubs: [{}]\n", list.join(", "))
+    }
+
     /// The `rendezvous.nostr` line that answers offers from these npubs only.
     /// `me` is this node: with no devices it is the whole list, since FIPS
     /// reads an empty allowlist as none and would answer everyone.
