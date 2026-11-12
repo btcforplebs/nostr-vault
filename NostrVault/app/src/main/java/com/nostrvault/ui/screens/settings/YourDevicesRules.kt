@@ -6,7 +6,7 @@ import com.nostrvault.fips.MyDevice
 
 /**
  * The rules behind Settings › Your Devices, pure for the tests: which card gets a Sync now button, what it runs, and
- * the order of the cards. Twin of iOS `YourDevicesView`.
+ * the order of the cards. Twin of iOS `YourDevicesSettingsView` / `YourDevicesLogic`.
  */
 object YourDevicesRules {
     /** What a card's Sync now runs. Only the two vaults have one; phones and the browser vault have no button. */
@@ -43,6 +43,14 @@ object YourDevicesRules {
     const val CONNECT_FOOTER = "Two scans: one shows a code, the other scans it. Your Nostr key never leaves this device."
     const val THIS_PHONE_HEADER = "This phone"
     const val ALWAYS_ON_VAULT = "Use this phone as an always-on vault"
+    const val ALWAYS_ON_SUBTITLE = "Mobile vault mode: for a spare phone on a charger"
+    /**
+     * The power notice under the switch, worded for Android (Logen 2026-11-12): iPhone's says charger, app open,
+     * screen kept on, pauses when you leave the app; Android runs it in the background, so it says charger and
+     * background (as docs/mesh/home-vault: it keeps serving while your vault runs, and after a restart).
+     */
+    const val POWER_NOTICE = "Leave this phone on a charger. Mobile vault mode keeps running in the background while " +
+        "your vault runs, and after a restart. Your devices reach it in full."
     const val ADVANCED_HEADER = "Advanced"
     const val MESH_ROW = "Mesh"
     const val DESKTOP_BY_ADDRESS_ROW = "Desktop vault by web address"

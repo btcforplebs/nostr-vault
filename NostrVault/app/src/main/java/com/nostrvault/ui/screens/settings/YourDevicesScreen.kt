@@ -46,7 +46,6 @@ import com.nostrvault.ui.screens.settings.fipsmesh.MeshSection
 import com.nostrvault.ui.screens.settings.fipsmesh.MeshSwitchRow
 import com.nostrvault.ui.screens.settings.fipsmesh.MeshValueRow
 import com.nostrvault.ui.screens.settings.fipsmesh.RoleTile
-import com.nostrvault.ui.screens.settings.fipsmesh.SHARE_FOOTER
 import com.nostrvault.ui.screens.settings.fipsmesh.StatusDot
 import com.nostrvault.ui.screens.settings.fipsmesh.homeVaultLine
 import com.nostrvault.ui.screens.settings.fipsmesh.pausedLine
@@ -210,14 +209,15 @@ private fun ConnectButton(onClick: () -> Unit) {
 
 /**
  * This phone: the Mobile vault mode switch from Mesh › Share With Others, bound to the same state
- * (FipsMeshViewModel.shareRelay / setShareRelay), with the same sharing and paused lines.
+ * (FipsMeshViewModel.shareRelay / setShareRelay), with the same sharing and paused lines, and the Android
+ * power notice (YourDevicesRules.POWER_NOTICE; the Mesh page keeps SHARE_FOOTER, what others can read).
  */
 @Composable
 private fun ThisPhoneSection(viewModel: FipsMeshViewModel, status: FipsStatus) {
     val shareRelay by viewModel.shareRelay.collectAsState()
     val pausedUntil by viewModel.pausedUntil.collectAsState()
-    MeshSection(YourDevicesRules.THIS_PHONE_HEADER, footer = SHARE_FOOTER) {
-        MeshSwitchRow(YourDevicesRules.ALWAYS_ON_VAULT, null, shareRelay, enabled = viewModel.isAvailable, onChange = viewModel::setShareRelay)
+    MeshSection(YourDevicesRules.THIS_PHONE_HEADER, footer = YourDevicesRules.POWER_NOTICE) {
+        MeshSwitchRow(YourDevicesRules.ALWAYS_ON_VAULT, YourDevicesRules.ALWAYS_ON_SUBTITLE, shareRelay, enabled = viewModel.isAvailable, onChange = viewModel::setShareRelay)
         if (shareRelay && status.running) {
             MeshDivider()
             val until = pausedUntil

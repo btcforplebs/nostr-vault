@@ -34,7 +34,8 @@ struct YourDevicesThisPhoneSection: View {
         } header: {
             Text("This phone")
         } footer: {
-            Text("Keeps the screen on while the app is open. Your devices reach it in full. Leaving the app pauses it; it turns on again when you come back.")
+            // The iPhone's power notice; Android's is worded for the background (YourDevicesRules.POWER_NOTICE).
+            Text("Leave this phone on a charger with the app open: it keeps the screen on. Leaving the app pauses it; it turns on again when you come back. Your devices reach it in full.")
         }
     }
 }
