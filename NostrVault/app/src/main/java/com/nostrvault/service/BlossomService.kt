@@ -774,9 +774,12 @@ class BlossomService @Inject constructor(
         val meshOutcomes = mesh.map { target -> async { target.key to deleteOnMeshDevice(target.npub, sha256, meshAuth) } }
         val served = mirrors.zip(outcomes.awaitAll())
         val all = served.filter { it.second != Outcome.SKIPPED }.map { it.first to (it.second == Outcome.GONE) } + meshOutcomes.awaitAll()
-        // Delete everywhere, and something took it: every open Media tab of the owner's drops the tile (/files
-        // kind 5, plan gap 3). Not Delete from mirrors: the home vault still has it, so the tile is still good.
-        if (includeHomeVault && account.hex.equals(owner, ignoreCase = true) && all.any { it.second }) {
+        // Delete everywhere, and the home vault took it: every open Media tab of the owner's drops the tile (/files
+        // kind 5, plan gap 3). Not when only another server took it: the vault still has the blob, so its notes stay.
+        // Not Delete from mirrors either, for the same reason. (The vault also sends its own kind 5: filesBlobGone.)
+        if (includeHomeVault && account.hex.equals(owner, ignoreCase = true) &&
+            com.nostrvault.fips.MeshDeleteTargets.homeVaultTookIt(config.homeVaultNpub, all)
+        ) {
             homeVault.offerFileNoteDelete(sha256)
         }
         MirrorDeleteResult(

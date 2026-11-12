@@ -115,6 +115,28 @@ class HomeVaultFileNoteLaneTest {
         assertTrue("replacing its own blob's note is not a new item", q.addFileNote(draft(HomeVaultQueue.FileNoteDraft.DELETE)))
     }
 
+    @Test
+    fun `notes do not count toward the blob cap, and blobs not toward the note cap`() {
+        val q = HomeVaultQueue(tmp.newFolder(), maxItems = 1)
+        assertTrue(q.addFileNote(draft(HomeVaultQueue.FileNoteDraft.ADD)))
+        assertTrue("a waiting note leaves the blob slot free", q.addBlob(sha, "image/png", 1) { it.writeText("x") })
+        assertFalse("blobs and events still share their cap", q.addEvent("e1", "{}"))
+        assertFalse("notes keep a cap of their own", q.addFileNote(draft(HomeVaultQueue.FileNoteDraft.ADD, sha = other)))
+        assertEquals(2, q.size)
+    }
+
+    @Test
+    fun `only the home vault taking the delete sends the device kind 5`() {
+        val home = "npub1home"
+        val homeKey = MeshDeleteTarget(home, "").key
+        val mac = MeshDeleteTarget("npub1mac", "").key
+        assertTrue(MeshDeleteTargets.homeVaultTookIt(home, listOf("https://m.example" to true, homeKey to true)))
+        assertFalse("a mirror took it, the vault kept it", MeshDeleteTargets.homeVaultTookIt(home, listOf("https://m.example" to true, homeKey to false)))
+        assertFalse("a Mac took it, the vault kept it", MeshDeleteTargets.homeVaultTookIt(home, listOf(mac to true, homeKey to false)))
+        assertFalse("the vault was never asked", MeshDeleteTargets.homeVaultTookIt(home, listOf("https://m.example" to true)))
+        assertFalse("no home vault", MeshDeleteTargets.homeVaultTookIt(null, listOf(homeKey to true)))
+    }
+
     // The mesh key signs /files events only (Tron T2: no general signing function).
 
     @Test

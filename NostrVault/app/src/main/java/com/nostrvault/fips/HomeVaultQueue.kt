@@ -106,7 +106,7 @@ class HomeVaultQueue(
     ): Boolean = synchronized(lock) {
         val current = load()
         if (current.any { it.key == sha256 }) return true
-        if (current.size >= maxItems) return false
+        if (countsTowardCap(current) >= maxItems) return false
         if (blobBytes() + byteCount > maxBlobBytes) return false
         blobDir.mkdirs()
         val file = blobFile(sha256)
@@ -144,7 +144,8 @@ class HomeVaultQueue(
         val same = current.firstOrNull { it.key == key }
         if (same != null && same.fileNote?.action == draft.action) return true
         val rest = current.filterNot { it.key == key }
-        if (rest.size >= maxItems) return false
+        // Notes have their own cap: each upload queues a blob and its note, so sharing one cap halved the blobs.
+        if (rest.count { it.type == TYPE_FILE_NOTE } >= maxItems) return false
         save(rest + Item(key = key, type = TYPE_FILE_NOTE, contentType = draft.mime, queuedAt = now, fileNote = draft.copy(sha256 = sha)))
         true
     }
@@ -186,10 +187,13 @@ class HomeVaultQueue(
     private fun add(item: Item): Boolean = synchronized(lock) {
         val current = load()
         if (current.any { it.key == item.key }) return true
-        if (current.size >= maxItems) return false
+        if (countsTowardCap(current) >= maxItems) return false
         save(current + item)
         true
     }
+
+    /** What [maxItems] counts for blobs, events and public copies: file notes are left out (Tron, PR 1990). */
+    private fun countsTowardCap(items: List<Item>): Int = items.count { it.type != TYPE_FILE_NOTE }
 
     private fun load(): List<Item> {
         if (!listFile.exists()) return emptyList()
