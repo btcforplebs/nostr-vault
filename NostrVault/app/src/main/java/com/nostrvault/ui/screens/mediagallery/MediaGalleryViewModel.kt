@@ -48,7 +48,10 @@ class MediaGalleryViewModel @Inject constructor(
     val isUploading = _isUploading.asStateFlow()
 
     private val _mediaItems = MutableStateFlow<List<BlossomMediaItem>>(emptyList())
-    val mediaItems = _mediaItems.asStateFlow()
+
+    /** The list with each file's post date filled in, so the tab orders by when it was posted. */
+    val mediaItems = combine(_mediaItems, blobNoteIndexStore.postDates, ::withPostDates)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val json = Json { ignoreUnknownKeys = true }
 

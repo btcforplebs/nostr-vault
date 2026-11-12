@@ -72,6 +72,8 @@ data class BlossomMediaItem(
     val lastModified: Long?,
     val isLocal: Boolean,
     val noteId: String? = null,
+    /** Seconds: created_at of the note that posted this file, where one has been seen. */
+    val postedAt: Long? = null,
 ) {
     val isVideo: Boolean get() = mimeType?.startsWith("video") == true
     val isImage: Boolean get() = mimeType?.startsWith("image") == true || mimeType == "image"
@@ -79,8 +81,13 @@ data class BlossomMediaItem(
     val isAudio: Boolean get() = mimeType?.startsWith("audio") == true ||
         (!isImage && !isVideo && com.nostrvault.ui.components.isAudioUrl(localFile?.name ?: displayUrl))
 
-    /** Seconds since epoch the gallery orders by, newest first: upload time, else file mtime. */
-    val sortTime: Long get() = uploaded ?: lastModified?.div(1000) ?: 0L
+    /**
+     * Seconds since epoch the gallery orders by: when the note that posted it
+     * was made (iOS orders by the note's created_at too), else upload time,
+     * else file mtime. Upload time and mtime are when a copy landed, so a file
+     * mirrored or moved in today would otherwise jump to the top.
+     */
+    val sortTime: Long get() = postedAt ?: uploaded ?: lastModified?.div(1000) ?: 0L
 
     /** GIF detection by extension or mime type, matching iOS MediaGallery isGif. */
     val isGif: Boolean get() =
@@ -122,3 +129,11 @@ enum class MediaTypeFilter {
 
 /** Gallery layout mode. */
 enum class MediaLayoutMode { GRID, LIST }
+
+/** [items] with each file's post date from [postDates] (hash -> seconds), where one is known. */
+internal fun withPostDates(items: List<BlossomMediaItem>, postDates: Map<String, Long>): List<BlossomMediaItem> =
+    if (postDates.isEmpty()) items
+    else items.map { item ->
+        val at = postDates[item.sha256.lowercase()]
+        if (at == null || at == item.postedAt) item else item.copy(postedAt = at)
+    }

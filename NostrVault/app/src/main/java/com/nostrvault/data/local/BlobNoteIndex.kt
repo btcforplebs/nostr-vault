@@ -73,6 +73,10 @@ internal fun oldestNoteByBlobHash(notes: List<FeedNote>): Map<String, FeedNote> 
     return best
 }
 
+/** hash → created_at in seconds of the note [noteIdsByBlobHash] picks, so the Media tab can order by post date. */
+internal fun postDatesByBlobHash(notes: List<FeedNote>): Map<String, Long> =
+    oldestNoteByBlobHash(notes).mapValues { it.value.createdAt.time / 1000 }
+
 /**
  * The hash → note index, kept on disk.
  *
@@ -139,6 +143,11 @@ class BlobNoteIndexStore @Inject constructor(
      * Report Media / Block User target (iOS MediaItem.pubkey).
      */
     val authors: StateFlow<Map<String, String>> = _authors.asStateFlow()
+
+    private val _postDates = MutableStateFlow<Map<String, Long>>(emptyMap())
+
+    /** hash → created_at in seconds of the note in [index]; the Media tab sorts by it. */
+    val postDates: StateFlow<Map<String, Long>> = _postDates.asStateFlow()
 
     init {
         scope.launch { load() }
@@ -208,6 +217,7 @@ class BlobNoteIndexStore @Inject constructor(
 
     private fun publish() {
         _index.value = entries.mapValues { it.value.noteId }
+        _postDates.value = entries.mapValues { it.value.createdAt / 1000 }
         _authors.value = entries.mapNotNull { (hash, e) -> e.pubkey?.let { hash to it } }.toMap()
     }
 
