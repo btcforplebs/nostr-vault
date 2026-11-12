@@ -118,10 +118,11 @@ otherwise the phone. `haven-go/mesh_publish.go`.
   most 5 minutes ahead, no `x`. Same checks as §2.1, spent at the upgrade: one token per connection (replay: 409).
 - An unpaired key's `t=publish` token is 403 at the upgrade. A publish connection's **first frame** is
   `["NOTICE", "publish-for-me: on"]`; a device that does not see it (an older vault) sends its notes itself.
-- On that connection `["OK", <id>, true, ""]` means the vault **stored the note and queued its blast**. Every other
+- On that connection `["OK", <id>, true, ""]` means the vault **stored the note, kept it in its blast queue on disk (`blast_queue.json`) and queued its
+  blast**: a crash after the OK cannot lose it. Every other
   answer is OK false and the device sends the note itself: not the owner's (`restricted:`), signed more than
-  5 minutes ago or ephemeral (`blocked:`), already held (`duplicate:`), or a replaceable the vault keeps a newer copy
-  of (`blocked:`). Old notes are never re-blasted, not even for a paired device.
+  5 minutes ago or ephemeral (`blocked:`), already held (`duplicate:`), a replaceable the vault keeps a newer copy
+  of, or no blast relays configured (`blocked:`). Old notes are never re-blasted, not even for a paired device.
 - Without the token (a stranger, the device's catch-up, `?pulled=1`) nothing written over the mesh is blasted, as
   before (`mesh_safety.go`).
 

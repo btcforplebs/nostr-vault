@@ -13,10 +13,12 @@ package main
 // On that connection, and only there:
 //   - the first frame is ["NOTICE", meshPublishNotice]; a phone that does
 //     not see it (an older vault) sends its notes itself;
-//   - OK true means the vault stored the note and queued its blast;
+//   - OK true means the vault stored the note, kept it in the blast queue
+//     on disk, and queued its blast;
 //   - every other answer is OK false, so the phone sends the note itself:
 //     not the owner's, too old (meshPublishMaxAge), ephemeral, already held
-//     ("duplicate:"), or a replaceable the vault keeps a newer copy of.
+//     ("duplicate:"), a replaceable the vault keeps a newer copy of, or no
+//     relays to send to.
 //
 // Everything else on the mesh is unchanged (mesh_safety.go): a stranger, a
 // connection without the token, or a second-hand write (?pulled=1, the
@@ -48,9 +50,16 @@ const meshPublishNotice = "publish-for-me: on"
 var meshPublishMaxAge = 5 * time.Minute
 
 var (
-	errPublishDup   = errors.New("duplicate: the vault already holds this note and did not send it")
-	errPublishStale = errors.New("blocked: the vault keeps a newer copy and did not send this one")
+	errPublishDup      = errors.New("duplicate: the vault already holds this note and did not send it")
+	errPublishStale    = errors.New("blocked: the vault keeps a newer copy and did not send this one")
+	errPublishNoRelays = errors.New("blocked: the vault has no relays to send to")
+	errPublishNotKept  = errors.New("blocked: the vault could not keep the note to send it")
 )
+
+// publishForMeKeep puts a note in the blast queue on disk before the vault
+// confirms it (init.go sets blastQueue.keepForPublish). Nil: the vault never
+// confirms, since nothing would keep the note through a crash.
+var publishForMeKeep func(*nostr.Event) bool
 
 // isPublishForMeConn: ctx's connection was admitted on a paired device's
 // publish token, the device is still paired, and it is not a second-hand
@@ -112,6 +121,14 @@ func publishForMe(ctx context.Context, ev *nostr.Event, stored func(context.Cont
 	if !stored(ctx, ev.ID) {
 		slog.Info("publish for a device: a newer copy is kept, not blasted", "id", ev.ID, "kind", ev.Kind)
 		return errPublishStale
+	}
+	// Confirm only what will go out: relays to send to, and the note on
+	// disk first (Tron, PR 1970 M2: the phone stands down on this OK).
+	if len(config.BlastrRelays) == 0 {
+		return errPublishNoRelays
+	}
+	if publishForMeKeep == nil || !publishForMeKeep(ev) {
+		return errPublishNotKept
 	}
 	slog.Info("event stored, blasted for a paired device", "id", ev.ID, "kind", ev.Kind)
 	send(ev)

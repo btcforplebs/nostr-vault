@@ -4,8 +4,10 @@ package main
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -269,5 +271,88 @@ func TestMeshPublishForMeIsAnnounced(t *testing.T) {
 	plain.send([]any{"REQ", "x", nostr.Filter{Kinds: []int{1}, Limit: 1}})
 	if msg := plain.next("NOTICE", "EOSE", "CLOSED"); str(msg[0]) == "NOTICE" {
 		t.Errorf("a plain mesh connection got NOTICE %q", str(msg[1]))
+	}
+}
+
+// openPublishConn opens a paired phone's publish connection and reads the
+// notice.
+func openPublishConn(t *testing.T) (*meshWS, *havenUnderTest) {
+	t.Helper()
+	h := startPublishHaven(t)
+	door := startMeshDoor(t)
+	vault, phone := newTestKey(t), newTestKey(t)
+	pairMeshDevices(t, vault, phone)
+	ws, code := dialDoorAs(t, door, "/", deviceBlobAuth(t, phone, "publish", "", vault.pk, time.Now().Add(4*time.Minute)))
+	if code != 0 {
+		t.Fatalf("paired publish connection refused: %d", code)
+	}
+	ws.next("NOTICE")
+	return ws, h
+}
+
+func queuedOnDisk(t *testing.T, id string) bool {
+	t.Helper()
+	raw, err := os.ReadFile(blastPendingFile)
+	return err == nil && strings.Contains(string(raw), id)
+}
+
+// Tron, PR 1970 M2: a vault with no relays to send to never confirms.
+func TestMeshPublishForMeRefusesWithNoRelays(t *testing.T) {
+	ws, h := openPublishConn(t)
+	config.BlastrRelays = nil
+	note := nostr.Event{Kind: 1, CreatedAt: nostr.Now(), Content: "nowhere to go"}
+	note.Sign(h.ownerSK)
+	if ok, msg := ws.publish(note); ok || !strings.HasPrefix(msg, "blocked:") {
+		t.Errorf("no blast relays: ok %v %q, want OK false blocked:", ok, msg)
+	}
+}
+
+// Tron, PR 1970 M2: once the vault confirms, the note is in the blast queue
+// on disk, so a crash or quit after the OK cannot lose it; and it leaves the
+// queue once a relay took it, so it is not sent twice.
+func TestMeshPublishForMeKeepsTheNoteOnDiskBeforeOK(t *testing.T) {
+	ws, h := openPublishConn(t)
+	// A relay that takes the connection and never answers: the blast is
+	// still under way when the OK comes back.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { c.Close() })
+		}
+	}()
+	config.BlastrRelays = []string{"ws://" + ln.Addr().String()}
+	config.BlastrTimeoutSeconds = 5
+	note := nostr.Event{Kind: 1, CreatedAt: nostr.Now(), Content: "kept before the OK"}
+	note.Sign(h.ownerSK)
+	if ok, msg := ws.publish(note); !ok {
+		t.Fatalf("fresh note: OK false %q", msg)
+	}
+	if !queuedOnDisk(t, note.ID) {
+		t.Fatal("the vault confirmed a note it had not kept on disk")
+	}
+
+	blasted := publishBlastTarget(t)
+	sent := nostr.Event{Kind: 1, CreatedAt: nostr.Now(), Content: "taken by a relay"}
+	sent.Sign(h.ownerSK)
+	if ok, msg := ws.publish(sent); !ok {
+		t.Fatalf("fresh note: OK false %q", msg)
+	}
+	if !waitBlasted(blasted, sent.ID, 5*time.Second) {
+		t.Fatal("not blasted")
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for queuedOnDisk(t, sent.ID) && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if queuedOnDisk(t, sent.ID) {
+		t.Error("a note a relay took stays in the blast queue (it would be sent again)")
 	}
 }

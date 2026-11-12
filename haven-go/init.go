@@ -519,6 +519,7 @@ func initRelays(ctx context.Context) error {
 	// a sender that hangs up right after OK must not cut the blast.
 	meshBlobs.reset()
 	sendBlast, _ := newBlastSender(relayCtx, blastQ)
+	publishForMeKeep = blastQ.keepForPublish
 	wireOutboxWrites(outboxRelay, outboxDB, sendBlast)
 	wireOutboxReads(outboxRelay, outboxDB, outboxRelayLimits)
 	outboxRelay.DeleteEvent = append(outboxRelay.DeleteEvent, outboxDB.DeleteEvent)

@@ -257,9 +257,31 @@ func blastOrKeep(ctx context.Context, q *blastQueue, ev *nostr.Event) {
 	res := blast(ctx, ev)
 	if res.accepted == 0 && res.failed > 0 {
 		q.add(ev)
-	} else if res.accepted == 0 {
+		return
+	}
+	if res.accepted == 0 {
 		slog.Warn("🗑️ every relay refused the note, not keeping it", "id", ev.ID)
 	}
+	// A note kept before its first try (keepForPublish) is done now.
+	q.remove(ev.ID)
+}
+
+// blastPublishGrace: how long a publish-for-me note kept on disk waits
+// before the retry round may send it, so the pool's first try comes first.
+var blastPublishGrace = 2 * time.Minute
+
+// keepForPublish puts ev in the blast queue on disk before the vault
+// confirms it to a paired device (mesh_publish.go): a crash or quit after the
+// OK cannot lose it. The pool's blast takes it out again (blastOrKeep).
+// False when it is not in the queue.
+func (q *blastQueue) keepForPublish(ev *nostr.Event) bool {
+	now := blastClock()
+	q.keep(ev, pendingBlast{Event: *ev, QueuedAt: now.Unix(), NextAt: now.Add(blastPublishGrace).Unix()})
+	q.flush()
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	_, ok := q.idsLocked()[ev.ID]
+	return ok
 }
 
 // newBlastSender is how the outbox hands a stored note to the blastr: a
