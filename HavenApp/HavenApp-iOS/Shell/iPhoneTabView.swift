@@ -253,7 +253,8 @@ struct iPhoneTabView: View {
             dmService: dmService,
             feedService: feedService,
             vertical: true,
-            railOnRight: onRight
+            railOnRight: onRight,
+            dockRailOnRight: layout.dockRailOnRight
         )
     }
 

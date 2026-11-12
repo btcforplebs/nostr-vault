@@ -7,6 +7,9 @@ import SwiftUI
 struct RailAccountButton: View {
     @ObservedObject var configService: ConfigService
     @ObservedObject var nostrService: NostrService
+    /// The rail is on the window's right edge (`ShellLayout.dockRailOnRight`),
+    /// so the list opens to its left; on a left rail it opened off-screen.
+    var railOnRight = false
     @State private var showing = false
 
     private var activeHex: String { configService.activeAccountHexPubkey }
@@ -21,7 +24,7 @@ struct RailAccountButton: View {
         .accessibilityLabel("Accounts")
         .accessibilityValue(nostrService.profiles[activeHex]?.bestName ?? "")
         .accessibilityHint("Lists your accounts and settings")
-        .popover(isPresented: $showing, arrowEdge: .leading) {
+        .popover(isPresented: $showing, arrowEdge: railOnRight ? .trailing : .leading) {
             AccountList(configService: configService, nostrService: nostrService, currentNpub: currentNpub) {
                 showing = false
             }
