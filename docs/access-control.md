@@ -29,6 +29,13 @@ Whitelisting grants specific npubs the same permissions as the relay owner.
 > [!NOTE]
 > The relay owner's npub (defined by `OWNER_NPUB`) is automatically whitelisted. You don't need to add it to the file.
 
+### Private readers (optional)
+Set `PRIVATE_READER_NPUBS_FILE` to a JSON array of npubs to narrow the private side to those keys plus the owner:
+reading `/private` and `/lists`, the full blob list, and unposted blobs over the mesh. Other whitelisted npubs keep
+their own space (publishing and uploads) but read nothing private. A named file that is missing or unreadable leaves
+the owner alone. With the variable unset, every whitelisted npub reads, as above. The Nostr Vault iPhone and Mac apps
+write this file with the accounts that have a key or signer on the device.
+
 ## Blacklisting
 
 Blacklisting allows you to explicitly block specific npubs from interacting with your Haven relay, even if they would 

@@ -72,7 +72,8 @@ func rejectListHistoryWrite(ctx context.Context, evt *nostr.Event) (bool, string
 	if authed == "" {
 		return true, "auth-required: only this vault's own apps can file list history"
 	}
-	if _, ok := whitelist()[authed]; !ok {
+	if !isPrivateReader(authed) && authed != evt.PubKey {
+		// An account without a key here files only its own lists.
 		return true, "restricted: only this vault's own apps can file list history"
 	}
 	if _, owner := whitelist()[evt.PubKey]; !owner {

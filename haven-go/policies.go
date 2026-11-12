@@ -125,9 +125,11 @@ func whitelistBypassEventRateLimiter(tokensPerInterval int, interval time.Durati
 	}
 }
 
+// MustBeWhitelistedToQuery gates /private and /lists reads: only a private
+// reader (privateReaders), not every account with vault space.
 func MustBeWhitelistedToQuery(ctx context.Context, _ nostr.Filter) (bool, string) {
 	authenticatedUser := khatru.GetAuthed(ctx)
-	if _, ok := whitelist()[authenticatedUser]; !ok {
+	if !isPrivateReader(authenticatedUser) {
 		slog.Debug("🚫 query rejected: user is not whitelisted", "user", authenticatedUser)
 		return true, "restricted: you must be whitelisted to query this relay"
 	}
@@ -152,7 +154,9 @@ func MustBeWhitelistedToPost(ctx context.Context, event *nostr.Event) (bool, str
 	if authenticatedUser == "" {
 		return true, "auth-required: you must be authenticated to post to this relay"
 	}
-	if _, ok := whitelist()[authenticatedUser]; !ok {
+	// Storing someone else's signed event takes a private reader (an
+	// account with a key or signer here): an added npub posts only its own.
+	if !isPrivateReader(authenticatedUser) {
 		slog.Debug("🚫 event rejected: user is not whitelisted", "event", event.ID, "pubkey", authenticatedUser)
 		return true, "restricted: you must be whitelisted to post to this relay"
 	}

@@ -151,7 +151,8 @@ extension RelayProcessManager {
         RelayConfiguration.writeImportSeedRelays(config: config, under: relayDataDir, alsoFrom: request.alsoFrom)
         if let data = try? encoder.encode(config.activeBlastrRelays.isEmpty ? [] : config.activeBlastrRelays) { try? data.write(to: relayDataDir.appendingPathComponent(config.blastrRelaysFile)) }
         if let data = try? encoder.encode(config.dmRelays) { try? data.write(to: relayDataDir.appendingPathComponent("relays_dm.json")) }
-        if let data = try? encoder.encode(config.vaultWhitelistNpubs) { try? data.write(to: relayDataDir.appendingPathComponent("whitelisted_npubs.json")) }
+        HavenConfig.writeVaultAccountFiles(whitelist: config.vaultWhitelistNpubs, readers: config.vaultPrivateReaderNpubs,
+                                           whitelistFile: "whitelisted_npubs.json", under: relayDataDir, encoder: encoder)
         if let data = try? encoder.encode(config.allBlockedNpubsAcrossAccounts) { try? data.write(to: relayDataDir.appendingPathComponent("blacklisted_npubs.json")) }
         
         let envURL = relayDataDir.appendingPathComponent(".env")

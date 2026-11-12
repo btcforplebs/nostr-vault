@@ -139,11 +139,9 @@ extension RelayProcessManager {
             try? data.write(to: dmRelaysURL)
         }
 
-        // Write whitelisted_npubs.json (Required by new binary)
-        let whitelistURL = relayDataDir.appendingPathComponent("whitelisted_npubs.json")
-        if let data = try? encoder.encode(inputs.whitelistedNpubs) {
-            try? data.write(to: whitelistURL)
-        }
+        // whitelisted_npubs.json and private_reader_npubs.json
+        HavenConfig.writeVaultAccountFiles(whitelist: inputs.whitelistedNpubs, readers: inputs.privateReaderNpubs,
+                                           whitelistFile: "whitelisted_npubs.json", under: relayDataDir, encoder: encoder)
         
         // Write blacklisted_npubs.json
         let blacklistURL = relayDataDir.appendingPathComponent("blacklisted_npubs.json")

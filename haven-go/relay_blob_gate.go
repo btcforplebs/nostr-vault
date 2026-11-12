@@ -162,13 +162,14 @@ func relayBlobRejectList(ctx context.Context, auth *nostr.Event, _ string) (bool
 	return true, "listing needs the vault owner's signed authorization", http.StatusUnauthorized
 }
 
-// ownerOrDeviceAuth: auth is signed by a whitelisted account, or is the
-// paired-device token this request was admitted on (withMeshDeviceAuth).
+// ownerOrDeviceAuth: auth is signed by a private reader (privateReaders),
+// or is the paired-device token this request was admitted on
+// (withMeshDeviceAuth).
 func ownerOrDeviceAuth(ctx context.Context, auth *nostr.Event) bool {
 	if auth == nil {
 		return false
 	}
-	if _, ok := whitelist()[auth.PubKey]; ok {
+	if isPrivateReader(auth.PubKey) {
 		return true
 	}
 	return isMeshDeviceAuth(ctx, auth)

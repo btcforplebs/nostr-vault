@@ -7,8 +7,9 @@ import Combine
 ///
 /// Logen's rule (2026-11-06): nothing is added on its own. The ticked ones
 /// become watch-only accounts (public key only: no nsec, no bunker, no saved
-/// sign-in), with no vault access. Every note the copy carried stays in the vault either way,
-/// and the engine never uploads anything by a brought-over account.
+/// sign-in) with their own space in this vault, like any added account
+/// (Logen, 2026-11-12). Every note the copy carried stays in the vault either
+/// way.
 @MainActor
 final class CopyAccountsSync: ObservableObject {
     static let shared = CopyAccountsSync()
@@ -106,9 +107,10 @@ final class CopyAccountsSync: ObservableObject {
 
     /// The person's answer: `ticked` join this device's accounts watch-only
     /// (npub only, no key or sign-in); every offered one, ticked or not, is
-    /// settled and not asked again. A watch-only account never gets vault
-    /// access (Logen, 2026-11-06 11:37Z): it is not in the whitelist file
-    /// (`HavenConfig.vaultWhitelistNpubs`) and AddAccountsC is not called.
+    /// settled and not asked again. A ticked account gets vault space through
+    /// the whitelist file (`HavenConfig.vaultWhitelistNpubs`, Logen
+    /// 2026-11-12): save() writes it and restarts a running relay whose list
+    /// differs, so AddAccountsC is not called.
     func answer(ticked: [CopyAccounts.Account]) {
         let asked = offered
         let chosen = asked.filter { a in ticked.contains { $0.npub == a.npub } }
