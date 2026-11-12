@@ -195,8 +195,7 @@ final class DraftServiceEncryptionWiringTests: XCTestCase {
     /// an event opened before (same id) isn't decrypted again.
     func testFetchesAreSingleFlightAndOpenedDraftsCached() throws {
         let src = try source()
-        XCTAssertTrue(src.contains("if let running = fetchInFlight {"))
-        XCTAssertTrue(src.contains("if fetchInFlight?.id == id { fetchInFlight = nil }"), "only the fetch that set the slot clears it")
+        XCTAssertTrue(src.contains("await fetchFlight.run(account: ownPubkey"))
         XCTAssertTrue(src.contains("var opened = openedDrafts[event.id]"))
         XCTAssertTrue(src.contains("openedDrafts = opens"))
     }

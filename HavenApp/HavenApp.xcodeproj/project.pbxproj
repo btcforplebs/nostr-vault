@@ -778,6 +778,7 @@
 		5F9EC49DE8C22CFC0798A5B2 /* ReferralLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D89468262A774682DE8BDF0 /* ReferralLookup.swift */; };
 		5FA1579C568CB14E0DB553D3 /* GlobeArcs.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0F4B46B5C5EE525BDE1206A /* GlobeArcs.swift */; };
 		5FC0EE276B0FC7751EE68E27 /* LockedKeyCopyButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0CBC949CCC069EF2C665689 /* LockedKeyCopyButton.swift */; };
+		5FC32AC9623545321BA3210E /* AccountSingleFlight.swift in Sources */ = {isa = PBXBuildFile; fileRef = E224D9ABE474A15D697A39D0 /* AccountSingleFlight.swift */; };
 		5FD02A9E59A159252E3D0D1B /* TabButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33EF69906D14085C32707F25 /* TabButton.swift */; };
 		5FDB457BFF6A6A03969C299B /* MediaGridItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 279617C6C46FE95602AF2F5B /* MediaGridItem.swift */; };
 		5FE2DB8A760080B3DCFE08DA /* MacRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105F42F6A7F7C7BE4AC38462 /* MacRail.swift */; };
@@ -830,6 +831,7 @@
 		6599E6B809A7C89D83B5765A /* AudioPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7170B65E0299D14E11CEE3D8 /* AudioPlayerView.swift */; };
 		65B4D40289A91E22BFF3FB07 /* CStringArguments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16D3572447C348FFE5B9A499 /* CStringArguments.swift */; };
 		65D02542D0D20BDD4AC2E3B9 /* FeedService+Filtering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98B5891BCE3FFE978646D7D4 /* FeedService+Filtering.swift */; };
+		66242A66978A22588517FD46 /* AccountSingleFlight.swift in Sources */ = {isa = PBXBuildFile; fileRef = E224D9ABE474A15D697A39D0 /* AccountSingleFlight.swift */; };
 		663A7F85A2A87FCC26284490 /* ShellLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55812FB11A77C917BDE1A406 /* ShellLayout.swift */; };
 		6640752C7CC0FB1BB452E3DC /* ComposePasteRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7797BEEECFB3B3FB30AB32E0 /* ComposePasteRule.swift */; };
 		6681A5E321C637A4CB1A1991 /* LiveStreamMoreMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = FACD978E3159323F7A6BC06F /* LiveStreamMoreMenu.swift */; };
@@ -3189,6 +3191,7 @@
 		E20CD71E4D4331E21582E6E2 /* NostrService+ServerListAdoption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+ServerListAdoption.swift"; sourceTree = "<group>"; };
 		E21025C4F8626E1E4FFAB180 /* FeedFilterEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedFilterEngine.swift; sourceTree = "<group>"; };
 		E21458F66BFE204CE1479D50 /* MeshPairingHello.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshPairingHello.swift; sourceTree = "<group>"; };
+		E224D9ABE474A15D697A39D0 /* AccountSingleFlight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSingleFlight.swift; sourceTree = "<group>"; };
 		E22DCF8AB8337406564BAC9E /* NVRelayAsk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVRelayAsk.swift; sourceTree = "<group>"; };
 		E23194264AA64ADEF638EDF8 /* ZoomSwipeWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomSwipeWatch.swift; sourceTree = "<group>"; };
 		E29E19875274ECE1D3381131 /* HighlightReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightReviewView.swift; sourceTree = "<group>"; };
@@ -4272,6 +4275,7 @@
 			isa = PBXGroup;
 			children = (
 				CC215700D15BB33A4F8F4EB1 /* AccountDataSweep.swift */,
+				E224D9ABE474A15D697A39D0 /* AccountSingleFlight.swift */,
 				ADE20F9D5EC5160587318D28 /* AccountUnread.swift */,
 				7FA8251E55F8473F7A55C6E0 /* AdaptiveGridLayout.swift */,
 				299FAAEDC2A8F8F9CEBC02E1 /* AppTypeScale.swift */,
@@ -5282,6 +5286,7 @@
 				0A65ABE6A642C1496B8D1E8E /* AccountBunkerConfig.swift in Sources */,
 				90AD1055CA65A9166B52B947 /* AccountDataSweep.swift in Sources */,
 				FCF9E2A3BB6921EB9A467368 /* AccountDetailView.swift in Sources */,
+				66242A66978A22588517FD46 /* AccountSingleFlight.swift in Sources */,
 				3283FAB8FDC6A1A9D3B6254B /* AccountSwitchFlash.swift in Sources */,
 				672A76A54B117639CC833335 /* AccountSwitcherView.swift in Sources */,
 				ACF015B03A548365BDBCA65E /* AccountTabHoldItem.swift in Sources */,
@@ -6381,6 +6386,7 @@
 				422734AE557FE5F2D6B426DB /* AccountBunkerConfig.swift in Sources */,
 				02A6C51E410C48B08E1D3195 /* AccountDataSweep.swift in Sources */,
 				EE5337DF2E952F3418103753 /* AccountDetailView.swift in Sources */,
+				5FC32AC9623545321BA3210E /* AccountSingleFlight.swift in Sources */,
 				727A175702DD6CC3114B1248 /* AccountSwitchFlash.swift in Sources */,
 				163562ECAAE6E82C011CFBCE /* AccountSwitcherView.swift in Sources */,
 				42644DAD405D01206AAE1359 /* AccountUnread.swift in Sources */,

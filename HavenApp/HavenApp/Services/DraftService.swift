@@ -53,7 +53,7 @@ class DraftService: ObservableObject {
 
     /// The fetch running now and the account it is for: a second caller
     /// waits for it instead of opening every draft again.
-    private var fetchInFlight: (account: String, id: UUID, task: Task<Void, Never>)?
+    private let fetchFlight = AccountSingleFlight()
     /// Drafts already opened, by event id (the id covers the content, so a
     /// newer save is a new entry). Opening one can be a bunker round trip.
     private var openedDrafts: [String: DraftEnvelope.Opened] = [:]
@@ -321,18 +321,9 @@ class DraftService: ObservableObject {
     func fetchDrafts() async {
         let ownPubkey = NostrService.shared.activeHexPubkey
         guard !ownPubkey.isEmpty else { return }
-        if let running = fetchInFlight {
-            await running.task.value
-            // It was for another account (a switch meanwhile): fetch this one's.
-            if running.account == ownPubkey || NostrService.shared.activeHexPubkey != ownPubkey { return }
-            return await fetchDrafts()
+        await fetchFlight.run(account: ownPubkey, currentAccount: { NostrService.shared.activeHexPubkey }) {
+            await self.performFetch(ownPubkey: ownPubkey)
         }
-        let task = Task { await self.performFetch(ownPubkey: ownPubkey) }
-        let id = UUID()
-        fetchInFlight = (ownPubkey, id, task)
-        await task.value
-        // A waiter may have started a newer fetch after an account switch; leave that one.
-        if fetchInFlight?.id == id { fetchInFlight = nil }
     }
 
     private func performFetch(ownPubkey: String) async {
