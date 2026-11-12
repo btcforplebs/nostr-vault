@@ -68,21 +68,29 @@ final class ShellLayoutTests: XCTestCase {
                        "never narrower than the rail")
     }
 
+    /// Open on its side the strip is still on the right (Logen, 2026-11-11).
+    func testDuoOpenRailGoesInsideTheCameraStrip() {
+        XCTAssertEqual(ShellLayout.stripRail(layout: .fold, trailingInset: 85, railWidth: 68),
+                       ShellLayout.StripRail(topClearance: ShellLayout.duoStripTopClearance, width: 85))
+    }
+
     func testNoStripRailWithoutAStripOnTheRight() {
         XCTAssertNil(ShellLayout.stripRail(layout: .duoClosed, trailingInset: 0, railWidth: 68),
                      "the closed Duo turned so the strip is elsewhere")
-        for layout in [ShellLayout.fold, .phone, .padLandscape, .padUpright] {
+        XCTAssertNil(ShellLayout.stripRail(layout: .fold, trailingInset: 0, railWidth: 68),
+                     "the open Duo turned so the strip is elsewhere")
+        for layout in [ShellLayout.phone, .padLandscape, .padUpright] {
             XCTAssertNil(ShellLayout.stripRail(layout: layout, trailingInset: 85, railWidth: 68), "\(layout)")
         }
     }
 
-    /// The left half stops half a gutter short of the screen's middle, after
-    /// whatever safe area is already on the left.
+    /// The left half ends on the screen's middle, after whatever safe area is
+    /// already on the left.
     func testLeftHalfEndsBeforeTheFold() {
         let w: CGFloat = 1000
         let left = ShellLayout.foldLeftWidth(windowWidth: w, leadingInset: 0)
-        XCTAssertEqual(left + ShellLayout.foldGutter / 2, w / 2)
-        XCTAssertEqual(ShellLayout.foldLeftWidth(windowWidth: w, leadingInset: 24) + 24 + ShellLayout.foldGutter / 2, w / 2)
+        XCTAssertEqual(left, w / 2)
+        XCTAssertEqual(ShellLayout.foldLeftWidth(windowWidth: w, leadingInset: 24) + 24, w / 2)
         XCTAssertEqual(ShellLayout.foldLeftWidth(windowWidth: 0, leadingInset: 24), 0)
     }
 }

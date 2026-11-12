@@ -10,10 +10,22 @@ import SwiftUI
 /// fold stays on this device, per account.
 ///
 /// On an open folding iPhone it fills the left half instead
-/// (`fillsFoldHalf`): the rail on the screen's outer (left) edge, the panels
-/// as wide as the half, and no fold, so the app never runs across the crease.
+/// (`fillsFoldHalf`): the rail on the screen's outer (left) edge and the
+/// panels as wide as the half. It folds there too (Logen, 2026-11-11): down
+/// to its rail, and the app takes the rest of the screen, crease and all.
 struct SpaceColumn: View {
     var fillsFoldHalf = false
+    /// Told whenever the column folds or opens, so the shell can give the
+    /// fold's half back to the app.
+    var onFoldedChange: ((Bool) -> Void)? = nil
+    /// On a fold's half: the panels' width while open. They keep it while
+    /// the half slides shut, so nothing reflows; the half clips them.
+    var foldPanelsWidth: CGFloat? = nil
+
+    /// A fold's half folded: the rail and its hairline.
+    static let foldRailWidth: CGFloat = BottomTabBar.railWidth + 1
+    /// The fold's half sliding shut or open (the shell animates its width with this).
+    static let foldAnimation: Animation = .spring(response: 0.36, dampingFraction: 0.9)
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @ObservedObject private var store = SpaceLayoutStore.shared
@@ -22,8 +34,7 @@ struct SpaceColumn: View {
     @StateObject private var liveVault = LiveVaultModel()
     @StateObject private var liveNow = LiveNowModel()
     @State private var foldedSaved = false
-    /// The half of an open folding iPhone never folds.
-    private var folded: Bool { foldedSaved && !fillsFoldHalf }
+    private var folded: Bool { foldedSaved }
     @State private var editing = false
     /// The widget the rail opened on its own, or nil for the dashboard.
     @State private var selected: String?
@@ -39,15 +50,14 @@ struct SpaceColumn: View {
             if fillsFoldHalf {
                 rail
                 railRule
-            }
-            if !folded {
+                foldPanels
+            } else if !folded {
                 VStack(spacing: 0) {
                     spaceBar
                     if let id = selected { single(id) } else { panels }
                 }
-                .frame(width: fillsFoldHalf ? nil : LiveVaultLayout.openWidth)
-                .frame(maxWidth: fillsFoldHalf ? .infinity : nil)
-                if !fillsFoldHalf { railRule }
+                .frame(width: LiveVaultLayout.openWidth)
+                railRule
             }
             if !fillsFoldHalf { rail }
         }
@@ -68,6 +78,13 @@ struct SpaceColumn: View {
                     .fill(Color.white.opacity(0.08))
                     .frame(width: 1)
                     .ignoresSafeArea()
+            }
+        }
+        // The shell resizes the half on the same curve; the first reading
+        // (on appear) is not animated.
+        .onChange(of: folded, initial: true) { old, value in
+            if old == value { onFoldedChange?(value) } else {
+                withAnimation(Self.foldAnimation) { onFoldedChange?(value) }
             }
         }
         .onChange(of: owner, initial: true) { _, hex in
@@ -106,10 +123,28 @@ struct SpaceColumn: View {
         railIds.contains(LiveNow.panelId)
     }
 
-    /// One rail icon per widget the layout shows, in its order.
-    private var railIds: [String] { store.layout.shownPanels(ids).map(\.id) }
+    /// One rail icon per widget, in the layout's order, including the ones
+    /// taken off Your space: those are hidden there only (Logen, 2026-11-11).
+    private var railIds: [String] { store.layout.railPanelIds(ids) }
 
     private var relayReady: Bool { relayManager.isRunning && !relayManager.isBooting }
+
+    /// A fold's half: the panels stay laid out at their open width and fade
+    /// while the half's edge slides over them, instead of being removed and
+    /// squeezed (Logen, 2026-11-11: the fold animation needed love).
+    private var foldPanels: some View {
+        VStack(spacing: 0) {
+            spaceBar
+            if let id = selected { single(id) } else { panels }
+        }
+        .frame(width: foldPanelsWidth)
+        .frame(maxWidth: foldPanelsWidth == nil ? .infinity : nil)
+        .opacity(folded ? 0 : 1)
+        .allowsHitTesting(!folded)
+        .accessibilityHidden(folded)
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        .clipped()
+    }
 
     // MARK: Bar
 
@@ -120,9 +155,7 @@ struct SpaceColumn: View {
                 .font(.appSystem(size: 17, weight: .bold))
             Spacer()
             if selected != nil {
-                if !fillsFoldHalf {
-                    barButton("sidebar.right", label: "Fold Your space") { setFolded(true) }
-                }
+                foldButton
             } else if editing {
                 Button("Done") { withAnimation(.easeInOut(duration: 0.2)) { editing = false } }
                     .font(.appSystem(size: 15, weight: .semibold))
@@ -132,9 +165,7 @@ struct SpaceColumn: View {
                 barButton("pencil", label: "Edit Your space") {
                     withAnimation(.easeInOut(duration: 0.2)) { editing = true }
                 }
-                if !fillsFoldHalf {
-                    barButton("sidebar.right", label: "Fold Your space") { setFolded(true) }
-                }
+                foldButton
             }
         }
         .padding(.leading, 18)
@@ -143,6 +174,13 @@ struct SpaceColumn: View {
         // the title sits level with them. No rule under it; the feed's half
         // has none.
         .frame(height: PadTopBar.height)
+    }
+
+    /// Folds the column toward its rail: right on the iPad, left on a fold's half.
+    private var foldButton: some View {
+        barButton(fillsFoldHalf ? "sidebar.left" : "sidebar.right", label: "Fold Your space") {
+            withAnimation(fillsFoldHalf ? Self.foldAnimation : .easeInOut(duration: 0.2)) { setFolded(true) }
+        }
     }
 
     private func barButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
@@ -288,46 +326,73 @@ struct SpaceColumn: View {
             Spacer(minLength: 0)
         }
         .padding(.top, (PadTopBar.height - 40) / 2)
-        .frame(width: LiveVaultLayout.foldedWidth)
+        // On a fold's half, as wide as the dock's rail on the other edge.
+        .frame(width: fillsFoldHalf ? BottomTabBar.railWidth : LiveVaultLayout.foldedWidth)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private func railButton(_ id: String?, symbol: String, title: String, badge: Int = 0) -> some View {
         let isOpen = !folded && selected == id
         return Button { tapRail(id) } label: {
-            Image(systemName: symbol)
-                .font(.appSystem(size: 17, weight: .semibold))
-                .foregroundColor(isOpen ? .havenPurple : .secondary)
-                .frame(width: 40, height: 40)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isOpen ? Color.havenPurple.opacity(0.16) : Color.clear))
-                .overlay(alignment: .topTrailing) {
-                    if let text = AccountUnread.badge(badge) {
-                        Text(text)
-                            .font(.appSystem(size: 10, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 4)
-                            .frame(minWidth: 16, minHeight: 16)
-                            .background(Capsule().fill(Color.havenPurple))
-                            .offset(x: 4, y: -4)
-                    }
-                }
-                .contentShape(Rectangle())
+            if fillsFoldHalf {
+                railLabeledItem(symbol: symbol, title: title, isOpen: isOpen, badge: badge)
+            } else {
+                Image(systemName: symbol)
+                    .font(.appSystem(size: 17, weight: .semibold))
+                    .foregroundColor(isOpen ? .havenPurple : .secondary)
+                    .frame(width: 40, height: 40)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isOpen ? Color.havenPurple.opacity(0.16) : Color.clear))
+                    .overlay(alignment: .topTrailing) { railBadge(badge) }
+                    .contentShape(Rectangle())
+            }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isOpen && !fillsFoldHalf ? "Fold \(title)" : (badge > 0 ? "\(title), \(badge)" : title))
+        .accessibilityLabel(isOpen ? "Fold \(title)" : (badge > 0 ? "\(title), \(badge)" : title))
         .help(title)
+    }
+
+    @ViewBuilder
+    private func railBadge(_ badge: Int) -> some View {
+        if let text = AccountUnread.badge(badge) {
+            Text(text)
+                .font(.appSystem(size: 10, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 4)
+                .frame(minWidth: 16, minHeight: 16)
+                .background(Capsule().fill(Color.havenPurple))
+                .offset(x: 4, y: -4)
+        }
+    }
+
+    /// A fold's half: icon over its name, sized like the dock's rail items
+    /// (`BottomTabBar.tabItemLabel`), so both edges of the screen match.
+    private func railLabeledItem(symbol: String, title: String, isOpen: Bool, badge: Int) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: symbol)
+                .font(.appSystem(size: 20, weight: isOpen ? .semibold : .regular))
+                .frame(height: 24)
+                .overlay(alignment: .topTrailing) { railBadge(badge) }
+            Text(title)
+                .font(.appSystem(size: 10, weight: isOpen ? .semibold : .regular))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .foregroundStyle(isOpen ? Color.havenPurple : .white)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
     }
 
     /// Folded: open on that icon. Open on it already: fold. Otherwise switch to it.
     private func tapRail(_ id: String?) {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(fillsFoldHalf ? Self.foldAnimation : .easeInOut(duration: 0.2)) {
             if folded {
                 selected = id
                 setFolded(false)
             } else if selected == id {
-                // The fold's half has no fold: the open icon stays open.
-                if !fillsFoldHalf { setFolded(true) }
+                setFolded(true)
             } else {
                 selected = id
                 editing = false

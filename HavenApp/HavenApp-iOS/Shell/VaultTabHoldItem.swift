@@ -13,6 +13,8 @@ struct VaultTabHoldItem<Label: View>: View {
     @ObservedObject var relayManager: RelayProcessManager
     /// Puts the Vault tab on screen (the tab's own tap when it isn't).
     let onTap: () -> Void
+    /// On the Duo's side rail: the menu opens beside the tab.
+    var beside = false
     @ViewBuilder let label: () -> Label
 
     @ObservedObject private var section = VaultSection.shared
@@ -25,7 +27,7 @@ struct VaultTabHoldItem<Label: View>: View {
     private var current: VaultMode { section.showsMedia ? .media : section.listMode }
 
     var body: some View {
-        DockHoldButton(onTap: onTap, entries: entries, onPick: pick, label: label)
+        DockHoldButton(onTap: onTap, entries: entries, onPick: pick, beside: beside, label: label)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Vault")
             .accessibilityValue(current.title)

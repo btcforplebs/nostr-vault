@@ -3,30 +3,18 @@ import SwiftUI
 /// The account picture at the top of the iPad rail. A tap lists the
 /// accounts on this device; a tap on one switches to it. Above them, then a
 /// divider: App settings and Mesh settings, as in the dock's hold menu.
-/// No hold or slide, unlike the iPhone dock's avatar.
+/// No hold or slide on the iPad; the Duo rail uses the dock's hold menu.
 struct RailAccountButton: View {
     @ObservedObject var configService: ConfigService
     @ObservedObject var nostrService: NostrService
-    @ObservedObject private var unreadStore = AccountUnreadStore.shared
     @State private var showing = false
 
     private var activeHex: String { configService.activeAccountHexPubkey }
-    private var othersHaveNews: Bool {
-        configService.allAccountNpubs.contains { $0 != currentNpub && unreadStore.count(npub: $0) > 0 }
-    }
-    private var currentNpub: String {
-        let npub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        return npub.isEmpty ? configService.config.ownerNpub : npub
-    }
+    private var currentNpub: String { RailAccountPicture.currentNpub(configService) }
 
     var body: some View {
         Button { showing = true } label: {
-            AvatarView(url: nostrService.profiles[activeHex]?.pictureURL, pubkey: activeHex, size: 40)
-                .overlay(Circle().stroke(Color.havenPurple.opacity(0.7), lineWidth: 2))
-                .overlay(alignment: .topTrailing) {
-                    NewsDot(isShown: othersHaveNews, size: 11).offset(x: 2, y: -2)
-                }
-                .frame(maxWidth: .infinity)
+            RailAccountPicture(configService: configService, nostrService: nostrService)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -38,6 +26,33 @@ struct RailAccountButton: View {
                 showing = false
             }
         }
+    }
+}
+
+/// The account picture on a rail, dotted while another account here has
+/// news. The iPad rail's button and the Duo rail's hold menu both draw it.
+struct RailAccountPicture: View {
+    @ObservedObject var configService: ConfigService
+    @ObservedObject var nostrService: NostrService
+    @ObservedObject private var unreadStore = AccountUnreadStore.shared
+
+    static func currentNpub(_ configService: ConfigService) -> String {
+        let npub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+        return npub.isEmpty ? configService.config.ownerNpub : npub
+    }
+
+    var body: some View {
+        let hex = configService.activeAccountHexPubkey
+        let current = Self.currentNpub(configService)
+        let othersHaveNews = configService.allAccountNpubs.contains {
+            $0 != current && unreadStore.count(npub: $0) > 0
+        }
+        AvatarView(url: nostrService.profiles[hex]?.pictureURL, pubkey: hex, size: 40)
+            .overlay(Circle().stroke(Color.havenPurple.opacity(0.7), lineWidth: 2))
+            .overlay(alignment: .topTrailing) {
+                NewsDot(isShown: othersHaveNews, size: 11).offset(x: 2, y: -2)
+            }
+            .frame(maxWidth: .infinity)
     }
 }
 

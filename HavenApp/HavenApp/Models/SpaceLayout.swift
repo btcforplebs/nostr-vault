@@ -298,6 +298,13 @@ struct SpaceLayout: Equatable {
     func shownPanels(_ ids: [String]) -> [Panel] { panels.filter { $0.on && ids.contains($0.id) } }
     /// Known panels taken off, in the default order.
     func hiddenPanels(_ ids: [String]) -> [String] { ids.filter { id in panels.contains { $0.id == id && !$0.on } } }
+    /// The rail's icons: every known panel, taken off or not, in the
+    /// layout's order, then any known one the layout lacks. Taking a panel off
+    /// hides it from Your space only (Logen, 2026-11-11).
+    func railPanelIds(_ ids: [String]) -> [String] {
+        let ordered = panels.map(\.id).filter { ids.contains($0) }
+        return ordered + ids.filter { !ordered.contains($0) }
+    }
 
     func settingPanel(_ id: String, on: Bool? = nil, open: Bool? = nil, at: Int64) -> SpaceLayout {
         var next = self

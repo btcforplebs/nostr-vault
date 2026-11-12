@@ -59,7 +59,7 @@ struct SpacePanelCard<Content: View>: View {
             if editing {
                 editButton("chevron.up", label: "Move \(title) up", enabled: canMoveUp) { onMove(-1) }
                 editButton("chevron.down", label: "Move \(title) down", enabled: canMoveDown) { onMove(1) }
-                editButton("eye.slash", label: "Remove \(title)", enabled: true, action: onHide)
+                editButton("eye.slash", label: "Hide \(title) from Your space", enabled: true, action: onHide)
             } else {
                 Button(action: onToggleOpen) {
                     Image(systemName: "chevron.down")

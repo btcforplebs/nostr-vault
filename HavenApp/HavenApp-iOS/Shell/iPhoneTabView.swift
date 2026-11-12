@@ -37,8 +37,11 @@ struct iPhoneTabView: View {
     /// The window's own safe area on the right (`WindowTrailingInsetReader`),
     /// so drawing the rail into it (`stripRail`) doesn't change the reading.
     @State private var trailingInset: CGFloat = 0
+    /// The open Duo's Your space half is folded to its rail: the app takes
+    /// the rest of the screen, crease included.
+    @State private var foldSpaceFolded = false
 
-    /// The closed iPhone Duo: the rail inside iOS's camera strip on the right.
+    /// The iPhone Duo, closed or open: the rail inside iOS's camera strip on the right.
     private var stripRail: ShellLayout.StripRail? {
         ShellLayout.stripRail(layout: layout, trailingInset: trailingInset, railWidth: BottomTabBar.railWidth)
     }
@@ -157,11 +160,15 @@ struct iPhoneTabView: View {
         HStack(spacing: 0) {
             if layout == .padLandscape { sideRail(onRight: false) }
             if layout == .fold {
-                SpaceColumn(fillsFoldHalf: true)
-                    .frame(width: ShellLayout.foldLeftWidth(windowWidth: windowSize.width, leadingInset: leadingInset))
-                // Nothing on the crease.
-                Color.black
-                    .frame(width: ShellLayout.foldGutter)
+                let half = ShellLayout.foldLeftWidth(windowWidth: windowSize.width, leadingInset: leadingInset)
+                SpaceColumn(fillsFoldHalf: true, onFoldedChange: { foldSpaceFolded = $0 },
+                            foldPanelsWidth: max(0, half - SpaceColumn.foldRailWidth))
+                    // A width, not nil, when folded, so the slide animates.
+                    .frame(width: foldSpaceFolded ? SpaceColumn.foldRailWidth : half)
+                // The hairline between Your space and the app, as on the rails.
+                Rectangle()
+                    .fill(Color.white.opacity(0.08))
+                    .frame(width: 1)
                     .ignoresSafeArea()
                     .accessibilityHidden(true)
             }
@@ -176,7 +183,7 @@ struct iPhoneTabView: View {
                     .frame(width: stripRail?.width)
             }
         }
-        // Closed Duo: the rail takes the strip, the feed the width it freed.
+        // Duo: the rail takes the strip, the app the width it freed.
         .ignoresSafeArea(.container, edges: stripRail == nil ? [] : .trailing)
         .background(WindowTrailingInsetReader(inset: $trailingInset))
         .background {
@@ -193,6 +200,12 @@ struct iPhoneTabView: View {
                     .onChange(of: geo.size) { _, size in windowSize = size }
             }
             .ignoresSafeArea()
+        }
+        .overlay {
+            // The Feed, Vault and account hold menus, over the whole window:
+            // a tap anywhere off the menu (Your space and the rail on the
+            // Duo too) closes it.
+            DockHoldMenuOverlay()
         }
         // The iPad is laid out like the iPhone: same headers, same buttons,
         // no system toolbar row. Screens branch on the width class for that,
@@ -316,10 +329,6 @@ struct iPhoneTabView: View {
             if configService.config.hasCompletedSetup && relayManager.state == .idle {
                 relayManager.startRelay(config: configService.config)
             }
-        }
-        .overlay {
-            // The Feed, Vault and account hold menus.
-            DockHoldMenuOverlay()
         }
         // App settings / Mesh settings picked from the account menus.
         .profileMenuSheets()

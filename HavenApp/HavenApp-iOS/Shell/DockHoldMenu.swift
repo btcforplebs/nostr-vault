@@ -56,6 +56,9 @@ final class DockHoldMenu: ObservableObject {
     /// Centered on screen and growing up from the middle (the account
     /// picker, Logen 2026-11-01); otherwise on its tab's side of the screen.
     @Published private(set) var centered = false
+    /// Beside its tab, toward the middle of the screen, instead of above it:
+    /// the tab is on a side rail (the iPhone Duo's), with no room above.
+    @Published private(set) var beside = false
     /// Each row's frame, global coordinates.
     var rowFrames: [String: CGRect] = [:]
     private var onPick: ((String) -> Void)?
@@ -66,9 +69,11 @@ final class DockHoldMenu: ObservableObject {
         }?.key
     }
 
-    func open(from anchor: CGRect, entries: [DockHoldEntry], centered: Bool = false, onPick: @escaping (String) -> Void) {
+    func open(from anchor: CGRect, entries: [DockHoldEntry], centered: Bool = false, beside: Bool = false,
+              onPick: @escaping (String) -> Void) {
         self.anchor = anchor
         self.centered = centered
+        self.beside = beside
         self.entries = entries
         self.onPick = onPick
         rowFrames = [:]
@@ -99,6 +104,11 @@ struct DockHoldButton<Label: View>: View {
     let onPick: (String) -> Void
     /// Draw the menu centered on screen instead of on the tab's side.
     var centered = false
+    /// Open beside the tab, not above it (a tab on the Duo's side rail).
+    var beside = false
+    /// A plain tap opens the menu and leaves it open for a tap on a row,
+    /// instead of running `onTap` (the Duo rail's account picture).
+    var tapOpensMenu = false
     @ViewBuilder let label: () -> Label
 
     @ObservedObject private var menu = DockHoldMenu.shared
@@ -170,7 +180,7 @@ struct DockHoldButton<Label: View>: View {
         openedHere = true
         openHaptic?.impactOccurred()
         tickHaptic?.prepare()
-        menu.open(from: frame, entries: entries(), centered: centered, onPick: onPick)
+        menu.open(from: frame, entries: entries(), centered: centered, beside: beside, onPick: onPick)
     }
 
     private func ended(_ value: DragGesture.Value) {
@@ -188,15 +198,18 @@ struct DockHoldButton<Label: View>: View {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 menu.pick(id)
             } else {
+                let tapped = !moved && !visitedRow && frame.contains(value.location)
+                    && Date().timeIntervalSince(downAt) < DockHoldMenu.tapGrace
+                // A tap that opens the menu leaves it up for a tap on a row.
+                if tapped && tapOpensMenu { return }
                 menu.close()
-                if !moved, !visitedRow, frame.contains(value.location),
-                   Date().timeIntervalSince(downAt) < DockHoldMenu.tapGrace {
-                    onTap()
-                }
+                if tapped { onTap() }
             }
             return
         }
-        if !moved && frame.contains(value.location) { onTap() }
+        if !moved && frame.contains(value.location) {
+            if tapOpensMenu { openMenu() } else { onTap() }
+        }
     }
 }
 
@@ -207,8 +220,52 @@ struct DockHoldButton<Label: View>: View {
 /// and grows up from the middle when the menu asks for it.
 struct DockHoldMenuOverlay: View {
     @ObservedObject private var menu = DockHoldMenu.shared
+    /// The list's size, for placing it beside a rail tab.
+    @State private var listSize: CGSize = .zero
 
     var body: some View {
+        if menu.beside { besideRail } else { aboveDock }
+    }
+
+    /// Beside a side-rail tab, toward the middle of the screen, its middle
+    /// level with the tab and kept on screen, growing out of the tab's side.
+    private var besideRail: some View {
+        GeometryReader { geo in
+            let space = geo.frame(in: .global)
+            let onRight = menu.anchor.midX > space.midX
+            let gap: CGFloat = 8
+            let x = onRight
+                ? menu.anchor.minX - space.minX - gap - listSize.width / 2
+                : menu.anchor.maxX - space.minX + gap + listSize.width / 2
+            let halfHeight = listSize.height / 2
+            let y = min(max(menu.anchor.midY - space.minY, halfHeight + 12),
+                        max(halfHeight + 12, geo.size.height - halfHeight - 12))
+            ZStack(alignment: .topLeading) {
+                if menu.isOpen {
+                    Color.black.opacity(0.28)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture { menu.close() }
+                        .transition(.opacity)
+
+                    list
+                        .onGeometryChange(for: CGSize.self) { $0.size } action: { listSize = $0 }
+                        .position(x: x, y: y)
+                        // Hidden until measured, so it never flashes in the corner.
+                        .opacity(listSize == .zero ? 0 : 1)
+                        .transition(
+                            .scale(scale: 0.6, anchor: onRight ? .trailing : .leading)
+                                .combined(with: .opacity)
+                        )
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(menu.isOpen)
+    }
+
+    private var aboveDock: some View {
         GeometryReader { geo in
             let space = geo.frame(in: .global)
             let trailing = menu.anchor.midX > space.midX
