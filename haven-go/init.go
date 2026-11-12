@@ -563,6 +563,8 @@ func initRelays(ctx context.Context) error {
 	blossomServer.LoadBlob = append(blossomServer.LoadBlob, loadBlob)
 	// Over the mesh, only blobs a public note names (mesh_safety.go).
 	guardMeshBlobs(blossomServer)
+	// On the relay port, /list and HEAD of unposted blobs only to the owner's app or signed auth (relay_blob_gate.go).
+	guardRelayBlobs(blossomServer)
 	guardDeleteServer(blossomServer)
 	blossomServer.DeleteBlob = append(blossomServer.DeleteBlob, func(ctx context.Context, sha256 string, ext string) error {
 		slog.Debug("deleting blob", "sha256", sha256, "ext", ext)
@@ -782,6 +784,10 @@ func dynamicRelayHandler(w http.ResponseWriter, r *http.Request) {
 	r, code, why := withMeshDeviceAuth(r)
 	if code != 0 {
 		http.Error(w, why, code)
+		return
+	}
+	r, ok := relayBlobGate(w, r)
+	if !ok {
 		return
 	}
 	var relay *khatru.Relay
