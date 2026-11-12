@@ -232,3 +232,36 @@ func publishConnCtx(t *testing.T, phone, vault testKey) context.Context {
 	}
 	return context.WithValue(context.Background(), 0, &khatru.WebSocket{Request: r})
 }
+
+// The phone counts a confirm only on a connection the vault marked as a
+// publish connection: its first frame is the publish NOTICE. An older vault,
+// or one that has not paired this phone, never sends it, so the phone sends
+// the note itself rather than holding it for a vault that will not.
+func TestMeshPublishForMeIsAnnounced(t *testing.T) {
+	h := startPublishHaven(t)
+	_ = h
+	door := startMeshDoor(t)
+	vault, phone, stranger := newTestKey(t), newTestKey(t), newTestKey(t)
+	pairMeshDevices(t, vault, phone)
+	soon := time.Now().Add(4 * time.Minute)
+
+	ws, code := dialDoorAs(t, door, "/", deviceBlobAuth(t, phone, "publish", "", vault.pk, soon))
+	if code != 0 {
+		t.Fatalf("paired publish connection refused: %d", code)
+	}
+	if msg := ws.next("NOTICE"); str(msg[1]) != meshPublishNotice {
+		t.Errorf("first NOTICE %q, want %q", str(msg[1]), meshPublishNotice)
+	}
+
+	// An unpaired key's publish token is turned down at the door, at once.
+	if _, code := dialDoorAs(t, door, "/", deviceBlobAuth(t, stranger, "publish", "", vault.pk, soon)); code != http.StatusForbidden {
+		t.Errorf("unpaired publish token: %d, want 403", code)
+	}
+
+	// A plain mesh connection is not announced.
+	plain, _ := dialDoorAs(t, door, "/", "")
+	plain.send([]any{"REQ", "x", nostr.Filter{Kinds: []int{1}, Limit: 1}})
+	if msg := plain.next("NOTICE", "EOSE", "CLOSED"); str(msg[0]) == "NOTICE" {
+		t.Errorf("a plain mesh connection got NOTICE %q", str(msg[1]))
+	}
+}
