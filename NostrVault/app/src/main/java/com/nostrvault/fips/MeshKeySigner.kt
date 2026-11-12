@@ -62,6 +62,32 @@ object MeshKeySigner {
         return authorization(MeshKeyAuth.BLOSSOM_KIND, "Publish ${java.util.UUID.randomUUID().toString().take(8)}", tags)
     }
 
+    /**
+     * A `/files` event signed with this device's mesh key, as the JSON the relay takes, or null (no mesh key, or not a
+     * `/files` event: [fileNotesAllowed]). The file note (1063), its deletion (5) and the room's AUTH (22242); the
+     * vault refuses the account key for all three (haven-go files_relay.go), so nothing else may sign them.
+     */
+    fun fileNotes(kind: Int, tags: List<List<String>>, content: String = ""): String? {
+        if (!fileNotesAllowed(kind, tags)) return null
+        return withKey { sec, pub ->
+            val unsigned = EventPublisher.buildUnsignedEvent(pub, kind, content, tags)
+            EventPublisher.signWithGoBackend(unsigned, sec)?.takeIf { signedBy(it, pub, kind) }
+        }
+    }
+
+    /**
+     * Only `/files` events: a 1063, a kind 5 that says `k` 1063, an AUTH whose relay is a `/files` room. Kept narrow
+     * so this is still no general signing function (Tron T2): a mesh-key kind 5 for a note is fine, one for a post is
+     * not.
+     */
+    internal fun fileNotesAllowed(kind: Int, tags: List<List<String>>): Boolean = when (kind) {
+        FileNote.KIND -> true
+        FileNote.DELETION_KIND -> tags.any { it.size >= 2 && it[0] == "k" && it[1] == FileNote.KIND.toString() } &&
+            tags.none { it.size >= 2 && it[0] == "k" && it[1] != FileNote.KIND.toString() }
+        FileNote.AUTH_KIND -> tags.any { it.size >= 2 && it[0] == "relay" && it[1].substringBefore('?').trimEnd('/').endsWith("/files") }
+        else -> false
+    }
+
     /** This device's mesh npub from its key, read only: null when the engine has not made one yet (never makes one). */
     fun npub(): String? = withKey { _, pub -> HavenBridge.encodeNpub(pub) }
 

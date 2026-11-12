@@ -39,6 +39,7 @@ class MediaGalleryViewModel @Inject constructor(
     private val blossomService: BlossomService,
     private val notificationManager: NotificationManager,
     blobNoteIndexStore: com.nostrvault.data.local.BlobNoteIndexStore,
+    private val fileNotesLive: com.nostrvault.fips.FileNotesLive,
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(false)
@@ -66,9 +67,17 @@ class MediaGalleryViewModel @Inject constructor(
     /** A delete's full reload (a server may still have the file), a moment after the last one. */
     private var reloadJob: Job? = null
 
+    /** The owner's live file notes (the home vault's `/files`): applied on the main thread only. */
+    private val fileNotes = com.nostrvault.fips.FileNotesState()
+
+    /** The notes' tiles as of the last change, put back on each full load's result so a load can't hide them. */
+    @Volatile
+    private var noteTiles: List<com.nostrvault.fips.FileNoteTile> = emptyList()
+
     init {
         loadBlossomMedia()
         watchVaultFolder()
+        watchFileNotes()
         // Auto-Mirror Media: pull own media from the mirrors, at most every
         // 3 hours (iOS triggerAutoMirrorIfEnabled).
         if (configStore.config.value.autoMirrorMedia) blossomService.runAutoMirrorIfDue()
@@ -202,6 +211,7 @@ class MediaGalleryViewModel @Inject constructor(
                         .sortedByDescending { it.sortTime }
                         .toList()
                     for (item in landedDuringLoad.values) loaded = MediaLiveRules.landed(loaded, item)
+                    for (tile in noteTiles) MediaLiveRules.noteItem(tile)?.let { loaded = MediaLiveRules.noteLanded(loaded, it) }
                     _mediaItems.value = loaded
                 }
             } finally {
@@ -250,6 +260,32 @@ class MediaGalleryViewModel @Inject constructor(
                     loadBlossomMedia()
                 }
             }
+        }
+    }
+
+    /**
+     * Another of the owner's devices uploads or deletes: the tile comes or goes here with no pull, while this tab is
+     * open and the home vault is reachable (RESEARCH/NV_MEDIA_LIVE_FILE_NOTES_PLAN.md §1 "Live"). Pull to refresh
+     * still lists the servers, for other apps' uploads.
+     */
+    private fun watchFileNotes() {
+        viewModelScope.launch {
+            fileNotesLive.events { fileNotes.since }.collect(::onFileNote)
+        }
+    }
+
+    internal fun onFileNote(event: kotlinx.serialization.json.JsonObject) {
+        fileNotes.owner = nostrService.ownerHexPubkey.takeIf { it.isNotEmpty() }
+        val change = fileNotes.apply(event)
+        noteTiles = fileNotes.tiles
+        when (change) {
+            is com.nostrvault.fips.FileNotesState.Change.Added -> {
+                val item = noteTiles.firstOrNull { it.sha256 == change.sha256 }?.let(MediaLiveRules::noteItem) ?: return
+                _mediaItems.update { MediaLiveRules.noteLanded(it, item) }
+            }
+            is com.nostrvault.fips.FileNotesState.Change.Removed ->
+                _mediaItems.update { MediaLiveRules.noteRemoved(it, change.sha256) }
+            com.nostrvault.fips.FileNotesState.Change.None -> Unit
         }
     }
 

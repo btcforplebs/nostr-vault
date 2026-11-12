@@ -62,6 +62,39 @@ internal object MediaLiveRules {
         return (current.filter { it.sha256 != item.sha256 } + merged).sortedByDescending { it.sortTime }
     }
 
+    /**
+     * A tile from the owner's live file notes (`/files`, FileNotes.kt): another device uploaded it. Null with no
+     * server link: a vault-only note has no address this tab can draw yet, and the server listing finds it once a
+     * server has it.
+     */
+    fun noteItem(tile: com.nostrvault.fips.FileNoteTile): BlossomMediaItem? {
+        val url = tile.urls.firstOrNull() ?: return null
+        return BlossomMediaItem(
+            sha256 = tile.sha256,
+            displayUrl = url,
+            localFile = null,
+            mimeType = tile.mime,
+            size = tile.size,
+            uploaded = tile.createdAt,
+            lastModified = null,
+            isLocal = false,
+        )
+    }
+
+    /** [current] with a note's tile in it, newest first; a hash already listed (here or on a server) keeps its tile. */
+    fun noteLanded(current: List<BlossomMediaItem>, item: BlossomMediaItem): List<BlossomMediaItem> {
+        if (current.any { it.sha256 == item.sha256 } || !shown(item)) return current
+        return (current + item).sortedByDescending { it.sortTime }
+    }
+
+    /**
+     * [current] after a `/files` kind 5 left no live note for [sha256]: its remote tile goes. This phone's own copy
+     * stays: the folder watch owns that one.
+     */
+    fun noteRemoved(current: List<BlossomMediaItem>, sha256: String): List<BlossomMediaItem> =
+        if (current.none { it.sha256 == sha256 && !it.isLocal }) current
+        else current.filterNot { it.sha256 == sha256 && !it.isLocal }
+
     /** [current] without this phone's copy of [sha256]. A server-only tile of it is not this phone's to drop. */
     fun removed(current: List<BlossomMediaItem>, sha256: String): List<BlossomMediaItem> =
         if (current.none { it.sha256 == sha256 && it.isLocal }) current

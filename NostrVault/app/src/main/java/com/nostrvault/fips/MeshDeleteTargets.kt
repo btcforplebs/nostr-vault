@@ -31,6 +31,17 @@ internal object MeshDeleteTargets {
      * 404 to it: without the HEAD that read as deleted while the file stayed. [checkCode] null is
      * no answer, which proves nothing.
      */
+    /**
+     * Whether a Delete everywhere should send this device's `/files` kind 5: only when the home vault itself took
+     * the delete. Any other server taking it while the vault keeps the blob would empty the room of notes for a
+     * file still there (Tron, PR 1990). [outcomes] is each target's key and whether it is gone.
+     */
+    fun homeVaultTookIt(homeVaultNpub: String?, outcomes: List<Pair<String, Boolean>>): Boolean {
+        val home = homeVaultNpub?.takeIf { it.isNotEmpty() } ?: return false
+        val key = MeshDeleteTarget(home, "").key
+        return outcomes.any { it.first == key && it.second }
+    }
+
     fun gone(deleteCode: Int, checkCode: Int?): Boolean =
         (deleteCode in 200..299 || deleteCode == 404) && checkCode == 404
 }
