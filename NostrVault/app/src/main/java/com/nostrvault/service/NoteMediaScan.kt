@@ -29,16 +29,23 @@ internal object NoteMediaScan {
 
     /**
      * The links to copy in, in first-seen order: each once, outside servers
-     * only, and not a hash-named file this vault already holds.
+     * only, and not a file this vault already holds. A link's hash is its
+     * name, else [knownHash] (the note's imeta `x`, or an earlier download);
+     * two links to one hash are one download.
      */
-    fun urlsToImport(urls: List<String>, isStoredLocally: (String) -> Boolean): List<String> {
+    fun urlsToImport(
+        urls: List<String>,
+        knownHash: (String) -> String? = { null },
+        isStoredLocally: (String) -> Boolean,
+    ): List<String> {
         val seen = LinkedHashSet<String>()
+        val hashes = HashSet<String>()
         for (url in urls) {
             val host = runCatching { URI(url).host?.lowercase() }.getOrNull() ?: continue
             if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) continue
             if (host in LOCAL_HOSTS) continue
-            val hash = blobHash(url)
-            if (hash != null && isStoredLocally(hash)) continue
+            val hash = blobHash(url) ?: knownHash(url)?.lowercase()
+            if (hash != null && (isStoredLocally(hash) || !hashes.add(hash))) continue
             seen += url
         }
         return seen.toList()
