@@ -49,9 +49,9 @@ object GlobeLive {
 }
 
 /**
- * Whether notes fly across the WOT globe as they reach the relay, and from which
- * feeds and of which sorts (iOS `LiveArcsSetting`, same keys). The bar's
- * antenna is the main switch. Kept across launches; a switch is only stored once
+ * Whether notes fly across the WOT globe as they reach the relay (iOS
+ * `LiveArcsSetting`, same keys). The bar's antenna is the only switch: every
+ * feed and every sort flies. Kept across launches; a switch is only stored once
  * someone flips it, so everyone who never touched it gets the default.
  */
 object LiveArcsSetting {
@@ -60,22 +60,24 @@ object LiveArcsSetting {
     /** Live arrivals start on (Logen, 10/15). */
     const val DEFAULT_ON = true
 
-    /** Each feed's own switch. All three start on. */
+    /** A cut feed switch's key, kept so [retireCutSwitches] can remove it. */
     fun key(ring: GlobeArcs.Ring) = "wotLiveArcs." + ring.name.lowercase()
 
-    /** Each sort's own switch. All on. */
+    /** A cut sort switch's key, kept so [retireCutSwitches] can remove it. */
     fun key(sort: GlobeArcs.Sort) = "wotLiveArcs.sort." + sort.name.lowercase()
 
     fun isOn(prefs: SharedPreferences) = prefs.getBoolean(KEY, DEFAULT_ON)
 
-    fun rings(prefs: SharedPreferences): Set<GlobeArcs.Ring> =
-        GlobeArcs.Ring.entries.filterTo(HashSet()) { prefs.getBoolean(key(it), true) }
+    /**
+     * The feed and sort switches My Web had until 11/12, when Logen had them
+     * cut: everything flies now. A value someone stored would have no switch
+     * left to undo it, so it goes. The antenna ([KEY]) keeps what it was set to.
+     */
+    val RETIRED_KEYS: List<String> =
+        GlobeArcs.Ring.entries.map { key(it) } + GlobeArcs.Sort.entries.map { key(it) }
 
-    fun show(prefs: SharedPreferences) = GlobeLive.Show(
-        notes = prefs.getBoolean(key(GlobeArcs.Sort.NOTE), true),
-        replies = prefs.getBoolean(key(GlobeArcs.Sort.REPLY), true),
-        reposts = prefs.getBoolean(key(GlobeArcs.Sort.REPOST), true),
-        reactions = prefs.getBoolean(key(GlobeArcs.Sort.REACTION), true),
-        zaps = prefs.getBoolean(key(GlobeArcs.Sort.ZAP), true),
-    )
+    fun retireCutSwitches(prefs: SharedPreferences) {
+        if (RETIRED_KEYS.none(prefs::contains)) return
+        prefs.edit().apply { RETIRED_KEYS.forEach(::remove) }.apply()
+    }
 }

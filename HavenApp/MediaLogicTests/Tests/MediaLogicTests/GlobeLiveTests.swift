@@ -24,6 +24,18 @@ final class GlobeLiveTests: XCTestCase {
         XCTAssertEqual(Set(keys).count, keys.count)
     }
 
+    func testTheCutSwitchesAreForgottenButTheAntennaIsKept() {
+        let defaults = UserDefaults(suiteName: "GlobeLiveTests-\(UUID())")!
+        // Someone who had switched the antenna, a feed, a sort and the spin off.
+        defaults.set(false, forKey: LiveArcsSetting.key)
+        for key in LiveArcsSetting.retiredKeys { defaults.set(false, forKey: key) }
+        LiveArcsSetting.retireCutSwitches(defaults)
+        for key in LiveArcsSetting.retiredKeys { XCTAssertNil(defaults.object(forKey: key), key) }
+        XCTAssertFalse(LiveArcsSetting.isOn(defaults))
+        XCTAssertFalse(LiveArcsSetting.retiredKeys.contains(LiveArcsSetting.key))
+        XCTAssertEqual(LiveArcsSetting.retiredKeys.count, GlobeArcs.Ring.allCases.count + GlobeArcs.Sort.allCases.count + 1)
+    }
+
     func testEachArrivalKnowsWhatItIs() {
         XCTAssertEqual(GlobeArcs.arrival(event(1, [["p", b]]), now: now)?.sort, .note)
         XCTAssertEqual(GlobeArcs.arrival(event(1, [["e", String(repeating: "d", count: 64), "", "reply", b]]), now: now)?.sort, .reply)

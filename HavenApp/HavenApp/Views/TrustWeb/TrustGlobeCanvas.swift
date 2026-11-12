@@ -62,15 +62,6 @@ struct TrustGlobeCanvas: View {
     @State private var probe = GlobeStormProbe()
     #endif
     @AppStorage(LiveArcsSetting.key) private var liveArcsOn = LiveArcsSetting.defaultOn
-    @AppStorage(LiveArcsSetting.key(.following)) private var followingOn = true
-    @AppStorage(LiveArcsSetting.key(.discover)) private var discoverOn = true
-    @AppStorage(LiveArcsSetting.key(.global)) private var globalOn = true
-    @AppStorage(LiveArcsSetting.key(.note)) private var notesOn = true
-    @AppStorage(LiveArcsSetting.key(.reply)) private var repliesOn = true
-    @AppStorage(LiveArcsSetting.key(.repost)) private var repostsOn = true
-    @AppStorage(LiveArcsSetting.key(.reaction)) private var reactionsOn = true
-    @AppStorage(LiveArcsSetting.key(.zap)) private var zapsOn = true
-    @AppStorage(LiveArcsSetting.spinKey) private var spinOn = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appIsActive = true
     /// Off when the tab or the post leaves the screen: a drifting globe's
@@ -166,7 +157,7 @@ struct TrustGlobeCanvas: View {
         .onAppear {
             onScreen = true
             scene.camera.keepsDrifting = keepsDrifting
-            scene.camera.drifts = spinOn
+            LiveArcsSetting.retireCutSwitches()
             scene.showsNames = showsNames
             scene.reduceMotion = reduceMotion
             scene.focus(layer)
@@ -181,7 +172,6 @@ struct TrustGlobeCanvas: View {
             // connections (arrivals were dropped there anyway), and coming
             // back starts it again, asking from then: what arrived meanwhile
             // never flies as a burst (Android stops on pause too).
-            // A feed or sort switched in My Web reopens it asking for just those.
             guard liveArcs && liveArcsOn && clockAllowed else { return }
             scene.setLiveArcs(true)
             let token = arrivals.start(me: me, rings: rings, show: show)
@@ -192,13 +182,7 @@ struct TrustGlobeCanvas: View {
         // While the clock is stopped nothing would move them on: they're
         // dropped rather than piling up behind a sheet or another app.
         .onReceive(arrivals.arrived) { arrival in
-            // The My Web switches pick which sorts fly: the feed's own
-            // timeline carries every sort, and notes and replies share a kind.
-            if clockAllowed, show.allows(arrival.sort) { scene.arrive(arrival) }
-        }
-        .onChange(of: spinOn) { _, on in
-            scene.camera.drifts = on
-            scene.wake()
+            if clockAllowed { scene.arrive(arrival) }
         }
         .onChange(of: filterLit) { _, lit in scene.filter(lit) }
         .onChange(of: focus) { _, key in
@@ -238,10 +222,8 @@ struct TrustGlobeCanvas: View {
     /// False while a sheet or another app covers the globe: the clock stops.
     private var clockAllowed: Bool { onScreen && running && appIsActive }
 
-    /// Which sorts fly, from the My Web dashboard.
-    private var show: GlobeArcs.Show {
-        GlobeArcs.Show(notes: notesOn, replies: repliesOn, reposts: repostsOn, reactions: reactionsOn, zaps: zapsOn)
-    }
+    /// Every sort flies (the My Web switches were cut, Logen 11/12).
+    private var show: GlobeArcs.Show { GlobeArcs.Show() }
 
     /// What the live REQ asks for; a change reopens it.
     private struct LiveRequest: Equatable {
@@ -249,14 +231,8 @@ struct TrustGlobeCanvas: View {
         let show: GlobeArcs.Show
     }
 
-    /// The feeds whose notes fly, from the My Web dashboard.
-    private var rings: Set<GlobeArcs.Ring> {
-        var on = Set<GlobeArcs.Ring>()
-        if followingOn { on.insert(.following) }
-        if discoverOn { on.insert(.discover) }
-        if globalOn { on.insert(.global) }
-        return on
-    }
+    /// Every feed's notes fly.
+    private var rings: Set<GlobeArcs.Ring> { Set(GlobeArcs.Ring.allCases) }
 
     /// Turns the globe under the finger.
     private func drag(in size: CGSize) -> some Gesture {

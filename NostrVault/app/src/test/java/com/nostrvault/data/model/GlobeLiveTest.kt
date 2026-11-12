@@ -41,6 +41,13 @@ class GlobeLiveTest {
         assertEquals(keys.size, keys.toSet().size)
     }
 
+    @Test fun theCutSwitchesAreForgottenButTheAntennaIsKept() {
+        // Skipped: removing them from SharedPreferences (not tested here); the list is.
+        assertFalse(LiveArcsSetting.KEY in LiveArcsSetting.RETIRED_KEYS)
+        assertEquals(GlobeArcs.Ring.entries.size + GlobeArcs.Sort.entries.size, LiveArcsSetting.RETIRED_KEYS.size)
+        assertEquals(LiveArcsSetting.RETIRED_KEYS.size, LiveArcsSetting.RETIRED_KEYS.toSet().size)
+    }
+
     @Test fun eachArrivalKnowsWhatItIs() {
         assertEquals(GlobeArcs.Sort.NOTE, arrival(event(1, listOf(listOf("p", b))))?.sort)
         assertEquals(GlobeArcs.Sort.REPLY, arrival(event(1, listOf(listOf("e", d, "", "reply", b))))?.sort)

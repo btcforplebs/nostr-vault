@@ -79,6 +79,7 @@ extension TrustWebView {
     private var myWebDashboard: MyWebDashboardView {
         let matches = filterMatches
         return MyWebDashboardView(
+            me: me,
             counts: layerCounts,
             layers: TrustMap.layers(hasVouches: vouches != nil),
             hasVouches: vouches != nil,
@@ -99,14 +100,22 @@ extension TrustWebView {
                 if !filters.contains(filter) { toggle(filter) }
                 myWebOpen = false
             },
+            onPerson: { picked in
+                myWebOpen = false
+                jump(to: 0)
+                if picked != me { openCard(picked) }
+            },
             onRebuild: { refresh() }
         )
     }
 }
 
-/// My Web: what the WOT tab's globe holds, in numbers. A row puts that part
-/// of your web on the globe and closes the page.
+/// My Web: what the WOT tab's globe holds, in numbers, and who is new in it.
+/// A row puts that part of your web on the globe and closes the page; a face
+/// opens that person's card. No switches: the bar's antenna is the one for
+/// live arrivals (the rest were cut, Logen 11/12).
 struct MyWebDashboardView: View {
+    let me: String
     let counts: [TrustMap.Layer: Int]
     let layers: [TrustMap.Layer]
     let hasVouches: Bool
@@ -121,21 +130,32 @@ struct MyWebDashboardView: View {
     let filters: Set<TrustMap.Filter>
     let onLayer: (TrustMap.Layer) -> Void
     let onFilter: (TrustMap.Filter) -> Void
+    /// A face in New in your web: close the page and show their card.
+    let onPerson: (String) -> Void
     let onRebuild: () -> Void
-
-    /// Live arrivals: the bar's antenna, and which feeds' notes fly.
-    @AppStorage(LiveArcsSetting.key) private var liveArcsOn = LiveArcsSetting.defaultOn
-    @AppStorage(LiveArcsSetting.key(.following)) private var followingOn = true
-    @AppStorage(LiveArcsSetting.key(.discover)) private var discoverOn = true
-    @AppStorage(LiveArcsSetting.key(.global)) private var globalOn = true
 
     @Environment(\.openURL) private var openURL
     static let plebsVsZombiesURL = URL(string: "https://plebsvszombies.cc")!
+    static let newcomersDetail = "People your follows started following this week. Tap one to see how they reach you."
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 headline
+                if follows > 0 {
+                    DashboardSection(title: "New in your web") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(MyWebDashboardView.newcomersDetail)
+                                .font(.appSystem(size: 12))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            WotNewcomersView(me: me, showsTitle: false, faceSize: 40, onOpen: onPerson)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                    }
+                }
                 DashboardSection(title: "Who you can see") {
                     ForEach(Array(layers.enumerated()), id: \.element) { index, item in
                         if index > 0 { DashboardDivider() }
@@ -152,23 +172,6 @@ struct MyWebDashboardView: View {
                              detail: followsBackDetail,
                              count: followsBack, selected: filters.contains(.followsBack)) { onFilter(.followsBack) }
                 }
-                DashboardSection(title: "Live arrivals") {
-                    switchRow(icon: "antenna.radiowaves.left.and.right", title: "Stars on the globe",
-                              detail: "A star for each new note as it arrives", isOn: $liveArcsOn)
-                    DashboardDivider()
-                    switchRow(icon: "person.2.fill", title: GlobeArcs.Ring.following.title,
-                              detail: "Your follows' notes, from the inner ring. The fewest", isOn: $followingOn)
-                        .disabled(!liveArcsOn)
-                    DashboardDivider()
-                    switchRow(icon: "sparkles", title: GlobeArcs.Ring.discover.title,
-                              detail: "Your wider web, from the next ring out. More", isOn: $discoverOn)
-                        .disabled(!liveArcsOn)
-                    DashboardDivider()
-                    switchRow(icon: "globe", title: GlobeArcs.Ring.global.title,
-                              detail: "The rest of Global, from the outer haze. The most", isOn: $globalOn)
-                        .disabled(!liveArcsOn)
-                }
-                LiveArcsShowSection(liveArcsOn: liveArcsOn)
                 DashboardSection(title: "Upkeep") {
                     DashboardRow(icon: "arrow.clockwise", title: "Rebuild your web",
                                  detail: rebuiltText, state: .info) {
@@ -241,14 +244,6 @@ struct MyWebDashboardView: View {
         if rebuilding { return "Rebuilding now…" }
         guard let rebuiltAt else { return "Your vault rebuilds it once a day" }
         return "Last rebuilt \(rebuiltAt.formatted(.relative(presentation: .named))). Your vault rebuilds it once a day"
-    }
-
-    private func switchRow(icon: String, title: String, detail: String, isOn: Binding<Bool>) -> some View {
-        DashboardRow(icon: icon, title: title, detail: detail, state: .info) {
-            Toggle(title, isOn: isOn)
-                .labelsHidden()
-                .tint(.havenPurple)
-        }
     }
 
     private func countRow(icon: String, title: String, detail: String, count: Int?, selected: Bool,
