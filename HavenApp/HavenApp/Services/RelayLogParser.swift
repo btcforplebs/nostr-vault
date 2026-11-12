@@ -14,8 +14,11 @@ enum RelayLogParser {
             pattern: "^\\d{4}/\\d{2}/\\d{2}\\s\\d{2}:\\d{2}:\\d{2}\\s(INFO|WARN|ERROR|DEBUG)\\s",
             options: .caseInsensitive
         )
+        // `\b` first: without it the engine retried from every character of
+        // a long word, so one 4 KB line took 0.8 s and 32 KB took 55 s.
+        // Same matches (a key always starts at a word boundary).
         private static let kvPattern = try? NSRegularExpression(
-            pattern: "(\\w+)=([^\\s]+)",
+            pattern: "\\b(\\w+)=([^\\s]+)",
             options: []
         )
 
@@ -88,6 +91,38 @@ enum RelayLogParser {
         var importJobLines: [ImportJobs.Line] = []
         /// `COPY` lines (MeshCopyV2): the mesh vault copy moved.
         var copyLines: [MeshCopyV2.Progress] = []
+    }
+
+    /// Longest line handed to the parser. It runs ~50 substring scans, a
+    /// lowercased copy and (window up) two regexes per line, so one 200 KB
+    /// line (an event dump) cost as much as thousands of normal ones; the
+    /// Mac reader sat at a full core on Logen's .99 Mac (2026-11-11). Every
+    /// state line it looks for fits well inside this; relay.log itself
+    /// keeps the whole line.
+    static let maxParsedLineBytes = 4096
+
+    /// Lines acted on in full, never cut: a notification marker carries the
+    /// whole recipient list.
+    static let wholeLineMarkers = ["🔔NOTIFY|"]
+
+    /// The lines of a chunk of relay output, empty lines left out, each cut
+    /// to `maxParsedLineBytes` (marker lines excepted).
+    static func lines(in output: String) -> [String] {
+        output.components(separatedBy: .newlines).compactMap { $0.isEmpty ? nil : capped($0) }
+    }
+
+    /// `line` cut to `maxParsedLineBytes` on a character boundary, unless a
+    /// marker shows in its first 256 bytes.
+    static func capped(_ line: String) -> String {
+        let utf8 = line.utf8
+        guard utf8.count > maxParsedLineBytes else { return line }
+        let head = String(decoding: utf8.prefix(256), as: UTF8.self)
+        if wholeLineMarkers.contains(where: { head.contains($0) }) { return line }
+        var end = utf8.index(utf8.startIndex, offsetBy: maxParsedLineBytes)
+        while end > utf8.startIndex, end.samePosition(in: line) == nil {
+            end = utf8.index(before: end)
+        }
+        return String(line[..<end])
     }
 
     /// The `RELAY_START_FAILED|` line (haven-go cshared.go logStartFailed).
