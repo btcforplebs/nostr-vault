@@ -35,6 +35,48 @@ object YourDevicesRules {
     /** The same rule as Mesh › Sync, which shows Send now only while something waits. */
     fun mobileSendEnabled(state: HomeVaultSender.State): Boolean = state.waiting > 0 || state.publicPending > 0
 
+    // Full copy (multi-Mac rules §3). Twins of iOS YourDevicesLogic.
+
+    /**
+     * What an unset switch becomes at upgrade, written once: on for a phone that already finished a mesh copy (the
+     * copy record names a peer), off for any other (Logen's pick: phones default light). Once only: a light phone's
+     * notes-only first copy must not flip it on later.
+     */
+    fun fullCopyAtUpgrade(stored: Boolean?, copiedBefore: Boolean): Boolean = stored ?: copiedBefore
+
+    /** Whether this phone keeps every own note and file: mobile vault mode always does, else the switch. */
+    fun keepsFullCopy(mobileVault: Boolean, stored: Boolean?): Boolean = mobileVault || stored == true
+
+    /** Mobile vault mode turns the switch on and locks it. */
+    fun fullCopyLocked(mobileVault: Boolean): Boolean = mobileVault
+
+    const val FULL_COPY_LOCKED_LINE = "A mobile vault keeps everything."
+
+    /** Whether a catch-up moves files, not only notes: never for a light phone; on Wi-Fi only while that is on (default). */
+    fun catchUpMovesFiles(fullCopy: Boolean, wifiOnly: Boolean?, onWiFi: Boolean): Boolean =
+        fullCopy && (onWiFi || wifiOnly == false)
+
+    /** The host of an https/wss URL or bare domain, lowercased, without port or path; null without one. */
+    fun host(text: String): String? {
+        var t = text.trim().lowercase()
+        if (t.isEmpty()) return null
+        if (!t.contains("://")) t = "https://$t"
+        return runCatching { java.net.URI(t).host }.getOrNull()?.takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * Which own device is public on the web: the one whose domain is the first of the owner's https entries in the
+     * newest 10063 that is one of theirs (multi-Mac rules §3.3). [domains]: each own device's domain by mesh npub.
+     */
+    fun webDevice(serverList: List<String>, domains: Map<String, String>): String? {
+        val byHost = mutableMapOf<String, String>()
+        domains.forEach { (npub, domain) -> host(domain)?.let { byHost.putIfAbsent(it, npub) } }
+        return serverList.asSequence()
+            .filter { it.lowercase().startsWith("https://") }
+            .mapNotNull { host(it)?.let(byHost::get) }
+            .firstOrNull()
+    }
+
     const val TITLE = "Your Devices"
     const val DEVICES_HEADER = "Your devices"
     const val NO_DEVICES = "No devices yet."

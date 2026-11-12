@@ -76,6 +76,21 @@ object MacSync {
             ?.npub
     }
 
+    /**
+     * Every Mac and box of the owner's (multi-Mac rules §1: the Go sync took only the first). [macMeshNpub]'s first,
+     * then My Devices order, each once, never this phone's own mesh npub. iOS MeshDevicesLogic.macs.
+     */
+    fun macMeshNpubs(config: HavenConfig, ownNpub: String? = null): List<String> {
+        val out = mutableListOf<String>()
+        macMeshNpub(config)?.takeIf { it != ownNpub }?.let { out += it }
+        config.fipsMesh.devices
+            .filter { it.role == DeviceRole.MAC && MyDevicesRules.isOwners(it.linkedBy, config.ownerNpub) }
+            .map { it.npub }
+            .filter { it != ownNpub && it !in out && MyDevicesRules.isMeshNpub(it) }
+            .forEach { out += it }
+        return out
+    }
+
     fun parse(text: String): MacSyncStatus? = runCatching { json.decodeFromString<MacSyncStatus>(text) }.getOrNull()
 
     fun read(relayDataDir: File): MacSyncStatus? =

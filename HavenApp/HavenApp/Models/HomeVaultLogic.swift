@@ -116,6 +116,25 @@ enum HomeVaultLogic {
         return out
     }
 
+    /// The Macs and boxes that get this phone's new notes and media each on
+    /// a lane of their own (multi-Mac rules §3.1): every Mac in My Devices
+    /// but the one the media vault lane already sends to, each once, never
+    /// this phone. A Mac that is off holds back no other lane.
+    static func macTargets(devices: [MeshDevice], ownNpub: String?, mediaVault: String?, mac: String?) -> [String] {
+        MeshDevicesLogic.macs(devices, macNpub: mac, ownNpub: ownNpub).filter { $0 != mediaVault }
+    }
+
+    /// Every own-device lane besides the media vault's: Macs first (each
+    /// keeps the full history, so it is the first copy worth having, as
+    /// Android's MeshSendTargets), then linked phones.
+    static func laneTargets(devices: [MeshDevice], ownNpub: String?, homeVault: String?, mediaVault: String?, mac: String?) -> [String] {
+        var out = macTargets(devices: devices, ownNpub: ownNpub, mediaVault: mediaVault, mac: mac)
+        for phone in phoneTargets(devices: devices, ownNpub: ownNpub, homeVault: homeVault, mac: mac) where !out.contains(phone) {
+            out.append(phone)
+        }
+        return out
+    }
+
     /// Whether an iPhone shares its vault with its own devices while its app
     /// is open, so its linked phones can send to it: the mesh is on, the app
     /// is on screen, nothing shares already, and a phone is linked.

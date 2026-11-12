@@ -31,3 +31,117 @@ enum YourDevicesLogic {
             : "\(device.role.label) · not in reach now"
     }
 }
+
+// MARK: - Full copy (multi-Mac rules §3)
+
+extension YourDevicesLogic {
+    /// What a phone's unset switch becomes at upgrade, written once: on for
+    /// a phone that already finished a mesh copy (`copiedBefore`, the copy
+    /// record names a peer), so nobody loses what they have today; off for
+    /// any other phone (Logen's pick 1: phones default light). Run once only:
+    /// a light phone's notes-only first copy must not flip it on later.
+    static func fullCopyAtUpgrade(stored: Bool?, copiedBefore: Bool) -> Bool {
+        stored ?? copiedBefore
+    }
+
+    /// Whether this device keeps every own note and file. Macs and boxes
+    /// always do; a mobile vault always does; a phone when its switch is on.
+    static func keepsFullCopy(isDesktop: Bool, mobileVault: Bool, stored: Bool?) -> Bool {
+        isDesktop || mobileVault || stored == true
+    }
+
+    /// The switch is shown but can't be turned off: a mobile vault keeps
+    /// everything. Macs and boxes show a label instead of a switch.
+    static func fullCopyLocked(mobileVault: Bool) -> Bool { mobileVault }
+
+    static let fullCopyLockedLine = "A mobile vault keeps everything."
+
+    /// Whether a catch-up moves files, not only notes (rule 7): a light
+    /// device never does; a full-copy phone only on Wi-Fi while Wi-Fi only is
+    /// on (the default). Its own new media goes out at once regardless.
+    static func catchUpMovesFiles(fullCopy: Bool, isDesktop: Bool, wifiOnly: Bool?, onWiFi: Bool) -> Bool {
+        guard fullCopy else { return false }
+        if isDesktop { return true }
+        return onWiFi || wifiOnly == false
+    }
+}
+
+// MARK: - The web device (multi-Mac rules §3.3)
+
+extension YourDevicesLogic {
+    /// The host of an `https://`/`wss://` URL or a bare domain, lowercased,
+    /// without port or path. nil for anything without a host.
+    static func host(_ text: String) -> String? {
+        var t = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !t.isEmpty else { return nil }
+        if !t.contains("://") { t = "https://" + t }
+        guard let host = URL(string: t)?.host, !host.isEmpty else { return nil }
+        return host
+    }
+
+    /// Which own device is public on the web: the one whose domain is the
+    /// first of the owner's https entries in the newest 10063 that is one of
+    /// theirs. The list is the one source of truth. `domains`: each own
+    /// device's domain (this one's included), by mesh npub. nil: none is.
+    static func webDevice(serverList: [String], domains: [String: String]) -> String? {
+        let byHost = Dictionary(domains.compactMap { npub, domain in host(domain).map { ($0, npub) } },
+                                uniquingKeysWith: { first, _ in first })
+        for entry in serverList where entry.lowercased().hasPrefix("https://") {
+            if let h = host(entry), let npub = byHost[h] { return npub }
+        }
+        return nil
+    }
+
+    /// Turning Public on the web on asks first when another own device has
+    /// it now (Logen's pick 2): "Move public web from <A> to <B>?". nil:
+    /// nothing to ask, the switch just turns on.
+    static func moveWebPrompt(current: String?, currentName: String, this ownNpub: String, thisName: String) -> String? {
+        guard let current, current != ownNpub else { return nil }
+        return "Move public web from \(currentName) to \(thisName)?"
+    }
+
+    /// The old web device turns its own switch off once it sees lists that
+    /// name another own device as the web device. A list that names no own
+    /// device (the owner took the domain out by hand) changes nothing here.
+    static func standsDown(publicOnWeb: Bool, ownNpub: String, serverList: [String], domains: [String: String]) -> Bool {
+        guard publicOnWeb, let web = webDevice(serverList: serverList, domains: domains) else { return false }
+        return web != ownNpub
+    }
+
+    /// A list of URLs with the old web device's host swapped for `to`, in
+    /// place, so its order is kept; `to` goes first when `from` isn't there.
+    /// Once only: a second copy of `to` is dropped. Used for 10050 and 10063.
+    static func movingWeb(urls: [String], from oldHost: String?, to newURL: String) -> [String] {
+        guard let newHost = host(newURL) else { return urls }
+        let old = oldHost.flatMap(host)
+        var out: [String] = []
+        var placed = false
+        for url in urls {
+            let h = host(url)
+            if h == newHost || (old != nil && h == old) {
+                if !placed { out.append(newURL); placed = true }
+                continue
+            }
+            out.append(url)
+        }
+        return placed ? out : [newURL] + out
+    }
+
+    /// The same for 10002's `r` tags, keeping each tag's read/write marker.
+    static func movingWeb(relayTags: [[String]], from oldHost: String?, to newURL: String) -> [[String]] {
+        guard let newHost = host(newURL) else { return relayTags }
+        let old = oldHost.flatMap(host)
+        var out: [[String]] = []
+        var placed = false
+        for tag in relayTags {
+            guard tag.count >= 2, tag[0] == "r" else { out.append(tag); continue }
+            let h = host(tag[1])
+            if h == newHost || (old != nil && h == old) {
+                if !placed { var moved = tag; moved[1] = newURL; out.append(moved); placed = true }
+                continue
+            }
+            out.append(tag)
+        }
+        return placed ? out : [["r", newURL]] + out
+    }
+}

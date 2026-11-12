@@ -82,6 +82,13 @@ struct HavenConfig: Codable, Equatable {
     /// the owner's published lists. nil until the owner touches the switch:
     /// then a domain already set keeps being listed (`listsOwnDomain`).
     var publicOnWeb: Bool?
+    /// Your Devices › Keep a full copy on this phone (multi-Mac rules §3).
+    /// nil until set: at upgrade a phone that already finished a mesh copy
+    /// reads as on, a new one as off (`YourDevicesLogic.fullCopyAtUpgrade`).
+    /// Macs and boxes always keep a full copy and never read it.
+    var keepFullCopy: Bool?
+    /// Under the full-copy switch: catch-up moves files on Wi-Fi only. nil = on.
+    var fullCopyWifiOnly: Bool?
     
     // NWC (Nostr Wallet Connect)
     var nwcURI: String = ""
@@ -323,7 +330,7 @@ struct HavenConfig: Codable, Equatable {
         case useOLED, textSizeScale, feedLayoutModes, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage, hideNostrVaultBadge
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications, notifyOwnAccountTags, showDMTextInNotifications
-        case macRelayURL, publicOnWeb
+        case macRelayURL, publicOnWeb, keepFullCopy, fullCopyWifiOnly
         case privateRelayName, privateRelayDescription, privateRelayIcon
         case chatRelayName, chatRelayDescription, chatRelayIcon, chatRelayWotDepth, chatRelayWotRefreshHours, wotRefreshInterval, chatRelayMinFollowers
         case outboxRelayName, outboxRelayDescription, outboxRelayIcon, outboxMaxEventsPerMinute, outboxMaxConnectionsPerMinute
@@ -375,6 +382,8 @@ struct HavenConfig: Codable, Equatable {
         nwcURI = try container.decodeIfPresent(String.self, forKey: .nwcURI) ?? defaults.nwcURI
         macRelayURL = try container.decodeIfPresent(String.self, forKey: .macRelayURL) ?? defaults.macRelayURL
         publicOnWeb = try container.decodeIfPresent(Bool.self, forKey: .publicOnWeb)
+        keepFullCopy = try container.decodeIfPresent(Bool.self, forKey: .keepFullCopy)
+        fullCopyWifiOnly = try container.decodeIfPresent(Bool.self, forKey: .fullCopyWifiOnly)
         defaultZapAmount = try container.decodeIfPresent(Int.self, forKey: .defaultZapAmount) ?? defaults.defaultZapAmount
         // Retired themes (purple/blue/green/pink/slate) resolve to orange rather
         // than being carried forward as an unrenderable key.
