@@ -78,6 +78,7 @@ type blastQueue struct {
 	dirty     bool        // a change not yet on disk (long queues only, see persistLocked)
 	saveTimer *time.Timer // a batched save is scheduled
 	dropped   int         // notes not kept since the queue was last below blastPendingMax
+	saveErr   error       // the last save's error, nil once a save works (keepForPublish)
 }
 
 // deletedHere reports whether the outbox holds a signed delete for ev (by its
@@ -150,17 +151,22 @@ func (q *blastQueue) saveLocked() {
 	q.dirty = false
 	data, err := json.Marshal(q.items)
 	if err != nil {
+		q.saveErr = err
 		return
 	}
 	tmp := q.path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		q.saveErr = err
 		slog.Error("🚫 could not save blast queue", "error", err)
 		return
 	}
 	if err := os.Rename(tmp, q.path); err != nil {
 		_ = os.Remove(tmp)
+		q.saveErr = err
 		slog.Error("🚫 could not save blast queue", "error", err)
+		return
 	}
+	q.saveErr = nil
 }
 
 // add keeps ev after a blast no relay took (one failed try).
@@ -273,7 +279,9 @@ var blastPublishGrace = 2 * time.Minute
 // keepForPublish puts ev in the blast queue on disk before the vault
 // confirms it to a paired device (mesh_publish.go): a crash or quit after the
 // OK cannot lose it. The pool's blast takes it out again (blastOrKeep).
-// False when it is not in the queue.
+// False when it is not in the queue on disk: not kept, or the save failed
+// (disk full; Tron, PR 1970 low). It stays queued in memory then, and the
+// phone sends it as well.
 func (q *blastQueue) keepForPublish(ev *nostr.Event) bool {
 	now := blastClock()
 	q.keep(ev, pendingBlast{Event: *ev, QueuedAt: now.Unix(), NextAt: now.Add(blastPublishGrace).Unix()})
@@ -281,7 +289,7 @@ func (q *blastQueue) keepForPublish(ev *nostr.Event) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	_, ok := q.idsLocked()[ev.ID]
-	return ok
+	return ok && !q.dirty && q.saveErr == nil
 }
 
 // newBlastSender is how the outbox hands a stored note to the blastr: a

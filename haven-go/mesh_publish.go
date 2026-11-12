@@ -29,6 +29,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/fiatjaf/eventstore"
@@ -104,15 +105,60 @@ func rejectForPublishForMe(ctx context.Context, ev *nostr.Event) (bool, string) 
 
 // refuseDupForPublish wraps a store step: on a publish connection, an event
 // the store already holds is not confirmed (whoever wrote it first, a
-// stranger or a catch-up, did not have it blasted).
+// stranger or a catch-up, did not have it blasted), unless the vault itself
+// is already sending it (ownBlasts). Then the answer is the plain OK true
+// (ErrDupEvent: khatru says OK and stops, no second blast), so the phone
+// does not fan it out too.
 func refuseDupForPublish(store func(context.Context, *nostr.Event) error) func(context.Context, *nostr.Event) error {
 	return func(ctx context.Context, ev *nostr.Event) error {
 		err := store(ctx, ev)
 		if errors.Is(err, eventstore.ErrDupEvent) && isPublishForMeConn(ctx) {
+			if ownBlasts.has(ev.ID, time.Now()) {
+				slog.Info("publish for a device: already sent by the vault, confirmed", "id", ev.ID, "kind", ev.Kind)
+				return eventstore.ErrDupEvent
+			}
 			return errPublishDup
 		}
 		return err
 	}
+}
+
+// ownBlasts holds the notes the vault blasted as first-hand owner writes in
+// the last meshPublishMaxAge (newBlastStored). The phone sends to the
+// author's own 10002 relays at once, alongside the hand-off; when that list
+// names this vault's public relay, the copy arriving there is blasted, and
+// the hand-off then finds it held (Tron's PR 1970 re-check, Logen's go
+// 2026-11-12). The vault is sending it, so it confirms, and exactly one
+// device blasts it. Only ids, kept in memory: a note the vault holds but
+// did not send (mesh, ?pulled=1) is never here.
+var ownBlasts = &recentIDs{}
+
+type recentIDs struct {
+	mu  sync.Mutex
+	ids map[string]time.Time
+}
+
+// add records id as sent at now, dropping entries older than
+// meshPublishMaxAge.
+func (r *recentIDs) add(id string, now time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.ids == nil {
+		r.ids = map[string]time.Time{}
+	}
+	for k, at := range r.ids {
+		if now.Sub(at) > meshPublishMaxAge {
+			delete(r.ids, k)
+		}
+	}
+	r.ids[id] = now
+}
+
+func (r *recentIDs) has(id string, now time.Time) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	at, ok := r.ids[id]
+	return ok && now.Sub(at) <= meshPublishMaxAge
 }
 
 // publishForMe is blastStored for a publish connection: blast what the store

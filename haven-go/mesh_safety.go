@@ -227,6 +227,9 @@ func newBlastStored(stored func(ctx context.Context, id string) bool, send func(
 			return nil
 		}
 		slog.Info("event stored")
+		if len(config.BlastrRelays) > 0 {
+			ownBlasts.add(ev.ID, time.Now())
+		}
 		send(ev)
 		return nil
 	}
