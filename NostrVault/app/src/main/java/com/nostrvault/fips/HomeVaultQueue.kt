@@ -46,7 +46,29 @@ class HomeVaultQueue(
          * Such an item needs no owner signer, so it is never held for one.
          */
         val meshKeyOnly: Boolean = false,
+        /** For [TYPE_FILE_NOTE]: what to tell the vault's `/files` about one blob. Optional: older queues lack it. */
+        val fileNote: FileNoteDraft? = null,
     )
+
+    /**
+     * The fileNote lane (RESEARCH/NV_MEDIA_LIVE_FILE_NOTES_PLAN.md gap 1): what to tell the home vault's `/files` about
+     * one blob. The note is signed with this device's mesh key when it is sent, never when queued, so an unpair or a
+     * new key in between never ships a stale signature. Apple's `FileNoteDraft`.
+     */
+    @Serializable
+    data class FileNoteDraft(
+        val action: String,
+        val sha256: String,
+        val mime: String,
+        val size: Long,
+        /** The media servers that have it (add only); empty = the vault holds it. */
+        val servers: List<String> = emptyList(),
+    ) {
+        companion object {
+            const val ADD = "add"
+            const val DELETE = "delete"
+        }
+    }
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val listFile get() = File(dir, "queue.json")
@@ -111,6 +133,22 @@ class HomeVaultQueue(
         // mirror order changed names a second server, and each needs its copy.
         add(Item(key = publicCopyKey(sha256, server), type = TYPE_PUBLIC_COPY, contentType = contentType, server = server, queuedAt = now))
 
+    /**
+     * Queue one blob's file note: one item per blob, the newest word winning (a delete takes back a waiting add, and
+     * the other way). The same word twice is queued once. False when the queue is full.
+     */
+    fun addFileNote(draft: FileNoteDraft, now: Long = System.currentTimeMillis()): Boolean = synchronized(lock) {
+        val sha = draft.sha256.lowercase()
+        val key = fileNoteKey(sha)
+        val current = load()
+        val same = current.firstOrNull { it.key == key }
+        if (same != null && same.fileNote?.action == draft.action) return true
+        val rest = current.filterNot { it.key == key }
+        if (rest.size >= maxItems) return false
+        save(rest + Item(key = key, type = TYPE_FILE_NOTE, contentType = draft.mime, queuedAt = now, fileNote = draft.copy(sha256 = sha)))
+        true
+    }
+
     fun blobFile(sha256: String): File = File(blobDir, sha256)
 
     fun update(item: Item) = synchronized(lock) {
@@ -119,14 +157,14 @@ class HomeVaultQueue(
 
     /**
      * Drops what a signed delete takes back (device sync map §4.3): the queued events [eventIds] names, and
-     * every send of blob [sha256] (the blob itself and its public copies). They are never sent. Returns how
-     * many items went.
+     * every send of blob [sha256] (the blob itself and its public copies). They are never sent. A file note stays:
+     * the kind 5 for a deleted blob must still go. Returns how many items went.
      */
     fun dropDeleted(eventIds: Set<String> = emptySet(), sha256: String? = null): Int = synchronized(lock) {
         val all = load()
         val kept = all.filterNot { item ->
             (item.type == TYPE_EVENT && item.key in eventIds) ||
-                (sha256 != null && item.type != TYPE_EVENT && (item.key == sha256 || item.key.startsWith("$sha256@")))
+                (sha256 != null && item.type != TYPE_EVENT && item.type != TYPE_FILE_NOTE && (item.key == sha256 || item.key.startsWith("$sha256@")))
         }
         if (kept.size != all.size) {
             save(kept)
@@ -184,6 +222,10 @@ class HomeVaultQueue(
         const val TYPE_EVENT = "event"
         const val TYPE_BLOB = "blob"
         const val TYPE_PUBLIC_COPY = "public-copy"
+        const val TYPE_FILE_NOTE = "file-note"
+
+        /** A file note's key: apart from the blob's own item (keyed by the bare hash), which [add] would take it for. */
+        fun fileNoteKey(sha256: String) = "${sha256.lowercase()}#note"
 
         fun publicCopyKey(sha256: String, server: String) = "$sha256@$server"
 

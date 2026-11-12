@@ -18,6 +18,28 @@ import com.nostrvault.service.BlossomService.UploadSource
         toHomeVault: Boolean = true,
         /** The account a note's media is signed as; null signs as the owner (see signAuthHeader). */
         signAs: com.nostrvault.data.model.PostingAccount.Lock? = null,
+    ): UploadAttempt {
+        // Read now: the caller may delete its temp file once this returns.
+        val size = when (source) {
+            is UploadSource.Data -> source.data.size.toLong()
+            is UploadSource.FileSource -> source.file.length()
+        }
+        val attempt = uploadOnce(source, sha256, contentType, skipOutsideServers, toHomeVault, signAs)
+        // The owner's media only, and never a DM attachment (the vault serves any blob to anyone with its hash).
+        val asOwner = signAs == null || signAs.hex.equals(nostrService.ownerHexPubkey, ignoreCase = true)
+        if (toHomeVault && asOwner) fileNoteServers(attempt, configStore.config.value.activeBlossomMirrors)?.let { servers ->
+            homeVault.offerFileNote(sha256, contentType, size, servers)
+        }
+        return attempt
+    }
+
+    private suspend fun BlossomService.uploadOnce(
+        source: UploadSource,
+        sha256: String,
+        contentType: String,
+        skipOutsideServers: Boolean,
+        toHomeVault: Boolean,
+        signAs: com.nostrvault.data.model.PostingAccount.Lock?,
     ): UploadAttempt = withContext(Dispatchers.IO) {
         // Sign the BUD-02 auth event ONCE and reuse it for the local relay and
         // every mirror. The event is server-agnostic (no "u" tag), so one
@@ -98,6 +120,23 @@ import com.nostrvault.service.BlossomService.UploadSource
             return@withContext UploadAttempt(notHosted(mirrors), savedLocalUrl)
         }
         UploadAttempt(PostUploadOutcome.Hosted(external), savedLocalUrl)
+    }
+
+/**
+ * The servers a file note names for one upload (RESEARCH/NV_MEDIA_LIVE_FILE_NOTES_PLAN.md gap 1), or null for no note.
+ * Hosted: the server that took it first, then the other mirrors the pass sent it to (the other devices' tile check
+ * drops a dead one). Kept on this device only: none, since the home vault gets the blob from the same queue. Never
+ * saved anywhere: no note.
+ */
+internal fun fileNoteServers(attempt: BlossomService.UploadAttempt, mirrors: List<String>): List<String>? =
+    when (val outcome = attempt.outcome) {
+        is BlossomService.PostUploadOutcome.Hosted -> {
+            val first = mirrors.firstOrNull { outcome.url.startsWith(it.trimEnd('/') + "/") }
+                ?: com.nostrvault.relay.blossomOrigin(outcome.url)
+            (listOfNotNull(first) + mirrors).map { it.trimEnd('/') }.distinct()
+        }
+        BlossomService.PostUploadOutcome.NotSavedOnDevice -> null
+        else -> emptyList()
     }
 
 /**

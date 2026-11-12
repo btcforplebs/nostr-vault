@@ -21,6 +21,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -65,6 +68,9 @@ class HomeVaultSender @Inject constructor(
     /** This phone's mesh-key Blossom token for one blob on one vault ([MeshKeySigner.blossom]); swapped in tests. */
     internal var meshToken: (verb: MeshKeyAuth.Verb, sha256: String, receiver: String, content: String, lifetimeS: Long, size: Long?) -> String? =
         { verb, sha, receiver, content, lifetime, size -> MeshKeySigner.blossom(verb, listOf(sha), listOf(receiver), content, lifetime, size) }
+
+    /** Signs a `/files` event (1063, its kind 5, the AUTH) with this device's mesh key, never the owner's; swapped in tests. */
+    internal var fileNoteSign: (kind: Int, tags: List<List<String>>) -> String? = { kind, tags -> MeshKeySigner.fileNotes(kind, tags) }
 
     /** The owner's hex pubkey. Wired by NostrService. */
     @Volatile
@@ -339,6 +345,31 @@ class HomeVaultSender @Inject constructor(
         scope.launch { queues.forEach { it.dropDeleted(sha256 = sha256.lowercase()) } }
     }
 
+    /**
+     * Tell the home vault's `/files` that this device has [sha256] on [servers] (none: the vault holds it), so every
+     * open Media tab of the owner's shows it (RESEARCH/NV_MEDIA_LIVE_FILE_NOTES_PLAN.md gap 1). The home vault's lane
+     * only, and only while the owner is active: the note's `p` is the owner. Signed when sent, with the mesh key.
+     */
+    fun offerFileNote(sha256: String, contentType: String, size: Long, servers: List<String>) =
+        queueFileNote(HomeVaultQueue.FileNoteDraft(HomeVaultQueue.FileNoteDraft.ADD, sha256.lowercase(), safeType(contentType), size, servers))
+
+    /** Tell `/files` the owner deleted [sha256] everywhere: a kind 5 for every note naming it, sent when the vault is reachable. */
+    fun offerFileNoteDelete(sha256: String) =
+        queueFileNote(HomeVaultQueue.FileNoteDraft(HomeVaultQueue.FileNoteDraft.DELETE, sha256.lowercase(), "application/octet-stream", 0))
+
+    private fun queueFileNote(draft: HomeVaultQueue.FileNoteDraft) {
+        if (activeVault == null || !FileNote.isHex64(draft.sha256)) return
+        scope.launch {
+            val queued = try {
+                queue.addFileNote(draft)
+            } catch (e: Exception) {
+                Log.w(TAG, "home vault: could not queue file note ${draft.sha256.take(8)}: ${e.message}")
+                false
+            }
+            if (queued) drain() else full()
+        }
+    }
+
     /** Also send this signed event to the home vault and each Mac taking notes, if it is the owner's. */
     fun offerEvent(eventId: String, pubkey: String, eventJson: String) {
         if (pubkey.isEmpty() || pubkey != ownerHex()) return
@@ -505,6 +536,8 @@ class HomeVaultSender @Inject constructor(
                 when (item.type) {
                     HomeVaultQueue.TYPE_BLOB -> sendBlob(base, item, queue, npub)
                     HomeVaultQueue.TYPE_EVENT -> sendEvent(base, item)
+                    HomeVaultQueue.TYPE_FILE_NOTE ->
+                        if (role == DeviceRole.HOME_VAULT) sendFileNote(base, item, npub) else HomeVaultSend.REJECTED
                     else -> HomeVaultSend.REJECTED
                 }
             } catch (e: IOException) {
@@ -671,6 +704,49 @@ class HomeVaultSender @Inject constructor(
             withTimeoutOrNull(EVENT_OK_TIMEOUT_MS) { answer.await() } ?: HomeVaultSend.RETRY
         } finally {
             socket.close(1000, null)
+        }
+    }
+
+    /**
+     * One file note to the vault's `/files` (plan gap 1). An add signs the 1063 now, with the mesh key. A delete
+     * AUTHs (reads need it), asks `#x` for every note naming the blob, then signs one kind 5 for them all; none left
+     * is done. Accepted or `duplicate:` is done, `restricted:` (this device unpaired, an account key) is dropped,
+     * anything else waits ([HomeVaultRules.eventOutcome]).
+     */
+    internal suspend fun sendFileNote(base: String, item: HomeVaultQueue.Item, vaultNpub: String, http: OkHttpClient = client): HomeVaultSend {
+        val draft = item.fileNote ?: return HomeVaultSend.REJECTED
+        val owner = ownerHex().lowercase()
+        val url = FileNote.filesUrl(base) ?: return HomeVaultSend.REJECTED
+        val note = when (draft.action) {
+            HomeVaultQueue.FileNoteDraft.ADD ->
+                FileNote.tags(draft.sha256, draft.mime, draft.size, owner, draft.servers) ?: return HomeVaultSend.REJECTED
+            HomeVaultQueue.FileNoteDraft.DELETE ->
+                if (!FileNote.isHex64(draft.sha256) || !FileNote.isHex64(owner)) return HomeVaultSend.REJECTED else null
+            else -> return HomeVaultSend.REJECTED
+        }
+        val socket = FilesSocket.open(http, url, vaultNpub, fileNoteSign)
+        try {
+            val (kind, tags) = if (note != null) {
+                FileNote.KIND to note
+            } else {
+                if (!socket.auth()) return HomeVaultSend.RETRY
+                val filter = buildJsonObject {
+                    put("kinds", buildJsonArray { add(JsonPrimitive(FileNote.KIND)) })
+                    put("#x", buildJsonArray { add(JsonPrimitive(draft.sha256)) })
+                    put("#p", buildJsonArray { add(JsonPrimitive(owner)) })
+                }
+                val found = socket.query("files-del", filter) ?: return HomeVaultSend.RETRY
+                val ids = found.mapNotNull { FileNote.parse(it)?.takeIf { n -> n.sha256 == draft.sha256 }?.id }
+                // Nothing names it: nothing to take back.
+                FileNote.DELETION_KIND to (FileNoteDeletion.tags(ids, draft.sha256, owner) ?: return HomeVaultSend.SENT)
+            }
+            // No mesh key yet (the engine makes it): try again later, never the owner's signer.
+            val signed = fileNoteSign(kind, tags) ?: return HomeVaultSend.RETRY
+            val (accepted, message) = socket.publish(signed) ?: return HomeVaultSend.RETRY
+            if (!accepted) Log.w(TAG, "home vault /files refused a ${draft.action} for ${draft.sha256.take(8)}: $message")
+            return HomeVaultRules.eventOutcome(accepted, message)
+        } finally {
+            socket.close()
         }
     }
 

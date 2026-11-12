@@ -503,7 +503,7 @@ class BlossomService @Inject constructor(
                 return@withContext MirrorPushResult.SignerUnavailable
             }
 
-            val accepted = mirrors.map { mirror ->
+            val tookIt = mirrors.map { mirror ->
                 async {
                     try {
                         uploadToServer(
@@ -518,7 +518,11 @@ class BlossomService @Inject constructor(
                         false
                     }
                 }
-            }.awaitAll().count { it }
+            }.awaitAll()
+            val accepted = tookIt.count { it }
+            // The owner's other devices hear of it on /files (a first note for it; a device's second is a duplicate).
+            val hosted = mirrors.filterIndexed { i, _ -> tookIt[i] }
+            if (hosted.isNotEmpty()) homeVault.offerFileNote(sha256, contentType, data.size.toLong(), hosted)
 
             MirrorPushResult.of(accepted, mirrors.size).also {
                 Log.i(TAG, "Push of ${sha256.take(8)}: $accepted of ${mirrors.size} servers accepted")
@@ -770,6 +774,11 @@ class BlossomService @Inject constructor(
         val meshOutcomes = mesh.map { target -> async { target.key to deleteOnMeshDevice(target.npub, sha256, meshAuth) } }
         val served = mirrors.zip(outcomes.awaitAll())
         val all = served.filter { it.second != Outcome.SKIPPED }.map { it.first to (it.second == Outcome.GONE) } + meshOutcomes.awaitAll()
+        // Delete everywhere, and something took it: every open Media tab of the owner's drops the tile (/files
+        // kind 5, plan gap 3). Not Delete from mirrors: the home vault still has it, so the tile is still good.
+        if (includeHomeVault && account.hex.equals(owner, ignoreCase = true) && all.any { it.second }) {
+            homeVault.offerFileNoteDelete(sha256)
+        }
         MirrorDeleteResult(
             deleted = all.filter { it.second }.map { it.first },
             failed = all.filterNot { it.second }.map { it.first },
