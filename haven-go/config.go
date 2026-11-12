@@ -212,6 +212,8 @@ func defaultGoMemLimitMB() int {
 		// Roomy on purpose: sync rounds legitimately spike (vector builds over
 		// six Badger DBs), and a limit the live heap can approach turns into
 		// back-to-back GC cycles — sustained 100% CPU with no crash.
+		// The Mac app passes GO_MEM_LIMIT_MB scaled to the machine's RAM
+		// (RelayConfiguration.goMemLimitMB); this is the fallback.
 		return 1024
 	default:
 		return 0 // server: let GOGC alone govern
