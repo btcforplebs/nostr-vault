@@ -31,6 +31,7 @@ import com.nostrvault.service.NostrService.Companion.TAG
                     } catch (e: Exception) {
                         Log.w(TAG, "Mute list sync failed: ${e.message}")
                     }
+                    settledMuteLists.update { it + hex }
                 }
         }
     }
@@ -138,5 +139,15 @@ import com.nostrvault.service.NostrService.Companion.TAG
      * time only), what a block builds on when the relays return an older one.
      */
     private val heldMuteLists = java.util.concurrent.ConcurrentHashMap<String, NostrEvent>()
+
+    /** Accounts (hex) whose relays were asked for their mute list this launch, found or not, and it applied. */
+    private val settledMuteLists = MutableStateFlow<Set<String>>(emptySet())
+
+    /**
+     * [settledMuteLists] for screens that keep something from the list's people
+     * (My Web's newcomers): they wait for it, so nobody muted is offered before
+     * the list lands.
+     */
+    internal val NostrService.muteListsSettled: StateFlow<Set<String>> get() = settledMuteLists
 
     internal fun heldMuteList(hex: String): NostrEvent? = heldMuteLists[hex]

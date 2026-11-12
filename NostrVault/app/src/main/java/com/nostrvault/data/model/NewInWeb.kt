@@ -40,8 +40,13 @@ data class NewInWeb(
 
         private fun short(pk: String) = pk.take(8)
 
-        /** [vouched]: the web's extended layer, most linked first. [kept] null on a first look. */
-        fun update(vouched: List<String>, kept: NewInWeb?, now: Long): NewInWeb {
+        /**
+         * [allVouched]: the web's extended layer, most linked first. [kept] null on a first look.
+         * Anyone in [muted] (the mute list, kind 10000, public and private) is never offered and
+         * never newly noted, and drops out of new once muted, as the web's `newInWeb`.
+         */
+        fun update(allVouched: List<String>, kept: NewInWeb?, now: Long, muted: Set<String> = emptySet()): NewInWeb {
+            val vouched = if (muted.isEmpty()) allVouched else allVouched.filter { it !in muted }
             if (kept == null) return NewInWeb(known = vouched.mapTo(HashSet(), ::short))
             val still = vouched.toHashSet()
             val stillFresh = kept.fresh.filter { it.pubkey in still && now - it.at < NEW_FOR }

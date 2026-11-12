@@ -16,6 +16,7 @@ struct WotNewcomersView: View {
     @ObservedObject private var nostrService = NostrService.shared
     @State private var fresh: [String] = []
     @State private var askedForWeb = false
+    @State private var mutesSettled = false
 
     var body: some View {
         Group {
@@ -24,7 +25,7 @@ struct WotNewcomersView: View {
             } else if fresh.isEmpty {
                 Text(feedService.extendedNetworkPubkeys.isEmpty
                      ? (feedService.isLoadingExtendedNetwork ? "Loading your web..." : "Your follows' lists haven't come in yet")
-                     : "No one new in your web this week")
+                     : mutesSettled ? "No one new in your web this week" : "Loading your mute list...")
                     .font(.appSystem(size: 13))
                     .foregroundColor(.secondary)
             } else {
@@ -53,6 +54,11 @@ struct WotNewcomersView: View {
         }
         .onChange(of: feedService.extendedNetworkPubkeys, initial: true) { _, vouched in update(vouched) }
         .onChange(of: me) { _, _ in update(feedService.extendedNetworkPubkeys) }
+        // A mute (or the list landing) takes the person out at once.
+        .onReceive(NotificationCenter.default.publisher(for: MuteListStore.settled)) { _ in update(feedService.extendedNetworkPubkeys) }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))) { _ in
+            update(feedService.extendedNetworkPubkeys)
+        }
         .onAppear(perform: askForWebIfMissing)
     }
 
@@ -66,10 +72,14 @@ struct WotNewcomersView: View {
     }
 
     private func update(_ vouched: [String]) {
-        guard !me.isEmpty, !vouched.isEmpty else { fresh = []; return }
+        // Nobody is called new before the mute list has landed: the newcomers
+        // are kept, so one offered before it would sit here for a week.
+        mutesSettled = !me.isEmpty && MuteListStore.shared.isSettled(hex: me)
+        guard !me.isEmpty, !vouched.isEmpty, mutesSettled else { fresh = []; return }
         let key = WotNewcomers.key(me)
         let kept = UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(WotNewcomers.self, from: $0) }
-        let next = WotNewcomers.update(vouched: vouched, kept: kept, now: Int64(Date().timeIntervalSince1970))
+        let next = WotNewcomers.update(vouched: vouched, kept: kept, now: Int64(Date().timeIntervalSince1970),
+                                       muted: ConfigService.shared.activeAccountBlockedHexPubkeys)
         if let data = try? JSONEncoder().encode(next) { UserDefaults.standard.set(data, forKey: key) }
         fresh = next.fresh.map(\.pubkey)
         nostrService.fetchMissingProfiles(for: Array(fresh.prefix(WotNewcomers.faces)))
