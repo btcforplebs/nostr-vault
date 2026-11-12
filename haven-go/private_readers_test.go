@@ -55,6 +55,13 @@ func TestPrivateReadsRefuseAnAddedNpubWithoutAKeyHere(t *testing.T) {
 	a.runPublishCases(t, "/private", []publishCase{
 		{name: "vault space/private: added npub's own note, unauthenticated, accepted", event: note(watchSK, nil)},
 	})
+	// Only its own: AUTHed as the added npub, someone else's event is refused.
+	for _, path := range []string{"", "/private"} {
+		a.runPublishCases(t, path, []publishCase{
+			{name: "MustBeWhitelistedToPost" + path + ": stranger-signed, authed as added npub, rejected", authSK: watchSK, event: note(a.strangerSK, nil), rejectBy: reasonNotWhitelisted},
+			{name: "MustBeWhitelistedToPost" + path + ": stranger-signed, authed as owner, accepted", authSK: a.ownerSK, event: note(a.strangerSK, nil)},
+		})
+	}
 }
 
 // An app that names no readers file (Android, the browser vault) keeps the

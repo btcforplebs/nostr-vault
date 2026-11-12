@@ -154,7 +154,9 @@ func MustBeWhitelistedToPost(ctx context.Context, event *nostr.Event) (bool, str
 	if authenticatedUser == "" {
 		return true, "auth-required: you must be authenticated to post to this relay"
 	}
-	if _, ok := whitelist()[authenticatedUser]; !ok {
+	// Storing someone else's signed event takes a private reader (an
+	// account with a key or signer here): an added npub posts only its own.
+	if !isPrivateReader(authenticatedUser) {
 		slog.Debug("🚫 event rejected: user is not whitelisted", "event", event.ID, "pubkey", authenticatedUser)
 		return true, "restricted: you must be whitelisted to post to this relay"
 	}
