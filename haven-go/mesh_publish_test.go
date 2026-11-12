@@ -249,8 +249,14 @@ func TestMeshPublishForMeIsAnnounced(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("paired publish connection refused: %d", code)
 	}
-	if msg := ws.next("NOTICE"); str(msg[1]) != meshPublishNotice {
-		t.Errorf("first NOTICE %q, want %q", str(msg[1]), meshPublishNotice)
+	// The very first frame: the phones send nothing until they read it.
+	_ = ws.c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, first, err := ws.c.ReadMessage()
+	if err != nil {
+		t.Fatalf("no first frame: %v", err)
+	}
+	if want := `["NOTICE","` + meshPublishNotice + `"]`; strings.TrimSpace(string(first)) != want {
+		t.Errorf("first frame %s, want %s", first, want)
 	}
 
 	// An unpaired key's publish token is turned down at the door, at once.
