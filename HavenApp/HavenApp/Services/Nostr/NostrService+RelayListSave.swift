@@ -168,7 +168,8 @@ extension NostrService {
             let moved = Self.dmInboxMoved(published, from: oldInbox, to: newInbox)
             guard moved != published else { done?(nil); return }
             // Never sign an empty DM inbox: nobody could reach the owner's DMs (Tron #1991).
-            guard !moved.isEmpty else {
+            // Loopback entries never go out (publishOwnerDMRelays), so they don't count.
+            guard moved.contains(where: { !Self.isLoopbackRelay($0) }) else {
                 done?("This vault is the only relay in your DM inbox, so it stays listed. Add another DM relay under Relays first.")
                 return
             }

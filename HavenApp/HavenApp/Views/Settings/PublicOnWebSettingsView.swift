@@ -36,7 +36,7 @@ struct PublicOnWebSettingsView: View {
                             .foregroundColor(.orange)
                     }
                 } footer: {
-                    Text("Needs your own domain and a tunnel. On: your domain goes in your relay list and DM inbox, so other apps can reach this vault. Turning it off takes it out of your relay list and DM inbox now. A tunnel you started keeps running until you stop it.")
+                    Text("Needs your own domain and a tunnel. On: your domain goes in your DM inbox now and in your relay list the next time you save Relays, so other apps can reach this vault. Turning it off takes it out of your relay list and DM inbox now. A tunnel you started keeps running until you stop it.")
                 }
             }
             .groupedFormStyleCompat()
