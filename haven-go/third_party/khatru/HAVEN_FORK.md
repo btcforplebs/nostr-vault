@@ -24,3 +24,7 @@ Changes from upstream are listed below. Keep every other file byte-identical to 
   `clientsMutex` (`reserveListeners`/`releaseReserved`), so a burst of REQs on one connection
   cannot pass it. A refused REQ gets CLOSED. `ListenerCount(ws)` for tests. Used by the mesh door
   (haven-go `mesh_query_caps.go`).
+- `responding.go`: the `RejectFilter` hooks run before the `"limit":0` (live-only) return. Upstream
+  returned first, so a live-only REQ skipped every read gate and got new events on `/private` and
+  `/chat` with no AUTH (Tron, #1966). An empty live-only filter is now refused where empty filters
+  are.
