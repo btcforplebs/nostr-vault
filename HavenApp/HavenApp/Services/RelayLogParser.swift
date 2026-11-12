@@ -90,6 +90,11 @@ enum RelayLogParser {
         var copyLines: [MeshCopyV2.Progress] = []
     }
 
+    /// The lines of a chunk of relay output, empty lines left out.
+    static func lines(in output: String) -> [String] {
+        output.components(separatedBy: .newlines).filter { !$0.isEmpty }
+    }
+
     /// The `RELAY_START_FAILED|` line (haven-go cshared.go logStartFailed).
     static let startFailedMarker = "RELAY_START_FAILED|"
 

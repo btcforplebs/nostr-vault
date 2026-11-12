@@ -93,7 +93,7 @@ extension RelayProcessManager {
     private typealias BatchedStateUpdate = RelayLogParser.BatchedStateUpdate
 
     private nonisolated func processOutputInBackground(_ output: String) {
-        let lines = output.components(separatedBy: .newlines).filter { !$0.isEmpty }
+        let lines = RelayLogParser.lines(in: output)
         guard !lines.isEmpty else { return }
 
         var batch = BatchedStateUpdate()
