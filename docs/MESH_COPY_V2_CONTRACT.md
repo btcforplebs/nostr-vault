@@ -56,6 +56,8 @@ link-paired devices are in it too. No re-pair is needed.
 SetMeshDevicesC({"self": "<this vault's mesh npub>", "devices": [{"npub": "<mesh npub>", "role": "phone"}, …]})
 ```
 - 0 set; 1 bad input, and the old set is kept.
+- Roles are `phone`, `vault` and `browser` (pairing contract §1); `mac` and `homeVault` are read as `vault`. The set
+  holds any number of vaults.
 - The vault's own key is never a paired device.
 - An **empty or missing set accepts no device**. There is no fallback to "anyone".
 - **Unpair:** a device that leaves the set loses its copy tokens at once (as `RevokeCopyTokensC`). Once the set is
@@ -123,6 +125,50 @@ The owner-signed 24242 keeps working until the apps switch (`TODO(mesh-key)`).
   - A's owner changes;
   - B leaves A's paired set (`SetMeshDevicesC`), the same as Remove device.
 - Removing B on B's side forgets A: no resume, no catch-up.
+
+### 2.2 The box's paired set (device list)
+
+A Mac's app hands its engine the set from its own My Devices. A **box** has no app, so its set comes from the owner's
+devices over the mesh. The owner's kind 10063 is **not** a device list: linking on Apple no longer writes it (PR 1850), and the
+box stops reading its `fipsmesh` entries as "my devices" once this lands.
+
+**First device.** A new box's set is empty, so it accepts no device (§2). The first entry comes from linking on the
+box's own page (pairing contract §2): the device linked there is added with its role.
+
+**Every later change.** A device in the box's set sends it the owner's whole list:
+
+```
+PUT /copy/v2/devices        served where /copy/v2 is (§1); the door answers 404
+Authorization: Nostr <base64 kind 27235>, signed by the sender's mesh key
+{"v":1,"t":<unix>,"devices":[{"npub":"<mesh npub>","role":"phone","name":"<name>"}, …]}
+```
+
+- The proof is §2's start proof with `["u", …/copy/v2/devices]`, `["method","PUT"]`, `["p", <the box's mesh npub>]`,
+  and `["payload", <hex sha256 of the body>]` (NIP-98). Same 60 s window and single use.
+- `devices` is what the sender would hand its own engine with `SetMeshDevicesC`: the owner's devices only
+  (`linkedBy` is the owner or empty), roles kept, plus the sender itself. `name` is optional, at most 40 code points.
+  At most 64 entries; a body over 64 KiB is 413.
+- The box drops its own npub from the list, then checks every entry as `SetMeshDevicesC` does. One bad entry
+  refuses the whole list (400) and the old set is kept.
+- `t` must be later than the `t` of the last list the box accepted, and at most 10 minutes ahead of the box's clock.
+  Otherwise 409 `stale_list`, and the sender reads the box's current `t` from the answer (`{"t": <unix>}`), sends
+  again with a `t` past it (so a device whose clock is behind still gets its change in).
+- The signer must be in the box's set **when the list arrives** and must not be the box: anyone else is 403. A
+  device removed from the set can never send another list.
+- The list **replaces** the set. A device that left it loses its copy tokens at once (as Unpair, §2). A list
+  without the sender is allowed (it removed itself).
+- 204 when taken, also when nothing changed.
+
+**When devices send it.** After every change to My Devices that names the box, and at the start of every catch-up
+with the box (§6), so a box that was off during a change still gets it. A send that fails is retried at the next
+catch-up; there is no other retry.
+
+**On the box.** havend writes the set to `mesh-devices.json` (`[{"npub", "role"}]`: today's file plus `role`),
+which is what the mesh lets in as own devices and what the engine reads as its paired set (`MESH_DEVICES_FILE`).
+
+**Trust.** Any device in the set can rewrite the whole set, the same trust each device already has on the owner's
+other vaults through §2. A lost phone is handled by removing it from My Devices on another device: that list
+replaces the set (dropping any key the lost phone added), and from then on the lost phone's lists are 403.
 
 ## 3. The first copy
 
@@ -402,3 +448,36 @@ A v2 `notes.zip` only adds `accounts.json` and `settings.json` (plus the trimmed
 readers skip (`jsonl.go importFromZip` reads `.jsonl` entries only). Settings › Back up zips now carry
 `accounts.json` too, and a restore checks ownership with it (§3.4) but neither adds nor offers an account. Old backup zips restore unchanged: no accounts, no settings,
 no media part, owner check by their notes.
+
+## 9. The mesh door (what strangers reach)
+
+The door (`mesh_door.go`) is what any FIPS peer reaches at a vault's mesh address, the same `npub.fips` that is in
+its `fipsmesh` entry. There is **one mesh key** per device: the door, the own devices (§2) and the 10063 entry all
+use it. The door behaves like the vault's https Haven, plus the mesh limits at the end. It never serves `/copy/`.
+
+| Request | Today | After the rework |
+|---|---|---|
+| websocket `/`, EVENT (outbox) | owner-signed only (`meshOwnerEventsOnly`) | the same as https: owner-signed only |
+| websocket `/`, REQ / COUNT (outbox) | refused (`meshNoQueries`) | the same filters as https (no empty or complex filters, brought-over accounts hidden), plus the mesh query limits below |
+| `/inbox` | 404 | as https: gift wraps (kind 1059) only, writers in the owner's web of trust, tagging an owner account; reads as https |
+| `/chat` | 404 | as https: NIP-42 AUTH, writers and readers in the web of trust |
+| `/private` | 404 | as https: NIP-42 AUTH by the owner's accounts only |
+| GET / HEAD `/<sha256>[.ext]` | only a blob named by a public outbox note (`mesh_safety.go`), else 404 | as stock Haven: any blob the vault holds, by hash |
+| GET `/list/<pubkey>` | 404 | as stock Haven |
+| PUT / HEAD `/upload` | owner-signed or paired-device kind 24242 (§2.1), one at a time | unchanged |
+| DELETE `/<sha256>` | 404 at the door | unchanged (own devices delete over §2.1) |
+| `/copy/*` | 404 | 404 |
+
+**Never blasted.** Nothing that comes in through the door is published to public relays: only first-hand writes
+are blasted (`isSecondHandConn`, `mesh_safety.go`). This holds for every row above.
+
+**Mesh limits** (strangers only; the owner's own devices are not limited by these). Kept as they are today
+(Logen's OK on keeping them is pending):
+- The strangers lane: 1 MiB/s and 16 slots shared by all strangers (`fips-v2-android/src/strangers.rs`).
+- At most 32 mesh connections at once, each at most 30 minutes; an upload must keep at least 64 KiB/s after 30 s.
+- Queries: a cap on `limit` per filter, on bytes per answer and on open subscriptions per connection. The numbers
+  are set by the PR that opens REQ at the door and written here when it lands.
+
+DMs are kept private by encryption, not by the door hiding them. Gift wraps are ciphertext already. DM files are
+ciphertext only once senders send NIP-17 kind 15 (`docs/DM_FILE_VECTORS.json`). **Until then a DM photo is a plain
+blob**: anyone with its hash can read it over https today, and at the door once the blob row changes.

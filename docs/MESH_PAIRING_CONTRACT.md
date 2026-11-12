@@ -9,6 +9,9 @@ A scans B, and both say "Linked ✓". This file is the wire contract. The pure l
 | Android | `fips/MeshPairing.kt`, `MeshPairingSession.kt`, `MeshPairingWords.kt` | `test/.../fips/MeshPairingTest.kt` |
 | Web | `web-vault/src/net/mesh-pairing.js`, `mesh-pairing-session.js`, `mesh-pairing-words.js` | `web-vault/test/mesh-pairing.test.mjs` |
 
+The `vault` role (§1) is in this contract before it is in the code: the step-3 PRs add it to `reference.py`, the
+fixtures and all three platforms together.
+
 All three read the same fixtures, `HavenApp/MediaLogicTests/Tests/MediaLogicTests/Fixtures/MeshPairing/`
 (`payload-cases.json`, `hello-cases.json`, `checkwords-cases.json`, `words.txt`), made by `reference.py` there. Change
 the rule in `reference.py` first, regenerate, then make all three agree. The fixture keys are SHA-256 of labels: no
@@ -26,8 +29,18 @@ nvpair:v1?m=<mesh npub>&n=<name>&r=<role>&o=<owner npub>&e=<A's secret>&b=<B's s
 
 - Fields are written in that order. `n` is left out when the name is empty.
 - `m` is the showing device's **mesh** address (its own key, never the account). `o` is the account it runs as.
-- `r` is the wire role: `phone`, `mac`, `homeVault`, `browser` (iOS `MeshDeviceRole` raw values; Android's stored
-  `home_vault` is mapped, never sent).
+  **One mesh key per device.** The key in `m` is the device's only mesh key: the one its own devices trust, the one
+  strangers reach at its door, and the one in its `fipsmesh` entry when it publishes one. There is no separate
+  pairing key; a device keeps its key across re-links, so no device has to re-pair.
+- `r` is the wire role (§2):
+  - `phone`: iPhone, iPad, Android. Keeps a copy of the vault, by default all of it.
+  - `vault`: a Mac or a Linux box. Always on, keeps the full history. **A reader takes `mac` and `homeVault` as
+    `vault`** (what older builds send).
+  - `browser`: the web page. Photos only; it copies no vault.
+
+  Writers keep sending `mac` / `homeVault` until the apps that read `vault` are released on every platform
+  (`TODO(vault-role)`), so an older app does not refuse the code with `unknownRole`. After that they send `vault`.
+  Android's stored `home_vault` is mapped, never sent.
 - `s`: 16 random bytes, base64url without padding (22 characters), fresh each time the code is shown. `e`: A's `s`.
   `b`: B's own fresh secret s_B, the same shape. Only a device that read B's code knows s_B, so the scan ack (§3)
   proves A really scanned B. Without it, the device showing the first code could make the ack alone (Tron, PR 1700).
@@ -56,10 +69,18 @@ Unknown extra fields are ignored, so a later v1 can add one.
 - **Owner**: `o` is compared with every account on this device: the active one → `ok`; another one → `switchTo`
   (that account); none → `otherOwner`, and nothing is stored. `o` is a claim; it stops the common accident, not a
   deliberate stranger.
+- **Any number of vaults.** My Devices holds every linked `vault` (Macs and boxes) side by side. Linking another
+  vault never replaces or hides one already linked, and every vault keeps the full history from the others (copy
+  contract §6).
+- **A box** (a vault with no screen of its own) takes the code steps on its setup page (the box's own web page, opened in a browser
+  on the same network), always as A with Accept and
+  the check words (§5). The box's mesh key signs its hello and ack. The device linked there becomes the first
+  device in the box's paired set; the box learns the rest of My Devices from the device list (copy contract §2.2).
 - **Role (Tron 1)**: name, role and owner all come from the other device, and the role grants access, so the person
   confirms the role in plain words before anything is stored (`roleConfirmText`). A device already known under
-  another role is refused (`refuseOtherRole`); under the same role it is `alreadyLinked`. Pairing never calls the
-  existing add path for a device it would move between roles.
+  another role is refused (`refuseOtherRole`); under the same role it is `alreadyLinked`. `mac`, `homeVault` and
+  `vault` are the same role here: a device stored as `mac` that now shows `vault` is `alreadyLinked`, never
+  `refuseOtherRole`. Pairing never calls the existing add path for a device it would move between roles.
 
 ## 3. Hello and ack
 
