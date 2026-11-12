@@ -38,7 +38,7 @@ const (
 	// Relay.Write with a 2-3 GB heap (RESEARCH/NV_MAC_RELAY_PROFILE_2026_11_12.md).
 	blastPoolWorkers = 4
 	blastPoolQueue   = 512
-	// A queue longer than blastPendingMax (only owner notes go past it) is
+	// A queue longer than blastPendingMax (only the vault's accounts' notes go past it) is
 	// saved at most this often, not on every change: rewriting a file of
 	// thousands of notes per note is quadratic.
 	blastBatchedSaveEvery = time.Second
@@ -80,9 +80,12 @@ type blastQueue struct {
 	dropped   int         // notes not kept since the queue was last below blastPendingMax
 }
 
-// isOwnerNote: the owner's own notes are never dropped for space.
-func isOwnerNote(ev *nostr.Event) bool {
-	return config.OwnerPubKey != "" && ev.PubKey == config.OwnerPubKey
+// isVaultAccountNote: a note from the owner or any of the vault's other
+// accounts (the whitelist) is never dropped for space. The blast is how it
+// leaves this device, and a note the pool could not take has had no try yet.
+func isVaultAccountNote(ev *nostr.Event) bool {
+	_, ok := whitelist()[ev.PubKey]
+	return ok
 }
 
 func openBlastQueue(file string) *blastQueue {
@@ -182,11 +185,11 @@ func (q *blastQueue) keep(ev *nostr.Event, p pendingBlast) {
 	if _, ok := q.idsLocked()[ev.ID]; ok {
 		return
 	}
-	if len(q.items) >= blastPendingMax && !isOwnerNote(ev) {
+	if len(q.items) >= blastPendingMax && !isVaultAccountNote(ev) {
 		// Keep the ones already waiting: they have waited longest to get out.
-		// The owner's notes are always kept: the blast is how they leave
-		// this device. One line for the first, one count when there is room
-		// again: a line per note was thousands in a burst.
+		// The vault's own accounts' notes are always kept (isVaultAccountNote);
+		// this is for a key that is no longer one of them. One line for the
+		// first, one count when there is room again.
 		if q.dropped == 0 {
 			slog.Warn("⚠️ blast queue full, not keeping other accounts' notes for now", "id", ev.ID)
 		}
@@ -256,9 +259,9 @@ func blastOrKeep(ctx context.Context, q *blastQueue, ev *nostr.Event) {
 // It never blocks the caller (the relay is answering a client).
 //
 //   - Queue full: the note goes to the blast queue (blast_queue.json), due
-//     at the next retry round (at most a minute). The owner's notes are
-//     always kept there; another account's note is kept up to
-//     blastPendingMax and otherwise not blasted (it stays stored).
+//     at the next retry round (at most a minute). Notes from the vault's
+//     accounts (owner and whitelist) are always kept there; a note from a
+//     key that is no longer one of them is kept up to blastPendingMax.
 //   - Relay stopping (ctx done): the notes still waiting go to the blast
 //     queue too, and are sent on the next start.
 //

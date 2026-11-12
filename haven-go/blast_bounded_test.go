@@ -143,9 +143,11 @@ func TestOutboxDoesNotBlastADuplicate(t *testing.T) {
 	}
 }
 
-// When the pool's queue is full, an owner note waits in the blast queue
-// (never lost); another account's note does too, up to blastPendingMax.
-func TestBlastOverflowKeepsOwnerNotes(t *testing.T) {
+// When the pool's queue is full, a note from any of the vault's accounts
+// waits in the blast queue: never lost, however long the queue is (Tron's
+// review: an untried note dropped at the cap was never published, and the
+// client had its OK). On stop, every note still in the pool is kept too.
+func TestBlastOverflowKeepsEveryVaultAccountsNotes(t *testing.T) {
 	ctx, sk := blastTestSetup(t, stallingRelay(t))
 	owner, _ := nostr.GetPublicKey(sk)
 	config.OwnerPubKey = owner
@@ -158,8 +160,9 @@ func TestBlastOverflowKeepsOwnerNotes(t *testing.T) {
 	q := openBlastQueue(blastPendingFile)
 	send, done := newBlastSender(ctx, q)
 	t.Cleanup(func() { cancel(); <-done })
+	// The owner's backlog fills the blast queue past its cap first.
 	ownerNotes := signedNotes(t, sk, blastPendingMax+blastPoolQueue+200)
-	otherNotes := signedNotes(t, otherSK, blastPendingMax+50)
+	otherNotes := signedNotes(t, otherSK, 300)
 	for _, ev := range ownerNotes {
 		send(ev)
 	}
@@ -168,32 +171,41 @@ func TestBlastOverflowKeepsOwnerNotes(t *testing.T) {
 	}
 	q.flush()
 
-	kept := map[string]int{}
-	for _, p := range q.snapshot() {
-		kept[p.Event.PubKey]++
+	count := func() map[string]int {
+		kept := map[string]int{}
+		for _, p := range q.snapshot() {
+			kept[p.Event.PubKey]++
+		}
+		return kept
 	}
-	// Every owner note is either in the pool (queued or being sent) or kept.
-	if inPool := blastPoolQueue + blastPoolWorkers; kept[owner] < len(ownerNotes)-inPool {
-		t.Errorf("kept %d owner notes, want at least %d", kept[owner], len(ownerNotes)-inPool)
-	}
-	if kept[other] != 0 && len(q.snapshot()) > len(ownerNotes)+blastPendingMax {
-		t.Errorf("other account's notes passed the cap: %d", kept[other])
+	// Every note is in the pool (queued or being sent) or kept.
+	inPool := blastPoolQueue + blastPoolWorkers
+	if k := count(); k[owner]+k[other] < len(ownerNotes)+len(otherNotes)-inPool || k[other] == 0 {
+		t.Errorf("kept owner %d + other %d of %d notes; at most %d may be in the pool",
+			k[owner], k[other], len(ownerNotes)+len(otherNotes), inPool)
 	}
 
-	// On stop, what was still waiting in the pool goes to the blast queue too.
+	// On stop, every note not yet sent ends up in the blast queue.
 	cancel()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		n := 0
-		for _, p := range q.snapshot() {
-			if p.Event.PubKey == owner {
-				n++
-			}
-		}
-		if n >= len(ownerNotes)-blastPoolWorkers {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
+	<-done
+	q.flush()
+	if k := count(); k[owner] != len(ownerNotes) || k[other] != len(otherNotes) {
+		t.Errorf("after stop kept owner %d/%d, other %d/%d", k[owner], len(ownerNotes), k[other], len(otherNotes))
 	}
-	t.Errorf("owner notes still in the pool were not kept on stop")
+}
+
+// The cap still holds for a key that is not one of the vault's accounts
+// (say one removed since): such a note is not kept past blastPendingMax.
+func TestBlastQueueCapsNotesFromOutsideTheVault(t *testing.T) {
+	_, sk := blastTestSetup(t)
+	q := openBlastQueue(blastPendingFile)
+	for _, ev := range signedNotes(t, sk, blastPendingMax) {
+		q.keepUntried(ev)
+	}
+	stranger := signedNotes(t, nostr.GeneratePrivateKey(), 1)[0]
+	q.keepUntried(stranger)
+	q.flush()
+	if n := len(q.snapshot()); n != blastPendingMax {
+		t.Fatalf("queue holds %d, want %d (stranger's note not kept)", n, blastPendingMax)
+	}
 }
