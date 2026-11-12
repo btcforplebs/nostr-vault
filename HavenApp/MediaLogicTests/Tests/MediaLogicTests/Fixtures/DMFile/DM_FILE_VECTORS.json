@@ -1,0 +1,588 @@
+{
+  "about": "NIP-17 kind 15 encrypted file vectors for Nostr Vault (build plan D0, RESEARCH/NV_SYNC_REWORK_BUILD_PLAN_2026_11_12.md). The source of truth is docs/DM_FILE_VECTORS.json; the copies in the Apple, Android and web test folders must stay byte-identical to it.",
+  "spec": "https://github.com/nostr-protocol/nips/blob/master/17.md (kind 15)",
+  "rules": [
+    "Algorithm: AES-256-GCM, 128-bit tag appended to the ciphertext (ciphertext_hex = ciphertext || tag). No AAD.",
+    "decryption-key: 64 lowercase hex chars (32 bytes). decryption-nonce: lowercase hex, any non-empty length; 12 and 16 bytes both appear in the wild.",
+    "x = sha256 of the encrypted bytes (what the server holds). ox = sha256 of the original file. size = encrypted bytes.",
+    "Receive order: algorithm is aes-gcm, then sha256(download) == x, then decrypt (tag must verify), then sha256(plaintext) == ox, then show as file-type.",
+    "content is the file URL; the vectors use files.example and made-up keys. Every key, nonce and pubkey is sha256 of a label, or a sha256 prefix: none is real."
+  ],
+  "expect_values": {
+    "ok": "decrypts to plaintext_hex",
+    "reject_x": "refuse: sha256(ciphertext) != x",
+    "reject_decrypt": "refuse: GCM tag does not verify",
+    "reject_ox": "refuse: sha256(plaintext) != ox",
+    "reject_algorithm": "refuse: algorithm is not aes-gcm",
+    "reject_key": "refuse: key is not 32 bytes"
+  },
+  "labels": {
+    "sender": "sha256(\"d0 sender\")",
+    "receiver": "sha256(\"d0 receiver\")",
+    "png-12-byte-nonce": "key sha256(\"d0 key 1\"), nonce first 12 bytes of sha256(\"d0 nonce 12\")",
+    "png-16-byte-nonce": "key sha256(\"d0 key 2\"), nonce first 16 bytes of sha256(\"d0 nonce 16\")",
+    "amethyst-crypto-kmp": "key sha256(\"d0 amethyst key\"), nonce first 16 bytes of sha256(\"d0 amethyst nonce\")"
+  },
+  "vectors": [
+    {
+      "id": "png-12-byte-nonce",
+      "expect": "ok",
+      "note": "Our send shape: 12-byte nonce (the NIST size).",
+      "source": "Nostr Vault (Node WebCrypto)",
+      "file_type": "image/png",
+      "algorithm": "aes-gcm",
+      "key": "d58c3bfaf300097195c0bfe407ecc2f970a6a61362d40d1d07bd686c49a9a8c2",
+      "nonce": "1f28f69c7da350a5b51c834c",
+      "plaintext_hex": "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a730000001449444154789c63f83e59eaffffff0c400c6401004296094399cbcaa00000000049454e44ae426082",
+      "ciphertext_hex": "243aedbe22fafdd5dd5239e9b51f7c936e3794a331016bff8f73a3b44032b8c932177c3a9bffb7cc6bc5e529c37e377bc5a797fb4a0fb61469b48a7782d78148f77a6023862f9940d73257ed4e2df0707cdc80c5da95a24f6308220b0a",
+      "x": "bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf",
+      "ox": "aa867b8de59e2c352b8c8e24b11752a2975902e8789c11237bfff50a0da4a30d",
+      "size": 93,
+      "ext": ".png",
+      "rumor": {
+        "pubkey": "112bf6b423d7f462f29c1332fce677ed7037bcbaa2cf7a67ca57a5d8f5d2fb95",
+        "created_at": 1762905600,
+        "kind": 15,
+        "tags": [
+          [
+            "p",
+            "f4a3296660fd5f0f8068c33981cb5d07f2eccbc757e74ffea1b587dccbcbfa34"
+          ],
+          [
+            "file-type",
+            "image/png"
+          ],
+          [
+            "encryption-algorithm",
+            "aes-gcm"
+          ],
+          [
+            "decryption-key",
+            "d58c3bfaf300097195c0bfe407ecc2f970a6a61362d40d1d07bd686c49a9a8c2"
+          ],
+          [
+            "decryption-nonce",
+            "1f28f69c7da350a5b51c834c"
+          ],
+          [
+            "x",
+            "bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf"
+          ],
+          [
+            "ox",
+            "aa867b8de59e2c352b8c8e24b11752a2975902e8789c11237bfff50a0da4a30d"
+          ],
+          [
+            "size",
+            "93"
+          ]
+        ],
+        "content": "https://files.example/bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf.png"
+      }
+    },
+    {
+      "id": "png-16-byte-nonce",
+      "expect": "ok",
+      "note": "16-byte nonce, the length Amethyst sends by default. Receivers must take any non-empty nonce length, not only 12.",
+      "source": "Nostr Vault (Node WebCrypto)",
+      "file_type": "image/png",
+      "algorithm": "aes-gcm",
+      "key": "90697a6cc766eb4cf12aa3eb5225bcd3ca1883fbba4ebb72eeda356e974dd25e",
+      "nonce": "f1a84d1ab2360350883ff4f3ffca53f5",
+      "plaintext_hex": "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a730000001449444154789c63f83e59eaffffff0c400c6401004296094399cbcaa00000000049454e44ae426082",
+      "ciphertext_hex": "bb56eac35f2aad9bd0d5ad5645d4f2cf4f4eb3a17494be30b72017b9e879d552bec4ba496209004492ea7e9dc709b9684307af3b8436dd3aa17298316a0ea619d5c354bc95f1e30d864d5bf5f12916c701f3922adaeb32efb46a7720ce",
+      "x": "06554bf361e08465c2c2ae5f50aafe592732b1571c3f025fd9b95ffc56430f65",
+      "ox": "aa867b8de59e2c352b8c8e24b11752a2975902e8789c11237bfff50a0da4a30d",
+      "size": 93,
+      "ext": ".png",
+      "rumor": {
+        "pubkey": "112bf6b423d7f462f29c1332fce677ed7037bcbaa2cf7a67ca57a5d8f5d2fb95",
+        "created_at": 1762905600,
+        "kind": 15,
+        "tags": [
+          [
+            "p",
+            "f4a3296660fd5f0f8068c33981cb5d07f2eccbc757e74ffea1b587dccbcbfa34"
+          ],
+          [
+            "file-type",
+            "image/png"
+          ],
+          [
+            "encryption-algorithm",
+            "aes-gcm"
+          ],
+          [
+            "decryption-key",
+            "90697a6cc766eb4cf12aa3eb5225bcd3ca1883fbba4ebb72eeda356e974dd25e"
+          ],
+          [
+            "decryption-nonce",
+            "f1a84d1ab2360350883ff4f3ffca53f5"
+          ],
+          [
+            "x",
+            "06554bf361e08465c2c2ae5f50aafe592732b1571c3f025fd9b95ffc56430f65"
+          ],
+          [
+            "ox",
+            "aa867b8de59e2c352b8c8e24b11752a2975902e8789c11237bfff50a0da4a30d"
+          ],
+          [
+            "size",
+            "93"
+          ]
+        ],
+        "content": "https://files.example/06554bf361e08465c2c2ae5f50aafe592732b1571c3f025fd9b95ffc56430f65.png"
+      }
+    },
+    {
+      "id": "amethyst-crypto-kmp",
+      "expect": "ok",
+      "note": "Made by Amethyst's own AES-GCM (vitorpamplona/crypto-kmp d32286ef, AESGCM jvmAndroid, the class quartz ce558d90 uses for kind 15 files). Node WebCrypto reproduces it byte for byte.",
+      "source": "Amethyst crypto-kmp d32286eff216368a8a5ec5e69fb1722bbfd073b4",
+      "file_type": "text/plain",
+      "algorithm": "aes-gcm",
+      "key": "f6754d2fce480aae59c9dfb5a4526a9f868b8a9ccb3fcbf0009612e945100632",
+      "nonce": "e1ee224b0f44fb547dc9f747e580874a",
+      "plaintext_hex": "4e6f737472205661756c7420443020696e7465726f7020766563746f723a20416d6574687973742063727970746f2d6b6d702041455347434d2c2031362d62797465206e6f6e63652c206b696e642031352066696c652e",
+      "ciphertext_hex": "a59ca8fb1b9c239946d82ef9562474b022eb0522ecadc484cf254cc4f7e1781bbb473496ce10b5e0ce04fe045326e2a69e1cb267e3fbdba280efbc10924ba01e7c325a9190960a9d61c855a2113de5569f48e440b7aefa5cee1e3f05b61dabc97152210c17c00a",
+      "x": "84191b79ee4f6099f3663e1efdd4189bdc3ef4dfe2768e1652aa0b41d234bf6a",
+      "ox": "8d8b18a0ffbb59e5c1c3cc0af1bf2bb3ed4a68da82e97b6aced43cfd5c435c1e",
+      "size": 103,
+      "ext": ".txt",
+      "rumor": {
+        "pubkey": "112bf6b423d7f462f29c1332fce677ed7037bcbaa2cf7a67ca57a5d8f5d2fb95",
+        "created_at": 1762905600,
+        "kind": 15,
+        "tags": [
+          [
+            "p",
+            "f4a3296660fd5f0f8068c33981cb5d07f2eccbc757e74ffea1b587dccbcbfa34"
+          ],
+          [
+            "file-type",
+            "text/plain"
+          ],
+          [
+            "encryption-algorithm",
+            "aes-gcm"
+          ],
+          [
+            "decryption-key",
+            "f6754d2fce480aae59c9dfb5a4526a9f868b8a9ccb3fcbf0009612e945100632"
+          ],
+          [
+            "decryption-nonce",
+            "e1ee224b0f44fb547dc9f747e580874a"
+          ],
+          [
+            "x",
+            "84191b79ee4f6099f3663e1efdd4189bdc3ef4dfe2768e1652aa0b41d234bf6a"
+          ],
+          [
+            "ox",
+            "8d8b18a0ffbb59e5c1c3cc0af1bf2bb3ed4a68da82e97b6aced43cfd5c435c1e"
+          ],
+          [
+            "size",
+            "103"
+          ]
+        ],
+        "content": "https://files.example/84191b79ee4f6099f3663e1efdd4189bdc3ef4dfe2768e1652aa0b41d234bf6a.txt"
+      }
+    },
+    {
+      "id": "x-mismatch",
+      "expect": "reject_x",
+      "note": "Downloaded bytes are not the file the event names: sha256(ciphertext) != x. Refuse before decrypting.",
+      "source": "Nostr Vault (edited from png-12-byte-nonce)",
+      "file_type": "image/png",
+      "algorithm": "aes-gcm",
+      "key": "d58c3bfaf300097195c0bfe407ecc2f970a6a61362d40d1d07bd686c49a9a8c2",
+      "nonce": "1f28f69c7da350a5b51c834c",
+      "plaintext_hex": "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a730000001449444154789c63f83e59eaffffff0c400c6401004296094399cbcaa00000000049454e44ae426082",
+      "ciphertext_hex": "253aedbe22fafdd5dd5239e9b51f7c936e3794a331016bff8f73a3b44032b8c932177c3a9bffb7cc6bc5e529c37e377bc5a797fb4a0fb61469b48a7782d78148f77a6023862f9940d73257ed4e2df0707cdc80c5da95a24f6308220b0a",
+      "x": "bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf",
+      "ox": "aa867b8de59e2c352b8c8e24b11752a2975902e8789c11237bfff50a0da4a30d",
+      "size": 93,
+      "ext": ".png",
+      "rumor": {
+        "pubkey": "112bf6b423d7f462f29c1332fce677ed7037bcbaa2cf7a67ca57a5d8f5d2fb95",
+        "created_at": 1762905600,
+        "kind": 15,
+        "tags": [
+          [
+            "p",
+            "f4a3296660fd5f0f8068c33981cb5d07f2eccbc757e74ffea1b587dccbcbfa34"
+          ],
+          [
+            "file-type",
+            "image/png"
+          ],
+          [
+            "encryption-algorithm",
+            "aes-gcm"
+          ],
+          [
+            "decryption-key",
+            "d58c3bfaf300097195c0bfe407ecc2f970a6a61362d40d1d07bd686c49a9a8c2"
+          ],
+          [
+            "decryption-nonce",
+            "1f28f69c7da350a5b51c834c"
+          ],
+          [
+            "x",
+            "bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf"
+          ],
+          [
+            "ox",
+            "aa867b8de59e2c352b8c8e24b11752a2975902e8789c11237bfff50a0da4a30d"
+          ],
+          [
+            "size",
+            "93"
+          ]
+        ],
+        "content": "https://files.example/bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf.png"
+      }
+    },
+    {
+      "id": "tag-tampered",
+      "expect": "reject_decrypt",
+      "note": "x matches the bytes, but the GCM tag does not verify (last byte flipped). The sender's file was changed before x was taken.",
+      "source": "Nostr Vault (edited from png-12-byte-nonce)",
+      "file_type": "image/png",
+      "algorithm": "aes-gcm",
+      "key": "d58c3bfaf300097195c0bfe407ecc2f970a6a61362d40d1d07bd686c49a9a8c2",
+      "nonce": "1f28f69c7da350a5b51c834c",
+      "plaintext_hex": "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a730000001449444154789c63f83e59eaffffff0c400c6401004296094399cbcaa00000000049454e44ae426082",
+      "ciphertext_hex": "243aedbe22fafdd5dd5239e9b51f7c936e3794a331016bff8f73a3b44032b8c932177c3a9bffb7cc6bc5e529c37e377bc5a797fb4a0fb61469b48a7782d78148f77a6023862f9940d73257ed4e2df0707cdc80c5da95a24f6308220b0b",
+      "x": "5c5d9a5248c5a85c5992a9193c2173b7ca444c83077ab50dc949e36dc2971196",
+      "ox": "aa867b8de59e2c352b8c8e24b11752a2975902e8789c11237bfff50a0da4a30d",
+      "size": 93,
+      "ext": ".png",
+      "rumor": {
+        "pubkey": "112bf6b423d7f462f29c1332fce677ed7037bcbaa2cf7a67ca57a5d8f5d2fb95",
+        "created_at": 1762905600,
+        "kind": 15,
+        "tags": [
+          [
+            "p",
+            "f4a3296660fd5f0f8068c33981cb5d07f2eccbc757e74ffea1b587dccbcbfa34"
+          ],
+          [
+            "file-type",
+            "image/png"
+          ],
+          [
+            "encryption-algorithm",
+            "aes-gcm"
+          ],
+          [
+            "decryption-key",
+            "d58c3bfaf300097195c0bfe407ecc2f970a6a61362d40d1d07bd686c49a9a8c2"
+          ],
+          [
+            "decryption-nonce",
+            "1f28f69c7da350a5b51c834c"
+          ],
+          [
+            "x",
+            "5c5d9a5248c5a85c5992a9193c2173b7ca444c83077ab50dc949e36dc2971196"
+          ],
+          [
+            "ox",
+            "aa867b8de59e2c352b8c8e24b11752a2975902e8789c11237bfff50a0da4a30d"
+          ],
+          [
+            "size",
+            "93"
+          ]
+        ],
+        "content": "https://files.example/5c5d9a5248c5a85c5992a9193c2173b7ca444c83077ab50dc949e36dc2971196.png"
+      }
+    },
+    {
+      "id": "wrong-key",
+      "expect": "reject_decrypt",
+      "note": "decryption-key is not the key the file was sealed with.",
+      "source": "Nostr Vault (edited from png-12-byte-nonce)",
+      "file_type": "image/png",
+      "algorithm": "aes-gcm",
+      "key": "90697a6cc766eb4cf12aa3eb5225bcd3ca1883fbba4ebb72eeda356e974dd25e",
+      "nonce": "1f28f69c7da350a5b51c834c",
+      "plaintext_hex": "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a730000001449444154789c63f83e59eaffffff0c400c6401004296094399cbcaa00000000049454e44ae426082",
+      "ciphertext_hex": "243aedbe22fafdd5dd5239e9b51f7c936e3794a331016bff8f73a3b44032b8c932177c3a9bffb7cc6bc5e529c37e377bc5a797fb4a0fb61469b48a7782d78148f77a6023862f9940d73257ed4e2df0707cdc80c5da95a24f6308220b0a",
+      "x": "bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf",
+      "ox": "aa867b8de59e2c352b8c8e24b11752a2975902e8789c11237bfff50a0da4a30d",
+      "size": 93,
+      "ext": ".png",
+      "rumor": {
+        "pubkey": "112bf6b423d7f462f29c1332fce677ed7037bcbaa2cf7a67ca57a5d8f5d2fb95",
+        "created_at": 1762905600,
+        "kind": 15,
+        "tags": [
+          [
+            "p",
+            "f4a3296660fd5f0f8068c33981cb5d07f2eccbc757e74ffea1b587dccbcbfa34"
+          ],
+          [
+            "file-type",
+            "image/png"
+          ],
+          [
+            "encryption-algorithm",
+            "aes-gcm"
+          ],
+          [
+            "decryption-key",
+            "90697a6cc766eb4cf12aa3eb5225bcd3ca1883fbba4ebb72eeda356e974dd25e"
+          ],
+          [
+            "decryption-nonce",
+            "1f28f69c7da350a5b51c834c"
+          ],
+          [
+            "x",
+            "bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf"
+          ],
+          [
+            "ox",
+            "aa867b8de59e2c352b8c8e24b11752a2975902e8789c11237bfff50a0da4a30d"
+          ],
+          [
+            "size",
+            "93"
+          ]
+        ],
+        "content": "https://files.example/bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf.png"
+      }
+    },
+    {
+      "id": "wrong-nonce",
+      "expect": "reject_decrypt",
+      "note": "decryption-nonce is not the nonce the file was sealed with.",
+      "source": "Nostr Vault (edited from png-12-byte-nonce)",
+      "file_type": "image/png",
+      "algorithm": "aes-gcm",
+      "key": "d58c3bfaf300097195c0bfe407ecc2f970a6a61362d40d1d07bd686c49a9a8c2",
+      "nonce": "f1a84d1ab2360350883ff4f3",
+      "plaintext_hex": "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a730000001449444154789c63f83e59eaffffff0c400c6401004296094399cbcaa00000000049454e44ae426082",
+      "ciphertext_hex": "243aedbe22fafdd5dd5239e9b51f7c936e3794a331016bff8f73a3b44032b8c932177c3a9bffb7cc6bc5e529c37e377bc5a797fb4a0fb61469b48a7782d78148f77a6023862f9940d73257ed4e2df0707cdc80c5da95a24f6308220b0a",
+      "x": "bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf",
+      "ox": "aa867b8de59e2c352b8c8e24b11752a2975902e8789c11237bfff50a0da4a30d",
+      "size": 93,
+      "ext": ".png",
+      "rumor": {
+        "pubkey": "112bf6b423d7f462f29c1332fce677ed7037bcbaa2cf7a67ca57a5d8f5d2fb95",
+        "created_at": 1762905600,
+        "kind": 15,
+        "tags": [
+          [
+            "p",
+            "f4a3296660fd5f0f8068c33981cb5d07f2eccbc757e74ffea1b587dccbcbfa34"
+          ],
+          [
+            "file-type",
+            "image/png"
+          ],
+          [
+            "encryption-algorithm",
+            "aes-gcm"
+          ],
+          [
+            "decryption-key",
+            "d58c3bfaf300097195c0bfe407ecc2f970a6a61362d40d1d07bd686c49a9a8c2"
+          ],
+          [
+            "decryption-nonce",
+            "f1a84d1ab2360350883ff4f3"
+          ],
+          [
+            "x",
+            "bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf"
+          ],
+          [
+            "ox",
+            "aa867b8de59e2c352b8c8e24b11752a2975902e8789c11237bfff50a0da4a30d"
+          ],
+          [
+            "size",
+            "93"
+          ]
+        ],
+        "content": "https://files.example/bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf.png"
+      }
+    },
+    {
+      "id": "ox-mismatch",
+      "expect": "reject_ox",
+      "note": "Decrypts fine, but sha256(plaintext) != ox. Do not show it.",
+      "source": "Nostr Vault (edited from png-12-byte-nonce)",
+      "file_type": "image/png",
+      "algorithm": "aes-gcm",
+      "key": "d58c3bfaf300097195c0bfe407ecc2f970a6a61362d40d1d07bd686c49a9a8c2",
+      "nonce": "1f28f69c7da350a5b51c834c",
+      "plaintext_hex": "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a730000001449444154789c63f83e59eaffffff0c400c6401004296094399cbcaa00000000049454e44ae426082",
+      "ciphertext_hex": "243aedbe22fafdd5dd5239e9b51f7c936e3794a331016bff8f73a3b44032b8c932177c3a9bffb7cc6bc5e529c37e377bc5a797fb4a0fb61469b48a7782d78148f77a6023862f9940d73257ed4e2df0707cdc80c5da95a24f6308220b0a",
+      "x": "bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf",
+      "ox": "a80da15505a7402032e61584650584d1ff203131a6e60796b06b09fdbf847856",
+      "size": 93,
+      "ext": ".png",
+      "rumor": {
+        "pubkey": "112bf6b423d7f462f29c1332fce677ed7037bcbaa2cf7a67ca57a5d8f5d2fb95",
+        "created_at": 1762905600,
+        "kind": 15,
+        "tags": [
+          [
+            "p",
+            "f4a3296660fd5f0f8068c33981cb5d07f2eccbc757e74ffea1b587dccbcbfa34"
+          ],
+          [
+            "file-type",
+            "image/png"
+          ],
+          [
+            "encryption-algorithm",
+            "aes-gcm"
+          ],
+          [
+            "decryption-key",
+            "d58c3bfaf300097195c0bfe407ecc2f970a6a61362d40d1d07bd686c49a9a8c2"
+          ],
+          [
+            "decryption-nonce",
+            "1f28f69c7da350a5b51c834c"
+          ],
+          [
+            "x",
+            "bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf"
+          ],
+          [
+            "ox",
+            "a80da15505a7402032e61584650584d1ff203131a6e60796b06b09fdbf847856"
+          ],
+          [
+            "size",
+            "93"
+          ]
+        ],
+        "content": "https://files.example/bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf.png"
+      }
+    },
+    {
+      "id": "unknown-algorithm",
+      "expect": "reject_algorithm",
+      "note": "encryption-algorithm is not aes-gcm. Refuse; do not guess.",
+      "source": "Nostr Vault (edited from png-12-byte-nonce)",
+      "file_type": "image/png",
+      "algorithm": "aes-cbc",
+      "key": "d58c3bfaf300097195c0bfe407ecc2f970a6a61362d40d1d07bd686c49a9a8c2",
+      "nonce": "1f28f69c7da350a5b51c834c",
+      "plaintext_hex": "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a730000001449444154789c63f83e59eaffffff0c400c6401004296094399cbcaa00000000049454e44ae426082",
+      "ciphertext_hex": "243aedbe22fafdd5dd5239e9b51f7c936e3794a331016bff8f73a3b44032b8c932177c3a9bffb7cc6bc5e529c37e377bc5a797fb4a0fb61469b48a7782d78148f77a6023862f9940d73257ed4e2df0707cdc80c5da95a24f6308220b0a",
+      "x": "bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf",
+      "ox": "aa867b8de59e2c352b8c8e24b11752a2975902e8789c11237bfff50a0da4a30d",
+      "size": 93,
+      "ext": ".png",
+      "rumor": {
+        "pubkey": "112bf6b423d7f462f29c1332fce677ed7037bcbaa2cf7a67ca57a5d8f5d2fb95",
+        "created_at": 1762905600,
+        "kind": 15,
+        "tags": [
+          [
+            "p",
+            "f4a3296660fd5f0f8068c33981cb5d07f2eccbc757e74ffea1b587dccbcbfa34"
+          ],
+          [
+            "file-type",
+            "image/png"
+          ],
+          [
+            "encryption-algorithm",
+            "aes-cbc"
+          ],
+          [
+            "decryption-key",
+            "d58c3bfaf300097195c0bfe407ecc2f970a6a61362d40d1d07bd686c49a9a8c2"
+          ],
+          [
+            "decryption-nonce",
+            "1f28f69c7da350a5b51c834c"
+          ],
+          [
+            "x",
+            "bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf"
+          ],
+          [
+            "ox",
+            "aa867b8de59e2c352b8c8e24b11752a2975902e8789c11237bfff50a0da4a30d"
+          ],
+          [
+            "size",
+            "93"
+          ]
+        ],
+        "content": "https://files.example/bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf.png"
+      }
+    },
+    {
+      "id": "key-not-32-bytes",
+      "expect": "reject_key",
+      "note": "A 16-byte key (AES-128). NIP-17 files are AES-256-GCM here; refuse other key sizes.",
+      "source": "Nostr Vault (edited from png-12-byte-nonce)",
+      "file_type": "image/png",
+      "algorithm": "aes-gcm",
+      "key": "d58c3bfaf300097195c0bfe407ecc2f9",
+      "nonce": "1f28f69c7da350a5b51c834c",
+      "plaintext_hex": "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a730000001449444154789c63f83e59eaffffff0c400c6401004296094399cbcaa00000000049454e44ae426082",
+      "ciphertext_hex": "243aedbe22fafdd5dd5239e9b51f7c936e3794a331016bff8f73a3b44032b8c932177c3a9bffb7cc6bc5e529c37e377bc5a797fb4a0fb61469b48a7782d78148f77a6023862f9940d73257ed4e2df0707cdc80c5da95a24f6308220b0a",
+      "x": "bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf",
+      "ox": "aa867b8de59e2c352b8c8e24b11752a2975902e8789c11237bfff50a0da4a30d",
+      "size": 93,
+      "ext": ".png",
+      "rumor": {
+        "pubkey": "112bf6b423d7f462f29c1332fce677ed7037bcbaa2cf7a67ca57a5d8f5d2fb95",
+        "created_at": 1762905600,
+        "kind": 15,
+        "tags": [
+          [
+            "p",
+            "f4a3296660fd5f0f8068c33981cb5d07f2eccbc757e74ffea1b587dccbcbfa34"
+          ],
+          [
+            "file-type",
+            "image/png"
+          ],
+          [
+            "encryption-algorithm",
+            "aes-gcm"
+          ],
+          [
+            "decryption-key",
+            "d58c3bfaf300097195c0bfe407ecc2f9"
+          ],
+          [
+            "decryption-nonce",
+            "1f28f69c7da350a5b51c834c"
+          ],
+          [
+            "x",
+            "bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf"
+          ],
+          [
+            "ox",
+            "aa867b8de59e2c352b8c8e24b11752a2975902e8789c11237bfff50a0da4a30d"
+          ],
+          [
+            "size",
+            "93"
+          ]
+        ],
+        "content": "https://files.example/bd470bb09025802da5c86f1fe486a8a3a8785883798b333e3dc0fa61e0650cbf.png"
+      }
+    }
+  ]
+}
