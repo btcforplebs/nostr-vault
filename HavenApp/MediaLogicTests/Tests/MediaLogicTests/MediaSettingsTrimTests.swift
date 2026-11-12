@@ -96,6 +96,26 @@ final class MediaSettingsTrimTests: XCTestCase {
         XCTAssertTrue(mac.contains("ProfilePicturePrefetchService.shared.start()"), "starts on Mac")
     }
 
+    /// Now that prefetch runs for everyone: never on cellular, a metered
+    /// hotspot or Low Data Mode, and never more than 200 pictures a run.
+    func testAvatarPrefetchSkipsCostlyNetworks() {
+        XCTAssertTrue(AvatarPrefetchRules.mayRun(satisfied: true, cellular: false, expensive: false, constrained: false))
+        XCTAssertFalse(AvatarPrefetchRules.mayRun(satisfied: false, cellular: false, expensive: false, constrained: false), "offline")
+        XCTAssertFalse(AvatarPrefetchRules.mayRun(satisfied: true, cellular: true, expensive: false, constrained: false), "cellular")
+        XCTAssertFalse(AvatarPrefetchRules.mayRun(satisfied: true, cellular: false, expensive: true, constrained: false), "metered hotspot")
+        XCTAssertFalse(AvatarPrefetchRules.mayRun(satisfied: true, cellular: false, expensive: false, constrained: true), "Low Data Mode")
+    }
+
+    func testAvatarPrefetchIsCappedPerRun() throws {
+        XCTAssertEqual(AvatarPrefetchRules.perRun, 200)
+        let urls = (0..<2000).map { URL(string: "https://example.com/\($0).jpg")! }
+        XCTAssertEqual(AvatarPrefetchRules.thisRun(urls), Array(urls.prefix(200)))
+        XCTAssertEqual(AvatarPrefetchRules.thisRun(Array(urls.prefix(3))).count, 3)
+        let src = try source("HavenApp/Services/ProfilePicturePrefetchService.swift")
+        XCTAssertTrue(src.contains("AvatarPrefetchRules.mayRun("), "the monitor uses the gate")
+        XCTAssertTrue(src.contains("AvatarPrefetchRules.thisRun("), "the run uses the cap")
+    }
+
     // MARK: One Media Servers row and page
 
     func testDashboardHasOneMediaServersRowCountingTheMac() throws {

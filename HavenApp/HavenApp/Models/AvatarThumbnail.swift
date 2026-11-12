@@ -57,3 +57,20 @@ enum AvatarThumbnail {
         return string.addingPercentEncoding(withAllowedCharacters: allowed) ?? string
     }
 }
+
+/// When profile pictures may be fetched ahead, and how many per run.
+/// Prefetch is on for everyone (no switch), so it must stay off cellular,
+/// metered hotspots and Low Data Mode, and fetch at most 200 pictures a run,
+/// matching the media rules. Android does the same on unmetered networks only.
+enum AvatarPrefetchRules {
+    static let perRun = 200
+
+    static func mayRun(satisfied: Bool, cellular: Bool, expensive: Bool, constrained: Bool) -> Bool {
+        satisfied && !cellular && !expensive && !constrained
+    }
+
+    /// The first `perRun` uncached pictures; the rest wait for the next run.
+    static func thisRun(_ uncached: [URL]) -> [URL] {
+        Array(uncached.prefix(perRun))
+    }
+}

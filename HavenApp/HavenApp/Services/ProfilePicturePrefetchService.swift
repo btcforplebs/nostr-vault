@@ -51,11 +51,12 @@ class ProfilePicturePrefetchService {
         pathMonitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                #if os(macOS)
-                self.isWiFi = path.status == .satisfied
-                #else
-                self.isWiFi = path.status == .satisfied && !path.usesInterfaceType(.cellular)
-                #endif
+                self.isWiFi = AvatarPrefetchRules.mayRun(
+                    satisfied: path.status == .satisfied,
+                    cellular: path.usesInterfaceType(.cellular),
+                    expensive: path.isExpensive,
+                    constrained: path.isConstrained
+                )
                 #if DEBUG
                 print("ProfilePicturePrefetchService: Network changed - isWiFi=\(self.isWiFi)")
                 #endif
@@ -137,7 +138,8 @@ class ProfilePicturePrefetchService {
             }
 
             // Filter to only uncached URLs
-            let uncached = urls.filter { !AvatarImageCache.shared.hasSmallCopy(of: $0) }
+            // Capped per run; whatever is left goes in the next day's run.
+            let uncached = AvatarPrefetchRules.thisRun(urls.filter { !AvatarImageCache.shared.hasSmallCopy(of: $0) })
 
             #if DEBUG
             print("ProfilePicturePrefetchService: \(urls.count) total URLs, \(uncached.count) uncached")
