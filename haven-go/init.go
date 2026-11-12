@@ -487,6 +487,7 @@ func initRelays(ctx context.Context) error {
 	outboxRelay.Info.Software = config.RelaySoftware
 	outboxRelay.ServiceURL = relayServiceURL("")
 	serviceURLFromHost(outboxRelay, "")
+	pinMeshAuthURL(outboxRelay, "")
 
 	outboxRelay.RejectEvent = append(outboxRelay.RejectEvent,
 		policies.PreventTimestampsInTheFuture(maxFutureSkew),
@@ -587,6 +588,9 @@ func initRelays(ctx context.Context) error {
 	inboxRelay.Info.Software = config.RelaySoftware
 	inboxRelay.ServiceURL = relayServiceURL("/inbox")
 	serviceURLFromHost(inboxRelay, "/inbox")
+	pinMeshAuthURL(inboxRelay, "/inbox")
+	// Over the mesh: never read (incoming DMs only, mesh_door_relays.go).
+	inboxRelay.RejectFilter = append(inboxRelay.RejectFilter, meshInboxNoReads)
 
 	if !inboxRelayLimits.AllowEmptyFilters {
 		inboxRelay.RejectFilter = append(inboxRelay.RejectFilter, policies.NoEmptyFilters)
@@ -604,6 +608,7 @@ func initRelays(ctx context.Context) error {
 			inboxRelayLimits.EventIPLimiterMaxTokens,
 		),
 		OnlyGiftWrappedDMs,
+		meshInboxGiftWrapOnly,
 		MustNotBeBlacklistedToPost,
 		MustBeInWotToPost,
 		MustTagWhitelistedPubKey,
@@ -650,6 +655,8 @@ func initRelays(ctx context.Context) error {
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(inboxRelay, inboxDB)
 	hideBroughtOnInbox(inboxRelay)
+	// The mesh door serves /inbox too (mesh_door_relays.go): gift wraps in, no reads, mesh caps.
+	wireMeshReadCaps(inboxRelay)
 	inboxRelay.DeleteEvent = append(inboxRelay.DeleteEvent, inboxDB.DeleteEvent)
 	inboxRelay.OverwriteDeletionOutcome = append(inboxRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	inboxRelay.ReplaceEvent = append(inboxRelay.ReplaceEvent, inboxDB.ReplaceEvent)

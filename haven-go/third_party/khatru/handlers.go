@@ -325,6 +325,9 @@ func (rl *Relay) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 							}
 							ws.WriteJSON(nostr.ClosedEnvelope{SubscriptionID: env.SubscriptionID, Reason: reason})
 							cancelReqCtx(errors.New("filter rejected"))
+							// HAVEN PATCH: drop the listeners its earlier filters
+							// opened. The client got CLOSED and sends no CLOSE.
+							rl.removeListenerId(ws, env.SubscriptionID)
 							return
 						} else {
 							rl.addListener(ws, env.SubscriptionID, srl, filter, cancelReqCtx)

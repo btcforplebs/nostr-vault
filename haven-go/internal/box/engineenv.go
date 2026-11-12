@@ -41,6 +41,8 @@ var engineDifferences = map[string]string{
 	"HAVEN_SERVICE_URL_FROM_HOST": "1 without NV_RELAY_URL: NIP-42 AUTH names the address the client used (LAN IP, hostname, mesh), not 127.0.0.1",
 	"HAVEN_BEHIND_PROXY":          "1: every client reaches the engine through havend on 127.0.0.1, so the engine takes the client from havend's X-Forwarded-For and rate-limits that, not loopback",
 	"HAVEN_MESH_PLAIN_PORT":       "NV_MESH_DOOR_PORT: the CLI engine opens the mesh door there at start (the Mac opens it with SetMeshServingC); nv-mesh sends strangers to it",
+	"HAVEN_MESH_NPUB_FILE":        "NV_DATA_DIR/mesh/npub: read by the engine when a mesh AUTH comes, so an npub nv-mesh writes after the engine started still counts",
+	"HAVEN_MESH_NPUB":             "the box's mesh npub (NV_DATA_DIR/mesh/npub, from nv-mesh): a NIP-42 AUTH through the mesh door must name ws://<npub>.fips, never the Host header (haven-go mesh_door_relays.go); empty until nv-mesh has written it, and then no AUTH over the mesh succeeds",
 }
 
 // EngineEnv is the engine's environment for a vault in vaultDir.
@@ -138,6 +140,11 @@ func EngineEnv(c Config, vaultDir string) map[string]string {
 		"HAVEN_BEHIND_PROXY":          "1",
 		"HAVEN_MESH_PLAIN_PORT":       strconv.Itoa(c.MeshDoorPort),
 	}
+	npub, _, _ := MeshID{NpubFile: c.MeshNpubFile}.Read()
+	env["HAVEN_MESH_NPUB"] = npub
+	// And the file itself: nv-mesh may write it after the engine starts,
+	// and the engine reads it when a mesh AUTH comes (haven-go meshOwnNpub).
+	env["HAVEN_MESH_NPUB_FILE"] = c.MeshNpubFile
 	return env
 }
 

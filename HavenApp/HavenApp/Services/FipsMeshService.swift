@@ -729,6 +729,9 @@ final class FipsMeshService: ObservableObject {
         let rc = NvFipsStart(nsec, options)
         guard rc == 0 else { return .failure(MeshError(message: "Mesh did not start (\(rc))")) }
         // The relay's mesh port listens only while sharing.
+        // Its NIP-42 AUTH is pinned to this device's mesh address
+        // (haven-go mesh_door_relays.go), so Go gets the npub first.
+        RelayProcessManager.handToGo(["HAVEN_MESH_NPUB": meshNpubFromKey() ?? ""])
         SetMeshServingC(1)
         let shared = NvFipsExport(port)
         guard shared == 0 else {

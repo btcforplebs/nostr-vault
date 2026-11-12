@@ -28,3 +28,6 @@ Changes from upstream are listed below. Keep every other file byte-identical to 
   returned first, so a live-only REQ skipped every read gate and got new events on `/private` and
   `/chat` with no AUTH (Tron, #1966). An empty live-only filter is now refused where empty filters
   are.
+- `handlers.go`: a REQ refused part-way (one of its filters rejected) also removes the listeners its
+  earlier filters opened. Upstream kept them: the client got CLOSED and sends no CLOSE, so they held
+  places under `ReqCaps` until it reconnected (Tron, #1963).
