@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 
 	"github.com/fiatjaf/khatru/blossom"
@@ -43,7 +45,8 @@ type relayOwnAppKey struct{}
 //     (both arrive on loopback, and any app on the phone can dial the latter),
 //   - names no tunnel or proxy hop off this machine (copyThroughTunnel,
 //     copyFromLoopback: the Mac tunnel and the box's havend arrive on
-//     loopback too), and
+//     loopback too; viaProxy),
+//   - asks for a loopback Host (loopbackHost: DNS rebinding), and
 //   - is not from a web page: browsers send Origin on fetches and Sec-Fetch-*
 //     on every request, an <img> included; the apps' native HTTP clients
 //     send neither. A page open on the same Mac or Android phone could
@@ -58,7 +61,33 @@ func relayOwnApp(r *http.Request) bool {
 	if isMeshRequest(r) || r.Context().Value(meshOwnPortKey{}) != nil {
 		return false
 	}
-	return relayFromThisMachine(r) && !fromWebPage(r)
+	return relayFromThisMachine(r) && loopbackHost(r.Host) && !viaProxy(r) && !fromWebPage(r)
+}
+
+// loopbackHost: the Host the apps dial (127.0.0.1, ::1, localhost). A web
+// page on a rebound domain (DNS rebinding to 127.0.0.1) is same-origin, so it
+// sends no Origin and no Sec-Fetch-*; only its Host gives it away. A proxy
+// that passes the public Host is refused the same way.
+func loopbackHost(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip, err := netip.ParseAddr(host)
+	return err == nil && ip.Unmap().IsLoopback()
+}
+
+// viaProxy: r names a proxy hop the apps never send.
+func viaProxy(r *http.Request) bool {
+	for _, h := range []string{"Via", "X-Forwarded-Host", "X-Forwarded-Proto"} {
+		if r.Header.Get(h) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // relayFromThisMachine: r came from this machine with no tunnel or proxy hop
@@ -96,10 +125,10 @@ func relayBlobGate(w http.ResponseWriter, r *http.Request) (*http.Request, bool)
 		return r.WithContext(context.WithValue(r.Context(), relayOwnAppKey{}, true)), true
 	}
 	if r.Method == http.MethodHead {
-		if m := blossomBlobPathRe.FindStringSubmatch(r.URL.Path); m != nil {
+		if sha, ok := khatruBlobPath(r.URL.Path); ok {
 			// meshHeadAllowed: the owner's or a paired device's signed "get"
 			// for this blob, or a public note names it.
-			if !meshHeadAllowed(r, strings.ToLower(m[1])) {
+			if !meshHeadAllowed(r, sha) {
 				w.Header().Add("X-Reason", "file not found")
 				w.WriteHeader(http.StatusNotFound)
 				return r, false
@@ -107,6 +136,20 @@ func relayBlobGate(w http.ResponseWriter, r *http.Request) (*http.Request, bool)
 		}
 	}
 	return r, true
+}
+
+// khatruBlobPath: the path khatru's Blossom router sends to handleHasBlob /
+// handleGetBlob (khatru/blossom/server.go): one segment, 64 characters, then
+// nothing or any suffix starting with a dot ("/<sha>.", "/<sha>.tar.gz").
+// blossomBlobPathRe is narrower, so it cannot gate what khatru answers.
+func khatruBlobPath(path string) (string, bool) {
+	if len(path) < 65 || strings.Contains(path[1:], "/") {
+		return "", false
+	}
+	if len(path) != 65 && path[65] != '.' {
+		return "", false
+	}
+	return strings.ToLower(path[1:65]), true
 }
 
 // relayBlobRejectList is the relay port's RejectList: the full blob list

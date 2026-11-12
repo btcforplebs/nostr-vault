@@ -80,20 +80,30 @@ func TestRelayPortBlobGate(t *testing.T) {
 		remote  string
 		headers map[string]string
 		ownApp  bool
+		host    string // "" = 127.0.0.1:3355, what the apps dial
 	}
 	froms := []from{
-		{"own app (loopback)", "127.0.0.1:50000", nil, true},
-		{"own app (::1)", "[::1]:50000", nil, true},
-		{"LAN", "192.168.1.20:50000", nil, false},
-		{"tunnel (Cloudflare on loopback)", "127.0.0.1:50000", map[string]string{"Cf-Connecting-Ip": "203.0.113.9", "Cf-Ray": "x"}, false},
-		{"proxy naming a LAN client", "127.0.0.1:50000", map[string]string{"X-Forwarded-For": "192.168.1.20"}, false},
-		{"web page fetch (Origin)", "127.0.0.1:50000", map[string]string{"Origin": "https://evil.example"}, false},
-		{"web page <img> (Sec-Fetch-Site)", "127.0.0.1:50000", map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "no-cors"}, false},
+		{"own app (loopback)", "127.0.0.1:50000", nil, true, ""},
+		{"own app (::1)", "[::1]:50000", nil, true, "[::1]:3355"},
+		{"own app (localhost)", "127.0.0.1:50000", nil, true, "localhost:3355"},
+		{"DNS rebinding (loopback, foreign Host)", "127.0.0.1:50000", nil, false, "evil.example:3355"},
+		{"proxy with only Via", "127.0.0.1:50000", map[string]string{"Via": "1.1 proxy"}, false, ""},
+		{"proxy with only X-Forwarded-Host", "127.0.0.1:50000", map[string]string{"X-Forwarded-Host": "vault.example"}, false, ""},
+		{"proxy with only X-Forwarded-Proto", "127.0.0.1:50000", map[string]string{"X-Forwarded-Proto": "https"}, false, ""},
+		{"LAN", "192.168.1.20:50000", nil, false, ""},
+		{"tunnel (Cloudflare on loopback)", "127.0.0.1:50000", map[string]string{"Cf-Connecting-Ip": "203.0.113.9", "Cf-Ray": "x"}, false, ""},
+		{"proxy naming a LAN client", "127.0.0.1:50000", map[string]string{"X-Forwarded-For": "192.168.1.20"}, false, ""},
+		{"web page fetch (Origin)", "127.0.0.1:50000", map[string]string{"Origin": "https://evil.example"}, false, ""},
+		{"web page <img> (Sec-Fetch-Site)", "127.0.0.1:50000", map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "no-cors"}, false, ""},
 	}
 
 	do := func(f from, method, path, auth string) int {
 		req := httptest.NewRequest(method, path, nil)
 		req.RemoteAddr = f.remote
+		req.Host = "127.0.0.1:3355"
+		if f.host != "" {
+			req.Host = f.host
+		}
 		for k, v := range f.headers {
 			req.Header.Set(k, v)
 		}
@@ -128,6 +138,12 @@ func TestRelayPortBlobGate(t *testing.T) {
 		}
 		if got := do(f, http.MethodHead, "/"+private, ""); got != wantHead {
 			t.Errorf("%s: unsigned HEAD of an unposted blob: %d, want %d", f.name, got, wantHead)
+		}
+		// Every suffix khatru still routes to its HEAD handler (Tron).
+		for _, suffix := range []string{".", ".jpg", ".jpg.png", ".j-p", ".tar.gz"} {
+			if got := do(f, http.MethodHead, "/"+private+suffix, ""); got != wantHead {
+				t.Errorf("%s: unsigned HEAD of an unposted blob%s: %d, want %d", f.name, suffix, got, wantHead)
+			}
 		}
 		if got := do(f, http.MethodHead, "/"+private, signed(sk, "get", private)); got != 200 {
 			t.Errorf("%s: owner-signed HEAD of an unposted blob: %d, want 200", f.name, got)
@@ -174,6 +190,7 @@ func TestRelayPortBlobGate(t *testing.T) {
 func TestRelayPortBlobGateOwnPortIsNotOwnApp(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/"+blobHash('e'), nil)
 	req.RemoteAddr = "127.0.0.1:50000"
+	req.Host = "127.0.0.1:3355"
 	if !relayOwnApp(req) {
 		t.Fatal("plain loopback request should be the own app")
 	}
@@ -183,6 +200,7 @@ func TestRelayPortBlobGateOwnPortIsNotOwnApp(t *testing.T) {
 	}
 	req = markMesh(httptest.NewRequest(http.MethodGet, "/"+blobHash('e'), nil))
 	req.RemoteAddr = "127.0.0.1:50000"
+	req.Host = "127.0.0.1:3355"
 	if relayOwnApp(req) {
 		t.Error("mesh door request taken as the own app")
 	}
