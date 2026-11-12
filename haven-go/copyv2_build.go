@@ -135,7 +135,7 @@ func buildCopy(ctx context.Context, dir, id string, progress copyBuildProgress) 
 		return m, errCopyNoSpace
 	}
 
-	stores := slices.Sorted(maps.Keys(dbs))
+	stores := slices.DeleteFunc(slices.Sorted(maps.Keys(dbs)), filesStoreLeftOut)
 	p := copyProgress{StoresTotal: len(stores), FilesTotal: len(media)}
 	progress(p)
 

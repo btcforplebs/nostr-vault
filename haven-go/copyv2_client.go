@@ -385,7 +385,7 @@ func restoreCopyNotes(ctx context.Context, path string, stats *copyRestoreStats)
 			continue
 		}
 		name, ok := strings.CutSuffix(file.Name, ".jsonl")
-		if !ok || name == "blossom" {
+		if !ok || name == "blossom" || filesStoreLeftOut(name) {
 			continue
 		}
 		db, ok := dbs[name]

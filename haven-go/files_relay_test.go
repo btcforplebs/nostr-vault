@@ -3,12 +3,15 @@
 package main
 
 import (
+	"archive/zip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -373,5 +376,90 @@ func TestFilesBlobDeletePostsADeletion(t *testing.T) {
 		if ev.ID == note.ID {
 			t.Error("the note for a deleted blob is still served")
 		}
+	}
+}
+
+// Tron, #1974: an account key never counts as a device, even when the app's
+// device list names it (as self or as a device).
+func TestFilesAccountKeyInTheDeviceListStaysRefused(t *testing.T) {
+	v := startFilesVault(t)
+	owner := testKey{sk: v.h.ownerSK, pk: v.h.owner}
+	pairMeshDevices(t, owner, v.account, v.devA)
+	ws := v.filesConn(t, "")
+	for name, sk := range map[string]string{"the owner as self": owner.sk, "a second account as a device": v.account.sk} {
+		if ok, _ := ws.publish(fileNote(t, sk, fileHash(name), v.h.owner)); ok {
+			t.Errorf("%s: a note signed with an account key was taken", name)
+		}
+	}
+	if ok, msg := ws.publish(fileNote(t, v.devA.sk, fileHash("dev"), v.h.owner)); !ok {
+		t.Fatalf("the paired device's note: %q", msg)
+	}
+	// The account listed as a device reads as nobody; the owner still reads.
+	if _, closed := v.filesConn(t, v.account.sk).req("a", nostr.Filter{Kinds: []int{kindFileMetadata}}); !strings.HasPrefix(closed, "restricted") {
+		t.Errorf("a second account listed as a device read /files: closed %q", closed)
+	}
+	if n := len(v.notes(t)); n != 1 {
+		t.Errorf("the owner reads %d notes, want 1", n)
+	}
+}
+
+// Tron, #1974: the files store never travels in a mesh copy, and neither a
+// copy nor a backup zip that carries one is taken in.
+func TestFilesStoreNeverTravels(t *testing.T) {
+	owner, dev := newTestKey(t), newTestKey(t)
+	cv := openCopyVault(t, owner.pk)
+	prevFiles := filesDB
+	t.Cleanup(func() { filesDB = prevFiles })
+	filesDB = fallbackBackend(filepath.Join(cv.dir, "db", "files"))
+	if err := filesDB.Init(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(filesDB.Close)
+	dbs["files"] = filesDB
+	saveEv(t, filesDB, fileNote(t, dev.sk, fileHash("a"), owner.pk))
+	saveEv(t, outboxDB, owner.sign(t, nostr.Event{Kind: 1, Content: "hello"}))
+
+	dir := t.TempDir()
+	if _, err := buildCopy(context.Background(), dir, "dddddddddddddddddddddddddddddddd", func(copyProgress) {}); err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.OpenReader(filepath.Join(dir, "notes.zip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range zr.File {
+		names = append(names, f.Name)
+	}
+	zr.Close()
+	if slices.Contains(names, "files.jsonl") || !slices.Contains(names, "outbox.jsonl") {
+		t.Errorf("the copy's notes.zip holds %v (want outbox.jsonl, no files.jsonl)", names)
+	}
+
+	// Taking one in: a zip that carries files.jsonl leaves the store alone.
+	carried := fileNote(t, dev.sk, fileHash("carried"), owner.pk)
+	note := owner.sign(t, nostr.Event{Kind: 1, Content: "carried along"})
+	path := filepath.Join(t.TempDir(), "in.zip")
+	f, _ := os.Create(path)
+	zw := zip.NewWriter(f)
+	for name, ev := range map[string]nostr.Event{"files.jsonl": carried, "outbox.jsonl": note} {
+		w, _ := zw.Create(name)
+		line, _ := json.Marshal(ev)
+		_, _ = w.Write(append(line, '\n'))
+	}
+	zw.Close()
+	f.Close()
+	var stats copyRestoreStats
+	if _, _, err := restoreCopyNotes(context.Background(), path, &stats); err != nil {
+		t.Fatalf("restoring the copy: %v", err)
+	}
+	if err := importFromZip(context.Background(), path); err != nil {
+		t.Fatalf("importing the zip: %v", err)
+	}
+	if n := countIn(t, filesDB, nostr.Filter{IDs: []string{carried.ID}}); n != 0 {
+		t.Error("a files.jsonl in a copy or zip was taken in")
+	}
+	if n := countIn(t, outboxDB, nostr.Filter{IDs: []string{note.ID}}); n != 1 {
+		t.Error("the outbox note beside it was not taken in (positive control)")
 	}
 }

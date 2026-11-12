@@ -106,6 +106,15 @@ func filesWriter(pk string) bool {
 	if pk == "" {
 		return false
 	}
+	// An account key never writes here, even if the app's device list names
+	// it (as self or a device): the mesh never uses the account key (Tron,
+	// #1974). Same order as Blossom's withMeshDeviceAuth.
+	if config.OwnerPubKey != "" && pk == config.OwnerPubKey {
+		return false
+	}
+	if _, account := whitelist()[pk]; account {
+		return false
+	}
 	if self := meshDevices.selfKey(); self != "" && pk == self {
 		return true
 	}
@@ -114,6 +123,10 @@ func filesWriter(pk string) bool {
 	}
 	return meshDevices.paired(pk)
 }
+
+// filesStoreLeftOut: the files store never travels: not in a backup zip, not
+// in a mesh copy, and not taken from either on import.
+func filesStoreLeftOut(name string) bool { return name == "files" }
 
 // filesReader: pk may read /files: the owner, or a key that may write.
 // TODO(1971): swap the owner half for its owner-read-set helper.
