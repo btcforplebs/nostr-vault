@@ -50,7 +50,8 @@ internal object StarterRelays {
     /**
      * The recommended list: this device's Read relays that can go on a
      * public list, once each. On a new install those are the five read
-     * servers (primal, damus, snort, btcforplebs, wellorder; Logen 2026-10-31).
+     * servers (primal, damus, snort, btcforplebs; Logen 2026-10-31; wellorder
+     * dropped 2026-11-12).
      */
     fun from(read: List<String>): List<String> =
         RelayConfiguration.newAccountRelayListTags(read).map { it[1] }.filter(RelayDraft::listable)

@@ -216,12 +216,12 @@ struct HavenConfig: Codable, Equatable {
 
     /// A new account's starter relays, read and write (Logen 2026-10-31).
     /// The read and broadcast defaults are both this list.
+    /// nostr-pub.wellorder.net dropped 2026-11-12 (dead); saved lists keep it.
     static let starterRelays = [
         "wss://relay.primal.net",
         "wss://relay.damus.io",
         "wss://relay.snort.social",
-        "wss://relay.btcforplebs.com",
-        "wss://nostr-pub.wellorder.net"
+        "wss://relay.btcforplebs.com"
     ]
     
     // Feed Reading

@@ -6,17 +6,17 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Create an account's starter servers: this device's Read relays, the five read servers on a new install. */
+/** Create an account's starter servers: this device's Read relays, the four read servers on a new install. */
 class StarterRelaysTest {
 
     @Test
-    fun `a new install's starter list is the five read servers`() {
+    fun `a new install's starter list is the four read servers`() {
         val list = StarterRelays.from(HavenConfig.newInstall().activeFeedRelays)
         assertEquals(
-            setOf("wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.btcforplebs.com", "wss://nostr-pub.wellorder.net"),
+            setOf("wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.btcforplebs.com"),
             list.toSet(),
         )
-        assertEquals(5, list.size)
+        assertEquals(4, list.size)
     }
 
     @Test

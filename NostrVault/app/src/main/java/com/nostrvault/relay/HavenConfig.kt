@@ -405,14 +405,14 @@ data class HavenConfig(
          * this network on 2026-10-12; keep it that way, since several features
          * ask only the first three (see [DeadRelays]). Same list and order as
          * iOS feedRelays, so take(3) reaches the same three relays on both.
+         * nostr-pub.wellorder.net dropped 2026-11-12 (dead); saved lists keep it.
          */
         val DEFAULT_READ_RELAYS: List<String> = listOf(
             "wss://relay.primal.net",
             "wss://relay.damus.io",
             "wss://relay.snort.social",
             "wss://relay.btcforplebs.com",
-            "wss://nostr-pub.wellorder.net",
-        )
+            )
 
         /**
          * Default DM (kind 10050) relays. Same as iOS. relay.damus.io stays:
