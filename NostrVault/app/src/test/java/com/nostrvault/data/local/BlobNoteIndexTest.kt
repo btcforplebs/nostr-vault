@@ -108,3 +108,14 @@ class BlobNoteIndexTest {
         assertEquals(noteIdsByBlobHash(listOf(quote, original)), picked.mapValues { it.value.id })
     }
 }
+
+class BlobPostDateTest {
+    @Test
+    fun `post dates are the indexed note's created_at in seconds`() {
+        val notes = listOf(
+            note("new", at = 9_000_000, media = listOf("https://m.example/$HASH_A.jpg")),
+            note("old", at = 2_000_500, media = listOf("https://m.example/$HASH_A")),
+        )
+        assertEquals(mapOf(HASH_A to 2_000L), postDatesByBlobHash(notes))
+    }
+}
