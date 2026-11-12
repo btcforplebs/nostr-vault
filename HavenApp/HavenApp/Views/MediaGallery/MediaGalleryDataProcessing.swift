@@ -43,6 +43,8 @@ extension MediaGalleryView {
         )
         let macRelayHttps = configService.config.macRelayHttpsURL
         let currentNotFound = MediaCacheService.shared.known404Set()
+        // The owner's other devices' uploads, live from /files (FileNotesLive).
+        let noteTiles = isOwnerBrowsing ? FileNotesLive.shared.tiles : []
         let gen = updateGeneration
 
         #if DEBUG
@@ -138,6 +140,17 @@ extension MediaGalleryView {
                     )
                 } else {
                     latestItems[key] = item
+                }
+            }
+
+            // Note tiles last: a hash already here (this device's copy, or a
+            // post) keeps its item; the note's links still count for display.
+            if currentFilter == .all || currentFilter == .mine {
+                for tile in noteTiles {
+                    for link in tile.urls { if let url = URL(string: link) { recordURL(tile.sha256, url) } }
+                    if latestItems[tile.sha256] == nil, let item = tile.mediaItem(owner: owner) {
+                        latestItems[tile.sha256] = item
+                    }
                 }
             }
 

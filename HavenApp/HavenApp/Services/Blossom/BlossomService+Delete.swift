@@ -94,6 +94,12 @@ extension BlossomService {
         if result.deleted.isEmpty && result.failed.isEmpty && result.skipped.isEmpty {
             logger.warning("No Blossom mirrors configured for deletion")
         }
+        // Delete everywhere: every open Media tab drops the tile once the
+        // home vault itself took it (FileNotesOutbox, /files kind 5).
+        if includeHomeVault && onlyServers == nil {
+            let deleted = result.deleted
+            await MainActor.run { FileNotesOutbox.deletedEverywhere(sha256: sha256, deleted: deleted) }
+        }
         return result
     }
 

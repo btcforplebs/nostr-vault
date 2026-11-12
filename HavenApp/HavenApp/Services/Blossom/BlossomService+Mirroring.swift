@@ -48,6 +48,10 @@ extension BlossomService {
                     ErrorNotificationManager.shared.show(message, icon: "exclamationmark.icloud.fill", style: .warning)
                 }
             }
+            if let first = accepted.first {
+                await noteFileUploaded(sha256: sha256, contentType: contentType, size: data.count,
+                                       servers: HomeVaultLogic.fileNoteServers(configured: mirrors, hosted: first))
+            }
             return !accepted.isEmpty
         } catch {
             logger.error("pushLocalToMirrors: error reading local blob: \(error.localizedDescription)")
@@ -96,6 +100,7 @@ extension BlossomService {
         guard !mirrors.isEmpty else {
             if let forwardTo, let link = await kioskOnlyLink(toHomeVault: toHomeVault, mirrors: [forwardTo], sha256: sha256, contentType: contentType, vaultForwards: true) {
                 appLog("post upload ok — on the home vault, which passes it on to \(forwardTo)")
+                await noteFileUploaded(sha256: sha256, contentType: contentType, size: source.byteCount, servers: [forwardTo])
                 return .hosted(link)
             }
             // A vault was asked to pass it on and did not take it: the fix is
@@ -111,8 +116,11 @@ extension BlossomService {
         if skipOutsideServers {
             appLog("saved \(sha256.prefix(8)) on this device only — an earlier attachment found every outside server down")
             if let link = await kioskOnlyLink(toHomeVault: toHomeVault, mirrors: mirrors, sha256: sha256, contentType: contentType) {
+                await noteFileUploaded(sha256: sha256, contentType: contentType, size: source.byteCount,
+                                       servers: HomeVaultLogic.fileNoteServers(configured: mirrors, hosted: link))
                 return .hosted(link)
             }
+            await noteFileUploadedIfVaultHasIt(sha256: sha256, contentType: contentType, size: source.byteCount, toHomeVault: toHomeVault)
             return .savedOnDevice(unreachable: mirrors)
         }
 
@@ -135,12 +143,17 @@ extension BlossomService {
         if let externalURL = hostedURL {
             logger.info("Using external Blossom mirror: \(externalURL.absoluteString)")
             appLog("post upload ok — mirrored to \(externalURL.absoluteString)")
+            await noteFileUploaded(sha256: sha256, contentType: contentType, size: source.byteCount,
+                                   servers: HomeVaultLogic.fileNoteServers(configured: mirrors, hosted: externalURL))
             return .hosted(externalURL)
         }
 
         if let link = await kioskOnlyLink(toHomeVault: toHomeVault, mirrors: mirrors, sha256: sha256, contentType: contentType) {
+            await noteFileUploaded(sha256: sha256, contentType: contentType, size: source.byteCount,
+                                   servers: HomeVaultLogic.fileNoteServers(configured: mirrors, hosted: link))
             return .hosted(link)
         }
+        await noteFileUploadedIfVaultHasIt(sha256: sha256, contentType: contentType, size: source.byteCount, toHomeVault: toHomeVault)
         appLog("post upload paused at stage 2 of 2 — saved on this device, no outside server accepted it after two passes; the post will wait for one", level: "WARN")
         return .savedOnDevice(unreachable: mirrors)
     }
@@ -566,5 +579,26 @@ extension BlossomService {
         if at(0, Array("ID3".utf8)) || at(0, [0xFF, 0xFB]) { return "audio/mpeg" }
         if at(0, Array("%PDF".utf8)) { return "application/pdf" }
         return "application/octet-stream"
+    }
+}
+
+extension BlossomService {
+    /// Tell the owner's `/files` this device put `sha256` on `servers`, so
+    /// their other open Media tabs show it (FileNotesOutbox).
+    func noteFileUploaded(sha256: String, contentType: String, size: Int, servers: [String]) async {
+        await MainActor.run {
+            FileNotesOutbox.uploaded(sha256: sha256, mime: contentType, size: size, servers: servers)
+        }
+    }
+
+    /// Saved here but on no media server: a note names no server, which means
+    /// the vault holds it: on the Mac (it is the vault), or on a phone whose
+    /// media vault was given it.
+    func noteFileUploadedIfVaultHasIt(sha256: String, contentType: String, size: Int, toHomeVault: Bool) async {
+        #if os(macOS)
+        await noteFileUploaded(sha256: sha256, contentType: contentType, size: size, servers: [])
+        #else
+        if toHomeVault { await noteFileUploaded(sha256: sha256, contentType: contentType, size: size, servers: []) }
+        #endif
     }
 }

@@ -245,6 +245,7 @@ struct MediaGalleryView: View {
         }
         .modifier(mediaChangeHandlers)
         .modifier(MagicPasteFromWidget { showMediaHalf(); handlePasteFromClipboard() })
+        .modifier(MediaGalleryLiveNotes { scheduleUpdateDisplayData() })
         .modifier(ShareInboxImport(isRelayReady: relayManager.isRunning && !relayManager.isBooting) { showMediaHalf(); handleUploadFileURLs($0) })
         .onReceive(VaultSection.shared.$showsMedia) { vaultShowsMedia = $0 }
         .modifier(mediaSheetsAndPickers)
@@ -376,6 +377,7 @@ struct MediaGalleryView: View {
         }
         .modifier(mediaChangeHandlers)
         .modifier(MagicPasteFromWidget { showMediaHalf(); handlePasteFromClipboard() })
+        .modifier(MediaGalleryLiveNotes { scheduleUpdateDisplayData() })
         .modifier(ShareInboxImport(isRelayReady: relayManager.isRunning && !relayManager.isBooting) { showMediaHalf(); handleUploadFileURLs($0) })
         .modifier(mediaSheetsAndPickers)
     }

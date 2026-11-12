@@ -117,6 +117,24 @@ final class HomeVaultSender: ObservableObject {
         appLog("deleted \(sha256.prefix(8)): no longer queued")
     }
 
+    /// A file note for the media vault's `/files` (FileNotesOutbox): the
+    /// active owner's, the vault's lane only, the newest word per blob winning.
+    func offerFileNote(_ draft: FileNoteDraft) {
+        let owner = NostrService.shared.activeHexPubkey
+        guard let vault = mediaVault, vault.ownerHex == owner, FileNote.isHex64(draft.sha256) else { return }
+        let item = HomeVaultLogic.fileNoteItem(draft, owner: owner)
+        let rest = queue.filter { !HomeVaultLogic.sameSend($0, item) }
+        guard HomeVaultLogic.hasRoom(for: item, in: rest, max: Self.maxQueue) else {
+            appLog("file note queue full (\(Self.maxQueue)) — \(draft.sha256.prefix(8)) not queued", level: "WARN")
+            return
+        }
+        let next = HomeVaultLogic.addingFileNote(item, to: queue)
+        guard next != queue else { return }
+        queue = next
+        saveQueue()
+        drainSoon()
+    }
+
     /// The linked phones that get `owner`'s new notes and media: only this
     /// device's owner's (the phones were linked for it; Android sends the
     /// owner's posts only too).
@@ -272,6 +290,8 @@ final class HomeVaultSender: ObservableObject {
         var gaveUp: [String] = []
         for item in queue where HomeVaultLogic.isExpired(item, now: now) {
             appLog("gave up on \(item.kind.rawValue) \(item.id.prefix(8)) after \(item.attempts) tries", level: "WARN")
+            // A file note is a hint for other Media tabs: giving up on one is not news.
+            if item.kind == .fileNote { remove(item); continue }
             gaveUp.append(item.kind == .mirror
                 ? "a photo a note links never reached your media servers"
                 : "a \(item.kind == .event ? "note" : "photo") never reached your \(item.target == nil ? "mobile vault" : "other phone")")
@@ -298,7 +318,7 @@ final class HomeVaultSender: ObservableObject {
 
         for item in queue {
             if !userInitiated, let notBefore = item.notBefore, notBefore > now { waiting = true; continue }
-            let needsSigner = item.kind != .event
+            let needsSigner = HomeVaultLogic.needsAccountSigner(item.kind)
             if needsSigner && signerNeedsPerson {
                 // Never from the background; at most a few prompts per tap.
                 guard userInitiated || active, prompts < HomeVaultLogic.maxPromptsPerTap else { waiting = true; continue }
@@ -324,6 +344,11 @@ final class HomeVaultSender: ObservableObject {
                 guard let vault, vault.ownerHex == item.ownerHex,
                       vault.ownerHex == NostrService.shared.activeHexPubkey else { waiting = true; continue }
                 if item.kind == .event && mediaWaiting.contains(lane) { waiting = true; continue }
+                // A file note goes to the media vault's /files only, never a phone's lane.
+                if item.kind == .fileNote && item.target != nil {
+                    remove(item)
+                    continue
+                }
                 if !meshTried.contains(lane) {
                     meshTried.insert(lane)
                     if let url = await FipsMeshService.shared.ingressURL(meshNpub: vault.meshNpub) {
@@ -341,6 +366,12 @@ final class HomeVaultSender: ObservableObject {
                 }
                 switch item.kind {
                 case .event: result = await HomeVaultTransport.sendEvent(json: item.eventJSON ?? "", id: item.id, base: base)
+                case .fileNote:
+                    if let draft = item.fileNote {
+                        result = await FileNotesTransport.send(draft, owner: item.ownerHex, url: FileNote.filesURL(base: base), vaultNpub: vault.meshNpub)
+                    } else {
+                        result = .rejected("no note")
+                    }
                 default: result = await sendBlob(item, base: base, receiver: vault.meshNpub)
                 }
             }
