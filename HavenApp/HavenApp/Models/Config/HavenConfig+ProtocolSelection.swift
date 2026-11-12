@@ -28,6 +28,15 @@ extension HavenConfig {
         return host == "localhost" || host == "127.0.0.1"
     }
     
+    /// This relay's own domain may go in lists and hints other people read:
+    /// it has an address and the owner has not turned Public on the web off.
+    /// Turning it off stops the listing only; the domain still serves. nil
+    /// (never touched) keeps today's behaviour: a domain is listed. Callers
+    /// keep their own private-network check.
+    var listsOwnDomain: Bool {
+        !isLocal && (publicOnWeb ?? true)
+    }
+
     /// Returns the appropriate WebSocket URL (ws:// for local, wss:// for remote)
     var nostrURL: String {
         if isLocal {
@@ -45,7 +54,7 @@ extension HavenConfig {
     /// when the world can reach it, otherwise none. A loopback or home-network
     /// address points every other client at itself, or at nothing.
     var publicRelayHint: String {
-        guard !isLocal, !Self.isPrivateNetworkHost(sanitizedRelayURL) else { return "" }
+        guard listsOwnDomain, !Self.isPrivateNetworkHost(sanitizedRelayURL) else { return "" }
         return nostrURL
     }
 

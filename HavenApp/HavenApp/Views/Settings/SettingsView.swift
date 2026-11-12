@@ -62,6 +62,7 @@ struct SettingsView: View {
         case pushNotifications = "Notifications"
         case relays = "Relays"
         case blossom = "Media Servers"
+        case devices = "Your Devices"
         case macRelay = "Desktop vault sync"
         case relayAccess = "Who Can Reach You"
         case fipsMesh = "Mesh"
@@ -80,7 +81,7 @@ struct SettingsView: View {
             switch self {
             case .macRelay:
                 #if os(macOS)
-                return "Domain & Port"
+                return "Public on the web"
                 #else
                 return rawValue
                 #endif
@@ -103,6 +104,7 @@ struct SettingsView: View {
             case .pushNotifications: return "bell.badge"
             case .relays: return "point.3.connected.trianglepath.dotted"
             case .blossom: return "server.rack"
+            case .devices: return "laptopcomputer.and.iphone"
             case .macRelay:
                 #if os(macOS)
                 return "globe"
@@ -132,9 +134,9 @@ struct SettingsView: View {
     /// dead end.
     static var groups: [(title: String, tabs: [SettingsTab])] {
         #if os(macOS)
-        let relayTabs: [SettingsTab] = [.macRelay, .relayAccess, .importNotes, .backup, .startup]
+        let relayTabs: [SettingsTab] = [.devices, .relayAccess, .importNotes, .backup, .startup]
         #else
-        let relayTabs: [SettingsTab] = [.macRelay, .relayAccess, .importNotes, .backup]
+        let relayTabs: [SettingsTab] = [.devices, .relayAccess, .importNotes, .backup]
         #endif
         return [
             ("Account", [.accounts, .blocked, .recentlyDeleted, .followingBackup, .listBackups, .wallet, .privacy]),
@@ -142,9 +144,10 @@ struct SettingsView: View {
             ("Notifications", [.pushNotifications]),
             ("Relays", [.relays, .blossom]),
             ("Your Vault", relayTabs),
-            ("Mesh", [.fipsMesh]),
             ("Help", [.tutorials]),
-            ("Advanced", [.proofOfWork, .advanced, .bitcoin, .logs]),
+            // Mesh and the desktop vault's web address: also under Your
+            // Devices › Advanced; kept here so their deep links still land.
+            ("Advanced", [.fipsMesh, .macRelay, .proofOfWork, .advanced, .bitcoin, .logs]),
         ]
     }
 
@@ -224,7 +227,7 @@ struct SettingsView: View {
         var tabs: [SettingsTab] {
             switch self {
             case .account: return [.accounts, .wallet, .bitcoin, .privacy, .blocked]
-            case .vault: return [.startup, .macRelay, .relayAccess, .fipsMesh, .advanced]
+            case .vault: return [.startup, .devices, .relayAccess, .macRelay, .fipsMesh, .advanced]
             case .relaysMedia: return [.relays, .blossom]
             case .backups: return [.backup, .followingBackup, .listBackups, .recentlyDeleted, .importNotes]
             case .reading: return [.feed, .appearance, .pushNotifications, .proofOfWork]
@@ -824,6 +827,7 @@ struct SettingsView: View {
         // health indicator.
         case .blossom: return .green
         case .macRelay: return .teal
+        case .devices: return .teal
         case .proofOfWork: return .purple
         case .advanced: return .gray
         case .bitcoin: return .orange
@@ -886,11 +890,12 @@ struct SettingsView: View {
             case .followingBackup: FollowingBackupSettingsView()
             case .listBackups: ListBackupView()
             case .blossom: BlossomSettingsView(pushed: pushed)
+            case .devices: YourDevicesSettingsView()
             case .macRelay:
                 #if os(iOS)
                 MacRelaySettingsView()
                 #else
-                MacRelayDomainSettingsView()
+                PublicOnWebSettingsView()
                 #endif
             case .proofOfWork: ProofOfWorkSettingsView()
             case .advanced: AdvancedSettingsView()
