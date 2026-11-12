@@ -56,12 +56,20 @@ page /docs/ site '<title>Docs'
 page /relay/ app '/relay/assets/index-'
 page /vault/ app '/vault/assets/index-'
 
-# The web app's code, and the haven.wasm it runs: named inside the hashed index script.
+# The web app's code, and the haven.wasm it runs: named inside the hashed index script, or inside one of the chunks
+# it imports at load (the bundler may move haven/vault.js into a shared chunk such as vault-<hash>.js).
 js=$(grep -o '/vault/assets/index-[A-Za-z0-9_-]*\.js' "$tmp/b" | head -n 1)
 if [ -z "$js" ]; then bad "/vault/ names no index script"; else
   get "$js"; [ "$code" = 200 ] && ok "$js 200" || bad "$js is $code"
   wasm=$(grep -o 'haven-[A-Za-z0-9_-]*\.wasm' "$tmp/b" | head -n 1)
-  if [ -z "$wasm" ]; then bad "$js names no haven-*.wasm"; else
+  if [ -z "$wasm" ]; then
+    for chunk in $(grep -oE 'from"\./[A-Za-z0-9_.-]+\.js"' "$tmp/b" | sed 's/^from"\.\///; s/"$//' | sort -u); do
+      get "/vault/assets/$chunk"
+      [ "$code" = 200 ] && wasm=$(grep -o 'haven-[A-Za-z0-9_-]*\.wasm' "$tmp/b" | head -n 1)
+      [ -n "$wasm" ] && { js="$js -> $chunk"; break; }
+    done
+  fi
+  if [ -z "$wasm" ]; then bad "$js and its imported chunks name no haven-*.wasm"; else
     get "/vault/assets/$wasm"
     [ "$code" = 200 ] && [ "$(header content-type)" = application/wasm ] && ok "/vault/assets/$wasm 200 application/wasm" \
       || bad "/vault/assets/$wasm is $code $(header content-type)"
