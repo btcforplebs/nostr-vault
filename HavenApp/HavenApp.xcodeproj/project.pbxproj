@@ -718,6 +718,7 @@
 		581195B0C389081A7ECDB31B /* FipsMeshDeviceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B164C72D0777F09A5D027B5 /* FipsMeshDeviceView.swift */; };
 		5824DB03C8D7940175A77A6B /* RelayLogPump.swift in Sources */ = {isa = PBXBuildFile; fileRef = A847A4A1309C29C8E4E27F93 /* RelayLogPump.swift */; };
 		582B89583D7C8E04B806B734 /* StatusReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD3DD7BAC37646182F7C742D /* StatusReviewView.swift */; };
+		582CDCABB47808407740A721 /* WotNewcomersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A3D186CE8979899BC73398 /* WotNewcomersView.swift */; };
 		583AA09A62B650E722BCE759 /* FeedService+FeedSubscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D193D037DA97BC9EE07026C /* FeedService+FeedSubscription.swift */; };
 		5847D6E37160D84ADF6839D3 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 716EDC59763B44048B40E416 /* SettingsView.swift */; };
 		584CCA512626ED6224155B28 /* ConfigService+VaultWhitelist.swift in Sources */ = {isa = PBXBuildFile; fileRef = C941E98AF9A4C26BB5CB2CE4 /* ConfigService+VaultWhitelist.swift */; };
@@ -1881,6 +1882,7 @@
 		E0A5461B68AE422C1589FC94 /* BlossomMediaCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B16351ED2F5677D2447FC87 /* BlossomMediaCache.swift */; };
 		E0AEE7D87B73FF5DA4703EC1 /* NostrVaultWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D5FDEA395EFFC23FE419C55 /* NostrVaultWidgetBundle.swift */; };
 		E0B0B7229805AE34DE01C716 /* LocalRelaySearchSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CE7BC31C983DC50BC5885B2 /* LocalRelaySearchSession.swift */; };
+		E0B46272B9BB4804B879F2FF /* WotNewcomersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A3D186CE8979899BC73398 /* WotNewcomersView.swift */; };
 		E0B56059E6F73F34C83D91D2 /* BringItOverStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE6DCB37E979F242074190A /* BringItOverStep.swift */; };
 		E0D882CB85829D6B7D8940E5 /* NostrContentFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF76B5373E734C5934402DBD /* NostrContentFormatter.swift */; };
 		E0DB1B155E0792C5547BFBFF /* UseNostrKeyStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = E662ABBCA6DC83B396C0F5CE /* UseNostrKeyStep.swift */; };
@@ -2623,6 +2625,7 @@
 		614245993910AB626DBE345C /* RelayProcessManager+Backup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RelayProcessManager+Backup.swift"; sourceTree = "<group>"; };
 		618885CB514523D351B723B4 /* MosaicWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MosaicWidget.swift; sourceTree = "<group>"; };
 		621A96E074FD92012D0EEB20 /* MacFipsMeshSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFipsMeshSettingsView.swift; sourceTree = "<group>"; };
+		62A3D186CE8979899BC73398 /* WotNewcomersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WotNewcomersView.swift; sourceTree = "<group>"; };
 		62B1CCA082F36A09EF426579 /* MarketScopeGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketScopeGate.swift; sourceTree = "<group>"; };
 		64074B113CDD8831C2CD4942 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		64608CF1EFDCD7211E9AAE04 /* ShareInboxTrigger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInboxTrigger.swift; sourceTree = "<group>"; };
@@ -3493,6 +3496,7 @@
 				D7D56F5AAF9F6D61DDAF4893 /* TrustWebView+Search.swift */,
 				5A748BF7419C4CC72FE97E36 /* TrustWebView+TrustCard.swift */,
 				D2A7E86F4A80054401A68579 /* TrustWebView+WOTTabBar.swift */,
+				62A3D186CE8979899BC73398 /* WotNewcomersView.swift */,
 				EE6164DC044E0ED9CC69EFBF /* WotRefresh.swift */,
 			);
 			path = TrustWeb;
@@ -6318,6 +6322,7 @@
 				BB1F699C27C0AE79E84F7E74 /* WizardDesignSystem.swift in Sources */,
 				5F73A64C4696CA82320E17E1 /* WotMiniPanel.swift in Sources */,
 				2C51F38A3C9173B1ECF7A90B /* WotNewcomers.swift in Sources */,
+				E0B46272B9BB4804B879F2FF /* WotNewcomersView.swift in Sources */,
 				CF4C777AEA457AF1976BAA9D /* WotRebuildWatch.swift in Sources */,
 				2B532EA51C401B6E429E0766 /* WotRefresh.swift in Sources */,
 				7AB9FA44B5825B002BE8C4EB /* YourDevicesSection.swift in Sources */,
@@ -7376,6 +7381,7 @@
 				ACC26F1D0C0082D8CE56EA5F /* WhatsInsideSheet.swift in Sources */,
 				D5DC60999F43DB5C0AAEA4B2 /* WizardDesignSystem.swift in Sources */,
 				7BBEF207D9F586EA174A96E4 /* WotNewcomers.swift in Sources */,
+				582CDCABB47808407740A721 /* WotNewcomersView.swift in Sources */,
 				6372382606A3FF40A02649C3 /* WotRebuildWatch.swift in Sources */,
 				69B71EAE17A97D74A6FEAFE1 /* WotRefresh.swift in Sources */,
 				5A450BD5C5A41DE5E34DE705 /* YourDevicesSection.swift in Sources */,
