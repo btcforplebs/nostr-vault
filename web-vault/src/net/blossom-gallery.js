@@ -36,6 +36,16 @@ export function mediaType(blob) {
   return "other"
 }
 
+/** The grid with the live file notes' tiles (net/file-notes.js tiles()) added: a file the servers listed stays as they
+ *  listed it; a file only a note names joins as `fromNote`, held by none of the servers yet. A note with no https link
+ *  can't be shown here and is left out. Newest first, as listBlobs. */
+export function mergeNoteTiles(blobs, tiles) {
+  const listed = new Set(blobs.map(b => b.sha256))
+  const added = tiles.filter(t => !listed.has(t.sha256) && t.urls.length)
+    .map(t => ({ sha256: t.sha256, url: t.urls[0], type: t.mime, size: t.size, uploaded: t.createdAt, kind: mediaType({ type: t.mime, url: t.urls[0] }), servers: [], fromNote: true }))
+  return added.length ? [...added, ...blobs].sort((a, b) => b.uploaded - a.uploaded) : blobs
+}
+
 export const TYPE_FILTERS = { all: () => true, photos: b => b.kind === "photo", videos: b => b.kind === "video", gifs: b => b.kind === "gif" }
 
 // A signed "list" auth, kept until a minute before it runs out, so opening Media again doesn't ask the signer again.

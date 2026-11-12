@@ -142,3 +142,44 @@ test("real Haven: /inbox keeps others' replies, likes, zaps and follow lists onc
   anon.close()
   await h.stop()
 })
+
+test("real Haven: /files takes a paired device's file note and serves it to the page's mesh-key AUTH, never to an account key", { skip: !built && "public/haven.wasm not built" }, async () => {
+  const { makeAuthEvent } = await import("nostr-tools/nip42")
+  const owner = generateSecretKey(), device = generateSecretKey(), mesh = generateSecretKey(), phone = generateSecretKey(), stranger = generateSecretKey()
+  const me = getPublicKey(owner)
+  const h = await boot()
+  await h.start({
+    ownerNpub: npubEncode(me), whitelist: [npubEncode(getPublicKey(device))], env: { RELAY_URL: "vault.local" }, storePrefix: "files-live",
+    meshDevices: JSON.stringify({ self: npubEncode(getPublicKey(mesh)), devices: [{ npub: npubEncode(getPublicKey(phone)), role: "phone" }] }),
+  })
+  const as = sk => ch => finalizeEvent(makeAuthEvent("wss://vault.local/files", ch), sk)
+  const open = (id, sk) => new HavenClient(h.conn(id, { mode: "nip01", route: "/files", owner: true }), { auth: as(sk) })
+  const now = Math.floor(Date.now() / 1000)
+  const fileNote = sk => finalizeEvent({ kind: 1063, created_at: now, tags: [["x", "ab".repeat(32)], ["m", "image/jpeg"], ["size", "1234"], ["p", me], ["url", "https://blossom.example/" + "ab".repeat(32)]], content: "" }, sk)
+  const filter = { kinds: [1063, 5], "#p": [me] }
+
+  try {
+  const page = open("ui-files", mesh)
+  assert.deepEqual(await page.query(filter), [], "the page's own stream reaches /files and its mesh key may read")
+  const sender = open("phone-files", phone)
+  assert.deepEqual(await sender.event(fileNote(phone)), { ok: true, message: "" }, "a paired device writes")
+  assert.match((await sender.event(fileNote(stranger))).message, /^restricted/, "an unpaired key does not")
+  const got = await page.query(filter)
+  assert.equal(got.length, 1)
+  assert.equal(got[0].pubkey, getPublicKey(phone))
+  const byDevice = open("device-files", device)
+  await assert.rejects(byDevice.query(filter), /restricted/, "the whitelisted device key never reads /files")
+  for (const c of [page, sender, byDevice]) c.close()
+  } finally { await h.stop() }
+})
+
+test("real Haven: a start without meshDevices forgets the last one's paired devices", { skip: !built && "public/haven.wasm not built" }, async () => {
+  const { makeAuthEvent } = await import("nostr-tools/nip42")
+  const owner = generateSecretKey(), mesh = generateSecretKey()
+  const h = await boot()
+  await h.start({ ownerNpub: npubEncode(getPublicKey(owner)), env: { RELAY_URL: "vault.local" }, storePrefix: "files-forget" })
+  const c = new HavenClient(h.conn("ui-files", { mode: "nip01", route: "/files", owner: true }), { auth: ch => finalizeEvent(makeAuthEvent("wss://vault.local/files", ch), mesh) })
+  await assert.rejects(c.query({ kinds: [1063] }), /restricted/, "the earlier start's mesh key is not this one's")
+  c.close()
+  await h.stop()
+})

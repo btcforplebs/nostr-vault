@@ -2,11 +2,15 @@
 // event signed by this browser's mesh key (its FIPS key, never the account's), `p` = the other device's mesh pubkey,
 // the content NIP-44 encrypted between the two mesh keys, sent to the finder relays. This is the only place the web
 // reads its mesh key outside the FIPS engine (plan T2): per call, never kept, never logged, never handed to UI code,
-// and it signs nothing but kind 21195. The session logic (who is accepted, what aborts) is mesh-pairing-session.js.
+// and it signs nothing but kind 21195 and the kind 22242 AUTH for this browser vault's own /files room (sealMeshAuth,
+// Logen's go 2026-11-12: /files is read with a device's mesh key, never an account key). The session logic (who is
+// accepted, what aborts) is mesh-pairing-session.js.
 import { finalizeEvent, getPublicKey, verifyEvent } from "nostr-tools/pure"
+import { makeAuthEvent } from "nostr-tools/nip42"
 import * as nip44 from "nostr-tools/nip44"
 import { bytesToHex, hexToBytes } from "nostr-tools/utils"
 import { HELLO_KIND } from "./mesh-pairing.js"
+import { FILES_AUTH_RELAY } from "./file-notes-live.js"
 import { FINDER_RELAYS } from "../desktop/space/my-devices.js"
 import { pool } from "./pool.js"
 import { VAULT_NS, pageStorage } from "../../../web-relay/src/page-storage.js"
@@ -44,6 +48,17 @@ export async function sealHello({ toHex, content, now = Math.floor(Date.now() / 
   try {
     const key = nip44.v2.utils.getConversationKey(sk, toHex)
     return finalizeEvent({ kind: HELLO_KIND, created_at: now, tags: [["p", toHex]], content: nip44.v2.encrypt(content, key) }, sk)
+  } finally { if (!given) sk.fill(0) }
+}
+
+/** The NIP-42 AUTH (kind 22242) for this browser vault's /files room (net/file-notes-live.js), signed by this browser's
+ *  mesh key, which haven-go files_relay.go reads as the vault's own key. Its relay tag is fixed: it signs for no other
+ *  room. `sk` is for tests. */
+export async function sealMeshAuth({ challenge, storage, sk: given }) {
+  if (typeof challenge !== "string" || !challenge) throw new Error("no AUTH challenge")
+  const sk = given ?? await meshKey(storage)
+  try {
+    return finalizeEvent(makeAuthEvent(FILES_AUTH_RELAY, challenge), sk)
   } finally { if (!given) sk.fill(0) }
 }
 
