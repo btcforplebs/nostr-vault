@@ -20,6 +20,9 @@ struct BottomTabBar: View {
     /// The rail sits on the window's right edge (the open folding iPhone),
     /// so its rule goes on its left.
     var railOnRight = false
+    /// Any side rail on the window's right edge (`ShellLayout.dockRailOnRight`):
+    /// the iPad in landscape too, whose rail keeps plain taps.
+    var dockRailOnRight = false
 
     /// Scroll-linked fold, 0 = full tab bar, 1 = avatar + compose capsule.
     private var chrome: ChromeCollapse { .shared }
@@ -62,7 +65,8 @@ struct BottomTabBar: View {
                     RailAccountPicture(configService: configService, nostrService: nostrService)
                 }
             } else {
-                RailAccountButton(configService: configService, nostrService: nostrService)
+                RailAccountButton(configService: configService, nostrService: nostrService,
+                                  railOnRight: dockRailOnRight)
             }
         }
         // Below the window's close/minimise/resize buttons when the app runs
