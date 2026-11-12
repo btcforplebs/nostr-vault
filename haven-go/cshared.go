@@ -1819,11 +1819,7 @@ func nip46Sign(sess *nip46Session, eventJSON *C.char) *C.char {
 		return nil
 	}
 
-	pubPrefix := event.PubKey
-	if len(pubPrefix) > 8 {
-		pubPrefix = pubPrefix[:8]
-	}
-	log.Printf("NIP46SignEventC: sending sign_event to bunker kind=%d pubkey=%s tags=%v", event.Kind, pubPrefix, event.Tags)
+	log.Println(nip46SignLogLine(&event))
 
 	// A signer may put this in front of a person (Clave's lock-screen
 	// Approve), so give them time to read it.

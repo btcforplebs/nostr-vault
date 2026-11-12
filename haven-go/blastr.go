@@ -86,6 +86,11 @@ func blast(ctx context.Context, ev *nostr.Event) blastResult {
 // between tries. A rejection ends it at once: the relay has read the note and
 // said no, and the old back-to-back retries sent the same bytes three times
 // for the same answer.
+//
+// Each relay's failures log at Debug: one line per relay per try, with the
+// relay's error text, was a large share of the relay log on a busy vault, and
+// the app parses every line. The per-event "blasted event" line (blast) keeps
+// the accepted / rejected / failed counts at Info.
 func publishWithRetry(ctx context.Context, relayURL string, ev *nostr.Event, timeout time.Duration, maxRetries int) publishOutcome {
 	sleep := func(attempt int) bool {
 		select {
@@ -103,7 +108,7 @@ func publishWithRetry(ctx context.Context, relayURL string, ev *nostr.Event, tim
 			if attempt < maxRetries && sleep(attempt) {
 				continue
 			}
-			slog.Error("⛓️‍💥 error connecting to relay", "relay", relayURL, "error", err)
+			slog.Debug("⛓️‍💥 error connecting to relay", "relay", relayURL, "error", err)
 			return publishFailed
 		}
 
@@ -113,13 +118,13 @@ func publishWithRetry(ctx context.Context, relayURL string, ev *nostr.Event, tim
 			return publishAccepted
 		}
 		if isRejection(err) {
-			slog.Warn("🚫 relay rejected event, not retrying", "relay", relayURL, "id", ev.ID, "reason", err)
+			slog.Debug("🚫 relay rejected event, not retrying", "relay", relayURL, "id", ev.ID, "reason", err)
 			return publishRejected
 		}
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			slog.Error("🚫 timeout publishing to relay", "relay", relayURL, "timeout", timeout, "attempt", attempt+1)
+			slog.Debug("🚫 timeout publishing to relay", "relay", relayURL, "timeout", timeout, "attempt", attempt+1)
 		} else {
-			slog.Error("🚫 error publishing to relay", "relay", relayURL, "error", err, "attempt", attempt+1)
+			slog.Debug("🚫 error publishing to relay", "relay", relayURL, "error", err, "attempt", attempt+1)
 		}
 		if attempt < maxRetries && !sleep(attempt) {
 			break

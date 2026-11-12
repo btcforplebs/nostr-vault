@@ -221,6 +221,7 @@
 		1AEBBB148ACA1D8A09E4810F /* ListWipeWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30B10189BB85A90260B86AE9 /* ListWipeWatcher.swift */; };
 		1B2B43EEF51EC229CC47FDF8 /* NVThumbnails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0419EB3F68D0DEFEAAB8BEC5 /* NVThumbnails.swift */; };
 		1B4C23F500672FEFCFF233CC /* TrustGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 434118C984FE32826200D64A /* TrustGate.swift */; };
+		1B58A9B8469CD4271E18799A /* RelayLogFastPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B6672D48C006A66A27305B9 /* RelayLogFastPath.swift */; };
 		1C3C7BC7F17020B4B6BEA795 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEF0159EC6004E767A239389 /* QRScannerView.swift */; };
 		1C500F450AEDF86EC8B08AF9 /* NotReadyShareReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CABE1283B9C60079654F154 /* NotReadyShareReviewView.swift */; };
 		1C638E1348F60422BE9242EA /* emoji.tsv in Resources */ = {isa = PBXBuildFile; fileRef = AC81643CEE8DEC2FD0B25C34 /* emoji.tsv */; };
@@ -1222,6 +1223,7 @@
 		9356EED44EBAB8CA6CEF22D4 /* NostrService+ListPublishing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E037E60F09160D6697CB3C /* NostrService+ListPublishing.swift */; };
 		937E3DDB1DBFEC84603EFE1F /* ShellLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55812FB11A77C917BDE1A406 /* ShellLayout.swift */; };
 		9391F8F2A2C865BCEBA7048C /* TutorialStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90C7DCAD2158E32953277AED /* TutorialStage.swift */; };
+		93B6655B76372BEF08DC1F20 /* RelayLogFastPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B6672D48C006A66A27305B9 /* RelayLogFastPath.swift */; };
 		93B73FF47BBBE288DEEFBB20 /* NoteSplitPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A715D3FE88115AC004FCA65 /* NoteSplitPane.swift */; };
 		93BE6200BD1B5D35735CF2DF /* MediaGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0FC14B3CEA24424481BBA3 /* MediaGalleryView.swift */; };
 		93C8180861D99C946E1C2E29 /* MediaUploadNotificationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB9B0CBB4AB1F2FE5C7A8F4B /* MediaUploadNotificationBanner.swift */; };
@@ -2582,6 +2584,7 @@
 		5AB87D6F419A5756C1655631 /* QuotedEventsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotedEventsView.swift; sourceTree = "<group>"; };
 		5ADC40DC429546740845C49A /* CalendarShareHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarShareHandler.swift; sourceTree = "<group>"; };
 		5B5F614D06F85D01C096F9F2 /* WelcomeStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeStepView.swift; sourceTree = "<group>"; };
+		5B6672D48C006A66A27305B9 /* RelayLogFastPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayLogFastPath.swift; sourceTree = "<group>"; };
 		5B779245F219AC33231205A4 /* MirrorStatusSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MirrorStatusSheet.swift; sourceTree = "<group>"; };
 		5B91658F386F6313DBAA8D6D /* FeedMediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedMediaView.swift; sourceTree = "<group>"; };
 		5BC759260F54CE352A66B934 /* DMService+GiftWrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+GiftWrap.swift"; sourceTree = "<group>"; };
@@ -4824,6 +4827,7 @@
 				F45EAC47FAD37FE1E1C42AC0 /* RelayCheckProbe.swift */,
 				674B477FC2EDC213BEA34279 /* RelayConfiguration.swift */,
 				215B39AD61BD36B556EF716A /* RelayCounter.swift */,
+				5B6672D48C006A66A27305B9 /* RelayLogFastPath.swift */,
 				09F904D883705C247E543061 /* RelayLogParser.swift */,
 				105E5C471F2CCABE27A5E705 /* RelayProbe.swift */,
 				22D8D67DB985CB4EA94E4FAF /* RelayProcessManager.swift */,
@@ -6094,6 +6098,7 @@
 				8237E21398977EE2BB3AD600 /* RelayFailReason.swift in Sources */,
 				B0161BA89DDFD99C86ABE6B4 /* RelayFrame.swift in Sources */,
 				D95FE9EAEC6CDCF53AC7E1E5 /* RelayListEditor.swift in Sources */,
+				93B6655B76372BEF08DC1F20 /* RelayLogFastPath.swift in Sources */,
 				1812007EFA1502564F99AB47 /* RelayLogParser.swift in Sources */,
 				0B9EB5CD63F768A07DBB7F53 /* RelayLogPump.swift in Sources */,
 				79379A78AE60A6E8FE515E16 /* RelayMatrix.swift in Sources */,
@@ -7154,6 +7159,7 @@
 				F30FBB5029F87164D31FA233 /* RelayFailReason.swift in Sources */,
 				8ACBECA76626A6B52415A403 /* RelayFrame.swift in Sources */,
 				DB68DA241565F5E69B9F2B43 /* RelayListEditor.swift in Sources */,
+				1B58A9B8469CD4271E18799A /* RelayLogFastPath.swift in Sources */,
 				AA7A14658D6BCB88A3174586 /* RelayLogParser.swift in Sources */,
 				5824DB03C8D7940175A77A6B /* RelayLogPump.swift in Sources */,
 				FEAF96537008A8910F89B9E6 /* RelayMatrix.swift in Sources */,

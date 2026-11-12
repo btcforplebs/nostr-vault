@@ -23,8 +23,8 @@ func fallbackBackend(path string) DBBackend { return newBadgerBackend(path) }
 // BadgerOptionsModifier below) to fit a menu-bar app, so the "might be too
 // small" warning and its companion "Cache life expectancy" histogram — emitted
 // every 60s per DB by (*badger.DB).monitorCache — are expected noise, not
-// actionable. Every other Badger log line (real warnings, errors, info) passes
-// through untouched.
+// actionable. Real warnings and errors pass through; info and debug are
+// dropped (see Infof).
 type quietBadgerLogger struct{ badgerdb.Logger }
 
 func (l quietBadgerLogger) Warningf(format string, args ...interface{}) {
@@ -34,6 +34,12 @@ func (l quietBadgerLogger) Warningf(format string, args ...interface{}) {
 	}
 	l.Logger.Warningf(format, args...)
 }
+
+// Infof and Debugf are dropped: compactions, "Discard stats", "Set
+// nextTxnTs" and table sizes were 8-10% of a phone's relay log, which the
+// app parses line by line, and nothing reads them. Warnings and errors pass.
+func (l quietBadgerLogger) Infof(format string, args ...interface{})  {}
+func (l quietBadgerLogger) Debugf(format string, args ...interface{}) {}
 
 func newBadgerBackend(path string) DBBackend {
 	return newBadgerStoreFor(path, runtime.GOOS)

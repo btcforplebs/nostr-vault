@@ -805,7 +805,9 @@ func logInboxImport(ev *nostr.Event) {
 	case nostr.KindTextNote, nostr.KindComment:
 		log.Println("📰 new note in your inbox")
 	case nostr.KindReaction:
-		log.Println(ev.Content, "new reaction in your inbox")
+		// Not the reaction's content: any length, any text, in every line
+		// the app parses. The red dot reads only the phrase.
+		log.Println("❤️ new reaction in your inbox")
 	case nostr.KindZap:
 		log.Println("⚡️ new zap in your inbox")
 	case nostr.KindEncryptedDirectMessage:

@@ -51,7 +51,7 @@ enum ImportStartGate {
 
     /// The Go side began the import cycle.
     static func isEngineStart(_ line: String) -> Bool {
-        line.contains("is booting up (C-Shared Import Mode)")
+        RelayLogBytes.contains(line, "is booting up (C-Shared Import Mode)")
     }
 
     /// A start Go refused (ImportResult.isRetryableStart) is tried this many

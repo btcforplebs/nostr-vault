@@ -42,7 +42,8 @@ enum ListHistoryScan {
     /// Reads one relay log line. true when it was a scan line (nothing else
     /// in it to parse).
     static func collect(from line: String, into batch: inout RelayLogParser.BatchedStateUpdate) -> Bool {
-        guard let r = line.range(of: marker) else { return false }
+        // Byte check first: this runs on every relay log line (RelayLogBytes).
+        guard RelayLogBytes.contains(line, marker), let r = line.range(of: marker) else { return false }
         let text = line[r.upperBound...].trimmingCharacters(in: .whitespaces)
         if text.hasPrefix("looking for older versions") {
             batch.listHistoryScanning = true
