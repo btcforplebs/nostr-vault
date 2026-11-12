@@ -125,6 +125,10 @@ otherwise the phone. `haven-go/mesh_publish.go`.
   of, or no blast relays configured (`blocked:`). Old notes are never re-blasted, not even for a paired device.
 - Without the token (a stranger, the device's catch-up, `?pulled=1`) nothing written over the mesh is blasted, as
   before (`mesh_safety.go`).
+- **Phones** (`VaultPublishHandoff`, iOS and Android) hand off only regular kinds (not 0, 3, 10000-39999) and only when
+  the author's own kind 10002 write relays are known. Those relays get the note from the phone **at once** and decide
+  "Posted"; the hold (10 s) decides only who sends the fan-out to the blast relays. Vault sends: the phone's relay
+  keeps a `?pulled=1` copy. Otherwise: the phone's relay blasts it as before, plus the fan-out.
 
 **Answer:**
 ```json

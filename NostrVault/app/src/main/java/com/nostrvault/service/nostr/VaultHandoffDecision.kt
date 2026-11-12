@@ -33,6 +33,13 @@ enum class VaultHandoffDecision {
         fun decide(connected: Boolean, sawPublishNotice: Boolean, accepted: Boolean?, message: String?, timedOut: Boolean): VaultHandoffDecision =
             if (connected && sawPublishNotice && !timedOut && accepted == true && message.isNullOrBlank()) VAULT_SENDS else PHONE_SENDS
 
+        /**
+         * Whether a note of [kind] is handed to the vault at all: regular kinds only. A profile (0), a follow list
+         * (3), replaceable (10000-19999), ephemeral (20000-29999) and addressable (30000-39999) kinds go the phone's
+         * way, with no hold (Tron review of PR 1970, M1). Twin of Apple's `handsOff(kind:)`.
+         */
+        fun handsOff(kind: Int): Boolean = kind > 0 && kind != 3 && kind !in 10_000..39_999
+
         /** Whether [text] is exactly `["NOTICE", "publish-for-me: on"]`. */
         fun isPublishNotice(text: String): Boolean = runCatching {
             val parsed = Json.parseToJsonElement(text).jsonArray

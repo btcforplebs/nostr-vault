@@ -86,9 +86,13 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val eventJson = serializeEvent(event)
         stampOwnRelayListPost(event)
 
-        VaultPublishHandoff.target(configStore.config.value)?.let { vault ->
-            postThroughVault(event, eventJson, vault, onBroadcastOutcome)
-            return
+        val config = configStore.config.value
+        VaultPublishHandoff.target(config)?.let { vault ->
+            // Only a regular note whose author's own relays are known now: anything else goes as before, no hold.
+            VaultPublishHandoff.authorPlan(event.kind, _outboxRelays.value[event.pubkey], config.activeBlastrRelays)?.let { plan ->
+                postThroughVault(event, eventJson, vault, plan, onBroadcastOutcome)
+                return
+            }
         }
 
         // 0. The owner's home vault on the mesh, which passes it on to the
@@ -131,14 +135,22 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
      */
     internal suspend fun NostrService.blastToAuthorRelays(event: NostrEvent, onBroadcastOutcome: ((BroadcastTally.Outcome) -> Unit)?) {
         val plan = PublishTargets.plan(authorWriteRelays(event), configStore.config.value.activeBlastrRelays)
+        sendConfirmed(event, plan.confirmed, onBroadcastOutcome)
+        plan.alsoSend.forEach { fireAndForgetPublish(event, it) }
+    }
+
+    /**
+     * Sends [event] to the relays that decide "Posted" ([PublishTargets.Plan.confirmed]): with
+     * [onBroadcastOutcome], waiting for their OKs ([broadcastConfirmed]) and reporting once.
+     */
+    internal fun NostrService.sendConfirmed(event: NostrEvent, relays: List<String>, onBroadcastOutcome: ((BroadcastTally.Outcome) -> Unit)?) {
         if (onBroadcastOutcome == null) {
-            plan.all.forEach { fireAndForgetPublish(event, it) }
-        } else {
-            plan.alsoSend.forEach { fireAndForgetPublish(event, it) }
-            scope.launch {
-                val outcome = broadcastConfirmed(event, plan.confirmed)
-                withContext(Dispatchers.Main) { onBroadcastOutcome(outcome) }
-            }
+            relays.forEach { fireAndForgetPublish(event, it) }
+            return
+        }
+        scope.launch {
+            val outcome = broadcastConfirmed(event, relays)
+            withContext(Dispatchers.Main) { onBroadcastOutcome(outcome) }
         }
     }
 

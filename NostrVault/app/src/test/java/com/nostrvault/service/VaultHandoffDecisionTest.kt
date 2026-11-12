@@ -77,6 +77,46 @@ class VaultHandoffDecisionTest {
         assertNull(VaultHandoffDecision.okAnswer("not json", id))
     }
 
+    // What is handed off: regular kinds only (M1, Tron review of PR 1970). Twin of Apple's handsOff(kind:).
+
+    @Test fun onlyRegularKindsAreHandedOff() {
+        for (k in listOf(1, 4, 5, 6, 7, 16, 1111, 9735, 40000)) assertTrue("$k", VaultHandoffDecision.handsOff(k))
+        // A profile, a follow list, replaceable, ephemeral and addressable kinds always go the phone's way.
+        for (k in listOf(0, 3, 10000, 10002, 10050, 19999, 20000, 24242, 29999, 30000, 30023, 39999, -1)) {
+            assertFalse("$k", VaultHandoffDecision.handsOff(k))
+        }
+    }
+
+    private val damus = "wss://relay.damus.io"
+    private val nos = "wss://nos.lol"
+    private val primal = "wss://relay.primal.net"
+
+    @Test fun aNoteWithTheAuthorsOwnRelaysKnownIsHandedOffWithThem() {
+        val plan = VaultPublishHandoff.authorPlan(1, listOf(nos, primal), listOf(damus, nos))!!
+        // The author's own relays still decide "Posted"; only the app's extra relays are the vault's to send.
+        assertEquals(listOf(nos, primal), plan.confirmed)
+        assertEquals(listOf(damus), plan.alsoSend)
+    }
+
+    @Test fun unknownOrEmptyAuthorRelaysOrAnIrregularKindTakeTodaysPath() {
+        assertNull(VaultPublishHandoff.authorPlan(1, null, listOf(damus)))
+        assertNull(VaultPublishHandoff.authorPlan(1, emptyList(), listOf(damus)))
+        // Only this phone's own relay is no author relay at all.
+        assertNull(VaultPublishHandoff.authorPlan(1, listOf("ws://127.0.0.1:3355"), listOf(damus)))
+        assertNull(VaultPublishHandoff.authorPlan(0, listOf(nos), listOf(damus)))
+        assertNull(VaultPublishHandoff.authorPlan(10002, listOf(nos), listOf(damus)))
+        // Own relays equal to the app's are still known.
+        assertEquals(listOf(damus), VaultPublishHandoff.authorPlan(1, listOf(damus), listOf(damus))!!.confirmed)
+    }
+
+    @Test fun theVaultTakesOnlyTheFanOut() {
+        val plan = VaultPublishHandoff.authorPlan(1, listOf(nos), listOf(damus, primal))!!
+        assertEquals(emptyList<String>(), VaultPublishHandoff.heldSends(VAULT_SENDS, plan))
+        assertEquals(listOf(damus, primal), VaultPublishHandoff.heldSends(PHONE_SENDS, plan))
+        assertFalse(VaultPublishHandoff.localRelayBlasts(VAULT_SENDS))
+        assertTrue(VaultPublishHandoff.localRelayBlasts(PHONE_SENDS))
+    }
+
     // The gate.
 
     @Test fun onlyTheDialedOwnersMacIsTheVault() {

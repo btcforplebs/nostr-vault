@@ -47,6 +47,26 @@ object VaultPublishHandoff {
         target(config, mesh) != null
 
     /**
+     * Where a note of [kind] goes when it is handed off: the author's own write relays ([authorWrite], their kind
+     * 10002, as known at post time) decide "Posted" as always, and only [PublishTargets.Plan.alsoSend], the app's
+     * other relays, become the vault's to send. Null (today's path, no hold) for a kind not handed off
+     * ([VaultHandoffDecision.handsOff]) or when the author's own relays are not known: then the phone alone would
+     * decide where the note is read from.
+     */
+    fun authorPlan(kind: Int, authorWrite: List<String>?, appWrite: List<String>): PublishTargets.Plan? {
+        if (!VaultHandoffDecision.handsOff(kind)) return null
+        if (PublishTargets.plan(authorWrite, emptyList()).confirmed.isEmpty()) return null
+        return PublishTargets.plan(authorWrite, appWrite)
+    }
+
+    /** What the phone still sends after the hold, besides [PublishTargets.Plan.confirmed]: the fan-out, unless the vault does it. */
+    fun heldSends(decision: VaultHandoffDecision, plan: PublishTargets.Plan): List<String> =
+        if (decision == VaultHandoffDecision.VAULT_SENDS) emptyList() else plan.alsoSend
+
+    /** Whether this phone's relay gets the note on its normal socket (and blasts it) rather than as a second-hand copy. */
+    fun localRelayBlasts(decision: VaultHandoffDecision): Boolean = decision != VaultHandoffDecision.VAULT_SENDS
+
+    /**
      * Opens the vault at [url] with `Authorization: Nostr <token>`, waits for its first frame to be the publish notice
      * ([VaultHandoffDecision.PUBLISH_NOTICE]), only then sends [eventJson], and waits for its OK; all within [holdMs].
      * No token (no mesh key yet), a refused upgrade (403 for an unpaired device), a closed socket or any other first
