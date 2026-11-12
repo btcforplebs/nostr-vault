@@ -39,10 +39,12 @@ pub const STRANGER_RATE: u64 = 1 << 20;
 pub const STRANGER_SLOTS: usize = 16;
 
 /// What one stranger may pull per sharing session, and hold open at once.
+/// 4, not 6: three free keys at 6 held all 16 slots (attack review
+/// 2026-11-12, item 4). A gallery still loads 4 at a time.
 const PER_STRANGER_BYTES: u64 = 256 << 20;
-const PER_STRANGER_OPEN: usize = 6;
-// One stranger cannot fill the door.
-const _: () = assert!(PER_STRANGER_OPEN < STRANGER_SLOTS);
+const PER_STRANGER_OPEN: usize = 4;
+// Three strangers together cannot fill the door.
+const _: () = assert!(3 * PER_STRANGER_OPEN < STRANGER_SLOTS);
 /// How long the door waits for the relay to take a connection.
 const RELAY_CONNECT: Duration = Duration::from_secs(3);
 
@@ -84,9 +86,10 @@ pub struct Strangers {
 impl Strangers {
     /// `total`: see [`limits`].
     pub fn start(address: Ipv6Addr, mtu: usize, to_mesh: TunOutboundTx, from_mesh: Receiver<Vec<u8>>, total: u64) -> Result<Self> {
-        Self::start_with(address, mtu, to_mesh, from_mesh, STRANGER_RATE, STRANGER_SLOTS, total)
+        Self::start_with(address, mtu, to_mesh, from_mesh, STRANGER_RATE, STRANGER_SLOTS, total, FLOOR)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn start_with(
         address: Ipv6Addr,
         mtu: usize,
@@ -95,13 +98,14 @@ impl Strangers {
         rate: u64,
         slots: usize,
         total: u64,
+        floor: Floor,
     ) -> Result<Self> {
         let listener = TcpListener::bind(("127.0.0.1", 0)).context("bind stranger door")?;
         let door = listener.local_addr()?;
         let forward_port = Arc::new(AtomicU16::new(0));
         let stop = Arc::new(AtomicBool::new(false));
         let counters = Arc::new(Counters::default());
-        let gate = Door { forward_port: forward_port.clone(), stop: stop.clone(), counters: counters.clone(), bucket: Bucket::new(rate), slots };
+        let gate = Door { forward_port: forward_port.clone(), stop: stop.clone(), counters: counters.clone(), bucket: Bucket::new(rate), slots, floor };
         let door_thread = std::thread::Builder::new()
             .name("fips-stranger-door".into())
             .spawn(move || gate.run(listener))?;
@@ -148,7 +152,17 @@ struct Door {
     counters: Arc<Counters>,
     bucket: Arc<Bucket>,
     slots: usize,
+    floor: Floor,
 }
+
+/// What a stranger must keep taking from the vault to keep its door slot.
+#[derive(Clone, Copy)]
+struct Floor {
+    window: Duration,
+    min_bytes: u64,
+}
+
+const FLOOR: Floor = Floor { window: Duration::from_secs(60), min_bytes: 16 * 1024 };
 
 impl Door {
     fn run(self, listener: TcpListener) {
@@ -178,10 +192,10 @@ impl Door {
             };
             c.open.fetch_add(1, Ordering::SeqCst);
             c.total.fetch_add(1, Ordering::Relaxed);
-            let (counters, bucket) = (self.counters.clone(), self.bucket.clone());
+            let (counters, bucket, floor) = (self.counters.clone(), self.bucket.clone(), self.floor);
             let spawned = std::thread::Builder::new()
                 .name("fips-stranger".into())
-                .spawn(move || splice(stranger, relay, &bucket, &counters));
+                .spawn(move || splice(stranger, relay, &bucket, &counters, floor));
             if spawned.is_err() {
                 self.counters.open.fetch_sub(1, Ordering::SeqCst);
             }
@@ -189,15 +203,19 @@ impl Door {
     }
 }
 
-/// Both directions through the bucket, until either side ends; then both close.
-fn splice(stranger: TcpStream, relay: TcpStream, bucket: &Arc<Bucket>, c: &Arc<Counters>) {
+/// Both directions through the bucket, until either side ends; then both
+/// close. The vault-to-stranger direction carries the [`Floor`]: a stranger
+/// that stops taking bytes (an idle websocket, a quiet keep-alive) loses its
+/// slot within two windows instead of holding it for Haven's 30-minute
+/// lifetime at no cost (attack review 2026-11-12, item 4).
+fn splice(stranger: TcpStream, relay: TcpStream, bucket: &Arc<Bucket>, c: &Arc<Counters>, floor: Floor) {
     let pair = stranger.try_clone().and_then(|s| relay.try_clone().map(|r| (s, r)));
     if let Ok((stranger2, relay2)) = pair {
         let (b, c2) = (bucket.clone(), c.clone());
         let up = std::thread::Builder::new()
             .name("fips-stranger-up".into())
-            .spawn(move || pump(stranger2, relay2, &b, &c2.rx));
-        pump(relay, stranger, bucket, &c.tx);
+            .spawn(move || pump(stranger2, relay2, &b, &c2.rx, None));
+        pump(relay, stranger, bucket, &c.tx, Some(floor));
         if let Ok(up) = up {
             let _ = up.join();
         }
@@ -206,24 +224,83 @@ fn splice(stranger: TcpStream, relay: TcpStream, bucket: &Arc<Bucket>, c: &Arc<C
 }
 
 /// Copy `from` to `to` at the bucket's pace. On the end of either, shut both
-/// down, which also ends the other direction.
-fn pump(mut from: TcpStream, mut to: TcpStream, bucket: &Bucket, count: &AtomicU64) {
+/// down, which also ends the other direction. With a `floor`, also end it
+/// when a window passes with fewer than `min_bytes` **written to `to`**:
+/// judged while waiting to read and while blocked writing, so a stranger
+/// that stops reading (a zero window) is cut too (Tron, PR 1964).
+fn pump(mut from: TcpStream, mut to: TcpStream, bucket: &Bucket, count: &AtomicU64, floor: Option<Floor>) {
     let mut buf = vec![0u8; 16 * 1024];
-    loop {
+    let mut window = floor.map(Window::new);
+    // Wake often enough to judge the window while nothing arrives or nothing drains.
+    if let Some(f) = floor {
+        let tick = Some((f.window / 4).max(Duration::from_millis(10)));
+        if from.set_read_timeout(tick).is_err() || to.set_write_timeout(tick).is_err() {
+            let _ = from.shutdown(Shutdown::Both);
+            let _ = to.shutdown(Shutdown::Both);
+            return;
+        }
+    }
+    let stalled = |e: &std::io::Error| floor.is_some() && matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut);
+    'copy: loop {
+        if window.as_mut().is_some_and(Window::cut) {
+            break;
+        }
         let n = match from.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => n,
             Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+            Err(e) if stalled(&e) => continue,
             Err(_) => break,
         };
         bucket.take(n);
-        if to.write_all(&buf[..n]).is_err() {
-            break;
+        let mut off = 0;
+        while off < n {
+            match to.write(&buf[off..n]) {
+                Ok(0) => break 'copy,
+                Ok(k) => {
+                    off += k;
+                    count.fetch_add(k as u64, Ordering::Relaxed);
+                    if let Some(w) = window.as_mut() {
+                        w.bytes += k as u64;
+                    }
+                }
+                Err(e) if e.kind() == ErrorKind::Interrupted => {}
+                Err(e) if stalled(&e) => {}
+                Err(_) => break 'copy,
+            }
+            if window.as_mut().is_some_and(Window::cut) {
+                break 'copy;
+            }
         }
-        count.fetch_add(n as u64, Ordering::Relaxed);
     }
     let _ = from.shutdown(Shutdown::Both);
     let _ = to.shutdown(Shutdown::Both);
+}
+
+/// The [`Floor`]'s running window: bytes written since it opened.
+struct Window {
+    floor: Floor,
+    start: Instant,
+    bytes: u64,
+}
+
+impl Window {
+    fn new(floor: Floor) -> Self {
+        Self { floor, start: Instant::now(), bytes: 0 }
+    }
+
+    /// The window has passed: cut if it fell short, else open the next one.
+    fn cut(&mut self) -> bool {
+        if self.start.elapsed() < self.floor.window {
+            return false;
+        }
+        if self.bytes < self.floor.min_bytes {
+            tracing::debug!("stranger cut: {} bytes in {:?}", self.bytes, self.floor.window);
+            return true;
+        }
+        (self.start, self.bytes) = (Instant::now(), 0);
+        false
+    }
 }
 
 /// A token bucket shared by every stranger connection (fips-v2's blob gate).
@@ -296,6 +373,24 @@ mod tests {
             counters: counters.clone(),
             bucket: Bucket::new(rate),
             slots,
+            floor: FLOOR,
+        };
+        std::thread::spawn(move || d.run(listener));
+        (addr, counters, forward_port)
+    }
+
+    fn door_with(rate: u64, slots: usize, port: u16, floor: Floor) -> (SocketAddr, Arc<Counters>, Arc<AtomicU16>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let counters = Arc::new(Counters::default());
+        let forward_port = Arc::new(AtomicU16::new(port));
+        let d = Door {
+            forward_port: forward_port.clone(),
+            stop: Arc::new(AtomicBool::new(false)),
+            counters: counters.clone(),
+            bucket: Bucket::new(rate),
+            slots,
+            floor,
         };
         std::thread::spawn(move || d.run(listener));
         (addr, counters, forward_port)
@@ -528,5 +623,228 @@ mod tests {
         // One stranger's share never exceeds the whole.
         assert_eq!(l.per_peer_bytes, 100 << 20);
         assert_eq!(limits(1 << 30).per_peer_bytes, PER_STRANGER_BYTES);
+    }
+
+    /// Attack review 2026-11-12 item 4: three free keys used to hold every
+    /// door slot (3 x 6 >= 16). Each key opens all it may, through the
+    /// strangers' stack, and holds; a fourth stranger must still get in.
+    #[test]
+    fn three_keys_cannot_hold_every_door_slot() {
+        let me: Ipv6Addr = "fd00::a".parse().unwrap();
+        let keys: Vec<Ipv6Addr> = (1..=3).map(|i| format!("fd00::1:{i}").parse().unwrap()).collect();
+        let late: Ipv6Addr = "fd00::2:1".parse().unwrap();
+        let (mesh_door, _r) = relay(None); // echoes and holds
+
+        let (me_out, mut me_out_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(4096);
+        let (mesh_tx, mesh_rx) = std::sync::mpsc::channel();
+        let side = Strangers::start(me, 1280, me_out, mesh_rx, 0).unwrap();
+        assert!(side.share(Some(mesh_door)));
+        // This node's packets go to whichever stranger they are addressed to.
+        type Routes = Arc<Mutex<Vec<(Ipv6Addr, std::sync::mpsc::Sender<Vec<u8>>)>>>;
+        let routes: Routes = Arc::default();
+        let r2 = routes.clone();
+        std::thread::spawn(move || {
+            while let Some(p) = me_out_rx.blocking_recv() {
+                let dst = Ipv6Addr::from(<[u8; 16]>::try_from(&p[24..40]).unwrap());
+                if let Some((_, tx)) = r2.lock().unwrap().iter().find(|(a, _)| *a == dst) {
+                    let _ = tx.send(p);
+                }
+            }
+        });
+        let mut dialers = Vec::new();
+        for addr in keys.iter().copied().chain([late]) {
+            let (tx, rx) = std::sync::mpsc::channel();
+            routes.lock().unwrap().push((addr, tx));
+            dialers.push(dial(addr, me, mesh_tx.clone(), rx));
+        }
+        // Each key opens as many as it can (more than it may) and holds them.
+        let mut held = Vec::new();
+        for (_, port) in &dialers[..3] {
+            for _ in 0..PER_STRANGER_OPEN + 2 {
+                let mut c = TcpStream::connect(("127.0.0.1", *port)).unwrap();
+                c.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+                let mut b = [0u8; 1];
+                if c.write_all(b"x").is_ok() && c.read_exact(&mut b).is_ok() {
+                    held.push(c);
+                }
+            }
+        }
+        assert!(held.len() < STRANGER_SLOTS, "three keys hold {} of {STRANGER_SLOTS} door slots", held.len());
+        let mut c = TcpStream::connect(("127.0.0.1", dialers[3].1)).unwrap();
+        c.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        c.write_all(b"y").unwrap();
+        let mut b = [0u8; 1];
+        c.read_exact(&mut b).expect("a fourth stranger is turned away while three keys hold the door");
+        assert_eq!(&b, b"y");
+        drop(held);
+        for (ctl, _) in dialers {
+            ctl.stop();
+        }
+        side.stop();
+    }
+
+    /// An idle stranger (a websocket that only answers pings, or a quiet
+    /// keep-alive) loses its slot; one that keeps taking bytes keeps it.
+    #[test]
+    fn an_idle_stranger_loses_its_door_slot() {
+        let window = Duration::from_millis(600);
+        // Idle: the relay stand-in echoes, and the stranger sends nothing.
+        let (port, _r) = relay(None);
+        let (addr, c, _) = door_with(0, 4, port, Floor { window, min_bytes: 1024 });
+        let mut idle = TcpStream::connect(addr).unwrap();
+        idle.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        idle.write_all(b"p").unwrap();
+        let mut b = [0u8; 1];
+        idle.read_exact(&mut b).unwrap();
+        let start = Instant::now();
+        assert!(matches!(idle.read(&mut b), Ok(0) | Err(_)), "an idle stranger is cut");
+        assert!(start.elapsed() < window * 4, "cut after {:?}", start.elapsed());
+        wait_for(|| c.open.load(Ordering::SeqCst) == 0);
+
+        // Busy: the relay streams 64 KiB a window's worth at a time; kept.
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let busy_port = l.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for s in l.incoming() {
+                let Ok(mut s) = s else { return };
+                std::thread::spawn(move || {
+                    for _ in 0..12 {
+                        if s.write_all(&[1u8; 16 * 1024]).is_err() {
+                            return;
+                        }
+                        std::thread::sleep(Duration::from_millis(150));
+                    }
+                });
+            }
+        });
+        let (addr, _c, _) = door_with(0, 4, busy_port, Floor { window, min_bytes: 1024 });
+        let mut busy = TcpStream::connect(addr).unwrap();
+        busy.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut got = Vec::new();
+        busy.read_to_end(&mut got).unwrap();
+        assert_eq!(got.len(), 12 * 16 * 1024, "a stranger taking bytes keeps its slot to the end");
+    }
+
+    /// Tron, PR 1964: a stranger that stops reading left the pump blocked in
+    /// its write, where the floor was never judged, and the bytes it was
+    /// judged on were the ones read from the vault, not the ones the
+    /// stranger took. A non-reader must lose its slot.
+    #[test]
+    fn a_stranger_that_stops_reading_loses_its_door_slot() {
+        let window = Duration::from_millis(600);
+        let (port, _r) = relay(Some(64 << 20));
+        let (addr, c, _) = door_with(0, 4, port, Floor { window, min_bytes: 1024 });
+        let held = TcpStream::connect(addr).unwrap();
+        wait_for(|| c.open.load(Ordering::SeqCst) == 1);
+        let end = Instant::now() + window * 10;
+        while c.open.load(Ordering::SeqCst) != 0 {
+            assert!(Instant::now() < end, "a stranger that reads nothing still holds its slot after 10 windows (tx {})", c.tx.load(Ordering::SeqCst));
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        drop(held);
+    }
+
+    /// The same through the real strangers' stack (Tron's probe): an attacker
+    /// with its own TCP that never opens its receive window and sends one
+    /// byte a second, so the stack's idle timeout stays fresh. The floor,
+    /// shrunk to 600 ms, must still free the door.
+    #[test]
+    fn a_zero_window_attacker_loses_its_door_slots() {
+        use smoltcp::iface::{Config, Interface, SocketSet};
+        use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
+        use smoltcp::socket::tcp;
+        use smoltcp::time::Instant as SInstant;
+        use smoltcp::wire::{HardwareAddress, IpAddress, IpCidr};
+        struct Dev {
+            rx: std::collections::VecDeque<Vec<u8>>,
+            tx: Vec<Vec<u8>>,
+        }
+        struct QRx(Vec<u8>);
+        struct QTx<'a>(&'a mut Vec<Vec<u8>>);
+        impl RxToken for QRx {
+            fn consume<R, F: FnOnce(&[u8]) -> R>(self, f: F) -> R {
+                f(&self.0)
+            }
+        }
+        impl TxToken for QTx<'_> {
+            fn consume<R, F: FnOnce(&mut [u8]) -> R>(self, len: usize, f: F) -> R {
+                let mut b = vec![0u8; len];
+                let r = f(&mut b);
+                self.0.push(b);
+                r
+            }
+        }
+        impl Device for Dev {
+            type RxToken<'a> = QRx;
+            type TxToken<'a> = QTx<'a>;
+            fn receive(&mut self, _: SInstant) -> Option<(QRx, QTx<'_>)> {
+                let p = self.rx.pop_front()?;
+                Some((QRx(p), QTx(&mut self.tx)))
+            }
+            fn transmit(&mut self, _: SInstant) -> Option<QTx<'_>> {
+                Some(QTx(&mut self.tx))
+            }
+            fn capabilities(&self) -> DeviceCapabilities {
+                let mut c = DeviceCapabilities::default();
+                c.medium = Medium::Ip;
+                c.max_transmission_unit = 1280;
+                c
+            }
+        }
+        let me: Ipv6Addr = "fd00::a".parse().unwrap();
+        let atk: Ipv6Addr = "fd00::1:1".parse().unwrap();
+        let (mesh_door, _r) = relay(Some(64 << 20));
+        let (me_out, mut me_out_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(4096);
+        let (mesh_tx, mesh_rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        let floor = Floor { window: Duration::from_millis(600), min_bytes: 1024 };
+        let side = Strangers::start_with(me, 1280, me_out, mesh_rx, 0, STRANGER_SLOTS, 0, floor).unwrap();
+        assert!(side.share(Some(mesh_door)));
+        let (to_atk, from_vault) = std::sync::mpsc::channel::<Vec<u8>>();
+        std::thread::spawn(move || {
+            while let Some(p) = me_out_rx.blocking_recv() {
+                let _ = to_atk.send(p);
+            }
+        });
+        let mut dev = Dev { rx: Default::default(), tx: Vec::new() };
+        let mut iface = Interface::new(Config::new(HardwareAddress::Ip), &mut dev, SInstant::now());
+        iface.update_ip_addrs(|a| {
+            let _ = a.push(IpCidr::new(IpAddress::Ipv6(atk), 8));
+        });
+        let mut sockets = SocketSet::new(vec![]);
+        let mut handles = Vec::new();
+        for i in 0..PER_STRANGER_OPEN {
+            let mut s = tcp::Socket::new(tcp::SocketBuffer::new(vec![0; 2048]), tcp::SocketBuffer::new(vec![0; 256]));
+            s.connect(iface.context(), (IpAddress::Ipv6(me), crate::MESH_PORT), 40000 + i as u16).unwrap();
+            handles.push(sockets.add(s));
+        }
+        let c = side.counters.clone();
+        let start = Instant::now();
+        let (mut last_tick, mut was_open) = (Instant::now(), false);
+        loop {
+            while let Ok(p) = from_vault.try_recv() {
+                dev.rx.push_back(p);
+            }
+            iface.poll(SInstant::now(), &mut dev, &mut sockets);
+            for p in dev.tx.drain(..) {
+                let _ = mesh_tx.send(p);
+            }
+            if last_tick.elapsed() >= Duration::from_secs(1) {
+                last_tick = Instant::now();
+                for h in &handles {
+                    let s = sockets.get_mut::<tcp::Socket>(*h);
+                    if s.may_send() {
+                        let _ = s.send_slice(b"x");
+                    }
+                }
+            }
+            let open = c.open.load(Ordering::SeqCst);
+            was_open |= open == PER_STRANGER_OPEN;
+            if was_open && open == 0 {
+                break;
+            }
+            assert!(start.elapsed() < Duration::from_secs(30), "zero-window attacker still holds {open} door slots (ever full: {was_open}, tx {})", c.tx.load(Ordering::SeqCst));
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        side.stop();
     }
 }

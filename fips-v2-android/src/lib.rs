@@ -17,6 +17,8 @@ mod node;
 pub mod own_devices;
 pub mod relay_link;
 pub mod strangers;
+#[cfg(test)]
+mod reserve_tests;
 pub use relay_link::relay_push;
 
 use std::net::{Ipv6Addr, SocketAddr};
@@ -266,6 +268,9 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
     anyhow::ensure!(opts.strangers_port == 0 || own.is_some(), "strangers_port needs own_devices");
     let me = Identity::from_secret_key(decode_nsec(nsec.as_str()).context("nsec")?).npub();
     let allowlist = own.as_ref().map(|o| o.allowlist_yaml(&me)).unwrap_or_default();
+    // Strangers can fill the session table (1024 entries, free keys): own
+    // devices keep a slot past it (attack review 2026-11-12, item 2).
+    let limits = own.as_ref().map(|o| o.reserved_yaml()).unwrap_or_default();
     let mut dialed: Vec<String> = Vec::new();
     for npub in opts.peers.iter().chain(own.iter().flat_map(|o| o.npubs.iter())) {
         // A peer typed by hand into the config must not stop the engine.
@@ -300,7 +305,7 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
   identity:
     nsec: "{nsec}"
   leaf_only: true
-  control:
+{limits}  control:
     enabled: false
   bloom:
     max_inbound_fpr: {MAX_INBOUND_FPR}
@@ -324,6 +329,7 @@ transports:
         port = opts.udp_port,
         native_api = native_api,
         allowlist = allowlist,
+        limits = limits,
     )))
 }
 
@@ -924,7 +930,8 @@ mod tests {
         let err = mesh_config(&typo).expect_err("a typo in offer_allowlist must stop the start");
         assert!(format!("{err:#}").contains("offer_allowlist"), "{err:#}");
 
-        let reserved = yaml.replace("  leaf_only: true\n", "  leaf_only: true\n  limits:\n    reserved_npubs: [\"npub1typo\"]\n");
+        // The app now writes this list itself (own devices): break the real line.
+        let reserved = yaml.replace("reserved_npubs: [\"", "reserved_npubs: [\"npub1typo\", \"");
         assert_ne!(reserved, *yaml);
         let err = mesh_config(&reserved).expect_err("a typo in reserved_npubs must stop the start");
         assert!(format!("{err:#}").contains("reserved_npubs"), "{err:#}");
