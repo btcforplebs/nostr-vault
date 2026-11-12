@@ -3,7 +3,7 @@
 // with nothing changed if your relays don't answer or the list changed elsewhere). Shown only in box mode (BoxScreen).
 import { useEffect, useState } from "preact/hooks"
 import { latestList, publishList } from "../net/list-edit.js"
-import { boxRelay, listed, setListed } from "./public-on-web.js"
+import { boxInbox, boxRelay, listed, setListed } from "./public-on-web.js"
 
 export function PublicOnWeb({ ctx, relayUrl, lists = { latest: latestList, publish: publishList } }) {
   const relay = boxRelay(relayUrl)
@@ -19,7 +19,9 @@ export function PublicOnWeb({ ctx, relayUrl, lists = { latest: latestList, publi
     domain and a tunnel (NV_RELAY_URL in the box's .env; see the Linux guide), then come back here.</p>
   if (!state) return <p class="muted small box-pad">Reading your relay list…</p>
   if (state.error) return <p class="error small box-pad" role="alert">{state.error}</p>
-  const on = listed(state.relays.event?.tags, "r", relay)
+  // On only when both lists name it: one left behind (an earlier tap refused halfway) shows off, so tapping on again
+  // finishes it rather than needing off-then-on (Tron #1991 L1).
+  const on = listed(state.relays.event?.tags, "r", relay) && listed(state.inbox.event?.tags, "relay", boxInbox(relay))
 
   const set = async next => {
     setBusy(true); setMsg(null)

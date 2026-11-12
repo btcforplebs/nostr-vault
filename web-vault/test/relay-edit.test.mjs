@@ -237,7 +237,7 @@ test("Save reads the list again: refuses when relays don't answer, or when it ch
   assert.deepEqual(signed, [], "nothing was signed")
   // With no `latest` given it reads through latestList and the real askRelay (the own relays refuse here): refused.
   ctx.account.relays = { read: ["ws://127.0.0.1:1"], write: ["ws://127.0.0.1:2"] }
-  const real = await publishList(ctx, 10002, [], { previous }).catch(e => e)
+  const real = await publishList(ctx, 10002, [["r", "wss://a.example"]], { previous }).catch(e => e)
   assert.ok(real instanceof ListNotSaved && real.checked === false, String(real))
   assert.deepEqual(signed, [], "nothing was signed")
 })

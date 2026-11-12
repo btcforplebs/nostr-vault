@@ -81,6 +81,10 @@ export class ListNotSaved extends Error {
  * -> { event, relays: [{ url, ok, message }] }; throws ListNotSaved, or when signing fails or no relay took it.
  */
 export async function publishList(ctx, kind, tags, { previous, also = [], latest } = {}) {
+  // An empty relay list or DM inbox is never signed: nobody could find your relays or reach your DMs (Tron #1991).
+  const relayTag = { 10002: "r", 10050: "relay" }[kind]
+  if (relayTag && !(tags ?? []).some(t => t[0] === relayTag && t[1]))
+    throw new ListNotSaved(`Not saved: that would leave your ${kind === 10002 ? "relay list" : "DM inbox"} with no relay, so nobody could find you. Keep at least one. Nothing was changed.`, previous ?? null, true)
   const fresh = latest ? await latest(ctx, kind) : await latestList(ctx, kind)
   if (!fresh.checked && fresh.noRelayList) throw new ListNotSaved(`Not saved. ${NO_RELAY_LIST} Nothing was changed.`, fresh.event, false)
   if (!fresh.checked) throw new ListNotSaved("Not saved: your relays didn't answer, so your newest list couldn't be read. Nothing was changed. Try again when you're online.", fresh.event, false)

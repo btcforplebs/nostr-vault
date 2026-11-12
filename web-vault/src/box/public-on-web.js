@@ -37,16 +37,19 @@ export function withRelay(tags, name, url, on) {
  * -> which kinds were published; throws what publishList throws (nothing signed for that list).
  */
 export async function setListed(ctx, relay, next, state, publish) {
+  const relaysTags = state.relays.event?.tags ?? [], inbox = boxInbox(relay), inboxTags = state.inbox.event?.tags ?? []
+  const steps = [
+    { kind: 10002, name: "r", url: relay, tags: relaysTags, previous: state.relays.event, what: "relay list" },
+    { kind: 10050, name: "relay", url: inbox, tags: inboxTags, previous: state.inbox.event, what: "DM inbox" },
+  ].filter(s => listed(s.tags, s.name, s.url) !== next).map(s => ({ ...s, out: withRelay(s.tags, s.name, s.url, next) }))
+  // Checked for both lists before either is signed, so a refusal never leaves one moved and the other behind
+  // (Tron #1991): a list with no relay left means nobody can find your relays or reach your DMs.
+  const empty = steps.find(s => !s.out.some(t => t[0] === s.name))
+  if (empty) throw new Error(`Not changed: this box is the only relay in your ${empty.what}, so unlisting it would leave the list empty. Add another relay to it in Settings first.`)
   const done = []
-  const relaysTags = state.relays.event?.tags ?? []
-  if (listed(relaysTags, "r", relay) !== next) {
-    await publish(ctx, 10002, withRelay(relaysTags, "r", relay, next), { previous: state.relays.event })
-    done.push(10002)
-  }
-  const inbox = boxInbox(relay), inboxTags = state.inbox.event?.tags ?? []
-  if (listed(inboxTags, "relay", inbox) !== next) {
-    await publish(ctx, 10050, withRelay(inboxTags, "relay", inbox, next), { previous: state.inbox.event })
-    done.push(10050)
+  for (const s of steps) {
+    await publish(ctx, s.kind, s.out, { previous: s.previous })
+    done.push(s.kind)
   }
   return done
 }

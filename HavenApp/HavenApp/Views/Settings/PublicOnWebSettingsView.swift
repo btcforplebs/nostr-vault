@@ -10,6 +10,8 @@ import SwiftUI
 /// separate, under Media Servers › Your Vaults (Logen 2026-11-12).
 struct PublicOnWebSettingsView: View {
     @EnvironmentObject var configService: ConfigService
+    /// Why a list change on switch-off didn't go out (empty list, unsettled lookup).
+    @State private var notice: String?
 
     /// Never touched: on when a domain is already set, so nothing an owner
     /// published before this switch existed is dropped.
@@ -28,8 +30,13 @@ struct PublicOnWebSettingsView: View {
                         }
                     }
                     .tint(Color.havenPurple)
+                    if let notice {
+                        Text(notice)
+                            .font(.appCaption)
+                            .foregroundColor(.orange)
+                    }
                 } footer: {
-                    Text("Needs your own domain and a tunnel. On: your domain goes in your relay list and DM inbox, so other apps can reach this vault. Turning it off takes it out of your DM inbox now and out of your relay list the next time you save Relays. A tunnel you started keeps running until you stop it.")
+                    Text("Needs your own domain and a tunnel. On: your domain goes in your relay list and DM inbox, so other apps can reach this vault. Turning it off takes it out of your relay list and DM inbox now. A tunnel you started keeps running until you stop it.")
                 }
             }
             .groupedFormStyleCompat()
@@ -44,11 +51,23 @@ struct PublicOnWebSettingsView: View {
     }
 
     private func set(_ on: Bool) {
+        notice = nil
         let oldInbox = configService.config.ownHavenDMInboxURL
+        let wasListed = configService.config.listsOwnDomain
+        let domain = "wss://\(configService.config.sanitizedRelayURL)"
         configService.config.publicOnWeb = on
         let newInbox = configService.config.ownHavenDMInboxURL
+        let show: @MainActor (String?) -> Void = { line in
+            if let line { notice = [notice, line].compactMap { $0 }.joined(separator: "\n") }
+        }
+        // Off: the domain leaves the published 10002 now. Once it is no longer
+        // pinned, Settings › Relays would read it back as one of the owner's
+        // own rows and Save would keep it (Tron #1991).
+        if wasListed && !configService.config.listsOwnDomain {
+            NostrService.shared.publishOwnerRelayListDrop(domain, done: show)
+        }
         if oldInbox != newInbox {
-            NostrService.shared.publishOwnerDMInboxMove(from: oldInbox, to: newInbox)
+            NostrService.shared.publishOwnerDMInboxMove(from: oldInbox, to: newInbox, done: show)
         }
     }
 }

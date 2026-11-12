@@ -273,4 +273,15 @@ final class RelayDraftTests: XCTestCase {
             XCTAssertFalse(RelayDraft.listable(url), url)
         }
     }
+
+    func testRelayListDroppingTakesOnlyThatRelayOut() {
+        let tags = [["r", "wss://Vault.example.com/"], ["r", "wss://relay.damus.io", "read"], ["alt", "x"]]
+        XCTAssertEqual(RelayDraft.relayListDropping("wss://vault.example.com", from: tags),
+                       [["r", "wss://relay.damus.io", "read"], ["alt", "x"]])
+        XCTAssertNil(RelayDraft.relayListDropping("wss://other.example", from: tags), "not on it: nothing to publish")
+        XCTAssertNil(RelayDraft.relayListDropping("", from: tags))
+        // The only relay: the caller sees no r tag left and refuses to sign (Tron #1991).
+        let only = RelayDraft.relayListDropping("wss://vault.example.com", from: [["r", "wss://vault.example.com"]])
+        XCTAssertEqual(only, [])
+    }
 }

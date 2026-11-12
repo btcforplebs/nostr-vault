@@ -48,6 +48,17 @@ enum RelayDraft {
         !HavenConfig.publicRelayListTags(ownRelays: [url], read: [], write: []).isEmpty
     }
 
+    /// The published 10002 `tags` without `relay`'s `r` tags, every other tag
+    /// as published; nil when `relay` isn't on it. May leave no relay: the
+    /// caller refuses to sign that.
+    static func relayListDropping(_ relay: String, from tags: [[String]]) -> [[String]]? {
+        let key = RelayMatrix.key(relay)
+        guard !key.isEmpty else { return nil }
+        let isIt: ([String]) -> Bool = { $0.count >= 2 && $0[0] == "r" && RelayMatrix.key($0[1]) == key }
+        guard tags.contains(where: isIt) else { return nil }
+        return tags.filter { !isIt($0) }
+    }
+
     /// The relays that index every account's lists; a "none" counts only when both answered.
     static let indexers = ["wss://purplepag.es", "wss://user.kindpag.es"]
 

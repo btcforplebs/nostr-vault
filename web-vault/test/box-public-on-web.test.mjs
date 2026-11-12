@@ -61,3 +61,24 @@ test("a refused 10002 stops before the 10050", async () => {
   await assert.rejects(setListed({}, relay, true, state([], []), publish), /Not saved/)
   assert.deepEqual(calls, [10002])
 })
+
+test("off refuses, signing nothing, when the box is the only relay in either list (Tron #1991)", async () => {
+  for (const [relays, inbox, what] of [
+    [[["r", relay]], [["relay", relay + "/inbox"], ["relay", "wss://inbox.nostr.wine"]], /relay list/],
+    [[["r", relay], ["r", "wss://relay.damus.io"]], [["relay", relay + "/inbox"]], /DM inbox/],
+  ]) {
+    const r = recorder()
+    await assert.rejects(setListed({}, relay, false, state(relays, inbox), r.publish), what)
+    assert.equal(r.calls.length, 0, "neither list signed, so none is left half-moved")
+  }
+})
+
+test("publishList never signs an empty relay list or DM inbox", async () => {
+  const { publishList, ListNotSaved } = await import("../src/net/list-edit.js")
+  let signed = 0
+  const ctx = { signer: { signEvent: async () => { signed++ } } }
+  for (const [kind, tags] of [[10002, []], [10002, [["alt", "x"]]], [10050, []], [10050, [["relay", ""]]]])
+    await assert.rejects(publishList(ctx, kind, tags, { latest: async () => ({ checked: true, event: null }) }),
+      e => e instanceof ListNotSaved && /no relay/.test(e.message), `${kind} ${JSON.stringify(tags)}`)
+  assert.equal(signed, 0)
+})
