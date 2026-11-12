@@ -102,6 +102,14 @@ type Relay struct {
 	clients      map[*WebSocket][]listenerSpec
 	listeners    []listener
 	clientsMutex sync.Mutex
+	// HAVEN PATCH: listeners a REQ in flight has reserved (ReqCaps), under clientsMutex.
+	reserved map[*WebSocket]int
+
+	// HAVEN PATCH: ReqCaps, if set, gives the caps for a REQ on this connection:
+	// at most maxFilters filters in one REQ, and at most maxListeners open
+	// listeners (one per filter, "limit":0 included) on the connection, this
+	// REQ counted. 0 means no cap. Checked once per REQ, before any filter runs.
+	ReqCaps func(ctx context.Context) (maxFilters, maxListeners int)
 
 	// set this to true to support negentropy
 	Negentropy bool

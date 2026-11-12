@@ -287,6 +287,20 @@ func (rl *Relay) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 					ws.WriteJSON(resp)
 
 				case *nostr.ReqEnvelope:
+					// HAVEN PATCH: the per-REQ caps (ReqCaps), once, before any
+					// filter runs, counted and reserved under clientsMutex.
+					if rl.ReqCaps != nil {
+						if maxFilters, maxListeners := rl.ReqCaps(ctx); maxFilters > 0 || maxListeners > 0 {
+							if reason := rl.reserveListeners(ws, len(env.Filters), maxFilters, maxListeners); reason != "" {
+								ws.WriteJSON(nostr.ClosedEnvelope{SubscriptionID: env.SubscriptionID, Reason: reason})
+								return
+							}
+							if maxListeners > 0 {
+								defer rl.releaseReserved(ws, len(env.Filters))
+							}
+						}
+					}
+
 					eose := sync.WaitGroup{}
 					eose.Add(len(env.Filters))
 

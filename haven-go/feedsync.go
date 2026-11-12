@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/fiatjaf/eventstore"
+	"github.com/fiatjaf/khatru/policies"
 	"github.com/nbd-wtf/go-nostr"
 
 	"github.com/barrydeen/haven/internal/negsync"
@@ -86,6 +87,25 @@ func feedCommonFilter(authors []string, since nostr.Timestamp) nostr.Filter {
 
 func feedRareFilter(authors []string, since nostr.Timestamp) nostr.Filter {
 	return nostr.Filter{Authors: authors, Kinds: rareFeedKinds, Since: &since}
+}
+
+// feedWriteRules are what the /feed route refuses: future timestamps,
+// base64 media, a writer over the outbox's rate, anything but feed kinds,
+// and a note with a signed delete in the feed cache (the apps write follows'
+// notes here; feed sync keeps the follows' deletes, so a deleted note does
+// not come back this way either: Tron's note on #1960).
+func feedWriteRules(db DBBackend) []func(context.Context, *nostr.Event) (bool, string) {
+	return []func(context.Context, *nostr.Event) (bool, string){
+		policies.PreventTimestampsInTheFuture(maxFutureSkew),
+		policies.RejectEventsWithBase64Media,
+		whitelistBypassEventRateLimiter(
+			outboxRelayLimits.EventIPLimiterTokensPerInterval,
+			time.Minute*time.Duration(outboxRelayLimits.EventIPLimiterInterval),
+			outboxRelayLimits.EventIPLimiterMaxTokens,
+		),
+		OnlyFeedKinds,
+		MustNotBeDeleted(db),
+	}
 }
 
 // feedSyncCh triggers an immediate feed sync round (pull-to-refresh).

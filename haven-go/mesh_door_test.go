@@ -159,8 +159,9 @@ func TestMeshUploadSizeChecks(t *testing.T) {
 	}
 }
 
-// Over a mesh websocket only owner-signed EVENTs land, and nothing can be
-// read. The same relay reached directly is the control.
+// Over a mesh websocket only owner-signed EVENTs land, and the outbox
+// answers a REQ as it does over https (sync rework M1, mesh_query_caps.go).
+// The same relay reached directly is the control.
 func TestMeshRelayOwnerEventsOnly(t *testing.T) {
 	h := startHaven(t)
 	door := startMeshDoor(t)
@@ -185,8 +186,8 @@ func TestMeshRelayOwnerEventsOnly(t *testing.T) {
 		t.Fatalf("stranger note over the mesh: %v, want rejected", err)
 	}
 
-	if _, reason := req(t, mesh, nostr.Filter{Authors: []string{h.owner}}); !strings.Contains(reason, "no queries over the mesh") {
-		t.Fatalf("REQ over the mesh: closed %q, want refused", reason)
+	if evs, reason := req(t, mesh, nostr.Filter{Authors: []string{h.owner}}); reason != "" || len(evs) != 1 || evs[0].ID != note.ID {
+		t.Fatalf("REQ over the mesh: %d events, closed %q; want the owner's note", len(evs), reason)
 	}
 
 	direct := h.connect(t, "")

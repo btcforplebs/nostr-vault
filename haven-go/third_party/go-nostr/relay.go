@@ -176,8 +176,12 @@ func (r *Relay) ConnectWithTLS(ctx context.Context, tlsConfig *tls.Config) error
 				// raced the read loop and close(); IsConnected (the context) is
 				// what says the connection is gone.
 
+				// HAVEN PATCH: the cause alone. The read loop writes
+				// r.ConnectionError as it hits the read error, which raced this
+				// read when our own Close cancelled the context first; when the
+				// read loop closes, the same error is the context's cause.
 				for _, sub := range r.Subscriptions.Range {
-					sub.unsub(fmt.Errorf("relay connection closed: %w / %w", context.Cause(r.connectionContext), r.ConnectionError))
+					sub.unsub(fmt.Errorf("relay connection closed: %w", context.Cause(r.connectionContext)))
 				}
 				return
 
