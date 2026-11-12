@@ -42,17 +42,6 @@ extension RelayProcessManager {
             stderrPipe = errPipe
             dup2(errPipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
 
-            // Drain stderr into the same log file / processing path
-            errPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-                let data = handle.availableData
-                guard !data.isEmpty else { return }
-                self?.logProcessingQueue.async {
-                    // Merge stderr data into the main pipe's handler by writing
-                    // it to the log file directly; the main pipe handles parsing.
-                    try? pipe.fileHandleForWriting.write(contentsOf: data)
-                }
-            }
-
             // Open a persistent file handle for the log file. Rotate first
             // when large — the log is append-only and a menu-bar app can run
             // for months between launches.
@@ -70,61 +59,15 @@ extension RelayProcessManager {
             logFileHandle = try? FileHandle(forWritingTo: logFileURL)
             logFileHandle?.seekToEndOfFile()
 
-            // Safety cap: if the buffer grows beyond 512 KB (e.g. the main
-            // thread can't keep up), drop data to prevent unbounded memory
-            // growth and pipe backpressure that can deadlock Go goroutines.
-            let maxBufferSize = 512 * 1024
-
-            // Capture file handle outside the Sendable closure to avoid
-            // referencing @MainActor-isolated property from background queue.
-            let fileHandle = logFileHandle
-
-            // Use NSLock-protected buffer to avoid data races — the
-            // readabilityHandler can fire on an arbitrary thread and the
-            // logProcessingQueue serialises processing, but Swift's closure
-            // capture of a mutable local var is not concurrency-safe.
-            let bufferLock = NSLock()
-            var localBuffer = Data()
-
-            pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-                let data = handle.availableData
-                guard !data.isEmpty else { return }
-
-                // Process output on a serial background queue to keep MainActor free
-                self?.logProcessingQueue.async {
-                    // Write to persistent log file
-                    fileHandle?.write(data)
-
-                    bufferLock.lock()
-                    defer { bufferLock.unlock() }
-                    localBuffer.append(data)
-
-                    // Safety valve: drop oldest data if buffer grows too large
-                    if localBuffer.count > maxBufferSize {
-                        let dropTarget = localBuffer.count - maxBufferSize / 2
-                        if let nl = localBuffer[dropTarget...].firstIndex(of: 0x0A) {
-                            localBuffer = localBuffer.subdata(in: localBuffer.index(after: nl)..<localBuffer.endIndex)
-                        } else {
-                            localBuffer.removeAll()
-                        }
-                    }
-
-                    // Find the last newline character
-                    guard let range = localBuffer.range(of: Data([0x0A]), options: .backwards) else {
-                        return
-                    }
-
-                    // Extract all complete lines
-                    let validData = localBuffer.subdata(in: 0..<range.upperBound)
-
-                    // Keep the remainder in the buffer
-                    localBuffer = localBuffer.subdata(in: range.upperBound..<localBuffer.endIndex)
-
-                    if let output = String(data: validData, encoding: .utf8) {
-                        self?.processOutputInBackground(output)
-                    }
-                }
+            // Both streams go to relay.log at once and to the parser through
+            // a capped buffer: a parser that falls behind drops old lines
+            // instead of queueing every read (12 GB on .99, 2026-11-11), and
+            // never blocks Go on a full pipe. See RelayLogPump.
+            let pump = RelayLogPump(fileHandle: logFileHandle, queue: logProcessingQueue) { [weak self] output in
+                self?.processOutputInBackground(output)
             }
+            pump.attach(pipe, as: .stdout)
+            pump.attach(errPipe, as: .stderr)
         }
     }
 
