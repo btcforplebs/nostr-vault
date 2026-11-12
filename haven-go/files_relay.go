@@ -11,8 +11,9 @@ package main
 //     this vault's own mesh key, or by the vault itself (filesVaultKey). Never
 //     the account key or any other whitelisted key (mesh_devices.go: the mesh
 //     never uses the account key).
-//   - Read by the owner, a paired device or the vault's own mesh key, AUTHed.
-//     Not by every whitelisted account (the PR 1971 must-fix).
+//   - Read, AUTHed, by a private reader (#1971; the owner only where the app
+//     names none), a paired device or the vault's own mesh key. Never by
+//     every whitelisted account.
 //   - Trust is checked live: a device that is unpaired can't write, read, or
 //     be heard, and its old notes stop being served (kept, in case it pairs
 //     again).
@@ -128,16 +129,25 @@ func filesWriter(pk string) bool {
 // in a mesh copy, and not taken from either on import.
 func filesStoreLeftOut(name string) bool { return name == "files" }
 
-// filesReader: pk may read /files: the owner, or a key that may write.
-// TODO(1971): swap the owner half for its owner-read-set helper.
+// filesReader: pk may read /files: one of the vault's private readers
+// (#1971), or a key that may write.
 func filesReader(pk string) bool {
 	if pk == "" {
 		return false
 	}
-	if config.OwnerPubKey != "" && pk == config.OwnerPubKey {
-		return true
+	return filesAccountReader(pk) || filesWriter(pk)
+}
+
+// filesAccountReader: an account key that reads /files. With the app's
+// private-reader file named, #1971's set (the owner plus the accounts with a
+// key or signer here). Without it (Android, the browser vault, older apps)
+// the owner only: #1971 falls back to the whole whitelist there, which takes
+// in added npubs that are often someone else's.
+func filesAccountReader(pk string) bool {
+	if config.PrivateReaderPubKeys == nil {
+		return config.OwnerPubKey != "" && pk == config.OwnerPubKey
 	}
-	return filesWriter(pk)
+	return isPrivateReader(pk)
 }
 
 // rejectFilesWrite is the whole write gate. It is not MustBeWhitelistedToPost:

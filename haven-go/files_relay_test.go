@@ -463,3 +463,34 @@ func TestFilesStoreNeverTravels(t *testing.T) {
 		t.Error("the outbox note beside it was not taken in (positive control)")
 	}
 }
+
+// #1971's private readers read /files when the app names them; with no
+// reader file (Android, the browser vault) only the owner does, never the
+// whole whitelist.
+func TestFilesReadersFollowThePrivateReaderSet(t *testing.T) {
+	v := startFilesVault(t)
+	if ok, msg := v.filesConn(t, "").publish(fileNote(t, v.devA.sk, fileHash("pr"), v.h.owner)); !ok {
+		t.Fatal(msg)
+	}
+	f := nostr.Filter{Kinds: []int{kindFileMetadata}}
+	reads := func(sk string) bool {
+		evs, closed := v.filesConn(t, sk).req("r", f)
+		return closed == "" && len(evs) == 1
+	}
+	if reads(v.account.sk) {
+		t.Error("no reader file: a second account read /files")
+	}
+	addedNpub := newTestKey(t)
+	config.WhitelistedPubKeys[addedNpub.pk] = struct{}{}
+	config.PrivateReaderPubKeys = map[string]struct{}{v.h.owner: {}, v.account.pk: {}}
+	t.Cleanup(func() { config.PrivateReaderPubKeys = nil })
+	if !reads(v.account.sk) {
+		t.Error("an account in the private-reader set could not read /files")
+	}
+	if reads(addedNpub.sk) {
+		t.Error("an added npub outside the private-reader set read /files")
+	}
+	if !reads(v.h.ownerSK) {
+		t.Error("the owner could not read /files")
+	}
+}
