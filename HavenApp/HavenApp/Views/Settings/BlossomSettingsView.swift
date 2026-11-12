@@ -9,13 +9,16 @@ struct BlossomSettingsView: View {
     var pushed = true
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
-    @ObservedObject private var mirrorService = MirrorService.shared
     @ObservedObject private var waitingPosts = MediaPostQueue.shared
 
     @State private var newMirrorURL = ""
     /// Every add and remove is a draft: nothing is stored or published until Save.
     @State private var draft = MediaServersDraft(mirrors: ConfigService.shared.config.blossomMirrors)
     @ObservedObject private var leaveGuard = MediaServersLeaveGuard.shared
+    /// Each saved server's health and the files some server is missing: the
+    /// page under Vault › Advanced until 2026-11-12, now part of this one.
+    @StateObject private var health = MediaServersModel()
+    @State private var showFiles = false
     @Environment(\.dismiss) private var dismiss
     
     private func waitingLine(_ post: QueuedMediaPost) -> String {
@@ -100,6 +103,9 @@ struct BlossomSettingsView: View {
                                 .font(.appSystem(size: 11, design: .monospaced))
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
+                            ServerHealthLine(server: health.servers.first { $0.id == macHttps }, missing: "Not checked yet") {
+                                Task { await health.test(macHttps) }
+                            }
                         }
                         Spacer()
                     }
@@ -123,8 +129,22 @@ struct BlossomSettingsView: View {
                     }
                     .padding(.vertical, 4)
                 }
+                // Also used for uploads, but not typed in the list below
+                // (this device's own mesh address).
+                ForEach(extraServers) { server in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(server.host)
+                            .font(.appSystem(size: 12, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        ServerHealthLine(server: server) { Task { await health.test(server.id) } }
+                    }
+                    .padding(.vertical, 2)
+                }
             } header: {
-                Text("Your Mac")
+                // The Mac and this device's own mesh address: used without
+                // being typed, and counted on the dashboard row.
+                Text("Added for You")
             }
             
             // Section 2: Additional Blossom Servers (Mirrors)
@@ -141,9 +161,14 @@ struct BlossomSettingsView: View {
                             Image(systemName: "server.rack")
                                 .font(.appSystem(size: 14))
                                 .foregroundColor(.havenPurple)
-                            Text(url)
-                                .font(.appSystem(size: 12, design: .monospaced))
-                                .foregroundColor(.white)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(url)
+                                    .font(.appSystem(size: 12, design: .monospaced))
+                                    .foregroundColor(.white)
+                                ServerHealthLine(server: health.server(configured: url), missing: missingLine(url)) {
+                                    if let id = HavenConfig.blossomUploadServer(url) { Task { await health.test(id) } }
+                                }
+                            }
                             Spacer()
                             Button(action: { draft.removeMirror(url) }) {
                                 Image(systemName: "minus.circle")
@@ -187,44 +212,16 @@ struct BlossomSettingsView: View {
 
             MeshMediaServersSection(draft: $draft)
             
-            // Section 3: Media Sync & Mirroring
+            // Your media: what is stored here and the one Copy to servers.
             Section {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Mirror from Servers")
-                            .font(.appBody)
-                            .foregroundColor(.white)
-                        Text("Download your media from your media servers into your vault")
-                            .font(.appCaption)
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Button(action: {
-                        mirrorService.runMirror(configService: configService, nostrService: NostrService.shared)
-                    }) {
-                        HStack(spacing: 6) {
-                            if mirrorService.state == .mirroring {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "arrow.down.circle")
-                            }
-                            if let progress = mirrorService.progress, mirrorService.state == .mirroring {
-                                Text("\(progress.completed)/\(progress.total)")
-                            } else {
-                                Text("Mirror Now")
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.havenPurple.opacity(mirrorService.state == .mirroring ? 0.3 : 1.0))
-                        .foregroundColor(.white)
-                        .cornerRadius(6)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(mirrorService.state == .mirroring || configService.config.activeBlossomMirrors.isEmpty)
-                }
-                
+                MediaCopyRows(model: health, showFiles: $showFiles)
+            } header: {
+                Text("Your Media")
+            }
+
+            // Auto-Mirror stays for now (2026-11-12). Its by-hand twin is
+            // Import media on the dashboard, the one place that runs it.
+            Section {
                 Toggle(isOn: Binding(
                     get: { configService.config.autoMirrorMedia },
                     set: { newValue in
@@ -238,6 +235,8 @@ struct BlossomSettingsView: View {
                 }
             } header: {
                 Text("Offline Copies")
+            } footer: {
+                Text("To import now, use Import media on the dashboard.")
             }
 
             // Section 4: FIPS. Your own mesh (address, devices, sharing)
@@ -299,7 +298,12 @@ struct BlossomSettingsView: View {
         }
         .onChange(of: configService.config.blossomMirrors) { _, saved in
             draft.savedMirrorsChanged(saved)
+            Task { await loadHealth() }
         }
+        .task { await loadHealth() }
+        #if os(iOS)
+        .refreshable { await loadHealth() }
+        #endif
         .onChange(of: draft.hasChanges, initial: true) { _, changed in
             leaveGuard.hasChanges = changed
         }
@@ -356,6 +360,25 @@ struct BlossomSettingsView: View {
         }
     }
     
+    private func loadHealth() async {
+        await health.load(configService: configService, nostrService: NostrService.shared)
+    }
+
+    /// Saved servers that uploads use but no row above shows: the Mac has its
+    /// own row, typed servers theirs.
+    private var extraServers: [MediaServersModel.Server] {
+        let shown = Set(configService.config.blossomMirrors.compactMap(HavenConfig.blossomUploadServer)
+                        + [configService.config.macRelayHttpsURL])
+        return health.servers.filter { !shown.contains($0.id) }
+    }
+
+    /// What a typed server without health says: not saved yet, or saved but
+    /// skipped because nothing answers there (`blossomUploadServer`).
+    private func missingLine(_ url: String) -> String {
+        guard configService.config.blossomMirrors.contains(url) else { return "Not saved yet" }
+        return HavenConfig.blossomUploadServer(url) == nil ? "Not used: this server is gone" : "Not checked yet"
+    }
+
     private func addMirror(_ typed: String) {
         // A tapped suggestion leaves a half-typed address alone.
         if draft.addMirror(typed), typed == newMirrorURL { newMirrorURL = "" }

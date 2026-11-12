@@ -155,7 +155,9 @@ struct MediaGalleryView: View {
     }
 
     /// The Vault tab has one dashboard, which the relay half presents; outside
-    /// it (macOS) Blossom keeps its own sheet.
+    /// it (the iPad and Mac sidebars' Media page) the button opens the one
+    /// Media Servers page. The old Media dashboard sheet repeated it and the
+    /// Vault dashboard's Import media (cut 2026-11-12).
     func openDashboard() {
         if inVaultTab {
             NotificationCenter.default.post(name: .openRelayDashboard, object: nil)
@@ -244,9 +246,6 @@ struct MediaGalleryView: View {
         .modifier(mediaChangeHandlers)
         .modifier(MagicPasteFromWidget { showMediaHalf(); handlePasteFromClipboard() })
         .modifier(ShareInboxImport(isRelayReady: relayManager.isRunning && !relayManager.isBooting) { showMediaHalf(); handleUploadFileURLs($0) })
-        .onReceive(NotificationCenter.default.publisher(for: .openBlossomDashboard)) { _ in
-            openDashboard()
-        }
         .onReceive(VaultSection.shared.$showsMedia) { vaultShowsMedia = $0 }
         .modifier(mediaSheetsAndPickers)
     }
@@ -298,9 +297,9 @@ struct MediaGalleryView: View {
             ChromeFold(anchor: .bottomTrailing) {
                 Button(action: openDashboard) {
                     HStack(spacing: 6) {
-                        Image(systemName: inVaultTab ? VaultDashboard.symbol : "camera.macro")
+                        Image(systemName: inVaultTab ? VaultDashboard.symbol : "server.rack")
                             .font(.appSystem(size: 15, weight: .bold))
-                        Text(inVaultTab ? "Vault" : "Media")
+                        Text(inVaultTab ? "Vault" : "Servers")
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.white)
@@ -419,9 +418,9 @@ struct MediaGalleryView: View {
             ChromeFold(anchor: .bottomTrailing) {
                 Button(action: openDashboard) {
                     HStack(spacing: 6) {
-                        Image(systemName: inVaultTab ? VaultDashboard.symbol : "camera.macro")
+                        Image(systemName: inVaultTab ? VaultDashboard.symbol : "server.rack")
                             .font(.appSystem(size: 15, weight: .bold))
-                        Text(inVaultTab ? "Vault" : "Media")
+                        Text(inVaultTab ? "Vault" : "Servers")
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.white)
@@ -463,12 +462,11 @@ struct MediaGalleryView: View {
                 )
                 .keyboardShortcut("r", modifiers: .command)
 
-                // The Blossom dashboard's only entry points were the iOS-only floating
-                // button, so on macOS four screens of storage, mirror and sync state
-                // compiled, shipped, and could not be opened.
+                // The Media Servers page from the gallery (the floating button
+                // is iOS-only).
                 IconFilterButton(
-                    icon: "camera.macro",
-                    tooltip: "Media Dashboard",
+                    icon: "server.rack",
+                    tooltip: "Media Servers",
                     isSelected: true,
                     color: .havenPurple,
                     action: { showingBlossomMediaList = true }
@@ -704,14 +702,21 @@ struct MediaGallerySheetsModifier: ViewModifier {
                     .environmentObject(configService)
             }
             .sheet(isPresented: $showingBlossomMediaList) {
-                BlossomDashboardView()
-                    .environmentObject(configService)
-                    .environmentObject(nostrService)
-                    #if os(macOS)
-                    // Stats, mirrors, sync and the activity log need room; without a
-                    // minimum the sheet takes the content's ideal size.
-                    .frame(minWidth: 620, minHeight: 640)
-                    #endif
+                NavigationStack {
+                    BlossomSettingsView(pushed: false)
+                        .settingsPage("Media Servers")
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { MediaServersLeaveGuard.shared.requestLeave { showingBlossomMediaList = false } }
+                            }
+                        }
+                }
+                .environmentObject(configService)
+                .environmentObject(nostrService)
+                .environmentObject(RelayProcessManager.shared)
+                #if os(macOS)
+                .frame(minWidth: 560, minHeight: 640)
+                #endif
             }
             .fileImporter(
                 isPresented: $showingFileImporter,

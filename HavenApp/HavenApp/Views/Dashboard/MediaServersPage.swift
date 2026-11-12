@@ -1,62 +1,92 @@
 import SwiftUI
 
-// MARK: - Media servers
+// MARK: - Media servers health and copy
 
-/// Your Blossom servers, whether each answers, and the files on this phone
-/// that some server does not have yet, with the one action that copies them.
-struct MediaServersPage: View {
-    @EnvironmentObject var configService: ConfigService
-    @EnvironmentObject var nostrService: NostrService
-    @StateObject private var model = MediaServersModel()
-    @State private var showFiles = false
+/// The parts of the Media Servers page (`BlossomSettingsView`) that read
+/// `MediaServersModel`: each server's health under its row, and "Your media"
+/// with the one action that copies files a server is missing. These were a
+/// second page under Vault › Advanced until the media settings trim
+/// (2026-11-12); now the list, the health and the copy are one page.
+
+/// One server's health, drawn under its address: a dot, what was found and
+/// when, and Test. A server not in the saved list (added, not saved) says so.
+struct ServerHealthLine: View {
+    let server: MediaServersModel.Server?
+    /// Said when there is no health to show (not saved, or not used).
+    var missing = "Not saved yet"
+    let onTest: () -> Void
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                serversSection
-                mediaSection
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 32)
-        }
-        .background(Color.platformWindowBackground.ignoresSafeArea())
-        .refreshable { await model.load(configService: configService, nostrService: nostrService) }
-        .task { await model.load(configService: configService, nostrService: nostrService) }
-    }
-
-    // MARK: Servers
-
-    private var serversSection: some View {
-        DashboardSection(title: "Servers") {
-            if model.servers.isEmpty {
-                Text("None set up. Add one in Vault settings › Media Servers.")
-                    .font(.appSystem(size: 13))
+        HStack(spacing: 8) {
+            Circle()
+                .fill(dotColor)
+                .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                Text(statusLine(now: context.date))
+                    .font(.appCaption)
                     .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-            } else {
-                ForEach(Array(model.servers.enumerated()), id: \.element.id) { index, server in
-                    if index > 0 { DashboardDivider() }
-                    ServerRow(server: server) { Task { await model.test(server.id) } }
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let server {
+                // The spinner takes the button's place, so the row does not move.
+                ZStack {
+                    Button("Test", action: onTest)
+                        .font(.appCaption.weight(.semibold))
+                        .buttonStyle(.borderless)
+                        .opacity(server.status == .checking ? 0 : 1)
+                        .disabled(server.status == .checking)
+                    if server.status == .checking {
+                        ProgressView().controlSize(.small)
+                    }
                 }
+                .accessibilityLabel("Test \(server.host)")
             }
         }
     }
 
-    // MARK: Your media
+    private var dotColor: Color {
+        switch server?.status {
+        case .working: return .havenOnline
+        case .answers, .lostFile: return .orange
+        case .offline: return .red
+        case .checking, .unknown, nil: return .secondary.opacity(0.4)
+        }
+    }
 
-    private var mediaSection: some View {
-        DashboardSection(title: "Your media") {
+    private func statusLine(now: Date) -> String {
+        guard let server else { return missing }
+        let state: String
+        switch server.status {
+        case .checking: return "Checking…"
+        case .unknown: return "Not checked yet"
+        case .working: state = "Has your files"
+        case .answers: state = "Answers, but holds none of your files to check"
+        case .lostFile: state = "Answers, but a file it had is gone"
+        case .offline: state = "Not answering"
+        }
+        guard let at = server.checkedAt else { return state }
+        let ago = now.timeIntervalSince(at) < 60 ? "just now" : at.formatted(.relative(presentation: .named))
+        return "\(state) · checked \(ago)"
+    }
+}
+
+/// "Your media": files stored here, how many some server is missing, Copy to
+/// servers, and the list of those files. Form rows, inset-free, so the
+/// dashboard row styles keep their own padding.
+struct MediaCopyRows: View {
+    @ObservedObject var model: MediaServersModel
+    @Binding var showFiles: Bool
+
+    var body: some View {
+        Group {
             ValueRow(icon: VaultMode.media.symbol, title: "Files stored",
                      value: model.filesStored.map { $0.formatted() } ?? "—")
-            DashboardDivider()
             ValueRow(icon: "clock.arrow.circlepath", title: "Waiting to copy", value: waitingText)
-            // Always there once a server is set up, so the card keeps its
+            // Always there once a server is set up, so the section keeps its
             // height while the check runs instead of growing a row a minute in.
             if !model.servers.isEmpty {
-                DashboardDivider()
                 DashboardRow(
                     icon: "arrow.up.circle.fill",
                     title: "Copy to servers",
@@ -76,7 +106,6 @@ struct MediaServersPage: View {
                 }
             }
             if !model.files.isEmpty {
-                DashboardDivider()
                 Button {
                     withAnimation(Motion.control) { showFiles.toggle() }
                 } label: {
@@ -87,13 +116,11 @@ struct MediaServersPage: View {
                 .accessibilityHint(showFiles ? "Hides the list of files" : "Lists each file and what happened to it")
                 if showFiles {
                     ForEach(model.files) { file in
-                        DashboardDivider()
                         MediaCopyFileRow(file: file, hostFor: model.host(for:))
                     }
                 }
             }
             if let note = model.copyNote {
-                DashboardDivider()
                 Text(note)
                     .font(.appCaption)
                     .foregroundColor(.secondary)
@@ -102,6 +129,7 @@ struct MediaServersPage: View {
                     .padding(.vertical, 10)
             }
         }
+        .listRowInsets(EdgeInsets())
     }
 
     private var waitingText: String {
@@ -123,81 +151,15 @@ struct MediaServersPage: View {
         let last = VaultHistory.lastServerCopy.map { " Last copied \($0.formatted(.relative(presentation: .named)))." } ?? ""
         switch model.waiting ?? 0 {
         case 0: return "Every file is on your servers." + last
-        case 1: return "1 file is only on this phone." + last
-        case let n: return "\(n.formatted()) files are only on this phone." + last
+        case 1: return "1 file is only on this device." + last
+        case let n: return "\(n.formatted()) files are only on this device." + last
         }
-    }
-}
-
-/// One Blossom server: status dot, host, when it was last checked, and Test.
-private struct ServerRow: View {
-    let server: MediaServersModel.Server
-    let onTest: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Circle()
-                .fill(dotColor)
-                .frame(width: 10, height: 10)
-                .frame(width: 30, height: 30)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(server.host)
-                    .font(.appSystem(size: 15, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                TimelineView(.periodic(from: .now, by: 30)) { context in
-                    Text(statusLine(now: context.date))
-                        .font(.appSystem(size: 12))
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .combine)
-            // The spinner takes the button's place, so the row does not move.
-            ZStack {
-                RowButton(title: "Test", action: onTest)
-                    .opacity(server.status == .checking ? 0 : 1)
-                    .disabled(server.status == .checking)
-                if server.status == .checking {
-                    ProgressView().controlSize(.small)
-                }
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-    }
-
-    private var dotColor: Color {
-        switch server.status {
-        case .working: return .havenOnline
-        case .answers, .lostFile: return .orange
-        case .offline: return .red
-        case .checking, .unknown: return .secondary.opacity(0.4)
-        }
-    }
-
-    private func statusLine(now: Date) -> String {
-        let state: String
-        switch server.status {
-        case .checking: return "Checking…"
-        case .unknown: return "Not checked yet"
-        case .working: state = "Has your files"
-        case .answers: state = "Answers, but holds none of your files to check"
-        case .lostFile: state = "Answers, but a file it had is gone"
-        case .offline: state = "Not answering"
-        }
-        guard let at = server.checkedAt else { return state }
-        let ago = now.timeIntervalSince(at) < 60 ? "just now" : at.formatted(.relative(presentation: .named))
-        return "\(state) · checked \(ago)"
     }
 }
 
 // MARK: - Media servers model
 
-/// The Media servers page's state: each server's health, the files on this
+/// The Media Servers page's health and copy state: each server's health, the files on this
 /// phone, and which of them some server is missing. "Waiting to copy" is
 /// measured, never assumed: the old Blossom panel showed every file as
 /// needing backup until a backup ran. Answers go into `BlossomBackupStore`
@@ -252,6 +214,13 @@ final class MediaServersModel: ObservableObject {
         let now = files.filter { $0.status == .copying }
         guard let first = now.first else { return "finishing" }
         return now.count == 1 ? first.title : "\(first.title) and \(now.count - 1) more"
+    }
+
+    /// The health of a server as typed in the list. Uploads go to its upload
+    /// address (`HavenConfig.blossomUploadServer`), so that is what was tested.
+    func server(configured url: String) -> Server? {
+        guard let upload = HavenConfig.blossomUploadServer(url) else { return nil }
+        return servers.first { $0.id == upload }
     }
 
     func host(for server: String) -> String {

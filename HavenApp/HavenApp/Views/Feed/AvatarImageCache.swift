@@ -120,6 +120,14 @@ final class AvatarImageCache {
         }
     }
 
+    /// True when `load(url:)` would go to the network: no small copy yet, not
+    /// a known-dead link, not backing off after a recent failure.
+    func wouldFetch(_ url: URL) -> Bool {
+        !hasSmallCopy(of: url)
+            && !MediaCacheService.shared.isKnown404(url: url)
+            && !backoff.isBackingOff(url)
+    }
+
     func hasSmallCopy(of url: URL) -> Bool {
         MediaCacheService.shared.hasAvatarThumbnail(for: url, maxPixel: Int(Self.targetPixelSize))
     }

@@ -165,6 +165,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 // Media servers set in another app (kind 10063) become
                 // upload servers here too.
                 await NostrService.shared.syncOwnerServerList()
+                // Profile pictures ahead of time, once a day on Wi-Fi. There
+                // is no switch for it any more; before, the iOS start sat in
+                // HavenApp/App/iOSAppDelegate.swift, which this target does
+                // not build, so it never ran on iPhone or iPad.
+                try? await Task.sleep(for: .seconds(5))
+                ProfilePicturePrefetchService.shared.start()
             }
         }
 

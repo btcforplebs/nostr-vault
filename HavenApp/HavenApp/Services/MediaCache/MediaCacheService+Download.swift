@@ -115,9 +115,6 @@ extension MediaCacheService {
     private func adoptDownloadedFile(_ tempURL: URL, sourceURL: URL) -> Data? {
         let fm = FileManager.default
         let size = ((try? fm.attributesOfItem(atPath: tempURL.path))?[.size] as? NSNumber)?.intValue ?? 0
-        guard !isDiskCacheDisabled else {
-            return try? Data(contentsOf: tempURL)
-        }
         guard size > 100 else {
             #if DEBUG
             print("MediaCacheService: Skipping cache for \(sourceURL.absoluteString) - data too small (\(size) bytes)")

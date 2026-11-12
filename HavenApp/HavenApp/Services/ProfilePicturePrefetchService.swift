@@ -21,26 +21,13 @@ class ProfilePicturePrefetchService {
     // MARK: - Lifecycle
 
     func start() {
+        // Always on, Wi-Fi only, at most once a day: there is no switch
+        // (media settings trim, 2026-11-12; Android has done this all along).
         guard !started else { return }
-        guard ConfigService.shared.config.prefetchProfilePictures else { return }
-        guard !ConfigService.shared.config.disableMediaCache else { return }
 
         started = true
         startNetworkMonitor()
         setupTimer()
-
-        // React to the toggle being turned off
-        ConfigService.shared.$config
-            .map(\.prefetchProfilePictures)
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] enabled in
-                guard let self else { return }
-                if !enabled {
-                    self.stop()
-                }
-            }
-            .store(in: &cancellables)
 
         // Initial check after a brief delay to let contacts load
         Task {
@@ -64,11 +51,12 @@ class ProfilePicturePrefetchService {
         pathMonitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                #if os(macOS)
-                self.isWiFi = path.status == .satisfied
-                #else
-                self.isWiFi = path.status == .satisfied && !path.usesInterfaceType(.cellular)
-                #endif
+                self.isWiFi = AvatarPrefetchRules.mayRun(
+                    satisfied: path.status == .satisfied,
+                    cellular: path.usesInterfaceType(.cellular),
+                    expensive: path.isExpensive,
+                    constrained: path.isConstrained
+                )
                 #if DEBUG
                 print("ProfilePicturePrefetchService: Network changed - isWiFi=\(self.isWiFi)")
                 #endif
@@ -88,8 +76,6 @@ class ProfilePicturePrefetchService {
     }
 
     private func checkAndRun() {
-        guard ConfigService.shared.config.prefetchProfilePictures else { return }
-        guard !ConfigService.shared.config.disableMediaCache else { return }
         guard isWiFi else {
             #if DEBUG
             print("ProfilePicturePrefetchService: Skipping - not on Wi-Fi")
@@ -152,7 +138,8 @@ class ProfilePicturePrefetchService {
             }
 
             // Filter to only uncached URLs
-            let uncached = urls.filter { !AvatarImageCache.shared.hasSmallCopy(of: $0) }
+            // Capped per run; whatever is left goes in the next day's run.
+            let uncached = AvatarPrefetchRules.thisRun(urls, fetchable: AvatarImageCache.shared.wouldFetch)
 
             #if DEBUG
             print("ProfilePicturePrefetchService: \(urls.count) total URLs, \(uncached.count) uncached")
