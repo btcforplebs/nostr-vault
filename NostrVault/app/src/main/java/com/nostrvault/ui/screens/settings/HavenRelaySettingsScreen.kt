@@ -373,7 +373,7 @@ internal fun MacSyncSection(
         ) {
             Icon(NostrVaultIcons.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
-            Text("Check desktop vault sync", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("Sync now", fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

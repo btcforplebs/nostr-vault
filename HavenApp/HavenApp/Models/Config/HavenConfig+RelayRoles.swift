@@ -118,7 +118,7 @@ extension HavenConfig {
     /// this device only) and the Mac relay.
     var ownPublicRelays: [String] {
         var relays: [String] = []
-        if !isLocal { relays.append("wss://\(sanitizedRelayURL)") }
+        if listsOwnDomain { relays.append("wss://\(sanitizedRelayURL)") }
         relays.append(macRelayWssURL)
         return relays
     }

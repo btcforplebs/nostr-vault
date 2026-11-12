@@ -9,9 +9,9 @@
   "lede": "One heading per problem: what you see, why it happens, and what to tap.",
   "description": "Fixes for common Nostr Vault problems: empty feed, signer not answering, read-only account, photo posts failing, relays not answering, mesh devices not in reach, Check sync stopping, Mobile vault mode paused.",
   "labels": {
-    "ios": ["Fill Your Feed", "Media Servers", "Reveal Key", "Accounts & Keys", "My Devices", "Not in reach", "Link a device", "This Device", "Desktop vault · full history", "Check desktop vault sync", "Copy was interrupted", "Mobile vault mode", "Mobile vault mode paused", "Share With Others", "No Write relay"],
+    "ios": ["Fill Your Feed", "Media Servers", "Reveal Key", "Accounts & Keys", "My Devices", "Not in reach", "Link a device", "This Device", "Desktop vault · full history", "Sync now", "Copy was interrupted", "Mobile vault mode", "Mobile vault mode paused", "Share With Others", "No Write relay"],
     "android": ["Media Servers", "Start Vault Automatically", "My Devices", "This Device", "Desktop vault · full history", "Mobile vault mode", "No Write relay",
-                "Check desktop vault sync", "Copy was interrupted"]
+                "Sync now", "Copy was interrupted"]
   }
 }
 -->
@@ -82,7 +82,8 @@
 
 <section id="check-sync">
 <h2>Check sync stops early</h2>
-<p>On iPhone and Android, <strong>Check desktop vault sync</strong> ends on "Stopped · N still missing", "Copy didn't
+<p>On iPhone and Android, <strong>Sync now</strong> on your Mac's card in <span class="path">Settings &rarr; Your Devices</span>
+    (it used to be called Check desktop vault sync) ends on "Stopped · N still missing", "Copy didn't
     finish" with a reason, or "Copy was interrupted". The button is greyed out while a copy is running or when
     your vault isn't running.</p>
 <p><strong>Fix:</strong> read the reason line. "Copy was interrupted" means the app closed during the copy; it

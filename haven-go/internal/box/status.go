@@ -115,6 +115,8 @@ type Status struct {
 	Owner   string         `json:"owner"`
 	Device  string         `json:"device"` // the box's one npub (the mesh's); "" until nv-mesh made it
 	Move    *MoveState     `json:"move,omitempty"`
+	// RelayURL: the box's own web address (NV_RELAY_URL), "" when none.
+	RelayURL string `json:"relay_url,omitempty"`
 }
 
 // meshStale: a status.json older than this is from an nv-mesh that has

@@ -35,10 +35,10 @@ test("the starter list keeps wss relays others can reach, once each", () => {
 const files = dir => readdirSync(dir).flatMap(f => { const p = join(dir, f); return statSync(p).isDirectory() ? (f === "vendor" ? [] : files(p)) : /\.(js|jsx|mjs)$/.test(f) ? [p] : [] })
 const writes10002 = src => /kind:\s*10002\b/.test(src) || /publishList\([^)]*\b10002\b/.test(src)
 
-test("only the relay step and Save on Relays send a kind 10002", () => {
+test("only the relay step, Save on Relays and the box's Public on the web switch send a kind 10002", () => {
   const root = new URL("../src", import.meta.url).pathname
   const hits = files(root).filter(p => writes10002(readFileSync(p, "utf8"))).map(p => p.slice(root.length + 1)).sort()
-  assert.deepEqual(hits, ["net/new-account.js", "screens/RelaysPage.jsx"])
+  assert.deepEqual(hits, ["box/public-on-web.js", "net/new-account.js", "screens/RelaysPage.jsx"])
   // The scan can see a new sender: both shapes are caught.
   assert.ok(writes10002(`pool.publish(r, sign({ kind: 10002, tags }))`))
   assert.ok(writes10002(`await publishList(ctx, 10002, tags)`))

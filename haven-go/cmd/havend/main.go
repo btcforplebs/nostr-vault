@@ -104,6 +104,7 @@ func run(args []string) error {
 		Started:    time.Now(),
 		Mesh:       mesh,
 		Owner:      cfg.OwnerNpub,
+		RelayURL:   cfg.RelayURL,
 		Engine:     engine,
 		MeshStatus: cfg.MeshStatusFile,
 		Storage:    &box.StorageMeter{},

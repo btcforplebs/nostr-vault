@@ -10,7 +10,7 @@ extension HavenConfig {
     /// unreachable to them.
     var ownHavenDMInboxURL: String {
         #if os(macOS)
-        guard !isLocal, !Self.isPrivateNetworkHost(sanitizedRelayURL) else { return "" }
+        guard listsOwnDomain, !Self.isPrivateNetworkHost(sanitizedRelayURL) else { return "" }
         return Self.normalizedRelayURL(nostrURL + "/inbox")
         #else
         let base = macRelayNormalizedBase

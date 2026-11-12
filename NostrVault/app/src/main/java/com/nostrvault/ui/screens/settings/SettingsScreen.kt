@@ -172,13 +172,10 @@ val SETTINGS_GROUPS: List<SettingsGroup> = listOf(
         SettingsRow("Media Servers", NostrVaultIcons.SettingsMediaServers, SettingsTile.Green, Screen.BlossomSettings),
     )),
     SettingsGroup("Your Vault", listOf(
-        SettingsRow("Desktop vault sync", NostrVaultIcons.SettingsMacRelay, SettingsTile.Teal, Screen.HavenRelaySettings),
+        SettingsRow("Your Devices", NostrVaultIcons.SettingsMacRelay, SettingsTile.Teal, Screen.YourDevices),
         SettingsRow("Who Can Reach You", NostrVaultIcons.SettingsRelayAccess, SettingsTile.Blue, Screen.RelayAccessSettings),
         SettingsRow("Import Notes", NostrVaultIcons.Import, SettingsTile.Orange, Screen.ImportSettings),
         SettingsRow("Backup & Restore", NostrVaultIcons.SettingsBackup, SettingsTile.Indigo, Screen.BackupSettings),
-    )),
-    SettingsGroup("Mesh", listOf(
-        SettingsRow("Mesh", NostrVaultIcons.SettingsRelays, SettingsTile.Teal, Screen.MeshSettings),
     )),
     SettingsGroup("Help", listOf(
         SettingsRow("Tutorials", NostrVaultIcons.Tutorials, SettingsTile.Purple, Screen.TutorialsSettings),
@@ -186,6 +183,7 @@ val SETTINGS_GROUPS: List<SettingsGroup> = listOf(
     SettingsGroup("Advanced", listOf(
         SettingsRow("Proof of Work", NostrVaultIcons.PoW, SettingsTile.Purple, Screen.PowSettings),
         SettingsRow("Database & Reset", NostrVaultIcons.SettingsDatabase, SettingsTile.Gray, Screen.AdvancedSettings),
+        SettingsRow("Mesh", NostrVaultIcons.SettingsRelays, SettingsTile.Teal, Screen.MeshSettings),
         SettingsRow("Bitcoin On-Chain", NostrVaultIcons.Wallet, SettingsTile.Orange, Screen.BitcoinWallet),
         SettingsRow("Logs", NostrVaultIcons.SettingsLogs, SettingsTile.Gray, Screen.LogViewer),
     )),

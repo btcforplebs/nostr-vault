@@ -78,6 +78,10 @@ struct HavenConfig: Codable, Equatable {
 
     // Mac relay (iOS only)
     var macRelayURL: String = "" // wss:// URL to a remote Mac Haven relay to sync missed notes
+    /// Your Devices › Public on the web (Mac): list this vault's own domain in
+    /// the owner's published lists. nil until the owner touches the switch:
+    /// then a domain already set keeps being listed (`listsOwnDomain`).
+    var publicOnWeb: Bool?
     
     // NWC (Nostr Wallet Connect)
     var nwcURI: String = ""
@@ -319,7 +323,7 @@ struct HavenConfig: Codable, Equatable {
         case useOLED, textSizeScale, feedLayoutModes, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage, hideNostrVaultBadge
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications, notifyOwnAccountTags, showDMTextInNotifications
-        case macRelayURL
+        case macRelayURL, publicOnWeb
         case privateRelayName, privateRelayDescription, privateRelayIcon
         case chatRelayName, chatRelayDescription, chatRelayIcon, chatRelayWotDepth, chatRelayWotRefreshHours, wotRefreshInterval, chatRelayMinFollowers
         case outboxRelayName, outboxRelayDescription, outboxRelayIcon, outboxMaxEventsPerMinute, outboxMaxConnectionsPerMinute
@@ -370,6 +374,7 @@ struct HavenConfig: Codable, Equatable {
         showReplies = try container.decodeIfPresent(Bool.self, forKey: .showReplies) ?? defaults.showReplies
         nwcURI = try container.decodeIfPresent(String.self, forKey: .nwcURI) ?? defaults.nwcURI
         macRelayURL = try container.decodeIfPresent(String.self, forKey: .macRelayURL) ?? defaults.macRelayURL
+        publicOnWeb = try container.decodeIfPresent(Bool.self, forKey: .publicOnWeb)
         defaultZapAmount = try container.decodeIfPresent(Int.self, forKey: .defaultZapAmount) ?? defaults.defaultZapAmount
         // Retired themes (purple/blue/green/pink/slate) resolve to orange rather
         // than being carried forward as an unrenderable key.

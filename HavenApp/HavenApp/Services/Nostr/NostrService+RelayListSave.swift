@@ -147,10 +147,13 @@ extension NostrService {
     /// list, `oldInbox` becomes `newInbox` and every other entry stays as
     /// published. Nothing goes out when no list was found or the indexers
     /// didn't both answer, so the app's defaults never reach it.
+    /// `done` gets a line for the owner when nothing went out for a reason
+    /// they must act on (nil when published or nothing changed).
     @MainActor
-    func publishOwnerDMInboxMove(from oldInbox: String, to newInbox: String) {
+    func publishOwnerDMInboxMove(from oldInbox: String, to newInbox: String,
+                                 done: (@MainActor (String?) -> Void)? = nil) {
         let config = ConfigService.shared.config
-        guard let owner = Bech32.decode(config.ownerNpub)?.hexString else { return }
+        guard let owner = Bech32.decode(config.ownerNpub)?.hexString else { done?(nil); return }
         Task {
             let lookup = await lookupNewestReplaceable(kind: 10050, for: owner, alsoAsk: config.dmInboxRelays + RelayDraft.indexers)
             // Both indexers must answer: a lagging relay's older copy, re-signed, would roll the list back.
@@ -158,12 +161,45 @@ extension NostrService {
                 #if DEBUG
                 print("NostrService: DM inbox move: no settled published list; not published")
                 #endif
+                done?(lookup.event == nil && RelayDraft.settled(found: false, answeredBy: lookup.answeredBy) ? nil : "Your DM inbox list couldn't be checked, so it wasn't changed. Try again, or edit it under Relays.")
                 return
             }
             let published = ProfileRepository.parseDMRelayListTags(event.tags)
             let moved = Self.dmInboxMoved(published, from: oldInbox, to: newInbox)
-            guard moved != published else { return }
+            guard moved != published else { done?(nil); return }
+            // Never sign an empty DM inbox: nobody could reach the owner's DMs (Tron #1991).
+            // Loopback entries never go out (publishOwnerDMRelays), so they don't count.
+            guard moved.contains(where: { !Self.isLoopbackRelay($0) }) else {
+                done?("This vault is the only relay in your DM inbox, so it stays listed. Add another DM relay under Relays first.")
+                return
+            }
             publishOwnerDMRelays(moved)
+            done?(nil)
+        }
+    }
+
+    /// Takes `relay` off the owner's published relay list (kind 10002),
+    /// every other tag as published. Like the DM inbox move, nothing goes
+    /// out unless both indexers answered, and a list that would be left with
+    /// no relay is never signed. `done` as above.
+    @MainActor
+    func publishOwnerRelayListDrop(_ relay: String, done: (@MainActor (String?) -> Void)? = nil) {
+        let config = ConfigService.shared.config
+        guard let owner = Bech32.decode(config.ownerNpub)?.hexString else { done?(nil); return }
+        Task {
+            let lookup = await lookupNewestReplaceable(kind: 10002, for: owner,
+                                                       alsoAsk: Array(config.readRelays.prefix(3)) + RelayDraft.indexers)
+            guard let event = lookup.event, RelayDraft.settled(found: true, answeredBy: lookup.answeredBy) else {
+                done?(lookup.event == nil && RelayDraft.settled(found: false, answeredBy: lookup.answeredBy) ? nil : "Your relay list couldn't be checked, so your domain is still on it. Try again, or remove it under Relays.")
+                return
+            }
+            guard let tags = RelayDraft.relayListDropping(relay, from: event.tags) else { done?(nil); return }
+            guard tags.contains(where: { $0.count >= 2 && $0[0] == "r" }) else {
+                done?("This vault is the only relay in your relay list, so it stays listed. Add another relay under Relays first.")
+                return
+            }
+            publishRelayListTags(tags)
+            done?(nil)
         }
     }
 

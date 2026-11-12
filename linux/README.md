@@ -41,6 +41,14 @@ The container gets at most 1.5 GB of memory and low CPU priority, restarts by it
 vault listens on `NV_PORT` (8080), and on loopback only the engine (3355) and the mesh door (8081). The installer
 checks those are free.
 
+### Public on the web (advanced)
+
+Your own devices reach the box over the mesh with no domain. To also make it public on the web, give it a domain and a
+tunnel that ends at `NV_PORT`, set `NV_RELAY_URL=vault.example.com` in `/opt/nostr-vault/.env` and restart. Then in the
+web app's **Box** screen, **Public on the web** › **Make this vault public on the web** lists that domain in your relay
+list and its `/inbox` in your DM inbox (the browser signs them; the box holds no account key). Off unlists it; the
+tunnel keeps running until you stop it.
+
 ## Inside the container (for the four lanes)
 
 | | |

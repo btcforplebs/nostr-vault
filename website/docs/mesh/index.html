@@ -168,8 +168,9 @@
                     <li>Step by step: <a class="inline" href="/docs/mesh/photo-server/">your Mac as your photo server</a>,
                         <a class="inline" href="/docs/mesh/home-vault/">mobile or desktop vault</a>.</li>
                 </ul>
-                <p>To turn it on, open <span class="path">Settings &rarr; Mesh</span> and switch on
-                    <strong>Mesh</strong>. Serving is off until you turn it on.</p>
+                <p>It turns on when you connect your first device from <span class="path">Settings &rarr; Your Devices</span>.
+                    You can also switch on <strong>Mesh</strong> yourself under <span class="path">Your Devices &rarr; Advanced &rarr; Mesh</span>.
+                    Serving is off until it is on.</p>
                 </section>
 
                 <section id="devices">
@@ -179,9 +180,11 @@
                     each other over the mesh. Devices on this list sync with each other in full: your notes, your photos and
                     your history.</p>
                 <ol>
-                    <li>On each device, open Mesh settings (on iPhone and iPad, the Mesh button on the Profile tab) and turn on
-                        <strong>Mesh</strong>.</li>
-                    <li>On one device tap <span class="ui">Link a device</span>: one shows a code, the other scans it, then they
+                    <li>On one device open <span class="path">Settings &rarr; Your Devices</span> and tap
+                        <strong>Connect a computer or phone</strong> (on the Mac, <strong>Connect a phone</strong> under Your Vault).
+                        That turns the mesh on. Or open Mesh settings (on iPhone and iPad, the Mesh button on the Profile tab), turn on
+                        <strong>Mesh</strong> and tap <span class="ui">Link a device</span>.</li>
+                    <li>One shows a code, the other scans it, then they
                         swap. Both add each other. See <a class="inline" href="/docs/mesh/my-devices/#add">Link a device</a>.</li>
                     <li>Something that can't scan, such as a Linux box, is added by its mesh address: tap
                         <strong>Add a device</strong>, then paste the address under <strong>Paste instead</strong>.</li>
@@ -201,11 +204,11 @@
                     <li>Your own devices in My Devices reach it in full.</li>
                     <li>Everyone else can only read the photos in your posts, and only slowly: 1 MB/s shared between all of
                         them, at most 256 MB each. On iPhone they get 1 GB a day in total, then wait until the next day. On
-                        Android, Pause after sets the total for one session (1 GB to start). They can't read your notes or
-                        change anything.</li>
+                        Android, Pause after sets the total for one session (1 GB to start). They can read your public notes, as on
+                        any relay, but not your messages or private notes, and they can't change anything.</li>
                 </ul>
-                <p>Add it on your other phones as <strong>Mobile vault &middot; new posts</strong>, and your new notes and photos go to the
-                    mobile vault over the mesh, which sends your notes on to your relays.</p>
+                <p>Add it on your other phones as <strong>Mobile vault &middot; new posts</strong>, and your new notes and photos also go to the
+                    mobile vault over the mesh. Your phone still sends your notes to your relays itself; the mobile vault keeps a copy.</p>
                 </section>
 
                 <section id="share">
@@ -232,9 +235,10 @@
                 <ul>
                     <li><strong>Your home IP isn't published.</strong> Your profile lists your device by its mesh key, not
                         its address. The mesh finds it by key.</li>
-                    <li><strong>The door only serves photos.</strong> To anyone outside My Devices, your device only hands
-                        out the photos in your public posts. It doesn't expose your relay, your messages, your keys or
-                        anything private.</li>
+                    <li><strong>The door serves what's public.</strong> To anyone outside My Devices, your device hands out your
+                        public notes and the photos in your public posts, as a public relay would, and takes direct messages
+                        for you if your inbox lets the sender in. Your messages and private notes can't be read over it, and
+                        it never exposes your keys.</li>
                     <li><strong>A separate key.</strong> The device's mesh key is its own key, made once and kept on that
                         device. Your Nostr key never goes to the mesh.</li>
                     <li><strong>Follows only is about what your app loads.</strong> Your app asks the mesh for photos only

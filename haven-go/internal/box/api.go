@@ -17,6 +17,9 @@ type API struct {
 	Started time.Time
 	Mesh    MeshID // the box's one npub, the mesh's
 	Owner   string // npub
+	// RelayURL is NV_RELAY_URL, the box's own web address if it has one
+	// (Config.RelayURL); the box screen's Public on the web part shows it.
+	RelayURL string
 
 	Engine     interface{ State() EngineState }
 	MeshStatus string // path of the mesh status file
@@ -100,15 +103,16 @@ func (a *API) status() Status {
 	disk, _ := DiskOf(eng.VaultDir)
 	npub, _, _ := a.Mesh.Read()
 	return Status{
-		Version: a.Version,
-		Uptime:  int64(time.Since(a.Started).Seconds()),
-		Mem:     readMem(eng.Pid),
-		Disk:    disk,
-		Mesh:    readMesh(a.MeshStatus, npub, time.Now()),
-		Engine:  eng,
-		Owner:   a.Owner,
-		Device:  npub,
-		Move:    a.Mover.State(),
+		Version:  a.Version,
+		Uptime:   int64(time.Since(a.Started).Seconds()),
+		Mem:      readMem(eng.Pid),
+		Disk:     disk,
+		Mesh:     readMesh(a.MeshStatus, npub, time.Now()),
+		Engine:   eng,
+		Owner:    a.Owner,
+		Device:   npub,
+		Move:     a.Mover.State(),
+		RelayURL: a.RelayURL,
 	}
 }
 

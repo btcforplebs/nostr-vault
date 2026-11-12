@@ -1,6 +1,7 @@
 // The box's owner-only API (/api/box/, NIP-98: each request carries a kind 27235 event signed by the owner, NV_OWNER).
 // Shapes the box screens read (shared contract, nostr-vault-linux):
-//   GET  status   -> { version, uptime: seconds, mem: { used, total }, disk: { used, total }, mesh: { up, npub, peers } }
+//   GET  status   -> { version, uptime: seconds, mem: { used, total }, disk: { used, total }, mesh: { up, npub, peers },
+//                      relay_url }   relay_url: NV_RELAY_URL, the box's own web address; missing when it has none
 //   GET  storage  -> { path, used, free, total }                       bytes
 //   GET  devices  -> { box: { npub, name }, devices: [{ npub, name, role, approved, lastSeen }] }
 //                    havend: the owner's 10063 has no names or seen times, so name is "" and lastSeen is left out

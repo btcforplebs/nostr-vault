@@ -10,7 +10,7 @@
   "description": "What your vault keeps on each device: your notes, mentions, messages and media. The Vault tab, starting and stopping it, Import Notes, and the Mac and web differences.",
   "labels": {
     "ios": ["Your Vault", "Who Can Reach You", "Import Notes", "Backup & Restore", "Start Vault Automatically", "Your vault is running", "Keep it full", "In your vault", "Import notes", "Copy Address", "Start Vault", "Start Date", "Tutorials", "Vault Dashboard", "Is it safe?", "Make one"],
-    "mac": ["Domain & Port", "Startup", "Launch at Login", "Relay Dashboard"],
+    "mac": ["Public on the web", "Make this vault public on the web", "Startup", "Launch at Login", "Relay Dashboard"],
     "android": ["Your Vault", "Who Can Reach You", "Import Notes", "Backup & Restore", "Start Vault Automatically", "Vault Dashboard", "Start Date", "Start Import", "Tutorials"],
     "web": ["Vault Dashboard", "Keep it full", "Import notes", "Back up media", "Import from my relays", "This browser's copy", "Sign out and delete this browser's copy"]
   }
@@ -108,9 +108,10 @@
     <tr><th></th><th>Where the vault runs</th><th>What's different</th></tr>
     <tr><td>iPhone</td><td>Inside the app</td><td>Vault tab with the full dashboard.</td></tr>
     <tr><td>Android</td><td>Inside the app</td><td>Same as iPhone.</td></tr>
-    <tr><td>Mac</td><td>Inside the menu bar app</td><td>A simpler Relay Dashboard. <strong>Domain &amp; Port</strong>
-        lets you give the vault your own domain so your other devices can reach it, and
-        <strong>Startup</strong> has <strong>Launch at Login</strong>.</td></tr>
+    <tr><td>Mac</td><td>Inside the menu bar app</td><td>A simpler Relay Dashboard. Your devices reach it over the mesh with no setup; under
+        <span class="path">Settings &rarr; Your Vault</span>, <strong>Public on the web</strong> is the advanced last step:
+        <strong>Make this vault public on the web</strong> lists your own domain in your relay list and DM inbox, and
+        shows the domain, port and tunnel settings. <strong>Startup</strong> has <strong>Launch at Login</strong>.</td></tr>
     <tr><td>Web</td><td>In your browser's storage</td><td>A Vault Dashboard like the phone's, without Start/Stop,
         Import media or Desktop vault sync. Import with <span class="path">Keep it full &rarr; Import
         notes</span> or <strong>Import from my relays</strong> in Settings. Signing out deletes this browser's copy; your phone's vault is

@@ -1,9 +1,10 @@
-// The box screens (#/box), as the Mac app's: Status, Storage (Move vault to…), Mesh, My Devices and Update, read from the
+// The box screens (#/box), as the Mac app's: Status, Storage (Move vault to…), Mesh, My Devices, Public on the web and Update, read from the
 // box's owner-only API (api.js). Shown only in box mode (mode.js). Each part loads on its own, so a slow or refused
 // call leaves the others showing; an unknown number reads "—", never 0.
 import { useEffect, useMemo, useState } from "preact/hooks"
 import { boxApi } from "./api.js"
 import { bytes, uptime, share, ago, shortNpub } from "./format.js"
+import { PublicOnWeb } from "./PublicOnWeb.jsx"
 if (import.meta.env) import("./box.css")
 
 const ROLE = { mac: "Desktop vault · full history", phone: "Phone", homeVault: "Mobile vault · new posts", browser: "Browser vault" }
@@ -38,6 +39,9 @@ export function BoxScreen({ ctx, api: given }) {
       </Part>
       <Part title="My Devices" state={data.devices}>
         {devices && <Devices devices={devices} />}
+      </Part>
+      <Part title="Public on the web" state={data.status}>
+        {status && <PublicOnWeb ctx={ctx} relayUrl={status.relay_url} />}
       </Part>
       <Part title="Update" state={data.status}>
         {status && <Update api={api} version={status.version} />}
