@@ -809,6 +809,8 @@ class BlossomService @Inject constructor(
 
     /** @return true if the file is gone from this device (deleted, or never stored here). */
     fun deleteFromLocal(sha256: String): Boolean {
+        // Gone from this device: nothing still queued sends it on (device sync map §4.3).
+        homeVault.forgetBlob(sha256)
         val config = configStore.config.value
         val dir = config.relayDataDir?.let { File(it, config.blossomPath) } ?: return false
         // Bare-hash file (how the relay stores blobs) is the common case.

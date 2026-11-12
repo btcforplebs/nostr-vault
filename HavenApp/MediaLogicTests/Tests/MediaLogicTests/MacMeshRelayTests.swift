@@ -66,7 +66,9 @@ final class MacMeshRelayTests: XCTestCase {
         var config = config(mac: macNpub)
         config.blastrRelays = ["wss://w.example"]
         let mesh = RelayConfiguration.MacMeshRelay(npub: macNpub, url: meshURL)
-        XCTAssertEqual(RelayConfiguration.blastrRelays(config: config, mesh: mesh), [meshURL, "wss://w.example"])
+        // Marked second-hand: the Mac stores the phone's note and does not
+        // blast it again (the phone already did; haven-go isSecondHandConn).
+        XCTAssertEqual(RelayConfiguration.blastrRelays(config: config, mesh: mesh), [meshURL + "?pulled=1", "wss://w.example"])
         XCTAssertEqual(RelayConfiguration.blastrRelays(config: config, mesh: nil), ["wss://w.example"])
         let other = RelayConfiguration.MacMeshRelay(npub: otherNpub, url: meshURL)
         XCTAssertEqual(RelayConfiguration.blastrRelays(config: config, mesh: other), ["wss://w.example"])
@@ -141,9 +143,11 @@ final class MacMeshRelayTests: XCTestCase {
         var config = config(mac: macNpub)
         config.blastrRelays = ["ws://127.0.0.1:60707/5a0e9fbac56fe8892287621964880fef", "wss://w.example"]
         let mesh = RelayConfiguration.MacMeshRelay(npub: macNpub, url: meshURL)
-        XCTAssertEqual(RelayConfiguration.blastrRelays(config: config, mesh: mesh), [meshURL, "wss://w.example"])
+        XCTAssertEqual(RelayConfiguration.blastrRelays(config: config, mesh: mesh), [meshURL + "?pulled=1", "wss://w.example"])
         config.blastrRelays = [meshURL]
-        XCTAssertEqual(RelayConfiguration.blastrRelays(config: config, mesh: mesh), [meshURL])
+        XCTAssertEqual(RelayConfiguration.blastrRelays(config: config, mesh: mesh), [meshURL + "?pulled=1"])
+        config.blastrRelays = [meshURL + "?pulled=1"]
+        XCTAssertEqual(RelayConfiguration.blastrRelays(config: config, mesh: mesh), [meshURL + "?pulled=1"])
         XCTAssertEqual(RelayConfiguration.blastrRelays(config: config, mesh: nil), [])
     }
 }

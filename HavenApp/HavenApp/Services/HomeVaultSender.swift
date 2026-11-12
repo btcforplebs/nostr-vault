@@ -91,6 +91,13 @@ final class HomeVaultSender: ObservableObject {
               let id = eventDict["id"] as? String,
               let data = try? JSONSerialization.data(withJSONObject: eventDict),
               let json = String(data: data, encoding: .utf8) else { return }
+        // A signed delete takes back the notes it names that still wait here:
+        // they are never sent (device sync map §4.3). The delete itself goes.
+        let deleted = HomeVaultLogic.deletedEventIDs(eventDict)
+        if !deleted.isEmpty {
+            queue = HomeVaultLogic.droppingDeleted(queue, eventIDs: deleted, author: pubkey, blob: nil)
+            saveQueue()
+        }
         let item = HomeVaultItem(kind: .event, id: id, ownerHex: pubkey, eventJSON: json, contentType: nil, added: Date(), attempts: 0, notBefore: nil)
         if let vault = homeVault, pubkey == vault.ownerHex { _ = add(item) }
         for target in phoneTargets(owner: pubkey) {
@@ -98,6 +105,16 @@ final class HomeVaultSender: ObservableObject {
             copy.target = target
             _ = add(copy)
         }
+    }
+
+    /// A deleted blob is not sent anywhere it still waits to go: the home
+    /// vault, a linked phone, or a public copy (device sync map §4.3).
+    func forget(blobSha256 sha256: String) {
+        let kept = HomeVaultLogic.droppingDeleted(queue, eventIDs: [], author: nil, blob: sha256.lowercased())
+        guard kept.count != queue.count else { return }
+        queue = kept
+        saveQueue()
+        appLog("deleted \(sha256.prefix(8)): no longer queued")
     }
 
     /// The linked phones that get `owner`'s new notes and media: only this
@@ -511,7 +528,7 @@ enum HomeVaultTransport {
 
     /// Publish one signed event over the vault's outbox websocket and wait for its OK.
     static func sendEvent(json: String, id: String, base: URL, timeout: TimeInterval = 20) async -> HomeVaultSendResult {
-        guard let url = HomeVaultLogic.websocketURL(base: base) else { return .rejected("bad mesh URL") }
+        guard let url = HomeVaultLogic.eventWebsocketURL(base: base) else { return .rejected("bad mesh URL") }
         let session = URLSession(configuration: .ephemeral)
         let socket = session.webSocketTask(with: url)
         socket.resume()
