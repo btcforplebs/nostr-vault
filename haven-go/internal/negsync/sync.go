@@ -147,8 +147,11 @@ type LocalVector struct {
 
 // BuildVector materializes the windowed local set once and seals it into a
 // reusable reconciliation vector.
+//
+// The query carries ForVector, so a store that knows the mark answers with
+// id+created_at stubs a page at a time, one scan process-wide (vector_scan.go).
 func BuildVector(ctx context.Context, store nostr.RelayStore, filter nostr.Filter) (*LocalVector, error) {
-	data, err := store.QuerySync(ctx, filter)
+	data, err := store.QuerySync(ForVector(ctx), filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query our local store: %w", err)
 	}
