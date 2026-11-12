@@ -5,12 +5,16 @@ package main
 import (
 	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime/metrics"
 	"runtime/pprof"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -38,6 +42,15 @@ var (
 )
 
 func init() {
+	go func() {
+		// The pprof listener is checked every few seconds until it starts:
+		// the host app hands its settings over after this package loads.
+		for range time.Tick(pprofCheckEvery) {
+			if started, _ := startPprofIfSet(); started {
+				return
+			}
+		}
+	}()
 	go func() {
 		var last time.Time
 		for range time.Tick(heapProfileEvery) {
@@ -119,4 +132,91 @@ func pruneHeapProfiles(dir string, keep int) {
 		os.Remove(names[0])
 		names = names[1:]
 	}
+}
+
+// A pprof listener for a relay that runs hot where nothing else can see
+// into it (Logen's .99 Mac, 2026-11-12: the sandboxed app's container is
+// unreadable over ssh, so profile files written there can't be fetched).
+//
+// Off unless HAVEN_PPROF_ADDR is set, and then only on 127.0.0.1:<port>;
+// any other host (0.0.0.0, a LAN address, ::, "localhost") is refused.
+// It serves runtime/pprof profiles from its own mux: net/http/pprof is not
+// imported, because its init registers on http.DefaultServeMux, which the
+// standalone relay serves to the world (main.go).
+//
+//	curl 'http://127.0.0.1:<port>/debug/pprof/goroutine?debug=1'
+//	curl -o heap.pb.gz http://127.0.0.1:<port>/debug/pprof/heap
+//	curl -o allocs.pb.gz http://127.0.0.1:<port>/debug/pprof/allocs
+
+const pprofAddrEnv = "HAVEN_PPROF_ADDR"
+
+var (
+	pprofCheckEvery = 5 * time.Second
+	pprofOnce       sync.Mutex
+	pprofListener   net.Listener
+)
+
+// pprofListenAddr is the address to listen on, or an error if the setting
+// names anything but 127.0.0.1 with a port.
+func pprofListenAddr(raw string) (string, error) {
+	host, port, err := net.SplitHostPort(strings.TrimSpace(raw))
+	if err != nil {
+		return "", fmt.Errorf("%s=%q: %w", pprofAddrEnv, raw, err)
+	}
+	if host != "127.0.0.1" {
+		return "", fmt.Errorf("%s=%q: only 127.0.0.1 is allowed", pprofAddrEnv, raw)
+	}
+	if n, err := strconv.Atoi(port); err != nil || n < 0 || n > 65535 {
+		return "", fmt.Errorf("%s=%q: bad port", pprofAddrEnv, raw)
+	}
+	return net.JoinHostPort(host, port), nil
+}
+
+// startPprofIfSet starts the listener once, if the setting is on and
+// allowed. started is true once it runs (now or before); an error means the
+// setting was refused or the port couldn't be opened.
+func startPprofIfSet() (started bool, err error) {
+	pprofOnce.Lock()
+	defer pprofOnce.Unlock()
+	if pprofListener != nil {
+		return true, nil
+	}
+	raw := strings.TrimSpace(hostGetenv(pprofAddrEnv))
+	if raw == "" {
+		return false, nil
+	}
+	addr, err := pprofListenAddr(raw)
+	if err != nil {
+		slog.Error("🚫 pprof listener refused", "error", err)
+		return true, err // refused for good: stop checking
+	}
+	ln, err := net.Listen("tcp4", addr)
+	if err != nil {
+		slog.Error("🚫 pprof listener could not start", "addr", addr, "error", err)
+		return false, err
+	}
+	pprofListener = ln
+	srv := &http.Server{Handler: pprofMux(), ReadHeaderTimeout: 10 * time.Second}
+	go srv.Serve(ln)
+	slog.Warn("🧪 pprof listening (diagnostics)", "addr", ln.Addr().String())
+	return true, nil
+}
+
+func pprofMux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/{name}", func(w http.ResponseWriter, r *http.Request) {
+		p := pprof.Lookup(r.PathValue("name"))
+		if p == nil {
+			http.NotFound(w, r)
+			return
+		}
+		debug, _ := strconv.Atoi(r.URL.Query().Get("debug"))
+		if debug > 0 {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		} else {
+			w.Header().Set("Content-Type", "application/octet-stream")
+		}
+		_ = p.WriteTo(w, debug)
+	})
+	return mux
 }
