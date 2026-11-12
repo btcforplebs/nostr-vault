@@ -7,10 +7,9 @@
   "description": "Send each new note and photo from your phone to Nostr Vault on your Mac over the mesh, get your history back from the Mac, and check that everything arrived.",
   "checked": "Nostr Vault 3.0.0 (41)",
   "labels": {
-    "ios": ["Desktop vault · full history", "Sync", "Send now", "Check desktop vault sync", "Copying your full history from the Mac…", "Copy was interrupted",
-            "Desktop vault sync"],
+    "ios": ["Desktop vault · full history", "Your Devices", "Your devices", "Sync now", "Sync", "Send now", "Connect a computer or phone", "Copying your full history from the Mac…", "Copy was interrupted"],
     "android": ["Desktop vault · full history", "Sync", "Send now", "Desktop vault sync", "Check desktop vault sync"],
-    "mac": ["Your phones sync with this Mac. Check sync from Mesh on the phone."]
+    "mac": ["Your phones sync with this Mac. Check sync from Mesh on the phone.", "Your Vault", "Connect a phone"]
   }
 }
 -->
@@ -20,21 +19,22 @@
 
 <h2>Set it up</h2>
 <ol class="steps">
-    <li>Turn on the mesh on the Mac and on the phone, and add each to the other's
-        <a href="/docs/mesh/my-devices/">My Devices</a>. On the phone, pick <span class="ui">Desktop vault &middot; full history</span>.</li>
+    <li>On the phone, open <span class="path">Settings &rarr; Your Devices</span> and tap
+        <span class="ui">Connect a computer or phone</span>; on the Mac, open <span class="path">Settings &rarr; Your Vault</span>
+        and tap <span class="ui">Connect a phone</span>. Do the two scans (see <a href="/docs/mesh/my-devices/#link">Link a device</a>).
+        This turns the mesh on if it was off. On the phone, the Mac is your <span class="ui">Desktop vault &middot; full history</span>.</li>
     <li>Keep Nostr Vault open on the Mac. It syncs while it's open.</li>
     <li>Shortly after the phone's vault starts, it copies your full history from the Mac on its own. After that, new
         posts and mentions keep syncing by themselves.</li>
 </ol>
 
 <h2 id="check">Check that it arrived</h2>
-<p>On iPhone and Android, open <span class="path">Settings &rarr; Mesh</span> and, under
-    <span class="ui">Sync</span>, tap <span class="ui">Check desktop vault sync</span>. It's also under
-    <span class="path">Settings &rarr; Desktop vault sync</span>. It ends with what was copied and how many are
+<p>On iPhone and Android, open <span class="path">Settings &rarr; Your Devices</span>. Under
+    <span class="ui">Your devices</span>, your Mac's card has <span class="ui">Sync now</span>. It ends with what was copied and how many are
     missing (Done &middot; nothing missing on iPhone, Everything copied &middot; 0 missing on Android), or says why
-    it stopped.</p>
+    it stopped. The same button is under <span class="path">Settings &rarr; Mesh</span> &rarr; <span class="ui">Sync</span>.</p>
 <div class="shots">
-    <figure><img src="/docs/img/ios/sync.webp" alt="Sync, with Check desktop vault sync" width="900" height="1957" loading="lazy"><figcaption>Sync, with Check desktop vault sync</figcaption></figure>
+    <figure><img src="/docs/img/ios/sync.webp" alt="Sync, with the desktop vault sync check" width="900" height="1957" loading="lazy"><figcaption>Sync, with the desktop vault sync check (older screen)</figcaption></figure>
 </div>
 
 <ul>
@@ -42,13 +42,13 @@
     <li><span class="ui">Copy was interrupted</span>: the app closed during the copy. It picks up again the next time
         the relay starts.</li>
 </ul>
-<p>If you also have a <a href="/docs/mesh/home-vault/">mobile vault</a>, <span class="ui">Send now</span> under Sync
-    sends what's waiting for it.</p>
+<p>If you also have a <a href="/docs/mesh/home-vault/">mobile vault</a>, its card under <span class="ui">Your devices</span> has
+    <span class="ui">Sync now</span> too (<span class="ui">Send now</span> under Mesh &rarr; Sync): it sends what's waiting for it.</p>
 
 <h2>Good to know</h2>
 <ul>
     <li>Nothing goes through a server of ours. The phone and the Mac talk over the mesh, end to end encrypted.</li>
-    <li>When the Mac is closed or out of reach, new posts still go to your public relays as usual. The Mac catches up
-        when it's back.</li>
+    <li>Your phone sends your new posts to your public relays itself. When the Mac is closed or out of reach, nothing
+        changes for them; the Mac catches up when it's back.</li>
     <li>Posting a photo still needs a public media server. The Mac gets a copy as well.</li>
 </ul>
