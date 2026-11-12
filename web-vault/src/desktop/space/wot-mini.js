@@ -30,22 +30,25 @@ export const loadingText = (have, follows) => `Loading your web: ${have.toLocale
 
 /**
  * Who is new among `vouched` (the web's extended layer, most linked first), against what this browser kept `kept`
- * ({ known: Set of short keys, fresh: [[pk, first seen]] } or null on a first look) -> { fresh, kept }.
- * A first look only notes everyone: nothing is new yet. Later, anyone not seen before is new from `now`; someone stays
- * new for NEW_FOR_S while still vouched for. Known people are never forgotten, so someone a missing list hides for a
- * while doesn't come back as new.
+ * ({ known: Set of short keys, fresh: [[pk, first seen]] } or null on a first look) -> { fresh, kept }. Anyone in
+ * `muted` (the block list, kind 10000) is never offered and never newly noted: the web build already leaves them out
+ * (wot.js buildWeb), and the offer checks again, so a block list that landed after the web did can't flash someone
+ * you muted. A first look only notes everyone: nothing is new yet. Later, anyone not seen before is new from `now`;
+ * someone stays new for NEW_FOR_S while still vouched for. Known people are never forgotten, so someone a missing
+ * list hides for a while doesn't come back as new.
  */
-export function newInWeb(vouched, kept, now) {
+export function newInWeb(vouched, kept, now, muted = new Set()) {
+  const clean = muted.size ? vouched.filter(pk => !muted.has(pk)) : vouched
   const known = new Set(kept?.known ?? [])
   if (!kept) {
-    for (const pk of vouched) known.add(short(pk))
+    for (const pk of clean) known.add(short(pk))
     return { fresh: [], kept: { known, fresh: [] } }
   }
-  const still = new Set(vouched)
+  const still = new Set(clean)
   const fresh = (kept.fresh ?? []).filter(([pk, at]) => still.has(pk) && now - at < NEW_FOR_S)
   const had = new Set(fresh.map(([pk]) => pk))
-  const arrived = vouched.filter(pk => !known.has(short(pk)) && !had.has(pk)).map(pk => [pk, now])
-  for (const pk of vouched) known.add(short(pk))
+  const arrived = clean.filter(pk => !known.has(short(pk)) && !had.has(pk)).map(pk => [pk, now])
+  for (const pk of clean) known.add(short(pk))
   const all = [...arrived, ...fresh].slice(0, NEW_KEPT)
   return { fresh: all.map(([pk]) => pk), kept: { known, fresh: all } }
 }

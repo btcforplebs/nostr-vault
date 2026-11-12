@@ -31,6 +31,18 @@ test("someone known is never new again, even after a missing list hid them a whi
   assert.deepEqual(newInWeb([pk(1), pk(2)], gone.kept, 3000).fresh, [])
 })
 
+test("muted people are never offered and never newly noted, and they drop out of new once muted", () => {
+  const muted = new Set([pk(2)])
+  const first = newInWeb([pk(1), pk(2)], null, 1000, muted)
+  assert.deepEqual(first.fresh, [])
+  assert.deepEqual([...first.kept.known].sort(), [pk(1).slice(0, 8)], "a muted person isn't noted on a first look")
+  const r = newInWeb([pk(1), pk(2)], first.kept, 2000)
+  assert.deepEqual(r.fresh, [pk(2)])
+  const nowMuted = newInWeb([pk(1), pk(2)], r.kept, 3000, muted)
+  assert.deepEqual(nowMuted.fresh, [], "muted after arriving: no longer new")
+  assert.deepEqual(newInWeb([pk(1), pk(2)], nowMuted.kept, 4000).fresh, [], "and once known they don't come back as new after an unmute")
+})
+
 test("at most NEW_KEPT newcomers are kept", () => {
   const { kept } = newInWeb([], null, 1)
   const many = Array.from({ length: NEW_KEPT + 10 }, (_, i) => pk(i + 1))
@@ -63,6 +75,12 @@ test("the panel says how far the web has loaded and hides New in your web until 
   assert.match(src, /!ready \? `\$\{loadingText\(have, follows\.length\)\}…`/)
   assert.match(src, /\{status \? <p class="wm-note">\{status\}<\/p>/, "the faces only show with no status line")
   assert.match(src, /mapped\(follows\.length, unsettledLists\(follows\)\)|const left = unsettledLists\(follows\)/)
+})
+
+test("nobody muted is offered: the offer checks the block list, and nothing is called new before the list has loaded", () => {
+  const src = readFileSync(new URL("../src/desktop/space/WotMini.jsx", import.meta.url), "utf8")
+  assert.match(src, /newInWeb\(web\.extended, readKept\(me\), Math\.floor\(Date\.now\(\) \/ 1000\), blocked\)/, "the offer itself skips muted people")
+  assert.match(src, /&& blocksLoaded/, "newcomers wait for the block list, so a late mute can't flash someone into kept")
 })
 
 test("the globe draws every follow, up to GLOBE_OUTER vouched people, and every new one", () => {

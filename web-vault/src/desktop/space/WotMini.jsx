@@ -20,7 +20,7 @@ export function WotMini({ ctx, open = true, tools = null }) {
   const me = ctx.session.pubkey
   const follows = useMemo(() => ctx.account.follows.filter(pk => pk !== me), [ctx.account.follows, me])
   const key = `${me}:${follows.length}:${follows[0] ?? ""}:${follows.at(-1) ?? ""}`
-  const { blocked } = useBlocks(ctx)
+  const { blocked, loaded: blocksLoaded } = useBlocks(ctx)
   const [lists, setLists] = useState(null)
   const [unsettled, setUnsettled] = useState(0) // lists cut off, not known to be missing (wot.js unsettledLists)
   const [have, setHave] = useState(0) // follows' lists in so far, for the loading line
@@ -46,12 +46,15 @@ export function WotMini({ ctx, open = true, tools = null }) {
     return () => { live = false; off(); clearTimeout(timer) }
   }, [key])
   const web = useMemo(() => (lists ? buildWeb(me, follows, lists, { blocked }) : null), [lists, blocked])
-  const ready = !!web && mapped(follows.length, unsettled)
+  // The mute list has to have landed before anyone is called new: the newcomers are kept, so one offered before the
+  // block list arrived would sit on the panel for a week (blocks.js loadBlocks, useBlocks loaded).
+  const ready = !!web && mapped(follows.length, unsettled) && blocksLoaded
 
-  // Who is new, worked out once per web and kept for the next look.
+  // Who is new, worked out once per web and kept for the next look. The offer checks the block list again, so nobody
+  // muted is kept or shown even if the web was built before their mute landed.
   const fresh = useMemo(() => {
     if (!ready) return []
-    const { fresh, kept } = newInWeb(web.extended, readKept(me), Math.floor(Date.now() / 1000))
+    const { fresh, kept } = newInWeb(web.extended, readKept(me), Math.floor(Date.now() / 1000), blocked)
     writeKept(me, kept)
     return fresh
   }, [web, ready])
@@ -66,6 +69,7 @@ export function WotMini({ ctx, open = true, tools = null }) {
   const status = !ctx.account.loaded ? "Loading your follows…"
     : !follows.length ? "Follow someone to see your web: it's built from the people you follow and who they follow."
     : gaveUp && !ready ? `${unsettled.toLocaleString()} of your follows' lists didn't arrive. New people show here once they do.`
+    : web && mapped(follows.length, unsettled) && !blocksLoaded ? "Loading your block list…"
     : !ready ? `${loadingText(have, follows.length)}…`
     : null
   return (
