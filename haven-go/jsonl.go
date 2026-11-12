@@ -49,6 +49,9 @@ func exportToZip(ctx context.Context, zipFileName string) (err error) {
 	}
 
 	for name, db := range dbs {
+		if filesStoreLeftOut(name) {
+			continue // media notes are private and derivable (files_relay.go)
+		}
 		fileName := name + ".jsonl"
 		slog.Info("📦 exporting db to fileName", "fileName", fileName)
 
@@ -189,7 +192,7 @@ func importFromZip(ctx context.Context, zipFileName string) error {
 		}
 		relayName := strings.TrimSuffix(file.Name, ".jsonl")
 		db, ok := dbs[relayName]
-		if !ok {
+		if !ok || filesStoreLeftOut(relayName) {
 			slog.Warn("⏭️ skipping file for unknown relay type", "file", file.Name)
 			continue
 		}

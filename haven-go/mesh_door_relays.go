@@ -22,7 +22,9 @@ import (
 // through the door is blasted: only the outbox blasts, and not mesh writes.
 
 // meshDoorRelayPaths are the websocket paths the door opens besides "/".
-var meshDoorRelayPaths = map[string]bool{"/inbox": true}
+// /files: the owner's media file notes, for the owner's own devices
+// (files_relay.go).
+var meshDoorRelayPaths = map[string]bool{"/inbox": true, filesPath: true}
 
 // meshAuthURL is the URL a NIP-42 AUTH over the mesh must name in its
 // `relay` tag: this vault's mesh address, ws://<mesh npub>.fips<path> (what
