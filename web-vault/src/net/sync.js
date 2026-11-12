@@ -4,7 +4,7 @@ import { recordOwnList } from "./list-wipe-alarm.js"
 import { verifyEvent } from "nostr-tools/pure"
 import { nip77 } from "nostr-tools"
 import { normalizeURL } from "nostr-tools/utils"
-import { pool, publishRelays, relayLists, uniq } from "./pool.js"
+import { pool, publishRelays, relayLists, oneAsk, uniq } from "./pool.js"
 import { appendClientTag } from "./client-tag.js"
 import { neverConnectUrls } from "./never-connect.js"
 import { withImportLock } from "./import-lock.js"
@@ -170,7 +170,7 @@ export async function syncFeed(vault, follows, relays, { onProgress = () => {}, 
   const top = (await readFeed(vault, follows, { limit: 1 }))[0]
   const since = top ? top.created_at - 600 : now() - 2 * 86400
   let stored = 0, done = 0
-  const sent = new Set()
+  const sent = new Set(), ask = oneAsk() // every relay's read is one ask for the quick cap (pool.js QUICK_CONNECT_MS)
   const chunk = async i => {
     // Each relay's answer is stored as it lands, so the fastest relay's notes show without waiting for the slowest
     // (up to maxWait). A note two relays send is written once: Haven takes one request per id at a time.
@@ -182,7 +182,7 @@ export async function syncFeed(vault, follows, relays, { onProgress = () => {}, 
     await Promise.all(relays.map(async url => {
       let until
       for (let n = 0; n < FEED_MAX_PAGES; n++) {
-        const page = await query([url], until === undefined ? filter : { ...filter, until }, { maxWait: 8000 }).catch(() => [])
+        const page = await query([url], until === undefined ? filter : { ...filter, until }, { maxWait: 8000, ask }).catch(() => [])
         const evs = page.filter(e => !sent.has(e.id) && sent.add(e.id))
         // A store Haven doesn't answer is counted, not thrown: one timeout no longer fails the whole sync (Tidy 6).
         const k = await storeAll(vault.feed, evs, { tally })
@@ -223,8 +223,9 @@ export const FEED_MAX_PAGES = 20
  */
 export async function syncOwn(vault, pubkey, relays, { on, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
   let stored = 0
+  const group = oneAsk() // see syncFeed
   const ask = filter => Promise.all(uniq(relays).map(async url => {
-    const evs = await query([url], filter, { maxWait: 8000 }).catch(() => [])
+    const evs = await query([url], filter, { maxWait: 8000, ask: group }).catch(() => [])
     const n = evs.length ? await storeAll(vault.outbox, evs) : 0
     stored += n
     if (n) await on?.()

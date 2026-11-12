@@ -45,11 +45,19 @@ const RETRY_CONNECT_TIMEOUT_MS = 5000
 // never finishes the handshake held every quote to the 5 s connect timeout: nostr-pub.wellorder.net, 4,064-5,009 ms
 // with it and 722-792 ms without (Tron, RESEARCH/NV_WEB_SLOW_LOAD_2026_11_12.md). Live subscriptions still wait
 // the full connect: a slow relay they skipped would be missing from the feed until every relay had dropped.
+// The cap skips a relay only once another relay of the same ask is open: an ask whose relays are all still connecting
+// (a cold load on a slow link) waits for the first of them, so it never ends with every relay skipped and nothing read.
+// A DM destination lookup that came back empty sent to the fallback (the sender's own relays) for 10 min (Tron).
 export const QUICK_CONNECT_MS = 1500
 // A relay whose connect failed or timed out is skipped by fresh opens for a cool-down, doubling per failure in a row
 // up to the last step, and asked again after it (or at once when the browser comes back online). It was re-tried
-// on every query: 13-17 failed sockets to wellorder in 30-45 s.
+// on every query: 13-17 failed sockets to wellorder in 30-45 s. Writes don't wait on it: a publish dials the relay
+// anyway (a relay back up takes the user's note at once, and its connect ends the cool-down).
 export const COOL_DOWN_MS = [60e3, 120e3, 300e3, 600e3]
+
+/** One ask spread over several one-shot reads (a sync that asks each relay on its own): pass it as `ask` to each
+ *  querySync, so a slow relay is skipped once any relay of the whole sync is open, not only one of its own read. */
+export const oneAsk = () => ({ open: 0, onOpen: new Set() })
 
 export class LivePool extends SimplePool {
   signerRelays = new Set()
@@ -68,7 +76,8 @@ export class LivePool extends SimplePool {
   rawConnect = new WeakMap() // relay -> its own connect, before watch() wrapped it
   coolDowns = new Map() // url -> { until, n }: fresh opens skip it until then (connect failed or timed out n times in a row)
   quickConnectMs = QUICK_CONNECT_MS
-  quickOpen = false // set while a one-shot ask opens its relays (subscribeMap), read synchronously by ensureRelay
+  quickOpen = null // the open one-shot ask ({ open, onOpen }) while subscribeMap opens its relays, read synchronously by ensureRelay
+  writeOpen = false // set while publish opens its relays, read synchronously by ensureRelay
   isHidden = () => globalThis.document?.visibilityState === "hidden"
   isOffline = () => globalThis.navigator?.onLine === false
   pageProtocol = () => globalThis.location?.protocol ?? ""
@@ -155,8 +164,14 @@ export class LivePool extends SimplePool {
     // nostr-tools calls ensureRelay for every relay synchronously inside subscribeMap (each async opener runs up to
     // its first await, which is that call), so the flag is seen by exactly this ask's opens.
     const was = this.quickOpen
-    this.quickOpen = !!params?.quickConnect
+    this.quickOpen = params?.quickConnect ? (params.ask ?? oneAsk()) : null
     try { return super.subscribeMap(requests, params) } finally { this.quickOpen = was }
+  }
+  publish(relays, event, params) {
+    // nostr-tools calls ensureRelay synchronously for each relay here too (only allowConnectingToRelay before it).
+    const was = this.writeOpen
+    this.writeOpen = true
+    try { return super.publish(relays, event, params) } finally { this.writeOpen = was }
   }
   /** Still cooling down after a failed connect? A signer's relay never is. */
   coolingDown(key) {
@@ -168,13 +183,15 @@ export class LivePool extends SimplePool {
     this.coolDowns.set(key, { n, until: Date.now() + COOL_DOWN_MS[Math.min(n - 1, COOL_DOWN_MS.length - 1)] })
   }
   async ensureRelay(url, params) {
-    const quick = this.quickOpen // before any await: see subscribeMap
+    const ask = this.quickOpen, write = this.writeOpen // before any await: see subscribeMap and publish
     const key = normalizeURL(url)
     const held = this.relays.get(key)
+    // Counted at once, so the ask's other relays (opened in this same tick) know one is already there.
+    if (ask && held?.connected) ask.open++
     // A relay nostr-tools is reconnecting by itself is gated in watch(), which charges what that reconnect re-fires.
     // Taking a unit here too would spend two on one open.
     if (!(held && held.reconnectAttempts > 0)) {
-      if (!held?.connected && this.coolingDown(key)) throw new Error(`relay skipped, its last connect failed: ${url}`)
+      if (!held?.connected && !write && this.coolingDown(key)) throw new Error(`relay skipped, its last connect failed: ${url}`)
       const no = this.refuse(url, 1)
       if (no) throw new Error(no)
     }
@@ -195,10 +212,22 @@ export class LivePool extends SimplePool {
     opening.then(() => this.coolDowns.delete(key), err => { if (!err?.refused && !params?.abort?.aborted) this.coolDown(key) })
     let relay
     try {
-      if (quick && !wasOpen) {
-        let timer
-        const slow = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`relay slow to connect, skipped for this ask: ${url}`)), this.quickConnectMs) })
-        try { relay = await Promise.race([opening, slow]) } finally { clearTimeout(timer) }
+      if (ask && !wasOpen) {
+        // Skipped after quickConnectMs only if another relay of this ask is open by then, else as soon as one opens.
+        let timer, waiting = null
+        const slow = new Promise((_, reject) => {
+          const skip = () => reject(new Error(`relay slow to connect, skipped for this ask: ${url}`))
+          timer = setTimeout(() => {
+            if (ask.open > 0) return skip()
+            waiting = () => { if (ask.open > 0) skip() }
+            ask.onOpen.add(waiting)
+          }, this.quickConnectMs)
+        })
+        try {
+          relay = await Promise.race([opening, slow])
+          ask.open++
+          for (const cb of [...ask.onOpen]) cb()
+        } finally { clearTimeout(timer); if (waiting) ask.onOpen.delete(waiting) }
       } else relay = await opening
     } catch (err) {
       // super.ensureRelay drops a relay whose connect threw. A refusal from watch() must not: the feed, DM and
