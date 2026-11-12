@@ -488,16 +488,6 @@ func initRelays(ctx context.Context) error {
 	outboxRelay.ServiceURL = relayServiceURL("")
 	serviceURLFromHost(outboxRelay, "")
 
-	if !outboxRelayLimits.AllowEmptyFilters {
-		outboxRelay.RejectFilter = append(outboxRelay.RejectFilter, policies.NoEmptyFilters)
-	}
-	if !outboxRelayLimits.AllowComplexFilters {
-		outboxRelay.RejectFilter = append(outboxRelay.RejectFilter, policies.NoComplexFilters)
-	}
-
-	outboxRelay.RejectFilter = append(outboxRelay.RejectFilter, meshNoQueries)
-	outboxRelay.RejectCountFilter = append(outboxRelay.RejectCountFilter, meshNoQueries)
-
 	outboxRelay.RejectEvent = append(outboxRelay.RejectEvent,
 		policies.PreventTimestampsInTheFuture(maxFutureSkew),
 		meshOwnerEventsOnly,
@@ -529,10 +519,7 @@ func initRelays(ctx context.Context) error {
 	meshBlobs.reset()
 	sendBlast, _ := newBlastSender(relayCtx, blastQ)
 	wireOutboxWrites(outboxRelay, outboxDB, sendBlast)
-	// Queries (plain and NIP-50 search) and counts; see search.go.
-	enableSearch(outboxRelay, outboxDB)
-	// Brought-over accounts are stored, never served to strangers (brought_reads.go).
-	hideBroughtOnOutbox(outboxRelay)
+	wireOutboxReads(outboxRelay, outboxDB, outboxRelayLimits)
 	outboxRelay.DeleteEvent = append(outboxRelay.DeleteEvent, outboxDB.DeleteEvent)
 	outboxRelay.OverwriteDeletionOutcome = append(outboxRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 
