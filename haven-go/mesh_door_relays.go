@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/fiatjaf/khatru"
@@ -23,14 +26,44 @@ var meshDoorRelayPaths = map[string]bool{"/inbox": true, "/chat": true, "/privat
 // a FIPS client dials). Pinned, never taken from the request: over the mesh
 // the Host header is the client's to choose, and a hostile relay that
 // forwards a challenge could otherwise log in as the owner (Tron 4,
-// RESEARCH/NV_MESH_ATTACK_B_2026_11_12.md). With no HAVEN_MESH_NPUB (the
-// host app or the box hands it over), no AUTH over the mesh can succeed.
+// RESEARCH/NV_MESH_ATTACK_B_2026_11_12.md). With no mesh npub known
+// (meshOwnNpub), no AUTH over the mesh can succeed.
 func meshAuthURL(path string) string {
-	npub := strings.TrimSpace(hostGetenv("HAVEN_MESH_NPUB"))
-	if prefix, _, err := nip19.Decode(npub); err != nil || prefix != "npub" {
-		return "http://mesh-npub-unknown.invalid" + path
+	npub := meshOwnNpub()
+	if npub == "" {
+		// Refused outright: a host made at random when the process starts,
+		// so no AUTH can name it (an empty URL would match an empty tag).
+		return "http://" + meshAuthOff + ".invalid" + path
 	}
 	return "http://" + npub + ".fips" + path
+}
+
+// meshAuthOff is the unguessable host meshAuthURL names while the vault does
+// not know its mesh npub.
+var meshAuthOff = func() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return "mesh-auth-off-" + hex.EncodeToString(b)
+}()
+
+// meshOwnNpub is this vault's mesh npub: HAVEN_MESH_NPUB (the apps hand it
+// over when they open the door), or else the file HAVEN_MESH_NPUB_FILE names
+// (the box: nv-mesh writes it on its first start, maybe after the engine
+// started, so it is read when an AUTH comes, not once). "" if neither holds a
+// valid npub.
+func meshOwnNpub() string {
+	npub := strings.TrimSpace(hostGetenv("HAVEN_MESH_NPUB"))
+	if npub == "" {
+		if f := strings.TrimSpace(hostGetenv("HAVEN_MESH_NPUB_FILE")); f != "" {
+			if b, err := os.ReadFile(f); err == nil && len(b) <= 1024 {
+				npub = strings.TrimSpace(string(b))
+			}
+		}
+	}
+	if prefix, _, err := nip19.Decode(npub); err != nil || prefix != "npub" || npub != strings.ToLower(npub) {
+		return ""
+	}
+	return npub
 }
 
 // pinMeshAuthURL makes rl check a mesh AUTH against meshAuthURL(path); any

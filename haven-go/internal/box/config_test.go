@@ -161,4 +161,7 @@ func TestMeshNpubReachesTheEngine(t *testing.T) {
 	if got := EngineEnv(c, "/v")["HAVEN_MESH_NPUB"]; got != npub {
 		t.Fatalf("HAVEN_MESH_NPUB = %q, want %q", got, npub)
 	}
+	if got := EngineEnv(c, "/v")["HAVEN_MESH_NPUB_FILE"]; got != c.MeshNpubFile {
+		t.Fatalf("HAVEN_MESH_NPUB_FILE = %q, want %q", got, c.MeshNpubFile)
+	}
 }

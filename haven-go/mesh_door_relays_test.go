@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -197,6 +199,34 @@ func TestMeshDoorPrivateAndChatNeedPinnedAuth(t *testing.T) {
 	}
 }
 
+// The box's engine reads its mesh npub from the file when an AUTH comes:
+// one nv-mesh wrote after the engine started counts (Tron's low on #1966).
+func TestMeshAuthReadsTheNpubFileLate(t *testing.T) {
+	h := startHaven(t)
+	setHostEnv("HAVEN_MESH_NPUB", "")
+	file := t.TempDir() + "/npub"
+	setHostEnv("HAVEN_MESH_NPUB_FILE", file)
+	t.Cleanup(func() { setHostEnv("HAVEN_MESH_NPUB_FILE", "") })
+	door := startMeshDoor(t)
+	pk, _ := nostr.GetPublicKey(nostr.GeneratePrivateKey())
+	npub, _ := nip19.EncodePublicKey(pk)
+	pinned := "ws://" + npub + ".fips/private"
+
+	ws := dialDoor(t, door, "/private")
+	challenge := str(ws.next("AUTH")[1])
+	if ws.auth(challenge, h.ownerSK, pinned) {
+		t.Fatal("AUTH taken before the npub file existed")
+	}
+	if err := os.WriteFile(file, []byte(npub+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ws = dialDoor(t, door, "/private")
+	challenge = str(ws.next("AUTH")[1])
+	if !ws.auth(challenge, h.ownerSK, pinned) {
+		t.Fatal("AUTH not taken once the npub file was written")
+	}
+}
+
 // With no mesh npub handed over, no AUTH over the mesh can succeed.
 func TestMeshDoorAuthFailsClosedWithoutMeshNpub(t *testing.T) {
 	h := startHaven(t)
@@ -206,7 +236,7 @@ func TestMeshDoorAuthFailsClosedWithoutMeshNpub(t *testing.T) {
 	challenge := str(ws.next("AUTH")[1])
 	pk, _ := nostr.GetPublicKey(nostr.GeneratePrivateKey())
 	someNpub, _ := nip19.EncodePublicKey(pk)
-	for _, relay := range []string{h.base + "/private", "ws://" + someNpub + ".fips/private"} {
+	for _, relay := range []string{h.base + "/private", "ws://" + someNpub + ".fips/private", "", "ws://mesh-npub-unknown.invalid/private"} {
 		if ws.auth(challenge, h.ownerSK, relay) {
 			t.Fatalf("AUTH naming %s was taken with no mesh npub", relay)
 		}
@@ -264,5 +294,87 @@ func TestMeshDoorInboxGiftWrapsFromTheWebOfTrustOnly(t *testing.T) {
 	}
 	if evs, closed := ws.req("s", nostr.Filter{Kinds: []int{nostr.KindGiftWrap}}); closed != "" || len(evs) != 1 {
 		t.Fatalf("the owner's /inbox read over the mesh: %d events, closed %q", len(evs), closed)
+	}
+}
+
+// gotEvent reads frames for a while and reports whether an EVENT came.
+func (m *meshWS) gotEvent(wait time.Duration) bool {
+	m.t.Helper()
+	deadline := time.Now().Add(wait)
+	for time.Now().Before(deadline) {
+		_ = m.c.SetReadDeadline(deadline)
+		_, msg, err := m.c.ReadMessage()
+		if err != nil {
+			return false
+		}
+		var arr []json.RawMessage
+		if json.Unmarshal(msg, &arr) == nil && len(arr) > 0 && str(arr[0]) == "EVENT" {
+			return true
+		}
+	}
+	return false
+}
+
+func dialURL(t *testing.T, url string) *meshWS {
+	t.Helper()
+	c, _, err := websocket.DefaultDialer.Dial(url, nil)
+	if err != nil {
+		t.Fatalf("websocket %s: %v", url, err)
+	}
+	t.Cleanup(func() { c.Close() })
+	return &meshWS{t: t, c: c}
+}
+
+// Tron's must-fix on #1966: a live-only REQ ("limit":0) returned before
+// every read gate (khatru responding.go), so with no AUTH it got the owner's
+// new private and chat events, over the mesh and directly. Six cells.
+func TestLiveOnlyREQFacesTheReadGates(t *testing.T) {
+	h := startHaven(t)
+	withMeshNpub(t)
+	door := startMeshDoor(t)
+	cells := []struct {
+		path      string
+		mesh      bool
+		kind      int
+		wantEvent bool
+	}{
+		{"/private", true, 1, false},
+		{"/private", false, 1, false},
+		{"/chat", true, nostr.KindGiftWrap, false},
+		{"/chat", false, nostr.KindGiftWrap, false},
+		{"/inbox", true, nostr.KindGiftWrap, false},
+		{"/inbox", false, nostr.KindGiftWrap, true}, // /inbox reads are open over https
+	}
+	for i, c := range cells {
+		var sub *meshWS
+		if c.mesh {
+			sub = dialDoor(t, door, c.path)
+		} else {
+			sub = dialURL(t, h.base+c.path)
+		}
+		// A live-only filter for the route's kind (an empty one is refused
+		// where empty filters are, live or not).
+		sub.send([]any{"REQ", "live", map[string]any{"kinds": []int{c.kind}, "limit": 0}})
+		time.Sleep(100 * time.Millisecond)
+
+		ev := nostr.Event{Kind: c.kind, CreatedAt: nostr.Now(), Content: fmt.Sprintf("new %d", i), Tags: nostr.Tags{{"p", h.owner}}}
+		ev.Sign(h.ownerSK)
+		writer := dialURL(t, h.base+c.path)
+		ok, msg := writer.publish(ev)
+		if !ok && strings.HasPrefix(msg, "auth-required") {
+			if writer.challenge == "" {
+				writer.next("AUTH")
+			}
+			if !writer.auth(writer.challenge, h.ownerSK, h.base+c.path) {
+				t.Fatalf("%s: the owner's direct AUTH was not taken", c.path)
+			}
+			ok, msg = writer.publish(ev)
+		}
+		if !ok {
+			t.Fatalf("%s: the owner's write was refused: %q", c.path, msg)
+		}
+		if got := sub.gotEvent(time.Second); got != c.wantEvent {
+			t.Errorf("%s over the mesh %v, no AUTH, live-only REQ: got the event %v, want %v", c.path, c.mesh, got, c.wantEvent)
+		}
 	}
 }
