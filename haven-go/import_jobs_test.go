@@ -52,12 +52,32 @@ func jobsSetup(t *testing.T, days int, relays ...string) (testKey, DBBackend) {
 	prevPath, prevEnsure := importJobsPath, jobsEnsureSeeds
 	importJobsPath = func() string { return path }
 	importJobsRunner = jobRunner{}
+	// Setup starts wider_network by itself; the real one waits for the
+	// relay's own web build, which these tests never run, so it is a no-op
+	// here unless a test replaces runJob.
+	prevRun := runJob
+	runJob = func(ctx context.Context, spawn func(string, func()), name string, res *jobResult) {
+		if name != jobWiderNetwork {
+			prevRun(ctx, spawn, name, res)
+		}
+	}
 	t.Cleanup(func() {
-		importJobsRunner.wait()
+		waitIdle()
+		runJob = prevRun
 		importJobsPath, jobsEnsureSeeds = prevPath, prevEnsure
 		importJobsRunner = jobRunner{}
 	})
 	return owner, db
+}
+
+// waitIdle waits out a chain of runs (setup starts wider_network by itself).
+func waitIdle() {
+	for {
+		importJobsRunner.wait()
+		if importJobsRunner.current() == "" {
+			return
+		}
+	}
 }
 
 // goSpawn stands in for a relay cycle's spawn.
@@ -428,10 +448,11 @@ func TestJobsNothingStartsUnasked(t *testing.T) {
 
 	resumeImportJobs(context.Background(), goSpawn) // no file yet
 	runJobAndWait(t, context.Background(), jobSetup, false)
+	waitIdle()
 	resumeImportJobs(context.Background(), goSpawn)
-	importJobsRunner.wait()
-	if fmt.Sprint(ran) != "map[setup:1]" {
-		t.Fatalf("ran %v, want setup once (the long items wait for Run)", ran)
+	waitIdle()
+	if fmt.Sprint(ran) != "map[setup:1 wider_network:1]" {
+		t.Fatalf("ran %v, want setup once and the wider web it starts (the other long items wait for Run)", ran)
 	}
 	// Mark replies cut, then switch account: the other account's cut is not resumed.
 	updateJob(func(f *jobsFile) { f.job(jobReplies).Status = jobRunning })

@@ -97,6 +97,16 @@ class FeedViewModel @Inject constructor(
         }
     }
 
+    init {
+        // The relay starts the wider web by itself after setup: reload Underrated when it ends (the button's own
+        // watch already does that for runs it started).
+        viewModelScope.launch {
+            widerWebFinished(widerNetworkBuilding).collect {
+                if (_feedMode.value == FeedMode.UNDERRATED && widerNetworkWatch?.isActive != true) refresh()
+            }
+        }
+    }
+
     /** The Underrated empty screen asks for the jobs list once, so a run started elsewhere shows as running. */
     fun refreshImportJobs() = importJobService.refresh()
 
