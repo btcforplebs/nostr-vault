@@ -89,6 +89,11 @@ final class MediaSettingsTrimTests: XCTestCase {
         let src = try source("HavenApp/Services/ProfilePicturePrefetchService.swift")
         XCTAssertTrue(src.contains("guard isWiFi"), "still Wi-Fi only")
         XCTAssertFalse(src.contains("ConfigService.shared.$config"), "no switch to follow")
+        // The iOS target's delegate, not HavenApp/App/iOSAppDelegate.swift (not built).
+        let ios = try source("HavenApp-iOS/AppDelegate.swift")
+        XCTAssertTrue(ios.contains("ProfilePicturePrefetchService.shared.start()"), "starts on iPhone and iPad")
+        let mac = try source("HavenApp/App/AppDelegate.swift")
+        XCTAssertTrue(mac.contains("ProfilePicturePrefetchService.shared.start()"), "starts on Mac")
     }
 
     // MARK: One Media Servers row and page

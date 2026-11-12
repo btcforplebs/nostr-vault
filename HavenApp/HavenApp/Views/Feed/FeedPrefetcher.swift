@@ -17,7 +17,6 @@ enum FeedPrefetcher {
     private static var warmedNoteIds = Set<String>()
 
     static func warm<S: Sequence>(_ notes: S, feedService: FeedService, nostrService: NostrService) where S.Element == FeedNote {
-        guard !ConfigService.shared.config.disableMediaCache else { return }
         if warmedNoteIds.count > 5000 { warmedNoteIds.removeAll() }
 
         var missingProfiles: [String] = []

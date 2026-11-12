@@ -94,11 +94,6 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
     private let notFoundMaxAge: TimeInterval = 7 * 24 * 3600
     let notFoundMaxCount = 500
 
-    /// Mirror of `disableMediaCache`, readable from download threads.
-    var diskCacheDisabled = false
-    let diskCacheLock = NSLock()
-    private var configCancellable: AnyCancellable?
-
     /// Ceiling for the media cache plus thumbnails. Time-based expiry alone
     /// let one week of scrolling fill 1.7 GB; past this, oldest files go first.
     static let maxCacheBytes: Int64 = 500 * 1024 * 1024
@@ -157,20 +152,10 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         self.memoryPressureSource = source
         #endif
 
-        // Evict expired cache files on launch (read config on main, evict on background)
-        DispatchQueue.main.async { [weak self] in
-            let ttlDays = ConfigService.shared.config.cacheTTLDays
-            self?.configCancellable = ConfigService.shared.$config
-                .map(\.disableMediaCache)
-                .removeDuplicates()
-                .sink { disabled in
-                    guard let self else { return }
-                    self.diskCacheLock.withLock { self.diskCacheDisabled = disabled }
-                }
-            DispatchQueue.global(qos: .utility).async {
-                self?.evictExpiredFiles(ttlDays: ttlDays)
-                self?.trimToSizeLimit()
-            }
+        // Evict expired cache files on launch, off the main thread.
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.evictExpiredFiles(ttlDays: HavenConfig.mediaKeepDays)
+            self?.trimToSizeLimit()
         }
 
         // Drop playback/thumbnail symlinks that point into a previous app

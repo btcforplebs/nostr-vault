@@ -21,26 +21,13 @@ class ProfilePicturePrefetchService {
     // MARK: - Lifecycle
 
     func start() {
+        // Always on, Wi-Fi only, at most once a day: there is no switch
+        // (media settings trim, 2026-11-12; Android has done this all along).
         guard !started else { return }
-        guard ConfigService.shared.config.prefetchProfilePictures else { return }
-        guard !ConfigService.shared.config.disableMediaCache else { return }
 
         started = true
         startNetworkMonitor()
         setupTimer()
-
-        // React to the toggle being turned off
-        ConfigService.shared.$config
-            .map(\.prefetchProfilePictures)
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] enabled in
-                guard let self else { return }
-                if !enabled {
-                    self.stop()
-                }
-            }
-            .store(in: &cancellables)
 
         // Initial check after a brief delay to let contacts load
         Task {
@@ -88,8 +75,6 @@ class ProfilePicturePrefetchService {
     }
 
     private func checkAndRun() {
-        guard ConfigService.shared.config.prefetchProfilePictures else { return }
-        guard !ConfigService.shared.config.disableMediaCache else { return }
         guard isWiFi else {
             #if DEBUG
             print("ProfilePicturePrefetchService: Skipping - not on Wi-Fi")

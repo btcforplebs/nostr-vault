@@ -388,13 +388,12 @@ struct MediaCacheBreakdownView: View {
 
                             // Cache lifetime info
                             if let b = breakdown, totalCount > 0 {
-                                let ttlDays = ConfigService.shared.config.cacheTTLDays
                                 VStack(spacing: 6) {
                                     HStack(spacing: 8) {
                                         Image(systemName: "clock.fill")
                                             .font(.appSystem(size: 12))
                                             .foregroundColor(.secondary)
-                                        Text("TTL: \(ttlDays > 0 ? "\(ttlDays) day\(ttlDays == 1 ? "" : "s")" : "Never expires")")
+                                        Text("Kept \(HavenConfig.mediaKeepDays) days")
                                             .font(.appSystem(size: 12, weight: .medium, design: .monospaced))
                                             .foregroundColor(.secondary)
                                         Spacer()

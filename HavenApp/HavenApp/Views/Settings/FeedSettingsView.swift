@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// What the feed shows (where it reads from is Settings > Relays). The three
-/// switches are the same values as the feed's toolbar buttons, so flipping
-/// one in either place flips both.
+/// What the feed shows (where it reads from is Settings > Relays). The first
+/// three switches are the same values as the feed's toolbar buttons, so
+/// flipping one in either place flips both.
 struct FeedSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     @AppStorage(PendingPostManager.ActionType.countdownKey)
@@ -19,6 +19,10 @@ struct FeedSettingsView: View {
                 }
                 Toggle(isOn: $configService.config.autoLoadNewPosts) {
                     Text("Auto-Load New Posts").settingInfo(.feedAutoLoad)
+                }
+                // Moved here from Media & Cache, which is gone (2026-11-12).
+                Toggle(isOn: $configService.config.autoplayVideos) {
+                    Text("Autoplay Videos").settingInfo(.mediaAutoplay)
                 }
             } header: {
                 Text("What You See")

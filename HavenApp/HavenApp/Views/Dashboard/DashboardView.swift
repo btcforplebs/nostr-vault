@@ -21,9 +21,6 @@ struct DashboardView: View {
     @State private var showingShareSheet = false
 
     var isSidebar: Bool = false
-    /// The Vault Dashboard: the relay's dashboard with the Blossom sections
-    /// under it, one sheet for everything the Vault tab stores.
-    var includesBlossom = false
     
     var body: some View {
         GeometryReader { geometry in
@@ -211,12 +208,6 @@ struct DashboardView: View {
                             .padding(.horizontal)
                         #endif
                     }
-
-                    if includesBlossom {
-                        Divider()
-                            .padding(.vertical, 4)
-                        BlossomDashboardView(embedded: true)
-                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
@@ -306,7 +297,7 @@ struct DashboardView: View {
                 }
                 .disabled(exporter.isBusy)
 
-                ActionButton(icon: "photo.stack", title: "Export Media", isLoading: exporter.running == .media, emphasis: .secondary) {
+                ActionButton(icon: "photo.stack", title: "Back Up Media", isLoading: exporter.running == .media, emphasis: .secondary) {
                     exporter.export(.media, relayManager: relayManager, config: configService.config)
                 }
                 .disabled(exporter.isBusy)
