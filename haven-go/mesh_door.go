@@ -80,10 +80,9 @@ func isMeshConn(ctx context.Context) bool {
 //   - websocket on /: outbox relay, EVENTs signed by the owner only
 //     (meshOwnerEventsOnly); REQs with the https rules and the mesh caps
 //     (mesh_query_caps.go).
-//   - websocket on /inbox, /chat, /private: those relays with their https
-//     rules, NIP-42 AUTH pinned to this vault's mesh address, the mesh caps;
-//     /inbox takes only gift wraps and reads only for the vault's accounts
-//     (mesh_door_relays.go).
+//   - websocket on /inbox: incoming gift wraps only, with the https rules,
+//     NIP-42 AUTH pinned to this vault's mesh address and the mesh caps; no
+//     reads (mesh_door_relays.go). /chat and /private are not served here.
 //
 // Everything else is 404.
 func meshHandler(w http.ResponseWriter, r *http.Request) {
@@ -156,8 +155,8 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		dynamicRelayHandler(w, markMesh(r))
 	case (r.URL.Path == "/" || meshDoorRelayPaths[r.URL.Path]) && r.Method == http.MethodGet && r.Header.Get("Upgrade") == "websocket":
-		// The outbox, and (sync rework M2) /inbox, /chat and /private with the
-		// https rules, the mesh caps and the pinned AUTH (mesh_door_relays.go).
+		// The outbox, and (sync rework M2) /inbox for incoming gift wraps
+		// (mesh_door_relays.go).
 		r.Header.Del("Accept")
 		r.Header.Del("Content-Type")
 		dynamicRelayHandler(w, markMesh(r))

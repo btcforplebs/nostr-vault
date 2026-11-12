@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/barrydeen/haven/pkg/wot"
 	"github.com/fasthttp/websocket"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
@@ -117,6 +118,22 @@ func (m *meshWS) publish(ev nostr.Event) (bool, string) {
 	return accepted, str(ok[3])
 }
 
+// inboxChallenge gets an AUTH challenge on a mesh /inbox connection: a gift
+// wrap from a key outside the web of trust is refused with auth-required,
+// and the relay sends its challenge.
+func (m *meshWS) inboxChallenge(owner string) string {
+	m.t.Helper()
+	wrap := nostr.Event{Kind: nostr.KindGiftWrap, CreatedAt: nostr.Now(), Content: "probe", Tags: nostr.Tags{{"p", owner}}}
+	wrap.Sign(nostr.GeneratePrivateKey())
+	if ok, msg := m.publish(wrap); ok || !strings.HasPrefix(msg, "auth-required") {
+		m.t.Fatalf("probe gift wrap: ok %v, %q", ok, msg)
+	}
+	if m.challenge == "" {
+		m.next("AUTH")
+	}
+	return m.challenge
+}
+
 // withMeshNpub sets this vault's mesh npub (HAVEN_MESH_NPUB) for the test.
 func withMeshNpub(t *testing.T) string {
 	t.Helper()
@@ -125,78 +142,6 @@ func withMeshNpub(t *testing.T) string {
 	setHostEnv("HAVEN_MESH_NPUB", npub)
 	t.Cleanup(func() { setHostEnv("HAVEN_MESH_NPUB", "") })
 	return npub
-}
-
-// No private or chat data over the mesh without AUTH as the right key, with
-// the relay tag pinned to this vault's mesh address.
-func TestMeshDoorPrivateAndChatNeedPinnedAuth(t *testing.T) {
-	h := startHaven(t)
-	npub := withMeshNpub(t)
-	door := startMeshDoor(t)
-	ctx := context.Background()
-	stranger := nostr.GeneratePrivateKey()
-
-	for _, c := range []struct {
-		path string
-		db   DBBackend
-		kind int
-	}{{"/private", privateDB, 1}, {"/chat", chatDB, nostr.KindGiftWrap}} {
-		note := nostr.Event{Kind: c.kind, CreatedAt: nostr.Now(), Content: "only mine",
-			Tags: nostr.Tags{{"p", h.owner}}}
-		note.Sign(h.ownerSK)
-		if err := c.db.SaveEvent(ctx, &note); err != nil {
-			t.Fatal(err)
-		}
-		f := nostr.Filter{Authors: []string{h.owner}}
-		pinned := "ws://" + npub + ".fips" + c.path
-
-		// No AUTH: refused.
-		ws := dialDoor(t, door, c.path)
-		challenge := str(ws.next("AUTH")[1])
-		if evs, closed := ws.req("a", f); len(evs) != 0 || !strings.HasPrefix(closed, "auth-required") {
-			t.Fatalf("%s without AUTH: %d events, closed %q", c.path, len(evs), closed)
-		}
-		// The owner's AUTH naming another relay (the Host-derived or local
-		// address a forwarding relay would get signed): not taken.
-		for _, other := range []string{h.base + c.path, "ws://" + npub + ".fips/other", "wss://attacker.example" + c.path} {
-			if ws.auth(challenge, h.ownerSK, other) {
-				t.Fatalf("%s: AUTH naming %s was taken", c.path, other)
-			}
-		}
-		if evs, closed := ws.req("b", f); len(evs) != 0 || closed == "" {
-			t.Fatalf("%s after a refused AUTH: %d events, closed %q", c.path, len(evs), closed)
-		}
-
-		// A stranger's correct AUTH: taken, but it reads nothing.
-		ws = dialDoor(t, door, c.path)
-		challenge = str(ws.next("AUTH")[1])
-		if !ws.auth(challenge, stranger, pinned) {
-			t.Fatalf("%s: the stranger's pinned AUTH was not taken", c.path)
-		}
-		if evs, closed := ws.req("c", f); len(evs) != 0 || closed == "" {
-			t.Fatalf("%s as a stranger: %d events, closed %q", c.path, len(evs), closed)
-		}
-
-		// The owner's AUTH, pinned: served.
-		ws = dialDoor(t, door, c.path)
-		challenge = str(ws.next("AUTH")[1])
-		if !ws.auth(challenge, h.ownerSK, pinned) {
-			t.Fatalf("%s: the owner's pinned AUTH was not taken", c.path)
-		}
-		if evs, closed := ws.req("d", f); closed != "" || len(evs) != 1 || evs[0].ID != note.ID {
-			t.Fatalf("%s as the owner: %d events, closed %q", c.path, len(evs), closed)
-		}
-		// The mesh caps apply here too: too many filters in one REQ.
-		many := make([]any, 0, meshMaxFilters+2)
-		many = append(many, "REQ", "e")
-		for i := 0; i <= meshMaxFilters; i++ {
-			many = append(many, f)
-		}
-		ws.send(many)
-		if closed := str(ws.next("CLOSED")[2]); !strings.Contains(closed, "filters") {
-			t.Fatalf("%s: %d filters closed with %q", c.path, meshMaxFilters+1, closed)
-		}
-	}
 }
 
 // The box's engine reads its mesh npub from the file when an AUTH comes:
@@ -210,19 +155,17 @@ func TestMeshAuthReadsTheNpubFileLate(t *testing.T) {
 	door := startMeshDoor(t)
 	pk, _ := nostr.GetPublicKey(nostr.GeneratePrivateKey())
 	npub, _ := nip19.EncodePublicKey(pk)
-	pinned := "ws://" + npub + ".fips/private"
+	pinned := "ws://" + npub + ".fips/inbox"
 
-	ws := dialDoor(t, door, "/private")
-	challenge := str(ws.next("AUTH")[1])
-	if ws.auth(challenge, h.ownerSK, pinned) {
+	ws := dialDoor(t, door, "/inbox")
+	if ws.auth(ws.inboxChallenge(h.owner), h.ownerSK, pinned) {
 		t.Fatal("AUTH taken before the npub file existed")
 	}
 	if err := os.WriteFile(file, []byte(npub+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ws = dialDoor(t, door, "/private")
-	challenge = str(ws.next("AUTH")[1])
-	if !ws.auth(challenge, h.ownerSK, pinned) {
+	ws = dialDoor(t, door, "/inbox")
+	if !ws.auth(ws.inboxChallenge(h.owner), h.ownerSK, pinned) {
 		t.Fatal("AUTH not taken once the npub file was written")
 	}
 }
@@ -232,11 +175,11 @@ func TestMeshDoorAuthFailsClosedWithoutMeshNpub(t *testing.T) {
 	h := startHaven(t)
 	setHostEnv("HAVEN_MESH_NPUB", "")
 	door := startMeshDoor(t)
-	ws := dialDoor(t, door, "/private")
-	challenge := str(ws.next("AUTH")[1])
+	ws := dialDoor(t, door, "/inbox")
+	challenge := ws.inboxChallenge(h.owner)
 	pk, _ := nostr.GetPublicKey(nostr.GeneratePrivateKey())
 	someNpub, _ := nip19.EncodePublicKey(pk)
-	for _, relay := range []string{h.base + "/private", "ws://" + someNpub + ".fips/private", "", "ws://mesh-npub-unknown.invalid/private"} {
+	for _, relay := range []string{h.base + "/inbox", "ws://" + someNpub + ".fips/inbox", "", "ws://mesh-npub-unknown.invalid/inbox"} {
 		if ws.auth(challenge, h.ownerSK, relay) {
 			t.Fatalf("AUTH naming %s was taken with no mesh npub", relay)
 		}
@@ -276,24 +219,26 @@ func TestMeshDoorInboxGiftWrapsFromTheWebOfTrustOnly(t *testing.T) {
 		t.Fatal("a gift wrap AUTHed as a key outside the web of trust was taken")
 	}
 
-	// AUTHed as a web of trust member (the owner): the gift wrap is taken.
+	// AUTHed as a web of trust member (a follow, with their own key: the
+	// account key is never used on the mesh): the gift wrap is taken, and the
+	// /inbox still can't be read over the mesh, by them or anyone.
+	friendSK := nostr.GeneratePrivateKey()
+	friend, _ := nostr.GetPublicKey(friendSK)
+	wot.MarkReady(wot.NewCycle(), stubWot{members: map[string]bool{h.owner: true, friend: true}})
 	ws = dialDoor(t, door, "/inbox")
-	if _, closed := ws.req("r", nostr.Filter{Kinds: []int{nostr.KindGiftWrap}}); !strings.HasPrefix(closed, "auth-required") {
-		t.Fatalf("an /inbox read over the mesh without AUTH closed with %q", closed)
+	if _, closed := ws.req("r", nostr.Filter{Kinds: []int{nostr.KindGiftWrap}}); !strings.Contains(closed, "only takes incoming") {
+		t.Fatalf("an /inbox read over the mesh closed with %q", closed)
 	}
-	if ws.challenge == "" {
-		ws.next("AUTH")
-	}
-	if !ws.auth(ws.challenge, h.ownerSK, pinned) {
-		t.Fatal("the owner's pinned AUTH was not taken")
+	if !ws.auth(ws.inboxChallenge(h.owner), friendSK, pinned) {
+		t.Fatal("the follow's pinned AUTH was not taken")
 	}
 	wrap2 := nostr.Event{Kind: nostr.KindGiftWrap, CreatedAt: nostr.Now(), Content: "sealed 2", Tags: nostr.Tags{{"p", h.owner}}}
 	wrap2.Sign(stranger)
 	if ok, msg := ws.publish(wrap2); !ok {
-		t.Fatalf("a gift wrap AUTHed as the owner was refused: %q", msg)
+		t.Fatalf("a gift wrap from a follow over the mesh was refused: %q", msg)
 	}
-	if evs, closed := ws.req("s", nostr.Filter{Kinds: []int{nostr.KindGiftWrap}}); closed != "" || len(evs) != 1 {
-		t.Fatalf("the owner's /inbox read over the mesh: %d events, closed %q", len(evs), closed)
+	if evs, closed := ws.req("s", nostr.Filter{Kinds: []int{nostr.KindGiftWrap}}); len(evs) != 0 || closed == "" {
+		t.Fatalf("an AUTHed /inbox read over the mesh: %d events, closed %q", len(evs), closed)
 	}
 }
 
@@ -348,7 +293,15 @@ func TestLiveOnlyREQFacesTheReadGates(t *testing.T) {
 	for i, c := range cells {
 		var sub *meshWS
 		if c.mesh {
-			sub = dialDoor(t, door, c.path)
+			conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(door, "http")+c.path, nil)
+			if err != nil {
+				if c.wantEvent {
+					t.Fatalf("%s over the mesh: %v", c.path, err)
+				}
+				continue // not served over the mesh at all (/chat, /private)
+			}
+			t.Cleanup(func() { conn.Close() })
+			sub = &meshWS{t: t, c: conn}
 		} else {
 			sub = dialURL(t, h.base+c.path)
 		}
@@ -375,6 +328,67 @@ func TestLiveOnlyREQFacesTheReadGates(t *testing.T) {
 		}
 		if got := sub.gotEvent(time.Second); got != c.wantEvent {
 			t.Errorf("%s over the mesh %v, no AUTH, live-only REQ: got the event %v, want %v", c.path, c.mesh, got, c.wantEvent)
+		}
+	}
+}
+
+// Logen's pick B for the mesh door (2026-11-12): over the mesh it takes
+// incoming DMs only, and nothing there needs the account key. A mesh read of
+// /inbox, /chat or /private is refused, even AUTHed as the owner with the
+// pinned address; over https nothing changes.
+func TestMeshDoorRefusesInboxChatPrivateReads(t *testing.T) {
+	h := startHaven(t)
+	npub := withMeshNpub(t)
+	door := startMeshDoor(t)
+	ctx := context.Background()
+	for _, c := range []struct {
+		path string
+		db   DBBackend
+		kind int
+	}{{"/inbox", inboxDB, nostr.KindGiftWrap}, {"/chat", chatDB, nostr.KindGiftWrap}, {"/private", privateDB, 1}} {
+		ev := nostr.Event{Kind: c.kind, CreatedAt: nostr.Now(), Content: "stored", Tags: nostr.Tags{{"p", h.owner}}}
+		ev.Sign(h.ownerSK)
+		if err := c.db.SaveEvent(ctx, &ev); err != nil {
+			t.Fatal(err)
+		}
+		f := nostr.Filter{Kinds: []int{c.kind}}
+
+		// Over the mesh: no websocket at all, or a REQ that is refused,
+		// with or without the owner's pinned AUTH.
+		conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(door, "http")+c.path, nil)
+		if err == nil {
+			ws := &meshWS{t: t, c: conn}
+			t.Cleanup(func() { conn.Close() })
+			if evs, closed := ws.req("anon", f); len(evs) != 0 || closed == "" {
+				t.Errorf("%s over the mesh, no AUTH: %d events, closed %q", c.path, len(evs), closed)
+			}
+			challenge := ws.challenge
+			if challenge == "" {
+				challenge = ws.inboxChallenge(h.owner)
+			}
+			ws.auth(challenge, h.ownerSK, "ws://"+npub+".fips"+c.path)
+			if evs, closed := ws.req("owner", f); len(evs) != 0 || closed == "" {
+				t.Errorf("%s over the mesh, AUTHed as the owner: %d events, closed %q", c.path, len(evs), closed)
+			}
+			ws.send([]any{"REQ", "live", map[string]any{"kinds": []int{c.kind}, "limit": 0}})
+			if closed := str(ws.next("CLOSED", "EOSE")[0]); closed != "CLOSED" {
+				t.Errorf("%s over the mesh: a live-only REQ was not refused", c.path)
+			}
+		}
+
+		// Over https, as before: the owner AUTHed reads it.
+		direct := dialURL(t, h.base+c.path)
+		if evs, closed := direct.req("d", f); closed == "" && len(evs) == 1 && c.path == "/inbox" {
+			continue // /inbox reads are open over https
+		}
+		if direct.challenge == "" {
+			direct.next("AUTH")
+		}
+		if !direct.auth(direct.challenge, h.ownerSK, h.base+c.path) {
+			t.Fatalf("%s: the owner's https AUTH was not taken", c.path)
+		}
+		if evs, closed := direct.req("d2", f); closed != "" || len(evs) != 1 {
+			t.Errorf("%s over https, AUTHed as the owner: %d events, closed %q", c.path, len(evs), closed)
 		}
 	}
 }

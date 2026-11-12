@@ -13,13 +13,16 @@ import (
 	"github.com/nbd-wtf/go-nostr/nip19"
 )
 
-// Sync rework M2 (RESEARCH/NV_SYNC_REWORK_BUILD_PLAN_2026_11_12.md §1): the
-// mesh door also serves /inbox, /chat and /private, with the https rules
-// (init.go) and the mesh caps (wireMeshReadCaps). Nothing that comes in
+// Sync rework M2 (RESEARCH/NV_SYNC_REWORK_BUILD_PLAN_2026_11_12.md §1), as
+// Logen picked it (B, 2026-11-12): over the mesh the door takes incoming DMs
+// only. /inbox takes gift-wrap writes (the https rules, init.go, plus the
+// mesh caps, wireMeshReadCaps); every mesh read of /inbox is refused, and
+// /chat and /private are not served over the mesh at all. Nothing on the
+// mesh needs the account key (Logen's 2026-11-05 rule). Nothing that comes in
 // through the door is blasted: only the outbox blasts, and not mesh writes.
 
 // meshDoorRelayPaths are the websocket paths the door opens besides "/".
-var meshDoorRelayPaths = map[string]bool{"/inbox": true, "/chat": true, "/private": true}
+var meshDoorRelayPaths = map[string]bool{"/inbox": true}
 
 // meshAuthURL is the URL a NIP-42 AUTH over the mesh must name in its
 // `relay` tag: this vault's mesh address, ws://<mesh npub>.fips<path> (what
@@ -92,18 +95,12 @@ func meshInboxGiftWrapOnly(ctx context.Context, ev *nostr.Event) (bool, string) 
 	return false, ""
 }
 
-// meshInboxReadsNeedAuth: over the mesh /inbox is read only by the vault's
-// own accounts (NIP-42 AUTH, pinned). Over https it reads open.
-func meshInboxReadsNeedAuth(ctx context.Context, _ nostr.Filter) (bool, string) {
-	if !isMeshConn(ctx) {
-		return false, ""
-	}
-	authed := khatru.GetAuthed(ctx)
-	if authed == "" {
-		return true, "auth-required: reading this relay over the mesh needs you to authenticate"
-	}
-	if _, ok := whitelist()[authed]; !ok {
-		return true, "restricted: over the mesh only this vault's accounts read this relay"
+// meshInboxNoReads: over the mesh /inbox is for delivering DMs, never for
+// reading them, whoever is AUTHed (Logen's pick B). Over https it reads
+// open, as before.
+func meshInboxNoReads(ctx context.Context, _ nostr.Filter) (bool, string) {
+	if isMeshConn(ctx) {
+		return true, "restricted: over the mesh this relay only takes incoming messages"
 	}
 	return false, ""
 }

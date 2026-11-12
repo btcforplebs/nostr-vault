@@ -53,7 +53,7 @@ func wireOutboxReads(rl *khatru.Relay, db DBBackend, limits OutboxRelayLimits) {
 }
 
 // wireMeshReadCaps adds the mesh-only read rules to rl (the outbox and,
-// sync rework M2, /inbox, /chat and private). Call it after every query is
+// sync rework M2, /inbox). Call it after every query is
 // wired: the byte cap wraps rl.QueryEvents as they are.
 //   - no negentropy over the mesh;
 //   - limit clamped to meshMaxLimit;
