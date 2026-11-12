@@ -36,7 +36,7 @@ import javax.inject.Singleton
 class BlossomService @Inject constructor(
     internal val configStore: ConfigStore,
     internal val nostrService: NostrService,
-    private val mediaCacheService: MediaCacheService,
+    internal val mediaCacheService: MediaCacheService,
     /** "Last ran" times for the Vault Dashboard (iOS VaultHistory). */
     private val vaultHistory: com.nostrvault.data.local.VaultHistoryStore,
     internal val homeVault: com.nostrvault.fips.HomeVaultSender,
@@ -81,7 +81,7 @@ class BlossomService @Inject constructor(
 
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true }
-    private val mirrorSemaphore = Semaphore(MIRROR_CONCURRENCY)
+    internal val mirrorSemaphore = Semaphore(MIRROR_CONCURRENCY)
 
     internal val localClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -612,70 +612,12 @@ class BlossomService @Inject constructor(
         saved.get()
     }
 
-    /**
-     * Copies in the media your own notes link to on outside servers: your
-     * notes are read from this device's relay, page by page, and each link
-     * not already here is downloaded and stored, four at a time, under one
-     * signed upload authorisation. iOS `BlossomService.mirrorFromNoteMedia`.
-     * @return how many files were saved.
-     */
+    /** Copies in the media your own notes link to (BlossomServiceNoteMedia.kt). iOS `mirrorFromNoteMedia`. */
     suspend fun mirrorFromNoteMedia(
         onProgress: ((Float) -> Unit)? = null,
         onLogMessage: ((String) -> Unit)? = null,
         limits: RunLimits = RunLimits(RunSignature { ownVaultAuth(listOf("list", "upload")) }, cap = Int.MAX_VALUE),
-    ): Int = withContext(Dispatchers.IO) {
-        BlobStream.sweepLeftovers()
-        val owner = nostrService.ownerHexPubkey
-        val relay = configStore.config.value.nostrURL
-        if (owner.isEmpty() || relay == null) return@withContext 0
-
-        val notes = NoteMediaScan.collect(owner) { filter ->
-            nostrService.queryRawEvents(listOf(filter), listOf(relay), timeoutMs = 8_000L)
-        }
-        val urls = notes.flatMap { note ->
-            nostrService.extractMediaURLs(note.content, note.pubkey, note.tags, note.createdAt).map { it.url }
-        }
-        onLogMessage?.invoke("Found ${urls.size} media link(s) in ${notes.size} note(s)")
-        // A link's hash, known before any download: its name, the note's imeta x, or an earlier run.
-        val imeta = notes.fold(HashMap<String, String>()) { acc, n -> acc.apply { putAll(AutoMirrorRules.imetaHashes(n.tags)) } }
-        val toImport = NoteMediaScan.urlsToImport(urls, knownHash = { imeta[it] ?: autoMirrorState.hashFor(it) }) {
-            mediaCacheService.isInLocalBlossom(it)
-        }
-        if (toImport.isEmpty()) {
-            onLogMessage?.invoke("All note media already exists locally")
-            return@withContext 0
-        }
-        // The run's one signature for every upload (none when keyless).
-        val auth = limits.signature.get()
-        if (auth == null) {
-            onLogMessage?.invoke("Note media skipped: could not sign the upload (signer unavailable)")
-            return@withContext 0
-        }
-        onLogMessage?.invoke("${toImport.size} media item(s) missing locally — downloading...")
-        val completed = java.util.concurrent.atomic.AtomicInteger(0)
-        val saved = java.util.concurrent.atomic.AtomicInteger(0)
-        coroutineScope {
-            for (url in toImport) {
-                if (!limits.take()) break
-                mirrorSemaphore.acquire()
-                launch {
-                    try {
-                        val sha = mirrorUrlToLocal(url, ownVault = auth) { onLogMessage?.invoke("Skipped $url: $it") }
-                        if (sha != null) {
-                            autoMirrorState.remember(url, sha)
-                            saved.incrementAndGet()
-                        }
-                    } finally {
-                        mirrorSemaphore.release()
-                        onProgress?.invoke(completed.incrementAndGet().toFloat() / toImport.size)
-                    }
-                }
-            }
-        }
-        autoMirrorState.saveIfChanged()
-        onLogMessage?.invoke("Mirror from notes complete: ${saved.get()} new file(s)")
-        saved.get()
-    }
+    ): Int = copyNoteMediaIn(onProgress, onLogMessage, limits)
 
     // ══════════════════════════════════════════════════════════════════
     // Deletion
