@@ -10,6 +10,7 @@ enum VaultHistory {
     private static let notesBackupKey = "haven.vault.lastNotesBackup"
     private static let mediaBackupKey = "haven.vault.lastMediaBackup"
     private static let mediaImportKey = "haven.vault.lastMediaImport"
+    private static let mediaImportStartKey = "haven.vault.lastMediaImportStart"
     private static let serverCopyKey = "haven.vault.lastServerCopy"
 
     static var lastNotesImport: Date? {
@@ -31,6 +32,13 @@ enum VaultHistory {
     static var lastMediaImport: Date? {
         get { defaults.object(forKey: mediaImportKey) as? Date }
         set { defaults.set(newValue, forKey: mediaImportKey) }
+    }
+
+    /// When the last media import started, written before it begins, so a
+    /// relaunch mid-run doesn't start another Auto-Mirror (`AutoMirrorSchedule`).
+    static var lastMediaImportStart: Date? {
+        get { defaults.object(forKey: mediaImportStartKey) as? Date }
+        set { defaults.set(newValue, forKey: mediaImportStartKey) }
     }
 
     /// The last Copy to servers (Media servers page) that finished.

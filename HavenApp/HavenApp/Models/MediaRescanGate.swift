@@ -41,14 +41,23 @@ struct MediaRescanGate: Equatable {
 }
 
 /// When Auto-Mirror (`HavenConfig.autoMirrorMedia`) runs by itself: on, and
-/// not within `every` of the last import. It lists every server and scans
+/// not within `every` of the last run. It lists every server and scans
 /// every note, so it runs when the app opens, at most once every few hours.
+/// Rule 3: counted from when a run starts, so a relaunch mid-run does not
+/// start another one. Android twin: `AutoMirrorRules.due`.
 enum AutoMirrorSchedule {
     static let every: TimeInterval = 3 * 60 * 60
 
     static func isDue(enabled: Bool, lastRun: Date?, now: Date, every: TimeInterval = every) -> Bool {
         guard enabled else { return false }
         guard let lastRun else { return true }
+        // A clock set back doesn't hold it off for good.
+        if now < lastRun { return true }
         return now.timeIntervalSince(lastRun) >= every
+    }
+
+    /// The later of the last run's start and the last import that finished.
+    static func lastRun(started: Date?, finished: Date?) -> Date? {
+        [started, finished].compactMap { $0 }.max()
     }
 }
