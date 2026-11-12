@@ -38,15 +38,16 @@ enum DraftEnvelope {
     }
 
     /// A fetched draft's text and tags (the old shape: outer d/k, then the
-    /// inner tags). Plain text that isn't a NIP-44 payload is an old draft and
-    /// opens as it is. Nil when it is encrypted but can't be opened: its
-    /// ciphertext is never shown as the draft's text.
+    /// inner tags). Plain text that doesn't look like a NIP-44 payload is an
+    /// old draft and opens as it is. Nil when it looks encrypted but can't be
+    /// opened: it is never shown as the draft's text, and never saved again
+    /// over the relay copy.
     static func open(content: String, tags: [[String]],
                      decrypt: (String) async throws -> String) async -> Opened? {
-        guard looksEncrypted(content) else {
+        guard let payload = encryptedPayload(content) else {
             return Opened(content: content, tags: tags, createdAt: nil, wasPlaintext: true)
         }
-        guard let plain = try? await decrypt(content),
+        guard let plain = try? await decrypt(payload),
               let obj = (try? JSONSerialization.jsonObject(with: Data(plain.utf8))) as? [String: Any],
               let text = obj["content"] as? String else { return nil }
         let inner = (obj["tags"] as? [[Any]])?.compactMap { tag -> [String]? in
@@ -59,12 +60,25 @@ enum DraftEnvelope {
                       createdAt: created, wasPlaintext: false)
     }
 
-    /// A NIP-44 v2 payload: base64 of at least 99 bytes (version, nonce,
-    /// padded ciphertext, MAC) whose first byte is 2. Text people type is
-    /// almost never that.
-    static func looksEncrypted(_ content: String) -> Bool {
-        guard content.count >= 132, content.count <= 87_472,
-              let data = Data(base64Encoded: content), data.count >= 99 else { return false }
-        return data.first == 2
+    static func looksEncrypted(_ content: String) -> Bool { encryptedPayload(content) != nil }
+
+    /// The content as a NIP-44 payload to decrypt, or nil for plain text.
+    /// The same rule as Android's DraftEvents.encryptedPayload, on purpose
+    /// lenient: a miss shows ciphertext as text and saves it again, so
+    /// anything shaped like one counts. Trimmed of ASCII spaces and line
+    /// ends, then 132 to 87,472 characters of standard base64 (99 to 65,603 bytes: version, nonce, padded
+    /// ciphertext, MAC) with or without its `=` padding. Text people type has
+    /// spaces or punctuation long before 132 characters.
+    static func encryptedPayload(_ content: String) -> String? {
+        let trimmed = content.trimmingCharacters(in: asciiSpace)
+        let body = trimmed.hasSuffix("==") ? trimmed.dropLast(2) : trimmed.hasSuffix("=") ? trimmed.dropLast(1) : Substring(trimmed)
+        // Padding, when there is any, fills out the last group of four.
+        guard trimmed.utf8.count >= 132, trimmed.utf8.count <= 87_472, body.utf8.count % 4 != 1,
+              body.utf8.count == trimmed.utf8.count || trimmed.utf8.count % 4 == 0,
+              body.utf8.allSatisfy({ base64Alphabet.contains($0) }) else { return nil }
+        return trimmed
     }
+
+    private static let asciiSpace = CharacterSet(charactersIn: " \t\n\r")
+    private static let base64Alphabet = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".utf8)
 }

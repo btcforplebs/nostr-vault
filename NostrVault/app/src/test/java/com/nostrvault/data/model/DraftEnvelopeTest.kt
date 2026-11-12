@@ -107,8 +107,8 @@ class DraftEnvelopeTest {
         assertFalse(asked)
     }
 
-    @Test fun shortEmptyAndBase64LookingOldDraftsArePlaintext() {
-        for (text in listOf("", "x", "hello", "QUJD", "A".repeat(140))) {
+    @Test fun shortAndEmptyOldDraftsArePlaintext() {
+        for (text in listOf("", "x", "hello", "QUJD", "A".repeat(131))) {
             val opened = runBlocking { DraftEvents.open(text, listOf(listOf("d", "1"))) { "" } }
             assertNotNull(text, opened)
             assertEquals(text, opened!!.content)
@@ -116,20 +116,87 @@ class DraftEnvelopeTest {
         }
     }
 
-    /** One that can't be opened (another key, the signer said no) is left out, never shown as ciphertext. */
-    @Test fun unreadableCiphertextIsNeverShownAsText() {
+    /**
+     * The one rule both apps use (iOS DraftEnvelopeTests.testSharedDetectionVectors,
+     * same list): a miss shows ciphertext as text and saves it again, so
+     * anything shaped like a NIP-44 payload counts, padded or not.
+     */
+    @Test fun sharedDetectionVectors() {
+        val payload = "AgMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbg="
+        val vectors = listOf(
+            payload to true,
+            payload.trimEnd('=') to true, // a signer that drops the padding
+            "$payload\n" to true,
+            "  $payload\r\n" to true,
+            "A".repeat(131) to false,
+            "A".repeat(132) to true,
+            "A".repeat(133) to false, // not a base64 length
+            "A".repeat(87_472) to true,
+            "A".repeat(87_473) to false,
+            payload.replaceRange(60, 61, " ") to false,
+            payload.replaceRange(60, 61, "-") to false, // URL-safe alphabet is not NIP-44
+            payload.replaceRange(60, 61, "=") to false,
+            "$payload=" to false,
+            "meet at the old mill at 9, bring the key. ".repeat(5) to false,
+        )
+        for ((text, expected) in vectors) assertEquals(text.take(40), expected, DraftEvents.looksEncrypted(text))
+    }
+
+    /** Shaped like a payload but it won't open: left out, never shown and never re-saved. */
+    @Test fun anUnpaddedOrUnreadablePayloadIsNeverResaved() {
+        val unpadded = seal()!!.content.trimEnd('=')
+        val events = listOf(DraftEvents.Fetched("ID1", unpadded, me, listOf(listOf("d", "X"), listOf("k", "1")), 1))
+        val (drafts, old) = runBlocking { DraftEvents.openAll(events) { null } }
+        assertTrue(drafts.isEmpty())
+        assertTrue(old.isEmpty())
+    }
+
+    /** Opened once per event id: the next fetch asks the signer only for what changed. */
+    @Test fun aFetchDecryptsOnlyNewEvents() {
         val sealed = seal()!!
-        assertNull(runBlocking { DraftEvents.open(sealed.content, sealed.tags) { null } })
-        assertNull(runBlocking { DraftEvents.open(sealed.content, sealed.tags) { "not json" } })
+        val events = listOf(DraftEvents.Fetched("ID1", sealed.content, me, sealed.tags, 1))
+        val cache = mutableMapOf<String, DraftEvents.Opened>()
+        var asked = 0
+        repeat(3) { runBlocking { DraftEvents.openAll(events, cache) { asked++; fakeDecrypt(it) } } }
+        assertEquals(1, asked)
+        // One that didn't open is asked again; one the relay no longer has leaves the cache.
+        runBlocking { DraftEvents.openAll(listOf(DraftEvents.Fetched("ID2", sealed.content, me, sealed.tags, 1)), cache) { null } }
+        assertTrue(cache.isEmpty())
+    }
+
+    /**
+     * Tron on PR 1968: re-saving an old iPhone/Mac draft here kept only d, k,
+     * e and q, and the stripped copy then replaced the draft on both apps.
+     * The tags it came with go inside as they are.
+     */
+    @Test fun anIPhoneDraftKeepsItsTagsWhenSavedHere() {
+        val iphoneTags = listOf(
+            listOf("d", "IPHONE-1"), listOf("k", "1"),
+            listOf("e", "a".repeat(64), "wss://relay.one", "root"),
+            listOf("e", "b".repeat(64), "wss://10.0.0.1:3355", "reply"),
+            listOf("p", "c".repeat(64)),
+            listOf("p", "f".repeat(64)),
+        )
+        val fetched = DraftEvents.fromEvent("reply text", me, iphoneTags, 1_700_000_000)!!
+        val saved = DraftEvents.tagsToSave(fetched)
+        assertEquals(iphoneTags, saved)
+        val sealed = runBlocking { DraftEvents.seal(fetched.content, saved, fetched.updatedAt) { fakeEncrypt(it) } }!!
+        val reopened = runBlocking { DraftEvents.open(sealed.content, sealed.tags) { fakeDecrypt(it) } }!!
+        assertEquals(iphoneTags, reopened.tags)
+        // A draft written here has no tags of its own: built from its fields, as before.
+        assertEquals(DraftEvents.tags(draft), DraftEvents.tagsToSave(draft))
+        // An old draft with no k tag still goes out with one.
+        val noK = fetched.copy(tags = iphoneTags.filter { it[0] != "k" })
+        assertEquals(listOf("k", "1"), DraftEvents.tagsToSave(noK)[1])
     }
 
     /** A fetch: encrypted drafts open with their saved time, old ones open and are named for a re-save, unreadable ones are dropped. */
     @Test fun aFetchOpensEachAndNamesTheOldOnes() {
         val sealed = seal()!!
         val events = listOf(
-            DraftEvents.Fetched(sealed.content, me, sealed.tags, createdAt = 1_800_000_000),
-            DraftEvents.Fetched("old text", me, listOf(listOf("d", "OLD"), listOf("k", "1")), createdAt = 1_700_000_000),
-            DraftEvents.Fetched(sealed.content, me, listOf(listOf("d", "LOCKED"), listOf("k", "1")), createdAt = 1_700_000_000),
+            DraftEvents.Fetched("E1", sealed.content, me, sealed.tags, createdAt = 1_800_000_000),
+            DraftEvents.Fetched("E2", "old text", me, listOf(listOf("d", "OLD"), listOf("k", "1")), createdAt = 1_700_000_000),
+            DraftEvents.Fetched("E3", sealed.content, me, listOf(listOf("d", "LOCKED"), listOf("k", "1")), createdAt = 1_700_000_000),
         )
         val (drafts, old) = runBlocking {
             DraftEvents.openAll(events) { c -> fakeDecrypt(c)?.takeIf { events.indexOfFirst { it.content == c } >= 0 } }

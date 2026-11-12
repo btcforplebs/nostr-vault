@@ -34,7 +34,7 @@ class DraftRelaySyncTest {
 
     private val nostr = mockk<NostrService>(relaxed = true)
     private val cipher = mockk<DraftSelfCipher>().also {
-        coEvery { it.encrypt(any(), any()) } answers { "SEALED:" + firstArg<String>().length }
+        coEvery { it.encrypt(any(), any(), any()) } answers { "SEALED:" + firstArg<String>().length }
         coEvery { it.decrypt(any(), any()) } returns null
     }
 
@@ -128,7 +128,7 @@ class DraftRelaySyncTest {
         drafts.saveDraft(Draft(id = "d", content = "Hello secret", replyToId = "p".repeat(64)), syncToRelay = false)
         drafts.syncDraft("d")
         draftSigns(1)
-        coVerify { cipher.encrypt(match { it.contains("Hello secret") }, "alice") }
+        coVerify { cipher.encrypt(match { it.contains("Hello secret") }, "alice", any()) }
         assertTrue(content.captured.startsWith("SEALED:"))
         assertFalse(content.captured.contains("Hello"))
         assertEquals(listOf(listOf("d", "d"), listOf("k", "1")), tags.captured)
@@ -136,13 +136,13 @@ class DraftRelaySyncTest {
 
     /** No encryption (signer said no, no key): nothing is signed or sent, and it stays queued. */
     @Test fun aFailedEncryptionSignsNothing() {
-        coEvery { cipher.encrypt(any(), any()) } returns null
+        coEvery { cipher.encrypt(any(), any(), any()) } returns null
         val drafts = service()
         drafts.saveDraft(Draft(id = "d", content = "Hello"), syncToRelay = false)
         drafts.syncDraft("d")
         Thread.sleep(200)
         draftSigns(0)
-        coEvery { cipher.encrypt(any(), any()) } returns "SEALED"
+        coEvery { cipher.encrypt(any(), any(), any()) } returns "SEALED"
         drafts.syncDraft("d")
         draftSigns(1)
     }

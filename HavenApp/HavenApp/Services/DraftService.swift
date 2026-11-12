@@ -51,6 +51,13 @@ class DraftService: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
 
+    /// The fetch running now and the account it is for: a second caller
+    /// waits for it instead of opening every draft again.
+    private var fetchInFlight: (account: String, task: Task<Void, Never>)?
+    /// Drafts already opened, by event id (the id covers the content, so a
+    /// newer save is a new entry). Opening one can be a bunker round trip.
+    private var openedDrafts: [String: DraftEnvelope.Opened] = [:]
+
     private init() {
         loadFromDisk()
         loadTombstones()
@@ -314,7 +321,19 @@ class DraftService: ObservableObject {
     func fetchDrafts() async {
         let ownPubkey = NostrService.shared.activeHexPubkey
         guard !ownPubkey.isEmpty else { return }
+        if let running = fetchInFlight {
+            await running.task.value
+            // It was for another account (a switch meanwhile): fetch this one's.
+            if running.account == ownPubkey || NostrService.shared.activeHexPubkey != ownPubkey { return }
+            return await fetchDrafts()
+        }
+        let task = Task { await self.performFetch(ownPubkey: ownPubkey) }
+        fetchInFlight = (ownPubkey, task)
+        await task.value
+        fetchInFlight = nil
+    }
 
+    private func performFetch(ownPubkey: String) async {
         isLoading = true
         defer { isLoading = false }
 
@@ -329,11 +348,18 @@ class DraftService: ObservableObject {
         // can't be opened is left out, never shown as ciphertext.
         var relayDrafts: [Draft] = []
         var plaintextIds: Set<String> = []
+        var opens: [String: DraftEnvelope.Opened] = [:]
         for event in receivedEvents where event.pubkey.lowercased() == ownPubkey.lowercased() {
-            guard let opened = await DraftEnvelope.open(
-                content: event.content, tags: event.tags,
-                decrypt: { try await MuteListStore.decryptToSelf($0, me: ownPubkey, nip04: false) }
-            ) else { continue }
+            var opened = openedDrafts[event.id]
+            if opened == nil {
+                opened = await DraftEnvelope.open(
+                    content: event.content, tags: event.tags,
+                    decrypt: { try await MuteListStore.decryptToSelf($0, me: ownPubkey, nip04: false) }
+                )
+            }
+            guard let opened else { continue }
+            // Only ones that opened: a bunker that wasn't ready is asked again next time.
+            opens[event.id] = opened
             let tags = opened.tags
             guard let dTag = tags.first(where: { $0.count >= 2 && $0[0] == "d" })?[1] else { continue }
 
@@ -355,6 +381,8 @@ class DraftService: ObservableObject {
                 updatedAt: opened.createdAt ?? event.createdAtDate
             ))
         }
+        // Kept for the events the relay still has, so the cache doesn't grow.
+        openedDrafts = opens
         // A switch while opening: these belong to the account we asked as.
         guard NostrService.shared.activeHexPubkey == ownPubkey else { return }
 

@@ -91,11 +91,50 @@ final class DraftEnvelopeTests: XCTestCase {
 
     /// Old drafts are often short or empty, and may be base64-looking words: still plain text.
     func testShortAndEmptyOldDraftsArePlaintext() async throws {
-        for text in ["", "x", "hello", "QUJD", String(repeating: "A", count: 140)] {
+        for text in ["", "x", "hello", "QUJD", String(repeating: "A", count: 131)] {
             let opened = await DraftEnvelope.open(content: text, tags: [["d", "1"], ["k", "1"]], decrypt: { _ in "" })
             XCTAssertEqual(opened?.content, text)
             XCTAssertEqual(opened?.wasPlaintext, true, text)
         }
+    }
+
+    /// The one rule both apps use (Android DraftEnvelopeTest.sharedDetectionVectors,
+    /// same list): a miss shows ciphertext as text and saves it again, so
+    /// anything shaped like a NIP-44 payload counts, padded or not.
+    func testSharedDetectionVectors() {
+        let payload = "AgMKERgfJi00O0JJUFdeZWxzeoGIj5adpKuyucDHztXc4+rx+P8GDRQbIikwNz5FTFNaYWhvdn2Ei5KZoKeutbzDytHY3+bt9PsCCRAXHiUsMzpBSE9WXWRrcnmAh46VnKOqsbg="
+        func replacing(_ c: Character) -> String {
+            var chars = Array(payload); chars[60] = c; return String(chars)
+        }
+        let a = { (n: Int) in String(repeating: "A", count: n) }
+        let vectors: [(String, Bool)] = [
+            (payload, true),
+            (String(payload.dropLast()), true), // a signer that drops the padding
+            (payload + "\n", true),
+            ("  " + payload + "\r\n", true),
+            (a(131), false),
+            (a(132), true),
+            (a(133), false), // not a base64 length
+            (a(87_472), true),
+            (a(87_473), false),
+            (replacing(" "), false),
+            (replacing("-"), false), // URL-safe alphabet is not NIP-44
+            (replacing("="), false),
+            (payload + "=", false),
+            (String(repeating: "meet at the old mill at 9, bring the key. ", count: 5), false),
+        ]
+        for (text, expected) in vectors {
+            XCTAssertEqual(DraftEnvelope.looksEncrypted(text), expected, String(text.prefix(40)))
+        }
+    }
+
+    /// Shaped like a payload (here unpadded) but it won't open: left out,
+    /// never shown as text and never re-saved over the relay copy.
+    func testUnreadablePayloadShapeIsNeverPlaintext() async {
+        let unpadded = String(repeating: "QUJD", count: 40) + "QQ"
+        let opened = await DraftEnvelope.open(content: unpadded, tags: [["d", "X"], ["k", "1"]],
+                                              decrypt: { _ in throw URLError(.cannotDecodeContentData) })
+        XCTAssertNil(opened)
     }
 
     /// One that can't be opened (another key, signer said no) is left out:
@@ -150,5 +189,14 @@ final class DraftServiceEncryptionWiringTests: XCTestCase {
         XCTAssertEqual(built.count, 1, "one place builds a fetched draft")
         XCTAssertTrue(built.first?.contains("content: opened.content,") == true, "a fetched draft's content is never used unopened")
         XCTAssertTrue(src.contains("plaintextIds"))
+    }
+
+    /// Opening a draft can be a bunker round trip: one fetch at a time, and
+    /// an event opened before (same id) isn't decrypted again.
+    func testFetchesAreSingleFlightAndOpenedDraftsCached() throws {
+        let src = try source()
+        XCTAssertTrue(src.contains("if let running = fetchInFlight {"))
+        XCTAssertTrue(src.contains("var opened = openedDrafts[event.id]"))
+        XCTAssertTrue(src.contains("openedDrafts = opens"))
     }
 }

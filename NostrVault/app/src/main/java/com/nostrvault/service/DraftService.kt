@@ -58,6 +58,8 @@ class DraftService @Inject constructor(
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     private val fetchMutex = kotlinx.coroutines.sync.Mutex()
+    /** Drafts already opened, by event id; only touched under [fetchMutex]. */
+    private val openedDrafts = mutableMapOf<String, DraftEvents.Opened>()
     @OptIn(ExperimentalCoroutinesApi::class)
     private val diskWriter = Dispatchers.IO.limitedParallelism(1)
 
@@ -226,7 +228,7 @@ class DraftService @Inject constructor(
      * Attempt to sync a single draft to the /private relay endpoint
      * as a kind 31234 parameterized replaceable event.
      */
-    private fun trySyncDraft(draft: Draft) {
+    private fun trySyncDraft(draft: Draft, background: Boolean = false) {
         if (!RelayForegroundService.readyForConnections.value) return
         // The embedded /private relay is owner-only; an external relay may
         // not be, so drafts stay queued on the device.
@@ -245,13 +247,16 @@ class DraftService @Inject constructor(
                 // author's own key, in iOS's tag shape inside; only d and k
                 // outside. No encryption, nothing sent: it stays queued.
                 val me = configStore.activeAccountHexPubkey.value
-                val sealed = DraftEvents.seal(draft.content, DraftEvents.tags(draft), draft.updatedAt) {
-                    cipher.encrypt(it, me)
+                // [background] (the re-save after a fetch, no one tapping):
+                // Amber only if it can without asking; else it waits queued.
+                val sealed = DraftEvents.seal(draft.content, DraftEvents.tagsToSave(draft), draft.updatedAt) {
+                    cipher.encrypt(it, me, silentOnly = background)
                 } ?: return@launch
                 val event = nostrService.signEventAsync(
                     kind = DraftEvents.KIND,
                     content = sealed.content,
                     tags = sealed.tags,
+                    silentOnly = background,
                 )
                 // A newer save while this one was out still has to go.
                 if (event != null && postToPrivateRelay(event) && findDraft(draft.id)?.updatedAt == draft.updatedAt) {
@@ -370,7 +375,7 @@ class DraftService @Inject constructor(
             val events = queryDrafts(url, account) ?: return
             if (configStore.activeAccountHexPubkey.value != account) return
             // Opened here, after the socket is closed. One that can't be opened is left out.
-            val (fetched, plaintext) = DraftEvents.openAll(events) { cipher.decrypt(it, account) }
+            val (fetched, plaintext) = DraftEvents.openAll(events, openedDrafts) { cipher.decrypt(it, account) }
             if (configStore.activeAccountHexPubkey.value != account) return
             val deleted = synchronized(pendingDeletes) { pendingDeletes.map(DraftEvents::idOf) }.toSet() +
                 synchronized(deletedThisRun) { deletedThisRun.toSet() }
@@ -380,7 +385,7 @@ class DraftService @Inject constructor(
             if (merged != before) persistToDisk(merged)
             // Old plaintext drafts on the relay are replaced once by an
             // encrypted copy (same d tag): the newer of the two copies.
-            for (id in plaintext - deleted) findDraft(id)?.let { trySyncDraft(it) }
+            for (id in plaintext - deleted) findDraft(id)?.let { trySyncDraft(it, background = true) }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to fetch drafts from relay", e)
         } finally {
@@ -422,6 +427,7 @@ class DraftService @Inject constructor(
                                     ?: emptyList()
                                 found.add(
                                     DraftEvents.Fetched(
+                                        id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@collect,
                                         content = obj["content"]?.jsonPrimitive?.contentOrNull ?: "",
                                         pubkey = pubkey,
                                         tags = tags,
@@ -499,9 +505,10 @@ class DraftSelfCipher @Inject constructor(
     private val nostrService: NostrService,
     private val amberSignerService: AmberSignerService,
 ) {
-    suspend fun encrypt(plaintext: String, me: String): String? = guard {
+    /** [silentOnly]: Amber encrypts only if it can without asking (a background re-save). */
+    suspend fun encrypt(plaintext: String, me: String, silentOnly: Boolean = false): String? = guard {
         when (configStore.config.value.activeSigningMode()) {
-            "amber" -> amberSignerService.nip44Encrypt(plaintext, me)
+            "amber" -> amberSignerService.nip44Encrypt(plaintext, me, silentOnly)
             "nip46" -> if (bunkerReady(me)) NIP46Service.nip44Encrypt(me, plaintext) else null
             else -> nostrService.resolveSecretKey(forceOwner = false)?.let { sk ->
                 withContext(Dispatchers.Default) { HavenBridge.encryptNIP44(plaintext, me, sk) }
