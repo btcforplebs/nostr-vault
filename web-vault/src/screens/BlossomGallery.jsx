@@ -9,7 +9,9 @@ import { emptyMediaReason } from "../net/media-empty-reason.js"
 import { mediaServers } from "../net/upload.js"
 import { BlossomStats } from "./BlossomStats.jsx"
 import { BlossomUpload } from "./BlossomUpload.jsx"
-import { listBlobs, deleteBlob, deleteTargets, mirrorBlob, outcome, byDay, TYPE_FILTERS } from "../net/blossom-gallery.js"
+import { listBlobs, deleteBlob, deleteTargets, mirrorBlob, outcome, byDay, TYPE_FILTERS, mergeNoteTiles } from "../net/blossom-gallery.js"
+import { watchFileNotes } from "../net/file-notes-live.js"
+import { sealMeshAuth } from "../net/pair-hello.js"
 import { SkeletonGrid, Waiting } from "../components/Loading.jsx"
 import { BlossomThumb } from "../components/BlossomThumb.jsx"
 import { Avatar } from "../components/Avatar.jsx"
@@ -84,29 +86,45 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
     if (entering && !needsAsking(shown.get(me))) return
     load()
   }, [me, refreshes])
+  // Live file notes on this browser vault's /files (net/file-notes-live.js): a paired phone's upload shows at once, before
+  // the servers are asked again. The in-page vault only (owners is null in box mode).
+  const [noteTiles, setNoteTiles] = useState([])
+  const handled = useRef(new Set()) // note-only files the viewer copied or deleted: the watcher's later lists keep them
+  const vault = ctx.vault
+  useEffect(() => {
+    setNoteTiles([]); handled.current = new Set()
+    if (!vault?.owners) return
+    return watchFileNotes({ haven: vault.haven, owner: me, auth: challenge => sealMeshAuth({ challenge }), onChange: setNoteTiles })
+  }, [me, vault])
   // Uploads, deletes and copies change the list on screen; the kept one follows (its age doesn't).
   useEffect(() => { if (found?.done) shown.set(me, { servers, found, at: shown.get(me)?.at ?? Date.now() }) }, [found])
 
-  if (!found || (!found.done && !found.blobs.length)) return <><Waiting>Loading media…</Waiting><SkeletonGrid count={12} gridClass="vault-grid" tileClass="vault-thumb blossom-tile" label="Asking your media servers" /></>
-  const blobs = found.blobs.filter(TYPE_FILTERS[filter] ?? TYPE_FILTERS.all)
-  const why = found.done && !found.blobs.length ? emptyMediaReason({ servers, status: found.status, readOnly: !!ctx.signer?.readOnly }) : ""
+  const listed = found && mergeNoteTiles(found.blobs, noteTiles.filter(t => !handled.current.has(t.sha256)))
+  if (!found || (!found.done && !listed.length)) return <><Waiting>Loading media…</Waiting><SkeletonGrid count={12} gridClass="vault-grid" tileClass="vault-thumb blossom-tile" label="Asking your media servers" /></>
+  const blobs = listed.filter(TYPE_FILTERS[filter] ?? TYPE_FILTERS.all)
+  const why = found.done && !listed.length ? emptyMediaReason({ servers, status: found.status, readOnly: !!ctx.signer?.readOnly }) : ""
   const groups = sections(blobs, sort)
   const order = groups.flatMap(g => g.blobs) // the viewer steps through the grid's order
-  const current = found.blobs.find(b => b.sha256 === open)
-  const update = (sha, f) => setFound(x => ({ ...x, blobs: f(x.blobs) }))
+  const current = listed.find(b => b.sha256 === open)
+  // A note-only tile the viewer copies or deletes becomes a listed file (or none), so its servers show.
+  const update = (sha, f) => {
+    const note = current?.fromNote && current.sha256 === sha ? (({ fromNote, ...b }) => b)(current) : null
+    if (note) { handled.current.add(sha); setNoteTiles(t => t.filter(x => x.sha256 !== sha)) }
+    setFound(x => ({ ...x, blobs: f(note && !x.blobs.some(b => b.sha256 === sha) ? [note, ...x.blobs] : x.blobs) }))
+  }
   return (
     <div class="blossom">
       <BlossomStats blobs={found.blobs} servers={servers} status={found.status} pending={!found.done} />
       <BlossomUpload ctx={ctx} servers={servers} onAdded={added => setFound(x => ({ ...x, blobs: [...added, ...x.blobs.filter(b => !added.some(a => a.sha256 === b.sha256))] }))} />
       {note && <div class="status-line">{note}</div>}
-      {found.blobs.length > 1 && (
+      {listed.length > 1 && (
         <label class="status-line blossom-sort">Sort by{" "}
           <select value={sort} onChange={e => { setSort(e.currentTarget.value); saveSort(e.currentTarget.value) }}>
             {SORTS.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
           </select>
         </label>
       )}
-      {!blobs.length ? <div class="empty"><p><strong>No media found</strong></p>{found.blobs.length > 0 ? <p class="muted small">Try changing your filter settings</p>
+      {!blobs.length ? <div class="empty"><p><strong>No media found</strong></p>{listed.length > 0 ? <p class="muted small">Try changing your filter settings</p>
         : why && <p class="muted small">{why}</p>}</div>
         : groups.map(g => (
         <section key={g.day || "all"}>
@@ -116,7 +134,8 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
               <button key={b.sha256} class="vault-thumb blossom-tile" onClick={() => setOpen(b.sha256)} aria-label={`${isAudio(b) ? "audio" : b.kind}${g.day ? ` uploaded ${g.day}` : ""}`}>
                 <Thumb blob={b} />
                 {b.kind === "video" && <span class="blossom-play" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M8 5.5v13l11-6.5z" fill="currentColor" /></svg></span>}
-                {servers.length > 0 && <span class="blossom-badge" title={b.servers.length < servers.length ? "Not on every server" : "On every server"}>{b.servers.length}/{servers.length}</span>}
+                {b.fromNote ? <span class="blossom-badge" title="Just added from one of your devices">New</span>
+                  : servers.length > 0 && <span class="blossom-badge" title={b.servers.length < servers.length ? "Not on every server" : "On every server"}>{b.servers.length}/{servers.length}</span>}
               </button>
             ))}
           </div>

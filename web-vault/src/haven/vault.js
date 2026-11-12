@@ -10,7 +10,9 @@ import { makeAuthEvent } from "nostr-tools/nip42"
 import { loadHaven } from "../../../web-relay/src/haven/haven.js"
 import { HavenClient } from "../../../web-relay/src/haven/client.js"
 import { loadOwners } from "../../../web-relay/src/fips/owners.js"
-import { ownersForAccount } from "../net/pair-devices.js"
+import { ownersForAccount, pairedDevices } from "../net/pair-devices.js"
+import { ownMeshHex } from "../net/pair-hello.js"
+import { meshDevicesConfig } from "../net/file-notes-live.js"
 import { VAULT_NS, RELAY_NS, pageStorage } from "../../../web-relay/src/page-storage.js"
 import { clearSession } from "../session.js"
 import { forgetSynced } from "../net/feed-synced.js"
@@ -48,12 +50,18 @@ export async function startVault({ pubkey, log = () => {} }) {
   const t0 = Date.now()
   const haven = await loadHaven(WASM)
   const loadMs = Date.now() - t0
+  const selfHex = await ownMeshHex(localStorage)
   await haven.start({
     ownerNpub: npubEncode(pubkey),
     whitelist: [npubEncode(getPublicKey(sk))],
-    env: { RELAY_URL: RELAY_HOST },
+    // HAVEN_MESH_NPUB: the mesh address a paired device's AUTH names over the mesh door (haven-go meshAuthURL,
+    // ws://<this npub>.fips/files). Without it every AUTH over the mesh fails (Tron, PR 1996).
+    env: { RELAY_URL: RELAY_HOST, HAVEN_MESH_NPUB: npubEncode(selfHex) },
     // One set of stores per account, so a second account on this browser never opens the first one's data.
     storePrefix: pubkey,
+    // Who writes and reads /files (net/file-notes-live.js): this browser's mesh key and this account's paired devices.
+    // Read at start: a device paired later writes there after the next start.
+    meshDevices: meshDevicesConfig({ selfHex, owners, devices: pairedDevices(localStorage, pubkey) }),
   })
   const open = route => routeClient(haven, route, sk)
   // /inbox holds what others sent the user (replies, likes, zaps…): the Vault tab reads it and fills it from the relays.

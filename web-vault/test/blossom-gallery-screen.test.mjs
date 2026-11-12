@@ -53,9 +53,11 @@ test("audio is told apart from other files", () => {
 
 const src = readFileSync(new URL("../src/screens/BlossomGallery.jsx", import.meta.url), "utf8")
 test("every tile shows how many servers hold it; the iPhone's loading and empty wording", () => {
-  assert.match(src, /\{servers\.length > 0 && <span class="blossom-badge"/)
+  assert.match(src, /: servers\.length > 0 && <span class="blossom-badge"/)
+  // A file only a live note names (net/file-notes-live.js) says New instead: no server has listed it yet.
+  assert.match(src, /\{b\.fromNote \? <span class="blossom-badge" title="Just added from one of your devices">New<\/span>/)
   for (const w of ["Loading media…", "No media found", "Try changing your filter settings"]) assert.ok(src.includes(w), w)
-  assert.match(src, /found\.blobs\.length > 0 \? <p class="muted small">Try changing your filter settings/)
+  assert.match(src, /listed\.length > 0 \? <p class="muted small">Try changing your filter settings/)
   // No files at all: the reason when a server didn't list them (a read-only sign-in can't sign the list request).
   assert.match(src, /: why && <p class="muted small">\{why\}<\/p>/)
 })

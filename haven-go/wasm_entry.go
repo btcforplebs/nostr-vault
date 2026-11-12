@@ -76,6 +76,10 @@ func init() {
 		s, ok := r.Context().Value(streamCtxKey{}).(*havenStream)
 		return ok && s.owner
 	}
+	// The page's own stream is this machine: /files (files_relay.go) and the
+	// device gates treat it as natively they treat loopback with no tunnel.
+	// FIPS streams are never owner streams (havenConn).
+	meshDeviceOverLoopback = func(r *http.Request) bool { return ownerConn(r) }
 }
 
 // ── lifecycle ───────────────────────────────────────────────────────────
@@ -151,6 +155,18 @@ func havenStart(cfg js.Value) error {
 		return err
 	}
 	blacklistOverride.Store(nil)
+	// This browser's mesh key and its paired devices (SetMeshDevicesC's JSON):
+	// who may write and read /files. A start without it, or with one that
+	// doesn't parse, pairs nothing (the vault still starts), so the last
+	// account's devices never carry over.
+	devices := jsString(cfg.Get("meshDevices"))
+	if devices == "" {
+		devices = "{}"
+	}
+	if err := meshDevices.set(devices); err != nil {
+		slog.Warn("havenStart: meshDevices ignored", "error", err)
+		meshDevices.set("{}")
+	}
 
 	members := map[string]bool{}
 	for pk := range config.WhitelistedPubKeys {
