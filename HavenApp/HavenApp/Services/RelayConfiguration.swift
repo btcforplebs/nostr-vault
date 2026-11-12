@@ -251,6 +251,7 @@ enum RelayConfiguration {
         let blastrRelays: [String]
         let dmRelays: [String]
         let whitelistedNpubs: [String]
+        let privateReaderNpubs: [String]
     }
 
     static func launchInputs(config: HavenConfig, relayDataDir: URL) -> LaunchInputs {
@@ -266,7 +267,9 @@ enum RelayConfiguration {
             }()),
             dmRelays: config.dmRelays,
             // Every account, watch-only included (vaultWhitelistNpubs).
-            whitelistedNpubs: config.vaultWhitelistNpubs
+            whitelistedNpubs: config.vaultWhitelistNpubs,
+            // Accounts with a key or signer here (vaultPrivateReaderNpubs).
+            privateReaderNpubs: config.vaultPrivateReaderNpubs
         )
     }
 
@@ -351,6 +354,8 @@ enum RelayConfiguration {
 
             // Whitelisted Npubs
             "WHITELISTED_NPUBS_FILE": config.whitelistedNpubsFile,
+            // Who reads /private, list history and unposted blobs
+            "PRIVATE_READER_NPUBS_FILE": HavenConfig.privateReaderNpubsFile,
 
             // Blacklisted Npubs
             "BLACKLISTED_NPUBS_FILE": config.blacklistedNpubsFile,

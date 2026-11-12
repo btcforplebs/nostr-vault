@@ -177,7 +177,7 @@ func meshBlobRejectGet(ctx context.Context, auth *nostr.Event, sha256 string, _ 
 		return false, "", 0
 	}
 	if auth != nil {
-		if _, ok := whitelist()[auth.PubKey]; ok {
+		if isPrivateReader(auth.PubKey) {
 			return false, "", 0
 		}
 		if isMeshDeviceAuth(ctx, auth) {

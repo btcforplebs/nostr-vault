@@ -1,12 +1,11 @@
 import XCTest
 @testable import MediaLogic
 
-/// The vault whitelist rule (Logen, 2026-11-12 14:19Z, undoing the 11-06
-/// key-or-signer rule): the owner, always, even npub-only (OWNER_NPUB), plus
-/// every account on this device, watch-only (npub only) included, like Haven.
-/// Access is whitelist-wide: the key of any listed npub, AUTHed, reads the
-/// whole /private store and list history, not just its own notes. An npub
-/// alone reads nothing gated and cannot post as that account.
+/// The vault account rule (Logen, 2026-11-12, PR #1971 option a): every
+/// account on this device, watch-only (npub only) included, gets vault space
+/// (the whitelist file); only the owner and accounts with a key or signer
+/// here read the private side (the private-readers file; the engine half is
+/// haven-go/private_readers_test.go).
 final class VaultWhitelistTests: XCTestCase {
     private let owner = "npub1fsgzj6t7udv8zhf6zj32mkqhcjcpv52yph5qsdcl0qt94jgdckqs4yjc3w"
     private let keyed = "npub13evkv42fprxqfpqdp966kn2cwpjrk9jflp08yelkkue20g977wpsv6pcap"
@@ -49,6 +48,17 @@ final class VaultWhitelistTests: XCTestCase {
         XCTAssertEqual(c.vaultWhitelistNpubs, [keyed, signer])
     }
 
+    /// Private reads: accounts with a key or signer here, never a
+    /// watch-only one, never the owner (the engine adds OWNER_NPUB).
+    func testOnlyAccountsThatSignHereReadPrivate() {
+        XCTAssertEqual(config().vaultPrivateReaderNpubs, [keyed, signer])
+        var c = config()
+        c.accountCredentials = [:]
+        XCTAssertEqual(c.vaultPrivateReaderNpubs, [signer], "removing a key takes private reads away")
+        c.whitelistedNpubs = [owner]
+        XCTAssertEqual(c.vaultPrivateReaderNpubs, [])
+    }
+
     /// Older builds kept the list only in the whitelist file: it joins the
     /// account list at launch (and so keeps its vault space).
     func testLaunchKeepsEveryAccount() {
@@ -70,19 +80,25 @@ final class VaultWhitelistTests: XCTestCase {
     func testEveryWhitelistWriterUsesTheRule() throws {
         let rc = try source("Services/RelayConfiguration.swift")
         XCTAssertTrue(rc.contains("whitelistedNpubs: config.vaultWhitelistNpubs"), "relay start (launch inputs)")
+        XCTAssertTrue(rc.contains("privateReaderNpubs: config.vaultPrivateReaderNpubs"), "relay start (launch inputs)")
+        XCTAssertTrue(rc.contains("\"PRIVATE_READER_NPUBS_FILE\": HavenConfig.privateReaderNpubsFile"),
+                      "without the env the engine lets every whitelisted key read")
         for path in ["Services/Relay/RelayProcessManager+Backup.swift", "Services/Relay/RelayProcessManager+Import.swift"] {
             let text = try source(path)
-            XCTAssertTrue(text.contains("encoder.encode(config.vaultWhitelistNpubs)"), path)
+            XCTAssertTrue(text.contains("writeVaultAccountFiles(whitelist: config.vaultWhitelistNpubs, readers: config.vaultPrivateReaderNpubs"), path)
             XCTAssertFalse(text.contains("encoder.encode(config.whitelistedNpubs)"), path)
+            XCTAssertFalse(text.contains("encoder.encode(config.vaultWhitelistNpubs)"), path)
         }
         let cs = try source("Services/ConfigService.swift")
         XCTAssertTrue(cs.contains("writeVaultWhitelist(encoder: encoder)"))
         XCTAssertFalse(cs.contains("encoder.encode(config.whitelistedNpubs)"))
         let write = try source("Services/ConfigService+VaultWhitelist.swift")
         XCTAssertTrue(write.contains("let list = config.vaultWhitelistNpubs"))
+        XCTAssertTrue(write.contains("let readers = config.vaultPrivateReaderNpubs"))
+        XCTAssertTrue(write.contains("running.vaultPrivateReaderNpubs != readers"), "a removed key stops private reads now")
         XCTAssertTrue(write.contains("relay.applySavedConfig(config)"), "a removed account leaves the running relay too")
         // No other Swift file writes the whitelist file.
         let start = try source("Services/Relay/RelayProcessManager+Start.swift")
-        XCTAssertTrue(start.contains("encoder.encode(inputs.whitelistedNpubs)"))
+        XCTAssertTrue(start.contains("writeVaultAccountFiles(whitelist: inputs.whitelistedNpubs, readers: inputs.privateReaderNpubs"))
     }
 }

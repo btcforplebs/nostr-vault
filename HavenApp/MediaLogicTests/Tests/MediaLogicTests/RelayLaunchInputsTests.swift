@@ -14,8 +14,8 @@ final class RelayLaunchInputsTests: XCTestCase {
         return config
     }
 
-    private func restarts(_ change: (inout HavenConfig) -> Void) -> Bool {
-        let before = base()
+    private func restarts(from start: HavenConfig? = nil, _ change: (inout HavenConfig) -> Void) -> Bool {
+        let before = start ?? base()
         var after = before
         change(&after)
         XCTAssertNotEqual(before, after, "the change under test must change the config")
@@ -48,6 +48,11 @@ final class RelayLaunchInputsTests: XCTestCase {
         // The whitelist file holds every account (vaultWhitelistNpubs),
         // watch-only included: adding one by npub reaches the relay.
         XCTAssertTrue(restarts { $0.whitelistedNpubs = ["npub1friend"] })
+        // A key or signer added to an account already there makes it a
+        // private reader (vaultPrivateReaderNpubs): that reaches the relay too.
+        var keyed = base()
+        keyed.whitelistedNpubs = ["npub1friend"]
+        XCTAssertTrue(restarts(from: keyed) { $0.accountCredentials["npub1friend"] = "ncryptsec1placeholder" })
         XCTAssertTrue(restarts { $0.importSeedRelays = ["wss://seed.example"] })
         XCTAssertTrue(restarts { $0.blastrRelays = ["wss://blast.example"] })
     }

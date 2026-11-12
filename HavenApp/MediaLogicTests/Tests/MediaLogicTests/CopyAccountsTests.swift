@@ -134,6 +134,10 @@ final class CopyAccountsTests: XCTestCase {
         let view = try source("Views/SetupWizard/CopyAccountsAskView.swift")
         XCTAssertFalse(view.localizedCaseInsensitiveContains("no access"))
         XCTAssertTrue(view.contains("their own space in this vault"))
+        // Ticking publishes: the engine uploads and serves the account as
+        // own (Tron, PR #1971), and it reads nothing private.
+        XCTAssertTrue(view.contains("shared from this vault like yours"))
+        XCTAssertTrue(view.contains("can't read your private notes"))
     }
 
     /// A finished copy refreshes the offer, and setup asks before it goes on.

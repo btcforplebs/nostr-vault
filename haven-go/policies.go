@@ -125,9 +125,11 @@ func whitelistBypassEventRateLimiter(tokensPerInterval int, interval time.Durati
 	}
 }
 
+// MustBeWhitelistedToQuery gates /private and /lists reads: only a private
+// reader (privateReaders), not every account with vault space.
 func MustBeWhitelistedToQuery(ctx context.Context, _ nostr.Filter) (bool, string) {
 	authenticatedUser := khatru.GetAuthed(ctx)
-	if _, ok := whitelist()[authenticatedUser]; !ok {
+	if !isPrivateReader(authenticatedUser) {
 		slog.Debug("🚫 query rejected: user is not whitelisted", "user", authenticatedUser)
 		return true, "restricted: you must be whitelisted to query this relay"
 	}

@@ -68,6 +68,7 @@ type Config struct {
 	WotCachePath                         string              `json:"wot_cache_path"`
 	WotCacheTTLMinutes                   int                 `json:"wot_cache_ttl_minutes"`
 	WhitelistedPubKeys                   map[string]struct{} `json:"whitelisted_pubkeys"`
+	PrivateReaderPubKeys                 map[string]struct{} `json:"private_reader_pubkeys"`
 	BlacklistedPubKeys                   map[string]struct{} `json:"blacklisted_pubkeys"`
 	LogLevel                             string              `json:"log_level"`
 	BlastrRelays                         []string            `json:"blastr_relays"`
@@ -153,6 +154,7 @@ func loadConfig() Config {
 		WotCacheTTLMinutes:                   getEnvInt("WOT_CACHE_TTL_MINUTES", 4320),
 		WhitelistedPubKeys:                   getNpubsFromFile(getEnvString("WHITELISTED_NPUBS_FILE", "")),
 		BlacklistedPubKeys:                   getNpubsFromFile(getEnvString("BLACKLISTED_NPUBS_FILE", "")),
+		PrivateReaderPubKeys:                 privateReadersFromFile(getEnvString("PRIVATE_READER_NPUBS_FILE", "")),
 		LogLevel:                             getEnvString("HAVEN_LOG_LEVEL", "INFO"),
 		BlastrRelays:                         getRelayListFromFile(getEnv("BLASTR_RELAYS_FILE")),
 		BlastrTimeoutSeconds:                 getEnvInt("BLASTR_TIMEOUT_SECONDS", 5),
@@ -176,6 +178,9 @@ func loadConfig() Config {
 	// Relay owner is always whitelisted
 	if cfg.OwnerPubKey != "" {
 		cfg.WhitelistedPubKeys[cfg.OwnerPubKey] = struct{}{}
+		if cfg.PrivateReaderPubKeys != nil {
+			cfg.PrivateReaderPubKeys[cfg.OwnerPubKey] = struct{}{}
+		}
 	}
 
 	// The Mac relay's outbox is a seed relay for everything that reads them
@@ -280,6 +285,17 @@ func getRelayListFromFile(filePath string) []string {
 		relayList[i] = relay
 	}
 	return relayList
+}
+
+// privateReadersFromFile: nil when no file is named (an app that predates
+// the split, Android and the browser vault: every whitelisted key reads, as
+// before). A named file that is missing or unreadable gives an empty set, so
+// only the owner reads: fail closed (privateReaders, whitelist.go).
+func privateReadersFromFile(filePath string) map[string]struct{} {
+	if filePath == "" {
+		return nil
+	}
+	return getNpubsFromFile(filePath)
 }
 
 func getNpubsFromFile(filePath string) map[string]struct{} {

@@ -17,9 +17,9 @@ import (
 	"github.com/barrydeen/haven/internal/negsync"
 )
 
-// ownReader: the connection is the vault's own (NIP-42 as one of its
-// accounts, or the browser build's owner stream). Loopback is not enough: a
-// tunnel or the mesh arrives from 127.0.0.1 too.
+// ownReader: the connection is the vault's own (NIP-42 as a private reader,
+// see privateReaders, or the browser build's owner stream). Loopback is not
+// enough: a tunnel or the mesh arrives from 127.0.0.1 too.
 func ownReader(ctx context.Context) bool {
 	if ownerStream(ctx) {
 		return true
@@ -28,8 +28,7 @@ func ownReader(ctx context.Context) bool {
 	if authed == "" {
 		return false
 	}
-	_, ok := whitelist()[authed]
-	return ok
+	return isPrivateReader(authed)
 }
 
 // hiddenBrought: the brought-over accounts this read must not see (nil when

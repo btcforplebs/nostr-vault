@@ -44,6 +44,30 @@ func whitelist() map[string]struct{} {
 	return l.merged
 }
 
+// privateReaders: the keys that may read the vault's private side: /private,
+// list history, the full blob list and unposted blobs over the mesh. The
+// owner plus the accounts with a key or signer on this device
+// (PRIVATE_READER_NPUBS_FILE, written by the app). Every other added account
+// has space for its own notes and uploads (whitelist()) and reads nothing
+// gated (Logen, 2026-11-12, PR #1971): an added npub is often someone else's,
+// and whoever holds its nsec could AUTH as it. With no file named, the
+// whitelist (see privateReadersFromFile). Live additions (AddAccountsC) never
+// read: they are brought-over, watch-only accounts.
+func privateReaders() map[string]struct{} {
+	if r := config.PrivateReaderPubKeys; r != nil {
+		return r
+	}
+	return whitelist()
+}
+
+// isPrivateReader: pk is a private reader and still one of the vault's own.
+func isPrivateReader(pk string) bool {
+	if _, ok := privateReaders()[pk]; !ok {
+		return false
+	}
+	return isOwnKey(pk)
+}
+
 func isOwnKey(pk string) bool {
 	_, ok := whitelist()[pk]
 	return ok

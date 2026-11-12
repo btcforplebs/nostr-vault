@@ -18,7 +18,7 @@ func meshHeadAllowed(r *http.Request, sha256 string) bool {
 	return meshOwnerGetAuthorized(r, sha256) || meshBlobs.has(r.Context(), sha256)
 }
 
-// meshOwnerGetAuthorized: the request carries a whitelisted key's kind
+// meshOwnerGetAuthorized: the request carries a private reader's kind
 // 24242 "get" for sha256, unexpired and validly signed: what khatru checks
 // before meshBlobRejectGet lets the owner read an unposted blob.
 func meshOwnerGetAuthorized(r *http.Request, sha256 string) bool {
@@ -38,7 +38,7 @@ func meshOwnerGetAuthorized(r *http.Request, sha256 string) bool {
 	if json.Unmarshal(raw, &ev) != nil || ev.Kind != 24242 {
 		return false
 	}
-	if _, ok := whitelist()[ev.PubKey]; !ok {
+	if !isPrivateReader(ev.PubKey) {
 		return false
 	}
 	if authExpiration(&ev) <= time.Now().Unix() ||
