@@ -3,6 +3,7 @@ package khatru
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 
 	"github.com/nbd-wtf/go-nostr"
@@ -59,16 +60,46 @@ func (rl *Relay) addListener(
 	}
 }
 
-// OpenSubscriptionIDs is the set of subscription ids ws has open (Haven fork:
-// the mesh door's per-connection cap, haven-go mesh_query_caps.go).
-func (rl *Relay) OpenSubscriptionIDs(ws *WebSocket) map[string]struct{} {
+// HAVEN PATCH: reserveListeners checks a REQ of n filters against ReqCaps
+// and, if it fits, reserves n listeners for ws until releaseReserved. The
+// count is the open listeners (a REQ on an id already open adds to them; it
+// does not replace) plus what other REQs in flight reserved, so a burst of
+// REQs on one connection cannot pass the cap between check and addListener.
+// It returns the CLOSED reason, or "" when the REQ may run.
+func (rl *Relay) reserveListeners(ws *WebSocket, n, maxFilters, maxListeners int) string {
+	if maxFilters > 0 && n > maxFilters {
+		return fmt.Sprintf("rate-limited: at most %d filters in one REQ", maxFilters)
+	}
+	if maxListeners <= 0 {
+		return ""
+	}
 	rl.clientsMutex.Lock()
 	defer rl.clientsMutex.Unlock()
-	out := map[string]struct{}{}
-	for _, spec := range rl.clients[ws] {
-		out[spec.id] = struct{}{}
+	if rl.reserved == nil {
+		rl.reserved = map[*WebSocket]int{}
 	}
-	return out
+	if len(rl.clients[ws])+rl.reserved[ws]+n > maxListeners {
+		return fmt.Sprintf("rate-limited: at most %d open subscriptions, close one first", maxListeners)
+	}
+	rl.reserved[ws] += n
+	return ""
+}
+
+// HAVEN PATCH: releaseReserved gives back what reserveListeners took; by then
+// the REQ's listeners are in rl.clients (or it was refused).
+func (rl *Relay) releaseReserved(ws *WebSocket, n int) {
+	rl.clientsMutex.Lock()
+	defer rl.clientsMutex.Unlock()
+	if rl.reserved[ws] -= n; rl.reserved[ws] <= 0 {
+		delete(rl.reserved, ws)
+	}
+}
+
+// HAVEN PATCH: ListenerCount is how many listeners ws holds open (tests).
+func (rl *Relay) ListenerCount(ws *WebSocket) int {
+	rl.clientsMutex.Lock()
+	defer rl.clientsMutex.Unlock()
+	return len(rl.clients[ws])
 }
 
 // remove a specific subscription id from listeners for a given ws client

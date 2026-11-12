@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 
+	"github.com/fiatjaf/eventstore"
 	"github.com/fiatjaf/khatru"
 	"github.com/fiatjaf/khatru/policies"
 	"github.com/nbd-wtf/go-nostr"
@@ -22,11 +23,16 @@ const (
 	// JSON). The answer stops there; the client gets EOSE and can page with
 	// until/since.
 	meshMaxAnswerBytes = 1 << 20
-	// meshMaxSubscriptions: open subscriptions on one mesh connection. Mesh
-	// peers carry no identity of their own (they arrive from loopback,
-	// meshPeerKey), so this is per connection; the strangers' lane caps the
-	// connections (16 slots, 1 MiB/s for all, fips-v2-android strangers.rs).
+	// meshMaxSubscriptions: open subscription filters (khatru listeners, one
+	// per filter, "limit":0 and a REQ on an id already open included) on one
+	// mesh connection. Mesh peers carry no identity of their own (they arrive
+	// from loopback, meshPeerKey), so this is per connection; the strangers'
+	// lane caps the connections (16 slots, 1 MiB/s for all,
+	// fips-v2-android strangers.rs).
 	meshMaxSubscriptions = 16
+	// meshMaxFilters: filters in one REQ, so one REQ's answer is at most
+	// meshMaxFilters × meshMaxAnswerBytes.
+	meshMaxFilters = 8
 )
 
 // wireOutboxReads adds the outbox's read rules to rl: empty and complex
@@ -41,8 +47,12 @@ func wireOutboxReads(rl *khatru.Relay, db DBBackend, limits OutboxRelayLimits) {
 	if !limits.AllowComplexFilters {
 		rl.RejectFilter = append(rl.RejectFilter, policies.NoComplexFilters)
 	}
+	// First: a NEG-OPEN runs these hooks with no subscription in its context.
+	rl.RejectFilter = append([]func(context.Context, nostr.Filter) (bool, string){meshNoNegentropy}, rl.RejectFilter...)
 	rl.OverwriteFilter = append(rl.OverwriteFilter, meshCapLimit)
-	rl.RejectFilter = append(rl.RejectFilter, meshSubscriptionCap(rl))
+	// One check per REQ, in the khatru fork (ReqCaps): filters per REQ and
+	// open listeners per connection, reserved under its lock.
+	rl.ReqCaps = meshReqCaps
 	rl.RejectCountFilter = append(rl.RejectCountFilter, meshNoQueries)
 	enableSearch(rl, db)
 	hideBroughtOnOutbox(rl)
@@ -62,21 +72,22 @@ func meshCapLimit(ctx context.Context, f *nostr.Filter) {
 	}
 }
 
-// meshSubscriptionCap refuses a new subscription on a mesh connection that
-// already holds meshMaxSubscriptions others.
-func meshSubscriptionCap(rl *khatru.Relay) func(context.Context, nostr.Filter) (bool, string) {
-	return func(ctx context.Context, _ nostr.Filter) (bool, string) {
-		if !isMeshConn(ctx) {
-			return false, ""
-		}
-		ws := khatru.GetConnection(ctx)
-		open := rl.OpenSubscriptionIDs(ws)
-		delete(open, khatru.GetSubscriptionID(ctx)) // its own earlier filters
-		if len(open) >= meshMaxSubscriptions {
-			return true, "rate-limited: too many open subscriptions on the mesh, close one first"
-		}
-		return false, ""
+// meshNoNegentropy: no negentropy over the mesh (NEG-OPEN): the door
+// answers REQs, which the caps bound; a negentropy session reads the whole
+// filter into a vector.
+func meshNoNegentropy(ctx context.Context, _ nostr.Filter) (bool, string) {
+	if isMeshConn(ctx) && eventstore.IsNegentropySession(ctx) {
+		return true, "restricted: no negentropy over the mesh"
 	}
+	return false, ""
+}
+
+// meshReqCaps: the per-REQ caps for a mesh connection, none for any other.
+func meshReqCaps(ctx context.Context) (maxFilters, maxListeners int) {
+	if !isMeshConn(ctx) {
+		return 0, 0
+	}
+	return meshMaxFilters, meshMaxSubscriptions
 }
 
 // meshCapAnswerBytes stops a mesh filter's answer once it weighs
@@ -97,7 +108,9 @@ func meshCapAnswerBytes(query func(context.Context, nostr.Filter) (chan *nostr.E
 					continue
 				}
 				b, _ := json.Marshal(ev)
-				if sent+len(b) > meshMaxAnswerBytes {
+				// The first event always goes (the relay's message limit
+				// bounds it), so one big note can't make every page empty.
+				if sent > 0 && sent+len(b) > meshMaxAnswerBytes {
 					stopped = true
 					slog.Debug("mesh answer capped", "bytes", sent)
 					continue

@@ -17,5 +17,10 @@ Changes from upstream are listed below. Keep every other file byte-identical to 
 
 - `listener.go`: `notifyListeners` collects matching listeners under `clientsMutex` and writes
   to them after unlocking.
-- `listener.go`: `OpenSubscriptionIDs(ws)` reads which subscription ids a connection holds (under
-  `clientsMutex`), for the mesh door's open-subscription cap (haven-go `mesh_query_caps.go`).
+- `relay.go`, `handlers.go`, `listener.go`: `Relay.ReqCaps`. If set, each REQ is checked once,
+  before any filter runs: at most `maxFilters` filters, and the connection's open listeners (one per
+  filter, `"limit":0` included, a REQ on an open id adding to them) plus listeners reserved by REQs
+  still in flight plus this REQ's filters at most `maxListeners`. Counted and reserved under
+  `clientsMutex` (`reserveListeners`/`releaseReserved`), so a burst of REQs on one connection
+  cannot pass it. A refused REQ gets CLOSED. `ListenerCount(ws)` for tests. Used by the mesh door
+  (haven-go `mesh_query_caps.go`).

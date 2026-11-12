@@ -8,9 +8,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/fasthttp/websocket"
 	"github.com/fiatjaf/khatru"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
@@ -24,7 +26,23 @@ import (
 // (wireOutboxReads) over db; mesh marks every connection as the mesh door.
 func outboxReadsServer(t *testing.T, db DBBackend, mesh bool) string {
 	t.Helper()
+	url, _, _ := outboxReadsRelay(t, db, mesh)
+	return url
+}
+
+// outboxReadsRelay is outboxReadsServer that also gives the relay and the
+// server side of the latest connection (to count its listeners).
+func outboxReadsRelay(t *testing.T, db DBBackend, mesh bool) (string, *khatru.Relay, func() *khatru.WebSocket) {
+	t.Helper()
 	rl := khatru.NewRelay()
+	rl.Negentropy = true // on by default in the vault (config.go)
+	var mu sync.Mutex
+	var last *khatru.WebSocket
+	rl.OnConnect = append(rl.OnConnect, func(ctx context.Context) {
+		mu.Lock()
+		last = khatru.GetConnection(ctx)
+		mu.Unlock()
+	})
 	wireOutboxReads(rl, db, OutboxRelayLimits{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if mesh {
@@ -33,7 +51,11 @@ func outboxReadsServer(t *testing.T, db DBBackend, mesh bool) string {
 		rl.ServeHTTP(w, r)
 	}))
 	t.Cleanup(srv.Close)
-	return "ws" + strings.TrimPrefix(srv.URL, "http")
+	return "ws" + strings.TrimPrefix(srv.URL, "http"), rl, func() *khatru.WebSocket {
+		mu.Lock()
+		defer mu.Unlock()
+		return last
+	}
 }
 
 func storeNotes(t *testing.T, db DBBackend, sk string, n, contentBytes int) {
@@ -127,21 +149,90 @@ func TestMeshDoorCapsTheAnswerBytes(t *testing.T) {
 	}
 }
 
-// One mesh connection holds at most meshMaxSubscriptions open; the next is
-// refused, and closing one makes room.
-func TestMeshDoorCapsOpenSubscriptions(t *testing.T) {
+// rawConn opens a websocket to url and gives a send and a read of raw frames.
+func rawConn(t *testing.T, url string) (*nostr.Relay, func(string)) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	r, err := nostr.RelayConnect(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { r.Close() })
+	return r, func(msg string) {
+		if err := <-r.Write([]byte(msg)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func waitListeners(rl *khatru.Relay, ws func() *khatru.WebSocket) int {
+	// Every REQ handler runs in its own goroutine: give them time to finish.
+	n, same := -1, 0
+	for i := 0; i < 200 && same < 10; i++ {
+		time.Sleep(10 * time.Millisecond)
+		c := rl.ListenerCount(ws())
+		if c == n {
+			same++
+		} else {
+			n, same = c, 0
+		}
+	}
+	return n
+}
+
+// Tron's review of #1963, row by row: one mesh connection never holds more
+// than meshMaxSubscriptions open listeners, however the REQs come.
+func TestMeshDoorCapsOpenListeners(t *testing.T) {
 	db := withOutbox(t)
 	sk := nostr.GeneratePrivateKey()
 	pk, _ := nostr.GetPublicKey(sk)
 	storeNotes(t, db, sk, 1, 10)
+	filter := fmt.Sprintf(`{"authors":["%s"],"limit":0}`, pk)
+	rows := map[string]func(send func(string)){
+		"500 REQs, distinct ids, limit 0": func(send func(string)) {
+			for i := 0; i < 500; i++ {
+				send(fmt.Sprintf(`["REQ","s%d",%s]`, i, filter))
+			}
+		},
+		"500 REQs, one id": func(send func(string)) {
+			for i := 0; i < 500; i++ {
+				send(fmt.Sprintf(`["REQ","same",%s]`, filter))
+			}
+		},
+		"300 REQs at once": func(send func(string)) {
+			var wg sync.WaitGroup
+			for i := 0; i < 300; i++ {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					send(fmt.Sprintf(`["REQ","b%d",{"authors":["%s"]}]`, i, pk))
+				}(i)
+			}
+			wg.Wait()
+		},
+	}
+	for name, run := range rows {
+		t.Run(name, func(t *testing.T) {
+			url, rl, ws := outboxReadsRelay(t, db, true)
+			_, send := rawConn(t, url)
+			run(send)
+			if n := waitListeners(rl, ws); n > meshMaxSubscriptions || n == 0 {
+				t.Fatalf("one mesh connection holds %d listeners, want 1..%d", n, meshMaxSubscriptions)
+			}
+		})
+	}
+	// Closing makes room again.
+	url := outboxReadsServer(t, db, true)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	r, err := nostr.RelayConnect(ctx, outboxReadsServer(t, db, true))
+	r, err := nostr.RelayConnect(ctx, url)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	open := func() (*nostr.Subscription, string) {
+	// open subscribes and reads until EOSE (true) or CLOSED (false).
+	open := func() (*nostr.Subscription, bool) {
 		sub, err := r.Subscribe(ctx, nostr.Filters{{Authors: []string{pk}}})
 		if err != nil {
 			t.Fatal(err)
@@ -150,29 +241,114 @@ func TestMeshDoorCapsOpenSubscriptions(t *testing.T) {
 			select {
 			case <-sub.Events:
 			case <-sub.EndOfStoredEvents:
-				return sub, ""
-			case reason := <-sub.ClosedReason:
-				return sub, reason
+				return sub, true
+			case <-sub.ClosedReason:
+				return sub, false
 			case <-ctx.Done():
 				t.Fatal("no answer")
 			}
 		}
 	}
 	var subs []*nostr.Subscription
-	for i := 0; i < meshMaxSubscriptions; i++ {
-		sub, closed := open()
-		if closed != "" {
-			t.Fatalf("subscription %d refused: %q", i+1, closed)
+	refused := false
+	for i := 0; i <= meshMaxSubscriptions; i++ {
+		if sub, ok := open(); ok {
+			subs = append(subs, sub)
+		} else {
+			refused = true
 		}
-		subs = append(subs, sub)
 	}
-	if _, closed := open(); closed == "" {
-		t.Fatalf("subscription %d was not refused", meshMaxSubscriptions+1)
+	if !refused || len(subs) != meshMaxSubscriptions {
+		t.Fatalf("%d open before a refusal (refused %v), want %d", len(subs), refused, meshMaxSubscriptions)
 	}
 	subs[0].Unsub()
 	time.Sleep(100 * time.Millisecond)
-	if _, closed := open(); closed != "" {
-		t.Fatalf("after a CLOSE there was no room: %q", closed)
+	if _, ok := open(); !ok {
+		t.Fatal("after a CLOSE there was no room")
+	}
+}
+
+// One REQ with more than meshMaxFilters filters is refused: per-filter caps
+// times 50 filters let one REQ send 50 MB.
+func TestMeshDoorCapsFiltersPerREQ(t *testing.T) {
+	db := withOutbox(t)
+	sk := nostr.GeneratePrivateKey()
+	pk, _ := nostr.GetPublicKey(sk)
+	storeNotes(t, db, sk, 1, 10)
+	filters := make(nostr.Filters, meshMaxFilters+1)
+	for i := range filters {
+		filters[i] = nostr.Filter{Authors: []string{pk}}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	r, err := nostr.RelayConnect(ctx, outboxReadsServer(t, db, true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	sub, err := r.Subscribe(ctx, filters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case reason := <-sub.ClosedReason:
+		if !strings.Contains(reason, "filters") {
+			t.Fatalf("refused for %q", reason)
+		}
+	case <-sub.Events:
+		t.Fatal("a REQ with too many filters was answered")
+	case <-sub.EndOfStoredEvents:
+		t.Fatal("a REQ with too many filters was answered")
+	case <-ctx.Done():
+		t.Fatal("no answer")
+	}
+	if got, closed := meshQuery(t, outboxReadsServer(t, db, true), nostr.Filter{Authors: []string{pk}}); closed != "" || len(got) != 1 {
+		t.Fatalf("a normal REQ after: %d events, closed %q", len(got), closed)
+	}
+}
+
+// Tron's review of #1963: a NEG-OPEN over the mesh crashed the relay (an
+// unguarded subscription id). It is refused, and the relay keeps serving.
+func TestMeshDoorRefusesNegentropy(t *testing.T) {
+	db := withOutbox(t)
+	sk := nostr.GeneratePrivateKey()
+	pk, _ := nostr.GetPublicKey(sk)
+	storeNotes(t, db, sk, 1, 10)
+	url := outboxReadsServer(t, db, true)
+	c, _, err := websocket.DefaultDialer.Dial(url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := c.WriteMessage(websocket.TextMessage, []byte(`["NEG-OPEN","n1",{"kinds":[1]},"6100000200"]`)); err != nil {
+		t.Fatal(err)
+	}
+	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, msg, err := c.ReadMessage()
+	if err != nil || !strings.HasPrefix(string(msg), `["NEG-ERROR","n1"`) || !strings.Contains(string(msg), "negentropy") {
+		t.Fatalf("NEG-OPEN over the mesh answered %q (%v), want NEG-ERROR: no negentropy over the mesh", msg, err)
+	}
+	if got, closed := meshQuery(t, url, nostr.Filter{Authors: []string{pk}}); closed != "" || len(got) != 1 {
+		t.Fatalf("after a NEG-OPEN the relay answers %d events, closed %q", len(got), closed)
+	}
+}
+
+// COUNT stays closed over the mesh.
+func TestMeshDoorRefusesCount(t *testing.T) {
+	db := withOutbox(t)
+	sk := nostr.GeneratePrivateKey()
+	pk, _ := nostr.GetPublicKey(sk)
+	storeNotes(t, db, sk, 3, 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	r, err := nostr.RelayConnect(ctx, outboxReadsServer(t, db, true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	n, _, err := r.Count(ctx, nostr.Filters{{Authors: []string{pk}}})
+	if err == nil && n > 0 {
+		t.Fatalf("COUNT over the mesh answered %d", n)
 	}
 }
 
@@ -231,5 +407,28 @@ func TestFeedRouteRefusesADeletedNote(t *testing.T) {
 	}
 	if !rejected {
 		t.Fatal("/feed takes a note its author deleted")
+	}
+}
+
+// Tron's reproduction on #1963, through the whole relay and the real mesh
+// door: a NEG-OPEN is a NEG-ERROR, not a crash.
+func TestMeshDoorNegOpenThroughTheDoor(t *testing.T) {
+	startHaven(t)
+	saved := outboxRelay.Negentropy
+	outboxRelay.Negentropy = true // on by default (config.go)
+	t.Cleanup(func() { outboxRelay.Negentropy = saved })
+	door := startMeshDoor(t)
+	c, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(door, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := c.WriteMessage(websocket.TextMessage, []byte(`["NEG-OPEN","n1",{"kinds":[1]},"6100000200"]`)); err != nil {
+		t.Fatal(err)
+	}
+	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, msg, err := c.ReadMessage()
+	if err != nil || !strings.HasPrefix(string(msg), `["NEG-ERROR","n1"`) {
+		t.Fatalf("NEG-OPEN through the door answered %q (%v)", msg, err)
 	}
 }
