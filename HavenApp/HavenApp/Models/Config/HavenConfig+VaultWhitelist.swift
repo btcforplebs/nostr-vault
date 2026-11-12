@@ -1,32 +1,28 @@
 import Foundation
 
-/// Who has vault access (Logen, 2026-11-06 11:37Z): the device owner, always,
-/// even npub-only (the engine whitelists OWNER_NPUB itself), plus every
-/// account with a key or signer on this device. Nothing else: a watch-only
-/// account is often someone else's npub, and a whitelisted key may post
-/// without AUTH and read /private and /lists as the owner's reader.
+/// Who has vault space (Logen, 2026-11-12 14:19Z, undoing the 11-06
+/// key-or-signer rule): the device owner, always, even npub-only (the engine
+/// whitelists OWNER_NPUB itself), plus every account added on this device,
+/// watch-only (npub only) included, like Haven. What stays gated: reading
+/// /private and the inbox needs AUTH by the account's own key, and every
+/// event an account stores carries that account's own signature.
 ///
-/// `whitelistedNpubs` stays the app's account list (watch-only accounts
-/// included, kept in config.json); `whitelisted_npubs.json` and the relay's
-/// launch inputs get `vaultWhitelistNpubs` only.
+/// `whitelistedNpubs` is the app's account list (kept in config.json);
+/// `whitelisted_npubs.json` and the relay's launch inputs get
+/// `vaultWhitelistNpubs`: the same list, trimmed, without the owner.
 extension HavenConfig {
-    /// The accounts for the whitelist file: signing accounts other than the
-    /// owner, in account order, no repeats.
+    /// The accounts for the whitelist file: every account other than the
+    /// owner, in account order, no blanks, no repeats.
     var vaultWhitelistNpubs: [String] {
         let owner = ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
         var seen = Set<String>()
         return whitelistedNpubs.compactMap { raw in
             let npub = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !npub.isEmpty, npub != owner, canSignOnThisDevice(npub: npub), seen.insert(npub).inserted else {
+            guard !npub.isEmpty, npub != owner, seen.insert(npub).inserted else {
                 return nil
             }
             return npub
         }
-    }
-
-    /// A stored key (ncryptsec) or a signer (bunker) for `npub` here.
-    func canSignOnThisDevice(npub: String) -> Bool {
-        hasStoredCredential(npub: npub) || hasSigner(npub: npub)
     }
 
     func hasStoredCredential(npub: String) -> Bool {
@@ -41,7 +37,7 @@ extension HavenConfig {
     /// The account list at launch: config.json's, then any the whitelist
     /// file holds that it lacks (older builds kept the list only there).
     /// The file is rewritten from `vaultWhitelistNpubs` on the next save and
-    /// relay start, so a stale watch-only entry loses access then.
+    /// relay start.
     static func accountList(saved: [String], whitelistFile: [String]) -> [String] {
         var seen = Set(saved)
         return saved + whitelistFile.filter { seen.insert($0).inserted }

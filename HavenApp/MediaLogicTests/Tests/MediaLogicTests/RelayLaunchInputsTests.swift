@@ -45,13 +45,9 @@ final class RelayLaunchInputsTests: XCTestCase {
     /// dictionary, so a new env key is covered automatically but these are not.
     func testRelayListFilesRestart() {
         XCTAssertTrue(restarts { $0.dmRelays = ["wss://dm.example"] })
-        // The whitelist file holds signing accounts only (vaultWhitelistNpubs):
-        // a watch-only account changes nothing the relay reads.
-        XCTAssertFalse(restarts { $0.whitelistedNpubs = ["npub1friend"] })
-        XCTAssertTrue(restarts {
-            $0.whitelistedNpubs = ["npub1friend"]
-            $0.accountCredentials["npub1friend"] = "ncryptsec1placeholder"
-        })
+        // The whitelist file holds every account (vaultWhitelistNpubs),
+        // watch-only included: adding one by npub reaches the relay.
+        XCTAssertTrue(restarts { $0.whitelistedNpubs = ["npub1friend"] })
         XCTAssertTrue(restarts { $0.importSeedRelays = ["wss://seed.example"] })
         XCTAssertTrue(restarts { $0.blastrRelays = ["wss://blast.example"] })
     }

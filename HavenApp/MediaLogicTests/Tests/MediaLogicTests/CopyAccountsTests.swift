@@ -109,8 +109,9 @@ final class CopyAccountsTests: XCTestCase {
     }
 
     /// Only the ticked accounts join, as watch-only accounts: no live add
-    /// (AddAccountsC), no key, no signer, no stored credential. The whitelist
-    /// file leaves them out (VaultWhitelistTests).
+    /// (AddAccountsC), no key, no signer, no stored credential. They get
+    /// vault space through the whitelist file like any account
+    /// (VaultWhitelistTests).
     func testAnswerAddsOnlyTheTickedWatchOnly() throws {
         let text = try source("Services/Relay/CopyAccountsSync.swift")
         let answer = try body(of: "func answer(ticked: [CopyAccounts.Account]) {", in: text)
@@ -125,6 +126,14 @@ final class CopyAccountsTests: XCTestCase {
                      "Views/Settings/AddAccountSheetView.swift"] {
             XCTAssertFalse(try source(path).contains("AddAccountsC("), path)
         }
+    }
+
+    /// The ask says what ticking gives (Logen, 2026-11-12): a place in this
+    /// vault, npub only. It must never promise "no access" again.
+    func testAskSaysTickedAccountsGetVaultSpace() throws {
+        let view = try source("Views/SetupWizard/CopyAccountsAskView.swift")
+        XCTAssertFalse(view.localizedCaseInsensitiveContains("no access"))
+        XCTAssertTrue(view.contains("their own space in this vault"))
     }
 
     /// A finished copy refreshes the offer, and setup asks before it goes on.

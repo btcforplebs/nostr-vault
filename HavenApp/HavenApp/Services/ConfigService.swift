@@ -237,7 +237,7 @@ class ConfigService: ObservableObject {
             savedImport, own: config.feedRelays + config.blastrRelays, mac: config.macRelayWssURL)
 
         // The account list: config.json's, plus any an older build kept only
-        // in the whitelist file (that file now holds signing accounts only).
+        // in the whitelist file.
         let npubsURL = relayDataDir.appendingPathComponent(config.whitelistedNpubsFile)
         if let data = try? Data(contentsOf: npubsURL), let list = try? JSONDecoder().decode([String].self, from: data) {
             config.whitelistedNpubs = HavenConfig.accountList(saved: config.whitelistedNpubs, whitelistFile: list)
@@ -339,7 +339,7 @@ class ConfigService: ObservableObject {
              }
         }
 
-        // The vault whitelist: signing accounts only, written even when empty
+        // The vault whitelist: every account, written even when empty
         // (ConfigService+VaultWhitelist).
         writeVaultWhitelist(encoder: encoder)
         

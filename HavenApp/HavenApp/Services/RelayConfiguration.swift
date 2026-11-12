@@ -265,7 +265,7 @@ enum RelayConfiguration {
                 #endif
             }()),
             dmRelays: config.dmRelays,
-            // Signing accounts only; watch-only never get vault access.
+            // Every account, watch-only included (vaultWhitelistNpubs).
             whitelistedNpubs: config.vaultWhitelistNpubs
         )
     }
