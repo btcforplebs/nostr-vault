@@ -11,6 +11,8 @@ package main
 // (withMeshDeviceAuth). Never the account key on the mesh.
 //
 // On that connection, and only there:
+//   - the first frame is ["NOTICE", meshPublishNotice]; a phone that does
+//     not see it (an older vault) sends its notes itself;
 //   - OK true means the vault stored the note and queued its blast;
 //   - every other answer is OK false, so the phone sends the note itself:
 //     not the owner's, too old (meshPublishMaxAge), ephemeral, already held
@@ -34,6 +36,11 @@ import (
 
 // meshPublishVerb is the device token's t for a publish connection.
 const meshPublishVerb = "publish"
+
+// meshPublishNotice is a publish connection's first frame
+// (["NOTICE", meshPublishNotice]). A phone counts a confirm only after it:
+// an older vault, or one that has not paired the phone, never sends it.
+const meshPublishNotice = "publish-for-me: on"
 
 // meshPublishMaxAge: how old a note may be for the vault to send it. A
 // phone hands over what it just signed and waits about 10 s; anything older
@@ -109,4 +116,15 @@ func publishForMe(ctx context.Context, ev *nostr.Event, stored func(context.Cont
 	slog.Info("event stored, blasted for a paired device", "id", ev.ID, "kind", ev.Kind)
 	send(ev)
 	return nil
+}
+
+// announcePublishForMe is the outbox's OnConnect: a publish connection's
+// first frame is the publish NOTICE, sent before any EVENT is read.
+func announcePublishForMe(ctx context.Context) {
+	if !isPublishForMeConn(ctx) {
+		return
+	}
+	if ws := khatru.GetConnection(ctx); ws != nil {
+		_ = ws.WriteJSON(nostr.NoticeEnvelope(meshPublishNotice))
+	}
 }

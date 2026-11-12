@@ -308,6 +308,7 @@ func ownDeviceWriteURL(raw string) string {
 // replaceOrDup answers ErrDupEvent for those too.
 func wireOutboxWrites(relay *khatru.Relay, db DBBackend, send func(*nostr.Event)) {
 	blastStored := newBlastStored(outboxHolds, send)
+	relay.OnConnect = append(relay.OnConnect, announcePublishForMe)
 	relay.RejectEvent = append(relay.RejectEvent, rejectForPublishForMe)
 	relay.StoreEvent = append(relay.StoreEvent, refuseDupForPublish(db.SaveEvent), noteStoredForMeshBlobs, blastStored)
 	relay.ReplaceEvent = append(relay.ReplaceEvent, refuseDupForPublish(replaceOrDup(db)), noteStoredForMeshBlobs, blastStored)

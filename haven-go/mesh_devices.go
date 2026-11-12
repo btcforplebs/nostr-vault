@@ -298,7 +298,13 @@ func withMeshDeviceAuth(r *http.Request) (*http.Request, int, string) {
 	if json.Unmarshal(raw, &ev) != nil || ev.Kind != 24242 {
 		return r, 0, ""
 	}
-	if _, owner := whitelist()[ev.PubKey]; owner || !meshDevices.paired(ev.PubKey) {
+	_, owner := whitelist()[ev.PubKey]
+	if !owner && !meshDevices.paired(ev.PubKey) && ev.Tags.FindWithValue("t", meshPublishVerb) != nil {
+		// Turned down at once, so the phone sends its note itself instead
+		// of handing it to a vault that would not send it (mesh_publish.go).
+		return r, http.StatusForbidden, "not a paired device of this vault"
+	}
+	if owner || !meshDevices.paired(ev.PubKey) {
 		return r, 0, "" // owner path (kept until the apps switch) or a stranger
 	}
 	if !meshDeviceOverMesh(r) {
