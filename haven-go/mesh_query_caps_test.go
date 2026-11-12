@@ -432,3 +432,23 @@ func TestMeshDoorNegOpenThroughTheDoor(t *testing.T) {
 		t.Fatalf("NEG-OPEN through the door answered %q (%v)", msg, err)
 	}
 }
+
+// Tron's low on #1963: a REQ refused part-way kept the listeners of its
+// earlier filters, so a client that got CLOSED (and sends no CLOSE) could
+// lock itself out of the mesh's 16. 3 × (7 good filters + {}) must leave none.
+func TestRefusedREQLeavesNoListeners(t *testing.T) {
+	db := withOutbox(t)
+	sk := nostr.GeneratePrivateKey()
+	pk, _ := nostr.GetPublicKey(sk)
+	storeNotes(t, db, sk, 1, 10)
+	url, rl, ws := outboxReadsRelay(t, db, true)
+	_, send := rawConn(t, url)
+	good := fmt.Sprintf(`{"authors":["%s"]}`, pk)
+	filters := strings.Repeat(good+",", 7) + `{}`
+	for i := 0; i < 3; i++ {
+		send(fmt.Sprintf(`["REQ","p%d",%s]`, i, filters))
+	}
+	if n := waitListeners(rl, ws); n != 0 {
+		t.Fatalf("refused REQs left %d listeners, want 0", n)
+	}
+}
