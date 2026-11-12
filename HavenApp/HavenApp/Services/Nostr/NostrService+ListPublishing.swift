@@ -208,7 +208,13 @@ extension NostrService {
     /// removed on Media Servers. Nothing else changes the list's mesh
     /// entries: linking or removing a device never does (Logen via Tod,
     /// 2026-11-08), so a publish for a typed server keeps them as they are.
-    func publishServerList(fipsDetectedNpub: String? = nil, meshAdd: [String] = [], meshRemove: [String] = []) {
+    ///
+    /// `webMove`: Public on the web moved here (multi-Mac rules §3.3): the
+    /// old web device's https entry becomes `to`, in its place, so this
+    /// device is the one the list names. Not managed by this device: a later
+    /// publish here keeps it, as another device's entry.
+    func publishServerList(fipsDetectedNpub: String? = nil, meshAdd: [String] = [], meshRemove: [String] = [],
+                           webMove: (fromHost: String, to: String)? = nil) {
         let servers = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub) + meshAdd
         let owner = activeHexPubkey
         // Merge into the newest list, never replace it (one rule for every
@@ -264,7 +270,7 @@ extension NostrService {
                 #endif
                 return
             }
-            guard let merged = HomeVaultLogic.mergeServerList(
+            guard var merged = HomeVaultLogic.mergeServerList(
                 existing: existing,
                 current: current,
                 previouslyManaged: previouslyManaged,
@@ -276,6 +282,9 @@ extension NostrService {
                 print("NostrService: No usable Blossom server, skipping Kind 10063 publish")
                 #endif
                 return
+            }
+            if let webMove {
+                merged = YourDevicesLogic.movingWeb(urls: merged, from: webMove.fromHost, to: webMove.to)
             }
             // Nothing changed: no new signed event on the public relays (kiosk
             // mode republishes on every app switch; readers already hold this).

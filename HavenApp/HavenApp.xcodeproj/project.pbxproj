@@ -1850,6 +1850,7 @@
 		DA405ED1B5A70690B85F8E01 /* NostrWebLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1A64222EFDE647C6491CFB /* NostrWebLink.swift */; };
 		DA455878A98B3172DC89DA14 /* TrustGlobeCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCE61C621EC79CB4E00F63F9 /* TrustGlobeCanvas.swift */; };
 		DA4D22419FAD927F58025331 /* FilterButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE65F95458326DF0C43FCEAC /* FilterButton.swift */; };
+		DA69EDAF3E78E6E97F38FACF /* WebRoleService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 936CEE94651C4BE03EAC1D9C /* WebRoleService.swift */; };
 		DACEFF32366C05635FF82E03 /* NIP46Error.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BCE06AC36BF540013C789B2 /* NIP46Error.swift */; };
 		DAD434A8DBB5F7874CA96C82 /* LocalDvmFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4428B268F51253A9AF4B8BC /* LocalDvmFeed.swift */; };
 		DADD47CE66A0FE71FD19A897 /* MacFipsMeshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD5FA4141163EFF726CBBBD1 /* MacFipsMeshService.swift */; };
@@ -1941,6 +1942,7 @@
 		E3E261106E739296E6F290C4 /* ContactManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4EFE6422E6E0A896809308 /* ContactManager.swift */; };
 		E405ECA10E10787620830F3F /* NVShareAction+Display.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11DACF33881364138C48F3B4 /* NVShareAction+Display.swift */; };
 		E449E2E084666AD88A404F90 /* RailPinsColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 667070BF7CD9F4EA19D897B6 /* RailPinsColumn.swift */; };
+		E4604A92F5669743FB7A6C3B /* WebRoleService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 936CEE94651C4BE03EAC1D9C /* WebRoleService.swift */; };
 		E4D9036E6A98FD0E5E5E4624 /* GifPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A557F0804214239CCFEDDD8 /* GifPickerSheet.swift */; };
 		E4DC095F28C9D7FE3BBED27A /* ModeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA14EC3D2D24B98A94F93B56 /* ModeButton.swift */; };
 		E4DD291F338D4847D20FEF23 /* AccountUnreadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2C295EC834C1EFDC6B042DC /* AccountUnreadStore.swift */; };
@@ -2882,6 +2884,7 @@
 		93478F128B3552096C953E1B /* BitcoinSweepEstimate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinSweepEstimate.swift; sourceTree = "<group>"; };
 		935349BC5DE878019608285D /* RelayDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayDraft.swift; sourceTree = "<group>"; };
 		935F68EC9A7EBD1E570211CF /* FeedThreadGrouping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedThreadGrouping.swift; sourceTree = "<group>"; };
+		936CEE94651C4BE03EAC1D9C /* WebRoleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebRoleService.swift; sourceTree = "<group>"; };
 		937CB610C3601ECF3B4BBD0E /* LiveStatusService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveStatusService.swift; sourceTree = "<group>"; };
 		93ED6BB091A4EBC9250A7858 /* Theming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theming.swift; sourceTree = "<group>"; };
 		94054AF395C39BAEE638AD61 /* NotePushLanding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotePushLanding.swift; sourceTree = "<group>"; };
@@ -4921,6 +4924,7 @@
 				1A6E60029BAE8DFF771BF7B3 /* VaultBackupRestore.swift */,
 				C9A5B72667467B8FA335AF4A /* VaultSocket.swift */,
 				2E884308913F1B4723D26D1C /* VideoPlaybackService.swift */,
+				936CEE94651C4BE03EAC1D9C /* WebRoleService.swift */,
 				3CB15AE080BDC0999543399A /* WebSocketClient.swift */,
 				FB5A5080BEBFB65F83A8E757 /* WebSocketClient+LookupConnection.swift */,
 				9BA557D10C9E58C90C37C72A /* ZapHistoryService.swift */,
@@ -6391,6 +6395,7 @@
 				13F5AD97D4722D42C522E076 /* WalletSetupStep.swift in Sources */,
 				C2F3A9B7A6FD0B42164286EB /* Wavlake.swift in Sources */,
 				244F6D570738547E17EAC33E /* WavlakeTrackCard.swift in Sources */,
+				DA69EDAF3E78E6E97F38FACF /* WebRoleService.swift in Sources */,
 				7FD9D8FB6010447F28657CEB /* WebSocketClient+LookupConnection.swift in Sources */,
 				4F12CB28845F57A334AECA84 /* WebSocketClient.swift in Sources */,
 				3F5A4D6AD2BDD2CECDF2D268 /* WelcomeStepView.swift in Sources */,
@@ -7467,6 +7472,7 @@
 				13FDBCE7E18749AB453C7A9F /* WalletSetupStep.swift in Sources */,
 				BC01754B87DBF7DC16BFBA8E /* Wavlake.swift in Sources */,
 				DB75AAC26D68BF70E8867A40 /* WavlakeTrackCard.swift in Sources */,
+				E4604A92F5669743FB7A6C3B /* WebRoleService.swift in Sources */,
 				A35F90A84D9356F573F9576C /* WebSocketClient+LookupConnection.swift in Sources */,
 				8ADB489FAB643EBB11BB577E /* WebSocketClient.swift in Sources */,
 				E67D7091060430CABF7FDD5F /* WelcomeStepView.swift in Sources */,

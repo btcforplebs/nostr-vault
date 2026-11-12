@@ -1,3 +1,5 @@
+//go:build !(js && wasm)
+
 package main
 
 // Own devices' web domains, device to device (multi-Mac rules §3.3).

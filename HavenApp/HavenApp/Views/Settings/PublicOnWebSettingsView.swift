@@ -12,6 +12,9 @@ struct PublicOnWebSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     /// Why a list change on switch-off didn't go out (empty list, unsettled lookup).
     @State private var notice: String?
+    /// Another own Mac is public on the web now: turning on asks first
+    /// (WebRoleService, multi-Mac rules §3.3).
+    @State private var moveFrom: WebRoleService.WebDevice?
 
     /// Never touched: on when a domain is already set, so nothing an owner
     /// published before this switch existed is dropped.
@@ -40,6 +43,18 @@ struct PublicOnWebSettingsView: View {
                 }
             }
             .groupedFormStyleCompat()
+            .confirmationDialog(moveFrom.flatMap(WebRoleService.shared.movePrompt) ?? "",
+                                isPresented: Binding(get: { moveFrom != nil }, set: { if !$0 { moveFrom = nil } }),
+                                titleVisibility: .visible) {
+                Button("Move") {
+                    let from = moveFrom
+                    moveFrom = nil
+                    set(true, movingFrom: from)
+                }
+                Button("Cancel", role: .cancel) { moveFrom = nil }
+            } message: {
+                Text("Only one of your Macs is public on the web. Your lists will name this Mac instead, and the other one turns its switch off.")
+            }
             if isOn {
                 MacRelayDomainSettingsView()
             }
@@ -51,6 +66,14 @@ struct PublicOnWebSettingsView: View {
     }
 
     private func set(_ on: Bool) {
+        if on, !isOn, let other = WebRoleService.shared.otherWebDevice() {
+            moveFrom = other
+            return
+        }
+        set(on, movingFrom: nil)
+    }
+
+    private func set(_ on: Bool, movingFrom other: WebRoleService.WebDevice?) {
         notice = nil
         let oldInbox = configService.config.ownHavenDMInboxURL
         let wasListed = configService.config.listsOwnDomain
@@ -66,7 +89,10 @@ struct PublicOnWebSettingsView: View {
         if wasListed && !configService.config.listsOwnDomain {
             NostrService.shared.publishOwnerRelayListDrop(domain, done: show)
         }
-        if oldInbox != newInbox {
+        if let other {
+            // One republish: the other Mac's entries become this one's.
+            WebRoleService.shared.moveHere(from: other, done: show)
+        } else if oldInbox != newInbox {
             NostrService.shared.publishOwnerDMInboxMove(from: oldInbox, to: newInbox, done: show)
         }
     }

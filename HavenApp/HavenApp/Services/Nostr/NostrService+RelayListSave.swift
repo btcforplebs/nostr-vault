@@ -152,6 +152,22 @@ extension NostrService {
     @MainActor
     func publishOwnerDMInboxMove(from oldInbox: String, to newInbox: String,
                                  done: (@MainActor (String?) -> Void)? = nil) {
+        publishOwnerDMInbox(done: done) { Self.dmInboxMoved($0, from: oldInbox, to: newInbox) }
+    }
+
+    /// Public on the web moved here from the own device at `oldHost`: on the
+    /// published DM inbox list its entry becomes `newInbox`, in its place
+    /// (multi-Mac rules §3.3, Tron #1997). Same checks as the move above.
+    @MainActor
+    func publishOwnerDMInboxWebMove(fromHost oldHost: String, to newInbox: String,
+                                    done: (@MainActor (String?) -> Void)? = nil) {
+        guard !newInbox.isEmpty else { done?(nil); return }
+        publishOwnerDMInbox(done: done) { YourDevicesLogic.movingWeb(urls: $0, from: oldHost, to: newInbox) }
+    }
+
+    @MainActor
+    private func publishOwnerDMInbox(done: (@MainActor (String?) -> Void)?,
+                                     change: @escaping ([String]) -> [String]) {
         let config = ConfigService.shared.config
         guard let owner = Bech32.decode(config.ownerNpub)?.hexString else { done?(nil); return }
         Task {
@@ -165,7 +181,7 @@ extension NostrService {
                 return
             }
             let published = ProfileRepository.parseDMRelayListTags(event.tags)
-            let moved = Self.dmInboxMoved(published, from: oldInbox, to: newInbox)
+            let moved = change(published)
             guard moved != published else { done?(nil); return }
             // Never sign an empty DM inbox: nobody could reach the owner's DMs (Tron #1991).
             // Loopback entries never go out (publishOwnerDMRelays), so they don't count.
@@ -199,6 +215,29 @@ extension NostrService {
                 return
             }
             publishRelayListTags(tags)
+            done?(nil)
+        }
+    }
+
+    /// Public on the web moved here from the own device at `oldHost`: on the
+    /// published relay list (10002) its `r` entry becomes `newRelay`, in its
+    /// place and with its read/write marker. Nothing goes out unless both
+    /// indexers answered (as the drop above).
+    @MainActor
+    func publishOwnerRelayListWebMove(fromHost oldHost: String, to newRelay: String,
+                                      done: (@MainActor (String?) -> Void)? = nil) {
+        let config = ConfigService.shared.config
+        guard let owner = Bech32.decode(config.ownerNpub)?.hexString else { done?(nil); return }
+        Task {
+            let lookup = await lookupNewestReplaceable(kind: 10002, for: owner,
+                                                       alsoAsk: Array(config.readRelays.prefix(3)) + RelayDraft.indexers)
+            guard let event = lookup.event, RelayDraft.settled(found: true, answeredBy: lookup.answeredBy) else {
+                done?("Your relay list couldn't be checked, so it still names your other Mac. Try again, or edit it under Relays.")
+                return
+            }
+            let moved = YourDevicesLogic.movingWeb(relayTags: event.tags, from: oldHost, to: newRelay)
+            guard moved != event.tags else { done?(nil); return }
+            publishRelayListTags(moved)
             done?(nil)
         }
     }

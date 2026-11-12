@@ -300,8 +300,11 @@ final class HomeVaultSender: ObservableObject {
                 : "a \(item.kind == .event ? "note" : "photo") never reached your \(item.target == nil ? "mobile vault" : "other device")")
             remove(item)
         }
-        // A device no longer linked gets nothing more: its lane goes.
-        let linked = Set(laneTargets)
+        // A device no longer linked gets nothing more: its lane goes. A Mac
+        // that became the media vault (Mac A removed, the setting moved to
+        // Mac B) is still linked: what waits on its own lane still goes
+        // there, not dropped (Tron #1997). New sends use the vault lane.
+        let linked = Set(laneTargets + [mediaVault?.meshNpub, homeVault?.meshNpub].compactMap { $0 })
         for item in queue where item.target.map({ !linked.contains($0) }) ?? false {
             appLog("dropped \(item.kind.rawValue) \(item.id.prefix(8)): that device is no longer linked")
             remove(item)

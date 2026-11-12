@@ -27,6 +27,8 @@ class AppDelegate: NSObject, ObservableObject {
 
         #if os(macOS)
         startFocusLifecycleObservers()
+        // Public on the web stands down here once another own Mac has it.
+        WebRoleService.shared.start()
 
         // Without a delegate, a clicked notification only activates the app.
         // LocalNotificationService posts the same notifications on both
