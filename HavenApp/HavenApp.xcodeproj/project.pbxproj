@@ -1725,6 +1725,7 @@
 		CFA3FAE3FE9E3F35516F2419 /* MusicBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34514E56570393BEB67F9D54 /* MusicBrowserView.swift */; };
 		CFAC954EF7DFDE57D1667878 /* TrustWebView+MyWeb.swift in Sources */ = {isa = PBXBuildFile; fileRef = D069FB5194A04D262C4C449C /* TrustWebView+MyWeb.swift */; };
 		CFE920F1073C8063C4907027 /* RelayCountSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E80C9464564EDE937ADDFDDC /* RelayCountSession.swift */; };
+		D011C900BD5C603F5C1C89CF /* DraftEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = D71EA5A677224AC81E73AEED /* DraftEnvelope.swift */; };
 		D016ED896705E2C8A0C450E5 /* RelayStatusCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC6553829D621A65D21C14F7 /* RelayStatusCard.swift */; };
 		D0299BB67190AD393D2C4155 /* MediaServersDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEAE224EF3A8A96C61DF7CC0 /* MediaServersDraft.swift */; };
 		D04D39305F6A1088ECFBE1AE /* AudioPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7170B65E0299D14E11CEE3D8 /* AudioPlayerView.swift */; };
@@ -1772,6 +1773,7 @@
 		D4B365B7F713A9A69966A8F5 /* Juntos.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = B16BA3C0FD98FA86CA181B2C /* Juntos.mp3 */; };
 		D4CBD50DD844C82D618664BA /* SignInWithClaveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51BD3B4068A03F5AF468D320 /* SignInWithClaveView.swift */; };
 		D4CBE6AF3405EF25C9A0AD6C /* PushNotificationStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76BAFE194F5C54218E6F3555 /* PushNotificationStep.swift */; };
+		D4DB885E355420E6D6846426 /* DraftEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = D71EA5A677224AC81E73AEED /* DraftEnvelope.swift */; };
 		D4EE933EA1927793E34D6695 /* LookupSocketPool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E6332D0F94F277B7B5DB49F /* LookupSocketPool.swift */; };
 		D4FEBF02D25AA17670907C36 /* DMService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 775FD3A0FC8C2289FB4BBFE3 /* DMService.swift */; };
 		D50939A6B0EB9A8CEED1E6D6 /* DMService+Reconnect.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5AF9325362206BD88D81991 /* DMService+Reconnect.swift */; };
@@ -3147,6 +3149,7 @@
 		D67ADBC1563448EB3D0AE077 /* VaultDashboardDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultDashboardDetails.swift; sourceTree = "<group>"; };
 		D6E037E60F09160D6697CB3C /* NostrService+ListPublishing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+ListPublishing.swift"; sourceTree = "<group>"; };
 		D6EBFF34B8DB3F06E41013B6 /* VaultTabHoldItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultTabHoldItem.swift; sourceTree = "<group>"; };
+		D71EA5A677224AC81E73AEED /* DraftEnvelope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftEnvelope.swift; sourceTree = "<group>"; };
 		D76A00C84747256991A76CA7 /* FeedNoteRow+Media.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedNoteRow+Media.swift"; sourceTree = "<group>"; };
 		D7D56F5AAF9F6D61DDAF4893 /* TrustWebView+Search.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrustWebView+Search.swift"; sourceTree = "<group>"; };
 		D7DA77A05092FC2A5676A6B6 /* FeedRowDataFill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedRowDataFill.swift; sourceTree = "<group>"; };
@@ -4307,6 +4310,7 @@
 				8A39FE3AB127539B3DE26A7C /* DMUnreadRule.swift */,
 				476EF8F1B938508F9475B764 /* DockClearance.swift */,
 				59E8B88393BC807874308374 /* DockInset.swift */,
+				D71EA5A677224AC81E73AEED /* DraftEnvelope.swift */,
 				F67FCE8523F6E6F9E436C4E2 /* DraftReplyParent.swift */,
 				66C02A451295D2B6C9573E95 /* DraftSyncPlan.swift */,
 				BC1096A9CAC6ECB80F009AD7 /* DraftTombstones.swift */,
@@ -5471,6 +5475,7 @@
 				56306706B175F8D4376071C5 /* DockHoldMenu.swift in Sources */,
 				8C6567E64873C61D0FF6E801 /* DockInset.swift in Sources */,
 				CDF7CFA6912E6CE991DD11BA /* DockSafeAreaInset.swift in Sources */,
+				D011C900BD5C603F5C1C89CF /* DraftEnvelope.swift in Sources */,
 				250B9683C98FA15A0612455D /* DraftPickerView.swift in Sources */,
 				AC18B76901595FF2EC40783D /* DraftReplyParent.swift in Sources */,
 				A2466D5E5282712286740FE2 /* DraftService.swift in Sources */,
@@ -6563,6 +6568,7 @@
 				DCE772251391A5A6446A595C /* DivineComposeView.swift in Sources */,
 				33DC6E222AE0280108199AAA /* DockClearance.swift in Sources */,
 				BF5F617A740BAB43FADD3BAD /* DockInset.swift in Sources */,
+				D4DB885E355420E6D6846426 /* DraftEnvelope.swift in Sources */,
 				AF751CC952382B08B77E1EED /* DraftPickerView.swift in Sources */,
 				BF2FC4F96D9D2FFEACF5CD89 /* DraftReplyParent.swift in Sources */,
 				E363C397778EDA4BA29B9B7E /* DraftService.swift in Sources */,
