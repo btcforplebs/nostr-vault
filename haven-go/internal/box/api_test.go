@@ -171,12 +171,14 @@ func TestAPIMove(t *testing.T) {
 // The box screen's Public on the web part reads the box's own web address
 // from status: the NV_RELAY_URL it was set up with, or none.
 func TestAPIStatusCarriesTheRelayURL(t *testing.T) {
-	srv, owner, api := newTestAPI(t)
+	srv, owner, _ := newTestAPI(t)
 	if _, st := call(t, srv, &owner, "GET", "/api/box/status", nil); st["relay_url"] != nil {
 		t.Errorf("no NV_RELAY_URL: relay_url %v, want none", st["relay_url"])
 	}
-	api.RelayURL = "vault.example.com"
-	if _, st := call(t, srv, &owner, "GET", "/api/box/status", nil); st["relay_url"] != "vault.example.com" {
-		t.Errorf("relay_url %v", st["relay_url"])
+	// A second signed GET in the same second is a replay; a fresh box answers it.
+	srv2, owner2, api2 := newTestAPI(t)
+	api2.RelayURL = "vault.example.com"
+	if code, st := call(t, srv2, &owner2, "GET", "/api/box/status", nil); st["relay_url"] != "vault.example.com" {
+		t.Errorf("relay_url %v (code %d %v)", st["relay_url"], code, st)
 	}
 }
