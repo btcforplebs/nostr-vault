@@ -67,7 +67,7 @@ extension GlobeArcs {
 
 /// Whether notes fly across the WOT globe as they reach the relay, and from
 /// which feeds. Kept across launches, like Auto-load. The bar's antenna is
-/// the main switch; the My Web dashboard picks the feeds.
+/// the only switch: every feed and every sort flies.
 enum LiveArcsSetting {
     static let key = "wotLiveArcs"
     /// Live arrivals start on (Logen, 10/15). The switch is only stored once
@@ -88,6 +88,18 @@ enum LiveArcsSetting {
 
     /// The globe's idle spin. On.
     static let spinKey = "wotGlobeSpin"
+
+    /// The feed, sort and spin switches My Web had until 11/12, when Logen had
+    /// them cut: everything flies now, and Reduce Motion stills the globe. A
+    /// value someone stored would have no switch left to undo it, so it goes.
+    /// The antenna (`key`) is not among them: it keeps what it was set to.
+    static var retiredKeys: [String] {
+        GlobeArcs.Ring.allCases.map { key($0) } + GlobeArcs.Sort.allCases.map { key($0) } + [spinKey]
+    }
+
+    static func retireCutSwitches(_ defaults: UserDefaults = .standard) {
+        for retired in retiredKeys { defaults.removeObject(forKey: retired) }
+    }
 
     /// The antenna as `@AppStorage(key) … = defaultOn` reads it.
     static func isOn(_ defaults: UserDefaults) -> Bool {
