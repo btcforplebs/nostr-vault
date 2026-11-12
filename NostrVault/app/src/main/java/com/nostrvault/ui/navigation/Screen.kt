@@ -96,6 +96,8 @@ sealed class Screen(val route: String) {
     data object ListBackup : Screen("settings/list_backup")
     data object NotificationSettings : Screen("settings/notifications")
     data object HavenRelaySettings : Screen("settings/haven_relay")
+    /** Settings › Your Devices: your devices, the two-scan link, this phone as a vault; Mesh and by-address under Advanced. */
+    data object YourDevices : Screen("settings/your_devices")
     /** Settings → Mesh → FIPS Mesh, and its device and Advanced pages. */
     data object MeshSettings : Screen("settings/mesh")
     data object FipsMeshDevice : Screen("settings/mesh/device/{npub}") {

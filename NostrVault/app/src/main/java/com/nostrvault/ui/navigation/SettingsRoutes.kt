@@ -26,6 +26,7 @@ import com.nostrvault.ui.screens.settings.fipsmesh.FipsMeshAdvancedScreen
 import com.nostrvault.ui.screens.settings.fipsmesh.FipsMeshDeviceScreen
 import com.nostrvault.ui.screens.settings.fipsmesh.FipsMeshScreen
 import com.nostrvault.ui.screens.settings.SettingsScreen
+import com.nostrvault.ui.screens.settings.YourDevicesScreen
 
 /** Settings and its pages, lifted from [NostrVaultNavHost]. */
 internal fun NavGraphBuilder.settingsRoutes(
@@ -157,6 +158,16 @@ internal fun NavGraphBuilder.settingsRoutes(
     composable(Screen.HavenRelaySettings.route) {
         HavenRelaySettingsScreen(
             onBack = { navController.popBackStack() },
+        )
+    }
+
+    composable(Screen.YourDevices.route) {
+        YourDevicesScreen(
+            onBack = { navController.popBackStack() },
+            onOpenDevice = { npub -> navController.navigate(Screen.FipsMeshDevice.createRoute(npub)) },
+            onLinkDevice = { navController.navigate(Screen.PairDevice.route) },
+            onOpenMesh = { navController.navigate(Screen.MeshSettings.route) },
+            onOpenDesktopByAddress = { navController.navigate(Screen.HavenRelaySettings.route) },
         )
     }
 
