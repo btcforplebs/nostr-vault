@@ -102,7 +102,8 @@ func publishWithRetry(ctx context.Context, relayURL string, ev *nostr.Event, tim
 	}
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		pubCtx, cancel := context.WithTimeout(ctx, timeout)
-		relay, err := pool.EnsureRelay(relayURL)
+		// Another of the owner's devices stores it without blasting it again.
+		relay, err := pool.EnsureRelay(ownDeviceWriteURL(relayURL))
 		if err != nil {
 			cancel()
 			if attempt < maxRetries && sleep(attempt) {

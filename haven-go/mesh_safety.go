@@ -5,7 +5,9 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -211,8 +213,8 @@ func newBlastStored(stored func(ctx context.Context, id string) bool, send func(
 			slog.Info("event stored from the mesh, not blasted", "id", ev.ID, "kind", ev.Kind)
 			return nil
 		}
-		if isPulledConn(ctx) {
-			slog.Debug("event pulled from a relay stored, not blasted", "id", ev.ID, "kind", ev.Kind)
+		if isSecondHandConn(ctx) {
+			slog.Debug("second-hand event stored, not blasted", "id", ev.ID, "kind", ev.Kind)
 			return nil
 		}
 		if !stored(ctx, ev.ID) {
@@ -239,6 +241,52 @@ const pulledInjectionParam = "pulled"
 func isPulledConn(ctx context.Context) bool {
 	conn := khatru.GetConnection(ctx)
 	return conn != nil && conn.Request != nil && conn.Request.URL.Query().Get(pulledInjectionParam) == "1"
+}
+
+// isSecondHandConn: ctx's writes are not first-hand, so they are stored and
+// never blasted (device sync map §4.5, "only first-hand writes are
+// published"). A note is blasted once, by the device it was written on.
+//   - `?pulled=1`: pulled from relays (the apps' injection clients), or sent
+//     by another of the owner's devices (owner catch-up uploads, the blast
+//     to the Mac, HomeVaultSender; ownDeviceWriteURL and the apps mark
+//     those).
+//   - the iPhone's own-device port (HAVEN_MESH_OWN_PORT): only the owner's
+//     other devices reach it.
+//
+// The mesh door is checked on its own in blastStored.
+func isSecondHandConn(ctx context.Context) bool {
+	if isPulledConn(ctx) {
+		return true
+	}
+	conn := khatru.GetConnection(ctx)
+	return conn != nil && conn.Request != nil && conn.Request.Context().Value(meshOwnPortKey{}) != nil
+}
+
+// ownDeviceWriteURL is url marked as second-hand (`?pulled=1`) when it is
+// another of the owner's devices' relay (the Mac relay, MAC_RELAY_URL), so
+// what this vault sends there is stored and not blasted again. Any other
+// relay is dialled as it is.
+func ownDeviceWriteURL(raw string) string {
+	base := macRelayBase(config.MacRelayURL)
+	if base == "" {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	q := u.Query()
+	plain := *u
+	plain.RawQuery = ""
+	if strings.TrimRight(plain.String(), "/") != base {
+		return raw
+	}
+	if q.Get(pulledInjectionParam) == "1" {
+		return raw
+	}
+	q.Set(pulledInjectionParam, "1")
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // wireOutboxWrites adds the outbox store, the mesh blob index and the blast

@@ -28,9 +28,10 @@ func TestFeedCatchupFiltersSplitRareKinds(t *testing.T) {
 		}
 	}
 	got := slices.Sorted(slices.Values(slices.Concat(common.Kinds, rare.Kinds)))
-	want := slices.Sorted(slices.Values(feedKinds))
+	// Every feed kind, plus the follows' deletes (feedPullKinds, in the common REQ).
+	want := slices.Sorted(slices.Values(feedPullKinds()))
 	if !slices.Equal(got, want) {
-		t.Fatalf("catch-up kinds %v, want every feed kind %v", got, want)
+		t.Fatalf("catch-up kinds %v, want every feed kind and kind 5 %v", got, want)
 	}
 	if *common.Since != 100 || *rare.Since != 50 {
 		t.Fatalf("since common=%d rare=%d, want each its own watermark", *common.Since, *rare.Since)
