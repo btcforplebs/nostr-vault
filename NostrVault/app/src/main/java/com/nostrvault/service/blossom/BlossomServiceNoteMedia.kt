@@ -28,9 +28,12 @@ internal suspend fun BlossomService.copyNoteMediaIn(
     val notes = NoteMediaScan.collect(owner) { filter ->
         nostrService.queryRawEvents(listOf(filter), listOf(relay), timeoutMs = 8_000L)
     }
-    val urls = notes.flatMap { note ->
-        nostrService.extractMediaURLs(note.content, note.pubkey, note.tags, note.createdAt).map { it.url }
+    val links = notes.flatMap { note ->
+        nostrService.extractMediaURLs(note.content, note.pubkey, note.tags, note.createdAt).map { it.url to note.createdAt }
     }
+    val urls = links.map { it.first }
+    // Each copy carries its note's created_at; a link in several notes, the newest (iOS).
+    val noteDates = CopiedInDate.newestByKey(links, { it.first }, { it.second })
     onLogMessage?.invoke("Found ${urls.size} media link(s) in ${notes.size} note(s)")
     // A link's hash, known before any download: its name, the note's imeta x, or an earlier run.
     val imeta = notes.fold(HashMap<String, String>()) { acc, n -> acc.apply { putAll(AutoMirrorRules.imetaHashes(n.tags)) } }
@@ -56,8 +59,10 @@ internal suspend fun BlossomService.copyNoteMediaIn(
             mirrorSemaphore.acquire()
             launch {
                 try {
+                    val startedAt = System.currentTimeMillis()
                     val sha = mirrorUrlToLocal(url, ownVault = auth) { onLogMessage?.invoke("Skipped $url: $it") }
                     if (sha != null) {
+                        stampCopiedIn(sha, noteDates[url], startedAt)
                         autoMirrorState.remember(url, sha)
                         saved.incrementAndGet()
                     }

@@ -546,6 +546,7 @@ class BlossomService @Inject constructor(
         val ownerPubkey = nostrService.ownerHexPubkey
 
         val allHashes = mutableSetOf<String>()
+        val listed = mutableListOf<BlobDescriptor>() // their upload times date the copies (CopiedInDate)
 
         // Sign ONE kind 24242 auth event for the ENTIRE mirror-in and reuse it for
         // both the remote /list and every local /upload. It carries both "t" verbs
@@ -575,6 +576,7 @@ class BlossomService @Inject constructor(
                 }
                 val blobs = json.decodeFromString<List<BlobDescriptor>>(body)
                 blobs.mapNotNull { it.sha256 }.forEach { allHashes.add(it) }
+                listed += blobs
             } catch (e: Exception) {
                 Log.w(TAG, "Blob list fetch from $mirror failed: ${e.message}")
                 onUnreachable?.invoke(mirror)
@@ -592,14 +594,17 @@ class BlossomService @Inject constructor(
 
         val completed = java.util.concurrent.atomic.AtomicInteger(0)
         val saved = java.util.concurrent.atomic.AtomicInteger(0)
+        val uploadedDates = CopiedInDate.uploadedByHash(listed)
         coroutineScope {
             for (hash in missing) {
                 if (!limits.take()) break
                 mirrorSemaphore.acquire()
                 launch {
                     try {
+                        val startedAt = System.currentTimeMillis()
                         val blob = downloadFromMirrors(hash) { onLogMessage?.invoke("Skipped ${hash.take(8)}: $it") }
                         if (blob != null && storeStreamed(blob, "application/octet-stream", ownVault)) {
+                            stampCopiedIn(hash, uploadedDates[hash.lowercase()], startedAt)
                             saved.incrementAndGet()
                         }
                     } finally {
