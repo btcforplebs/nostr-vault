@@ -40,6 +40,8 @@ struct iPhoneTabView: View {
     /// The open Duo's Your space half is folded to its rail: the app takes
     /// the rest of the screen, crease included.
     @State private var foldSpaceFolded = false
+    /// The iPad's Your space column is folded to its rail.
+    @State private var padSpaceFolded = false
 
     /// The iPhone Duo, closed or open: the rail inside iOS's camera strip on the right.
     private var stripRail: ShellLayout.StripRail? {
@@ -48,7 +50,7 @@ struct iPhoneTabView: View {
 
     /// iPad (regular width): every tab's list sits in a `NoteSplitPane`, in
     /// both orientations. An opened note covers the list, with ‹ Back, as on
-    /// the web's desktop layout; landscape gives the right side to "Your
+    /// the web's desktop layout; landscape gives the left side to "Your
     /// space" (`SpaceColumn`) instead. The iPhone Duo open on its side puts
     /// "Your space" on the left half and the app on the right
     /// (`ShellLayout.fold`); closed, it is the phone with the dock as a rail
@@ -85,8 +87,8 @@ struct iPhoneTabView: View {
         }
     }
 
-    /// iPad in landscape: a slim rail left of the app (in place of the
-    /// dock) and "Your space" right of it. iPhone Duo open on its side:
+    /// iPad in landscape: "Your space" left of the app and a slim rail
+    /// right of it (in place of the dock). iPhone Duo open on its side:
     /// "Your space" left of the fold, the app right of it, the rail on the
     /// far right. iPhone Duo closed: the app, the rail on the right.
     private var showsSpace: Bool { layout.hasSideRail }
@@ -158,7 +160,7 @@ struct iPhoneTabView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            if layout == .padLandscape { sideRail(onRight: false) }
+            if layout == .padLandscape { padSpace }
             if layout == .fold {
                 let half = ShellLayout.foldLeftWidth(windowWidth: windowSize.width, leadingInset: leadingInset)
                 SpaceColumn(fillsFoldHalf: true, onFoldedChange: { foldSpaceFolded = $0 },
@@ -173,12 +175,12 @@ struct iPhoneTabView: View {
                     .accessibilityHidden(true)
             }
             tabs
-            if layout == .padLandscape {
-                SpaceColumn()
-                    .transition(.move(edge: .trailing))
-            }
-            if layout.railOnRight {
-                sideRail(onRight: true)
+            if layout.dockRailOnRight {
+                // The Duo's rail keeps its hold menus; the iPad's plain taps.
+                sideRail(onRight: layout.railOnRight)
+                    .overlay(alignment: .leading) {
+                        if !layout.railOnRight { shellRule }
+                    }
                     .padding(.top, stripRail?.topClearance ?? 0)
                     .frame(width: stripRail?.width)
             }
@@ -211,6 +213,30 @@ struct iPhoneTabView: View {
         // no system toolbar row. Screens branch on the width class for that,
         // so every one below sees compact.
         .environment(\.horizontalSizeClass, .compact)
+    }
+
+    /// iPad in landscape, mirrored (Logen, 2026-11-12): Your space on the
+    /// left, the same view as the open Duo's half (its rail on the screen's
+    /// edge, panels that slide shut without reflow, a widget hidden from Your
+    /// space keeping its rail icon), at the iPad column's width.
+    private var padSpace: some View {
+        SpaceColumn(fillsFoldHalf: true, onFoldedChange: { padSpaceFolded = $0 },
+                    foldPanelsWidth: LiveVaultLayout.openWidth)
+            // A width, not nil, when folded, so the slide animates.
+            .frame(width: ShellLayout.padSpaceWidth(folded: padSpaceFolded,
+                                                    panelsWidth: LiveVaultLayout.openWidth,
+                                                    railWidth: SpaceColumn.foldRailWidth))
+            .overlay(alignment: .trailing) { shellRule }
+            .transition(.move(edge: .leading))
+    }
+
+    /// The hairline between the app and a column beside it, as on the rails.
+    private var shellRule: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.08))
+            .frame(width: 1)
+            .ignoresSafeArea()
+            .accessibilityHidden(true)
     }
 
     /// The dock's items down a side of the window; the dock itself goes.
