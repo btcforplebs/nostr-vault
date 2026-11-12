@@ -229,7 +229,7 @@ func TestCopyStopLogHasNoIngressToken(t *testing.T) {
 	}
 	run := func(string, func()) {}
 	run = func(_ string, fn func()) { fn() }
-	startCopySync(context.Background(), run, testDevice, base)
+	startCopySync(context.Background(), run, testDevice, base, false)
 	startCopyFrom(context.Background(), run, testDevice, base, "x")
 	if !strings.Contains(buf.String(), "stopped") {
 		t.Fatalf("no stop line logged: %q", buf.String())

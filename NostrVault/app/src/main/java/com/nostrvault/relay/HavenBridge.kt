@@ -436,6 +436,9 @@ object HavenBridge {
     /** CopySyncC: one catch-up with a linked device [peer] through [base]. 0 started · 2 busy · 3 relay not running. */
     external fun copySync(peer: String, base: String): Int
 
+    /** CopySyncNotesOnlyC: [copySync] for a light phone, notes, accounts, settings and web domains, no files. */
+    external fun copySyncNotesOnly(peer: String, base: String): Int
+
     /**
      * SetMeshDevicesC (docs/MESH_COPY_V2_CONTRACT.md §2): this vault's mesh npub and its paired devices,
      * `{"self":"npub1…","devices":[{"npub":"npub1…","role":"phone"}]}`. Only these devices' mesh keys may start a copy

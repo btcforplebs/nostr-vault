@@ -1095,6 +1095,7 @@
 		83352352A3848FB0FE67A278 /* HavenConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3056CC16711F7E38B7FE86D /* HavenConfig.swift */; };
 		837C1DBCDECBBDE38000A871 /* TrustPathService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1CBD42B98E57609F77CA5E7 /* TrustPathService.swift */; };
 		838C819BE2CDC266568308E9 /* NIP46Service+Methods.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9953C03BA85F5AE78844A7 /* NIP46Service+Methods.swift */; };
+		83DDD0F82FA93D21EFF2C780 /* MeshKeySigner+DomainProof.swift in Sources */ = {isa = PBXBuildFile; fileRef = C01383EE4FC725A74BE2F571 /* MeshKeySigner+DomainProof.swift */; };
 		83F735BA7188232AFF312FA1 /* MeshSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85C517E5AC5352632A7A05A8 /* MeshSettingsSheet.swift */; };
 		840DED3DB173B14993FF456A /* MirrorMediaStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30F99815B3480ACD67F45648 /* MirrorMediaStep.swift */; };
 		8423CB01B792A11013AA7878 /* NVZapsToday.swift in Sources */ = {isa = PBXBuildFile; fileRef = D358E7C7A4DC7332A585EE35 /* NVZapsToday.swift */; };
@@ -1894,6 +1895,7 @@
 		DED9A13B12AEAFFFC0B44BDC /* starter_packs.json in Resources */ = {isa = PBXBuildFile; fileRef = E76B268D327BDC761BB5AC1E /* starter_packs.json */; };
 		DF0BAA44D98386C78D9999E6 /* ImportSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1255DBAAFB357995BFAAC5F /* ImportSettingsView.swift */; };
 		DF233A4AC33F055B884A640C /* RelayRequestBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E944BA26FF2F1C88F23319A /* RelayRequestBudget.swift */; };
+		DF26CD2787C1AFEF8ECD3999 /* MeshKeySigner+DomainProof.swift in Sources */ = {isa = PBXBuildFile; fileRef = C01383EE4FC725A74BE2F571 /* MeshKeySigner+DomainProof.swift */; };
 		DF334F134363929C956118D8 /* SidebarTabButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BE56AF7542C25844828CE9F /* SidebarTabButton.swift */; };
 		DF41EBC4F8B4951C81DB7698 /* WalletLightningTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA979A3F7ED54EAB8F501F2E /* WalletLightningTab.swift */; };
 		DF611F7704238D2428B42622 /* VaultContentsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C479523C73672690926ABDA0 /* VaultContentsSection.swift */; };
@@ -3097,6 +3099,7 @@
 		BF6F98928C8180139589F245 /* UploadShareHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadShareHandler.swift; sourceTree = "<group>"; };
 		BF877C91ACA408A0F738AA31 /* FeedView+FeedStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedView+FeedStack.swift"; sourceTree = "<group>"; };
 		BFE4FF1BF35D7CF7BEF59AD4 /* FollowingSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowingSnapshot.swift; sourceTree = "<group>"; };
+		C01383EE4FC725A74BE2F571 /* MeshKeySigner+DomainProof.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeshKeySigner+DomainProof.swift"; sourceTree = "<group>"; };
 		C0338A6FA5F31523F34060CC /* MeshMediaRouter+Live.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MeshMediaRouter+Live.swift"; sourceTree = "<group>"; };
 		C09269B6CDEA04F6D772F6BC /* FeedView+TrustScope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedView+TrustScope.swift"; sourceTree = "<group>"; };
 		C0CBC949CCC069EF2C665689 /* LockedKeyCopyButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockedKeyCopyButton.swift; sourceTree = "<group>"; };
@@ -4860,6 +4863,7 @@
 				2967E3C73285483C276E373D /* MeshDiagnostics.swift */,
 				9FA16722B2CD63AE6DC314B4 /* MeshIdentityReset.swift */,
 				1D53720BD75EE6B0C1FEBDA7 /* MeshKeySigner.swift */,
+				C01383EE4FC725A74BE2F571 /* MeshKeySigner+DomainProof.swift */,
 				F898B6C30AFB74BB4011E597 /* MeshKeySigner+FileNotes.swift */,
 				E21458F66BFE204CE1479D50 /* MeshPairingHello.swift */,
 				1B03DACD65D976F80B315E19 /* MirrorService.swift */,
@@ -5905,6 +5909,7 @@
 				5EBD31FC940582B640D55D5E /* MeshDiagnostics.swift in Sources */,
 				EDCC11293EC1A7BB105D2DCE /* MeshIdentityReset.swift in Sources */,
 				4F038CE2543853DF6AB45C80 /* MeshKeyAuth.swift in Sources */,
+				DF26CD2787C1AFEF8ECD3999 /* MeshKeySigner+DomainProof.swift in Sources */,
 				9B7489C80ACF199305FCDEFE /* MeshKeySigner+FileNotes.swift in Sources */,
 				91D8535DDBF9D7C987938E9B /* MeshKeySigner.swift in Sources */,
 				AB7F8F34512CA3C52285854B /* MeshMediaRouter+Live.swift in Sources */,
@@ -7009,6 +7014,7 @@
 				3744333FCDE99AEC5B1D2B0B /* MeshDiagnostics.swift in Sources */,
 				D5F589CB24E1407D75DEF741 /* MeshIdentityReset.swift in Sources */,
 				01B37CD90AF3FABC3A4638E2 /* MeshKeyAuth.swift in Sources */,
+				83DDD0F82FA93D21EFF2C780 /* MeshKeySigner+DomainProof.swift in Sources */,
 				88BD688574BCF4DBF91037DA /* MeshKeySigner+FileNotes.swift in Sources */,
 				2B1D116ED7EBAD6EDCD11CF1 /* MeshKeySigner.swift in Sources */,
 				A497F168AB85DD029F0035BF /* MeshMediaRouter+Live.swift in Sources */,

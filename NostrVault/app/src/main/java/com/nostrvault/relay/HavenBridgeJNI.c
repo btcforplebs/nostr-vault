@@ -111,6 +111,7 @@ extern char* ImportJobsC(void);
 extern int RunImportJobC(char* name);
 extern int StartCopyFromC(char* peer, char* base, char* startAuth);
 extern int CopySyncC(char* peer, char* base);
+extern int CopySyncNotesOnlyC(char* peer, char* base);
 extern int SetMeshDevicesC(char* devices);
 extern int CancelImportJobC(char* name);
 extern char* GetNotifyLogC(void);
@@ -654,6 +655,16 @@ Java_com_nostrvault_relay_HavenBridge_copySync(JNIEnv *env, jobject thiz, jstrin
     const char *cPeer = GET_CSTR(env, peer);
     const char *cBase = GET_CSTR(env, base);
     int rc = CopySyncC((char*)cPeer, (char*)cBase);
+    REL_CSTR(env, base, cBase);
+    REL_CSTR(env, peer, cPeer);
+    return rc;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_nostrvault_relay_HavenBridge_copySyncNotesOnly(JNIEnv *env, jobject thiz, jstring peer, jstring base) {
+    const char *cPeer = GET_CSTR(env, peer);
+    const char *cBase = GET_CSTR(env, base);
+    int rc = CopySyncNotesOnlyC((char*)cPeer, (char*)cBase);
     REL_CSTR(env, base, cBase);
     REL_CSTR(env, peer, cPeer);
     return rc;

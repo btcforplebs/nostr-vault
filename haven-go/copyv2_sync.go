@@ -37,7 +37,9 @@ const (
 	copySyncMaxBody     = 32 << 20
 	copySyncOverlap     = 7 * 24 * time.Hour // gift wraps backdate up to 2 days
 	copySyncFile        = "copy_sync.json"
-	copySyncMaxFiles    = 2000
+	// copySyncNotesOnlyMark keys a light device's rounds apart from full ones.
+	copySyncNotesOnlyMark = "#notes"
+	copySyncMaxFiles      = 2000
 )
 
 // copySyncPage: ids per page of A's list (a var so a test can page small).
@@ -73,7 +75,8 @@ func (s *copyServer) store(name string) DBBackend {
 }
 
 func (s *copyServer) serveSync(w http.ResponseWriter, r *http.Request, what string) {
-	if _, ok := s.bearer(r); !ok {
+	tokenHash, ok := s.bearer(r)
+	if !ok {
 		http.Error(w, "auth_refused", http.StatusUnauthorized)
 		return
 	}
@@ -166,6 +169,8 @@ func (s *copyServer) serveSync(w http.ResponseWriter, r *http.Request, what stri
 			return
 		}
 		copyJSON(w, http.StatusOK, map[string]string{"accounts": takeCopyAccounts(raw)})
+	case what == "device":
+		s.serveSyncDevice(w, r, tokenHash)
 	case what == "settings" && r.Method == http.MethodGet:
 		raw, err := os.ReadFile(copySettingsFile)
 		if err != nil || copySettingsRefusal(raw, time.Now()) != "" {
@@ -414,10 +419,14 @@ func clearCopySynced(peer string) {
 	copySyncMu.Lock()
 	defer copySyncMu.Unlock()
 	all := loadCopySync()
-	if _, ok := all[copyPeerKey(peer)]; !ok {
+	full, notes := copyPeerKey(peer), copyPeerKey(peer+copySyncNotesOnlyMark)
+	_, hasFull := all[full]
+	_, hasNotes := all[notes]
+	if !hasFull && !hasNotes {
 		return
 	}
-	delete(all, copyPeerKey(peer))
+	delete(all, full)
+	delete(all, notes)
 	raw, _ := json.Marshal(all)
 	tmp := copySyncFile + ".tmp"
 	if err := os.WriteFile(tmp, raw, 0o600); err == nil {
@@ -446,8 +455,15 @@ func (c *copyClient) sync(ctx context.Context) (copySyncResult, error) {
 	if c.token == "" {
 		return res, copyErr("auth_refused")
 	}
+	// A light device's rounds keep their own mark: turning full copy on
+	// later then starts the file pass from the beginning, not from the last
+	// notes-only round (multi-Mac rules §3, rule 7).
+	mark := c.peer
+	if c.notesOnly {
+		mark = c.peer + copySyncNotesOnlyMark
+	}
 	copySyncMu.Lock()
-	last := loadCopySync()[copyPeerKey(c.peer)]
+	last := loadCopySync()[copyPeerKey(mark)]
 	copySyncMu.Unlock()
 	started := time.Now().Unix()
 	since := int64(0)
@@ -457,6 +473,8 @@ func (c *copyClient) sync(ctx context.Context) (copySyncResult, error) {
 	// Accounts first, both ways, so each side keeps the other's new accounts'
 	// notes in this same round (§3.4, §6). They only ever merge.
 	res.Accounts, _ = c.syncAccounts(ctx)
+	// Each side's web domain, when it has one (copyv2_device.go).
+	c.syncDevice(ctx)
 	allIDs := true
 	for _, store := range copySyncStores {
 		db := c.store(store)
@@ -473,17 +491,21 @@ func (c *copyClient) sync(ctx context.Context) (copySyncResult, error) {
 			allIDs = false
 		}
 	}
-	files, allFiles, err := c.syncFiles(ctx, since)
-	res.Files = files
-	if err != nil {
-		return res, err
+	files, allFiles := 0, true
+	if !c.notesOnly {
+		var err error
+		files, allFiles, err = c.syncFiles(ctx, since)
+		res.Files = files
+		if err != nil {
+			return res, err
+		}
 	}
 	res.Settings, _ = c.syncSettings(ctx)
 	// Marked only when every listed page was read: otherwise the next round
 	// would start a week before now and never list the older notes and
 	// files again.
 	if allFiles && allIDs {
-		markCopySynced(c.peer, started)
+		markCopySynced(mark, started)
 	}
 	slog.Info("copy catch-up done", "got", res.Got, "sent", res.Sent, "files", res.Files, "settings", res.Settings, "accounts", res.Accounts)
 	return res, nil

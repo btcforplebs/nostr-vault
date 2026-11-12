@@ -23,13 +23,15 @@ class MeshCopyStarterTest {
     private class FakeEngine : MeshCopyStarter.Engine {
         val starts = mutableListOf<Triple<String, String, String>>()
         val syncs = mutableListOf<Pair<String, String>>()
+        val filesToo = mutableListOf<Boolean>()
         val answers = ArrayDeque<Int>()
         override fun startCopyFrom(peer: String, base: String, startAuth: String): Int {
             starts += Triple(peer, base, startAuth)
             return answers.removeFirstOrNull() ?: MeshCopyV2.RUN_STARTED
         }
-        override fun copySync(peer: String, base: String): Int {
+        override fun copySync(peer: String, base: String, filesToo: Boolean): Int {
             syncs += peer to base
+            this.filesToo += filesToo
             return MeshCopyV2.RUN_STARTED
         }
     }
@@ -56,7 +58,9 @@ class MeshCopyStarterTest {
         scope = this,
         nowS = { now },
         io = StandardTestDispatcher(testScheduler),
+        filesToo = { filesToo },
     )
+    private var filesToo = true
 
     @Test
     fun `the start goes to the engine with the signed proof and the link's secret path`() = runTest {
@@ -124,6 +128,18 @@ class MeshCopyStarterTest {
         s.reconnectNow()
         assertEquals(listOf(peer to link.replaceFirst("ws://", "http://")), engine.syncs)
         assertEquals(now, store.r.copied[peer])
+        assertEquals("a full copy catches up on files too", listOf(true), engine.filesToo)
+    }
+
+    @Test
+    fun `a light phone's catch-up is notes only`() = runTest {
+        val s = starter()
+        s.start(peer, link, "Studio Mac")
+        s.onLogLine("COPY stage=done part=- bytes=0/0 items=5/5 source=mesh")
+        now += MeshCopyV2.SYNC_EVERY_S
+        filesToo = false
+        s.reconnectNow()
+        assertEquals(listOf(false), engine.filesToo)
     }
 
     @Test

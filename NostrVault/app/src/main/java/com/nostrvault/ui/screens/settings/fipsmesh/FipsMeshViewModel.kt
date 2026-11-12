@@ -10,6 +10,7 @@ import com.nostrvault.fips.FipsMeshSettings
 import com.nostrvault.fips.HomeVaultSender
 import com.nostrvault.fips.MyDevicesRules
 import com.nostrvault.service.NostrService
+import com.nostrvault.ui.screens.settings.YourDevicesRules
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -45,6 +46,15 @@ class FipsMeshViewModel @Inject constructor(
 
     private val _busy = MutableStateFlow(false)
     val busy = _busy.asStateFlow()
+
+    /** Keep a full copy on this phone (multi-Mac rules §3): on unless turned off; mobile vault mode locks it on. */
+    val fullCopy = configStore.config.map { YourDevicesRules.keepsFullCopy(it.fipsShareRelay, it.keepFullCopy) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val fullCopyWifiOnly = configStore.config.map { it.fullCopyWifiOnly != false }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    fun setFullCopy(on: Boolean) = configStore.update { it.copy(keepFullCopy = on) }
+    fun setFullCopyWifiOnly(on: Boolean) = configStore.update { it.copy(fullCopyWifiOnly = on) }
 
     val settings = configStore.config.map { it.fipsMesh }
         .stateIn(viewModelScope, SharingStarted.Eagerly, configStore.config.value.fipsMesh)

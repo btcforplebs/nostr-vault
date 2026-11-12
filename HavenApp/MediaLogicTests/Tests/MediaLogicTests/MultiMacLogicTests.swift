@@ -85,19 +85,13 @@ final class MultiMacLogicTests: XCTestCase {
 
     // MARK: Full copy (§3, Logen's pick 1)
 
-    func testUpgradeTurnsOnOnlyPhonesThatAlreadyCopied() {
-        XCTAssertTrue(YourDevicesLogic.fullCopyAtUpgrade(stored: nil, copiedBefore: true))
-        XCTAssertFalse(YourDevicesLogic.fullCopyAtUpgrade(stored: nil, copiedBefore: false), "new phones start light")
-        XCTAssertFalse(YourDevicesLogic.fullCopyAtUpgrade(stored: false, copiedBefore: true), "a choice made stays")
-        XCTAssertTrue(YourDevicesLogic.fullCopyAtUpgrade(stored: true, copiedBefore: false))
-    }
-
     func testWhoKeepsAFullCopy() {
         XCTAssertTrue(YourDevicesLogic.keepsFullCopy(isDesktop: true, mobileVault: false, stored: false), "Macs always")
         XCTAssertTrue(YourDevicesLogic.keepsFullCopy(isDesktop: false, mobileVault: true, stored: false), "mobile vaults always")
         XCTAssertTrue(YourDevicesLogic.keepsFullCopy(isDesktop: false, mobileVault: false, stored: true))
         XCTAssertFalse(YourDevicesLogic.keepsFullCopy(isDesktop: false, mobileVault: false, stored: false))
-        XCTAssertFalse(YourDevicesLogic.keepsFullCopy(isDesktop: false, mobileVault: false, stored: nil))
+        XCTAssertTrue(YourDevicesLogic.keepsFullCopy(isDesktop: false, mobileVault: false, stored: nil),
+                      "every phone, new or existing, starts on (Logen's pick 1)")
         XCTAssertTrue(YourDevicesLogic.fullCopyLocked(mobileVault: true))
         XCTAssertFalse(YourDevicesLogic.fullCopyLocked(mobileVault: false))
     }
@@ -167,5 +161,35 @@ final class MultiMacLogicTests: XCTestCase {
                        [["r", "wss://relay.damus.io"], ["r", "wss://b.example.com", "write"], ["p", "x"]])
         XCTAssertEqual(YourDevicesLogic.movingWeb(relayTags: [["r", "wss://relay.damus.io"]], from: nil, to: "wss://b.example.com"),
                        [["r", "wss://b.example.com"], ["r", "wss://relay.damus.io"]])
+    }
+}
+
+/// WEB_DOMAIN_PROOF (multi-Mac rules §3.3): the Mac's host for its own devices,
+/// never an address.
+final class WebDomainForOwnDevicesTests: XCTestCase {
+    private func domain(_ relayURL: String) -> String {
+        var c = HavenConfig()
+        c.relayURL = relayURL
+        return c.webDomainForOwnDevices
+    }
+
+    func testOnlyAPublicNameIsSent() {
+        XCTAssertEqual(domain("wss://Vault.Example.com"), "vault.example.com")
+        XCTAssertEqual(domain("vault.example.com:8443"), "vault.example.com")
+        XCTAssertEqual(domain("https://vault.example.com/"), "vault.example.com")
+        XCTAssertEqual(domain(""), "", "mesh only")
+        XCTAssertEqual(domain("localhost:3355"), "")
+        XCTAssertEqual(domain("127.0.0.1"), "")
+        XCTAssertEqual(domain("192.168.1.20:3355"), "")
+        XCTAssertEqual(domain("8.8.8.8"), "", "no IPs, ever")
+        XCTAssertEqual(domain("[2001:db8::1]:3355"), "")
+        XCTAssertEqual(domain("mac.local"), "")
+    }
+
+    func testSentWhetherOrNotPublicOnTheWebIsOn() {
+        var c = HavenConfig()
+        c.relayURL = "vault.example.com"
+        c.publicOnWeb = false
+        XCTAssertEqual(c.webDomainForOwnDevices, "vault.example.com", "another Mac must be able to offer the move back")
     }
 }

@@ -22,3 +22,9 @@ enum NIP49Service {
         throw NIP49Error.decodingFailed
     }
 }
+
+/// The Mac's web-domain proof needs the mesh key and the Go signer: here it
+/// signs nothing, as a Mac with no mesh key yet (WEB_DOMAIN_PROOF stays "").
+enum MeshKeySigner {
+    static func domainProofJSON(domain: String) -> String { "" }
+}

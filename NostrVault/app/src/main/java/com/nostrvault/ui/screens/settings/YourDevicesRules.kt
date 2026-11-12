@@ -38,14 +38,10 @@ object YourDevicesRules {
     // Full copy (multi-Mac rules §3). Twins of iOS YourDevicesLogic.
 
     /**
-     * What an unset switch becomes at upgrade, written once: on for a phone that already finished a mesh copy (the
-     * copy record names a peer), off for any other (Logen's pick: phones default light). Once only: a light phone's
-     * notes-only first copy must not flip it on later.
+     * Whether this phone keeps every own note and file: mobile vault mode always does, else the switch, which is on
+     * unless the owner turned it off (Logen's pick 1, 2026-11-12: new and existing phones start on).
      */
-    fun fullCopyAtUpgrade(stored: Boolean?, copiedBefore: Boolean): Boolean = stored ?: copiedBefore
-
-    /** Whether this phone keeps every own note and file: mobile vault mode always does, else the switch. */
-    fun keepsFullCopy(mobileVault: Boolean, stored: Boolean?): Boolean = mobileVault || stored == true
+    fun keepsFullCopy(mobileVault: Boolean, stored: Boolean?): Boolean = mobileVault || stored != false
 
     /** Mobile vault mode turns the switch on and locks it. */
     fun fullCopyLocked(mobileVault: Boolean): Boolean = mobileVault
@@ -86,6 +82,10 @@ object YourDevicesRules {
     const val THIS_PHONE_HEADER = "This phone"
     const val ALWAYS_ON_VAULT = "Use this phone as an always-on vault"
     const val ALWAYS_ON_SUBTITLE = "Mobile vault mode: for a spare phone on a charger"
+    const val FULL_COPY = "Keep a full copy on this phone"
+    const val FULL_COPY_SUBTITLE = "Every photo and file from your other devices shows up here. Off: notes only, files when you open them."
+    const val WIFI_ONLY = "Wi-Fi only"
+    const val WIFI_ONLY_SUBTITLE = "Catching up on files waits for Wi-Fi. What you add here always goes out right away."
     /**
      * The power notice under the switch, worded for Android (Logen 2026-11-12): iPhone's says charger, app open,
      * screen kept on, pauses when you leave the app; Android runs it in the background, so it says charger and

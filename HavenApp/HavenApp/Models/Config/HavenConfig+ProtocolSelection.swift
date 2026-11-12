@@ -37,6 +37,25 @@ extension HavenConfig {
         !isLocal && (publicOnWeb ?? true)
     }
 
+    /// This vault's own web host as told to the owner's other devices over
+    /// the mesh (WEB_DOMAIN_PROOF, multi-Mac rules §3.3): the host without port,
+    /// whether or not Public on the web is on, so another Mac can offer
+    /// "make this one public instead". "" when it has none the world can
+    /// reach (local, a home address, an IP): mesh-only Macs send nothing.
+    /// The engine checks again. Only the Mac passes it; phones never serve.
+    var webDomainForOwnDevices: String {
+        guard !isLocal else { return "" }
+        let hostPort = sanitizedRelayURL.split(separator: "/").first.map(String.init)?.lowercased() ?? ""
+        // A bracketed or bare IPv6 address has more than one colon: never sent.
+        guard hostPort.filter({ $0 == ":" }).count <= 1 else { return "" }
+        let host = hostPort.split(separator: ":").first.map(String.init) ?? ""
+        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789.-")
+        guard host.contains("."), host.allSatisfy({ allowed.contains($0) }),
+              !host.allSatisfy({ $0.isNumber || $0 == "." }), // an IPv4 address
+              !Self.isPrivateNetworkHost(host) else { return "" }
+        return host
+    }
+
     /// Returns the appropriate WebSocket URL (ws:// for local, wss:// for remote)
     var nostrURL: String {
         if isLocal {

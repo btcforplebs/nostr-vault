@@ -1,10 +1,13 @@
 package com.nostrvault.fips
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.di.ApplicationScope
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.ui.screens.settings.YourDevicesRules
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -43,6 +46,11 @@ class MeshCopyStarter internal constructor(
     private val nowS: () -> Long = { System.currentTimeMillis() / 1000 },
     /** Where the unreachable retries run (the link dial blocks); the tests' scheduler in the tests. */
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /**
+     * Whether a catch-up moves files as well as notes (multi-Mac rules §3, rule 7): false for a light phone (Full
+     * copy off) or a full one off Wi-Fi while Wi-Fi only is on ([YourDevicesRules.catchUpMovesFiles]).
+     */
+    private val filesToo: () -> Boolean = { true },
 ) {
     @Inject constructor(
         @ApplicationContext context: Context,
@@ -56,14 +64,22 @@ class MeshCopyStarter internal constructor(
         records = PrefsRecordStore(context),
         setupDone = { configStore.config.value.hasCompletedSetup },
         scope = scope,
+        filesToo = {
+            val cfg = configStore.config.value
+            YourDevicesRules.catchUpMovesFiles(
+                fullCopy = YourDevicesRules.keepsFullCopy(mobileVault = cfg.fipsShareRelay, stored = cfg.keepFullCopy),
+                wifiOnly = cfg.fullCopyWifiOnly,
+                onWiFi = onWiFi(context),
+            )
+        },
     )
 
     /** The libhaven copy calls (a fake in the tests). Codes: [MeshCopyV2.RUN_STARTED] and the rest. */
     interface Engine {
         /** StartCopyFromC: [startAuth] is base64 of the signed start, or "" to resume with the token the engine holds. */
         fun startCopyFrom(peer: String, base: String, startAuth: String): Int
-        /** CopySyncC: one catch-up with [peer]. */
-        fun copySync(peer: String, base: String): Int
+        /** CopySyncC: one catch-up with [peer]; CopySyncNotesOnlyC when not [filesToo]. */
+        fun copySync(peer: String, base: String, filesToo: Boolean): Int
     }
 
     interface RecordStore {
@@ -216,7 +232,7 @@ class MeshCopyStarter internal constructor(
             if (!setupDone()) return
             val peer = r.syncDue(nowS()).firstOrNull() ?: return
             val (base, prefix) = link(peer)?.let(MeshCopyV2::splitLink) ?: return
-            if (engine.copySync(peer, base + prefix) == MeshCopyV2.RUN_STARTED) {
+            if (engine.copySync(peer, base + prefix, filesToo()) == MeshCopyV2.RUN_STARTED) {
                 current = peer
                 synchronized(this) { record = record.copy(copied = record.copied + (peer to nowS())) }
             }
@@ -260,7 +276,8 @@ class MeshCopyStarter internal constructor(
 
     private object BridgeEngine : Engine {
         override fun startCopyFrom(peer: String, base: String, startAuth: String): Int = call { HavenBridge.startCopyFrom(peer, base, startAuth) }
-        override fun copySync(peer: String, base: String): Int = call { HavenBridge.copySync(peer, base) }
+        override fun copySync(peer: String, base: String, filesToo: Boolean): Int =
+            call { if (filesToo) HavenBridge.copySync(peer, base) else HavenBridge.copySyncNotesOnly(peer, base) }
         private fun call(f: () -> Int): Int =
             if (!HavenBridge.isLoaded) MeshCopyV2.RUN_RELAY_NOT_RUNNING else runCatching(f).getOrDefault(MeshCopyV2.RUN_RELAY_NOT_RUNNING)
     }
@@ -294,4 +311,11 @@ class MeshCopyStarter internal constructor(
             f.setExecutable(false, false)
         }
     }
+}
+
+/** Wi-Fi (or a wire) now, for Wi-Fi only. */
+private fun onWiFi(context: Context): Boolean {
+    val cm = context.getSystemService(ConnectivityManager::class.java) ?: return false
+    val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+    return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
 }

@@ -154,9 +154,9 @@ data class HavenConfig(
     // media over the mesh: its mesh npub, from their 10063. Null for none.
     val homeVaultNpub: String? = null,
 
-    // Your Devices › Keep a full copy on this phone (multi-Mac rules §3). Null until set: at upgrade a phone that
-    // already finished a mesh copy reads as on, a new one as off (YourDevicesRules.fullCopyAtUpgrade). Mobile vault
-    // mode keeps a full copy whatever this says. iOS HavenConfig.keepFullCopy.
+    // Your Devices › Keep a full copy on this phone (multi-Mac rules §3). Null = on, for new and existing phones
+    // (Logen's pick 1); only turning it off stores false (YourDevicesRules.keepsFullCopy). Mobile vault mode keeps a
+    // full copy whatever this says. iOS HavenConfig.keepFullCopy.
     val keepFullCopy: Boolean? = null,
     // Under it: catch-up moves files on Wi-Fi only. Null = on. iOS HavenConfig.fullCopyWifiOnly.
     val fullCopyWifiOnly: Boolean? = null,

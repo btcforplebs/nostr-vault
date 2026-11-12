@@ -339,9 +339,19 @@ enum RelayConfiguration {
         // while the host has SetMeshServingC(1).
         let meshPlainPort = String(config.meshPlainPort)
 
+        #if os(macOS)
+        let webDomainProof = MeshKeySigner.domainProofJSON(domain: config.webDomainForOwnDevices)
+        #else
+        let webDomainProof = ""
+        #endif
         var env: [String: String] = [
             "OWNER_NPUB": cleanNpub,
             "RELAY_URL": config.relayURL,
+            // The Mac's own public https host signed with its mesh key, for
+            // the owner's other devices over the mesh only (multi-Mac rules
+            // §3.3). Phones never serve the web; the engine drops anything
+            // that isn't this vault's own key naming a public name.
+            "WEB_DOMAIN_PROOF": webDomainProof,
             "RELAY_PORT": String(config.relayPort),
             "RELAY_BIND_ADDRESS": relayBindAddress,
             "DB_ENGINE": config.dbEngine,

@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Network
 #if os(iOS)
 import UIKit
 #endif
@@ -35,6 +36,10 @@ final class MeshCopyV2Service: ObservableObject {
 
     private static var now: Int { Int(Date().timeIntervalSince1970) }
 
+    /// Whether this device is on Wi-Fi (or a wire) now, for Wi-Fi only.
+    private let path = NWPathMonitor()
+    private var onWiFi = false
+
     /// A copy or catch-up is starting or running. A relay restart would cut
     /// it, so settings restarts wait for this to clear
     /// (`MeshCopyV2.settingsRestartWait`).
@@ -56,6 +61,11 @@ final class MeshCopyV2Service: ObservableObject {
     /// Resume and catch up when the relay comes up and when the app comes back.
     func startWatching() {
         guard watchers.isEmpty else { return }
+        path.pathUpdateHandler = { [weak self] p in
+            let wifi = p.status == .satisfied && (p.usesInterfaceType(.wifi) || p.usesInterfaceType(.wiredEthernet))
+            Task { @MainActor in self?.onWiFi = wifi }
+        }
+        path.start(queue: DispatchQueue(label: "com.haven.mesh-copy.path"))
         RelayProcessManager.shared.$isRunning
             .removeDuplicates()
             .sink { [weak self] running in
@@ -166,11 +176,39 @@ final class MeshCopyV2Service: ObservableObject {
             Self.log(.noMeshLink(seconds: 0), peer: peer)
             return
         }
-        let code = MeshCopyV2.StartResult(code: peer.withCString { p in base.withCString { b in CopySyncC(mutating(p), mutating(b)) } })
+        // A light phone (Full copy off), or a full one off Wi-Fi while Wi-Fi
+        // only is on, catches up on notes only (multi-Mac rules §3, rule 7).
+        let filesToo = catchUpMovesFiles
+        let code = MeshCopyV2.StartResult(code: peer.withCString { p in base.withCString { b in
+            filesToo ? CopySyncC(mutating(p), mutating(b)) : CopySyncNotesOnlyC(mutating(p), mutating(b))
+        } })
         if code == .started {
             current = peer
             record.copied[peer] = Self.now
         }
+    }
+
+    /// Whether this device's catch-up moves files as well as notes.
+    private var catchUpMovesFiles: Bool {
+        #if os(macOS)
+        return true
+        #else
+        let config = ConfigService.shared.config
+        let full = YourDevicesLogic.keepsFullCopy(isDesktop: false, mobileVault: FipsMeshService.shared.kioskActive,
+                                                  stored: config.keepFullCopy)
+        return YourDevicesLogic.catchUpMovesFiles(fullCopy: full, isDesktop: false,
+                                                  wifiOnly: config.fullCopyWifiOnly, onWiFi: onWiFi)
+        #endif
+    }
+
+    /// Own devices' web domains learned over the mesh (CopyPeerDomainsC), by
+    /// mesh npub, paired devices only. Never published (multi-Mac rules §3.3).
+    static func peerDomains() -> [String: String] {
+        guard let raw = CopyPeerDomainsC() else { return [:] }
+        defer { free(raw) }
+        guard let data = String(cString: raw).data(using: .utf8),
+              let map = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return map
     }
 
     /// Dials, signs (a fresh start only) and calls the engine, retrying

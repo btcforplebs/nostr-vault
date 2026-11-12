@@ -83,8 +83,8 @@ struct HavenConfig: Codable, Equatable {
     /// then a domain already set keeps being listed (`listsOwnDomain`).
     var publicOnWeb: Bool?
     /// Your Devices › Keep a full copy on this phone (multi-Mac rules §3).
-    /// nil until set: at upgrade a phone that already finished a mesh copy
-    /// reads as on, a new one as off (`YourDevicesLogic.fullCopyAtUpgrade`).
+    /// nil = on, for new and existing phones (Logen's pick 1); only an owner
+    /// who turns it off stores false (`YourDevicesLogic.keepsFullCopy`).
     /// Macs and boxes always keep a full copy and never read it.
     var keepFullCopy: Bool?
     /// Under the full-copy switch: catch-up moves files on Wi-Fi only. nil = on.

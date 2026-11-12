@@ -216,7 +216,20 @@ private fun ConnectButton(onClick: () -> Unit) {
 private fun ThisPhoneSection(viewModel: FipsMeshViewModel, status: FipsStatus) {
     val shareRelay by viewModel.shareRelay.collectAsState()
     val pausedUntil by viewModel.pausedUntil.collectAsState()
+    val fullCopy by viewModel.fullCopy.collectAsState()
+    val wifiOnly by viewModel.fullCopyWifiOnly.collectAsState()
     MeshSection(YourDevicesRules.THIS_PHONE_HEADER, footer = YourDevicesRules.POWER_NOTICE) {
+        val locked = YourDevicesRules.fullCopyLocked(mobileVault = shareRelay)
+        MeshSwitchRow(
+            YourDevicesRules.FULL_COPY,
+            if (locked) YourDevicesRules.FULL_COPY_LOCKED_LINE else YourDevicesRules.FULL_COPY_SUBTITLE,
+            fullCopy, enabled = !locked, onChange = viewModel::setFullCopy,
+        )
+        if (fullCopy) {
+            MeshDivider()
+            MeshSwitchRow(YourDevicesRules.WIFI_ONLY, YourDevicesRules.WIFI_ONLY_SUBTITLE, wifiOnly, onChange = viewModel::setFullCopyWifiOnly)
+        }
+        MeshDivider()
         MeshSwitchRow(YourDevicesRules.ALWAYS_ON_VAULT, YourDevicesRules.ALWAYS_ON_SUBTITLE, shareRelay, enabled = viewModel.isAvailable, onChange = viewModel::setShareRelay)
         if (shareRelay && status.running) {
             MeshDivider()

@@ -135,21 +135,24 @@ final class HomeVaultSender: ObservableObject {
         drainSoon()
     }
 
-    /// The linked phones that get `owner`'s new notes and media: only this
-    /// device's owner's (the phones were linked for it; Android sends the
-    /// owner's posts only too).
+    /// The other own devices that get `owner`'s new notes and media, each on
+    /// its own lane: every Mac and box the media vault lane doesn't already
+    /// send to, then linked phones (multi-Mac rules §3.1). Only this
+    /// device's owner's (they were linked for it; Android sends the owner's
+    /// posts only too).
     func phoneTargets(owner: String) -> [String] {
         guard let ownerHex = Bech32.decode(ConfigService.shared.config.ownerNpub)?.hexString.lowercased(),
               owner.lowercased() == ownerHex else { return [] }
-        return linkedPhones
+        return laneTargets
     }
 
-    /// My Devices' phones, whichever account is active.
-    private var linkedPhones: [String] {
+    /// My Devices' Macs and phones with a lane, whichever account is active.
+    private var laneTargets: [String] {
         let config = ConfigService.shared.config
-        return HomeVaultLogic.phoneTargets(devices: FipsMeshDevices.current(config),
-                                           ownNpub: FipsMeshService.shared.ownMeshNpub,
-                                           homeVault: homeVault?.meshNpub, mac: config.macRelayMeshNpub)
+        return HomeVaultLogic.laneTargets(devices: FipsMeshDevices.current(config),
+                                          ownNpub: FipsMeshService.shared.ownMeshNpub,
+                                          homeVault: homeVault?.meshNpub, mediaVault: mediaVault?.meshNpub,
+                                          mac: config.macRelayMeshNpub)
     }
 
     /// A blob just saved to this phone's own Blossom, signed for by `signer`.
@@ -237,10 +240,10 @@ final class HomeVaultSender: ObservableObject {
         // the oldest would lose something that never got out (Tron, #473).
         // Each lane has its own cap.
         guard HomeVaultLogic.hasRoom(for: item, in: queue, max: Self.maxQueue) else {
-            appLog("queue full (\(Self.maxQueue)) — \(item.kind.rawValue) \(item.id.prefix(8)) not queued\(item.target == nil ? "" : " for a linked phone")", level: "WARN")
+            appLog("queue full (\(Self.maxQueue)) — \(item.kind.rawValue) \(item.id.prefix(8)) not queued\(item.target == nil ? "" : " for a linked device")", level: "WARN")
             lastResult = item.target == nil
                 ? "The queue is full: new notes and media aren't going to your mobile vault. Tap Send now when it's in reach."
-                : "The queue for your other phone is full: open Nostr Vault on it so it can catch up."
+                : "The queue for one of your other devices is full: open Nostr Vault on it so it can catch up."
             return false
         }
         // Media before the notes that point at it, so a note never lands first.
@@ -294,13 +297,13 @@ final class HomeVaultSender: ObservableObject {
             if item.kind == .fileNote { remove(item); continue }
             gaveUp.append(item.kind == .mirror
                 ? "a photo a note links never reached your media servers"
-                : "a \(item.kind == .event ? "note" : "photo") never reached your \(item.target == nil ? "mobile vault" : "other phone")")
+                : "a \(item.kind == .event ? "note" : "photo") never reached your \(item.target == nil ? "mobile vault" : "other device")")
             remove(item)
         }
-        // A phone no longer linked gets nothing more: its lane goes.
-        let linked = Set(linkedPhones)
+        // A device no longer linked gets nothing more: its lane goes.
+        let linked = Set(laneTargets)
         for item in queue where item.target.map({ !linked.contains($0) }) ?? false {
-            appLog("dropped \(item.kind.rawValue) \(item.id.prefix(8)): that phone is no longer linked")
+            appLog("dropped \(item.kind.rawValue) \(item.id.prefix(8)): that device is no longer linked")
             remove(item)
         }
 
@@ -355,7 +358,7 @@ final class HomeVaultSender: ObservableObject {
                         bases[lane] = url
                     } else if item.target == nil || meshWhy == nil {
                         meshWhy = item.target == nil ? "the mesh did not reach your mobile vault"
-                            : "your other phone isn't in reach (it takes them while Nostr Vault is open on it)"
+                            : "one of your other devices isn't in reach (a phone takes them while Nostr Vault is open on it)"
                     }
                 }
                 guard let base = bases[lane] else {

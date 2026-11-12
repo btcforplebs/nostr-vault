@@ -10,19 +10,11 @@ import org.junit.Test
 /** Multi-Mac rules §3: the full-copy switch and the one web device. Twin of iOS MultiMacLogicTests. */
 class YourDevicesFullCopyRulesTest {
     @Test
-    fun `upgrade turns on only phones that already copied`() {
-        assertTrue(YourDevicesRules.fullCopyAtUpgrade(stored = null, copiedBefore = true))
-        assertFalse("new phones start light", YourDevicesRules.fullCopyAtUpgrade(stored = null, copiedBefore = false))
-        assertFalse("a choice made stays", YourDevicesRules.fullCopyAtUpgrade(stored = false, copiedBefore = true))
-        assertTrue(YourDevicesRules.fullCopyAtUpgrade(stored = true, copiedBefore = false))
-    }
-
-    @Test
     fun `mobile vault mode keeps a full copy and locks the switch`() {
         assertTrue(YourDevicesRules.keepsFullCopy(mobileVault = true, stored = false))
         assertTrue(YourDevicesRules.keepsFullCopy(mobileVault = false, stored = true))
         assertFalse(YourDevicesRules.keepsFullCopy(mobileVault = false, stored = false))
-        assertFalse(YourDevicesRules.keepsFullCopy(mobileVault = false, stored = null))
+        assertTrue("every phone, new or existing, starts on", YourDevicesRules.keepsFullCopy(mobileVault = false, stored = null))
         assertTrue(YourDevicesRules.fullCopyLocked(mobileVault = true))
         assertFalse(YourDevicesRules.fullCopyLocked(mobileVault = false))
     }

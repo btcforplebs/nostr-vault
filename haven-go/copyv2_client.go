@@ -79,6 +79,9 @@ type copyClient struct {
 	syncDB func(string) DBBackend
 	// freeBytes, swapped in tests.
 	free func(string) (uint64, bool)
+	// notesOnly: a light device's catch-up, with no file pass (multi-Mac
+	// rules §3: a phone without full copy fetches files when opened).
+	notesOnly bool
 }
 
 var copyPeersMu sync.Mutex
@@ -764,6 +767,8 @@ func (c *copyClient) run(ctx context.Context, startAuth string) (err error) {
 		c.line(copyLine{Stage: "relays", Source: "relays"})
 		c.relays()
 	}
+	// This Mac's domain to A and A's here, once the copy is in (pairing).
+	c.syncDevice(ctx)
 	done := copyLine{Stage: "done", Items: [2]int64{int64(stats.notes + stats.messages + stats.files), int64(stats.notes + stats.messages + stats.files)}}
 	if settings == "refused" || m.Settings == "refused" {
 		done.Error = "settings_refused"
@@ -845,10 +850,13 @@ func startCopyFrom(ctx context.Context, spawn func(string, func()), peer, base, 
 	})
 }
 
-// startCopySync is CopySyncC: one catch-up with peer through base.
-func startCopySync(ctx context.Context, spawn func(string, func()), peer, base string) int {
+// startCopySync is CopySyncC (and, notesOnly, CopySyncNotesOnlyC): one
+// catch-up with peer through base.
+func startCopySync(ctx context.Context, spawn func(string, func()), peer, base string, notesOnly bool) int {
 	return copyRuns.begin(ctx, spawn, "copyv2.sync", func(cctx context.Context) {
-		if _, err := newCopyClient(peer, base).sync(cctx); err != nil {
+		c := newCopyClient(peer, base)
+		c.notesOnly = notesOnly
+		if _, err := c.sync(cctx); err != nil {
 			slog.Warn("copy catch-up stopped", "error", copyErrorCode(err))
 		}
 	})

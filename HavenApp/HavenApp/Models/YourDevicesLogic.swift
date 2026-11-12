@@ -35,19 +35,12 @@ enum YourDevicesLogic {
 // MARK: - Full copy (multi-Mac rules §3)
 
 extension YourDevicesLogic {
-    /// What a phone's unset switch becomes at upgrade, written once: on for
-    /// a phone that already finished a mesh copy (`copiedBefore`, the copy
-    /// record names a peer), so nobody loses what they have today; off for
-    /// any other phone (Logen's pick 1: phones default light). Run once only:
-    /// a light phone's notes-only first copy must not flip it on later.
-    static func fullCopyAtUpgrade(stored: Bool?, copiedBefore: Bool) -> Bool {
-        stored ?? copiedBefore
-    }
-
     /// Whether this device keeps every own note and file. Macs and boxes
-    /// always do; a mobile vault always does; a phone when its switch is on.
+    /// always do; a mobile vault always does; a phone unless its owner
+    /// turned the switch off. Unset (new and existing phones) is on: Logen's
+    /// pick 1 (2026-11-12) — a file on any device shows up on all the others.
     static func keepsFullCopy(isDesktop: Bool, mobileVault: Bool, stored: Bool?) -> Bool {
-        isDesktop || mobileVault || stored == true
+        isDesktop || mobileVault || stored != false
     }
 
     /// The switch is shown but can't be turned off: a mobile vault keeps
