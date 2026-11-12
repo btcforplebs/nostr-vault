@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/barrydeen/haven/pkg/runsafe"
 	"github.com/nbd-wtf/go-nostr"
 )
 
@@ -30,6 +31,18 @@ var (
 )
 
 const (
+	// The outbox hands stored notes to a fixed pool: blastPoolWorkers blasts
+	// at a time (each one goes to every blastr relay, so that many sends per
+	// relay), and at most blastPoolQueue waiting. One goroutine per note let a
+	// burst of 38,808 notes on .99 park 185,349 sends in go-nostr's
+	// Relay.Write with a 2-3 GB heap (RESEARCH/NV_MAC_RELAY_PROFILE_2026_11_12.md).
+	blastPoolWorkers = 4
+	blastPoolQueue   = 512
+	// A queue longer than blastPendingMax (only the vault's accounts' notes go past it) is
+	// saved at most this often, not on every change: rewriting a file of
+	// thousands of notes per note is quadratic.
+	blastBatchedSaveEvery = time.Second
+
 	blastPendingMax    = 500
 	blastPendingMaxAge = 7 * 24 * time.Hour
 	blastBackoffFirst  = time.Minute
@@ -59,7 +72,20 @@ type blastQueue struct {
 	mu    sync.Mutex
 	path  string
 	items []pendingBlast
-	local eventQuerier // the outbox store: a queued list it holds a newer copy of is dropped
+	ids   map[string]struct{} // the queued ids, so a long queue checks a note in O(1)
+	local eventQuerier        // the outbox store: a queued list it holds a newer copy of is dropped
+
+	dirty     bool        // a change not yet on disk (long queues only, see persistLocked)
+	saveTimer *time.Timer // a batched save is scheduled
+	dropped   int         // notes not kept since the queue was last below blastPendingMax
+}
+
+// isVaultAccountNote: a note from the owner or any of the vault's other
+// accounts (the whitelist) is never dropped for space. The blast is how it
+// leaves this device, and a note the pool could not take has had no try yet.
+func isVaultAccountNote(ev *nostr.Event) bool {
+	_, ok := whitelist()[ev.PubKey]
+	return ok
 }
 
 func openBlastQueue(file string) *blastQueue {
@@ -67,7 +93,7 @@ func openBlastQueue(file string) *blastQueue {
 	if err != nil {
 		path = file
 	}
-	q := &blastQueue{path: path}
+	q := &blastQueue{path: path, ids: map[string]struct{}{}}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return q
@@ -76,10 +102,44 @@ func openBlastQueue(file string) *blastQueue {
 		slog.Warn("⚠️ unreadable blast queue, starting empty", "error", err)
 		q.items = nil
 	}
+	for _, p := range q.items {
+		q.ids[p.Event.ID] = struct{}{}
+	}
 	return q
 }
 
+// persistLocked saves the queue: at once while it is short (as it always
+// was), batched to once per blastBatchedSaveEvery while it is long.
+func (q *blastQueue) persistLocked() {
+	if q.dropped > 0 && len(q.items) < blastPendingMax {
+		slog.Warn("⚠️ blast queue has room again", "notes_not_kept", q.dropped)
+		q.dropped = 0
+	}
+	if len(q.items) <= blastPendingMax {
+		q.saveLocked()
+		return
+	}
+	q.dirty = true
+	if q.saveTimer == nil {
+		q.saveTimer = time.AfterFunc(blastBatchedSaveEvery, q.flush)
+	}
+}
+
+// flush writes any batched change now.
+func (q *blastQueue) flush() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.saveTimer != nil {
+		q.saveTimer.Stop()
+		q.saveTimer = nil
+	}
+	if q.dirty {
+		q.saveLocked()
+	}
+}
+
 func (q *blastQueue) saveLocked() {
+	q.dirty = false
 	data, err := json.Marshal(q.items)
 	if err != nil {
 		return
@@ -95,33 +155,66 @@ func (q *blastQueue) saveLocked() {
 	}
 }
 
+// add keeps ev after a blast no relay took (one failed try).
 func (q *blastQueue) add(ev *nostr.Event) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	for _, p := range q.items {
-		if p.Event.ID == ev.ID {
-			return
+	now := blastClock()
+	q.keep(ev, pendingBlast{Event: *ev, QueuedAt: now.Unix(), Attempts: 1, NextAt: now.Add(blastBackoff(1)).Unix()})
+}
+
+// keepUntried keeps ev for the next retry round without a try: the pool was
+// full, or the relay stopped before a worker reached it.
+func (q *blastQueue) keepUntried(ev *nostr.Event) {
+	now := blastClock()
+	q.keep(ev, pendingBlast{Event: *ev, QueuedAt: now.Unix(), NextAt: now.Unix()})
+}
+
+// idsLocked is the queued-id index, rebuilt if items was set without it.
+func (q *blastQueue) idsLocked() map[string]struct{} {
+	if q.ids == nil || len(q.ids) != len(q.items) {
+		q.ids = make(map[string]struct{}, len(q.items))
+		for _, p := range q.items {
+			q.ids[p.Event.ID] = struct{}{}
 		}
 	}
-	if len(q.items) >= blastPendingMax {
-		// Keep the ones already waiting: they have waited longest to get out.
-		slog.Warn("⚠️ blast queue full, not keeping note", "id", ev.ID)
+	return q.ids
+}
+
+func (q *blastQueue) keep(ev *nostr.Event, p pendingBlast) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if _, ok := q.idsLocked()[ev.ID]; ok {
 		return
 	}
-	now := blastClock()
-	q.items = append(q.items, pendingBlast{Event: *ev, QueuedAt: now.Unix(), Attempts: 1,
-		NextAt: now.Add(blastBackoff(1)).Unix()})
-	q.saveLocked()
-	slog.Info("📮 note kept for a later blast", "id", ev.ID, "pending", len(q.items))
+	if len(q.items) >= blastPendingMax && !isVaultAccountNote(ev) {
+		// Keep the ones already waiting: they have waited longest to get out.
+		// The vault's own accounts' notes are always kept (isVaultAccountNote);
+		// this is for a key that is no longer one of them. One line for the
+		// first, one count when there is room again.
+		if q.dropped == 0 {
+			slog.Warn("⚠️ blast queue full, not keeping other accounts' notes for now", "id", ev.ID)
+		}
+		q.dropped++
+		return
+	}
+	q.items = append(q.items, p)
+	q.ids[ev.ID] = struct{}{}
+	q.persistLocked()
+	if len(q.items) <= blastPendingMax {
+		slog.Info("📮 note kept for a later blast", "id", ev.ID, "pending", len(q.items))
+	}
 }
 
 func (q *blastQueue) remove(id string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	if _, ok := q.idsLocked()[id]; !ok {
+		return
+	}
 	for i, p := range q.items {
 		if p.Event.ID == id {
 			q.items = append(q.items[:i], q.items[i+1:]...)
-			q.saveLocked()
+			delete(q.ids, id)
+			q.persistLocked()
 			return
 		}
 	}
@@ -135,7 +228,7 @@ func (q *blastQueue) failed(id string) {
 		if q.items[i].Event.ID == id {
 			q.items[i].Attempts++
 			q.items[i].NextAt = blastClock().Add(blastBackoff(q.items[i].Attempts)).Unix()
-			q.saveLocked()
+			q.persistLocked()
 			return
 		}
 	}
@@ -161,12 +254,81 @@ func blastOrKeep(ctx context.Context, q *blastQueue, ev *nostr.Event) {
 	}
 }
 
+// newBlastSender is how the outbox hands a stored note to the blastr: a
+// fixed pool of blastPoolWorkers, with at most blastPoolQueue notes waiting.
+// It never blocks the caller (the relay is answering a client).
+//
+//   - Queue full: the note goes to the blast queue (blast_queue.json), due
+//     at the next retry round (at most a minute). Notes from the vault's
+//     accounts (owner and whitelist) are always kept there; a note from a
+//     key that is no longer one of them is kept up to blastPendingMax.
+//   - Relay stopping (ctx done): the notes still waiting go to the blast
+//     queue too, and are sent on the next start.
+//
+// done closes once every worker has stopped.
+func newBlastSender(ctx context.Context, q *blastQueue) (send func(*nostr.Event), done <-chan struct{}) {
+	work := make(chan *nostr.Event, blastPoolQueue)
+	var wg sync.WaitGroup
+	stopped := make(chan struct{})
+	for range blastPoolWorkers {
+		wg.Add(1)
+		runsafe.Go("blast-worker", func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					keepWaitingBlasts(work, q)
+					return
+				case ev := <-work:
+					if ctx.Err() != nil {
+						q.keepUntried(ev)
+						continue
+					}
+					blastOrKeep(ctx, q, ev)
+				}
+			}
+		})
+	}
+	go func() { wg.Wait(); close(stopped) }()
+	return func(ev *nostr.Event) {
+		if ctx.Err() != nil {
+			q.keepUntried(ev)
+			q.flush()
+			return
+		}
+		select {
+		case work <- ev:
+			// Stopped meanwhile: the workers may have drained and gone.
+			if ctx.Err() != nil {
+				keepWaitingBlasts(work, q)
+			}
+		default:
+			q.keepUntried(ev)
+		}
+	}, stopped
+}
+
+// keepWaitingBlasts moves the notes still in the pool's queue to the blast
+// queue and writes it.
+func keepWaitingBlasts(work chan *nostr.Event, q *blastQueue) {
+	for {
+		select {
+		case ev := <-work:
+			q.keepUntried(ev)
+		default:
+			q.flush()
+			return
+		}
+	}
+}
+
 // retryPendingBlasts runs for the relay's lifetime, re-blasting queued notes.
 func retryPendingBlasts(ctx context.Context, q *blastQueue) {
 	wait := blastRetryFirstWait
 	for {
 		select {
 		case <-ctx.Done():
+			q.flush()
 			return
 		case <-time.After(wait):
 		}

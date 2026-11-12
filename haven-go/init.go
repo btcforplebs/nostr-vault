@@ -526,21 +526,15 @@ func initRelays(ctx context.Context) error {
 	// Only what the store now holds, and nothing a stranger sent over the
 	// mesh door (mesh_safety.go). The relay's context, not the connection's:
 	// a sender that hangs up right after OK must not cut the blast.
-	blastStored := newBlastStored(outboxHolds, func(event *nostr.Event) {
-		runsafe.Go("blast", func() { blastOrKeep(relayCtx, blastQ, event) })
-	})
 	meshBlobs.reset()
-	outboxRelay.StoreEvent = append(outboxRelay.StoreEvent, outboxDB.SaveEvent, noteStoredForMeshBlobs, blastStored)
+	sendBlast, _ := newBlastSender(relayCtx, blastQ)
+	wireOutboxWrites(outboxRelay, outboxDB, sendBlast)
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(outboxRelay, outboxDB)
 	// Brought-over accounts are stored, never served to strangers (brought_reads.go).
 	hideBroughtOnOutbox(outboxRelay)
 	outboxRelay.DeleteEvent = append(outboxRelay.DeleteEvent, outboxDB.DeleteEvent)
 	outboxRelay.OverwriteDeletionOutcome = append(outboxRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
-	// khatru hands replaceable kinds (0, 3, 10002, 10063, 30023…) to ReplaceEvent,
-	// never StoreEvent, so they are blasted here too: a phone's 10063 sent only
-	// to this relay otherwise never reaches the public relays.
-	outboxRelay.ReplaceEvent = append(outboxRelay.ReplaceEvent, outboxDB.ReplaceEvent, noteStoredForMeshBlobs, blastStored)
 
 	mux = outboxRelay.Router()
 
