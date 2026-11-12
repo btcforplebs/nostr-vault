@@ -39,6 +39,25 @@ const SLOT_POLL_MS = 50
 export const HIDDEN_PING_MS = 5 * 60_000
 // A reconnect the pool makes itself gives up on the handshake after this and tries again, like the callers' opens.
 const RETRY_CONNECT_TIMEOUT_MS = 5000
+// A one-shot ask (querySync, subscribeEose) waits at most this long for a relay that hasn't connected yet, then
+// goes on without it; the connect itself carries on to its own timeout, so the relay is there for the next ask if it
+// does open. querySync answers only when every relay has answered or timed out, so one relay that accepts TCP and
+// never finishes the handshake held every quote to the 5 s connect timeout: nostr-pub.wellorder.net, 4,064-5,009 ms
+// with it and 722-792 ms without (Tron, RESEARCH/NV_WEB_SLOW_LOAD_2026_11_12.md). Live subscriptions still wait
+// the full connect: a slow relay they skipped would be missing from the feed until every relay had dropped.
+// The cap skips a relay only once another relay of the same ask is open: an ask whose relays are all still connecting
+// (a cold load on a slow link) waits for the first of them, so it never ends with every relay skipped and nothing read.
+// A DM destination lookup that came back empty sent to the fallback (the sender's own relays) for 10 min (Tron).
+export const QUICK_CONNECT_MS = 1500
+// A relay whose connect failed or timed out is skipped by fresh opens for a cool-down, doubling per failure in a row
+// up to the last step, and asked again after it (or at once when the browser comes back online). It was re-tried
+// on every query: 13-17 failed sockets to wellorder in 30-45 s. Writes don't wait on it: a publish dials the relay
+// anyway (a relay back up takes the user's note at once, and its connect ends the cool-down).
+export const COOL_DOWN_MS = [60e3, 120e3, 300e3, 600e3]
+
+/** One ask spread over several one-shot reads (a sync that asks each relay on its own): pass it as `ask` to each
+ *  querySync, so a slow relay is skipped once any relay of the whole sync is open, not only one of its own read. */
+export const oneAsk = () => ({ open: 0, onOpen: new Set() })
 
 export class LivePool extends SimplePool {
   signerRelays = new Set()
@@ -55,6 +74,10 @@ export class LivePool extends SimplePool {
   retryTimers = new Map() // url -> timeout
   retryCounts = new Map() // url -> attempts, for the backoff
   rawConnect = new WeakMap() // relay -> its own connect, before watch() wrapped it
+  coolDowns = new Map() // url -> { until, n }: fresh opens skip it until then (connect failed or timed out n times in a row)
+  quickConnectMs = QUICK_CONNECT_MS
+  quickOpen = null // the open one-shot ask ({ open, onOpen }) while subscribeMap opens its relays, read synchronously by ensureRelay
+  writeOpen = false // set while publish opens its relays, read synchronously by ensureRelay
   isHidden = () => globalThis.document?.visibilityState === "hidden"
   isOffline = () => globalThis.navigator?.onLine === false
   pageProtocol = () => globalThis.location?.protocol ?? ""
@@ -69,7 +92,7 @@ export class LivePool extends SimplePool {
     // Back from sleep, or wifi again after a dead patch: try the relays that were waiting out a backoff at once
     // instead of up to a minute later. `online` is the only signal a browser gives; while offline nothing is tried
     // at all (attemptReconnect leaves it to this event), so a flapping link spends no budget on connects that can't open.
-    this.onOnline = () => { this.retryAllNow() }
+    this.onOnline = () => { this.coolDowns.clear(); this.retryAllNow() }
     globalThis.addEventListener?.("online", this.onOnline)
   }
 
@@ -78,6 +101,7 @@ export class LivePool extends SimplePool {
     for (const t of this.retryTimers.values()) clearTimeout(t)
     this.retryTimers.clear()
     this.retryCounts.clear()
+    this.coolDowns.clear()
     // nostr-tools holds its own 10-60 s reconnect timer per dropped relay (abstract-relay.js:187): a destroyed pool
     // must not leave those to open sockets after it is gone.
     for (const r of this.relays.values()) {
@@ -113,12 +137,62 @@ export class LivePool extends SimplePool {
     if (!signer && !this.budget.takeMany(url, n)) return `relay skipped, ${where} budget used: ${url}`
     return null
   }
+  /**
+   * querySync, plus `params.first(ev)`: when it is true for an event the read ends there with what has come in so far,
+   * instead of waiting for every relay (a quote by id needs one verified copy). Without it, as nostr-tools'.
+   */
+  querySync(relays, filter, params) {
+    const first = params?.first
+    if (!first) return super.querySync(relays, filter, params)
+    return new Promise(resolve => {
+      const events = []
+      let done = false, sub = null, found = false
+      const finish = () => { if (done) return; done = true; resolve(events); if (found) sub?.close("found") }
+      sub = this.subscribeEose(relays, filter, {
+        ...params,
+        first: undefined,
+        onevent(ev) { if (done) return; events.push(ev); if (first(ev)) { found = true; finish() } },
+        onclose: finish,
+      })
+    })
+  }
+  /** querySync and the other one-shot asks come through here; their opens wait at most quickConnectMs, unless the
+   *  caller passes quickConnect: false (a lookup that picks where something goes must hear every relay). */
+  subscribeEose(relays, filter, params) {
+    return super.subscribeEose(relays, filter, { ...params, quickConnect: params?.quickConnect ?? true })
+  }
+  subscribeMap(requests, params) {
+    // nostr-tools calls ensureRelay for every relay synchronously inside subscribeMap (each async opener runs up to
+    // its first await, which is that call), so the flag is seen by exactly this ask's opens.
+    const was = this.quickOpen
+    this.quickOpen = params?.quickConnect ? (params.ask ?? oneAsk()) : null
+    try { return super.subscribeMap(requests, params) } finally { this.quickOpen = was }
+  }
+  publish(relays, event, params) {
+    // nostr-tools calls ensureRelay synchronously for each relay here too (only allowConnectingToRelay before it).
+    const was = this.writeOpen
+    this.writeOpen = true
+    try { return super.publish(relays, event, params) } finally { this.writeOpen = was }
+  }
+  /** Still cooling down after a failed connect? A signer's relay never is. */
+  coolingDown(key) {
+    const c = this.coolDowns.get(key)
+    return !!c && Date.now() < c.until && !this.signerRelays.has(key)
+  }
+  coolDown(key) {
+    const n = (this.coolDowns.get(key)?.n ?? 0) + 1
+    this.coolDowns.set(key, { n, until: Date.now() + COOL_DOWN_MS[Math.min(n - 1, COOL_DOWN_MS.length - 1)] })
+  }
   async ensureRelay(url, params) {
+    const ask = this.quickOpen, write = this.writeOpen // before any await: see subscribeMap and publish
     const key = normalizeURL(url)
     const held = this.relays.get(key)
+    // Counted at once, so the ask's other relays (opened in this same tick) know one is already there.
+    if (ask && held?.connected) ask.open++
     // A relay nostr-tools is reconnecting by itself is gated in watch(), which charges what that reconnect re-fires.
     // Taking a unit here too would spend two on one open.
     if (!(held && held.reconnectAttempts > 0)) {
+      if (!held?.connected && !write && this.coolingDown(key)) throw new Error(`relay skipped, its last connect failed: ${url}`)
       const no = this.refuse(url, 1)
       if (no) throw new Error(no)
     }
@@ -132,11 +206,30 @@ export class LivePool extends SimplePool {
       }
       await new Promise(r => setTimeout(r, SLOT_POLL_MS))
     }
+    const wasOpen = !!this.relays.get(key)?.connected
     const opening = super.ensureRelay(url, params), fresh = this.relays.get(key)
     if (fresh) { this.watch(fresh); this.lastUsed.set(fresh, Date.now()) }
+    // A connect that fails or times out (not one the gates refused) starts the relay's cool-down; one that opens ends it.
+    opening.then(() => this.coolDowns.delete(key), err => { if (!err?.refused && !params?.abort?.aborted) this.coolDown(key) })
     let relay
     try {
-      relay = await opening
+      if (ask && !wasOpen) {
+        // Skipped after quickConnectMs only if another relay of this ask is open by then, else as soon as one opens.
+        let timer, waiting = null
+        const slow = new Promise((_, reject) => {
+          const skip = () => reject(new Error(`relay slow to connect, skipped for this ask: ${url}`))
+          timer = setTimeout(() => {
+            if (ask.open > 0) return skip()
+            waiting = () => { if (ask.open > 0) skip() }
+            ask.onOpen.add(waiting)
+          }, this.quickConnectMs)
+        })
+        try {
+          relay = await Promise.race([opening, slow])
+          ask.open++
+          for (const cb of [...ask.onOpen]) cb()
+        } finally { clearTimeout(timer); if (waiting) ask.onOpen.delete(waiting) }
+      } else relay = await opening
     } catch (err) {
       // super.ensureRelay drops a relay whose connect threw. A refusal from watch() must not: the feed, DM and
       // notification subscriptions are still open on that relay and would be orphaned, so keep it for the retry.
@@ -274,8 +367,9 @@ export class LivePool extends SimplePool {
 
 export const pool = new LivePool({ enablePing: true, enableReconnect: true })
 
-// The five the apps read from (iPhone/Mac and Android, Logen 2026-10-31), and a new account's starter list.
-export const DEFAULT_RELAYS = ["wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.btcforplebs.com", "wss://nostr-pub.wellorder.net"]
+// The apps' read set (iPhone/Mac and Android, Logen 2026-10-31), and a new account's starter list. Without
+// nostr-pub.wellorder.net since 2026-11-12: it hangs the handshake 10-12 s or answers 503 (Tron's slow-load review).
+export const DEFAULT_RELAYS = ["wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.btcforplebs.com"]
 // relay.nostr.band stopped answering (no EOSE, every query held to its timeout) on 2026-10-13.
 export const PROFILE_RELAYS = ["wss://purplepag.es"]
 

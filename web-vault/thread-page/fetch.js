@@ -5,8 +5,9 @@ import { verifiedCopy } from "../src/net/thread.js"
 import { mentionedPubkeys, profileOf } from "./page.js"
 
 /** Where to look, after the link's own relay hints. */
-// The five the apps and the web app read from (src/net/pool.js DEFAULT_RELAYS).
-export const READ_RELAYS = ["wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.btcforplebs.com", "wss://nostr-pub.wellorder.net"]
+// The web app's read set (src/net/pool.js DEFAULT_RELAYS): the apps' five without nostr-pub.wellorder.net, which
+// hangs the handshake 10-12 s (2026-11-12).
+export const READ_RELAYS = ["wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.btcforplebs.com"]
 export const PROFILE_RELAYS = ["wss://purplepag.es", "wss://relay.primal.net", "wss://relay.damus.io"]
 const MAX_HINTS = 3
 const REPLY_LIMIT = 300

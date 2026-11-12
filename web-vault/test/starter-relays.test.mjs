@@ -61,11 +61,11 @@ function mount() {
 test("the step names the servers, and Continue keeps exactly what it shows", async () => {
   const { el, state } = mount()
   assert.match(el.textContent, /Your posts will be shared through these servers/)
-  for (const host of ["relay.primal.net", "relay.damus.io", "relay.snort.social", "relay.btcforplebs.com", "nostr-pub.wellorder.net"]) assert.ok(el.textContent.includes(host), host)
+  for (const host of ["relay.primal.net", "relay.damus.io", "relay.snort.social", "relay.btcforplebs.com"]) assert.ok(el.textContent.includes(host), host)
   assert.ok(button(el, "Change"), "a small Change link")
   assert.equal(button(el, "Remove"), undefined, "no editing until Change")
   const cont = button(el, "Continue")
-  assert.ok(!("disabled" in cont.attributes) && cont.disabled !== true, "five servers: Continue is on")
+  assert.ok(!("disabled" in cont.attributes) && cont.disabled !== true, "four servers: Continue is on")
   fire(button(el, "Continue"), "click")
   assert.deepEqual(state.continued, NEW_ACCOUNT_RELAYS)
   render(null, el)

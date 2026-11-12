@@ -7,9 +7,9 @@ import { join } from "node:path"
 import { DEFAULT_RELAYS } from "../src/net/pool.js"
 import { NEW_ACCOUNT_RELAYS, newAccountTemplates, publishNewAccount, starterList } from "../src/net/new-account.js"
 
-const FIVE = ["wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.btcforplebs.com", "wss://nostr-pub.wellorder.net"]
+const FIVE = ["wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.btcforplebs.com"]
 
-test("the web reads from the apps' five, and a new account starts with them", () => {
+test("the web reads from the apps' five less wellorder (dead 2026-11-12), and a new account starts with them", () => {
   assert.deepEqual(DEFAULT_RELAYS, FIVE)
   assert.deepEqual(NEW_ACCOUNT_RELAYS, FIVE)
 })

@@ -438,9 +438,10 @@ test("DM relay lookups are kept per person, and a failed lookup isn't", async ()
   const { cachedDmRelays, forgetDmRelays } = await import("../src/net/dms.js")
   forgetDmRelays()
   let asked = 0
-  const query = async () => { asked++; return [] }
+  const list = { kind: 10002, pubkey: pk(B), created_at: 1, tags: [["r", "wss://b-read.example"]] }
+  const query = async () => { asked++; return [list] }
   let t = 0; const clock = () => t
-  assert.deepEqual(await cachedDmRelays(pk(B), ["wss://x.example"], { query, fallback: ["wss://f.example"] }, clock), ["wss://f.example"])
+  assert.deepEqual(await cachedDmRelays(pk(B), ["wss://x.example"], { query, fallback: ["wss://f.example"] }, clock), ["wss://b-read.example"])
   await cachedDmRelays(pk(B), ["wss://x.example"], { query, fallback: ["wss://f.example"] }, clock)
   assert.equal(asked, 1)
   t = 11 * 60_000
@@ -449,7 +450,12 @@ test("DM relay lookups are kept per person, and a failed lookup isn't", async ()
   const bad = async () => { throw new Error("down") }
   await assert.rejects(cachedDmRelays(pk(C), ["wss://x.example"], { query: bad }, clock))
   await new Promise(r => setTimeout(r, 0))
-  assert.deepEqual(await cachedDmRelays(pk(C), ["wss://x.example"], { query, fallback: [] }, clock), [], "asked again after a failure")
+  const none = async () => { asked++; return [] }
+  assert.deepEqual(await cachedDmRelays(pk(C), ["wss://x.example"], { query: none, fallback: ["wss://f.example"] }, clock), ["wss://f.example"], "asked again after a failure")
+  await new Promise(r => setTimeout(r, 0))
+  const before = asked
+  await cachedDmRelays(pk(C), ["wss://x.example"], { query: none, fallback: ["wss://f.example"] }, clock)
+  assert.equal(asked, before + 1, "a fallback from no answer isn't kept")
   forgetDmRelays()
 })
 

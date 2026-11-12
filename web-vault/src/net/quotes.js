@@ -83,7 +83,10 @@ async function lookup(q, { vault, relays, save, query }) {
   if (!urls.length) return null
   // Only what was asked for: a relay may answer with extra or unrelated events, and a validly signed article from
   // another key with the same d tag must not stand in for this one.
-  const found = newest((await query(urls, filter, { maxWait: 6000 })).map(verifiedCopy).filter(ev => ev && matches(q, ev)))
+  // A note id names one event, so the read ends at the first verified copy instead of waiting for the slowest relay
+  // (LivePool.querySync `first`). An naddr may come back in several versions and the newest wins, so that read waits.
+  const first = q.type === "note" ? ev => matches(q, ev) && !!verifiedCopy(ev) : undefined
+  const found = newest((await query(urls, filter, { maxWait: 6000, first })).map(verifiedCopy).filter(ev => ev && matches(q, ev)))
   if (!found) return null
   if (vault && save) await vault.feed.event(found).catch(() => {})
   return found
