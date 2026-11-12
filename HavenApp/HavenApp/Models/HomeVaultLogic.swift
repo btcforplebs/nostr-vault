@@ -13,8 +13,10 @@ struct HomeVault: Codable, Equatable {
 
 struct HomeVaultItem: Codable, Equatable, Identifiable {
     /// event and blob go to the home vault over the mesh; mirror is the
-    /// public upload of a blob the note already links to (kiosk-only blob).
-    enum Kind: String, Codable { case event, blob, mirror }
+    /// public upload of a blob the note already links to (kiosk-only blob);
+    /// fileNote is a kind 1063 or 5 for the vault's /files, signed with the
+    /// mesh key when sent (HomeVaultFileNoteLane.swift).
+    enum Kind: String, Codable { case event, blob, mirror, fileNote }
     var kind: Kind
     /// Event id, or the blob's sha256.
     var id: String
@@ -35,6 +37,8 @@ struct HomeVaultItem: Codable, Equatable, Identifiable {
     /// phone's mesh npub for that phone (Logen 2026-11-05). Optional: older
     /// queues lack it and stay the home vault's.
     var target: String? = nil
+    /// What a fileNote item says (fileNote only). Optional: older queues lack it.
+    var fileNote: FileNoteDraft? = nil
 }
 
 enum HomeVaultSendResult: Equatable {
@@ -62,7 +66,8 @@ enum HomeVaultLogic {
     static func droppingDeleted(_ queue: [HomeVaultItem], eventIDs: Set<String>, author: String?, blob: String?) -> [HomeVaultItem] {
         queue.filter { item in
             if item.kind == .event, let author, item.ownerHex == author, eventIDs.contains(item.id) { return false }
-            if let blob, item.kind != .event, item.id == blob { return false }
+            // A file note stays: the kind 5 for a deleted blob must still go.
+            if let blob, item.kind == .blob || item.kind == .mirror, item.id == blob { return false }
             return true
         }
     }
