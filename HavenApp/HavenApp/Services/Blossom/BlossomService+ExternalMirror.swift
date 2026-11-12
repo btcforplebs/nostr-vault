@@ -7,6 +7,12 @@ extension BlossomService {
     /// - Parameter progress: Callback with (completed, total) counts
     /// - Returns: Number of newly mirrored blobs
     func mirrorAllFromExternal(progress: ((Int, Int) -> Void)? = nil, logMessage: ((String, String) -> Void)? = nil) async -> Int {
+        var limit = AutoMirrorRunLimit.unlimited
+        return await mirrorAllFromExternal(limit: &limit, progress: progress, logMessage: logMessage)
+    }
+
+    /// The same, downloading at most what `limit` has left (one run's cap).
+    func mirrorAllFromExternal(limit: inout AutoMirrorRunLimit, progress: ((Int, Int) -> Void)? = nil, logMessage: ((String, String) -> Void)? = nil) async -> Int {
         let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
         let relayDataDir = await MainActor.run { configService.relayDataDir }
         let blossomPath = await MainActor.run { configService.config.blossomPath }
@@ -105,7 +111,11 @@ extension BlossomService {
 
         logger.info("Found \(missingHashes.count) blobs to mirror from external servers")
         logMessage?("\(missingHashes.count) blob(s) missing locally — downloading from mirrors...", "INFO")
-        let sortedHashes = Array(missingHashes).sorted()
+        let heldBefore = limit.held
+        let sortedHashes = limit.take(Array(missingHashes).sorted())
+        if limit.held > heldBefore {
+            logMessage?("\(limit.held - heldBefore) blob(s) left for the next run (at most \(AutoMirrorRunLimit.maxDownloads) per run)", "INFO")
+        }
         let uploadedDates = CopiedInDate.uploadedByHash(descriptorDates)
         var mirrored = 0
         var completedCount = 0
@@ -140,6 +150,12 @@ extension BlossomService {
     /// - Parameter progress: Callback with (completed, total) counts
     /// - Returns: Number of newly mirrored blobs
     func mirrorFromNoteMedia(_ noteMedia: [MediaItem], progress: ((Int, Int) -> Void)? = nil, logMessage: ((String, String) -> Void)? = nil) async -> Int {
+        var limit = AutoMirrorRunLimit.unlimited
+        return await mirrorFromNoteMedia(noteMedia, limit: &limit, progress: progress, logMessage: logMessage)
+    }
+
+    /// The same, downloading at most what `limit` has left (one run's cap).
+    func mirrorFromNoteMedia(_ noteMedia: [MediaItem], limit: inout AutoMirrorRunLimit, progress: ((Int, Int) -> Void)? = nil, logMessage: ((String, String) -> Void)? = nil) async -> Int {
         let relayDataDir = await MainActor.run { configService.relayDataDir }
         let ownerPubkey = await MainActor.run { nostrService.ownerHexPubkey }
         let whitelistedPubkeys = await MainActor.run { configService.whitelistedHexPubkeys }
@@ -151,6 +167,8 @@ extension BlossomService {
 
         // Find remote media URLs from owner or whitelisted accounts that aren't stored locally
         var candidates: [URL] = []
+        // A note's imeta `x` names the file before any download (rule 1).
+        var knownHashes: [String: String] = [:]
         // The note's created_at goes on the copied file (newest note wins, as in the grid).
         let noteDates = CopiedInDate.newestByKey(noteMedia, key: { $0.url.absoluteString }, date: { $0.dateAdded })
         for item in noteMedia {
@@ -162,12 +180,24 @@ extension BlossomService {
             if host.isEmpty { continue }
             if host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" { continue }
             candidates.append(item.url)
+            if let tags = item.tags {
+                knownHashes.merge(AutoMirrorLedger.imetaHashes(tags)) { first, _ in first }
+            }
         }
-        let urlsToMirror = ledger.toDownload(candidates, localHashes: localHashes)
-
-        guard !urlsToMirror.isEmpty else {
+        let wanted = ledger.toDownload(candidates, localHashes: localHashes, knownHashes: knownHashes)
+        guard !wanted.isEmpty else {
             logger.info("No missing media found in note events")
             logMessage?("All note media already exists locally", "INFO")
+            return 0
+        }
+        let heldBefore = limit.held
+        let urlsToMirror = limit.take(wanted)
+        if limit.held > heldBefore {
+            logMessage?("\(limit.held - heldBefore) media item(s) left for the next run (at most \(AutoMirrorRunLimit.maxDownloads) per run)", "INFO")
+        }
+
+        guard !urlsToMirror.isEmpty else {
+            logMessage?("This run's \(AutoMirrorRunLimit.maxDownloads) downloads are used up; the rest come next run", "INFO")
             return 0
         }
 

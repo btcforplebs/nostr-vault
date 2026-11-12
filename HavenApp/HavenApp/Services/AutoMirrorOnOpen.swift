@@ -45,7 +45,8 @@ enum AutoMirrorOnOpen {
         let relay = RelayProcessManager.shared
         guard relay.isRunning, !relay.isBooting else { return }
         guard AutoMirrorSchedule.isDue(enabled: config.config.autoMirrorMedia,
-                                       lastRun: VaultHistory.lastMediaImport,
+                                       lastRun: AutoMirrorSchedule.lastRun(started: VaultHistory.lastMediaImportStart,
+                                                                           finished: VaultHistory.lastMediaImport),
                                        now: Date()) else { return }
         MirrorService.shared.runMirror(configService: config, nostrService: .shared)
     }

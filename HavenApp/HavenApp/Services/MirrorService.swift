@@ -51,6 +51,7 @@ class MirrorService: ObservableObject {
         statusText = "Starting..."
         logEntries = []
         log("Starting Blossom mirror operation...")
+        VaultHistory.lastMediaImportStart = Date()
 
         Task {
             // Request background execution time on iOS so the mirror completes
@@ -72,6 +73,8 @@ class MirrorService: ObservableObject {
 
             let service = BlossomService(configService: configService, nostrService: nostrService)
             var totalCount = 0
+            // Both halves share one cap; the rest comes next run (AutoMirrorRunLimit).
+            var limit = AutoMirrorRunLimit()
 
             // 1. Mirror from configured Blossom mirrors (BUD-04 /list endpoint)
             let mirrors = configService.config.activeBlossomMirrors
@@ -79,7 +82,7 @@ class MirrorService: ObservableObject {
                 log("Found \(mirrors.count) configured mirror(s): \(mirrors.joined(separator: ", "))")
                 statusText = "Fetching blob list from mirrors..."
                 log("Fetching blob list from mirrors...")
-                let count = await service.mirrorAllFromExternal { completed, total in
+                let count = await service.mirrorAllFromExternal(limit: &limit) { completed, total in
                     Task { @MainActor in
                         self.progress = (completed, total)
                         self.statusText = "Mirroring from servers: \(completed)/\(total)"
@@ -115,7 +118,7 @@ class MirrorService: ObservableObject {
 
             statusText = "Mirroring media from notes (\(noteMedia.count) found)..."
             log("Starting note media mirror (\(noteMedia.count) URLs to check)...")
-            let noteCount = await service.mirrorFromNoteMedia(noteMedia) { completed, total in
+            let noteCount = await service.mirrorFromNoteMedia(noteMedia, limit: &limit) { completed, total in
                 Task { @MainActor in
                     self.progress = (completed, total)
                     self.statusText = "Mirroring from notes: \(completed)/\(total)"
@@ -134,8 +137,15 @@ class MirrorService: ObservableObject {
             statusText = ""
             lastMirrorDate = Date()
             VaultHistory.lastMediaImport = lastMirrorDate
-            lastResult = totalCount > 0 ? "Mirrored \(totalCount) files" : "All media already mirrored"
-            log(totalCount > 0 ? "Done — mirrored \(totalCount) file(s) to local storage" : "Done — all media already mirrored")
+            // Held back by the per-run cap. A file can be held in both halves,
+            // so this is "up to".
+            let more = limit.held > 0 ? "up to \(limit.held) more next run" : ""
+            if totalCount > 0 {
+                lastResult = "Mirrored \(totalCount) files" + (more.isEmpty ? "" : "; \(more)")
+            } else {
+                lastResult = more.isEmpty ? "All media already mirrored" : "Nothing new yet; \(more)"
+            }
+            log("Done — \(lastResult)")
 
             // Keep state as .complete so the user can review logs and dismiss manually
         }
