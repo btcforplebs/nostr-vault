@@ -63,6 +63,24 @@ object MeshKeyAuth {
         }
     }
 
+    /** The `t` of a publish token: the vault sends the note this connection hands it (haven-go mesh_publish.go). */
+    const val PUBLISH_VERB = "publish"
+
+    /**
+     * A kind 24242 for a publish connection to one vault ([receiver], its mesh npub): one `t` = publish, its `p`, and
+     * an expiration no more than five minutes ahead. No `x`: it covers notes, not blobs. Null without a receiver.
+     */
+    fun publishTags(
+        receiver: String,
+        nowS: Long = System.currentTimeMillis() / 1000,
+        lifetimeS: Long = BLOSSOM_LIFETIME_S,
+    ): List<List<String>>? {
+        val p = receiver.trim()
+        if (p.isEmpty()) return null
+        val ahead = lifetimeS.coerceIn(1, BLOSSOM_LIFETIME_S)
+        return listOf(listOf("t", PUBLISH_VERB), listOf("p", p), listOf("expiration", (nowS + ahead).toString()))
+    }
+
     /** One device for the paired set: its mesh npub and role (the engine keeps the role). */
     data class Device(val npub: String, val role: DeviceRole)
 

@@ -79,16 +79,41 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
      * With [onBroadcastOutcome], the Blastr broadcast waits for relay `OK`s and
      * reports once: accepted when one relay takes it, refused when none does
      * after the retries (see [broadcastConfirmed]). Called on the main thread.
+     * With a vault on the mesh ([VaultPublishHandoff]) the vault may send it
+     * instead ([postThroughVault]).
      */
     internal fun NostrService.postEventImpl(event: NostrEvent, onBroadcastOutcome: ((BroadcastTally.Outcome) -> Unit)? = null) {
         val eventJson = serializeEvent(event)
         stampOwnRelayListPost(event)
+
+        val config = configStore.config.value
+        VaultPublishHandoff.target(config)?.let { vault ->
+            // Only a regular note whose author's own relays are known now: anything else goes as before, no hold.
+            VaultPublishHandoff.authorPlan(event.kind, _outboxRelays.value[event.pubkey], config.activeBlastrRelays)?.let { plan ->
+                postThroughVault(event, eventJson, vault, plan, onBroadcastOutcome)
+                return
+            }
+        }
 
         // 0. The owner's home vault on the mesh, which passes it on to the
         //    regular relays too. Queued while it is out of reach.
         homeVault.offerEvent(event.id, event.pubkey, eventJson)
 
         // 1. Post to local relay
+        postToLocalRelay(eventJson)
+
+        // 2. Smart broadcast based on event kind and target.
+        scope.launch(Dispatchers.IO) {
+            sendToRecipients(event)
+            blastToAuthorRelays(event, onBroadcastOutcome)
+        }
+    }
+
+    /**
+     * Writes [eventJson] to this phone's relay on its normal socket: the relay
+     * stores it and blasts it to its broadcast list (and retries).
+     */
+    internal fun NostrService.postToLocalRelay(eventJson: String) {
         scope.launch(Dispatchers.IO) {
             val localUrl = configStore.config.value.nostrURL
             if (localUrl != null) {
@@ -102,49 +127,55 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                 }
             }
         }
+    }
 
-        // 2. Smart broadcast based on event kind and target. The author's own
-        // write relays (kind 10002) decide "Posted"; see PublishTargets.
-        val toBlastr: suspend () -> Unit = {
-            val plan = PublishTargets.plan(authorWriteRelays(event), configStore.config.value.activeBlastrRelays)
-            if (onBroadcastOutcome == null) {
-                plan.all.forEach { fireAndForgetPublish(event, it) }
-            } else {
-                plan.alsoSend.forEach { fireAndForgetPublish(event, it) }
-                scope.launch {
-                    val outcome = broadcastConfirmed(event, plan.confirmed)
-                    withContext(Dispatchers.Main) { onBroadcastOutcome(outcome) }
+    /**
+     * The author's own write relays (kind 10002) and Blastr: they decide
+     * "Posted"; see PublishTargets.
+     */
+    internal suspend fun NostrService.blastToAuthorRelays(event: NostrEvent, onBroadcastOutcome: ((BroadcastTally.Outcome) -> Unit)?) {
+        val plan = PublishTargets.plan(authorWriteRelays(event), configStore.config.value.activeBlastrRelays)
+        sendConfirmed(event, plan.confirmed, onBroadcastOutcome)
+        plan.alsoSend.forEach { fireAndForgetPublish(event, it) }
+    }
+
+    /**
+     * Sends [event] to the relays that decide "Posted" ([PublishTargets.Plan.confirmed]): with
+     * [onBroadcastOutcome], waiting for their OKs ([broadcastConfirmed]) and reporting once.
+     */
+    internal fun NostrService.sendConfirmed(event: NostrEvent, relays: List<String>, onBroadcastOutcome: ((BroadcastTally.Outcome) -> Unit)?) {
+        if (onBroadcastOutcome == null) {
+            relays.forEach { fireAndForgetPublish(event, it) }
+            return
+        }
+        scope.launch {
+            val outcome = broadcastConfirmed(event, relays)
+            withContext(Dispatchers.Main) { onBroadcastOutcome(outcome) }
+        }
+    }
+
+    /**
+     * The reader side, never held for a vault: a note's `p` target's inbox
+     * relays, and a DM relay list's (10050) DM relays, where senders look for
+     * it (iOS #224). A profile (kind 0) has none.
+     */
+    internal fun NostrService.sendToRecipients(event: NostrEvent) {
+        if (event.kind == 0) return
+        // Extract target pubkey from p-tag and send to their inbox relays
+        val targetPubkey = event.tags
+            .firstOrNull { it.size >= 2 && it[0] == "p" }
+            ?.get(1)
+        if (targetPubkey != null) {
+            val targetRelays = _relayLists.value[targetPubkey]
+            if (targetRelays != null) {
+                for (relayUrl in targetRelays.filter { !it.contains("blastr") }) {
+                    fireAndForgetPublish(event, relayUrl)
                 }
             }
         }
-        scope.launch(Dispatchers.IO) {
-            when (event.kind) {
-                0 -> toBlastr() // Profile → Blastr
-                else -> {
-                    // Extract target pubkey from p-tag and send to their inbox relays
-                    val targetPubkey = event.tags
-                        .firstOrNull { it.size >= 2 && it[0] == "p" }
-                        ?.get(1)
-
-                    if (targetPubkey != null) {
-                        val targetRelays = _relayLists.value[targetPubkey]
-                        if (targetRelays != null) {
-                            for (relayUrl in targetRelays.filter { !it.contains("blastr") }) {
-                                fireAndForgetPublish(event, relayUrl)
-                            }
-                        }
-                    }
-
-                    // Also broadcast to Blastr for visibility
-                    toBlastr()
-                    // A DM relay list (10050) also goes to the DM relays it
-                    // names, where senders look for it (iOS #224).
-                    DMInbox.extraBroadcastRelays(event.kind, event.tags, configStore.config.value.activeBlastrRelays)
-                        .filter { !isLoopbackRelay(it) }
-                        .forEach { fireAndForgetPublish(event, it) }
-                }
-            }
-        }
+        DMInbox.extraBroadcastRelays(event.kind, event.tags, configStore.config.value.activeBlastrRelays)
+            .filter { !isLoopbackRelay(it) }
+            .forEach { fireAndForgetPublish(event, it) }
     }
 
     /**

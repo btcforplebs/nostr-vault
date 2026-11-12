@@ -117,4 +117,27 @@ class MeshKeyAuthTest {
             MeshKeySigner.readNsec = before
         }
     }
+    @Test
+    fun `a publish token has one t=publish, a p for the vault, no x, and lives five minutes at most`() {
+        val tags = MeshKeyAuth.publishTags(a, nowS = 1000)!!
+        assertEquals(listOf(listOf("t", "publish"), listOf("p", a), listOf("expiration", "1300")), tags)
+        assertEquals(1, tags.count { it[0] == "t" })
+        assertFalse(tags.any { it[0] == "x" })
+        assertEquals("1300", MeshKeyAuth.publishTags(a, nowS = 1000, lifetimeS = 3600)!!.single { it[0] == "expiration" }[1])
+        assertEquals("1060", MeshKeyAuth.publishTags(" $a ", nowS = 1000, lifetimeS = 60)!!.single { it[0] == "expiration" }[1])
+        assertEquals(a, MeshKeyAuth.publishTags(" $a ", nowS = 1000)!!.single { it[0] == "p" }[1])
+        // No vault named: the vault refuses it, so there is none.
+        assertNull(MeshKeyAuth.publishTags(" ", nowS = 1000))
+    }
+
+    @Test
+    fun `no mesh key signs no publish token`() {
+        val before = MeshKeySigner.readNsec
+        MeshKeySigner.readNsec = { null }
+        try {
+            assertNull(MeshKeySigner.publish(a))
+        } finally {
+            MeshKeySigner.readNsec = before
+        }
+    }
 }

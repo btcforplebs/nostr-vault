@@ -66,7 +66,56 @@ extension NostrService {
             }
         }
 
-        // 1. Post to local relay — reuse the feed's already-connected socket
+        // 1. Post to local relay, unless the vault takes the note (sync
+        //    pick 1, vaultHandoff(for:)): then steps 1, 1b and 3 wait for its
+        //    answer, at most VaultHandoffDecision.hold.
+        let handoff = directBroadcast ? vaultHandoff(for: event) : nil
+        if handoff == nil { writeToOwnRelay(str, eventId: event.id) }
+
+        #if os(iOS)
+        // 1b. A copy for the owner's home vault (a kiosk phone on the mesh), if one is set.
+        //     After the vault's answer on a hand-off (postThroughVault).
+        if handoff == nil { HomeVaultSender.shared.enqueue(eventDict: eventDict) }
+        // 1c. A copy for the owner's browser relay (a nostrvault.app page on the mesh), if one is set.
+        BrowserRelaySender.shared.enqueue(eventDict: eventDict)
+        #endif
+
+        // 2. Smart Broadcast: Send to author's inbox relays if it's a reply or reaction
+        if event.kind == 1 || event.kind == 6 || event.kind == 7 || event.kind == NIP10Thread.commentKind {
+            // Find target author's pubkey from 'p' tags (skipping own pubkey)
+            let targetPubkey = event.tags.first { $0.count >= 2 && $0[0] == "p" && $0[1] != activeHexPubkey }?[1]
+
+            if let targetPubkey = targetPubkey, let targetRelays = relayLists[targetPubkey] {
+                #if DEBUG
+                print("NostrService: Smart broadcast event \(event.id.prefix(8)) to \(targetPubkey.prefix(8))'s inbox relays: \(targetRelays)")
+                #endif
+
+                // Skip relays already covered by the direct blast. Waits for
+                // each relay's OK: nos.lol, primal, nostr.mom and
+                // relay.nostr.net drop an event whose socket closes right
+                // after it (measured 2026-10-25, 0 of 4 kept it).
+                let blastrRelays = ConfigService.shared.config.activeBlastrRelays
+                broadcastRawEvent(eventDict, to: targetRelays.filter { !blastrRelays.contains($0) })
+            } else if let targetPubkey = targetPubkey {
+                // We don't have their relays yet, fetch for next time
+                fetchRelayList(for: targetPubkey)
+            }
+        }
+
+        // 3. Direct broadcast, or the vault's hand-off (see step 1).
+        if let handoff {
+            postThroughVault(event, eventDict: eventDict, message: str, handoff: handoff, onBroadcastOutcome: onBroadcastOutcome)
+        } else if directBroadcast {
+            broadcastDirect(event, eventDict: eventDict, onBroadcastOutcome: onBroadcastOutcome)
+        } else {
+            onBroadcastOutcome?(.refused)
+        }
+    }
+
+    /// Step 1 of postEvent: the note to this device's own relay on the plain
+    /// address, so its relay blasts it and keeps its retry queue.
+    func writeToOwnRelay(_ str: String, eventId: String) {
+        // Post to local relay — reuse the feed's already-connected socket
         // (the nostr way: one connection, send EVENT through it, no new TLS handshake)
         let relayReady = RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting
         if relayReady {
@@ -97,98 +146,72 @@ extension NostrService {
             }
         } else {
             #if DEBUG
-            print("NostrService: ⚠️ Local relay not ready — event \(event.id.prefix(8)) will reach network via direct blast only")
+            print("NostrService: ⚠️ Local relay not ready — event \(eventId.prefix(8)) will reach network via direct blast only")
             #endif
         }
+    }
 
-        #if os(iOS)
-        // 1b. A copy for the owner's home vault (a kiosk phone on the mesh), if one is set.
-        HomeVaultSender.shared.enqueue(eventDict: eventDict)
-        // 1c. A copy for the owner's browser relay (a nostrvault.app page on the mesh), if one is set.
-        BrowserRelaySender.shared.enqueue(eventDict: eventDict)
-        #endif
-
-        // 2. Smart Broadcast: Send to author's inbox relays if it's a reply or reaction
-        if event.kind == 1 || event.kind == 6 || event.kind == 7 || event.kind == NIP10Thread.commentKind {
-            // Find target author's pubkey from 'p' tags (skipping own pubkey)
-            let targetPubkey = event.tags.first { $0.count >= 2 && $0[0] == "p" && $0[1] != activeHexPubkey }?[1]
-
-            if let targetPubkey = targetPubkey, let targetRelays = relayLists[targetPubkey] {
-                #if DEBUG
-                print("NostrService: Smart broadcast event \(event.id.prefix(8)) to \(targetPubkey.prefix(8))'s inbox relays: \(targetRelays)")
-                #endif
-
-                // Skip relays already covered by the direct blast. Waits for
-                // each relay's OK: nos.lol, primal, nostr.mom and
-                // relay.nostr.net drop an event whose socket closes right
-                // after it (measured 2026-10-25, 0 of 4 kept it).
-                let blastrRelays = ConfigService.shared.config.activeBlastrRelays
-                broadcastRawEvent(eventDict, to: targetRelays.filter { !blastrRelays.contains($0) })
-            } else if let targetPubkey = targetPubkey {
-                // We don't have their relays yet, fetch for next time
-                fetchRelayList(for: targetPubkey)
-            }
-        }
-
-        // 3. Direct broadcast: every event goes to the blastr relays from here
-        //    too, not only through the local relay. See
-        //    RelayConfiguration.directBroadcastRelays for why.
-        if directBroadcast {
-            // The same list the relay blasts to, so a Mac reached over the
-            // mesh is asked too and its OK confirms the post.
-            #if os(iOS)
-            let mesh = RelayConfiguration.macMeshRelay
-            #else
-            let mesh: RelayConfiguration.MacMeshRelay? = nil
-            #endif
-            let relays = RelayConfiguration.directBroadcastRelays(
-                kind: event.kind,
-                tags: event.tags,
-                blastrRelays: RelayConfiguration.blastrRelays(config: ConfigService.shared.config, mesh: mesh),
-                ownerWriteRelays: outboxRelays[event.pubkey] ?? []
-            )
-            // The author's own kind 10002 write relays decide "Posted"; the
-            // relays above still get it. See PublishTargets.
-            let send: ([String]?) -> Void = { [weak self] authorWrite in
-                guard let self else { return }
-                let plan = PublishTargets.plan(authorWriteRelays: authorWrite, appWriteRelays: relays)
-                if let onBroadcastOutcome {
-                    if !plan.alsoSend.isEmpty { self.broadcastRawEvent(eventDict, to: plan.alsoSend) }
-                    self.broadcastConfirmed(eventDict, to: plan.confirmed, attemptsLeft: 3, completion: onBroadcastOutcome)
-                } else {
-                    self.broadcastRawEvent(eventDict, to: plan.all)
-                }
-            }
-            if event.kind == 10002 {
-                send(ProfileRepository.parseRelayListTags(event.tags).write)
-            } else if let known = outboxRelays[event.pubkey] {
-                send(known)
+    /// Step 3 of postEvent: every event goes to the blastr relays from here
+    /// too, not only through the local relay. See
+    /// RelayConfiguration.directBroadcastRelays for why.
+    private func broadcastDirect(_ event: NostrEvent, eventDict: [String: Any],
+                                 onBroadcastOutcome: ((BroadcastTally.Outcome) -> Void)?) {
+        let relays = directBroadcastRelays(for: event)
+        // The author's own kind 10002 write relays decide "Posted"; the
+        // relays above still get it. See PublishTargets.
+        let send: ([String]?) -> Void = { [weak self] authorWrite in
+            guard let self else { return }
+            let plan = PublishTargets.plan(authorWriteRelays: authorWrite, appWriteRelays: relays)
+            if let onBroadcastOutcome {
+                if !plan.alsoSend.isEmpty { self.broadcastRawEvent(eventDict, to: plan.alsoSend) }
+                self.broadcastConfirmed(eventDict, to: plan.confirmed, attemptsLeft: 3, completion: onBroadcastOutcome)
             } else {
-                // Not loaded yet (fresh install, or an account made in another
-                // app): looked up first, briefly.
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    let list = await self.fetchNewestReplaceable(kind: 10002, for: event.pubkey,
-                                                                 alsoAsk: ["wss://purplepag.es", "wss://user.kindpag.es"], timeout: 4)
-                    let parsed = list.map { ProfileRepository.parseRelayListTags($0.tags) }
-                    let write = parsed?.write ?? []
-                    // fetchNewestReplaceable only returns a signed copy.
-                    if let list, let parsed, !write.isEmpty, self.outboxRelays[event.pubkey] == nil {
-                        self.applyRelayList(parsed, pubkey: event.pubkey, createdAt: list.created_at)
-                    }
-                    send(write)
-                }
+                self.broadcastRawEvent(eventDict, to: plan.all)
             }
-        } else {
-            onBroadcastOutcome?(.refused)
         }
+        if event.kind == 10002 {
+            send(ProfileRepository.parseRelayListTags(event.tags).write)
+        } else if let known = outboxRelays[event.pubkey] {
+            send(known)
+        } else {
+            // Not loaded yet (fresh install, or an account made in another
+            // app): looked up first, briefly.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let list = await self.fetchNewestReplaceable(kind: 10002, for: event.pubkey,
+                                                             alsoAsk: ["wss://purplepag.es", "wss://user.kindpag.es"], timeout: 4)
+                let parsed = list.map { ProfileRepository.parseRelayListTags($0.tags) }
+                let write = parsed?.write ?? []
+                // fetchNewestReplaceable only returns a signed copy.
+                if let list, let parsed, !write.isEmpty, self.outboxRelays[event.pubkey] == nil {
+                    self.applyRelayList(parsed, pubkey: event.pubkey, createdAt: list.created_at)
+                }
+                send(write)
+            }
+        }
+    }
 
+    /// The app's broadcast list for `event`: the same list the relay blasts
+    /// to, so a Mac reached over the mesh is asked too and its OK confirms
+    /// the post, plus the kind's extras.
+    func directBroadcastRelays(for event: NostrEvent) -> [String] {
+        #if os(iOS)
+        let mesh = RelayConfiguration.macMeshRelay
+        #else
+        let mesh: RelayConfiguration.MacMeshRelay? = nil
+        #endif
+        return RelayConfiguration.directBroadcastRelays(
+            kind: event.kind,
+            tags: event.tags,
+            blastrRelays: RelayConfiguration.blastrRelays(config: ConfigService.shared.config, mesh: mesh),
+            ownerWriteRelays: outboxRelays[event.pubkey] ?? []
+        )
     }
 
     /// Sends to `relays` and reports a single outcome. When every relay
     /// refuses or times out it tries again, a little later each time, before
     /// giving up: a slow relay shouldn't read as a failed post.
-    private func broadcastConfirmed(_ eventDict: [String: Any], to relays: [String], attemptsLeft: Int,
+    func broadcastConfirmed(_ eventDict: [String: Any], to relays: [String], attemptsLeft: Int,
                                     completion: @escaping (BroadcastTally.Outcome) -> Void) {
         var tally = BroadcastTally(relayCount: relays.count)
         if tally.outcome != nil {

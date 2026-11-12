@@ -252,6 +252,10 @@ func isMeshDeviceAuth(ctx context.Context, auth *nostr.Event) bool {
 // token. ok false: a device key may not do this.
 func meshDeviceVerb(r *http.Request) (verb, sha string, spend, ok bool) {
 	switch {
+	case r.URL.Path == "/" && r.Method == http.MethodGet && strings.EqualFold(r.Header.Get("Upgrade"), "websocket"):
+		// The outbox websocket on which the vault sends this device's
+		// fresh posts for it (mesh_publish.go). One token per connection.
+		return meshPublishVerb, "", true, true
 	case r.URL.Path == "/upload" && r.Method == http.MethodPut:
 		// The hash is checked once the body is read (the door, and the
 		// index's Keep for the own port).
@@ -294,7 +298,13 @@ func withMeshDeviceAuth(r *http.Request) (*http.Request, int, string) {
 	if json.Unmarshal(raw, &ev) != nil || ev.Kind != 24242 {
 		return r, 0, ""
 	}
-	if _, owner := whitelist()[ev.PubKey]; owner || !meshDevices.paired(ev.PubKey) {
+	_, owner := whitelist()[ev.PubKey]
+	if !owner && !meshDevices.paired(ev.PubKey) && ev.Tags.FindWithValue("t", meshPublishVerb) != nil {
+		// Turned down at once, so the phone sends its note itself instead
+		// of handing it to a vault that would not send it (mesh_publish.go).
+		return r, http.StatusForbidden, "not a paired device of this vault"
+	}
+	if owner || !meshDevices.paired(ev.PubKey) {
 		return r, 0, "" // owner path (kept until the apps switch) or a stranger
 	}
 	if !meshDeviceOverMesh(r) {

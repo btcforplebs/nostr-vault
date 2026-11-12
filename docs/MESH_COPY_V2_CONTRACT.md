@@ -108,6 +108,31 @@ another key stays.
 
 The owner-signed 24242 keeps working until the apps switch (`TODO(mesh-key)`).
 
+### 2.2 Publish for me (the vault sends the phone's posts)
+
+Sync pick 1 (Logen, 2026-11-12): exactly one device blasts each note, the vault when it confirms within about 10 s,
+otherwise the phone. `haven-go/mesh_publish.go`.
+
+- The device opens the outbox websocket (`GET /`, `Upgrade: websocket`) over the mesh with `Authorization: Nostr
+  <24242>` signed by **its mesh key**: `["t", "publish"]`, `["p", <vault's mesh npub>]`, `["expiration", <unix>]` at
+  most 5 minutes ahead, no `x`. Same checks as §2.1, spent at the upgrade: one token per connection (replay: 409).
+- An unpaired key's `t=publish` token is 403 at the upgrade. A publish connection's **first frame** is
+  `["NOTICE", "publish-for-me: on"]`; a device that does not see it (an older vault) sends its notes itself.
+- On that connection `["OK", <id>, true, ""]` means the vault **stored the note, kept it in its blast queue on disk (`blast_queue.json`) and queued its
+  blast**: a crash after the OK cannot lose it. Every other
+  answer is OK false and the device sends the note itself: not the owner's (`restricted:`), signed more than
+  5 minutes ago or ephemeral (`blocked:`), already held (`duplicate:`), a replaceable the vault keeps a newer copy
+  of, or no blast relays configured (`blocked:`). Old notes are never re-blasted, not even for a paired device.
+- One exception to `duplicate:`: a note the vault itself blasted as a first-hand owner write in the last 5 minutes
+  (the phone's at-once copy to a 10002 list that names this vault's public relay) gets the plain OK true, since the
+  vault is already sending it. Exactly one device blasts it. That blast is the ordinary owner-write one, in memory.
+- Without the token (a stranger, the device's catch-up, `?pulled=1`) nothing written over the mesh is blasted, as
+  before (`mesh_safety.go`).
+- **Phones** (`VaultPublishHandoff`, iOS and Android) hand off only regular kinds (not 0, 3, 10000-39999) and only when
+  the author's own kind 10002 write relays are known. Those relays get the note from the phone **at once** and decide
+  "Posted"; the hold (10 s) decides only who sends the fan-out to the blast relays. Vault sends: the phone's relay
+  keeps a `?pulled=1` copy. Otherwise: the phone's relay blasts it as before, plus the fan-out.
+
 **Answer:**
 ```json
 {"id": "<32 hex>", "token": "<64 hex>", "state": "building"}

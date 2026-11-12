@@ -53,6 +53,15 @@ object MeshKeySigner {
         return authorization(MeshKeyAuth.BLOSSOM_KIND, "$content ${java.util.UUID.randomUUID().toString().take(8)}", tags)
     }
 
+    /**
+     * A publish token for [receiver] ([MeshKeyAuth.publishTags]): the vault sends what this connection hands it. Null
+     * with no mesh key. A random word in the content: the vault takes each token id once.
+     */
+    fun publish(receiver: String): String? {
+        val tags = MeshKeyAuth.publishTags(receiver) ?: return null
+        return authorization(MeshKeyAuth.BLOSSOM_KIND, "Publish ${java.util.UUID.randomUUID().toString().take(8)}", tags)
+    }
+
     /** This device's mesh npub from its key, read only: null when the engine has not made one yet (never makes one). */
     fun npub(): String? = withKey { _, pub -> HavenBridge.encodeNpub(pub) }
 

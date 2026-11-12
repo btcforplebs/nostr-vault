@@ -102,4 +102,21 @@ final class MeshKeyAuthTests: XCTestCase {
         XCTAssertTrue(MeshKeyAuth.retriesWithOwnerForm(older))
         XCTAssertFalse(MeshKeyAuth.retriesWithOwnerForm(nil))
     }
+
+    // MARK: Publish for me (24242, sync pick 1)
+
+    func testPublishIsOneTOnePAndFiveMinutesWithNoBlob() throws {
+        let tags = try XCTUnwrap(MeshKeyAuth.publishTags(receiver: " \(a) ", now: now))
+        XCTAssertEqual(tags.filter { $0.first == "t" }, [["t", "publish"]])
+        XCTAssertEqual(tags.filter { $0.first == "p" }, [["p", a]])
+        XCTAssertFalse(tags.contains { $0.first == "x" }, "a publish token names no blob")
+        let exp = try XCTUnwrap(Int64(try XCTUnwrap(tags.first { $0.first == "expiration" })[1]))
+        XCTAssertGreaterThan(exp, Int64(now.timeIntervalSince1970))
+        XCTAssertLessThanOrEqual(exp, Int64(now.timeIntervalSince1970) + 300, "at most five minutes ahead")
+        XCTAssertEqual(tags.count, 3, "t, p and expiration only")
+    }
+
+    func testPublishWithoutAReceiverIsNotSigned() {
+        XCTAssertNil(MeshKeyAuth.publishTags(receiver: "  ", now: now))
+    }
 }
