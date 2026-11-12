@@ -369,6 +369,9 @@ func (r *jobRunner) run(ctx context.Context, spawn func(string, func()), name st
 		if r.afterRunHook != nil {
 			r.afterRunHook(name)
 		}
+		if name == jobSetup {
+			r.autoStartWider(ctx, func() int { return r.run(ctx, spawn, jobWiderNetwork, false) })
+		}
 	})
 	return runStarted
 }
