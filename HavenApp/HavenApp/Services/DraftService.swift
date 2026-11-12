@@ -382,9 +382,16 @@ class DraftService: ObservableObject {
 
         // Old plaintext drafts on the relay are replaced once by an encrypted
         // copy (same d tag); the newer of the two copies is the one saved.
-        // Read from `drafts` each time: one deleted meanwhile isn't sent.
-        for id in live.map(\.id) where plaintextIds.contains(id) {
-            if let draft = drafts.first(where: { $0.id == id }) { await saveToRelay(draft: draft) }
+        // Read from `drafts` each time: one deleted meanwhile isn't sent. Not
+        // awaited here, so the list isn't "loading" while a signer answers.
+        let resave = live.map(\.id).filter(plaintextIds.contains)
+        if !resave.isEmpty {
+            Task { [weak self] in
+                for id in resave {
+                    guard let self, let draft = self.drafts.first(where: { $0.id == id }) else { continue }
+                    await self.saveToRelay(draft: draft)
+                }
+            }
         }
     }
 
