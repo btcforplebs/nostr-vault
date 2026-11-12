@@ -42,6 +42,8 @@ class BlossomService @Inject constructor(
     internal val homeVault: com.nostrvault.fips.HomeVaultSender,
     /** The photo screen's server answers, kept on disk for a day. */
     private val presenceStore: BlossomPresenceStore = BlossomPresenceStore(file = null),
+    /** Auto-Mirror's last start and fetched links, kept across launches. */
+    internal val autoMirrorState: AutoMirrorState = AutoMirrorState(dir = null),
 ) {
     companion object {
         internal const val TAG = "BlossomService"
