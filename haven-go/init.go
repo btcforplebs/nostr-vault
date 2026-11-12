@@ -527,7 +527,8 @@ func initRelays(ctx context.Context) error {
 	// mesh door (mesh_safety.go). The relay's context, not the connection's:
 	// a sender that hangs up right after OK must not cut the blast.
 	meshBlobs.reset()
-	wireOutboxWrites(outboxRelay, outboxDB, newBlastSender(relayCtx, blastQ))
+	sendBlast, _ := newBlastSender(relayCtx, blastQ)
+	wireOutboxWrites(outboxRelay, outboxDB, sendBlast)
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(outboxRelay, outboxDB)
 	// Brought-over accounts are stored, never served to strangers (brought_reads.go).

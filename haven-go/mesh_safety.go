@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fiatjaf/eventstore"
 	"github.com/fiatjaf/khatru"
 	"github.com/fiatjaf/khatru/blossom"
 	"github.com/nbd-wtf/go-nostr"
@@ -225,10 +226,30 @@ func newBlastStored(stored func(ctx context.Context, id string) bool, send func(
 // 10002, 10063, 30023…) to ReplaceEvent, never StoreEvent, so they are
 // blasted there too: a phone's 10063 sent only to this relay otherwise never
 // reaches the public relays.
+//
+// A copy the outbox already holds is not blasted again. For a regular kind
+// the store says so itself (eventstore.ErrDupEvent ends khatru's chain); a
+// replaceable kind's ReplaceEvent returned nil for a copy it already had, so
+// the chain went on to the blast and every re-sent profile, follow list or
+// article went out to every relay again (the .99 blast storm, 2026-11-12).
+// replaceOrDup answers ErrDupEvent for those too.
 func wireOutboxWrites(relay *khatru.Relay, db DBBackend, send func(*nostr.Event)) {
 	blastStored := newBlastStored(outboxHolds, send)
 	relay.StoreEvent = append(relay.StoreEvent, db.SaveEvent, noteStoredForMeshBlobs, blastStored)
-	relay.ReplaceEvent = append(relay.ReplaceEvent, db.ReplaceEvent, noteStoredForMeshBlobs, blastStored)
+	relay.ReplaceEvent = append(relay.ReplaceEvent, replaceOrDup(db), noteStoredForMeshBlobs, blastStored)
+}
+
+// replaceOrDup is db.ReplaceEvent, except that an event db already holds
+// (same id) is eventstore.ErrDupEvent, as SaveEvent answers for a regular
+// kind: khatru then says OK and stops the chain. Storing it again would
+// change nothing.
+func replaceOrDup(db DBBackend) func(context.Context, *nostr.Event) error {
+	return func(ctx context.Context, ev *nostr.Event) error {
+		if storeHolds(ctx, db, ev.ID) {
+			return eventstore.ErrDupEvent
+		}
+		return db.ReplaceEvent(ctx, ev)
+	}
 }
 
 // outboxHolds reports whether the outbox store holds event id.
@@ -236,9 +257,14 @@ func outboxHolds(ctx context.Context, id string) bool {
 	if outboxDB == nil {
 		return false
 	}
+	return storeHolds(ctx, outboxDB, id)
+}
+
+// storeHolds reports whether db holds event id.
+func storeHolds(ctx context.Context, db DBBackend, id string) bool {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	ch, err := outboxDB.QueryEvents(ctx, nostr.Filter{IDs: []string{id}, Limit: 1})
+	ch, err := db.QueryEvents(ctx, nostr.Filter{IDs: []string{id}, Limit: 1})
 	if err != nil {
 		return false
 	}
