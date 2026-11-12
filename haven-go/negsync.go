@@ -12,10 +12,16 @@ import (
 	"github.com/barrydeen/haven/internal/negsync"
 	"github.com/barrydeen/haven/internal/tombstones"
 	"github.com/fiatjaf/eventstore"
+	"github.com/fiatjaf/khatru"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip11"
 	"github.com/nbd-wtf/go-nostr/nip70"
 )
+
+// A device's NEG-OPEN to this relay builds its vector through the same
+// stores as our own syncs: mark those queries so they are answered with
+// id+created_at stubs, one scan at a time (internal/negsync/vector_scan.go).
+func init() { khatru.NegentropyContext = negsync.ForVector }
 
 // ─── Per-relay NIP-77 capability cache ──────────────────────────────────────
 //

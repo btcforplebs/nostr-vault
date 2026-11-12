@@ -16,8 +16,13 @@ type NegentropySession struct {
 	postponeClose func()
 }
 
+// NegentropyContext lets the embedding app mark the context of the queries a
+// served NEG-OPEN makes, so its stores can answer them with id+created_at
+// only (haven: negsync.ForVector). The identity function by default.
+var NegentropyContext = func(ctx context.Context) context.Context { return ctx }
+
 func (rl *Relay) startNegentropySession(ctx context.Context, filter nostr.Filter) (*vector.Vector, error) {
-	ctx = eventstore.SetNegentropy(ctx)
+	ctx = NegentropyContext(eventstore.SetNegentropy(ctx))
 
 	// do the same overwrite/reject flow we do in normal REQs
 	for _, ovw := range rl.OverwriteFilter {
