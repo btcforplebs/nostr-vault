@@ -31,6 +31,17 @@ func ForVector(ctx context.Context) context.Context {
 	return context.WithValue(ctx, forVectorKey{}, true)
 }
 
+// Unmark clears the ForVector mark: a hook inside a NEG-OPEN that reads a
+// store itself and checks fields beyond id and created_at (kind, author,
+// tags) needs whole events, not stubs (Tron, PR 1956: /lists filters on
+// kind and author). The negentropy session flag itself is kept.
+func Unmark(ctx context.Context) context.Context {
+	if !IsForVector(ctx) {
+		return ctx
+	}
+	return context.WithValue(ctx, forVectorKey{}, false)
+}
+
 // IsForVector reports whether ctx was marked by ForVector.
 func IsForVector(ctx context.Context) bool {
 	v, _ := ctx.Value(forVectorKey{}).(bool)

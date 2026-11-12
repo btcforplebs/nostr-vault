@@ -13,6 +13,8 @@ import (
 
 	"github.com/fiatjaf/khatru"
 	"github.com/nbd-wtf/go-nostr"
+
+	"github.com/barrydeen/haven/internal/negsync"
 )
 
 // ownReader: the connection is the vault's own (NIP-42 as one of its
@@ -51,10 +53,15 @@ func hiddenBrought(ctx context.Context, filterAuthors []string) map[string]struc
 
 func hideBroughtQuery(query func(context.Context, nostr.Filter) (chan *nostr.Event, error)) func(context.Context, nostr.Filter) (chan *nostr.Event, error) {
 	return func(ctx context.Context, filter nostr.Filter) (chan *nostr.Event, error) {
-		ch, err := query(ctx, filter)
 		// A lookup by IDs ignores Authors, so it is always filtered when any
 		// account is hidden; only a filter naming no hidden author skips it.
 		hidden := hiddenBrought(ctx, nil)
+		if len(hidden) > 0 {
+			// The filter below reads the author, which a NEG-OPEN's
+			// id+created_at stubs lack (PR 1956): read whole events.
+			ctx = negsync.Unmark(ctx)
+		}
+		ch, err := query(ctx, filter)
 		if err != nil || ch == nil || len(hidden) == 0 {
 			return ch, err
 		}
@@ -127,8 +134,13 @@ func inboxHides(ev *nostr.Event, brought map[string]struct{}) bool {
 
 func hideBroughtInboxQuery(query func(context.Context, nostr.Filter) (chan *nostr.Event, error)) func(context.Context, nostr.Filter) (chan *nostr.Event, error) {
 	return func(ctx context.Context, filter nostr.Filter) (chan *nostr.Event, error) {
-		ch, err := query(ctx, filter)
 		hidden := hiddenBrought(ctx, nil)
+		if len(hidden) > 0 {
+			// inboxHides reads p tags, which a NEG-OPEN's id+created_at
+			// stubs lack (PR 1956): read whole events.
+			ctx = negsync.Unmark(ctx)
+		}
+		ch, err := query(ctx, filter)
 		if err != nil || ch == nil || len(hidden) == 0 {
 			return ch, err
 		}

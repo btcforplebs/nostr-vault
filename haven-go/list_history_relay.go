@@ -8,6 +8,8 @@ import (
 	"github.com/fiatjaf/khatru"
 	"github.com/fiatjaf/khatru/policies"
 	"github.com/nbd-wtf/go-nostr"
+
+	"github.com/barrydeen/haven/internal/negsync"
 )
 
 // listsRelay serves list history (list_history.go) at /lists: read-only,
@@ -104,6 +106,10 @@ func queryListHistory(ctx context.Context, store DBBackend, f nostr.Filter) (cha
 			kinds = append(kinds, k)
 		}
 	}
+	// A NEG-OPEN's context carries the vector mark, but the store read below
+	// keeps rows by kind and author, which id+created_at stubs lack (Tron,
+	// PR 1956): read whole events.
+	ctx = negsync.Unmark(ctx)
 	var found []*nostr.Event
 	for _, author := range authors {
 		if _, owner := whitelist()[author]; !owner {
