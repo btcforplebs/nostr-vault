@@ -129,7 +129,9 @@ extension FeedService {
         // Already connecting, just queue
         if outboxInjectionClient != nil { return }
 
-        guard let url = URL(string: ConfigService.shared.config.nostrURL) else { return }
+        // Marked as pulled: the relay stores these and never blasts them back
+        // out (PulledInjection).
+        guard let url = PulledInjection.url(ConfigService.shared.config.nostrURL) else { return }
 
         let client = WebSocketClient()
         client.isTemporary = false

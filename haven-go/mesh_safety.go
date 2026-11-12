@@ -211,6 +211,10 @@ func newBlastStored(stored func(ctx context.Context, id string) bool, send func(
 			slog.Info("event stored from the mesh, not blasted", "id", ev.ID, "kind", ev.Kind)
 			return nil
 		}
+		if isPulledConn(ctx) {
+			slog.Debug("event pulled from a relay stored, not blasted", "id", ev.ID, "kind", ev.Kind)
+			return nil
+		}
 		if !stored(ctx, ev.ID) {
 			slog.Info("event not stored (a newer copy is kept), not blasted", "id", ev.ID, "kind", ev.Kind)
 			return nil
@@ -219,6 +223,22 @@ func newBlastStored(stored func(ctx context.Context, id string) bool, send func(
 		send(ev)
 		return nil
 	}
+}
+
+// pulledInjectionParam marks a connection that writes events the app pulled
+// from relays (`?pulled=1`: the Apple apps' FeedService and NetworkSyncService
+// injection clients). Those are stored and never blasted: they came from the
+// relays, and sending each one back to every write relay was the .99 storm
+// (Logen's pick, 2026-11-12). Anything else written to the outbox (the apps
+// posting, the owner's devices, any client) is blasted as before. A client
+// that sets it only keeps its own notes from being blasted; strangers still
+// cannot write here (MustBeWhitelistedToPost).
+const pulledInjectionParam = "pulled"
+
+// isPulledConn reports whether ctx's connection is a pulled-events writer.
+func isPulledConn(ctx context.Context) bool {
+	conn := khatru.GetConnection(ctx)
+	return conn != nil && conn.Request != nil && conn.Request.URL.Query().Get(pulledInjectionParam) == "1"
 }
 
 // wireOutboxWrites adds the outbox store, the mesh blob index and the blast
