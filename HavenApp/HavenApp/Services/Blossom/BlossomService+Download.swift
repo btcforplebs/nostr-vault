@@ -42,10 +42,27 @@ extension BlossomService {
     /// - Parameter date: The blob's real date (BUD-02 `uploaded`), set on the stored file.
     /// - Returns: true if the blob was successfully downloaded and stored locally
     func downloadFromMirrors(sha256: String, date: Date? = nil) async -> Bool {
+        guard let file = await fetchFromMirrors(sha256: sha256) else { return false }
+        defer { try? FileManager.default.removeItem(at: file.url) }
+        // Upload to local relay via BUD-02 spec (HTTP PUT with kind 24242 auth), from the file.
+        // Skip external mirroring — the blob came FROM a configured mirror.
+        let success = await saveToLocalRelay(fileURL: file.url, sha256: sha256, contentType: file.contentType, mirrorToExternal: false)
+        if success {
+            await stampCopiedIn(sha256: sha256, date: date)
+            logger.info("Successfully mirrored \(sha256.prefix(8)) (\(file.size) bytes)")
+        } else {
+            logger.warning("Local relay rejected upload of \(sha256.prefix(8))")
+        }
+        return success
+    }
+
+    /// A blob from the first configured mirror that has it, as a temp file
+    /// checked against `sha256`. The caller deletes the file.
+    func fetchFromMirrors(sha256: String) async -> StreamingBlobDownload.File? {
         let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
         guard !mirrors.isEmpty else {
             logger.warning("No Blossom mirrors configured for download")
-            return false
+            return nil
         }
 
         // Try each mirror until one succeeds
@@ -74,35 +91,35 @@ extension BlossomService {
             let result: Result<StreamingBlobDownload.File, StreamingBlobDownload.Failure> = await StreamingBlobDownload.fetch(
                 request, configuration: session.configuration, expectedSHA256: sha256,
                 challenge: local ? trustLocal : nil)
-            guard case .success(let file) = result else {
-                if case .failure(let why) = result {
-                    logger.warning("Download from \(mirror)/\(sha256.prefix(8)) skipped: \(why.reason)")
-                    // No room here is no room from any mirror.
-                    if case .noRoom = why { return false }
-                }
-                continue
-            }
-            defer { try? FileManager.default.removeItem(at: file.url) }
-
-            // Upload to local relay via BUD-02 spec (HTTP PUT with kind 24242 auth), from the file.
-            // Skip external mirroring — the blob came FROM a configured mirror.
-            let success = await saveToLocalRelay(fileURL: file.url, sha256: sha256, contentType: file.contentType, mirrorToExternal: false)
-            if success {
-                await stampCopiedIn(sha256: sha256, date: date)
-                logger.info("Successfully mirrored \(sha256.prefix(8)) from \(mirror) (\(file.size) bytes)")
-                return true
-            } else {
-                logger.warning("Local relay rejected upload of \(sha256.prefix(8)) from \(mirror)")
-                continue
+            switch result {
+            case .success(let file):
+                return file
+            case .failure(let why):
+                logger.warning("Download from \(mirror)/\(sha256.prefix(8)) skipped: \(why.reason)")
+                // No room here is no room from any mirror.
+                if case .noRoom = why { return nil }
             }
         }
 
         logger.error("Failed to download \(sha256.prefix(8)) from any mirror")
-        return false
+        return nil
+    }
+
+    /// Media from any link, as a temp file hashed as it arrived. The caller deletes the file.
+    func fetchFromURL(_ url: URL) async -> StreamingBlobDownload.File? {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 120  // video files
+        switch await StreamingBlobDownload.fetch(request, configuration: remoteSession.configuration) {
+        case .failure(let why):
+            logger.warning("Download from \(url.absoluteString) skipped: \(why.reason)")
+            return nil
+        case .success(let file):
+            return file
+        }
     }
 
     /// Give a just-copied blob its real date on disk (see CopiedInDate).
-    private func stampCopiedIn(sha256: String, date: Date?) async {
+    func stampCopiedIn(sha256: String, date: Date?) async {
         guard let date else { return }
         let dir = await MainActor.run { configService.relayDataDir.appendingPathComponent(configService.config.blossomPath) }
         if !CopiedInDate.stamp(sha256: sha256, in: dir, date: date) {

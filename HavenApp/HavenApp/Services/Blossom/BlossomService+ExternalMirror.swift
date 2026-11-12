@@ -35,6 +35,12 @@ extension BlossomService {
         var remoteBlobHashes: Set<String> = []
         // Each blob's server upload time, so a copy keeps its real date.
         var descriptorDates: [(sha256: String?, uploaded: Int?)] = []
+        // One BUD-02 list authorisation (kind 24242) for every server, so servers
+        // that require authentication return blob lists instead of empty/403.
+        // A keyless vault signs nothing (no signer to ask); the list is asked for unsigned.
+        let listAuthTags = [["t", "list"], ["expiration", String(Int64(Date().timeIntervalSince1970) + 3600)]]
+        let listAuthEvent = keyless ? nil : await nostrService.signEventAsync(kind: 24242, content: "List blobs", tags: listAuthTags)
+        let listAuthHeader = listAuthEvent.flatMap { try? JSONEncoder().encode($0) }.map { "Nostr \($0.base64EncodedString())" }
         for mirror in mirrors {
             guard var mirrorURL = URL(string: mirror) else { continue }
 
@@ -46,20 +52,6 @@ extension BlossomService {
 
             logMessage?("Querying \(mirror) for blob list...", "INFO")
 
-            // Create a BUD-02 auth event (kind 24242) for the list operation so servers
-            // that require authentication return blob lists instead of empty/403.
-            let listExpiration = Int64(Date().timeIntervalSince1970) + 3600
-            let listAuthTags = [
-                ["t", "list"],
-                ["expiration", String(listExpiration)]
-            ]
-            // A keyless vault signs nothing (no signer to ask); the list is asked for unsigned.
-            let listAuthEvent = keyless ? nil : await nostrService.signEventAsync(kind: 24242, content: "List blobs", tags: listAuthTags)
-            var listAuthHeader: String? = nil
-            if let authEvent = listAuthEvent,
-               let authJSON = try? JSONEncoder().encode(authEvent) {
-                listAuthHeader = "Nostr \(authJSON.base64EncodedString())"
-            }
 
             for pubkey in allPubkeys {
                 let baseListURL = mirrorURL.appendingPathComponent("list").appendingPathComponent(pubkey)
@@ -118,39 +110,21 @@ extension BlossomService {
         var mirrored = 0
         var completedCount = 0
         let total = sortedHashes.count
+        let plan = await autoMirrorSigningPlan()
+        let groupSize = Self.autoMirrorGroupSize
 
-        await withTaskGroup(of: Bool.self) { group in
-            var queued = 0
-            for hash in sortedHashes {
-                if queued >= 4 {
-                    if let success = await group.next() {
-                        completedCount += 1
-                        if success {
-                            mirrored += 1
-                            logMessage?("Downloaded \(hash.prefix(12))... (\(completedCount)/\(total))", "INFO")
-                        } else {
-                            logMessage?("Failed to download \(hash.prefix(12))... (\(completedCount)/\(total))", "WARN")
-                        }
-                        progress?(completedCount, total)
-                    }
-                    // Throttle to avoid overwhelming the relay
-                    try? await Task.sleep(nanoseconds: 150_000_000)
-                }
-                group.addTask {
-                    await self.downloadFromMirrors(sha256: hash, date: uploadedDates[hash.lowercased()])
-                }
-                queued += 1
-            }
-            for await success in group {
-                completedCount += 1
-                if success {
-                    mirrored += 1
-                    logMessage?("Downloaded \(sortedHashes[min(completedCount - 1, sortedHashes.count - 1)].prefix(12))... (\(completedCount)/\(total))", "INFO")
-                } else {
-                    logMessage?("Failed to download blob (\(completedCount)/\(total))", "WARN")
-                }
-                progress?(completedCount, total)
-            }
+        // A group at a time: download, then save with at most one signature.
+        for start in stride(from: 0, to: total, by: groupSize) {
+            let group = Array(sortedHashes[start..<min(start + groupSize, total)])
+            let fetched = await autoMirrorFetch(group) { hash in await self.fetchFromMirrors(sha256: hash) }
+            let files = fetched.map(\.1)
+            let result = await autoMirrorStore(files, plan: plan, dates: uploadedDates)
+            files.forEach { try? FileManager.default.removeItem(at: $0.url) }
+            let inVault = group.filter { result.inVault.contains($0.lowercased()) }.count
+            mirrored += result.new
+            completedCount += group.count
+            logMessage?("Saved \(result.new) blob(s); \(inVault) of \(group.count) now here (\(completedCount)/\(total))", inVault == group.count ? "INFO" : "WARN")
+            progress?(completedCount, total)
         }
 
         progress?(total, total)
@@ -167,21 +141,16 @@ extension BlossomService {
     /// - Returns: Number of newly mirrored blobs
     func mirrorFromNoteMedia(_ noteMedia: [MediaItem], progress: ((Int, Int) -> Void)? = nil, logMessage: ((String, String) -> Void)? = nil) async -> Int {
         let relayDataDir = await MainActor.run { configService.relayDataDir }
-        let blossomPath = await MainActor.run { configService.config.blossomPath }
         let ownerPubkey = await MainActor.run { nostrService.ownerHexPubkey }
         let whitelistedPubkeys = await MainActor.run { configService.whitelistedHexPubkeys }
 
-        // Get local blob hashes
-        let blossomDir = relayDataDir.appendingPathComponent(blossomPath)
-        let localHashes: Set<String>
-        if let files = try? FileManager.default.contentsOfDirectory(atPath: blossomDir.path) {
-            localHashes = Set(files.filter { !$0.starts(with: ".") && $0 != "LOCK" })
-        } else {
-            localHashes = []
-        }
+        let localHashes = await vaultBlobHashes()
+        // What earlier runs saved: a link not named by its hash is otherwise
+        // downloaded again on every run (AutoMirrorLedger).
+        var ledger = AutoMirrorLedger.load(from: relayDataDir)
 
         // Find remote media URLs from owner or whitelisted accounts that aren't stored locally
-        var urlsToMirror: [URL] = []
+        var candidates: [URL] = []
         // The note's created_at goes on the copied file (newest note wins, as in the grid).
         let noteDates = CopiedInDate.newestByKey(noteMedia, key: { $0.url.absoluteString }, date: { $0.dateAdded })
         for item in noteMedia {
@@ -192,15 +161,9 @@ extension BlossomService {
             let host = item.url.host?.lowercased() ?? ""
             if host.isEmpty { continue }
             if host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" { continue }
-
-            // Extract hash from URL to check if already local
-            let lastComponent = item.url.deletingPathExtension().lastPathComponent
-            if lastComponent.count == 64 && lastComponent.allSatisfy({ $0.isHexDigit }) {
-                if localHashes.contains(lastComponent) { continue }
-            }
-
-            urlsToMirror.append(item.url)
+            candidates.append(item.url)
         }
+        let urlsToMirror = ledger.toDownload(candidates, localHashes: localHashes)
 
         guard !urlsToMirror.isEmpty else {
             logger.info("No missing media found in note events")
@@ -213,43 +176,32 @@ extension BlossomService {
         var mirrored = 0
         var completedCount = 0
         let total = urlsToMirror.count
+        let plan = await autoMirrorSigningPlan()
+        let groupSize = Self.autoMirrorGroupSize
 
-        // Process concurrently with a limit of 4 simultaneous downloads
-        await withTaskGroup(of: Bool.self) { group in
-            var queued = 0
-            for url in urlsToMirror {
-                if queued >= 4 {
-                    if let success = await group.next() {
-                        completedCount += 1
-                        if success {
-                            mirrored += 1
-                            logMessage?("Mirrored \(url.lastPathComponent.prefix(20))... from \(url.host ?? "remote") (\(completedCount)/\(total))", "INFO")
-                        } else {
-                            logMessage?("Failed \(url.lastPathComponent.prefix(20))... from \(url.host ?? "remote") (\(completedCount)/\(total))", "WARN")
-                        }
-                        progress?(completedCount, total)
-                    }
-                    // Throttle to avoid overwhelming the relay
-                    try? await Task.sleep(nanoseconds: 150_000_000)
-                }
-                group.addTask {
-                    await self.downloadFromURL(url: url, date: noteDates[url.absoluteString])
-                }
-                queued += 1
+        // A group at a time: download, save with at most one signature, then
+        // remember each link saved, so a run stopped part way resumes here.
+        for start in stride(from: 0, to: total, by: groupSize) {
+            let group = Array(urlsToMirror[start..<min(start + groupSize, total)])
+            let fetched = await autoMirrorFetch(group) { url in await self.fetchFromURL(url) }
+            var dates: [String: Date] = [:]
+            for (url, file) in fetched { dates[file.sha256.lowercased()] = noteDates[url.absoluteString] }
+            let result = await autoMirrorStore(fetched.map(\.1), plan: plan, dates: dates)
+            fetched.forEach { try? FileManager.default.removeItem(at: $0.1.url) }
+            var here = 0
+            for (url, file) in fetched where result.inVault.contains(file.sha256.lowercased()) {
+                ledger.remember(url: url, sha256: file.sha256)
+                here += 1
             }
-            for await success in group {
-                completedCount += 1
-                if success {
-                    mirrored += 1
-                    logMessage?("Mirrored media (\(completedCount)/\(total))", "INFO")
-                } else {
-                    logMessage?("Failed to mirror media (\(completedCount)/\(total))", "WARN")
-                }
-                progress?(completedCount, total)
+            do { try ledger.save(to: relayDataDir) } catch {
+                appLog("Auto-Mirror: could not write \(AutoMirrorLedger.fileName): \(error.localizedDescription)", level: "WARN")
             }
+            mirrored += result.new
+            completedCount += group.count
+            logMessage?("Saved \(result.new) media item(s); \(here) of \(group.count) now here (\(completedCount)/\(total))", here == group.count ? "INFO" : "WARN")
+            progress?(completedCount, total)
         }
 
-        progress?(total, total)
         logger.info("Mirrored \(mirrored)/\(total) media from note events")
         logMessage?("Note media phase: \(mirrored)/\(total) item(s) downloaded successfully", "INFO")
         return mirrored
