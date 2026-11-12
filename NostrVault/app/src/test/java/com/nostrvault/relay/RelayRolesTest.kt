@@ -35,12 +35,12 @@ class RelayRolesTest {
         assertEquals(RelayConfiguration.FALLBACK_WRITE_RELAYS, base.copy(blastrRelays = emptyList()).writeRelays)
     }
 
-    /** A new account's kind 10002 marks all five read servers write, so it writes to all five. */
+    /** A new account's kind 10002 marks all four read servers write, so it writes to all four. */
     @Test
-    fun `a new install writes to the five read relays`() {
+    fun `a new install writes to the four read relays`() {
         val config = HavenConfig.newInstall()
         assertEquals(HavenConfig.DEFAULT_READ_RELAYS, config.blastrRelays)
-        assertEquals(5, config.blastrRelays.size)
+        assertEquals(4, config.blastrRelays.size)
         assertEquals(config.feedRelays, config.blastrRelays)
         assertTrue(config.publicRelayListTags.all { it.size == 2 })
     }

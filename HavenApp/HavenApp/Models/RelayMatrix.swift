@@ -243,7 +243,6 @@ enum RelayMatrix {
         "wss://relay.primal.net",
         "wss://relay.snort.social",
         "wss://relay.btcforplebs.com",
-        "wss://nostr-pub.wellorder.net",
         "wss://relay.nostr.bg",
         "wss://nostr.oxtr.dev",
         "wss://relay.nostr.net",
