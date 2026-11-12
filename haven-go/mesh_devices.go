@@ -252,6 +252,10 @@ func isMeshDeviceAuth(ctx context.Context, auth *nostr.Event) bool {
 // token. ok false: a device key may not do this.
 func meshDeviceVerb(r *http.Request) (verb, sha string, spend, ok bool) {
 	switch {
+	case r.URL.Path == "/" && r.Method == http.MethodGet && strings.EqualFold(r.Header.Get("Upgrade"), "websocket"):
+		// The outbox websocket on which the vault sends this device's
+		// fresh posts for it (mesh_publish.go). One token per connection.
+		return meshPublishVerb, "", true, true
 	case r.URL.Path == "/upload" && r.Method == http.MethodPut:
 		// The hash is checked once the body is read (the door, and the
 		// index's Keep for the own port).

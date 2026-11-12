@@ -108,6 +108,21 @@ another key stays.
 
 The owner-signed 24242 keeps working until the apps switch (`TODO(mesh-key)`).
 
+### 2.2 Publish for me (the vault sends the phone's posts)
+
+Sync pick 1 (Logen, 2026-11-12): exactly one device blasts each note, the vault when it confirms within about 10 s,
+otherwise the phone. `haven-go/mesh_publish.go`.
+
+- The device opens the outbox websocket (`GET /`, `Upgrade: websocket`) over the mesh with `Authorization: Nostr
+  <24242>` signed by **its mesh key**: `["t", "publish"]`, `["p", <vault's mesh npub>]`, `["expiration", <unix>]` at
+  most 5 minutes ahead, no `x`. Same checks as §2.1, spent at the upgrade: one token per connection (replay: 409).
+- On that connection `["OK", <id>, true, ""]` means the vault **stored the note and queued its blast**. Every other
+  answer is OK false and the device sends the note itself: not the owner's (`restricted:`), signed more than
+  5 minutes ago or ephemeral (`blocked:`), already held (`duplicate:`), or a replaceable the vault keeps a newer copy
+  of (`blocked:`). Old notes are never re-blasted, not even for a paired device.
+- Without the token (a stranger, the device's catch-up, `?pulled=1`) nothing written over the mesh is blasted, as
+  before (`mesh_safety.go`).
+
 **Answer:**
 ```json
 {"id": "<32 hex>", "token": "<64 hex>", "state": "building"}

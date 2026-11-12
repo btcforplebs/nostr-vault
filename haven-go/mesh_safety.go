@@ -203,12 +203,17 @@ func noteStoredForMeshBlobs(_ context.Context, ev *nostr.Event) error {
 }
 
 // newBlastStored is the outbox's after-store hook for (2): blast an event
-// only when it came from the owner's own side (not the mesh door) and the
+// only when it came from the owner's own side (not the mesh door, unless a
+// paired device asked the vault to send it: mesh_publish.go) and the
 // store really holds it now. For replaceable kinds khatru calls this after
 // ReplaceEvent, which returns nil when it keeps a newer copy; blasting then
 // would push a stale profile, follow list or 10063 back onto public relays.
 func newBlastStored(stored func(ctx context.Context, id string) bool, send func(*nostr.Event)) func(context.Context, *nostr.Event) error {
 	return func(ctx context.Context, ev *nostr.Event) error {
+		if isPublishForMeConn(ctx) {
+			// A paired device asked the vault to send it (mesh_publish.go).
+			return publishForMe(ctx, ev, stored, send)
+		}
 		if isMeshConn(ctx) {
 			slog.Info("event stored from the mesh, not blasted", "id", ev.ID, "kind", ev.Kind)
 			return nil
@@ -303,8 +308,9 @@ func ownDeviceWriteURL(raw string) string {
 // replaceOrDup answers ErrDupEvent for those too.
 func wireOutboxWrites(relay *khatru.Relay, db DBBackend, send func(*nostr.Event)) {
 	blastStored := newBlastStored(outboxHolds, send)
-	relay.StoreEvent = append(relay.StoreEvent, db.SaveEvent, noteStoredForMeshBlobs, blastStored)
-	relay.ReplaceEvent = append(relay.ReplaceEvent, replaceOrDup(db), noteStoredForMeshBlobs, blastStored)
+	relay.RejectEvent = append(relay.RejectEvent, rejectForPublishForMe)
+	relay.StoreEvent = append(relay.StoreEvent, refuseDupForPublish(db.SaveEvent), noteStoredForMeshBlobs, blastStored)
+	relay.ReplaceEvent = append(relay.ReplaceEvent, refuseDupForPublish(replaceOrDup(db)), noteStoredForMeshBlobs, blastStored)
 }
 
 // replaceOrDup is db.ReplaceEvent, except that an event db already holds
