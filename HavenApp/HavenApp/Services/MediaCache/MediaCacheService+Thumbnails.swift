@@ -243,7 +243,6 @@ extension MediaCacheService {
     }
 
     func saveAvatarThumbnail(_ data: Data, for url: URL, maxPixel: Int) {
-        guard !isDiskCacheDisabled else { return }
         try? data.write(to: avatarThumbnailPath(for: url, maxPixel: maxPixel), options: .atomic)
     }
 

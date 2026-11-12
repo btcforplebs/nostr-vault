@@ -59,7 +59,6 @@ struct SettingsView: View {
         case privacy = "Privacy"
         case feed = "Feed"
         case appearance = "Appearance"
-        case media = "Media & Cache"
         case pushNotifications = "Notifications"
         case relays = "Relays"
         case blossom = "Media Servers"
@@ -101,7 +100,6 @@ struct SettingsView: View {
             case .privacy: return "hand.raised"
             case .feed: return "newspaper"
             case .appearance: return "paintpalette"
-            case .media: return "photo.on.rectangle"
             case .pushNotifications: return "bell.badge"
             case .relays: return "point.3.connected.trianglepath.dotted"
             case .blossom: return "server.rack"
@@ -140,7 +138,7 @@ struct SettingsView: View {
         #endif
         return [
             ("Account", [.accounts, .blocked, .recentlyDeleted, .followingBackup, .listBackups, .wallet, .privacy]),
-            ("Feed & Display", [.feed, .appearance, .media]),
+            ("Feed & Display", [.feed, .appearance]),
             ("Notifications", [.pushNotifications]),
             ("Relays", [.relays, .blossom]),
             ("Your Vault", relayTabs),
@@ -227,7 +225,7 @@ struct SettingsView: View {
             switch self {
             case .account: return [.accounts, .wallet, .bitcoin, .privacy, .blocked]
             case .vault: return [.startup, .macRelay, .relayAccess, .fipsMesh, .advanced]
-            case .relaysMedia: return [.relays, .blossom, .media]
+            case .relaysMedia: return [.relays, .blossom]
             case .backups: return [.backup, .followingBackup, .listBackups, .recentlyDeleted, .importNotes]
             case .reading: return [.feed, .appearance, .pushNotifications, .proofOfWork]
             case .help: return [.tutorials, .logs]
@@ -811,7 +809,6 @@ struct SettingsView: View {
         case .recentlyDeleted: return .gray
         case .appearance: return .purple
         case .feed: return .pink
-        case .media: return .indigo
         case .relays: return .havenPurple
         case .pushNotifications: return .red
         case .importNotes: return .orange
@@ -877,7 +874,6 @@ struct SettingsView: View {
             case .relays: RelayMatrixView()
             case .pushNotifications: PushNotificationSettingsView()
             case .importNotes: ImportSettingsView()
-            case .media: MediaSettingsView()
             case .relayAccess: RelayAccessSettingsView()
             case .fipsMesh:
                 #if os(iOS)

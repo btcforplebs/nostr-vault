@@ -25,12 +25,7 @@ extension MediaCacheService {
         return FileManager.default.fileExists(atPath: path.path)
     }
 
-    var isDiskCacheDisabled: Bool {
-        diskCacheLock.withLock { diskCacheDisabled }
-    }
-
     func saveToCache(url: URL, data: Data) {
-        guard !isDiskCacheDisabled else { return }
         // Guard: Don't cache extremely small files which are likely error messages/404 pages
         guard data.count > 100 else {
             #if DEBUG

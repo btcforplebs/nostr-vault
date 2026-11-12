@@ -167,7 +167,7 @@ final class MediaServersDraftTests: XCTestCase {
         let settings = try source("HavenApp/Views/Settings/SettingsView.swift")
         XCTAssertTrue(settings.contains("if selectedTab == .blossom { MediaServersLeaveGuard.shared.requestLeave(go) }"))
         XCTAssertEqual(count("selectedTab = ", in: settings), 2, "every sidebar switch goes through select(_:)")
-        for host in ["HavenApp/Views/Compose/UploadServersLink.swift", "HavenApp/Views/Dashboard/BlossomDashboardView.swift"] {
+        for host in ["HavenApp/Views/Compose/UploadServersLink.swift", "HavenApp/Views/MediaGallery/MediaGalleryView.swift"] {
             let src = try source(host)
             XCTAssertTrue(src.contains("BlossomSettingsView(pushed: false)"), host)
             XCTAssertTrue(src.contains("MediaServersLeaveGuard.shared.requestLeave {"), host)

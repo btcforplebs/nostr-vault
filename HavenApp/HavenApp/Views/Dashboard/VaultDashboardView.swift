@@ -563,7 +563,8 @@ struct VaultDashboardView: View {
                 RelayAccessSettingsView().settingsPage("Who Can Reach You")
             }
             DashboardDivider()
-            SettingLink(icon: "server.rack", title: "Media Servers", value: "\(config.blossomMirrors.count)") {
+            // What uploads use: typed servers, the Mac, this device's mesh address.
+            SettingLink(icon: "server.rack", title: "Media Servers", value: "\(config.activeBlossomMirrors.count)") {
                 BlossomSettingsView().settingsPage("Media Servers")
             }
             DashboardDivider()
@@ -598,10 +599,6 @@ struct VaultDashboardView: View {
         DashboardSection(title: "Advanced") {
             SettingLink(icon: "server.rack", title: "Relay details", value: nil) {
                 RelayDetailsPage().settingsPage("Relay details")
-            }
-            DashboardDivider()
-            SettingLink(icon: "photo.on.rectangle", title: "Media servers", value: nil) {
-                MediaServersPage().settingsPage("Media servers")
             }
             #if os(macOS)
             // iPhone/iPad: Mesh is on the Profile tab, beside Settings.

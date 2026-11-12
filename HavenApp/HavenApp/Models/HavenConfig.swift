@@ -22,10 +22,13 @@ struct HavenConfig: Codable, Equatable {
     var setupMode: String = "full" // "full", "browse", or "newuser"
     var defaultFeedMode: String = "FOLLOWING" // "FOLLOWING", "POPULAR", etc.
     var hasCompletedInitialImport: Bool = false // Browse mode: tracks if first background import has run
-    var disableMediaCache: Bool = false
     var autoplayVideos: Bool = true
-    var cacheTTLDays: Int = 3
-    var prefetchProfilePictures: Bool = false
+    /// Other people's media is kept a week, then cleared. Older builds had a
+    /// switch to turn the cache off, a Keep Media For picker and a profile
+    /// picture prefetch switch; they are gone (media settings trim,
+    /// 2026-11-12). Their saved values are not read, so the first save after
+    /// launch drops them from config.json.
+    static let mediaKeepDays = 7
     // Settings > Privacy. Both reach a third party with a request signed by your key, so both start off.
     var vertexLookups: Bool = false // Ask Vertex (relay.vertexlab.io) for follower counts when a profile opens
     var fanfaresAutoCheck: Bool = false // Ask Fanfares for a gated article's key when it shows, not only on a tap
@@ -312,7 +315,7 @@ struct HavenConfig: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
-        case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, disableMediaCache, autoplayVideos, cacheTTLDays, prefetchProfilePictures, vertexLookups, fanfaresAutoCheck, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
+        case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, autoplayVideos, vertexLookups, fanfaresAutoCheck, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
         case useOLED, textSizeScale, feedLayoutModes, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage, hideNostrVaultBadge
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications, notifyOwnAccountTags, showDMTextInNotifications
@@ -359,10 +362,7 @@ struct HavenConfig: Codable, Equatable {
         hasAcceptedToS = try container.decodeIfPresent(Bool.self, forKey: .hasAcceptedToS) ?? defaults.hasAcceptedToS
         setupMode = try container.decodeIfPresent(String.self, forKey: .setupMode) ?? defaults.setupMode
         hasCompletedInitialImport = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedInitialImport) ?? defaults.hasCompletedInitialImport
-        disableMediaCache = try container.decodeIfPresent(Bool.self, forKey: .disableMediaCache) ?? defaults.disableMediaCache
         autoplayVideos = try container.decodeIfPresent(Bool.self, forKey: .autoplayVideos) ?? defaults.autoplayVideos
-        cacheTTLDays = try container.decodeIfPresent(Int.self, forKey: .cacheTTLDays) ?? defaults.cacheTTLDays
-        prefetchProfilePictures = try container.decodeIfPresent(Bool.self, forKey: .prefetchProfilePictures) ?? defaults.prefetchProfilePictures
         vertexLookups = try container.decodeIfPresent(Bool.self, forKey: .vertexLookups) ?? defaults.vertexLookups
         fanfaresAutoCheck = try container.decodeIfPresent(Bool.self, forKey: .fanfaresAutoCheck) ?? defaults.fanfaresAutoCheck
         ownerNcryptsec = try container.decodeIfPresent(String.self, forKey: .ownerNcryptsec) ?? defaults.ownerNcryptsec

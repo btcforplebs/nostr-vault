@@ -12,7 +12,6 @@ struct BackupSettingsView: View {
 
     @State private var isExportingJSONL = false
     @State private var isImportingJSONL = false
-    @State private var isExportingBlossom = false
     @State private var isImportingBlossom = false
     @State private var statusMessage = ""
     /// A refused restore ("This backup isn't…") is a failure too.
@@ -46,7 +45,7 @@ struct BackupSettingsView: View {
                             Text("Export")
                         }
                     }
-                    .disabled(isExportingJSONL || isImportingJSONL || isExportingBlossom || isImportingBlossom)
+                    .disabled(isExportingJSONL || isImportingJSONL || isImportingBlossom)
                 }
                 
                 HStack {
@@ -69,36 +68,13 @@ struct BackupSettingsView: View {
                             Text("Import")
                         }
                     }
-                    .disabled(isExportingJSONL || isImportingJSONL || isExportingBlossom || isImportingBlossom)
+                    .disabled(isExportingJSONL || isImportingJSONL || isImportingBlossom)
                 }
             } header: {
                 Text("Notes").settingInfo(.relayBackup)
             }
             
             Section {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Export Media")
-                            .font(.appBody)
-                        Text("Save all your vault's media as a backup")
-                            .font(.appCaption)
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Button(action: exportBlossom) {
-                        HStack(spacing: 6) {
-                            if isExportingBlossom {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "photo.stack")
-                            }
-                            Text("Export")
-                        }
-                    }
-                    .disabled(isExportingJSONL || isImportingJSONL || isExportingBlossom || isImportingBlossom)
-                }
-                
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Import Media")
@@ -119,10 +95,13 @@ struct BackupSettingsView: View {
                             Text("Import")
                         }
                     }
-                    .disabled(isExportingJSONL || isImportingJSONL || isExportingBlossom || isImportingBlossom)
+                    .disabled(isExportingJSONL || isImportingJSONL || isImportingBlossom)
                 }
             } header: {
                 Text("Media")
+            } footer: {
+                // One button backs up media: the dashboard's (2026-11-12).
+                Text("To back up your media, use Back up media on the dashboard.")
             }
 
             if !statusMessage.isEmpty {
@@ -227,34 +206,6 @@ struct BackupSettingsView: View {
                     statusMessage = BackupRestoreCode.error(code: code) ?? "Notes restored successfully!"
                     clearStatus()
                 }
-            }
-        }
-    }
-    
-    // MARK: - Blossom Export
-    
-    private func exportBlossom() {
-        isExportingBlossom = true
-        statusMessage = "Preparing media export..."
-        
-        let tempDir = NSTemporaryDirectory()
-        let tempPath = (tempDir as NSString).appendingPathComponent("blossom-backup-\(Date().timeIntervalSince1970).zip")
-        
-        relayManager.runBlossomExportWithExtensions(config: configService.config, outputPath: tempPath) { success in
-            Task { @MainActor in
-                isExportingBlossom = false
-                guard success else {
-                    statusMessage = "Media export failed"
-                    clearStatus()
-                    return
-                }
-                // "Last backup" only once the file is really saved or shared, not on a cancel.
-                #if os(macOS)
-                presentSavePanel(title: "Save Media Backup", defaultName: "blossom-backup.zip", tempPath: tempPath) { VaultHistory.lastMediaBackup = Date() }
-                #else
-                shareFile(at: tempPath) { VaultHistory.lastMediaBackup = Date() }
-                statusMessage = ""
-                #endif
             }
         }
     }
