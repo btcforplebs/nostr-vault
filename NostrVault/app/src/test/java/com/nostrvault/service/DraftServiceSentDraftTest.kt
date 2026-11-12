@@ -25,7 +25,7 @@ class DraftServiceSentDraftTest {
         every { context.filesDir } returns tmp.root
         val config = mockk<ConfigStore>(relaxed = true)
         every { config.activeAccountHexPubkey } returns MutableStateFlow("alice")
-        return DraftService(context, config, mockk(relaxed = true))
+        return DraftService(context, config, mockk(relaxed = true), mockk(relaxed = true))
     }
 
     @Test fun theSentVersionGoes() {

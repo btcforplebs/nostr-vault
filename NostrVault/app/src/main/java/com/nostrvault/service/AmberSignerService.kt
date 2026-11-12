@@ -225,8 +225,9 @@ class AmberSignerService @Inject constructor(
     suspend fun nip04Decrypt(ciphertext: String, senderPubkey: String, silentOnly: Boolean = false): String? =
         cryptoOp("nip04_decrypt", "NIP04_DECRYPT", ciphertext, senderPubkey, silentOnly)
 
-    suspend fun nip44Encrypt(plaintext: String, recipientPubkey: String): String? =
-        cryptoOp("nip44_encrypt", "NIP44_ENCRYPT", plaintext, recipientPubkey)
+    /** @param silentOnly see [nip04Decrypt]. */
+    suspend fun nip44Encrypt(plaintext: String, recipientPubkey: String, silentOnly: Boolean = false): String? =
+        cryptoOp("nip44_encrypt", "NIP44_ENCRYPT", plaintext, recipientPubkey, silentOnly)
 
     /** @param silentOnly see [nip04Decrypt]. */
     suspend fun nip44Decrypt(ciphertext: String, senderPubkey: String, silentOnly: Boolean = false): String? =

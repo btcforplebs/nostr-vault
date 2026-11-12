@@ -51,6 +51,13 @@ class DraftService: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
 
+    /// The fetch running now and the account it is for: a second caller
+    /// waits for it instead of opening every draft again.
+    private let fetchFlight = AccountSingleFlight()
+    /// Drafts already opened, by event id (the id covers the content, so a
+    /// newer save is a new entry). Opening one can be a bunker round trip.
+    private var openedDrafts: [String: DraftEnvelope.Opened] = [:]
+
     private init() {
         loadFromDisk()
         loadTombstones()
@@ -293,8 +300,16 @@ class DraftService: ObservableObject {
             pendingSaves.append(draft)
             return
         }
+        // NIP-37: the text and the reply/quote/mention tags go NIP-44
+        // encrypted to the author's own key; only d and k stay outside. A
+        // failed encryption sends nothing.
+        let me = NostrService.shared.activeHexPubkey
+        guard let sealed = try? await DraftEnvelope.seal(
+            content: draft.content, tags: draft.tags, updatedAt: draft.updatedAt,
+            encrypt: { try await MuteListStore.encryptToSelf($0, me: me, nip04: false) }
+        ) else { return }
         guard let event = await NostrService.shared.signEventAsync(
-            kind: 31234, content: draft.content, tags: draft.tags
+            kind: 31234, content: sealed.content, tags: sealed.tags
         ) else { return }
         await postEventToPrivateRelayConfirmed(event)
     }
@@ -306,7 +321,12 @@ class DraftService: ObservableObject {
     func fetchDrafts() async {
         let ownPubkey = NostrService.shared.activeHexPubkey
         guard !ownPubkey.isEmpty else { return }
+        await fetchFlight.run(account: ownPubkey, currentAccount: { NostrService.shared.activeHexPubkey }) {
+            await self.performFetch(ownPubkey: ownPubkey)
+        }
+    }
 
+    private func performFetch(ownPubkey: String) async {
         isLoading = true
         defer { isLoading = false }
 
@@ -316,29 +336,48 @@ class DraftService: ObservableObject {
         let filter: [String: Any] = ["kinds": [31234], "authors": [ownPubkey]]
         let receivedEvents = await VaultSocket.query(path: "/private", filter: filter, timeout: 5) ?? []
 
-        // Parse relay events into Draft structs
-        let relayDrafts = receivedEvents.compactMap { event -> Draft? in
-            guard let dTag = event.tags.first(where: { $0.count >= 2 && $0[0] == "d" })?[1] else {
-                return nil
+        // Open each one (NIP-37, encrypted to our own key). An old plaintext
+        // draft opens as it is and is saved again encrypted below; one that
+        // can't be opened is left out, never shown as ciphertext.
+        var relayDrafts: [Draft] = []
+        var plaintextIds: Set<String> = []
+        var opens: [String: DraftEnvelope.Opened] = [:]
+        for event in receivedEvents where event.pubkey.lowercased() == ownPubkey.lowercased() {
+            var opened = openedDrafts[event.id]
+            if opened == nil {
+                opened = await DraftEnvelope.open(
+                    content: event.content, tags: event.tags,
+                    decrypt: { try await MuteListStore.decryptToSelf($0, me: ownPubkey, nip04: false) }
+                )
             }
+            guard let opened else { continue }
+            // Only ones that opened: a bunker that wasn't ready is asked again next time.
+            opens[event.id] = opened
+            let tags = opened.tags
+            guard let dTag = tags.first(where: { $0.count >= 2 && $0[0] == "d" })?[1] else { continue }
 
-            let eTags = event.tags.filter { $0.count >= 2 && $0[0] == "e" }
+            let eTags = tags.filter { $0.count >= 2 && $0[0] == "e" }
             let replyTag = eTags.first(where: { $0.count >= 4 && $0[3] == "reply" })
             let rootTag = eTags.first(where: { $0.count >= 4 && $0[3] == "root" })
-            let qTag = event.tags.first(where: { $0.count >= 2 && $0[0] == "q" })
+            let qTag = tags.first(where: { $0.count >= 2 && $0[0] == "q" })
 
-            return Draft(
+            if opened.wasPlaintext { plaintextIds.insert(dTag) }
+            relayDrafts.append(Draft(
                 id: dTag,
-                content: event.content,
+                content: opened.content,
                 pubkey: event.pubkey,
                 replyToId: replyTag?[1],
                 rootId: rootTag?[1],
                 quoteId: qTag?[1],
                 quotePubkey: qTag != nil && qTag!.count >= 4 ? qTag![3] : nil,
-                tags: event.tags,
-                updatedAt: event.createdAtDate
-            )
+                tags: tags,
+                updatedAt: opened.createdAt ?? event.createdAtDate
+            ))
         }
+        // Kept for the events the relay still has, so the cache doesn't grow.
+        openedDrafts = opens
+        // A switch while opening: these belong to the account we asked as.
+        guard NostrService.shared.activeHexPubkey == ownPubkey else { return }
 
         // A relay copy of a draft deleted here missed its delete: leave it
         // out, and send the delete again.
@@ -361,6 +400,20 @@ class DraftService: ObservableObject {
 
         drafts = Array(merged.values).sorted { $0.updatedAt > $1.updatedAt }
         saveToDisk()
+
+        // Old plaintext drafts on the relay are replaced once by an encrypted
+        // copy (same d tag); the newer of the two copies is the one saved.
+        // Read from `drafts` each time: one deleted meanwhile isn't sent. Not
+        // awaited here, so the list isn't "loading" while a signer answers.
+        let resave = live.map(\.id).filter(plaintextIds.contains)
+        if !resave.isEmpty {
+            Task { [weak self] in
+                for id in resave {
+                    guard let self, let draft = self.drafts.first(where: { $0.id == id }) else { continue }
+                    await self.saveToRelay(draft: draft)
+                }
+            }
+        }
     }
 
     // MARK: - Delete Draft
