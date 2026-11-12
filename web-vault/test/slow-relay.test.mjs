@@ -45,7 +45,9 @@ class GoodSocket {
   close() { if (this.readyState >= 2) return; this.readyState = 3; setTimeout(() => this.onclose?.({}), 0) }
 }
 // Real WebSocket for the hanging relay (the handshake really never finishes), the in-memory one for the good relay.
-function Socket(url) { return url.startsWith(GOOD) ? new GoodSocket(url) : new WebSocket(url) }
+// hangDials counts dials on the client side: the server's accept count can still rise from an earlier test's connect.
+let hangDials = 0
+function Socket(url) { if (url.startsWith(GOOD)) return new GoodSocket(url); hangDials++; return new WebSocket(url) }
 
 const newPool = () => {
   const p = new LivePool({ websocketImplementation: Socket })
@@ -96,11 +98,11 @@ test("once a relay's connect has failed, asks skip it at once", async () => {
   const p = newPool()
   try {
     p.coolDown(hangUrl + "/") // what a failed or timed-out connect does (next test)
-    const before = accepted
+    const before = hangDials
     const { out, ms } = await timed(() => p.querySync([GOOD, hangUrl], { kinds: [1] }, { maxWait: 6000 }))
     assert.equal(out.length, 3)
     assert.ok(ms < 300, `read took ${ms} ms`)
-    assert.equal(accepted, before, "not dialed")
+    assert.equal(hangDials, before, "not dialed")
   } finally { p.destroy() }
 })
 
@@ -115,9 +117,9 @@ test("a failed connect starts the cool-down, a good one ends it, and online clea
     assert.equal(p.coolDowns.get(key).n, 1)
     const until = p.coolDowns.get(key).until - Date.now()
     assert.ok(until > COOL_DOWN_MS[0] - 1000 && until <= COOL_DOWN_MS[0], `${until} ms`)
-    const before = accepted
+    const before = hangDials
     await assert.rejects(p.ensureRelay(hangUrl), /its last connect failed/)
-    assert.equal(accepted, before, "no new socket while cooling down")
+    assert.equal(hangDials, before, "no new socket while cooling down")
     // A signer's own relay is never skipped.
     p.keepForSigner([hangUrl])
     assert.equal(p.coolingDown(key), false)
