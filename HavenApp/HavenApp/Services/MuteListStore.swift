@@ -22,6 +22,13 @@ final class MuteListStore {
     private var activeHex = ""
     private var cancellables = Set<AnyCancellable>()
     private var started = false
+    /// Accounts whose relays were asked for their list this launch, found or not.
+    private var asked: Set<String> = []
+    /// The id of the list last opened per account.
+    private var openedID: [String: String] = [:]
+
+    /// Posted on the main thread when an account's list may have settled (`isSettled`).
+    static let settled = Notification.Name("MuteListSettled")
 
     private static let defaultsKey = "muteListEvents"
     /// Saves the stored events in the order they were taken, off the lock.
@@ -41,6 +48,18 @@ final class MuteListStore {
     }
 
     // MARK: - Reading
+
+    /// True once this launch has asked the relays for `hex`'s list (found or
+    /// not) and the newest one held is opened. Screens that keep something from
+    /// the list's people (WoT newcomers) wait for it, so nobody muted is
+    /// offered before the list lands.
+    func isSettled(hex: String) -> Bool {
+        let h = hex.lowercased()
+        lock.lock(); defer { lock.unlock() }
+        guard asked.contains(h) else { return false }
+        guard let event = events[h] else { return true }
+        return openedID[h] == event.id
+    }
 
     func list(forHex hex: String) -> MuteList {
         lock.lock(); defer { lock.unlock() }
@@ -107,7 +126,14 @@ final class MuteListStore {
             let lookup = await NostrService.shared.lookupNewestReplaceable(
                 kind: 10000, for: hex, alsoAsk: Array(Set(config.readRelays + Self.extraRelays)))
             if let event = lookup.event { NostrService.shared.applyOwnMuteList(event) }
+            markAsked(hex)
+            await MainActor.run { NotificationCenter.default.post(name: Self.settled, object: nil) }
         }
+    }
+
+    private func markAsked(_ hex: String) {
+        lock.lock(); defer { lock.unlock() }
+        asked.insert(hex)
     }
 
     /// A kind 10000 by one of this device's accounts (the caller checks), from any relay. Kept
@@ -155,7 +181,9 @@ final class MuteListStore {
         guard events[hex]?.id == event.id else { lock.unlock(); return } // a newer one came in meanwhile
         let changed = lists[hex] != opened
         lists[hex] = opened
+        openedID[hex] = event.id
         lock.unlock()
+        await MainActor.run { NotificationCenter.default.post(name: Self.settled, object: nil) }
         #if DEBUG
         print("MuteListStore: \(hex.prefix(8)) private people \(opened.privatePubkeys.count), words \(opened.words.count), hashtags \(opened.hashtags.count), threads \(opened.threads.count) \(opened.privateNote)")
         #endif

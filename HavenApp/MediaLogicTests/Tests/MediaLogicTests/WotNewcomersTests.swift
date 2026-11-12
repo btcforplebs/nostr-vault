@@ -20,6 +20,19 @@ final class WotNewcomersTests: XCTestCase {
         XCTAssertTrue(WotNewcomers.update(vouched: [pk(1), pk(2)], kept: kept, now: 10 + 7 * 86400).fresh.isEmpty)
     }
 
+    func testMutedPeopleAreNeverOfferedNorNewlyNotedAndDropOutOnceMuted() {
+        let muted: Set<String> = [pk(2)]
+        let first = WotNewcomers.update(vouched: [pk(1), pk(2)], kept: nil, now: 1000, muted: muted)
+        XCTAssertTrue(first.fresh.isEmpty)
+        XCTAssertEqual(first.known, [String(pk(1).prefix(8))], "a muted person isn't noted on a first look")
+        let r = WotNewcomers.update(vouched: [pk(1), pk(2)], kept: first, now: 2000)
+        XCTAssertEqual(r.fresh.map(\.pubkey), [pk(2)])
+        let nowMuted = WotNewcomers.update(vouched: [pk(1), pk(2)], kept: r, now: 3000, muted: muted)
+        XCTAssertTrue(nowMuted.fresh.isEmpty, "muted after arriving: no longer new")
+        XCTAssertTrue(WotNewcomers.update(vouched: [pk(1), pk(2)], kept: nowMuted, now: 4000).fresh.isEmpty,
+                      "once known they don't come back as new after an unmute")
+    }
+
     func testSomeoneWhoDropsOutAndComesBackIsNotNewAgain() {
         var kept = WotNewcomers.update(vouched: [pk(1), pk(2)], kept: nil, now: 0)
         kept = WotNewcomers.update(vouched: [pk(1)], kept: kept, now: 10)

@@ -24,6 +24,19 @@ class NewInWebTest {
         assertTrue(NewInWeb.update(listOf(pk(1), pk(2)), kept, 10 + 7 * 86400L).fresh.isEmpty())
     }
 
+    @Test fun mutedPeopleAreNeverOfferedNorNewlyNotedAndDropOutOnceMuted() {
+        val muted = setOf(pk(2))
+        val first = NewInWeb.update(listOf(pk(1), pk(2)), null, 1000, muted)
+        assertTrue(first.fresh.isEmpty())
+        assertEquals("a muted person isn't noted on a first look", setOf(pk(1).take(8)), first.known)
+        val r = NewInWeb.update(listOf(pk(1), pk(2)), first, 2000)
+        assertEquals(listOf(pk(2)), r.fresh.map { it.pubkey })
+        val nowMuted = NewInWeb.update(listOf(pk(1), pk(2)), r, 3000, muted)
+        assertTrue("muted after arriving: no longer new", nowMuted.fresh.isEmpty())
+        assertTrue("once known they don't come back as new after an unmute",
+            NewInWeb.update(listOf(pk(1), pk(2)), nowMuted, 4000).fresh.isEmpty())
+    }
+
     @Test fun someoneWhoDropsOutAndComesBackIsNotNewAgain() {
         var kept = NewInWeb.update(listOf(pk(1), pk(2)), null, 0)
         kept = NewInWeb.update(listOf(pk(1)), kept, 10)

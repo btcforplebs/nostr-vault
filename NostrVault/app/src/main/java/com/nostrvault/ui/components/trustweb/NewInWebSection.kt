@@ -30,6 +30,7 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.NewInWeb
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.muteListsSettled
 import com.nostrvault.ui.theme.SecondaryText
 
 /** Where each account's seen list is kept (iOS keeps it in UserDefaults under the same key). */
@@ -52,14 +53,20 @@ internal fun NewInWebSection(
     val followed by feedService.followedPubkeys.collectAsState()
     val vouched by feedService.extendedNetworkPubkeys.collectAsState()
     val loading by feedService.isLoadingExtendedNetwork.collectAsState()
+    val settled by nostrService.muteListsSettled.collectAsState()
+    val config by feedService.configStore.config.collectAsState()
+    // Nobody is called new before the mute list has landed: the newcomers are
+    // kept, so one offered before it would sit here for a week.
+    val mutesSettled = me.isNotEmpty() && me in settled
+    val muted = remember(config) { feedService.blockedHexForActiveAccount() }
     var fresh by remember(me) { mutableStateOf(emptyList<String>()) }
 
-    LaunchedEffect(me, vouched) {
-        if (me.isEmpty() || vouched.isEmpty()) { fresh = emptyList(); return@LaunchedEffect }
+    LaunchedEffect(me, vouched, mutesSettled, muted) {
+        if (me.isEmpty() || vouched.isEmpty() || !mutesSettled) { fresh = emptyList(); return@LaunchedEffect }
         val prefs = context.applicationContext.getSharedPreferences(NEWCOMERS_PREFS, Context.MODE_PRIVATE)
         val key = NewInWeb.key(me)
         val next = NewInWeb.update(vouched, NewInWeb.fromJson(prefs.getString(key, null)),
-            System.currentTimeMillis() / 1000)
+            System.currentTimeMillis() / 1000, muted)
         prefs.edit().putString(key, next.toJson()).apply()
         fresh = next.fresh.map { it.pubkey }
         nostrService.fetchMissingProfiles(fresh.take(NewInWeb.FACES))
@@ -75,7 +82,8 @@ internal fun NewInWebSection(
     ) {
         Text(MyWebWords.NEWCOMERS_DETAIL, color = SecondaryText, fontSize = 12.sp)
         if (fresh.isEmpty()) {
-            Text(MyWebWords.newcomersEmpty(vouched.isEmpty(), loading), color = SecondaryText, fontSize = 13.sp)
+            Text(if (vouched.isNotEmpty() && !mutesSettled) "Loading your mute list..." else MyWebWords.newcomersEmpty(vouched.isEmpty(), loading),
+                color = SecondaryText, fontSize = 13.sp)
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 for (pk in fresh.take(NewInWeb.FACES)) {

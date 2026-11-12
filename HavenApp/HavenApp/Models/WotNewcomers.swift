@@ -24,7 +24,11 @@ struct WotNewcomers: Equatable, Codable {
     private static func short(_ pk: String) -> String { String(pk.prefix(8)) }
 
     /// `vouched`: the web's extended layer, most linked first. `kept` nil on a first look.
-    static func update(vouched: [String], kept: WotNewcomers?, now: Int64) -> WotNewcomers {
+    /// Anyone in `muted` (the mute list, kind 10000, public and private) is never
+    /// offered and never newly noted, and drops out of new once muted: the web's
+    /// `newInWeb` does the same.
+    static func update(vouched allVouched: [String], kept: WotNewcomers?, now: Int64, muted: Set<String> = []) -> WotNewcomers {
+        let vouched = muted.isEmpty ? allVouched : allVouched.filter { !muted.contains($0) }
         guard var next = kept else {
             return WotNewcomers(known: Set(vouched.map(short)), fresh: [])
         }
