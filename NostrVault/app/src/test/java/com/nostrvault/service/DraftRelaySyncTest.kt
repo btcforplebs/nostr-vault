@@ -10,6 +10,10 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
@@ -29,6 +33,10 @@ class DraftRelaySyncTest {
     @get:Rule val tmp = TemporaryFolder()
 
     private val nostr = mockk<NostrService>(relaxed = true)
+    private val cipher = mockk<DraftSelfCipher>().also {
+        coEvery { it.encrypt(any(), any()) } answers { "SEALED:" + firstArg<String>().length }
+        coEvery { it.decrypt(any(), any()) } returns null
+    }
 
     /**
      * The relay is up before the service starts, and the service's own
@@ -51,7 +59,7 @@ class DraftRelaySyncTest {
             configFlow
         }
         RelayForegroundService._readyForConnections.value = true
-        val drafts = DraftService(context, config, nostr)
+        val drafts = DraftService(context, config, nostr, cipher)
         check(passDone.await(5, TimeUnit.SECONDS)) { "relay-up pass never ran" }
         return drafts
     }
@@ -109,5 +117,33 @@ class DraftRelaySyncTest {
         drafts.syncDraft("nothing")
         Thread.sleep(200)
         draftSigns(0)
+    }
+
+    /** What is signed is the encrypted draft, to alice's own key: never the text, only d and k outside. */
+    @Test fun theSignedDraftIsEncryptedToSelf() {
+        val content = slot<String>()
+        val tags = slot<List<List<String>>>()
+        coEvery { nostr.signEventAsync(DraftEvents.KIND, capture(content), capture(tags), any(), any(), any(), any(), any()) } returns null
+        val drafts = service()
+        drafts.saveDraft(Draft(id = "d", content = "Hello secret", replyToId = "p".repeat(64)), syncToRelay = false)
+        drafts.syncDraft("d")
+        draftSigns(1)
+        coVerify { cipher.encrypt(match { it.contains("Hello secret") }, "alice") }
+        assertTrue(content.captured.startsWith("SEALED:"))
+        assertFalse(content.captured.contains("Hello"))
+        assertEquals(listOf(listOf("d", "d"), listOf("k", "1")), tags.captured)
+    }
+
+    /** No encryption (signer said no, no key): nothing is signed or sent, and it stays queued. */
+    @Test fun aFailedEncryptionSignsNothing() {
+        coEvery { cipher.encrypt(any(), any()) } returns null
+        val drafts = service()
+        drafts.saveDraft(Draft(id = "d", content = "Hello"), syncToRelay = false)
+        drafts.syncDraft("d")
+        Thread.sleep(200)
+        draftSigns(0)
+        coEvery { cipher.encrypt(any(), any()) } returns "SEALED"
+        drafts.syncDraft("d")
+        draftSigns(1)
     }
 }

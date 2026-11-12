@@ -38,6 +38,7 @@ class DraftService @Inject constructor(
     @ApplicationContext private val context: Context,
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
+    private val cipher: DraftSelfCipher,
 ) {
     companion object {
         private const val TAG = "DraftService"
@@ -227,8 +228,8 @@ class DraftService @Inject constructor(
      */
     private fun trySyncDraft(draft: Draft) {
         if (!RelayForegroundService.readyForConnections.value) return
-        // Drafts are plaintext. The embedded /private relay is owner-only; an
-        // external relay may not be, so drafts stay queued on the device.
+        // The embedded /private relay is owner-only; an external relay may
+        // not be, so drafts stay queued on the device.
         if (configStore.config.value.useExternalRelay) return
         // Signing uses the active account: another account's draft waits
         // until that account is active again.
@@ -240,11 +241,17 @@ class DraftService @Inject constructor(
 
         scope.launch {
             try {
-                // iOS's tag shape, so iOS and the Mac read reply and quote back.
+                // NIP-37: text, reply and quote go NIP-44 encrypted to the
+                // author's own key, in iOS's tag shape inside; only d and k
+                // outside. No encryption, nothing sent: it stays queued.
+                val me = configStore.activeAccountHexPubkey.value
+                val sealed = DraftEvents.seal(draft.content, DraftEvents.tags(draft), draft.updatedAt) {
+                    cipher.encrypt(it, me)
+                } ?: return@launch
                 val event = nostrService.signEventAsync(
                     kind = DraftEvents.KIND,
-                    content = draft.content,
-                    tags = DraftEvents.tags(draft),
+                    content = sealed.content,
+                    tags = sealed.tags,
                 )
                 // A newer save while this one was out still has to go.
                 if (event != null && postToPrivateRelay(event) && findDraft(draft.id)?.updatedAt == draft.updatedAt) {
@@ -360,7 +367,10 @@ class DraftService @Inject constructor(
         if (account.isEmpty()) return
         if (!fetchMutex.tryLock()) return
         try {
-            val fetched = queryDrafts(url, account) ?: return
+            val events = queryDrafts(url, account) ?: return
+            if (configStore.activeAccountHexPubkey.value != account) return
+            // Opened here, after the socket is closed. One that can't be opened is left out.
+            val (fetched, plaintext) = DraftEvents.openAll(events) { cipher.decrypt(it, account) }
             if (configStore.activeAccountHexPubkey.value != account) return
             val deleted = synchronized(pendingDeletes) { pendingDeletes.map(DraftEvents::idOf) }.toSet() +
                 synchronized(deletedThisRun) { deletedThisRun.toSet() }
@@ -368,6 +378,9 @@ class DraftService @Inject constructor(
             // update, not read-then-write: an autosave landing meanwhile is kept.
             val merged = _drafts.updateAndGet { DraftEvents.merge(it, fetched, deleted) }
             if (merged != before) persistToDisk(merged)
+            // Old plaintext drafts on the relay are replaced once by an
+            // encrypted copy (same d tag): the newer of the two copies.
+            for (id in plaintext - deleted) findDraft(id)?.let { trySyncDraft(it) }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to fetch drafts from relay", e)
         } finally {
@@ -375,10 +388,10 @@ class DraftService @Inject constructor(
         }
     }
 
-    /** The account's kind 31234 events on [url], or null if the relay didn't answer in time. */
-    private suspend fun queryDrafts(url: String, account: String): List<Draft>? = coroutineScope {
+    /** The account's kind 31234 events on [url], unopened, or null if the relay didn't answer in time. */
+    private suspend fun queryDrafts(url: String, account: String): List<DraftEvents.Fetched>? = coroutineScope {
         val client = WebSocketClient(url = url, scope = this, autoReconnect = false)
-        val found = java.util.Collections.synchronizedList(mutableListOf<Draft>())
+        val found = java.util.Collections.synchronizedList(mutableListOf<DraftEvents.Fetched>())
         val subId = "drafts-${java.util.UUID.randomUUID().toString().take(8)}"
         val req = "[\"REQ\",\"$subId\",{\"kinds\":[${DraftEvents.KIND}],\"authors\":[\"$account\"]}]"
         try {
@@ -407,12 +420,14 @@ class DraftService @Inject constructor(
                                 if (pubkey != account || obj["kind"]?.jsonPrimitive?.contentOrNull != "${DraftEvents.KIND}") return@collect
                                 val tags = obj["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" } }
                                     ?: emptyList()
-                                DraftEvents.fromEvent(
-                                    content = obj["content"]?.jsonPrimitive?.contentOrNull ?: "",
-                                    pubkey = pubkey,
-                                    tags = tags,
-                                    createdAt = obj["created_at"]?.jsonPrimitive?.longOrNull ?: return@collect,
-                                )?.let { found.add(it) }
+                                found.add(
+                                    DraftEvents.Fetched(
+                                        content = obj["content"]?.jsonPrimitive?.contentOrNull ?: "",
+                                        pubkey = pubkey,
+                                        tags = tags,
+                                        createdAt = obj["created_at"]?.jsonPrimitive?.longOrNull ?: return@collect,
+                                    ),
+                                )
                             }
                             "EOSE" -> if (arr.getOrNull(1)?.jsonPrimitive?.contentOrNull == subId) done.complete(Unit)
                             // "auth-required:" before AUTH lands; the REQ is sent again after it.
@@ -470,4 +485,53 @@ class DraftService @Inject constructor(
      * Serialize a NostrEvent to JSON string for WebSocket transmission.
      */
     private fun serializeEvent(event: NostrEvent): String = EventPublisher.serializeSignedEvent(event)
+}
+
+/**
+ * NIP-44 to the account's own key for drafts: local key, Amber, or the
+ * account's bunker (as NwcBackupService and PrivateCopyService). Null when it
+ * can't (no key, the signer said no). Decrypting never opens Amber: a fetch
+ * runs in the background, so a draft it can't open silently waits.
+ */
+@Singleton
+class DraftSelfCipher @Inject constructor(
+    private val configStore: ConfigStore,
+    private val nostrService: NostrService,
+    private val amberSignerService: AmberSignerService,
+) {
+    suspend fun encrypt(plaintext: String, me: String): String? = guard {
+        when (configStore.config.value.activeSigningMode()) {
+            "amber" -> amberSignerService.nip44Encrypt(plaintext, me)
+            "nip46" -> if (bunkerReady(me)) NIP46Service.nip44Encrypt(me, plaintext) else null
+            else -> nostrService.resolveSecretKey(forceOwner = false)?.let { sk ->
+                withContext(Dispatchers.Default) { HavenBridge.encryptNIP44(plaintext, me, sk) }
+            }
+        }
+    }
+
+    suspend fun decrypt(ciphertext: String, me: String): String? = guard {
+        when (configStore.config.value.activeSigningMode()) {
+            "amber" -> amberSignerService.nip44Decrypt(ciphertext, me, silentOnly = true)
+            "nip46" -> if (bunkerReady(me)) NIP46Service.nip44Decrypt(me, ciphertext) else null
+            else -> nostrService.resolveSecretKey(forceOwner = false)?.let { sk ->
+                withContext(Dispatchers.Default) { HavenBridge.decryptNIP44(ciphertext, me, sk) }
+            }
+        }
+    }
+
+    private suspend fun guard(op: suspend () -> String?): String? = try {
+        op()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
+
+    /** The active account's bunker is connected, connecting it if needed (as DMs do). */
+    private suspend fun bunkerReady(me: String): Boolean {
+        if (NIP46Service.isConnected.value && NIP46Service.connectedPubkey == me) return true
+        val config = configStore.config.value
+        val bunker = config.bunkerConfig(config.activeOrOwnerNpub()) ?: return false
+        return NIP46Service.connectForAccount(bunker, me) != null
+    }
 }
