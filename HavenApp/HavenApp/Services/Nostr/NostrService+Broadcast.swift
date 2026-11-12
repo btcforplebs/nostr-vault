@@ -67,14 +67,15 @@ extension NostrService {
         }
 
         // 1. Post to local relay, unless the vault takes the note (sync
-        //    pick 1, VaultPublishHandoff): then steps 1 and 3 wait for its
+        //    pick 1, vaultHandoff(for:)): then steps 1, 1b and 3 wait for its
         //    answer, at most VaultHandoffDecision.hold.
-        let vault = directBroadcast ? VaultPublishHandoff.vault(config: ConfigService.shared.config) : nil
-        if vault == nil { writeToOwnRelay(str, eventId: event.id) }
+        let handoff = directBroadcast ? vaultHandoff(for: event) : nil
+        if handoff == nil { writeToOwnRelay(str, eventId: event.id) }
 
         #if os(iOS)
         // 1b. A copy for the owner's home vault (a kiosk phone on the mesh), if one is set.
-        HomeVaultSender.shared.enqueue(eventDict: eventDict)
+        //     After the vault's answer on a hand-off (postThroughVault).
+        if handoff == nil { HomeVaultSender.shared.enqueue(eventDict: eventDict) }
         // 1c. A copy for the owner's browser relay (a nostrvault.app page on the mesh), if one is set.
         BrowserRelaySender.shared.enqueue(eventDict: eventDict)
         #endif
@@ -102,19 +103,8 @@ extension NostrService {
         }
 
         // 3. Direct broadcast, or the vault's hand-off (see step 1).
-        if let vault {
-            VaultPublishHandoff.handOff(eventId: event.id, message: str, to: vault) { [weak self] decision in
-                guard let self else { return }
-                switch decision {
-                case .vaultSends:
-                    // The vault blasts it; the phone's relay keeps a copy and does not.
-                    self.keepHandedOffNote(eventDict)
-                    onBroadcastOutcome?(.accepted)
-                case .phoneSends:
-                    self.writeToOwnRelay(str, eventId: event.id)
-                    self.broadcastDirect(event, eventDict: eventDict, onBroadcastOutcome: onBroadcastOutcome)
-                }
-            }
+        if let handoff {
+            postThroughVault(event, eventDict: eventDict, message: str, handoff: handoff, onBroadcastOutcome: onBroadcastOutcome)
         } else if directBroadcast {
             broadcastDirect(event, eventDict: eventDict, onBroadcastOutcome: onBroadcastOutcome)
         } else {
@@ -124,7 +114,7 @@ extension NostrService {
 
     /// Step 1 of postEvent: the note to this device's own relay on the plain
     /// address, so its relay blasts it and keeps its retry queue.
-    private func writeToOwnRelay(_ str: String, eventId: String) {
+    func writeToOwnRelay(_ str: String, eventId: String) {
         // Post to local relay — reuse the feed's already-connected socket
         // (the nostr way: one connection, send EVENT through it, no new TLS handshake)
         let relayReady = RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting
@@ -166,19 +156,7 @@ extension NostrService {
     /// RelayConfiguration.directBroadcastRelays for why.
     private func broadcastDirect(_ event: NostrEvent, eventDict: [String: Any],
                                  onBroadcastOutcome: ((BroadcastTally.Outcome) -> Void)?) {
-        // The same list the relay blasts to, so a Mac reached over the
-        // mesh is asked too and its OK confirms the post.
-        #if os(iOS)
-        let mesh = RelayConfiguration.macMeshRelay
-        #else
-        let mesh: RelayConfiguration.MacMeshRelay? = nil
-        #endif
-        let relays = RelayConfiguration.directBroadcastRelays(
-            kind: event.kind,
-            tags: event.tags,
-            blastrRelays: RelayConfiguration.blastrRelays(config: ConfigService.shared.config, mesh: mesh),
-            ownerWriteRelays: outboxRelays[event.pubkey] ?? []
-        )
+        let relays = directBroadcastRelays(for: event)
         // The author's own kind 10002 write relays decide "Posted"; the
         // relays above still get it. See PublishTargets.
         let send: ([String]?) -> Void = { [weak self] authorWrite in
@@ -213,10 +191,27 @@ extension NostrService {
         }
     }
 
+    /// The app's broadcast list for `event`: the same list the relay blasts
+    /// to, so a Mac reached over the mesh is asked too and its OK confirms
+    /// the post, plus the kind's extras.
+    func directBroadcastRelays(for event: NostrEvent) -> [String] {
+        #if os(iOS)
+        let mesh = RelayConfiguration.macMeshRelay
+        #else
+        let mesh: RelayConfiguration.MacMeshRelay? = nil
+        #endif
+        return RelayConfiguration.directBroadcastRelays(
+            kind: event.kind,
+            tags: event.tags,
+            blastrRelays: RelayConfiguration.blastrRelays(config: ConfigService.shared.config, mesh: mesh),
+            ownerWriteRelays: outboxRelays[event.pubkey] ?? []
+        )
+    }
+
     /// Sends to `relays` and reports a single outcome. When every relay
     /// refuses or times out it tries again, a little later each time, before
     /// giving up: a slow relay shouldn't read as a failed post.
-    private func broadcastConfirmed(_ eventDict: [String: Any], to relays: [String], attemptsLeft: Int,
+    func broadcastConfirmed(_ eventDict: [String: Any], to relays: [String], attemptsLeft: Int,
                                     completion: @escaping (BroadcastTally.Outcome) -> Void) {
         var tally = BroadcastTally(relayCount: relays.count)
         if tally.outcome != nil {

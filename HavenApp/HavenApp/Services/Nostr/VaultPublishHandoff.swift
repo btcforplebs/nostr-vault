@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import UIKit
+#endif
 
 /// Sync pick 1 (Logen, 2026-11-12): the vault sends your phone's posts.
 /// Exactly one device blasts each note: the vault if it confirms within
@@ -48,7 +51,32 @@ enum VaultPublishHandoff {
             DispatchQueue.main.async { completion(.phoneSends) }
             return
         }
-        Attempt(eventId: eventId, completion: completion).start(url: url, auth: auth, message: message)
+        // While held, the note is only in memory: keep the app running
+        // through the hold if it is locked or left (Tron, PR 1970 S1).
+        let ending = HoldTask.begin()
+        Attempt(eventId: eventId, completion: { decision in
+            completion(decision)
+            ending()
+        }).start(url: url, auth: auth, message: message)
+    }
+
+    /// A background task for one hold; the returned closure ends it, once.
+    private enum HoldTask {
+        static func begin() -> () -> Void {
+            #if os(iOS)
+            let lock = NSLock()
+            var id = UIBackgroundTaskIdentifier.invalid
+            let end = {
+                lock.lock(); let current = id; id = .invalid; lock.unlock()
+                if current != .invalid { UIApplication.shared.endBackgroundTask(current) }
+            }
+            let started = UIApplication.shared.beginBackgroundTask(withName: "Vault hand-off", expirationHandler: end)
+            lock.lock(); id = started; lock.unlock()
+            return end
+            #else
+            return {}
+            #endif
+        }
     }
 
     /// One hand-off: one socket, one answer. Kept alive by its own callbacks
@@ -149,7 +177,59 @@ enum VaultPublishHandoff {
     }
 }
 
+extension VaultPublishHandoff {
+    /// A note postEvent hands to the vault, and how it is sent
+    /// (VaultHandoffDecision.handoffPlan).
+    struct Plan {
+        let vault: RelayConfiguration.MacMeshRelay
+        let relays: PublishTargets.Plan
+    }
+}
+
 extension NostrService {
+    /// The hand-off for `event`, or nil to post as before with no delay:
+    /// a regular kind (VaultHandoffDecision.handsOff), a mesh vault
+    /// (VaultPublishHandoff.isEnabled), and the author's kind 10002 write
+    /// relays known now (Tron, PR 1970 M1).
+    func vaultHandoff(for event: NostrEvent) -> VaultPublishHandoff.Plan? {
+        guard VaultHandoffDecision.handsOff(kind: event.kind),
+              let vault = VaultPublishHandoff.vault(config: ConfigService.shared.config),
+              let relays = VaultHandoffDecision.handoffPlan(
+                authorWriteRelays: outboxRelays[event.pubkey], appWriteRelays: directBroadcastRelays(for: event))
+        else { return nil }
+        return .init(vault: vault, relays: relays)
+    }
+
+    /// Steps 1, 1b and 3 of postEvent for a handed-off note. The author's
+    /// own write relays get it at once, and their OK is the outcome; the
+    /// vault's answer decides only the rest. The vault sends it: the phone's
+    /// relay keeps a `?pulled=1` copy (stored, not blasted) and nothing more
+    /// goes out. Otherwise the phone's relay gets it on the plain address
+    /// (blasted, retried) and the phone sends the fan-out itself.
+    func postThroughVault(_ event: NostrEvent, eventDict: [String: Any], message: String,
+                          handoff: VaultPublishHandoff.Plan,
+                          onBroadcastOutcome: ((BroadcastTally.Outcome) -> Void)?) {
+        if let onBroadcastOutcome {
+            broadcastConfirmed(eventDict, to: handoff.relays.confirmed, attemptsLeft: 3, completion: onBroadcastOutcome)
+        } else {
+            broadcastRawEvent(eventDict, to: handoff.relays.confirmed)
+        }
+        VaultPublishHandoff.handOff(eventId: event.id, message: message, to: handoff.vault) { [weak self] decision in
+            #if os(iOS)
+            // After the decision, as Android: a ?pulled=1 copy reaching the
+            // same Mac first would make every hand-off a "duplicate:".
+            HomeVaultSender.shared.enqueue(eventDict: eventDict)
+            #endif
+            guard let self else { return }
+            switch decision {
+            case .vaultSends: self.keepHandedOffNote(eventDict)
+            case .phoneSends: self.writeToOwnRelay(message, eventId: event.id)
+            }
+            let rest = VaultHandoffDecision.relaysAfterHold(decision, plan: handoff.relays)
+            if !rest.isEmpty { self.broadcastRawEvent(eventDict, to: rest) }
+        }
+    }
+
     /// The vault took the note and sends it: the phone's own relay keeps a
     /// copy through `?pulled=1`, so it is stored here and never blasted
     /// (PulledInjection). Nothing is written while the relay is not up; the

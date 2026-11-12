@@ -19,6 +19,32 @@ enum VaultHandoffDecision: Equatable {
     /// A publish connection's first frame names this (Go meshPublishNotice).
     static let publishNotice = "publish-for-me: on"
 
+    /// Only regular kinds are handed to the vault (Tron, PR 1970 M1): a
+    /// profile, follow list, replaceable, ephemeral or addressable event has
+    /// kind-specific extra relays (10050's, 10063's), and the vault's blast
+    /// goes only to the blastr relays. Those take the phone's path.
+    static func handsOff(kind: Int) -> Bool {
+        kind != 0 && kind != 3 && !(10000..<40000).contains(kind)
+    }
+
+    /// How a handed-off note is sent (Tron, PR 1970 M1): the phone sends to
+    /// the author's own kind 10002 write relays (`confirmed`, which decide
+    /// "Posted") at once, alongside the hand-off; the hold decides only who
+    /// sends the app's fan-out (`alsoSend`). Nil when the author's write
+    /// relays are not known: no hand-off then.
+    static func handoffPlan(authorWriteRelays: [String]?, appWriteRelays: [String]) -> PublishTargets.Plan? {
+        guard !PublishTargets.plan(authorWriteRelays: authorWriteRelays, appWriteRelays: []).confirmed.isEmpty
+        else { return nil }
+        return PublishTargets.plan(authorWriteRelays: authorWriteRelays, appWriteRelays: appWriteRelays)
+    }
+
+    /// What the phone still sends once the hold has decided: nothing when
+    /// the vault fans the note out, the fan-out otherwise. Never `confirmed`
+    /// again: that went out at once.
+    static func relaysAfterHold(_ decision: VaultHandoffDecision, plan: PublishTargets.Plan) -> [String] {
+        decision == .vaultSends ? [] : plan.alsoSend
+    }
+
     /// The vault's OK for one note.
     struct OKAnswer: Equatable {
         let accepted: Bool

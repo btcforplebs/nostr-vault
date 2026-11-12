@@ -79,4 +79,38 @@ final class VaultHandoffDecisionTests: XCTestCase {
         XCTAssertFalse(VaultHandoffDecision.isPublishNotice(frame: "not json"))
         XCTAssertEqual(VaultHandoffDecision.publishNotice, "publish-for-me: on")
     }
+
+    // MARK: What is handed off (Tron, PR 1970 M1)
+
+    func testOnlyRegularKindsAreHandedOff() {
+        for kind in [1, 6, 7, 1111, 1068, 9735, 40000] {
+            XCTAssertTrue(VaultHandoffDecision.handsOff(kind: kind), "\(kind)")
+        }
+        for kind in [0, 3, 10000, 10002, 10050, 10063, 19999, 20000, 24242, 29999, 30000, 30023, 39999] {
+            XCTAssertFalse(VaultHandoffDecision.handsOff(kind: kind), "\(kind)")
+        }
+    }
+
+    func testTheAuthorsRelaysAreSentAtOnceAndTheFanOutWaitsForTheHold() throws {
+        let own = ["wss://own.example/", "wss://SHARED.example", "ws://127.0.0.1:4869"]
+        let app = ["wss://shared.example", "wss://blastr.example"]
+        let plan = try XCTUnwrap(VaultHandoffDecision.handoffPlan(authorWriteRelays: own, appWriteRelays: app))
+        XCTAssertEqual(plan.confirmed, ["wss://own.example", "wss://SHARED.example"], "the author's write relays, loopback dropped")
+        XCTAssertEqual(plan.alsoSend, ["wss://blastr.example"], "the fan-out the vault may take")
+        XCTAssertEqual(plan, PublishTargets.plan(authorWriteRelays: own, appWriteRelays: app), "what decides Posted is unchanged")
+    }
+
+    func testAfterTheHoldOnlyTheFanOutIsLeft() throws {
+        let plan = PublishTargets.Plan(confirmed: ["wss://own.example"], alsoSend: ["wss://blastr.example"])
+        XCTAssertEqual(VaultHandoffDecision.relaysAfterHold(.vaultSends, plan: plan), [], "the vault fans it out")
+        XCTAssertEqual(VaultHandoffDecision.relaysAfterHold(.phoneSends, plan: plan), ["wss://blastr.example"],
+                       "the author's relays were sent at once, not again")
+    }
+
+    func testNoHandOffWithoutTheAuthorsOwnRelays() {
+        XCTAssertNil(VaultHandoffDecision.handoffPlan(authorWriteRelays: nil, appWriteRelays: ["wss://blastr.example"]))
+        XCTAssertNil(VaultHandoffDecision.handoffPlan(authorWriteRelays: [], appWriteRelays: ["wss://blastr.example"]))
+        XCTAssertNil(VaultHandoffDecision.handoffPlan(authorWriteRelays: [" ", "ws://localhost:4869"],
+                                                      appWriteRelays: ["wss://blastr.example"]))
+    }
 }
