@@ -41,6 +41,16 @@ enum MeshKeyAuth {
         return tags
     }
 
+    /// The kind 24242 that opens a publish connection to a vault (sync
+    /// pick 1, haven-go mesh_publish.go): one `t` = publish, a `p` naming the
+    /// vault, an expiration no more than five minutes ahead, and no blob.
+    /// Nil without a receiver.
+    static func publishTags(receiver: String, now: Date = Date()) -> [[String]]? {
+        guard let named = unique([receiver]).first else { return nil }
+        return [["t", "publish"], ["p", named],
+                ["expiration", String(Int64(now.timeIntervalSince1970 + blossomLifetime))]]
+    }
+
     /// The JSON for SetMeshDevicesC: this device's mesh npub and My Devices
     /// without it, each once, roles kept. Nil when this device has no mesh
     /// key yet: the engine then keeps the set it has (none at first, which

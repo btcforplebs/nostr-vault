@@ -66,40 +66,11 @@ extension NostrService {
             }
         }
 
-        // 1. Post to local relay — reuse the feed's already-connected socket
-        // (the nostr way: one connection, send EVENT through it, no new TLS handshake)
-        let relayReady = RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting
-        if relayReady {
-            let localURLString = ConfigService.shared.config.nostrURL
-            if FeedService.shared.sendToLocalRelay(str) {
-                // Sent through existing feed connection
-            } else if let existing = clients[localURLString], existing.connectionState == .connected {
-                existing.send(text: str)
-            } else if let localURL = URL(string: localURLString) {
-                // Last resort: temporary client
-                let localClient = WebSocketClient()
-                localClient.isTemporary = true
-
-                localClient.$connectionState
-                    .receive(on: DispatchQueue.main)
-                    .sink { state in
-                        if state == .connected {
-                            localClient.send(text: str)
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                                localClient.disconnect()
-                            }
-                        }
-                    }
-                    .store(in: &cancellables)
-
-                localClient.connect(url: localURL)
-                trackTemporaryClient(localClient)
-            }
-        } else {
-            #if DEBUG
-            print("NostrService: ⚠️ Local relay not ready — event \(event.id.prefix(8)) will reach network via direct blast only")
-            #endif
-        }
+        // 1. Post to local relay, unless the vault takes the note (sync
+        //    pick 1, VaultPublishHandoff): then steps 1 and 3 wait for its
+        //    answer, at most VaultHandoffDecision.hold.
+        let vault = directBroadcast ? VaultPublishHandoff.vault(config: ConfigService.shared.config) : nil
+        if vault == nil { writeToOwnRelay(str, eventId: event.id) }
 
         #if os(iOS)
         // 1b. A copy for the owner's home vault (a kiosk phone on the mesh), if one is set.
@@ -130,59 +101,116 @@ extension NostrService {
             }
         }
 
-        // 3. Direct broadcast: every event goes to the blastr relays from here
-        //    too, not only through the local relay. See
-        //    RelayConfiguration.directBroadcastRelays for why.
-        if directBroadcast {
-            // The same list the relay blasts to, so a Mac reached over the
-            // mesh is asked too and its OK confirms the post.
-            #if os(iOS)
-            let mesh = RelayConfiguration.macMeshRelay
-            #else
-            let mesh: RelayConfiguration.MacMeshRelay? = nil
-            #endif
-            let relays = RelayConfiguration.directBroadcastRelays(
-                kind: event.kind,
-                tags: event.tags,
-                blastrRelays: RelayConfiguration.blastrRelays(config: ConfigService.shared.config, mesh: mesh),
-                ownerWriteRelays: outboxRelays[event.pubkey] ?? []
-            )
-            // The author's own kind 10002 write relays decide "Posted"; the
-            // relays above still get it. See PublishTargets.
-            let send: ([String]?) -> Void = { [weak self] authorWrite in
+        // 3. Direct broadcast, or the vault's hand-off (see step 1).
+        if let vault {
+            VaultPublishHandoff.handOff(eventId: event.id, message: str, to: vault) { [weak self] decision in
                 guard let self else { return }
-                let plan = PublishTargets.plan(authorWriteRelays: authorWrite, appWriteRelays: relays)
-                if let onBroadcastOutcome {
-                    if !plan.alsoSend.isEmpty { self.broadcastRawEvent(eventDict, to: plan.alsoSend) }
-                    self.broadcastConfirmed(eventDict, to: plan.confirmed, attemptsLeft: 3, completion: onBroadcastOutcome)
-                } else {
-                    self.broadcastRawEvent(eventDict, to: plan.all)
+                switch decision {
+                case .vaultSends:
+                    // The vault blasts it; the phone's relay keeps a copy and does not.
+                    self.keepHandedOffNote(eventDict)
+                    onBroadcastOutcome?(.accepted)
+                case .phoneSends:
+                    self.writeToOwnRelay(str, eventId: event.id)
+                    self.broadcastDirect(event, eventDict: eventDict, onBroadcastOutcome: onBroadcastOutcome)
                 }
             }
-            if event.kind == 10002 {
-                send(ProfileRepository.parseRelayListTags(event.tags).write)
-            } else if let known = outboxRelays[event.pubkey] {
-                send(known)
-            } else {
-                // Not loaded yet (fresh install, or an account made in another
-                // app): looked up first, briefly.
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    let list = await self.fetchNewestReplaceable(kind: 10002, for: event.pubkey,
-                                                                 alsoAsk: ["wss://purplepag.es", "wss://user.kindpag.es"], timeout: 4)
-                    let parsed = list.map { ProfileRepository.parseRelayListTags($0.tags) }
-                    let write = parsed?.write ?? []
-                    // fetchNewestReplaceable only returns a signed copy.
-                    if let list, let parsed, !write.isEmpty, self.outboxRelays[event.pubkey] == nil {
-                        self.applyRelayList(parsed, pubkey: event.pubkey, createdAt: list.created_at)
-                    }
-                    send(write)
-                }
-            }
+        } else if directBroadcast {
+            broadcastDirect(event, eventDict: eventDict, onBroadcastOutcome: onBroadcastOutcome)
         } else {
             onBroadcastOutcome?(.refused)
         }
+    }
 
+    /// Step 1 of postEvent: the note to this device's own relay on the plain
+    /// address, so its relay blasts it and keeps its retry queue.
+    private func writeToOwnRelay(_ str: String, eventId: String) {
+        // Post to local relay — reuse the feed's already-connected socket
+        // (the nostr way: one connection, send EVENT through it, no new TLS handshake)
+        let relayReady = RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting
+        if relayReady {
+            let localURLString = ConfigService.shared.config.nostrURL
+            if FeedService.shared.sendToLocalRelay(str) {
+                // Sent through existing feed connection
+            } else if let existing = clients[localURLString], existing.connectionState == .connected {
+                existing.send(text: str)
+            } else if let localURL = URL(string: localURLString) {
+                // Last resort: temporary client
+                let localClient = WebSocketClient()
+                localClient.isTemporary = true
+
+                localClient.$connectionState
+                    .receive(on: DispatchQueue.main)
+                    .sink { state in
+                        if state == .connected {
+                            localClient.send(text: str)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                                localClient.disconnect()
+                            }
+                        }
+                    }
+                    .store(in: &cancellables)
+
+                localClient.connect(url: localURL)
+                trackTemporaryClient(localClient)
+            }
+        } else {
+            #if DEBUG
+            print("NostrService: ⚠️ Local relay not ready — event \(eventId.prefix(8)) will reach network via direct blast only")
+            #endif
+        }
+    }
+
+    /// Step 3 of postEvent: every event goes to the blastr relays from here
+    /// too, not only through the local relay. See
+    /// RelayConfiguration.directBroadcastRelays for why.
+    private func broadcastDirect(_ event: NostrEvent, eventDict: [String: Any],
+                                 onBroadcastOutcome: ((BroadcastTally.Outcome) -> Void)?) {
+        // The same list the relay blasts to, so a Mac reached over the
+        // mesh is asked too and its OK confirms the post.
+        #if os(iOS)
+        let mesh = RelayConfiguration.macMeshRelay
+        #else
+        let mesh: RelayConfiguration.MacMeshRelay? = nil
+        #endif
+        let relays = RelayConfiguration.directBroadcastRelays(
+            kind: event.kind,
+            tags: event.tags,
+            blastrRelays: RelayConfiguration.blastrRelays(config: ConfigService.shared.config, mesh: mesh),
+            ownerWriteRelays: outboxRelays[event.pubkey] ?? []
+        )
+        // The author's own kind 10002 write relays decide "Posted"; the
+        // relays above still get it. See PublishTargets.
+        let send: ([String]?) -> Void = { [weak self] authorWrite in
+            guard let self else { return }
+            let plan = PublishTargets.plan(authorWriteRelays: authorWrite, appWriteRelays: relays)
+            if let onBroadcastOutcome {
+                if !plan.alsoSend.isEmpty { self.broadcastRawEvent(eventDict, to: plan.alsoSend) }
+                self.broadcastConfirmed(eventDict, to: plan.confirmed, attemptsLeft: 3, completion: onBroadcastOutcome)
+            } else {
+                self.broadcastRawEvent(eventDict, to: plan.all)
+            }
+        }
+        if event.kind == 10002 {
+            send(ProfileRepository.parseRelayListTags(event.tags).write)
+        } else if let known = outboxRelays[event.pubkey] {
+            send(known)
+        } else {
+            // Not loaded yet (fresh install, or an account made in another
+            // app): looked up first, briefly.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let list = await self.fetchNewestReplaceable(kind: 10002, for: event.pubkey,
+                                                             alsoAsk: ["wss://purplepag.es", "wss://user.kindpag.es"], timeout: 4)
+                let parsed = list.map { ProfileRepository.parseRelayListTags($0.tags) }
+                let write = parsed?.write ?? []
+                // fetchNewestReplaceable only returns a signed copy.
+                if let list, let parsed, !write.isEmpty, self.outboxRelays[event.pubkey] == nil {
+                    self.applyRelayList(parsed, pubkey: event.pubkey, createdAt: list.created_at)
+                }
+                send(write)
+            }
+        }
     }
 
     /// Sends to `relays` and reports a single outcome. When every relay
