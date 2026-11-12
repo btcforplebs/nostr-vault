@@ -40,7 +40,8 @@ enum MeshCopyV2 {
     /// The first five keys must come in the contract's order; later keys
     /// other than `error` are ignored.
     static func parseLine(_ line: String) -> Progress? {
-        guard let r = line.range(of: lineMarker) else { return nil }
+        // Byte check first: this runs on every relay log line (RelayLogBytes).
+        guard RelayLogBytes.contains(line, lineMarker), let r = line.range(of: lineMarker) else { return nil }
         if r.lowerBound != line.startIndex, !line[line.index(before: r.lowerBound)].isWhitespace { return nil }
         let tokens = line[r.upperBound...].split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\r" })
         var pairs: [(String, String)] = []

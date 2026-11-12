@@ -25,8 +25,8 @@ enum RelayLogParser {
         static func parse(_ line: String) -> LogEntry {
             var message = line
 
-            let level = line.contains("ERROR") ? "ERROR" :
-                        line.contains("WARN") ? "WARN" : "INFO"
+            let level = RelayLogBytes.contains(line, "ERROR") ? "ERROR" :
+                        RelayLogBytes.contains(line, "WARN") ? "WARN" : "INFO"
 
             if let regex = logPattern {
                 let range = NSRange(location: 0, length: message.utf16.count)
@@ -164,13 +164,13 @@ enum RelayLogParser {
     /// for either. Reactions go first: their line leads with the reaction's
     /// own content, which could say anything.
     static func inboxActivityKind(in line: String) -> Int? {
-        if line.contains("new reaction in your inbox") { return 7 }
-        if line.contains("new note in your inbox") { return 1 }
-        if line.contains("new zap in your inbox") { return 9735 }
-        if line.contains("new encrypted message in your inbox") { return 4 }
-        if line.contains("new gift-wrapped message in your chat relay") { return 1059 }
-        if line.contains("new repost in your inbox") { return 6 }
-        if line.contains("event in your inbox"), let r = line.range(of: "new event kind ") {
+        if RelayLogBytes.contains(line, "new reaction in your inbox") { return 7 }
+        if RelayLogBytes.contains(line, "new note in your inbox") { return 1 }
+        if RelayLogBytes.contains(line, "new zap in your inbox") { return 9735 }
+        if RelayLogBytes.contains(line, "new encrypted message in your inbox") { return 4 }
+        if RelayLogBytes.contains(line, "new gift-wrapped message in your chat relay") { return 1059 }
+        if RelayLogBytes.contains(line, "new repost in your inbox") { return 6 }
+        if RelayLogBytes.contains(line, "event in your inbox"), let r = line.range(of: "new event kind ") {
             return Int(line[r.upperBound...].prefix { $0.isNumber })
         }
         return nil
@@ -183,7 +183,16 @@ enum RelayLogParser {
 
     /// Extract state changes from a single log line.
     /// Pure string parsing — no MainActor, no UI dependencies.
+    /// The per-event lines take one byte comparison (fastStateChanges);
+    /// the rest get the full parse.
     static func collectStateChanges(from line: String, into batch: inout BatchedStateUpdate) {
+        if fastStateChanges(from: line, into: &batch) { return }
+        fullStateChanges(from: line, into: &batch)
+    }
+
+    /// Every check, as byte searches (RelayLogBytes): Foundation's
+    /// `contains` walked grapheme clusters on every emoji line.
+    static func fullStateChanges(from line: String, into batch: inout BatchedStateUpdate) {
         if ImportStartGate.isEngineStart(line) { batch.importEngineStarted = true }
         if let job = ImportJobs.parseLine(line) {
             batch.importJobLines.append(job)
@@ -195,10 +204,10 @@ enum RelayLogParser {
         }
         if ListHistoryScan.collect(from: line, into: &batch) { return }
         // Import state
-        if line.contains("connected successfully") {
+        if RelayLogBytes.contains(line, "connected successfully") {
             batch.importProgress = 0.1
             batch.importStatusMessage = "Connected to relays..."
-        } else if line.contains("No notes found for") {
+        } else if RelayLogBytes.contains(line, "No notes found for") {
             // An empty 10-day window (import.go): still progress through the
             // history, so the bar and the "from <month>" line keep moving for
             // someone with gaps (or a new key with no notes at all).
@@ -211,7 +220,7 @@ enum RelayLogParser {
                let rangeEnd = line.range(of: " to", range: rangeStart..<line.endIndex)?.lowerBound {
                 batch.importStatusMessage = "Looking through notes from \(line[rangeStart..<rangeEnd])..."
             }
-        } else if line.contains("Imported") && line.contains("notes") {
+        } else if RelayLogBytes.contains(line, "Imported") && RelayLogBytes.contains(line, "notes") {
             let dateStr = line.components(separatedBy: "to ").last.map { String($0.prefix(10)) }
             if let dateStr {
                 batch.progressDateStr = dateStr
@@ -225,22 +234,22 @@ enum RelayLogParser {
             } else {
                 batch.importStatusMessage = "Found notes..."
             }
-        } else if line.contains("Initializing WoT") || line.contains("building WoT") || line.contains("fetching Nostr events") {
+        } else if RelayLogBytes.contains(line, "Initializing WoT") || RelayLogBytes.contains(line, "building WoT") || RelayLogBytes.contains(line, "fetching Nostr events") {
             batch.importStatusMessage = "Building Web of Trust..."
             batch.importProgress = 0.2
-        } else if line.contains("analysing Nostr events") {
+        } else if RelayLogBytes.contains(line, "analysing Nostr events") {
             batch.importStatusMessage = "Analysing Web of Trust..."
             batch.importProgress = 0.3
-        } else if line.contains("importing inbox notes") || line.contains("Importing inbox notes") {
+        } else if RelayLogBytes.contains(line, "importing inbox notes") || RelayLogBytes.contains(line, "Importing inbox notes") {
             batch.importStatusMessage = "Importing tagged notes..."
             batch.importProgress = 0.85
-        } else if line.contains("tagged import complete") {
+        } else if RelayLogBytes.contains(line, "tagged import complete") {
             // Not the end: only IMPORT_RESULT says how the import went
             // (ImportResult). "subscribing to inbox" is a normal relay boot
             // line and says nothing about an import.
             batch.importProgress = 0.95
             batch.importStatusMessage = "Tagged notes imported"
-        } else if line.contains("imported") && line.contains("tagged notes") {
+        } else if RelayLogBytes.contains(line, "imported") && RelayLogBytes.contains(line, "tagged notes") {
             if let countMatch = line.components(separatedBy: " ").first(where: { Int($0) != nil }) {
                 batch.importProgress = 0.95
                 batch.importStatusMessage = "Imported \(countMatch) tagged notes"
@@ -248,9 +257,9 @@ enum RelayLogParser {
                 batch.importProgress = 0.95
                 batch.importStatusMessage = "Tagged notes imported"
             }
-        } else if line.contains("Import complete") || line.contains("import complete") {
+        } else if RelayLogBytes.contains(line, "Import complete") || RelayLogBytes.contains(line, "import complete") {
             batch.importProgress = 0.95
-        } else if line.contains("No notes found") {
+        } else if RelayLogBytes.contains(line, "No notes found") {
             if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
                 batch.progressDateStr = String(dateStr)
                 if let fromIndex = line.components(separatedBy: "for ").last?.prefix(10) {
@@ -262,29 +271,29 @@ enum RelayLogParser {
         }
 
         // Event counts
-        if line.contains("Imported") && line.contains("notes") && !line.contains("complete") {
+        if RelayLogBytes.contains(line, "Imported") && RelayLogBytes.contains(line, "notes") && !RelayLogBytes.contains(line, "complete") {
             let components = line.components(separatedBy: " ")
             if let importedIndex = components.firstIndex(of: "Imported"),
                importedIndex + 1 < components.count,
                let count = Int(components[importedIndex + 1]) {
                 batch.eventsStoredDelta += count
             }
-        } else if line.contains("imported") && line.contains("tagged notes") {
+        } else if RelayLogBytes.contains(line, "imported") && RelayLogBytes.contains(line, "tagged notes") {
             let components = line.components(separatedBy: " ")
             if let importedIndex = components.firstIndex(of: "imported"),
                importedIndex + 1 < components.count,
                let count = Int(components[importedIndex + 1]) {
                 batch.eventsStoredDelta += count
             }
-        } else if line.contains("event stored") {
+        } else if RelayLogBytes.contains(line, "event stored") {
             batch.eventsStoredDelta += 1
-        } else if line.contains("new note") ||
-                  line.contains("new repost") ||
-                  line.contains("new reaction") ||
-                  line.contains("new zap") ||
-                  line.contains("new encrypted message") ||
-                  line.contains("new event kind") ||
-                  line.contains("blasted event") {
+        } else if RelayLogBytes.contains(line, "new note") ||
+                  RelayLogBytes.contains(line, "new repost") ||
+                  RelayLogBytes.contains(line, "new reaction") ||
+                  RelayLogBytes.contains(line, "new zap") ||
+                  RelayLogBytes.contains(line, "new encrypted message") ||
+                  RelayLogBytes.contains(line, "new event kind") ||
+                  RelayLogBytes.contains(line, "blasted event") {
             batch.eventsStoredDelta += 1
         }
 
@@ -296,13 +305,13 @@ enum RelayLogParser {
             batch.inboxActivityKinds.insert(kind)
         }
 
-        if let r = line.range(of: startFailedMarker) {
+        if RelayLogBytes.contains(line, startFailedMarker), let r = line.range(of: startFailedMarker) {
             batch.startFailed = String(line[r.upperBound...]).trimmingCharacters(in: .whitespaces)
         }
 
         // Local notification markers — collect for LocalNotificationService.
         let notifyPrefix = "🔔NOTIFY|"
-        if let r = line.range(of: notifyPrefix) {
+        if RelayLogBytes.contains(line, notifyPrefix), let r = line.range(of: notifyPrefix) {
             let body = String(line[r.upperBound...])
             if body.hasPrefix("type=listversion|") {
                 batch.listVersionMarkers.append(body)
@@ -312,46 +321,46 @@ enum RelayLogParser {
         }
 
         // Booting status
-        let lowerLine = line.lowercased()
-        if lowerLine.contains("subscribing to") {
+        let lowerLine = RelayLogBytes.asciiLowercased(line)
+        if RelayLogBytes.contains(lowerLine, "subscribing to") {
             if let topic = line.components(separatedBy: "to ").last {
                 batch.bootStatusMessage = "Subscribing to \(topic.trimmingCharacters(in: .punctuationCharacters))..."
             }
-        } else if lowerLine.contains("is booting up") {
+        } else if RelayLogBytes.contains(lowerLine, "is booting up") {
             batch.bootStatusMessage = "Booting Haven..."
-        } else if lowerLine.contains("starting deeper web of trust") {
+        } else if RelayLogBytes.contains(lowerLine, "starting deeper web of trust") {
             batch.bootStatusMessage = "Analyzing trust graph..."
-        } else if lowerLine.contains("starting") {
+        } else if RelayLogBytes.contains(lowerLine, "starting") {
             if let service = line.components(separatedBy: "starting ").last ?? line.components(separatedBy: "Starting ").last {
                 let cleanService = service.components(separatedBy: "\"").first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? service
                 batch.bootStatusMessage = "Starting \(cleanService.trimmingCharacters(in: .punctuationCharacters))..."
             }
-        } else if lowerLine.contains("listening at") || lowerLine.contains("listening on") {
+        } else if RelayLogBytes.contains(lowerLine, "listening at") || RelayLogBytes.contains(lowerLine, "listening on") {
             batch.bootStatusMessage = "Initializing network listeners..."
             batch.stopBooting = true
-        } else if lowerLine.contains("building web of trust graph") || lowerLine.contains("initializing wot") {
+        } else if RelayLogBytes.contains(lowerLine, "building web of trust graph") || RelayLogBytes.contains(lowerLine, "initializing wot") {
             batch.bootStatusMessage = "Building trust network..."
-        } else if lowerLine.contains("analysed") || lowerLine.contains("analysing nostr events") {
+        } else if RelayLogBytes.contains(lowerLine, "analysed") || RelayLogBytes.contains(lowerLine, "analysing nostr events") {
             if let regex = analysedPattern,
                let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
                let range = Range(match.range(at: 1), in: line) {
                 batch.bootStatusMessage = "Analyzing network connections (\(String(line[range])) profiles)..."
             }
-        } else if lowerLine.contains("network size") {
+        } else if RelayLogBytes.contains(lowerLine, "network size") {
             if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
                 batch.bootStatusMessage = "Discovered \(count) network peers"
             }
-        } else if lowerLine.contains("totals") && lowerLine.contains("pubkeys") {
+        } else if RelayLogBytes.contains(lowerLine, "totals") && RelayLogBytes.contains(lowerLine, "pubkeys") {
             if let regex = pubkeysPattern,
                let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
                let range = Range(match.range(at: 1), in: line) {
                 batch.bootStatusMessage = "Discovered \(String(line[range])) network peers"
             }
-        } else if lowerLine.contains("relays discovered") {
+        } else if RelayLogBytes.contains(lowerLine, "relays discovered") {
             if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
                 batch.bootStatusMessage = "Connecting to \(count) remote relays..."
             }
-        } else if lowerLine.contains("pubkeys with minimum followers") || lowerLine.contains("eliminating pubkeys") {
+        } else if RelayLogBytes.contains(lowerLine, "pubkeys with minimum followers") || RelayLogBytes.contains(lowerLine, "eliminating pubkeys") {
             if let regex = trustGraphPattern,
                let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
                let range = Range(match.range(at: 1), in: line) {
@@ -363,25 +372,25 @@ enum RelayLogParser {
         // import.go), which starts only once the Web of Trust is ready. Not
         // the line before it ("waiting for Web of Trust before subscribing to
         // inbox"), which ended "Syncing" while the trust graph still built.
-        if lowerLine.contains("subscribing to inbox on") {
+        if RelayLogBytes.contains(lowerLine, "subscribing to inbox on") {
             batch.stopWotSyncing = true
         }
 
         // Connection tracking
-        if line.contains("accepted connection") || line.contains("new connection") || line.contains("WS connect") {
+        if RelayLogBytes.contains(line, "accepted connection") || RelayLogBytes.contains(line, "new connection") || RelayLogBytes.contains(line, "WS connect") {
             batch.connectionsDelta += 1
-        } else if line.contains("connection closed") || line.contains("WS disconnect") || line.contains("disconnected") {
+        } else if RelayLogBytes.contains(line, "connection closed") || RelayLogBytes.contains(line, "WS disconnect") || RelayLogBytes.contains(line, "disconnected") {
             batch.connectionsDelta -= 1
         }
 
         // Error states
-        if line.contains("Cannot acquire directory lock") || line.contains("Another process is using this Badger database") {
+        if RelayLogBytes.contains(line, "Cannot acquire directory lock") || RelayLogBytes.contains(line, "Another process is using this Badger database") {
             batch.isLocked = true
         }
-        if line.contains("bind: address already in use") {
+        if RelayLogBytes.contains(line, "bind: address already in use") {
             batch.isPortConflict = true
         }
-        if line.contains("mdb_env_open") && line.contains("operation not permitted") {
+        if RelayLogBytes.contains(line, "mdb_env_open") && RelayLogBytes.contains(line, "operation not permitted") {
             batch.isLocked = true
         }
     }

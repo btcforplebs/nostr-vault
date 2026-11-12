@@ -111,7 +111,8 @@ enum ImportJobs {
     static let lineMarker = "IMPORT_JOB "
 
     static func parseLine(_ line: String) -> Line? {
-        guard let r = line.range(of: lineMarker) else { return nil }
+        // Byte check first: this runs on every relay log line (RelayLogBytes).
+        guard RelayLogBytes.contains(line, lineMarker), let r = line.range(of: lineMarker) else { return nil }
         var fields: [String: String] = [:]
         for part in line[r.upperBound...].split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\r" }) {
             guard let eq = part.firstIndex(of: "=") else { continue }
