@@ -290,12 +290,60 @@ struct EmojiVaultView: View {
                 .foregroundColor(.secondary)
         }
         let listed = listedAddresses
-        ForEach(browser.found) { found in
-            FoundSetRow(found: found,
-                        authorName: nostr.profiles[found.author]?.bestName ?? String(found.author.prefix(8)),
-                        listed: listed.contains(found.set.address),
-                        busy: store.listing.contains(found.set.address))
+        let me = nostr.activeHexPubkey
+        let old = library.answeredFor == me ? EmojiSetBrowse.oldSets(browser.ownVersions, owner: me, listed: listed) : []
+        if !old.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Your old sets").font(.appSystem(size: 15, weight: .bold))
+                Text("Sets you made that are out of your emoji list or were emptied, from your vault and your relays.")
+                    .font(.appSystem(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.top, 4)
+            // Ids of their own: a set's address is also its page's id above,
+            // and a LazyVStack draws one id once (seen in the sim: an old-set
+            // row took a listed page's place).
+            ForEach(old, id: \.rowID) { set in
+                FoundSetRow(found: set.found,
+                            detail: oldDetail(set),
+                            title: "Add back",
+                            listed: false,
+                            busy: browser.restoring.contains(set.found.set.address) || store.listing.contains(set.found.set.address)) {
+                    Task {
+                        if let problem = await browser.addBack(set) {
+                            ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: problem, tone: .error)
+                        }
+                    }
+                }
+            }
+            Text("Everyone's sets").font(.appSystem(size: 15, weight: .bold)).padding(.top, 8)
         }
+        let oldIDs = Set(old.map(\.id))
+        ForEach(browser.found.filter { !oldIDs.contains($0.id) }, id: \.rowID) { found in
+            let isListed = listed.contains(found.set.address)
+            FoundSetRow(found: found,
+                        detail: foundDetail(found),
+                        title: isListed ? "Remove" : "Add",
+                        listed: isListed,
+                        busy: store.listing.contains(found.set.address)) {
+                let address = found.set.address
+                Task { _ = await store.setListed(address, on: !isListed) }
+            }
+        }
+    }
+
+    private func foundDetail(_ found: EmojiSetBrowse.Found) -> String {
+        let name = nostr.profiles[found.author]?.bestName ?? String(found.author.prefix(8))
+        var parts = ["by \(name)", "\(found.set.emojis.count) emoji"]
+        if found.byFollow { parts.append("you follow") }
+        return parts.joined(separator: " · ")
+    }
+
+    private func oldDetail(_ set: EmojiSetBrowse.OldSet) -> String {
+        var parts = ["\(set.found.set.emojis.count) emoji",
+                     Date(timeIntervalSince1970: TimeInterval(set.found.createdAt)).formatted(date: .abbreviated, time: .omitted)]
+        if set.needsRestore { parts.append(set.listed ? "emptied, brings the emoji back" : "older version") }
+        return parts.joined(separator: " · ")
     }
 
     private func authorLine(_ page: EmojiVaultLogic.SetPage) -> String {
@@ -329,13 +377,15 @@ struct EmojiVaultView: View {
     }
 }
 
-/// One set in Find emoji sets: title, author, a row of its emoji, and Add /
-/// Remove (the 10030, through EmojiVaultStore.setListed).
+/// One set in Find emoji sets: title, a detail line, a row of its emoji,
+/// and one button (Add / Remove / Add back).
 private struct FoundSetRow: View {
     let found: EmojiSetBrowse.Found
-    let authorName: String
+    let detail: String
+    let title: String
     let listed: Bool
     let busy: Bool
+    let action: () -> Void
     private static let preview = 8
 
     var body: some View {
@@ -351,21 +401,17 @@ private struct FoundSetRow: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                Button {
-                    let address = found.set.address
-                    let on = !listed
-                    Task { _ = await EmojiVaultStore.shared.setListed(address, on: on) }
-                } label: {
+                Button(action: action) {
                     if busy {
                         ProgressView().controlSize(.small).frame(minWidth: 64)
                     } else {
-                        Text(listed ? "Remove" : "Add").frame(minWidth: 64)
+                        Text(title).frame(minWidth: 64)
                     }
                 }
                 .buttonStyle(.bordered)
                 .tint(listed ? .secondary : Color.havenPurple)
                 .disabled(busy)
-                .accessibilityLabel(listed ? "Remove \(found.set.title)" : "Add \(found.set.title)")
+                .accessibilityLabel("\(title) \(found.set.title)")
             }
             HStack(spacing: 6) {
                 ForEach(found.set.emojis.prefix(Self.preview), id: \.self) { e in
@@ -383,11 +429,6 @@ private struct FoundSetRow: View {
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
     }
 
-    private var detail: String {
-        var parts = ["by \(authorName)", "\(found.set.emojis.count) emoji"]
-        if found.byFollow { parts.append("you follow") }
-        return parts.joined(separator: " · ")
-    }
 }
 
 /// One emoji in the grid: its image (the saved copy first), with a corner

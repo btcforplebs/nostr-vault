@@ -21,6 +21,7 @@ enum EmojiSetBrowse {
         let createdAt: Int64
         let kind: Int
         let tags: [[String]]
+        var content: String = ""
     }
 
     struct Found: Equatable, Identifiable {
@@ -29,6 +30,8 @@ enum EmojiSetBrowse {
         let createdAt: Int64
         let byFollow: Bool
         var id: String { self.set.address }
+        /// Its row on the Emoji page, apart from the same set's page there.
+        var rowID: String { "find:" + self.set.address }
     }
 
     /// The asks: the follows' sets (chunked), then everyone's since a month ago.
@@ -69,5 +72,54 @@ enum EmojiSetBrowse {
             if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
             return $0.set.address < $1.set.address
         }
+    }
+
+    // MARK: Your old sets
+
+    /// One of your own sets, as the vault and your relays kept it.
+    struct OldSet: Equatable, Identifiable {
+        /// The version to bring back: the newest, or the one before a wipe.
+        let found: Found
+        let versionID: String
+        /// The newest version seen is a wipe of `found`: Add back signs
+        /// `found`'s emoji again (list restore) before listing it.
+        let needsRestore: Bool
+        let listed: Bool
+        var id: String { found.id }
+        var rowID: String { "old:" + found.id }
+    }
+
+    /// Your own 30030 sets, every version the vault and relays sent: per
+    /// set, the newest version, stepping back past each one that shrank
+    /// (ListShrinkRule.shrank, the list-history rule: emptied, or under half
+    /// of 10+). Shown when it isn't in your emoji list or its newest copy
+    /// was wiped; newest first.
+    static func oldSets(_ events: [Candidate], owner: String, listed: Set<String>, now: Date = Date()) -> [OldSet] {
+        let latest = Int64(now.timeIntervalSince1970) + maxSkew
+        var byAddress: [String: [Candidate]] = [:]
+        var seen = Set<String>()
+        for c in events where c.pubkey == owner && c.createdAt < latest && seen.insert(c.id).inserted {
+            guard let a = address(c) else { continue }
+            byAddress[a, default: []].append(c)
+        }
+        return byAddress.compactMap { a, versions -> OldSet? in
+            let sorted = versions.sorted { $0.createdAt != $1.createdAt ? $0.createdAt > $1.createdAt : $0.id < $1.id }
+            func version(_ c: Candidate) -> ListVersion {
+                ListVersion(id: c.id, pubkey: c.pubkey, kind: c.kind, createdAt: c.createdAt, tags: c.tags, content: c.content)
+            }
+            var best = 0
+            while best + 1 < sorted.count, ListShrinkRule.shrank(version(sorted[best + 1]), version(sorted[best])) {
+                best += 1
+            }
+            let pick = sorted[best]
+            let set = EmojiListParse.set(address: a, tags: pick.tags)
+            guard !set.emojis.isEmpty else { return nil }
+            let isListed = listed.contains(a)
+            let restore = best > 0
+            guard !isListed || restore else { return nil }
+            return OldSet(found: Found(set: set, author: owner, createdAt: pick.createdAt, byFollow: false),
+                          versionID: pick.id, needsRestore: restore, listed: isListed)
+        }
+        .sorted { $0.found.createdAt != $1.found.createdAt ? $0.found.createdAt > $1.found.createdAt : $0.id < $1.id }
     }
 }

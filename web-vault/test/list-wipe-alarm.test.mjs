@@ -2,7 +2,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { wipeAlarm, alarmsIn, alarmLine, recordOwnList, ownListIds, dismissAlarm, dismissedAlarms, RULE, HISTORY } from "../src/net/list-wipe-alarm.js"
+import { wipeAlarm, alarmsIn, alarmLine, recordOwnList, ownListIds, dismissAlarm, dismissedAlarms, RULE, HISTORY, isProtectedKind, listName, PROTECTED_KINDS } from "../src/net/list-wipe-alarm.js"
 
 const fx = JSON.parse(readFileSync(new URL("../../HavenApp/MediaLogicTests/Tests/MediaLogicTests/Fixtures/ListAlarm/alarm-cases.json", import.meta.url)))
 
@@ -59,4 +59,10 @@ test("banner wording names the app, or says it didn't name itself", () => {
   assert.match(alarmLine({ ...base, how: "emptied", client: "Nostr Vault", claimsNostrVault: true }, "en-GB"),
     /changed by an app calling itself Nostr Vault\. This device didn't make that change\.$/)
   assert.match(alarmLine({ ...base, how: "swapped", to: 40, lost: 40, client: null }, "en-GB"), /lost 40 of 40 entries .+ swapped for others/)
+})
+
+test("your own emoji sets (30030) are kept and guarded like the emoji list (Apple ListShrinkRule twin)", () => {
+  assert.ok(isProtectedKind(30030))
+  assert.equal(listName(30030), "emoji set")
+  assert.deepEqual(PROTECTED_KINDS, [0, 3, 10000, 10001, 10002, 10003, 10004, 10006, 10007, 10015, 10030, 10050, 10063, 30000, 30002, 30003, 30030])
 })

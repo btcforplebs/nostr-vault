@@ -48,7 +48,7 @@ final class ListHistoryTests: XCTestCase {
 
     func testKindSetMatchesTheVault() {
         XCTAssertEqual(ListShrinkRule.protectedKinds, [0, 3, 10000, 10001, 10002, 10003, 10004, 10006, 10007,
-                                                       10015, 10030, 10050, 10063, 30000, 30002, 30003])
+                                                       10015, 10030, 10050, 10063, 30000, 30002, 30003, 30030])
         XCTAssertFalse(ListShrinkRule.isProtected(1))
         XCTAssertFalse(ListShrinkRule.isProtected(30023))
     }
