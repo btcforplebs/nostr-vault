@@ -28,6 +28,7 @@ import { runAndWait, resumeImportJobs } from "./src/net/import-jobs.js"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { startNavDepth } from "./src/components/nav-depth.js"
 import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, RelayScreen, DesktopShell, VaultDashboard } from "./src/screens/lazy-screens.js"
+import { warmScreens } from "./src/screens/warm-screens.js"
 import { GuestApp } from "./src/guest/GuestApp.jsx"
 import { SettingsScreen, resetBrowser } from "./src/screens/SettingsScreen.jsx"
 import { TabBar, PostButton } from "./src/components/TabBar.jsx"
@@ -260,6 +261,9 @@ function App() {
 
   // A Vault job (import-jobs.js) a reload or a closed tab cut is picked up once the account is in, from its cursor.
   useEffect(() => { if (!BOX && account?.loaded) resumeImportJobs({ vault, session, account }).catch(() => {}) }, [session?.pubkey, !!account?.loaded])
+
+  // The tab screens' code, fetched while the app is idle, so a first click on a tab doesn't flash placeholder rows.
+  useEffect(() => { warmScreens() }, [])
 
   // After a follow or unfollow: the new list is in Haven's outbox, so read the account back and the feed follows it.
   // The account's Never Connect list (kind 10006), from Haven or the network: the pool refuses those relays.
