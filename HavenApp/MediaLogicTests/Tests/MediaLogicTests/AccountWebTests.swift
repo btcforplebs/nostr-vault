@@ -185,8 +185,8 @@ final class AccountWebTests: XCTestCase {
         let wot = try src("Services/Feed/FeedService+WebOfTrust.swift")
         XCTAssertFalse(wot.contains("modificationDate(of: cacheURL)"), "every reload key covers both files")
         XCTAssertTrue(wot.contains("WotFiles.stamp(cacheURL: cacheURL)"))
-        XCTAssertTrue(wot.contains("readLinks: false"), "the main-thread read skips the links")
-        XCTAssertTrue(wot.contains("followListIsKnown || (hasAttemptedContactLoad && !followedPubkeys.isEmpty)"))
+        XCTAssertTrue(wot.contains("readLinks: firstLinks"), "the main-thread read skips the links once it has some")
+        XCTAssertTrue(wot.contains("followListIsKnown || ((hasAttemptedContactLoad || accountFollowsRestored) && !followedPubkeys.isEmpty)"))
         let haze = try src("Views/TrustWeb/TrustWebView+FacesAndFilters.swift")
         XCTAssertFalse(haze.contains("FeedService.shared.feedTrustedPubkeys"), "the globe builds its web off the main thread")
     }

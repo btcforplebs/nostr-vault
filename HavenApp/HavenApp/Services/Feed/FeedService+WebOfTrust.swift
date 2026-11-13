@@ -12,8 +12,21 @@ extension FeedService {
     func loadWotPubkeys() {
         let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
         wotCacheStamp = (cacheURL.path, WotFiles.stamp(cacheURL: cacheURL))
+        // No links yet (the first read): parse them here, so the first paint
+        // of the Vault list, which only re-filters on events, gets the
+        // account web and not the pooled one (Tron 2011 re-review should-fix).
+        // Later reloads parse them off the main thread.
+        let firstLinks = !trustedWebMemo.hasLinks
+        let linksModified = firstLinks ? WotFiles.modified(WotFiles.linksURL(beside: cacheURL)) : nil
         let read = FeedFilterEngine.readWotCache(from: cacheURL, ownerHex: ConfigService.shared.activeAccountHexPubkey,
-                                                 readLinks: false)
+                                                 readLinks: firstLinks)
+        if firstLinks, read?.links != nil {
+            // An older off-main parse still in flight must not land over these.
+            wotLinksReads += 1
+            wotLinksStamp = linksModified
+            applyWotCache(read, path: cacheURL.path, withLinks: true)
+            return
+        }
         applyWotCache(read, path: cacheURL.path)
         if let read { loadWotLinksInBackground(cacheURL: cacheURL, depth: read.depth) }
     }
@@ -165,6 +178,16 @@ extension FeedService {
         return feedTrustedPubkeys
     }
 
+    /// Who counts as inside the web of `recipientHex`, one of this device's
+    /// accounts (`AccountWeb.trusted(forRecipient:)`): the open account its
+    /// own web, any other account the relay's pooled web. Alerts, the
+    /// switcher badge and the Vault's other-account rows judge by this.
+    func trustedPubkeys(for recipientHex: String) -> Set<String> {
+        if wotPubkeys.isEmpty { loadWotPubkeysIfChanged() }
+        return AccountWeb.trusted(forRecipient: recipientHex, active: ConfigService.shared.activeAccountHexPubkey,
+                                  open: { feedTrustedPubkeys }, pooled: wotPubkeys)
+    }
+
     /// The one rule every feed with a Global button follows (Global, Media,
     /// Articles, diVines, Recipes, Live, Marketplace): Global shows your Web of
     /// Trust until the shield is switched to Everyone. nil means everyone.
@@ -202,7 +225,7 @@ extension FeedService {
     /// offline it never came back, so the pooled web showed. A stale snapshot
     /// can only leave someone out for a moment: it fails closed.
     private var followsKnownForAccountWeb: Bool {
-        followListIsKnown || (hasAttemptedContactLoad && !followedPubkeys.isEmpty)
+        followListIsKnown || ((hasAttemptedContactLoad || accountFollowsRestored) && !followedPubkeys.isEmpty)
     }
 
     /// REQ filters for a Global view under `trust`. Everyone: the filter as

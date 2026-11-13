@@ -31,6 +31,12 @@ final class TrustedWebMemo: @unchecked Sendable {
         generation += 1
     }
 
+    /// A links file has been loaded (the first read parses it on the spot).
+    var hasLinks: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return links != nil
+    }
+
     func load(links: TrustLinksIndex?) {
         lock.lock(); defer { lock.unlock() }
         self.links = links

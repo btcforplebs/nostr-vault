@@ -132,8 +132,9 @@ final class LocalNotificationService {
         }()
         guard allowed else { return }
         // Nothing from outside your Web of Trust: those were the spam alerts.
+        // The recipient's web: another account is not judged by the open one's.
         let own: Set<String> = [recipientHex, NostrService.shared.activeHexPubkey]
-        let trusted = FeedService.shared.relayTabTrustedPubkeys()
+        let trusted = FeedService.shared.trustedPubkeys(for: recipientHex)
         guard NotificationPolicy.authorMayNotify(author, type: type, trusted: trusted, own: own) else { return }
 
         // One summary per absence: record it as soon as it is cleared to fire,

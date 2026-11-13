@@ -208,7 +208,9 @@ extension VaultView {
         let whitelist = configService.whitelistedHexPubkeys
         let ownAccounts = configService.allAccountHexes
         let notifyOwn = configService.config.notifyOwnAccountTags
-        let trusted = FeedService.shared.relayTabTrustedPubkeys()
+        // Each account's own web, not the open account's.
+        let webs = Dictionary(wanted.map { ($0, FeedService.shared.trustedPubkeys(for: $0)) },
+                              uniquingKeysWith: { a, _ in a })
         let mutes = MuteListStore.shared.active
         let noteKinds = NostrService.relayTabNoteKinds
         let service = nostrService
@@ -253,7 +255,7 @@ extension VaultView {
                                 block.contains($0) || NotificationPolicy.hidesOwnAccountTag(
                                     author: $0, recipient: hex, accounts: ownAccounts, notify: notifyOwn)
                             },
-                            isOutside: { ContentFilter.isOutside(author: $0, owner: hex, whitelist: whitelist, trusted: trusted) },
+                            isOutside: { ContentFilter.isOutside(author: $0, owner: hex, whitelist: whitelist, trusted: webs[hex] ?? []) },
                             foldsOutsideLikes: true
                         )
                         return (hex, lines, full)
