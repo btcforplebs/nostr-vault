@@ -11,6 +11,8 @@ import com.nostrvault.service.emoji.EmojiListSave
 import com.nostrvault.service.emoji.EmojiSetBrowser
 import com.nostrvault.service.emoji.EmojiVaultPage
 import com.nostrvault.service.emoji.EmojiVaultStore
+import com.nostrvault.service.emoji.OwnEmojiSetFinder
+import com.nostrvault.service.emoji.OwnEmojiSets
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -30,6 +32,7 @@ class EmojiVaultViewModel @Inject constructor(
     private val listSave: EmojiListSave,
     private val browser: EmojiSetBrowser,
     private val nostrService: NostrService,
+    private val ownSets: OwnEmojiSetFinder,
     fileNotesLive: FileNotesLive,
 ) : ViewModel() {
     val progress = store.progress
@@ -54,6 +57,12 @@ class EmojiVaultViewModel @Inject constructor(
 
     data class BrowseState(val loading: Boolean = false, val found: List<EmojiSetBrowser.Found> = emptyList(), val note: String? = null)
 
+    /** Your old sets in Find emoji sets: own sets not in the 10030, or wiped (Logen 2026-11-13). */
+    data class OldSetsState(val loading: Boolean = false, val found: OwnEmojiSetFinder.Found? = null, val busy: String? = null)
+
+    private val _oldSets = MutableStateFlow(OldSetsState())
+    val oldSets: StateFlow<OldSetsState> = _oldSets.asStateFlow()
+
     init {
         emojiList.refresh(wide = true)
         viewModelScope.launch { fileNotesLive.events { null }.collect(store::onFileNote) }
@@ -72,6 +81,28 @@ class EmojiVaultViewModel @Inject constructor(
         viewModelScope.launch {
             val why = listSave.change(address, add, found?.event)
             _message.value = why ?: if (add) "Set added to your emoji list." else "Set removed from your emoji list."
+        }
+    }
+
+    fun loadOldSets() {
+        if (_oldSets.value.loading) return
+        _oldSets.value = _oldSets.value.copy(loading = true)
+        viewModelScope.launch {
+            val found = runCatching { ownSets.find() }.getOrNull()
+            _oldSets.value = OldSetsState(found = found)
+        }
+    }
+
+    /** Add back one old set: restore its emoji if the newest copy lost them, then list it. Only on a tap. */
+    fun addBack(old: OwnEmojiSets.OldSet) {
+        val found = _oldSets.value.found ?: return
+        if (_oldSets.value.busy != null) return
+        _oldSets.value = _oldSets.value.copy(busy = old.address)
+        viewModelScope.launch {
+            val why = runCatching { ownSets.addBack(old, found) }.getOrElse { it.message ?: "Not added back." }
+            _message.value = why ?: "\u201c${old.set.title}\u201d is back in your emoji list."
+            _oldSets.value = _oldSets.value.copy(busy = null)
+            if (why == null) loadOldSets()
         }
     }
 

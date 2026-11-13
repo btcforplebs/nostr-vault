@@ -61,6 +61,16 @@ class EmojiSetBrowser @Inject constructor(
     suspend fun byAuthor(pubkey: String): List<Found> =
         found(query(relays(pubkey), """{"kinds":[30030],"authors":${strings(listOf(pubkey))},"limit":$LIMIT}"""))
 
+    /**
+     * Every copy of [pubkey]'s own sets their relays and the read relays still give, signature-checked, empty and
+     * older ones included: Your old sets ([OwnEmojiSetFinder]) picks from them.
+     */
+    suspend fun ownVersions(pubkey: String): List<NostrEvent> {
+        val own = runCatching { nostrService.ownListRelays(pubkey) }.getOrDefault(emptyList())
+        val urls = (own + relays(pubkey)).map { it.trim() }.filter { it.startsWith("wss://") }.distinct().take(MAX_RELAYS)
+        return query(urls, """{"kinds":[30030],"authors":${strings(listOf(pubkey))},"limit":$LIMIT}""").filter { it.pubkey == pubkey }
+    }
+
     /** A pasted `naddr1…` (or `nostr:naddr1…`) for a 30030, or null when it isn't one. */
     suspend fun byNaddr(text: String): Found? {
         val naddr = text.trim().removePrefix("nostr:")

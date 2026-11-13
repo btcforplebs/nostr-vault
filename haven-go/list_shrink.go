@@ -28,6 +28,7 @@ var protectedListKinds = map[int]struct{}{
 	30000: {}, // follow sets
 	30002: {}, // relay sets
 	30003: {}, // bookmark sets
+	30030: {}, // emoji sets (Logen 2026-11-13: your old sets come back)
 }
 
 // Lists whose private items are encrypted into the content, which the vault

@@ -36,7 +36,7 @@ import com.nostrvault.ui.theme.SecondaryText
 
 /**
  * Browse other people's emoji sets (custom emoji plan §4.3): sets by people you follow, or everyone's from the last
- * month, or a pasted naddr / npub. Add or Remove rewrites your 10030. Reading costs nothing; only Add/Remove signs.
+ * month, or a pasted naddr / npub; your own old sets on top ([EmojiOldSetsSection]). Add or Remove rewrites your 10030. Reading costs nothing; only Add/Remove signs.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,9 +44,11 @@ fun EmojiSetsBrowseSheet(viewModel: EmojiVaultViewModel, onDismiss: () -> Unit) 
     val state by viewModel.browse.collectAsState()
     val listed by viewModel.listed.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
+    val oldSets by viewModel.oldSets.collectAsState()
     var scope by remember { mutableStateOf(EmojiSetBrowser.Scope.FOLLOWS) }
     var pasted by remember { mutableStateOf("") }
     LaunchedEffect(scope) { viewModel.browse(scope) }
+    LaunchedEffect(Unit) { viewModel.loadOldSets() }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
@@ -70,6 +72,7 @@ fun EmojiSetsBrowseSheet(viewModel: EmojiVaultViewModel, onDismiss: () -> Unit) 
             }
             state.note?.let { Text(it, color = SecondaryText, fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp)) }
             LazyColumn(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+                item(key = "old-sets") { EmojiOldSetsSection(oldSets, viewModel::addBack) }
                 items(state.found, key = { it.event.id }) { f ->
                     val inList = f.set.address in listed
                     Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {

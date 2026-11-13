@@ -59,7 +59,7 @@ func TestListItemCountSkipsMetadata(t *testing.T) {
 }
 
 func TestProtectedListKinds(t *testing.T) {
-	for _, k := range []int{0, 3, 10000, 10002, 10003, 10050, 10063, 30000, 30003} {
+	for _, k := range []int{0, 3, 10000, 10002, 10003, 10050, 10063, 30000, 30003, 30030} {
 		if !isProtectedListKind(k) {
 			t.Errorf("kind %d should be protected", k)
 		}

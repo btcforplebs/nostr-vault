@@ -34,7 +34,7 @@ object ListShrinkRule {
     /** Kind 0 is not a list but is kept the same way; its items are the profile's filled-in fields. */
     val protectedKinds: List<Int> = listOf(
         0, 3, 10000, 10001, 10002, 10003, 10004, 10006, 10007,
-        10015, 10030, 10050, 10063, 30000, 30002, 30003,
+        10015, 10030, 10050, 10063, 30000, 30002, 30003, 30030,
     )
 
     /** Lists with an encrypted private part the vault can't read: a large drop in content length counts too. */
@@ -69,6 +69,7 @@ object ListShrinkRule {
         30000 -> "follow set"
         30002 -> "relay set"
         30003 -> "bookmark set"
+        30030 -> "emoji set"
         else -> "list $kind"
     }
 
