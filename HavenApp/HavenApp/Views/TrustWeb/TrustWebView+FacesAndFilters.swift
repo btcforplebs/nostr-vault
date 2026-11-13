@@ -264,13 +264,13 @@ extension TrustWebView {
     /// thread too: tens of thousands of keys.
     private func hazeFromLoadedWeb() {
         // The open account's web, as every feed reads it (`AccountWeb`).
-        let web = FeedService.shared.feedTrustedPubkeys
+        let accountWeb = FeedService.shared.feedTrustedPubkeys
         let arrivals = arrivals
         let counts = FeedService.shared.wotVouches
         let inner = myFollows.union([me, author])
         let follows = myFollows, me = me, wot = isWOTTab
         Task.detached(priority: .userInitiated) {
-            let graph = web.union(arrivals)
+            let graph = accountWeb.union(arrivals)
             let layout = TrustMap.hazeLayout(graph: graph, inner: inner, vouches: counts, me: me, follows: follows,
                                              wot: wot, faceScale: TrustGlobeCanvas.faceScale)
             let shell = layout.shell, close = layout.close, layerFaces = layout.layerFaces
