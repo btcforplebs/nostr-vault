@@ -9,7 +9,7 @@ import { emptyMediaReason } from "../net/media-empty-reason.js"
 import { mediaServers } from "../net/upload.js"
 import { BlossomStats } from "./BlossomStats.jsx"
 import { BlossomUpload } from "./BlossomUpload.jsx"
-import { listBlobs, deleteBlob, deleteTargets, mirrorBlob, outcome, byDay, TYPE_FILTERS, mergeNoteTiles } from "../net/blossom-gallery.js"
+import { listBlobs, deleteBlob, deleteTargets, mirrorBlob, outcome, byDay, TYPE_FILTERS, mergeNoteTiles, withoutEmoji } from "../net/blossom-gallery.js"
 import { watchFileNotes } from "../net/file-notes-live.js"
 import { sealMeshAuth } from "../net/pair-hello.js"
 import { SkeletonGrid, Waiting } from "../components/Loading.jsx"
@@ -89,17 +89,19 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
   // Live file notes on this browser vault's /files (net/file-notes-live.js): a paired phone's upload shows at once, before
   // the servers are asked again. The in-page vault only (owners is null in box mode).
   const [noteTiles, setNoteTiles] = useState([])
+  const [emojiOnly, setEmojiOnly] = useState(() => new Set()) // saved emoji images: the Emoji page shows them, not Media
   const handled = useRef(new Set()) // note-only files the viewer copied or deleted: the watcher's later lists keep them
   const vault = ctx.vault
   useEffect(() => {
-    setNoteTiles([]); handled.current = new Set()
+    setNoteTiles([]); setEmojiOnly(new Set()); handled.current = new Set()
     if (!vault?.owners) return
-    return watchFileNotes({ haven: vault.haven, owner: me, auth: challenge => sealMeshAuth({ challenge }), onChange: setNoteTiles })
+    const onChange = (tiles, state) => { setNoteTiles(tiles); setEmojiOnly(state?.emojiOnly() ?? new Set()) }
+    return watchFileNotes({ haven: vault.haven, owner: me, auth: challenge => sealMeshAuth({ challenge }), onChange })
   }, [me, vault])
   // Uploads, deletes and copies change the list on screen; the kept one follows (its age doesn't).
   useEffect(() => { if (found?.done) shown.set(me, { servers, found, at: shown.get(me)?.at ?? Date.now() }) }, [found])
 
-  const listed = found && mergeNoteTiles(found.blobs, noteTiles.filter(t => !handled.current.has(t.sha256)))
+  const listed = found && withoutEmoji(mergeNoteTiles(found.blobs, noteTiles.filter(t => !handled.current.has(t.sha256))), emojiOnly)
   if (!found || (!found.done && !listed.length)) return <><Waiting>Loading media…</Waiting><SkeletonGrid count={12} gridClass="vault-grid" tileClass="vault-thumb blossom-tile" label="Asking your media servers" /></>
   const blobs = listed.filter(TYPE_FILTERS[filter] ?? TYPE_FILTERS.all)
   const why = found.done && !listed.length ? emptyMediaReason({ servers, status: found.status, readOnly: !!ctx.signer?.readOnly }) : ""

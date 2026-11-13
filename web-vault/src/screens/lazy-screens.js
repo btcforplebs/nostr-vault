@@ -20,6 +20,7 @@ export const AccountsScreen = lazyScreen("AccountsScreen", () => import("./Accou
 export const WalletScreen = lazyScreen("WalletScreen", () => import("./WalletScreen.jsx"))
 export const WotScreen = lazyScreen("WotScreen", () => import("./WotScreen.jsx"))
 export const BookmarksScreen = lazyScreen("BookmarksScreen", () => import("./BookmarksScreen.jsx"))
+export const EmojiScreen = lazyScreen("EmojiScreen", () => import("./emoji/EmojiScreen.jsx"))
 // A sheet over the screen, not a screen: nothing in its place while it loads, as before.
 export const VaultDashboard = lazyScreen("VaultDashboard", () => import("./VaultDashboard.jsx"), { fallback: () => null, failed: () => null })
 // The desktop layout too: it drags the desktop space's own screens (LiveVault, MessagesPeek) with it, which a phone

@@ -3,6 +3,8 @@
 // read-only), so only parse, merge, tombstone and the tile rule are here. Port of iOS Models/FileNote.swift; keep every
 // branch the same as that file and Android's FileNotes.kt.
 
+import { emojiPart, emojiOnlyHashes, emojiCopies } from "./emoji-notes.js"
+
 export const FILE_NOTE_KIND = 1063
 /** Back this far on a resubscribe, for notes stamped a little late. */
 export const RESUBSCRIBE_OVERLAP = 600
@@ -79,6 +81,7 @@ export class FileNotesState {
     this.notes = new Map() // id -> note
     this.deleted = new Set()
     this.newestSeen = undefined
+    this.changes = 0 // bumped on every note added or deleted, also those that leave the tiles as they were
   }
 
   /** Apply one event from the room. -> { added: sha256 } | { removed: sha256 } | null (no tile change). */
@@ -90,7 +93,8 @@ export class FileNotesState {
       this.#seen(at)
       if (this.deleted.has(note.id) || this.notes.has(note.id)) return null
       const had = this.hasLiveNote(note.sha256)
-      this.notes.set(note.id, note)
+      this.notes.set(note.id, { ...note, emoji: emojiPart(ev) })
+      this.changes++
       return had ? null : { added: note.sha256 }
     }
     const del = parseFileNoteDeletion(ev)
@@ -100,7 +104,7 @@ export class FileNotesState {
       for (const id of del.noteIDs) {
         this.deleted.add(id)
         const gone = this.notes.get(id)
-        if (gone) { this.notes.delete(id); touched.add(gone.sha256) }
+        if (gone) { this.notes.delete(id); touched.add(gone.sha256); this.changes++ }
       }
       // One hash per deletion here (the vault's and the apps' form).
       const removed = [...touched].sort().find(sha => !this.hasLiveNote(sha))
@@ -130,6 +134,10 @@ export class FileNotesState {
       return { sha256, mime: ordered[0].mime, size: ordered[0].size, createdAt: ordered[0].createdAt, urls: [...new Set(ordered.flatMap(n => n.urls))] }
     }).sort((a, b) => (a.createdAt !== b.createdAt ? b.createdAt - a.createdAt : a.sha256 < b.sha256 ? -1 : a.sha256 > b.sha256 ? 1 : 0))
   }
+
+  /** Hashes Media hides (every live note an emoji note) and the saved emoji copies (net/emoji-notes.js). */
+  emojiOnly() { return emojiOnlyHashes(this.notes.values()) }
+  emojiCopies() { return emojiCopies(this.notes.values()) }
 
   #seen(at) {
     if (this.newestSeen === undefined || at > this.newestSeen) this.newestSeen = at

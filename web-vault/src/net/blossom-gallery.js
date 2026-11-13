@@ -46,6 +46,10 @@ export function mergeNoteTiles(blobs, tiles) {
   return added.length ? [...added, ...blobs].sort((a, b) => b.uploaded - a.uploaded) : blobs
 }
 
+/** Media without the saved emoji images (`hidden`: FileNotesState.emojiOnly(), every note for them an emoji note):
+ *  those show on the Emoji page instead (RESEARCH/NV_CUSTOM_EMOJI_PLAN.md §4.1). */
+export const withoutEmoji = (blobs, hidden) => (hidden?.size ? blobs.filter(b => !hidden.has(b.sha256)) : blobs)
+
 export const TYPE_FILTERS = { all: () => true, photos: b => b.kind === "photo", videos: b => b.kind === "video", gifs: b => b.kind === "gif" }
 
 // A signed "list" auth, kept until a minute before it runs out, so opening Media again doesn't ask the signer again.
