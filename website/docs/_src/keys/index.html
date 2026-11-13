@@ -5,7 +5,7 @@
   "section": "keys",
   "order": 1,
   "description": "What your Nostr keys are, where Nostr Vault keeps them, and how to add accounts, switch between them, back up your secret key and remove a key.",
-  "checked": "Nostr Vault 3.2.0 and the web app",
+  "checked": "Nostr Vault 3.2.2 and the web app",
   "labels": {
     "ios": ["Accounts & Keys", "Add Account", "Npub", "Owner", "Remote Signer", "Local Key", "Switch to This Account", "Sign With",
             "Reveal Key", "Reveal Private Key", "Import Private Key", "Import Key", "Encrypt with Password", "Connect Remote Signer",
@@ -14,7 +14,7 @@
     "android": ["Accounts & Keys", "Add Account", "Owner", "Remote Signer", "Amber", "Local Key", "Switch to this account", "Signing",
                 "Reveal Private Key", "Import Private Key", "Encrypt with Password", "Connect Remote Signer (NIP-46)", "Connect Remote Signer",
                 "Disconnect Remote Signer", "Remove Local Key", "Remove Account", "Relays"],
-    "mac": ["Accounts & Keys", "Add Account", "Switch account", "Delete Account", "Leave Nostr Forever"],
+    "mac": ["Accounts & Keys", "Add Account", "Settings", "Account", "Delete Account", "Leave Nostr Forever"],
     "web": ["Accounts & Keys", "Add Account", "Switch to This Account", "Sign out", "Remove Account", "Save and publish"]
   }
 }
@@ -42,13 +42,23 @@
 <div class="docs-table-wrap"><table>
     <tr><th>Device</th><th>Open</th></tr>
     <tr><td>iPhone, iPad, Android</td><td>Profile tab &rarr; gear &rarr; <span class="path">Accounts &amp; Keys</span></td></tr>
-    <tr><td>Mac</td><td>Menu bar icon &rarr; gear &rarr; <span class="path">Accounts &amp; Keys</span></td></tr>
+    <tr><td>Mac</td><td><span class="ui">Settings</span> at the bottom of the rail &rarr; <span class="ui">Account</span> &rarr; <span class="path">Accounts &amp; Keys</span></td></tr>
     <tr><td>Web</td><td>Settings &rarr; <span class="path">Accounts &amp; Keys</span></td></tr>
 </table></div>
 <p>Each account shows how it signs: <span class="ui">Local Key</span>, <span class="ui">Remote Signer</span>,
     <span class="ui">Amber</span> (Android), or <span class="ui">No signing key</span> (read-only). The first account you set up is the
     <span class="ui">Owner</span>: it's the one your vault belongs to.</p>
 <p>Tap an account to manage it. On iPhone, iPad and Mac it opens its own page; on Android its row opens in place.</p>
+
+<h2 id="watch-only">Watch-only accounts</h2>
+<p>An account with only its npub can read, but not post, like or send messages. In your vault:</p>
+<ul>
+    <li><strong>iPhone, iPad and Mac</strong> give it its own space, so the vault keeps its notes and uploads and
+        shares them like yours. It can't read your private notes or add to them.</li>
+    <li><strong>Android</strong> keeps it out of the vault until it has a key or signer on the phone.</li>
+</ul>
+<p>Add a key or signer and it reads the private side like the owner. Remove the key or signer again and it goes
+    back to watch-only. See <a class="inline" href="/docs/vault/#accounts">Every account on this device</a>.</p>
 
 <div class="shots">
     <figure><img src="/docs/img/ios/accounts.webp" alt="Accounts &amp; Keys on iPhone" width="900" height="1957" loading="lazy"><figcaption>Accounts &amp; Keys on iPhone</figcaption></figure>
@@ -79,7 +89,7 @@
 <ul>
     <li><strong>iPhone:</strong> hold your picture in the middle of the tab bar and pick an account. It only opens
         when you have more than one.</li>
-    <li><strong>Mac:</strong> the account button in the menu bar panel.</li>
+    <li><strong>Mac:</strong> click your picture at the top of the rail and pick an account.</li>
     <li><strong>Everywhere:</strong> open the account in <span class="ui">Accounts &amp; Keys</span> and tap
         <span class="ui">Switch to This Account</span>.</li>
 </ul>
@@ -98,6 +108,11 @@
 </div>
 
 <div class="note"><p>With a signer, there's no key to reveal here. Back it up in the signer app.</p></div>
+
+<h2 id="secrets">Other secrets the app keeps</h2>
+<p>Your wallet connection and your signer links are secrets too: whoever has them can spend from your wallet or ask your signer to sign. Since 3.2.2 they're no longer
+    in the app's settings file. On iPhone, iPad and Mac they're in the Keychain, on this device only. On Android
+    they're in the phone's encrypted key store. They move there by themselves the first time you open 3.2.2.</p>
 
 <h2 id="method">Change how an account signs</h2>
 <ul>

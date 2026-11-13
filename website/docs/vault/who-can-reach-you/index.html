@@ -155,22 +155,38 @@
                 <p class="eyebrow">The settings</p>
                 <h2 id="follow-distance-minimum-followers-refresh-trust-list">Follow Distance, Minimum Followers, Refresh Trust List</h2>
                 <h3>Follow Distance</h3>
-                <p>How many follows away someone can be and still reach you. Lower is more private.</p>
+                <p>How many follows away someone can be and still reach you. Lower is more private. Follow Distance counts
+                    you as 1, so each number is one more than the "hops" on a trust card.</p>
                 <div class="docs-table-wrap">
                 <table>
-                    <tr><th>Distance</th><th>Who can reach you</th></tr>
-                    <tr><td>1</td><td>Only you.</td></tr>
-                    <tr><td>2</td><td>You and the people you follow.</td></tr>
-                    <tr><td>3 (default)</td><td>You, the people you follow, and the people they follow, if enough of your
-                        follows follow them (see Minimum Followers).</td></tr>
+                    <tr><th>Distance</th><th>Who can reach you</th><th>On a trust card</th></tr>
+                    <tr><td>1</td><td>Only you and your other accounts on this device.</td><td>&ndash;</td></tr>
+                    <tr><td>2</td><td>Also the people you follow.</td><td>1 hop</td></tr>
+                    <tr><td>3 (default)</td><td>Also the people they follow, if enough of your follows follow them (see
+                        Minimum Followers).</td><td>2 hops</td></tr>
                 </table>
                 </div>
-                <p>The control stops at 3. An older setting of 4 or 5 shows as 3, which is how the relay always ran it.</p>
+                <p>The control stops at 3. An older setting of 4 or 5 shows as 3, which is how the relay always ran it.
+                    Nobody three hops out (a friend of a friend of a friend) gets into your inbox at any setting, unless they
+                    reply to or quote your own posts.</p>
+                <p>The Vault Dashboard counts the same way as this setting: at 3 its line reads "People within 3 hops of
+                    you", meaning you, your follows and their follows. A trust card calls that same friend of a friend
+                    "2 hops".</p>
 
                 <h3>Minimum Followers</h3>
                 <p>At distance 3, how many of the people you follow must also follow someone before they can reach you.
-                    The default is 3. Raise it to keep out more strangers, lower it to let more friends of friends in. It has no
-                    effect at distance 1 or 2.</p>
+                    The default is 3: a friend of a friend gets in once 3 of your follows follow them. Raise it to keep out more
+                    strangers, lower it to let more friends of friends in. 0 and 1 both mean one follow is enough. It has no
+                    effect at distance 1 or 2, and your own follows always count, whatever it's set to.</p>
+                <p>A new account that follows fewer people than Minimum Followers would let almost nobody in, so the vault
+                    widens it to its follows' follows until the account follows more.</p>
+
+                <h3>With more than one account</h3>
+                <p>The vault's inbox has one trust list for the whole device: it pools the follows of every account on it,
+                    and counts Minimum Followers across them all. What you see is stricter. Since 3.2.2, feeds, the Vault
+                    list, notifications and the WoT globe judge each account by its own follows only. Someone who got in
+                    through another account's follows doesn't show up for this one. See
+                    <a class="inline" href="/docs/web-of-trust/#per-account">Your web of trust</a>.</p>
 
                 <h3>Refresh Trust List</h3>
                 <p>How often the vault rebuilds the list from your follows: <strong>Every hour</strong>,
@@ -192,7 +208,9 @@
                     <tr><td>Messages</td><td>Yes</td><td>No</td><td>Only people who sign in and are within your Follow Distance</td></tr>
                 </table>
                 </div>
-                <p>Your devices are the ones in <a class="inline" href="/docs/mesh/my-devices/">My Devices</a>.</p>
+                <p>Your devices are the ones in <a class="inline" href="/docs/mesh/my-devices/">My Devices</a>. Your other accounts
+                    on this device have their own space in the vault, and only those that can sign here read private notes and
+                    messages: see <a class="inline" href="/docs/vault/#accounts">Every account on this device</a>.</p>
                 </section>
 
                 <section id="platforms">
@@ -212,6 +230,7 @@
                 </div>
                 </section>
             </article>
+            <p class="docs-checked">Checked against Nostr Vault 3.2.2 and the web app.</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
                 <a class="prev" href="/docs/vault/"><span>Previous</span>Your vault</a>
                 <a class="next" href="/docs/backup/"><span>Next</span>Backup and restore</a>

@@ -7,9 +7,10 @@
   "eyebrow": "Mesh and your devices",
   "h1": "A small vault in a <span>browser tab</span>.",
   "lede": "nostrvault.app/relay/ turns a browser tab into a small vault on the mesh. Your iPhone can send your new notes to it, and only the devices you pair can read them.",
-  "description": "The Nostr Vault browser vault at nostrvault.app/relay/: a browser tab that keeps your notes and serves them to your own devices over the mesh. Pairing, Start mesh, the screensaver, My Devices and limits.",
+  "description": "The Nostr Vault browser vault at nostrvault.app/relay/: a browser tab that keeps your notes and serves them to your own devices over the mesh. Pairing, signing once, Start mesh, the screensaver, My Devices, the web app's live Media and slow relays, and limits.",
+  "checked": "Nostr Vault 3.2.2 and the web app",
   "labels": {
-    "web": ["Save owners", "Start mesh", "Stop mesh", "Start screensaver", "Show photo", "Report"],
+    "web": ["Save owners", "Start mesh", "Stop mesh", "Start screensaver", "Show photo", "Report", "Sign with extension", "Sign with key", "Forget account", "An npub can't sign.", "New"],
     "ios": ["Mesh", "This Device", "Copy", "My Devices", "Add a device", "Paste instead", "Browser vault", "Connect this phone", "Copy this phone's mesh address", "Send my latest notes", "Remove from My Devices", "Advanced", "None"],
     "android": ["My Devices", "Add a device", "Paste instead", "Browser vault"],
     "mac": ["My Devices", "Add a device", "Paste instead", "Browser vault"]
@@ -24,8 +25,8 @@
     a web page, at <code>nostrvault.app/relay/</code>. It stores notes in the browser's own storage on that
     device and joins the mesh, so your own devices can reach it by its key. New to the mesh? Read
     <a class="inline" href="/docs/mesh/">The mesh</a> first.</p>
-<p>The page keeps no Nostr key of yours. Your notes arrive already signed, and the page checks each
-    signature. A good spot for it is an old phone or tablet on a charger.</p>
+<p>The page keeps no Nostr key of yours. You sign once to show which account is yours, and the key you sign
+    with is not kept. Your notes arrive already signed, and the page checks each signature. A good spot for it is an old phone or tablet on a charger.</p>
 </section>
 
 <section id="pair">
@@ -35,9 +36,13 @@
     <li>On your iPhone, open <strong>Mesh</strong> and turn the mesh on. Under
         <strong>This Device</strong>, tap <strong>Copy</strong>. That's the phone's mesh address.</li>
     <li>On the device that will run the page, open <code>nostrvault.app/relay/</code>. Paste the address
-        into the box under the FIPS heading (one address per line). In the box below it, paste your Nostr
-        account's npub: without it the page turns your notes away and keeps 0. Tap
-        <strong>Save owners</strong>. The page reloads.</li>
+        into the box under the Mesh heading (one address per line).</li>
+    <li>Show the page which Nostr account is yours by signing once: tap <strong>Sign with extension</strong>, or
+        paste an nsec, an ncryptsec (with its password below) or a <code>bunker://</code> link and tap
+        <strong>Sign with key</strong>. The key signs one proof and isn't saved anywhere. A typed npub is refused
+        ("An npub can't sign."), because anyone can type an npub. Without a signed account the page turns your
+        notes away and keeps 0. <strong>Forget account</strong> clears it.</li>
+    <li>Tap <strong>Save owners</strong>. The page reloads.</li>
     <li>Tap <strong>Start mesh</strong>. The status's first line shows the page's own <em>mesh address</em>.
         There's no Copy button, so select the address and copy it.</li>
     <li>On the iPhone, go to <span class="path">My Devices &rarr; Add a device</span>. Under
@@ -80,7 +85,8 @@
 <h2>The screensaver</h2>
 <p><strong>Start screensaver</strong> fills the screen with a black "relay running" view: a count, the
     uptime, whether the screen is kept awake (the wake lock), and whether the seed is up. Tap anywhere to
-    leave it. After a reload, start it again.</p>
+    leave it. After a reload it comes back on its own, and the wake lock is taken again when the tab is
+    visible.</p>
 <p>The count on this screen is the page's own test notes, not your notes. <strong>Report</strong> shows
     storage, uptime gaps and a signature self-test, if you want the details.</p>
 </section>
@@ -93,8 +99,12 @@
         background, nothing reaches it.</li>
     <li>Notes the phone sends while the page is down are not queued. Tap <strong>Send my latest notes</strong>
         once it's back.</li>
-    <li>Stored notes stay in the browser and are there when you reopen the page. Tap <strong>Start mesh</strong>
-        again; it doesn't start by itself. <strong>Stop mesh</strong> takes the page off the mesh.</li>
+    <li>Stored notes stay in the browser and are there when you reopen the page. The page rejoins the mesh by
+        itself after a reload, a crash or the browser putting the tab to sleep, and again when you come back to
+        it. <strong>Stop mesh</strong> takes the page off the mesh, and it stays off, even after a reload, until
+        you tap <strong>Start mesh</strong>.</li>
+    <li>The signed account is checked again on every load. One saved by an older page, from a typed npub, is
+        dropped: sign once more.</li>
     <li>The page's mesh key lives in the browser's site data. Clear that data and the page gets a new
         address, so pair it again.</li>
 </ul>
@@ -111,6 +121,24 @@
 <p>Android and Mac add it the same way: <span class="path">My Devices &rarr; Add a device</span>, then
     <strong>Paste instead</strong> with the page's address, and pick <strong>Browser vault</strong>. In this build,
     only the iPhone app sends notes to the page.</p>
+</section>
+
+<section id="web-app">
+<p class="eyebrow">The web app's own vault</p>
+<h2>Live Media and slow relays in the web app</h2>
+<p>The web app at nostrvault.app keeps its own vault in the browser too (This browser's copy). Two 3.2.2
+    changes are about it:</p>
+<ul>
+    <li><strong>Live Media.</strong> When this browser's vault is your home vault, files your paired devices
+        send to it show up in the Media tab while the tab is open, as <strong>New</strong> tiles. A file your
+        media servers already list stays as it was. The web app only reads these file notes; it doesn't write
+        them. A file that lives only on the mesh, with no https link, gets no tile.</li>
+    <li><strong>A dead relay no longer slows you down.</strong> A relay that takes the connection but never
+        answers used to hold every quote and read for about 5 seconds. Now a one-off read waits at most 1.5
+        seconds for a relay that isn't connected yet, a quote stops at the first good copy, and a relay that
+        failed is skipped for a minute, then longer each time, up to 10 minutes. The dead
+        nostr-pub.wellorder.net is gone from the default relays, so new accounts start with four.</li>
+</ul>
 </section>
 
 <section id="privacy">

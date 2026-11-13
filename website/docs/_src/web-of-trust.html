@@ -7,10 +7,11 @@
   "eyebrow": "Using the app",
   "h1": "Your <span>web of trust</span>",
   "lede": "The people you follow, and the people they follow, decide who can reach you. Nostr Vault draws that web as a globe and uses it to keep spam out of your vault, your notifications and your feeds.",
-  "description": "Nostr Vault's web of trust: the WoT tab globe, layers (Following, Vouched, Further out), Find someone, trust paths, My Web, Rebuild your web, and the Who Can Reach You settings.",
+  "description": "Nostr Vault's web of trust: one web per account, the WoT tab globe, layers (Following, Vouched, Further out), Find someone, trust paths, My Web, what is folded from outside your web, and Follow Distance and Minimum Followers explained.",
+  "checked": "Nostr Vault 3.2.2 and the web app",
   "labels": {
-    "ios": ["WoT", "Web of Trust", "Everyone", "Following", "Vouched", "Further out", "Rebuild your web", "Talk with you", "Follow you back", "Find someone", "My Web", "See their web", "Open in WoT", "Profile", "Who Can Reach You", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Your Web of Trust"],
-    "android": ["WoT", "Everyone", "Following", "Vouched", "Further out", "Rebuild your web", "Find someone", "My Web", "See their web", "Who Can Reach You", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Your Web of Trust"],
+    "ios": ["WoT", "Web of Trust", "Everyone", "Following", "Vouched", "Further out", "Rebuild your web", "Talk with you", "Follow you back", "Find someone", "My Web", "See their web", "Open in WoT", "Profile", "Who Can Reach You", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Your Web of Trust", "New in your web", "Who you can see", "With you", "Upkeep", "Plebs vs Zombies", "Outside your web"],
+    "android": ["WoT", "Everyone", "Following", "Vouched", "Further out", "Rebuild your web", "Find someone", "My Web", "See their web", "Who Can Reach You", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Your Web of Trust", "New in your web", "Who you can see", "With you", "Upkeep", "Outside your web"],
     "web": ["WoT", "Web of Trust", "Globe", "Everyone", "Following", "Vouched", "Further out", "Find someone", "Follow you back", "My Web", "See their web", "Rebuild your web"]
   }
 }
@@ -27,6 +28,24 @@
 <p>Your vault rebuilds the web on its own, once a day unless you change
     Refresh Trust List. If you follow very few people, it borrows from your
     follows' follows so a new account isn't empty.</p>
+</section>
+
+<section id="per-account">
+<p class="eyebrow">New in 3.2.2</p>
+<h2>One web per account</h2>
+<p>With more than one account on a device, each one now has its own web, built from its own follows. Before
+    3.2.2 the app pooled every account's follows into one web, so someone followed by one of your follows and
+    two of another account's follows counted as vouched for you. To you they were three hops out.</p>
+<ul>
+    <li><strong>The open account</strong> sees its own web in feeds, the Vault list, notifications and the WoT
+        globe: you, your follows, and people enough of <em>your own</em> follows follow.</li>
+    <li><strong>Your other accounts</strong> get their alerts, their account badge and their Vault lines judged
+        by their own web too.</li>
+    <li><strong>The vault's inbox</strong> still uses one list for the device, pooled from every account, so a
+        mention for any account can land. What you're shown from it is filtered by the open account's web.</li>
+</ul>
+<p>Until the open account's follow list has loaded, and for a new account with fewer follows than Minimum
+    Followers, the app shows the shared web instead.</p>
 </section>
 
 <section id="globe">
@@ -61,9 +80,18 @@
 <section id="my-web">
 <p class="eyebrow">The numbers</p>
 <h2>My Web and rebuilding</h2>
-<p>Tap <strong>My Web</strong> for the whole picture: how many people are in your web, how many you follow,
-    how many are Vouched, who talks with you and who follows you back. Under Upkeep it says when the web was
-    last rebuilt.</p>
+<p>Tap <strong>My Web</strong> for the whole picture:</p>
+<ul>
+    <li><strong>New in your web</strong>: faces of people who joined your web since you last looked. Tap one to
+        open their card on the globe. The first time you open it on a device, it only notes who's already
+        there.</li>
+    <li><strong>Who you can see</strong>: how many people are in your whole web, how many you follow, how many
+        are Vouched and how many are further out. Tap a row to show that layer on the globe.</li>
+    <li><strong>With you</strong>: who talks with you and who follows you back.</li>
+    <li><strong>Upkeep</strong>: when the web was last rebuilt, and <strong>Rebuild your web</strong>.
+        On iPhone and Android, <strong>Plebs vs Zombies</strong> opens a site that helps you clean up your
+        follows.</li>
+</ul>
 <p>Just followed a lot of people? Tap <strong>Rebuild your web</strong> (in My Web, or at the bottom of the
     layer menu). The globe shows each step: reading your follow list, reading your follows' lists, counting.
     A full rebuild can take a few minutes. If it fails or the vault isn't running, the globe keeps your
@@ -77,13 +105,17 @@
     <li><strong>Who can reach your vault.</strong> Only people in your web can post to your vault's inbox.
         Strangers can still reply to or quote your own posts.</li>
     <li><strong>Notifications.</strong> Replies, likes, reposts and mentions notify you only from people in
-        your web. Zaps and follows always come through. A message alerts if it's from your web or someone you've
+        your web. Zaps and follows always come through. In the Vault list, likes and reposts from outside your
+        web fold into one "N from outside your web" line; tap it to see them under
+        <strong>Outside your web</strong>. They don't add to the account's unread count. A message alerts if it's from your web or someone you've
         written to; others wait under Requests. A new follower outside your web is folded into
         "N new followers".</li>
     <li><strong>Feeds.</strong> Global, Media and the other discovery feeds show only your web unless you
-        switch them to Everyone. Everyone unlocks once you follow 5 people. See
+        switch them to Everyone. Everyone unlocks once you follow 5 people. While it's on, a banner at the top
+        says so and takes you back to your web in one tap. See
         <a class="inline" href="/docs/feeds/#everyone-lock">Feeds</a>.</li>
-    <li><strong>Search.</strong> Your follows and your web rank above everyone else.</li>
+    <li><strong>Search.</strong> Your follows and your web rank above everyone else. People and notes from
+        outside your web fold under one line at the end.</li>
     <li><strong>Mesh photos.</strong> Photos load over the mesh only from people you follow, not from your
         wider web.</li>
 </ul>
@@ -92,11 +124,17 @@
 <section id="settings">
 <p class="eyebrow">Settings</p>
 <h2>Who Can Reach You</h2>
-<p>On iPhone and Android, open <span class="path">Settings &rarr; Your Vault &rarr; Who Can Reach You</span>.
-    <strong>Follow Distance</strong> sets how far out your web reaches (3, your whole web, to start),
-    <strong>Minimum Followers</strong> how many of your follows must vouch for someone further out, and
-    <strong>Refresh Trust List</strong> how often it's rebuilt. Details on
-    <a class="inline" href="/docs/vault/who-can-reach-you/">Who Can Reach You</a>.</p>
+<p>On iPhone and Android, open <span class="path">Settings &rarr; Your Vault &rarr; Who Can Reach You</span>.</p>
+<ul>
+    <li><strong>Follow Distance</strong> is how far out your web reaches. It counts you as 1: at 2 it's you and
+        your follows, at 3 (the default) it adds the people they follow. That outer ring is what a trust card
+        calls "2 hops". It never goes further, so nobody three hops out is in your web.</li>
+    <li><strong>Minimum Followers</strong> is how many of your follows must follow someone in that outer ring
+        before they're in. The default is 3. Your own follows are always in. It's counted from the open
+        account's follows.</li>
+    <li><strong>Refresh Trust List</strong> is how often the web is rebuilt.</li>
+</ul>
+<p>Details on <a class="inline" href="/docs/vault/who-can-reach-you/">Who Can Reach You</a>.</p>
 </section>
 
 <section id="platforms">
@@ -107,7 +145,8 @@
         Vouched and Further out layers, <strong>Find someone</strong>, <strong>Follow you back</strong>, trust
         cards with <strong>See their web</strong>, and <strong>My Web</strong> with <strong>Rebuild your
         web</strong>. It builds your web in the browser from follow lists, so it has no Talk with you filter and
-        no trust settings.</li>
+        no trust settings. In Notifications, likes and reposts from outside your web fold under one
+        "Show N from outside your web" line, and search folds its outside results the same way.</li>
 </ul>
 <p class="note">Replay it in the app: <span class="path">Settings &rarr; Help &rarr; Tutorials &rarr; Your Web of Trust</span>.</p>
 </section>

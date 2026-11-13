@@ -7,11 +7,12 @@
   "eyebrow": "Your vault",
   "h1": "A Nostr relay <span>in your pocket</span>.",
   "lede": "Your vault is a full copy of your notes and media on your own device. Underneath it's a real Nostr relay and media server. It keeps everything, so they don't depend on anyone else's server.",
-  "description": "What your vault keeps on each device: your notes, mentions, messages and media. The Vault tab, starting and stopping it, Import Notes, and the Mac and web differences.",
+  "description": "What your vault keeps on each device: your notes, mentions, messages and media. Space for each account, who reads the private side, the Vault tab, Import Notes, and the Mac and web differences.",
+  "checked": "Nostr Vault 3.2.2 and the web app",
   "labels": {
-    "ios": ["Your Vault", "Who Can Reach You", "Import Notes", "Backup & Restore", "Start Vault Automatically", "Your vault is running", "Keep it full", "In your vault", "Import notes", "Copy Address", "Start Vault", "Start Date", "Tutorials", "Vault Dashboard", "Is it safe?", "Make one"],
+    "ios": ["Your Vault", "Your Devices", "Who Can Reach You", "Import Notes", "Backup & Restore", "Start Vault Automatically", "Your vault is running", "Keep it full", "In your vault", "Import notes", "Copy Address", "Start Vault", "Start Date", "Tutorials", "Vault Dashboard", "Is it safe?", "Make one", "Follow list saved", "List backups", "Backup file", "Desktop vault sync", "Add your other accounts?", "Accounts & Keys"],
     "mac": ["Public on the web", "Make this vault public on the web", "Startup", "Launch at Login", "Relay Dashboard"],
-    "android": ["Your Vault", "Who Can Reach You", "Import Notes", "Backup & Restore", "Start Vault Automatically", "Vault Dashboard", "Start Date", "Start Import", "Tutorials"],
+    "android": ["Your Vault", "Your Devices", "Who Can Reach You", "Import Notes", "Backup & Restore", "Start Vault Automatically", "Vault Dashboard", "Start Date", "Start Import", "Tutorials"],
     "web": ["Vault Dashboard", "Keep it full", "Import notes", "Back up media", "Import from my relays", "This browser's copy", "Sign out and delete this browser's copy"]
   }
 }
@@ -30,12 +31,43 @@
     <li><strong>Recent notes from people you follow</strong>, so your feed loads fast. Older ones are cleared
         out over time.</li>
     <li><strong>Your media</strong>, in its own media server.</li>
+    <li><strong>The notes and media of your other accounts</strong> on this device, each in its own space
+        (see <a class="inline" href="#accounts">Every account on this device</a>).</li>
 </ul>
 <p>The vault's address (<code>wss://127.0.0.1:&hellip;</code> on a phone) only works on that device. Other apps
     and people can't connect to it directly. What reaches it over the mesh or the web is set out in
     <a class="inline" href="/docs/vault/who-can-reach-you/">Who Can Reach You</a>. Your notes still go to your normal relays too. The vault is the copy you own.</p>
 <p>To see it explained in the app, open <span class="path">Settings &rarr; Help &rarr; Tutorials</span> and
     play <strong>Your Vault at Work</strong> or <strong>How Your Vault Works</strong>.</p>
+</section>
+
+<section id="accounts">
+<p class="eyebrow">More than one account</p>
+<h2>Every account on this device</h2>
+<p>The first account you set up is the owner: the vault is theirs. Accounts you add in
+    <span class="path">Settings &rarr; Accounts &amp; Keys</span> share the same vault, in two different ways.</p>
+<div class="docs-table-wrap">
+<table>
+    <tr><th></th><th>Space in the vault</th><th>Reads the private side</th></tr>
+    <tr><td>The owner</td><td>Yes, always, even with only an npub</td><td>Yes</td></tr>
+    <tr><td>An account with a key or signer on this device</td><td>Yes</td><td>Yes</td></tr>
+    <tr><td>A watch-only account (npub only)</td><td>Yes on iPhone, iPad and Mac. No on Android</td><td>No</td></tr>
+</table>
+</div>
+<ul>
+    <li><strong>Space</strong> means the vault keeps that account's own notes and uploads, and shares them
+        like yours.</li>
+    <li><strong>The private side</strong> is your private notes, your old list versions, the full list of
+        your media, and media you never posted. Only the owner and accounts that can sign on this device
+        read it, by signing in with their own key.</li>
+    <li>A watch-only npub is often someone else's account. So it never reads the private side, and since 3.2.2
+        its notes can't be written into your private notes either. Only accounts that can read the private
+        side can add to it.</li>
+    <li>Removing an account's key or signer keeps its space but stops its private reads. Removing the account
+        takes away both.</li>
+</ul>
+<p>After a copy from another device, iPhone, iPad and Mac ask <strong>Add your other accounts?</strong> The
+    accounts you tick are added watch-only, each with its own space.</p>
 </section>
 
 <section id="vault-tab">
@@ -49,16 +81,17 @@
     <strong>Restart</strong>, <strong>Stop</strong> and <strong>Start</strong>.</p>
 <p>Below that:</p>
 <ul>
-    <li><strong>Is it safe?</strong>: four checks (your key, a saved follow list, a copy on your Mac, a backup
-        file), with a button to make a backup.</li>
+    <li><strong>Is it safe?</strong>: where your key is (on this device, in a signer app, or none), then three
+        checks: <strong>Follow list saved</strong>, <strong>List backups</strong> and <strong>Backup file</strong>,
+        with a button to make a backup file.</li>
     <li><strong>Who can reach you</strong>: how many people can send to your inbox, and how many people you've
         blocked.</li>
     <li><strong>In your vault</strong>: how many events it holds and how much space notes, media and cache use.
         The cache is other people's media kept for quick loading, and you can clear it.</li>
     <li><strong>Keep it full</strong>: <strong>Import notes</strong>, import media, back up media and export
         notes.</li>
-    <li><strong>Vault settings</strong>: shortcuts to Relays, Who Can Reach You, Media Servers, Sync with Vault on
-        Mac and Start automatically.</li>
+    <li><strong>Vault settings</strong>: shortcuts to Relays, Who Can Reach You, Media Servers,
+        <strong>Desktop vault sync</strong> and Start automatically.</li>
     <li>Then relay activity, and <strong>Advanced</strong> with relay details and media servers.</li>
 </ul>
 <p>On iPhone and Android this screen is called <strong>Vault Dashboard</strong>.</p>
@@ -74,8 +107,8 @@
     isn't.</p>
 <ul>
     <li><strong>Start Vault Automatically</strong>: start the vault when the app opens. Leave it on.</li>
-    <li><strong>Desktop vault sync</strong>: send your notes and photos to Nostr Vault on your Mac
-        (see <a class="inline" href="/docs/mesh/">The mesh</a>).</li>
+    <li><strong>Your Devices</strong>: the Macs, Linux boxes and phones you linked. Your media syncs to all of
+        them (see <a class="inline" href="/docs/mesh/">The mesh</a>).</li>
     <li><strong>Who Can Reach You</strong>: who may send to your inbox and messages.
         <a class="inline" href="/docs/vault/who-can-reach-you/">More</a>.</li>
     <li><strong>Import Notes</strong>: fill the vault with your past notes. See below.</li>
@@ -114,7 +147,8 @@
         shows the domain, port and tunnel settings. <strong>Startup</strong> has <strong>Launch at Login</strong>.</td></tr>
     <tr><td>Web</td><td>In your browser's storage</td><td>A Vault Dashboard like the phone's, without Start/Stop,
         Import media or Desktop vault sync. Import with <span class="path">Keep it full &rarr; Import
-        notes</span> or <strong>Import from my relays</strong> in Settings. Signing out deletes this browser's copy; your phone's vault is
+        notes</span> or <strong>Import from my relays</strong> in Settings. While the tab is open, files your
+        devices send to this browser's vault show up in Media as they land, marked New. Signing out deletes this browser's copy; your phone's vault is
         untouched.</td></tr>
 </table>
 </div>
