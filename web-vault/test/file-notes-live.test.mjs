@@ -145,3 +145,20 @@ test("mergeNoteTiles: a note-only file joins the grid as new, a file the servers
   assert.equal(all[1], listed[0])
   assert.equal(mergeNoteTiles(listed, []), listed)
 })
+
+test("watchFileNotes: a second note for a shown file (an emoji note) still reports, so Media can hide or show it", async () => {
+  const haven = fakeHaven(), timers = manualTimers(), seen = []
+  const stop = watchFileNotes({ haven, owner: me, auth: ch => ({ id: "e" + ch }), onChange: (t, s) => seen.push(s.emojiOnly()), timers })
+  const c = haven.conns[0]
+  c.send(["AUTH", "x"]); await new Promise(r => setImmediate(r)); c.send(["OK", "ex", true, ""])
+  const sub = c.sent[1][1]
+  const emojiNote = finalizeEvent({ kind: 1063, created_at: 1000, tags: [["x", SHA], ["m", "image/png"], ["size", "10"], ["p", me], ["t", "nv-emoji"], ["emoji", "blob", `https://blossom.example/${SHA}.png`]], content: "" }, phone)
+  c.send(["EVENT", sub, emojiNote])
+  assert.deepEqual([...seen.at(-1)], [SHA], "emoji only: hidden from Media")
+  c.send(["EVENT", sub, fileNote(SHA, 1001)])
+  assert.equal(seen.length, 2, "the plain note for the same file is reported too")
+  assert.deepEqual([...seen.at(-1)], [], "a plain note keeps it in Media")
+  c.send(["EVENT", sub, fileNote(SHA, 1001)])
+  assert.equal(seen.length, 2, "a replayed note changes nothing")
+  stop()
+})

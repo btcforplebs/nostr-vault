@@ -27,7 +27,7 @@ import { markTourDone, tourDone } from "./src/net/first-run.js"
 import { runAndWait, resumeImportJobs } from "./src/net/import-jobs.js"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { startNavDepth } from "./src/components/nav-depth.js"
-import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, RelayScreen, DesktopShell, VaultDashboard } from "./src/screens/lazy-screens.js"
+import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, RelayScreen, DesktopShell, VaultDashboard } from "./src/screens/lazy-screens.js"
 import { GuestApp } from "./src/guest/GuestApp.jsx"
 import { SettingsScreen, resetBrowser } from "./src/screens/SettingsScreen.jsx"
 import { TabBar, PostButton } from "./src/components/TabBar.jsx"
@@ -49,7 +49,7 @@ import "./src/styles/boot-sheets.js" // after app.css: the sheets the boot compo
 import { NotifyWatch } from "./src/components/useNotifyWatch.js"
 import { isDashboardOpen } from "./src/net/dashboard-route.js"
 
-const ROUTES = ["feed", "search", "wot", "notifications", "compose", "profile", "relay", "thread", "messages", "dm", "vault", "bookmarks", "settings", "accounts", "wallet", ...(BOX ? ["box"] : [])]
+const ROUTES = ["feed", "search", "wot", "notifications", "compose", "profile", "relay", "thread", "messages", "dm", "vault", "bookmarks", "emoji", "settings", "accounts", "wallet", ...(BOX ? ["box"] : [])]
 // "#/thread/<id>" -> { route: "thread", arg: "<id>" }; "#/profile/<pubkey>" is someone else's profile.
 const routeOf = () => {
   const [r, arg = ""] = location.hash.replace(/^#\/?/, "").split(/[?]/)[0].split("/")
@@ -306,6 +306,7 @@ function PhoneScreens({ ctx, route, arg, other }) {
       {route === "thread" && <ThreadScreen key={arg} ctx={ctx} id={arg} />}
       {route === "messages" && <MessagesScreen ctx={ctx} vaultMenu />}
       {route === "bookmarks" && <BookmarksScreen ctx={ctx} />}
+      {route === "emoji" && <EmojiScreen ctx={ctx} />}
       {route === "dm" && <ConversationScreen key={arg} ctx={ctx} peer={arg} />}
       {route === "vault" && <VaultScreen ctx={ctx} />}
       {route === "settings" && <SettingsScreen key={arg} ctx={ctx} page={arg} />}

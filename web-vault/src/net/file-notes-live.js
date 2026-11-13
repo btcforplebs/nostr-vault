@@ -18,8 +18,8 @@ export function meshDevicesConfig({ selfHex, owners, devices = [] }) {
 }
 
 /**
- * Keeps one REQ open on /files for `owner`'s notes. `onChange(tiles)` gets the tiles (FileNotesState.tiles()) after
- * each event that changes them. A dropped stream comes back after `retryMs` with `since` (overlap included); a
+ * Keeps one REQ open on /files for `owner`'s notes. `onChange(tiles, state)` gets the tiles (FileNotesState.tiles())
+ * and the state itself (its emoji copies, net/emoji-notes.js) after each event that changes them. A dropped stream comes back after `retryMs` with `since` (overlap included); a
  * refused AUTH or REQ stops for good (an older vault, a key it doesn't take): no retry loop. -> stop()
  * `haven`: the running vault's haven (conn); none, or no owner, opens nothing. `auth(challenge)` -> signed 22242.
  */
@@ -53,9 +53,13 @@ export function watchFileNotes({ haven, owner, auth, onChange, retryMs = FILES_R
           if (m[1] !== authID) return
           if (!m[2]) return give()
           return send(["REQ", sub, liveFilter(owner, state.since())])
-        case "EVENT":
-          if (m[1] === sub && state.apply(m[2])) onChange(state.tiles())
+        case "EVENT": {
+          if (m[1] !== sub) return
+          // A second note for a file already shown changes no tile, but may change whether it is an emoji (Media hides those).
+          const before = state.changes
+          if (state.apply(m[2]) || state.changes !== before) onChange(state.tiles(), state)
           return
+        }
         case "CLOSED":
           if (m[1] === sub) give()
       }

@@ -1,0 +1,28 @@
+/* Vault › Emoji (emoji/EmojiScreen.jsx): sets as a title line over a grid of small images with their shortcodes. */
+.emoji-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px var(--gutter); }
+.emoji-set { padding: 8px 0 12px; border-bottom: 1px solid var(--hair); }
+.emoji-set-head { display: flex; gap: 10px; align-items: center; width: 100%; padding: 6px var(--gutter); border: 0; background: none;
+  color: inherit; text-align: left; font: inherit; min-height: 0; }
+button.emoji-set-head:hover { background: rgb(255 255 255 / .04); }
+.emoji-set-icon { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; object-fit: cover;
+  background: var(--s1); font-size: 20px; }
+.emoji-set-text { display: grid; gap: 2px; min-width: 0; }
+.emoji-badge { padding: 1px 6px; border-radius: 6px; background: var(--accent-pale); color: var(--text); font: var(--t-foot); }
+.emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; padding: 4px var(--gutter); }
+.emoji-tile { position: relative; display: grid; justify-items: center; gap: 2px; margin: 0; padding: 6px 2px; border-radius: 8px; background: var(--s1); }
+.emoji-tile img, .emoji-missing { width: 36px; height: 36px; object-fit: contain; }
+.emoji-missing { display: grid; place-items: center; color: var(--text-3); font: 600 18px/1 var(--font); }
+.emoji-tile.dead { opacity: .55; }
+.emoji-tile figcaption { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-foot); color: var(--text-2); }
+.emoji-dot { position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
+.emoji-saved { position: absolute; top: 2px; left: 4px; font: 600 10px/1 var(--font); color: var(--accent); }
+.emoji-more { align-self: center; justify-self: center; color: var(--text-2); font: var(--t-foot); }
+.emoji-detail, .emoji-browse { display: grid; gap: 6px; padding: 8px 0; }
+.emoji-detail > button, .emoji-browse > button { justify-self: start; margin-left: var(--gutter); }
+.emoji-detail > p { padding: 0 var(--gutter); margin: 0; }
+.emoji-link { display: flex; gap: 8px; padding: 4px var(--gutter); }
+.emoji-link input { flex: 1; min-width: 0; }
+.emoji-dead { padding-bottom: 16px; }
+.emoji-dead > p { padding: 0 var(--gutter); margin: 0 0 6px; }
+.emoji-dead-row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; padding: 4px var(--gutter); }
+.emoji-url { flex-basis: 100%; overflow-wrap: anywhere; }

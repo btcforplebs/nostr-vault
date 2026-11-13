@@ -16,7 +16,7 @@ export function deskModeFor(width) {
 
 /** Screens with a list that a note, conversation or person opens over. WoT, the Dashboard (relay) and Settings (with
  *  Accounts and Wallet) are pages of their own. */
-export const SPLIT = new Set(["feed", "search", "profile", "vault", "messages", "notifications", "bookmarks"])
+export const SPLIT = new Set(["feed", "search", "profile", "vault", "messages", "notifications", "bookmarks", "emoji"])
 export const FULL = new Set(["wot", "relay", "settings", "accounts", "wallet"])
 
 const HEX = /^[0-9a-f]{64}$/
@@ -70,7 +70,7 @@ export function sideOf(route, otherProfile = false) {
   if (route === "messages" || route === "dm") return "messages"
   if (route === "settings" || route === "accounts" || route === "wallet") return "settings"
   if (route === "notifications") return "notifications" // its own rail row (parity #31)
-  if (route === "relay" || route === "bookmarks") return "vault"
+  if (route === "relay" || route === "bookmarks" || route === "emoji") return "vault"
   if (route === "compose" || route === "thread") return null
   return route
 }
