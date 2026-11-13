@@ -48,6 +48,11 @@ class HomeVaultQueue(
         val meshKeyOnly: Boolean = false,
         /** For [TYPE_FILE_NOTE]: what to tell the vault's `/files` about one blob. Optional: older queues lack it. */
         val fileNote: FileNoteDraft? = null,
+        /**
+         * Lane tries the device answered (even with an error). Only these count toward the backoff and
+         * [HomeVaultRules.MAX_ATTEMPTS] on a lane (Tron #2005). Optional: older queues lack it.
+         */
+        val answered: Int = 0,
     )
 
     /**
@@ -363,22 +368,25 @@ object HomeVaultRules {
     fun expired(item: HomeVaultQueue.Item, now: Long): Boolean =
         item.attempts >= MAX_ATTEMPTS || (item.attempts > 0 && now - item.queuedAt > MAX_AGE_MS)
 
-    /**
-     * A lane to another device of the owner's (a Mac, a phone) waits at most this long between tries: that device is
-     * in reach only while its app is open, so a long wait misses it (Logen 2026-11-13). The mobile vault is always on
-     * and keeps the long backoff.
-     */
-    const val LANE_BACKOFF_CAP_MS = 2 * 60_000L
-
     /** Whether sends to a device in [role] go on a lane (anything but the mobile vault). */
     fun isLane(role: DeviceRole): Boolean = role != DeviceRole.HOME_VAULT
 
-    fun backoffMs(attempts: Int, lane: Boolean): Long =
-        if (lane) backoffMs(attempts).coerceAtMost(LANE_BACKOFF_CAP_MS) else backoffMs(attempts)
+    /**
+     * The item after a send that came back RETRY. A RETRY is only recorded once the device's door was reached (out
+     * of reach, drainLane stops before trying and retries within a minute), so a lane backs off on the tries its
+     * device answered: 1 min doubling to 6 h, as before #2005. Counting all tries would carry the 2-minute build's
+     * hundreds of tries into a 6 h wait (Tron #2005: never a 2-minute re-send of a 256 MB blob for 14 days).
+     */
+    fun afterRetry(item: HomeVaultQueue.Item, now: Long, lane: Boolean): HomeVaultQueue.Item {
+        val attempts = item.attempts + 1
+        if (!lane) return item.copy(attempts = attempts, nextAt = now + backoffMs(attempts))
+        val answered = item.answered + 1
+        return item.copy(attempts = attempts, answered = answered, nextAt = now + backoffMs(answered))
+    }
 
-    /** A lane tries every 2 minutes, so its try count says nothing: only age gives up on it. */
+    /** On a lane only answered tries count toward [MAX_ATTEMPTS]; age still gives up. */
     fun expired(item: HomeVaultQueue.Item, now: Long, lane: Boolean): Boolean =
-        if (lane) item.attempts > 0 && now - item.queuedAt > MAX_AGE_MS else expired(item, now)
+        if (lane) item.answered >= MAX_ATTEMPTS || (item.attempts > 0 && now - item.queuedAt > MAX_AGE_MS) else expired(item, now)
 
     /** Npubs connected now that were not at the last look. */
     fun newlyInReach(now: Set<String>, before: Set<String>): Set<String> = now - before

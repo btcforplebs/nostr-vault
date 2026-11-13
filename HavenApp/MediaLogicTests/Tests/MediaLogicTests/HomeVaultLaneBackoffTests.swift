@@ -15,20 +15,51 @@ final class HomeVaultLaneBackoffTests: XCTestCase {
                       added: added, attempts: attempts, notBefore: notBefore, target: target)
     }
 
-    func testLaneBackoffIsCappedAtTwoMinutes() {
-        XCTAssertEqual(HomeVaultLogic.backoff(afterAttempts: 1, lane: true), 60)
-        XCTAssertEqual(HomeVaultLogic.backoff(afterAttempts: 2, lane: true), 120)
-        XCTAssertEqual(HomeVaultLogic.backoff(afterAttempts: 6, lane: true), 120)
-        XCTAssertEqual(HomeVaultLogic.backoff(afterAttempts: 30, lane: true), 120)
-        XCTAssertEqual(HomeVaultLogic.backoff(afterAttempts: 6, lane: false), 32 * 60, "the home vault keeps its backoff")
+    private let t0 = Date(timeIntervalSince1970: 1_000_000)
+
+    /// Tron M1 (#2005): the 2-min wait is only for a device that is out of reach.
+    func testUnreachedLaneRetriesWithinTwoMinutes() {
+        var it = item(target: phone)
+        for _ in 0..<30 { it = HomeVaultLogic.afterRetry(it, lane: true, reached: false, now: t0) }
+        XCTAssertEqual(it.notBefore, t0.addingTimeInterval(120))
+        XCTAssertEqual(it.attempts, 30)
+        XCTAssertEqual(it.answered ?? 0, 0, "a try that never reached the device is not an answer")
+    }
+
+    func testAnsweredLaneTriesGoBackToTheLongBackoff() {
+        var it = item(target: phone)
+        for _ in 0..<6 { it = HomeVaultLogic.afterRetry(it, lane: true, reached: true, now: t0) }
+        XCTAssertEqual(it.notBefore, t0.addingTimeInterval(32 * 60), "1 min doubling, as before #2005")
+        for _ in 0..<20 { it = HomeVaultLogic.afterRetry(it, lane: true, reached: true, now: t0) }
+        XCTAssertEqual(it.notBefore, t0.addingTimeInterval(6 * 3600), "up to 6 h")
+    }
+
+    func testUnreachedTriesDoNotInflateTheAnsweredBackoff() {
+        var it = item(target: phone)
+        for _ in 0..<50 { it = HomeVaultLogic.afterRetry(it, lane: true, reached: false, now: t0) }
+        it = HomeVaultLogic.afterRetry(it, lane: true, reached: true, now: t0)
+        XCTAssertEqual(it.notBefore, t0.addingTimeInterval(60), "the first answered try waits 1 min")
+    }
+
+    func testHomeVaultKeepsItsBackoff() {
+        var it = item()
+        for _ in 0..<6 { it = HomeVaultLogic.afterRetry(it, lane: false, reached: false, now: t0) }
+        XCTAssertEqual(it.notBefore, t0.addingTimeInterval(32 * 60))
+        XCTAssertEqual(it.attempts, 6)
     }
 
     func testOnlyTheHomeVaultIsNotALane() {
-        XCTAssertFalse(HomeVaultLogic.isLane(item(), homeVault: home))
-        XCTAssertFalse(HomeVaultLogic.isLane(item(target: home), homeVault: home))
-        XCTAssertTrue(HomeVaultLogic.isLane(item(target: phone), homeVault: home))
-        XCTAssertTrue(HomeVaultLogic.isLane(item(), homeVault: nil), "media to the Mac with no kiosk is a lane")
-        XCTAssertFalse(HomeVaultLogic.isLane(item(.mirror), homeVault: nil), "a public copy is not a device lane")
+        XCTAssertFalse(HomeVaultLogic.isLane(item(), homeVault: home, mediaVault: home))
+        XCTAssertFalse(HomeVaultLogic.isLane(item(target: home), homeVault: home, mediaVault: home))
+        XCTAssertTrue(HomeVaultLogic.isLane(item(target: phone), homeVault: home, mediaVault: home))
+        XCTAssertTrue(HomeVaultLogic.isLane(item(), homeVault: nil, mediaVault: mac), "media to the Mac with no kiosk is a lane")
+        XCTAssertFalse(HomeVaultLogic.isLane(item(.mirror), homeVault: nil, mediaVault: mac), "a public copy is not a device lane")
+        XCTAssertFalse(HomeVaultLogic.isLane(item(.event), homeVault: home, mediaVault: mac), "notes go to the kiosk")
+    }
+
+    /// Tron L1 (#2005): media to the Mac is a lane with a kiosk too, as on Android (role MAC).
+    func testMediaToTheMacIsALaneWithAKioskToo() {
+        XCTAssertTrue(HomeVaultLogic.isLane(item(), homeVault: home, mediaVault: mac))
     }
 
     func testDestinationFollowsTheLane() {
@@ -37,10 +68,13 @@ final class HomeVaultLaneBackoffTests: XCTestCase {
         XCTAssertEqual(HomeVaultLogic.destination(item(.event), homeVault: nil, mediaVault: mac), nil, "notes go to a kiosk only")
     }
 
-    func testLaneItemsDoNotGiveUpOnTriesOnlyOnAge() {
+    func testLaneGivesUpAfterFortyAnsweredTriesOrOnAge() {
         let now = Date(timeIntervalSince1970: 100 * 86400)
-        XCTAssertFalse(HomeVaultLogic.isExpired(item(target: phone, attempts: 400, added: now), now: now, lane: true),
-                       "2-min tries would give up on a photo after ~80 min")
+        var it = item(target: phone, attempts: 400, added: now)
+        XCTAssertFalse(HomeVaultLogic.isExpired(it, now: now, lane: true),
+                       "tries that never reached the device do not count toward 40")
+        it.answered = 40
+        XCTAssertTrue(HomeVaultLogic.isExpired(it, now: now, lane: true), "40 answered tries: give up, as before #2005")
         XCTAssertTrue(HomeVaultLogic.isExpired(item(target: phone, attempts: 1, added: now.addingTimeInterval(-15 * 86400)), now: now, lane: true))
         XCTAssertTrue(HomeVaultLogic.isExpired(item(attempts: 40, added: now), now: now, lane: false))
     }

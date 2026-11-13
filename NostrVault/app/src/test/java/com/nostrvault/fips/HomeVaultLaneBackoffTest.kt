@@ -10,13 +10,31 @@ import org.junit.Test
  * the always-on mobile vault keeps its long backoff (Logen 2026-11-13). As iOS HomeVaultLaneBackoffTests.
  */
 class HomeVaultLaneBackoffTest {
+    private val t0 = 1_000_000L
+
+    /** Tron M1 (#2005): a RETRY is recorded only after the device's door answered, so it backs off as before #2005. */
     @Test
-    fun `a lane's backoff stops at two minutes, the mobile vault's does not`() {
-        assertEquals(60_000L, HomeVaultRules.backoffMs(1, lane = true))
-        assertEquals(120_000L, HomeVaultRules.backoffMs(2, lane = true))
-        assertEquals(120_000L, HomeVaultRules.backoffMs(6, lane = true))
-        assertEquals(120_000L, HomeVaultRules.backoffMs(1000, lane = true))
-        assertEquals(32 * 60_000L, HomeVaultRules.backoffMs(6, lane = false))
+    fun `an answered lane retry goes back to the long backoff`() {
+        var it = HomeVaultQueue.Item(key = "k", type = HomeVaultQueue.TYPE_BLOB, queuedAt = t0)
+        repeat(6) { _ -> it = HomeVaultRules.afterRetry(it, t0, lane = true) }
+        assertEquals(t0 + 32 * 60_000L, it.nextAt)
+        assertEquals(6, it.answered)
+        repeat(20) { _ -> it = HomeVaultRules.afterRetry(it, t0, lane = true) }
+        assertEquals(t0 + 6 * 60 * 60_000L, it.nextAt)
+    }
+
+    @Test
+    fun `old tries from the 2-minute build do not inflate the answered backoff`() {
+        val fromB28 = HomeVaultQueue.Item(key = "k", type = HomeVaultQueue.TYPE_BLOB, queuedAt = t0, attempts = 300)
+        assertEquals(t0 + 60_000L, HomeVaultRules.afterRetry(fromB28, t0, lane = true).nextAt)
+    }
+
+    @Test
+    fun `the mobile vault keeps its backoff`() {
+        var it = HomeVaultQueue.Item(key = "k", type = HomeVaultQueue.TYPE_BLOB, queuedAt = t0)
+        repeat(6) { _ -> it = HomeVaultRules.afterRetry(it, t0, lane = false) }
+        assertEquals(t0 + 32 * 60_000L, it.nextAt)
+        assertEquals(6, it.attempts)
     }
 
     @Test
@@ -27,10 +45,11 @@ class HomeVaultLaneBackoffTest {
     }
 
     @Test
-    fun `a lane gives up on age only, not on tries`() {
+    fun `a lane gives up after forty answered tries or on age`() {
         val now = 100L * 24 * 60 * 60_000L
         val tried = HomeVaultQueue.Item(key = "k", type = HomeVaultQueue.TYPE_BLOB, queuedAt = now, attempts = 400)
-        assertFalse(HomeVaultRules.expired(tried, now, lane = true))
+        assertFalse("tries from before this rule are not answers", HomeVaultRules.expired(tried, now, lane = true))
+        assertTrue(HomeVaultRules.expired(tried.copy(answered = 40), now, lane = true))
         assertTrue(HomeVaultRules.expired(tried, now, lane = false))
         val old = HomeVaultQueue.Item(key = "k", type = HomeVaultQueue.TYPE_BLOB, queuedAt = now - 15L * 24 * 60 * 60_000L, attempts = 1)
         assertTrue(HomeVaultRules.expired(old, now, lane = true))
