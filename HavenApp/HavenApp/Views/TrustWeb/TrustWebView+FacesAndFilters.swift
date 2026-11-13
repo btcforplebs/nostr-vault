@@ -263,14 +263,17 @@ extension TrustWebView {
     /// follows, `FeedService.feedTrustedPubkeys`) is put together off the main
     /// thread too: tens of thousands of keys.
     private func hazeFromLoadedWeb() {
-        // The open account's web, as every feed reads it (`AccountWeb`).
-        let accountWeb = FeedService.shared.feedTrustedPubkeys
+        // The open account's web, as every feed reads it (`AccountWeb`),
+        // built in the detached task: a cold memo counts the whole links file.
+        let feed = FeedService.shared
+        let memo = feed.trustedWebMemo, saved = feed.wotPubkeys, followed = feed.followedPubkeys
+        let scope = feed.accountWebScope
         let arrivals = arrivals
         let counts = FeedService.shared.wotVouches
         let inner = myFollows.union([me, author])
         let follows = myFollows, me = me, wot = isWOTTab
         Task.detached(priority: .userInitiated) {
-            let graph = accountWeb.union(arrivals)
+            let graph = memo.web(saved: saved, follows: followed, scope: scope).union(arrivals)
             let layout = TrustMap.hazeLayout(graph: graph, inner: inner, vouches: counts, me: me, follows: follows,
                                              wot: wot, faceScale: TrustGlobeCanvas.faceScale)
             let shell = layout.shell, close = layout.close, layerFaces = layout.layerFaces

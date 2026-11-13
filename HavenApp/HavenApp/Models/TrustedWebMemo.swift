@@ -23,6 +23,20 @@ final class TrustedWebMemo: @unchecked Sendable {
         generation += 1
     }
 
+    /// A graph read without its links (main-thread reads): the depth now,
+    /// the links when their off-main parse lands (`load(links:)`).
+    func load(depth: Int?) {
+        lock.lock(); defer { lock.unlock() }
+        self.depth = depth
+        generation += 1
+    }
+
+    func load(links: TrustLinksIndex?) {
+        lock.lock(); defer { lock.unlock() }
+        self.links = links
+        generation += 1
+    }
+
     /// The web for `follows`. With a `scope`, the open account's own web
     /// (`AccountWeb`); without, the relay's shared web plus the follows.
     func web(saved: Set<String>, follows: [String], scope: AccountWebScope? = nil) -> Set<String> {

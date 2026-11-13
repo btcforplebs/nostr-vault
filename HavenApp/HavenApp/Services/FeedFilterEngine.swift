@@ -271,9 +271,15 @@ enum FeedFilterEngine {
         /// `wot_links.json` beside the cache, read for a depth-3 web only
         /// (the relay deletes it at depth 2). The account web counts from it.
         var links: TrustLinksIndex? = nil
+        /// The links file on disk was written for this cache (`WotFiles`).
+        /// False in the moment between the relay's two writes.
+        var linksCurrent = true
     }
 
-    static func readWotCache(from cacheURL: URL, ownerHex: String) -> WotCache? {
+    /// `readLinks: false` skips `wot_links.json` (several MB at depth 3), so
+    /// a read on the main thread stays as cheap as it was; the caller parses
+    /// the links off the main thread.
+    static func readWotCache(from cacheURL: URL, ownerHex: String, readLinks: Bool = true) -> WotCache? {
         guard let data = try? Data(contentsOf: cacheURL),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let pubkeys = json["pubkeys"] as? [String: Bool] else {
@@ -281,10 +287,11 @@ enum FeedFilterEngine {
         }
         let loaded = Set(pubkeys.keys)
         let depth = json["depth"] as? Int
-        let linksURL = cacheURL.deletingLastPathComponent().appendingPathComponent(TrustLinks.fileName)
-        let links = (depth ?? 0) >= 3 ? (try? Data(contentsOf: linksURL)).flatMap(TrustLinksIndex.parse) : nil
+        let linksURL = WotFiles.linksURL(beside: cacheURL)
+        let links = readLinks && (depth ?? 0) >= 3 ? (try? Data(contentsOf: linksURL)).flatMap(TrustLinksIndex.parse) : nil
         return WotCache(pubkeys: hasUsableWot(loaded, ownerHex: ownerHex) ? loaded : [],
-                        vouches: TrustMap.vouches(fromJSON: json), depth: depth, links: links)
+                        vouches: TrustMap.vouches(fromJSON: json), depth: depth, links: links,
+                        linksCurrent: WotFiles.linksCurrent(cacheURL: cacheURL, depth: depth))
     }
 
     /// True when the graph names somebody other than the owner. An empty
