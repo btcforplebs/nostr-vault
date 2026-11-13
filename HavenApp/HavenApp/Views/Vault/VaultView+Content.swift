@@ -92,6 +92,7 @@ extension VaultView {
             if showsOtherAccounts { loadOtherAccountActivity() }
         }
         .onChange(of: configService.config.activeAccountNpub) { _, _ in
+            listSwapAccountSwitched()
             notesHasLoadedOnce = false
             likesHasLoadedOnce = false
             likesInitialSettled = false
@@ -103,10 +104,12 @@ extension VaultView {
             refreshAll()
         }
         .onChange(of: nostrService.isFetching) { _, _ in
+            listSwapReadChanged()
             if viewMode == .likes { updateLikesSettleState() }
             if viewMode == .zaps { updateZapsSettleState() }
         }
         .onChange(of: relayManager.isBooting) { _, _ in
+            listSwapReadChanged()
             if viewMode == .likes { updateLikesSettleState() }
             if viewMode == .zaps { updateZapsSettleState() }
         }

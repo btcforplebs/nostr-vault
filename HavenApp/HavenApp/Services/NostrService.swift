@@ -124,6 +124,8 @@ class NostrService: ObservableObject {
         setupThrottling()
         loadProfiles()
         updateOwnerHex()
+        // The last Vault screen, before any socket is up (VaultSnapshotStore).
+        restoreVaultSnapshot()
         prefetchWhitelistedProfiles()
         // The whole mute list, private part included, after this init returns.
         DispatchQueue.main.async { MuteListStore.shared.start() }

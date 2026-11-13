@@ -213,6 +213,12 @@ struct VaultView: View {
     // Debounce mechanism for updateDisplayData
     @State var updateTask: Task<Void, Never>?
     @State var updateGeneration: Int = 0
+    /// When the Vault list on screen started waiting for a read to end
+    /// (VaultView+ListSwap); nil while nothing is held.
+    @State var listHeldSince: Date?
+    /// The next build may be a saved screen, shown at once: on launch and
+    /// after an account switch (VaultSnapshotStore).
+    @State var showsSavedScreen = true
     @State var showingRelayDashboard = false
     /// The `eventsResetGeneration` the extended zap receipts were fetched in;
     /// nil until the first fetch. A refresh anywhere (this tab, Media) wipes
@@ -505,6 +511,7 @@ struct VaultView: View {
             if showsOtherAccounts { loadOtherAccountActivity() }
         }
         .onChange(of: configService.config.activeAccountNpub) { _, _ in
+            listSwapAccountSwitched()
             notesHasLoadedOnce = false
             activityHasLoadedOnce = false
             noOlderPages = []
@@ -518,10 +525,12 @@ struct VaultView: View {
             refreshAll()
         }
         .onChange(of: nostrService.isFetching) { _, _ in
+            listSwapReadChanged()
             if viewMode == .likes { updateLikesSettleState() }
             if viewMode == .zaps { updateZapsSettleState() }
         }
         .onChange(of: relayManager.isBooting) { _, _ in
+            listSwapReadChanged()
             if viewMode == .likes { updateLikesSettleState() }
             if viewMode == .zaps { updateZapsSettleState() }
         }
