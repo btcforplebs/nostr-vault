@@ -69,10 +69,39 @@ final class HomeVaultFileNoteLaneTests: XCTestCase {
         XCTAssertEqual(kept.map(\.kind), [.fileNote], "the blob send goes; the kind 5 for it must still go")
     }
 
+    private func queued(_ kind: HomeVaultItem.Kind, server: String? = nil, target: String? = nil) -> HomeVaultItem {
+        HomeVaultItem(kind: kind, id: sha, ownerHex: owner, eventJSON: nil, contentType: "image/jpeg",
+                      added: Date(), attempts: 0, notBefore: nil, server: server, target: target)
+    }
+
     func testAFileNoteNeedsNoPersonToSign() {
-        XCTAssertFalse(HomeVaultLogic.needsAccountSigner(.fileNote), "the device mesh key signs it")
-        XCTAssertTrue(HomeVaultLogic.needsAccountSigner(.blob))
-        XCTAssertFalse(HomeVaultLogic.needsAccountSigner(.event))
+        XCTAssertFalse(HomeVaultLogic.asksAccountSigner(queued(.fileNote)), "the device mesh key signs it")
+        XCTAssertFalse(HomeVaultLogic.asksAccountSigner(queued(.event)))
+        XCTAssertTrue(HomeVaultLogic.asksAccountSigner(queued(.mirror, server: "https://blossom.primal.net")))
+    }
+
+    // MARK: Blob lanes sign with the mesh key (build 26: 11 photos held for a tap since Nov 8)
+
+    func testABlobToAnotherOwnDeviceNeedsNoPerson() {
+        let lane = "npub1h3yrmwec03729j49zvd9ukm4ufhj4pfa87adh42maud0qddz08tqeth4ga"
+        XCTAssertFalse(HomeVaultLogic.asksAccountSigner(queued(.blob, target: lane)),
+                       "a blob on a linked device's lane signs with this phone's mesh key")
+        XCTAssertFalse(HomeVaultLogic.asksAccountSigner(queued(.blob)),
+                       "a blob to the media vault signs with the mesh key too")
+        XCTAssertFalse(HomeVaultLogic.asksAccountSigner(queued(.blob, server: "http://192.168.1.20:3355")),
+                       "a private server is not passed a public token")
+    }
+
+    func testABlobThePublicServerGetsStillNeedsTheAccount() {
+        XCTAssertTrue(HomeVaultLogic.asksAccountSigner(queued(.blob, server: "https://blossom.primal.net")),
+                      "the vault carries the owner's token to the public server")
+    }
+
+    func testAMeshBlobNeverAsksARemoteSigner() {
+        XCTAssertFalse(HomeVaultLogic.meshBlobMayUseOwnerForm(signingMode: "nip46"), "a bunker is never asked for a mesh send")
+        XCTAssertFalse(HomeVaultLogic.meshBlobMayUseOwnerForm(signingMode: "nip55"))
+        XCTAssertFalse(HomeVaultLogic.meshBlobMayUseOwnerForm(signingMode: ""))
+        XCTAssertTrue(HomeVaultLogic.meshBlobMayUseOwnerForm(signingMode: "local"), "a local key signs without a person")
     }
     // MARK: Tron's PR 1990 follow-ups, Apple side
 

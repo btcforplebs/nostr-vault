@@ -47,14 +47,14 @@ class HomeVaultSenderMeshKeyTest {
         server.shutdown()
     }
 
-    private fun sender(meshKey: Boolean): HomeVaultSender {
+    private fun sender(meshKey: Boolean, localSigner: Boolean = true): HomeVaultSender {
         val context = mockk<Context> { every { filesDir } returns tmp.newFolder() }
         val config = mockk<ConfigStore>()
         every { config.config } returns MutableStateFlow(HavenConfig(homeVaultNpub = vault))
         return HomeVaultSender(context, config).apply {
             ownerHex = { "a".repeat(64) }
             ownerIsActive = { true }
-            signerIsLocal = { true }
+            signerIsLocal = { localSigner }
             meshToken = { verb, _, receiver, _, _, _ ->
                 if (meshKey) { minted += verb to receiver; "device-${verb.wire}" } else null
             }
@@ -116,5 +116,26 @@ class HomeVaultSenderMeshKeyTest {
         assertEquals(HomeVaultSend.SENT, send(sender(meshKey = false)))
         assertEquals(2, ownerSigned.size) // the check and the upload
         assertNull(minted.firstOrNull())
+    }
+
+    // A bunker or Amber is never asked for a mesh send (build 26: lane photos held for a tap since Nov 8).
+
+    @Test
+    fun `with a remote signer and no mesh key the blob waits, nothing asks the owner`() {
+        server.enqueue(MockResponse().setResponseCode(404))
+        assertEquals(HomeVaultSend.RETRY, send(sender(meshKey = false, localSigner = false)))
+        assertEquals("only the unsigned check went out", 1, server.requestCount)
+        assertEquals(emptyList<Any>(), ownerSigned)
+    }
+
+    @Test
+    fun `with a remote signer a vault without the set gets no owner retry`() {
+        server.enqueue(MockResponse().setResponseCode(404))
+        server.enqueue(MockResponse().setResponseCode(403))
+        val outcome = send(sender(meshKey = true, localSigner = false))
+        assertEquals(listOf("HEAD Nostr device-get", "PUT Nostr device-upload"), auths(2))
+        assertEquals(2, server.requestCount)
+        assertEquals(emptyList<Any>(), ownerSigned)
+        assertEquals(HomeVaultRules.uploadOutcome(403), outcome)
     }
 }

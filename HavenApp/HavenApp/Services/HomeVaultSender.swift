@@ -324,7 +324,7 @@ final class HomeVaultSender: ObservableObject {
 
         for item in queue {
             if !userInitiated, let notBefore = item.notBefore, notBefore > now { waiting = true; continue }
-            let needsSigner = HomeVaultLogic.needsAccountSigner(item.kind)
+            let needsSigner = HomeVaultLogic.asksAccountSigner(item)
             if needsSigner && signerNeedsPerson {
                 // Never from the background; at most a few prompts per tap.
                 guard userInitiated || active, prompts < HomeVaultLogic.maxPromptsPerTap else { waiting = true; continue }
@@ -426,10 +426,16 @@ final class HomeVaultSender: ObservableObject {
         defer { try? FileManager.default.removeItem(at: file) }
         let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int) ?? 0
         // Signed by this phone's mesh key for this vault. Without a mesh key
-        // only the owner's form is left (TODO(mesh-key): remove with it).
+        // only the owner's form is left, and only with the account key on
+        // this phone: a bunker is never asked for a mesh send, so the blob
+        // waits for the mesh key (TODO(mesh-key): remove with it).
+        let ownerForm = HomeVaultLogic.meshBlobMayUseOwnerForm(signingMode: ConfigService.shared.config.activeSigningMode())
         let meshAuth = Self.meshUploadAuth(sha256: item.id, size: size, receiver: receiver)
         var firstAuth = meshAuth
-        if firstAuth == nil { firstAuth = await signUploadAuth(sha256: item.id, size: size) }
+        if firstAuth == nil {
+            guard ownerForm else { return .unreachable("this phone has no mesh key yet") }
+            firstAuth = await signUploadAuth(sha256: item.id, size: size)
+        }
         guard let auth = firstAuth else {
             return .unreachable("could not sign the upload")
         }
@@ -449,7 +455,7 @@ final class HomeVaultSender: ObservableObject {
         // with the owner's form while vaults accept it. A vault that has its
         // set says so, and its refusal stands (MeshKeyAuth.retriesWithOwnerForm).
         // TODO(mesh-key).
-        guard meshAuth != nil, ownerRetry,
+        guard meshAuth != nil, ownerRetry, ownerForm,
               let ownerAuth = await signUploadAuth(sha256: item.id, size: size) else { return result }
         appLog("vault did not take the device key for \(item.id.prefix(8)), sent with the owner's", level: "WARN")
         return await HomeVaultTransport.upload(file: file, size: size, sha256: item.id, contentType: contentType, authBase64: ownerAuth, base: base, forward: forward).result

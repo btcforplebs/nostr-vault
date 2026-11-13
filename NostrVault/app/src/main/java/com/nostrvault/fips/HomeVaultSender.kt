@@ -525,7 +525,7 @@ class HomeVaultSender @Inject constructor(
             scheduleRetry()
             return
         }
-        // Each blob is one signer prompt; a tap approves a batch, not the whole queue.
+        // Nothing on a mesh lane waits for a signer (mesh key; see needsOwnerSignature): only backoff selects.
         val selection = HomeVaultRules.select(
             items, now, userInitiated, signerIsLocal(),
             needsSignature = HomeVaultRules::needsOwnerSignature,
@@ -591,7 +591,8 @@ class HomeVaultSender @Inject constructor(
         val sha = item.key
         val file = queue.blobFile(sha)
         // Already there (sent before a crash, or uploaded on the kiosk itself).
-        val meshOnly = item.meshKeyOnly
+        // A bunker or Amber is never asked for a mesh send: without a local key the mesh key is the only form.
+        val meshOnly = HomeVaultRules.meshKeyOnly(item, signerIsLocal())
         http.newCall(VaultCheck.request(base, sha, check ?: checkAuth(sha, receiver, meshOnly))).execute().use {
             if (it.isSuccessful) return HomeVaultSend.SENT
         }

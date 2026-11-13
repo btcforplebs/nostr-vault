@@ -139,15 +139,15 @@ class MeshMirrorSendTest {
     }
 
     @Test
-    fun `a mesh-key-only blob is never held for an external signer`() {
+    fun `no mesh blob is held for an external signer`() {
         val item = HomeVaultQueue.Item(key = sha, type = HomeVaultQueue.TYPE_BLOB, meshKeyOnly = true)
         val owner = item.copy(meshKeyOnly = false)
         val selection = HomeVaultRules.select(
             listOf(item, owner), now = 0, userInitiated = false, localSigner = false,
             needsSignature = HomeVaultRules::needsOwnerSignature,
         )
-        assertEquals(listOf(item), selection.toTry)
-        assertTrue(selection.heldForSigner)
+        assertEquals("both sign with the mesh key; a remote signer is never asked", listOf(item, owner), selection.toTry)
+        assertFalse(selection.heldForSigner)
         assertFalse(HomeVaultQueue.Item(key = sha, type = HomeVaultQueue.TYPE_BLOB).meshKeyOnly)
     }
 }
