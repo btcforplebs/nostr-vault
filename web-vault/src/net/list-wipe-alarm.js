@@ -5,7 +5,7 @@
 // ListWipeAlarmRule.kt (HavenApp/MediaLogicTests/.../Fixtures/ListAlarm/alarm-cases.json).
 
 /** The lists the vault keeps history for (haven-go protectedListKinds). */
-export const PROTECTED_KINDS = [0, 3, 10000, 10001, 10002, 10003, 10004, 10006, 10007, 10015, 10030, 10050, 10063, 30000, 30002, 30003]
+export const PROTECTED_KINDS = [0, 3, 10000, 10001, 10002, 10003, 10004, 10006, 10007, 10015, 10030, 10050, 10063, 30000, 30002, 30003, 30030]
 const PROTECTED = new Set(PROTECTED_KINDS)
 const META = new Set(["d", "title", "name", "description", "image", "alt", "client"])
 const ENCRYPTED = new Set([10000, 10003, 30000, 30003])
@@ -134,7 +134,7 @@ export function wipeAlarm(newestFirst, own = new Set(), dismissed = new Set()) {
 const NAMES = {
   0: "profile", 3: "follows", 10000: "mutes", 10001: "pinned notes", 10002: "relay list", 10003: "bookmarks",
   10004: "communities", 10006: "blocked relays", 10007: "search relays", 10015: "interests", 10030: "emoji list",
-  10050: "DM relays", 10063: "media servers", 30000: "follow set", 30002: "relay set", 30003: "bookmark set",
+  10050: "DM relays", 10063: "media servers", 30000: "follow set", 30002: "relay set", 30003: "bookmark set", 30030: "emoji set",
 }
 export const listName = kind => NAMES[kind] ?? `list ${kind}`
 

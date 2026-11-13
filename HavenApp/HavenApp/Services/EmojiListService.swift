@@ -16,6 +16,9 @@ final class EmojiListService: ObservableObject {
     private(set) var setEvents: [String: NostrEvent] = [:]
     /// The 10030 the library was read from, for the Emoji page's edits.
     private(set) var listEvent: NostrEvent?
+    /// The account whose 10030 read has answered this run (found or not):
+    /// until then "not in your list" can't be told (Your old sets waits).
+    @Published private(set) var answeredFor = ""
 
     /// Set by `FeedActions.make`, the one place every screen's actions come from.
     weak var nostrService: NostrService?
@@ -70,7 +73,9 @@ final class EmojiListService: ObservableObject {
             let loaded = await Self.load(owner: owner, nostrService: nostrService)
             guard let self, self.generation == ticket else { return }
             self.refreshing = nil
-            guard let loaded, nostrService.activeHexPubkey == owner else { return }
+            guard nostrService.activeHexPubkey == owner else { return }
+            self.answeredFor = owner
+            guard let loaded else { return }
             self.setEvents = loaded.events
             self.listEvent = loaded.list
             self.library = loaded.library

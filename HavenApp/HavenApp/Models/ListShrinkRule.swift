@@ -25,7 +25,7 @@ enum ListShrinkRule {
     /// Kind 0 is not a list but is kept the same way; its items are the
     /// profile's filled-in fields.
     static let protectedKinds: [Int] = [0, 3, 10000, 10001, 10002, 10003, 10004, 10006, 10007,
-                                        10015, 10030, 10050, 10063, 30000, 30002, 30003]
+                                        10015, 10030, 10050, 10063, 30000, 30002, 30003, 30030]
 
     /// Lists with an encrypted private part the vault can't read: a large
     /// drop in content length counts too.
@@ -60,6 +60,7 @@ enum ListShrinkRule {
         case 30000: return "follow set"
         case 30002: return "relay set"
         case 30003: return "bookmark set"
+        case 30030: return "emoji set"
         default: return "list \(kind)"
         }
     }

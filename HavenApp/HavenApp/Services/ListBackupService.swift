@@ -108,6 +108,17 @@ final class ListBackupService: ObservableObject {
         }
     }
 
+    /// Restores `old` in one step, for a tap that already says what comes
+    /// back (the Emoji page's Add back on a wiped set): the versions are read,
+    /// the newest list fetched, then `restore` with its checks. Nil when done.
+    func restoreWithPreview(_ old: ListVersion) async -> String? {
+        await load()
+        switch await preview(old) {
+        case .failure(let error): return error.message
+        case .success(let shown): return await restore(old, preview: shown)
+        }
+    }
+
     /// Restores `old` after the person confirmed `preview`; nil when done,
     /// else what to tell them. The versions are read again afterwards.
     func restore(_ old: ListVersion, preview: NostrService.ListRestorePreview) async -> String? {
