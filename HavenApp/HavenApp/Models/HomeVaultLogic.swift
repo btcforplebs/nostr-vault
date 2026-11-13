@@ -357,11 +357,61 @@ extension HomeVaultLogic {
         return min(60 * minutes, 6 * 3600)
     }
 
+    /// A lane to another device of the owner's (a phone, a Mac) waits at most
+    /// this long between tries: that device is in reach only while its app is
+    /// open, so a long wait misses it (Logen 2026-11-13). The always-on home
+    /// vault keeps the long backoff.
+    static let laneBackoffCap: TimeInterval = 120
+
+    static func backoff(afterAttempts attempts: Int, lane: Bool) -> TimeInterval {
+        lane ? min(backoff(afterAttempts: attempts), laneBackoffCap) : backoff(afterAttempts: attempts)
+    }
+
+    /// Whether an item goes to another device rather than the home vault: a
+    /// linked device's lane, or media to the Mac while there is no home vault.
+    static func isLane(_ item: HomeVaultItem, homeVault: String?) -> Bool {
+        guard item.kind != .mirror else { return false }
+        if let target = item.target { return target != homeVault }
+        return homeVault == nil
+    }
+
+    /// The mesh npub an item is sent to, as `HomeVaultSender.drain` picks it.
+    static func destination(_ item: HomeVaultItem, homeVault: String?, mediaVault: String?) -> String? {
+        if item.kind == .mirror { return nil }
+        if let target = item.target { return target }
+        return item.kind == .event ? homeVault : mediaVault
+    }
+
+    /// Npubs connected now that were not at the last look.
+    static func newlyInReach(now: Set<String>, before: Set<String>) -> Set<String> {
+        now.subtracting(before)
+    }
+
+    /// A device just came into reach: what waits on its lane is due now, not
+    /// at the end of its backoff. Tries are kept; the home vault's wait is not
+    /// touched.
+    static func wakeOnReach(_ queue: [HomeVaultItem], newlyInReach: Set<String>, homeVault: String?, mediaVault: String?) -> [HomeVaultItem] {
+        queue.map { item in
+            guard item.notBefore != nil, isLane(item, homeVault: homeVault),
+                  let dest = destination(item, homeVault: homeVault, mediaVault: mediaVault),
+                  newlyInReach.contains(dest) else { return item }
+            var woke = item
+            woke.notBefore = nil
+            return woke
+        }
+    }
+
     /// Too old or tried too often: give up on it (logged, not silent). Age
     /// only counts once it has been tried: a clock that jumps forward must
     /// not delete what was queued a minute ago and never sent (Tron, #472).
     static func isExpired(_ item: HomeVaultItem, now: Date) -> Bool {
         item.attempts >= maxAttempts || (item.attempts > 0 && now.timeIntervalSince(item.added) > maxAge)
+    }
+
+    /// A lane tries every 2 minutes, so its try count says nothing: only age
+    /// gives up on it.
+    static func isExpired(_ item: HomeVaultItem, now: Date, lane: Bool) -> Bool {
+        lane ? item.attempts > 0 && now.timeIntervalSince(item.added) > maxAge : isExpired(item, now: now)
     }
 
     /// How long the vault may keep retrying a public upload for the phone.

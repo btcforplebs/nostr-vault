@@ -363,6 +363,30 @@ object HomeVaultRules {
     fun expired(item: HomeVaultQueue.Item, now: Long): Boolean =
         item.attempts >= MAX_ATTEMPTS || (item.attempts > 0 && now - item.queuedAt > MAX_AGE_MS)
 
+    /**
+     * A lane to another device of the owner's (a Mac, a phone) waits at most this long between tries: that device is
+     * in reach only while its app is open, so a long wait misses it (Logen 2026-11-13). The mobile vault is always on
+     * and keeps the long backoff.
+     */
+    const val LANE_BACKOFF_CAP_MS = 2 * 60_000L
+
+    /** Whether sends to a device in [role] go on a lane (anything but the mobile vault). */
+    fun isLane(role: DeviceRole): Boolean = role != DeviceRole.HOME_VAULT
+
+    fun backoffMs(attempts: Int, lane: Boolean): Long =
+        if (lane) backoffMs(attempts).coerceAtMost(LANE_BACKOFF_CAP_MS) else backoffMs(attempts)
+
+    /** A lane tries every 2 minutes, so its try count says nothing: only age gives up on it. */
+    fun expired(item: HomeVaultQueue.Item, now: Long, lane: Boolean): Boolean =
+        if (lane) item.attempts > 0 && now - item.queuedAt > MAX_AGE_MS else expired(item, now)
+
+    /** Npubs connected now that were not at the last look. */
+    fun newlyInReach(now: Set<String>, before: Set<String>): Set<String> = now - before
+
+    /** The items of a lane whose device just came into reach, made due now. Tries are kept. */
+    fun wokenOnReach(items: List<HomeVaultQueue.Item>): List<HomeVaultQueue.Item> =
+        items.filter { it.nextAt > 0 }.map { it.copy(nextAt = 0) }
+
     /** External-signer prompts one Send now may cause. */
     const val PROMPTS_PER_TAP = 10
 
