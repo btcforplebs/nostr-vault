@@ -19,12 +19,28 @@ object EmojiLocalCopies {
     /** What [CustomEmojiImage] loads for [emoji]: the vault file when there is one, else its link. */
     fun model(emoji: CustomEmoji): Any = _byUrl.value[emoji.url] ?: emoji.url
 
-    /** The vault folder is listed once, not per emoji. */
-    internal fun update(saved: Collection<EmojiVaultStore.Saved>, notes: List<EmojiNote>, vaultDir: File?) {
-        val files = vaultDir?.listFiles()?.filter { it.isFile }.orEmpty()
-            .associateBy { it.name.substringBefore('.').lowercase() }
-        _byUrl.value = urlMap(saved.map { it.sha256 to it.codes } + notes.map { it.sha256 to it.codes }) { files[it] }
+    private var listing: Map<String, File> = emptyMap()
+    private var listedDir: File? = null
+    private var listedAt = 0L
+
+    /**
+     * The vault folder is listed once, not per emoji, and not on every rebuild: again only after a store ([relist]), for
+     * another folder, or when a hash has no file yet and the last listing is over [RELIST_MS] old (copy v2 brings
+     * another device's blobs later).
+     */
+    @Synchronized
+    internal fun update(saved: Collection<EmojiVaultStore.Saved>, notes: List<EmojiNote>, vaultDir: File?, relist: Boolean, now: Long = System.currentTimeMillis()) {
+        val pairs = saved.map { it.sha256 to it.codes } + notes.map { it.sha256 to it.codes }
+        val missing = pairs.any { (sha, _) -> sha.lowercase() !in listing }
+        if (relist || vaultDir != listedDir || (missing && now - listedAt > RELIST_MS)) {
+            listing = vaultDir?.listFiles()?.filter { it.isFile }.orEmpty().associateBy { it.name.substringBefore('.').lowercase() }
+            listedDir = vaultDir
+            listedAt = now
+        }
+        _byUrl.value = urlMap(pairs) { listing[it.lowercase()] }
     }
+
+    private const val RELIST_MS = 30_000L
 
     /** Pure: each code's url → the first hash for it that has a file. */
     internal fun urlMap(pairs: List<Pair<String, List<List<String>>>>, fileFor: (String) -> File?): Map<String, File> = buildMap {

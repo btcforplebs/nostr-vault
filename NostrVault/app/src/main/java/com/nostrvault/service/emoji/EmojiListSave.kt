@@ -42,11 +42,11 @@ class EmojiListSave @Inject constructor(
         return when (outcome) {
             is ListVersionSave.Outcome.Saved -> {
                 if (add && setEvent != null) store.keepEvents(listOf(setEvent))
-                emojiList.refresh(force = true)
+                emojiList.refresh(force = true, wide = true)
                 null
             }
             is ListVersionSave.Outcome.Refused -> {
-                if (outcome.changed) emojiList.refresh(force = true)
+                if (outcome.changed) emojiList.refresh(force = true, wide = true)
                 outcome.message
             }
         }

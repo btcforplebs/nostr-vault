@@ -55,11 +55,11 @@ class EmojiVaultViewModel @Inject constructor(
     data class BrowseState(val loading: Boolean = false, val found: List<EmojiSetBrowser.Found> = emptyList(), val note: String? = null)
 
     init {
-        emojiList.refresh()
+        emojiList.refresh(wide = true)
         viewModelScope.launch { fileNotesLive.events { null }.collect(store::onFileNote) }
     }
 
-    fun refresh() = emojiList.refresh(force = true)
+    fun refresh() = emojiList.refresh(force = true, wide = true)
 
     fun saveCopies() = store.saveCopies(emojiList.library.value.sets)
 

@@ -16,7 +16,9 @@ import com.nostrvault.service.OwnVaultAuth
 import com.nostrvault.service.StreamedBlob
 import com.nostrvault.service.VaultSocket
 import com.nostrvault.service.localBlobFile
+import com.nostrvault.relay.VerifiedEvents
 import com.nostrvault.relay.vaultAuthRelayTag
+import com.nostrvault.service.EventPublisher
 import com.nostrvault.service.ownVaultAuth
 import com.nostrvault.service.sniffContentType
 import com.nostrvault.service.storeStreamed
@@ -68,6 +70,8 @@ class EmojiVaultStore @Inject constructor(
         val sets: List<String>,
         /** The blob was in the vault before (a photo too): Media keeps it. */
         val alsoMedia: Boolean = false,
+        /** Its emoji note is not on the home vault's queue yet (no vault, owner not active, lane full): offered again. */
+        val noteOwed: Boolean = false,
     )
 
     /** An emoji whose image could not be found anywhere. */
@@ -106,6 +110,11 @@ class EmojiVaultStore @Inject constructor(
     val progress: StateFlow<Progress> = _progress.asStateFlow()
 
     private var run: Job? = null
+    private var publishJob: Job? = null
+
+    /** A store changed the vault folder since [EmojiLocalCopies] last listed it. */
+    @Volatile
+    private var folderChanged = true
 
     @Volatile
     private var loaded = false
@@ -121,7 +130,10 @@ class EmojiVaultStore @Inject constructor(
             loaded = true
             runCatching { json.decodeFromString(Disk.serializer(), file.readText()) }.getOrNull()?.also { disk = it }
         }
-        if (read != null) publishState()
+        if (read != null) {
+            publishState()
+            offerOwedNotes()
+        }
     }
 
     /** One `/files` event from a live subscription (Media tab, Emoji page). */
@@ -132,7 +144,7 @@ class EmojiVaultStore @Inject constructor(
                 index.owner = nostrService.ownerHexPubkey.takeIf { it.isNotEmpty() }
                 index.apply(event)
             }
-            if (changed) publishState()
+            if (changed) publishSoon()
         }
     }
 
@@ -153,6 +165,7 @@ class EmojiVaultStore @Inject constructor(
             try {
                 ensureLoaded()
                 ownerScoped(owner)
+                offerOwedNotes()
                 body()
             } catch (e: CancellationException) {
                 throw e
@@ -191,8 +204,7 @@ class EmojiVaultStore @Inject constructor(
         // This run's answer replaces what an earlier run said about the same links.
         val tried = wanted.map { it.url }.toSet()
         synchronized(lock) { disk = disk.copy(dead = disk.dead.filter { it.url !in tried } + dead) }
-        persist()
-        homeVault.drainSoon()
+        offerOwedNotes()
         _progress.value = Progress(done = wanted.size, total = wanted.size, tally = tally)
     }
 
@@ -218,7 +230,7 @@ class EmojiVaultStore @Inject constructor(
                             val sha = sha256(bytes)
                             val match = EmojiCopyRules.zipMatch(entry.name, sha, sets)
                             if (match == null) tally.skip(EmojiCopyRules.Skip.NO_MATCH) else {
-                                matchedUrls += match.url
+                                matchedUrls += match.codes.map { it[1] }
                                 store(Fetch.Ok(bytes, sha, sniffContentType(bytes.copyOf(minOf(bytes.size, 64)))), match, auth, tally)
                             }
                         }
@@ -229,8 +241,7 @@ class EmojiVaultStore @Inject constructor(
         }
         // A dead link the zip filled is no longer dead.
         synchronized(lock) { disk = disk.copy(dead = disk.dead.filter { it.url !in matchedUrls }) }
-        persist()
-        homeVault.drainSoon()
+        offerOwedNotes()
         _progress.value = Progress(done = seen, total = seen, tally = tally)
     }
 
@@ -243,22 +254,45 @@ class EmojiVaultStore @Inject constructor(
             temp.writeBytes(got.bytes)
             val ok = blossomService.storeStreamed(StreamedBlob(temp, got.sha256, got.bytes.size.toLong()), got.mime, auth)
             if (!ok) return tally.skip(EmojiCopyRules.Skip.NOT_STORED)
+            folderChanged = true
         }
         record(got.sha256, Saved(got.sha256, got.mime, got.bytes.size.toLong(), w.codes, w.sets, alsoMedia = wasThere && !isOurs(got.sha256)), w)
         return tally.copy(saved = tally.saved + 1, bytes = tally.bytes + got.bytes.size)
     }
 
-    /** Records a copy (new, or more codes/sets for one already saved) and queues its emoji note. */
+    /**
+     * Records a copy (new, or more codes/sets for one already saved) with its emoji note owed. The notes go to the
+     * queue in batches ([offerOwedNotes]): one queue write per [NOTE_BATCH], not per emoji.
+     */
     private fun record(sha256: String, fresh: Saved?, w: EmojiCopyRules.Wanted) {
-        val merged = synchronized(lock) {
+        val owed = synchronized(lock) {
             val old = disk.saved.firstOrNull { it.sha256 == sha256 }
             val base = old ?: fresh ?: return
-            val next = base.copy(codes = (base.codes + w.codes).distinct(), sets = (base.sets + w.sets).distinct())
+            val codes = (base.codes + w.codes).distinct()
+            val sets = (base.sets + w.sets).distinct()
+            // A copy whose note already went, with nothing new to say, owes nothing.
+            val next = base.copy(codes = codes, sets = sets, noteOwed = base.noteOwed || old == null || codes != old.codes || sets != old.sets)
             disk = disk.copy(saved = disk.saved.filterNot { it.sha256 == sha256 } + next)
-            next
+            disk.saved.count { it.noteOwed }
         }
-        homeVault.offerEmojiNote(merged.sha256, merged.mime, merged.size, merged.codes, merged.sets)
-        publishState()
+        if (owed >= NOTE_BATCH) offerOwedNotes() else publishSoon()
+    }
+
+    /**
+     * Offers every owed emoji note to the home vault's queue in one batch; the ones it took are no longer owed, the
+     * rest wait for the next launch or run. Saves the file either way, so an owed mark survives the app being killed.
+     */
+    private fun offerOwedNotes() {
+        val owed = synchronized(lock) { disk.saved.filter { it.noteOwed } }
+        val queued = if (owed.isEmpty()) emptySet() else homeVault.queueEmojiNotes(
+            owed.map { HomeVaultSender.EmojiNoteOffer(it.sha256, it.mime, it.size, it.codes, it.sets) },
+        )
+        if (queued.isNotEmpty()) synchronized(lock) {
+            disk = disk.copy(saved = disk.saved.map { if (it.noteOwed && it.sha256.lowercase() in queued) it.copy(noteOwed = false) else it })
+        }
+        persist()
+        if (queued.isNotEmpty()) homeVault.drainSoon()
+        publishSoon()
     }
 
     private fun isOurs(sha256: String): Boolean = synchronized(lock) { disk.saved.any { it.sha256 == sha256 } }
@@ -335,7 +369,8 @@ class EmojiVaultStore @Inject constructor(
 
     /** [keepSetEvents] for events in hand (a set just added from Browse). Only signed 30030s, as they came. */
     fun keepEvents(events: List<NostrEvent>) {
-        val picked = events.filter { it.kind == 30030 && it.sig.isNotEmpty() }
+        // Lookups are not signature-checked, so check here: a forged set is never sent on as if its author signed it.
+        val picked = events.filter { it.kind == 30030 && it.sig.isNotEmpty() && signed(it) }
         if (picked.isEmpty()) return
         scope.launch {
             val owner = nostrService.ownerHexPubkey
@@ -347,6 +382,9 @@ class EmojiVaultStore @Inject constructor(
             }
         }
     }
+
+    private fun signed(event: NostrEvent): Boolean =
+        runCatching { VerifiedEvents.verify(EventPublisher.serializeSignedEvent(event)) }.getOrDefault(false)
 
     private suspend fun signAuth(challenge: String): NostrEvent? {
         val url = configStore.config.value.localRelayURL("") ?: return null
@@ -379,8 +417,19 @@ class EmojiVaultStore @Inject constructor(
         runCatching {
             val temp = File(file.path + ".part")
             temp.writeText(text)
-            temp.renameTo(file)
+            check(temp.renameTo(file)) { "rename failed" }
         }.onFailure { Log.w(TAG, "emoji copies not saved: ${it.message}") }
+    }
+
+    /** [publishState], at most once per [PUBLISH_DELAY_MS]: a `/files` backfill of thousands of notes rebuilds once. */
+    private fun publishSoon() {
+        synchronized(lock) {
+            if (publishJob?.isActive == true) return
+            publishJob = scope.launch {
+                kotlinx.coroutines.delay(PUBLISH_DELAY_MS)
+                publishState()
+            }
+        }
     }
 
     private fun publishState() {
@@ -397,12 +446,16 @@ class EmojiVaultStore @Inject constructor(
         _notes.value = notes
         _hiddenFromMedia.value = hidden
         val config = configStore.config.value
-        EmojiLocalCopies.update(saved.values, notes, config.relayDataDir?.let { File(it, config.blossomPath) })
+        val relist = folderChanged
+        folderChanged = false
+        EmojiLocalCopies.update(saved.values, notes, config.relayDataDir?.let { File(it, config.blossomPath) }, relist)
     }
 
     private data class Quad(val a: Map<String, Saved>, val b: List<Dead>, val c: List<EmojiNote>, val d: Set<String>)
 
     private companion object {
         const val TAG = "EmojiVault"
+        const val NOTE_BATCH = 100
+        const val PUBLISH_DELAY_MS = 300L
     }
 }

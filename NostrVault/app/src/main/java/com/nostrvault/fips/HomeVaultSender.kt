@@ -357,9 +357,29 @@ class HomeVaultSender @Inject constructor(
     fun offerFileNoteDelete(sha256: String) =
         queueFileNote(HomeVaultQueue.FileNoteDraft(HomeVaultQueue.FileNoteDraft.DELETE, sha256.lowercase(), "application/octet-stream", 0))
 
-    /** An emoji note for a saved custom emoji (plan §4.1): like [offerFileNote], plus `t` nv-emoji, its codes and sets. */
-    fun offerEmojiNote(sha256: String, contentType: String, size: Long, codes: List<List<String>>, sets: List<String>) =
-        queueFileNote(HomeVaultQueue.FileNoteDraft(HomeVaultQueue.FileNoteDraft.EMOJI, sha256.lowercase(), safeType(contentType), size, emptyList(), codes, sets))
+    /** One saved custom emoji's note (plan §4.1): like [offerFileNote], plus `t` nv-emoji, its codes and sets. */
+    data class EmojiNoteOffer(val sha256: String, val contentType: String, val size: Long, val codes: List<List<String>>, val sets: List<String>)
+
+    /**
+     * Queue emoji notes in one batch, on the emoji notes' own cap. Returns the hashes queued; the caller keeps the rest
+     * owed and offers them again (no vault yet, owner not active, or the emoji lane full). Never reports "the queue is
+     * full": that line is about media.
+     */
+    fun queueEmojiNotes(offers: List<EmojiNoteOffer>): Set<String> {
+        if (activeVault == null) return emptySet()
+        val drafts = offers.filter { FileNote.isHex64(it.sha256.lowercase()) }.map {
+            HomeVaultQueue.FileNoteDraft(HomeVaultQueue.FileNoteDraft.EMOJI, it.sha256.lowercase(), safeType(it.contentType), it.size, emptyList(), it.codes, it.sets)
+        }
+        if (drafts.isEmpty()) return emptySet()
+        val queued = try {
+            queue.addFileNotes(drafts)
+        } catch (e: Exception) {
+            Log.w(TAG, "home vault: could not queue emoji notes: ${e.message}")
+            emptySet()
+        }
+        if (queued.size < drafts.size) Log.w(TAG, "home vault: ${drafts.size - queued.size} emoji notes not queued; offered again later")
+        return queued
+    }
 
     private fun queueFileNote(draft: HomeVaultQueue.FileNoteDraft) {
         if (activeVault == null || !FileNote.isHex64(draft.sha256)) return

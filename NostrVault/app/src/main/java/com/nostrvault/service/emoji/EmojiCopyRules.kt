@@ -116,14 +116,19 @@ object EmojiCopyRules {
     }
 
     /**
-     * The emoji a zip file matches in the saved [sets]: by file name = shortcode (folders and extension dropped), or by
-     * the file's [sha256] = the hash in an emoji's link. Empty: the file matches no set, so it is skipped (pick 6).
+     * The emoji a zip file matches in the saved [sets]: by the file's [sha256] = the hash in an emoji's link, or by
+     * file name = shortcode (folders and extension dropped). A name match never overrides a hash: a link that carries
+     * a hash matches only bytes that hash to it. A name used by more than one image link (`:smile:` in two sets) is
+     * ambiguous and matches nothing, so one file never becomes the image for two different links. The result's codes
+     * name every link the file now stands for. Null: the file matches no set, so it is skipped (pick 6).
      */
     fun zipMatch(fileName: String, sha256: String, sets: List<EmojiListRepository.EmojiSet>): Wanted? {
         val base = fileName.substringAfterLast('/').substringBeforeLast('.')
-        val hits = wanted(sets).filter { w ->
-            w.codes.any { it[0] == base } || hashInUrl(w.url) == sha256.lowercase()
-        }
+        val sha = sha256.lowercase()
+        val all = wanted(sets)
+        val byHash = all.filter { hashInUrl(it.url) == sha }
+        val byName = all.filter { w -> hashInUrl(w.url) == null && w.codes.any { it[0] == base } }
+        val hits = byHash + byName.takeIf { it.size == 1 }.orEmpty()
         if (hits.isEmpty()) return null
         return Wanted(
             hits.first().url,

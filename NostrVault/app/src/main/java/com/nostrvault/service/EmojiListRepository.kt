@@ -72,6 +72,10 @@ class EmojiListRepository @Inject constructor(
     private var refreshing: Job? = null
     private var lastRefreshMs = 0L
 
+    /** The last load fetched up to [MAX_SETS_PAGE] sets (the Emoji page), not just [MAX_SETS_PICKER]. */
+    @Volatile
+    private var lastWide = false
+
     init {
         scope.launch {
             runCatching { json.decodeFromString(Library.serializer(), cacheFile.readText()) }
@@ -80,17 +84,23 @@ class EmojiListRepository @Inject constructor(
         }
     }
 
-    /** Asks the relays again, at most once a minute. Shows nothing of another account's. */
-    fun refresh(force: Boolean = false) {
-        if (force) lastRefreshMs = 0
+    /**
+     * Asks the relays again, at most once a minute. Shows nothing of another account's. [wide]: the Emoji page, which
+     * fetches up to [MAX_SETS_PAGE] sets; the picker fetches [MAX_SETS_PICKER] and keeps the rest as last fetched.
+     */
+    fun refresh(force: Boolean = false, wide: Boolean = false) {
+        if (force || (wide && !lastWide)) lastRefreshMs = 0
         val owner = nostrService.activeHexPubkey
         if (owner.isEmpty()) return
         if (_library.value.owner.isNotEmpty() && _library.value.owner != owner) _library.value = Library(owner)
         val now = System.currentTimeMillis()
         if (refreshing?.isActive == true || now - lastRefreshMs < REFRESH_EVERY_MS) return
         lastRefreshMs = now
+        lastWide = wide
+        val maxSets = if (wide) MAX_SETS_PAGE else MAX_SETS_PICKER
+        val kept = _library.value.takeIf { it.owner == owner }?.sets.orEmpty()
         refreshing = scope.launch {
-            runCatching { load(owner) }
+            runCatching { load(owner, maxSets, kept) }
                 .onFailure { Log.w(TAG, "emoji list not loaded: ${it.message}") }
                 .getOrNull()
                 ?.let { loaded ->
@@ -101,13 +111,13 @@ class EmojiListRepository @Inject constructor(
         }
     }
 
-    private suspend fun load(owner: String): Library? {
+    private suspend fun load(owner: String, maxSets: Int, kept: List<EmojiSet>): Library? {
         val ask = askRelays(owner)
         val list = nostrService.lookupNewestReplaceable(10030, owner, ask).event ?: return null
         listEvent = list
         val parsed = EmojiListParse.list(list.tags)
         val sets = kotlinx.coroutines.coroutineScope {
-            parsed.setAddresses.take(MAX_SETS).map { address ->
+            parsed.setAddresses.take(maxSets).map { address ->
                 async {
                     val ref = EmojiListParse.setRef(address) ?: return@async null
                     val event = nostrService.lookupNewestReplaceable(
@@ -118,18 +128,25 @@ class EmojiListRepository @Inject constructor(
                 }
             }.awaitAll().filterNotNull()
         }
-        return Library(owner, parsed.single, sets)
+        return Library(owner, parsed.single, sets + keptBeyond(parsed.setAddresses, maxSets, kept))
     }
 
     private fun askRelays(pubkey: String): List<String> =
         (nostrService.relayLists.value[pubkey].orEmpty() + configStore.config.value.readRelays +
             NostrService.PROFILE_RELAYS).distinct()
 
-    private companion object {
-        const val TAG = "EmojiList"
-        const val REFRESH_EVERY_MS = 60_000L
-        /** Sets fetched per refresh; each is a lookup across the relays. 100 for the Emoji page (plan §4.3). */
-        const val MAX_SETS = 100
+    companion object {
+        private const val TAG = "EmojiList"
+        private const val REFRESH_EVERY_MS = 60_000L
+        /** Sets fetched per refresh; each is a lookup across the relays. 100 for the Emoji page (plan §4.3), 20 for the picker. */
+        const val MAX_SETS_PAGE = 100
+        const val MAX_SETS_PICKER = 20
+
+        /** A narrow refresh keeps the sets past [maxSets] (up to the page's 100) as the last wide one fetched them, in list order. */
+        internal fun keptBeyond(addresses: List<String>, maxSets: Int, kept: List<EmojiSet>): List<EmojiSet> {
+            val byAddress = kept.associateBy { it.address }
+            return addresses.take(MAX_SETS_PAGE).drop(maxSets).mapNotNull { byAddress[it] }
+        }
     }
 }
 
