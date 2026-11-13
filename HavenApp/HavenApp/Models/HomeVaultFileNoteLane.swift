@@ -12,6 +12,9 @@ struct FileNoteDraft: Codable, Equatable {
     var size: Int64
     /// The media servers that have it (add only); empty = the vault holds it.
     var servers: [String]
+    /// More tags for an add, such as an emoji copy's (EmojiNote.tags). nil
+    /// for a plain note; optional so queues saved before it still read.
+    var extraTags: [[String]]? = nil
 }
 
 extension HomeVaultLogic {

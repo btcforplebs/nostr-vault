@@ -64,6 +64,8 @@ struct MenuBarView: View {
         case feed
         case search
         case media
+        /// Saved custom emoji sets (EmojiVaultView). The iPhone has it as a Vault page.
+        case emoji
         case profile
         case relay
         case notes

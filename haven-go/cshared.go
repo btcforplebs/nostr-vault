@@ -1043,6 +1043,19 @@ func UnzipDirectoryC(zipPath *C.char, destPath *C.char) C.int {
 	return 0
 }
 
+//export UnzipDirectoryCappedC
+func UnzipDirectoryCappedC(zipPath *C.char, destPath *C.char, maxBytes C.longlong, maxEntries C.int) C.int {
+	if maxBytes <= 0 {
+		log.Printf("🚫 unzip refused: no byte cap")
+		return 1
+	}
+	if err := UnzipDirectoryCapped(C.GoString(zipPath), C.GoString(destPath), uint64(maxBytes), int(maxEntries)); err != nil {
+		log.Printf("🚫 unzip failed: %v", err)
+		return 1
+	}
+	return 0
+}
+
 //export SignEventC
 func SignEventC(jsonStr *C.char, sk *C.char) *C.char {
 	event := nostr.Event{}

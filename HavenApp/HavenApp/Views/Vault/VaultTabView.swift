@@ -7,7 +7,11 @@ import SwiftUI
 /// bar's corner button reads it to open the matching dashboard.
 final class VaultSection: ObservableObject {
     static let shared = VaultSection()
-    @Published var showsMedia = false
+    /// Any write here also leaves the Emoji page: every path that picks the
+    /// Media or relay half means "not Emoji".
+    @Published var showsMedia = false { didSet { if showsEmoji { showsEmoji = false } } }
+    /// The Emoji page (EmojiVaultView) is showing, over both halves.
+    @Published var showsEmoji = false
     /// Modes with something new, published by the relay half so the pill
     /// shows the same dots on the Media half.
     @Published var newModes: Set<VaultMode> = []
@@ -43,17 +47,24 @@ struct VaultTabView<Notes: View>: View {
     /// a Vault visit doesn't pay for its thumbnails, rescan and mirroring.
     @State private var mediaBuilt = false
 
+    private var notesShow: Bool { !section.showsMedia && !section.showsEmoji }
+
     var body: some View {
         ZStack {
             notes()
-                .opacity(section.showsMedia ? 0 : 1)
-                .allowsHitTesting(!section.showsMedia)
-                .accessibilityHidden(section.showsMedia)
+                .opacity(notesShow ? 1 : 0)
+                .allowsHitTesting(notesShow)
+                .accessibilityHidden(!notesShow)
             if mediaBuilt || section.showsMedia {
                 MediaTabView()
                     .opacity(section.showsMedia ? 1 : 0)
                     .allowsHitTesting(section.showsMedia)
                     .accessibilityHidden(!section.showsMedia)
+            }
+            // Built only while shown: it holds no scroll worth keeping.
+            if section.showsEmoji {
+                EmojiVaultView()
+                    .transition(.opacity)
             }
         }
         .environment(\.inVaultTab, true)
@@ -75,7 +86,10 @@ enum VaultMode: String, CaseIterable {
     /// "Vault": everything that came in, in one list, like a notifications
     /// page. The tab opens on it.
     case activity
-    case notes, articles, highlights, media, likes, zaps, bookmarks, followers
+    case notes, articles, highlights, media
+    /// Saved custom emoji sets (EmojiVaultView), kept out of Media.
+    case emoji
+    case likes, zaps, bookmarks, followers
     /// The inbox, as a page of its own (Logen 2026-11-03): no toolbar
     /// envelope, no sheet. Last, so the tab's hold menu has it on top.
     case messages
@@ -89,6 +103,7 @@ enum VaultMode: String, CaseIterable {
         case .articles: return "doc.richtext"
         case .highlights: return "highlighter"
         case .media: return "photo.on.rectangle"
+        case .emoji: return "face.smiling"
         case .likes: return "heart.fill"
         case .zaps: return "bolt.fill"
         case .bookmarks: return "bookmark.fill"
@@ -121,9 +136,12 @@ enum VaultMode: String, CaseIterable {
         case .bookmarks: NotificationCenter.default.post(name: .havenOpenRelayBookmarks, object: nil)
         case .followers: NotificationCenter.default.post(name: .havenOpenRelayFollowers, object: nil)
         case .messages: DMInboxRoute.shared.open(nil)
-        case .media: break
+        case .media, .emoji: break
         }
-        withAnimation(Motion.toggle) { VaultSection.shared.showsMedia = self == .media }
+        withAnimation(Motion.toggle) {
+            VaultSection.shared.showsMedia = self == .media
+            VaultSection.shared.showsEmoji = self == .emoji
+        }
     }
 }
 
@@ -203,7 +221,7 @@ struct VaultModePill: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Vault: \(mode.title)")
         .accessibilityValue(hasNewElsewhere ? "New activity" : "")
-        .accessibilityHint("Switch between everything new, notes, articles, highlights, media, likes, zaps, bookmarks, followers and messages, or open the Vault Dashboard")
+        .accessibilityHint("Switch between everything new, notes, articles, highlights, media, emoji, likes, zaps, bookmarks, followers and messages, or open the Vault Dashboard")
     }
 }
 

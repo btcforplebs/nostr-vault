@@ -534,3 +534,34 @@ func TestRestoreWithFailedWritesIsAnError(t *testing.T) {
 		t.Fatalf("jsonl import with failed writes: %v, want errRestoreIncomplete", err)
 	}
 }
+
+// A stranger's archive is capped by bytes and entries, not just free space:
+// a deflate bomb stops at the cap and leaves nothing past it.
+func TestUnzipCappedStopsBombAndEntries(t *testing.T) {
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "bomb.zip")
+	out, _ := os.Create(archive)
+	zw := zip.NewWriter(out)
+	w, _ := zw.CreateHeader(&zip.FileHeader{Name: "a.png", Method: zip.Deflate})
+	w.Write(bytes.Repeat([]byte{0}, 8<<20)) // 8 MB of zeros, a few KB packed
+	for i := 0; i < 3; i++ {
+		w, _ := zw.Create(fmt.Sprintf("small%d.png", i))
+		w.Write([]byte("x"))
+	}
+	zw.Close()
+	out.Close()
+
+	dest := filepath.Join(dir, "capped")
+	if err := UnzipDirectoryCapped(archive, dest, 1<<20, 100); !errors.Is(err, errUnzipTooBig) {
+		t.Fatalf("8 MB entry under a 1 MB cap: %v, want errUnzipTooBig", err)
+	}
+	if left, _ := os.ReadDir(dest); len(left) != 0 {
+		t.Fatalf("%d files left behind by a capped unzip", len(left))
+	}
+	if err := UnzipDirectoryCapped(archive, filepath.Join(dir, "few"), 16<<20, 3); err == nil {
+		t.Fatal("4 entries under a 3-entry cap unpacked")
+	}
+	if err := UnzipDirectoryCapped(archive, filepath.Join(dir, "fits"), 16<<20, 4); err != nil {
+		t.Fatalf("archive within both caps: %v", err)
+	}
+}

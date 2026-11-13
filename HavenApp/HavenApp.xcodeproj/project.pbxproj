@@ -147,6 +147,7 @@
 		101F21414B9D5836861A6FAB /* MediaGalleryUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 834869D3781DF8E49BC46F38 /* MediaGalleryUpload.swift */; };
 		104702FCB22CFBAFA35F7A96 /* UnlikePill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49B848AAC08254AED757D954 /* UnlikePill.swift */; };
 		106E858255575EFA62F08E50 /* EveryoneBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8000BFE6C336339A3875019 /* EveryoneBannerView.swift */; };
+		10A88DDF82E2E0FAE8F4BE5C /* EmojiVaultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD769B0ACEDBE0D0B6F71210 /* EmojiVaultView.swift */; };
 		10C21033384530651850389B /* LeaveNostrForeverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B08D21E9A541EB40D045D137 /* LeaveNostrForeverView.swift */; };
 		10E1131073AC917E036BDF79 /* FeedMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B91658F386F6313DBAA8D6D /* FeedMediaView.swift */; };
 		10EFE6F5CE71C1D715E1F23D /* NoteNavigationLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54018888DDE538484D3BC086 /* NoteNavigationLink.swift */; };
@@ -160,6 +161,7 @@
 		1194D4407221F85D84006CE3 /* CopyAccountsAskView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25CD84D7B568943171E90C8E /* CopyAccountsAskView.swift */; };
 		11A377144BA3CEF7D2C5298E /* ProfileFeedLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6681C0D9B8CB71534CDED28F /* ProfileFeedLoader.swift */; };
 		11CA2627A013602A67310A7D /* MediaGridItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 279617C6C46FE95602AF2F5B /* MediaGridItem.swift */; };
+		11CDD537547D62124FECCB9A /* EmojiVaultStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC439EF13F67BEF6C20E51A9 /* EmojiVaultStore.swift */; };
 		11E4220F9DFF75F3F0989C5F /* RelayMatrixView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91A236C874DC2ACEF2B73EF2 /* RelayMatrixView.swift */; };
 		11FCE41B6A363ED194E8ADEC /* PillLaneStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6E19D4039CEF9C7FA5E2991 /* PillLaneStack.swift */; };
 		12144F9EE4AE61920792462D /* NewPostsFold.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CB1418A113C8C037133410C /* NewPostsFold.swift */; };
@@ -625,6 +627,7 @@
 		4C1835A1E50204B035354B6D /* BlossomSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8FEFBCD65FD1B5DD5E43FD3 /* BlossomSettingsView.swift */; };
 		4C3E1EC23DF7183639C79DB0 /* PostActionNotificationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F67B70956B68FD2DA8E0598 /* PostActionNotificationBanner.swift */; };
 		4C3FE1C20BEBCAA94022D784 /* BlossomService+LocalUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB509F2A30B9B45176A3489 /* BlossomService+LocalUpload.swift */; };
+		4C401889D3A01F4D4775DB85 /* EmojiVaultStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC439EF13F67BEF6C20E51A9 /* EmojiVaultStore.swift */; };
 		4C51593200648C9350C77B24 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 915DF9A0796218139DE0703E /* Assets.xcassets */; };
 		4CB97B6BED6A0C7F9B4117B0 /* DMService+Persistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAC81DE3E07D6D955930EB56 /* DMService+Persistence.swift */; };
 		4CCBAF41414F27FB9E09F585 /* LabelPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBDF2964207ECC2BFAE27EBA /* LabelPublisher.swift */; };
@@ -1090,6 +1093,7 @@
 		82260876404FFEC615922E6E /* DashboardBreakdowns.swift in Sources */ = {isa = PBXBuildFile; fileRef = F84CE7CFC2F8380A8CC6B14D /* DashboardBreakdowns.swift */; };
 		8226645A0193B8454E903651 /* ZapHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83B7AE001906426D0D833C0D /* ZapHistory.swift */; };
 		8237E21398977EE2BB3AD600 /* RelayFailReason.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877D6213216BFCF65A3C5F3E /* RelayFailReason.swift */; };
+		8244134527440B2EF08BB01F /* EmojiVaultLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = D389A30791FDF2A96086B17F /* EmojiVaultLogic.swift */; };
 		82494B87098AEB93C4C03BD4 /* FeedNoteRow+Reactions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D3A3A057633F264653666C6 /* FeedNoteRow+Reactions.swift */; };
 		8260BA8E12D59DEA80D7BDDC /* ProfileEngagementStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD292CB3880A2292BE462A49 /* ProfileEngagementStore.swift */; };
 		827E7E7D78E6E20C3D3FB71B /* CopySaving.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B372B39BC49ABA2ADD10179 /* CopySaving.swift */; };
@@ -1245,6 +1249,7 @@
 		9299A8B5CF94DADE6D52AB66 /* HoldToConfirmButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A6344C6C038AF79FCEC23D /* HoldToConfirmButton.swift */; };
 		92BA603CA1FF1A6F13674A52 /* BitcoinSweepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9AD59B52FA7C675CB3E04BC /* BitcoinSweepView.swift */; };
 		92BAAC238F493C5533857956 /* BlobCopyRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9053BAEF74D259A303D5CD57 /* BlobCopyRun.swift */; };
+		92DB818E57A0FE64416DB611 /* EmojiNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1471A91DECBB5D725A1715F2 /* EmojiNote.swift */; };
 		92E001C76E4D8DD3132624D2 /* StarterRelayListStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28CDA4D972E3E7E90396580D /* StarterRelayListStep.swift */; };
 		92EAC0D39F5301AE83A1115A /* HashtagLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B14385A5620C648E978F548 /* HashtagLink.swift */; };
 		92EBD4156406F61914CAE362 /* PostEngagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DB298CA7BDB0FE78BDEA42D /* PostEngagement.swift */; };
@@ -1833,6 +1838,7 @@
 		D63FFB1B0B8C7246DA32939B /* MacRelaySyncStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8152C31E47774D859AE128B /* MacRelaySyncStatusView.swift */; };
 		D6677D646D5A28DC87C87662 /* MenuBarView+MacShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B050F745FF2F61061BF7D55 /* MenuBarView+MacShell.swift */; };
 		D6B489ACF9177452BF641CAE /* BitcoinSweepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9AD59B52FA7C675CB3E04BC /* BitcoinSweepView.swift */; };
+		D6C2C65E3BB5872D2DC05C7F /* EmojiVaultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD769B0ACEDBE0D0B6F71210 /* EmojiVaultView.swift */; };
 		D6D4E20107F221F91D070C0A /* RelayAccessLimits.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95DAB8620C73EF55984EF22A /* RelayAccessLimits.swift */; };
 		D6D7B75E3B62CB8764254858 /* MediaPrivacy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C4C43890E8EB9A15FFAD39A /* MediaPrivacy.swift */; };
 		D6DB303C4F4CADFF7AF5053B /* DMService+Publishing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B66DBC6F906E98DB63E2AAD /* DMService+Publishing.swift */; };
@@ -1842,6 +1848,7 @@
 		D740AE7BF727B9F50031F148 /* BackupRestoreCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26FD42DE3F81B42839907CD4 /* BackupRestoreCode.swift */; };
 		D7453C908988F0E8DA85D17F /* ImportRunningPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31DF387809C5344100031771 /* ImportRunningPill.swift */; };
 		D75679718256CBFD5D490B30 /* RevealKeyGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26298D9F25210DA7D5ED7418 /* RevealKeyGate.swift */; };
+		D75F71AB50E4174CD0EC6927 /* EmojiVaultLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = D389A30791FDF2A96086B17F /* EmojiVaultLogic.swift */; };
 		D77C6C30CC8998E4A0341043 /* ActionToastBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 160DAD117DA05D7B6AF3460D /* ActionToastBanner.swift */; };
 		D78888FE41863CB9D7B18949 /* MarketplaceFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AECAA69E57DB3F7947D9032C /* MarketplaceFeedService.swift */; };
 		D78A86476C9F266C9AE64BF4 /* NVShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200B7EA08917B874F06B2AF /* NVShareInbox.swift */; };
@@ -2163,6 +2170,7 @@
 		FA82CB413FB87E4C93835C7B /* LeaveNostrService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EC8D4A0D7C68FF72B9CCF4D /* LeaveNostrService.swift */; };
 		FA85C3B0A6B2562BB1B27D75 /* MusicPlayerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4305ED0FAA1EFC4C5F3CFE00 /* MusicPlayerService.swift */; };
 		FABF82531CFA2A3D7E04D127 /* ProfileShareHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D321A8DE1CDEFF237C6323E /* ProfileShareHandler.swift */; };
+		FAEDE6A3BE57D2B10D7296B5 /* EmojiNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1471A91DECBB5D725A1715F2 /* EmojiNote.swift */; };
 		FAF0A2FB375DB1631337EB3B /* FeedService+SubscriptionReconciliation.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDC2FBF6CDE5043844A3DFA3 /* FeedService+SubscriptionReconciliation.swift */; };
 		FAF9A21319A7923F9762B1E8 /* MediaCacheService+Thumbnails.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27CE4B2C8531D50AE8C0E54 /* MediaCacheService+Thumbnails.swift */; };
 		FB097A797BECE26CC4D4DA79 /* NVZapsToday.swift in Sources */ = {isa = PBXBuildFile; fileRef = D358E7C7A4DC7332A585EE35 /* NVZapsToday.swift */; };
@@ -2345,6 +2353,7 @@
 		140A9D83B992BBCA74D259C2 /* MediaCacheService+Sources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MediaCacheService+Sources.swift"; sourceTree = "<group>"; };
 		143FB30420F6140DFC7F2A4E /* TrustScopeLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustScopeLock.swift; sourceTree = "<group>"; };
 		1450181E9BA44C1EA1E766D5 /* UploadAuthCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadAuthCache.swift; sourceTree = "<group>"; };
+		1471A91DECBB5D725A1715F2 /* EmojiNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiNote.swift; sourceTree = "<group>"; };
 		14CE23F702361A34D4175349 /* ImportResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportResult.swift; sourceTree = "<group>"; };
 		14FAD736D401196122276352 /* OtherResponseCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OtherResponseCard.swift; sourceTree = "<group>"; };
 		155D5690C7C6EF350165A21F /* DMAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMAttachment.swift; sourceTree = "<group>"; };
@@ -3105,6 +3114,7 @@
 		BBCC2C40E48A867FA28814D4 /* FeedThreadCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedThreadCard.swift; sourceTree = "<group>"; };
 		BBDF2964207ECC2BFAE27EBA /* LabelPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelPublisher.swift; sourceTree = "<group>"; };
 		BC1096A9CAC6ECB80F009AD7 /* DraftTombstones.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftTombstones.swift; sourceTree = "<group>"; };
+		BC439EF13F67BEF6C20E51A9 /* EmojiVaultStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiVaultStore.swift; sourceTree = "<group>"; };
 		BC4EA632EECD8DCC87123579 /* MyDevicesPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyDevicesPanel.swift; sourceTree = "<group>"; };
 		BCB3C0E4C43D7B5971396CBC /* MediaCacheService+MemoryCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MediaCacheService+MemoryCache.swift"; sourceTree = "<group>"; };
 		BD189D3728C9702A5C95D0E2 /* ComposeView+Attachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ComposeView+Attachments.swift"; sourceTree = "<group>"; };
@@ -3198,6 +3208,7 @@
 		D2A7E86F4A80054401A68579 /* TrustWebView+WOTTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrustWebView+WOTTabBar.swift"; sourceTree = "<group>"; };
 		D343EC33764F0FED0D74697A /* EventInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventInspector.swift; sourceTree = "<group>"; };
 		D358E7C7A4DC7332A585EE35 /* NVZapsToday.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVZapsToday.swift; sourceTree = "<group>"; };
+		D389A30791FDF2A96086B17F /* EmojiVaultLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiVaultLogic.swift; sourceTree = "<group>"; };
 		D39BB3DA1D948E689E12C3E3 /* CaretFollower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaretFollower.swift; sourceTree = "<group>"; };
 		D3B410605BF99F9DAB06729E /* OnThisDay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnThisDay.swift; sourceTree = "<group>"; };
 		D402A79FB4D7F03B9F67E1D2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -3371,6 +3382,7 @@
 		FCCAC7159663216216258B08 /* MuteListStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MuteListStore.swift; sourceTree = "<group>"; };
 		FCD09B9E9DBEE997A0AF1832 /* NostrService+Signing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+Signing.swift"; sourceTree = "<group>"; };
 		FD57608996E7CA8D632A0147 /* TutorialProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialProgress.swift; sourceTree = "<group>"; };
+		FD769B0ACEDBE0D0B6F71210 /* EmojiVaultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiVaultView.swift; sourceTree = "<group>"; };
 		FD9D44519AE3AFB7DF22C301 /* LiveNoteCleanup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveNoteCleanup.swift; sourceTree = "<group>"; };
 		FDB08989DAA08A101C01CEC2 /* NoteTranslation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteTranslation.swift; sourceTree = "<group>"; };
 		FDC471CDEB623A380FC45C62 /* MacModeComposeButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacModeComposeButton.swift; sourceTree = "<group>"; };
@@ -3601,6 +3613,7 @@
 			isa = PBXGroup;
 			children = (
 				3B9646E91993C4D774E5F139 /* ActivityTargetFetcher.swift */,
+				FD769B0ACEDBE0D0B6F71210 /* EmojiVaultView.swift */,
 				0CED90605A0EC0CF574801DE /* NoteRow+EngagementBar.swift */,
 				6D7F06C12BC798B50FBF8CA0 /* NoteRow+ExpandedLayout.swift */,
 				436B49412CA8DD29DA49C857 /* OpensMessagesMode.swift */,
@@ -4398,7 +4411,9 @@
 				BC1096A9CAC6ECB80F009AD7 /* DraftTombstones.swift */,
 				75FAB177AF921AAA9A805C44 /* EmojiCatalog.swift */,
 				9B51A8C730F9E0715F991CD2 /* EmojiListParse.swift */,
+				1471A91DECBB5D725A1715F2 /* EmojiNote.swift */,
 				B217E0E9F1229BFCC97EF224 /* EmojiPalette.swift */,
+				D389A30791FDF2A96086B17F /* EmojiVaultLogic.swift */,
 				DE754D297405B0C13943D892 /* EveryoneBanner.swift */,
 				0D1E52DF70BE0757C1CDD664 /* FactoryResetGate.swift */,
 				EE380E2051298A7E673A3A7C /* FeedAccountKey.swift */,
@@ -4842,6 +4857,7 @@
 				3800D9290BD369F4F26BC5C3 /* DraftService.swift */,
 				056500E0943FECEBFE6EBC1C /* EmojiListService.swift */,
 				B589B40DCA89EA8C175FEF32 /* EmojiPaletteStore.swift */,
+				BC439EF13F67BEF6C20E51A9 /* EmojiVaultStore.swift */,
 				01EFA5F14E595113B47E8FC2 /* EngagementTracker.swift */,
 				D343EC33764F0FED0D74697A /* EventInspector.swift */,
 				ED0D438DE03F310940F4D19A /* EventPublisher.swift */,
@@ -5584,9 +5600,13 @@
 				AEB176AE62F974F9A5FCC1CE /* EmojiCatalog.swift in Sources */,
 				2E072D51613DED1FE90740F2 /* EmojiListParse.swift in Sources */,
 				9465FFF264F339A39DD4687F /* EmojiListService.swift in Sources */,
+				92DB818E57A0FE64416DB611 /* EmojiNote.swift in Sources */,
 				0B8F17C97D3423B5053D0A26 /* EmojiPalette.swift in Sources */,
 				27D88B1AC859C42F7A1AF98E /* EmojiPaletteStore.swift in Sources */,
 				7E49917398AC93A58178EE7F /* EmojiPickerView.swift in Sources */,
+				D75F71AB50E4174CD0EC6927 /* EmojiVaultLogic.swift in Sources */,
+				4C401889D3A01F4D4775DB85 /* EmojiVaultStore.swift in Sources */,
+				10A88DDF82E2E0FAE8F4BE5C /* EmojiVaultView.swift in Sources */,
 				A4CC418BB19F41A7C051EF00 /* EngagementTracker.swift in Sources */,
 				CBCA92A51535C9E34872C0BB /* ErrorNotificationBanner.swift in Sources */,
 				78ADF8C19CAAAA4A58E158A0 /* EventBroadcastSheet.swift in Sources */,
@@ -6701,9 +6721,13 @@
 				4698DB63020E0F7F06082C13 /* EmojiCatalog.swift in Sources */,
 				35F9738EB414D345100C7694 /* EmojiListParse.swift in Sources */,
 				49A25ACE93515D02CCA809C0 /* EmojiListService.swift in Sources */,
+				FAEDE6A3BE57D2B10D7296B5 /* EmojiNote.swift in Sources */,
 				DAF441B097E15C8F2407E352 /* EmojiPalette.swift in Sources */,
 				1CC5A64F92A00678610A9D4C /* EmojiPaletteStore.swift in Sources */,
 				3E1CF7FF7BF9CC321886CD3E /* EmojiPickerView.swift in Sources */,
+				8244134527440B2EF08BB01F /* EmojiVaultLogic.swift in Sources */,
+				11CDD537547D62124FECCB9A /* EmojiVaultStore.swift in Sources */,
+				D6C2C65E3BB5872D2DC05C7F /* EmojiVaultView.swift in Sources */,
 				489C0CB7897C5D6A6C6EBFD2 /* EngagementTracker.swift in Sources */,
 				D1B024EAA1105FEC11699EC8 /* ErrorNotificationBanner.swift in Sources */,
 				BBEB6E9E824AA4B887755B8E /* EventBroadcastSheet.swift in Sources */,

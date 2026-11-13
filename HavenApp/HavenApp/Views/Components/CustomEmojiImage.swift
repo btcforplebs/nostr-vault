@@ -6,10 +6,18 @@ import SwiftUI
 struct CustomEmojiImage: View {
     let emoji: CustomEmoji
     let size: CGFloat
+    /// The saved copy's hash when the caller knows it (the Emoji page), so
+    /// the image is looked up again the moment a copy lands.
+    var savedHash: String? = nil
+    /// The vault's saved copy (EmojiVaultStore), drawn first: a dead link
+    /// still shows once the image has been saved.
+    @State private var saved: PlatformImage?
 
     var body: some View {
         Group {
-            if let url = URL(string: emoji.url) {
+            if let saved {
+                Image(platformImage: saved).resizable().aspectRatio(contentMode: .fit)
+            } else if let url = URL(string: emoji.url) {
                 CachedAsyncImage(url: url) { image in
                     image.resizable().aspectRatio(contentMode: .fit)
                 } placeholder: {
@@ -21,6 +29,18 @@ struct CustomEmojiImage: View {
         }
         .frame(width: size, height: size)
         .accessibilityLabel(emoji.content)
+        .task(id: emoji.url + (savedHash ?? "")) { saved = await Self.savedCopy(emoji.url) }
+    }
+
+    /// The saved copy's image, off the main thread, once per file.
+    private static func savedCopy(_ url: String) async -> PlatformImage? {
+        await Task.detached(priority: .userInitiated) {
+            guard let file = EmojiVaultStore.localFile(forURL: url) else { return nil }
+            if let hit = MediaCacheService.shared.cachedImage(for: file) { return hit }
+            guard let data = try? Data(contentsOf: file), let image = PlatformImage(data: data) else { return nil }
+            MediaCacheService.shared.cacheImage(image, for: file)
+            return image
+        }.value
     }
 
     private var fallback: some View {

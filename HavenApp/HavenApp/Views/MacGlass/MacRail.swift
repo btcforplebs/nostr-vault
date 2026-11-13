@@ -85,6 +85,9 @@ struct MacRail: View {
                     MacRailItem(title: "Media", selected: selectedTab == .media) { selectedTab = .media } icon: {
                         Image(systemName: "photo.on.rectangle")
                     }
+                    MacRailItem(title: "Emoji", selected: selectedTab == .emoji) { selectedTab = .emoji } icon: {
+                        Image(systemName: "face.smiling")
+                    }
                     MacRailItem(title: "Relay", selected: selectedTab == .relay) { selectedTab = .relay } icon: {
                         Image(systemName: "server.rack")
                     }

@@ -91,6 +91,7 @@ extern int BackupToCloudC(void);
 extern int RestoreFromCloudC(void);
 extern int ZipDirectoryC(char* dirPath, char* zipPath);
 extern int UnzipDirectoryC(char* zipPath, char* destPath);
+extern int UnzipDirectoryCappedC(char* zipPath, char* destPath, long long int maxBytes, int maxEntries);
 extern char* SignEventC(char* jsonStr, char* sk);
 extern char* GenerateKeyPairC(void);
 

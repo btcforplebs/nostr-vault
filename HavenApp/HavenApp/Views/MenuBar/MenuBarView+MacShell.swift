@@ -101,7 +101,7 @@ extension MenuBarView {
     static func pageReadsNarrow(_ tab: Tab) -> Bool {
         switch tab {
         case .feed, .search, .profile: return true
-        case .notes, .media, .relay, .settings, .wot: return false
+        case .notes, .media, .emoji, .relay, .settings, .wot: return false
         }
     }
 
@@ -110,7 +110,7 @@ extension MenuBarView {
     static func pageShowsSpace(_ tab: Tab) -> Bool {
         switch tab {
         case .feed, .search, .profile, .notes: return true
-        case .media, .relay, .settings, .wot: return false
+        case .media, .emoji, .relay, .settings, .wot: return false
         }
     }
 }
