@@ -159,3 +159,20 @@ func TestFilesVaultSkipsAFileDeletedInTheGrace(t *testing.T) {
 		t.Errorf("%d notes for a deleted file, want 0", n)
 	}
 }
+
+// Tron, #2000: the record is filed before the file is saved, so a save that
+// failed leaves a record and no file. No note for a file that never landed.
+func TestFilesVaultSkipsAFileNotOnDisk(t *testing.T) {
+	v := startFilesVault(t)
+	held := heldNoteChecks(t)
+	body := []byte("record but no file")
+	x := fileHash(string(body))
+	uploadAs(t, v.h, v.h.ownerSK, body)
+	if err := deleteBlobFiles(x); err != nil { // as a failed save leaves it
+		t.Fatal(err)
+	}
+	runHeld(held)
+	if n := len(notesFor(v.notes(t), x)); n != 0 {
+		t.Errorf("%d notes for a file not on disk, want 0", n)
+	}
+}

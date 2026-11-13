@@ -11,7 +11,8 @@ package main
 //     right after an upload, so the vault waits filesUploadGrace and writes
 //     only if no trusted note names that hash by then (dedupe by hash).
 //   - The owner's media only (filed under the owner, as /files takes p =
-//     owner); nothing for a file deleted in the meantime.
+//     owner); nothing for a file deleted in the meantime, or one whose save
+//     failed (the record is filed before the file is saved, Tron #2000).
 
 import (
 	"context"
@@ -46,7 +47,7 @@ func writeVaultFileNote(ctx context.Context, blob blossom.BlobDescriptor) {
 	if filesDB == nil || blossomDB == nil || filesRelay == nil || config.OwnerPubKey == "" {
 		return
 	}
-	if filesHasTrustedNote(ctx, blob.SHA256) || !ownerHasBlobRecord(ctx, blob.SHA256) {
+	if filesHasTrustedNote(ctx, blob.SHA256) || !ownerHasBlobRecord(ctx, blob.SHA256) || !blobOnDisk(blob.SHA256) {
 		return
 	}
 	sk := filesVaultSecret()
@@ -96,4 +97,13 @@ func ownerHasBlobRecord(ctx context.Context, x string) bool {
 		found = true
 	}
 	return found
+}
+
+// blobOnDisk: the stored file for x is here (bare hash or hash.ext, never a
+// partial .tmp write), through the platform fs as loadBlob reads it.
+func blobOnDisk(x string) bool {
+	if st, err := fs.Stat(config.BlossomPath + x); err == nil && st.Mode().IsRegular() {
+		return true
+	}
+	return len(blobFilesWithExt(x)) > 0
 }
