@@ -63,7 +63,7 @@ function within(p, ms) {
  * its authors' names are stored (or the feed step's limit passes); the steps carry on after it and keep reporting.
  * -> { account as refreshAccount read it back, fresh, filled: settles once every step has ended }
  */
-export async function prepareVault({ vault, pubkey, local, early, log = () => {}, onStep = () => {}, limits = STEP_LIMIT_MS, setup = null, onLate }) {
+export async function prepareVault({ vault, pubkey, local, early, log = () => {}, onStep = () => {}, limits = STEP_LIMIT_MS, setup = null, onLate, onAccount = () => {} }) {
   // A step that has reported its end stays ended: a slow sync still counting in the background doesn't reopen it.
   const ended = new Set()
   const say = (id, s) => {
@@ -78,6 +78,9 @@ export async function prepareVault({ vault, pubkey, local, early, log = () => {}
   // Too slow or failed: go on with what Haven has, and the boot's own refresh brings the rest.
   const account = accountState === "done" ? await accountRun : local
   say("account", { state: accountState, count: account.follows.length })
+  // The account as soon as it's read, not when the whole setup returns: "Open now" (main.jsx) shows it at once instead
+  // of "Loading your follows…" and 0 Following while your own notes are still coming in.
+  if (accountState === "done") onAccount(account)
 
   const readRelays = uniq([...account.relays.read, ...DEFAULT_RELAYS])
   // Their own old posts: from the relays their list names (write or unmarked, public only) and the apps' five.

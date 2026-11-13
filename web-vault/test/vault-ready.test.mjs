@@ -255,3 +255,29 @@ test("first run with the setup job: you're in only once setup is done or partial
   assert.equal(opened, true)
   assert.deepEqual([steps.notes.state, steps.notes.count], ["done", 77])
 })
+
+// "Open now" while setup still brings in your own notes: the app showed "Loading your follows…" and 0 Following until
+// setup ended, minutes for a big account. The account is handed over as soon as it is read.
+test("the account is handed over as soon as it is read, while setup is still running", async t => {
+  localStorage.m.clear()
+  relays(t)
+  let finish
+  const setup = () => new Promise(r => { finish = r })
+  const handed = []
+  const p = prepareVault({ vault: vault(), pubkey: ME, local: empty, setup, onAccount: a => handed.push(a) })
+  await new Promise(r => setTimeout(r, 100))
+  assert.equal(handed.length, 1, "handed over before setup ends")
+  assert.equal(handed[0].follows.length, 300)
+  assert.ok(handed[0].contacts)
+  finish({ status: "done", stored: 0 })
+  const { account } = await p
+  assert.equal(account, handed[0])
+})
+
+test("an account read too slowly isn't handed over: Haven's copy is not the account", async t => {
+  localStorage.m.clear()
+  relays(t, { slow: new Set(["account"]) })
+  const handed = []
+  await (await prepareVault({ vault: vault(), pubkey: ME, local: empty, onAccount: a => handed.push(a), limits: { account: 30, notes: 200, feed: 200, profiles: 200 } })).filled
+  assert.deepEqual(handed, [])
+})
