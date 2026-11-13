@@ -72,6 +72,8 @@ final class EmojiVaultStore: ObservableObject {
         let active = NostrService.shared.activeHexPubkey
         guard active != owner else { return }
         owner = active
+        lastResult = nil
+        unmatchedZipFiles = []
         var saved = Saved()
         if let url = indexURL(active), let data = try? Data(contentsOf: url),
            let decoded = try? JSONDecoder().decode(Saved.self, from: data) { saved = decoded }
@@ -176,7 +178,7 @@ final class EmojiVaultStore: ObservableObject {
                 switch await Self.fetch(job.url, ownServers: ownServers) {
                 case .image(let data, let mime):
                     totalBytes += Int64(data.count)
-                    switch await self.keep(data: data, mime: mime, emoji: job.emoji) {
+                    switch await self.keep(data: data, mime: mime, emoji: job.emoji, account: account) {
                     case .saved: tally.saved += 1
                     case .already: tally.already += 1
                     case .failed: tally.dead += 1
@@ -190,7 +192,9 @@ final class EmojiVaultStore: ObservableObject {
                 }
             }
             guard let self else { return }
-            await self.resendSets(addresses: sets.map(\.address))
+            if !Task.isCancelled, NostrService.shared.activeHexPubkey == account {
+                await self.resendSets(addresses: sets.map(\.address))
+            }
             self.persist()
             self.lastResult = tally.summary
             self.progress = nil
@@ -207,7 +211,9 @@ final class EmojiVaultStore: ObservableObject {
 
     /// Stores `data` in this device's vault (once per hash) and notes it with
     /// `emoji`. A hash already noted for every one of `emoji` is left alone.
-    private func keep(data: Data, mime: String, emoji: [CustomEmoji]) async -> Kept {
+    private func keep(data: Data, mime: String, emoji: [CustomEmoji], account: String) async -> Kept {
+        // The account switched mid-run: nothing is filed under the other one.
+        guard owner == account, NostrService.shared.activeHexPubkey == account else { return .failed }
         let sha = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         let have = copies[sha]?.note.emoji ?? []
         let missing = emoji.filter { e in !have.contains { $0.shortcode == e.shortcode && $0.url == e.url } }
@@ -220,7 +226,7 @@ final class EmojiVaultStore: ObservableObject {
             let stored = isOwner
                 ? await blossom.importToOwnVaultInProcess(source: .data(data), sha256: sha, contentType: mime)
                 : await blossom.storeLocally(source: .data(data), sha256: sha, contentType: mime, mirrorToExternal: false) != nil
-            guard stored else { return .failed }
+            guard stored, owner == account, NostrService.shared.activeHexPubkey == account else { return .failed }
         }
         // Every set emoji using this image, so the note names them all.
         let all = have.isEmpty ? emoji : missing
@@ -334,7 +340,7 @@ final class EmojiVaultStore: ObservableObject {
                 defer { self.progress?.done = index + 1 }
                 guard let path = paths[match.file.name + "\u{0}" + match.file.sha256],
                       let data = try? Data(contentsOf: path), let mime = Self.sniffImage(data) else { continue }
-                switch await self.keep(data: data, mime: mime, emoji: match.emoji) {
+                switch await self.keep(data: data, mime: mime, emoji: match.emoji, account: account) {
                 case .saved:
                     tally.saved += 1
                     for e in match.emoji { self.dead.remove(e.url) }
