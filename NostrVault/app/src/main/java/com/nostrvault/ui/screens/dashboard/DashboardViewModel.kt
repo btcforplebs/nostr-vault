@@ -102,7 +102,6 @@ class DashboardViewModel @Inject constructor(
         /** Zaps > Given reads the wallet's 200 most recent payments. */
         internal const val WALLET_GIVEN_PAGES = 4
         internal const val WALLET_GIVEN_PAGE_SIZE = 50
-        private const val SNAPSHOT_MAX_EVENTS = 500
         internal const val SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000L // 24 hours
         internal const val SNAPSHOT_FILE = "vault_snapshot.json"
         private const val FOLLOWERS_POLL_MS = 60_000L
@@ -319,6 +318,8 @@ class DashboardViewModel @Inject constructor(
     /** All raw events from the local relay (all kinds including 7, 9735). */
     internal val allEvents = mutableListOf<NostrEvent>()
     internal val allEventsMutex = Mutex()
+    /** The account [allEvents] belong to: its saved screen is what gets written. */
+    @Volatile internal var heldAccount: String = nostrService.activeHexPubkey
     internal val seenIds = ConcurrentHashMap.newKeySet<String>()
 
     /** Newest created_at seen — lets resume re-subscribes fetch only the gap. */
@@ -509,7 +510,11 @@ class DashboardViewModel @Inject constructor(
     private fun resetForAccountSwitch() {
         disconnectFromLocalRelay()
         viewModelScope.launch {
-            allEventsMutex.withLock { allEvents.clear() }
+            // The account left keeps its screen for when you come back.
+            val left = heldAccount // empty (unknown at launch): nothing is saved
+            val held = allEventsMutex.withLock { allEvents.toList().also { allEvents.clear() } }
+            heldAccount = nostrService.activeHexPubkey
+            withContext(Dispatchers.IO) { writeSnapshot(left, held) }
             seenIds.clear()
             forgetGivenLookups()
             walletGivenGen++
@@ -542,6 +547,12 @@ class DashboardViewModel @Inject constructor(
             olderCursors.clear()
             _noOlderPages.value = emptySet()
             _isLoadingOlder.value = false
+            // The new account's last screen at once; the reconnect tops it up.
+            val gen = updateGeneration
+            if (restoreSnapshotIfAvailable(heldAccount) && gen == updateGeneration) {
+                _notesHasLoadedOnce.value = true
+                updateDisplayData(updateGeneration)
+            }
             refreshFollowers()
             connectToLocalRelay()
         }
@@ -618,21 +629,9 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun persistSnapshot() {
+        val account = heldAccount.ifEmpty { nostrService.activeHexPubkey }
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val dir = configStore.config.value.appSupportDir ?: return@launch
-                val events = allEventsMutex.withLock {
-                    allEvents.sortedByDescending { it.createdAt }.take(SNAPSHOT_MAX_EVENTS)
-                }
-                if (events.isEmpty()) return@launch
-                val snapshot = DiskVaultSnapshot(
-                    events = events,
-                    savedAt = System.currentTimeMillis(),
-                )
-                File(dir, SNAPSHOT_FILE).writeText(json.encodeToString(snapshot))
-            } catch (e: Exception) {
-                Log.w(TAG, "Vault snapshot save failed: ${e.message}")
-            }
+            writeSnapshot(account, allEventsMutex.withLock { allEvents.toList() })
         }
     }
 

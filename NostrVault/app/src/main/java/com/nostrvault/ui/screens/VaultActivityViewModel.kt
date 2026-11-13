@@ -103,6 +103,8 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 import javax.inject.Inject
+import com.nostrvault.data.local.VaultSnapshotStore
+import com.nostrvault.data.model.VaultListSwap
 import com.nostrvault.ui.screens.dashboard.IconFilterButton
 import com.nostrvault.ui.components.RevealNewestEffect
 
@@ -137,6 +139,8 @@ class VaultActivityViewModel @Inject constructor(
         const val SHOW_STEP = 50
         /** The first page is twice a step, as on iOS; a filter change starts again at one step. */
         const val FIRST_SHOW = 100
+        /** A saved screen older than this is read fresh instead (as the Notes snapshot). */
+        const val SAVED_SCREEN_MAX_AGE_MS = 24 * 60 * 60 * 1000L
         /** Kinds of others' events that reach the list. */
         val TAGGED_KINDS: Set<Int> = VaultMode.RELAY_TAB_NOTE_KINDS + setOf(7, 16, 9735)
     }
@@ -148,6 +152,13 @@ class VaultActivityViewModel @Inject constructor(
     @Volatile private var generation = 0
     @Volatile private var noOlder = false
     private var rebuildJob: Job? = null
+
+    // One swap per refresh (VaultListSwap): reads running now, since when a
+    // built list has been held back, and whether the next build is a saved
+    // screen that shows at once.
+    private val readsRunning = java.util.concurrent.atomic.AtomicInteger(0)
+    private var heldSince: Long? = null
+    @Volatile private var showsSavedScreen = false
 
     private val _lines = MutableStateFlow<List<VaultActivity>>(emptyList())
     /** Every line, newest first; the list shows the first [shown]. */
@@ -220,6 +231,14 @@ class VaultActivityViewModel @Inject constructor(
     private var otherJob: Job? = null
 
     init {
+        // The last screen first (VaultSnapshotStore), then the refresh tops it up.
+        RelayForegroundService.newsDot.setJudged(true)
+        viewModelScope.launch {
+            val gen = generation
+            val owner = nostrService.activeHexPubkey
+            val saved = readSavedScreen(owner)
+            if (gen == generation) putSavedScreen(saved)
+        }
         // As the Vault's lists: load once the local relay takes connections.
         viewModelScope.launch {
             RelayForegroundService.readyForConnections.collect { ready -> if (ready) refresh() }
@@ -246,7 +265,10 @@ class VaultActivityViewModel @Inject constructor(
         viewModelScope.launch {
             configStore.accountSwitches.collect {
                 generation++
-                eventsMutex.withLock { events.clear() }
+                // The account left keeps its screen for when you come back.
+                val left = _activeHex.value
+                val held = eventsMutex.withLock { events.values.toList().also { events.clear() } }
+                withContext(Dispatchers.IO) { writeSavedScreen(left, held) }
                 noOlder = false
                 _lines.value = emptyList()
                 _outsideLines.value = emptyList()
@@ -255,7 +277,11 @@ class VaultActivityViewModel @Inject constructor(
                 _unreadSince.value = Long.MAX_VALUE
                 follows = emptyList()
                 _activeHex.value = nostrService.activeHexPubkey.lowercase()
+                heldSince = null
                 resetAccountChip()
+                val gen = generation
+                val saved = readSavedScreen(nostrService.activeHexPubkey)
+                if (gen == generation) putSavedScreen(saved)
                 refresh()
             }
         }
@@ -289,6 +315,9 @@ class VaultActivityViewModel @Inject constructor(
             val newest = eventsMutex.withLock { events.values.maxOfOrNull { it.createdAt } }
             val since = VaultActivity.refreshSince(newest, VaultActivity.nowSeconds())
                 ?.let { ",\"since\":$it" } ?: ""
+            // The dot's lists the relay proposed before this read: it settles them.
+            val asked = RelayForegroundService.newsDot.proposed()
+            readsRunning.incrementAndGet()
             _isRefreshing.value = true
             try {
                 fetch(
@@ -298,8 +327,12 @@ class VaultActivityViewModel @Inject constructor(
                     ),
                 )
             } finally {
-                _isRefreshing.value = false
+                val running = readsRunning.decrementAndGet()
+                _isRefreshing.value = running > 0
                 _hasLoadedOnce.value = true
+                settleNews(asked, owner)
+                // The read is done: the list built meanwhile goes up in one swap.
+                if (running == 0) scheduleRebuild()
             }
         }
     }
@@ -411,11 +444,38 @@ class VaultActivityViewModel @Inject constructor(
             foldsOutsideLikes = true,
         )
         if (gen != generation) return@withContext
+        if (!publishesNow(snapshot.isNotEmpty())) return@withContext
         _lines.value = lines
         _outsideLines.value = outside
         nostrService.fetchMissingProfiles(
             (lines.take(_shown.value + SHOW_STEP) + outside.take(_shown.value)).flatMap { it.actors.take(6) }.distinct(),
         )
+    }
+
+    /**
+     * Whether the list just built goes on screen now (VaultListSwap): while a
+     * read runs, or nothing was read yet, the list on screen stays and the new
+     * one goes up when the read ends or the cap passes; a saved screen goes up
+     * at once.
+     */
+    @Synchronized
+    private fun publishesNow(hasEvents: Boolean): Boolean {
+        val refreshing = readsRunning.get() > 0 || (!hasEvents && !_hasLoadedOnce.value)
+        val now = System.currentTimeMillis()
+        if (!refreshing) {
+            heldSince = null
+        } else if (heldSince == null) {
+            heldSince = now
+            // Look again once the cap is up, in case the read never ends.
+            viewModelScope.launch {
+                delay(VaultListSwap.CAP_MS + 100)
+                scheduleRebuild()
+            }
+        }
+        val force = showsSavedScreen && hasEvents
+        if (!VaultListSwap.publishes(force, refreshing, heldSince?.let { now - it })) return false
+        if (force) showsSavedScreen = false
+        return true
     }
 
     /**
@@ -586,6 +646,68 @@ class VaultActivityViewModel @Inject constructor(
 
     /** Followers seen here, as on the Followers list. */
     fun markFollowersSeen() = seenStore.markSeen(nostrService.activeHexPubkey)
+
+    // ── Saved screen and dot (VaultActivitySavedScreen) ──
+
+    private fun snapshotStore(): VaultSnapshotStore? =
+        configStore.config.value.appSupportDir?.let { VaultSnapshotStore(java.io.File(it)) }
+
+    /** Saves what is held as the active account's screen (the app going to the background). */
+    fun persistSavedScreen() {
+        val owner = nostrService.activeHexPubkey
+        viewModelScope.launch(Dispatchers.IO) {
+            writeSavedScreen(owner, eventsMutex.withLock { events.values.toList() })
+        }
+    }
+
+    private fun writeSavedScreen(owner: String, held: List<VaultActivity.Event>) {
+        runCatching {
+            snapshotStore()?.write(
+                VaultSnapshotStore.ACTIVITY, owner, held.map(VaultActivitySavedScreen::save),
+                VaultActivitySavedScreen.Saved.serializer(),
+            ) { it.createdAt }
+        }
+    }
+
+    private suspend fun readSavedScreen(owner: String): List<VaultActivity.Event> = withContext(Dispatchers.IO) {
+        runCatching {
+            snapshotStore()?.read(
+                VaultSnapshotStore.ACTIVITY, owner, VaultActivitySavedScreen.Saved.serializer(), SAVED_SCREEN_MAX_AGE_MS,
+            )?.map(VaultActivitySavedScreen::load)
+        }.getOrNull().orEmpty()
+    }
+
+    /** Puts a saved screen in memory and shows it at once; the refresh then only tops it up. */
+    private suspend fun putSavedScreen(saved: List<VaultActivity.Event>) {
+        if (saved.isEmpty()) return
+        eventsMutex.withLock { saved.forEach { events.putIfAbsent(it.id, it) } }
+        showsSavedScreen = true
+        _hasLoadedOnce.value = true
+        scheduleRebuild()
+    }
+
+    /** [mode] was on screen for the active account: the dot lights only for what comes after. */
+    fun recordVisit(mode: VaultMode) {
+        seenStore.markNewsVisit(nostrService.activeHexPubkey, VaultActivitySavedScreen.visited(mode).map { it.name })
+    }
+
+    /** A read for [owner] ended: of the lists proposed before it, the ones with news light. */
+    private suspend fun settleNews(asked: Set<VaultMode>, owner: String) {
+        if (asked.isEmpty()) return
+        val held = eventsMutex.withLock { events.values.toList() }
+        val own = accountHexes.value.toSet()
+        RelayForegroundService.newsDot.settle(asked, owner) { mode ->
+            VaultActivitySavedScreen.hasNews(held, mode, owner, own, seenStore.newsVisit(owner, mode.name))
+        }
+    }
+
+    override fun onCleared() {
+        RelayForegroundService.newsDot.setJudged(false)
+        val owner = nostrService.activeHexPubkey
+        val held = runCatching { events.values.toList() }.getOrDefault(emptyList())
+        if (held.isNotEmpty()) Thread { writeSavedScreen(owner, held) }.start()
+        super.onCleared()
+    }
 
     private fun kindsJson(kinds: Set<Int>) = kinds.sorted().joinToString(",", "[", "]")
 }
