@@ -68,4 +68,15 @@ extension HomeVaultLogic {
         ordered.insert(ordered.remove(at: first), at: 0)
         return ordered
     }
+
+    /// The servers a Media tab save's file note names (Magic Paste, photo
+    /// picker, Files): the configured ones that took it, in configured order.
+    /// None took it: an empty list, which means the vault holds it, when this
+    /// is the vault (the Mac) or the home vault was given it. nil: nowhere
+    /// the owner's other devices can fetch it, so no note.
+    static func mediaSaveNoteServers(configured: [String], accepted: [String], toHomeVault: Bool, isVault: Bool) -> [String]? {
+        let took = configured.filter(accepted.contains)
+        if !took.isEmpty { return took }
+        return toHomeVault || isVault ? [] : nil
+    }
 }
