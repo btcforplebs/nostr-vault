@@ -211,7 +211,7 @@ final class EmojiVaultStore: ObservableObject {
 
     /// Stores `data` in this device's vault (once per hash) and notes it with
     /// `emoji`. A hash already noted for every one of `emoji` is left alone.
-    private func keep(data: Data, mime: String, emoji: [CustomEmoji], account: String) async -> Kept {
+    func keep(data: Data, mime: String, emoji: [CustomEmoji], account: String) async -> Kept {
         // The account switched mid-run: nothing is filed under the other one.
         guard owner == account, NostrService.shared.activeHexPubkey == account else { return .failed }
         let sha = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()

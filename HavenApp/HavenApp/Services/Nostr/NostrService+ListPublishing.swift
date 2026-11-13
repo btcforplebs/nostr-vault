@@ -92,11 +92,12 @@ extension NostrService {
     @MainActor
     /// `skipIfUnchanged`: when the built list is the newest one as it is,
     /// nothing is signed and the newest is returned (nil when there is none).
-    func publishMergedList(kind: Int, author: String, signAsNpub: String?, skipIfUnchanged: Bool = false,
+    /// `dTag`: for an addressable list (kinds 30000-39999), the one at that `d`.
+    func publishMergedList(kind: Int, author: String, signAsNpub: String?, dTag: String? = nil, skipIfUnchanged: Bool = false,
                            build: (NostrEvent?) async -> (tags: [[String]], content: String)) async -> NostrEvent? {
         guard !author.isEmpty else { return nil }
         let alsoAsk = ListMerge.editLookupAsk(readRelays: ConfigService.shared.config.readRelays)
-        let lookup = await lookupNewestReplaceable(kind: kind, for: author, alsoAsk: alsoAsk, skipAhead: true)
+        let lookup = await lookupNewestReplaceable(kind: kind, for: author, alsoAsk: alsoAsk, dTag: dTag, skipAhead: true)
         // The newest list, or "none" only when the relays agree there is none:
         // one relay saying none may just not hold it (Logen 2026-10-31).
         let published: NostrEvent?
