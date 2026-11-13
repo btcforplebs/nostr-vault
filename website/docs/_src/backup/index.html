@@ -7,11 +7,12 @@
   "eyebrow": "Your vault",
   "h1": "Keep a copy <span>you can restore</span>.",
   "lede": "Save your vault's notes and media as files, roll your follow list back to an earlier version, and bring back a post you deleted by mistake.",
+  "checked": "Nostr Vault 3.2.2",
   "description": "How to back up and restore Nostr Vault: export and import notes and media in Backup & Restore, restore an old follow list from Following Backup, un-delete posts in Recently Deleted, and the web backup.",
   "labels": {
-    "ios": ["Backup & Restore", "Export Notes", "Import Notes", "Export Media", "Import Media", "Following Backup", "Restore This List", "Scan Relays", "Up to 50 are kept", "Recently Deleted", "Un-delete", "Delete Forever", "Back up media", "List backups", "Merge", "Look up and back up my lists", "Old versions of your lists"],
+    "ios": ["Backup & Restore", "Export Notes", "Import Notes", "Import Media", "Keep it full", "Export notes", "Following Backup", "Restore This List", "Scan Relays", "Up to 50 are kept", "Recently Deleted", "Un-delete", "Delete Forever", "Back up media", "List backups", "Merge", "Look up and back up my lists", "Old versions of your lists"],
     "android": ["Backup & Restore", "Notes (JSONL)", "Media", "Export Notes", "Import Notes", "Export Media", "Import Media", "Restore This List", "Un-delete", "Delete Forever", "List backups", "Merge", "Look up and back up my lists", "Old versions of your lists"],
-    "mac": ["Backup & Restore", "Save JSONL Backup", "Save Media Backup"],
+    "mac": ["Backups", "Backup & Restore", "Save JSONL Backup", "Import Notes", "Import Media", "Back up media"],
     "web": ["Recover a List", "Look up and back up my lists", "Old versions of your lists", "Backup & Restore", "Export notes", "Import notes", "Save backup file", "Back up media", "Restore This List", "Un-delete"]
   }
 }
@@ -20,25 +21,31 @@
 <section id="backup">
 <p class="eyebrow">Notes and media</p>
 <h2>Backup &amp; Restore</h2>
-<p>Open <span class="path">Settings &rarr; Your Vault &rarr; Backup &amp; Restore</span>. It has two
+<p>Open <span class="path">Settings &rarr; Backup &amp; Restore</span> (in the Your Vault group on iPhone, iPad
+    and Android; on the Mac, <span class="path">Settings &rarr; Backups &rarr; Backup &amp; Restore</span>). It has two
     parts, and each one is its own file.</p>
 <ul>
-    <li><strong>Notes.</strong> <strong>Export Notes</strong> saves everything in your vault as a .zip: your
-        notes, private notes, messages (still encrypted), the notes that mention you and your feed cache.
-        <strong>Import Notes</strong> puts a notes backup back.</li>
-    <li><strong>Media.</strong> <strong>Export Media</strong> saves the photos and videos in your vault's media
-        server as a .zip. <strong>Import Media</strong> puts them back.</li>
+    <li><strong>Notes.</strong> <strong>Export Notes</strong> (on the Mac, <strong>Save JSONL Backup</strong>) saves
+        everything in your vault as a .zip: your notes, private notes, messages (still encrypted), the notes that
+        mention you and your feed cache. <strong>Import Notes</strong> puts a notes backup back.</li>
+    <li><strong>Media.</strong> On iPhone, iPad and Mac, save your photos and videos with <strong>Back up media</strong>
+        on the Vault dashboard, under <strong>Keep it full</strong>; <strong>Import Media</strong> here puts a media
+        backup back. On Android this page has both <strong>Export Media</strong> and <strong>Import Media</strong>.</li>
 </ul>
 <p>On iPhone the file goes to the share sheet, so you can save it to Files or send it to your Mac. On the Mac
     and Android you pick where to save it.</p>
 <p>A restore adds to what's already in the vault. Anything it already has is skipped, and nothing is deleted.
-    The vault pauses for a moment while notes are saved or restored.</p>
+    The vault pauses for a moment while notes are saved or restored. If any note or file fails to restore, it says so
+    instead of reporting success, and a file that isn't a media backup is turned down.</p>
 <div class="note">
     <p><strong>Your keys are not in the backup.</strong> A backup holds notes and media only. Keep your key (or
         your signer) safe on its own; see Accounts &amp; Keys in the app.</p>
+    <p>Your wallet connection and signer links aren't in your phone's own device backup either: they stay in the
+        phone's secure storage, on that phone only. On iPhone, iPad and Mac your message cache is left out of the
+        device backup too. On a new phone, connect your wallet and signer again.</p>
 </div>
-<p>On iPhone and Mac, start the vault before you export media. On iPhone and Android, the Vault tab has the same
-    exports under <strong>Keep it full</strong>: <strong>Export notes</strong> and <strong>Back up media</strong>.</p>
+<p>Start the vault before you back up media. The Vault dashboard has both under <strong>Keep it full</strong>:
+    <strong>Export notes</strong> and <strong>Back up media</strong>.</p>
 </section>
 
 <section id="following">

@@ -5,7 +5,7 @@
   "section": "mesh",
   "order": 4,
   "description": "A mobile or desktop vault is the always-on one: a Mac, Linux box, Pi, box or spare phone that stays on. What each kind does, and how to turn a spare phone into a mobile vault with Mobile vault mode.",
-  "checked": "Nostr Vault 3.0.0 (41)",
+  "checked": "Nostr Vault 3.2.2",
   "labels": {
     "ios": ["Your Devices", "This phone", "Use this phone as an always-on vault", "Sync now", "Share With Others", "Mobile vault mode", "Share this vault on the mesh while the app stays open", "Mobile vault · new posts", "Send now",
             "Nothing waiting"],
@@ -14,16 +14,17 @@
   }
 }
 -->
-<p>Your <strong>mobile or desktop vault</strong> is the vault that stays on. A <strong>desktop vault</strong> is a Mac,
-    and later a Linux box or Raspberry Pi. A <strong>mobile vault</strong> is a box or an old phone on a charger. Your other devices reach it over the mesh, so your notes and media have a home even when
+<p>Your <strong>mobile or desktop vault</strong> is the vault that stays on. A <strong>desktop vault</strong> is a Mac
+    or a Linux box. A <strong>mobile vault</strong> is a box or an old phone on a charger. Your other devices reach it over the mesh, so your notes and media have a home even when
     your phone is off.</p>
 
 <h2 id="kinds">What each kind does</h2>
 <ul>
-    <li><strong>Desktop vault &middot; full history</strong> (a Mac today; Linux and Pi later): keeps all your history and syncs both
-        ways with your phones. Set it up with <a href="/docs/mesh/sync/">Desktop vault sync</a>.</li>
-    <li><strong>Mobile vault &middot; new posts</strong> (a spare phone or a box): keeps a copy of your new posts and media. Your phone
-        still sends your notes to your relays itself. It doesn't hold your older history. This page shows how to set one up on a spare phone.</li>
+    <li><strong>Desktop vault &middot; full history</strong> (a Mac or a Linux box): keeps all your history and syncs both
+        ways with your phones. You can have more than one. See <a href="/docs/mesh/sync/">Your Devices and sync</a>.</li>
+    <li><strong>Mobile vault &middot; new posts</strong> (a spare phone or a box): keeps a copy of your new posts and media, and
+        a full copy of every file (Mobile vault mode keeps <strong>Keep a full copy on this phone</strong> on). Your phone
+        still sends your notes to your relays itself. This page shows how to set one up on a spare phone.</li>
 </ul>
 
 <h2 id="kiosk">1. Turn on Mobile vault mode on the spare phone</h2>
@@ -63,14 +64,16 @@
 </ol>
 <p>From then on, your new notes and media also go to the mobile vault over the mesh, as a copy: your main phone still
     sends your notes to your relays itself, and keeps them too. Anything that can't reach the mobile vault waits on the main phone and goes when the
-    app is open and the mobile vault is in reach. <span class="ui">Sync now</span> on its card in Your Devices
+    app is open and the mobile vault is in reach: the phone tries at least every 2 minutes while it is out of reach, and
+    right away when it comes back. <span class="ui">Sync now</span> on its card in Your Devices
     (<span class="ui">Send now</span> under Mesh &rarr; Sync) sends it straight away.</p>
 
 <div class="note">
     <p><strong>What's public.</strong> Linking a vault doesn't list it. If you add it under
         <span class="path">Settings &rarr; Media Servers</span> &rarr; <span class="ui">Your Vaults</span>, its mesh address
         is listed in your media server list, in public, so other apps can fetch your photos from it. Direct-message attachments are never sent there.</p>
-    <p>If your key is in a remote signer, media only goes to the mobile vault when you tap <span class="ui">Send now</span>.</p>
+    <p>Media goes to the mobile vault signed with this phone's mesh key, so it goes without a tap even if your key is in a
+        remote signer.</p>
 </div>
 
 <h2 id="photos">Where new photos go</h2>
