@@ -31,11 +31,25 @@ extension HomeVaultLogic {
         return queue.filter { !sameSend($0, item) } + [item]
     }
 
-    /// Whether sending this kind may need the account's signer (and so a
-    /// person, with a bunker). Notes are signed already; a file note signs
-    /// with the device's mesh key.
-    static func needsAccountSigner(_ kind: HomeVaultItem.Kind) -> Bool {
-        kind == .blob || kind == .mirror
+    /// Whether sending this item may ask the account's signer (and so a
+    /// person, with a bunker). Notes are signed already; a file note and a
+    /// blob over the mesh sign with this device's mesh key. Only a mirror to
+    /// a media server, or a blob the vault passes on to a public server (its
+    /// forward token), needs the account.
+    static func asksAccountSigner(_ item: HomeVaultItem) -> Bool {
+        switch item.kind {
+        case .mirror: return true
+        case .blob: return item.server.map(isPublicServer) ?? false
+        default: return false
+        }
+    }
+
+    /// Whether a blob over the mesh may fall back to the owner's upload form
+    /// (no mesh key yet, or an older vault that turns the device form down).
+    /// Only with the account key on this device: a bunker or other remote
+    /// signer is never asked for a mesh send.
+    static func meshBlobMayUseOwnerForm(signingMode: String) -> Bool {
+        signingMode == "local"
     }
 
     /// Whether a Delete everywhere sends this device's `/files` kind 5: only

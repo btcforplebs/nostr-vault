@@ -400,9 +400,16 @@ object HomeVaultRules {
         return Selection(toTry, held)
     }
 
-    /** A queued blob is signed as the owner unless it is mesh-key-only (a feed Mirror); events are already signed. */
-    fun needsOwnerSignature(item: HomeVaultQueue.Item): Boolean =
-        item.type == HomeVaultQueue.TYPE_BLOB && !item.meshKeyOnly
+    /**
+     * Whether a send over the mesh waits for the owner's signer. Never: a blob signs with this device's mesh key, and
+     * falls back to the owner's form only with a local key ([meshKeyOnly]), so a bunker or Amber is never asked and
+     * nothing waits for a tap. Events are already signed; a file note signs with the mesh key.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun needsOwnerSignature(item: HomeVaultQueue.Item): Boolean = false
+
+    /** Whether a blob over the mesh signs with the mesh key only: a feed Mirror always, anything with a remote signer. */
+    fun meshKeyOnly(item: HomeVaultQueue.Item, localSigner: Boolean): Boolean = item.meshKeyOnly || !localSigner
 
     const val MAX_AGE_MS = 14L * 24 * 60 * 60_000L
     const val MAX_ATTEMPTS = 40
