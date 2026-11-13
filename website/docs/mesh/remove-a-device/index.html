@@ -85,7 +85,7 @@
                 <ul>
                     <li><a href="/docs/mesh/">The mesh</a></li>
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
-                    <li><a href="/docs/mesh/sync/">Desktop vault sync</a></li>
+                    <li><a href="/docs/mesh/sync/">Your Devices and sync</a></li>
                     <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
                     <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/" aria-current="page">Remove a device</a></li>
@@ -137,10 +137,10 @@
 
                 <h2 id="remove-a-device">Remove a device</h2>
                 <ol class="steps">
-                    <li>Open <span class="path">Settings &rarr; Mesh</span> and tap the device under
+                    <li>Open <span class="path">Settings &rarr; Your Devices &rarr; Mesh</span> and tap the device under
                         <span class="ui">My Devices</span>. On the Mac, use the remove button on its row.</li>
-                    <li>Tap <span class="ui">Remove from My Devices</span> (on iPhone, confirm). On Android and with the Mac's
-                        minus button it goes at once.</li>
+                    <li>Tap <span class="ui">Remove from My Devices</span> and confirm (on Android, <span class="ui">Remove</span>).
+                        With the Mac's minus button it goes at once.</li>
                     <li>Repeat on each of your other devices.</li>
                 </ol>
                 <div class="shots">
@@ -152,6 +152,7 @@
                     <li>It can no longer reach this device's vault, or learn its address.</li>
                     <li>New notes and media stop going to it. If it's on your media server list, it stays there until you remove it under <span class="path">Settings &rarr; Media Servers</span> &rarr; <span class="ui">Your Vaults</span>.</li>
                     <li>Anything it already has stays on it. Removing a device doesn't wipe it.</li>
+                    <li>If it was a Mac and you have another one linked, the other Mac takes over its role.</li>
                 </ul>
 
                 <h2 id="lost">A lost or stolen phone</h2>
@@ -170,7 +171,7 @@
                 <div class="note"><p>Your public posts are on public relays and stay there. A lost phone loses only what nothing else
                     holds a copy of, which is why a mobile or desktop vault is worth having.</p></div>
             </article>
-            <p class="docs-checked">Checked against Nostr Vault 3.0.0 (41).</p>
+            <p class="docs-checked">Checked against Nostr Vault 3.2.2.</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
                 <a class="prev" href="/docs/mesh/photo-server/"><span>Previous</span>Photo server</a>
                 <a class="next" href="/docs/mesh/advanced/"><span>Next</span>Advanced mesh settings</a>

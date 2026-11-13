@@ -6,14 +6,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Photos and media servers — Nostr Vault Docs</title>
-    <meta name="description" content="Media servers (Blossom) in Nostr Vault: where photos go when you post, adding and removing servers, mirroring copies back to your device, the Media &amp; Cache settings, and uploading from the share sheet.">
+    <meta name="description" content="Media servers (Blossom) in Nostr Vault: where photos go when you post, adding and removing servers, Auto-Mirror and Import media, the live Media tab across your devices, cache settings, and uploading from the share sheet.">
     <link rel="canonical" href="https://nostrvault.app/docs/media/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/media/">
     <meta property="og:title" content="Photos and media servers — Nostr Vault Docs">
-    <meta property="og:description" content="Media servers (Blossom) in Nostr Vault: where photos go when you post, adding and removing servers, mirroring copies back to your device, the Media &amp; Cache settings, and uploading from the share sheet.">
+    <meta property="og:description" content="Media servers (Blossom) in Nostr Vault: where photos go when you post, adding and removing servers, Auto-Mirror and Import media, the live Media tab across your devices, cache settings, and uploading from the share sheet.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -85,7 +85,7 @@
                 <ul>
                     <li><a href="/docs/mesh/">The mesh</a></li>
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
-                    <li><a href="/docs/mesh/sync/">Desktop vault sync</a></li>
+                    <li><a href="/docs/mesh/sync/">Your Devices and sync</a></li>
                     <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
                     <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
@@ -131,7 +131,7 @@
             <p class="eyebrow">Media and sharing</p>
             <h1>Where your <span>photos</span> go.</h1>
             <p class="docs-lede">A note on Nostr is text. The photos in it live on media servers, and the note links to them. This page explains which servers Nostr Vault uses, how to change them, and how to keep your own copies.</p>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#what-a-media-server-is">What a media server is</a></li><li><a href="#where-a-photo-goes-when-you-post">Where a photo goes when you post</a></li><li><a href="#add-or-remove-a-media-server">Add or remove a media server</a></li><li><a href="#mirroring">Mirroring</a></li><li><a href="#deleting-a-photo">Deleting a photo</a></li><li><a href="#media-cache">Media &amp; Cache</a></li><li><a href="#uploading-from-the-share-sheet">Uploading from the share sheet</a></li><li><a href="#import-media">Import media</a></li><li><a href="#picture-in-picture">Picture in picture</a></li><li><a href="#your-device-as-a-photo-server">Your device as a photo server</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#what-a-media-server-is">What a media server is</a></li><li><a href="#where-a-photo-goes-when-you-post">Where a photo goes when you post</a></li><li><a href="#add-or-remove-a-media-server">Add or remove a media server</a></li><li><a href="#mirroring">Mirroring</a></li><li><a href="#deleting-a-photo">Deleting a photo</a></li><li><a href="#media-cache">Media &amp; Cache</a></li><li><a href="#the-media-tab">The Media tab</a></li><li><a href="#uploading-from-the-share-sheet">Uploading from the share sheet</a></li><li><a href="#import-media">Import media</a></li><li><a href="#picture-in-picture">Picture in picture</a></li><li><a href="#your-device-as-a-photo-server">Your device as a photo server</a></li></ul></div>
 
             <article class="docs-article">
                 <section id="servers">
@@ -176,8 +176,13 @@
                 <p>Under <strong>Suggested</strong>, tap Add next to a well-known server to add it. Prices and limits are set by
                     each server.</p>
                 <p>Each change is saved and your updated list is published to your relays.</p>
-                <p>If you set up <span class="path">Desktop vault sync</span>, your Mac is used as a media server too. It
-                    shows at the top of the page and you don't need to add it by hand.</p>
+                <p>A Mac you set up under <span class="path">Your Devices &rarr; Advanced &rarr; Desktop vault by web address</span> is
+                    used as a media server too. On iPhone, iPad and Mac it shows at the top under <span class="ui">Added for You</span>,
+                    and you don't add it by hand.</p>
+                <p>Your vaults on the mesh are listed only if you choose to: under <span class="ui">Your Vaults on the Mesh</span>
+                    (on Android, <span class="ui">YOUR VAULTS</span>), tap <span class="ui">Add to my media servers</span>. Linking a device
+                    doesn't list it. Nothing is published until you tap <span class="ui">Save</span>; leaving with unsaved changes asks
+                    first.</p>
                 <p><strong>In the web app</strong>, the same page is <span class="path">Settings &rarr; Media Servers</span>.
                     Use <strong>Add</strong> and <strong>Remove</strong>, or add one from Suggested. Each saved server is checked
                     when the page opens, and <strong>Test</strong> checks it again. After a change, tap <strong>Save and
@@ -190,13 +195,30 @@
                 <section id="mirror">
                 <p class="eyebrow">Copies you own</p>
                 <h2 id="mirroring">Mirroring</h2>
-                <p>Mirroring brings your own photos back from your media servers into your vault on this device, so they work
-                    offline and you keep a copy if a server goes away. Both controls are on the Media Servers page:</p>
+                <p>Mirroring brings your own photos back into your vault on this device, so they work offline and you keep a copy
+                    if a server goes away. It looks in two places: the file lists of your media servers, and the photo and video links
+                    in your own notes, wherever they are hosted.</p>
                 <ul>
-                    <li><strong>Mirror Now</strong> downloads your media from your outside servers to this device, once. It
-                        shows progress while it runs.</li>
-                    <li><strong>Auto-Mirror Media</strong> keeps doing it for you.</li>
+                    <li><strong>Auto-Mirror Media</strong> (on the Media Servers page; under <span class="ui">Offline Copies</span> on
+                        iPhone, iPad and Mac) does it for you. It is off until you turn it on. It runs when you open the app.</li>
+                    <li>To run it by hand, use <strong>Import media</strong> on the Vault dashboard (on Android also
+                        <strong>Mirror Now</strong> on the Media Servers page).</li>
                 </ul>
+                <p>A run keeps to a few rules, so it never floods your phone, your servers or your signer:</p>
+                <ul>
+                    <li><strong>Nothing twice.</strong> A photo already in your vault is never downloaded again. The app knows a file's
+                        fingerprint before it downloads, from the link, from the note, or from an earlier run. A photo you deleted from
+                        your vault isn't brought back.</li>
+                    <li><strong>Few signatures.</strong> Your own account saves into its own vault without asking your signer for each
+                        file: your signer is asked once per run. On iPhone, iPad and Mac, another account you are signed in to signs once
+                        per 50 files.</li>
+                    <li><strong>Once every 3 hours</strong> at most, counted from when a run starts, so reopening the app halfway
+                        through doesn't start another one. Import media always runs.</li>
+                    <li><strong>200 files per run.</strong> The rest come next run, and the result says how many are left. A big
+                        backlog comes in at up to 1,600 files a day by itself, or 200 more each time you tap Import media.</li>
+                </ul>
+                <p>Auto-Mirror only brings files to this device. Sending them on to your other devices is what
+                    <a href="/docs/mesh/sync/#full-copy">full copy</a> does.</p>
                 </section>
 
                 <section id="delete">
@@ -216,21 +238,41 @@
                 <p class="eyebrow">Other people's photos</p>
                 <h2 id="media-cache">Media &amp; Cache</h2>
                 <p>When you look at photos and videos in the feed, the app keeps temporary copies so they load faster next
-                    time. You control this in <span class="path">Settings &rarr; Media &amp; Cache</span>, in the Feed &amp;
-                    Display group. The web app doesn't have this page.</p>
+                    time.</p>
+                <p><strong>iPhone, iPad and Mac</strong> keep it simple: copies are kept for 7 days, and profile pictures are
+                    fetched ahead once a day on Wi-Fi. <span class="ui">Autoplay Videos</span> is under
+                    <span class="path">Settings &rarr; Feed</span>, and <span class="ui">Clear cache</span> is on the Vault dashboard.
+                    There is no Media &amp; Cache page.</p>
+                <p><strong>Android</strong> has the page: <span class="path">Settings &rarr; Media &amp; Cache</span>, in the Feed
+                    &amp; Display group. The web app has neither.</p>
                 <ul>
                     <li><strong>Autoplay Videos</strong> plays videos as you scroll.</li>
                     <li><strong>Prefetch Profile Pictures</strong> loads profile pictures ahead of time for smoother
                         scrolling.</li>
                     <li><strong>Disable Media Cache</strong> stops saving copies, so media downloads again each time.</li>
                     <li><strong>Keep Media For</strong> sets how long copies are kept: 1, 3, 7, 14 or 30 days, or Never (they
-                        don't expire). It starts at 3 days. On iPhone and Mac the oldest copies are still cleared once the cache
-                        passes 500 MB.</li>
+                        don't expire). It starts at 3 days.</li>
                     <li><strong>Clear Media Cache</strong> deletes the temporary copies to free space. Your vault and your
                         media servers are not touched.</li>
                 </ul>
                 <p>On Android there is one more switch, <strong>Use Local Blossom Cache</strong>. It loads media through a
                     Blossom cache app on the same phone, when one is running. Uploads never go through it.</p>
+                </section>
+
+                <section id="media-tab">
+                <p class="eyebrow">Across your devices</p>
+                <h2 id="the-media-tab">The Media tab</h2>
+                <p>The Media tab shows the photos and videos in your vault. It is live: each file appears the moment it lands, from
+                    Auto-Mirror, a feed Mirror, Import media or another of your devices, with no pull to refresh.</p>
+                <ul>
+                    <li>Files you add on the Media tab (<span class="ui">Photos</span>, <span class="ui">Files</span>, or
+                        <span class="ui">Magic Paste</span> of a picture or link) reach your mobile or desktop vault and the Media tabs
+                        of your other devices, the same as photos you post.</li>
+                    <li>With <a href="/docs/mesh/sync/#full-copy">Keep a full copy on this phone</a> on (the default), every file from
+                        your other devices shows here. Off, a file loads when you open it.</li>
+                    <li>Delete everywhere removes it from your other devices' Media tabs too.</li>
+                    <li>When you add media to a post, <span class="ui">Pick from your media</span> opens full height on Android.</li>
+                </ul>
                 </section>
 
                 <section id="share">
@@ -270,8 +312,9 @@
                 <p class="eyebrow">Bring your media home</p>
                 <h2 id="import-media">Import media</h2>
                 <p>On iPhone, iPad, Mac and Android, <span class="path">Vault Dashboard &rarr; Keep it full &rarr; Import media</span>
-                    goes through every one of your notes and copies the photos and videos they link into your vault. Tap
-                    <span class="ui">Import</span>. It runs once by itself after your notes first come in.</p>
+                    runs the same import as Auto-Mirror, by hand: it copies the photos and videos on your media servers and in your
+                    notes into your vault. Tap <span class="ui">Import</span>. It runs once by itself after your notes first come in,
+                    and takes up to 200 files each time.</p>
                 <ul>
                     <li>Each file is written straight to disk as it downloads, so big videos come in without running the app out
                         of memory. Big files go one at a time.</li>
@@ -308,6 +351,7 @@
                     on its Media Servers page turns that off. It is on by default.</p>
                 </section>
             </article>
+            <p class="docs-checked">Checked against Nostr Vault 3.2.2.</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
                 <a class="prev" href="/docs/backup/"><span>Previous</span>Backup and restore</a>
                 <a class="next" href="/docs/share-links/"><span>Next</span>Share links</a>

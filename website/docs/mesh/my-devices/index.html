@@ -85,7 +85,7 @@
                 <ul>
                     <li><a href="/docs/mesh/">The mesh</a></li>
                     <li><a href="/docs/mesh/my-devices/" aria-current="page">My Devices</a></li>
-                    <li><a href="/docs/mesh/sync/">Desktop vault sync</a></li>
+                    <li><a href="/docs/mesh/sync/">Your Devices and sync</a></li>
                     <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
                     <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
@@ -141,10 +141,11 @@
 
                 <h2 id="your-devices">Your Devices</h2>
                 <p>The quickest way in is <span class="path">Settings &rarr; Your Devices</span> on iPhone, iPad and Android, and
-                    <span class="path">Settings &rarr; Your Vault</span> on the Mac. It shows a card for each of your devices, with
+                    <span class="path">Settings &rarr; Your Vault &rarr; Your Devices</span> on the Mac. It shows a card for each of your devices, with
                     <span class="ui">Sync now</span> on your vaults, and <span class="ui">Connect a computer or phone</span>
                     (<span class="ui">Connect a phone</span> on the Mac), which turns the mesh on if needed and starts the two scans below.
-                    The mesh's own settings are under <span class="ui">Advanced</span> there, and in the places listed next.</p>
+                    The mesh's own settings are under <span class="ui">Advanced</span> there, and in the places listed next. What syncs
+                    and how is on <a href="/docs/mesh/sync/">Your Devices and sync</a>.</p>
 
                 <h2 id="find-mesh-settings">Find Mesh settings</h2>
                 <ul>
@@ -152,7 +153,7 @@
                         profile picture in the tab bar and pick <span class="ui">Mesh settings</span>.</li>
                     <li><strong>Android:</strong> hold your account picture and pick <span class="ui">Mesh settings</span>, or
                         <span class="path">Settings &rarr; Your Devices &rarr; Mesh</span>.</li>
-                    <li><strong>Mac:</strong> <span class="ui">Mesh settings</span> under Advanced on the Vault dashboard.</li>
+                    <li><strong>Mac:</strong> <span class="path">Settings &rarr; Your Vault &rarr; Mesh</span>, or <span class="ui">Mesh settings</span> under Advanced on the Vault dashboard.</li>
                     <li>Everywhere, the Vault dashboard has a <strong>Your devices</strong> card with
                         <span class="ui">Mesh settings</span> and <span class="ui">Add</span>.</li>
                 </ul>
@@ -188,7 +189,7 @@
                     shows as text with <span class="ui">Copy</span>. A Linux box or the browser relay page has no code, only a mesh
                     address: paste that under <span class="ui">Paste instead</span>. To add this device to one of those, copy its
                     address from Mesh &rarr; Advanced (<span class="ui">Copy mesh address</span> on the Mac,
-                    <span class="ui">This Device's Address</span> on Android).</p>
+                    <span class="ui">Copy address</span> on Android).</p>
                 <p>Something went wrong? <span class="ui">Start again</span> shows a fresh code.</p>
                 <div class="shots">
                     <figure><img src="/docs/img/ios/add-device.webp" alt="Add a Device" width="900" height="1957" loading="lazy"><figcaption>Add a Device</figcaption></figure>
@@ -216,26 +217,25 @@
                     <li>Under <span class="ui">My Devices</span>, a phone shows each device's role and whether it is connected now,
                         or <span class="ui">Not in reach</span>. Android shows <span class="ui">In reach</span> or when it was last
                         seen. A Mac is in reach while Nostr Vault is open on it; a phone while the app is open or in Mobile vault mode.</li>
-                    <li>A linked Mac is your <span class="ui">Desktop vault &middot; full history</span>: your new notes and photos go to
-                        it, and your history syncs back. See <a href="/docs/mesh/sync/">Desktop vault sync</a>. Your iPhone and
-                        Android phones also send new notes and media to every linked phone.</li>
-                    <li>Tap a device to rename it, copy its address, or remove it (<span class="ui">Remove from My Devices</span> on
-                        iPhone). On Android, <span class="ui">What It Gets</span> chooses whether it gets
-                        <span class="ui">Send new notes</span> and <span class="ui">Send new media</span>.</li>
+                    <li>A linked Mac is a <span class="ui">Desktop vault &middot; full history</span>: your new notes and photos go to
+                        it, and your history syncs back. You can link more than one Mac; each gets its own copy. Your phones also send
+                        each new photo and file to every linked device. See <a href="/docs/mesh/sync/">Your Devices and sync</a>.</li>
+                    <li>Tap a device to rename it, copy its address, or remove it with <span class="ui">Remove from My Devices</span>
+                        (you confirm first). Android also shows when it was <span class="ui">Last seen</span>.</li>
                     <li>Once a device is on the list, only the devices on the list learn this phone's address. Anyone else on the mesh
                         gets public photos only.</li>
                 </ul>
 
                 <h2 id="next">Next</h2>
                 <ul>
-                    <li><a href="/docs/mesh/sync/">Desktop vault sync</a></li>
+                    <li><a href="/docs/mesh/sync/">Your Devices and sync</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device, or a lost phone</a></li>
                 </ul>
             </article>
-            <p class="docs-checked">Checked against Nostr Vault 3.2.0.</p>
+            <p class="docs-checked">Checked against Nostr Vault 3.2.2.</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
                 <a class="prev" href="/docs/mesh/"><span>Previous</span>The mesh</a>
-                <a class="next" href="/docs/mesh/sync/"><span>Next</span>Desktop vault sync</a>
+                <a class="next" href="/docs/mesh/sync/"><span>Next</span>Your Devices and sync</a>
             </div>
         </main>
     </div>

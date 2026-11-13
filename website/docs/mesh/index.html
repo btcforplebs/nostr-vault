@@ -85,7 +85,7 @@
                 <ul>
                     <li><a href="/docs/mesh/" aria-current="page">The mesh</a></li>
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
-                    <li><a href="/docs/mesh/sync/">Desktop vault sync</a></li>
+                    <li><a href="/docs/mesh/sync/">Your Devices and sync</a></li>
                     <li><a href="/docs/mesh/home-vault/">Mobile and desktop vaults</a></li>
                     <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
@@ -189,8 +189,10 @@
                     <li>Something that can't scan, such as a Linux box, is added by its mesh address: tap
                         <strong>Add a device</strong>, then paste the address under <strong>Paste instead</strong>.</li>
                 </ol>
-                <p>A device on the list shows a dot when it's in reach. To check that everything arrived, use
-                    <span class="path">Mesh &rarr; Sync &rarr; Check sync</span> on a phone.</p>
+                <p>A device on the list shows a dot when it's in reach. You can link more than one Mac, and each new photo and file
+                    reaches all of your devices; phones keep a full copy by default. To check that everything arrived, tap
+                    <span class="ui">Sync now</span> on a vault's card in <span class="path">Settings &rarr; Your Devices</span>. More on
+                    <a class="inline" href="/docs/mesh/sync/">Your Devices and sync</a>.</p>
                 </section>
 
                 <section id="kiosk">
@@ -240,7 +242,8 @@
                         for you if your inbox lets the sender in. Your messages and private notes can't be read over it, and
                         it never exposes your keys.</li>
                     <li><strong>A separate key.</strong> The device's mesh key is its own key, made once and kept on that
-                        device. Your Nostr key never goes to the mesh.</li>
+                        device. Your Nostr key never goes to the mesh: what your devices send each other is signed with their mesh
+                        keys only.</li>
                     <li><strong>Follows only is about what your app loads.</strong> Your app asks the mesh for photos only
                         from people you follow, so strangers' devices aren't contacted. It doesn't limit who can see your
                         photos: there's no setting for that. See
@@ -271,7 +274,8 @@
                         <h3>The apps</h3>
                         <ul>
                             <li>Mesh on iPhone, Android and Mac.</li>
-                            <li>My Devices, sync and Check sync.</li>
+                            <li>My Devices, Your Devices and Sync now, with more than one Mac.</li>
+                            <li>Full copy of your photos and files on every phone, shown live in Media.</li>
                             <li>Mobile vault mode, mobile vaults and desktop vaults.</li>
                             <li>Photos from people you follow.</li>
                         </ul>
