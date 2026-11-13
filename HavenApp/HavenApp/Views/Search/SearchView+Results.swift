@@ -74,32 +74,15 @@ extension SearchView {
 
                         LazyVStack(spacing: 8) {
                             ForEach(searchResults.notes) { note in
-                                FeedNoteRow(
-                                   note: note,
-                                   profile: nostrService.profiles[note.pubkey],
-                                   rowData: FeedNoteRowData.resolve(
-                                       for: note,
-                                       feedService: feedService,
-                                       nostrService: nostrService
-                                   ),
-                                   onProfile: { pubkey in
-                                       showingProfile = pubkey
-                                   },
-                                   onMedia: { url, urls in
-                                       showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
-                                   },
-                                   showParent: false
-                               )
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        openNote(note)
-                                    }
+                                resultNoteRow(note)
                             }
                         }
                         .environment(\.feedActions, .make(feedService: feedService, nostrService: nostrService))
                         .padding(.horizontal, 16)
                     }
                 }
+
+                outsideSection
 
                 // Hashtags section
                 if (resultTypeFilter == .all || resultTypeFilter == .hashtags) && !searchResults.hashtags.isEmpty {
@@ -169,8 +152,32 @@ extension SearchView {
         .padding(.horizontal, 24)
     }
 
+    /// One note in the results, as the feed draws it; a tap opens it.
+    func resultNoteRow(_ note: FeedNote) -> some View {
+        FeedNoteRow(
+            note: note,
+            profile: nostrService.profiles[note.pubkey],
+            rowData: FeedNoteRowData.resolve(
+                for: note,
+                feedService: feedService,
+                nostrService: nostrService
+            ),
+            onProfile: { pubkey in
+                showingProfile = pubkey
+            },
+            onMedia: { url, urls in
+                showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
+            },
+            showParent: false
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            openNote(note)
+        }
+    }
+
     @ViewBuilder
-    private func userRow(pubkey: String, profile: FeedProfile) -> some View {
+    func userRow(pubkey: String, profile: FeedProfile) -> some View {
         Button(action: { showingProfile = pubkey }) {
             HStack(spacing: 12) {
                 AvatarView(url: profile.pictureURL, pubkey: pubkey, size: 40)

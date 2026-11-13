@@ -150,6 +150,12 @@ extension FeedView {
                             .frame(height: 1)
                             .id("top")
 
+                        if EveryoneBanner.shows(everyone: configService.config.globalShowsEveryone, globalLike: feedService.isGlobalLikeMode) {
+                            EveryoneBannerView { setGlobalShowsEveryone(false) }
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 8)
+                        }
+
                         if feedService.feedMode == .media {
                             mediaGridView
                         } else if feedService.feedMode == .articles {

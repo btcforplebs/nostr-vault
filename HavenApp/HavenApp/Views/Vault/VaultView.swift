@@ -66,6 +66,8 @@ struct VaultView: View {
     @State var showingMediaUrl: IdentifiableURL?
     @Namespace var mediaZoom
     @State var activityHasLoadedOnce = false
+    /// All's "N from outside your web" line (VaultOutsideFoldRow): 0 hides it.
+    @State var outsideLikeCount = 0
     /// Lines newer than this (unix seconds) are new since your last visit.
     @State var activityUnreadSince: Int64 = .max
     /// The account chip picked over the Vault list (VaultAccountChips). Nil

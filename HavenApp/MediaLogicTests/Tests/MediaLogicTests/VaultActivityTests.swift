@@ -81,10 +81,13 @@ final class VaultActivityTests: XCTestCase {
         XCTAssertTrue(all.contains { $0.id == "inReply" })
     }
 
-    func testOutsideFilterKeepsOnlyPostKinds() {
+    /// Posts, and since 2026-11-13 the folded likes and reposts; never zaps or follows.
+    func testOutsideFilterKeepsPostsAndFoldedLikes() {
         XCTAssertTrue(ActivityFilter.outside.includes(.reply))
         XCTAssertTrue(ActivityFilter.outside.includes(.highlight))
-        XCTAssertFalse(ActivityFilter.outside.includes(.reaction))
+        XCTAssertTrue(ActivityFilter.outside.includes(.reaction))
+        XCTAssertTrue(ActivityFilter.outside.includes(.repost))
+        XCTAssertFalse(ActivityFilter.outside.includes(.zap))
         XCTAssertFalse(ActivityFilter.outside.includes(.follow))
     }
 

@@ -12,7 +12,7 @@ extension VaultView {
         let others = showsOtherAccounts
         let tagged = others ? accountLines : []
         let lines = displayActivity
-        let isEmpty = others ? tagged.isEmpty : lines.isEmpty
+        let isEmpty = others ? tagged.isEmpty : lines.isEmpty && outsideLikeCount == 0
         let isLoading = others
             ? otherAccountLoading || (currentAccountChip == .all && (nostrService.isFetching || !activityHasLoadedOnce))
             : nostrService.isFetching || relayManager.isBooting || !activityHasLoadedOnce
@@ -82,6 +82,13 @@ extension VaultView {
                 .frame(maxWidth: .infinity)
             } else {
                 LazyVStack(spacing: 10) {
+                    if activityFilter == .all && outsideLikeCount > 0 {
+                        VaultOutsideFoldRow(count: outsideLikeCount) {
+                            activityFilter = .outside
+                            noteFilterToggle(.activity(.outside), nowOn: true)
+                        }
+                        .padding(.horizontal, 16)
+                    }
                     ForEach(lines) { line in
                         activityLink(line)
                             .padding(.horizontal, 16)

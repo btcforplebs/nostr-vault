@@ -137,6 +137,27 @@ enum GlobalSearchRanking {
             .map(\.item)
     }
 
+    /// Results split by your web (Logen 2026-11-13 "go all", option B): you,
+    /// your follows and `wot` stay; everyone else (tier 3) goes to `outside`,
+    /// folded under "N from outside your web". Order is kept on both sides.
+    /// Fails closed: with no web yet only you and your follows are inside.
+    /// Web twin: web-vault/src/net/search.js shapeResults `fold`.
+    static func splitOutside<T>(_ items: [T],
+                                own: Set<String>,
+                                follows: Set<String>,
+                                wot: Set<String>,
+                                pubkey: (T) -> String) -> (inside: [T], outside: [T]) {
+        var inside: [T] = [], outside: [T] = []
+        for item in items {
+            if tier(pubkey: pubkey(item), own: own, follows: follows, wot: wot) < 3 {
+                inside.append(item)
+            } else {
+                outside.append(item)
+            }
+        }
+        return (inside, outside)
+    }
+
     /// Profiles carry no timestamp, so within a tier they keep arrival order —
     /// the order the sources returned them in, which is the services' own ranking.
     static func rankProfiles(_ pubkeysInArrivalOrder: [String],

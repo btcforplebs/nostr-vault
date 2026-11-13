@@ -141,7 +141,11 @@ final class AccountUnreadTests: XCTestCase {
         XCTAssertFalse(u.record(marker("mention", id: "5", to: alice), rules: outside))
         XCTAssertFalse(u.record(marker("reply", id: "6", to: alice), rules: outside))
         XCTAssertFalse(u.record(marker("quote", id: "7", to: alice), rules: outside))
-        XCTAssertTrue(u.record(marker("reaction", id: "8", to: alice), rules: outside))
+        // Likes and reposts from outside fold out of the list (2026-11-13), so
+        // they don't count; zaps and follows still do.
+        XCTAssertFalse(u.record(marker("reaction", id: "8", to: alice), rules: outside))
+        XCTAssertFalse(u.record(marker("repost", id: "9", to: alice), rules: outside))
+        XCTAssertTrue(u.record(marker("zap", id: "10", to: alice), rules: outside))
         XCTAssertEqual(u.count(for: alice), 2)
         XCTAssertEqual(u.count(for: bob), 1)
     }

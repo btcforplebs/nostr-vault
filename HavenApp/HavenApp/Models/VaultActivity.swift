@@ -96,6 +96,10 @@ struct VaultActivity: Identifiable, Equatable {
     /// `outsideOnly` turns it round for the "Outside your web" filter: only
     /// the posts tagging you whose authors `isOutside` says are outside, and
     /// no likes, zaps, reposts or follows.
+    /// `foldsOutsideLikes` (Logen 2026-11-13 "go all", option A): likes and
+    /// reposts whose author `isOutside` leave All for the list's one
+    /// "N from outside your web" line, and `outsideOnly` lists them with the
+    /// outside posts. Zaps and follows are never folded.
     static func build(
         events: [Event],
         owner: String,
@@ -104,6 +108,7 @@ struct VaultActivity: Identifiable, Equatable {
         isBlocked: (String) -> Bool = { _ in false },
         isOutside: (String) -> Bool = { _ in false },
         outsideOnly: Bool = false,
+        foldsOutsideLikes: Bool = false,
         now: Int64 = Int64(Date().timeIntervalSince1970)
     ) -> [VaultActivity] {
         guard !owner.isEmpty else { return [] }
@@ -150,7 +155,11 @@ struct VaultActivity: Identifiable, Equatable {
         for event in events.sorted(by: { $0.createdAt > $1.createdAt }) {
             guard event.pubkey != owner, !isFuture(event.createdAt, now: now),
                   seen.insert(event.id).inserted else { continue }
-            if outsideOnly && (event.kind == reactionKind || event.kind == zapKind || repostKinds.contains(event.kind)) {
+            let isLike = event.kind == reactionKind || repostKinds.contains(event.kind)
+            if isLike && foldsOutsideLikes {
+                // Folded likes and reposts: only in the outside list.
+                if isOutside(event.pubkey) != outsideOnly { continue }
+            } else if outsideOnly && (isLike || event.kind == zapKind) {
                 continue
             }
 
