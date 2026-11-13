@@ -266,6 +266,11 @@ enum FeedFilterEngine {
     struct WotCache {
         let pubkeys: Set<String>
         let vouches: [String: Int]?
+        /// The depth the relay built at, nil from an older relay.
+        var depth: Int? = nil
+        /// `wot_links.json` beside the cache, read for a depth-3 web only
+        /// (the relay deletes it at depth 2). The account web counts from it.
+        var links: TrustLinksIndex? = nil
     }
 
     static func readWotCache(from cacheURL: URL, ownerHex: String) -> WotCache? {
@@ -275,8 +280,11 @@ enum FeedFilterEngine {
             return nil
         }
         let loaded = Set(pubkeys.keys)
+        let depth = json["depth"] as? Int
+        let linksURL = cacheURL.deletingLastPathComponent().appendingPathComponent(TrustLinks.fileName)
+        let links = (depth ?? 0) >= 3 ? (try? Data(contentsOf: linksURL)).flatMap(TrustLinksIndex.parse) : nil
         return WotCache(pubkeys: hasUsableWot(loaded, ownerHex: ownerHex) ? loaded : [],
-                        vouches: TrustMap.vouches(fromJSON: json))
+                        vouches: TrustMap.vouches(fromJSON: json), depth: depth, links: links)
     }
 
     /// True when the graph names somebody other than the owner. An empty

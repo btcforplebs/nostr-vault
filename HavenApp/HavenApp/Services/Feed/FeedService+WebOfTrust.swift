@@ -53,6 +53,8 @@ extension FeedService {
         // Vouches first: $wotPubkeys fires in willSet, and its subscribers
         // read the vouches straight away.
         wotVouches = read.vouches
+        // The links before the graph too: $wotPubkeys subscribers read the web.
+        trustedWebMemo.load(links: read.links, depth: read.depth)
         wotPubkeys = read.pubkeys
         wotCacheRead = true
         #if DEBUG
@@ -129,12 +131,24 @@ extension FeedService {
     }
 
     /// Your web right now, the one set every Global view and the Relay tab
-    /// filter against: the saved graph plus your current follows
-    /// (`TrustMap.web`). The graph is rebuilt about once a day, so without the
-    /// follows someone you just followed stayed filtered out of Global until
-    /// then. Only the follows while there is no graph, so Global still fails closed.
+    /// filter against: the open account's own web out of the saved graph,
+    /// plus your current follows (`AccountWeb`). The relay pools every
+    /// account on the device into one graph; this counts only the open
+    /// account's follows (Logen 2026-11-13). The graph is rebuilt about once a
+    /// day, so without the follows someone you just followed stayed filtered
+    /// out of Global until then. Only the follows while there is no graph, so
+    /// Global still fails closed.
     var feedTrustedPubkeys: Set<String> {
-        trustedWebMemo.web(saved: wotPubkeys, follows: followedPubkeys)
+        trustedWebMemo.web(saved: wotPubkeys, follows: followedPubkeys, scope: accountWebScope)
+    }
+
+    /// Who "you" are on this device and the bar the relay counted against.
+    private var accountWebScope: AccountWebScope {
+        let config = ConfigService.shared
+        let owners = config.whitelistedHexPubkeys.union([config.ownerHexPubkeyCached, config.activeAccountHexPubkey])
+        return AccountWebScope(owners: owners.subtracting([""]),
+                               minFollowers: config.config.chatRelayMinFollowers,
+                               followsKnown: followListIsKnown)
     }
 
     /// REQ filters for a Global view under `trust`. Everyone: the filter as
