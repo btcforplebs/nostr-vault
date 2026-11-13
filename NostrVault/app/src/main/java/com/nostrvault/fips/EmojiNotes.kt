@@ -112,6 +112,9 @@ class EmojiNoteIndex(
 
     val emojiNotes: List<EmojiNote> get() = emoji.values.sortedWith(compareBy<EmojiNote> { it.createdAt }.thenBy { it.id })
 
+    /** Hashes a live plain (photo) note names: Media keeps them. */
+    val plainHashes: Set<String> get() = plain.values.toSet()
+
     /** Hashes every live note of which is an emoji note. */
     val hiddenFromMedia: Set<String>
         get() {

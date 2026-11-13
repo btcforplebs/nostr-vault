@@ -140,6 +140,30 @@ class HomeVaultSenderFileNoteTest {
     }
 
     @Test
+    fun `an emoji note is a 1063 with nv-emoji, its codes and sets, signed with the mesh key`() {
+        val room = FakeFiles()
+        val set = "30030:${"b".repeat(64)}:cats"
+        val q = HomeVaultQueue(tmp.newFolder())
+        q.offerEmojiDraft(set)
+        server.enqueue(MockResponse().withWebSocketUpgrade(room))
+        val base = server.url("/tok").toString().trimEnd('/')
+        assertEquals(HomeVaultSend.SENT, runBlocking { sender().sendFileNote(base, q.items().single(), vault, OkHttpClient()) })
+        val ev = room.got.single { it[0].jsonPrimitive.content == "EVENT" }[1].jsonObject
+        assertEquals(mesh, ev["pubkey"]!!.jsonPrimitive.content)
+        val parsed = EmojiNote.parse(ev)!!
+        assertEquals(listOf(listOf("blobcat", "https://cdn.example.com/b.png")), parsed.codes)
+        assertEquals(listOf(set), parsed.sets)
+        assertTrue("the account signer never signs here", ownerSigned.isEmpty())
+    }
+
+    private fun HomeVaultQueue.offerEmojiDraft(set: String) = addFileNote(
+        HomeVaultQueue.FileNoteDraft(
+            HomeVaultQueue.FileNoteDraft.EMOJI, sha, "image/png", 9, emptyList(),
+            listOf(listOf("blobcat", "https://cdn.example.com/b.png")), listOf(set),
+        ),
+    )
+
+    @Test
     fun `a duplicate is done, restricted is dropped, an error waits`() {
         assertEquals(HomeVaultSend.SENT, send(FakeFiles(okFor = { false to "duplicate: this device already has a note for this file" }), HomeVaultQueue.FileNoteDraft.ADD))
         assertEquals(HomeVaultSend.REJECTED, send(FakeFiles(okFor = { false to "restricted: only this vault's paired devices write media notes" }), HomeVaultQueue.FileNoteDraft.ADD))

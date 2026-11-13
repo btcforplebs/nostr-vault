@@ -357,6 +357,10 @@ class HomeVaultSender @Inject constructor(
     fun offerFileNoteDelete(sha256: String) =
         queueFileNote(HomeVaultQueue.FileNoteDraft(HomeVaultQueue.FileNoteDraft.DELETE, sha256.lowercase(), "application/octet-stream", 0))
 
+    /** An emoji note for a saved custom emoji (plan §4.1): like [offerFileNote], plus `t` nv-emoji, its codes and sets. */
+    fun offerEmojiNote(sha256: String, contentType: String, size: Long, codes: List<List<String>>, sets: List<String>) =
+        queueFileNote(HomeVaultQueue.FileNoteDraft(HomeVaultQueue.FileNoteDraft.EMOJI, sha256.lowercase(), safeType(contentType), size, emptyList(), codes, sets))
+
     private fun queueFileNote(draft: HomeVaultQueue.FileNoteDraft) {
         if (activeVault == null || !FileNote.isHex64(draft.sha256)) return
         scope.launch {
@@ -720,6 +724,9 @@ class HomeVaultSender @Inject constructor(
         val note = when (draft.action) {
             HomeVaultQueue.FileNoteDraft.ADD ->
                 FileNote.tags(draft.sha256, draft.mime, draft.size, owner, draft.servers) ?: return HomeVaultSend.REJECTED
+            HomeVaultQueue.FileNoteDraft.EMOJI ->
+                EmojiNote.tags(draft.sha256, draft.mime, draft.size, owner, draft.servers,
+                    draft.emojiCodes.filter { it.size >= 2 }.map { it[0] to it[1] }, draft.emojiSets) ?: return HomeVaultSend.REJECTED
             HomeVaultQueue.FileNoteDraft.DELETE ->
                 if (!FileNote.isHex64(draft.sha256) || !FileNote.isHex64(owner)) return HomeVaultSend.REJECTED else null
             else -> return HomeVaultSend.REJECTED

@@ -20,6 +20,19 @@ object VaultSection {
     private val _showsMedia = MutableStateFlow(false)
     val showsMedia: StateFlow<Boolean> = _showsMedia
 
+    private val _showsEmoji = MutableStateFlow(false)
+    /** The Emoji page is showing (custom emoji plan §4.3); it sits apart from Media and the relay's lists. */
+    val showsEmoji: StateFlow<Boolean> = _showsEmoji
+
+    /** The Emoji page. */
+    fun showEmoji() {
+        chosen = true
+        _dashboardTrip.value = null
+        _showsActivity.value = false
+        _showsMedia.value = false
+        _showsEmoji.value = true
+    }
+
     private val _showsActivity = MutableStateFlow(true)
     /** The "Vault" list is showing (when Media is not). */
     val showsActivity: StateFlow<Boolean> = _showsActivity
@@ -64,6 +77,7 @@ object VaultSection {
         _dashboardTrip.value = null
         chosen = true
         _showsMedia.value = trip.media
+        _showsEmoji.value = false
         _showsActivity.value = trip.activity && !trip.media
         return true
     }
@@ -77,6 +91,7 @@ object VaultSection {
         _dashboardTrip.value = null
         _showsActivity.value = false
         _showsMedia.value = media
+        _showsEmoji.value = false
     }
 
     /** The "Vault" list. */
@@ -84,6 +99,7 @@ object VaultSection {
         chosen = true
         _dashboardTrip.value = null
         _showsMedia.value = false
+        _showsEmoji.value = false
         _showsActivity.value = true
     }
 

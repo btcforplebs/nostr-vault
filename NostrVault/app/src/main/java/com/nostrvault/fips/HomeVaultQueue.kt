@@ -68,10 +68,15 @@ class HomeVaultQueue(
         val size: Long,
         /** The media servers that have it (add only); empty = the vault holds it. */
         val servers: List<String> = emptyList(),
+        /** [EMOJI] only: (shortcode, url) pairs and set addresses for the emoji note's tags ([EmojiNote.tags]). */
+        val emojiCodes: List<List<String>> = emptyList(),
+        val emojiSets: List<String> = emptyList(),
     ) {
         companion object {
             const val ADD = "add"
             const val DELETE = "delete"
+            /** An emoji note (custom emoji plan §4.1): its own item, so it never replaces the blob's plain note. */
+            const val EMOJI = "emoji"
         }
     }
 
@@ -144,10 +149,12 @@ class HomeVaultQueue(
      */
     fun addFileNote(draft: FileNoteDraft, now: Long = System.currentTimeMillis()): Boolean = synchronized(lock) {
         val sha = draft.sha256.lowercase()
-        val key = fileNoteKey(sha)
+        val emoji = draft.action == FileNoteDraft.EMOJI
+        val key = if (emoji) emojiNoteKey(sha) else fileNoteKey(sha)
         val current = load()
         val same = current.firstOrNull { it.key == key }
-        if (same != null && same.fileNote?.action == draft.action) return true
+        // An emoji note waiting with other codes or sets is replaced by the newer word.
+        if (same != null && same.fileNote?.action == draft.action && (!emoji || same.fileNote == draft.copy(sha256 = sha))) return true
         val rest = current.filterNot { it.key == key }
         // Notes have their own cap: each upload queues a blob and its note, so sharing one cap halved the blobs.
         if (rest.count { it.type == TYPE_FILE_NOTE } >= maxItems) return false
@@ -235,6 +242,9 @@ class HomeVaultQueue(
 
         /** A file note's key: apart from the blob's own item (keyed by the bare hash), which [add] would take it for. */
         fun fileNoteKey(sha256: String) = "${sha256.lowercase()}#note"
+
+        /** An emoji note's key: apart from the blob's plain note. */
+        fun emojiNoteKey(sha256: String) = "${sha256.lowercase()}#emoji"
 
         fun publicCopyKey(sha256: String, server: String) = "$sha256@$server"
 

@@ -638,6 +638,7 @@ class DashboardViewModel @Inject constructor(
 
     /** The Vault pill's pick. Media only flips the tab's half; the lists keep their state. */
     fun selectMode(mode: VaultMode) {
+        if (mode == VaultMode.EMOJI) return com.nostrvault.ui.navigation.VaultSection.showEmoji()
         mode.noteScope?.let { setNoteScope(it) }
         mode.viewMode?.let { if (_viewMode.value != it) setViewMode(it) }
         com.nostrvault.ui.navigation.VaultSection.show(media = mode == VaultMode.MEDIA)

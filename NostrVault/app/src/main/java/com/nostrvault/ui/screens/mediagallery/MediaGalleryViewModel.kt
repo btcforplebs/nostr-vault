@@ -40,6 +40,7 @@ class MediaGalleryViewModel @Inject constructor(
     private val notificationManager: NotificationManager,
     blobNoteIndexStore: com.nostrvault.data.local.BlobNoteIndexStore,
     private val fileNotesLive: com.nostrvault.fips.FileNotesLive,
+    private val emojiVault: com.nostrvault.service.emoji.EmojiVaultStore,
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(false)
@@ -50,8 +51,13 @@ class MediaGalleryViewModel @Inject constructor(
 
     private val _mediaItems = MutableStateFlow<List<BlossomMediaItem>>(emptyList())
 
-    /** The list with each file's post date filled in, so the tab orders by when it was posted. */
-    val mediaItems = combine(_mediaItems, blobNoteIndexStore.postDates, ::withPostDates)
+    /**
+     * The list with each file's post date filled in, so the tab orders by when it was posted. Saved custom emoji are
+     * left out: they have their own page (custom emoji plan §4.1, Media rule).
+     */
+    val mediaItems = combine(_mediaItems, blobNoteIndexStore.postDates, emojiVault.hiddenFromMedia) { items, dates, emoji ->
+        withPostDates(com.nostrvault.service.emoji.EmojiMediaRule.shown(items, emoji) { it.sha256 }, dates)
+    }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -276,6 +282,7 @@ class MediaGalleryViewModel @Inject constructor(
 
     internal fun onFileNote(event: kotlinx.serialization.json.JsonObject) {
         fileNotes.owner = nostrService.ownerHexPubkey.takeIf { it.isNotEmpty() }
+        emojiVault.onFileNote(event)
         val change = fileNotes.apply(event)
         noteTiles = fileNotes.tiles
         when (change) {

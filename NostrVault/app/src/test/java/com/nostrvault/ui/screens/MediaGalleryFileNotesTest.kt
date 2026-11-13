@@ -60,7 +60,10 @@ class MediaGalleryFileNotesTest {
         """{"id":"$id","pubkey":"$phone","created_at":1700000100,"kind":5,"tags":[["e","$of"],["k","1063"],["x","$x"],["p","$owner"]],"content":"","sig":"s"}""",
     )
 
-    private fun viewModel(live: MutableSharedFlow<JsonObject>): MediaGalleryViewModel {
+    private fun viewModel(
+        live: MutableSharedFlow<JsonObject>,
+        emojiHidden: MutableStateFlow<Set<String>> = MutableStateFlow(emptySet()),
+    ): MediaGalleryViewModel {
         val config = mockk<ConfigStore>(relaxed = true) { every { config } returns MutableStateFlow(HavenConfig()) }
         val nostr = mockk<NostrService>(relaxed = true) { every { ownerHexPubkey } returns owner }
         val stats = mockk<StatsService>(relaxed = true) { coEvery { fetchBlobList(any()) } returns emptyList() }
@@ -69,13 +72,26 @@ class MediaGalleryFileNotesTest {
             every { authors } returns MutableStateFlow(emptyMap())
         }
         val notes = mockk<FileNotesLive> { every { events(any()) } returns live }
+        val emoji = mockk<com.nostrvault.service.emoji.EmojiVaultStore>(relaxed = true) { every { hiddenFromMedia } returns emojiHidden }
         return MediaGalleryViewModel(
             config, nostr, stats, mockk<MediaCacheService>(relaxed = true), mockk<BlossomService>(relaxed = true),
-            mockk<NotificationManager>(relaxed = true), index, notes,
+            mockk<NotificationManager>(relaxed = true), index, notes, emoji,
         )
     }
 
     private fun MediaGalleryViewModel.settle() = runBlocking { withTimeout(5_000) { isLoading.first { !it } } }
+
+    @Test
+    fun `a saved custom emoji is not a Media tile, and comes back once it is not hidden`() = runBlocking {
+        val live = MutableSharedFlow<JsonObject>()
+        val hidden = MutableStateFlow(setOf(sha))
+        val vm = viewModel(live, hidden)
+        vm.settle()
+        live.emit(note("n1"))
+        assertTrue(vm.mediaItems.value.isEmpty())
+        hidden.value = emptySet()
+        assertEquals(sha, withTimeout(5_000) { vm.mediaItems.first { it.isNotEmpty() } }.single().sha256)
+    }
 
     @Test
     fun `a live note lands a tile and its kind 5 takes it away`() = runBlocking {
