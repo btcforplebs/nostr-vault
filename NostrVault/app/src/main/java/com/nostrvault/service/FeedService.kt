@@ -460,8 +460,8 @@ class FeedService @Inject constructor(
     val wotPubkeys: StateFlow<Set<String>> = _wotPubkeys.asStateFlow()
     /** The relay's web as saved, every device account pooled ([trustedPubkeysFor] another account). */
     internal val _pooledWotPubkeys = MutableStateFlow<Set<String>>(emptySet())
-    /** Bumped by each [loadWotPubkeys]; only the newest run applies its result. */
-    internal val wotLoadGeneration = java.util.concurrent.atomic.AtomicInteger()
+    /** One [loadWotPubkeys] run at a time; a call during a run asks for one more after it. */
+    internal val wotLoadGate = RerunGate()
     /**
      * For everyone in the graph past your follows, how many of your follows
      * follow them (the WOT tab's Close layer). Null until the relay's cache
