@@ -161,4 +161,15 @@ class AccountUnreadTest {
         assertEquals(emptySet<Int>(), AccountUnread.ownAccountOnlyKinds(listOf(marker), own))
         assertEquals(setOf(1), AccountUnread.ownAccountOnlyKinds(listOf(marker)) { _, _ -> true })
     }
+
+    // Tron #2012 must-fix 1: the store loads the web only for JUDGED_BY_NETWORK
+    // and passes an empty one otherwise, which reads everyone as outside. So
+    // every type listShows judges by network must be in it, or a friend's like
+    // never counts in the switcher's "N new".
+    @Test fun everyTypeJudgedByNetworkLoadsTheWeb() {
+        for (type in AccountUnread.COUNTED_TYPES) {
+            val judged = shows(type, stranger, outside = setOf(stranger)) != shows(type, stranger)
+            assertEquals(type, judged, type in AccountUnread.JUDGED_BY_NETWORK)
+        }
+    }
 }

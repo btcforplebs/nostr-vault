@@ -180,6 +180,21 @@ class FeedService @Inject constructor(
 
     fun relayTabTrustedPubkeys(): Set<String> = relayTabTrustedPubkeysImpl()
 
+    /**
+     * Who counts as inside the web of [recipientHex], one of this device's
+     * accounts. The open account: [relayTabTrustedPubkeys], its own narrowed
+     * web (AccountWeb). Any other account: the relay's web as saved, which
+     * pools every account's follows, as before the narrowing. Its alerts,
+     * badge and Vault chip must not be judged by the open account's web.
+     */
+    fun trustedPubkeysFor(recipientHex: String): Set<String> =
+        if (recipientHex.isEmpty() || recipientHex.equals(nostrService.activeHexPubkey, ignoreCase = true)) {
+            relayTabTrustedPubkeysImpl()
+        } else {
+            if (_pooledWotPubkeys.value.isEmpty()) loadWotPubkeys()
+            _pooledWotPubkeys.value
+        }
+
     fun globalTrustSet(): Set<String>? = globalTrustSetImpl()
 
     /**
@@ -443,6 +458,10 @@ class FeedService @Inject constructor(
 
     internal val _wotPubkeys = MutableStateFlow<Set<String>>(emptySet())
     val wotPubkeys: StateFlow<Set<String>> = _wotPubkeys.asStateFlow()
+    /** The relay's web as saved, every device account pooled ([trustedPubkeysFor] another account). */
+    internal val _pooledWotPubkeys = MutableStateFlow<Set<String>>(emptySet())
+    /** Bumped by each [loadWotPubkeys]; only the newest run applies its result. */
+    internal val wotLoadGeneration = java.util.concurrent.atomic.AtomicInteger()
     /**
      * For everyone in the graph past your follows, how many of your follows
      * follow them (the WOT tab's Close layer). Null until the relay's cache

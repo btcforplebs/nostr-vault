@@ -557,7 +557,7 @@ class VaultActivityViewModel @Inject constructor(
             val npub = config.allAccountNpubs().firstOrNull { nostrService.npubToHex(it)?.lowercase() == hex }
             val blocked = npub?.let { config.blockedFor(it) }.orEmpty().mapNotNull { nostrService.npubToHex(it) }.toSet()
             val whitelist = config.whitelistedNpubs?.mapNotNull { nostrService.npubToHex(it) }?.toSet().orEmpty()
-            val trusted = feedService.relayTabTrustedPubkeys()
+            val trusted = feedService.trustedPubkeysFor(hex)
             val news = runCatching { FollowerSnapshot.parse(HavenBridge.getFollowers(hex)) }.getOrNull()
                 ?.current.orEmpty().filter { it.isNews }.map { VaultActivity.Follow(it.pubkey, it.followedAt) }
             val quietOwn = ownAccountTagRule(config)

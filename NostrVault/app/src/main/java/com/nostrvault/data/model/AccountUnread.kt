@@ -68,6 +68,9 @@ data class AccountUnread(val ids: Map<String, List<String>> = emptyMap()) {
         fun parse(body: String): Pair<String, String>? =
             parseMarker(body)?.let { it.recipient to it.id }
 
+        /** The marker types [listShows] judges by network: the store loads the web only for these. */
+        val JUDGED_BY_NETWORK = setOf("reply", "quote", "mention", "reaction", "repost")
+
         /**
          * Whether the Vault list draws a marker's event, by the same rules
          * VaultActivity.build and the list screen use: nobody blocked, no

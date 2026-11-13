@@ -47,6 +47,9 @@ import java.io.File
 
     @Suppress("DEPRECATION") // FileObserver(File) needs API 29; minSdk is 26.
     internal fun FeedService.loadWotPubkeysImpl() {
+        // A cache write, a links write and a follow change can each start a
+        // run; the newest one wins, not the last to finish.
+        val gen = wotLoadGeneration.incrementAndGet()
         scope.launch(Dispatchers.IO) {
             try {
                 val config = configStore.config.value
@@ -66,6 +69,8 @@ import java.io.File
                         val vouches = parsed.vouches
                         if (BuildConfig.DEBUG) Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
                         withContext(Dispatchers.Main.immediate) {
+                            if (gen != wotLoadGeneration.get()) return@withContext
+                            _pooledWotPubkeys.value = parsed.pubkeys
                             _wotCacheRead.value = true
                             // Before the graph: its collectors read the vouches straight away.
                             _wotVouches.value = vouches

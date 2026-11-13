@@ -56,10 +56,11 @@ class AccountUnreadStore @Inject constructor(
         val config = configStore.config.value
         val npub = runCatching { HavenBridge.hexToNpub(marker.recipient) }.getOrNull()
         val blocked = npub?.let { config.blockedFor(it) }.orEmpty().mapNotNull(::hexOf).toSet()
-        // Only replies, quotes and mentions are judged by network; skip the graph otherwise.
-        val judgesNetwork = marker.type == "reply" || marker.type == "quote" || marker.type == "mention"
+        // Replies, quotes, mentions, likes and reposts are judged by network
+        // (likes and reposts fold since 2026-11-13); skip the graph otherwise.
+        val judgesNetwork = marker.type in AccountUnread.JUDGED_BY_NETWORK
         val whitelist = if (judgesNetwork) config.whitelistedNpubs?.mapNotNull(::hexOf)?.toSet().orEmpty() else emptySet()
-        val trusted = if (judgesNetwork) feedService.get().relayTabTrustedPubkeys() else emptySet()
+        val trusted = if (judgesNetwork) feedService.get().trustedPubkeysFor(marker.recipient) else emptySet()
         return AccountUnread.listShows(
             marker,
             zapsOnly = config.zapsOnlyMode,
