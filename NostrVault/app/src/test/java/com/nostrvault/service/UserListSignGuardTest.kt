@@ -102,6 +102,9 @@ class UserListSignGuardTest {
                 "com/nostrvault/service/blossom/BlossomServiceMirroring.kt" to setOf("AUTH_KIND"),
                 "com/nostrvault/service/blossom/BlossomServiceUploadAuth.kt" to setOf("AUTH_KIND"),
                 "com/nostrvault/service/dm/DMServiceCrypto.kt" to setOf("sealEventJson"),
+                // Emoji page Add / Remove set: a 10030 with one `a` tag more or less, through ListVersionSave
+                // (fresh editBase, undo copy in the vault), only on a tap (custom emoji plan §4.3, pick 5).
+                "com/nostrvault/service/emoji/EmojiListSave.kt" to setOf("kind"),
                 "com/nostrvault/service/nostr/NostrServiceDeletedPosts.kt" to setOf("draft.kind"),
                 "com/nostrvault/service/nostr/NostrServiceListPublishing.kt" to setOf("kind"),
                 "com/nostrvault/service/nostr/NostrServiceSigning.kt" to setOf("eventJson", "kind", "lockedTo"),

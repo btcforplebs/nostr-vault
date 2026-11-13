@@ -107,18 +107,27 @@ class EmojiVaultStore @Inject constructor(
 
     private var run: Job? = null
 
+    @Volatile
+    private var loaded = false
+
     init {
-        scope.launch {
-            runCatching { json.decodeFromString(Disk.serializer(), file.readText()) }.getOrNull()?.let { loaded ->
-                synchronized(lock) { disk = loaded }
-                publishState()
-            }
+        scope.launch { ensureLoaded() }
+    }
+
+    /** Reads the file once, before anything changes or is shown. */
+    private fun ensureLoaded() {
+        val read = synchronized(lock) {
+            if (loaded) return
+            loaded = true
+            runCatching { json.decodeFromString(Disk.serializer(), file.readText()) }.getOrNull()?.also { disk = it }
         }
+        if (read != null) publishState()
     }
 
     /** One `/files` event from a live subscription (Media tab, Emoji page). */
     fun onFileNote(event: JsonObject) {
         scope.launch {
+            ensureLoaded()
             val changed = synchronized(lock) {
                 index.owner = nostrService.ownerHexPubkey.takeIf { it.isNotEmpty() }
                 index.apply(event)
@@ -140,9 +149,10 @@ class EmojiVaultStore @Inject constructor(
             _progress.value = Progress(error = "Switch to your vault's account to save emoji copies.")
             return
         }
-        ownerScoped(owner)
         run = scope.launch {
             try {
+                ensureLoaded()
+                ownerScoped(owner)
                 body()
             } catch (e: CancellationException) {
                 throw e
@@ -178,11 +188,9 @@ class EmojiVaultStore @Inject constructor(
             }
             _progress.value = Progress(running = true, done = i + 1, total = wanted.size, tally = tally)
         }
-        synchronized(lock) {
-            val stillDead = dead.map { it.url }.toSet()
-            val tried = wanted.map { it.url }.toSet()
-            disk = disk.copy(dead = disk.dead.filter { it.url !in tried } + dead.filter { it.url in stillDead })
-        }
+        // This run's answer replaces what an earlier run said about the same links.
+        val tried = wanted.map { it.url }.toSet()
+        synchronized(lock) { disk = disk.copy(dead = disk.dead.filter { it.url !in tried } + dead) }
         persist()
         homeVault.drainSoon()
         _progress.value = Progress(done = wanted.size, total = wanted.size, tally = tally)
@@ -234,7 +242,7 @@ class EmojiVaultStore @Inject constructor(
             val temp = File.createTempFile("emoji-${got.sha256.take(12)}-", ".blob", BlobStream.tempDir())
             temp.writeBytes(got.bytes)
             val ok = blossomService.storeStreamed(StreamedBlob(temp, got.sha256, got.bytes.size.toLong()), got.mime, auth)
-            if (!ok) return tally.skip(EmojiCopyRules.Skip.DEAD)
+            if (!ok) return tally.skip(EmojiCopyRules.Skip.NOT_STORED)
         }
         record(got.sha256, Saved(got.sha256, got.mime, got.bytes.size.toLong(), w.codes, w.sets, alsoMedia = wasThere && !isOurs(got.sha256)), w)
         return tally.copy(saved = tally.saved + 1, bytes = tally.bytes + got.bytes.size)

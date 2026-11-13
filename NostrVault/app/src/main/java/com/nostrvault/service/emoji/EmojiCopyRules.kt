@@ -77,7 +77,7 @@ object EmojiCopyRules {
         else -> null
     }
 
-    enum class Skip { NOT_IMAGE, TOO_BIG, DEAD, OVER_CAP, NO_MATCH }
+    enum class Skip { NOT_IMAGE, TOO_BIG, DEAD, OVER_CAP, NO_MATCH, NOT_STORED }
 
     /** A run's tally, for the line under the button ("Saved 203 · 9 dead · 4 too big"). */
     data class Tally(
@@ -88,6 +88,8 @@ object EmojiCopyRules {
         val notImage: Int = 0,
         val overCap: Int = 0,
         val noMatch: Int = 0,
+        /** The vault refused or failed the store (full disk, signer). */
+        val notStored: Int = 0,
         val bytes: Long = 0,
     ) {
         fun capReached(nextBytes: Long): Boolean = saved >= MAX_FILES || bytes + nextBytes > MAX_TOTAL_BYTES
@@ -100,6 +102,7 @@ object EmojiCopyRules {
             notImage.takeIf { it > 0 }?.let { "$it not images" },
             overCap.takeIf { it > 0 }?.let { "$it over the limit" },
             noMatch.takeIf { it > 0 }?.let { "$it matched no set" },
+            notStored.takeIf { it > 0 }?.let { "$it not stored by your vault" },
         ).joinToString(" · ")
 
         fun skip(why: Skip): Tally = when (why) {
@@ -108,6 +111,7 @@ object EmojiCopyRules {
             Skip.DEAD -> copy(dead = dead + 1)
             Skip.OVER_CAP -> copy(overCap = overCap + 1)
             Skip.NO_MATCH -> copy(noMatch = noMatch + 1)
+            Skip.NOT_STORED -> copy(notStored = notStored + 1)
         }
     }
 
