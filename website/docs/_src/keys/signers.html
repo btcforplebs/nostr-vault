@@ -5,13 +5,13 @@
   "section": "keys",
   "order": 2,
   "description": "Keep your Nostr secret key out of Nostr Vault with a signer: Amber on Android, Clave on iPhone, a bunker link from any signer app, or a browser extension on the web.",
-  "checked": "Nostr Vault 3.0.0 (41) and the web app",
+  "checked": "Nostr Vault 3.2.2 and the web app",
   "labels": {
-    "ios": ["Use a signer app", "Sign in with Clave", "Open Clave again", "Copy link", "Connect Remote Signer", "Bunker URI", "Scan QR code",
+    "ios": ["Bring an account", "Use a signer app", "Sign in with Clave", "Open Clave again", "Copy link", "Connect Remote Signer", "Bunker URI", "Scan QR code",
             "Approve the connection in your signer app", "Disconnect Remote Signer"],
-    "android": ["Use Amber", "Use a signer app", "Sign in with a signer app", "Sign-in QR code", "Open signer again",
+    "android": ["Bring an account", "Use Amber", "Use a signer app", "Sign in with a signer app", "Sign-in QR code", "Open signer again",
                 "Connect Remote Signer", "Scan bunker QR code", "Approve the connection in your signer app", "Disconnect Remote Signer"],
-    "mac": ["Connect with Clave on your iPhone", "Scan this with Clave on your iPhone and approve.", "Or paste a bunker link from any signer app"],
+    "mac": ["Bring an account", "Connect with Clave on your iPhone", "Scan this with Clave on your iPhone and approve.", "Or paste a bunker link from any signer app"],
     "web": ["Sign in with extension", "Bunker link (NIP-46)", "Connect bunker"]
   }
 }
@@ -37,7 +37,7 @@
 
 <h2 id="setup">Sign in with a signer during setup</h2>
 <ol class="steps">
-    <li>Choose <span class="ui">I already use Nostr</span>. On iPhone and Android, the next screen has
+    <li>Choose <span class="ui">Bring an account</span>. On iPhone and Android, the next screen has
         <span class="ui">Use a signer app</span> under the box (and <span class="ui">Use Amber</span> on Android when
         Amber is installed). On a Mac, choose <strong>Remote Signer</strong>.</li>
     <li>The signer opens, or a code shows on screen to scan with a signer on another device.</li>
@@ -77,6 +77,9 @@
 <ul>
     <li>Posts, likes and messages are signed by the signer, which may ask you to approve each one. If nothing happens, open the signer and check
         for a pending request.</li>
+    <li>Sending to your own devices doesn't need the signer. Since 3.2.2, with a bunker (or Amber on Android) the posts, photos and
+        files you send reach the devices in Your Devices without a tap: the phone signs those sends with its own
+        mesh key. Only a copy to a public media server still asks your signer.</li>
     <li>To stop using a signer, open the account and tap <span class="ui">Disconnect Remote Signer</span>. Revoke the
         connection in the signer app too.</li>
     <li>Back up your secret key in the signer app. Nostr Vault can't show it to you, because it never has it.</li>
