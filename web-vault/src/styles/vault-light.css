@@ -1,0 +1,27 @@
+/* The vault light, desktop only (DesktopShell.jsx): the warm light of the app icon's open door, as one light source at
+   the top of the page's column, and cards lit from above by it. The phone layout keeps the iPhone's flat OLED look
+   (PLANS/NV_WEB_DESIGN.md); tokens, colours, radii and type are unchanged. Nothing here moves on its own. */
+.desk-app { --light: rgb(230 115 38 / .17); --light-edge: rgb(250 148 71 / .10); }
+
+/* One light, centred over the column the feed and pages read in, fading out before the middle of the window. It falls
+   on what's there rather than behind it: laid over the column with a screen blend, so black takes on the glow, a card
+   warms a little, white text stays white, and the column's opaque sticky bars light up with the rest instead of
+   cutting a black band. On the column's own box (not the page), so it stays put while the list scrolls; it never
+   takes a click. Menus and sheets (z-index 20 and up) sit above it. */
+.desk-main { isolation: isolate; } /* the blend stays inside the column */
+.desk-main::before { content: ""; position: absolute; z-index: 9; inset: 0 0 auto; height: 760px; pointer-events: none; mix-blend-mode: screen;
+  background:
+    radial-gradient(ellipse 640px 600px at 50% -140px, var(--light), transparent 100%),
+    radial-gradient(ellipse 300px 260px at 50% -60px, var(--light-edge), transparent 100%); }
+
+/* Cards lit from above: a faint top edge and a soft fall-off shadow, on the spec's accent hairline and #1C1C1E fill. */
+.desk-app .note, .desk-app .article {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .06), 0 1px 0 rgb(0 0 0 / .6), 0 14px 28px -18px rgb(0 0 0 / .9); }
+.desk-app .desk-list .note:hover { background: #222224; border-color: rgb(230 115 38 / .45);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .08), 0 1px 0 rgb(0 0 0 / .6), 0 18px 34px -18px rgb(0 0 0 / .95); }
+
+/* The feed's pills and the column bars' buttons: the same top edge, so they read as lit by the same source. */
+.desk-app .screen-head button.small, .desk-app .feed-mode-pill, .desk-app .feed-toolbar {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .07), 0 8px 20px -10px rgb(0 0 0 / .8); }
+
+@media (forced-colors: active) { .desk-main::before { display: none; } }

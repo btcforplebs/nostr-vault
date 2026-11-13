@@ -57,3 +57,26 @@ html[data-shell="learn"] .welcome-learn { visibility: hidden; } /* the page is a
 .welcome-app-line { margin: 0; text-align: center; font: 400 13px/1.35 var(--font); color: var(--text-2); }
 /* "New to Nostr?" above the two doors (net/first-run.js). */
 .welcome-question { margin: 0 0 2px; text-align: center; font: var(--t-body); font-weight: 600; color: var(--text); }
+
+/* A wide window (the site's front door on a computer): the phone's column pinned its doors to the bottom of a 900px
+   window, with an empty band in the middle. Here the hero and the doors are one group, centred, standing in the
+   vault's open door: the arch of the app icon, drawn faintly around them, with its warm light pooling at the threshold
+   as the icon's keyhole glow does. Still, no motion. The site's phone frame (html[data-shell="learn"]) is narrow, so
+   it keeps the phone layout. */
+@media (min-width: 760px) and (min-height: 640px) {
+  .welcome { position: relative; justify-content: center; gap: 36px; overflow: hidden; isolation: isolate; }
+  .welcome-hero { flex: none; padding: 0; }
+  .welcome-actions { padding-top: 0; max-width: 380px; }
+  .welcome::before, .welcome::after { content: ""; position: absolute; z-index: -1; left: 50%; top: max(5vh, 32px); bottom: -2px;
+    width: min(600px, 86vw); transform: translateX(-50%); border-radius: 300px 300px 0 0; pointer-events: none; }
+  /* The light inside the door: brightest low, at the threshold, the same orange as the icon's glow. */
+  .welcome::before { background:
+    radial-gradient(70% 38% at 50% 100%, rgb(230 115 38 / .20), transparent 72%),
+    radial-gradient(90% 60% at 50% 30%, rgb(230 115 38 / .06), transparent 70%); }
+  /* The frame: the icon's bronze rim, a hairline that fades out toward the floor. */
+  .welcome::after { border: 1.5px solid rgb(201 162 122 / .28); border-bottom: 0;
+    -webkit-mask-image: linear-gradient(to bottom, #000 10%, rgb(0 0 0 / .5) 55%, transparent 92%);
+    mask-image: linear-gradient(to bottom, #000 10%, rgb(0 0 0 / .5) 55%, transparent 92%); }
+  .welcome-mark::before { background: rgb(230 115 38 / .42); }
+}
+@media (forced-colors: active) { .welcome::before, .welcome::after { display: none; } }

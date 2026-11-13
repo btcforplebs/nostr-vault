@@ -20,6 +20,7 @@ import { PeekCard } from "./PeekCard.jsx"
 import { ContextMenu } from "./ContextMenu.jsx"
 import { MagicPasteIcon } from "../components/MagicPasteIcon.jsx"
 import "../styles/desktop.css"
+import "../styles/vault-light.css"
 
 const HEX = /^[0-9a-f]{64}$/
 const LABEL = { feed: "Feed", search: "Search", profile: "Profile", vault: "Vault", messages: "Messages", notifications: "Notifications", settings: "Settings", wot: "WoT", relay: "Who Can Reach You" }
