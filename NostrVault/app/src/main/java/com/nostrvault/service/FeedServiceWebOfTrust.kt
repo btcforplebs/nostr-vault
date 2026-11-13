@@ -45,11 +45,17 @@ import java.io.File
         return TrustMap.web(_wotPubkeys.value, feedAuthorSet())
     }
 
-    @Suppress("DEPRECATION") // FileObserver(File) needs API 29; minSdk is 26.
     internal fun FeedService.loadWotPubkeysImpl() {
-        // A cache write, a links write and a follow change can each start a
-        // run; the newest one wins, not the last to finish.
-        val gen = wotLoadGeneration.incrementAndGet()
+        // One run at a time (Tron #2012 follow-up): ~20 callers ask while the
+        // web is empty, and throwing away the run in progress on each ask kept
+        // it empty. A call during a run is answered by one more run after it, so
+        // a cache write, links write or follow change mid-read is still seen.
+        if (wotLoadGate.tryStart()) launchWotLoad()
+    }
+
+    /** One WoT load; started only through [wotLoadGate], which it releases or reruns at the end. */
+    @Suppress("DEPRECATION") // FileObserver(File) needs API 29; minSdk is 26.
+    private fun FeedService.launchWotLoad() {
         scope.launch(Dispatchers.IO) {
             try {
                 val config = configStore.config.value
@@ -69,7 +75,6 @@ import java.io.File
                         val vouches = parsed.vouches
                         if (BuildConfig.DEBUG) Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
                         withContext(Dispatchers.Main.immediate) {
-                            if (gen != wotLoadGeneration.get()) return@withContext
                             _pooledWotPubkeys.value = parsed.pubkeys
                             _wotCacheRead.value = true
                             // Before the graph: its collectors read the vouches straight away.
@@ -90,6 +95,8 @@ import java.io.File
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "WoT load failed: ${e.message}")
+            } finally {
+                if (wotLoadGate.finish()) launchWotLoad()
             }
         }
     }
