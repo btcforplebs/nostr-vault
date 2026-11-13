@@ -342,6 +342,19 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
                 .collect { recomputeFilteredNotes() }
         }
 
+        // The web is the open account's (AccountWeb): a follow, an unfollow or
+        // an account switch counts it again from the saved files at once.
+        scope.launch {
+            _followedPubkeys
+                .map { it.toSet() }
+                .distinctUntilChanged()
+                .drop(1)
+                .collectLatest {
+                    delay(500) // a run of unfollows counts once
+                    if (_wotCacheRead.value) loadWotPubkeys()
+                }
+        }
+
         // The account the launch's notes belong to, taken before any switch
         // (FeedModeCaches.ownsNotes).
         scope.launch {

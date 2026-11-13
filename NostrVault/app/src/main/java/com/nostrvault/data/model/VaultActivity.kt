@@ -110,6 +110,12 @@ data class VaultActivity(
          * [outsideOnly]: just the posts that tag you from outside your network,
          * the ones the list leaves out (the Vault page's ··· "Outside your
          * web", Logen 2026-11-04). No likes, zaps, reposts or follows.
+         *
+         * [foldsOutsideLikes] (Logen 2026-11-13 "go all", option A): likes and
+         * reposts whose author [isOutside] leave the list for its one "N from
+         * outside your web" line ([VaultOutsideFold]), and [outsideOnly] lists
+         * them with the outside posts. Zaps and follows are never folded.
+         * iOS `build(foldsOutsideLikes:)`.
          */
         fun build(
             events: List<Event>,
@@ -121,6 +127,7 @@ data class VaultActivity(
             zone: ZoneId = ZoneId.systemDefault(),
             now: Long = nowSeconds(),
             outsideOnly: Boolean = false,
+            foldsOutsideLikes: Boolean = false,
         ): List<VaultActivity> {
             if (owner.isEmpty()) return emptyList()
 
@@ -154,7 +161,13 @@ data class VaultActivity(
             for (event in events.sortedByDescending { it.createdAt }) {
                 if (event.pubkey == owner || isFuture(event.createdAt, now) || !seen.add(event.id)) continue
 
-                if (outsideOnly && (event.kind == REACTION_KIND || event.kind == ZAP_KIND || event.kind in REPOST_KINDS)) continue
+                val isLike = event.kind == REACTION_KIND || event.kind in REPOST_KINDS
+                if (isLike && foldsOutsideLikes) {
+                    // Folded likes and reposts: only in the outside list.
+                    if (isOutside(event.pubkey) != outsideOnly) continue
+                } else if (outsideOnly && (isLike || event.kind == ZAP_KIND)) {
+                    continue
+                }
 
                 if (event.kind == REACTION_KIND) {
                     if (isBlocked(event.pubkey)) continue

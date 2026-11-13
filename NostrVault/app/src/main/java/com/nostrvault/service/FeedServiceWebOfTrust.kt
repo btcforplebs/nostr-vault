@@ -15,7 +15,9 @@ import java.io.File
         if (wotCacheObserver != null) return
         wotCacheObserver = object : FileObserver(relayDataDir, CLOSE_WRITE or MOVED_TO) {
             override fun onEvent(event: Int, path: String?) {
-                if (path == WOT_CACHE_FILE) loadWotPubkeys()
+                // The links file is swapped in just after the cache: the open
+                // account's web is counted from it (AccountWeb).
+                if (path == WOT_CACHE_FILE || path == AccountWeb.LINKS_FILE) loadWotPubkeys()
             }
         }.also { it.startWatching() }
     }
@@ -59,7 +61,8 @@ import java.io.File
                             Log.w(TAG, "WoT cache unreadable: $wotCachePath")
                             return@launch
                         }
-                        val loaded = parsed.pubkeys
+                        // The relay's web is every device account's pooled; keep the open account's part.
+                        val loaded = accountWeb(parsed.pubkeys, File(config.relayDataDir, AccountWeb.LINKS_FILE), parsed.depth, config.chatRelayMinFollowers)
                         val vouches = parsed.vouches
                         if (BuildConfig.DEBUG) Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
                         withContext(Dispatchers.Main.immediate) {
@@ -85,6 +88,17 @@ import java.io.File
             }
         }
     }
+
+/**
+ * [saved] narrowed to the open account ([AccountWeb]): its follows, and anyone
+ * Min Followers of them follow, not anyone the device's accounts together do.
+ */
+internal fun FeedService.accountWeb(saved: Set<String>, links: File, depth: Int?, minFollowers: Int): Set<String> {
+    val follows = followedPubkeySet()
+    val keep = deviceAccountHexes()
+    return if (depth != 3 || !links.exists()) AccountWeb.narrow(saved, null, depth, follows, keep, minFollowers)
+    else links.bufferedReader().use { AccountWeb.narrow(saved, it, depth, follows, keep, minFollowers) }
+}
 
 /**
  * Whether Global asks its relays again as the trust graph loads: its REQ

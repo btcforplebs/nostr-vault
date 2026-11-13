@@ -24,12 +24,14 @@ object WotCacheFile {
      * [pubkeys] as [FeedFilterEngine.parseWotCache] rules them (empty when the
      * graph names only the owner); [vouches] null when the cache predates them.
      */
-    data class Parsed(val pubkeys: Set<String>, val vouches: Map<String, Int>?)
+    data class Parsed(val pubkeys: Set<String>, val vouches: Map<String, Int>?, val depth: Int? = null)
 
     @Serializable
     private class Shape(
         val pubkeys: Map<String, Boolean>? = null,
         val vouches: Map<String, Double>? = null,
+        /** Follow Distance the graph was built at (0 or absent on older relays). */
+        val depth: Int? = null,
     )
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -42,7 +44,7 @@ object WotCacheFile {
             '{' -> {
                 val shape = json.decodeFromStream(Shape.serializer(), stream)
                 shape.pubkeys?.let { keys ->
-                    Parsed(usable(keys.keys, ownerHex), shape.vouches?.mapValues { it.value.toInt() })
+                    Parsed(usable(keys.keys, ownerHex), shape.vouches?.mapValues { it.value.toInt() }, shape.depth?.takeIf { it > 0 })
                 }
             }
             // Tolerate a bare array too, in case an older relay ever wrote one.

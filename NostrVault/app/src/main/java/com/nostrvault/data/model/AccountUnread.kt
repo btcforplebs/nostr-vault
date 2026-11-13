@@ -71,8 +71,9 @@ data class AccountUnread(val ids: Map<String, List<String>> = emptyMap()) {
         /**
          * Whether the Vault list draws a marker's event, by the same rules
          * VaultActivity.build and the list screen use: nobody blocked, no
-         * replies, quotes or mentions from outside your network, and no
-         * reactions in Zaps Only. Without this the switcher read "5 new" over
+         * replies, quotes, mentions, likes or reposts from outside your network
+         * (likes and reposts fold out since 2026-11-13, `foldsOutsideLikes`),
+         * and no reactions in Zaps Only. Without this the switcher read "5 new" over
          * a list with nothing new in it (sweep 11-01 #11).
          */
         fun listShows(
@@ -84,8 +85,8 @@ data class AccountUnread(val ids: Map<String, List<String>> = emptyMap()) {
             val author = marker.author
             if (author.isNotEmpty() && isBlocked(author)) return false
             return when (marker.type) {
-                "reaction" -> !zapsOnly
-                "reply", "quote", "mention" -> author.isEmpty() || !isOutside(author)
+                "reaction" -> !zapsOnly && (author.isEmpty() || !isOutside(author))
+                "reply", "quote", "mention", "repost" -> author.isEmpty() || !isOutside(author)
                 else -> true
             }
         }

@@ -115,13 +115,14 @@ class AccountUnreadTest {
         assertTrue(shows("zap", friend, zapsOnly = true))
     }
 
-    @Test fun outsideYourNetworkHidesRepliesQuotesMentionsOnly() {
-        for (type in listOf("reply", "quote", "mention")) {
+    @Test fun outsideYourNetworkHidesRepliesQuotesMentionsLikesReposts() {
+        // Likes and reposts fold out of the list since 2026-11-13 (foldsOutsideLikes).
+        for (type in listOf("reply", "quote", "mention", "reaction", "repost")) {
             assertFalse(type, shows(type, stranger, outside = setOf(stranger)))
             assertTrue(type, shows(type, friend, outside = setOf(stranger)))
         }
         // The list keeps these from anyone (VaultActivity.build).
-        for (type in listOf("reaction", "repost", "zap", "follow")) {
+        for (type in listOf("zap", "follow")) {
             assertTrue(type, shows(type, stranger, outside = setOf(stranger)))
         }
     }
