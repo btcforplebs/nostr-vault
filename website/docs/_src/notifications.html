@@ -10,9 +10,9 @@
   "description": "How Nostr Vault notifications work without APNs or FCM push on iPhone, Android, Mac and the web app: what wakes the app, when alerts arrive while it is open, in the background or closed, what to allow, and the limits.",
   "checked": "the apps and web app on master, October 2026",
   "labels": {
-    "ios": ["Notifications"],
-    "android": ["Notifications", "Your Vault", "Vault running", "Stop Vault", "Start Vault Automatically", "Missed while open"],
-    "mac": ["Notifications", "Launch at Login", "Start Vault Automatically"],
+    "ios": ["Notifications", "Show message text"],
+    "android": ["Notifications", "Your Vault", "Vault running", "Stop Vault", "Start Vault Automatically", "Missed while open", "Show message text"],
+    "mac": ["Notifications", "Launch at Login", "Start Vault Automatically", "Show message text", "Your Vault"],
     "web": ["Notifications", "Turn on"]
   }
 }
@@ -27,7 +27,11 @@
 <p>On every device:</p>
 <ul>
     <li>Only people in your <a class="inline" href="/docs/web-of-trust/">web of trust</a> set off an alert. New
-        followers from outside it are counted ("3 new followers") instead of named.</li>
+        followers from outside it are counted ("3 new followers") instead of named. If your web isn't built yet,
+        strangers set off no alerts at all. With more than one account, each account's alerts follow its own
+        web.</li>
+    <li>A message alert says who it's from, not what it says, unless you turn on <strong>Show message
+        text</strong>. The text never goes into a web alert.</li>
     <li>You choose the kinds under <span class="path">Settings &rarr; Notifications</span>
         (<a class="inline" href="/docs/messages/#settings">more</a>). Likes and reposts are off until you turn
         them on.</li>
@@ -76,7 +80,8 @@
         running.</li>
     <li><strong>After a restart or an app update:</strong> the vault starts again by itself, as long as
         <strong>Start Vault Automatically</strong> is on (it is unless you turned it off, under
-        <span class="path">Settings &rarr; Your Vault</span>).</li>
+        <span class="path">Settings &rarr; Your Vault</span>). Message alerts start again with it, without opening
+        the app, unless you sign with Amber: Amber needs the app in front to open your inbox.</li>
     <li><strong>Force stopped or Stop Vault:</strong> no alerts until you open the app again.</li>
     <li><strong>Using another app's relay</strong> (such as Citrine) instead of the built-in one: Nostr Vault makes
         no alerts.</li>
@@ -103,7 +108,7 @@
 </ul>
 <p><strong>What to allow:</strong> notifications (the app asks as setup finishes). To have your vault running
     after a restart, turn on <strong>Launch at Login</strong> under
-    <span class="path">Settings &rarr; Startup</span>. It is off until you turn it on.
+    <span class="path">Settings &rarr; Your Vault &rarr; Startup</span>. It is off until you turn it on.
     <strong>Start Vault Automatically</strong> is there too.</p>
 <p><strong>The honest limit:</strong> a Mac is the best always-on vault you have, but only while it's awake. It
     also helps your iPhone: each time iOS wakes the phone, it asks the Mac what came in.</p>

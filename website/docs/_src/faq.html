@@ -9,8 +9,8 @@
   "lede": "Short answers to what people ask most.",
   "description": "Nostr Vault FAQ: which version is current, can I use my existing Nostr account, which relays my posts go to, do I need a Mac, is my home IP public, who can see my photos, losing a phone, what the web app does, is it free.",
   "labels": {
-    "ios": ["Create an account", "Bring an account", "Use a signer app", "Sign in with Clave", "Remove from My Devices", "Desktop vault · full history", "Mobile vault mode"],
-    "android": ["Use Amber", "Use a signer app", "Remove from My Devices", "Mobile vault mode"],
+    "ios": ["Open Links in Nostr Vault", "Show message text", "Create an account", "Bring an account", "Use a signer app", "Sign in with Clave", "Remove from My Devices", "Desktop vault · full history", "Mobile vault mode"],
+    "android": ["Open Links in Nostr Vault", "Show message text", "Use Amber", "Use a signer app", "Remove from My Devices", "Mobile vault mode"],
     "web": ["Sign in with extension", "Connect bunker", "Create an account", "Edit Feeds", "Save and publish"]
   }
 }
@@ -18,10 +18,12 @@
 
 <section id="version">
 <h2>Which version is current?</h2>
-<p>3.2.0 on iPhone, iPad, Mac and Android: on the App Store for iPhone, iPad and Mac, and on Zapstore for
-    Android. 3.0 added the mesh, which connects your own devices directly; 3.1.0 added a new composer and your own
-    choice of relays; 3.2.0 links your devices with two scans and copies your whole vault to a new one. See
-    <a class="inline" href="/docs/whats-new/#v3-2-0">What's new</a>.</p>
+<p>3.2.2. The Android and Mac builds are on <a href="https://github.com/btcforplebs/nostr-vault/releases">GitHub</a>;
+    the App Store and Zapstore show the version they have on their own pages. 3.0 added the mesh, which connects
+    your own devices directly; 3.1.0 added a new composer and your own choice of relays; 3.2.0 links your devices
+    with two scans and copies your whole vault to a new one; 3.2.2 opens links inside the app, adds Your Devices in
+    Settings and keeps your drafts encrypted. See <a class="inline" href="/docs/whats-new/#v3-2-2">What's
+    new</a>.</p>
 </section>
 
 <section id="free">
@@ -97,6 +99,19 @@
     mesh address is its own key, not your Nostr key.</p>
 <p>Your Nostr account is your key. Keep a copy of it somewhere safe before you need it:
     <span class="path">Settings &rarr; Accounts &amp; Keys &rarr; Reveal Key</span>.</p>
+</section>
+
+<section id="links">
+<h2>Why do links open inside the app?</h2>
+<p>So you come back to where you were, and so a <code>.fips</code> site loads over the mesh instead of the open
+    internet. If you'd rather use your normal browser, turn off <span class="path">Settings &rarr; Privacy &rarr;
+    Open Links in Nostr Vault</span>. <a class="inline" href="/docs/feeds/#links">More</a>.</p>
+</section>
+
+<section id="message-text">
+<h2>Why don't message alerts show the text?</h2>
+<p>So a message can't be read off a locked screen. The alert says who it's from. To see the words too, turn on
+    <span class="path">Settings &rarr; Notifications &rarr; Show message text</span>.</p>
 </section>
 
 <section id="web">

@@ -6,14 +6,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>What's new — Nostr Vault Docs</title>
-    <meta name="description" content="Nostr Vault release notes for iPhone, iPad, Mac, Android and the web: 3.2.0 with two-scan device linking and vault copy, 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.">
+    <meta name="description" content="Nostr Vault release notes for iPhone, iPad, Mac, Android and the web: 3.2.2 with the in-app browser, Your Devices and encrypted drafts, 3.2.0 with two-scan device linking and vault copy, 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.">
     <link rel="canonical" href="https://nostrvault.app/docs/whats-new/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/whats-new/">
     <meta property="og:title" content="What's new — Nostr Vault Docs">
-    <meta property="og:description" content="Nostr Vault release notes for iPhone, iPad, Mac, Android and the web: 3.2.0 with two-scan device linking and vault copy, 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.">
+    <meta property="og:description" content="Nostr Vault release notes for iPhone, iPad, Mac, Android and the web: 3.2.2 with the in-app browser, Your Devices and encrypted drafts, 3.2.0 with two-scan device linking and vault copy, 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -131,9 +131,79 @@
             <p class="eyebrow">Help</p>
             <h1>What's new in <span>Nostr Vault</span></h1>
             <p class="docs-lede">The release notes for iPhone, iPad, Mac, Android and the web, newest first. Where a change is on only some of the apps, it says which.</p>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#3-2-0">3.2.0</a></li><li><a href="#3-1-0">3.1.0</a></li><li><a href="#3-0-0">3.0.0</a></li><li><a href="#2-7-2-build-40">2.7.2 (build 40)</a></li><li><a href="#2-7-2-build-39">2.7.2 (build 39)</a></li><li><a href="#2-7-2-first-builds">2.7.2 (first builds)</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#3-2-2">3.2.2</a></li><li><a href="#3-2-0">3.2.0</a></li><li><a href="#3-1-0">3.1.0</a></li><li><a href="#3-0-0">3.0.0</a></li><li><a href="#2-7-2-build-40">2.7.2 (build 40)</a></li><li><a href="#2-7-2-build-39">2.7.2 (build 39)</a></li><li><a href="#2-7-2-first-builds">2.7.2 (first builds)</a></li></ul></div>
 
             <article class="docs-article">
+                <section id="v3-2-2">
+                <p class="eyebrow">Android (build 98) and Mac &middot; iPhone and iPad</p>
+                <h2 id="3-2-2">3.2.2</h2>
+                <ul>
+                    <li><strong>Links open inside the app.</strong> A link in a post, a bio, an article or a message opens in Nostr
+                        Vault's own browser, and a <code>.fips</code> site loads over the mesh, never over the open internet. A
+                        mesh page asks before it sends you off the mesh (<strong>Leave the mesh?</strong>). Turn off
+                        <strong>Open Links in Nostr Vault</strong> under <span class="path">Settings &rarr; Privacy</span> to use
+                        your normal browser. (iPhone, iPad, Mac and Android.)</li>
+                    <li><strong>Your Devices in Settings.</strong> <strong>Your Devices</strong> lists the Macs, Linux boxes and
+                        phones you linked. Your media syncs to all of them, and a Mac keeps a full copy by default. Your vault sends
+                        your phone's posts out for you, and the phone sends a post itself if the vault doesn't answer within about 10
+                        seconds. When you sign with a bunker, your posts, photos and files reach your vault without a tap. See <a class="inline" href="/docs/mesh/my-devices/">My Devices</a>.</li>
+                    <li><strong>Media fills in as it lands.</strong> The Media tab shows each file the moment it arrives, the photo
+                        picker opens full height, and Auto-Mirror runs when you open the app, picking up where a stopped run left
+                        off. A copied-in photo keeps the date it was taken. See <a class="inline" href="/docs/media/">Media</a>.</li>
+                    <li><strong>Drafts follow you.</strong> Drafts are saved encrypted to yourself (NIP-37), so only you can read
+                        them and they show up on your other devices. Older drafts are re-saved encrypted the first time they load.
+                        (iPhone, iPad, Mac and Android. The web app keeps drafts in the browser only.)</li>
+                    <li><strong>Expanded or Threaded.</strong> Compact View is gone. The layout button switches a feed between
+                        Expanded and Threaded: Expanded turns replies off, Threaded turns them on, and you can still flip
+                        replies by hand. A feed you had on Compact opens as Expanded. See
+                        <a class="inline" href="/docs/feeds/#tune">Feeds</a>.</li>
+                    <li><strong>Feed details.</strong> A note, nevent or naddr written in an article shows as a quote card where it
+                        sits. Portrait videos get taller tiles, landscape clips turn sideways to fill the screen, and video tiles
+                        show the whole frame. Popular, Catch Up and Underrated end with a line saying the list is done. Profile
+                        bios have tappable links.</li>
+                    <li><strong>Your web, per account.</strong> Each account's web of trust is its own follows and the people
+                        several of them follow, not every account on the phone added together. See
+                        <a class="inline" href="/docs/web-of-trust/">Web of trust</a>.</li>
+                    <li><strong>Strangers stay out of the way.</strong> Likes and reposts from people outside your web fold into
+                        one "from outside your web" line in the Vault list, with the full list one tap away, and no longer count
+                        toward the unread badge. Zaps and new followers keep their own lines. Search folds results from outside
+                        your web the same way, and a feed set to Everyone shows a banner with <strong>Back to your web</strong>.
+                        Discover leaves out notes from people you already follow and from people outside your web.</li>
+                    <li><strong>The wider web builds itself.</strong> After first-run setup, the app builds your wider network
+                        (the people your follows follow) by itself, so Underrated, Popular, Global and Discover fill in. If
+                        Underrated is still empty it says why and offers <strong>Build your wider network</strong>.</li>
+                    <li><strong>Message alerts keep the text private.</strong> A message alert says who it's from, not what it
+                        says. <strong>Show message text</strong> under <span class="path">Settings &rarr; Notifications</span>
+                        puts the text back (off to start). On Android, message alerts come back after a restart or an update
+                        without opening the app (not with Amber). See <a class="inline" href="/docs/messages/#settings">Notification
+                        settings</a>.</li>
+                    <li><strong>Mac: a new window.</strong> A slim rail down the left, a note you open shows in a Thread column
+                        beside the list, and Your space sits on the right. Settings has six pages instead of 24: Account, Your
+                        Vault, Relays &amp; Media, Backups, Reading and Help. The menu bar panel shows your vault's status at a
+                        glance, with <strong>Open Nostr Vault</strong>, <strong>New Note</strong> and Start or Restart. See
+                        <a class="inline" href="/docs/start/mac/">Get started on Mac</a>.</li>
+                    <li><strong>iPad:</strong> in landscape, Your space is on the left and the app's rail on the right. Panels slide
+                        shut to the rail, and a panel you hide keeps its icon on the rail.</li>
+                    <li><strong>Quicker to open.</strong> The app opens with your saved notes already on screen, and alerts and the
+                        unread badge no longer go missing on a cold start.</li>
+                </ul>
+                <h3>Fixes</h3>
+                <ul>
+                    <li>Your wallet link and signer links are kept in the Keychain (Android: in the app's private storage), not
+                        in the settings file, and stay out of backups.</li>
+                    <li>Android checks that an invoice asks for exactly the amount you chose before your wallet pays it.</li>
+                    <li>The vault's red dot clears when you open the Vault dashboard. An unread message lights it again only
+                        when a newer one comes in.</li>
+                    <li>Media Servers changes are a draft until you tap <strong>Save</strong>; nothing is published before.</li>
+                    <li>A copy to a new device is done only when everything arrived; a partial copy tries again.</li>
+                    <li>New in your web leaves out people you muted.</li>
+                    <li>Muting a playing video keeps it playing. iPhones with a 120 Hz screen scroll at 120 Hz.</li>
+                    <li>The Mac uses much less CPU and memory while the vault runs, and its relay log can no longer grow without
+                        limit.</li>
+                    <li>A repost counts toward your web only when the reposted note checks out as really from its author.</li>
+                </ul>
+                </section>
+
                 <section id="v3-2-0">
                 <p class="eyebrow">App Store and Zapstore &middot; iPhone, iPad, Mac, Android and the web</p>
                 <h2 id="3-2-0">3.2.0</h2>

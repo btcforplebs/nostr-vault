@@ -134,7 +134,7 @@
 
             <article class="docs-article">
                 <p>On a Mac, Nostr Vault lives in the menu bar and runs your own Nostr relay. With <span class="ui">Start Vault Automatically</span> on, the relay starts when the
-                    app opens; otherwise click <span class="ui">Start Vault</span> in the panel. Leave it running and your Mac becomes
+                    app opens; otherwise click <span class="ui">Start</span> in the menu bar panel. Leave it running and your Mac becomes
                     the always-on home for your notes and media.</p>
 
                 <h2 id="install">Install</h2>
@@ -218,20 +218,29 @@
                     <strong>Ready to Browse</strong> opens the app. Re-run setup later to post, DM and zap.</p>
 
                 <h2 id="find-your-way-around">Find your way around</h2>
+                <p><strong>The menu bar panel.</strong> Click the Nostr Vault icon in the menu bar.</p>
                 <ul>
-                    <li>Click the Nostr Vault icon in the menu bar. The panel shows your relay's status, your notes and your media.</li>
-                    <li><span class="ui">Open Full App</span> opens the full window, with the feed.</li>
-                    <li>The gear at the bottom (<span class="ui">Settings (⌘,)</span>) opens Settings.</li>
-                    <li>Your relay starts when Nostr Vault opens if <span class="ui">Start Vault Automatically</span> is on;
-                        otherwise click <span class="ui">Start Vault</span> in the panel. The power button next to it (<span class="ui">Quit Nostr Vault</span>) stops it.</li>
+                    <li>The top line says whether your vault is running, for how long, and how many devices are connected. If
+                        it isn't running it says <em>Phones and the web can't reach it now</em>.</li>
+                    <li>Tiles show what's <span class="ui">Stored</span>, your mesh, and the <span class="ui">Outbox</span> when
+                        posts are waiting to go out.</li>
+                    <li><span class="ui">Open Nostr Vault</span> opens the full window. <span class="ui">New Note</span> starts a
+                        post (&#8984;N). <span class="ui">Start</span> or <span class="ui">Restart</span> starts your relay.</li>
+                    <li>At the bottom: your account picture to switch accounts, the gear (<span class="ui">Settings (⌘,)</span>),
+                        and the power button (<span class="ui">Quit Nostr Vault</span>), which asks first, because quitting stops
+                        your vault.</li>
                 </ul>
-                <p>To keep it running, open <span class="path">Settings &rarr; Startup</span> and turn on
-                    <span class="ui">Launch at Login</span> and <span class="ui">Start Vault Automatically</span>.</p>
-
-                <div class="shots mac">
-                    <figure><img src="/docs/img/mac/menubar.webp" alt="The menu bar panel" width="680" height="640" loading="lazy"><figcaption>The menu bar panel</figcaption></figure>
-                    <figure><img src="/docs/img/mac/settings-startup.webp" alt="Settings, Startup" width="1200" height="337" loading="lazy"><figcaption>Settings, Startup</figcaption></figure>
-                </div>
+                <p><strong>The window.</strong> A slim rail down the left has <span class="ui">Feed</span>,
+                    <span class="ui">Search</span>, <span class="ui">Profile</span>, <span class="ui">WoT</span>,
+                    <span class="ui">Vault</span>, <span class="ui">Media</span> and <span class="ui">Relay</span>, with
+                    <span class="ui">Settings</span> at the bottom; &#8984;1 to &#8984;7 jump down the rail. A note you open shows in a
+                    Thread column beside the list. With no note open, <span class="ui">Your space</span> sits on the right.</p>
+                <p><strong>Settings</strong> has six pages: <span class="ui">Account</span>, <span class="ui">Your Vault</span>,
+                    <span class="ui">Relays &amp; Media</span>, <span class="ui">Backups</span>, <span class="ui">Reading</span> and
+                    Help. Each page holds several sections, with a bar at the top to jump to one.</p>
+                <p>To keep your vault running, open <span class="path">Settings &rarr; Your Vault</span>; it starts with
+                    <span class="ui">Startup</span>. Turn on <span class="ui">Launch at Login</span> and
+                    <span class="ui">Start Vault Automatically</span>.</p>
 
                 <h2 id="next">Next</h2>
                 <ul>
@@ -239,7 +248,7 @@
                     <li><a href="/docs/keys/">Your keys and accounts</a></li>
                 </ul>
             </article>
-            <p class="docs-checked">Checked against Nostr Vault 3.2.0 for macOS.</p>
+            <p class="docs-checked">Checked against Nostr Vault 3.2.2 for macOS.</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
                 <a class="prev" href="/docs/start/android/"><span>Previous</span>Android</a>
                 <a class="next" href="/docs/start/web/"><span>Next</span>Web browser</a>
