@@ -23,6 +23,7 @@ class HomeVaultQueue(
     private val dir: File,
     private val maxItems: Int = MAX_ITEMS,
     private val maxBlobBytes: Long = MAX_BLOB_BYTES,
+    private val maxEmojiNotes: Int = MAX_EMOJI_NOTES,
 ) {
 
     @Serializable
@@ -68,10 +69,15 @@ class HomeVaultQueue(
         val size: Long,
         /** The media servers that have it (add only); empty = the vault holds it. */
         val servers: List<String> = emptyList(),
+        /** [EMOJI] only: (shortcode, url) pairs and set addresses for the emoji note's tags ([EmojiNote.tags]). */
+        val emojiCodes: List<List<String>> = emptyList(),
+        val emojiSets: List<String> = emptyList(),
     ) {
         companion object {
             const val ADD = "add"
             const val DELETE = "delete"
+            /** An emoji note (custom emoji plan §4.1): its own item, so it never replaces the blob's plain note. */
+            const val EMOJI = "emoji"
         }
     }
 
@@ -140,19 +146,46 @@ class HomeVaultQueue(
 
     /**
      * Queue one blob's file note: one item per blob, the newest word winning (a delete takes back a waiting add, and
-     * the other way). The same word twice is queued once. False when the queue is full.
+     * the other way). The same word twice is queued once. False when the queue is full: plain notes and emoji notes
+     * each have their own cap.
      */
-    fun addFileNote(draft: FileNoteDraft, now: Long = System.currentTimeMillis()): Boolean = synchronized(lock) {
-        val sha = draft.sha256.lowercase()
-        val key = fileNoteKey(sha)
-        val current = load()
-        val same = current.firstOrNull { it.key == key }
-        if (same != null && same.fileNote?.action == draft.action) return true
-        val rest = current.filterNot { it.key == key }
-        // Notes have their own cap: each upload queues a blob and its note, so sharing one cap halved the blobs.
-        if (rest.count { it.type == TYPE_FILE_NOTE } >= maxItems) return false
-        save(rest + Item(key = key, type = TYPE_FILE_NOTE, contentType = draft.mime, queuedAt = now, fileNote = draft.copy(sha256 = sha)))
-        true
+    fun addFileNote(draft: FileNoteDraft, now: Long = System.currentTimeMillis()): Boolean =
+        addFileNotes(listOf(draft), now).isNotEmpty()
+
+    /**
+     * [addFileNote] for many drafts at once (a Save copies run's emoji notes): the queue file is read and written once.
+     * Returns the hashes queued (or already waiting with the same word); the rest did not fit.
+     */
+    fun addFileNotes(drafts: List<FileNoteDraft>, now: Long = System.currentTimeMillis()): Set<String> = synchronized(lock) {
+        val items = load().toMutableList()
+        val queued = mutableSetOf<String>()
+        var changed = false
+        for (draft in drafts) {
+            val sha = draft.sha256.lowercase()
+            val emoji = draft.action == FileNoteDraft.EMOJI
+            val key = if (emoji) emojiNoteKey(sha) else fileNoteKey(sha)
+            val note = draft.copy(sha256 = sha)
+            val at = items.indexOfFirst { it.key == key }
+            val same = items.getOrNull(at)
+            // An emoji note waiting with other codes or sets is replaced by the newer word.
+            if (same != null && same.fileNote?.action == draft.action && (!emoji || same.fileNote == note)) {
+                queued += sha
+                continue
+            }
+            if (at >= 0) items.removeAt(at)
+            // Notes have their own cap: each upload queues a blob and its note, so sharing one cap halved the blobs.
+            // Emoji notes have another (one Save copies run offers up to 3,000), so they never crowd out photo notes.
+            val lane = items.count { it.type == TYPE_FILE_NOTE && (it.fileNote?.action == FileNoteDraft.EMOJI) == emoji }
+            if (lane >= if (emoji) maxEmojiNotes else maxItems) {
+                changed = changed || at >= 0
+                continue
+            }
+            items += Item(key = key, type = TYPE_FILE_NOTE, contentType = draft.mime, queuedAt = now, fileNote = note)
+            queued += sha
+            changed = true
+        }
+        if (changed) save(items)
+        queued
     }
 
     fun blobFile(sha256: String): File = File(blobDir, sha256)
@@ -236,6 +269,9 @@ class HomeVaultQueue(
         /** A file note's key: apart from the blob's own item (keyed by the bare hash), which [add] would take it for. */
         fun fileNoteKey(sha256: String) = "${sha256.lowercase()}#note"
 
+        /** An emoji note's key: apart from the blob's plain note. */
+        fun emojiNoteKey(sha256: String) = "${sha256.lowercase()}#emoji"
+
         fun publicCopyKey(sha256: String, server: String) = "$sha256@$server"
 
         /** The event ids a signed delete (kind 5) names with `e` tags; empty for anything else. */
@@ -256,6 +292,9 @@ class HomeVaultQueue(
         /** The blob a key names: a public copy's key is `<sha256>@<server>`. */
         fun shaOf(key: String) = key.substringBefore('@')
         const val MAX_ITEMS = 500
+
+        /** Emoji notes waiting: one Save copies run (EmojiCopyRules.MAX_FILES), plus room for a second. */
+        const val MAX_EMOJI_NOTES = 6_000
         const val MAX_BLOB_BYTES = 1L * 1024 * 1024 * 1024
     }
 }

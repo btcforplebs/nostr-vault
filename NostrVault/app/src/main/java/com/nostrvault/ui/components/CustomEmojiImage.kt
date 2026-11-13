@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,14 +26,18 @@ import coil.request.ImageRequest
 import com.nostrvault.service.CustomEmoji
 
 /**
- * A NIP-30 custom emoji's image, square, read out as its shortcode. When the
+ * A NIP-30 custom emoji's image, square, read out as its shortcode, drawn from
+ * the vault's copy when Save copies kept one ([EmojiLocalCopies]). When the
  * image can't load (offline, a dead link) its shortcode shows instead, so a
  * slot is never blank.
  */
 @Composable
 fun CustomEmojiImage(emoji: CustomEmoji, size: Dp, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    var failed by remember(emoji.url) { mutableStateOf(false) }
+    // The vault's own copy first (Save copies), the link only without one.
+    val copies by com.nostrvault.service.emoji.EmojiLocalCopies.byUrl.collectAsState()
+    val source: Any = copies[emoji.url] ?: emoji.url
+    var failed by remember(source) { mutableStateOf(false) }
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
@@ -49,7 +54,7 @@ fun CustomEmojiImage(emoji: CustomEmoji, size: Dp, modifier: Modifier = Modifier
             )
         } else {
             AsyncImage(
-                model = remember(emoji.url) { ImageRequest.Builder(context).data(emoji.url).build() },
+                model = remember(source) { ImageRequest.Builder(context).data(source).build() },
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
                 onError = { failed = true },

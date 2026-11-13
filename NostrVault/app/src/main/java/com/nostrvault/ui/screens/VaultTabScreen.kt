@@ -1,6 +1,7 @@
 package com.nostrvault.ui.screens
 
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.outlined.EmojiEmotions
 import kotlinx.coroutines.flow.filterNotNull
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -111,6 +112,7 @@ fun VaultTabScreen(
     if (restored) remember { VaultSection.restore(media = savedHalf.value == MEDIA_PART, activity = savedHalf.value == ACTIVITY_PART) }
     val showsMedia by VaultSection.showsMedia.collectAsState()
     val showsActivity by VaultSection.showsActivity.collectAsState()
+    val showsEmoji by VaultSection.showsEmoji.collectAsState()
     SideEffect { savedHalf.value = savedPart(showsMedia, showsActivity) }
     val halves = rememberSaveableStateHolder()
     var showDashboard by remember { mutableStateOf(false) }
@@ -143,7 +145,11 @@ fun VaultTabScreen(
     val relayNews by RelayForegroundService.newActivityModes.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
     val noteScope by viewModel.noteScope.collectAsState()
-    val showing = if (!showsMedia && showsActivity) VaultMode.ACTIVITY else VaultMode.of(showsMedia, viewMode, noteScope)
+    val showing = when {
+        showsEmoji -> VaultMode.EMOJI
+        !showsMedia && showsActivity -> VaultMode.ACTIVITY
+        else -> VaultMode.of(showsMedia, viewMode, noteScope)
+    }
     LaunchedEffect(opensNewActivity) {
         if (!opensNewActivity) return@LaunchedEffect
         VaultMode.opening(RelayForegroundService.newActivityModes.value, showing)?.let(viewModel::selectMode)
@@ -206,9 +212,25 @@ fun VaultTabScreen(
     // The Vault's search (iOS VaultSearchBar): over the Vault list and the
     // relay's lists, not Media. Kept across a note or profile it opens.
     var searchOpen by rememberSaveable { mutableStateOf(false) }
-    val openSearch: (() -> Unit)? = if (showsMedia) null else ({ searchOpen = true })
+    val openSearch: (() -> Unit)? = if (showsMedia || showsEmoji) null else ({ searchOpen = true })
     CompositionLocalProvider(LocalVaultMessages provides messages, LocalOpenVaultSearch provides openSearch) {
-    if (searchOpen && !showsMedia) {
+    if (showsEmoji) {
+        halves.SaveableStateProvider("emoji") {
+            val newModes by viewModel.newModes.collectAsState()
+            com.nostrvault.ui.screens.emoji.EmojiVaultScreen(
+                modePill = {
+                    VaultModePill(
+                        mode = VaultMode.EMOJI,
+                        zapsOnly = com.nostrvault.ui.theme.LocalZapsOnlyMode.current,
+                        newModes = newModes,
+                        onSelect = viewModel::selectMode,
+                        onOpenDashboard = openDashboard,
+                    )
+                },
+                onProfileClick = onProfileClick,
+            )
+        }
+    } else if (searchOpen && !showsMedia) {
         VaultSearchScreen(
             nostrService = viewModel.nostrService,
             feedService = feedService,
@@ -317,6 +339,7 @@ internal val VaultMode.icon: ImageVector
         VaultMode.ARTICLES -> NostrVaultIcons.Articles
         VaultMode.HIGHLIGHTS -> NostrVaultIcons.Highlights
         VaultMode.MEDIA -> NostrVaultIcons.TabMedia
+        VaultMode.EMOJI -> androidx.compose.material.icons.Icons.Outlined.EmojiEmotions
         VaultMode.LIKES -> NostrVaultIcons.HeartFilled
         VaultMode.ZAPS -> NostrVaultIcons.Zap
         VaultMode.BOOKMARKS -> androidx.compose.material.icons.Icons.Filled.Bookmark

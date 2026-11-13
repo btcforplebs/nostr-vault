@@ -51,7 +51,7 @@ object VaultAccountChips {
     fun pageShowsChipRow(mode: VaultMode): Boolean = when (mode) {
         VaultMode.NOTES, VaultMode.ARTICLES, VaultMode.HIGHLIGHTS,
         VaultMode.LIKES, VaultMode.ZAPS, VaultMode.FOLLOWERS -> true
-        VaultMode.ACTIVITY, VaultMode.MEDIA, VaultMode.BOOKMARKS -> false
+        VaultMode.ACTIVITY, VaultMode.MEDIA, VaultMode.EMOJI, VaultMode.BOOKMARKS -> false
     }
 
     /**

@@ -65,6 +65,8 @@ enum class VaultMode(val displayName: String) {
     ARTICLES("Articles"),
     HIGHLIGHTS("Highlights"),
     MEDIA("Media"),
+    /** The vault's custom emoji sets and their saved copies (custom emoji plan §4.3). */
+    EMOJI("Emoji"),
     LIKES("Likes"),
     ZAPS("Zaps"),
     BOOKMARKS("Bookmarks"),
@@ -87,7 +89,7 @@ enum class VaultMode(val displayName: String) {
             ZAPS -> VaultViewMode.ZAPS
             BOOKMARKS -> VaultViewMode.BOOKMARKS
             FOLLOWERS -> VaultViewMode.FOLLOWERS
-            MEDIA, ACTIVITY -> null
+            MEDIA, EMOJI, ACTIVITY -> null
         }
 
     companion object {

@@ -60,11 +60,11 @@ class VaultTabTest {
 
     @Test fun `the menu lists the modes in order, Vault first, and zaps only hides likes`() {
         assertEquals(
-            listOf("Vault", "Notes", "Articles", "Highlights", "Media", "Likes", "Zaps", "Bookmarks", "Followers"),
+            listOf("Vault", "Notes", "Articles", "Highlights", "Media", "Emoji", "Likes", "Zaps", "Bookmarks", "Followers"),
             VaultMode.menu(zapsOnly = false).map { it.displayName },
         )
         assertFalse(VaultMode.LIKES in VaultMode.menu(zapsOnly = true))
-        assertEquals(8, VaultMode.menu(zapsOnly = true).size)
+        assertEquals(9, VaultMode.menu(zapsOnly = true).size)
     }
 
     @Test fun `the pill names what the tab shows`() {
@@ -80,7 +80,7 @@ class VaultTabTest {
 
     @Test fun `each mode maps back to its list and scope`() {
         for (mode in VaultMode.entries) {
-            if (mode == VaultMode.MEDIA || mode == VaultMode.ACTIVITY) {
+            if (mode == VaultMode.MEDIA || mode == VaultMode.EMOJI || mode == VaultMode.ACTIVITY) {
                 assertNull(mode.viewMode)
                 continue
             }

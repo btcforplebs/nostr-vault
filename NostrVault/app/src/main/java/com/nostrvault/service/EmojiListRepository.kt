@@ -24,7 +24,8 @@ import javax.inject.Singleton
  * The account's own custom emoji, read from Nostr and never written here:
  * the newest kind 10030 (NIP-51), its single `emoji` tags, and the 30030 sets
  * its `a` tags add. Cached on disk so the picker has them at once; refreshed
- * at launch and whenever the picker opens. Saving to 10030 is a later step.
+ * at launch and whenever the picker opens. The Emoji page adds and removes
+ * sets ([com.nostrvault.service.emoji.EmojiListSave]).
  */
 @Singleton
 class EmojiListRepository @Inject constructor(
@@ -33,7 +34,14 @@ class EmojiListRepository @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     @Serializable
-    data class EmojiSet(val address: String, val title: String, val emojis: List<CustomEmoji>)
+    data class EmojiSet(
+        val address: String,
+        val title: String,
+        val emojis: List<CustomEmoji>,
+        /** The set's author and picture, for the Emoji page (older caches lack them). */
+        val author: String = "",
+        val image: String? = null,
+    )
 
     /** [owner]'s emoji: [single] saved one by one, then whole [sets]. */
     @Serializable
@@ -52,8 +60,21 @@ class EmojiListRepository @Inject constructor(
     private val _library = MutableStateFlow(Library())
     val library: StateFlow<Library> = _library.asStateFlow()
 
+    /** Each set's signed 30030 as last fetched, by address: what the Emoji page resends and keeps in the vault. */
+    private val _setEvents = MutableStateFlow<Map<String, NostrEvent>>(emptyMap())
+    val setEvents: StateFlow<Map<String, NostrEvent>> = _setEvents.asStateFlow()
+
+    /** The newest 10030 the last refresh found (null: none, or not read yet). */
+    @Volatile
+    var listEvent: NostrEvent? = null
+        private set
+
     private var refreshing: Job? = null
     private var lastRefreshMs = 0L
+
+    /** The last load fetched up to [MAX_SETS_PAGE] sets (the Emoji page), not just [MAX_SETS_PICKER]. */
+    @Volatile
+    private var lastWide = false
 
     init {
         scope.launch {
@@ -63,16 +84,23 @@ class EmojiListRepository @Inject constructor(
         }
     }
 
-    /** Asks the relays again, at most once a minute. Shows nothing of another account's. */
-    fun refresh() {
+    /**
+     * Asks the relays again, at most once a minute. Shows nothing of another account's. [wide]: the Emoji page, which
+     * fetches up to [MAX_SETS_PAGE] sets; the picker fetches [MAX_SETS_PICKER] and keeps the rest as last fetched.
+     */
+    fun refresh(force: Boolean = false, wide: Boolean = false) {
+        if (force || (wide && !lastWide)) lastRefreshMs = 0
         val owner = nostrService.activeHexPubkey
         if (owner.isEmpty()) return
         if (_library.value.owner.isNotEmpty() && _library.value.owner != owner) _library.value = Library(owner)
         val now = System.currentTimeMillis()
         if (refreshing?.isActive == true || now - lastRefreshMs < REFRESH_EVERY_MS) return
         lastRefreshMs = now
+        lastWide = wide
+        val maxSets = if (wide) MAX_SETS_PAGE else MAX_SETS_PICKER
+        val kept = _library.value.takeIf { it.owner == owner }?.sets.orEmpty()
         refreshing = scope.launch {
-            runCatching { load(owner) }
+            runCatching { load(owner, maxSets, kept) }
                 .onFailure { Log.w(TAG, "emoji list not loaded: ${it.message}") }
                 .getOrNull()
                 ?.let { loaded ->
@@ -83,33 +111,42 @@ class EmojiListRepository @Inject constructor(
         }
     }
 
-    private suspend fun load(owner: String): Library? {
+    private suspend fun load(owner: String, maxSets: Int, kept: List<EmojiSet>): Library? {
         val ask = askRelays(owner)
         val list = nostrService.lookupNewestReplaceable(10030, owner, ask).event ?: return null
+        listEvent = list
         val parsed = EmojiListParse.list(list.tags)
         val sets = kotlinx.coroutines.coroutineScope {
-            parsed.setAddresses.take(MAX_SETS).map { address ->
+            parsed.setAddresses.take(maxSets).map { address ->
                 async {
                     val ref = EmojiListParse.setRef(address) ?: return@async null
                     val event = nostrService.lookupNewestReplaceable(
                         30030, ref.pubkey, ask + askRelays(ref.pubkey), dTag = ref.d,
                     ).event ?: return@async null
+                    _setEvents.value = _setEvents.value + (address to event)
                     EmojiListParse.set(address, event.tags)
                 }
             }.awaitAll().filterNotNull()
         }
-        return Library(owner, parsed.single, sets)
+        return Library(owner, parsed.single, sets + keptBeyond(parsed.setAddresses, maxSets, kept))
     }
 
     private fun askRelays(pubkey: String): List<String> =
         (nostrService.relayLists.value[pubkey].orEmpty() + configStore.config.value.readRelays +
             NostrService.PROFILE_RELAYS).distinct()
 
-    private companion object {
-        const val TAG = "EmojiList"
-        const val REFRESH_EVERY_MS = 60_000L
-        /** Sets fetched per refresh; each is a lookup across the relays. */
-        const val MAX_SETS = 20
+    companion object {
+        private const val TAG = "EmojiList"
+        private const val REFRESH_EVERY_MS = 60_000L
+        /** Sets fetched per refresh; each is a lookup across the relays. 100 for the Emoji page (plan §4.3), 20 for the picker. */
+        const val MAX_SETS_PAGE = 100
+        const val MAX_SETS_PICKER = 20
+
+        /** A narrow refresh keeps the sets past [maxSets] (up to the page's 100) as the last wide one fetched them, in list order. */
+        internal fun keptBeyond(addresses: List<String>, maxSets: Int, kept: List<EmojiSet>): List<EmojiSet> {
+            val byAddress = kept.associateBy { it.address }
+            return addresses.take(MAX_SETS_PAGE).drop(maxSets).mapNotNull { byAddress[it] }
+        }
     }
 }
 
@@ -139,6 +176,7 @@ object EmojiListParse {
             ?: tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)?.takeIf { it.isNotBlank() }
             ?: "Emoji set"
         val emojis = CustomEmoji.fromTags(tags).values.map { it.copy(setAddress = address) }
-        return EmojiListRepository.EmojiSet(address, title, emojis)
+        val image = tags.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1)?.takeIf(CustomEmoji::isValidURL)
+        return EmojiListRepository.EmojiSet(address, title, emojis, setRef(address)?.pubkey.orEmpty(), image)
     }
 }
