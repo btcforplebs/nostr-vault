@@ -529,10 +529,8 @@ class HomeVaultSender @Inject constructor(
         val label = MeshSendTargets.label(role)
         val now = System.currentTimeMillis()
         val gaveUp = queue.items().filter { HomeVaultRules.expired(it, now, HomeVaultRules.isLane(role)) }
-        gaveUp.forEach {
-            Log.w(TAG, "home vault: gave up on ${it.type} ${it.key.take(8)} after ${it.attempts} tries")
-            queue.remove(it.key)
-        }
+        gaveUp.forEach { Log.w(TAG, "home vault: gave up on ${it.type} ${it.key.take(8)} after ${it.attempts} tries") }
+        queue.applyOutcomes(gaveUp.map { it to null })
         if (gaveUp.isNotEmpty()) {
             problem("Gave up sending ${gaveUp.size} ${if (gaveUp.size == 1) "item" else "items"} to ${MeshSendTargets.destination(role)}")
         }
@@ -555,52 +553,63 @@ class HomeVaultSender @Inject constructor(
             needsSignature = HomeVaultRules::needsOwnerSignature,
         )
         if (selection.heldForSigner) problem("Your signer needs you: tap Send now")
-        for (item in selection.toTry) {
-            val outcome = try {
-                when (item.type) {
-                    HomeVaultQueue.TYPE_BLOB -> sendBlob(base, item, queue, npub)
-                    HomeVaultQueue.TYPE_EVENT -> sendEvent(base, item)
-                    HomeVaultQueue.TYPE_FILE_NOTE ->
-                        if (role == DeviceRole.HOME_VAULT) sendFileNote(base, item, npub) else HomeVaultSend.REJECTED
-                    else -> HomeVaultSend.REJECTED
+        val outcomes = mutableListOf<Pair<HomeVaultQueue.Item, HomeVaultQueue.Item?>>()
+        try {
+            for (item in selection.toTry) {
+                val outcome = try {
+                    when (item.type) {
+                        HomeVaultQueue.TYPE_BLOB -> sendBlob(base, item, queue, npub)
+                        HomeVaultQueue.TYPE_EVENT -> sendEvent(base, item)
+                        HomeVaultQueue.TYPE_FILE_NOTE ->
+                            if (role == DeviceRole.HOME_VAULT) sendFileNote(base, item, npub) else HomeVaultSend.REJECTED
+                        else -> HomeVaultSend.REJECTED
+                    }
+                } catch (e: IOException) {
+                    // The vault, not the item: stop and try the lot later.
+                    Log.w(TAG, "home vault: ${item.type} ${item.key.take(8)}: ${e.message}")
+                    FipsMediaRouter.forget(npub)
+                    problem("$label not reachable")
+                    break
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    // Anything else is this item's fault and would fail every
+                    // time; dropping it keeps one bad entry from blocking or
+                    // crashing every launch.
+                    Log.e(TAG, "home vault: dropping ${item.type} ${item.key.take(8)}", e)
+                    HomeVaultSend.REJECTED
                 }
-            } catch (e: IOException) {
-                // The vault, not the item: stop and try the lot later.
-                Log.w(TAG, "home vault: ${item.type} ${item.key.take(8)}: ${e.message}")
-                FipsMediaRouter.forget(npub)
-                problem("$label not reachable")
-                break
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Throwable) {
-                // Anything else is this item's fault and would fail every
-                // time; dropping it keeps one bad entry from blocking or
-                // crashing every launch.
-                Log.e(TAG, "home vault: dropping ${item.type} ${item.key.take(8)}", e)
-                HomeVaultSend.REJECTED
+                outcomes += item to outcomeOf(item, outcome, npub, now, role)
+                // A blob is written at once: a kill mid-pass must not send a sent video (up to 1 GB) again (Tron, PR 2026).
+                if (item.type == HomeVaultQueue.TYPE_BLOB || outcomes.size >= OUTCOMES_PER_WRITE) {
+                    queue.applyOutcomes(outcomes)
+                    outcomes.clear()
+                }
             }
-            record(item, outcome, npub, now, queue, role)
+        } finally {
+            queue.applyOutcomes(outcomes)
         }
         if (queue.size > 0) scheduleRetry()
     }
 
     /** Apply one send's outcome to the queue. */
-    internal fun record(item: HomeVaultQueue.Item, outcome: HomeVaultSend, npub: String, now: Long, queue: HomeVaultQueue, role: DeviceRole) {
+    internal fun record(item: HomeVaultQueue.Item, outcome: HomeVaultSend, npub: String, now: Long, queue: HomeVaultQueue, role: DeviceRole) =
+        queue.applyOutcomes(listOf(item to outcomeOf(item, outcome, npub, now, role)))
+
+    /** One send's outcome: what [item] becomes in the queue (null: it goes), written with the pass's others. */
+    private fun outcomeOf(item: HomeVaultQueue.Item, outcome: HomeVaultSend, npub: String, now: Long, role: DeviceRole): HomeVaultQueue.Item? =
         when (outcome) {
             HomeVaultSend.SENT -> {
-                queue.remove(item.key)
                 _state.value = _state.value.copy(lastSentAt = System.currentTimeMillis(), lastProblem = null)
                 Log.i(TAG, "home vault: sent ${item.type} ${item.key.take(8)} to ${npub.take(12)}")
+                null
             }
             HomeVaultSend.REJECTED -> {
-                queue.remove(item.key)
                 problem("${MeshSendTargets.destination(role).replaceFirstChar { it.uppercase() }} refused a ${item.type}")
+                null
             }
-            HomeVaultSend.RETRY -> {
-                queue.update(HomeVaultRules.afterRetry(item, now, HomeVaultRules.isLane(role)))
-            }
+            HomeVaultSend.RETRY -> HomeVaultRules.afterRetry(item, now, HomeVaultRules.isLane(role))
         }
-    }
 
     /** One blob to [receiver] (the vault's mesh npub) through [base]. */
     internal suspend fun sendBlob(
@@ -843,6 +852,9 @@ class HomeVaultSender @Inject constructor(
 
     private companion object {
         const val TAG = "HomeVault"
+
+        /** A drain pass writes note and event outcomes to the queue file this often, not once per item; blobs at once. */
+        const val OUTCOMES_PER_WRITE = 50
         const val AUTH_KIND = 24242
         const val RETRY_MS = 60_000L
         const val REACH_CHECK_MS = 10_000L

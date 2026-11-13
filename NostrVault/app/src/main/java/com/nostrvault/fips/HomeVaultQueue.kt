@@ -212,6 +212,27 @@ class HomeVaultQueue(
         all.size - kept.size
     }
 
+    /**
+     * A drain pass's outcomes in one write, not one per item (Tron, PR 2024 F1: a 3,000-note queue rewritten 3,000
+     * times). Each entry is the item as the pass tried it and what it becomes: null drops it (with its blob file).
+     * An item changed since it was tried (a newer word for the same note, queued meanwhile) is left as it is now.
+     */
+    fun applyOutcomes(outcomes: List<Pair<Item, Item?>>) = synchronized(lock) {
+        if (outcomes.isEmpty()) return
+        val byKey = outcomes.associate { it.first.key to it }
+        val dropped = mutableListOf<String>()
+        val next = load().mapNotNull { stored ->
+            val (tried, after) = byKey[stored.key] ?: return@mapNotNull stored
+            when {
+                stored != tried -> stored
+                after == null -> null.also { dropped += stored.key }
+                else -> after
+            }
+        }
+        save(next)
+        dropped.forEach { blobFile(it).delete() }
+    }
+
     fun remove(key: String) = synchronized(lock) {
         save(load().filterNot { it.key == key })
         blobFile(key).delete()
@@ -441,7 +462,8 @@ object HomeVaultRules {
     data class Selection(val toTry: List<HomeVaultQueue.Item>, val heldForSigner: Boolean)
 
     /**
-     * The items a pass tries, oldest first. A background pass takes only
+     * The items a pass tries, oldest first, emoji notes after everything else: a Save copies run's thousands of notes
+     * never hold up a new photo (Tron, PR 2024 F1). A background pass takes only
      * what is due and nothing that needs a signature from a signer that is
      * not a local key (each would be a prompt). Send now ([userInitiated])
      * ignores backoff and may prompt, at most [promptCap] times.
@@ -457,7 +479,7 @@ object HomeVaultRules {
         val toTry = mutableListOf<HomeVaultQueue.Item>()
         var prompts = 0
         var held = false
-        for (item in items) {
+        for (item in items.sortedBy { it.fileNote?.action == HomeVaultQueue.FileNoteDraft.EMOJI }) {
             if (!userInitiated && item.nextAt > now) continue
             if (!localSigner && needsSignature(item)) {
                 if (!userInitiated || prompts >= promptCap) {
