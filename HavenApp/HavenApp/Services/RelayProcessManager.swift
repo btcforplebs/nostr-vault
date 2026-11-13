@@ -71,6 +71,9 @@ class RelayProcessManager: ObservableObject {
     /// Unread DMs the Vault Dashboard has already shown: the tab's dot
     /// lights for more than this (VaultNewsDot).
     @Published var dmUnreadSeen = 0
+    /// The other accounts' dots, kept while they're not on screen
+    /// (RelayProcessManager+NewsDot).
+    var newsAccounts = VaultNewsAccounts<VaultMode>()
 
     var outputPipe: Pipe?
     var stderrPipe: Pipe?
@@ -200,9 +203,11 @@ class RelayProcessManager: ObservableObject {
     func markRelayViewed(_ mode: VaultMode) {
         // The Vault list shows everything, so seeing it sees every list.
         if mode == .activity {
+            recordVisit(VaultMode.allCases)
             if !newActivityModes.isEmpty { newActivityModes = [] }
             return
         }
+        recordVisit([mode])
         if newActivityModes.contains(mode) { newActivityModes.remove(mode) }
     }
 

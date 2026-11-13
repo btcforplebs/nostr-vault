@@ -222,9 +222,8 @@ extension RelayProcessManager {
         } ?? []
         let landed = Set(batch.inboxActivityKinds.subtracting(ownOnly).compactMap(VaultMode.listing(inboxKind:)))
             .filter { !(zapsOnly && $0 == .likes) } // no Likes list to open
-        if !landed.isSubset(of: newActivityModes) {
-            newActivityModes.formUnion(landed)
-        }
+        // Lit only once the event is seen to be news (RelayProcessManager+NewsDot).
+        proposeNews(landed)
         // The log lines only say the count moved; the engine knows it. Adding
         // up deltas drifted (any "disconnected" line counted, and background
         // batches were dropped).

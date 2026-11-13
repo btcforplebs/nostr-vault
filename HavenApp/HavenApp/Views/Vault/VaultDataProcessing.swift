@@ -303,6 +303,8 @@ extension VaultView {
                 let missingProfiles = Array(Set(shown.flatMap { $0.actors.prefix(5) }))
                 let have = Set(currentEvents.map(\.id))
                 guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
+                // Held while a read is on: one swap per refresh (VaultView+ListSwap).
+                guard await MainActor.run(body: { self.listSwapPublishes(owner: owner, eventCount: events.count) }) else { return }
                 await MainActor.run {
                     if self.displayActivity != shown { self.displayActivity = shown }
                     if self.outsideLikeCount != outsideLikes { self.outsideLikeCount = outsideLikes }

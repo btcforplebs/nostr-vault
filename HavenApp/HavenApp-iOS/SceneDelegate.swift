@@ -250,8 +250,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             if !macURL.isEmpty, let macInbox = URL(string: macURL + "/inbox") {
                 urls.append(macInbox)
             }
+            // Only what is new since the newest event held (Logen 11-13): a
+            // whole re-read made the Vault list rebuild row by row on return.
+            let since = VaultActivity.refreshSince(newest: NostrService.shared.events.map(\.created_at).max(),
+                                                   now: Int64(Date().timeIntervalSince1970))
             if !urls.isEmpty {
-                NostrService.shared.fetchNotes(from: urls)
+                NostrService.shared.fetchNotes(from: urls, since: since)
             }
         }
 
@@ -292,6 +296,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // memory; the encode + write happens off-main inside the background-task
         // window opened below.
         FeedService.shared.persistCurrentSnapshot()
+        // And the Vault's, for the account on screen (VaultSnapshotStore).
+        NostrService.shared.saveVaultSnapshot()
 
         // Pause feed & reset viewer connections when entering background
         FeedService.shared.pauseFeed()

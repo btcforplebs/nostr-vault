@@ -163,7 +163,9 @@ extension NostrService {
         cancellables.removeAll()
         setupThrottling()
 
-        // 2. Clear Viewer tab event state — these belong to the previous account
+        // 2. Clear Viewer tab event state — these belong to the previous account,
+        // whose Vault screen is saved first (VaultSnapshotStore).
+        saveVaultSnapshot()
         events.removeAll()
         eventsResetGeneration += 1
         noteMedia.removeAll()
@@ -189,8 +191,12 @@ extension NostrService {
         // 6. Notify UI of cleared state
         eventUpdateSubject.send()
 
-        // 7. Update identity and prefetch avatars for the new account
+        // 7. Update identity and prefetch avatars for the new account, show
+        // its saved Vault screen at once, and give it its own news dot.
+        let previous = VaultSnapshotStore.eventsOwner
         updateOwnerHex()
+        restoreVaultSnapshot()
+        RelayProcessManager.shared.switchNewsDot(from: previous, to: activeHexPubkey)
         prefetchWhitelistedProfiles()
 
         // 8. Re-establish relay connections for the new account.
