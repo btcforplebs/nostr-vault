@@ -65,6 +65,7 @@ struct EmojiVaultView: View {
     private func content(_ pages: [EmojiVaultLogic.SetPage]) -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20, pinnedViews: []) {
+                GenmojiAddCard()
                 if pages.isEmpty {
                     emptyState
                 } else {
