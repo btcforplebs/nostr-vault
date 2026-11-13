@@ -114,6 +114,7 @@ extension FeedService {
         ownContactListCreatedAt = 0
         ownContactListAccountKey = ""
         hasAttemptedContactLoad = false
+        accountFollowsRestored = false
         contactListConfirmed = false
         pendingFollowActions.removeAll()
         FollowNotificationManager.shared.clearPending()
@@ -191,6 +192,7 @@ extension FeedService {
         guard let diskSnap = loadDiskSnapshot(forKey: key), !diskSnap.notes.isEmpty else { return false }
         notes = withoutDeletedNotes(diskSnap.notes)
         followedPubkeys = diskSnap.followedPubkeys
+        accountFollowsRestored = !followedPubkeys.isEmpty
         extendedNetworkPubkeys = diskSnap.extendedNetworkPubkeys
         if !diskSnap.extendedNetworkPubkeys.isEmpty {
             extendedNetworkComputedAt = diskSnap.capturedAt

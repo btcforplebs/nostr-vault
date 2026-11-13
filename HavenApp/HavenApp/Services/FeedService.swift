@@ -220,6 +220,11 @@ class FeedService: ObservableObject {
     /// so a slower, older parse can't land over a newer one.
     var wotLinksStamp: Date?
     var wotLinksReads = 0
+    /// The follows came from this account's disk snapshot (cold launch), so
+    /// the account web may count them before relays confirm (Tron 2011 low).
+    /// Kept apart from `hasAttemptedContactLoad`, which also stops the follow
+    /// list from loading.
+    var accountFollowsRestored = false
 
     /// Popularity scores returned by the local DVM, keyed by note ID.
     /// Used to sort the Popular feed by engagement rank.

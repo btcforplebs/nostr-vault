@@ -112,3 +112,17 @@ enum WotFiles {
         return links >= cache
     }
 }
+
+extension AccountWeb {
+    /// The web that judges `recipient`, one of this device's accounts: the
+    /// open account its own narrowed web (`open`), any other account the
+    /// relay's web as saved, which pools every account's follows, as before
+    /// the narrowing. Another account's alerts, switcher badge and Vault rows
+    /// were judged by the open account's web (the Apple twin of Android 2012
+    /// Tron must-fix 2).
+    static func trusted(forRecipient recipient: String, active: String, open: () -> Set<String>,
+                        pooled: Set<String>) -> Set<String> {
+        let recipient = recipient.lowercased()
+        return recipient.isEmpty || recipient == active.lowercased() ? open() : pooled
+    }
+}
