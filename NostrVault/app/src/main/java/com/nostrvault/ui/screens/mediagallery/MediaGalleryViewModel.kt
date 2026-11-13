@@ -431,7 +431,9 @@ class MediaGalleryViewModel @Inject constructor(
                 .substringAfterLast('/').ifEmpty { "pasted-media" }
             val uploadId = notificationManager.addUpload(filename)
             try {
-                if (blossomService.mirrorUrlToLocal(url, publicOnly = true) != null) {
+                val sha256 = blossomService.mirrorUrlToLocal(url, publicOnly = true)
+                if (sha256 != null) {
+                    withContext(Dispatchers.IO) { blossomService.afterPastedLink(sha256) }
                     notificationManager.markUploadSuccess(uploadId)
                     refresh()
                 } else {

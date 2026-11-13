@@ -134,7 +134,7 @@ extension MediaGalleryView {
                             return
                         }
 
-                        let localSuccess = await blossom.saveToLocalRelay(
+                        let localSuccess = await blossom.saveFromMediaTab(
                             fileURL: fileURL,
                             sha256: sha256,
                             contentType: mimeType
@@ -203,7 +203,7 @@ extension MediaGalleryView {
                         let mimeType = finalType.preferredMIMEType ?? "image/jpeg"
                         let sha256 = SHA256.hash(data: finalData).map { String(format: "%02x", $0) }.joined()
 
-                        let localSuccess = await blossom.saveToLocalRelay(
+                        let localSuccess = await blossom.saveFromMediaTab(
                             data: finalData,
                             sha256: sha256,
                             contentType: mimeType
@@ -296,7 +296,7 @@ extension MediaGalleryView {
                         return
                     }
 
-                    let localSuccess = await blossom.saveToLocalRelay(
+                    let localSuccess = await blossom.saveFromMediaTab(
                         fileURL: uploadURL,
                         sha256: sha256,
                         contentType: mimeType
@@ -374,7 +374,7 @@ extension MediaGalleryView {
 
                 let sha256 = SHA256.hash(data: imageData).map { String(format: "%02x", $0) }.joined()
 
-                success = await blossom.saveToLocalRelay(
+                success = await blossom.saveFromMediaTab(
                     data: imageData,
                     sha256: sha256,
                     contentType: detectedContentType
@@ -406,7 +406,7 @@ extension MediaGalleryView {
                 }
 
                 // Use existing BlossomService.downloadFromURL
-                success = await blossom.downloadFromURL(url: url)
+                success = await blossom.downloadFromURL(url: url, fromMediaTab: true)
             }
             else {
                 // Clipboard is empty or unsupported content

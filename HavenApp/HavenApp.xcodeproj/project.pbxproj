@@ -1038,6 +1038,7 @@
 		7CD772AF74D8BD717CE6DB6D /* LNURLService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B14053AFA5E916B43335BEE /* LNURLService.swift */; };
 		7CDD61D43B3F620A9C6319F0 /* ComposeView+Mentions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3864F7754BE936362DD6E14F /* ComposeView+Mentions.swift */; };
 		7D16FCD22C9D3C14C04C27E9 /* ProfileFeedLoader+Paging.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC45D9873BF6DE0CBD1519B1 /* ProfileFeedLoader+Paging.swift */; };
+		7D29F8AE235F56F724D45EAF /* BlossomService+MediaTabSave.swift in Sources */ = {isa = PBXBuildFile; fileRef = F92C877B0638BFEC8FCE0238 /* BlossomService+MediaTabSave.swift */; };
 		7E15E5188571B69C23C0C0A6 /* ShellLayout+Space.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D86B4CAED70F8DF0C9EE68 /* ShellLayout+Space.swift */; };
 		7E1A5CA08F04AA8FA6158758 /* DashboardHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C86A6AE71C1034FAB5E689FE /* DashboardHelpers.swift */; };
 		7E214E76C9C2598A10793820 /* QuickBarRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 207340FB8D3B36C2D991C22A /* QuickBarRow.swift */; };
@@ -1686,6 +1687,7 @@
 		C70896D50470F8951B7ECBD2 /* FollowingSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE4FF1BF35D7CF7BEF59AD4 /* FollowingSnapshot.swift */; };
 		C71CE09138EF387FD0B1448E /* OwnerSessionWarmup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27B80920656E134E7FCE4717 /* OwnerSessionWarmup.swift */; };
 		C72132BCC27261D4BF923C40 /* MediaCacheService+Playback.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF318FF14D794C94750A566D /* MediaCacheService+Playback.swift */; };
+		C727FA91517BFDE1075DAD14 /* BlossomService+MediaTabSave.swift in Sources */ = {isa = PBXBuildFile; fileRef = F92C877B0638BFEC8FCE0238 /* BlossomService+MediaTabSave.swift */; };
 		C75CCCA6E11027527F30672E /* PairLinkedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35C3EABFD4B9128CDFEF1E95 /* PairLinkedView.swift */; };
 		C7D03C3023945D08F50E0FE0 /* RelayProcessManager+OutputCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 538FAA70880DB672A5DBA40F /* RelayProcessManager+OutputCapture.swift */; };
 		C7D796DB819F882218B0A51F /* WalletLightningTab+History.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF4787352A5595AA4DF5F7D2 /* WalletLightningTab+History.swift */; };
@@ -3333,6 +3335,7 @@
 		F8A73E431CE524CF64925E0D /* CredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialStore.swift; sourceTree = "<group>"; };
 		F8BC6C1B7108F0D538B2C558 /* ReferencedNoteRepair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferencedNoteRepair.swift; sourceTree = "<group>"; };
 		F8C1948029E024BD7C870EB0 /* LeaveNostr.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeaveNostr.swift; sourceTree = "<group>"; };
+		F92C877B0638BFEC8FCE0238 /* BlossomService+MediaTabSave.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlossomService+MediaTabSave.swift"; sourceTree = "<group>"; };
 		F93CB9AC3A12C978695F2627 /* StartupSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartupSettingsView.swift; sourceTree = "<group>"; };
 		F98D86B19A51EEB1A211A1F3 /* FeedNoteSkeletonRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedNoteSkeletonRow.swift; sourceTree = "<group>"; };
 		F9CA2E376AE6090E021D6EB3 /* MarkdownBodyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownBodyView.swift; sourceTree = "<group>"; };
@@ -3508,6 +3511,7 @@
 				50F86F7EE1F2369C32106CFE /* BlossomService+Download.swift */,
 				AD7C75DADB5410D449F14955 /* BlossomService+ExternalMirror.swift */,
 				AAB509F2A30B9B45176A3489 /* BlossomService+LocalUpload.swift */,
+				F92C877B0638BFEC8FCE0238 /* BlossomService+MediaTabSave.swift */,
 				93215412F91AC6778B7ED535 /* BlossomService+MeshDelete.swift */,
 				80E8DDC285524202934229A5 /* BlossomService+Mirroring.swift */,
 				2E96162F29A4D24806FDDE07 /* BlossomService+OwnerImport.swift */,
@@ -5417,6 +5421,7 @@
 				B47625D1EBF2AD53AF3E7BBD /* BlossomService+Download.swift in Sources */,
 				1128386BCB6EA0F90C6A6C14 /* BlossomService+ExternalMirror.swift in Sources */,
 				3F21BB94AF95CD331C1DD1EE /* BlossomService+LocalUpload.swift in Sources */,
+				C727FA91517BFDE1075DAD14 /* BlossomService+MediaTabSave.swift in Sources */,
 				2CD0ED8D1E267E207D174114 /* BlossomService+MeshDelete.swift in Sources */,
 				26272FE4E62C5EAE020ADBF9 /* BlossomService+Mirroring.swift in Sources */,
 				F7DAA424D094DD9F0DE624CB /* BlossomService+OwnerImport.swift in Sources */,
@@ -6531,6 +6536,7 @@
 				8448DD5389D070385122456E /* BlossomService+Download.swift in Sources */,
 				A7DACD373A5AF63152E0B1AE /* BlossomService+ExternalMirror.swift in Sources */,
 				4C3FE1C20BEBCAA94022D784 /* BlossomService+LocalUpload.swift in Sources */,
+				7D29F8AE235F56F724D45EAF /* BlossomService+MediaTabSave.swift in Sources */,
 				FE5567237796A2AE1F75E6B7 /* BlossomService+MeshDelete.swift in Sources */,
 				A9F61360795D5D8B2007582E /* BlossomService+Mirroring.swift in Sources */,
 				3996B86DA73FF6627521206D /* BlossomService+OwnerImport.swift in Sources */,

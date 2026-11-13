@@ -14,8 +14,10 @@ extension BlossomService {
     ///     Defaults to `false` for internal/batch operations where only local storage is needed.
     ///   - date: The photo's own date (note created_at). Set as the stored file's
     ///     modified time so the Media grid doesn't move the copy to Today.
+    ///   - fromMediaTab: a Magic Paste of a link: also send it to the home
+    ///     vault and the file note (`saveFromMediaTab`).
     /// - Returns: true if the blob was successfully downloaded and stored locally
-    func downloadFromURL(url: URL, mirrorToExternal: Bool = false, date: Date? = nil) async -> Bool {
+    func downloadFromURL(url: URL, mirrorToExternal: Bool = false, date: Date? = nil, fromMediaTab: Bool = false) async -> Bool {
         var request = URLRequest(url: url)
         request.timeoutInterval = 120  // 2 minutes — 30s was too short for video files
 
@@ -28,7 +30,9 @@ extension BlossomService {
         case .success(let file):
             defer { try? FileManager.default.removeItem(at: file.url) }
             // Upload to local relay via BUD-02 spec (HTTP PUT with kind 24242 auth), from the file.
-            let success = await saveToLocalRelay(fileURL: file.url, sha256: file.sha256, contentType: file.contentType, mirrorToExternal: mirrorToExternal)
+            let success = fromMediaTab
+                ? await saveFromMediaTab(fileURL: file.url, sha256: file.sha256, contentType: file.contentType, mirrorToExternal: mirrorToExternal)
+                : await saveToLocalRelay(fileURL: file.url, sha256: file.sha256, contentType: file.contentType, mirrorToExternal: mirrorToExternal)
             if success {
                 await stampCopiedIn(sha256: file.sha256, date: date)
                 logger.info("Successfully mirrored \(file.sha256.prefix(8)) from \(url.host ?? "remote") (\(file.size) bytes)")

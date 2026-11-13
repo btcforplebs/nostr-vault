@@ -91,6 +91,14 @@ extension BlossomService {
     }
 
     func saveToLocalRelay(source: UploadSource, sha256: String, contentType: String, mirrorToExternal: Bool, progress: ((Double) -> Void)? = nil) async -> Bool {
+        await storeLocally(source: source, sha256: sha256, contentType: contentType, mirrorToExternal: mirrorToExternal, progress: progress) != nil
+    }
+
+    /// What a local save did: nil = not stored here. `mirrors`: the outside
+    /// servers it was pushed to; `accepted`: those that took it.
+    struct LocalSave { var mirrors: [String]; var accepted: [String] }
+
+    func storeLocally(source: UploadSource, sha256: String, contentType: String, mirrorToExternal: Bool, progress: ((Double) -> Void)? = nil) async -> LocalSave? {
         // A keyless vault can't sign the upload: in-process, no signer asked.
         // Nothing to push outside either, since that needs a signature too.
         // A big file from the owner also goes in-process, read from disk in
@@ -100,20 +108,21 @@ extension BlossomService {
         let route = OwnVaultUpload.route(keyless: keyless, bytes: Int64(source.byteCount), activeIsOwner: activeIsOwner)
         if keyless {
             let stored = await importToOwnVaultInProcess(source: source, sha256: sha256, contentType: contentType)
-            if stored { await announceStoredInVault() }
-            return stored
+            guard stored else { return nil }
+            await announceStoredInVault()
+            return LocalSave(mirrors: [], accepted: [])
         }
         let auth = await makeUploadAuth(sha256: sha256)
         if route == .inProcess {
             guard await importToOwnVaultInProcess(source: source, sha256: sha256, contentType: contentType) else {
                 logger.error("saveToLocalRelay: in-process store refused")
-                return false
+                return nil
             }
         } else {
             let localResult = await uploadToLocalWithRecovery(source: source, sha256: sha256, contentType: contentType, authBase64: auth)
             guard localResult != nil else {
                 logger.error("saveToLocalRelay: local upload failed after recovery attempt")
-                return false
+                return nil
             }
         }
         logger.info("saveToLocalRelay: stored in this vault (\(source.byteCount) bytes, \(route == .inProcess ? "in-process" : "upload"))")
@@ -124,9 +133,10 @@ extension BlossomService {
         // when the app was backgrounded or the view was dismissed.
         // Skipped during bulk sync (mirrorToExternal: false) to avoid N×M uploads.
         let mirrors = mirrorToExternal ? await MainActor.run { configService.config.activeBlossomMirrors } : []
+        var failedMirrors: [String] = []
         if !mirrors.isEmpty {
             logger.info("saveToLocalRelay: mirroring to \(mirrors.count) external server(s)")
-            let failedMirrors: [String] = await withTaskGroup(of: (String, Bool).self, returning: [String].self) { group in
+            failedMirrors = await withTaskGroup(of: (String, Bool).self, returning: [String].self) { group in
                 for (index, mirror) in mirrors.enumerated() {
                     group.addTask {
                         let parsed = URL(string: mirror)
@@ -174,6 +184,6 @@ extension BlossomService {
             }
         }
 
-        return true
+        return LocalSave(mirrors: mirrors, accepted: mirrors.filter { !failedMirrors.contains($0) })
     }
 }
