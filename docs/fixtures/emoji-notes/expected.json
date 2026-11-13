@@ -1,12 +1,12 @@
 {
   "good.json": { "emojiNotes": 1, "hiddenFromMedia": ["1111111111111111111111111111111111111111111111111111111111111111"],
-    "codes": { "1111111111111111111111111111111111111111111111111111111111111111": [["blobcat","https://cdn.example.com/1111111111111111111111111111111111111111111111111111111111111111.png"]] }, "sets": { "1111111111111111111111111111111111111111111111111111111111111111": ["30030:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbats"] } },
+    "codes": { "1111111111111111111111111111111111111111111111111111111111111111": [["blobcat","https://cdn.example.com/1111111111111111111111111111111111111111111111111111111111111111.png"]] }, "sets": { "1111111111111111111111111111111111111111111111111111111111111111": ["30030:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:cats"] } },
   "two-codes.json": { "emojiNotes": 1, "hiddenFromMedia": ["2222222222222222222222222222222222222222222222222222222222222222"],
     "codes": { "2222222222222222222222222222222222222222222222222222222222222222": [["party","https://a.example.com/party.gif"],["party_parrot","https://b.example.com/p.gif"]] },
-    "sets": { "2222222222222222222222222222222222222222222222222222222222222222": ["30030:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbats","30030:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:birds"] } },
+    "sets": { "2222222222222222222222222222222222222222222222222222222222222222": ["30030:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:cats","30030:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:birds"] } },
   "missing-tags.json": { "emojiNotes": 1, "hiddenFromMedia": ["3333333333333333333333333333333333333333333333333333333333333333"], "codes": { "3333333333333333333333333333333333333333333333333333333333333333": [] }, "sets": { "3333333333333333333333333333333333333333333333333333333333333333": [] },
     "why": "e3 has no x tag: not a file note at all. e4 is an emoji note with no shortcode or set: hidden from Media, listed on no set." },
   "photo-and-emoji.json": { "emojiNotes": 1, "hiddenFromMedia": [],
-    "codes": { "1111111111111111111111111111111111111111111111111111111111111111": [["blobcat","https://cdn.example.com/1111111111111111111111111111111111111111111111111111111111111111.png"]] }, "sets": { "1111111111111111111111111111111111111111111111111111111111111111": ["30030:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbats"] },
+    "codes": { "1111111111111111111111111111111111111111111111111111111111111111": [["blobcat","https://cdn.example.com/1111111111111111111111111111111111111111111111111111111111111111.png"]] }, "sets": { "1111111111111111111111111111111111111111111111111111111111111111": ["30030:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:cats"] },
     "why": "the plain note keeps the image in Media; the Emoji page still lists it." }
 }

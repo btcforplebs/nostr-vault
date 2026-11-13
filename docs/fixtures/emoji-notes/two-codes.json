@@ -1,4 +1,4 @@
 [{"id":"e200000000000000000000000000000000000000000000000000000000000000","pubkey":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","created_at":1794570100,"kind":1063,"content":"",
  "tags":[["x","2222222222222222222222222222222222222222222222222222222222222222"],["m","image/gif"],["size","4096"],["p","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
   ["t","nv-emoji"],["emoji","party","https://a.example.com/party.gif"],["emoji","party_parrot","https://b.example.com/p.gif"],
-  ["a","30030:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbats"],["a","30030:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:birds"],["emoji","bad code!","https://a.example.com/x.gif"],["a","10030:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:"]],"sig":""}]
+  ["a","30030:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:cats"],["a","30030:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:birds"],["emoji","bad code!","https://a.example.com/x.gif"],["a","10030:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:"]],"sig":""}]
