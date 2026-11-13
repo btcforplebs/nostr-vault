@@ -19,13 +19,17 @@ struct FileNote: Equatable {
     let owner: String
     /// `url` then each `fallback`, https only.
     let urls: [String]
+    /// The custom-emoji part when it says `["t","nv-emoji"]` (EmojiNote).
+    var emoji: EmojiNote? = nil
 
     /// The tags of a device's note for one blob, or nil when the blob, type,
     /// size or owner would make the vault refuse it. `servers`: the media
     /// servers that have it; mesh and home-network ones are left out (the
     /// note never names a place only this home can open), and none at all
     /// means the vault itself holds it.
-    static func tags(sha256: String, mime: String, size: Int64, owner: String, servers: [String]) -> [[String]]? {
+    /// `extra`: more tags for the note, such as an emoji copy's (EmojiNote.tags).
+    static func tags(sha256: String, mime: String, size: Int64, owner: String, servers: [String],
+                     extra: [[String]] = []) -> [[String]]? {
         let x = sha256.lowercased()
         let m = mime.trimmingCharacters(in: .whitespaces)
         guard isHex64(x), !m.isEmpty, size >= 0, isHex64(owner) else { return nil }
@@ -35,6 +39,7 @@ struct FileNote: Equatable {
         for (i, link) in links.enumerated() where seen.insert(link).inserted {
             tags.append([i == 0 ? "url" : "fallback", link])
         }
+        tags.append(contentsOf: extra.filter { ($0.first.map { !["x", "m", "size", "p", "url", "fallback", "client"].contains($0) }) ?? false })
         tags.append(["client", "nostr-vault"])
         return tags
     }
@@ -54,7 +59,7 @@ struct FileNote: Equatable {
         guard ps.count == 1, isHex64(ps[0]) else { return nil }
         let urls = (t.all("url") + t.all("fallback")).filter { $0.lowercased().hasPrefix("https://") && URL(string: $0) != nil }
         return FileNote(id: id, signer: signer, createdAt: createdAt(event), sha256: x, mime: m, size: size,
-                        owner: ps[0], urls: urls)
+                        owner: ps[0], urls: urls, emoji: EmojiNote.read(t.tags))
     }
 
     /// The live REQ every open Media tab keeps on `/files`.
@@ -249,9 +254,11 @@ struct FileNotesState: Equatable {
         notes.values.filter { $0.sha256 == sha256 }.map(\.id).sorted()
     }
 
-    /// One tile per hash, newest first.
+    /// One Media tile per hash, newest first. A hash only emoji notes name
+    /// is left out: it shows on the Emoji page (EmojiNote, emojiOnlyHashes).
     var tiles: [FileNoteTile] {
-        let byHash = Dictionary(grouping: notes.values, by: \.sha256)
+        let emojiOnly = emojiOnlyHashes
+        let byHash = Dictionary(grouping: notes.values.filter { !emojiOnly.contains($0.sha256) }, by: \.sha256)
         return byHash.map { sha, group in
             let ordered = group.sorted { $0.createdAt != $1.createdAt ? $0.createdAt > $1.createdAt : $0.id < $1.id }
             var seen = Set<String>()

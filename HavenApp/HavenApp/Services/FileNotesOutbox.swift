@@ -14,8 +14,10 @@ import Foundation
 enum FileNotesOutbox {
     /// `sha256` was uploaded by the active account; `servers`: the media
     /// servers that have it, the one serving it first (none = the vault).
-    static func uploaded(sha256: String, mime: String, size: Int, servers: [String]) {
-        let draft = FileNoteDraft(action: .add, sha256: sha256.lowercased(), mime: mime, size: Int64(size), servers: servers)
+    /// `extraTags`: an emoji copy's tags (EmojiNote.tags), nil for a plain note.
+    static func uploaded(sha256: String, mime: String, size: Int, servers: [String], extraTags: [[String]]? = nil) {
+        let draft = FileNoteDraft(action: .add, sha256: sha256.lowercased(), mime: mime, size: Int64(size), servers: servers,
+                                  extraTags: extraTags)
         #if os(iOS)
         HomeVaultSender.shared.offerFileNote(draft)
         #else
@@ -63,7 +65,7 @@ enum FileNotesTransport {
         switch draft.action {
         case .add:
             guard let note = FileNote.tags(sha256: draft.sha256, mime: draft.mime, size: draft.size,
-                                           owner: owner, servers: draft.servers) else { return .rejected("not a note the vault takes") }
+                                           owner: owner, servers: draft.servers, extra: draft.extraTags ?? []) else { return .rejected("not a note the vault takes") }
             // Writes need no AUTH; the room asks anyway, so answer it.
             _ = await socket.auth()
             (kind, tags) = (FileNote.kind, note)
