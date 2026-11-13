@@ -276,17 +276,28 @@ final class EmojiVaultStore: ObservableObject {
 
     /// One GET, read up to the size cap, typed by its first bytes.
     nonisolated static func download(_ url: URL) async -> Fetched {
-        guard url.scheme?.lowercased() == "https" || url.scheme?.lowercased() == "http",
+        // https only, like the web (httpsUrl): a stranger's http link could
+        // point the device at loopback or the LAN, and the store keeps the reply.
+        guard url.scheme?.lowercased() == "https",
               !(url.host?.lowercased().hasSuffix(".fips") ?? true) else { return .dead }
         do {
             let (bytes, response) = try await session.bytes(from: url)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return .dead }
             if http.expectedContentLength > EmojiVaultLogic.maxImageBytes { return .tooBig }
+            // Read in 64 KB chunks, not a byte at a time.
             var data = Data()
+            var chunk = [UInt8]()
+            chunk.reserveCapacity(64 * 1024)
             for try await byte in bytes {
-                data.append(byte)
-                if Int64(data.count) > EmojiVaultLogic.maxImageBytes { return .tooBig }
+                chunk.append(byte)
+                if chunk.count == 64 * 1024 {
+                    data.append(contentsOf: chunk)
+                    chunk.removeAll(keepingCapacity: true)
+                    if Int64(data.count) > EmojiVaultLogic.maxImageBytes { return .tooBig }
+                }
             }
+            data.append(contentsOf: chunk)
+            if Int64(data.count) > EmojiVaultLogic.maxImageBytes { return .tooBig }
             guard let mime = sniffImage(data) else { return data.isEmpty ? .dead : .notImage }
             return .image(data, mime: mime)
         } catch {
@@ -389,9 +400,13 @@ final class EmojiVaultStore: ObservableObject {
             return out
         }
         defer { try? FileManager.default.removeItem(at: copy) }
-        let ok = withCStrings([copy.path, dir.path]) { p in UnzipDirectoryC(p[0], p[1]) } == 0
+        // Capped at what the walker below can keep (plus room for skipped
+        // files), not the free space: a zip bomb stops here, not at 1 GB free.
+        let ok = withCStrings([copy.path, dir.path]) { p in
+            UnzipDirectoryCappedC(p[0], p[1], EmojiVaultLogic.maxUnzipBytes, Int32(EmojiVaultLogic.maxUnzipEntries))
+        } == 0
         guard ok else {
-            out.error = "That zip couldn't be opened, or it is too big for the free space."
+            out.error = "That zip couldn't be opened, or it unpacks to more than \(EmojiVaultLogic.maxUnzipBytes / 1024 / 1024) MB."
             return out
         }
         var files: [(EmojiVaultLogic.ZipFile, URL)] = []

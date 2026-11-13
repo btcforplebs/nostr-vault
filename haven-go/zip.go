@@ -102,6 +102,17 @@ var errUnzipTooBig = errors.New("archive is bigger than the free space on this d
 // leave less than unzipKeepFree on the disk, and writes every file 0600:
 // the zip's own modes could make a blob the relay can't read.
 func UnzipDirectory(archive, dest string) error {
+	return UnzipDirectoryCapped(archive, dest, 0, unzipMaxEntries)
+}
+
+// UnzipDirectoryCapped is UnzipDirectory with a byte cap (0 = only the free
+// space) and an entry cap, for archives from strangers: a 256 MB deflate
+// bomb would otherwise fill the disk to unzipKeepFree while the relay writes
+// to the same disk.
+func UnzipDirectoryCapped(archive, dest string, maxBytes uint64, maxEntries int) error {
+	if maxEntries <= 0 || maxEntries > unzipMaxEntries {
+		maxEntries = unzipMaxEntries
+	}
 	reader, err := zip.OpenReader(archive)
 	if err != nil {
 		return err
@@ -112,8 +123,8 @@ func UnzipDirectory(archive, dest string) error {
 	if err := os.MkdirAll(dest, 0o700); err != nil {
 		return err
 	}
-	if len(reader.File) > unzipMaxEntries {
-		return fmt.Errorf("archive has %d entries, more than %d", len(reader.File), unzipMaxEntries)
+	if len(reader.File) > maxEntries {
+		return fmt.Errorf("archive has %d entries, more than %d", len(reader.File), maxEntries)
 	}
 	budget := uint64(unzipFallbackCap)
 	if free, ok := unzipFreeBytes(dest); ok {
@@ -121,6 +132,9 @@ func UnzipDirectory(archive, dest string) error {
 			return errUnzipTooBig
 		}
 		budget = free - unzipKeepFree
+	}
+	if maxBytes > 0 && maxBytes < budget {
+		budget = maxBytes
 	}
 
 	var written uint64

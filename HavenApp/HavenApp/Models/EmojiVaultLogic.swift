@@ -13,6 +13,10 @@ enum EmojiVaultLogic {
     static let maxTotalBytes: Int64 = 200 * 1024 * 1024
     /// A zip bigger than this is refused before it is opened.
     static let maxZipBytes: Int64 = 256 * 1024 * 1024
+    /// What one zip may unpack: the kept total plus 16 KB a file for skipped
+    /// entries, and two entries a file (folders, __MACOSX). A bomb stops here.
+    static let maxUnzipBytes: Int64 = maxTotalBytes + Int64(maxFiles) * 16 * 1024
+    static let maxUnzipEntries = maxFiles * 2
     static let imageTypes: Set<String> = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"]
 
     static func isAllowedImage(mime: String) -> Bool {
