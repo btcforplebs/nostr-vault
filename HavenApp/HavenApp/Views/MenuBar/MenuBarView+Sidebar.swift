@@ -204,6 +204,10 @@ extension MenuBarView {
                                     selectedTab = .media
                                 }
 
+                                SidebarTabButton(icon: "face.smiling", title: "Emoji", isSelected: selectedTab == .emoji) {
+                                    selectedTab = .emoji
+                                }
+
                                 SidebarTabButton(icon: "gearshape", title: "Settings", isSelected: selectedTab == .settings) {
                                     selectedTab = .settings
                                 }
@@ -307,6 +311,10 @@ extension MenuBarView {
                     .environmentObject(configService)
                     .environmentObject(nostrService)
                     .environmentObject(relayManager)
+                    .transition(.opacity)
+            case .emoji:
+                EmojiVaultView()
+                    .environmentObject(nostrService)
                     .transition(.opacity)
             case .wot:
                 WOTTabView()

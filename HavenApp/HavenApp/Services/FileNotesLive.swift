@@ -78,6 +78,22 @@ final class FileNotesLive: ObservableObject {
     private func apply(_ event: [String: Any], room key: String) {
         guard room == key else { return }
         if state.apply(event) != .none { tiles = state.tiles }
+        scheduleEmojiIngest()
+    }
+
+    private var emojiIngest: Task<Void, Never>?
+
+    /// Hands the room's emoji notes to the Emoji page (EmojiVaultStore),
+    /// once per burst: a first sync brings thousands of notes at once.
+    private func scheduleEmojiIngest() {
+        guard emojiIngest == nil else { return }
+        emojiIngest = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard let self else { return }
+            self.emojiIngest = nil
+            guard let owner = self.state.owner else { return }
+            EmojiVaultStore.shared.ingest(owner: owner, copies: self.state.emojiCopies, plain: self.state.plainHashes)
+        }
     }
 
     private func reset(to key: String?, owner: String? = nil) {

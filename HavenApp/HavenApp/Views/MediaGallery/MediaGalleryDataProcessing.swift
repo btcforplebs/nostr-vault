@@ -45,6 +45,9 @@ extension MediaGalleryView {
         let currentNotFound = MediaCacheService.shared.known404Set()
         // The owner's other devices' uploads, live from /files (FileNotesLive).
         let noteTiles = isOwnerBrowsing ? FileNotesLive.shared.tiles : []
+        // Saved custom emoji live on the Vault's Emoji page, not here
+        // (EmojiVaultStore; a hash a plain note also names stays).
+        let emojiHidden = isOwnerBrowsing ? EmojiVaultStore.shared.hiddenFromMedia : []
         let gen = updateGeneration
 
         #if DEBUG
@@ -153,6 +156,8 @@ extension MediaGalleryView {
                     }
                 }
             }
+
+            for sha in emojiHidden { latestItems[sha] = nil }
 
             // Promote each merged item to its best display URL.
             // Priority: known mirror URL > current URL > any other recorded URL.

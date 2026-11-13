@@ -83,7 +83,7 @@ extension VaultView {
             case .bookmarks: viewMode = .bookmarks
             case .followers: viewMode = .followers
             case .messages: viewMode = .messages
-            case .media: break
+            case .media, .emoji: break
             }
             VaultSection.shared.showsMedia = false
         }

@@ -9,9 +9,14 @@ struct MediaGalleryLiveNotes: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onAppear { FileNotesLive.shared.start() }
+            .onAppear {
+                EmojiVaultStore.shared.useActiveAccount()
+                FileNotesLive.shared.start()
+            }
             .onDisappear { FileNotesLive.shared.stop() }
             .onReceive(FileNotesLive.shared.$tiles.dropFirst()) { _ in onChange() }
+            // A saved emoji leaves the grid (EmojiVaultStore.hiddenFromMedia).
+            .onReceive(EmojiVaultStore.shared.$copies.dropFirst().removeDuplicates { Set($0.keys) == Set($1.keys) }) { _ in onChange() }
     }
 }
 

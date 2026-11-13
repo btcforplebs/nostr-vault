@@ -24,7 +24,7 @@ struct VaultTabHoldItem<Label: View>: View {
         VaultMode.allCases.filter { !(zapsOnly && $0 == .likes) }
     }
 
-    private var current: VaultMode { section.showsMedia ? .media : section.listMode }
+    private var current: VaultMode { section.showsEmoji ? .emoji : section.showsMedia ? .media : section.listMode }
 
     var body: some View {
         DockHoldButton(onTap: onTap, entries: entries, onPick: pick, beside: beside, label: label)
