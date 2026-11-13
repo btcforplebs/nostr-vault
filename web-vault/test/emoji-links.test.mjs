@@ -47,3 +47,22 @@ test("dead links section lists dead emoji per set, saved ones marked", () => {
   const out = deadLinks([set], states, (_s, e) => (e.code === "c" ? {} : null))
   assert.deepEqual(out.map(d => [d.code, d.saved]), [["a", false], ["c", true]])
 })
+
+test("a server with no Content-Length is cut off once past the cap, not read to the end (Tron S1)", async () => {
+  let pulled = 0, cancelled = false
+  const endless = { getReader: () => ({ read: async () => { pulled++; return { done: false, value: new Uint8Array(512 * 1024) } }, cancel: async () => { cancelled = true } }) }
+  const url = `https://dead.example/${sha}.png`
+  const out = await checkLinks([url], { probe: async () => false, servers: async () => [["https://evil.example"]],
+    fetch: async () => ({ ok: true, headers: { get: () => null }, body: endless, arrayBuffer: async () => { throw new Error("must not buffer whole") } }) })
+  assert.equal(out.get(url), "dead")
+  assert.ok(cancelled, "stream cancelled")
+  assert.ok(pulled <= 5, `stopped after the cap (${pulled} chunks)`)
+})
+
+test("a streamed body under the cap is read whole and hash-checked", async () => {
+  const chunks = [bytes.slice(0, 4), bytes.slice(4)]
+  const body = { getReader: () => ({ read: async () => (chunks.length ? { done: false, value: chunks.shift() } : { done: true }), cancel: async () => {} }) }
+  const url = `https://dead.example/${sha}.png`
+  const out = await checkLinks([url], { probe: async () => false, servers: async () => [["https://good.example"]], fetch: async () => ({ ok: true, headers: { get: () => null }, body }) })
+  assert.deepEqual(out.get(url), { moved: `https://good.example/${sha}.png` })
+})

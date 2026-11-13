@@ -23,7 +23,7 @@ export function EmojiBrowse({ ctx, listed, onOpen, onBack }) {
     const d = decodeSetLink(link)
     if (!d) return setNote("That isn't an emoji set link. Paste one that starts with naddr1.")
     setNote("Looking for that set…")
-    const got = await fetchSets(ctx, [d.address], { relays: setRelays(ctx, d.relays) }).catch(() => new Map())
+    const got = await fetchSets(ctx, [d.address], { relays: setRelays(ctx, d.relays), keep: false }).catch(() => new Map())
     const set = got.get(d.address)
     if (!set) return setNote("No relay had that set.")
     setNote(""); onOpen(set)

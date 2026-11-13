@@ -115,3 +115,11 @@ test("keepSet resends the author's own signed event unchanged and refuses a forg
   assert.equal(v.kept[0].id, ev.id)
   await assert.rejects(keepSet(ctx(), { ...ev, content: "x" }, { send: () => [] }))
 })
+
+test("fetchSets with keep: false (a pasted link) writes nothing to the vault (Tron S2)", async () => {
+  const v = vault()
+  const ev = signedSet("pasted", [["x", "https://x.example/x.png"]], 100)
+  const got = await fetchSets(ctx(v), [addr("pasted")], { query: async () => [ev], keep: false })
+  assert.equal(got.get(addr("pasted")).event.id, ev.id)
+  assert.equal(v.kept.length, 0)
+})

@@ -122,17 +122,18 @@ export const setRelays = (ctx, extra = []) => uniq([...extra, ...ctx.account.rel
 
 /**
  * The sets at `addresses`: this browser's vault first (copies kept on Add, so a set its author's relays lost still
- * shows), then the relays. A newer copy from the relays is kept in the vault too. -> Map address -> parsed set.
+ * shows), then the relays. A newer copy from the relays is kept in the vault too, unless `keep` is false (a pasted
+ * link only opens the set: it is kept on Add, Tron PR 2023 S2). -> Map address -> parsed set.
  * `query` and `vault` are for tests.
  */
-export async function fetchSets(ctx, addresses, { relays = setRelays(ctx), query = (r, f, o) => pool.querySync(r, f, o), maxWait = 6000 } = {}) {
+export async function fetchSets(ctx, addresses, { relays = setRelays(ctx), query = (r, f, o) => pool.querySync(r, f, o), maxWait = 6000, keep = true } = {}) {
   const filters = setFilters(addresses)
   if (!filters.length) return new Map()
   const local = (await Promise.all(filters.map(f => ctx.vault.outbox.query(f).catch(() => [])))).flat()
   const net = (await Promise.all(filters.map(f => query(relays, f, { maxWait }).catch(() => [])))).flat().filter(verified)
   const best = newestByAddress([...local, ...net], addresses)
   const kept = new Set(local.map(e => e.id))
-  await Promise.all([...best.values()].filter(ev => !kept.has(ev.id)).map(ev => ctx.vault.outbox.event(nip01(ev)).catch(() => {})))
+  if (keep) await Promise.all([...best.values()].filter(ev => !kept.has(ev.id)).map(ev => ctx.vault.outbox.event(nip01(ev)).catch(() => {})))
   return new Map([...best].map(([a, ev]) => [a, parseEmojiSet(ev)]).filter(([, s]) => s))
 }
 

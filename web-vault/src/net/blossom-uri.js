@@ -65,6 +65,29 @@ export async function sha256Hex(bytes) {
 const MIME = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp", avif: "image/avif", svg: "image/svg+xml",
   mp4: "video/mp4", m4v: "video/mp4", mov: "video/quicktime", webm: "video/webm", mkv: "video/x-matroska" }
 
+/** The body, or null once it passes `maxBytes`: a server that sends no Content-Length is cut off mid-stream instead of
+ *  buffered whole (Tron, PR 2023 S1). Falls back to arrayBuffer() where there is no stream. */
+export async function readCapped(res, maxBytes) {
+  const reader = res.body?.getReader?.()
+  if (!reader) {
+    const all = new Uint8Array(await res.arrayBuffer())
+    return all.byteLength > maxBytes ? null : all
+  }
+  const parts = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > maxBytes) { reader.cancel().catch(() => {}); return null }
+    parts.push(value)
+  }
+  const out = new Uint8Array(total)
+  let at = 0
+  for (const v of parts) { out.set(v, at); at += v.byteLength }
+  return out
+}
+
 /**
  * The file's bytes from the first server whose answer hashes to the link's sha256. -> { bytes, server, mime } | null.
  * A server that refuses, times out, sends too much or sends other bytes is skipped. `fetch` is for tests.
@@ -77,8 +100,8 @@ export async function fetchVerified(b, servers, { fetch = globalThis.fetch, maxB
       if (!res.ok) continue
       const length = Number(res.headers?.get?.("content-length"))
       if (Number.isFinite(length) && length > maxBytes) continue
-      const bytes = new Uint8Array(await res.arrayBuffer())
-      if (bytes.byteLength > maxBytes) continue
+      const bytes = await readCapped(res, maxBytes)
+      if (!bytes) continue
       if ((await sha256Hex(bytes)) !== b.sha256) continue
       return { bytes, server, mime: MIME[b.ext] ?? (res.headers?.get?.("content-type") || "application/octet-stream") }
     } catch {}
