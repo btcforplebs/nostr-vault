@@ -426,8 +426,11 @@ final class EmojiVaultStore: ObservableObject {
                     published?.content ?? "")
         }
         guard let event else {
-            ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
-                                           message: "Your emoji list couldn't be read or signed. Nothing was changed.", tone: .error)
+            // No relay list: publishMergedList already said so.
+            if !NostrService.ownListRelays(for: me).isEmpty {
+                ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
+                                               message: "Your emoji list couldn't be read or signed. Nothing was changed.", tone: .error)
+            }
             return false
         }
         _ = await VaultSocket.publish(event)

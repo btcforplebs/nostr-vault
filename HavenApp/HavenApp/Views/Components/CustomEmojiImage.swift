@@ -6,6 +6,9 @@ import SwiftUI
 struct CustomEmojiImage: View {
     let emoji: CustomEmoji
     let size: CGFloat
+    /// The saved copy's hash when the caller knows it (the Emoji page), so
+    /// the image is looked up again the moment a copy lands.
+    var savedHash: String? = nil
     /// The vault's saved copy (EmojiVaultStore), drawn first: a dead link
     /// still shows once the image has been saved.
     @State private var saved: PlatformImage?
@@ -26,7 +29,7 @@ struct CustomEmojiImage: View {
         }
         .frame(width: size, height: size)
         .accessibilityLabel(emoji.content)
-        .task(id: emoji.url) { saved = await Self.savedCopy(emoji.url) }
+        .task(id: emoji.url + (savedHash ?? "")) { saved = await Self.savedCopy(emoji.url) }
     }
 
     /// The saved copy's image, off the main thread, once per file.

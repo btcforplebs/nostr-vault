@@ -53,7 +53,8 @@ final class EmojiListService: ObservableObject {
     func refresh(maxAge: TimeInterval = refreshEvery) {
         // Saved copies draw first everywhere an emoji shows.
         EmojiVaultStore.shared.useActiveAccount()
-        guard let nostrService else { return }
+        // The Emoji page can open before any screen has made its actions.
+        let nostrService = self.nostrService ?? NostrService.shared
         let owner = nostrService.activeHexPubkey
         guard !owner.isEmpty else { return }
         if !library.owner.isEmpty, library.owner != owner {
@@ -108,15 +109,16 @@ final class EmojiListService: ObservableObject {
     }
 
     /// The newest signed 30030 for each address, asked of the account's
-    /// relays plus `ask` and each author's outbox, `setsPerRequest` to a REQ.
+    /// write and read relays plus `ask` and each author's outbox, `setsPerRequest` to a REQ.
     static func fetchSets(_ addresses: [String], ask: [String], nostrService: NostrService) async -> [String: NostrEvent] {
         let refs = addresses.compactMap { a in EmojiListParse.setRef(a).map { (a, $0) } }
         var out: [String: NostrEvent] = [:]
         for start in stride(from: 0, to: refs.count, by: setsPerRequest) {
             let chunk = Array(refs[start..<min(start + setsPerRequest, refs.count)])
             let authors = Array(Set(chunk.map(\.1.pubkey)))
-            var relays = ConfigService.shared.config.readRelays
-            for extra in ask + authors.flatMap({ nostrService.outboxRelays[$0] ?? [] }) where !relays.contains(extra) {
+            // The account's own write relays too: its own sets live there.
+            var relays = ConfigService.shared.config.writeRelays
+            for extra in ConfigService.shared.config.readRelays + ask + authors.flatMap({ nostrService.outboxRelays[$0] ?? [] }) where !relays.contains(extra) {
                 relays.append(extra)
             }
             let filter: [String: Any] = ["kinds": [30030], "authors": authors, "#d": Array(Set(chunk.map(\.1.d)))]

@@ -171,7 +171,7 @@ struct EmojiVaultView: View {
                 Text(result)
                     .font(.appSystem(size: 13, weight: .medium))
             }
-            Text("Copies stay in your vault and reach your other devices. Nothing is posted.")
+            Text("Copies stay in your vault and reach your other devices. Nothing new is posted; your sets are kept in your vault too.")
                 .font(.appSystem(size: 12))
                 .foregroundColor(.secondary)
         }
@@ -281,8 +281,13 @@ struct EmojiVaultView: View {
 private struct EmojiTile: View {
     let row: EmojiVaultLogic.Row
 
+    private var savedHash: String? {
+        if case .saved(let sha) = row.status { return sha }
+        return nil
+    }
+
     var body: some View {
-        CustomEmojiImage(emoji: row.emoji, size: 36)
+        CustomEmojiImage(emoji: row.emoji, size: 36, savedHash: savedHash)
             .frame(width: 52, height: 52)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
             .overlay(alignment: .topTrailing) {
@@ -321,7 +326,8 @@ private struct EmojiDetailSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 16) {
-                CustomEmojiImage(emoji: row.emoji, size: 128)
+                CustomEmojiImage(emoji: row.emoji, size: 128,
+                                 savedHash: { if case .saved(let sha) = row.status { return sha }; return nil }())
                     .padding(.top, 24)
                 Text(row.emoji.content)
                     .font(.appSystem(size: 20, weight: .bold).monospaced())
