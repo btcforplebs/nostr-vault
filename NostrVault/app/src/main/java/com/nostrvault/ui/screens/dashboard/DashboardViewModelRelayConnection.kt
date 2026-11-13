@@ -73,13 +73,14 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.MAX_SEEN
         val inboxUrl = config.localInboxURL ?: return false
         val macWss = config.macRelayWssURL
 
-        outboxClient?.let { sendVaultSubscription(it, "vault-outbox", authors, ownerHex, localUrl) }
-        inboxClient?.let { sendVaultSubscription(it, "vault-inbox", authors, ownerHex, inboxUrl) }
+        // A re-send is a top-up (return, a tick, pull to refresh): only what came since the newest held.
+        outboxClient?.let { sendVaultSubscription(it, "vault-outbox", authors, ownerHex, localUrl, topUp = true) }
+        inboxClient?.let { sendVaultSubscription(it, "vault-inbox", authors, ownerHex, inboxUrl, topUp = true) }
         // Re-pull the Mac relay (source of truth) too so we converge on its data
         macOutboxClient?.takeIf { it.connectionState.value == WebSocketClient.ConnectionState.CONNECTED }
-            ?.let { sendVaultSubscription(it, "vault-mac-outbox", authors, ownerHex, macWss) }
+            ?.let { sendVaultSubscription(it, "vault-mac-outbox", authors, ownerHex, macWss, topUp = true) }
         macInboxClient?.takeIf { it.connectionState.value == WebSocketClient.ConnectionState.CONNECTED }
-            ?.let { sendVaultSubscription(it, "vault-mac-inbox", authors, ownerHex, "$macWss/inbox") }
+            ?.let { sendVaultSubscription(it, "vault-mac-inbox", authors, ownerHex, "$macWss/inbox", topUp = true) }
         return true
     }
 
@@ -205,6 +206,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.MAX_SEEN
         authors: Set<String>,
         ownerHex: String,
         relayUrl: String,
+        topUp: Boolean = false,
     ) {
         // Track this relay as active and reset EOSE tracking
         activeRelayUrls.add(relayUrl)
@@ -227,11 +229,14 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.MAX_SEEN
         }
 
         val filters = if (ownerHex.isNotEmpty()) {
-            // IMPORTANT: Mentions filter should NOT use sinceClause - we want ALL notes
-            // where the user is tagged, not just recent ones. This fixes the bug where
-            // older tagged notes never appear in the TAGGED filter.
+            // IMPORTANT: a first connect's mentions filter does NOT use sinceClause - we
+            // want ALL notes where the user is tagged, not just recent ones (older
+            // tagged notes never appeared otherwise). A top-up re-send already holds
+            // them, so it asks only for the gap (iOS #2034: return = top-up), instead
+            // of replaying 500 tagged events per account on every return.
+            val mentionSince = if (topUp) sinceClause else ""
             val mentionsFilters = (listOf(ownerHex) + others).map { hex ->
-                """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"#p":["$hex"],"limit":500}"""
+                """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"#p":["$hex"]$mentionSince,"limit":500}"""
             }
             (listOf(authorFilter) + otherAuthorFilters + mentionsFilters).joinToString(",")
         } else {

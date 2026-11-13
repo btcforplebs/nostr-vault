@@ -204,6 +204,8 @@ fun NostrVaultNavHost(
     }
     // Zaps Only hides Likes: a like then lights no Vault list.
     LaunchedEffect(config.zapsOnlyMode) { RelayForegroundService.setZapsOnlyMode(config.zapsOnlyMode) }
+    // The Vault tab's dot is per account: the one on screen shows its own.
+    LaunchedEffect(activeHex) { RelayForegroundService.switchNewsAccount(activeHex) }
 
     // A tutorial whose cards are on another page goes there: a last card's
     // "Next", or Replay in Settings. WoT is the WoT tab, Your Vault and Vault

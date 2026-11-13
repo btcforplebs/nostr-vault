@@ -39,6 +39,23 @@ class FollowersSeenStore @Inject constructor(
 
     private fun activityKey(ownerHex: String) = "vaultActivitySeenAt.$ownerHex"
 
+    /**
+     * When [ownerHex] last had [list] (a VaultMode name) on screen, epoch
+     * seconds, or null: the Vault tab's dot lights only for something newer
+     * (iOS keeps `vaultNewsLastVisit.<owner hex>`).
+     */
+    fun newsVisit(ownerHex: String, list: String): Long? =
+        prefs.getLong(newsKey(ownerHex, list), -1L).takeIf { it >= 0 }
+
+    fun markNewsVisit(ownerHex: String, lists: Collection<String>, nowSeconds: Long = System.currentTimeMillis() / 1000) {
+        if (ownerHex.isEmpty() || lists.isEmpty()) return
+        val edit = prefs.edit()
+        lists.forEach { edit.putLong(newsKey(ownerHex, it), nowSeconds) }
+        edit.apply()
+    }
+
+    private fun newsKey(ownerHex: String, list: String) = "vaultNewsLastVisit.${ownerHex.lowercase()}.$list"
+
     private companion object {
         const val PREFS_NAME = "relay_followers"
     }

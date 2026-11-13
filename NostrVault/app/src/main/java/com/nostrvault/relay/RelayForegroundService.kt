@@ -28,6 +28,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -165,12 +168,14 @@ class RelayForegroundService : Service() {
         // open the list the dot is for and the mode pill can mark each one (iOS
         // RelayProcessManager.newActivityModes, #476). DMs live under Profile,
         // whose own dot covers them.
-        private val _newActivityModes = MutableStateFlow<Set<VaultMode>>(emptySet())
-        val newActivityModes: StateFlow<Set<VaultMode>> = _newActivityModes.asStateFlow()
+        // One set per account, lit only for news: VaultNewsDot (#2034 twin).
+        val newsDot = com.nostrvault.data.model.VaultNewsDot()
+        val newActivityModes: StateFlow<Set<VaultMode>> = newsDot.modes
 
-        private val _hasNewRelayActivity = MutableStateFlow(false)
         /** The Vault tab's red dot: some Vault list got something. */
-        val hasNewRelayActivity: StateFlow<Boolean> = _hasNewRelayActivity.asStateFlow()
+        val hasNewRelayActivity: StateFlow<Boolean> = newsDot.modes
+            .map { it.isNotEmpty() }
+            .stateIn(CoroutineScope(SupervisorJob() + Dispatchers.Default), SharingStarted.Eagerly, false)
 
         /** Zaps Only hides the Likes list, so a like has no list to light. Set from the config. */
         @Volatile
@@ -183,21 +188,12 @@ class RelayForegroundService : Service() {
         private val _inboxActivityTick = MutableStateFlow(0L)
         val inboxActivityTick: StateFlow<Long> = _inboxActivityTick.asStateFlow()
 
-        private fun setNewActivityModes(modes: Set<VaultMode>) {
-            _newActivityModes.value = modes
-            _hasNewRelayActivity.value = modes.isNotEmpty()
-        }
-
         /** [mode] is on screen, so what came into it has been seen. */
-        @Synchronized
-        fun markRelayViewed(mode: VaultMode) {
-            // The Vault list shows everything, so seeing it sees every list.
-            if (mode == VaultMode.ACTIVITY) {
-                if (_newActivityModes.value.isNotEmpty()) setNewActivityModes(emptySet())
-                return
-            }
-            val modes = _newActivityModes.value
-            if (mode in modes) setNewActivityModes(modes - mode)
+        fun markRelayViewed(mode: VaultMode) = newsDot.viewed(mode)
+
+        /** The active account changed (or is first known): each account keeps its own dot. */
+        fun switchNewsAccount(hex: String) {
+            if (hex.isNotEmpty()) newsDot.switchAccount(hex)
         }
 
         /** Follows the Zaps Only setting; turning it on drops a Likes dot already lit. */
@@ -209,15 +205,13 @@ class RelayForegroundService : Service() {
 
         /**
          * An event of [kind] arrived from someone else (null: the import line
-         * named no kind). Lights the dot on the list it lands in, if any, and
-         * ticks the live re-subscribe either way.
+         * named no kind). Proposes the list it lands in, if any (VaultNewsDot
+         * decides whether it lights), and ticks the live re-subscribe either way.
          */
         @Synchronized
         fun markInboxActivity(kind: Int?) {
             val landed = kind?.let(VaultMode::listing)?.takeUnless { zapsOnlyMode && it == VaultMode.LIKES }
-            if (landed != null && landed !in _newActivityModes.value) {
-                setNewActivityModes(_newActivityModes.value + landed)
-            }
+            if (landed != null) newsDot.land(landed)
             _inboxActivityTick.value += 1
         }
 

@@ -129,7 +129,10 @@ fun VaultTabScreen(
         activity.refresh()
     }
     // Save a snapshot when the app goes to background so the next cold launch is instant.
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.persistSnapshot() }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        viewModel.persistSnapshot()
+        activity.persistSavedScreen()
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         // Every minute while the tab is on screen and the app is in front.
@@ -170,6 +173,8 @@ fun VaultTabScreen(
     val modeInSight = showing.takeIf { lifecycleState.isAtLeast(Lifecycle.State.RESUMED) && !opensNewActivity }
     LaunchedEffect(modeInSight, relayNews) {
         modeInSight?.let(RelayForegroundService::markRelayViewed)
+        // The dot lights only for what comes after this visit (per account).
+        modeInSight?.let(activity::recordVisit)
     }
 
     // The "Vault" list (iOS #506): new follows from the follower ledger join
