@@ -504,7 +504,7 @@ class HomeVaultSender @Inject constructor(
     private suspend fun drainLane(npub: String, queue: HomeVaultQueue, role: DeviceRole, userInitiated: Boolean) {
         val label = MeshSendTargets.label(role)
         val now = System.currentTimeMillis()
-        val gaveUp = queue.items().filter { HomeVaultRules.expired(it, now) }
+        val gaveUp = queue.items().filter { HomeVaultRules.expired(it, now, HomeVaultRules.isLane(role)) }
         gaveUp.forEach {
             Log.w(TAG, "home vault: gave up on ${it.type} ${it.key.take(8)} after ${it.attempts} tries")
             queue.remove(it.key)
@@ -574,7 +574,7 @@ class HomeVaultSender @Inject constructor(
             }
             HomeVaultSend.RETRY -> {
                 val attempts = item.attempts + 1
-                queue.update(item.copy(attempts = attempts, nextAt = now + HomeVaultRules.backoffMs(attempts)))
+                queue.update(item.copy(attempts = attempts, nextAt = now + HomeVaultRules.backoffMs(attempts, HomeVaultRules.isLane(role))))
             }
         }
     }
@@ -758,17 +758,47 @@ class HomeVaultSender @Inject constructor(
         (parsed[2].jsonPrimitive.booleanOrNull ?: false) to (parsed.getOrNull(3)?.jsonPrimitive?.contentOrNull ?: "")
     }.getOrNull()
 
-    /** Try again in a minute, for as long as something waits. One timer at a time. */
+    /**
+     * Try again in a minute, for as long as something waits. One timer at a time. Between tries, look at who the mesh
+     * is connected to: a device that just came into reach gets what waits on its lane now, not at the end of its
+     * backoff (Logen 2026-11-13).
+     */
     internal fun scheduleRetry() {
         if (retryJob?.isActive == true) return
         retryJob = scope.launch {
+            var peers = connectedPeers()
+            var sinceDrain = 0L
             while (isActive) {
-                delay(RETRY_MS)
-                if (lanes().none { it.second.size > 0 }) break
-                drain()
+                delay(REACH_CHECK_MS)
+                sinceDrain += REACH_CHECK_MS
+                val lanes = lanes()
+                if (lanes.none { it.second.size > 0 }) break
+                val now = connectedPeers()
+                val newly = HomeVaultRules.newlyInReach(now, peers)
+                peers = now
+                var woke = false
+                // Under the drain lock: a pass in flight must not have its tries written back over.
+                if (newly.isNotEmpty()) drainLock.withLock {
+                    for ((target, q) in lanes) {
+                        if (!HomeVaultRules.isLane(target.role) || target.npub !in newly) continue
+                        val due = HomeVaultRules.wokenOnReach(q.items())
+                        due.forEach { q.update(it) }
+                        if (due.isNotEmpty()) {
+                            Log.i(TAG, "home vault: ${target.npub.take(12)} came into reach, retrying its lane now")
+                            woke = true
+                        }
+                    }
+                }
+                if (woke || sinceDrain >= RETRY_MS) {
+                    sinceDrain = 0
+                    drain()
+                }
             }
         }
     }
+
+    private fun connectedPeers(): Set<String> =
+        runCatching { FipsBridge.status().peers.toSet() }.getOrDefault(emptySet())
 
     /** The mesh door for [npub], or null while the mesh is off or the device is not reachable; swapped in tests. */
     internal var meshIngress: (npub: String) -> String? =
@@ -789,6 +819,7 @@ class HomeVaultSender @Inject constructor(
         const val TAG = "HomeVault"
         const val AUTH_KIND = 24242
         const val RETRY_MS = 60_000L
+        const val REACH_CHECK_MS = 10_000L
         const val EVENT_OK_TIMEOUT_MS = 15_000L
         const val ENSURE_CALL_TIMEOUT_S = 45L
         const val ENSURE_LOCK_WAIT_MS = 10_000L

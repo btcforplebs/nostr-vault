@@ -38,6 +38,9 @@ final class HomeVaultSender: ObservableObject {
     static let maxBlobBytes = 256 * 1024 * 1024
 
     private var retryTimer: Timer?
+    /// Watches for a lane's device coming into reach (watchReach).
+    private var reachTimer: Timer?
+    private var reachPeers = Set<String>()
     /// One signed "get" per blob for the "already there?" checks.
     private var checkAuths = VaultCheckAuths()
     private var foregroundObserver: NSObjectProtocol?
@@ -291,7 +294,7 @@ final class HomeVaultSender: ObservableObject {
 
         let now = Date()
         var gaveUp: [String] = []
-        for item in queue where HomeVaultLogic.isExpired(item, now: now) {
+        for item in queue where HomeVaultLogic.isExpired(item, now: now, lane: isLane(item)) {
             appLog("gave up on \(item.kind.rawValue) \(item.id.prefix(8)) after \(item.attempts) tries", level: "WARN")
             // A file note is a hint for other Media tabs: giving up on one is not news.
             if item.kind == .fileNote { remove(item); continue }
@@ -413,8 +416,42 @@ final class HomeVaultSender: ObservableObject {
     private func backOff(_ item: HomeVaultItem) {
         guard let i = queue.firstIndex(where: { HomeVaultLogic.sameSend($0, item) }) else { return }
         queue[i].attempts += 1
-        queue[i].notBefore = Date().addingTimeInterval(HomeVaultLogic.backoff(afterAttempts: queue[i].attempts))
+        queue[i].notBefore = Date().addingTimeInterval(HomeVaultLogic.backoff(afterAttempts: queue[i].attempts, lane: isLane(item)))
         saveQueue()
+    }
+
+    private func isLane(_ item: HomeVaultItem) -> Bool {
+        HomeVaultLogic.isLane(item, homeVault: homeVault?.meshNpub)
+    }
+
+    /// While the app is open and a lane waits: every few seconds, look at who
+    /// the mesh is connected to. A device that just came into reach gets what
+    /// waits for it now, not at the end of its backoff.
+    private func watchReach() {
+        guard reachTimer == nil else { return }
+        reachPeers = FipsMeshService.shared.connectedPeers()
+        reachTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkReach() }
+        }
+    }
+
+    private func checkReach() {
+        guard queue.contains(where: isLane) else {
+            reachTimer?.invalidate()
+            reachTimer = nil
+            return
+        }
+        guard UIApplication.shared.applicationState == .active else { return }
+        let peers = FipsMeshService.shared.connectedPeers()
+        let newly = HomeVaultLogic.newlyInReach(now: peers, before: reachPeers)
+        reachPeers = peers
+        guard !newly.isEmpty else { return }
+        let woke = HomeVaultLogic.wakeOnReach(queue, newlyInReach: newly, homeVault: homeVault?.meshNpub, mediaVault: mediaVault?.meshNpub)
+        guard woke != queue else { return }
+        queue = woke
+        saveQueue()
+        appLog("a device came into reach: retrying its lane now")
+        drainSoon()
     }
 
     private func sendBlob(_ item: HomeVaultItem, base: URL, receiver: String) async -> HomeVaultSendResult {
@@ -524,6 +561,7 @@ final class HomeVaultSender: ObservableObject {
         lastResult = "Waiting: \(why)"
         appLog("send paused, \(queue.count) waiting: \(why)")
         // Try again while the app is open; foregrounding also retries.
+        if queue.contains(where: isLane) { watchReach() }
         if retryTimer == nil {
             retryTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated {
