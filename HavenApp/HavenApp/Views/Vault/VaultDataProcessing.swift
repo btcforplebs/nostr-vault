@@ -262,24 +262,39 @@ extension VaultView {
         Task.detached(priority: .userInitiated) {
             if currentMode == .activity {
                 // MARK: - Vault (everything that came in)
+                // Muted words, hashtags and threads: the mentions and replies,
+                // and the likes and zaps on a muted thread.
+                let events = currentEvents.filter { $0.pubkey == owner || !mutes.hides(id: $0.id, content: $0.content, tags: $0.tags) }.map {
+                    VaultActivity.Event(id: $0.id, pubkey: $0.pubkey, kind: $0.kind,
+                                        createdAt: $0.created_at, content: $0.content, tags: $0.tags,
+                                        images: $0.mediaURLs.filter(\.isImage))
+                }
+                let isBlocked: (String) -> Bool = {
+                    blacklist.contains($0) || NotificationPolicy.hidesOwnAccountTag(
+                        author: $0, recipient: owner, accounts: ownAccounts, notify: notifyOwn)
+                }
+                let isOutside: (String) -> Bool = {
+                    ContentFilter.isOutside(author: $0, owner: owner, whitelist: whitelist, trusted: trusted)
+                }
                 let lines = VaultActivity.build(
-                    // Muted words, hashtags and threads: the mentions and replies,
-                    // and the likes and zaps on a muted thread.
-                    events: currentEvents.filter { $0.pubkey == owner || !mutes.hides(id: $0.id, content: $0.content, tags: $0.tags) }.map {
-                        VaultActivity.Event(id: $0.id, pubkey: $0.pubkey, kind: $0.kind,
-                                            createdAt: $0.created_at, content: $0.content, tags: $0.tags,
-                                            images: $0.mediaURLs.filter(\.isImage))
-                    },
+                    events: events,
                     owner: owner,
                     noteKinds: Set(NostrService.relayTabNoteKinds),
                     follows: follows,
-                    isBlocked: {
-                        blacklist.contains($0) || NotificationPolicy.hidesOwnAccountTag(
-                            author: $0, recipient: owner, accounts: ownAccounts, notify: notifyOwn)
-                    },
-                    isOutside: { ContentFilter.isOutside(author: $0, owner: owner, whitelist: whitelist, trusted: trusted) },
-                    outsideOnly: currentActivityFilter == .outside
+                    isBlocked: isBlocked,
+                    isOutside: isOutside,
+                    outsideOnly: currentActivityFilter == .outside,
+                    foldsOutsideLikes: true
                 )
+                // All's "N from outside your web" line: the likes and reposts
+                // All left out (Logen 2026-11-13, option A).
+                let outsideLikes = currentActivityFilter == .all
+                    ? VaultActivity.outsideLikeCount(
+                        VaultActivity.build(events: events, owner: owner, noteKinds: Set(NostrService.relayTabNoteKinds),
+                                            isBlocked: isBlocked, isOutside: isOutside,
+                                            outsideOnly: true, foldsOutsideLikes: true),
+                        zapsOnly: zapsOnly)
+                    : 0
                 // Filtered before the page cap, so a page of likes doesn't
                 // hide the mentions behind it.
                 let shown = Array(lines.lazy
@@ -290,6 +305,7 @@ extension VaultView {
                 guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                 await MainActor.run {
                     if self.displayActivity != shown { self.displayActivity = shown }
+                    if self.outsideLikeCount != outsideLikes { self.outsideLikeCount = outsideLikes }
                     self.activityHasLoadedOnce = true
                     self.displayPass &+= 1
                     self.nostrService.fetchMissingProfiles(for: missingProfiles)

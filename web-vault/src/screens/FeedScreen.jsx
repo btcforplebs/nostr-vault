@@ -23,6 +23,7 @@ import { fetchPopular, audienceKeeps, popularRanks } from "../net/popular.js"
 import { setEveryone, everyoneLocked } from "../net/global-trust.js"
 import { SCREENED_LINE } from "../net/topic-filter.js"
 import { EveryoneShieldDialog } from "../components/EveryoneShieldDialog.jsx"
+import { EveryoneBanner } from "../components/EveryoneBanner.jsx"
 import { discoverNetwork, fetchDiscover } from "../net/discover.js"
 import { globalTrust } from "../readers/trust.js"
 import { mediaTiles } from "../net/media.js"
@@ -526,6 +527,7 @@ export function FeedScreen({ ctx }) {
           shield={global ? { everyone: !!choice.everyone, locked: everyoneLocked(follows, ctx.session?.pubkey) } : null} onShield={flipShield}
           audience={popular ? audience : null} onAudience={setAudience} ranks={popular ? ranks : null} onRanks={() => setRanks(!ranks)} />
       </header>
+      {global && choice.everyone && <EveryoneBanner onBack={flipShield} />}
       {shieldAsk && <EveryoneShieldDialog ask={shieldAsk} follows={follows} me={ctx.session?.pubkey} onProceed={proceedEveryone} onClose={() => setShieldAsk(null)} />}
       {dashboard && <FeedDashboard ctx={ctx} blocked={blocked} onPick={pick} onClose={() => setDashboard(false)} />}
       {editing && <EditFeeds feeds={FEEDS} menu={menu} onChange={changeMenu} onClose={() => setEditing(false)} />}

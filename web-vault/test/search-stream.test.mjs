@@ -133,7 +133,7 @@ test("a query asked again shows what it found last time in its first update", as
 
 test("results rank you, follows, then your web of trust, then everyone", () => {
   const people = [pk("s"), pk("w"), pk("f"), pk("m")]
-  const r = shapeResults({ people, notes: [] }, "x", { me: pk("m"), follows: [pk("f")], wot: new Set([pk("w")]) })
+  const r = shapeResults({ people, notes: [] }, "x", { me: pk("m"), follows: [pk("f")], wot: new Set([pk("w")]), fold: false })
   assert.deepEqual(r.people, [pk("m"), pk("f"), pk("w"), pk("s")])
 })
 

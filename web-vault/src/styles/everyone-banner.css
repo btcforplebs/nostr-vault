@@ -1,0 +1,4 @@
+/* Global with the Everyone shield on (components/EveryoneBanner.jsx): orange, as the shield is on the iPhone. */
+.everyone-banner { display: flex; align-items: center; gap: 12px; margin: 0 var(--gutter) 12px; padding: 10px 14px;
+  border-radius: var(--radius); background: rgb(255 159 10 / .10); border: 1px solid rgb(255 159 10 / .35); font: var(--t-sub); }
+.everyone-banner span { flex: 1; min-width: 0; }

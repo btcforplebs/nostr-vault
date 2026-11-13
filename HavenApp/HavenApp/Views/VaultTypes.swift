@@ -47,8 +47,10 @@ enum ActivityFilter {
     case all
     /// Replies, mentions and quotes.
     case mentions
-    /// Posts that tag you from people outside your Web of Trust: the lines
-    /// All leaves out. Built with `VaultActivity.build(outsideOnly:)`.
+    /// Posts that tag you, and likes and reposts, from people outside your
+    /// Web of Trust: the lines All leaves out (likes and reposts since Logen's
+    /// 2026-11-13 "go all"; All counts them on one "N from outside your web"
+    /// line that opens this). Built with `VaultActivity.build(outsideOnly:)`.
     case outside
 
     func includes(_ kind: VaultActivity.Kind) -> Bool {
@@ -56,6 +58,7 @@ enum ActivityFilter {
         case .all: return true
         case .mentions: return kind == .reply || kind == .mention || kind == .quote
         case .outside: return kind == .reply || kind == .mention || kind == .quote || kind == .article || kind == .highlight
+            || kind == .reaction || kind == .repost
         }
     }
 }

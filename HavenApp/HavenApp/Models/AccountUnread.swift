@@ -106,9 +106,10 @@ struct AccountUnread: Equatable {
             return true
         }
 
-        /// The lines VaultActivity.build checks `isOutside` for. Likes,
-        /// reposts, zaps and follows on your own notes are not gated.
-        static let webGatedTypes: Set<String> = ["reply", "quote", "mention"]
+        /// The lines VaultActivity.build checks `isOutside` for: likes and
+        /// reposts fold out of the list since 2026-11-13 (`foldsOutsideLikes`).
+        /// Zaps and follows on your own notes are not gated.
+        static let webGatedTypes: Set<String> = ["reply", "quote", "mention", "reaction", "repost"]
     }
 
     /// Counts the marker, once for each account it is for whose list shows

@@ -193,16 +193,24 @@ extension SearchView {
         let notes = visibleNotes(snapshot.notes, filter)
             .filter { scope.allowsAuthor($0.pubkey, own: own, follows: follows) && scope.allowsDate($0.createdAt, now: now) }
 
+        // People and notes from outside your web fold under one line; their
+        // hashtags and links stay out with them (Logen 2026-11-13, option B).
+        let wot = feedService.webOfTrustForRanking
+        let people = GlobalSearchRanking.splitOutside(profiles, own: [own], follows: follows, wot: wot, pubkey: \.pubkey)
+        let found = GlobalSearchRanking.splitOutside(notes, own: [own], follows: follows, wot: wot, pubkey: \.pubkey)
+
         var results = SearchResults()
-        for profile in profiles {
+        for profile in people.inside {
             results.users[profile.pubkey] = profile
         }
-        results.userOrder = profiles.map(\.pubkey)
+        results.userOrder = people.inside.map(\.pubkey)
+        results.outsideUsers = people.outside
         // Already ranked own → follows → everyone, newest first in each.
-        results.notes = Array(notes.prefix(100))
+        results.notes = Array(found.inside.prefix(100))
+        results.outsideNotes = Array(found.outside.prefix(100))
 
         var foundHashtags = Set<String>()
-        for note in notes {
+        for note in found.inside {
             for tag in extractHashtags(from: note.content) where tag.lowercased().contains(trimmedQuery) {
                 foundHashtags.insert(tag)
             }

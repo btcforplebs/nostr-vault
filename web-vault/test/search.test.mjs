@@ -84,9 +84,38 @@ const note = (id, pubkey, created_at, content = "") => ({ id, pubkey, created_at
 
 test("results rank you, then people you follow, then everyone, keeping order inside each", () => {
   const notes = [note("n1", STRANGER, 50), note("n2", FRIEND, 40), note("n3", ME, 30), note("n4", FRIEND, 20)]
-  const r = shapeResults({ people: [STRANGER, FRIEND, ME], notes }, "x", { me: ME, follows: [FRIEND] })
+  const r = shapeResults({ people: [STRANGER, FRIEND, ME], notes }, "x", { me: ME, follows: [FRIEND], fold: false })
   assert.deepEqual(r.people, [ME, FRIEND, STRANGER])
   assert.deepEqual(r.notes.map(n => n.id), ["n3", "n2", "n4", "n1"])
+})
+
+test("strangers fold under Outside your web: out of people and notes, and their hashtags and links with them", () => {
+  const notes = [note("n1", STRANGER, 50, "#nostrspam https://spam.example"), note("n2", FRIEND, 40, "#nostr"), note("n3", ME, 30)]
+  const r = shapeResults({ people: [STRANGER, FRIEND, ME], notes }, "nostr", { me: ME, follows: [FRIEND], wot: new Set() })
+  assert.deepEqual(r.people, [ME, FRIEND])
+  assert.deepEqual(r.notes.map(n => n.id), ["n3", "n2"])
+  assert.deepEqual(r.outsidePeople, [STRANGER])
+  assert.deepEqual(r.outsideNotes.map(n => n.id), ["n1"])
+  assert.deepEqual(r.hashtags, ["nostr"])
+  assert.deepEqual(r.links, [])
+})
+
+test("the web of trust past your follows stays inside; with no web yet it fails closed to you and your follows", () => {
+  const WEB = "4".repeat(64)
+  const notes = [note("w", WEB, 10), note("s", STRANGER, 20)]
+  const r = shapeResults({ people: [STRANGER, WEB], notes }, "x", { me: ME, follows: [FRIEND], wot: new Set([WEB]) })
+  assert.deepEqual(r.people, [WEB])
+  assert.deepEqual(r.outsidePeople, [STRANGER])
+  assert.deepEqual(r.notes.map(n => n.id), ["w"])
+  const none = shapeResults({ people: [STRANGER, WEB, FRIEND], notes }, "x", { me: ME, follows: [FRIEND] })
+  assert.deepEqual(none.people, [FRIEND])
+  assert.deepEqual(none.outsidePeople, [STRANGER, WEB])
+})
+
+test("fold: false (a pasted npub) keeps the person in people, nothing folded", () => {
+  const r = shapeResults({ people: [STRANGER], notes: [] }, "x", { me: ME, follows: [], fold: false })
+  assert.deepEqual(r.people, [STRANGER])
+  assert.deepEqual(r.outsidePeople, [])
 })
 
 test("Who and When narrow people and notes; hashtags and links follow the filter", () => {

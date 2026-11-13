@@ -1,0 +1,6 @@
+/* Strangers' likes, reposts and search results, folded under one line until asked for (components/OutsideFold.jsx).
+   Same look as the thread's .thread-outside-toggle. */
+.outside-fold-toggle { display: block; margin: 14px var(--gutter) 8px; padding: 10px 0; background: none; border: 0;
+  font: var(--t-foot); color: var(--text-3); cursor: pointer; text-align: left; }
+.outside-fold-toggle:hover { color: var(--text-2); }
+.outside-fold { opacity: .85; }

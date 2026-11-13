@@ -11,6 +11,7 @@ import { Avatar } from "../components/Avatar.jsx"
 import { NoteCard } from "../components/NoteCard.jsx"
 import { useProfile } from "../components/useProfile.js"
 import { SearchStart } from "./SearchStart.jsx"
+import { OutsideFold } from "../components/OutsideFold.jsx"
 import { parseQuery, hashtagOf, startSearch, shapeResults, filterCaption, loadRecent, saveRecent, clearRecent, MIN_QUERY, NO_FILTER, WHO, WHEN } from "../net/search.js"
 import { fetchProfiles, putProfile } from "../net/profiles.js"
 import { followLists } from "../net/wot.js"
@@ -104,9 +105,11 @@ export function SearchScreen({ ctx, onProfile }) {
   const shown = found && shapeResults({
     people: found.direct ? found.people : visiblePeople(found.people, blocked),
     notes: visibleNotes(found.notes, blocked),
-  }, text, { me: ctx.session.pubkey, follows: ctx.account.follows, wot, filter: found.direct ? NO_FILTER : filter })
+  }, text, { me: ctx.session.pubkey, follows: ctx.account.follows, wot, filter: found.direct ? NO_FILTER : filter, fold: !found.direct })
   const count = shown && { users: shown.people.length, notes: shown.notes.length, hashtags: shown.hashtags.length, links: shown.links.length }
-  const any = count && Object.values(count).some(Boolean)
+  // People and notes from outside your web, folded under one line below the results (net/outside-fold.js).
+  const outsideShown = shown ? (tab === "all" || tab === "users" ? shown.outsidePeople.length : 0) + (tab === "all" || tab === "notes" ? shown.outsideNotes.length : 0) : 0
+  const any = count && (Object.values(count).some(Boolean) || shown.outsidePeople.length + shown.outsideNotes.length > 0)
   const show = id => (tab === "all" || tab === id) && count[id] > 0
   const caption = filterCaption(filter)
   const filteredOut = found && !found.direct && (found.people.length || found.notes.length)
@@ -153,7 +156,11 @@ export function SearchScreen({ ctx, onProfile }) {
             <span class="person-names"><span class="author-name">{l.title}</span><span class="person-sub">{hostOf(l.url)}</span></span>
           </a>)}
         </>}
-        {tab !== "all" && !count[tab] && <div class="empty">
+        <OutsideFold count={outsideShown} resetKey={`${text.trim()}|${tab}`}>
+          {(tab === "all" || tab === "users") && shown.outsidePeople.map(pk => <PersonRow key={pk} pubkey={pk} onClick={onProfile && (() => onProfile(pk))} />)}
+          {(tab === "all" || tab === "notes") && shown.outsideNotes.map(n => <NoteCard key={n.id} event={n} />)}
+        </OutsideFold>
+        {tab !== "all" && !count[tab] && !outsideShown && <div class="empty">
           <p>No {TABS.find(t => t.id === tab).label.toLowerCase()} matched “{text.trim()}”</p>
           <p>Other tabs have results.</p>
         </div>}

@@ -16,6 +16,8 @@ struct SearchView: View {
     /// change never re-asks the relays.
     @State var searchFilter: SearchFilter = .all
     @State var searchResults: SearchResults = .empty
+    /// Whether the "from outside your web" fold is open (SearchView+Outside).
+    @State var showsOutside = false
     @State var isSearching = false
     @State var searchDebounceTask: Task<Void, Never>?
     @State var showingNoteDetail: FeedNote?
@@ -78,14 +80,20 @@ struct SearchView: View {
         /// own → follows → everyone). Empty: sorted by pubkey.
         var userOrder: [String] = []
         var notes: [FeedNote] = []
+        /// People and notes from outside your web, folded under one line
+        /// (SearchView+Outside), in rank order. Not in `users`.
+        var outsideUsers: [FeedProfile] = []
+        var outsideNotes: [FeedNote] = []
         var links: [SearchLink] = []
         var hashtags: [String] = []
 
         static let empty = SearchResults()
 
         var isEmpty: Bool {
-            users.isEmpty && notes.isEmpty && links.isEmpty && hashtags.isEmpty
+            users.isEmpty && notes.isEmpty && links.isEmpty && hashtags.isEmpty && !hasOutside
         }
+
+        var hasOutside: Bool { !outsideUsers.isEmpty || !outsideNotes.isEmpty }
 
         var orderedUsers: [(key: String, value: FeedProfile)] {
             guard !userOrder.isEmpty else { return users.sorted(by: { $0.key < $1.key }) }
@@ -98,8 +106,8 @@ struct SearchView: View {
         func isEmpty(for filter: ResultTypeFilter) -> Bool {
             switch filter {
             case .all: return isEmpty
-            case .users: return users.isEmpty
-            case .notes: return notes.isEmpty
+            case .users: return users.isEmpty && outsideUsers.isEmpty
+            case .notes: return notes.isEmpty && outsideNotes.isEmpty
             case .hashtags: return hashtags.isEmpty
             case .links: return links.isEmpty
             }
@@ -152,6 +160,7 @@ struct SearchView: View {
                             #endif
                             .onChange(of: searchQuery) { _, query in
                                 searchDebounceTask?.cancel()
+                                showsOutside = false
                                 let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
                                 if trimmed.isEmpty {
                                     searchResults = .empty

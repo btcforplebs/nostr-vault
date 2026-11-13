@@ -253,7 +253,8 @@ extension VaultView {
                                 block.contains($0) || NotificationPolicy.hidesOwnAccountTag(
                                     author: $0, recipient: hex, accounts: ownAccounts, notify: notifyOwn)
                             },
-                            isOutside: { ContentFilter.isOutside(author: $0, owner: hex, whitelist: whitelist, trusted: trusted) }
+                            isOutside: { ContentFilter.isOutside(author: $0, owner: hex, whitelist: whitelist, trusted: trusted) },
+                            foldsOutsideLikes: true
                         )
                         return (hex, lines, full)
                     }

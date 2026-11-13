@@ -153,7 +153,8 @@ final class LiveVaultModel: ObservableObject {
                     blacklist.contains($0) || NotificationPolicy.hidesOwnAccountTag(
                         author: $0, recipient: owner, accounts: ownAccounts, notify: notifyOwn)
                 },
-                isOutside: { ContentFilter.isOutside(author: $0, owner: owner, whitelist: whitelist, trusted: trusted) }
+                isOutside: { ContentFilter.isOutside(author: $0, owner: owner, whitelist: whitelist, trusted: trusted) },
+                foldsOutsideLikes: true
             )
             let shown = Array(built.lazy.filter { !(zapsOnly && $0.kind == .reaction) }.prefix(LiveVault.maxRows * 3))
             let have = Set(events.map(\.id))
