@@ -148,7 +148,7 @@ function App() {
     // The account came back with no follow list while a relay was still to answer (sync.js refreshAccount onLate): this
     // is it once they all have. Loaded either way then: a list nobody has is an account that follows no one.
     // It can land before prepareVault returns (its setup runs on), so the account set after that keeps it.
-    let late = null
+    let late = null, read = null
     const lateAccount = acc => {
       if (!live) return
       late = acc
@@ -157,7 +157,10 @@ function App() {
       log("account", { follows: acc.follows.length, late: true })
     }
     const settled = acc => late ? { ...late, loaded: true } : { ...acc, loaded: !!acc.contacts }
-    openNow.current = () => { if (opened) return; opened = true; setPrep(null); if (shown) setAccount(late ? { ...late, loaded: true } : shown) }
+    const current = () => late ? { ...late, loaded: true } : read ? settled(read) : shown
+    openNow.current = () => { if (opened) return; opened = true; setPrep(null); if (shown) setAccount(current()) }
+    // Setup has read the account (its first step) while the rest runs on: an app already opened shows it now.
+    const accountRead = acc => { if (!live) return; read = acc; putProfile(acc.profileEvent); if (opened) setAccount(current()) }
     ;(async () => {
       const v = BOX ? startBoxVault({ signer: { signEvent: e => signerNow.current.signEvent(e) }, routeClient, deviceKey }) : await startVault({ pubkey: session.pubkey, log })
       if (!live) return
@@ -183,7 +186,7 @@ function App() {
           if (!live) return
         }
         const { account: ready, fresh } = await prepareVault({ vault: v, pubkey: session.pubkey, local, early, log, onStep: step,
-          setup: c => runAndWait(c, "setup"), onLate: lateAccount })
+          setup: c => runAndWait(c, "setup"), onLate: lateAccount, onAccount: accountRead })
         if (!live) return
         if (fresh) {
           putProfile(ready.profileEvent)
