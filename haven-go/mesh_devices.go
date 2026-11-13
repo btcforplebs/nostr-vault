@@ -349,7 +349,13 @@ func (i meshOwnerIndex) Keep(ctx context.Context, blob blossom.BlobDescriptor, p
 	if dev := meshDeviceAuthIn(ctx); dev != nil && dev.PubKey == pubkey && dev.Tags.FindWithValue("x", blob.SHA256) == nil {
 		return errors.New("authorization does not cover this blob")
 	}
-	return i.EventStoreBlobIndexWrapper.Keep(ctx, blob, meshIndexKey(ctx, pubkey))
+	key := meshIndexKey(ctx, pubkey)
+	if err := i.EventStoreBlobIndexWrapper.Keep(ctx, blob, key); err != nil {
+		return err
+	}
+	// The owner's new file gets a live note even if its app sends none.
+	filesBlobKept(blob, key)
+	return nil
 }
 
 func (i meshOwnerIndex) Delete(ctx context.Context, sha256 string, pubkey string) error {
