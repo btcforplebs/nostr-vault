@@ -115,13 +115,14 @@ class AccountUnreadTest {
         assertTrue(shows("zap", friend, zapsOnly = true))
     }
 
-    @Test fun outsideYourNetworkHidesRepliesQuotesMentionsOnly() {
-        for (type in listOf("reply", "quote", "mention")) {
+    @Test fun outsideYourNetworkHidesRepliesQuotesMentionsLikesReposts() {
+        // Likes and reposts fold out of the list since 2026-11-13 (foldsOutsideLikes).
+        for (type in listOf("reply", "quote", "mention", "reaction", "repost")) {
             assertFalse(type, shows(type, stranger, outside = setOf(stranger)))
             assertTrue(type, shows(type, friend, outside = setOf(stranger)))
         }
         // The list keeps these from anyone (VaultActivity.build).
-        for (type in listOf("reaction", "repost", "zap", "follow")) {
+        for (type in listOf("zap", "follow")) {
             assertTrue(type, shows(type, stranger, outside = setOf(stranger)))
         }
     }
@@ -159,5 +160,16 @@ class AccountUnreadTest {
         val own = { r: String, a: String -> r != a }
         assertEquals(emptySet<Int>(), AccountUnread.ownAccountOnlyKinds(listOf(marker), own))
         assertEquals(setOf(1), AccountUnread.ownAccountOnlyKinds(listOf(marker)) { _, _ -> true })
+    }
+
+    // Tron #2012 must-fix 1: the store loads the web only for JUDGED_BY_NETWORK
+    // and passes an empty one otherwise, which reads everyone as outside. So
+    // every type listShows judges by network must be in it, or a friend's like
+    // never counts in the switcher's "N new".
+    @Test fun everyTypeJudgedByNetworkLoadsTheWeb() {
+        for (type in AccountUnread.COUNTED_TYPES) {
+            val judged = shows(type, stranger, outside = setOf(stranger)) != shows(type, stranger)
+            assertEquals(type, judged, type in AccountUnread.JUDGED_BY_NETWORK)
+        }
     }
 }

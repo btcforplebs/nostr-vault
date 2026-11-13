@@ -15,7 +15,9 @@ import java.io.File
         if (wotCacheObserver != null) return
         wotCacheObserver = object : FileObserver(relayDataDir, CLOSE_WRITE or MOVED_TO) {
             override fun onEvent(event: Int, path: String?) {
-                if (path == WOT_CACHE_FILE) loadWotPubkeys()
+                // The links file is swapped in just after the cache: the open
+                // account's web is counted from it (AccountWeb).
+                if (path == WOT_CACHE_FILE || path == AccountWeb.LINKS_FILE) loadWotPubkeys()
             }
         }.also { it.startWatching() }
     }
@@ -45,6 +47,9 @@ import java.io.File
 
     @Suppress("DEPRECATION") // FileObserver(File) needs API 29; minSdk is 26.
     internal fun FeedService.loadWotPubkeysImpl() {
+        // A cache write, a links write and a follow change can each start a
+        // run; the newest one wins, not the last to finish.
+        val gen = wotLoadGeneration.incrementAndGet()
         scope.launch(Dispatchers.IO) {
             try {
                 val config = configStore.config.value
@@ -59,10 +64,13 @@ import java.io.File
                             Log.w(TAG, "WoT cache unreadable: $wotCachePath")
                             return@launch
                         }
-                        val loaded = parsed.pubkeys
+                        // The relay's web is every device account's pooled; keep the open account's part.
+                        val loaded = accountWeb(parsed.pubkeys, File(config.relayDataDir, AccountWeb.LINKS_FILE), parsed.depth, config.chatRelayMinFollowers)
                         val vouches = parsed.vouches
                         if (BuildConfig.DEBUG) Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
                         withContext(Dispatchers.Main.immediate) {
+                            if (gen != wotLoadGeneration.get()) return@withContext
+                            _pooledWotPubkeys.value = parsed.pubkeys
                             _wotCacheRead.value = true
                             // Before the graph: its collectors read the vouches straight away.
                             _wotVouches.value = vouches
@@ -85,6 +93,17 @@ import java.io.File
             }
         }
     }
+
+/**
+ * [saved] narrowed to the open account ([AccountWeb]): its follows, and anyone
+ * Min Followers of them follow, not anyone the device's accounts together do.
+ */
+internal fun FeedService.accountWeb(saved: Set<String>, links: File, depth: Int?, minFollowers: Int): Set<String> {
+    val follows = followedPubkeySet()
+    val keep = deviceAccountHexes()
+    return if (depth != 3 || !links.exists()) AccountWeb.narrow(saved, null, depth, follows, keep, minFollowers)
+    else links.bufferedReader().use { AccountWeb.narrow(saved, it, depth, follows, keep, minFollowers) }
+}
 
 /**
  * Whether Global asks its relays again as the trust graph loads: its REQ

@@ -415,7 +415,7 @@ class LocalNotificationService @Inject constructor(
 
         // Nothing from outside your Web of Trust: those were the spam alerts.
         val own = setOf(recipientHex, nostrService.get().activeHexPubkey)
-        val trusted = trustedAuthors()
+        val trusted = trustedAuthors(recipientHex)
         if (!authorMayNotify(author, type, trusted, own)) {
             if (BuildConfig.DEBUG) Log.i(TAG, "skip: '$type' author ${author.take(8)} outside Web of Trust")
             return
@@ -795,8 +795,12 @@ class LocalNotificationService @Inject constructor(
      * your follows. Empty until the graph has loaded (a load is started then).
      * iOS: FeedService.relayTabTrustedPubkeys.
      */
-    private fun trustedAuthors(): Set<String> {
+    private fun trustedAuthors(recipientHex: String): Set<String> {
         val feed = feedService.get()
+        // Another account's alert: its own (the relay's pooled) web, not the open account's.
+        if (!recipientHex.equals(nostrService.get().activeHexPubkey, ignoreCase = true)) {
+            return feed.trustedPubkeysFor(recipientHex)
+        }
         val wot = feed.wotPubkeys.value
         if (wot.isEmpty()) {
             feed.loadWotPubkeys()

@@ -17,6 +17,12 @@ class WotCacheFileTest {
         assertEquals(mapOf(bob to 12), parsed?.vouches)
     }
 
+    @Test fun `the depth the graph was built at, null on an older relay`() {
+        assertEquals(3, WotCacheFile.parse("""{"pubkeys":{"$owner":true,"$alice":true},"depth":3}""", owner)?.depth)
+        assertNull(WotCacheFile.parse("""{"pubkeys":{"$owner":true,"$alice":true},"depth":0}""", owner)?.depth)
+        assertNull(WotCacheFile.parse("""{"pubkeys":{"$owner":true,"$alice":true}}""", owner)?.depth)
+    }
+
     @Test fun `a cache without vouches has a graph and null vouches`() {
         val parsed = WotCacheFile.read("""  {"pubkeys":{"$owner":true,"$alice":true}}""".byteInputStream(), owner)
         assertEquals(setOf(owner, alice), parsed?.pubkeys)
