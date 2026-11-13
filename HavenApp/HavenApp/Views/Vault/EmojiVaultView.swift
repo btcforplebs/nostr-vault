@@ -11,6 +11,7 @@ struct EmojiVaultView: View {
     @ObservedObject private var store = EmojiVaultStore.shared
     @ObservedObject private var nostr = NostrService.shared
     @ObservedObject private var configService = ConfigService.shared
+    @ObservedObject private var browser = EmojiSetBrowser.shared
     @Environment(\.inVaultTab) private var inVaultTab
 
     @State private var picked: EmojiVaultLogic.Row?
@@ -73,6 +74,7 @@ struct EmojiVaultView: View {
                     if !store.unmatchedZipFiles.isEmpty { unmatchedSection }
                     ForEach(pages) { page in setSection(page) }
                 }
+                findSetsSection
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -86,6 +88,11 @@ struct EmojiVaultView: View {
             library.refresh(maxAge: EmojiListService.pickerMaxAge)
         }
         .onDisappear { FileNotesLive.shared.stop() }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))) { _ in browser.dropBlocked() }
+        .onReceive(NotificationCenter.default.publisher(for: MuteListStore.settled)) { _ in browser.dropBlocked() }
+        .task(id: browser.found.map(\.author)) {
+            nostr.fetchMissingProfiles(for: Array(Set(browser.found.map(\.author))))
+        }
         .task(id: pages.map(\.author)) {
             nostr.fetchMissingProfiles(for: Array(Set(pages.map(\.author).filter { !$0.isEmpty })))
         }
@@ -245,6 +252,51 @@ struct EmojiVaultView: View {
         }
     }
 
+    // MARK: Find emoji sets
+
+    /// The account's 10030 sets, the fetched ones and any the list names.
+    private var listedAddresses: Set<String> {
+        var out = Set(library.library.sets.map(\.address))
+        if let list = library.listEvent { out.formUnion(EmojiListParse.list(list.tags).setAddresses) }
+        return out
+    }
+
+    /// Other people's sets, at the bottom of the page: people you follow
+    /// first, then everyone's from the last month. Rows are the LazyVStack's
+    /// own children, so a long answer draws as it scrolls.
+    @ViewBuilder
+    private var findSetsSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Find emoji sets").font(.appSystem(size: 17, weight: .bold))
+                Spacer()
+                if browser.loading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button { browser.browse(force: true) } label: { Image(systemName: "arrow.clockwise") }
+                        .accessibilityLabel("Look again")
+                }
+            }
+            Text("Sets by people you follow first, then everyone's from the last month. Add puts a set in your emoji list.")
+                .font(.appSystem(size: 12))
+                .foregroundColor(.secondary)
+        }
+        .padding(.top, 12)
+        .onAppear { browser.browse() }
+        if browser.asked && browser.found.isEmpty && !browser.loading {
+            Text("No sets found on your relays.")
+                .font(.appSystem(size: 14))
+                .foregroundColor(.secondary)
+        }
+        let listed = listedAddresses
+        ForEach(browser.found) { found in
+            FoundSetRow(found: found,
+                        authorName: nostr.profiles[found.author]?.bestName ?? String(found.author.prefix(8)),
+                        listed: listed.contains(found.set.address),
+                        busy: store.listing.contains(found.set.address))
+        }
+    }
+
     private func authorLine(_ page: EmojiVaultLogic.SetPage) -> String {
         let name = nostr.profiles[page.author]?.bestName ?? String(page.author.prefix(8))
         var parts = ["by \(name)", "\(page.saved) of \(page.rows.count) saved"]
@@ -273,6 +325,67 @@ struct EmojiVaultView: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+}
+
+/// One set in Find emoji sets: title, author, a row of its emoji, and Add /
+/// Remove (the 10030, through EmojiVaultStore.setListed).
+private struct FoundSetRow: View {
+    let found: EmojiSetBrowse.Found
+    let authorName: String
+    let listed: Bool
+    let busy: Bool
+    private static let preview = 8
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(found.set.title)
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .lineLimit(1)
+                    Text(detail)
+                        .font(.appSystem(size: 12))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Button {
+                    let address = found.set.address
+                    let on = !listed
+                    Task { _ = await EmojiVaultStore.shared.setListed(address, on: on) }
+                } label: {
+                    if busy {
+                        ProgressView().controlSize(.small).frame(minWidth: 64)
+                    } else {
+                        Text(listed ? "Remove" : "Add").frame(minWidth: 64)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .tint(listed ? .secondary : Color.havenPurple)
+                .disabled(busy)
+                .accessibilityLabel(listed ? "Remove \(found.set.title)" : "Add \(found.set.title)")
+            }
+            HStack(spacing: 6) {
+                ForEach(found.set.emojis.prefix(Self.preview), id: \.self) { e in
+                    CustomEmojiImage(emoji: e, size: 28)
+                }
+                if found.set.emojis.count > Self.preview {
+                    Text("+\(found.set.emojis.count - Self.preview)")
+                        .font(.appSystem(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .accessibilityHidden(true)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
+    }
+
+    private var detail: String {
+        var parts = ["by \(authorName)", "\(found.set.emojis.count) emoji"]
+        if found.byFollow { parts.append("you follow") }
+        return parts.joined(separator: " · ")
     }
 }
 
