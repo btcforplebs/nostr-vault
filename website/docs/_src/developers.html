@@ -12,7 +12,9 @@
 <p>The mesh address is one new entry form, <code>fipsmesh://&lt;npub&gt;/</code>, in lists you already use:
     the media server list (<code>kind:10063</code>) and, later, the relay list (<code>kind:10002</code>). In a
     relay list it goes in its own <code>fipsmesh</code> tag, not an <code>r</code> entry, so clients without mesh
-    support never try to connect to it; Nostr Vault doesn't publish that tag yet. No new event kinds. Requests are plain Blossom <code>GET /&lt;sha256&gt;</code>, with the same hash
+    support never try to connect to it; Nostr Vault doesn't publish that tag yet. Linking a device never writes
+    the media server list: Nostr Vault adds a <code>fipsmesh</code> entry only when you add a vault yourself under
+    <span class="path">Media Servers &rarr; Your Vaults on the Mesh</span> and save. No new event kinds. Requests are plain Blossom <code>GET /&lt;sha256&gt;</code>, with the same hash
     check.</p>
 <p>A client that doesn't know the form skips it and carries on with the other servers in the list. A client that
     does can ask the device for the photo by its fingerprint, the same way it asks any media server, and throws the
@@ -26,6 +28,17 @@
 </a>
 <p>How it works for people using the app is on <a href="/docs/mesh/">The mesh</a>.</p>
 
+<h2 id="nips">Other NIPs worth knowing</h2>
+<ul>
+    <li><strong>Drafts (NIP-37).</strong> Drafts are <code>kind:31234</code> with only <code>d</code> and
+        <code>k</code> tags outside; the draft itself is NIP-44 encrypted to your own key. Older plaintext drafts
+        are re-saved encrypted once. They go to your own vault, not to public relays.</li>
+    <li><strong>File notes (NIP-94).</strong> Your vault keeps a <code>kind:1063</code> note for each file in your
+        media, on its own <code>/files</code> relay. Only you and the readers you name can read it.</li>
+    <li><strong>Encrypted files in messages (NIP-17 <code>kind:15</code>).</strong> Test vectors are in
+        <a href="https://github.com/btcforplebs/nostr-vault/blob/master/docs/DM_FILE_VECTORS.json">docs/DM_FILE_VECTORS.json</a>.</li>
+</ul>
+
 <h2 id="build">Build Nostr Vault</h2>
 <p>Everything is in one repository, <a href="https://github.com/btcforplebs/nostr-vault">btcforplebs/nostr-vault</a>:</p>
 <ul>
@@ -36,6 +49,11 @@
     <li><code>web-vault/</code>: the web app. <code>npm ci</code>, then <code>npm run dev</code> or
         <code>npm run build</code>.</li>
     <li><code>web-relay/</code>: the <a href="/docs/browser-relay/">browser vault</a>.</li>
+    <li><code>fips-bridge/</code>, <code>fips-v2/</code> and <code>fips-v2-android/</code>: the mesh (FIPS)
+        engine embedded in the apps, and its probes (Rust).</li>
     <li><code>linux/</code>: a <code>Dockerfile</code> to build the vault for a Linux box yourself (no published image yet).</li>
-    <li><code>docs/</code>: the NIP drafts, including NIP-F1.</li>
+    <li><code>linux/</code> also has <code>install.sh</code>, which sets up a vault on a Linux box. Updates are
+        manual: run it again.</li>
+    <li><code>docs/</code>: the NIP drafts, including NIP-F1, and the contracts between the apps and the
+        vault.</li>
 </ul>

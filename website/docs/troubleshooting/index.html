@@ -131,7 +131,7 @@
             <p class="eyebrow">Help</p>
             <h1>When something <span>isn't working</span></h1>
             <p class="docs-lede">One heading per problem: what you see, why it happens, and what to tap.</p>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#my-feed-is-empty">My feed is empty</a></li><li><a href="#i-can-t-post-like-or-follow">I can't post, like or follow</a></li><li><a href="#my-signer-never-answers">My signer never answers</a></li><li><a href="#my-photo-post-didn-t-send">My photo post didn't send</a></li><li><a href="#a-relay-isn-t-answering">A relay isn't answering</a></li><li><a href="#android-my-vault-went-quiet-after-an-update">Android: my vault went quiet after an update</a></li><li><a href="#a-device-on-my-devices-is-never-in-reach">A device on My Devices is never in reach</a></li><li><a href="#check-sync-stops-early">Check sync stops early</a></li><li><a href="#someone-s-photos-don-t-load-over-the-mesh">Someone's photos don't load over the mesh</a></li><li><a href="#mobile-vault-mode-paused">Mobile vault mode paused</a></li><li><a href="#still-stuck">Still stuck?</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#my-feed-is-empty">My feed is empty</a></li><li><a href="#underrated-is-empty">Underrated is empty</a></li><li><a href="#i-can-t-post-like-or-follow">I can't post, like or follow</a></li><li><a href="#my-signer-never-answers">My signer never answers</a></li><li><a href="#my-photo-post-didn-t-send">My photo post didn't send</a></li><li><a href="#a-relay-isn-t-answering">A relay isn't answering</a></li><li><a href="#android-my-vault-went-quiet-after-an-update">Android: my vault went quiet after an update</a></li><li><a href="#a-device-on-my-devices-is-never-in-reach">A device on My Devices is never in reach</a></li><li><a href="#check-sync-stops-early">Check sync stops early</a></li><li><a href="#someone-s-photos-don-t-load-over-the-mesh">Someone's photos don't load over the mesh</a></li><li><a href="#mobile-vault-mode-paused">Mobile vault mode paused</a></li><li><a href="#message-alerts-don-t-show-what-was-said">Message alerts don't show what was said</a></li><li><a href="#a-link-opens-inside-the-app-not-in-my-browser">A link opens inside the app, not in my browser</a></li><li><a href="#still-stuck">Still stuck?</a></li></ul></div>
 
             <article class="docs-article">
                 <section id="empty-feed">
@@ -143,6 +143,14 @@
                     <span class="path">Settings &rarr; Help &rarr; Tutorials</span>. More on <a class="inline" href="/docs/feeds/#new-account">Feeds</a>.</p>
                 <p>Global and Media also stay empty until your web is built. That's on purpose: they show nothing rather than
                     everyone.</p>
+                </section>
+
+                <section id="underrated">
+                <h2 id="underrated-is-empty">Underrated is empty</h2>
+                <p>You see "Underrated needs your wider web". Underrated picks posts from people one step out, so it needs your
+                    wider network: the people your follows follow.</p>
+                <p><strong>Fix:</strong> tap <strong>Build your wider network</strong> and give it a few minutes. New accounts
+                    build it by themselves after setup; an account set up before 3.2.2 may need the tap once.</p>
                 </section>
 
                 <section id="read-only">
@@ -224,6 +232,22 @@
                 <p><strong>Fix:</strong> tap the notification or open the app again; Mobile vault mode turns back on by itself. If it
                     won't start, add your other phone or your Mac under My Devices first. If it says the mesh downloaded today's
                     limit, others can read again at the time it shows; your own devices are never limited. See <a class="inline" href="/docs/mesh/#kiosk">Mobile vault mode</a>.</p>
+                </section>
+
+                <section id="message-text">
+                <h2 id="message-alerts-don-t-show-what-was-said">Message alerts don't show what was said</h2>
+                <p>A message alert says "Message from <em>name</em>" and nothing more. That's on purpose, so a message can't be
+                    read off a locked screen.</p>
+                <p><strong>Fix:</strong> turn on <span class="path">Settings &rarr; Notifications &rarr; Show message text</span>.
+                    The pill inside the app always shows the text.</p>
+                </section>
+
+                <section id="links">
+                <h2 id="a-link-opens-inside-the-app-not-in-my-browser">A link opens inside the app, not in my browser</h2>
+                <p>Links open in Nostr Vault's own browser, so you come back to where you were.</p>
+                <p><strong>Fix:</strong> to use your normal browser, turn off
+                    <span class="path">Settings &rarr; Privacy &rarr; Open Links in Nostr Vault</span>. A <code>.fips</code> link
+                    always opens in the app: it can only load over the mesh.</p>
                 </section>
 
                 <section id="more">

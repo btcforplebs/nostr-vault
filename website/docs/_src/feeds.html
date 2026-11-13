@@ -9,9 +9,9 @@
   "lede": "Nostr has no algorithm picking for you. Nostr Vault gives you a set of feeds, each a different way to look at Nostr, and you decide which ones you see and in what order.",
   "description": "Nostr Vault feeds: Following, Discover, Global, Popular, Media and the rest; Edit Feeds; the Web of Trust shield; languages; reposts, replies and auto-load; and how a new account fills its feed.",
   "labels": {
-    "ios": ["Following", "Catch Up", "Underrated", "Collapse Menu on Scroll", "Discover", "Global", "Hashtags", "Popular", "Media", "diVines", "Articles", "Recipes", "Marketplace", "Live", "Polls", "Music", "Edit Feeds", "Reset to Default", "Web of Trust", "Everyone", "Everyone is locked", "All languages", "Auto-load", "Reposts", "Replies", "Expanded View", "Compact View", "Threaded View", "Feed & Display", "Show Reposts", "Show Replies", "Auto-Load New Posts", "Send Delay", "Reload Feed", "New Posts Pill", "Zaps Only", "Show ranks", "Report Post", "Block User", "Let's fill it", "Your Feeds", "Fill Your Feed"],
-    "android": ["Following", "Catch Up", "Underrated", "Discover", "Global", "Hashtags", "Popular", "Media", "diVines", "Articles", "Recipes", "Marketplace", "Live", "Polls", "Music", "Edit Feeds", "Reset to Default", "Everyone", "Sensitive Content Warning", "All languages", "Show Reposts", "Show Replies", "Auto-Load New Posts", "Send Delay", "Reload Feed", "New Posts Pill", "Zaps Only"],
-    "web": ["Following", "Discover", "Global", "Popular", "Media", "diVines", "Polls", "Articles", "Recipes", "Marketplace", "Live", "Music", "Edit Feeds", "Reset to Default"]
+    "ios": ["Following", "Catch Up", "Underrated", "Collapse Menu on Scroll", "Discover", "Global", "Hashtags", "Popular", "Media", "diVines", "Articles", "Recipes", "Marketplace", "Live", "Polls", "Music", "Edit Feeds", "Reset to Default", "Web of Trust", "Everyone", "Everyone is locked", "All languages", "Auto-load", "Reposts", "Replies", "Threaded View", "Build your wider network", "Back to your web", "Open Links in Nostr Vault", "Feed & Display", "Show Reposts", "Show Replies", "Auto-Load New Posts", "Send Delay", "Reload Feed", "New Posts Pill", "Zaps Only", "Show ranks", "Report Post", "Block User", "Let's fill it", "Your Feeds", "Fill Your Feed"],
+    "android": ["Following", "Catch Up", "Underrated", "Discover", "Global", "Hashtags", "Popular", "Media", "diVines", "Articles", "Recipes", "Marketplace", "Live", "Polls", "Music", "Edit Feeds", "Reset to Default", "Everyone", "Sensitive Content Warning", "All languages", "Build your wider network", "Open Links in Nostr Vault", "Show Reposts", "Show Replies", "Auto-Load New Posts", "Send Delay", "Reload Feed", "New Posts Pill", "Zaps Only"],
+    "web": ["Following", "Discover", "Global", "Popular", "Media", "diVines", "Polls", "Articles", "Recipes", "Marketplace", "Live", "Music", "Edit Feeds", "Reset to Default", "Back to your web"]
   }
 }
 -->
@@ -24,7 +24,8 @@
     <li><strong>Following</strong>: people you follow. It's always on.</li>
     <li><strong>Catch Up</strong>: the newest post from each person you follow, one each, from the last two weeks.
         Quiet people don't get lost under busy ones.</li>
-    <li><strong>Discover</strong>: the people your follows follow.</li>
+    <li><strong>Discover</strong>: the people your follows follow. It leaves out people you already follow and
+        anyone outside your web.</li>
     <li><strong>Underrated</strong>: good posts from people one step out, never your own follows. Ranked by the
         likes, reposts and zaps they get from your web, with a lift for people who post less.</li>
     <li><strong>Global</strong>: everyone in your <a class="inline" href="/docs/web-of-trust/">web of trust</a>,
@@ -60,7 +61,9 @@
 <p>Global, Hashtags, and the Global side of Media, Articles, diVines, Recipes, Live, Marketplace and Polls show
     only people in your web of trust: people you follow and the people they follow. A shield at the top right says <strong>Web of Trust</strong>.</p>
 <p>Tap it to switch to <strong>Everyone</strong>. You'll get a <strong>Sensitive Content Warning</strong> first,
-    because Everyone is unfiltered and you should expect spam. It starts on Web of Trust.</p>
+    because Everyone is unfiltered and you should expect spam. It starts on Web of Trust. While Everyone is on,
+    Global shows a banner saying so, with <strong>Back to your web</strong> to switch back in one tap (iPhone,
+    iPad, Mac and the web).</p>
 <p id="everyone-lock">Everyone stays locked until you follow at least 5 people. Until then the shield shows a
     lock, and tapping it explains why: <strong>Everyone is locked</strong>, how many of the 5 you follow, and
     how many more to go, for example "Follow 3 more people to unlock Everyone". Follow a few people and the switch
@@ -83,8 +86,10 @@
         Live and Polls, to pick whose posts you see. Polls also filters open and closed polls.</li>
     <li>On Popular, a menu to rank posts from everyone, only follows, or only people you don't follow, and
         <strong>Show ranks</strong> to see each post's place.</li>
-    <li>A layout button: <strong>Expanded View</strong>, <strong>Compact View</strong> or
-        <strong>Threaded View</strong> where a feed has threads (not diVines). Each feed remembers its own.</li>
+    <li>A layout button that switches between Expanded and <strong>Threaded View</strong> where a feed has
+        threads (not diVines). Expanded turns replies off and Threaded turns them on; you can still flip
+        <strong>Replies</strong> by hand. Each feed remembers its own, and a new install opens the timeline feeds
+        threaded. Compact View is gone: a feed you had on Compact opens as Expanded.</li>
 </ul>
 </section>
 
@@ -94,6 +99,29 @@
 <p>When new posts arrive, a pill at the top says how many. Tap it to load them, or pull down on the feed.
     Turn on <strong>Auto-load</strong> to add them as they arrive. Tap the Feed tab again to jump to the top.</p>
 <p>A repost shows "<em>name</em> reposted" above the post.</p>
+<p>Popular, Catch Up and Underrated are worked out once, not loaded page by page, so they end: a line under the
+    last post says the list is done. Pull down for a new one (on a Mac, click Refresh Feed).</p>
+</section>
+
+<section id="wider">
+<p class="eyebrow">One step out</p>
+<h2>Your wider network</h2>
+<p>Underrated, and the fuller versions of Popular, Global and Discover, need your wider network: the people your
+    follows follow. The app builds it by itself once first-run setup finishes. If Underrated is still empty, it
+    says why and offers <strong>Build your wider network</strong>. An account set up before 3.2.2 may need that
+    tap once.</p>
+</section>
+
+<section id="links">
+<p class="eyebrow">Tap a link</p>
+<h2>Links open in the app</h2>
+<p>A link in a post, an article, a profile bio or a message opens in Nostr Vault's own browser, so you come back
+    to the feed where you left it. A <code>.fips</code> link opens the site over the
+    <a class="inline" href="/docs/mesh/">mesh</a> and never goes to the open internet. To use your normal browser
+    instead, turn off <span class="path">Settings &rarr; Privacy &rarr; Open Links in Nostr Vault</span>. Signer
+    apps, <code>lightning:</code> and email links still open their own apps. (iPhone, iPad, Mac and
+    Android.)</p>
+<p>A note, nevent or naddr written in an article shows as a quote card where it sits in the text.</p>
 </section>
 
 <section id="settings">

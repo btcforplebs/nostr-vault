@@ -9,9 +9,9 @@
   "lede": "One heading per problem: what you see, why it happens, and what to tap.",
   "description": "Fixes for common Nostr Vault problems: empty feed, signer not answering, read-only account, photo posts failing, relays not answering, mesh devices not in reach, Check sync stopping, Mobile vault mode paused.",
   "labels": {
-    "ios": ["Fill Your Feed", "Media Servers", "Reveal Key", "Accounts & Keys", "My Devices", "Not in reach", "Link a device", "This Device", "Desktop vault · full history", "Sync now", "Copy was interrupted", "Mobile vault mode", "Mobile vault mode paused", "Share With Others", "No Write relay"],
+    "ios": ["Fill Your Feed", "Media Servers", "Reveal Key", "Accounts & Keys", "My Devices", "Not in reach", "Link a device", "This Device", "Desktop vault · full history", "Sync now", "Copy was interrupted", "Mobile vault mode", "Mobile vault mode paused", "Share With Others", "No Write relay", "Build your wider network", "Show message text", "Open Links in Nostr Vault"],
     "android": ["Media Servers", "Start Vault Automatically", "My Devices", "This Device", "Desktop vault · full history", "Mobile vault mode", "No Write relay",
-                "Sync now", "Copy was interrupted"]
+                "Sync now", "Copy was interrupted", "Build your wider network", "Show message text", "Open Links in Nostr Vault"]
   }
 }
 -->
@@ -25,6 +25,14 @@
     <span class="path">Settings &rarr; Help &rarr; Tutorials</span>. More on <a class="inline" href="/docs/feeds/#new-account">Feeds</a>.</p>
 <p>Global and Media also stay empty until your web is built. That's on purpose: they show nothing rather than
     everyone.</p>
+</section>
+
+<section id="underrated">
+<h2>Underrated is empty</h2>
+<p>You see "Underrated needs your wider web". Underrated picks posts from people one step out, so it needs your
+    wider network: the people your follows follow.</p>
+<p><strong>Fix:</strong> tap <strong>Build your wider network</strong> and give it a few minutes. New accounts
+    build it by themselves after setup; an account set up before 3.2.2 may need the tap once.</p>
 </section>
 
 <section id="read-only">
@@ -106,6 +114,22 @@
 <p><strong>Fix:</strong> tap the notification or open the app again; Mobile vault mode turns back on by itself. If it
     won't start, add your other phone or your Mac under My Devices first. If it says the mesh downloaded today's
     limit, others can read again at the time it shows; your own devices are never limited. See <a class="inline" href="/docs/mesh/#kiosk">Mobile vault mode</a>.</p>
+</section>
+
+<section id="message-text">
+<h2>Message alerts don't show what was said</h2>
+<p>A message alert says "Message from <em>name</em>" and nothing more. That's on purpose, so a message can't be
+    read off a locked screen.</p>
+<p><strong>Fix:</strong> turn on <span class="path">Settings &rarr; Notifications &rarr; Show message text</span>.
+    The pill inside the app always shows the text.</p>
+</section>
+
+<section id="links">
+<h2>A link opens inside the app, not in my browser</h2>
+<p>Links open in Nostr Vault's own browser, so you come back to where you were.</p>
+<p><strong>Fix:</strong> to use your normal browser, turn off
+    <span class="path">Settings &rarr; Privacy &rarr; Open Links in Nostr Vault</span>. A <code>.fips</code> link
+    always opens in the app: it can only load over the mesh.</p>
 </section>
 
 <section id="more">

@@ -140,7 +140,8 @@
                     <li><strong>iPhone and Android:</strong> open the Vault tab and tap the envelope at the top right. A red
                         dot means something is unread.</li>
                     <li><strong>iPad:</strong> <strong>Messages</strong> in the sidebar, with an unread count.</li>
-                    <li><strong>Mac:</strong> the <strong>Messages</strong> button on your profile.</li>
+                    <li><strong>Mac:</strong> <strong>Vault</strong> in the rail, then <strong>Messages</strong> in the bar at
+                        the top.</li>
                     <li><strong>Web:</strong> <strong>Messages</strong> on the Vault tab, or in the sidebar on a computer
                         (shortcut <kbd>g</kbd> <kbd>m</kbd>).</li>
                 </ul>
@@ -170,7 +171,9 @@
                     the message. Photos other than GIFs are re-saved, which removes their location.</p>
                 <p>On iPhone, the New Message screen has no photo button: send the first message, then add photos in the
                     conversation.</p>
-                <p>You can select and copy text in a message on iPhone and Android. There is no way to delete a message.</p>
+                <p>You can select and copy text in a message on iPhone and Android. Links in a message can be tapped and open in
+                    the app's own browser (<a class="inline" href="/docs/feeds/#links">more</a>). There is no way to delete a
+                    message.</p>
                 </section>
 
                 <section id="encryption">
@@ -211,6 +214,9 @@
                     zaps and new followers. Likes, zaps and reposts on the same post fold into one line ("Ann and 3 others"), and
                     new followers fold per day. Tap <strong>Mentions</strong> to see only replies, mentions and quotes. The web
                     app has the same list under <strong>Notifications</strong>.</p>
+                <p>Likes and reposts from people outside your web of trust fold into one "from outside your web" line, so
+                    strangers don't crowd the list. Tap it to see them all. They don't count toward the unread badge. Zaps and new
+                    followers keep their own lines.</p>
                 <p>With more than one account, chips above the list switch between All and each account, and each chip shows
                     that account's new count. A line for another account says For <em>name</em>. In the account switcher, each
                     other account shows how many new things it has.</p>
@@ -224,6 +230,8 @@
                     <li><strong>Notifications</strong> turns them all on or off.</li>
                     <li><strong>New Notes in Your Feed</strong> tells you when new posts arrive.</li>
                     <li><strong>Sound</strong> picks the alert sound.</li>
+                    <li><strong>Show message text</strong> puts a message's words in its alert. Off to start: the alert says only
+                        who it's from.</li>
                     <li>For each account: <strong>Mentions</strong>, <strong>Replies</strong>, <strong>Direct Messages</strong>,
                         <strong>Zaps</strong>, <strong>Reactions</strong> (hidden in Zaps Only mode), <strong>Reposts</strong> and
                         <strong>New Followers</strong>.</li>
@@ -232,8 +240,9 @@
                     only if it's from someone in your web of trust or someone you've written to. Other messages wait silently
                     under Requests. A new
                     follower outside your web is counted ("3 new followers") instead of named.</p>
-                <p>A message alert says who it's from. If you don't see it, the copy left in Notification Center just says
-                    "New message", without the sender or the text.</p>
+                <p>A message alert says who it's from, not what it says. To see the text in the alert, turn on
+                    <strong>Show message text</strong> (off to start). The in-app pill shows the text either way. On a locked
+                    Android phone the alert hides the sender too. The web app's alerts never show the text.</p>
                 </section>
 
                 <section id="delivery">
@@ -244,7 +253,8 @@
                     <li><strong>iPhone:</strong> iOS wakes the app in the background now and then to check. Alerts can come a
                         little late while the app is closed.</li>
                     <li><strong>Android:</strong> the vault keeps running, shown by the "Nostr Vault" notification, so
-                        alerts come right away.</li>
+                        alerts come right away. After a restart or an update, message alerts start again without opening the app,
+                        unless you sign with Amber.</li>
                     <li><strong>While the app is open,</strong> new things show as a pill at the top instead of a system alert.
                         When you come back after a while, one pill sums it up, like "5 mentions · 2 zaps · 1 DM". Android files
                         pills you didn't see under "Missed while open".</li>

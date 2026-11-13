@@ -70,7 +70,9 @@
         pick another amount. Turn off <strong>Zap button &#9889;&#65039;</strong> under
         <span class="path">Settings &rarr; Post buttons</span> to hide it.</li>
 </ul>
-<p>Each zap goes straight from your wallet to the author. Nostr Vault takes no cut.</p>
+<p>Each zap goes straight from your wallet to the author. Nostr Vault takes no cut. Before your wallet pays, the
+    app checks that the invoice asks for exactly the amount you chose, and refuses one that asks for more or names
+    no amount (Android).</p>
 </section>
 
 <section id="account">
@@ -93,6 +95,8 @@
         The web app keeps the link only in that browser, and deletes it when you sign out.</li>
 </ul>
 <p>To be sure the app can't spend any more, also revoke the connection in your wallet app.</p>
+<p>On iPhone, iPad and Mac the link is kept in the Keychain on this device, and on Android in encrypted storage locked
+    to the phone (the Android Keystore). It isn't in the settings file and it isn't copied into your phone's or Mac's backups.</p>
 </section>
 
 <section id="onchain">
