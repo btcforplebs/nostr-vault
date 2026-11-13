@@ -39,6 +39,10 @@ struct HomeVaultItem: Codable, Equatable, Identifiable {
     var target: String? = nil
     /// What a fileNote item says (fileNote only). Optional: older queues lack it.
     var fileNote: FileNoteDraft? = nil
+    /// Tries on a lane where the device was reached and answered, even with an
+    /// error. Only these count toward the long backoff and maxAttempts (Tron
+    /// #2005). Optional: older queues lack it.
+    var answered: Int? = nil
 }
 
 enum HomeVaultSendResult: Equatable {
@@ -358,21 +362,38 @@ extension HomeVaultLogic {
     }
 
     /// A lane to another device of the owner's (a phone, a Mac) waits at most
-    /// this long between tries: that device is in reach only while its app is
-    /// open, so a long wait misses it (Logen 2026-11-13). The always-on home
-    /// vault keeps the long backoff.
+    /// this long between tries while that device is out of reach: it is in
+    /// reach only while its app is open, so a long wait misses it (Logen
+    /// 2026-11-13). Once the device answers, even with an error, the long
+    /// backoff is back (Tron #2005: a 256 MB blob re-sent every 2 min for 14
+    /// days). The always-on home vault keeps the long backoff.
     static let laneBackoffCap: TimeInterval = 120
 
-    static func backoff(afterAttempts attempts: Int, lane: Bool) -> TimeInterval {
-        lane ? min(backoff(afterAttempts: attempts), laneBackoffCap) : backoff(afterAttempts: attempts)
+    /// The item after a try that did not send. `reached`: the mesh found the
+    /// device (its door was dialled); false when there was no way to it.
+    static func afterRetry(_ item: HomeVaultItem, lane: Bool, reached: Bool, now: Date) -> HomeVaultItem {
+        var next = item
+        next.attempts += 1
+        let wait: TimeInterval
+        if lane && reached {
+            let answered = (item.answered ?? 0) + 1
+            next.answered = answered
+            wait = backoff(afterAttempts: answered)
+        } else if lane {
+            wait = min(backoff(afterAttempts: next.attempts), laneBackoffCap)
+        } else {
+            wait = backoff(afterAttempts: next.attempts)
+        }
+        next.notBefore = now.addingTimeInterval(wait)
+        return next
     }
 
     /// Whether an item goes to another device rather than the home vault: a
-    /// linked device's lane, or media to the Mac while there is no home vault.
-    static func isLane(_ item: HomeVaultItem, homeVault: String?) -> Bool {
-        guard item.kind != .mirror else { return false }
-        if let target = item.target { return target != homeVault }
-        return homeVault == nil
+    /// linked device's lane, or media to the Mac (with or without a home
+    /// vault, as Android's role MAC; Tron #2005 L1).
+    static func isLane(_ item: HomeVaultItem, homeVault: String?, mediaVault: String?) -> Bool {
+        guard let dest = destination(item, homeVault: homeVault, mediaVault: mediaVault) else { return false }
+        return dest != homeVault
     }
 
     /// The mesh npub an item is sent to, as `HomeVaultSender.drain` picks it.
@@ -392,7 +413,7 @@ extension HomeVaultLogic {
     /// touched.
     static func wakeOnReach(_ queue: [HomeVaultItem], newlyInReach: Set<String>, homeVault: String?, mediaVault: String?) -> [HomeVaultItem] {
         queue.map { item in
-            guard item.notBefore != nil, isLane(item, homeVault: homeVault),
+            guard item.notBefore != nil, isLane(item, homeVault: homeVault, mediaVault: mediaVault),
                   let dest = destination(item, homeVault: homeVault, mediaVault: mediaVault),
                   newlyInReach.contains(dest) else { return item }
             var woke = item
@@ -408,10 +429,11 @@ extension HomeVaultLogic {
         item.attempts >= maxAttempts || (item.attempts > 0 && now.timeIntervalSince(item.added) > maxAge)
     }
 
-    /// A lane tries every 2 minutes, so its try count says nothing: only age
-    /// gives up on it.
+    /// A lane tries every 2 minutes while its device is out of reach, so
+    /// only answered tries count toward maxAttempts; age still gives up.
     static func isExpired(_ item: HomeVaultItem, now: Date, lane: Bool) -> Bool {
-        lane ? item.attempts > 0 && now.timeIntervalSince(item.added) > maxAge : isExpired(item, now: now)
+        guard lane else { return isExpired(item, now: now) }
+        return (item.answered ?? 0) >= maxAttempts || (item.attempts > 0 && now.timeIntervalSince(item.added) > maxAge)
     }
 
     /// How long the vault may keep retrying a public upload for the phone.

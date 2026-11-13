@@ -369,7 +369,7 @@ final class HomeVaultSender: ObservableObject {
                 }
                 guard let base = bases[lane] else {
                     if item.kind == .blob { mediaWaiting.insert(lane) }
-                    backOff(item)
+                    backOff(item, reached: false)
                     waiting = true
                     continue
                 }
@@ -394,7 +394,8 @@ final class HomeVaultSender: ObservableObject {
                 remove(item)
             case .unreachable(let why):
                 if item.kind == .blob { mediaWaiting.insert(item.target ?? "") }
-                backOff(item)
+                // The door was dialled: an answer, even an error, is not "out of reach".
+                backOff(item, reached: true)
                 waiting = true
                 appLog("\(item.kind.rawValue) \(item.id.prefix(8)) will retry: \(why)")
             }
@@ -413,15 +414,16 @@ final class HomeVaultSender: ObservableObject {
         }
     }
 
-    private func backOff(_ item: HomeVaultItem) {
+    /// `reached`: the mesh found the device. A lane out of reach retries
+    /// within 2 min; once the device answers it backs off as the home vault.
+    private func backOff(_ item: HomeVaultItem, reached: Bool) {
         guard let i = queue.firstIndex(where: { HomeVaultLogic.sameSend($0, item) }) else { return }
-        queue[i].attempts += 1
-        queue[i].notBefore = Date().addingTimeInterval(HomeVaultLogic.backoff(afterAttempts: queue[i].attempts, lane: isLane(item)))
+        queue[i] = HomeVaultLogic.afterRetry(queue[i], lane: isLane(item), reached: reached, now: Date())
         saveQueue()
     }
 
     private func isLane(_ item: HomeVaultItem) -> Bool {
-        HomeVaultLogic.isLane(item, homeVault: homeVault?.meshNpub)
+        HomeVaultLogic.isLane(item, homeVault: homeVault?.meshNpub, mediaVault: mediaVault?.meshNpub)
     }
 
     /// While the app is open and a lane waits: every few seconds, look at who

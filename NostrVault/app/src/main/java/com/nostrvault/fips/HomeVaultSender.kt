@@ -573,8 +573,7 @@ class HomeVaultSender @Inject constructor(
                 problem("${MeshSendTargets.destination(role).replaceFirstChar { it.uppercase() }} refused a ${item.type}")
             }
             HomeVaultSend.RETRY -> {
-                val attempts = item.attempts + 1
-                queue.update(item.copy(attempts = attempts, nextAt = now + HomeVaultRules.backoffMs(attempts, HomeVaultRules.isLane(role))))
+                queue.update(HomeVaultRules.afterRetry(item, now, HomeVaultRules.isLane(role)))
             }
         }
     }
