@@ -111,9 +111,19 @@ func ownerStream(ctx context.Context) bool {
 // This prevents the relay's own sync and heavy publishing from being blocked by
 // the IP-based bucket that was designed to throttle external strangers.
 func whitelistBypassEventRateLimiter(tokensPerInterval int, interval time.Duration, maxTokens int) func(ctx context.Context, evt *nostr.Event) (bool, string) {
+	return bypassEventRateLimiter(isOwnKey, tokensPerInterval, interval, maxTokens)
+}
+
+// privateReaderBypassEventRateLimiter is the /private limiter: only a
+// private reader's events skip it, not every added account's.
+func privateReaderBypassEventRateLimiter(tokensPerInterval int, interval time.Duration, maxTokens int) func(ctx context.Context, evt *nostr.Event) (bool, string) {
+	return bypassEventRateLimiter(isPrivateReader, tokensPerInterval, interval, maxTokens)
+}
+
+func bypassEventRateLimiter(exempt func(pk string) bool, tokensPerInterval int, interval time.Duration, maxTokens int) func(ctx context.Context, evt *nostr.Event) (bool, string) {
 	inner := policies.EventIPRateLimiter(tokensPerInterval, interval, maxTokens)
 	return func(ctx context.Context, evt *nostr.Event) (bool, string) {
-		if _, ok := whitelist()[evt.PubKey]; ok {
+		if exempt(evt.PubKey) {
 			return false, ""
 		}
 		// The browser build's owner streams: the page itself caching its
@@ -158,6 +168,24 @@ func MustBeWhitelistedToPost(ctx context.Context, event *nostr.Event) (bool, str
 	// account with a key or signer here): an added npub posts only its own.
 	if !isPrivateReader(authenticatedUser) {
 		slog.Debug("🚫 event rejected: user is not whitelisted", "event", event.ID, "pubkey", authenticatedUser)
+		return true, "restricted: you must be whitelisted to post to this relay"
+	}
+	return false, ""
+}
+
+// MustBePrivateReaderToPost gates /private writes: an event signed by a
+// private reader, or sent over an AUTH by one. A watch-only added npub has
+// space on the outbox for its own notes, not on /private (Tron, 2026-11-13).
+func MustBePrivateReaderToPost(ctx context.Context, event *nostr.Event) (bool, string) {
+	if isPrivateReader(event.PubKey) {
+		return false, ""
+	}
+	authenticatedUser := khatru.GetAuthed(ctx)
+	if authenticatedUser == "" {
+		return true, "auth-required: you must be authenticated to post to this relay"
+	}
+	if !isPrivateReader(authenticatedUser) {
+		slog.Debug("🚫 event rejected: user is not a private reader", "event", event.ID, "pubkey", authenticatedUser)
 		return true, "restricted: you must be whitelisted to post to this relay"
 	}
 	return false, ""

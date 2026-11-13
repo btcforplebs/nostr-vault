@@ -51,13 +51,14 @@ func whitelist() map[string]struct{} {
 // has space for its own notes and uploads (whitelist()) and reads nothing
 // gated (Logen, 2026-11-12, PR #1971): an added npub is often someone else's,
 // and whoever holds its nsec could AUTH as it. With no file named, the
-// whitelist (see privateReadersFromFile). Live additions (AddAccountsC) never
-// read: they are brought-over, watch-only accounts.
+// configured whitelist (see privateReadersFromFile), not whitelist(): live
+// additions (AddAccountsC) never read: they are brought-over, watch-only
+// accounts.
 func privateReaders() map[string]struct{} {
 	if r := config.PrivateReaderPubKeys; r != nil {
 		return r
 	}
-	return whitelist()
+	return config.WhitelistedPubKeys
 }
 
 // isPrivateReader: pk is a private reader and still one of the vault's own.

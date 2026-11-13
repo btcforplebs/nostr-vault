@@ -52,8 +52,13 @@ func TestPrivateReadsRefuseAnAddedNpubWithoutAKeyHere(t *testing.T) {
 	a.runPublishCases(t, "", []publishCase{
 		{name: "vault space/outbox: added npub's own note, unauthenticated, accepted", event: note(watchSK, nil)},
 	})
+	// /private takes only events signed by a private reader, or sent over an
+	// AUTH by one: a watch-only npub's own notes stay out (Tron, 2026-11-13).
 	a.runPublishCases(t, "/private", []publishCase{
-		{name: "vault space/private: added npub's own note, unauthenticated, accepted", event: note(watchSK, nil)},
+		{name: "MustBePrivateReaderToPost/private: added npub's own note, unauthenticated, rejected", event: note(watchSK, nil), rejectBy: reasonAuthRequired},
+		{name: "MustBePrivateReaderToPost/private: added npub's own note, authed as itself, rejected", authSK: watchSK, event: note(watchSK, nil), rejectBy: reasonNotWhitelisted},
+		{name: "MustBePrivateReaderToPost/private: added npub's own note, authed as owner, accepted", authSK: a.ownerSK, event: note(watchSK, nil)},
+		{name: "MustBePrivateReaderToPost/private: owner's note, unauthenticated, accepted", event: note(a.ownerSK, nil)},
 	})
 	// Only its own: AUTHed as the added npub, someone else's event is refused.
 	for _, path := range []string{"", "/private"} {
@@ -62,6 +67,35 @@ func TestPrivateReadsRefuseAnAddedNpubWithoutAKeyHere(t *testing.T) {
 			{name: "MustBeWhitelistedToPost" + path + ": stranger-signed, authed as owner, accepted", authSK: a.ownerSK, event: note(a.strangerSK, nil)},
 		})
 	}
+}
+
+// With no readers file, live additions (AddAccountsC) are brought-over,
+// watch-only accounts: vault space, but no private reads or /private writes.
+func TestPrivateReadersWithoutAFileExcludeLiveAdditions(t *testing.T) {
+	a := startPolicyHaven(t)
+	liveSK, live := newActor()
+	savedR := config.PrivateReaderPubKeys
+	config.PrivateReaderPubKeys = nil
+	resetLiveAccounts()
+	t.Cleanup(func() { config.PrivateReaderPubKeys = savedR; resetLiveAccounts() })
+	if addLiveAccounts([]string{live}) != 1 || !isOwnKey(live) {
+		t.Fatal("live addition not made one of the vault's own")
+	}
+	if isPrivateReader(live) {
+		t.Error("privateReaders: a live addition reads with no readers file")
+	}
+	if !isPrivateReader(a.owner) {
+		t.Error("privateReaders: the owner lost reads with no readers file")
+	}
+	a.runQueryCases(t, "/private", nostr.Filter{Kinds: []int{nostr.KindTextNote}}, []queryCase{
+		{name: "privateReaders/private: no file, authed as live addition, closed", authSK: liveSK, closedBy: closedNotWhitelistedQ},
+	})
+	a.runPublishCases(t, "/private", []publishCase{
+		{name: "MustBePrivateReaderToPost/private: live addition's own note, authed as itself, rejected", authSK: liveSK, event: note(liveSK, nil), rejectBy: reasonNotWhitelisted},
+	})
+	a.runPublishCases(t, "", []publishCase{
+		{name: "vault space/outbox: live addition's own note, unauthenticated, accepted", event: note(liveSK, nil)},
+	})
 }
 
 // An app that names no readers file (Android, the browser vault) keeps the
