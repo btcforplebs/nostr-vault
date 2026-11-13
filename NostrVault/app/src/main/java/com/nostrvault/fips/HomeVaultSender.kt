@@ -580,7 +580,11 @@ class HomeVaultSender @Inject constructor(
                     HomeVaultSend.REJECTED
                 }
                 outcomes += item to outcomeOf(item, outcome, npub, now, role)
-                if (outcomes.size >= OUTCOMES_PER_WRITE) queue.applyOutcomes(outcomes).also { outcomes.clear() }
+                // A blob is written at once: a kill mid-pass must not send a sent video (up to 1 GB) again (Tron, PR 2026).
+                if (item.type == HomeVaultQueue.TYPE_BLOB || outcomes.size >= OUTCOMES_PER_WRITE) {
+                    queue.applyOutcomes(outcomes)
+                    outcomes.clear()
+                }
             }
         } finally {
             queue.applyOutcomes(outcomes)
@@ -849,7 +853,7 @@ class HomeVaultSender @Inject constructor(
     private companion object {
         const val TAG = "HomeVault"
 
-        /** A drain pass writes its outcomes to the queue file this often, not once per item. */
+        /** A drain pass writes note and event outcomes to the queue file this often, not once per item; blobs at once. */
         const val OUTCOMES_PER_WRITE = 50
         const val AUTH_KIND = 24242
         const val RETRY_MS = 60_000L
