@@ -344,12 +344,12 @@ func initRelays(ctx context.Context) error {
 	privateRelay.RejectEvent = append(privateRelay.RejectEvent,
 		policies.PreventTimestampsInTheFuture(maxFutureSkew),
 		policies.RejectEventsWithBase64Media,
-		whitelistBypassEventRateLimiter(
+		privateReaderBypassEventRateLimiter(
 			privateRelayLimits.EventIPLimiterTokensPerInterval,
 			time.Minute*time.Duration(privateRelayLimits.EventIPLimiterInterval),
 			privateRelayLimits.EventIPLimiterMaxTokens,
 		),
-		MustBeWhitelistedToPost,
+		MustBePrivateReaderToPost,
 		MustNotBeDeleted(privateDB),
 	)
 
