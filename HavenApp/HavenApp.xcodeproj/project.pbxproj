@@ -571,6 +571,7 @@
 		44E80A628D1FFA5E86841553 /* MediaCopyFileRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDC94C3AA61FEF07180139DD /* MediaCopyFileRow.swift */; };
 		44F1646379AB87C0FA885525 /* MirrorStatusSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B779245F219AC33231205A4 /* MirrorStatusSheet.swift */; };
 		4588E6C2BB47FACE97191F2E /* ProfileContent+Header.swift in Sources */ = {isa = PBXBuildFile; fileRef = A74DC08C4C796F5023B17EB8 /* ProfileContent+Header.swift */; };
+		45A08FC28D8D4EE624C83E4A /* AccountWeb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 737C297DFD1BEAF9966EB868 /* AccountWeb.swift */; };
 		461A76D356816D9F40923F71 /* MusicComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 429BA3E5D0E9C89079389857 /* MusicComponents.swift */; };
 		461CFF899D1D27ECBFFC4A96 /* NotificationRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = A757B80073FA3D8B05BABC7D /* NotificationRoute.swift */; };
 		4627F52B057D4E506D1065CA /* NoteTagging.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE87DC6C17138B7274AF82BA /* NoteTagging.swift */; };
@@ -916,6 +917,7 @@
 		6F0367B60D208FAA085918CF /* ShareCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCF78E313D493BA653F26135 /* ShareCard.swift */; };
 		6F603115FCB6B0A0D32D0685 /* ReactionGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78FF5CDA9642898C97A55DBD /* ReactionGrouping.swift */; };
 		6F6502FABCA2A499BBF8B3E3 /* ArticleCommentRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5322197B2E2B16920BA467E1 /* ArticleCommentRow.swift */; };
+		6F73B4E01831A601E8BA5865 /* AccountWeb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 737C297DFD1BEAF9966EB868 /* AccountWeb.swift */; };
 		6F7D0E3B4DF39E945BCF9F35 /* VaultOutsideFoldRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8086F521A71C6EC9FD3B75B1 /* VaultOutsideFoldRow.swift */; };
 		6F923A9D7824CDB7C70FB597 /* DeletedPostsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E680C50EB51C30D009823043 /* DeletedPostsStore.swift */; };
 		6FADE7F1EE93ECA61C279770 /* QuickBarRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 207340FB8D3B36C2D991C22A /* QuickBarRow.swift */; };
@@ -2757,6 +2759,7 @@
 		71AB0175468D57FB7435B690 /* ImportNotesStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportNotesStep.swift; sourceTree = "<group>"; };
 		71B83064688F922769785D5B /* RelayProcessManager+Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RelayProcessManager+Config.swift"; sourceTree = "<group>"; };
 		71CC7FAABBAB90283299F087 /* MempoolAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MempoolAPIService.swift; sourceTree = "<group>"; };
+		737C297DFD1BEAF9966EB868 /* AccountWeb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountWeb.swift; sourceTree = "<group>"; };
 		7507E56424A5CF8EA46857DA /* SettingsHelp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsHelp.swift; sourceTree = "<group>"; };
 		75ABEDE255E82775CCD37559 /* NIP49Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP49Service.swift; sourceTree = "<group>"; };
 		75AFAEE59EB5CE1816CDEE9B /* VaultAuthGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultAuthGate.swift; sourceTree = "<group>"; };
@@ -4350,6 +4353,7 @@
 				CC215700D15BB33A4F8F4EB1 /* AccountDataSweep.swift */,
 				E224D9ABE474A15D697A39D0 /* AccountSingleFlight.swift */,
 				ADE20F9D5EC5160587318D28 /* AccountUnread.swift */,
+				737C297DFD1BEAF9966EB868 /* AccountWeb.swift */,
 				7FA8251E55F8473F7A55C6E0 /* AdaptiveGridLayout.swift */,
 				299FAAEDC2A8F8F9CEBC02E1 /* AppTypeScale.swift */,
 				17BD202097026B7B7AE2D6F1 /* ArticleEngagement.swift */,
@@ -5381,6 +5385,7 @@
 				27B0DEC7F90981AF0B72CBD4 /* AccountUnread.swift in Sources */,
 				A6507DB0C00EA44728AC6F5E /* AccountUnreadStore+ListRules.swift in Sources */,
 				95FCCF321AC349E725A323AC /* AccountUnreadStore.swift in Sources */,
+				45A08FC28D8D4EE624C83E4A /* AccountWeb.swift in Sources */,
 				BBCAC24C43564F431E394A02 /* AccountsSettingsView.swift in Sources */,
 				D36E4D6CF073E04B95CB5934 /* ActionButton.swift in Sources */,
 				6BF25EB287DA24C1DE56166C /* ActionToastBanner.swift in Sources */,
@@ -6502,6 +6507,7 @@
 				42644DAD405D01206AAE1359 /* AccountUnread.swift in Sources */,
 				E6C6CF8DA98F9D97624C54A0 /* AccountUnreadStore+ListRules.swift in Sources */,
 				E4DD291F338D4847D20FEF23 /* AccountUnreadStore.swift in Sources */,
+				6F73B4E01831A601E8BA5865 /* AccountWeb.swift in Sources */,
 				1EF0BABFD80641A8F6A25BCE /* AccountsSettingsView.swift in Sources */,
 				3A895A7B25C2229F1B389A2D /* ActionButton.swift in Sources */,
 				D77C6C30CC8998E4A0341043 /* ActionToastBanner.swift in Sources */,

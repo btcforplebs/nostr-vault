@@ -6,11 +6,16 @@ extension FeedService {
     /// Loads WOT pubkeys from the relay's cached `wot_cache.json` file.
     /// The relay computes this graph (owner -> follows -> follows-of-follows,
     /// filtered by minimum follower count) and persists it to disk.
+    /// The graph is read here, on the caller's thread as before; the links
+    /// file the account web counts from is several MB, so it is parsed off
+    /// the main thread (`loadWotLinksInBackground`).
     func loadWotPubkeys() {
         let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
-        wotCacheStamp = (cacheURL.path, Self.modificationDate(of: cacheURL))
-        applyWotCache(FeedFilterEngine.readWotCache(from: cacheURL, ownerHex: ConfigService.shared.activeAccountHexPubkey),
-                      path: cacheURL.path)
+        wotCacheStamp = (cacheURL.path, WotFiles.stamp(cacheURL: cacheURL))
+        let read = FeedFilterEngine.readWotCache(from: cacheURL, ownerHex: ConfigService.shared.activeAccountHexPubkey,
+                                                 readLinks: false)
+        applyWotCache(read, path: cacheURL.path)
+        if let read { loadWotLinksInBackground(cacheURL: cacheURL, depth: read.depth) }
     }
 
     /// `loadWotPubkeysIfChanged()` with the file read and parsed off the main
@@ -18,7 +23,7 @@ extension FeedService {
     /// about 1.2 s (Tom's perf sweep 11-01 #2).
     func loadWotPubkeysInBackgroundIfChanged() async {
         let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
-        let modified = Self.modificationDate(of: cacheURL)
+        let modified = WotFiles.stamp(cacheURL: cacheURL)
         if let stamp = wotCacheStamp, stamp.path == cacheURL.path, stamp.modified == modified { return }
         await loadWotPubkeysInBackground()
     }
@@ -27,17 +32,51 @@ extension FeedService {
     func loadWotPubkeysInBackground() async {
         let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
         let owner = ConfigService.shared.activeAccountHexPubkey
-        let modified = Self.modificationDate(of: cacheURL)
+        let modified = WotFiles.stamp(cacheURL: cacheURL)
+        let linksModified = WotFiles.modified(WotFiles.linksURL(beside: cacheURL))
+        wotLinksReads += 1
+        let readNumber = wotLinksReads
         let read = await Task.detached(priority: .userInitiated) {
             FeedFilterEngine.readWotCache(from: cacheURL, ownerHex: owner)
         }.value
         // An account switch while it was read: that account's load runs on its own.
         guard owner == ConfigService.shared.activeAccountHexPubkey else { return }
         wotCacheStamp = (cacheURL.path, modified)
-        applyWotCache(read, path: cacheURL.path)
+        // A newer links parse already landed: keep its links.
+        if readNumber == wotLinksReads { wotLinksStamp = linksModified }
+        applyWotCache(read, path: cacheURL.path, withLinks: readNumber == wotLinksReads)
     }
 
-    private func applyWotCache(_ read: FeedFilterEngine.WotCache?, path: String) {
+    /// The links file for the graph just read, parsed off the main thread
+    /// (Tron 2011 low 4). Until it lands the account web keeps the links it
+    /// had; on a first read that is none, so the shared web for a moment.
+    private func loadWotLinksInBackground(cacheURL: URL, depth: Int?) {
+        let linksURL = WotFiles.linksURL(beside: cacheURL)
+        let modified = (depth ?? 0) >= 3 ? WotFiles.modified(linksURL) : nil
+        // Depth 2 counts no links; the same file again needs no new parse.
+        if (depth ?? 0) < 3 || (modified != nil && modified == wotLinksStamp) {
+            if (depth ?? 0) < 3, wotLinksStamp != nil {
+                wotLinksStamp = nil
+                trustedWebMemo.load(links: nil)
+            }
+            return
+        }
+        wotLinksReads += 1
+        let readNumber = wotLinksReads
+        Task { @MainActor [weak self] in
+            let links = await Task.detached(priority: .userInitiated) {
+                (try? Data(contentsOf: linksURL)).flatMap(TrustLinksIndex.parse)
+            }.value
+            guard let self, readNumber == self.wotLinksReads else { return }
+            self.wotLinksStamp = modified
+            self.trustedWebMemo.load(links: links)
+            // Feeds and the Vault list redraw on the graph; tell them it changed.
+            self.wotPubkeys = self.wotPubkeys
+            if self.isGlobalLikeMode { self.recomputeFilteredNotes() }
+        }
+    }
+
+    private func applyWotCache(_ read: FeedFilterEngine.WotCache?, path: String, withLinks: Bool = false) {
         // nil = could not read the cache; keep whatever graph we already have.
         // Empty = read fine, but the graph names nobody but the owner (a new
         // account with no follows). That is no trust data, and the Global feed
@@ -53,6 +92,12 @@ extension FeedService {
         // Vouches first: $wotPubkeys fires in willSet, and its subscribers
         // read the vouches straight away.
         wotVouches = read.vouches
+        // The links before the graph too: $wotPubkeys subscribers read the web.
+        if withLinks {
+            trustedWebMemo.load(links: read.links, depth: read.depth)
+        } else {
+            trustedWebMemo.load(depth: read.depth)
+        }
         wotPubkeys = read.pubkeys
         wotCacheRead = true
         #if DEBUG
@@ -62,13 +107,18 @@ extension FeedService {
         if isGlobalLikeMode {
             recomputeFilteredNotes()
         }
+        // Read between the relay's two writes: the links still to come.
+        // Watch for them, so the account web doesn't count from old ones all day.
+        if !read.linksCurrent, wotRebuildWatchTimer == nil {
+            startWotFilesWatch()
+        }
     }
 
-    /// `loadWotPubkeys()`, unless the cache file is the one already read.
+    /// `loadWotPubkeys()`, unless neither file changed since the last read.
     private func loadWotPubkeysIfChanged() {
         let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
         if let stamp = wotCacheStamp, stamp.path == cacheURL.path,
-           stamp.modified == Self.modificationDate(of: cacheURL) {
+           stamp.modified == WotFiles.stamp(cacheURL: cacheURL) {
             return
         }
         loadWotPubkeys()
@@ -79,34 +129,31 @@ extension FeedService {
     /// Unfollowing everyone who brought someone in takes them out of Global
     /// then, not at the next mode switch.
     func watchForRebuiltWeb() {
-        wotRebuildWatchTimer?.invalidate()
         // Discovery's follows-of-follows tally is an hour-long cache of the
         // old list; the next Discovery visit counts again.
         extendedNetworkComputedAt = nil
+        startWotFilesWatch()
+    }
+
+    /// Reload once either WoT file changes. If the links are still behind the
+    /// cache after that read, the load starts a fresh watch for them.
+    private func startWotFilesWatch() {
+        wotRebuildWatchTimer?.invalidate()
         let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
-        let watch = WotRebuildWatch(startedAt: Date(), stampAtStart: Self.modificationDate(of: cacheURL))
+        let watch = WotRebuildWatch(startedAt: Date(), stampAtStart: WotFiles.stamp(cacheURL: cacheURL))
         wotRebuildWatchTimer = Timer.scheduledTimer(withTimeInterval: WotRebuildWatch.interval, repeats: true) { [weak self] timer in
             Task { @MainActor [weak self] in
                 guard let self, self.wotRebuildWatchTimer === timer else {
                     timer.invalidate()
                     return
                 }
-                switch watch.step(stamp: Self.modificationDate(of: cacheURL), now: Date()) {
-                case .wait:
-                    return
-                case .reload:
-                    self.loadWotPubkeys()
-                    fallthrough
-                case .stop:
-                    timer.invalidate()
-                    self.wotRebuildWatchTimer = nil
-                }
+                let step = watch.step(stamp: WotFiles.stamp(cacheURL: cacheURL), now: Date())
+                guard step != .wait else { return }
+                timer.invalidate()
+                self.wotRebuildWatchTimer = nil
+                if step == .reload { self.loadWotPubkeys() }
             }
         }
-    }
-
-    private static func modificationDate(of url: URL) -> Date? {
-        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
     }
 
     /// Who counts as inside your network in the Relay tab: the relay's trust
@@ -129,12 +176,33 @@ extension FeedService {
     }
 
     /// Your web right now, the one set every Global view and the Relay tab
-    /// filter against: the saved graph plus your current follows
-    /// (`TrustMap.web`). The graph is rebuilt about once a day, so without the
-    /// follows someone you just followed stayed filtered out of Global until
-    /// then. Only the follows while there is no graph, so Global still fails closed.
+    /// filter against: the open account's own web out of the saved graph,
+    /// plus your current follows (`AccountWeb`). The relay pools every
+    /// account on the device into one graph; this counts only the open
+    /// account's follows (Logen 2026-11-13). The graph is rebuilt about once a
+    /// day, so without the follows someone you just followed stayed filtered
+    /// out of Global until then. Only the follows while there is no graph, so
+    /// Global still fails closed.
     var feedTrustedPubkeys: Set<String> {
-        trustedWebMemo.web(saved: wotPubkeys, follows: followedPubkeys)
+        trustedWebMemo.web(saved: wotPubkeys, follows: followedPubkeys, scope: accountWebScope)
+    }
+
+    /// Who "you" are on this device and the bar the relay counted against.
+    var accountWebScope: AccountWebScope {
+        let config = ConfigService.shared
+        let owners = config.whitelistedHexPubkeys.union([config.ownerHexPubkeyCached, config.activeAccountHexPubkey])
+        return AccountWebScope(owners: owners.subtracting([""]),
+                               minFollowers: config.config.chatRelayMinFollowers,
+                               followsKnown: followsKnownForAccountWeb)
+    }
+
+    /// The open account's follows can be trusted as its own: confirmed by
+    /// relays, or restored from this account's snapshot after a switch
+    /// (Tron 2011 should-fix 3). A switch clears the relay confirmation, and
+    /// offline it never came back, so the pooled web showed. A stale snapshot
+    /// can only leave someone out for a moment: it fails closed.
+    private var followsKnownForAccountWeb: Bool {
+        followListIsKnown || (hasAttemptedContactLoad && !followedPubkeys.isEmpty)
     }
 
     /// REQ filters for a Global view under `trust`. Everyone: the filter as
