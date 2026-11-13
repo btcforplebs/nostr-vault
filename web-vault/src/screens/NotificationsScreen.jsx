@@ -19,6 +19,8 @@ import { followLists } from "../net/wot.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { SkeletonList, Spinner } from "../components/Loading.jsx"
 import { VaultPagesMenu } from "./VaultPagesMenu.jsx"
+import { OutsideFold } from "../components/OutsideFold.jsx"
+import { splitOutsideLikes, outsideCount } from "../net/outside-fold.js"
 import "../styles/notifications.css"
 
 export { Faces, Who, MAX_FACES } from "../components/ActivityFaces.jsx"
@@ -134,12 +136,17 @@ export function NotificationsScreen({ ctx, vaultMenu = false }) {
     return () => io.disconnect()
   }, [events, more.until, more.done, more.busy, filter])
 
-  const rows = useMemo(() => events && insideRows(groupNotifications(events, session.pubkey), session.pubkey, { trusted, follows: account.follows }),
+  // Likes and reposts from outside the web fold into one line (net/outside-fold.js); the rest are grouped as before.
+  const split = useMemo(() => events && splitOutsideLikes(events, session.pubkey, { trusted, follows: account.follows }),
     [events, trusted, session.pubkey, account.follows])
+  const rows = useMemo(() => split && insideRows(groupNotifications(split.inside, session.pubkey), session.pubkey, { trusted, follows: account.follows }),
+    [split, trusted, session.pubkey, account.follows])
   // A like, repost or zap on someone else's note that only tags the user isn't about the user's note: the iPhone keeps
   // no row for it, so it goes once that note has loaded and shows another author.
   const notMine = r => aboutYourPost(r) && notes.get(r.noteId) && notes.get(r.noteId).pubkey !== session.pubkey
   const shown = rows && filterRows(visibleRows(rows, blocked, session.pubkey), filter).filter(r => !notMine(r))
+  // Mentions never lists likes or reposts, so the fold only shows under All.
+  const outside = split && filter === "all" ? visibleRows(groupNotifications(split.outside, session.pubkey), blocked, session.pubkey).filter(r => !notMine(r)) : []
   // Anyone can reply, react or zap: only a follow's (or your own) picture host and inline images are fetched.
   const known = pk => pk === session.pubkey || account.follows.includes(pk)
 
@@ -151,8 +158,11 @@ export function NotificationsScreen({ ctx, vaultMenu = false }) {
         <button role="tab" aria-selected={filter === "mentions"} class={filter === "mentions" ? "on" : ""} onClick={() => setFilter("mentions")}>Mentions</button>
       </div>
       {status && <div class="status-line">{status}</div>}
+      {shown !== null && <OutsideFold count={outsideCount(outside)} resetKey={session.pubkey}>
+        {outside.map(r => <Row key={r.id} row={r} note={r.noteId ? notes.get(r.noteId) : undefined} trusted={known} unread={false} me={session.pubkey} />)}
+      </OutsideFold>}
       {shown === null || (loading && !shown.length) ? <SkeletonList count={7} rowClass="note notification" avatar={32} label="Loading notifications…" />
-        : !shown.length && (more.done || more.until === null) ? <Empty mentions={filter === "mentions"} />
+        : !shown.length && !outside.length && (more.done || more.until === null) ? <Empty mentions={filter === "mentions"} />
         : shown.map(r => <Row key={r.id} row={r} note={r.noteId ? notes.get(r.noteId) : undefined} trusted={known} unread={r.created_at > unreadSince} me={session.pubkey} />)}
       {shown !== null && !more.done && more.until !== null && <p ref={end} class="waiting" role="status">{more.busy && <><Spinner />Loading older notifications…</>}</p>}
     </main>

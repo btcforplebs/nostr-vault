@@ -46,3 +46,9 @@ export function globalShows(note, trust) {
 
 /** The notes Global shows, in their order. */
 export const filterGlobal = (notes, trust) => notes.filter(n => globalShows(n, trust))
+/** The line Global wears while Everyone is on (Logen 2026-11-13 "go all", option C), so a shield flipped once and kept
+ *  in this browser can't go unnoticed. iPhone/Mac twin: EveryoneBanner.swift. */
+export const EVERYONE_BANNER = {
+  text: "Everyone is on: these posts come from outside your web too, unfiltered.",
+  back: "Back to your web",
+}

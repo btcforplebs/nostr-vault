@@ -69,14 +69,24 @@ function rank(list, pubkeyOf, me, follows, wot = new Set()) {
 
 /** What the search relays answered, through the who/when filter and ranked own -> follows -> web of trust -> everyone, with the
  *  Hashtags and Links found in the notes that survived (so they follow the filter too).
- *  -> { people: [pubkey], notes: [event], hashtags: [tag], links: [{ url, title, noteId }] } */
-export function shapeResults({ people, notes }, query, { me, follows = [], wot, filter = NO_FILTER, now = Date.now() / 1000 }) {
+ *  `fold` (the default): people and notes from outside your web (you, your follows and `wot`) leave `people` / `notes`
+ *  for `outsidePeople` / `outsideNotes`, shown folded under "Outside your web" (Logen 2026-11-13 "go all", option B).
+ *  Their hashtags and links stay out, as their notes do. Fails closed: with no `wot` yet only you and your follows are
+ *  inside. `fold: false` (a pasted npub, which names one person on purpose) keeps everyone in `people`.
+ *  -> { people: [pubkey], notes: [event], outsidePeople: [pubkey], outsideNotes: [event], hashtags: [tag], links: [{ url, title, noteId }] } */
+export function shapeResults({ people, notes }, query, { me, follows = [], wot, filter = NO_FILTER, now = Date.now() / 1000, fold = true }) {
   const fset = new Set(follows)
   const allows = pk => filter.who === "you" ? pk === me : filter.who === "follows" ? fset.has(pk) : true
   const window = WHEN.find(w => w.id === filter.when)?.window
-  const shownPeople = rank(people.filter(allows), pk => pk, me, fset, wot)
-  const shownNotes = rank(notes.filter(n => allows(n.pubkey) && (!window || n.created_at >= now - window)), n => n.pubkey, me, fset, wot)
-  return { people: shownPeople, notes: shownNotes, hashtags: hashtagsIn(shownNotes, query), links: linksIn(shownNotes) }
+  const rankedPeople = rank(people.filter(allows), pk => pk, me, fset, wot)
+  const rankedNotes = rank(notes.filter(n => allows(n.pubkey) && (!window || n.created_at >= now - window)), n => n.pubkey, me, fset, wot)
+  const inside = pk => !fold || pk === me || fset.has(pk) || !!wot?.has(pk)
+  const shownPeople = rankedPeople.filter(inside), shownNotes = rankedNotes.filter(n => inside(n.pubkey))
+  return {
+    people: shownPeople, notes: shownNotes,
+    outsidePeople: rankedPeople.filter(pk => !inside(pk)), outsideNotes: rankedNotes.filter(n => !inside(n.pubkey)),
+    hashtags: hashtagsIn(shownNotes, query), links: linksIn(shownNotes),
+  }
 }
 
 /** Hashtags written in the notes whose name contains the query, lowercased, A-Z. */
