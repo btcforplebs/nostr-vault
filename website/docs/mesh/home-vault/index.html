@@ -183,8 +183,8 @@
                 </ol>
                 <p>From then on, your new notes and media also go to the mobile vault over the mesh, as a copy: your main phone still
                     sends your notes to your relays itself, and keeps them too. Anything that can't reach the mobile vault waits on the main phone and goes when the
-                    app is open and the mobile vault is in reach: the phone tries at least every 2 minutes while it is out of reach, and
-                    right away when it comes back. <span class="ui">Sync now</span> on its card in Your Devices
+                    app is open and the mobile vault is in reach: while it is out of reach the phone tries after 1 minute, then waits
+                    twice as long each time, up to 6 hours, and gives up after 40 tries. It also tries right away when the mobile vault comes back. <span class="ui">Sync now</span> on its card in Your Devices
                     (<span class="ui">Send now</span> under Mesh &rarr; Sync) sends it straight away.</p>
 
                 <div class="note">

@@ -186,8 +186,11 @@
 
                 <h2 id="retries">When a device is out of reach</h2>
                 <ul>
-                    <li>While a device is out of reach, the phone tries again at least every 2 minutes, and right away when the device
-                        comes back on the mesh. Nothing is dropped for being tried too often; only very old items give up.</li>
+                    <li>While a Mac, a Linux box or a linked phone is out of reach, the phone tries again at least every 2 minutes, and
+                        right away when the device comes back on the mesh. Nothing is dropped for being tried too often; only very old
+                        items give up.</li>
+                    <li>A mobile vault is different: while it is out of reach the phone tries after 1 minute, then waits twice as long
+                        each time, up to 6 hours, and gives up after 40 tries.</li>
                     <li>Once the device answers but turns an item down, the phone backs off instead: 1 minute, then longer each time,
                         up to 6 hours, for at most 40 tries.</li>
                     <li>A Mac is in reach while Nostr Vault is open on it; a phone while the app is open or in Mobile vault mode.</li>
