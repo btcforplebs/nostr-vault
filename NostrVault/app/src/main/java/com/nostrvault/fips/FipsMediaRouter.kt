@@ -141,10 +141,23 @@ object FipsMediaRouter {
             if (now - cached.at < INGRESS_RETRY_MS) return null
         }
         val result = FipsBridge.ingress(npub)
+        // Up, but no tree parent yet: not a dead vault. Not remembered, so the next ask may find the tree
+        // ([waitingForTree] lets a read wait for it).
+        if (result.error == FipsBridge.ERR_NO_TREE) {
+            noTree.add(npub)
+            return null
+        }
+        noTree.remove(npub)
         if (result.url == null) Log.w(TAG, "ingress ${npub.take(12)}: ${result.error}")
         ingress.put(npub, Ingress(result.url, now))
         return result.url
     }
+
+    /** Vaults whose last ask was answered "no tree parent yet" (libnvfips -10). */
+    private val noTree = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /** Whether [npub]'s last [ingressBase] was null only because the engine has no tree parent yet: worth a wait. */
+    fun waitingForTree(npub: String): Boolean = npub in noTree
 
     /**
      * Stop asking [npub] for the rest of the session. Wrong bytes are not a

@@ -428,6 +428,7 @@
 		30D8A68AB9D5370D2047AD1D /* ZapService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6DAA5E7383F9175577A61C7 /* ZapService.swift */; };
 		31409DF40877139C30BAAF30 /* MacModeComposeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDC471CDEB623A380FC45C62 /* MacModeComposeButton.swift */; };
 		31678CD3AA73D9AE222E8179 /* NWCService+PayInvoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = F720A3057EBF19D5EE421C52 /* NWCService+PayInvoice.swift */; };
+		316A42CFB310571FFBEA0C2A /* MeshSiteRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AC0483F9DFD12CDCE049B7B /* MeshSiteRetry.swift */; };
 		317391DCBA9DF606C5BD6011 /* HavenApp_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D1A35E8F156B18C3269D943 /* HavenApp_iOS.swift */; };
 		317F503A1708A580ED8FF693 /* PopularRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F0C028D1E2DC57C43CED675 /* PopularRanking.swift */; };
 		3208D3B22DE1AA8D963D030B /* LeaveNostrForeverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B08D21E9A541EB40D045D137 /* LeaveNostrForeverView.swift */; };
@@ -550,6 +551,7 @@
 		4103D3EF38F088EB79B4F109 /* TrustWebView+Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7D56F5AAF9F6D61DDAF4893 /* TrustWebView+Search.swift */; };
 		4106C6045599C6DAD5BE65A4 /* PersonProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70F880615FDC71BDC17B8A74 /* PersonProfileView.swift */; };
 		4138860007014EACC05BE78D /* UserStatusPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C7A2A3CB521D10A7E697FAB /* UserStatusPublisher.swift */; };
+		4154AB9BB343944BBCCF0E57 /* MeshSiteRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AC0483F9DFD12CDCE049B7B /* MeshSiteRetry.swift */; };
 		417A107EDCE8ED4BB06C8C3D /* DMCatchUp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D49413971796142180D204C0 /* DMCatchUp.swift */; };
 		417A5B57E5552977F48B6B23 /* LocalNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48CA2811713E8B33E246FC55 /* LocalNotificationService.swift */; };
 		41814E99E3DBD803275B2791 /* FeedView+MacHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BF0AAC36338F0945CC5920C /* FeedView+MacHeader.swift */; };
@@ -2899,6 +2901,7 @@
 		8A39FE3AB127539B3DE26A7C /* DMUnreadRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMUnreadRule.swift; sourceTree = "<group>"; };
 		8A5CB15E45E0E65A13FC6132 /* MediaGalleryDataProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGalleryDataProcessing.swift; sourceTree = "<group>"; };
 		8A8D9566E90F7CFE4A5C01FA /* FeedThreadRegroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedThreadRegroup.swift; sourceTree = "<group>"; };
+		8AC0483F9DFD12CDCE049B7B /* MeshSiteRetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshSiteRetry.swift; sourceTree = "<group>"; };
 		8B26FA9FB12D24E9BB3B6A76 /* InlineFeedVideoPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineFeedVideoPlayer.swift; sourceTree = "<group>"; };
 		8B294C3B4DE4C63104876789 /* MediaCacheService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaCacheService.swift; sourceTree = "<group>"; };
 		8B42CC290A5A895907ABCD84 /* InAppBrowserModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppBrowserModel.swift; sourceTree = "<group>"; };
@@ -4563,6 +4566,7 @@
 				F7567E9537DDD4C41851540B /* MeshPairingSession.swift */,
 				79B35043B40E4BA32E85A0E1 /* MeshPairingWords.swift */,
 				C955166884F1CE9A5BA4B36E /* MeshSiteIngress.swift */,
+				8AC0483F9DFD12CDCE049B7B /* MeshSiteRetry.swift */,
 				CD94E113C1DDF3CF7D6351B2 /* MuteList.swift */,
 				E6123D97505D017C00A6C40C /* MyDevicesCheckGate.swift */,
 				9FEFD738FD3D4C13BCD7D2A6 /* MyDevicesStatus.swift */,
@@ -6048,6 +6052,7 @@
 				B62B5AA48745585EDBCA0CFF /* MeshQRCode.swift in Sources */,
 				83F735BA7188232AFF312FA1 /* MeshSettingsSheet.swift in Sources */,
 				F282B7FBC6006502FCDBB76F /* MeshSiteIngress.swift in Sources */,
+				4154AB9BB343944BBCCF0E57 /* MeshSiteRetry.swift in Sources */,
 				2967EF7A63FDB4431EB3651A /* MessageComposerView.swift in Sources */,
 				E0F1E7C9450B284D7F6D2B66 /* MessagesPeekPanel.swift in Sources */,
 				821F08410D9293030E5DD4A0 /* MiniPlayerBar.swift in Sources */,
@@ -7180,6 +7185,7 @@
 				68B6097E7D0D0D915F2C9FAF /* MeshQRCode.swift in Sources */,
 				A82507F9E1F2B2DB90D34610 /* MeshSettingsSheet.swift in Sources */,
 				445527EDBD91D297AA159AE1 /* MeshSiteIngress.swift in Sources */,
+				316A42CFB310571FFBEA0C2A /* MeshSiteRetry.swift in Sources */,
 				5686CC2CCACE6E4F7B59F892 /* MessageComposerView.swift in Sources */,
 				AB57B140937B799529F4EB92 /* MiniPlayerBar.swift in Sources */,
 				E61584E6611641986C5662FC /* MirrorMediaStep.swift in Sources */,

@@ -25,9 +25,9 @@ extension MeshMediaRouter.Dependencies {
             },
             ingress: { npub in
                 #if os(iOS)
-                return await FipsMeshService.shared.ingressURL(meshNpub: npub)
+                return await FipsMeshService.shared.siteIngress(meshNpub: npub)
                 #else
-                return await MacFipsMeshService.shared.ingressURL(meshNpub: npub)
+                return await MacFipsMeshService.shared.siteIngress(meshNpub: npub)
                 #endif
             },
             get: { url, maxBytes in await MeshMediaGet.get(url, maxBytes: maxBytes) },

@@ -17,8 +17,9 @@ final class FipsSchemeHandler: NSObject, WKURLSchemeHandler {
 
     /// All of one page's responses together, so a site can't fill memory.
     static let pageByteCap = 48 << 20
-    /// A quiet site gives up like a slow server.
-    static let requestTimeout: TimeInterval = 20
+    /// A quiet site gives up like a slow server, but only after the mesh
+    /// could have found it (MeshSiteRetry).
+    static let requestTimeout = MeshSiteRetry.requestTimeout
     /// How long a page waits for the engine to find its tree parent.
     static let treeWait: TimeInterval = 45
     private static let treePoll: UInt64 = 3_000_000_000
@@ -77,8 +78,13 @@ final class FipsSchemeHandler: NSObject, WKURLSchemeHandler {
             return finish(load, status: 405, html: Self.page(.readOnly, url: url))
         }
 
+        // "Still reaching this site…" lasts until the page is answered.
+        defer { if isMain { onStatus?(nil) } }
         var target = url
-        for _ in 0...Self.maxRedirects {
+        var redirects = 0
+        // A cold route resets the first asks: ask again until MeshSiteRetry.window.
+        let firstAsk = Date()
+        while redirects <= Self.maxRedirects {
             guard let base = await door(for: npub, load: load, isMain: isMain) else { return }
             guard load.isActive else { return }
             guard let request = Self.request(for: target, base: base, method: method) else {
@@ -106,9 +112,16 @@ final class FipsSchemeHandler: NSObject, WKURLSchemeHandler {
                     return fail(load, URLError(.redirectToNonExistentLocation))
                 }
                 target = next
+                redirects += 1
             case .unreachable:
                 // The door may be stale (the tree moved): ask afresh next time.
                 bases[npub] = nil
+                if MeshSiteRetry.shouldRetry(startedAt: firstAsk, now: Date()) {
+                    if isMain { onStatus?("Still reaching this site…") }
+                    try? await Task.sleep(nanoseconds: UInt64(MeshSiteRetry.pause * 1_000_000_000))
+                    guard load.isActive else { return }
+                    continue
+                }
                 return isMain ? finish(load, page: .unreachable) : fail(load, URLError(.cannotConnectToHost))
             case .tooBig:
                 return isMain ? finish(load, page: .tooBig) : fail(load, URLError(.dataLengthExceedsMaximum))
@@ -125,13 +138,16 @@ final class FipsSchemeHandler: NSObject, WKURLSchemeHandler {
         if let base = bases[npub] { return base }
         let deadline = Date().addingTimeInterval(Self.treeWait)
         var reply = await ingress(npub)
+        var waited = false
         while reply.isWaiting, load.isActive, Date() < deadline {
+            waited = true
             onStatus?("Waiting for the mesh…")
             try? await Task.sleep(nanoseconds: Self.treePoll)
             guard load.isActive else { break }
             reply = await ingress(npub)
         }
-        onStatus?(nil)
+        // A page still being retried keeps its own line (run's defer clears it).
+        if waited { onStatus?(nil) }
         guard load.isActive else { return nil }
         if let base = reply.url {
             bases[npub] = base

@@ -27,7 +27,7 @@ class MeshSiteFetcherTest {
     @After fun down() = server.shutdown()
 
     private fun fetcher(door: (String) -> MeshSiteIngress = { MeshSiteIngress.Ready(base) }) =
-        MeshSiteFetcher(door, treeWaitMs = 300, treePollMs = 50)
+        MeshSiteFetcher(door, treeWaitMs = 300, treePollMs = 50, retryWindowMs = 300, retryPauseMs = 50)
 
     private fun Reply.html() = (this as Reply.Page).html
 
@@ -74,8 +74,34 @@ class MeshSiteFetcherTest {
     }
 
     @Test fun aSiteThatDoesNotAnswerIsSaidSo() {
+        repeat(20) { server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START)) }
+        var status: String? = "unset"
+        val f = fetcher().apply { onStatus = { status = it } }
+        assertTrue(f.fetch(npub, site, "GET", isMain = true).html().contains(FipsUrl.htmlEscaped(MeshPage.Unreachable.title)))
+        assertTrue("it asked again before giving up: ${server.requestCount}", server.requestCount > 1)
+        assertNull("the status clears", status)
+    }
+
+    @Test fun aSiteResetWhileTheRouteIsColdIsAskedAgainAndLoads() {
+        // Logen 2026-11-14: a cold route resets the first ask (the door's SYN times out before the lookup ends).
+        // The page asks again through a fresh door instead of saying "Can't reach this site" at once.
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START))
-        assertTrue(fetcher().fetch(npub, site, "GET", isMain = true).html().contains(FipsUrl.htmlEscaped(MeshPage.Unreachable.title)))
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START))
+        server.enqueue(MockResponse().setBody("<h1>found</h1>").setHeader("Content-Type", "text/html"))
+        var doors = 0
+        val seen = mutableListOf<String?>()
+        val f = fetcher { doors++; MeshSiteIngress.Ready(base) }.apply { onStatus = { seen += it } }
+        val reply = f.fetch(npub, site, "GET", isMain = true) as Reply.Body
+        assertEquals("<h1>found</h1>", reply.stream.readBytes().decodeToString())
+        assertEquals("each ask opens a fresh door", 3, doors)
+        assertTrue(seen.contains("Still reaching this site…"))
+        assertNull("the status clears", seen.last())
+    }
+
+    @Test fun theRequestTimeoutOutlastsTheLookupAndTheDoorsConnect() {
+        // Fork lookup ladder 1+2+4+8 s, door SYN timeout 20 s (fips-v2 stack.rs).
+        assertTrue(MeshSiteFetcher.REQUEST_TIMEOUT_S > 35)
+        assertTrue(MeshSiteFetcher.RETRY_WINDOW_MS >= MeshSiteFetcher.REQUEST_TIMEOUT_S * 1000)
     }
 
     @Test fun aPageTooBigForTheCapIsRefused() {

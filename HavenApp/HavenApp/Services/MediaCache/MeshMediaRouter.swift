@@ -30,8 +30,9 @@ actor MeshMediaRouter {
         var serverList: @Sendable (String) async -> [String]?
         /// Ask relays for the author's 10063.
         var requestServerList: @Sendable (String) async -> Void
-        /// A loopback base whose requests reach this mesh npub's vault, or nil.
-        var ingress: @Sendable (String) async -> URL?
+        /// A loopback base whose requests reach this mesh npub's vault, or why
+        /// there is none (`.notReady`: the engine has no tree parent yet).
+        var ingress: @Sendable (String) async -> MeshSiteIngress
         /// A plain GET of the full body (no Range), capped at `maxBytes`;
         /// nil when the connection failed.
         var get: @Sendable (URL, Int) async -> Reply?
@@ -45,7 +46,10 @@ actor MeshMediaRouter {
     /// The most a mesh read keeps. Bigger blobs come from the URL.
     static let maxBytes = 32 << 20
     /// A failed dial is not retried for this long, so a dead vault costs one wait.
+    /// "No tree parent yet" is not a failed dial: it is asked again every `treePoll`.
     static let ingressRetry: TimeInterval = 30
+    /// How often a read asks again while the engine is still finding its tree parent.
+    static let treePoll: Duration = .seconds(2)
     /// A missing 10063 is asked for again after this long (web LIST_RETRY_MS).
     static let requestRetry: TimeInterval = 60
     /// How long one vault may refuse or drop the read before it counts as
@@ -73,7 +77,7 @@ actor MeshMediaRouter {
 
     private let deps: Dependencies
     private var ingressCache: [String: (base: URL?, at: Date)] = [:]
-    private var ingressInFlight: [String: Task<URL?, Never>] = [:]
+    private var ingressInFlight: [String: Task<MeshSiteIngress, Never>] = [:]
     private var distrusted: Set<String> = []
     private var requested: [String: Date] = [:]
     /// "vault npub|sha256" to when that vault last answered without the photo.
@@ -236,7 +240,15 @@ actor MeshMediaRouter {
     /// then not dialled again per photo.
     private func patientGet(_ npub: String, sha256: String, patience: TimeInterval) async -> Reply? {
         let giveUp = deps.now() + patience
-        while !distrusted.contains(npub), let base = await ingressBase(npub) {
+        while !distrusted.contains(npub) {
+            let door = await ingressBase(npub)
+            guard let base = door.url else {
+                // Up, but no tree parent yet: wait for it within this read's
+                // patience instead of failing every photo at once.
+                guard door.isWaiting, !Task.isCancelled, deps.now() < giveUp else { return nil }
+                await deps.sleep(Self.treePoll)
+                continue
+            }
             if let reply = await deps.get(base.appendingPathComponent(sha256), Self.maxBytes) { return reply }
             // The photo left the screen: its cancelled GET says nothing about the vault.
             if Task.isCancelled { return nil }
@@ -270,21 +282,24 @@ actor MeshMediaRouter {
     }
 
     /// One dial per vault at a time; every photo from it shares the answer.
-    private func ingressBase(_ npub: String) async -> URL? {
+    /// A "no tree parent yet" answer is shared but not remembered: the next
+    /// ask may find the tree.
+    private func ingressBase(_ npub: String) async -> MeshSiteIngress {
         if let cached = ingressCache[npub] {
-            if let base = cached.base { return base }
-            if deps.now().timeIntervalSince(cached.at) < Self.ingressRetry { return nil }
+            if let base = cached.base { return .ready(base) }
+            if deps.now().timeIntervalSince(cached.at) < Self.ingressRetry { return .failed }
         }
         if let running = ingressInFlight[npub] { return await running.value }
         let dial = deps.ingress
         let task = Task { await dial(npub) }
         ingressInFlight[npub] = task
-        let base = await task.value
+        let door = await task.value
         ingressInFlight[npub] = nil
-        if base == nil { deps.log("mesh dial to \(npub.prefix(12))…: no ingress (mesh off, engine not running, or the peer never connected)") }
+        if door.isWaiting { return door }
+        if door.url == nil { deps.log("mesh dial to \(npub.prefix(12))…: no ingress (mesh off, engine not running, or the peer never connected)") }
         // A vault distrusted while this dial ran stays dropped.
-        if !distrusted.contains(npub) { ingressCache[npub] = (base, deps.now()) }
-        return base
+        if !distrusted.contains(npub) { ingressCache[npub] = (door.url, deps.now()) }
+        return door
     }
 }
 

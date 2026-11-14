@@ -23,6 +23,8 @@ class MeshSiteFetcher(
     private val treeWaitMs: Long = TREE_WAIT_MS,
     private val treePollMs: Long = TREE_POLL_MS,
     private val client: OkHttpClient = defaultClient,
+    private val retryWindowMs: Long = RETRY_WINDOW_MS,
+    private val retryPauseMs: Long = RETRY_PAUSE_MS,
 ) {
     /** What the WebView gets back. */
     sealed interface Reply {
@@ -58,8 +60,20 @@ class MeshSiteFetcher(
             // Reading only: a form post has nowhere honest to go (and WebView never shows us its body).
             return if (isMain) Reply.Page(MeshPage.html(MeshPage.ReadOnly, site), 405) else Reply.Fail
         }
+        // "Still reaching this site…" lasts until the page is answered.
+        try {
+            return read(npub, site, m, isMain, accept, range)
+        } finally {
+            if (isMain) onStatus(null)
+        }
+    }
+
+    private fun read(npub: String, site: String, m: String, isMain: Boolean, accept: String?, range: String?): Reply {
         var target = site
-        repeat(MAX_REDIRECTS + 1) {
+        var redirects = 0
+        // A cold route resets the first asks: ask again, through a fresh door, until [retryWindowMs] (iOS MeshSiteRetry).
+        val firstAsk = System.currentTimeMillis()
+        while (redirects <= MAX_REDIRECTS) {
             val base = when (val d = doorFor(npub)) {
                 is MeshSiteIngress.Ready -> d.base
                 else -> return if (isMain) Reply.Page(MeshPage.html(MeshPage.of(d), site)) else Reply.Fail
@@ -75,6 +89,11 @@ class MeshSiteFetcher(
             } catch (_: IOException) {
                 // No byte came back: no route, a reset, a timeout. The door may be stale (the tree moved).
                 bases.remove(npub)
+                if (System.currentTimeMillis() - firstAsk + retryPauseMs < retryWindowMs) {
+                    if (isMain) onStatus("Still reaching this site…")
+                    try { Thread.sleep(retryPauseMs) } catch (_: InterruptedException) { return page(isMain, MeshPage.Unreachable, site) }
+                    continue
+                }
                 return page(isMain, MeshPage.Unreachable, site)
             }
             if (response.code in 300..399) {
@@ -88,7 +107,8 @@ class MeshSiteFetcher(
                 }
                 if (FipsUrl.meshNpub(next) != npub) return Reply.Fail
                 target = next
-                return@repeat
+                redirects++
+                continue
             }
             val body = response.body ?: run { response.close(); return Reply.Fail }
             val budget = PAGE_BYTE_CAP - pageBytes.get()
@@ -118,12 +138,15 @@ class MeshSiteFetcher(
         bases[npub]?.let { return MeshSiteIngress.Ready(it) }
         val deadline = System.currentTimeMillis() + treeWaitMs
         var reply = door(npub)
+        var waited = false
         while (reply.isWaiting && System.currentTimeMillis() < deadline) {
+            waited = true
             onStatus("Waiting for the mesh…")
             try { Thread.sleep(treePollMs) } catch (_: InterruptedException) { break }
             reply = door(npub)
         }
-        onStatus(null)
+        // A page still being retried keeps its own line (fetch clears it).
+        if (waited) onStatus(null)
         if (reply is MeshSiteIngress.Ready) bases[npub] = reply.base
         return reply
     }
@@ -141,8 +164,15 @@ class MeshSiteFetcher(
     companion object {
         /** All of one page's responses together, so a site can't fill memory. */
         const val PAGE_BYTE_CAP = 48L shl 20
-        /** A quiet site gives up like a slow server. */
-        const val REQUEST_TIMEOUT_S = 20L
+        /**
+         * A quiet site gives up like a slow server, but only after the mesh could have found it: above the door's
+         * 20 s connect plus the engine's 15 s lookup (iOS MeshSiteRetry.requestTimeout).
+         */
+        const val REQUEST_TIMEOUT_S = 40L
+        /** How long one request keeps asking again after resets or timeouts (iOS MeshSiteRetry.window). */
+        const val RETRY_WINDOW_MS = 45_000L
+        /** The pause between those asks (iOS MeshSiteRetry.pause). */
+        const val RETRY_PAUSE_MS = 2_000L
         /** How long a page waits for the engine to find its tree parent. */
         const val TREE_WAIT_MS = 45_000L
         const val TREE_POLL_MS = 3_000L
