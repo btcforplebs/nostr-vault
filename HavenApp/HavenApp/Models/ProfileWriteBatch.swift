@@ -37,3 +37,46 @@ struct ProfileWriteBatch {
         return written
     }
 }
+
+/// Writes a cache file one save at a time. A save asked for while one is
+/// running is held, and a newer one replaces it, so at most one value is
+/// being written and one waiting. Saves used to start on a global queue
+/// every 5 s; with a 26 MB profile cache each took longer than that, they
+/// piled up, and the copies they held ran the iPhone out of memory during
+/// an account switch (11/14).
+final class LatestOnlySave<Value> {
+    private let lock = NSLock()
+    private var running = false
+    private var held: Value?
+    private let queue: DispatchQueue
+    private let write: (Value) -> Void
+
+    init(queue: DispatchQueue, write: @escaping (Value) -> Void) {
+        self.queue = queue
+        self.write = write
+    }
+
+    func save(_ value: Value) {
+        lock.lock()
+        if running {
+            held = value
+            lock.unlock()
+            return
+        }
+        running = true
+        lock.unlock()
+        queue.async { self.drain(value) }
+    }
+
+    private func drain(_ first: Value) {
+        var next: Value? = first
+        while let value = next {
+            autoreleasepool { write(value) }
+            lock.lock()
+            next = held
+            held = nil
+            if next == nil { running = false }
+            lock.unlock()
+        }
+    }
+}
