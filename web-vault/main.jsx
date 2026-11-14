@@ -52,7 +52,7 @@ import { isDashboardOpen } from "./src/net/dashboard-route.js"
 
 // The napplet shell page (plan P1), opened only by its address: /vault/?shell=1.
 const NAPPLET_SHELL = new URLSearchParams(location.search).get("shell") === "1"
-const ROUTES = ["feed", "search", "wot", "notifications", "compose", "profile", "relay", "thread", "messages", "dm", "vault", "bookmarks", "emoji", "settings", "accounts", "wallet", ...(BOX ? ["box"] : [])]
+const ROUTES = ["feed", "search", "wot", "notifications", "compose", "profile", "relay", "thread", "messages", "dm", "vault", "bookmarks", "emoji", "apps", "settings", "accounts", "wallet", ...(BOX ? ["box"] : [])]
 // "#/thread/<id>" -> { route: "thread", arg: "<id>" }; "#/profile/<pubkey>" is someone else's profile.
 const routeOf = () => {
   const [r, arg = ""] = location.hash.replace(/^#\/?/, "").split(/[?]/)[0].split("/")
@@ -318,6 +318,7 @@ function PhoneScreens({ ctx, route, arg, other }) {
       {route === "messages" && <MessagesScreen ctx={ctx} vaultMenu />}
       {route === "bookmarks" && <BookmarksScreen ctx={ctx} />}
       {route === "emoji" && <EmojiScreen ctx={ctx} />}
+      {route === "apps" && <NappletShell ctx={ctx} showSwitch={false} vaultMenu />}
       {route === "dm" && <ConversationScreen key={arg} ctx={ctx} peer={arg} />}
       {route === "vault" && <VaultScreen ctx={ctx} />}
       {route === "settings" && <SettingsScreen key={arg} ctx={ctx} page={arg} />}

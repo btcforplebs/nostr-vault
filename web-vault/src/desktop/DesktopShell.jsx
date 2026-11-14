@@ -8,7 +8,7 @@ import { FeedScreen } from "../screens/FeedScreen.jsx"
 import { SettingsScreen } from "../screens/SettingsScreen.jsx"
 // Every other screen comes as its own chunk, when it is first shown (screens/lazy.jsx), the same wrappers the phone
 // layout uses: the boot bundle carries the desktop layout and the Feed, not Compose's editors or the Vault's gallery.
-import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen } from "../screens/lazy-screens.js"
+import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, NappletShell } from "../screens/lazy-screens.js"
 import { compose } from "../net/actions.js"
 import { parseHash, withParam, sideOf, SPLIT, FULL } from "./routes.js"
 import { keyCommand, SHEET } from "./keys.js"
@@ -93,6 +93,7 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   const page = view.route === "settings" ? <SettingsScreen key={view.arg} ctx={ctx} page={view.arg} />
     : view.route === "accounts" ? <AccountsScreen ctx={ctx} />
     : view.route === "wallet" ? <WalletScreen />
+    : view.route === "apps" ? <NappletShell ctx={ctx} showSwitch={false} vaultMenu />
     : null
   return (
     <div class={`desk ${mode}${space ? (spaceFolded ? " space folded" : " space") : ""}`}>

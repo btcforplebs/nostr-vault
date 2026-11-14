@@ -6,12 +6,13 @@ import { pool, publishRelays, DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { firstTaken } from "../net/actions.js"
 import { checkSigned } from "../net/sync.js"
 import { getBlocks } from "../net/blocks.js"
-import { uploadPhoto, mediaServers } from "../net/upload.js"
-import { parseBlossomUri, candidateServers, fetchVerified, readCapped, MAX_BYTES } from "../net/blossom-uri.js"
+import { uploadPhoto, mediaServers, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
+import { parseBlossomUri, candidateServers, fetchVerified, readCapped, MAX_BYTES, serverOrigin, authorServers } from "../net/blossom-uri.js"
 import { showNotice } from "../net/notify-show.js"
 import { blockedUrl } from "./fetch-policy.js"
 import { protectedKind, deletionTargets } from "./policy.js"
 import { idbNappletStorage } from "./storage-idb.js"
+import { catalogFilter, catalogEntries, fetchArtifact } from "./catalog.js"
 
 const QUERY_WAIT_MS = 4000
 const codeError = (code, message) => Object.assign(new Error(message ?? code), { code })
@@ -105,3 +106,17 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
     randomId: () => crypto.randomUUID(),
   }
 }
+
+const readRelaysOf = ctx => uniq([...(ctx.account.relays?.read ?? []), ...DEFAULT_RELAYS])
+
+/** The Apps pane's catalog (P3): kind 35129 from the user's read relays, signatures checked, blocked publishers out. */
+export async function readCatalog(ctx) {
+  const evs = await pool.querySync(readRelaysOf(ctx), catalogFilter(), { maxWait: QUERY_WAIT_MS }).catch(() => [])
+  return catalogEntries(evs, { verify: ev => { try { return verifyEvent(ev) } catch { return false } }, blocked: getBlocks().blocked })
+}
+
+/** An app's bytes from Blossom, hash-checked (catalog.js fetchArtifact): its servers, its publisher's, the usual ones. */
+export const fetchAppArtifact = (ctx, event) => fetchArtifact(event, {
+  fetchVerified, serverOrigin, usual: DEFAULT_MEDIA_SERVERS,
+  authorServers: pk => authorServers(pk, readRelaysOf(ctx)),
+})
