@@ -27,6 +27,8 @@ function rig({ grant = defaultGrant({ firstParty: true }), yes = true, sendFails
     me: ME, messages: () => messages, blocked: () => new Set([EVE]), trusted: () => new Set([ANN]),
     unread: () => new Map([[ANN, 1], [BOB, 1]]), profile: pk => (pk === ANN ? { name: "Ann", picture: "https://x.example/a.png" } : pk === BOB ? { name: "Bob", picture: "http://x.example/b.png" } : null),
     onChange: cb => { listeners.add(cb); return () => listeners.delete(cb) },
+    retry: async id => { calls.retried = id; if (sendFails) throw Object.assign(new Error("Still not delivered"), { failedId: "f2" }); messages.delete(id); const m = msg("w10", ME, ANN, 70, "again"); messages.set("w10", m); return m },
+    discard: id => { calls.discarded = id; messages.delete(id) },
     searchName: pk => (pk === ANN ? "Ann Lee" : pk === BOB ? "Bob" : ""), follows: pk => pk === ANN, lookup: pks => calls.lookup.push(pks),
     async send(peer, text, photo) { calls.sent.push(photo ? [peer, text, photo] : [peer, text]); if (sendFails) throw Object.assign(new Error("Not delivered"), { failedId: "pending:9" }); const m = msg("w9", ME, peer, 60, text); messages.set("w9", m); return m },
     markRead: list => calls.read.push(list.map(m => m.id)), ask: async q => { calls.asks.push(q); return yes }, randomId: (() => { let i = 0; return () => `r${++i}` })(),
@@ -192,4 +194,43 @@ test("messages pane: shell deps get search names, follows and a once-per-person 
   assert.match(pane, /const fresh = pks\.filter\(pk => !looked\.current\.has\(pk\)\)/)
   const deps = fs.readFileSync(new URL("../src/napplet/shell-deps.js", import.meta.url), "utf8")
   assert.match(deps, /prepare: async \(\) => \(sentText = dmContent\(text, \(await uploadPhoto\(await preparePhoto\(photo\), \{ ctx, servers: await mediaServers\(ctx\) \}\)\)\.url\)\)/)
+})
+
+test("dm: a failed send hands back its message with the reason on it, never the result's error (the shim would drop it all)", async () => {
+  const f = rig({ sendFails: true })
+  const r = await f.ask("dm.send", { recipients: [ANN], content: "x" })
+  assert.equal(r.error, undefined)
+  assert.deepEqual([r.ok, r.message.id, r.message.error], [false, "pending:9", "Not delivered"])
+})
+
+test("dm: Try again and Remove work only on your own failed message to that person", async () => {
+  const { ask, calls, messages } = rig()
+  messages.set("f1", msg("f1", ME, ANN, 65, "lost", { failed: "no relay took it" }))
+  messages.set("f9", msg("f9", ME, BOB, 66, "lost too", { failed: "x" }))
+  for (const bad of [{ retry: "nope" }, { retry: "m2" }, { retry: "m1" }, { retry: "f9" }, { retry: 5 }])
+    assert.ok((await ask("dm.send", { recipients: [ANN], ...bad })).error, JSON.stringify(bad))
+  const ok = await ask("dm.send", { recipients: [ANN], conversationId: ANN, content: "", retry: "f1" })
+  assert.deepEqual([ok.ok, ok.message.id, ok.message.status, calls.retried], [true, "w10", "sent", "f1"])
+  messages.set("f3", msg("f3", ME, ANN, 67, "drop me", { failed: "x" }))
+  const gone = await ask("dm.send", { recipients: [ANN], content: "", retry: "f3", discard: true })
+  assert.deepEqual([gone.ok, gone.message.removed, calls.discarded, messages.has("f3")], [true, true, "f3", false])
+  const f = rig({ sendFails: true })
+  f.messages.set("f1", msg("f1", ME, ANN, 65, "lost", { failed: "x" }))
+  const again = await f.ask("dm.send", { recipients: [ANN], content: "", retry: "f1" })
+  assert.deepEqual([again.ok, again.error, again.message.id, again.message.status, again.message.error], [false, undefined, "f2", "failed", "Still not delivered"])
+})
+
+test("messages napplet: a failed bubble of yours has Try again and Remove; one the shell never kept comes back to the box", () => {
+  const html = fs.readFileSync(new URL("../napplets/messages/index.html", import.meta.url), "utf8")
+  assert.match(html, /if \(m\.status === "failed" && mine && !m\.retrying\)/)
+  assert.match(html, /retry: m\.id, \.\.\.\(discard \? \{ discard: true \} : \{\}\)/)
+  assert.match(html, /if \(!m\.id \|\| \/\^\(failed\|refused\):\/\.test\(m\.id\)\)/)
+})
+
+test("newestMine: what a Try again left, whatever its text", async () => {
+  const { newestMine } = await import("../src/napplet/shell-deps-find.js")
+  const m = new Map([["a", msg("a", ME, ANN, 1, "old")], ["b", msg("b", ME, ANN, 2, "x\nhttps://p.example/1.jpg")], ["c", msg("c", ME, ANN, 3, "y", { pending: true })], ["d", msg("d", ME, ANN, 4, "z", { failed: "x" })]])
+  assert.equal(newestMine(m, ME, ANN, false, new Set(["a"])).id, "b")
+  assert.equal(newestMine(m, ME, ANN, true).id, "d")
+  assert.equal(newestMine(m, ME, BOB), null)
 })

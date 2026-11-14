@@ -13,6 +13,12 @@
 //   dm.send            -> one recipient (NIP-17 direct; no groups, as on the classic page), through sendMessage. Our
 //                         extension `photo` (a Blob): the shell redraws it without its metadata, uploads it to your
 //                         media servers and sends its link after the text, the classic thread's own path (dm-photo.js).
+//                         Our extension `retry` (a failed message's id): Try again, the classic thread's own resend
+//                         (net/dms.js); with `discard: true`, Remove instead (the bubble goes, nothing is sent).
+//                         Only your own failed messages to that recipient.
+//                         A send that fails answers ok: false with the reason on the message (`message.error`), never
+//                         as the result's `error`: the shim drops the whole answer for that, the failed id with it,
+//                         and a Try again would have nothing to name.
 //   dm.subscribe/unsubscribe, and dm.message pushed for each new message after the subscription began
 // DMs are vault-private: only our own (first-party) napplet, the Messages screen itself, reads or sends them. An outside
 // napplet gets nothing, whatever it was granted (Logen, 2026-11-14). The ask before a send stays as a second wall.
@@ -37,7 +43,7 @@ const offset = c => { const n = Number(c); return Number.isInteger(n) && n >= 0 
 /**
  * deps: { me, messages() -> Map, blocked() -> Set, trusted() -> Set, unread(messages) -> Map peer -> n,
  * profile(pk) -> { name, picture } | null, searchName(pk) -> text, follows(pk) -> bool, lookup(pks) (fetch names),
- * onChange(cb) -> off, send(peer, text, photo?) -> Promise<message>, markRead(list), ask({ napplet, what, detail }) -> bool,
+ * onChange(cb) -> off, send(peer, text, photo?) -> Promise<message>, retry(id) -> Promise<message>, discard(id), markRead(list), ask({ napplet, what, detail }) -> bool,
  * randomId() }
  */
 export function dmHandler({ grant, who, deps, push }) {
@@ -93,6 +99,7 @@ export function dmHandler({ grant, who, deps, push }) {
     const to = Array.isArray(m.recipients) ? [...new Set(m.recipients)] : []
     if (to.length !== 1 || !HEX.test(to[0])) return refuse(m, "one recipient (a hex pubkey); groups aren't supported yet")
     if (m.conversationId !== undefined && m.conversationId !== to[0]) return refuse(m, "conversationId must be the recipient")
+    if (m.retry !== undefined) return again(m, to[0])
     const text = typeof m.content === "string" ? m.content.trim() : ""
     const photo = m.photo ?? null
     if (photo !== null && !(photo instanceof Blob && photo.size > 0 && photo.size <= MAX_PHOTO && (!photo.type || /^image\//.test(photo.type)))) return refuse(m, "photo: one image, at most 50 MB")
@@ -100,12 +107,27 @@ export function dmHandler({ grant, who, deps, push }) {
     if (deps.blocked().has(to[0])) return refuse(m, "you blocked them")
     const shownText = photo ? (text ? `${text}\n(photo)` : "(photo)") : text // as the classic thread shows one in flight
     if (!grant.firstParty && !(await deps.ask({ napplet: who, what: "dm-send", detail: { to: to[0], name: deps.profile(to[0])?.name ?? "", content: shownText } })))
-      return out(m, { ok: false, message: { id: `refused:${deps.randomId()}`, conversationId: to[0], senderPubkey: deps.me, createdAt: Math.floor(Date.now() / 1000), content: shownText, status: "failed" }, error: "the user said no" })
+      return out(m, { ok: false, message: { id: `refused:${deps.randomId()}`, conversationId: to[0], senderPubkey: deps.me, createdAt: Math.floor(Date.now() / 1000), content: shownText, status: "failed", error: "the user said no" } })
     try {
       const sent = await deps.send(to[0], text, photo)
       return out(m, { ok: true, message: dmMessage(sent, deps.me) })
     } catch (e) {
-      return out(m, { ok: false, message: { id: e?.failedId ?? `failed:${deps.randomId()}`, conversationId: to[0], senderPubkey: deps.me, createdAt: Math.floor(Date.now() / 1000), content: shownText, status: "failed" }, error: String(e?.message ?? e) })
+      return out(m, { ok: false, message: { id: e?.failedId ?? `failed:${deps.randomId()}`, conversationId: to[0], senderPubkey: deps.me, createdAt: Math.floor(Date.now() / 1000), content: shownText, status: "failed", error: String(e?.message ?? e) } })
+    }
+  }
+
+  // Try again (or Remove) a failed message of yours: the shell's own bubble, with the resend it keeps.
+  async function again(m, peer) {
+    const old = typeof m.retry === "string" ? deps.messages().get(m.retry) : null
+    if (!old || old.from !== deps.me || !old.failed || old.pending || old.peer !== peer) return refuse(m, "no failed message of yours with that id")
+    if (deps.blocked().has(peer)) return refuse(m, "you blocked them")
+    if (m.discard === true) { deps.discard(old.id); return out(m, { ok: true, message: { ...dmMessage(old, deps.me), removed: true } }) }
+    if (!grant.firstParty && !(await deps.ask({ napplet: who, what: "dm-send", detail: { to: peer, name: deps.profile(peer)?.name ?? "", content: String(old.content ?? "") } })))
+      return out(m, { ok: false, message: { ...dmMessage(old, deps.me), error: "the user said no" } })
+    try {
+      return out(m, { ok: true, message: dmMessage(await deps.retry(old.id), deps.me) })
+    } catch (e) {
+      return out(m, { ok: false, message: { ...dmMessage(old, deps.me), id: e?.failedId ?? old.id, status: "failed", error: String(e?.message ?? e) } })
     }
   }
 
