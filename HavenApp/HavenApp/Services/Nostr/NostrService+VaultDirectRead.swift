@@ -31,9 +31,11 @@ extension NostrService {
         // Local, so processEvent never injects these back into the relay.
         let local = ConfigService.shared.config.nostrURL
         let generation = eventsResetGeneration
+        if vaultStoreAnswered != owner { RelayProcessManager.shared.startupMark("vault store asked") }
 
         Task.detached(priority: .userInitiated) { [weak self] in
             let rows = Self.queryVaultStore(filters: filters)
+            if let rows, rows.isEmpty == false { RelayProcessManager.startupMarkOffMain("vault store answered \(rows.count)") }
             guard let self else { return }
             guard let rows else {
                 await MainActor.run { self.vaultStoreReadDone(account: nil) }
@@ -43,6 +45,7 @@ extension NostrService {
             self.processingQueue.async { [weak self] in
                 guard let self else { return }
                 for row in rows { self.processEvent(row, from: local) }
+                if rows.isEmpty == false { RelayProcessManager.startupMarkOffMain("vault store rows taken \(rows.count)") }
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     // A switch meanwhile: these were the old account's.
@@ -74,6 +77,7 @@ extension NostrService {
         guard let ptr = request.withCString({ QueryVaultC(UnsafeMutablePointer(mutating: $0)) }) else { return nil }
         defer { free(ptr) }
         let answer = Data(bytes: ptr, count: strlen(ptr))
+        RelayProcessManager.startupMarkOffMain("vault store bytes \(answer.count / 1024) KB")
         return VaultStoreAnswer.rows(answer)
     }
 

@@ -129,6 +129,8 @@ class RelayProcessManager: ObservableObject {
     /// in enqueue order. Overlapping a start with a still-running stop used
     /// to race the Go side's lifecycle globals and corrupt BadgerDB.
     var lifecycleChain: Task<Void, Never> = Task {}
+    /// Operations on the lifecycle chain not finished yet (startRelayAtLaunch).
+    var lifecyclePending = 0
 
     /// Coalescing/cooldown for automatic recovery restarts (Blossom upload
     /// failures). Each restart cycles the embedded Go relay and BadgerDB;

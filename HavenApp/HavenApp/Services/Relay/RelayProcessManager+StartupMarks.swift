@@ -16,6 +16,14 @@ extension RelayProcessManager {
         }
     }
 
+    /// A mark from any thread, once the relay's stdout is captured (a store
+    /// read runs only then): the main thread may be busy drawing, and a hop
+    /// there would add its wait to the mark.
+    nonisolated static func startupMarkOffMain(_ step: String) {
+        let line = StartupMarks.line(step, ms: StartupMarks.ms(since: StartupMarks.processStart))
+        FileHandle.standardOutput.write(Data((line + "\n").utf8))
+    }
+
     /// Copies the relay's templates out of the bundle when this build has
     /// not copied them yet (TemplatesCopy).
     func copyTemplatesIfChanged(to relayDataDir: URL) {

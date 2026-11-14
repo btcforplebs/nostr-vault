@@ -11,9 +11,11 @@ extension RelayProcessManager {
     /// Serialization guarantees a start can never overlap an in-flight stop.
     func enqueueLifecycle(_ op: @escaping @MainActor () async -> Void) {
         let prev = lifecycleChain
+        lifecyclePending += 1
         lifecycleChain = Task { @MainActor in
             await prev.value
             await op()
+            self.lifecyclePending -= 1
         }
     }
 
@@ -23,23 +25,71 @@ extension RelayProcessManager {
         }
     }
 
-    /// The actual start sequence. Must only run on the lifecycle chain.
-    func performStart(config: HavenConfig, isRetry: Bool) async {
+    /// The launch's start, right inside the launch handler (startup, Logen
+    /// 2026-11-14). Queued on the lifecycle chain, the start ran only after
+    /// the first frame was drawn: 407 ms on an iPhone 18 Pro, while the
+    /// stores open in ~90 ms. Nothing can be on the chain yet at launch and
+    /// a fresh process has no drain to wait for, so it runs now, the same
+    /// steps as performStart. A Mac relay over the mesh needs a dial first
+    /// (seconds), so that start stays queued.
+    func startRelayAtLaunch(config: HavenConfig) {
+        guard LaunchStart.startsNow(chainBusy: lifecyclePending > 0,
+                                    draining: RelayDrainingC() == 1,
+                                    meshDial: Self.needsMeshDial(config)) else {
+            startupMark("engine start queued (chain \(lifecyclePending), draining \(RelayDrainingC()), mesh dial \(Self.needsMeshDial(config)))")
+            startRelay(config: config)
+            return
+        }
+        guard claimStart() else { return }
+        prepareStart(config: config, isRetry: false)
+        #if os(iOS)
+        RelayConfiguration.macMeshRelay = nil
+        #endif
+        continueStartRelay(config: config, relayDataDir: ConfigService.shared.relayDataDir)
+    }
+
+    private static func needsMeshDial(_ config: HavenConfig) -> Bool {
+        #if os(iOS)
+        return config.macRelayMeshNpub != nil
+        #else
+        return false
+        #endif
+    }
+
+    /// Takes the start: false (and a log line) unless the vault is idle.
+    private func claimStart() -> Bool {
         // Strict guard: Must be idle, not running, and not in the middle of a shutdown
         guard state == .idle && !isRunning && !isShuttingDown else {
             logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot start relay: current state is \(state) (running: \(isRunning), shuttingDown: \(isShuttingDown))"))
-            return
+            return false
         }
-
         // Immediately claim the state so no second call can slip through.
         self.state = .booting
         startupMark("engine start asked")
+        return true
+    }
+
+    /// The actual start sequence. Must only run on the lifecycle chain.
+    func performStart(config: HavenConfig, isRetry: Bool) async {
+        guard claimStart() else { return }
         // A stop hands its stragglers to a reaper, and Go refuses a start
         // until they finish: a Restart (stop, then start) right away used to
         // be refused and sit on "Booting…". Wait it out here, as backup and
         // restore already do; if it still isn't done, Go's refusal line ends
         // the boot (RelayLogParser.startFailed).
         if RelayDrainingC() == 1 { _ = await waitForRelayDrain() }
+        prepareStart(config: config, isRetry: isRetry)
+
+        #if os(iOS)
+        await resolveMacMeshRelay(config: config)
+        #endif
+
+        continueStartRelay(config: config, relayDataDir: ConfigService.shared.relayDataDir)
+    }
+
+    /// The start's own steps before the engine is called: state, locks,
+    /// directories, templates.
+    private func prepareStart(config: HavenConfig, isRetry: Bool) {
         #if os(iOS)
         observeForegroundOnce()
         #endif
@@ -74,12 +124,6 @@ extension RelayProcessManager {
         // 3. Templates: copied when the app was installed or updated, not
         //    on every launch (startup time).
         copyTemplatesIfChanged(to: relayDataDir)
-
-        #if os(iOS)
-        await resolveMacMeshRelay(config: config)
-        #endif
-
-        continueStartRelay(config: config, relayDataDir: relayDataDir)
     }
 
     #if os(iOS)

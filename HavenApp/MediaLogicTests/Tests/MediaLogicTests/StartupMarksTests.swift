@@ -37,3 +37,12 @@ final class StartupMarksTests: XCTestCase {
         XCTAssertTrue(TemplatesCopy.needsCopy(copiedStamp: stamp, currentStamp: stamp, templatesPresent: false))
     }
 }
+
+final class LaunchStartTests: XCTestCase {
+    func testStartsNowOnlyWithNothingAhead() {
+        XCTAssertTrue(LaunchStart.startsNow(chainBusy: false, draining: false, meshDial: false))
+        XCTAssertFalse(LaunchStart.startsNow(chainBusy: true, draining: false, meshDial: false))
+        XCTAssertFalse(LaunchStart.startsNow(chainBusy: false, draining: true, meshDial: false))
+        XCTAssertFalse(LaunchStart.startsNow(chainBusy: false, draining: false, meshDial: true))
+    }
+}
