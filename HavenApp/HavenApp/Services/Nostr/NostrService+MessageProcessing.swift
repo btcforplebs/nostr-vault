@@ -42,10 +42,14 @@ extension NostrService {
 
         if type != "EVENT" { return }
 
-        guard json.count >= 3 else { return }
+        guard json.count >= 3, let eventDict = json[2] as? [String: Any] else { return }
+        processEvent(eventDict, from: urlString)
+    }
 
-        if let eventDict = json[2] as? [String: Any],
-           let eventData = try? JSONSerialization.data(withJSONObject: eventDict),
+    /// One event, from a socket or the direct store read (VaultDirectRead):
+    /// the same checks, side tables and buffer either way.
+    func processEvent(_ eventDict: [String: Any], from urlString: String) {
+        if let eventData = try? JSONSerialization.data(withJSONObject: eventDict),
            let event = try? JSONDecoder().decode(NostrEvent.self, from: eventData) {
 
             // A wrong clock dated it ahead: it would top the Vault's lists and

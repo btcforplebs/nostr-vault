@@ -29,6 +29,15 @@ class NostrService: ObservableObject {
     @Published var connectionStatus: String = "Disconnected"
     @Published var connectionColor: String = "gray"
     @Published var isFetching: Bool = false
+    /// The account (hex, lowercased) the store read last filled the events
+    /// for; "" until it answers after a launch or a switch. VaultDirectRead.
+    var vaultStoreAnswered = ""
+    /// A store read is on; `vaultStoreReadAgain`: one more asked meanwhile.
+    @Published var vaultStoreReading = false
+    var vaultStoreReadAgain = false
+    /// The account the events in memory belong to (a switch is heard after
+    /// `activeHexPubkey` already names the new one).
+    var eventsOwner = ""
 
     /// Set by SceneDelegate when it handles foreground reconnection.
     /// ViewerView checks this to avoid redundant refreshAll() calls.
@@ -124,8 +133,10 @@ class NostrService: ObservableObject {
         setupThrottling()
         loadProfiles()
         updateOwnerHex()
-        // The last Vault screen, before any socket is up (VaultSnapshotStore).
-        restoreVaultSnapshot()
+        eventsOwner = activeHexPubkey.lowercased()
+        // The saved Vault screens are gone (the store read replaced them):
+        // their files, up to 16 MB per account, go too.
+        Self.removeOldVaultSnapshots()
         prefetchWhitelistedProfiles()
         // The whole mute list, private part included, after this init returns.
         DispatchQueue.main.async { MuteListStore.shared.start() }

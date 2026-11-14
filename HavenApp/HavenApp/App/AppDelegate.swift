@@ -243,8 +243,6 @@ class AppDelegate: NSObject, ObservableObject {
         // The encode + write runs off-main; the relay-stop semaphore wait below
         // gives it time to flush before the process exits.
         FeedService.shared.persistCurrentSnapshot()
-        // The Vault screen too, written before this returns (VaultSnapshotStore).
-        NostrService.shared.saveVaultSnapshot(wait: true)
 
         // Stop background services before relay shutdown
         NetworkSyncService.shared.stop()

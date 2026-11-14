@@ -7,34 +7,59 @@ final class VaultReturnRulesTests: XCTestCase {
     // MARK: - One swap per refresh
 
     func testNotReadingShowsAtOnce() {
-        XCTAssertTrue(VaultListSwap.publishes(force: false, refreshing: false, heldFor: nil))
+        XCTAssertTrue(VaultListSwap.publishes(refreshing: false, heldFor: nil))
     }
 
     func testReadingHoldsTheOldList() {
-        XCTAssertFalse(VaultListSwap.publishes(force: false, refreshing: true, heldFor: nil))
-        XCTAssertFalse(VaultListSwap.publishes(force: false, refreshing: true, heldFor: 1))
+        XCTAssertFalse(VaultListSwap.publishes(refreshing: true, heldFor: nil))
+        XCTAssertFalse(VaultListSwap.publishes(refreshing: true, heldFor: 1))
     }
 
     func testAStuckReadStopsHoldingAtTheCap() {
-        XCTAssertTrue(VaultListSwap.publishes(force: false, refreshing: true, heldFor: VaultListSwap.cap))
+        XCTAssertTrue(VaultListSwap.publishes(refreshing: true, heldFor: VaultListSwap.cap))
     }
 
-    func testASavedScreenShowsAtOnce() {
-        XCTAssertTrue(VaultListSwap.publishes(force: true, refreshing: true, heldFor: nil))
+    // MARK: - Store read (VaultDirectRead)
+
+    func testOnceTheStoreAnsweredOnlyItHoldsTheList() {
+        // The socket tops up live after the store read: never holds the list.
+        XCTAssertFalse(VaultDirectRead.reading(storeAnswered: true, storeReading: false, socketReading: true,
+                                               booting: false, nothingYet: true))
+        XCTAssertTrue(VaultDirectRead.reading(storeAnswered: true, storeReading: true, socketReading: false,
+                                              booting: false, nothingYet: false))
     }
 
-    // MARK: - Saved screen
-
-    func testSnapshotKeepsTheNewest() {
-        let kept = VaultSnapshotRules.newest([3, 9, 1, 7], keep: 2) { Int64($0) }
-        XCTAssertEqual(kept, [9, 7])
+    func testBeforeTheStoreAnswersTheSocketRulesStand() {
+        XCTAssertTrue(VaultDirectRead.reading(storeAnswered: false, storeReading: false, socketReading: true,
+                                              booting: false, nothingYet: false))
+        XCTAssertTrue(VaultDirectRead.reading(storeAnswered: false, storeReading: false, socketReading: false,
+                                              booting: true, nothingYet: false))
+        // Followers (from disk) never show alone.
+        XCTAssertTrue(VaultDirectRead.reading(storeAnswered: false, storeReading: false, socketReading: false,
+                                              booting: false, nothingYet: true))
+        XCTAssertFalse(VaultDirectRead.reading(storeAnswered: false, storeReading: false, socketReading: false,
+                                               booting: false, nothingYet: false))
     }
 
-    func testSnapshotFileNameIsOnlyAHexKey() {
-        let hex = String(repeating: "Ab", count: 32)
-        XCTAssertEqual(VaultSnapshotRules.fileName(account: hex), "vault-\(hex.lowercased()).json")
-        XCTAssertNil(VaultSnapshotRules.fileName(account: "../../etc"))
-        XCTAssertNil(VaultSnapshotRules.fileName(account: ""))
+    func testStoreReadsTheWholeWindowFirstThenOnlyWhatIsNew() {
+        XCTAssertNil(VaultDirectRead.storeSince(answeredBefore: false, newest: 1_000, now: 2_000))
+        XCTAssertEqual(VaultDirectRead.storeSince(answeredBefore: true, newest: 1_000, now: 2_000), 940)
+        XCTAssertNil(VaultDirectRead.storeSince(answeredBefore: true, newest: nil, now: 2_000))
+    }
+
+    func testSocketOnlyTopsUpAfterTheStoreUnlessAMacRelayIsRead() {
+        XCTAssertEqual(VaultDirectRead.socketSince(full: true, storeAnswered: true, remoteRelay: false, newest: 1_000, now: 2_000), 940)
+        XCTAssertNil(VaultDirectRead.socketSince(full: true, storeAnswered: true, remoteRelay: true, newest: 1_000, now: 2_000))
+        XCTAssertNil(VaultDirectRead.socketSince(full: true, storeAnswered: false, remoteRelay: false, newest: 1_000, now: 2_000))
+        XCTAssertEqual(VaultDirectRead.socketSince(full: false, storeAnswered: false, remoteRelay: true, newest: 1_000, now: 2_000), 940)
+    }
+
+    func testStoreAnswerParsing() {
+        let rows = VaultStoreAnswer.rows(Data(#"{"events":[{"id":"a","kind":1}]}"#.utf8))
+        XCTAssertEqual(rows?.count, 1)
+        XCTAssertEqual(VaultStoreAnswer.rows(Data(#"{"events":[]}"#.utf8))?.count, 0)
+        XCTAssertNil(VaultStoreAnswer.rows(Data(#"{"events":null,"error":"vault read not ready"}"#.utf8)))
+        XCTAssertNil(VaultStoreAnswer.rows(Data("not json".utf8)))
     }
 
     // MARK: - One dot per account
@@ -78,7 +103,10 @@ final class VaultReturnRulesTests: XCTestCase {
         let scene = try source("HavenApp-iOS/SceneDelegate.swift")
         XCTAssertTrue(scene.contains("NostrService.shared.fetchNotes(from: urls, since: since)"))
         XCTAssertFalse(scene.contains("NostrService.shared.fetchNotes(from: urls)\n"))
-        XCTAssertTrue(scene.contains("NostrService.shared.saveVaultSnapshot()"))
+        XCTAssertFalse(scene.contains("saveVaultSnapshot"))
+        let read = try XCTUnwrap(scene.range(of: "NostrService.shared.readVaultFromStore()"))
+        let socket = try XCTUnwrap(scene.range(of: "NostrService.shared.fetchNotes(from: urls, since: since)"))
+        XCTAssertLessThan(read.lowerBound, socket.lowerBound)
     }
 
     func testTheVaultListPublishesThroughTheSwap() throws {
@@ -93,14 +121,26 @@ final class VaultReturnRulesTests: XCTestCase {
         }
     }
 
-    func testAccountSwitchSavesThenRestores() throws {
+    func testAccountSwitchReadsTheNewAccountFromTheStore() throws {
         let conn = try source("HavenApp/Services/Nostr/NostrService+Connection.swift")
-        let save = try XCTUnwrap(conn.range(of: "saveVaultSnapshot()"))
-        let clear = try XCTUnwrap(conn.range(of: "events.removeAll()", range: save.upperBound..<conn.endIndex))
-        let restore = try XCTUnwrap(conn.range(of: "restoreVaultSnapshot()"))
-        XCTAssertLessThan(save.lowerBound, clear.lowerBound)
-        XCTAssertLessThan(clear.lowerBound, restore.lowerBound)
+        let clear = try XCTUnwrap(conn.range(of: "events.removeAll()"))
+        let read = try XCTUnwrap(conn.range(of: "readVaultFromStore()"))
+        XCTAssertLessThan(clear.lowerBound, read.lowerBound)
+        XCTAssertTrue(conn.contains("vaultStoreAnswered = \"\""))
         XCTAssertTrue(conn.contains("switchNewsDot(from: previous, to: activeHexPubkey)"))
+        XCTAssertFalse(conn.contains("VaultSnapshot"))
+    }
+
+    func testTheStoreIsReadWhenTheEngineIsUpAndOnEveryRefresh() throws {
+        let capture = try source("HavenApp/Services/Relay/RelayProcessManager+OutputCapture.swift")
+        XCTAssertTrue(capture.contains("NostrService.shared.readVaultFromStore()"))
+        let net = try source("HavenApp/Views/Vault/VaultNetworking.swift")
+        let read = try XCTUnwrap(net.range(of: "nostrService.readVaultFromStore()"))
+        let debounce = try XCTUnwrap(net.range(of: "refreshDebounceTask = Task"))
+        XCTAssertLessThan(read.lowerBound, debounce.lowerBound)
+        // Through the socket's own event path, so dot, media and live list see them.
+        let direct = try source("HavenApp/Services/Nostr/NostrService+VaultDirectRead.swift")
+        XCTAssertTrue(direct.contains("self.processEvent(row, from: local)"))
     }
 
     func testTheDotIsProposedNotLitByTheLogLine() throws {

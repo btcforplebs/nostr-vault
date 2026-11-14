@@ -214,13 +214,31 @@ extension NostrService {
             activeSubscriptions[urlString] = subscriptionId
         }
 
-        // Split note kinds from engagement/metadata kinds. The relay returns the
-        // newest N events PER FILTER regardless of kind, so a single all-kinds
-        // filter lets a high volume of reactions/zaps crowd actual notes out of
-        // the window on cold start (notes are cached but never loaded into memory).
-        // Giving notes their own filter guarantees they load independent of how
-        // many reactions/zaps share the window — same rationale as bounding
-        // long-form bodies separately.
+        let filters = Self.vaultFilters(ownerHex: self.activeHexPubkey, authors: authors,
+                                        until: until, since: since)
+
+        let req = ["REQ", subscriptionId] + filters
+        if let reqData = try? JSONSerialization.data(withJSONObject: req),
+           let reqString = String(data: reqData, encoding: .utf8) {
+            #if DEBUG
+            print("NostrService: Sending REQ (\(subscriptionId)) with \(filters.count) filters to \(url.absoluteString)")
+            #endif
+            client.send(text: reqString)
+        }
+    }
+
+    /// The Vault's read: the socket REQ and the direct store read
+    /// (NostrService+VaultDirectRead) ask the same filters.
+    ///
+    /// Split note kinds from engagement/metadata kinds. The relay returns the
+    /// newest N events PER FILTER regardless of kind, so a single all-kinds
+    /// filter lets a high volume of reactions/zaps crowd actual notes out of
+    /// the window on cold start (notes are cached but never loaded into memory).
+    /// Giving notes their own filter guarantees they load independent of how
+    /// many reactions/zaps share the window — same rationale as bounding
+    /// long-form bodies separately.
+    static func vaultFilters(ownerHex: String, authors: [String]?, until: Int64?, since: Int64?) -> [[String: Any]] {
+        let isHistorical = until != nil
         let noteKinds = Self.relayTabNoteKinds
         let metaKinds = [0, 3, 4, 7, 1063, 9735, 10000, 10063]
         let noteLimit = isHistorical ? 100 : 400
@@ -249,19 +267,10 @@ extension NostrService {
         // CRITICAL: Always subscribe to mentions (#p) of the owner so "tagged notes"
         // from people we don't follow still show up in the viewer. Split the same way
         // so replies aren't starved by reactions/zaps tagging the owner.
-        let ownerHex = self.activeHexPubkey
         if !ownerHex.isEmpty {
             filters.append(makeFilter(kinds: noteKinds, limit: noteLimit, mentionsOwner: ownerHex))
             filters.append(makeFilter(kinds: metaKinds, limit: metaLimit, mentionsOwner: ownerHex))
         }
-
-        let req = ["REQ", subscriptionId] + filters
-        if let reqData = try? JSONSerialization.data(withJSONObject: req),
-           let reqString = String(data: reqData, encoding: .utf8) {
-            #if DEBUG
-            print("NostrService: Sending REQ (\(subscriptionId)) with \(filters.count) filters to \(url.absoluteString)")
-            #endif
-            client.send(text: reqString)
-        }
+        return filters
     }
 }

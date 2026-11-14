@@ -244,6 +244,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Re-fetch the viewer (Relay tab) notes if the relay is up. If it
         // isn't yet, ViewerView refreshes on its own appear path.
         if RelayProcessManager.shared.isRunning {
+            // What came in while away, straight from the store: the relay
+            // port iOS closed during suspend doesn't matter (VaultDirectRead).
+            NostrService.shared.readVaultFromStore()
             let config = ConfigService.shared.config
             var urls = [config.nostrURL, config.nostrURL + "/inbox"].compactMap { URL(string: $0) }
             let macURL = config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -296,8 +299,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // memory; the encode + write happens off-main inside the background-task
         // window opened below.
         FeedService.shared.persistCurrentSnapshot()
-        // And the Vault's, for the account on screen (VaultSnapshotStore).
-        NostrService.shared.saveVaultSnapshot()
 
         // Pause feed & reset viewer connections when entering background
         FeedService.shared.pauseFeed()
