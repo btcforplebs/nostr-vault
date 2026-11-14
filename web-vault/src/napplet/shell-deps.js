@@ -10,7 +10,7 @@ import { uploadPhoto, mediaServers } from "../net/upload.js"
 import { parseBlossomUri, candidateServers, fetchVerified, readCapped, MAX_BYTES } from "../net/blossom-uri.js"
 import { showNotice } from "../net/notify-show.js"
 import { blockedUrl } from "./fetch-policy.js"
-import { ACCOUNT_KINDS, NEVER_SIGN } from "./policy.js"
+import { protectedKind, deletionTargets } from "./policy.js"
 import { idbNappletStorage } from "./storage-idb.js"
 
 const QUERY_WAIT_MS = 4000
@@ -56,10 +56,12 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
     verify: ev => { try { return !!ev && verifyEvent(ev) } catch { return false } },
     // dispatch.js already ran signDecision; this is the last stop before the signer, so it says no again on its own.
     async sign(template) {
-      if (ACCOUNT_KINDS.has(template.kind) || NEVER_SIGN.has(template.kind)) throw new Error(`kind ${template.kind} is never signed for a napplet`)
+      if (protectedKind(template.kind)) throw new Error(`kind ${template.kind} is never signed for a napplet`)
+      if (template.kind === 5 && deletionTargets(template).kinds.some(k => !Number.isInteger(k) || protectedKind(k))) throw new Error("a napplet can't delete an account list")
       return checkSigned(await ctx.signer.signEvent(template), template, ctx.session.pubkey)
     },
     async publish(event) {
+      if (protectedKind(event?.kind)) return { ok: false, error: `kind ${event?.kind} is never sent for a napplet` }
       const { network, local } = publishRelays(ctx.account.relays?.write ?? [])
       const urls = [...network, ...local]
       const sends = pool.publish(urls, event)

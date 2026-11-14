@@ -6,12 +6,12 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import fs from "node:fs"
 import { parseManifest, checkArtifact, domainsFor, nappletKey, nappletLine, SHELL_DOMAINS } from "../src/napplet/manifest.js"
-import { visibleEvents, signDecision, defaultGrant, grantStore, PRIVATE_KINDS } from "../src/napplet/policy.js"
+import { visibleEvents, signDecision, resendDecision, defaultGrant, grantStore, PRIVATE_KINDS } from "../src/napplet/policy.js"
 import { createHandlers, cleanFilters, MAX_EVENTS, STORAGE_VALUE_MAX, MAX_SUBS } from "../src/napplet/dispatch.js"
 import { createBus } from "../src/napplet/bus.js"
 import { blockedUrl } from "../src/napplet/fetch-policy.js"
 import { loaderCsp, LOADER_FILE } from "../src/napplet/csp.js"
-import { askWords, domainWord } from "../src/napplet/consent-words.js"
+import { askWords, domainWord, PRIVATE_WORDS, tagSummary } from "../src/napplet/consent-words.js"
 
 const PUB = "a".repeat(64), H = "b".repeat(64), ME = "c".repeat(64), BAD = "d".repeat(64)
 const manifest = (tags, kind = 35129) => ({ kind, pubkey: PUB, id: "e".repeat(64), tags })
@@ -236,6 +236,7 @@ test("the loader's CSP is one string: csp.js, nginx and the page served beside i
   assert.ok(nginx.indexOf("napplet-frame\\.html") < nginx.indexOf("~^/(relay|vault)/  \"default-src 'self'"))
   assert.match(loaderCsp(), /connect-src 'none'/)
   assert.match(loaderCsp(), /frame-ancestors 'self'/)
+  assert.match(loaderCsp(), /sandbox allow-scripts$/)
   const page = fs.readFileSync(new URL(`../public/${LOADER_FILE}`, import.meta.url), "utf8")
   assert.match(page, /e\.source !== parent/)
   assert.match(page, /nv-loader\.ready/)
@@ -244,4 +245,59 @@ test("the loader's CSP is one string: csp.js, nginx and the page served beside i
 test("consent words cover every domain the shell offers", () => {
   for (const d of SHELL_DOMAINS.filter(d => d !== "shell")) assert.notEqual(domainWord(d), d, d)
   assert.match(askWords("publish", { title: "Emoji" }, { kind: 1, content: "hi" }).title, /Emoji wants to post a note as you/)
+})
+
+// Tron's review of PR 2057: vanish, deletions aimed at account lists, replayed lists, the sheet hiding tags.
+const MINE = "1".repeat(64), MYLIST = "2".repeat(64), THEIRS = "3".repeat(64), GONE = "4".repeat(64)
+const withEvents = evs => ({ vaultQuery: async fs => evs.filter(e => fs[0].ids?.includes(e.id)), netQuery: async () => [] })
+const own = [{ id: MINE, kind: 1, pubkey: ME, created_at: 1 }, { id: MYLIST, kind: 3, pubkey: ME, created_at: 2 }, { id: THEIRS, kind: 1, pubkey: PUB, created_at: 3 }]
+const del = tags => ({ type: "outbox.publish", id: "d", event: { kind: 5, content: "", tags } })
+
+test("policy: no napplet gets a vanish request or a deletion of a protected kind signed", () => {
+  for (const g of [defaultGrant(), defaultGrant({ firstParty: true })]) {
+    assert.equal(signDecision(g, { kind: 62, content: "Thanks!", tags: [["relay", "ALL_RELAYS"]] }).ok, false)
+    assert.equal(signDecision(g, { kind: 5, content: "", tags: [["a", `3:${ME}:`]] }).ok, false)
+    assert.equal(signDecision(g, { kind: 5, content: "", tags: [["a", `10002:${ME}:`]] }).ok, false)
+    assert.equal(signDecision(g, { kind: 5, content: "", tags: [["e", MINE], ["k", "3"]] }).ok, false)
+    assert.equal(signDecision(g, { kind: 5, content: "", tags: [["a", `x:${ME}:`]] }).ok, false) // unreadable kind
+    assert.equal(signDecision(g, { kind: 5, content: "", tags: [] }).ok, false) // deletes nothing named
+  }
+  assert.deepEqual(signDecision(defaultGrant(), { kind: 5, content: "", tags: [["e", MINE], ["k", "1"]] }), { ok: true, ask: true })
+})
+
+test("dispatch: a deletion's e ids are looked up: only the user's own, found, unprotected events", async () => {
+  const run = async tags => { const m = make(defaultGrant(), withEvents(own)); const r = await m.handlers.outbox(del(tags), napplet()); return [r.ok, m.calls.signed.length, m.calls.asked] }
+  assert.deepEqual(await run([["e", MYLIST], ["k", "1"]]), [false, 0, []]) // says kind 1, is the follow list
+  assert.deepEqual(await run([["e", GONE]]), [false, 0, []]) // can't be checked
+  assert.deepEqual(await run([["e", THEIRS]]), [false, 0, []]) // not the user's
+  assert.deepEqual(await run([["e", "nothex"]]), [false, 0, []])
+  assert.deepEqual(await run([["e", MINE]]), [true, 1, ["publish"]])
+})
+
+test("dispatch: relay.publish won't replay a signed list, vanish request or deletion", async () => {
+  const { handlers, calls } = make(defaultGrant({ firstParty: true }))
+  for (const kind of [0, 3, 10002, 62, 5, 22242]) {
+    const r = await handlers.relay({ type: "relay.publish", id: "r", event: { id: "x", kind, pubkey: ME, content: "", tags: [], sig: "good" } }, napplet())
+    assert.equal(r.ok, false, `kind ${kind}`)
+  }
+  assert.equal(calls.published.length, 0)
+  assert.deepEqual(resendDecision({ kind: 1 }), { ok: true })
+})
+
+test("ask sheet: deletions say so; unnamed kinds show their tags; the grant says data can leave", () => {
+  const d = askWords("publish", { title: "Cool app" }, { kind: 5, content: "", tags: [["e", MINE], ["a", `30023:${ME}:x`]] })
+  assert.equal(d.title, "Cool app wants to delete 2 of your posts")
+  assert.equal(d.yes, "Delete")
+  const odd = askWords("publish", { title: "Cool app" }, { kind: 9999, content: "Thanks!", tags: [["p", PUB], ["p", ME], ["e", MINE]] })
+  assert.match(odd.body, /Thanks!/)
+  assert.match(odd.body, /Tags: 2 p \(people\), 1 e \(events\)/)
+  assert.doesNotMatch(askWords("publish", {}, { kind: 1, content: "hi", tags: [["p", PUB]] }).body, /Tags/)
+  assert.equal(tagSummary([]), "No tags.")
+  assert.match(PRIVATE_WORDS.help, /send what it sees to whoever made it/)
+})
+
+test("storage: two picked files with the same name don't share storage", async () => {
+  // runtime.js localManifest: publisher "local", dTag = the file's name (runtime.js imports the shim, not node-safe)
+  assert.notEqual(nappletLine({ publisher: "local", dTag: "napplet.html", hash: H }), nappletLine({ publisher: "local", dTag: "napplet.html", hash: "f".repeat(64) }))
+  assert.equal(nappletLine({ publisher: PUB, dTag: "x", hash: H }), nappletLine({ publisher: PUB, dTag: "x", hash: "f".repeat(64) })) // published: across versions
 })

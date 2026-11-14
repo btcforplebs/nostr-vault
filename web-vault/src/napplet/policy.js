@@ -21,8 +21,21 @@ export const PRIVATE_KINDS = new Set([
  *  edited only by the app's own guarded editors (test/user-list-sign-guard.test.mjs); a napplet asks the shell. */
 export const ACCOUNT_KINDS = new Set([0, 3, 10000, 10002, 10006, 10050, 10063])
 
-/** Kinds no napplet ever gets signed, ours included: each is a credential (relay AUTH, Blossom auth, HTTP auth, NWC). */
-export const NEVER_SIGN = new Set([22242, 24242, 27235, 13194, 23194, 23195])
+/** Kinds no napplet ever gets signed, ours included: a credential (relay AUTH, Blossom auth, HTTP auth, NWC), or the
+ *  account's end (62, NIP-62 Request to Vanish). */
+export const NEVER_SIGN = new Set([22242, 24242, 27235, 13194, 23194, 23195, 62])
+
+/** Kinds a napplet may not delete either (kind 5 naming them in `a`/`k`): deleting the follow list wipes it too. */
+export const protectedKind = k => ACCOUNT_KINDS.has(k) || NEVER_SIGN.has(k)
+
+/** A kind 5's targets: `e` ids, `a` addresses (with their kind), `k` kinds. Malformed numbers count as NaN. */
+export function deletionTargets(template) {
+  const tags = template?.tags ?? []
+  const ids = tags.filter(t => t[0] === "e" && t[1]).map(t => t[1])
+  const addrs = tags.filter(t => t[0] === "a" && t[1]).map(t => t[1])
+  const kinds = [...addrs.map(a => Number(a.split(":")[0])), ...tags.filter(t => t[0] === "k").map(t => Number(t[1]))]
+  return { ids, addrs, kinds, count: ids.length + addrs.length }
+}
 
 /** A napplet's grant: what the user said yes to. First-party napplets get everything they ask for. */
 export function defaultGrant({ firstParty = false, domains = [] } = {}) {
@@ -30,6 +43,14 @@ export function defaultGrant({ firstParty = false, domains = [] } = {}) {
 }
 
 export const seesPrivate = grant => !!(grant?.firstParty || grant?.privateData)
+
+/** May this already-signed event be re-sent for a napplet (relay.publish)? Same refusals as signing: an old signed
+ *  follow list, relay list or vanish request of the user's must not be replayed. -> { ok } or { ok: false, error }. */
+export function resendDecision(event) {
+  if (protectedKind(event?.kind)) return { ok: false, error: `kind ${event?.kind} is never sent for a napplet` }
+  if (event?.kind === 5) return { ok: false, error: "napplets can't send deletions signed elsewhere" }
+  return { ok: true }
+}
 
 /** Drop the events this napplet may not see: private kinds (unless granted), and anyone the user blocked. */
 export function visibleEvents(events, grant, { blocked = null } = {}) {
@@ -48,6 +69,12 @@ export function signDecision(grant, template) {
   if (!Array.isArray(template.tags ?? []) || (template.tags ?? []).some(t => !Array.isArray(t) || t.some(v => typeof v !== "string"))) return { ok: false, error: "tags must be arrays of strings" }
   if (NEVER_SIGN.has(kind)) return { ok: false, error: `kind ${kind} is a credential; napplets can't have it signed` }
   if (ACCOUNT_KINDS.has(kind)) return { ok: false, error: `kind ${kind} is an account list; only Nostr Vault itself edits it` }
+  if (kind === 5) {
+    const t = deletionTargets(template)
+    if (!t.count) return { ok: false, error: "a deletion must name what it deletes" }
+    const bad = t.kinds.find(k => !Number.isInteger(k) || protectedKind(k))
+    if (bad !== undefined) return { ok: false, error: `a napplet can't delete kind ${bad}` }
+  }
   if (grant?.firstParty) return { ok: true, ask: false }
   if (PRIVATE_KINDS.has(kind) && !grant?.privateData) return { ok: false, error: `kind ${kind} is private; this napplet has no private-data grant` }
   return { ok: true, ask: grant?.publish !== "allow" }

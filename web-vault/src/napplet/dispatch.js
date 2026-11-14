@@ -4,7 +4,7 @@
 // Shell boundary (Logen's decisions 5 and 6): keys, Haven + FIPS and the network plumbing they need stay here;
 // everything a napplet reads comes through these handlers, block-filtered, never from its own relay list.
 // Message shapes: @napplet/nap 0.40 types (outbox, relay, resource, storage, theme, intent, inc, notify, upload).
-import { visibleEvents, seesPrivate, signDecision } from "./policy.js"
+import { visibleEvents, seesPrivate, signDecision, resendDecision, deletionTargets, protectedKind } from "./policy.js"
 import { nappletKey, nappletLine } from "./manifest.js"
 
 export const MAX_EVENTS = 500
@@ -71,10 +71,32 @@ export function createHandlers({ ident, grant, domains, deps }) {
     return () => { closed = true; stopNet() }
   }
 
+  // A kind 5's `e` ids say nothing about what they delete, so the shell looks each one up (vault and network, never
+  // shown to the napplet): every id must be found, be the user's, and not be an account list or a vanish request.
+  // Otherwise "delete 1 post" could be the user's follow list.
+  async function deletionRefusal(template) {
+    const { ids } = deletionTargets(template)
+    if (!ids.length) return null
+    if (ids.length > MAX_EVENTS || ids.some(x => !/^[0-9a-f]{64}$/.test(x))) return "a deletion names ids it can't check"
+    const fs = [{ ids, limit: ids.length }]
+    const found = dedupe([...(await deps.vaultQuery(fs).catch(() => [])), ...(await deps.netQuery(fs).catch(() => []))])
+    const byId = new Map(found.filter(ev => ev?.pubkey === deps.pubkey).map(ev => [ev.id, ev]))
+    for (const x of ids) {
+      const ev = byId.get(x)
+      if (!ev) return "a deletion names an event of yours the shell can't find"
+      if (protectedKind(ev.kind)) return `a napplet can't delete kind ${ev.kind}`
+    }
+    return null
+  }
+
   async function signAndPublish(template, what) {
     const d = signDecision(grant, template)
     if (!d.ok) return { ok: false, error: d.error }
     const unsigned = { kind: template.kind, content: template.content, tags: template.tags ?? [], created_at: Math.floor(Date.now() / 1000) }
+    if (unsigned.kind === 5) {
+      const bad = await deletionRefusal(unsigned)
+      if (bad) return { ok: false, error: bad }
+    }
     if (d.ask && !(await ask(what, { kind: unsigned.kind, content: unsigned.content, tags: unsigned.tags }))) return { ok: false, error: "the user said no" }
     const event = await deps.sign(unsigned)
     const sent = await deps.publish(event)
@@ -175,6 +197,8 @@ export function createHandlers({ ident, grant, domains, deps }) {
           // An event signed elsewhere (spreading already-signed notes): checked, then sent; the shell's key is not used.
           const ev = m.event
           if (!deps.verify(ev)) return { type: "relay.publish.result", id, ok: false, error: "invalid signature" }
+          const rd = resendDecision(ev)
+          if (!rd.ok) return { type: "relay.publish.result", id, ok: false, error: rd.error }
           const vis = visibleEvents([ev], grant)
           if (!vis.length) return { type: "relay.publish.result", id, ok: false, error: `kind ${ev.kind} is private; this napplet has no private-data grant` }
           if (!grant.firstParty && !(await ask("relay-publish", { kind: ev.kind, content: ev.content, tags: ev.tags, author: ev.pubkey }))) return { type: "relay.publish.result", id, ok: false, error: "the user said no" }

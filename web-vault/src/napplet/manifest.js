@@ -50,5 +50,6 @@ export function domainsFor(manifest, supported = SHELL_DOMAINS) {
 
 /** Who a napplet is, for grants and storage: NIP-5D identity is (dTag, artifact hash), under its publisher. */
 export const nappletKey = ({ publisher, dTag, hash }) => `${publisher}:${dTag}:${hash}`
-/** The same napplet across versions (storage's "shared" scope). */
-export const nappletLine = ({ publisher, dTag }) => `${publisher}:${dTag}`
+/** The same napplet across versions (storage's "shared" scope). A picked file has no publisher to tie versions
+ *  together, and its name proves nothing (two files called napplet.html are strangers), so its line is its hash. */
+export const nappletLine = ({ publisher, dTag, hash }) => (publisher === "local" ? `local:${hash}` : `${publisher}:${dTag}`)
