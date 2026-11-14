@@ -8,6 +8,7 @@ import { visibleEvents, seesPrivate, signDecision, resendDecision, deletionTarge
 import { nappletKey, nappletLine } from "./manifest.js"
 import { blossomHandler } from "./blossom-dispatch.js"
 import { dmHandler } from "./dm-dispatch.js"
+import { DELAYED_KINDS } from "./publish-delay.js"
 
 export const MAX_EVENTS = 500
 export const MAX_FILTERS = 10
@@ -101,6 +102,9 @@ export function createHandlers({ ident, grant, domains, deps }) {
       if (bad) return { ok: false, error: bad }
     }
     if (d.ask && !(await ask(what, { kind: unsigned.kind, content: unsigned.content, tags: unsigned.tags }))) return { ok: false, error: "the user said no" }
+    // The user's Send Delay with Undo (publish-delay.js): nothing is signed until it runs out.
+    if (deps.delay && DELAYED_KINDS.has(unsigned.kind) && !(await deps.delay(unsigned))) return { ok: false, error: "undone" }
+    unsigned.created_at = Math.floor(Date.now() / 1000)
     const event = await deps.sign(unsigned)
     const sent = await deps.publish(event)
     return { ok: !!sent.ok, event, eventId: event.id, relays: sent.relays ?? {}, ...(sent.ok ? {} : { error: sent.error ?? "no relay took it" }) }

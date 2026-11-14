@@ -138,7 +138,7 @@ export function ZapButton({ note, pubkey, pickFirst = false }) {
 
 /** The iPhone's custom zap amounts (CustomZapSheet): the presets, or any amount typed in, and an optional comment
  *  (empty unless the user writes one; a one-tap zap sends none). */
-function AmountPicker({ initial, onZap, onClose }) {
+export function AmountPicker({ initial, onZap, onClose }) {
   const [amount, setAmount] = useState(String(initial))
   const [comment, setComment] = useState("")
   const n = Math.floor(Number(amount))

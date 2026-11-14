@@ -50,3 +50,7 @@
 .messages-pane { display: flex; flex-direction: column; height: 100dvh; }
 .messages-host { flex: 1; min-height: 0; padding: 0; display: flex; }
 .messages-host .napplet-frame { border: 0; border-radius: 0; height: 100%; min-height: 0; background: var(--bg); }
+/* The Reader's ⋯ as a shell sheet (NoteSheets.jsx). */
+.note-menu-sheet { display: grid; gap: 4px; min-width: min(320px, 80vw); }
+.note-menu-sheet button { text-align: left; min-height: 44px; }
+.note-menu-sheet .danger { color: #ff6b5e; }

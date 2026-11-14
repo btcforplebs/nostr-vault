@@ -33,7 +33,9 @@
   .media .vid { padding: 0 14px; min-height: 56px; border-radius: 12px; background: var(--s2); color: var(--text); font-size: 14px; text-align: left; }
   .media video { width: 100%; max-height: 420px; border-radius: 12px; background: #000; }
   .quote { border: 1px solid var(--hair); border-radius: 12px; padding: 8px 10px; margin: 6px 0; color: var(--muted); font-size: 14px; }
-  .acts { display: flex; gap: 4px; margin-left: -8px; }
+  .acts { display: flex; gap: 2px; margin-left: -8px; flex-wrap: wrap; }
+  .quote { cursor: pointer; display: grid; gap: 2px; }
+  .quote b { color: var(--text); font-size: 13px; }
   .rp { color: var(--muted); font-size: 13px; margin: 0 0 4px; }
   .reply-line { color: var(--muted); font-size: 13px; margin-bottom: 2px; }
   .indent { padding-left: 30px; }
@@ -195,7 +197,7 @@ function body(ev) {
     else if (p.t === "link") { const a = el("a", "", p.v.replace(/^https?:\/\//, "").slice(0, 60)); a.href = "#"; a.title = p.v; a.onclick = e => { e.preventDefault(); e.stopPropagation(); openLink(p.v) }; div.append(a) }
     else if (p.t === "tag") div.append(el("span", "tag", `#${p.v}`))
     else if (p.t === "profile") { const a = el("a"); a.href = "#"; a.dataset.pk = p.v; a.dataset.at = "1"; want(p.v); paintWho(a); a.onclick = e => { e.preventDefault(); e.stopPropagation(); go({ kind: "profile", pubkey: p.v }) }; div.append(a) }
-    else if (p.t === "note") { const a = el("a", "", "a note ↗"); a.href = "#"; a.onclick = e => { e.preventDefault(); e.stopPropagation(); go({ kind: "thread", id: p.v }) }; div.append(a) }
+    else if (p.t === "note") media.append(quoteCard(p.v))
   }
   const f = document.createDocumentFragment(); f.append(div); if (media.childElementCount) f.append(media); return f
 }
@@ -211,6 +213,23 @@ function videoSlot(url) {
   }
   return b
 }
+// A quoted note (nostr:note / nevent): a small card filled in from the shell; a tap opens its thread.
+const quoted = new Map()
+function quoteCard(id) {
+  const box = el("div", "quote", "Loading the quoted note…")
+  box.onclick = e => { e.stopPropagation(); go({ kind: "thread", id }) }
+  ;(quoted.get(id) ?? (quoted.set(id, n.outbox.getEvent(id).then(r => r?.result?.event ?? null).catch(() => null)), quoted.get(id))).then(ev => {
+    if (!ev) { box.textContent = "A note that couldn't be found."; return }
+    const who = el("b"); who.dataset.pk = ev.pubkey; want(ev.pubkey); paintWho(who)
+    box.replaceChildren(who, el("div", "", String(ev.content ?? "").slice(0, 280)))
+  })
+  return box
+}
+const ACT = (label, title, on) => { const b = el("button", "ghost", label); b.title = title; b.setAttribute("aria-label", title); b.onclick = e => { e.stopPropagation(); on(b) }; return b }
+// Repost, Zap and ⋯ are the shell's own flows (its Send Delay with Undo, its zap picker, its block/report/delete
+// dialogs); the napplet hands over the signed note, the shell checks the signature.
+const shellAct = (action, ev) => n.intent?.invoke(`napplet:note/${action}`, { payload: { event: ev } }).catch(() => {})
+
 function card(ev, { focus = false, depth = 0, by = null } = {}) {
   const shown = repostOf(ev) ?? ev
   const a = el("article", focus ? "focus" : ""); a.dataset.id = shown.id
@@ -228,7 +247,9 @@ function card(ev, { focus = false, depth = 0, by = null } = {}) {
   const reply = el("button", "ghost", "Reply"); reply.onclick = e => { e.stopPropagation(); compose("reply", shown) }
   const like = el("button", `ghost${reacted.has(shown.id) ? " on" : ""}`, reacted.has(shown.id) ? "♥ Liked" : "♡ Like")
   like.onclick = async e => { e.stopPropagation(); if (reacted.has(shown.id)) return; like.disabled = true; const r = await n.outbox.publish({ kind: 7, content: "+", tags: reactionTags(shown) }).catch(err => ({ ok: false, error: String(err) })); like.disabled = false; if (r?.ok !== false) { reacted.add(shown.id); like.textContent = "♥ Liked"; like.classList.add("on") } else like.title = r.error || "not sent" }
-  acts.append(reply, like); col.append(acts)
+  acts.append(reply, ACT("⟲", "Repost", () => shellAct("repost", shown)), ACT("❝", "Quote", () => compose("quote", shown)), like,
+    ACT("⚡", "Zap", () => shellAct("zap", shown)), ACT("⋯", "More", () => shellAct("menu", shown)))
+  col.append(acts)
   a.append(col)
   if (!focus) a.onclick = () => go({ kind: "thread", id: shown.id, event: shown })
   return a
@@ -316,9 +337,15 @@ async function start() {
   // The shell opens a note or a profile here by intent; a reply this account just posted lands in the thread at once.
   n.intent?.onDelivery?.(d => {
     const p = d?.payload ?? {}
-    if (d.archetype === "note" && HEX.test(p.id ?? "")) go({ kind: "thread", id: p.id }, view.kind !== "feed" || stack.length > 0)
+    if (d.archetype === "note" && d.action !== "removed" && HEX.test(p.id ?? "")) go({ kind: "thread", id: p.id }, view.kind !== "feed" || stack.length > 0)
     else if (d.archetype === "profile" && HEX.test(p.pubkey ?? "")) go({ kind: "profile", pubkey: p.pubkey }, view.kind !== "feed" || stack.length > 0)
     else if (d.archetype === "feed") { stack = []; go({ kind: "feed" }, false) }
+    else if (d.archetype === "note" && d.action === "removed" && HEX.test(p.id ?? "")) {
+      // Deleted from the ⋯ menu: gone from the feed at once, and from a thread or profile on screen.
+      notes = notes.filter(x => x.id !== p.id && (repostOf(x)?.id !== p.id))
+      for (const a of document.querySelectorAll(`article[data-id="${p.id}"]`)) a.remove()
+      if (view.kind === "feed") drawFeed()
+    }
   })
   n.inc?.on?.("nv.compose.sent", e => {
     const ev = e?.payload?.event

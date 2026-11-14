@@ -17,7 +17,7 @@ const emit = () => { for (const f of listeners) f(toasts) }
 export const currentToasts = () => toasts
 
 /** Show or replace the pill for `key`. tone: "accent" (default) | "success" | "error". icon: "heart" | "bolt" | "warn" |
- *  "repost". `action` ({ label, onClick }): a button in the pill, such as a countdown's Undo; only such a pill takes taps. */
+ *  "repost" | "send". `action` ({ label, onClick }): a button in the pill, such as a countdown's Undo; only such a pill takes taps. */
 export function showToast({ key = "feedback", message, icon = "heart", tone = "accent", label, seconds, action }) {
   const toast = { key, icon, message, tone, label: label ?? message, action: action ?? null }
   toasts = [...toasts.filter(t => t.key !== key), toast]
@@ -50,6 +50,7 @@ function mount() {
 const ICONS = {
   heart: <path d="M12 20.5S3.5 15.3 3.5 9.2A4.7 4.7 0 0 1 12 6.4a4.7 4.7 0 0 1 8.5 2.8c0 6.1-8.5 11.3-8.5 11.3z" fill="currentColor" />,
   bolt: <path d="M13 2 4 14h7l-1 8 9-12h-7z" fill="currentColor" />,
+  send: <path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />,
   repost: <path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />,
   warn: <><path d="M12 3 2 21h20z" fill="currentColor" /><path d="M12 10v5M12 18v.01" stroke="#000" stroke-width="2" stroke-linecap="round" /></>,
 }

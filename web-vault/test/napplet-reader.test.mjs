@@ -17,10 +17,11 @@ function pureOf(file, names) {
   return box
 }
 const R = pureOf("reader", ["tokenize", "decodeNostr", "rootOf", "parentOf", "reactionTags", "repostOf", "mergeNotes", "threadRows", "ago"])
-const C = pureOf("compose", ["replyTags", "noteTemplate"])
+const C = pureOf("compose", ["replyTags", "noteTemplate", "quoteOf", "imetaTag", "neventOf"])
 const A = "a".repeat(64), B = "b".repeat(64), C1 = "c".repeat(64), D = "d".repeat(64), E = "e".repeat(64)
 const ev = (id, tags = [], at = 1, extra = {}) => ({ id, pubkey: A, kind: 1, created_at: at, content: "", tags, ...extra })
 const plain = x => JSON.parse(JSON.stringify(x))
+const H = c => c.repeat(64)
 
 test("tokenize: links, pictures, video, hashtags, nostr: mentions and notes; punctuation stays text", () => {
   const npub = nip19.npubEncode(B), note = nip19.noteEncode(C1), nevent = nip19.neventEncode({ id: D, relays: ["wss://r.example"] }), nprofile = nip19.nprofileEncode({ pubkey: E, relays: ["wss://r.example"] })
@@ -49,19 +50,30 @@ test("NIP-10: root and parent from marked tags, from old positional tags, and no
   assert.equal(R.rootOf(ev(C1)), C1); assert.equal(R.parentOf(ev(C1)), null)
 })
 
-test("compose reply tags: root, reply when not the root, author and everyone tagged, once each", () => {
-  const top = ev(A, [["p", B]])
-  assert.deepEqual(plain(C.replyTags(top)), [["e", A, "", "root"], ["p", A], ["p", B]])
-  const deep = { ...ev(C1, [["e", A, "", "root"], ["e", B, "", "reply"], ["p", A], ["p", D]]), pubkey: E }
-  assert.deepEqual(plain(C.replyTags(deep)), [["e", A, "", "root"], ["e", C1, "", "reply"], ["p", E], ["p", A], ["p", D]])
+test("compose: reply tags, quotes and imeta are the classic composer's own (net/actions.js, net/upload.js)", async () => {
+  const { replyTags, quoteOf } = await import("../src/net/actions.js")
+  const { imetaTag } = await import("../src/net/upload.js")
+  const parents = [ev(A, [["p", B]]), { ...ev(C1, [["e", A, "", "root", B], ["e", B, "", "reply"], ["p", A], ["p", D]]), pubkey: E }, ev(D, [["e", A], ["e", B, "", "mention"], ["p", A]])]
+  for (const p of parents) assert.deepEqual(plain(C.replyTags(p)), replyTags(p))
+  const q = { ...ev(B, [], 7), kind: 1, pubkey: E }
+  assert.deepEqual(plain(C.quoteOf(q, "look")), quoteOf(q, "look"))
+  const m = { url: "https://x.example/a.jpg", mime: "image/jpeg", sha256: H("f"), size: 99 }
+  assert.deepEqual(plain(C.imetaTag(m)), imetaTag(m))
 })
 
-test("compose note: trimmed, hashtags as t tags, empty or too long sends nothing, reply only to a real note", () => {
+test("compose note: trimmed, hashtags as t tags, a quote's line and q tag, files' links and imeta; nothing to send is null", () => {
   assert.deepEqual(plain(C.noteTemplate("  Hello #Nostr and #nostr #Zaps ", null)), { kind: 1, content: "Hello #Nostr and #nostr #Zaps", tags: [["t", "nostr"], ["t", "zaps"]] })
   assert.equal(C.noteTemplate("   ", null), null)
   assert.equal(C.noteTemplate("x".repeat(20001), null), null)
   assert.deepEqual(plain(C.noteTemplate("hi", { id: "nope" })).tags, [])
-  assert.deepEqual(plain(C.noteTemplate("hi", ev(A))).tags, [["e", A, "", "root"], ["p", A]])
+  const q = { ...ev(B), pubkey: E }
+  const quoted = plain(C.noteTemplate("look", null, { quote: q }))
+  assert.match(quoted.content, /^look\nnostr:nevent1[02-9ac-hj-np-z]+$/)
+  assert.deepEqual(quoted.tags, [["q", B, "", E], ["p", E]])
+  assert.match(plain(C.noteTemplate("", null, { quote: q })).content, /^nostr:nevent1/) // a quote alone
+  const withFile = plain(C.noteTemplate("pic", null, { media: [{ url: "https://x.example/a.jpg", mime: "image/jpeg" }, { url: "http://bad.example/b.jpg" }] }))
+  assert.equal(withFile.content, "pic\nhttps://x.example/a.jpg")
+  assert.deepEqual(withFile.tags, [["imeta", "url https://x.example/a.jpg", "m image/jpeg"]])
 })
 
 test("reader: reaction tags name the note, its author and kind; reposts unwrap only a whole note", () => {
