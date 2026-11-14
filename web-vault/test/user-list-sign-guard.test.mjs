@@ -45,7 +45,9 @@ test("only these files sign anything", () => {
   // A new one could sign a list; review it, then add it here.
   assert.deepEqual(scan().signers, [
     "../web-relay/src/fips/owner-proof.js" /* relay page owner proof: kind 29242 only, exact template, no list kind */,
-    "src/box/api.js", "src/box/box-vault.js", "src/guest/guest.js", "src/net/actions.js", "src/net/blocks.js",
+    "src/box/api.js", "src/box/box-vault.js", "src/guest/guest.js",
+    "src/napplet/shell-deps.js" /* napplets: policy.js signDecision runs first; no list kind (ACCOUNT_KINDS), no credential kind, for any napplet */,
+    "src/net/actions.js", "src/net/blocks.js",
     "src/net/blossom-gallery.js", "src/net/dms.js", "src/net/follow-backup.js", "src/net/follows.js",
     "src/net/list-edit.js", "src/net/list-merge-save.js" /* Recover a List: Save on a merge, kind from list-version-merge MERGE_KINDS (no 0, no 10002) */, "src/net/new-account.js", "src/net/nwc-backup.js" /* kind 30078 wallet backup only; signEvent wrapped to re-check the account and the ciphertext */, "src/net/profile-edit.js", "src/net/reports.js",
     "src/net/sync.js", "src/net/upload.js", "src/net/zaps.js", "src/readers/LiveChat.jsx", "src/signer/local.js",

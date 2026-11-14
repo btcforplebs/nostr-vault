@@ -6,6 +6,8 @@ const C = "nv-web-vault-v2"
 const NAV_TIMEOUT_MS = 3000
 /** The navigation timeout's answer: not a Response, so it can't be mistaken for the network's. */
 const SLOW = Symbol("slow network")
+// The napplet loader page (src/napplet/csp.js LOADER_FILE), served beside index.html.
+const LOADER = "napplet-frame.html"
 // A first install starts at once. A new build waits beside the worker serving open pages (whose lazy chunks
 // activate's prune would drop) until a page asks: "Update ready, tap to reload" (src/sw-update.js).
 self.addEventListener("install", e => e.waitUntil(precache().then(() => self.registration?.active ? undefined : self.skipWaiting())))
@@ -32,6 +34,10 @@ async function precache() {
   }))
   for (const [u, r] of files) await store(new Request(u), r)
   await store(new Request(index), res)
+  // The napplet loader (src/napplet/host.js) too, so a napplet opens offline; it isn't linked from index.html. Best
+  // effort: a server without it (an older build behind this worker) must not fail the install.
+  const loader = new URL(LOADER, index).href
+  await fetch(loader, { cache: "no-cache" }).then(r => r.ok && /^text\/html/.test(r.headers.get("Content-Type") ?? "") ? store(new Request(loader), r) : undefined, () => {})
 }
 // The same-origin URLs an index.html links (src="…" and href="…" of its tags).
 function shell(html, base) {
@@ -85,7 +91,8 @@ self.addEventListener("fetch", e => {
   })
   if (asset) return e.respondWith(caches.match(e.request, { ignoreSearch: true }).then(hit => hit || net()))
   // Offline, a page URL not seen before (a deep link, a stale tab) gets the shell, as the server would send index.html.
-  const shellPage = () => e.request.mode === "navigate" ? caches.match(new URL("./", location).href) : undefined
+  // Never for the napplet loader: its frame would get the whole app, under the app's CSP.
+  const shellPage = () => e.request.mode === "navigate" && !u.pathname.endsWith(`/${LOADER}`) ? caches.match(new URL("./", location).href) : undefined
   const cached = async () => (await caches.match(e.request, { ignoreSearch: true })) || shellPage()
   const page = net()
   if (e.request.mode !== "navigate") return e.respondWith(page.catch(cached))

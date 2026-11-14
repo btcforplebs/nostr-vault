@@ -1,0 +1,11 @@
+/* The napplet shell page (NappletShell.jsx, ?shell=1). */
+.napplet-shell { display: flex; flex-direction: column; min-height: 100%; }
+.napplet-bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 var(--gutter) 10px; }
+.napplet-who, .napplet-note { padding: 0 var(--gutter); margin: 0 0 8px; }
+.napplet-host { flex: 1; display: flex; min-height: 70vh; padding: 0 var(--gutter) var(--gutter); }
+.napplet-host .napplet-frame { flex: 1; width: 100%; border: 1px solid var(--hair); border-radius: 12px; background: var(--s1, var(--bg)); }
+.napplet-grants { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 8px; }
+.napplet-grants label, .napplet-private { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.napplet-private { padding: 10px; border: 1px solid var(--hair); border-radius: 10px; margin-bottom: 12px; }
+.napplet-preview { white-space: pre-wrap; max-height: 40vh; overflow: auto; padding: 10px; border-radius: 10px; background: var(--s2); }
+.napplet-bar label.button { display: inline-flex; align-items: center; font: var(--t-sub); font-weight: 600; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--hair); background: var(--s2); color: var(--text); cursor: pointer; }

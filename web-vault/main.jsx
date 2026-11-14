@@ -27,7 +27,7 @@ import { markTourDone, tourDone } from "./src/net/first-run.js"
 import { runAndWait, resumeImportJobs } from "./src/net/import-jobs.js"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { startNavDepth } from "./src/components/nav-depth.js"
-import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, RelayScreen, DesktopShell, VaultDashboard } from "./src/screens/lazy-screens.js"
+import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, RelayScreen, DesktopShell, VaultDashboard, NappletShell } from "./src/screens/lazy-screens.js"
 import { warmScreens } from "./src/screens/warm-screens.js"
 import { GuestApp } from "./src/guest/GuestApp.jsx"
 import { SettingsScreen, resetBrowser } from "./src/screens/SettingsScreen.jsx"
@@ -50,6 +50,8 @@ import "./src/styles/boot-sheets.js" // after app.css: the sheets the boot compo
 import { NotifyWatch } from "./src/components/useNotifyWatch.js"
 import { isDashboardOpen } from "./src/net/dashboard-route.js"
 
+// The napplet shell page (plan P1), opened only by its address: /vault/?shell=1.
+const NAPPLET_SHELL = new URLSearchParams(location.search).get("shell") === "1"
 const ROUTES = ["feed", "search", "wot", "notifications", "compose", "profile", "relay", "thread", "messages", "dm", "vault", "bookmarks", "emoji", "settings", "accounts", "wallet", ...(BOX ? ["box"] : [])]
 // "#/thread/<id>" -> { route: "thread", arg: "<id>" }; "#/profile/<pubkey>" is someone else's profile.
 const routeOf = () => {
@@ -279,6 +281,8 @@ function App() {
   const ctx = { vault, session, signer, account, signOut, reloadAccount }
   setActionContext(ctx)
   setMeshPeople(session.pubkey, account.follows) // whose note photos may load over FIPS (MediaImage)
+  // ?shell=1: the napplet shell page instead of the app's screens (src/napplet, plan P1). Hidden: nothing links it.
+  if (NAPPLET_SHELL) return <div class="app"><NappletShell ctx={ctx} /><AuthPrompt /></div>
   const other = route === "profile" && arg && arg !== session.pubkey // someone else's profile, reached from Search
   const desk = mode !== "phone"
   // The relay screen stays mounted (its FIPS panel finds its elements once, by id), in the same place in both layouts.
