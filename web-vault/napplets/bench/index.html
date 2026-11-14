@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>P0 bench</title>
+<style>body { margin: 0; padding: 10px; font: 13px/1.4 system-ui; color: #ccc; background: #111 } video, img { max-width: 120px; }</style>
+</head>
+<body>
+<p id="s">Running…</p>
+<div id="media"></div>
+<script>
+  // P0 spike bench (dev only). Measures what a Feed napplet would pay to read through the shell, and probes what the
+  // sandbox lets a napplet do on its own. Results go back to the shell with storage.setItem("bench", json).
+  const n = window.napplet
+  const now = () => performance.now()
+  const median = (a) => { const s = [...a].sort((x, y) => x - y); return +s[s.length >> 1].toFixed(2) }
+  const out = {}
+  const wait = (el, ev, ms = 8000) => new Promise((res, rej) => { el.addEventListener(ev, res, { once: true }); el.addEventListener("error", () => rej(new Error(ev + " error")), { once: true }); setTimeout(() => rej(new Error(ev + " timeout")), ms) })
+
+  async function hop() {
+    for (const size of [20, 200]) {
+      const runs = []
+      for (let i = 0; i < 25; i++) {
+        const t = now()
+        const r = await n.outbox.query([{ kinds: [1], limit: size }])
+        runs.push(now() - t)
+        out["page" + size + "_events"] = r.events.length
+      }
+      out["page" + size + "_ms_median"] = median(runs)
+      out["page" + size + "_ms_first"] = +runs[0].toFixed(2)
+    }
+    const pings = []
+    for (let i = 0; i < 50; i++) { const t = now(); await n.identity.getPublicKey(); pings.push(now() - t) }
+    out.ping_ms_median = median(pings)
+  }
+
+  async function thumbs() {
+    const reqs = Array.from({ length: 30 }, (_, i) => ({ url: "nvtest:thumb/" + i }))
+    const t = now()
+    const items = await n.resource.bytesMany(reqs)
+    out.thumbs30_bytes_ms = +(now() - t).toFixed(2)
+    out.thumbs30_total_kb = Math.round(items.reduce((s, it) => s + (it.ok ? it.blob.size : 0), 0) / 1024)
+    const imgs = items.filter((it) => it.ok).map((it) => { const im = new Image(); im.src = URL.createObjectURL(it.blob); document.getElementById("media").append(im); return im })
+    await Promise.all(imgs.map((im) => im.decode()))
+    out.thumbs30_decoded_ms = +(now() - t).toFixed(2)
+  }
+
+  async function bigBlobs() {
+    for (const mb of [5, 25, 50]) {
+      const t = now()
+      const b = await n.resource.bytes("nvtest:blob/" + mb)
+      out["blob" + mb + "mb_ms"] = +(now() - t).toFixed(2)
+      out["blob" + mb + "mb_size_ok"] = b.size === mb * 1048576
+    }
+  }
+
+  async function video() {
+    // A whole clip through resource.bytes -> blob: URL -> <video>.
+    const t = now()
+    const clip = await n.resource.bytes("nvtest:clip.webm")
+    const v = document.createElement("video")
+    v.muted = true; v.playsInline = true
+    v.src = URL.createObjectURL(clip)
+    document.getElementById("media").append(v)
+    v.play().catch(() => {})
+    try { await wait(v, "playing"); out.video_blob_playing_ms = +(now() - t).toFixed(2) } catch (e) { out.video_blob_error = e.message }
+    // MediaSource (what hls.js needs) inside the opaque-origin sandbox: does a SourceBuffer accept segments?
+    out.mse_present = typeof MediaSource === "function"
+    if (out.mse_present) {
+      try {
+        const ms = new MediaSource(), v2 = document.createElement("video")
+        v2.muted = true
+        v2.src = URL.createObjectURL(ms)
+        await wait(ms, "sourceopen", 4000)
+        const sb = ms.addSourceBuffer(clip.type || "video/webm;codecs=vp8")
+        sb.appendBuffer(await clip.arrayBuffer())
+        await wait(sb, "updateend", 4000)
+        out.mse_buffered_s = sb.buffered.length ? +sb.buffered.end(0).toFixed(2) : 0
+      } catch (e) { out.mse_error = e.message }
+    }
+  }
+
+  async function sandbox() {
+    // Each of these should be refused by the frame's CSP and the sandbox.
+    out.fetch_blocked = await fetch("https://example.com/").then(() => false, () => true)
+    out.ws_blocked = await new Promise((res) => { try { const w = new WebSocket("wss://relay.damus.io"); w.onerror = () => res(true); w.onopen = () => { w.close(); res(false) } } catch { res(true) } })
+    out.img_remote_blocked = await new Promise((res) => { const im = new Image(); im.onload = () => res(false); im.onerror = () => res(true); im.src = "https://nostrvault.app/vault/icon-192.png" })
+    out.localStorage_blocked = (() => { try { localStorage.setItem("x", "1"); return false } catch { return true } })()
+    out.indexedDB_blocked = await new Promise((res) => { try { const r = indexedDB.open("x"); r.onsuccess = () => res(false); r.onerror = () => res(true) } catch { res(true) } })
+    out.window_nostr_absent = typeof window.nostr === "undefined"
+    out.origin = String(self.origin)
+  }
+
+  ;(async () => {
+    for (const [name, f] of [["sandbox", sandbox], ["hop", hop], ["thumbs", thumbs], ["bigBlobs", bigBlobs], ["video", video]]) {
+      try { await f() } catch (e) { out[name + "_error"] = String(e && e.message || e) }
+    }
+    document.getElementById("s").textContent = "Done"
+    await n.storage.setItem("bench", JSON.stringify(out))
+  })()
+</script>
+</body>
+</html>

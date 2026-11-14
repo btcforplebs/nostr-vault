@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Note Drafts</title>
+<style>
+  :root { color-scheme: dark; font: 15px/1.4 -apple-system, system-ui, sans-serif; }
+  body { margin: 0; padding: 14px; background: #0b0b0c; color: #eee; }
+  h1 { font-size: 15px; margin: 0 0 8px; font-weight: 600; }
+  textarea { width: 100%; box-sizing: border-box; min-height: 90px; background: #151517; color: inherit; border: 1px solid #2a2a2e; border-radius: 10px; padding: 10px; font: inherit; }
+  .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  button { background: #e67326; color: #000; border: 0; border-radius: 999px; padding: 7px 14px; font: inherit; font-weight: 600; }
+  button:disabled { opacity: .4; }
+  #status { color: #999; font-size: 13px; }
+  ul { padding: 0; list-style: none; margin: 12px 0 0; }
+  li { border-top: 1px solid #222; padding: 8px 0; font-size: 14px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Note Drafts</h1>
+<p id="who" style="color:#999;font-size:13px;margin:0 0 8px">Checking who you are…</p>
+<textarea id="draft" placeholder="Write a note. It saves as you type."></textarea>
+<div class="row"><button id="post" disabled>Post</button><span id="status" role="status"></span></div>
+<ul id="mine"></ul>
+<script>
+  // A sample napplet, plain JS, no build: identity -> storage autosave -> outbox publish -> outbox query.
+  const n = window.napplet || {}
+  const $ = (id) => document.getElementById(id)
+  const status = (t) => { $("status").textContent = t }
+  const missing = ["identity", "storage", "outbox"].filter((d) => !n[d])
+  if (missing.length) status("This shell has no " + missing.join(", ") + ".")
+  let me = ""
+  async function start() {
+    if (n.identity) {
+      me = await n.identity.getPublicKey().catch(() => "")
+      $("who").textContent = me ? "Posting as " + me.slice(0, 12) + "…" : "No account in this shell."
+    }
+    if (n.storage) $("draft").value = (await n.storage.getItem("draft")) || ""
+    $("post").disabled = !me || !n.outbox
+    refresh()
+  }
+  let t
+  $("draft").addEventListener("input", () => {
+    clearTimeout(t)
+    t = setTimeout(() => n.storage && n.storage.setItem("draft", $("draft").value).then(() => status("Saved"), (e) => status(e.message)), 300)
+  })
+  $("post").addEventListener("click", async () => {
+    const content = $("draft").value.trim()
+    if (!content) return
+    status("Posting…")
+    const r = await n.outbox.publish({ kind: 1, content, tags: [], created_at: Math.floor(Date.now() / 1000) })
+    if (!r.ok) return status(r.error || "Not posted")
+    $("draft").value = ""
+    await n.storage.removeItem("draft")
+    status("Posted")
+    refresh()
+  })
+  async function refresh() {
+    if (!n.outbox || !me) return
+    const { events } = await n.outbox.query([{ kinds: [1], authors: [me], limit: 5 }])
+    $("mine").replaceChildren(...events.map(({ event }) => Object.assign(document.createElement("li"), { textContent: event.content })))
+  }
+  start()
+</script>
+</body>
+</html>

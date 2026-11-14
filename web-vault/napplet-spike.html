@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>napplet spike</title>
+<!-- P0 spike, dev only (npx vite, then /vault/napplet-spike.html). Not a build input: vite builds index.html only. -->
+<style>
+  body { margin: 0; background: #000; color: #ddd; font: 14px system-ui; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px; }
+  .napplet-frame { width: 100%; height: 520px; border: 1px solid #333; border-radius: 12px; background: #0b0b0c; }
+</style>
+</head>
+<body>
+<section id="drafts"></section>
+<section id="bench"></section>
+<script type="module" src="./src/napplet/spike/spike-shell.js"></script>
+</body>
+</html>
