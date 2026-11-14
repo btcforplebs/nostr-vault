@@ -406,9 +406,15 @@ struct DMThreadView: View {
 
     @MainActor
     private func prepareAttachment(_ data: Data, isGIF: Bool) {
+        // As the web's preparePhoto: at most 50 MB, a GIF told by its own header (a JPEG named .gif is redrawn),
+        // and a GIF keeps its frames with every comment, XMP, ICC and app block stripped (GIFStrip).
+        guard data.count <= 50 * 1024 * 1024 else {
+            sendError = "That photo is too big to send (at most 50 MB)."
+            return
+        }
         let prepared: PickedAttachment?
-        if isGIF {
-            prepared = PickedAttachment(data: data, mimeType: "image/gif", preview: Self.image(from: data))
+        if GIFStrip.isGIF(data) {
+            prepared = (try? GIFStrip.strip(data)).map { PickedAttachment(data: $0, mimeType: "image/gif", preview: Self.image(from: $0)) }
         } else if let jpeg = LongFormComposeView.coverJPEG(from: data) {
             prepared = PickedAttachment(data: jpeg, mimeType: "image/jpeg", preview: Self.image(from: jpeg))
         } else {
@@ -453,6 +459,8 @@ struct DMThreadView: View {
         #endif
 
         Task {
+            // Set once a locked photo's words went out on their own: a failure after that gives back only the photo.
+            var wordsSent = false
             do {
                 // The photo or video goes up first: a message that names a
                 // URL no server holds would reach them as a dead link.
@@ -462,7 +470,23 @@ struct DMThreadView: View {
                         fileURL: video.file, mimeType: video.mimeType,
                         configService: configService, nostrService: nostrService).url
                     mediaURL = DMAttachment.videoLink(url, extension: video.fileExtension)
+                } else if let photo, !useNIP04 {
+                    // A NIP-17 photo goes locked (DMFile, kind 15): encrypted here, only ciphertext uploaded, the
+                    // key inside the sealed message. Its words, if any, go first as their own message, as the web.
+                    let enc = try DMFile.encrypt(photo.data)
+                    let url = try await DMFileTransfer.upload(enc, configService: configService, nostrService: nostrService)
+                    DMFileTransfer.keep(photo.data, for: DMFile.Sealed(url: url, key: enc.key, nonce: enc.nonce, x: enc.x,
+                                                                       ox: enc.ox, mime: photo.mimeType))
+                    if !messageToSend.isEmpty {
+                        try await dmService.sendDM(content: messageToSend, to: counterpartyPubkey)
+                        wordsSent = true
+                    }
+                    try await dmService.sendDMFile(url: url, encrypted: enc, mime: photo.mimeType,
+                                                   to: counterpartyPubkey, after: wordsSent)
+                    await MainActor.run { isSending = false }
+                    return
                 } else if let photo {
+                    // NIP-04 has no file message: the photo stays a link, as before.
                     mediaURL = try await ModePostPublisher.upload(
                         data: photo.data, mimeType: photo.mimeType,
                         configService: configService, nostrService: nostrService).url
@@ -477,9 +501,10 @@ struct DMThreadView: View {
                 #if DEBUG
                 print("Failed to send DM: \(error)")
                 #endif
+                let sentWords = wordsSent
                 await MainActor.run {
                     isSending = false
-                    messageInput = messageToSend
+                    if !sentWords { messageInput = messageToSend }
                     if attachment == nil { attachment = photo } else { photo?.video?.discard() }
                     sendError = error.localizedDescription
                 }
@@ -544,9 +569,16 @@ struct MessageBubbleView: View {
             VStack(alignment: message.isFromMe ? .trailing : .leading, spacing: 3) {
                 VStack(alignment: .leading, spacing: 0) {
                     let split = parts
+                    // Locked photos (DMFile) open from their decrypted copy; the swipe list holds only plain links.
+                    let openable = split.images.filter { DMFile.parseLink($0.absoluteString) == nil } + split.videos
                     ForEach(split.images, id: \.absoluteString) { url in
+                        if let sealed = DMFile.parseLink(url.absoluteString) {
+                            LockedDMPhotoTile(sealed: sealed, size: min(240, containerWidth * 0.6), mediaZoom: mediaZoom) { local in
+                                onOpenImage?(local, [local])
+                            }
+                        } else {
                         Button {
-                            onOpenImage?(url, split.images + split.videos)
+                            onOpenImage?(url, openable)
                         } label: {
                             RetryableAsyncImage(url: url, contentMode: .fill, targetSize: CGSize(width: 600, height: 600))
                                 .frame(width: min(240, containerWidth * 0.6), height: min(240, containerWidth * 0.6))
@@ -556,10 +588,11 @@ struct MessageBubbleView: View {
                         .buttonStyle(.plain)
                         .mediaZoomSource(url, namespace: mediaZoom)
                         .accessibilityLabel("Photo")
+                        }
                     }
                     ForEach(split.videos, id: \.absoluteString) { url in
                         Button {
-                            onOpenImage?(url, split.images + split.videos)
+                            onOpenImage?(url, openable)
                         } label: {
                             DMVideoTile(size: min(240, containerWidth * 0.6))
                         }

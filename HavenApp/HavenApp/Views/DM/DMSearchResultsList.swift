@@ -24,7 +24,7 @@ enum DMSearchHits {
                 if DMSearch.nameMatches(query, names: [p?.displayName, p?.name, p?.nip05]) {
                     return DMSearchHit(conversation: conversation, isRequest: isRequest, excerpt: nil)
                 }
-                let texts = conversation.messages.map(\.content)
+                let texts = conversation.messages.map { DMFile.displayText($0.content) } // never search or show a locked photo's key
                 guard let i = DMSearch.newestTextMatch(query, texts: texts) else { return nil }
                 return DMSearchHit(conversation: conversation, isRequest: isRequest,
                                    excerpt: DMSearch.excerpt(texts[i], query: query))
@@ -74,7 +74,7 @@ struct DMSearchResultsList: View {
 
     private func row(_ hit: DMSearchHit) -> some View {
         // A Requests hit says so, ahead of the matched words or the latest message.
-        let text = hit.excerpt ?? (hit.isRequest ? String((hit.conversation.lastMessage?.content ?? "").prefix(60)) : nil)
+        let text = hit.excerpt ?? (hit.isRequest ? String(DMFile.displayText(hit.conversation.lastMessage?.content ?? "").prefix(60)) : nil)
         let preview = hit.isRequest ? "Request · " + (text ?? "") : text
         return ConversationRow(conversation: hit.conversation, nostrService: nostrService, preview: preview)
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))

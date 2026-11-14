@@ -611,7 +611,8 @@ struct ConversationRow: View {
 
     private var lastMessagePreview: String {
         if let preview { return preview }
-        let message = conversation.lastMessage?.content ?? ""
+        // A locked photo reads "Photo", never its link and key (DMFile).
+        let message = DMFile.displayText(conversation.lastMessage?.content ?? "")
         if message.isEmpty {
             return String(localized: "dm.inbox.noContent")
         }
