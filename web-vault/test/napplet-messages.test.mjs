@@ -1,6 +1,6 @@
 // Plan P7: NAP-DM in the shell (dm-dispatch.js) over the classic DM state, and the Messages napplet's pure block.
-// DMs are vault-private: an outside napplet needs the private-data grant to read anything and is asked before each
-// send; blocked people stay out; a napplet sees text only, never a wrap, a seal or a key.
+// DMs are vault-private: an outside napplet gets nothing, whatever it was granted (Logen 2026-11-14); blocked people
+// stay out; a napplet sees text only, never a wrap, a seal or a key.
 import test from "node:test"
 import assert from "node:assert/strict"
 import fs from "node:fs"
@@ -66,16 +66,11 @@ test("dm: an outside napplet without the private-data grant reads nothing and ca
   assert.equal(calls.sent.length, 0)
 })
 
-test("dm: an outside napplet with the grant is asked before every send, shown who and what; no means not sent", async () => {
+test("dm: an outside napplet with an old private-data grant still reads nothing and can't send; ours isn't asked", async () => {
   const granted = { ...defaultGrant({ domains: ["dm"] }), privateData: true }
   const a = rig({ grant: granted })
-  await a.ask("dm.send", { recipients: [ANN], content: "one" })
-  await a.ask("dm.send", { recipients: [ANN], content: "two" })
-  assert.equal(a.calls.asks.length, 2)
-  assert.deepEqual([a.calls.asks[0].what, a.calls.asks[0].detail.to, a.calls.asks[0].detail.content], ["dm-send", ANN, "one"])
-  const no = rig({ grant: granted, yes: false })
-  const r = await no.ask("dm.send", { recipients: [ANN], content: "nope" })
-  assert.deepEqual([r.ok, r.message.status, no.calls.sent.length], [false, "failed", 0])
+  assert.match((await a.ask("dm.send", { recipients: [ANN], content: "one" })).error, /private/)
+  assert.deepEqual([a.calls.asks.length, a.calls.sent.length], [0, 0])
   const ours = rig()
   await ours.ask("dm.send", { recipients: [ANN], content: "ours" })
   assert.equal(ours.calls.asks.length, 0) // the Messages napplet is the Messages screen

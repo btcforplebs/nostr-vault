@@ -70,12 +70,11 @@ test("blossom: lists only your own servers and your own pubkey; descriptors only
   assert.equal(calls.list.length, 1)
 })
 
-test("blossom: an outside napplet without the private-data grant sees no servers or files and is asked before a mirror", async () => {
-  const outside = rig({ grant: defaultGrant({ domains: ["blossom"] }) })
-  assert.match((await outside.send("blossom.servers")).error, /private/)
-  assert.match((await outside.send("blossom.list", { server: S1, pubkey: ME })).error, /private/)
-  await outside.send("blossom.mirror", { server: S1, url: "https://x.example/f", sha256: H("1") })
-  assert.deepEqual(outside.calls.asks, ["blossom-mirror"])
+test("blossom: the whole domain refuses outside napplets (servers, list, mirror, delete), even with every grant", async () => {
+  const outside = rig({ grant: { ...defaultGrant({ domains: ["blossom"] }), privateData: true } })
+  for (const [t, req] of [["blossom.servers"], ["blossom.list", { server: S1, pubkey: ME }], ["blossom.mirror", { server: S1, url: "https://x.example/f", sha256: H("1") }], ["blossom.delete", { server: S1, sha256: H("1") }]])
+    assert.match((await outside.send(t, req)).error, /private/)
+  assert.deepEqual([outside.calls.asks, outside.calls.mirror, outside.calls.remove], [[], [], []])
   const ours = rig()
   await ours.send("blossom.mirror", { server: S1, url: "https://x.example/f", sha256: H("1") })
   assert.deepEqual(ours.calls.asks, [])

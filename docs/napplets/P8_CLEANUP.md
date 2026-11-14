@@ -32,8 +32,12 @@ screens; check what each import is still used by before deleting.
 ## What's left before web 🏁
 
 **Logen's calls**
-1. **WebRTC and the grant.** A napplet on its own origin can still send STUN through an about:blank child frame
-   (P2). Should outside napplets get the private-data grant at all until browsers can block that?
+1. **WebRTC and the grant.** Answered (Logen 2026-11-14 15:20Z): outside napplets never get private vault data,
+   whatever they are granted; there is no private-data switch any more. Also in (13:41Z): every napplet read is
+   answered from Haven first, and what the shell fetches from the network passes the web of trust (you, follows,
+   theirs; `src/napplet/wot-gate.js`) and goes into Haven's feed cache before a napplet sees it. Haven's /feed keeps
+   feed kinds only, so likes, lists and zaps pass the same gate without being kept. No napplet gets the emoji list
+   or sets (10030/30030) signed (Tara). Side effect: the Reader no longer shows strangers' replies or profiles.
 2. **Turn the napplets on by default** for one release, with the classic screens behind the switch.
 3. **A napplet host on the live site** (`NV_NAPPLET_HOST`: wildcard DNS, wildcard certificate, ideally a Public
    Suffix List domain). Without it, outside napplets won't open on nostrvault.app; only ours run there.

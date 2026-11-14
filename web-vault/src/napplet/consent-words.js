@@ -14,10 +14,9 @@ export const DOMAIN_WORDS = {
   blossom: "See the files on your media servers, and ask to copy or delete them",
   dm: "Read your direct messages, and ask to send them",
 }
-export const PRIVATE_WORDS = {
-  label: "Your vault's private data",
-  help: "Your saved feed, inbox and DMs, your mute list and the vault's files. It can send what it sees to whoever made it. Off: it reads public relays only.",
-}
+/** An outside napplet never sees the vault's private data (Logen, 2026-11-14): there is no switch for it. */
+export const PUBLIC_ONLY = "public data only"
+export const PUBLIC_WORDS = "It never sees your vault's private data: your DMs, inbox, mute list or files. It reads public notes from people in your web of trust, through your vault."
 export const domainWord = d => DOMAIN_WORDS[d] ?? d
 const sizeWords = n => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`)
 const hostOf = u => { try { return new URL(u).host } catch { return String(u ?? "") } }

@@ -8,8 +8,8 @@
 //   dm.messages        -> one conversation, oldest first, a page from the newest end; reading it marks it read
 //   dm.send            -> one recipient (NIP-17 direct; no groups yet), through sendMessage
 //   dm.subscribe/unsubscribe, and dm.message pushed for each new message after the subscription began
-// Logen's decision 2: DMs are vault-private. An outside napplet needs the private-data grant to read anything, and is
-// asked before each send, shown who it goes to and what it says. Ours (first-party) is the Messages screen itself.
+// DMs are vault-private: only our own (first-party) napplet, the Messages screen itself, reads or sends them. An outside
+// napplet gets nothing, whatever it was granted (Logen, 2026-11-14). The ask before a send stays as a second wall.
 import { seesPrivate } from "./policy.js"
 import { conversations, threadShown } from "../net/dms.js"
 import { splitConversations } from "../net/dm-trust.js"
@@ -105,10 +105,10 @@ export function dmHandler({ grant, who, deps, push }) {
     switch (m.type) {
       case "dm.status":
         return out(m, { available: priv, ...(priv ? { ownerPubkey: deps.me } : {}), implementations: priv ? ["nip17", "nip04-read"] : [], capabilities: priv ? ["conversations", "messages", "send", "subscribe"] : [] })
-      case "dm.conversations": return priv ? conversationsPage(m) : refuse(m, "private: no private-data grant")
-      case "dm.messages": return priv ? messagesPage(m) : refuse(m, "private: no private-data grant")
-      case "dm.send": return priv ? send(m) : refuse(m, "private: no private-data grant")
-      case "dm.subscribe": return priv ? subscribe(m) : refuse(m, "private: no private-data grant")
+      case "dm.conversations": return priv ? conversationsPage(m) : refuse(m, "private: only Nostr Vault's own napplets")
+      case "dm.messages": return priv ? messagesPage(m) : refuse(m, "private: only Nostr Vault's own napplets")
+      case "dm.send": return priv ? send(m) : refuse(m, "private: only Nostr Vault's own napplets")
+      case "dm.subscribe": return priv ? subscribe(m) : refuse(m, "private: only Nostr Vault's own napplets")
       case "dm.unsubscribe": { const s = subs.get(m.subscriptionId); s?.off(); subs.delete(m.subscriptionId); return out(m, { ok: !!s }) }
       default: return refuse(m, "unsupported")
     }
