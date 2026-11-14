@@ -193,6 +193,7 @@ export function NappletShell({ ctx, showSwitch = true, vaultMenu = false }) {
       {asking && (
         <Dialog label={asking.words.title} onClose={() => { asking.resolve(false); setAsking(null) }}>
           <h3>{asking.words.title}</h3>
+          {asking.words.image && <img class="napplet-ask-image" src={asking.words.image} alt="" referrerpolicy="no-referrer" style="max-width:100%;max-height:220px;border-radius:8px;object-fit:contain" />}
           {asking.words.body && <p class="napplet-preview">{asking.words.body}</p>}
           <div class="mod-row">
             <button type="button" class="primary" onClick={() => { asking.resolve(true); setAsking(null) }}>{asking.words.yes}</button>

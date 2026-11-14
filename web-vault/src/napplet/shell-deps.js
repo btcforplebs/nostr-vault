@@ -13,6 +13,7 @@ import { blockedUrl } from "./fetch-policy.js"
 import { protectedKind, deletionTargets } from "./policy.js"
 import { idbNappletStorage } from "./storage-idb.js"
 import { catalogFilter, catalogEntries, fetchArtifact } from "./catalog.js"
+import { listBlobs, mirrorBlob, deleteBlob } from "../net/blossom-gallery.js"
 
 const QUERY_WAIT_MS = 4000
 const codeError = (code, message) => Object.assign(new Error(message ?? code), { code })
@@ -99,6 +100,21 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
       const tag = `napplet-${crypto.randomUUID()}`
       await showNotice({ title: `${from}: ${title}`, body, tag })
       return tag
+    },
+    // NAP-BLOSSOM (blossom-dispatch.js): the classic Media page's own Blossom code, the auths signed here.
+    blossom: {
+      pubkey: ctx.session.pubkey,
+      servers: () => mediaServers(ctx),
+      list: (server, pubkey) => listBlobs([server], pubkey, { ctx }),
+      mirror: (blob, server) => mirrorBlob(blob, [server], { ctx }),
+      remove: (blob, server) => deleteBlob(blob, { ctx, servers: [server] }),
+      describe: async url => {
+        const res = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(5000) })
+        if (!res.ok) return null
+        return { size: Number(res.headers.get("Content-Length")) || undefined, type: res.headers.get("Content-Type") || undefined }
+      },
+      ask,
+      now: () => Date.now(),
     },
     ask,
     saveGrant,

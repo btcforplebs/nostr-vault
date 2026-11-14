@@ -30,7 +30,8 @@
   .body a, .body .tag { color: var(--accent); text-decoration: none; cursor: pointer; }
   .media { display: grid; gap: 6px; margin: 6px 0; }
   .media img { width: 100%; max-height: 420px; object-fit: cover; border-radius: 12px; background: var(--s2); min-height: 80px; }
-  .media .vid { padding: 12px; border-radius: 12px; background: var(--s2); color: var(--muted); font-size: 13px; }
+  .media .vid { padding: 0 14px; min-height: 56px; border-radius: 12px; background: var(--s2); color: var(--text); font-size: 14px; text-align: left; }
+  .media video { width: 100%; max-height: 420px; border-radius: 12px; background: #000; }
   .quote { border: 1px solid var(--hair); border-radius: 12px; padding: 8px 10px; margin: 6px 0; color: var(--muted); font-size: 14px; }
   .acts { display: flex; gap: 4px; margin-left: -8px; }
   .rp { color: var(--muted); font-size: 13px; margin: 0 0 4px; }
@@ -190,13 +191,25 @@ function body(ev) {
   for (const p of tokenize(ev.content)) {
     if (p.t === "text") div.append(p.v)
     else if (p.t === "image") { const i = el("img"); i.alt = ""; i.loading = "lazy"; picture(i, p.v); media.append(i) }
-    else if (p.t === "video") media.append(el("div", "vid", "Video: plays in the classic view for now"))
+    else if (p.t === "video") media.append(videoSlot(p.v))
     else if (p.t === "link") { const a = el("a", "", p.v.replace(/^https?:\/\//, "").slice(0, 60)); a.href = "#"; a.title = p.v; a.onclick = e => { e.preventDefault(); e.stopPropagation(); openLink(p.v) }; div.append(a) }
     else if (p.t === "tag") div.append(el("span", "tag", `#${p.v}`))
     else if (p.t === "profile") { const a = el("a"); a.href = "#"; a.dataset.pk = p.v; a.dataset.at = "1"; want(p.v); paintWho(a); a.onclick = e => { e.preventDefault(); e.stopPropagation(); go({ kind: "profile", pubkey: p.v }) }; div.append(a) }
     else if (p.t === "note") { const a = el("a", "", "a note ↗"); a.href = "#"; a.onclick = e => { e.preventDefault(); e.stopPropagation(); go({ kind: "thread", id: p.v }) }; div.append(a) }
   }
   const f = document.createDocumentFragment(); f.append(div); if (media.childElementCount) f.append(media); return f
+}
+// Video: tap to load it as bytes from the shell (its IP rules), then it plays here. Nothing loads until asked.
+function videoSlot(url) {
+  const b = el("button", "vid", "▶ Play video")
+  b.onclick = async e => {
+    e.stopPropagation(); b.disabled = true; b.textContent = "Loading video…"
+    try {
+      const v = el("video"); v.controls = true; v.playsInline = true; v.src = URL.createObjectURL(await n.resource.bytes(url))
+      v.onclick = ev => ev.stopPropagation(); b.replaceWith(v); v.play().catch(() => {})
+    } catch (err) { b.disabled = false; b.textContent = "Couldn't load the video. Try again" }
+  }
+  return b
 }
 function card(ev, { focus = false, depth = 0, by = null } = {}) {
   const shown = repostOf(ev) ?? ev

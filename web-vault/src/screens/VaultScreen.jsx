@@ -37,6 +37,8 @@ import { VaultButton } from "../components/VaultButton.jsx"
 import { dashboardHref, openDashboard } from "../net/dashboard-route.js"
 import { ICONS, filterIcon, Icon, Chevron, Menu, MenuItem } from "./vault-ui.jsx"
 import { VaultPagesMenu } from "./VaultPagesMenu.jsx"
+import { MediaPane } from "./lazy-screens.js"
+import { nappletsOn } from "../napplet/flag.js"
 // ActivityRow is the Notifications row (Faces, notif-who, the unread dot), so its layout has to ship with this screen too:
 // the sheet used to arrive only with NotificationsScreen's chunk, and Vault activity faces stacked one per row.
 import "../styles/notifications.css"
@@ -363,7 +365,8 @@ export function List({ ctx, mode, filter, items, me, followers, notes, trusted, 
       return (list.length || page.older) ? paged(list, h => <HighlightCard key={h.id} event={h} trusted={trusted} />) : <Empty text="No highlights yet." />
     }
     case "media": {
-      if (filter !== "notes") return <BlossomGallery ctx={ctx} filter={filter} refreshes={refreshes} />
+      // The napplet switch on: the Media napplet (plan P5); "In your notes" stays here either way.
+      if (filter !== "notes") return nappletsOn() ? <MediaPane ctx={ctx} filter={filter} /> : <BlossomGallery ctx={ctx} filter={filter} refreshes={refreshes} />
       const list = items
       return (list.length || page.older)
         ? paged(list, p => <a key={p.url} href={`#/thread/${p.noteId}`} class="vault-thumb"><MediaImage item={p.item} author={me} loading="lazy" /></a>, Grid)
