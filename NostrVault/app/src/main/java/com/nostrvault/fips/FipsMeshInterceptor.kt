@@ -114,8 +114,14 @@ class FipsMeshInterceptor : Interceptor {
     private fun patientGet(chain: Interceptor.Chain, request: Request, npub: String, sha: String, patience: Long): Response? {
         val giveUp = clock() + patience
         while (!FipsMediaRouter.isDistrusted(npub)) {
-            // No mesh, or a vault that could not be dialled lately: nothing to wait for (iOS patientGet).
-            val base = dial(npub) ?: return null
+            val base = dial(npub)
+            if (base == null) {
+                // Up, but no tree parent yet: wait for it within this read's patience (iOS patientGet). No mesh, or
+                // a vault that could not be dialled lately: nothing to wait for.
+                if (!treeWait(npub) || clock() >= giveUp || chain.call().isCanceled()) return null
+                sleep(TREE_POLL_MS)
+                continue
+            }
             try {
                 return answer(chain, request, npub, base, sha)
             } catch (e: IOException) {
@@ -191,6 +197,10 @@ class FipsMeshInterceptor : Interceptor {
         @Volatile
         internal var dial: (String) -> String? = { FipsMediaRouter.ingressBase(it) }
 
+        /** Whether a null [dial] only means "no tree parent yet". A seam so a test can hold the tree back. */
+        @Volatile
+        internal var treeWait: (String) -> Boolean = { FipsMediaRouter.waitingForTree(it) }
+
         /** Seams so a test runs the patience loop without waiting it out. */
         @Volatile
         internal var clock: () -> Long = { System.currentTimeMillis() }
@@ -206,6 +216,9 @@ class FipsMeshInterceptor : Interceptor {
 
         /** The pause between those tries (iOS readRetry, web blob-get RETRY_MS). */
         const val READ_RETRY_MS = 1_000L
+
+        /** How often a read asks again while the engine is still finding its tree parent (iOS treePoll). */
+        const val TREE_POLL_MS = 2_000L
 
         /** One photo across all its vaults; no new vault is tried past it (iOS photoPatience). */
         const val PHOTO_PATIENCE_MS = 90_000L

@@ -240,6 +240,51 @@ final class MeshMediaRouterTests: XCTestCase {
         XCTAssertEqual(dials.count, 2)
     }
 
+    func testNoTreeParentYetIsWaitedForAndThePhotoLoads() async {
+        // Logen 2026-11-14: right after the engine starts it has no tree
+        // parent (libnvfips -10). That was remembered for 30 s as a dead
+        // vault, so every photo failed at once; now the read waits for it.
+        let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(vault)/"]])
+        await fake.setNoTreeDials(3)
+        let router = MeshMediaRouter(fake.deps(follows: [author]))
+        let data = await router.read(plan: .init(sha256: sha, hostNpub: vault), author: author)
+        XCTAssertEqual(data, photo)
+        let seen = await fake.snapshot()
+        XCTAssertEqual(seen.dials.count, 4, "asked again until the tree was there")
+        XCTAssertEqual(seen.sleeps, 3, "one treePoll between asks")
+    }
+
+    func testNoTreeIsNotRememberedAsADeadVault() async {
+        let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(vault)/"]])
+        await fake.setNoTreeDials(1_000)
+        let router = MeshMediaRouter(fake.deps(follows: [author]))
+        let plan = MeshMediaRouter.Plan(sha256: sha, hostNpub: vault)
+        let start = await fake.time()
+        let none = await router.read(plan: plan, author: author)
+        XCTAssertNil(none, "a tree that never comes still ends the read")
+        let waited = await fake.time().timeIntervalSince(start)
+        XCTAssertGreaterThanOrEqual(waited, MeshMediaRouter.readPatience)
+        XCTAssertLessThan(waited, MeshMediaRouter.readPatience + 5, "within one read's patience")
+        // The tree arrives: the very next photo dials at once, no 30 s hold.
+        await fake.setNoTreeDials(0)
+        let data = await router.read(plan: plan, author: author)
+        XCTAssertEqual(data, photo)
+    }
+
+    func testANoTreeAnswerIsSharedByPhotosWaitingTogether() async {
+        let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(vault)/"]], dialDelayPolls: 20)
+        await fake.setNoTreeDials(1)
+        let router = MeshMediaRouter(fake.deps(follows: [author]))
+        let plan = MeshMediaRouter.Plan(sha256: sha, hostNpub: vault)
+        async let a = router.read(plan: plan, author: author)
+        async let b = router.read(plan: plan, author: author)
+        let (one, two) = await (a, b)
+        XCTAssertEqual(one, photo)
+        XCTAssertEqual(two, photo)
+        let dials = await fake.snapshot().dials.count
+        XCTAssertLessThanOrEqual(dials, 3, "photos of one vault share each ask")
+    }
+
     func testAConnectionResetBeforeTheRouteIsUpIsTriedAgainAndLoads() async {
         // Logen's own photo, 10-22: the engine had just started, the first
         // read went out before the route to his vault was found, the
@@ -406,6 +451,8 @@ private actor Fake {
     private var status = 200
     private var oversized = false
     private var dialFails = false
+    /// Dials answered "no tree parent yet" before the engine finds one.
+    private var noTreeDials = 0
     private var deadVaults: Set<String> = []
     private var missing: Set<String> = []
     private var lastDial: String?
@@ -428,6 +475,7 @@ private actor Fake {
     func setStatus(_ code: Int) { status = code }
     func setOversized(_ on: Bool) { oversized = on }
     func setDialFails(_ on: Bool) { dialFails = on }
+    func setNoTreeDials(_ count: Int) { noTreeDials = count }
     func setDialFails(_ on: Bool, for npub: String) { if on { deadVaults.insert(npub) } else { deadVaults.remove(npub) } }
     /// Vaults that are up but answer 404 for the photo.
     func setMissing(_ npubs: Set<String>) { missing = npubs }
@@ -462,12 +510,16 @@ private actor Fake {
         }
     }
 
-    func dial(_ npub: String) async -> URL? {
+    func dial(_ npub: String) async -> MeshSiteIngress {
         state.dials.append(npub)
         lastDial = npub
         // Let the other reads queue up behind this dial.
         for _ in 0..<dialDelayPolls { await Task.yield() }
-        return dialFails || deadVaults.contains(npub) ? nil : (bases[npub] ?? base)
+        if noTreeDials > 0 {
+            noTreeDials -= 1
+            return .notReady
+        }
+        return dialFails || deadVaults.contains(npub) ? .failed : .ready(bases[npub] ?? base)
     }
 
     func get(_ url: URL, maxBytes: Int) -> MeshMediaRouter.Reply? {
@@ -530,7 +582,7 @@ final class MeshMediaRouterLogTests: XCTestCase {
             mayDial: { _ in true },
             serverList: { _ in ["fipsmesh://\(vault)/"] },
             requestServerList: { _ in },
-            ingress: { _ in ingress },
+            ingress: { _ in ingress.map(MeshSiteIngress.ready) ?? .failed },
             get: { _, _ in status.map { MeshMediaRouter.Reply(status: $0, data: Data()) } },
             now: { clock.withLock { t } },
             sleep: { d in clock.withLock { t = t.addingTimeInterval(Double(d.components.seconds) + 1) } },
