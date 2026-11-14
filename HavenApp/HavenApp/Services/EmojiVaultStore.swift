@@ -441,20 +441,15 @@ final class EmojiVaultStore: ObservableObject {
         guard FileNote.isHex64(me) else { return false }
         listing.insert(address)
         defer { listing.remove(address) }
-        let event = await nostr.publishMergedList(kind: 10030, author: me, signAsNpub: nil, skipIfUnchanged: true) { published in
-            if let published { _ = await VaultSocket.publish(published) }
-            return (EmojiVaultLogic.listTags(base: published?.tags ?? [], add: on ? address : nil, remove: on ? nil : address),
-                    published?.content ?? "")
+        // Old list kept in the vault first, new one stored there before relays (ListVersionSave).
+        let outcome = await nostr.saveListVersion(kind: 10030, author: me, verb: "change") { published in
+            let tags = EmojiVaultLogic.listTags(base: published?.tags ?? [], add: on ? address : nil, remove: on ? nil : address)
+            return tags == (published?.tags ?? []) ? .unchanged : .ready(tags: tags, content: published?.content ?? "")
         }
-        guard let event else {
-            // No relay list: publishMergedList already said so.
-            if !NostrService.ownListRelays(for: me).isEmpty {
-                ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
-                                               message: "Your emoji list couldn't be read or signed. Nothing was changed.", tone: .error)
-            }
+        if case .refused(let message, _) = outcome {
+            ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: message, tone: .error)
             return false
         }
-        _ = await VaultSocket.publish(event)
         if on { await resendSets(addresses: [address]) }
         EmojiListService.shared.refreshNow()
         return true

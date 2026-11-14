@@ -6,6 +6,7 @@ import { checkSigned } from "./sync.js"
 import { serverUrl } from "./upload.js"
 import { askRelay, editKnown, MAX_SKEW } from "./follows.js"
 import { verifyEvent } from "nostr-tools/pure"
+import { keepUndoCopy } from "./list-merge-save.js"
 
 const newest = evs => evs.reduce((a, e) => (!a || e.created_at > a.created_at ? e : a), undefined)
 const now = () => Math.floor(Date.now() / 1000)
@@ -72,6 +73,10 @@ export class ListNotSaved extends Error {
   constructor(message, latest, checked) { super(message); this.name = "ListNotSaved"; this.latest = latest; this.checked = checked }
 }
 
+/** Lists whose save keeps the old version in the vault first and stores the new one there before relays: the emoji
+ *  list (kind 10030), as on iPhone/Mac (ListVersionSave) and Android (EmojiListSave). */
+const VAULT_FIRST_KINDS = new Set([10030])
+
 /**
  * Sign the list with `tags` (the old copy's other tags kept) and send it out. Only on a Save tap, never by itself.
  * Right before signing it reads the list again: if the relays don't answer it refuses, and if a newer copy than
@@ -90,13 +95,24 @@ export async function publishList(ctx, kind, tags, { previous, also = [], latest
   if (!fresh.checked) throw new ListNotSaved("Not saved: your relays didn't answer, so your newest list couldn't be read. Nothing was changed. Try again when you're online.", fresh.event, false)
   if ((fresh.event?.id ?? null) !== (previous?.id ?? null))
     throw new ListNotSaved("Not saved: this list changed in another app since the page opened. It's reloaded below; make your change again.", fresh.event, true)
+  // Vault-first lists: the version being replaced goes into the vault's list history first (nothing is signed when it
+  // can't), and the new one is stored in the vault before any relay gets it (Logen 2026-11-14).
+  const vaultFirst = VAULT_FIRST_KINDS.has(kind)
+  if (vaultFirst) {
+    const undo = await keepUndoCopy(ctx, fresh.event)
+    if (undo) throw new ListNotSaved(`Not saved: the list you have now couldn't be kept first (${undo}), so nothing was changed.`, fresh.event, true)
+  }
   const template = { kind, content: previous?.content ?? "", tags, created_at: Math.max(now(), (previous?.created_at ?? 0) + 1) }
   const event = checkSigned(await ctx.signer.signEvent(template), template, ctx.session.pubkey)
+  if (vaultFirst) {
+    const kept = await ctx.vault.outbox.event(event).catch(e => ({ ok: false, message: String(e?.message ?? e) }))
+    if (!kept?.ok && !/^duplicate:/.test(kept?.message ?? "")) throw new Error(`Not saved: your vault refused the new list (${kept?.message || "no answer"}). Nothing was sent to your relays.`)
+  }
   const urls = uniq([...publishRelays([...ctx.account.relays.write, ...also]).network, ...PROFILE_RELAYS])
   const results = await Promise.allSettled(pool.publish(urls, event))
   const relays = results.map((r, i) => ({ url: urls[i], ok: r.status === "fulfilled", message: r.status === "fulfilled" ? r.value : String(r.reason?.message ?? r.reason) }))
   if (!relays.some(r => r.ok)) throw new Error(`No relay took it (0 of ${urls.length})`)
-  await ctx.vault.outbox.event(event).catch(() => {})
+  if (!vaultFirst) await ctx.vault.outbox.event(event).catch(() => {})
   return { event, relays }
 }
 
