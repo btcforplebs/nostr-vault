@@ -395,7 +395,7 @@ struct VaultView: View {
             if !isBooting && relayManager.isRunning {
                 refreshAll()
                 // A chip picked while the relay was starting read nothing.
-                if showsOtherAccounts { loadOtherAccountActivity() }
+                readOtherAccountsAhead()
                 initialLoad = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                     establishNotificationBaseline()
@@ -405,7 +405,7 @@ struct VaultView: View {
         .onChange(of: relayManager.isRunning) { _, isRunning in
             if isRunning && !relayManager.isBooting {
                 refreshAll()
-                if showsOtherAccounts { loadOtherAccountActivity() }
+                readOtherAccountsAhead()
                 initialLoad = true
             }
         }
@@ -510,7 +510,7 @@ struct VaultView: View {
         // Your accounts tagging each other came in or left the list.
         .onChange(of: configService.config.notifyOwnAccountTags) { _, _ in
             scheduleUpdateDisplayData()
-            if showsOtherAccounts { loadOtherAccountActivity(replacing: true) }
+            readOtherAccountsAhead(replacing: true)
         }
         .onChange(of: configService.config.activeAccountNpub) { _, _ in
             listSwapAccountSwitched()

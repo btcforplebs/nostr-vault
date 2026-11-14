@@ -65,6 +65,9 @@ extension VaultView {
             // Likes or Zaps can switch account, and the chip, the other
             // accounts' reads and any read in flight belong to the one left.
             .onChange(of: followersOwnerHex) { old, new in activeAccountChanged(from: old, to: new) }
+            // Every other account's lines are held before a chip is tapped.
+            .onAppear { readOtherAccountsAhead() }
+            .onChange(of: vaultAccountHexes) { _, _ in readOtherAccountsAhead() }
             // The relay drops blocked followers from the ledger it serves;
             // re-read now rather than at the next minute's poll.
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))) { _ in

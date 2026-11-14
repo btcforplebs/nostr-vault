@@ -92,12 +92,12 @@ extension VaultView {
         }
     }
 
-    /// The page changed with another account's chip picked: read what the new
-    /// page needs that isn't read yet (the list stays until it lands).
+    /// The page changed: read what the new page needs that isn't held yet
+    /// (with another chip picked, the list stays until it lands).
     func vaultPageChanged() {
-        guard showsOtherAccounts else { return }
+        guard hasOtherAccounts else { return }
         if viewMode == .activity {
-            if VaultAccountChips.needsRead(currentAccountChip, accounts: vaultAccountHexes,
+            if VaultAccountChips.needsRead(.all, accounts: vaultAccountHexes,
                                            active: followersOwnerHex, loaded: Set(otherAccountActivity.keys)) {
                 loadOtherAccountActivity()
             }
@@ -106,24 +106,37 @@ extension VaultView {
         }
     }
 
-    /// A block or mute changed: the shown accounts are read anew (not topped
-    /// up), so lines that now hide go.
+    /// A block or mute changed: the other accounts are read anew (not
+    /// topped up), so lines that now hide go.
     func rereadOtherAccounts() {
-        guard showsOtherAccounts else { return }
-        if viewMode == .activity {
-            loadOtherAccountActivity(replacing: true)
-        } else if viewMode != .media {
-            loadOtherAccountPages(replacing: true)
+        readOtherAccountsAhead(replacing: true)
+    }
+
+    /// More than one account on the device: the chips show.
+    var hasOtherAccounts: Bool {
+        !VaultAccountChips.otherAccounts(vaultAccountHexes, active: followersOwnerHex).isEmpty
+    }
+
+    /// Reads every other account's lines before any chip is tapped (the
+    /// Vault opens, the relay comes up, the active account changes, news
+    /// comes in), so a tap only shows what is held: no read, no wait, no
+    /// freeze (Logen 2026-11-14). The Vault list's lines always; a page's
+    /// events when that page is open. A pick still waiting is read by its
+    /// own read.
+    func readOtherAccountsAhead(replacing: Bool = false) {
+        guard hasOtherAccounts else { return }
+        loadOtherAccountActivity(replacing: replacing)
+        if viewMode != .activity && viewMode != .media {
+            loadOtherAccountPages(replacing: replacing)
         }
     }
 
-    /// Whether `state` has news for an account on show besides the active
-    /// one: a count above the one it had when last read or tapped. The
-    /// counts are taken as the new baseline either way.
+    /// Whether `state` has news for any account besides the active one (all
+    /// are held, shown or not): a count above the one it had when last read
+    /// or tapped. The counts are taken as the new baseline either way.
     func shownAccountsGotNews(_ state: AccountUnread) -> Bool {
-        guard showsOtherAccounts else { return false }
-        let me = followersOwnerHex.lowercased()
-        let shown = pageOwners.filter { $0 != me }.sorted()
+        let shown = VaultAccountChips.otherAccounts(vaultAccountHexes, active: followersOwnerHex)
+        guard !shown.isEmpty else { return false }
         let before = otherAccountSeenCounts
         for hex in shown { otherAccountSeenCounts[hex] = state.count(for: hex) }
         return VaultAccountChips.countRose(among: shown, before: { before[$0] ?? 0 }, after: { state.count(for: $0) })
@@ -181,6 +194,8 @@ extension VaultView {
         } else {
             activityUnreadSince = .max
         }
+        // The new active account's others are read again, ahead of a tap.
+        readOtherAccountsAhead()
     }
 
     /// "Load more" with other accounts' lines on screen: show more of what
@@ -218,7 +233,9 @@ extension VaultView {
             return
         }
         let me = followersOwnerHex.lowercased()
-        let wanted = VaultAccountChips.accounts(for: chip ?? currentAccountChip, accounts: vaultAccountHexes).filter { $0 != me }
+        // Every other account, whichever chip: each read holds all of their
+        // lines, so any later tap only shows them (Logen 2026-11-14).
+        let wanted = VaultAccountChips.otherAccounts(vaultAccountHexes, active: me)
         let pending = chip != nil
         otherAccountLoadTask?.cancel()
         guard !wanted.isEmpty, relayManager.isRunning, !relayManager.isBooting else {
@@ -257,15 +274,15 @@ extension VaultView {
             await withTaskGroup(of: (String, [VaultActivity], Bool).self) { group in
                 for hex in wanted {
                     group.addTask {
-                        async let mine = service.fetchEvents(
+                        async let mine = service.vaultAccountEvents(
                             filter: ["authors": [hex], "kinds": noteKinds, "limit": limit],
-                            from: [base], includeLoopback: true)
-                        async let tagged = service.fetchEvents(
+                            from: [base])
+                        async let tagged = service.vaultAccountEvents(
                             filter: ["#p": [hex], "kinds": noteKinds + [16], "limit": limit],
-                            from: [base + "/inbox"], includeLoopback: true)
-                        async let reactions = service.fetchEvents(
+                            from: [base + "/inbox"])
+                        async let reactions = service.vaultAccountEvents(
                             filter: ["#p": [hex], "kinds": [7, 9735], "limit": limit],
-                            from: [base + "/inbox"], includeLoopback: true)
+                            from: [base + "/inbox"])
                         let reads = await [mine, tagged, reactions]
                         let full = reads.contains { $0.count >= limit }
                         let events = reads.flatMap { $0 }
@@ -339,7 +356,9 @@ extension VaultView {
             return
         }
         let me = followersOwnerHex.lowercased()
-        let wanted = VaultAccountChips.accounts(for: chip ?? currentAccountChip, accounts: vaultAccountHexes).filter { $0 != me }
+        // Every other account, whichever chip: each read holds all of their
+        // lines, so any later tap only shows them (Logen 2026-11-14).
+        let wanted = VaultAccountChips.otherAccounts(vaultAccountHexes, active: me)
         otherPageLoadTask?.cancel()
         guard !wanted.isEmpty, relayManager.isRunning, !relayManager.isBooting else {
             then?()
@@ -358,22 +377,22 @@ extension VaultView {
             await withTaskGroup(of: (String, [NostrEvent], FollowerSnapshot?).self) { group in
                 for hex in wanted {
                     group.addTask {
-                        async let mine = service.fetchEvents(
+                        async let mine = service.vaultAccountEvents(
                             filter: ["authors": [hex], "kinds": noteKinds + [7], "limit": limit],
-                            from: [base], includeLoopback: true)
-                        async let tagged = service.fetchEvents(
+                            from: [base])
+                        async let tagged = service.vaultAccountEvents(
                             filter: ["#p": [hex], "kinds": noteKinds + [6, 7, 9735], "limit": limit],
-                            from: [base + "/inbox"], includeLoopback: true)
-                        async let sent = service.fetchEvents(
+                            from: [base + "/inbox"])
+                        async let sent = service.vaultAccountEvents(
                             filter: ["#P": [hex], "kinds": [9735], "limit": limit],
-                            from: [base, base + "/inbox"], includeLoopback: true)
+                            from: [base, base + "/inbox"])
                         let first = await [mine, tagged, sent].flatMap { $0 }
                         // The posts they liked or zapped, for My Likes / My Zaps.
                         let have = Set(first.map(\.id))
                         let wantIds = VaultAccountChips.givenTargets(
                             first.map { ($0.pubkey, $0.kind, $0.tags) }, account: hex).filter { !have.contains($0) }
-                        let targets = wantIds.isEmpty ? [] : await service.fetchEvents(
-                            filter: ["ids": Array(wantIds.prefix(limit))], from: [base, base + "/inbox"], includeLoopback: true)
+                        let targets = wantIds.isEmpty ? [] : await service.vaultAccountEvents(
+                            filter: ["ids": Array(wantIds.prefix(limit))], from: [base, base + "/inbox"])
                         let block = blocked[hex] ?? []
                         var seen = Set<String>()
                         let events = (first + targets).filter {
@@ -401,8 +420,12 @@ extension VaultView {
                     held: otherAccountEvents[hex] ?? [], read: events, id: \.id, at: \.created_at)
             }
             for (hex, ledger) in ledgers { otherFollowerSnapshots[hex] = ledger }
-            then?()
-            scheduleUpdateDisplayData()
+            // Read ahead with the active account's own list on screen:
+            // nothing to rebuild until a chip shows them.
+            if showsOtherAccounts || then != nil {
+                then?()
+                scheduleUpdateDisplayData()
+            }
         }
     }
 

@@ -91,4 +91,18 @@ enum VaultStoreAnswer {
               let events = object["events"] as? [[String: Any]] else { return nil }
         return events
     }
+
+    /// The same answer decoded straight to events, in one pass (the Vault
+    /// chips' reads: no dictionaries in between). Nil like `rows`. No
+    /// signature check: the store kept only events it had verified.
+    static func events<Event: Decodable>(_ data: Data, as _: Event.Type) -> [Event]? {
+        guard let answer = try? JSONDecoder().decode(VaultStoreEvents<Event>.self, from: data),
+              answer.error == nil else { return nil }
+        return answer.events
+    }
+}
+
+private struct VaultStoreEvents<Event: Decodable>: Decodable {
+    let events: [Event]?
+    let error: String?
 }
