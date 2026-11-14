@@ -49,6 +49,18 @@ extension DMService {
         }
     }
 
+    /// A locked photo (DMFile) as a NIP-17 kind 15 file message: `url` names the ciphertext, the key and nonce go
+    /// in the sealed rumor's tags, and this device keeps it as its `#nv-dm=` link. `after` (the words sent just
+    /// before it, as their own kind 14) puts it one second later so it sorts below them, as the web does.
+    func sendDMFile(url: URL, encrypted: DMFile.Encrypted, mime: String, to recipientHexPubkey: String, after: Bool = false) async throws {
+        let now = Int64(Date().timeIntervalSince1970)
+        let shown = DMFile.link(DMFile.Sealed(url: url, key: encrypted.key, nonce: encrypted.nonce, x: encrypted.x,
+                                              ox: encrypted.ox, mime: mime))
+        try await sendNIP17DM(content: url.absoluteString, to: recipientHexPubkey, rumorKind: 15,
+                              fileTags: DMFile.tags(encrypted, mime: mime), shown: shown,
+                              rumorTimestamp: after ? now + 1 : now)
+    }
+
     /// Send a NIP-17 encrypted DM (default, recommended)
     ///
     /// The message joins the thread only once both gift wraps are signed. It
@@ -57,7 +69,8 @@ extension DMService {
     /// bubble stayed in the thread as sent while nothing went out, and
     /// sending again added a second copy. Now any of those throws, the
     /// caller puts the text back, and nothing is left in the thread.
-    private func sendNIP17DM(content: String, to recipientHexPubkey: String) async throws {
+    private func sendNIP17DM(content: String, to recipientHexPubkey: String, rumorKind: Int = 14,
+                             fileTags: [[String]] = [], shown: String? = nil, rumorTimestamp: Int64? = nil) async throws {
         let ownHexPubkey = loadedAccountPubkey
         guard !ownHexPubkey.isEmpty else {
             throw NSError(domain: "DMService", code: -1, userInfo: [NSLocalizedDescriptionKey: "No active account loaded"])
@@ -73,14 +86,20 @@ extension DMService {
             rumorPTags: rumorPTags,
             giftWrapRecipient: recipientHexPubkey,
             senderHexPrivkey: senderPrivkey,
-            senderHexPubkey: ownHexPubkey
+            senderHexPubkey: ownHexPubkey,
+            rumorKind: rumorKind,
+            fileTags: fileTags,
+            rumorTimestamp: rumorTimestamp
         )
         async let selfWrap = NIP17Service.createGiftWrapAsync(
             content: content,
             rumorPTags: rumorPTags,
             giftWrapRecipient: ownHexPubkey,
             senderHexPrivkey: senderPrivkey,
-            senderHexPubkey: ownHexPubkey
+            senderHexPubkey: ownHexPubkey,
+            rumorKind: rumorKind,
+            fileTags: fileTags,
+            rumorTimestamp: rumorTimestamp
         )
         let (giftWrap, selfGiftWrap) = try await (recipientWrap, selfWrap)
 
@@ -90,11 +109,11 @@ extension DMService {
             throw NSError(domain: "DMService", code: -1, userInfo: [NSLocalizedDescriptionKey: "The account changed before the message was sent"])
         }
 
-        // ── Step 2: show it ──
+        // ── Step 2: show it ── (a file message as its locked link, the same text its self-copy unwraps to)
         let message = DMMessage(
             id: UUID().uuidString,
             senderPubkey: ownHexPubkey,
-            content: content,
+            content: shown ?? content,
             timestamp: Date(),
             isFromMe: true
         )

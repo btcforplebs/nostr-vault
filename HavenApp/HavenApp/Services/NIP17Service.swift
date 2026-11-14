@@ -6,7 +6,7 @@ struct DMRumor: Codable {
     var id: String
     let pubkey: String
     let created_at: Int64
-    let kind: Int  // Always 14
+    let kind: Int  // 14 a text message, 15 a file message (DMFile)
     let tags: [[String]]
     let content: String
 
@@ -55,17 +55,20 @@ enum NIP17Service {
         rumorPTags: [[String]],
         giftWrapRecipient: String,
         senderHexPrivkey: String,
-        senderHexPubkey: String
+        senderHexPubkey: String,
+        rumorKind: Int = 14,
+        fileTags: [[String]] = [],
+        rumorTimestamp: Int64? = nil
     ) throws -> NostrEvent {
-        // Step 1: Create rumor (kind 14, unsigned)
-        let rumorTimestamp = Int64(Date().timeIntervalSince1970)
-        let rumorTags = rumorPTags
+        // Step 1: Create rumor (kind 14 text, or kind 15 file with its DMFile tags after the p tags; unsigned)
+        let rumorTimestamp = rumorTimestamp ?? Int64(Date().timeIntervalSince1970)
+        let rumorTags = rumorPTags + fileTags
 
         var rumor = DMRumor(
             id: "",  // Will be computed
             pubkey: senderHexPubkey,
             created_at: rumorTimestamp,
-            kind: 14,
+            kind: rumorKind,
             tags: rumorTags,
             content: content
         )
@@ -179,7 +182,10 @@ enum NIP17Service {
         rumorPTags: [[String]],
         giftWrapRecipient: String,
         senderHexPrivkey: String?,
-        senderHexPubkey: String
+        senderHexPubkey: String,
+        rumorKind: Int = 14,
+        fileTags: [[String]] = [],
+        rumorTimestamp: Int64? = nil
     ) async throws -> NostrEvent {
         let isNIP46 = await ConfigService.shared.config.activeSigningMode() == "nip46"
 
@@ -187,13 +193,14 @@ enum NIP17Service {
             guard let sk = senderHexPrivkey else { throw NIP17Error.eventSigningFailed }
             return try createGiftWrap(
                 content: content, rumorPTags: rumorPTags, giftWrapRecipient: giftWrapRecipient,
-                senderHexPrivkey: sk, senderHexPubkey: senderHexPubkey
+                senderHexPrivkey: sk, senderHexPubkey: senderHexPubkey,
+                rumorKind: rumorKind, fileTags: fileTags, rumorTimestamp: rumorTimestamp
             )
         }
 
-        // Step 1: Create rumor (kind 14, unsigned) -- same as sync version
-        let rumorTimestamp = Int64(Date().timeIntervalSince1970)
-        var rumor = DMRumor(id: "", pubkey: senderHexPubkey, created_at: rumorTimestamp, kind: 14, tags: rumorPTags, content: content)
+        // Step 1: Create rumor (kind 14 or 15, unsigned) -- same as sync version
+        let rumorTimestamp = rumorTimestamp ?? Int64(Date().timeIntervalSince1970)
+        var rumor = DMRumor(id: "", pubkey: senderHexPubkey, created_at: rumorTimestamp, kind: rumorKind, tags: rumorPTags + fileTags, content: content)
         rumor.id = try computeEventID(pubkey: rumor.pubkey, createdAt: rumor.created_at, kind: rumor.kind, tags: rumor.tags, content: rumor.content)
 
         guard let rumorJSON = try encodeToJSON(rumor) else { throw NIP17Error.rumorCreationFailed }
@@ -281,7 +288,8 @@ enum NIP17Service {
               let rumor = try? JSONDecoder().decode(DMRumor.self, from: rumorData) else {
             throw NIP17Error.decryptionFailed
         }
-        guard rumor.kind == 14 else { throw NIP17Error.invalidGiftWrap }
+        // A kind 14 is its text; a kind 15 file message is kept as its locked link (DMFile).
+        guard let content = DMFile.messageContent(kind: rumor.kind, content: rumor.content, tags: rumor.tags) else { throw NIP17Error.invalidGiftWrap }
 
         // Step 5: Verify seal pubkey matches rumor pubkey
         guard sealEvent.pubkey == rumor.pubkey else {
@@ -291,7 +299,7 @@ enum NIP17Service {
 
         return (
             senderPubkey: rumor.pubkey,
-            content: rumor.content,
+            content: content,
             timestamp: Date(timeIntervalSince1970: TimeInterval(rumor.created_at)),
             rumorTags: rumor.tags
         )
@@ -342,7 +350,8 @@ enum NIP17Service {
             throw NIP17Error.decryptionFailed
         }
 
-        guard rumor.kind == 14 else {
+        // A kind 14 is its text; a kind 15 file message is kept as its locked link (DMFile).
+        guard let content = DMFile.messageContent(kind: rumor.kind, content: rumor.content, tags: rumor.tags) else {
             throw NIP17Error.invalidGiftWrap
         }
 
@@ -354,7 +363,7 @@ enum NIP17Service {
 
         return (
             senderPubkey: rumor.pubkey,
-            content: rumor.content,
+            content: content,
             timestamp: Date(timeIntervalSince1970: TimeInterval(rumor.created_at)),
             rumorTags: rumor.tags
         )

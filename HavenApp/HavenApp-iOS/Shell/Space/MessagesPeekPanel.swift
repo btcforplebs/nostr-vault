@@ -58,7 +58,7 @@ struct MessagesPeekPanel: View {
                 Text(profile?.bestName ?? String(chat.id.prefix(10)))
                     .font(.appSystem(size: 14, weight: chat.unreadCount > 0 ? .bold : .semibold))
                     .lineLimit(1)
-                Text(chat.lastMessage?.content ?? "")
+                Text(DMFile.displayText(chat.lastMessage?.content ?? ""))
                     .font(.appSystem(size: 12))
                     .foregroundColor(.secondary)
                     .lineLimit(1)
