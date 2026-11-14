@@ -66,44 +66,27 @@ enum ProfileRepository {
 
     // MARK: - Save to Disk (background queue)
 
-    static func saveProfiles(_ profiles: [String: FeedProfile]) {
-        let copy = profiles
-        DispatchQueue.global(qos: .utility).async {
-            let dir = havenSupportDir()
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            if let data = try? JSONEncoder().encode(copy) {
-                try? data.write(to: profilesURL)
-            }
+    /// One save per file at a time, newest waiting value wins
+    /// (`LatestOnlySave`).
+    private static let saveQueue = DispatchQueue(label: "com.haven.profile-cache.save", qos: .utility)
+
+    private static func saver<Value: Encodable>(_ url: @escaping () -> URL) -> LatestOnlySave<Value> {
+        LatestOnlySave(queue: saveQueue) { value in
+            if let data = try? JSONEncoder().encode(value) { try? data.write(to: url(), options: .atomic) }
         }
     }
 
-    static func saveRelayLists(_ lists: [String: [String]]) {
-        let copy = lists
-        DispatchQueue.global(qos: .utility).async {
-            if let data = try? JSONEncoder().encode(copy) { try? data.write(to: relayListsURL) }
-        }
-    }
+    private static let profilesSaver: LatestOnlySave<[String: FeedProfile]> = saver { profilesURL }
+    private static let relayListsSaver: LatestOnlySave<[String: [String]]> = saver { relayListsURL }
+    private static let outboxRelaysSaver: LatestOnlySave<[String: [String]]> = saver { outboxRelaysURL }
+    private static let dmRelayListsSaver: LatestOnlySave<[String: [String]]> = saver { dmRelayListsURL }
+    private static let serverListsSaver: LatestOnlySave<[String: [String]]> = saver { serverListsURL }
 
-    static func saveOutboxRelays(_ lists: [String: [String]]) {
-        let copy = lists
-        DispatchQueue.global(qos: .utility).async {
-            if let data = try? JSONEncoder().encode(copy) { try? data.write(to: outboxRelaysURL) }
-        }
-    }
-
-    static func saveDMRelayLists(_ lists: [String: [String]]) {
-        let copy = lists
-        DispatchQueue.global(qos: .utility).async {
-            if let data = try? JSONEncoder().encode(copy) { try? data.write(to: dmRelayListsURL) }
-        }
-    }
-
-    static func saveServerLists(_ lists: [String: [String]]) {
-        let copy = lists
-        DispatchQueue.global(qos: .utility).async {
-            if let data = try? JSONEncoder().encode(copy) { try? data.write(to: serverListsURL) }
-        }
-    }
+    static func saveProfiles(_ profiles: [String: FeedProfile]) { profilesSaver.save(profiles) }
+    static func saveRelayLists(_ lists: [String: [String]]) { relayListsSaver.save(lists) }
+    static func saveOutboxRelays(_ lists: [String: [String]]) { outboxRelaysSaver.save(lists) }
+    static func saveDMRelayLists(_ lists: [String: [String]]) { dmRelayListsSaver.save(lists) }
+    static func saveServerLists(_ lists: [String: [String]]) { serverListsSaver.save(lists) }
 
     // MARK: - Event Parsing (pure functions)
 

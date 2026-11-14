@@ -78,4 +78,50 @@ final class ProfileWriteBatchTests: XCTestCase {
         var profiles: [String: FeedProfile] = [:]
         XCTAssertEqual(batch.flush(into: &profiles), [])
     }
+
+    // MARK: - LatestOnlySave
+
+    private final class Recorder {
+        let lock = NSLock()
+        var values: [Int] = []
+        var concurrent = 0
+        var maxConcurrent = 0
+    }
+
+    func testSavesWhileOneRunsCollapseToTheNewest() {
+        let queue = DispatchQueue(label: "test.save", attributes: .concurrent)
+        let gate = DispatchSemaphore(value: 0)
+        let started = DispatchSemaphore(value: 0)
+        let done = expectation(description: "drained")
+        let rec = Recorder()
+        let saver = LatestOnlySave<Int>(queue: queue) { value in
+            rec.lock.lock(); rec.concurrent += 1; rec.maxConcurrent = max(rec.maxConcurrent, rec.concurrent); rec.lock.unlock()
+            if value == 1 { started.signal(); gate.wait() }
+            rec.lock.lock(); rec.values.append(value); rec.concurrent -= 1; rec.lock.unlock()
+            if value == 4 { done.fulfill() }
+        }
+        saver.save(1)
+        started.wait()
+        saver.save(2)
+        saver.save(3)
+        saver.save(4)
+        gate.signal()
+        wait(for: [done], timeout: 5)
+        XCTAssertEqual(rec.values, [1, 4])
+        XCTAssertEqual(rec.maxConcurrent, 1)
+    }
+
+    func testSaveAfterDrainRunsAgain() {
+        let queue = DispatchQueue(label: "test.save2")
+        let rec = Recorder()
+        let saver = LatestOnlySave<Int>(queue: queue) { value in
+            rec.lock.lock(); rec.values.append(value); rec.lock.unlock()
+        }
+        saver.save(1)
+        queue.sync {}
+        saver.save(2)
+        queue.sync {}
+        XCTAssertEqual(rec.values, [1, 2])
+    }
 }
+
