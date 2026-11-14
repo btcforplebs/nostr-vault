@@ -46,3 +46,10 @@ final class LaunchStartTests: XCTestCase {
         XCTAssertFalse(LaunchStart.startsNow(chainBusy: false, draining: false, meshDial: true))
     }
 }
+
+final class VaultFirstRowsTests: XCTestCase {
+    func testFirstRowsSkipTheDebounceLaterOnesKeepIt() {
+        XCTAssertEqual(VaultFirstRows.debounceNanos(firstRowsShown: false), 0)
+        XCTAssertEqual(VaultFirstRows.debounceNanos(firstRowsShown: true), 150_000_000)
+    }
+}

@@ -292,6 +292,11 @@ extension RelayProcessManager {
     }
     
     private nonisolated func removeLockFile(at url: URL) {
+        // A LOCK a live process still holds (Badger flocks it; e.g. a Mac
+        // Debug build on the same data) stays: deleting it let this start
+        // open, and tidy rename, a store under that running relay (Tron S3
+        // on #2045). A stale one from a crash has no holder and goes.
+        guard !Self.lockHeldByLiveProcess(url.path) else { return }
         if FileManager.default.fileExists(atPath: url.path) {
             do {
                 try FileManager.default.removeItem(at: url)
@@ -299,5 +304,15 @@ extension RelayProcessManager {
             } catch {
             }
         }
+    }
+
+    /// Whether a live process holds path's flock (Badger's directory lock).
+    nonisolated static func lockHeldByLiveProcess(_ path: String) -> Bool {
+        let fd = open(path, O_RDONLY)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { return errno == EWOULDBLOCK }
+        flock(fd, LOCK_UN)
+        return false
     }
 }

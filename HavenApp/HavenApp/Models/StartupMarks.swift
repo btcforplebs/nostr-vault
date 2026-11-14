@@ -53,3 +53,11 @@ enum LaunchStart {
         !chainBusy && !draining && !meshDial
     }
 }
+
+/// The Vault list's update debounce: none until the launch's first rows are
+/// on screen, then 150 ms so rapid triggers coalesce.
+enum VaultFirstRows {
+    static func debounceNanos(firstRowsShown: Bool) -> UInt64 {
+        firstRowsShown ? 150_000_000 : 0
+    }
+}
