@@ -16,6 +16,7 @@ import { catalogFilter, catalogEntries, fetchArtifact } from "./catalog.js"
 import { listBlobs, mirrorBlob, deleteBlob } from "../net/blossom-gallery.js"
 import { getMessages, onMessages, sendMessage } from "../net/dms.js"
 import { markRead } from "../net/dm-read.js"
+import { dmContent, preparePhoto } from "../net/dm-photo.js"
 import { getProfile } from "../net/profiles.js"
 import { findMine } from "./shell-deps-find.js"
 import { SEND_ACTIONS, countdownText, sendDelaySeconds, startCountdown } from "../net/send-delay.js"
@@ -158,15 +159,21 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
       me: ctx.session.pubkey,
       messages: () => getMessages().messages,
       blocked: dm.blocked, trusted: dm.trusted, unread: dm.unread,
+      searchName: dm.searchName ?? (() => ""), follows: dm.follows ?? (() => false), lookup: dm.lookup ?? (() => {}),
       profile: pk => getProfile(pk),
       onChange: cb => onMessages(cb),
-      async send(peer, text) {
+      // A photo takes the classic thread's own path (ConversationScreen.jsx): redrawn without its metadata
+      // (preparePhoto), uploaded to your media servers, its link sent after the text; "(photo)" shows while it goes.
+      async send(peer, text, photo = null) {
         const before = new Set([...getMessages().messages.values()].map(m => m.id))
-        try { await sendMessage(ctx, peer, text) } catch (e) {
-          const failed = findMine(getMessages().messages, ctx.session.pubkey, peer, text, true, before)
+        const preview = photo ? (text ? `${text}\n(photo)` : "(photo)") : null
+        let sentText = text
+        const opts = photo ? { preview, prepare: async () => (sentText = dmContent(text, (await uploadPhoto(await preparePhoto(photo), { ctx, servers: await mediaServers(ctx) })).url)) } : {}
+        try { await sendMessage(ctx, peer, text, opts) } catch (e) {
+          const failed = findMine(getMessages().messages, ctx.session.pubkey, peer, preview ?? text, true, before) ?? findMine(getMessages().messages, ctx.session.pubkey, peer, sentText, true, before)
           throw Object.assign(new Error(String(e?.fixed ? e.message : "The message wasn't sent.")), { failedId: failed?.id })
         }
-        return findMine(getMessages().messages, ctx.session.pubkey, peer, text, false, before) ?? { id: `sent:${crypto.randomUUID()}`, from: ctx.session.pubkey, peer, content: text, at: Math.floor(Date.now() / 1000) }
+        return findMine(getMessages().messages, ctx.session.pubkey, peer, sentText, false, before) ?? { id: `sent:${crypto.randomUUID()}`, from: ctx.session.pubkey, peer, content: sentText, at: Math.floor(Date.now() / 1000) }
       },
       markRead: list => markRead(ctx.session.pubkey, list),
       ask,

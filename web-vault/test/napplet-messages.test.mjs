@@ -21,13 +21,14 @@ function rig({ grant = defaultGrant({ firstParty: true }), yes = true, sendFails
     ["m3", msg("m3", BOB, BOB, 30, "stranger here")], ["m4", msg("m4", EVE, EVE, 40, "blocked one")],
     ["p1", msg("p1", ME, ANN, 50, "sending…", { pending: true })],
   ])
-  const calls = { read: [], sent: [], asks: [] }, pushed = []
+  const calls = { read: [], sent: [], asks: [], lookup: [] }, pushed = []
   const listeners = new Set()
   const deps = {
     me: ME, messages: () => messages, blocked: () => new Set([EVE]), trusted: () => new Set([ANN]),
     unread: () => new Map([[ANN, 1], [BOB, 1]]), profile: pk => (pk === ANN ? { name: "Ann", picture: "https://x.example/a.png" } : pk === BOB ? { name: "Bob", picture: "http://x.example/b.png" } : null),
     onChange: cb => { listeners.add(cb); return () => listeners.delete(cb) },
-    async send(peer, text) { calls.sent.push([peer, text]); if (sendFails) throw Object.assign(new Error("Not delivered"), { failedId: "pending:9" }); const m = msg("w9", ME, peer, 60, text); messages.set("w9", m); return m },
+    searchName: pk => (pk === ANN ? "Ann Lee" : pk === BOB ? "Bob" : ""), follows: pk => pk === ANN, lookup: pks => calls.lookup.push(pks),
+    async send(peer, text, photo) { calls.sent.push(photo ? [peer, text, photo] : [peer, text]); if (sendFails) throw Object.assign(new Error("Not delivered"), { failedId: "pending:9" }); const m = msg("w9", ME, peer, 60, text); messages.set("w9", m); return m },
     markRead: list => calls.read.push(list.map(m => m.id)), ask: async q => { calls.asks.push(q); return yes }, randomId: (() => { let i = 0; return () => `r${++i}` })(),
   }
   const h = dmHandler({ grant, who: { title: "Messages" }, deps, push: x => pushed.push(x) })
@@ -137,4 +138,58 @@ test("messages napplet: npub/nprofile/hex to a pubkey; threads merge once per id
   assert.equal(box.pubkeyOf("npub1xyz"), null)
   const t = JSON.parse(JSON.stringify(box.mergeThread([{ id: "a", createdAt: 5 }], [{ id: "b", createdAt: 1 }, { id: "a", createdAt: 5, status: "sent" }])))
   assert.deepEqual(t.map(m => m.id), ["b", "a"])
+})
+
+test("dm: search is the classic on-device one (names and text); a hit names the matching message; follows ride on rows", async () => {
+  const { ask, messages } = rig()
+  messages.set("m5", msg("m5", ANN, ANN, 25, "the bee meetup is Friday"))
+  const byText = await ask("dm.conversations", { query: "MEETUP" })
+  assert.deepEqual(byText.conversations.map(c => [c.id, c.hit?.content, c.last.content]), [[ANN, "the bee meetup is Friday", "sending…"]])
+  const byName = await ask("dm.conversations", { query: "lee" })
+  assert.deepEqual(byName.conversations.map(c => [c.id, c.hit ?? null]), [[ANN, null]])
+  assert.deepEqual((await ask("dm.conversations", { query: "blocked one" })).conversations, []) // a blocked person stays out
+  assert.deepEqual((await ask("dm.conversations")).conversations.map(c => [c.id, c.follows]), [[ANN, true], [BOB, false]])
+  for (const bad of [{ query: 5 }, { query: "x".repeat(201) }]) assert.ok((await ask("dm.conversations", bad)).error)
+})
+
+test("dm: ids gives a brand-new conversation its row (name, face) and looks up who has no name; blocked never", async () => {
+  const { ask, calls } = rig()
+  const NEW = H("d")
+  const r = await ask("dm.conversations", { ids: [ANN, NEW, EVE, NEW] })
+  assert.deepEqual(r.conversations.map(c => [c.id, c.participants[0].label ?? null, c.last?.content ?? null, c.updatedAt]), [[ANN, "Ann", "sending…", 50], [NEW, null, null, 0]])
+  assert.deepEqual(calls.lookup, [[NEW]])
+  for (const bad of [{ ids: "x" }, { ids: ["npub1x"] }, { ids: Array.from({ length: 21 }, (_, i) => H(String(i % 10))) }]) assert.ok((await ask("dm.conversations", bad)).error, JSON.stringify(bad).slice(0, 40))
+})
+
+test("dm: a photo (a Blob) goes to the shell's send with its text; only an image, at most 50 MB; photo alone is fine", async () => {
+  const { ask, calls } = rig()
+  const pic = new Blob([new Uint8Array([1, 2, 3])], { type: "image/jpeg" })
+  const ok = await ask("dm.send", { recipients: [ANN], content: "", photo: pic })
+  assert.equal(ok.ok, true)
+  assert.equal(calls.sent[0][2], pic)
+  for (const photo of ["https://x.example/a.jpg", new Blob(["x"], { type: "text/html" }), new Blob([]), { size: 3, type: "image/png" }])
+    assert.ok((await ask("dm.send", { recipients: [ANN], content: "hi", photo })).error, String(photo?.type ?? photo))
+  const f = rig({ sendFails: true })
+  const r = await f.ask("dm.send", { recipients: [ANN], content: "look", photo: pic })
+  assert.deepEqual([r.ok, r.message.content], [false, "look\n(photo)"])
+})
+
+test("messages napplet: a line that is only a picture link is a photo; previews say Photo", () => {
+  const html = fs.readFileSync(new URL("../napplets/messages/index.html", import.meta.url), "utf8")
+  const box = {}
+  vm.runInNewContext(`${html.slice(html.indexOf("// ---- pure"), html.indexOf("// ---- end pure ----"))}\n;Object.assign(box, { partsOf, previewOf })`, { box, Date })
+  const plain = x => JSON.parse(JSON.stringify(x))
+  assert.deepEqual(plain(box.partsOf("look\nhttps://b.example/abc.jpg")), [{ text: "look" }, { photo: "https://b.example/abc.jpg" }])
+  assert.deepEqual(plain(box.partsOf("see https://b.example/abc.jpg here\nline two")), [{ text: "see https://b.example/abc.jpg here\nline two" }])
+  assert.deepEqual(plain(box.partsOf("http://b.example/a.png")), [{ text: "http://b.example/a.png" }]) // https only
+  assert.equal(box.previewOf("https://b.example/abc.webp?x=1"), "Photo")
+  assert.equal(box.previewOf("hi\n  there\nhttps://b.example/abc.png"), "hi there · Photo")
+})
+
+test("messages pane: shell deps get search names, follows and a once-per-person lookup; a photo takes the classic path", () => {
+  const pane = fs.readFileSync(new URL("../src/napplet/MessagesPane.jsx", import.meta.url), "utf8")
+  assert.match(pane, /searchName, follows: pk => ctxRef\.current\.account\.follows\.includes\(pk\)/)
+  assert.match(pane, /const fresh = pks\.filter\(pk => !looked\.current\.has\(pk\)\)/)
+  const deps = fs.readFileSync(new URL("../src/napplet/shell-deps.js", import.meta.url), "utf8")
+  assert.match(deps, /prepare: async \(\) => \(sentText = dmContent\(text, \(await uploadPhoto\(await preparePhoto\(photo\), \{ ctx, servers: await mediaServers\(ctx\) \}\)\)\.url\)\)/)
 })
