@@ -123,5 +123,61 @@ final class ProfileWriteBatchTests: XCTestCase {
         queue.sync {}
         XCTAssertEqual(rec.values, [1, 2])
     }
+
+    // MARK: - ProfileCacheShards
+
+    private func fp(_ pubkey: String, _ name: String = "a") -> FeedProfile {
+        FeedProfile(pubkey: pubkey, name: name)
+    }
+
+    func testUnchangedProfilesWriteNothing() {
+        var shards = ProfileCacheShards(loaded: ["aa01": CachedProfile(p: fp("aa01"), s: 5)])
+        XCTAssertTrue(shards.plan(["aa01": fp("aa01")], now: 10, keep: []).isEmpty)
+    }
+
+    func testAChangedProfileRewritesOnlyItsShardWhole() {
+        var shards = ProfileCacheShards(loaded: [
+            "aa01": CachedProfile(p: fp("aa01"), s: 5),
+            "aa02": CachedProfile(p: fp("aa02"), s: 6),
+            "bb01": CachedProfile(p: fp("bb01"), s: 7),
+        ])
+        let writes = shards.plan(["aa01": fp("aa01", "new"), "aa02": fp("aa02"), "bb01": fp("bb01")], now: 10, keep: [])
+        XCTAssertEqual(Set(writes.keys), ["aa"])
+        XCTAssertEqual(writes["aa"]?["aa01"], CachedProfile(p: fp("aa01", "new"), s: 10))
+        XCTAssertEqual(writes["aa"]?["aa02"], CachedProfile(p: fp("aa02"), s: 6))
+    }
+
+    func testCapDropsOldestButNeverKept() {
+        var shards = ProfileCacheShards(loaded: [
+            "aa01": CachedProfile(p: fp("aa01"), s: 1),
+            "bb01": CachedProfile(p: fp("bb01"), s: 2),
+            "cc01": CachedProfile(p: fp("cc01"), s: 3),
+        ])
+        let all = ["aa01": fp("aa01"), "bb01": fp("bb01"), "cc01": fp("cc01"), "dd01": fp("dd01")]
+        let writes = shards.plan(all, now: 10, keep: ["aa01"], cap: 2)
+        XCTAssertEqual(Set(shards.onDisk.keys), ["aa01", "dd01"])
+        XCTAssertEqual(writes["bb"], [:])
+        XCTAssertEqual(writes["cc"], [:])
+        XCTAssertEqual(writes["dd"]?["dd01"]?.s, 10)
+        XCTAssertNil(writes["aa"])
+        // Left off disk but still in memory and unchanged: not written back.
+        XCTAssertTrue(shards.plan(all, now: 11, keep: ["aa01"], cap: 2).isEmpty)
+    }
+
+    func testLegacyCacheWritesEveryShardOnce() {
+        var dated = fp("aa01")
+        dated.metadataCreatedAt = 7
+        var shards = ProfileCacheShards(legacy: ["aa01": dated, "Zq": fp("Zq")])
+        let writes = shards.plan(["aa01": dated, "Zq": fp("Zq")], now: 10, keep: [])
+        XCTAssertEqual(writes.count, 257)
+        XCTAssertEqual(writes["aa"]?["aa01"]?.s, 7)
+        XCTAssertEqual(writes["zz"]?["Zq"]?.s, 0)
+        XCTAssertTrue(shards.plan(["aa01": dated, "Zq": fp("Zq")], now: 11, keep: []).isEmpty)
+    }
+
+    func testRemovedProfileLeavesItsShard() {
+        var shards = ProfileCacheShards(loaded: ["aa01": CachedProfile(p: fp("aa01"), s: 5)])
+        XCTAssertEqual(shards.plan([:], now: 10, keep: []), ["aa": [:]])
+    }
 }
 

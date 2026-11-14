@@ -16,7 +16,10 @@ enum ProfileRepository {
         return havenDir
     }
 
+    /// The old single-file profile cache; read once, then replaced by
+    /// `profileShardsURL`.
     static var profilesURL: URL { havenSupportDir().appendingPathComponent("profiles.json") }
+    static var profileShardsURL: URL { havenSupportDir().appendingPathComponent("profiles", isDirectory: true) }
     static var relayListsURL: URL { havenSupportDir().appendingPathComponent("relay_lists.json") }
     static var outboxRelaysURL: URL { havenSupportDir().appendingPathComponent("outbox_relays.json") }
     static var dmRelayListsURL: URL { havenSupportDir().appendingPathComponent("dm_relay_lists.json") }
@@ -24,10 +27,27 @@ enum ProfileRepository {
 
     // MARK: - Load from Disk
 
+    /// Loads the profile cache: the shard files, or the old single file
+    /// before the first save after this change.
     static func loadProfiles() -> [String: FeedProfile] {
-        guard let data = try? Data(contentsOf: profilesURL),
-              let loaded = try? JSONDecoder().decode([String: FeedProfile].self, from: data) else { return [:] }
-        return loaded
+        var loaded: [String: CachedProfile] = [:]
+        let files = (try? FileManager.default.contentsOfDirectory(at: profileShardsURL, includingPropertiesForKeys: nil)) ?? []
+        for file in files where file.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: file),
+                  let part = try? JSONDecoder().decode([String: CachedProfile].self, from: data) else { continue }
+            loaded.merge(part) { _, new in new }
+        }
+        // The old file is deleted only after every shard is written, so while
+        // it is there it is the cache (a first save may have been cut short).
+        let shards: ProfileCacheShards
+        if let data = try? Data(contentsOf: profilesURL),
+           let legacy = try? JSONDecoder().decode([String: FeedProfile].self, from: data) {
+            shards = ProfileCacheShards(legacy: legacy.merging(loaded.mapValues(\.p)) { _, new in new })
+        } else {
+            shards = ProfileCacheShards(loaded: loaded)
+        }
+        saveQueue.sync { profileShards = shards }
+        return shards.previous
     }
 
     static func loadRelayLists() -> [String: [String]] {
@@ -76,13 +96,33 @@ enum ProfileRepository {
         }
     }
 
-    private static let profilesSaver: LatestOnlySave<[String: FeedProfile]> = saver { profilesURL }
+    /// Touched only on `saveQueue`.
+    private static var profileShards = ProfileCacheShards(loaded: [:])
+
+    private static let profilesSaver = LatestOnlySave<([String: FeedProfile], Set<String>)>(queue: saveQueue) { profiles, keep in
+        let now = Int64(Date().timeIntervalSince1970)
+        let writes = profileShards.plan(profiles, now: now, keep: keep)
+        guard !writes.isEmpty else { return }
+        let dir = profileShardsURL
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        for (shard, contents) in writes {
+            let file = dir.appendingPathComponent("\(shard).json")
+            if contents.isEmpty {
+                try? FileManager.default.removeItem(at: file)
+            } else if let data = try? JSONEncoder().encode(contents) {
+                try? data.write(to: file, options: .atomic)
+            }
+        }
+        try? FileManager.default.removeItem(at: profilesURL)
+    }
     private static let relayListsSaver: LatestOnlySave<[String: [String]]> = saver { relayListsURL }
     private static let outboxRelaysSaver: LatestOnlySave<[String: [String]]> = saver { outboxRelaysURL }
     private static let dmRelayListsSaver: LatestOnlySave<[String: [String]]> = saver { dmRelayListsURL }
     private static let serverListsSaver: LatestOnlySave<[String: [String]]> = saver { serverListsURL }
 
-    static func saveProfiles(_ profiles: [String: FeedProfile]) { profilesSaver.save(profiles) }
+    /// Saves the profiles that changed since the last save. `keep` is never
+    /// left off disk by the cap (`ProfileCacheShards`).
+    static func saveProfiles(_ profiles: [String: FeedProfile], keep: Set<String>) { profilesSaver.save((profiles, keep)) }
     static func saveRelayLists(_ lists: [String: [String]]) { relayListsSaver.save(lists) }
     static func saveOutboxRelays(_ lists: [String: [String]]) { outboxRelaysSaver.save(lists) }
     static func saveDMRelayLists(_ lists: [String: [String]]) { dmRelayListsSaver.save(lists) }
