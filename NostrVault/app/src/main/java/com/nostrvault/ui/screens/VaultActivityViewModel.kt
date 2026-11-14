@@ -368,7 +368,9 @@ class VaultActivityViewModel @Inject constructor(
             """{"kinds":${kindsJson(TAGGED_KINDS)},"#p":["$owner"]$since,"limit":$PAGE}""",
         )
         try {
-            read(filters) { release() }
+            // The Mac relay's read runs beside the queue, so a slow Mac never
+            // holds the next refresh (an account switch's) behind it.
+            read(filters, macAside = { settleNews(asked, owner) }) { release() }
         } finally {
             release()
             settleNews(asked, owner)
@@ -407,9 +409,15 @@ class VaultActivityViewModel @Inject constructor(
      * Runs [filters]: this device's outbox and inbox straight from the store
      * (VaultStoreRead), then the Mac relay over the socket; when the store
      * can't answer, every relay over the socket as before. [storeDone] runs
-     * once the store's rows are kept. Returns how many events were new.
+     * once the store's rows are kept. With [macAside] the Mac relay's read
+     * runs on its own and [macAside] after it; otherwise it is waited for.
+     * Returns how many events were new (the Mac's only when waited for).
      */
-    private suspend fun read(filters: List<String>, storeDone: suspend () -> Unit = {}): Int {
+    private suspend fun read(
+        filters: List<String>,
+        macAside: (suspend () -> Unit)? = null,
+        storeDone: suspend () -> Unit = {},
+    ): Int {
         val gen = generation
         val stored = withContext(Dispatchers.IO) { VaultStoreRead.query(filters) }
             ?: return fetch(filters, relays())
@@ -417,7 +425,13 @@ class VaultActivityViewModel @Inject constructor(
         val added = keep(stored, gen)
         storeDone()
         val mac = macRelays()
-        return if (mac.isEmpty()) added else added + fetch(filters, mac)
+        if (mac.isEmpty()) return added
+        if (macAside == null) return added + fetch(filters, mac)
+        viewModelScope.launch {
+            fetch(filters, mac)
+            macAside()
+        }
+        return added
     }
 
     /** Runs [filters] over the socket on [relays] and keeps what came back. Returns how many events were new. */
