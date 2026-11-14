@@ -10,7 +10,7 @@ import assert from "node:assert/strict"
 import fs from "node:fs"
 import { visibleEvents, signDecision, resendDecision, defaultGrant, seesPrivate, outsideGrant, protectedKind } from "../src/napplet/policy.js"
 import { wotGate } from "../src/napplet/wot-gate.js"
-import { createHandlers } from "../src/napplet/dispatch.js"
+import { createHandlers, OUTSIDE_STORE_PER_MIN } from "../src/napplet/dispatch.js"
 import { dmHandler } from "../src/napplet/dm-dispatch.js"
 import { blossomHandler } from "../src/napplet/blossom-dispatch.js"
 import { SHELL_DOMAINS } from "../src/napplet/manifest.js"
@@ -134,12 +134,13 @@ test("rule 3: no napplet, ours included, gets 10030 or 30030 signed, deleted or 
 
 // A fake shell. Haven holds one of your notes; the network has a friend's, a friend-of-friend's, a stranger's and a
 // blocked one. The web: you, FRIEND, FOF.
-function make(grant) {
+function make(grant, { more = [], now } = {}) {
   const haven = [{ id: "hv", kind: 1, pubkey: ME, created_at: 50 }, { id: "hs", kind: 1, pubkey: STRANGER, created_at: 51 }]
   const net = [
     { id: "nf", kind: 1, pubkey: FRIEND, created_at: 40 }, { id: "nfof", kind: 1, pubkey: FOF, created_at: 30 },
     { id: "ns", kind: 1, pubkey: STRANGER, created_at: 45 }, { id: "nb", kind: 1, pubkey: BAD, created_at: 46 },
     { id: H("9"), kind: 1, pubkey: STRANGER, created_at: 1 },
+    ...more,
   ]
   const calls = { routes: [], order: [], stored: [] }
   const deps = {
@@ -156,6 +157,7 @@ function make(grant) {
     havenStore: async evs => { calls.order.push(evs.length === 1 && calls.order.includes("sub") ? `store:${evs[0].id}` : "store"); calls.stored.push(...evs); return evs },
     theme: () => ({}), storage: {}, resourceSchemes: () => [], fetchBytes: async () => ({}), upload: async () => ({}), notify: async () => "n",
     ask: async () => true, saveGrant: () => {}, bus: createBus(), randomId: () => "u",
+    ...(now ? { now } : {}),
   }
   const origSub = deps.netSubscribe
   deps.netSubscribe = (fs, onEvent, onEose) => { calls.order.push("sub"); return origSub(fs, ev => onEvent(ev), onEose) }
@@ -166,3 +168,23 @@ function napplet(onSend = () => {}) {
   const sent = []
   return { dTag: "t", hash: H("0"), sent, send: m => { sent.push(m); onSend(m) } }
 }
+
+test("an outside napplet writes at most OUTSIDE_STORE_PER_MIN network events into Haven a minute; past it they're handed over, not kept", async () => {
+  const more = Array.from({ length: 350 }, (_, i) => ({ id: `f${i}`, kind: 1, pubkey: FRIEND, created_at: 100 + i }))
+  let t = 0
+  const outside = make(defaultGrant({ domains: SHELL_DOMAINS }), { more, now: () => t })
+  const q = async h => (await h.handlers.relay({ type: "relay.query", id: "q", filters: [{ kinds: [1], limit: 500 }] }, napplet()))
+  await q(outside)
+  assert.equal(outside.calls.stored.length, OUTSIDE_STORE_PER_MIN)
+  const n = napplet()
+  await outside.handlers.relay({ type: "relay.subscribe", subId: "s", filters: [{ kinds: [1] }] }, n)
+  await new Promise(r => setTimeout(r, 20))
+  assert.equal(outside.calls.stored.length, OUTSIDE_STORE_PER_MIN) // the minute's budget is spent
+  assert.ok(n.sent.filter(m => m.type === "relay.event").length >= 350) // still handed over
+  t = 60_000
+  await q(outside)
+  assert.equal(outside.calls.stored.length, 2 * OUTSIDE_STORE_PER_MIN) // a new minute, a new budget
+  const ours = make(defaultGrant({ firstParty: true, domains: SHELL_DOMAINS }), { more })
+  await q(ours)
+  assert.ok(ours.calls.stored.length > OUTSIDE_STORE_PER_MIN) // our own napplets aren't capped
+})

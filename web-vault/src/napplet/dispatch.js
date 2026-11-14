@@ -19,6 +19,9 @@ export const STORAGE_KEY_MAX = 256
 export const STORAGE_VALUE_MAX = 256 * 1024
 export const STORAGE_KEYS_MAX = 500
 export const MAX_SUBS = 16
+/** How many network events an outside napplet may write into Haven's /feed per minute. Past it they are still
+ *  handed over (gated), just not kept: a broad sub can't stream the whole web into the browser vault. */
+export const OUTSIDE_STORE_PER_MIN = 300
 export const MAX_URLS = 50
 
 const list = f => (Array.isArray(f) ? f : f && typeof f === "object" ? [f] : [])
@@ -55,7 +58,16 @@ export function createHandlers({ ident, grant, domains, deps }) {
     const wot = await deps.wotGate().catch(() => ev => ev?.pubkey === deps.pubkey) // no web: only your own
     return ev => wot(ev) && visibleEvents([ev], grant, { blocked: deps.blocked() }).length > 0 // a block applies at once
   }
-  const store = evs => (evs.length ? deps.havenStore(evs).catch(() => []) : Promise.resolve([]))
+  let storeWindow = { start: -Infinity, used: 0 }
+  const keepable = evs => {
+    if (seesPrivate(grant)) return evs
+    const t = (deps.now ?? Date.now)()
+    if (t - storeWindow.start >= 60_000) storeWindow = { start: t, used: 0 }
+    const take = evs.slice(0, Math.max(0, OUTSIDE_STORE_PER_MIN - storeWindow.used))
+    storeWindow.used += take.length
+    return take
+  }
+  const store = evs => { const keep = keepable(evs); return keep.length ? deps.havenStore(keep).catch(() => []) : Promise.resolve([]) }
   async function read(filters) {
     const fs = cleanFilters(filters)
     const limit = Math.max(...fs.map(f => f.limit))
