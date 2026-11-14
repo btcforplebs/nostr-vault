@@ -175,3 +175,12 @@ test("media pane: Posted in rows carry no tags or signature; live tiles map to t
   assert.match(src, /actions: \{ media: \["open", "notes", "tiles"\] \}/)
   assert.match(src, /archetype: "note", actions: \["open"\][\s\S]*location\.hash = `#\/thread\/\$\{p\.id\}`/)
 })
+
+test("media: a video streams from the napplet origin's worker when it controls the page, else comes whole in parts", () => {
+  const html2 = fs.readFileSync(new URL("../napplets/media/index.html", import.meta.url), "utf8")
+  assert.match(html2, /if \(!navigator\.serviceWorker\?\.controller \|\| !\(b\.size > 0\) \|\| !n\.resource\) return null/)
+  assert.match(html2, /return new URL\(`nv-stream\/\$\{id\}`, location\.href\)\.href/)
+  assert.match(html2, /n\.resource\.bytes\(`\$\{s\.url\}#nv-bytes=\$\{d\.start\}-\$\{end\}`\)/)
+  assert.match(html2, /if \(part\.size !== end - d\.start \+ 1\) throw/)
+  assert.match(html2, /function hide\(\) \{\n  streams\.clear\(\)/)
+})

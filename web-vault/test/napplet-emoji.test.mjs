@@ -2,6 +2,7 @@
 // napplet's own origin (origin.js) with the loader headers and the two files a napplet origin serves (csp.js). What
 // the browser does with them (navigation cancelled, the service worker, WebRTC) is tools/napplet-leak-check.mjs.
 import test from "node:test"
+import vm from "node:vm"
 import assert from "node:assert/strict"
 import fs from "node:fs"
 import { registerHooks } from "node:module"
@@ -9,7 +10,7 @@ import { CATEGORIES, KEYWORDS } from "../src/components/emoji-data.js"
 import { pickedEmoji, composeEmoji, emojiTags, EMOJI_TOPIC } from "../src/napplet/emoji-intent.js"
 import { createBus } from "../src/napplet/bus.js"
 import { nappletOrigin, nappletParentHost } from "../src/napplet/origin.js"
-import { isolatedLoaderCsp, nappletOriginFile, loaderCsp, LOADER_FILE, SW_FILE } from "../src/napplet/csp.js"
+import { isolatedLoaderCsp, nappletOriginFile, loaderCsp, frameCsp, LOADER_FILE, SW_FILE } from "../src/napplet/csp.js"
 import { nappletsOn, setNappletsOn } from "../src/napplet/flag.js"
 
 const H = "ab".repeat(32)
@@ -94,7 +95,7 @@ test("the loader cancels navigations and reports its guards; the service worker 
   assert.match(page, /register\("napplet-sw\.js"\)/)
   assert.match(page, /type: "nv-loader\.ready", guards: g/)
   const sw = read(`../public/${SW_FILE}`)
-  assert.match(sw, /respondWith\(Response\.error\(\)\)/)
+  assert.match(sw, /Response\.error\(\)/)
   assert.match(sw, /clients\.claim\(\)/)
   const host = read("../src/napplet/host.js")
   assert.match(host, /needGuards && !\(g\.nav && g\.sw\)/)
@@ -117,4 +118,40 @@ test("napplets in the app's screens: off until switched on", () => {
   assert.equal(nappletsOn(store), false)
   setNappletsOn(true, store); assert.equal(nappletsOn(store), true)
   setNappletsOn(false, store); assert.equal(nappletsOn(store), false)
+})
+
+test("the napplet service worker: every request errors but its own two files and nv-stream parts, which come from the page, never the network", async () => {
+  const sw = read(`../public/${SW_FILE}`)
+  const ORIGIN = "http://n-abc.localhost:5197"
+  const listeners = {}, asked = []
+  let pageAnswer = want => ({ ok: true, buf: new Uint8Array(want.end - want.start + 1).fill(7).buffer, size: 10_000_000, type: "video/webm" })
+  const client = { id: "c1", postMessage: (msg, [port]) => { asked.push(msg); Promise.resolve().then(() => port.postMessage(pageAnswer(msg))) } }
+  const self = { addEventListener: (t, f) => (listeners[t] = f), skipWaiting() {}, clients: { claim: async () => {}, matchAll: async () => [client] } }
+  let fetched = 0
+  vm.runInNewContext(sw, { self, location: new URL(ORIGIN + "/vault/napplet-sw.js"), URL, Response, MessageChannel, setTimeout, clearTimeout, Number, Math, String, fetch: () => { fetched++ } })
+  const go = async (path, headers = {}, method = "GET") => {
+    let answer = "passed through"
+    listeners.fetch({ request: new Request(path.startsWith("http") ? path : ORIGIN + path, { headers, method }), clientId: "c1", respondWith: r => { answer = r } })
+    return answer === "passed through" ? answer : await answer
+  }
+  assert.equal(await go("/vault/napplet-frame.html"), "passed through")
+  for (const p of ["/vault/other.js", "/vault/nv-stream/short", "/vault/nv-stream/abcdef0123456789abcdef?x=1", "https://evil.example/vault/nv-stream/abcdef0123456789abcdef"])
+    assert.equal((await go(p)).type, "error", p)
+  assert.equal((await go("/vault/nv-stream/abcdef0123456789abcdef", {}, "POST")).type, "error")
+  const r = await go("/vault/nv-stream/abcdef0123456789abcdef", { range: "bytes=100-" })
+  assert.deepEqual([r.status, r.headers.get("content-range"), r.headers.get("content-type"), (await r.arrayBuffer()).byteLength], [206, `bytes 100-${100 + 4 * 1024 * 1024 - 1}/10000000`, "video/webm", 4 * 1024 * 1024])
+  assert.deepEqual(JSON.parse(JSON.stringify(asked.at(-1))), { type: "nv-stream.want", id: "abcdef0123456789abcdef", start: 100, end: 100 + 4 * 1024 * 1024 - 1 })
+  const small = await go("/vault/nv-stream/abcdef0123456789abcdef", { range: "bytes=0-99" })
+  assert.equal(small.headers.get("content-range"), "bytes 0-99/10000000")
+  pageAnswer = () => ({ ok: false })
+  assert.equal((await go("/vault/nv-stream/abcdef0123456789abcdef", { range: "bytes=0-" })).type, "error") // the page has no such stream
+  assert.equal(fetched, 0)
+})
+
+test("the stream path is allowed for media only on a napplet's own origin, in both of its policies", () => {
+  assert.match(frameCsp({ stream: "http://n-a.localhost:5197/vault/nv-stream/" }), /media-src blob: data: http:\/\/n-a\.localhost:5197\/vault\/nv-stream\/;/)
+  assert.doesNotMatch(frameCsp(), /nv-stream/)
+  assert.doesNotMatch(loaderCsp(), /nv-stream/) // the opaque loader (and website/nginx.conf's copy) never gets it
+  assert.match(isolatedLoaderCsp({ self: "http://n-a.localhost:5197", vault: "http://localhost:5197" }), /media-src blob: data: http:\/\/n-a\.localhost:5197\/vault\/nv-stream\/;/)
+  assert.match(read("../src/napplet/host.js"), /const stream = origin && loader \? /)
 })
