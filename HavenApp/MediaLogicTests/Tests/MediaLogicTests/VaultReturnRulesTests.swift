@@ -150,6 +150,11 @@ final class VaultReturnRulesTests: XCTestCase {
     func testTheStoreIsReadWhenTheEngineIsUpAndOnEveryRefresh() throws {
         let capture = try source("HavenApp/Services/Relay/RelayProcessManager+OutputCapture.swift")
         XCTAssertTrue(capture.contains("NostrService.shared.readVaultFromStore()"))
+        // And right after the engine is called, not on the "ready" line.
+        let start = try source("HavenApp/Services/Relay/RelayProcessManager+Start.swift")
+        let call = try XCTUnwrap(start.range(of: "StartRelayC(0)"))
+        let early = try XCTUnwrap(start.range(of: "NostrService.shared.readVaultFromStore()"))
+        XCTAssertLessThan(call.lowerBound, early.lowerBound)
         let net = try source("HavenApp/Views/Vault/VaultNetworking.swift")
         let read = try XCTUnwrap(net.range(of: "nostrService.readVaultFromStore()"))
         let debounce = try XCTUnwrap(net.range(of: "refreshDebounceTask = Task"))
