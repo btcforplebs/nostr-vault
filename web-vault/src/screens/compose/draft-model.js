@@ -4,7 +4,7 @@
 // done. A photo picked into an empty box, or whose place was deleted, is not placed: its link goes at the end, as before.
 // Pure functions, so the composer and the tests share them.
 
-export const EMPTY_DRAFT = Object.freeze({ text: "", mentions: {}, photos: [] })
+export const EMPTY_DRAFT = Object.freeze({ text: "", mentions: {}, photos: [], emojis: {} }) // emojis: custom ones picked, { shortcode: url } (NIP-30)
 
 /** The placeholder for photo `id` while it uploads. */
 export const photoToken = id => `[photo ${id}]`

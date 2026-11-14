@@ -49,7 +49,8 @@ The frame's CSP stops fetch, XHR, WebSocket, images, media, fonts and forms. It 
 
 So an outside napplet can tell its author the user's IP next to their pubkey, and one with the private-data grant can
 send them whatever it read (mutes, the vault's feed and inbox, its storage). The consent sheet says so on the
-private-data checkbox. The real fix, a separate origin for the loader plus a network-blocking service worker, is P2.
+private-data checkbox. The fix, a separate origin for the loader plus a network-blocking service worker, came in
+P2 (P2_EMOJI.md): navigation is closed there; WebRTC through a child frame is not.
 - **First-party** napplets (built into the bundle) are trusted like the screens they replace.
 
 ## Checked

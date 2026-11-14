@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Emoji</title>
+<style>
+  :root { color-scheme: light dark; --bg: #fff; --fg: #111; --muted: #666; --line: #e3e3e6; --cell: #f2f2f4; --accent: #e67326;
+    font: 15px/1.35 -apple-system, system-ui, sans-serif; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0b0b0c; --fg: #eee; --muted: #999; --line: #26262a; --cell: #17171a; } }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); }
+  body { padding: 10px 12px 14px; }
+  input { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--cell); color: inherit; font: inherit; }
+  input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  h2 { font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--muted); margin: 14px 2px 6px; text-transform: uppercase; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); gap: 4px; }
+  .grid button { aspect-ratio: 1; border: 0; border-radius: 10px; background: transparent; font-size: 26px; line-height: 1; padding: 0; cursor: pointer; color: inherit; }
+  .grid button:hover, .grid button:focus-visible { background: var(--cell); outline: none; }
+  .grid button:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+  .grid img { width: 30px; height: 30px; object-fit: contain; vertical-align: middle; }
+  .note { color: var(--muted); font-size: 13px; margin: 8px 2px; }
+</style>
+</head>
+<body>
+<input id="q" type="search" placeholder="Search emoji" aria-label="Search emoji" autocomplete="off">
+<div id="out"></div>
+<script>
+  // The Emoji napplet (plan P2), our first real napplet: Unicode emoji by category, your recent ones, and your own
+  // custom emoji (your kind 10030 list and the 30030 sets it names, NIP-30), read through the shell. Pictures come as
+  // bytes from the shell: this frame has no network. A pick goes out on the INC topic "nv.emoji.picked" as { emoji } or
+  // { shortcode, url }. Compose opens this napplet by intent (archetype "emoji", action "pick").
+  // CATEGORIES and KEYWORDS are copies of web-vault/src/components/emoji-data.js (test/napplet-emoji.test.mjs).
+  const CATEGORIES = [["Smileys","😀 😃 😄 😁 😆 😅 🤣 😂 🙂 😉 😊 😇 🥰 😍 🤩 😘 😋 😛 😜 🤪 🤔 🤨 😐 😑 😶 🙄 😏 😬 😌 😔 😴 😷 🤒 🤯 🥳 😎 🤓 🧐 😕 😟 🙁 😮 😲 😳 🥺 😢 😭 😱 😤 😡 🤬 💀 🤡 👻 👽 🤖 💩"],["Hearts & Hands","❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 💯 💕 💖 💗 👍 👎 👌 🤌 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ☝️ 👋 🤚 ✋ 🖖 👏 🙌 🫶 👐 🤲 🤝 🙏 💪 🫡"],["Fun & Activities","🎉 🎊 🎁 🎈 ✨ 🔥 ⚡ 🌟 ⭐ 💫 🚀 🏆 🥇 🎯 🎮 🎲 🎵 🎶 🎸 🎤 🍕 🍔 🍟 🌮 🍣 🍩 🍪 🎂 🍺 🍻 🥂 🍷 ☕ 🧡 🫂 👀 🧠 💡 💰 ₿"],["Animals & Nature","🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🙈 🙉 🙊 🐔 🐧 🐦 🦅 🦉 🐺 🐴 🦄 🐝 🦋 🐢 🐍 🐙 🦀 🐬 🐳 🌸 🌻 🌹 🌲 🌵 🍀 🍁 🌈 ☀️ 🌙 ❄️ 🌊"]]
+  const KEYWORDS = {"😀":"smile happy grin","😂":"laugh lol joy tears","🤣":"laugh rofl lol","😊":"smile blush happy","😍":"love heart eyes","🥰":"love hearts","😘":"kiss","😎":"cool sunglasses","🤔":"think hmm","🙄":"eyeroll","😴":"sleep tired","🤯":"mind blown wow","🥳":"party celebrate","😮":"wow surprised oh","😲":"shocked wow","😳":"flushed embarrassed","🥺":"please pleading","😢":"sad cry tear","😭":"cry sob sad","😱":"scream scared","😡":"angry mad","🤬":"angry swear","💀":"dead skull dying","🤡":"clown","👻":"ghost","💩":"poop","❤️":"heart love red","🧡":"heart orange bitcoin","💔":"broken heart","💯":"hundred perfect","👍":"thumbs up yes like ok","👎":"thumbs down no dislike","👌":"ok perfect","🤙":"shaka call hang loose","👋":"wave hello hi bye","👏":"clap applause","🙌":"hands raise praise","🫶":"heart hands love","🤝":"handshake deal","🙏":"pray please thanks","💪":"strong muscle flex","🫡":"salute","🎉":"party tada celebrate","✨":"sparkles magic","🔥":"fire hot lit","⚡":"lightning zap bolt","🌟":"star","⭐":"star","🚀":"rocket moon launch","🏆":"trophy win","🎯":"target bullseye","🎵":"music note","🍕":"pizza","🍺":"beer","☕":"coffee","👀":"eyes look","🧠":"brain smart","💡":"idea bulb","💰":"money bag","₿":"bitcoin btc","🐶":"dog puppy","🐱":"cat kitty","🦄":"unicorn","🐝":"bee","🌈":"rainbow","☀️":"sun","🌙":"moon night","🌊":"wave ocean sea"}
+  const n = window.napplet || {}
+  const $ = id => document.getElementById(id)
+  const RECENT_MAX = 16, CUSTOM_MAX = 120, SETS_MAX = 10
+  const SHORTCODE = /^[A-Za-z0-9_-]{1,64}$/
+  let recent = [], custom = [] // custom: [{ shortcode, url, src }]
+
+  const keyOf = it => it.emoji || ":" + it.shortcode + ":"
+  const matches = (e, category, q) => !q || e === q || category.toLowerCase().includes(q) || (KEYWORDS[e] || "").split(" ").some(w => w.startsWith(q))
+  const cell = (label, inner, onPick) => {
+    const b = document.createElement("button")
+    b.type = "button"; b.setAttribute("aria-label", label); b.title = label
+    if (typeof inner === "string") b.textContent = inner; else b.appendChild(inner)
+    b.addEventListener("click", onPick)
+    return b
+  }
+  const section = (title, cells) => {
+    if (!cells.length) return null
+    const f = document.createDocumentFragment(), h = document.createElement("h2"), g = document.createElement("div")
+    h.textContent = title; g.className = "grid"; g.append(...cells); f.append(h, g)
+    return f
+  }
+  const customCell = c => {
+    const img = document.createElement("img")
+    img.alt = ""
+    if (c.src) img.src = c.src
+    return cell(":" + c.shortcode + ":", img, () => pick({ shortcode: c.shortcode, url: c.url }))
+  }
+
+  function pick(item) {
+    recent = [item, ...recent.filter(r => keyOf(r) !== keyOf(item))].slice(0, RECENT_MAX)
+    if (n.storage) n.storage.setItem("recent", JSON.stringify(recent)).catch(() => {})
+    if (n.inc) n.inc.emit("nv.emoji.picked", item.emoji ? { emoji: item.emoji } : { shortcode: item.shortcode, url: item.url })
+    render()
+  }
+
+  function render() {
+    const q = $("q").value.trim().toLowerCase()
+    const out = $("out")
+    out.textContent = ""
+    const parts = []
+    if (!q) parts.push(section("Recent", recent.map(r => r.emoji ? cell(r.emoji, r.emoji, () => pick({ emoji: r.emoji }))
+      : customCell(custom.find(c => c.shortcode === r.shortcode && c.url === r.url) || r))))
+    parts.push(section("Yours", custom.filter(c => !q || c.shortcode.toLowerCase().includes(q)).map(customCell)))
+    for (const [name, list] of CATEGORIES) parts.push(section(name, list.split(" ").filter(e => matches(e, name, q)).map(e => cell(e, e, () => pick({ emoji: e })))))
+    const shown = parts.filter(Boolean)
+    if (!shown.length) {
+      const p = document.createElement("p")
+      p.className = "note"; p.textContent = "No emoji match that."
+      out.append(p)
+    }
+    out.append(...shown)
+  }
+  $("q").addEventListener("input", render)
+
+  // Your custom emoji: the 10030 list's own emoji tags, then the sets it names (a tags 30030:pubkey:d), newest of each.
+  async function loadCustom() {
+    if (!n.identity || !n.relay) return
+    const me = await n.identity.getPublicKey().catch(() => "")
+    if (!me) return
+    const [list] = (await n.relay.query([{ kinds: [10030], authors: [me], limit: 1 }]).catch(() => [])).map(r => r.event)
+    if (!list) return
+    const found = [], seen = new Set()
+    const add = t => {
+      if (t[0] !== "emoji" || !SHORTCODE.test(t[1] || "") || !/^https:\/\//.test(t[2] || "") || seen.has(t[1]) || found.length >= CUSTOM_MAX) return
+      seen.add(t[1]); found.push({ shortcode: t[1], url: t[2] })
+    }
+    list.tags.forEach(add)
+    const byAuthor = new Map()
+    for (const t of list.tags) {
+      const m = t[0] === "a" && /^30030:([0-9a-f]{64}):(.*)$/.exec(t[1] || "")
+      if (!m) continue
+      if (!byAuthor.has(m[1])) { if (byAuthor.size >= SETS_MAX) continue; byAuthor.set(m[1], []) }
+      byAuthor.get(m[1]).push(m[2])
+    }
+    if (byAuthor.size) {
+      const filters = [...byAuthor].map(([pk, ds]) => ({ kinds: [30030], authors: [pk], "#d": ds }))
+      const sets = (await n.relay.query(filters).catch(() => [])).map(r => r.event)
+      const newest = new Map()
+      for (const ev of sets) {
+        const k = ev.pubkey + ":" + ((ev.tags.find(t => t[0] === "d") || [])[1] || "")
+        if (!newest.has(k) || newest.get(k).created_at < ev.created_at) newest.set(k, ev)
+      }
+      for (const ev of newest.values()) ev.tags.forEach(add)
+    }
+    custom = found
+    render()
+    // Pictures through the shell, four at a time.
+    if (!n.resource) return
+    let i = 0
+    const worker = async () => {
+      while (i < custom.length) {
+        const c = custom[i++]
+        try { c.src = URL.createObjectURL(await n.resource.bytes(c.url)) } catch {}
+      }
+    }
+    await Promise.all([worker(), worker(), worker(), worker()])
+    render()
+  }
+
+  async function start() {
+    if (n.storage) {
+      try {
+        recent = JSON.parse((await n.storage.getItem("recent")) || "[]")
+          .filter(r => r && (typeof r.emoji === "string" ? r.emoji.length <= 16 : SHORTCODE.test(r.shortcode || "") && /^https:\/\//.test(r.url || "")))
+          .map(r => r.emoji ? { emoji: r.emoji } : { shortcode: r.shortcode, url: r.url }).slice(0, RECENT_MAX)
+      } catch {}
+    }
+    if (n.intent && n.intent.onDelivery) n.intent.onDelivery(() => $("q").focus())
+    render()
+    $("q").focus()
+    loadCustom()
+  }
+  start()
+</script>
+</body>
+</html>

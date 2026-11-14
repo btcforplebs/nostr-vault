@@ -42,7 +42,7 @@
 .compose-photo-error { margin: 6px 0 0; overflow-wrap: anywhere; }
 
 .compose-tools { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
-.compose-add-photo { display: inline-flex; align-items: center; gap: 6px; }
+.compose-add-photo, .compose-add-emoji { display: inline-flex; align-items: center; gap: 6px; }
 .compose-draft { margin-left: auto; }
 
 /* The compose sheet (lane E): the iPhone's ComposeView chrome, a sheet with no tab bar. Cancel and the title on the
@@ -66,9 +66,9 @@ body:has(.compose-sheet) .tabbar { display: none; }
 .compose-sheet .compose-area .compose:focus { outline: none; }
 .compose-sheet .compose-area.dragging .compose { border: 1px dashed var(--accent); border-radius: var(--radius); }
 .compose-sheet .compose-tools { grid-column: 1 / -1; margin-top: 10px; }
-.compose-sheet .compose-add-photo { width: 52px; height: 52px; min-height: 0; padding: 0; display: grid; place-items: center;
+.compose-sheet .compose-add-photo, .compose-sheet .compose-add-emoji { width: 52px; height: 52px; min-height: 0; padding: 0; display: grid; place-items: center;
   border-radius: 50%; border: 0; background: var(--accent-pale); color: var(--accent); }
-.compose-sheet .compose-add-photo svg { width: 24px; height: 24px; }
+.compose-sheet .compose-add-photo svg, .compose-sheet .compose-add-emoji svg { width: 24px; height: 24px; }
 /* Keyboard up (ComposeScreen useKeyboardFrame gives the visible area as --kb-top and --kb-height): the bar stays at the top, the
    tools sit on the keyboard, and the editor takes what's between and scrolls. Phone layout only: the desktop's compose
    is a dialog. */

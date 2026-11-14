@@ -194,6 +194,15 @@ test("typed #hashtags become t tags (NoteTagging), once each, and a URL fragment
   assert.deepEqual(tags.filter(t => t[0] === "t"), [["t", "nostr"], ["t", "日本"]])
 })
 
+test("custom emoji picked in the Emoji napplet: an emoji tag each while in the text, kept with the draft (NIP-30)", () => {
+  const emojis = { soapbox: "https://cdn.example/s.png", dropped: "https://cdn.example/d.png" }
+  const { content, tags } = buildPost({ text: "gm :soapbox:", mentions: {}, photos: [], target: null, parent: null, emojis })
+  assert.equal(content, "gm :soapbox:")
+  assert.deepEqual(tags.filter(t => t[0] === "emoji"), [["emoji", "soapbox", "https://cdn.example/s.png"]])
+  assert.deepEqual(draftOf("gm :soapbox:", {}, [], emojis).emojis, { soapbox: "https://cdn.example/s.png" })
+  assert.equal("emojis" in draftOf("gm", {}, [], emojis), false)
+})
+
 test("a draft keeps the text, the mentions still in it and only uploaded photos; one per target", () => {
   const d = draftOf("hi @Alice", { "@Alice": A, "@Bob": B }, [{ id: 1, url: "https://m/1.png", sha256: "1", preview: "blob:x", file: {}, status: "done" }, { id: 2, status: "uploading", preview: "blob:y" }])
   assert.deepEqual(d, { text: "hi @Alice", mentions: { "@Alice": A }, photos: [{ url: "https://m/1.png", sha256: "1", mime: undefined, size: undefined, width: undefined, height: undefined }] })

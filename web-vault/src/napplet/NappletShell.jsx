@@ -8,6 +8,7 @@ import { grantStore } from "./policy.js"
 import { createBus } from "./bus.js"
 import { shellDeps } from "./shell-deps.js"
 import { FIRST_PARTY } from "./first-party.js"
+import { nappletsOn, setNappletsOn } from "./flag.js"
 import { domainWord, PRIVATE_WORDS, askWords } from "./consent-words.js"
 import "./napplet.css"
 
@@ -19,6 +20,7 @@ export function NappletShell({ ctx }) {
   const [consent, setConsent] = useState(null) // { ident, domains, resolve }
   const [asking, setAsking] = useState(null) // { words, resolve }
   const [note, setNote] = useState("")
+  const [inApp, setInApp] = useState(nappletsOn)
   const grants = useMemo(() => grantStore(localStorage, ctx.session.pubkey), [ctx.session.pubkey])
   const bus = useMemo(() => createBus(), [])
   const ask = ({ napplet, what, detail }) => new Promise(resolve => setAsking({ words: askWords(what, napplet, detail), resolve }))
@@ -52,10 +54,11 @@ export function NappletShell({ ctx }) {
     <main class="screen napplet-shell">
       <header class="screen-head"><h2>Napplets <span class="muted small">preview</span></h2></header>
       <div class="napplet-bar">
-        {FIRST_PARTY.map(n => <button type="button" key={n.dTag} onClick={() => launch({ html: n.html, name: n.dTag, title: n.title, firstParty: true })}>{n.title}</button>)}
+        {FIRST_PARTY.map(n => <button type="button" key={n.dTag} onClick={() => launch({ html: n.html, name: n.dTag, title: n.title, firstParty: true, domains: n.domains })}>{n.title}</button>)}
         <label class="button">Open a file…<input type="file" accept=".html,text/html" hidden onChange={pickFile} /></label>
         {open && <button type="button" onClick={() => open.mounted.close()}>Close {open.ident.title}</button>}
       </div>
+      <label class="napplet-inapp muted small"><input type="checkbox" checked={inApp} onChange={e => { setNappletsOn(e.currentTarget.checked); setInApp(e.currentTarget.checked) }} /> Use napplets in the app (preview): Compose's emoji button opens the Emoji napplet</label>
       {open && <p class="muted small napplet-who">{open.ident.title} · {open.grant.firstParty ? "Nostr Vault's own" : open.grant.privateData ? "can see your vault's private data" : "public data only"} · {open.ident.hash.slice(0, 12)}</p>}
       {note && <p class="muted small napplet-note" role="status">{note}</p>}
       <div class="napplet-host" ref={host} />

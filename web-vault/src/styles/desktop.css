@@ -104,7 +104,7 @@
 .compose-inline > button.primary { grid-column: 2; min-height: 34px; padding: 0 18px; margin-right: var(--gutter); }
 .compose-inline .compose { min-height: 52px; }
 .compose-inline .compose-tools { margin-top: 6px; }
-.compose-inline .compose-add-photo { min-height: 30px; }
+.compose-inline .compose-add-photo, .compose-inline .compose-add-emoji { min-height: 30px; }
 
 /* The open row, and the row j/k selected. */
 .desk-list .note, .desk-list .dm-row { cursor: pointer; transition: background var(--press), border-color var(--press); }
