@@ -1,6 +1,9 @@
 import SwiftUI
 
 extension VaultView {
+    /// The first Vault rows of this launch got their startup mark.
+    @MainActor static var firstRowsMarked = false
+
 
     // MARK: - Background Processing
 
@@ -307,6 +310,10 @@ extension VaultView {
                 guard await MainActor.run(body: { self.listSwapPublishes(owner: owner, eventCount: events.count) }) else { return }
                 await MainActor.run {
                     if self.displayActivity != shown { self.displayActivity = shown }
+                    if !shown.isEmpty, !Self.firstRowsMarked {
+                        Self.firstRowsMarked = true
+                        RelayProcessManager.shared.startupMark("vault rows shown")
+                    }
                     if self.outsideLikeCount != outsideLikes { self.outsideLikeCount = outsideLikes }
                     self.activityHasLoadedOnce = true
                     self.displayPass &+= 1

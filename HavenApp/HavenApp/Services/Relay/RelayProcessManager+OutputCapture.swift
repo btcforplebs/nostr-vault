@@ -181,6 +181,7 @@ extension RelayProcessManager {
             }
             if batch.stopBooting {
                 isBooting = false
+                startupMark("vault ready seen")
                 state = .running  // Transition from .booting to .running
                 bootStatusMessage = ""
                 // Relay is up; WoT may still be building, unless the inbox

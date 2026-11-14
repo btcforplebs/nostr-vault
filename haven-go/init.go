@@ -145,8 +145,7 @@ func GranularInitDBs(names []string) error {
 		dbs = make(map[string]DBBackend)
 	}
 
-	for i, name := range names {
-		path := "db/" + name
+	for _, name := range names {
 		// A store from the last cycle that a straggler still held when it
 		// stopped closes only when released. Opening the same path before
 		// then would run two stores on one directory.
@@ -158,44 +157,138 @@ func GranularInitDBs(names []string) error {
 			}
 			delete(retiringDBs, name)
 		}
-		slog.Info(fmt.Sprintf("Initializing %s database (%d/%d)", name, i+1, len(names)))
-		inner := newDBBackend(path)
-		if err := inner.Init(); err != nil {
-			return fmt.Errorf("%sDB init failed: %w", name, err)
-		}
-		store := inner
-		if name == "outbox" {
-			// Every owner list version is also kept in `lists`.
-			store = newListHistoryDB(inner, func() DBBackend { return listsDB })
-		}
-		db := DBBackend(newGatedDB(store))
-		dbs[name] = db
-		slog.Info(fmt.Sprintf("✓ %s database ready", name))
-
-		// Assign to global variables for backward compatibility
-		switch name {
-		case "private":
-			privateDB = db
-		case "chat":
-			chatDB = db
-		case "outbox":
-			outboxDB = db
-		case "inbox":
-			inboxDB = db
-		case "blossom":
-			blossomDB = db
-		case "feed":
-			feedDB = db
-		case "lists":
-			listsDB = db
-		case "listsimport":
-			listsImportDB = db
-		case "files":
-			filesDB = db
-		}
 	}
 
+	// The Vault's own stores open first, the rest after them, each wave
+	// side by side: one by one, nine opens cost ~1 s on a phone (LogePhone
+	// 2026-11-14), and the Vault tab waited behind all of them.
+	for _, wave := range dbOpenWaves(names) {
+		opened, errs := openDBsTogether(wave)
+		var firstErr error
+		for i, name := range wave {
+			if errs[i] != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("%sDB init failed: %w", name, errs[i])
+				}
+				continue
+			}
+			registerDB(name, opened[i])
+		}
+		if firstErr != nil {
+			// The ones that did open stay in dbs, so CloseDBs closes them.
+			return firstErr
+		}
+		if containsAll(wave, vaultFirstDBs) {
+			startupMark("vault stores open")
+		}
+	}
+	startupMark("all stores open")
+
 	return nil
+}
+
+// vaultFirstDBs are what the Vault tab reads: they open before the rest.
+var vaultFirstDBs = []string{"inbox", "outbox"}
+
+// dbOpenWaves splits names into the Vault's stores, then everything else,
+// keeping the given order inside each wave and dropping empty waves.
+func dbOpenWaves(names []string) [][]string {
+	var first, rest []string
+	for _, name := range names {
+		if containsAll(vaultFirstDBs, []string{name}) {
+			first = append(first, name)
+		} else {
+			rest = append(rest, name)
+		}
+	}
+	var waves [][]string
+	for _, w := range [][]string{first, rest} {
+		if len(w) > 0 {
+			waves = append(waves, w)
+		}
+	}
+	return waves
+}
+
+func containsAll(set, want []string) bool {
+	for _, w := range want {
+		found := false
+		for _, s := range set {
+			if s == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+// openDBsTogether opens each named store on its own goroutine (separate
+// directories, separate engines) and waits for all of them. A panic in
+// one open comes back as that store's error rather than ending the app.
+func openDBsTogether(names []string) ([]DBBackend, []error) {
+	opened := make([]DBBackend, len(names))
+	errs := make([]error, len(names))
+	var wg sync.WaitGroup
+	for i, name := range names {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					errs[i] = fmt.Errorf("panic while opening: %v", r)
+				}
+			}()
+			slog.Info(fmt.Sprintf("Initializing %s database", name))
+			inner := newDBBackend("db/" + name)
+			if err := inner.Init(); err != nil {
+				errs[i] = err
+				return
+			}
+			opened[i] = inner
+			startupMark("store " + name + " open")
+		}()
+	}
+	wg.Wait()
+	return opened, errs
+}
+
+// registerDB wraps one opened store and assigns its global. Caller holds dbMu.
+func registerDB(name string, inner DBBackend) {
+	store := inner
+	if name == "outbox" {
+		// Every owner list version is also kept in `lists`. Read through
+		// the global when used, so lists may open after outbox.
+		store = newListHistoryDB(inner, func() DBBackend { return listsDB })
+	}
+	db := DBBackend(newGatedDB(store))
+	dbs[name] = db
+	slog.Info(fmt.Sprintf("✓ %s database ready", name))
+
+	// Assign to global variables for backward compatibility
+	switch name {
+	case "private":
+		privateDB = db
+	case "chat":
+		chatDB = db
+	case "outbox":
+		outboxDB = db
+	case "inbox":
+		inboxDB = db
+	case "blossom":
+		blossomDB = db
+	case "feed":
+		feedDB = db
+	case "lists":
+		listsDB = db
+	case "listsimport":
+		listsImportDB = db
+	case "files":
+		filesDB = db
+	}
 }
 
 // retiringDBs holds stores closed while a straggler was still inside
