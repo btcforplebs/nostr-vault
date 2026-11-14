@@ -12,6 +12,12 @@ export const DEFAULT_MEDIA_SERVERS = ["https://blossom.nostr.build", "https://bl
 // HavenConfig.defunctMirrorHosts: gone, and every upload to them waits out a timeout.
 const DEFUNCT = ["blossom.kylezien.com", "cdn.satellite.earth"]
 export const MAX_PHOTOS = 4
+// A DM's locked (encrypted) photo is ciphertext with no picture type, and the default servers refuse it (Primal 415,
+// nostr.build); nostr.download takes it (Logen 2026-11-14). It deletes files nobody downloads within a day, so it is
+// only ever the last try, after the account's own servers.
+export const LOCKED_FILE_FALLBACK = "https://nostr.download"
+/** Where a locked DM file goes: the account's servers in order, then the fallback when it isn't already one of them. */
+export const lockedFileServers = servers => uniq([...(servers ?? []), LOCKED_FILE_FALLBACK])
 
 const loopback = h => h === "localhost" || h === "[::1]" || /^127\./.test(h)
 /** A server URL worth trying: https (http only on this machine), no path slash at the end, not a dead host. */

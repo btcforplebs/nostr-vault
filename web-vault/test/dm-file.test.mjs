@@ -143,3 +143,28 @@ test("a 16-byte nonce from another NIP-17 app opens too", async () => {
   const got = await unwrap(await wrapFor(r, envOf(A), pk(B)), cryptoOf(B), pk(B))
   assert.equal(parseFileLink(got.content)?.nonce, "b".repeat(32))
 })
+
+// Logen 2026-11-14: the default servers refuse ciphertext (Primal 415), so a locked file falls back to nostr.download,
+// last, after the account's own servers; never twice, and never ahead of them.
+test("a locked DM file tries the account's servers, then nostr.download", async () => {
+  const { lockedFileServers, uploadPhoto, LOCKED_FILE_FALLBACK } = await import("../src/net/upload.js")
+  assert.equal(LOCKED_FILE_FALLBACK, "https://nostr.download")
+  assert.deepEqual(lockedFileServers(["https://blossom.primal.net"]), ["https://blossom.primal.net", "https://nostr.download"])
+  assert.deepEqual(lockedFileServers(["https://nostr.download", "https://a.example"]), ["https://nostr.download", "https://a.example"])
+  assert.deepEqual(lockedFileServers(undefined), ["https://nostr.download"])
+
+  const ctx = { session: { pubkey: pk(A) }, signer: { signEvent: async t => finalizeEvent(t, A) } }
+  const puts = []
+  const fetch = async (url, init) => {
+    if (init.method === "HEAD") return new Response(null, { status: 200 })
+    puts.push(url)
+    if (!url.startsWith("https://nostr.download")) return new Response("no", { status: 415, headers: { "X-Reason": "type not allowed" } })
+    const sha256 = [...new Uint8Array(await crypto.subtle.digest("SHA-256", init.body))].map(b => b.toString(16).padStart(2, "0")).join("")
+    return Response.json({ sha256, url: `https://nostr.download/${sha256}`, type: "application/octet-stream" })
+  }
+  const photo = new File([new Uint8Array([1, 2, 3, 4])], "p.jpg", { type: "image/jpeg" })
+  const msg = await encryptedPhoto(photo, { upload: f => uploadPhoto(f, { ctx, servers: lockedFileServers(["https://blossom.primal.net"]), fetch, raw: true }) })
+  assert.deepEqual(puts, ["https://blossom.primal.net/upload", "https://nostr.download/upload"])
+  assert.equal(msg.kind ?? 15, 15)
+  assert.ok(JSON.stringify(msg).includes("https://nostr.download/"))
+})

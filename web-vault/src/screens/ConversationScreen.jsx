@@ -14,7 +14,7 @@ import { dmPrefill, dropFailed, hasLegacy, sendMessage, sendFailure, threadShown
 import { preparePhoto } from "../net/dm-photo.js"
 import { encryptedPhoto } from "../net/dm-file.js"
 import { markRead } from "../net/dm-read.js"
-import { mediaServers, uploadPhoto } from "../net/upload.js"
+import { lockedFileServers, mediaServers, uploadPhoto } from "../net/upload.js"
 import { useMessages, SignerTrouble, AuthTrouble, OpenMore } from "./MessagesScreen.jsx"
 
 /** Return sends, as on the Mac app and every desktop chat; Shift or Option + Return is a new line. On a touch screen
@@ -84,7 +84,7 @@ export function ConversationScreen({ ctx, peer }) {
       await sendMessage(ctx, peer, t, sending ? {
         preview: t ? `${t}\n(photo)` : "(photo)",
         // Encrypted before it goes up (dm-file.js): the server gets ciphertext, the key goes inside the sealed kind 15.
-        prepare: async () => encryptedPhoto(sending.file, { upload: async f => uploadPhoto(f, { ctx, servers: await mediaServers(ctx), raw: true }) }),
+        prepare: async () => encryptedPhoto(sending.file, { upload: async f => uploadPhoto(f, { ctx, servers: lockedFileServers(await mediaServers(ctx)), raw: true }) }),
       } : {})
     } catch (err) { setStatus(sendFailure(err)) } finally { if (sending) URL.revokeObjectURL(sending.preview) }
   }

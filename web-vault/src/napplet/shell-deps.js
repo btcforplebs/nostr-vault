@@ -6,7 +6,7 @@ import { pool, publishRelays, DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { firstTaken } from "../net/actions.js"
 import { checkSigned } from "../net/sync.js"
 import { getBlocks } from "../net/blocks.js"
-import { uploadPhoto, mediaServers, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
+import { uploadPhoto, mediaServers, lockedFileServers, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
 import { parseBlossomUri, candidateServers, fetchVerified, readCapped, MAX_BYTES, serverOrigin, authorServers } from "../net/blossom-uri.js"
 import { showNotice } from "../net/notify-show.js"
 import { blockedUrl } from "./fetch-policy.js"
@@ -176,7 +176,7 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
         const before = new Set([...getMessages().messages.values()].map(m => m.id))
         const preview = photo ? (text ? `${text}\n(photo)` : "(photo)") : null
         let sentText = text
-        const opts = photo ? { preview, prepare: async () => { const m = await encryptedPhoto(await preparePhoto(photo), { upload: async f => uploadPhoto(f, { ctx, servers: await mediaServers(ctx), raw: true }) }); sentText = m.shown; return m } } : {}
+        const opts = photo ? { preview, prepare: async () => { const m = await encryptedPhoto(await preparePhoto(photo), { upload: async f => uploadPhoto(f, { ctx, servers: lockedFileServers(await mediaServers(ctx)), raw: true }) }); sentText = m.shown; return m } } : {}
         try { await sendMessage(ctx, peer, text, opts) } catch (e) {
           const failed = findMine(getMessages().messages, ctx.session.pubkey, peer, preview ?? text, true, before) ?? findMine(getMessages().messages, ctx.session.pubkey, peer, sentText, true, before)
           throw Object.assign(new Error(String(e?.fixed ? e.message : "The message wasn't sent.")), { failedId: failed?.id })

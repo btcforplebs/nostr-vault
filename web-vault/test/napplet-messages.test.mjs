@@ -193,7 +193,7 @@ test("messages pane: shell deps get search names, follows and a once-per-person 
   assert.match(pane, /searchName, follows: pk => ctxRef\.current\.account\.follows\.includes\(pk\)/)
   assert.match(pane, /const fresh = pks\.filter\(pk => !looked\.current\.has\(pk\)\)/)
   const deps = fs.readFileSync(new URL("../src/napplet/shell-deps.js", import.meta.url), "utf8")
-  assert.match(deps, /prepare: async \(\) => \{ const m = await encryptedPhoto\(await preparePhoto\(photo\), \{ upload: async f => uploadPhoto\(f, \{ ctx, servers: await mediaServers\(ctx\), raw: true \}\) \}\); sentText = m\.shown; return m \}/)
+  assert.match(deps, /prepare: async \(\) => \{ const m = await encryptedPhoto\(await preparePhoto\(photo\), \{ upload: async f => uploadPhoto\(f, \{ ctx, servers: lockedFileServers\(await mediaServers\(ctx\)\), raw: true \}\) \}\); sentText = m\.shown; return m \}/)
 })
 
 test("dm: a failed send hands back its message with the reason on it, never the result's error (the shim would drop it all)", async () => {
