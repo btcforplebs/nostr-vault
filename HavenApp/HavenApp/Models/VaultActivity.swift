@@ -92,7 +92,9 @@ struct VaultActivity: Identifiable, Equatable {
     /// Builds the list. `noteKinds` are the kinds the Vault lists (the relay
     /// tab's); `isHidden` drops blocked authors and, for posts that tag you,
     /// replies from outside your network (the Notes list hides those too).
-    /// `follows` are (pubkey, unix time) from the follower ledger.
+    /// `follows` are (pubkey, unix time) from the follower ledger; only those
+    /// `isOutside` lets in get a line (Logen 2026-11-14), and none under
+    /// `outsideOnly`: outside followers are the Followers page's ··· list.
     /// `outsideOnly` turns it round for the "Outside your web" filter: only
     /// the posts tagging you whose authors `isOutside` says are outside, and
     /// no likes, zaps, reposts or follows.
@@ -238,7 +240,7 @@ struct VaultActivity: Identifiable, Equatable {
 
         // Follows on one day fold into one line, like a notifications page.
         var followDays: [String: [(pubkey: String, at: Int64)]] = [:]
-        for follow in follows where !outsideOnly && follow.pubkey != owner && !isBlocked(follow.pubkey) {
+        for follow in follows where !outsideOnly && follow.pubkey != owner && !isBlocked(follow.pubkey) && !isOutside(follow.pubkey) {
             followDays[dayKey(follow.at), default: []].append(follow)
         }
         let followLines = followDays.map { day, list in

@@ -1305,6 +1305,7 @@
 		973373F27C99D359F4883EDE /* ModeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA14EC3D2D24B98A94F93B56 /* ModeButton.swift */; };
 		973C4F0062DF084625E96527 /* SetupWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC2FFB887BB8F9193F493F61 /* SetupWizardView.swift */; };
 		973E59C86B8FB1CECC2BBEA5 /* FeedNoteRow+Media.swift in Sources */ = {isa = PBXBuildFile; fileRef = D76A00C84747256991A76CA7 /* FeedNoteRow+Media.swift */; };
+		973F789C1EA161EB41F60B88 /* FollowerSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7DEF7BD10034E4F4D917073 /* FollowerSnapshot.swift */; };
 		97526DB1DC84E45294A2361B /* BookmarkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEFACBF119702896AC43B502 /* BookmarkService.swift */; };
 		977686D6FA85A360A19AF0DF /* MacSyncSettingsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CCBDC2A4AF4AEB828097AEC /* MacSyncSettingsPage.swift */; };
 		977D8A8FE2D04E7801C346EF /* MediaGalleryLiveNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8DDCBDBDC878D99921558E0 /* MediaGalleryLiveNotes.swift */; };
@@ -1855,6 +1856,7 @@
 		D5F589CB24E1407D75DEF741 /* MeshIdentityReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FA16722B2CD63AE6DC314B4 /* MeshIdentityReset.swift */; };
 		D62C7BC59CDDCA4753A97851 /* FeedView+ToolbarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D2901CEE1478D0AE933B4BC /* FeedView+ToolbarMenu.swift */; };
 		D63FFB1B0B8C7246DA32939B /* MacRelaySyncStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8152C31E47774D859AE128B /* MacRelaySyncStatusView.swift */; };
+		D653A36AC1BBB40D91E501F9 /* FollowerSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7DEF7BD10034E4F4D917073 /* FollowerSnapshot.swift */; };
 		D6677D646D5A28DC87C87662 /* MenuBarView+MacShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B050F745FF2F61061BF7D55 /* MenuBarView+MacShell.swift */; };
 		D6B489ACF9177452BF641CAE /* BitcoinSweepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9AD59B52FA7C675CB3E04BC /* BitcoinSweepView.swift */; };
 		D6C2C65E3BB5872D2DC05C7F /* EmojiVaultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD769B0ACEDBE0D0B6F71210 /* EmojiVaultView.swift */; };
@@ -3188,6 +3190,7 @@
 		C6D755F2DDBC1B8F835D3EFF /* StreamingBlobDownload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingBlobDownload.swift; sourceTree = "<group>"; };
 		C6EE10E9C93BC7D32CD6D065 /* ComposeView+Chrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ComposeView+Chrome.swift"; sourceTree = "<group>"; };
 		C6FB94CB9CC1F47E43D8AB15 /* PollStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollStore.swift; sourceTree = "<group>"; };
+		C7DEF7BD10034E4F4D917073 /* FollowerSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowerSnapshot.swift; sourceTree = "<group>"; };
 		C81B813614AC332D9C184C78 /* FollowingBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowingBackupService.swift; sourceTree = "<group>"; };
 		C83D9254A503D288F4DA7B70 /* FipsMeshSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FipsMeshSettings.swift; sourceTree = "<group>"; };
 		C86A6AE71C1034FAB5E689FE /* DashboardHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardHelpers.swift; sourceTree = "<group>"; };
@@ -4476,6 +4479,7 @@
 				C8B5671ABD01B4F4929AE5BB /* FileNote.swift */,
 				093D54B83D57F902ED44E397 /* FillYourFeedGuide.swift */,
 				0C48773D215B6C7086533AEF /* FipsURL.swift */,
+				C7DEF7BD10034E4F4D917073 /* FollowerSnapshot.swift */,
 				BFE4FF1BF35D7CF7BEF59AD4 /* FollowingSnapshot.swift */,
 				D27AC592B3A258559EAF7732 /* FollowListLogic.swift */,
 				6A66B764FCF1CB44F6DBFBEB /* GatedArticle.swift */,
@@ -5769,6 +5773,7 @@
 				C48109A117C642C10E628398 /* FollowListLogic.swift in Sources */,
 				F92E912DC9EBF56167EF289E /* FollowListView.swift in Sources */,
 				01BF75E899D8D7E974F5796C /* FollowNotificationBanner.swift in Sources */,
+				973F789C1EA161EB41F60B88 /* FollowerSnapshot.swift in Sources */,
 				CCDD2DE2A5F8B1ECDA15E248 /* FollowingBackupService.swift in Sources */,
 				3AEB8B86A7A7F02EB9885F69 /* FollowingBackupView.swift in Sources */,
 				57FED2A701DF696811DE4001 /* FollowingFeedState.swift in Sources */,
@@ -6901,6 +6906,7 @@
 				EE5DFB36A8769509D2517FBD /* FollowListLogic.swift in Sources */,
 				F49E32FCADAF1E2E1573892F /* FollowListView.swift in Sources */,
 				B2F24DD85032BA530BD637F8 /* FollowNotificationBanner.swift in Sources */,
+				D653A36AC1BBB40D91E501F9 /* FollowerSnapshot.swift in Sources */,
 				B90CCC03D296B8EDD6E7AC90 /* FollowingBackupService.swift in Sources */,
 				9A218E4A2B203DE0C9D92A48 /* FollowingBackupView.swift in Sources */,
 				204A8F9BC80EEE068D97459E /* FollowingFeedState.swift in Sources */,

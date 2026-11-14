@@ -152,11 +152,7 @@ final class LocalNotificationService {
             announceDM(id: id, type: type, author: author, recipientHex: recipientHex, npub: npub)
             return
         case .follow:
-            if NotificationPolicy.followIsNamed(author, trusted: trusted) {
-                announceFollow(follower: author, npub: npub)
-            } else {
-                announceFoldedFollow(follower: author, npub: npub)
-            }
+            announceFollow(follower: author, npub: npub)
             return
         case .note:
             break
@@ -283,60 +279,8 @@ final class LocalNotificationService {
         }
     }
 
-    /// Serialises the folded alert's read-then-replace, so two strangers
-    /// arriving together are both counted.
-    private var foldedFollowChain: Task<Void, Never>?
-
-    /// A stranger's follow joins one nameless "N new followers" alert per
-    /// account (NotificationPolicy.followIsNamed). The count and the latest
-    /// strangers ride in its userInfo, so the count survives a relaunch, and
-    /// once the alert is tapped or swiped away the next stranger starts it
-    /// over. Only the first stranger makes a sound: each later one just
-    /// changes the number, so a burst of follows buzzes the phone once.
-    private func announceFoldedFollow(follower: String, npub: String) {
-        guard NotificationPolicy.isPubkeyHex(follower) else { return }
-        let previous = foldedFollowChain
-        foldedFollowChain = Task { @MainActor in
-            await previous?.value
-            let id = "followers-\(npub)"
-            let showing = await Self.foldedFollowersShowing(identifier: "haven-relay-\(id)")
-            let folded = NotificationPolicy.foldedFollowers(showing: showing, adding: follower)
-            let (title, body) = NotificationPolicy.foldedFollowersText(count: folded.count)
-            let extra: [String: Any] = [Self.foldedFollowersKey: folded.members,
-                                        Self.foldedFollowerCountKey: folded.count]
-            if appInForeground {
-                // An alert already waiting in Notification Center is updated
-                // there below, so the pill only needs filing if there is none.
-                showInAppBanner(id: id, type: "followers", title: title, body: body, npub: npub,
-                                fileIfMissed: showing.isShowing ? nil : extra)
-                // The alert waiting in Notification Center still counts too,
-                // or its number would go backwards after the next stranger.
-                if showing.isShowing {
-                    await post(id: id, type: "followers", title: title, body: body, npub: npub, extra: extra, quiet: true)
-                }
-            } else {
-                await post(id: id, type: "followers", title: title, body: body, npub: npub,
-                           extra: extra, quiet: showing.isShowing)
-            }
-        }
-    }
-
-    private static let foldedFollowersKey = "notif_followers"
-    private static let foldedFollowerCountKey = "notif_follower_count"
     /// A replacement that only updates what is on screen: no sound, no banner.
     static let quietKey = "notif_quiet"
-
-    /// What the folded alert on screen (or about to be) already counts.
-    private static func foldedFollowersShowing(identifier: String) async -> NotificationPolicy.FoldedFollowers {
-        let center = UNUserNotificationCenter.current()
-        let pending = await center.pendingNotificationRequests()
-            .first { $0.identifier == identifier }?.content.userInfo
-        let delivered = await center.deliveredNotifications()
-            .first { $0.request.identifier == identifier }?.request.content.userInfo
-        guard let info = pending ?? delivered else { return .init() }
-        let members = (info[foldedFollowersKey] as? [String]) ?? []
-        return .init(members: members, count: (info[foldedFollowerCountKey] as? Int) ?? members.count)
-    }
 
     /// How long a NIP-04 DM marker waits for the inbox to decrypt its
     /// message (it names its sender, so it can alert without). A gift wrap
@@ -676,7 +620,7 @@ final class LocalNotificationService {
             RelayFocus.request(type: "followers", eventId: "")
             NotificationCenter.default.post(name: .havenOpenProfile, object: id)
         case "followers":
-            // The folded strangers' alert: their list, nobody named.
+            // A folded strangers' alert from before follow alerts were in-web only.
             NotificationCenter.default.post(name: .havenOpenRelayFollowers, object: nil)
             RelayFocus.request(type: "followers", eventId: "")
         case "dm", "giftwrap":
@@ -701,8 +645,7 @@ final class LocalNotificationService {
         Task { await post(id: id, type: type, title: title, body: body, npub: npub, extra: extra, quiet: quiet) }
     }
 
-    /// Returns once the system has filed the request, so the folded alert's
-    /// next read-back sees it (announceFoldedFollow).
+    /// Returns once the system has filed the request.
     private func post(id: String, type: String, title: String, body: String, npub: String,
                       extra: [String: Any] = [:], quiet: Bool = false) async {
         let content = UNMutableNotificationContent()

@@ -164,12 +164,14 @@ extension VaultView {
 
     private func trailingPill(buttonWidth: CGFloat, spacing: CGFloat) -> some View {
         HStack(spacing: spacing) {
-            if viewMode != .media && viewMode != .bookmarks {
+            // Followers has no buttons up front: its one filter is in ···.
+            if viewMode != .media && viewMode != .bookmarks && viewMode != .followers {
                 trailingFilters(spacing: spacing)
                 Divider().frame(height: 20).padding(.horizontal, 2)
             }
             searchToggleButton
             if viewMode == .activity { activityMoreMenu }
+            if viewMode == .followers { followersMoreMenu }
         }
         .environment(\.filterButtonWidth, buttonWidth)
     }
@@ -203,10 +205,7 @@ extension VaultView {
             case .zaps:
                 filterButton(.zaps(.onMyNotes), "tray.and.arrow.down.fill", "Received", zapsFilter == .onMyNotes) { zapsFilter = .onMyNotes }
                 filterButton(.zaps(.myZaps), "tray.and.arrow.up.fill", "Given", zapsFilter == .myZaps) { zapsFilter = .myZaps }
-            case .followers:
-                filterButton(.followers(.new), "sparkles", "New", followersFilter == .new) { followersFilter = .new }
-                filterButton(.followers(.all), "person.3.fill", "All", followersFilter == .all) { followersFilter = .all }
-            case .media, .bookmarks, .messages:
+            case .media, .bookmarks, .messages, .followers:
                 EmptyView()
             }
         }
@@ -242,14 +241,27 @@ extension VaultView {
     /// The Vault page's ···: the filter that doesn't earn a slot up front.
     /// Lit while it is on.
     var activityMoreMenu: some View {
-        let outsideOn = activityFilter == .outside
-        return Menu {
+        outsideMoreMenu(.activity(.outside), isOn: activityFilter == .outside) {
+            activityFilter = activityFilter == .outside ? .all : .outside
+        }
+    }
+
+    /// The Followers page's ···: Outside your web, as on the Notes page
+    /// (Logen 2026-11-14). Off, the list is the followers in your web.
+    var followersMoreMenu: some View {
+        outsideMoreMenu(.followers(.outside), isOn: followersFilter == .outside) {
+            followersFilter = followersFilter == .outside ? .inWeb : .outside
+        }
+    }
+
+    private func outsideMoreMenu(_ choice: VaultFilterChoice, isOn outsideOn: Bool,
+                                 toggle: @escaping () -> Void) -> some View {
+        Menu {
             Button {
-                activityFilter = outsideOn ? .all : .outside
-                noteFilterToggle(.activity(.outside), nowOn: !outsideOn)
+                toggle()
+                noteFilterToggle(choice, nowOn: !outsideOn)
             } label: {
-                Label(VaultFilterChoice.activity(.outside).name(scope: noteScope),
-                      systemImage: outsideOn ? "checkmark" : VaultFilterChoice.activity(.outside).icon)
+                Label(choice.name(scope: noteScope), systemImage: outsideOn ? "checkmark" : choice.icon)
             }
         } label: {
             Image(systemName: outsideOn ? "ellipsis.circle.fill" : "ellipsis")
@@ -328,7 +340,7 @@ extension VaultView {
         case .zaps:
             return (displayZappedNotes.count, displayZappedNotes.count >= maxDisplayedItems)
         case .followers(let filter):
-            return (followerSnapshot?.entries(for: filter).count ?? 0, false)
+            return (followerSnapshot?.entries(for: filter, isOutside: followerIsOutside(owner: followersOwnerHex)).count ?? 0, false)
         }
     }
 
@@ -585,14 +597,26 @@ extension VaultView {
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.platformSeparator, lineWidth: 0.8))
     }
 
+    /// The Mac's Followers filter: ··· with Outside your web, like Notes.
+    /// Off, the list is the followers in your web.
     var followersFilterView: some View {
-        HStack(spacing: 2) {
-            FilterButton(title: "New", icon: "sparkles", color: .havenPurple, isSelected: followersFilter == .new) {
-                tapFilter(.followers(.new), followersFilter == .new) { followersFilter = .new }
+        let on = followersFilter == .outside
+        return HStack(spacing: 2) {
+            Menu {
+                Button {
+                    followersFilter = on ? .inWeb : .outside
+                    noteFilterToggle(.followers(.outside), nowOn: !on)
+                } label: {
+                    Label("Outside your web", systemImage: on ? "checkmark" : VaultFilterChoice.followers(.outside).icon)
+                }
+            } label: {
+                Image(systemName: on ? "ellipsis.circle.fill" : "ellipsis.circle")
+                    .foregroundColor(on ? .havenPurple : .secondary)
             }
-            FilterButton(title: "All", icon: "person.3.fill", color: .secondary, isSelected: followersFilter == .all) {
-                tapFilter(.followers(.all), followersFilter == .all) { followersFilter = .all }
-            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .fixedSize()
+            .help("More filters")
         }
         .padding(4)
         .background(Color.platformTertiaryGroupedBackground)

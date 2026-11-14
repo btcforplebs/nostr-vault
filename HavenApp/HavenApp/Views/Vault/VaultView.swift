@@ -55,7 +55,7 @@ struct VaultView: View {
     @State var vaultShowsMedia = false
     @State var likesFilter: LikesFilter = .onMyNotes
     @State var zapsFilter: ZapsFilter = .onMyNotes
-    @State var followersFilter: FollowersFilter = .new
+    @State var followersFilter: FollowersFilter = .inWeb
     @State var followerSnapshot: FollowerSnapshot?
 
     // Cached display data (computed in background)
@@ -268,8 +268,8 @@ struct VaultView: View {
             }
         case .followers:
             switch followersFilter {
-            case .new: return "New Followers"
-            case .all: return "All Followers"
+            case .inWeb: return "Followers"
+            case .outside: return "Followers Outside Your Web"
             }
         case .bookmarks, .messages:
             return ""
