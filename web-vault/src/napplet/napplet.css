@@ -44,3 +44,9 @@
 .wot-pane { display: flex; flex-direction: column; height: 100dvh; }
 .wot-host { flex: 1; min-height: 0; padding: 0; display: flex; }
 .wot-host .napplet-frame { border: 0; border-radius: 0; background: #000; }
+/* Messages as the Messages napplet (MessagesPane.jsx, P7). */
+/* Exactly the screen under the Vault menu: the napplet scrolls inside its frame, so its own header (Back, the name)
+   stays put instead of the page scrolling it away. */
+.messages-pane { display: flex; flex-direction: column; height: 100dvh; }
+.messages-host { flex: 1; min-height: 0; padding: 0; display: flex; }
+.messages-host .napplet-frame { border: 0; border-radius: 0; height: 100%; min-height: 0; background: var(--bg); }

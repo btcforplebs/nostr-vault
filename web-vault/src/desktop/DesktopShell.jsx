@@ -8,7 +8,7 @@ import { FeedScreen } from "../screens/FeedScreen.jsx"
 import { SettingsScreen } from "../screens/SettingsScreen.jsx"
 // Every other screen comes as its own chunk, when it is first shown (screens/lazy.jsx), the same wrappers the phone
 // layout uses: the boot bundle carries the desktop layout and the Feed, not Compose's editors or the Vault's gallery.
-import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, NappletShell, ReaderPane, WotPane } from "../screens/lazy-screens.js"
+import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, NappletShell, ReaderPane, WotPane, MessagesPane } from "../screens/lazy-screens.js"
 import { nappletsOn } from "../napplet/flag.js"
 import { compose } from "../net/actions.js"
 import { parseHash, withParam, sideOf, SPLIT, FULL } from "./routes.js"
@@ -72,7 +72,7 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
           {other ? <PersonScreen key={view.arg} ctx={ctx} pubkey={view.arg} />
             : view.route === "profile" ? <ProfileScreen ctx={ctx} />
             : view.route === "vault" ? <VaultScreen ctx={ctx} desk />
-            : view.route === "messages" ? <MessagesScreen ctx={ctx} />
+            : view.route === "messages" ? (nappletsOn() ? <MessagesPane ctx={ctx} open={dm} /> : <MessagesScreen ctx={ctx} />)
             : view.route === "notifications" ? <NotificationsScreen ctx={ctx} />
             : view.route === "bookmarks" ? <BookmarksScreen ctx={ctx} />
             : view.route === "emoji" ? <EmojiScreen ctx={ctx} />
@@ -84,7 +84,8 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
 
   let detail = null
   if (view.route === "messages") {
-    if (dm) detail = <div class="desk-pane"><ConversationScreen key={dm} ctx={ctx} peer={dm} /></div>
+    // With napplets on, the Messages napplet shows the conversation itself (MessagesPane).
+    if (dm && !nappletsOn()) detail = <div class="desk-pane"><ConversationScreen key={dm} ctx={ctx} peer={dm} /></div>
   } else if (note) {
     detail = <ThreadPane key={note} ctx={ctx} id={note} onClose={closeDetail} />
   }

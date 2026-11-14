@@ -31,7 +31,7 @@ test("manifest: the artifact must hash to x; required domains the shell lacks re
   assert.doesNotThrow(() => checkArtifact(m, H))
   assert.throws(() => checkArtifact(m, "f".repeat(64)), /not the manifest's/)
   assert.deepEqual(domainsFor(m), ["shell", "identity", "theme"]) // ble is optional and not ours: left out
-  assert.throws(() => domainsFor(parseManifest(manifest([["d", "x"], ["x", H], ["R", "dm"]]))), /can't run it: no dm/)
+  assert.throws(() => domainsFor(parseManifest(manifest([["d", "x"], ["x", H], ["R", "llm"]]))), /can't run it: no llm/)
   assert.equal(nappletKey({ publisher: PUB, dTag: "x", hash: H }), `${PUB}:x:${H}`)
   assert.equal(nappletLine({ publisher: PUB, dTag: "x" }), `${PUB}:x`)
 })

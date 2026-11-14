@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Messages</title>
+<style>
+  :root { color-scheme: dark; --bg: #000; --text: #f2f2f2; --muted: #9a9a9f; --hair: #26262a; --s1: #111113; --s2: #1c1c1f; --accent: #e67326; --mine: #e67326;
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text); }
+  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 8px 14px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--hair); }
+  header h1 { flex: 1; margin: 0; font-size: 17px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button, input, textarea { font: inherit; color: var(--text); }
+  button { background: var(--s2); border: 1px solid var(--hair); border-radius: 999px; min-height: 36px; padding: 0 14px; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 650; }
+  button.ghost { background: none; border: 0; color: var(--muted); padding: 0 6px; }
+  button:disabled { opacity: .45; cursor: default; }
+  .tabs { display: flex; gap: 6px; padding: 10px 14px 4px; }
+  .tabs button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+  #list { list-style: none; margin: 0; padding: 0 0 120px; }
+  .row { display: grid; grid-template-columns: 48px 1fr auto; gap: 12px; align-items: center; width: 100%; padding: 10px 14px; background: none; border: 0; border-bottom: 1px solid var(--hair); border-radius: 0; text-align: left; min-height: 68px; }
+  .av { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; display: grid; place-items: center; font-weight: 700; color: #fff; }
+  .who { min-width: 0; }
+  .who b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who span { display: block; color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { text-align: right; color: var(--muted); font-size: 12px; display: grid; gap: 4px; justify-items: end; }
+  .badge { background: var(--accent); color: #000; font-weight: 700; border-radius: 999px; min-width: 20px; padding: 0 6px; font-size: 12px; line-height: 20px; text-align: center; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 20px; }
+  #thread { display: flex; flex-direction: column; min-height: 100vh; }
+  #bubbles { flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 12px 12px 12px; }
+  .b { max-width: 80%; padding: 8px 12px; border-radius: 18px; background: var(--s2); white-space: pre-wrap; overflow-wrap: anywhere; align-self: flex-start; }
+  .b.mine { align-self: flex-end; background: var(--mine); color: #000; }
+  .b.failed { outline: 1px solid #ff6b5e; }
+  .b time { display: block; font-size: 11px; opacity: .65; margin-top: 2px; }
+  .day { align-self: center; color: var(--muted); font-size: 12px; margin: 8px 0 2px; }
+  .compose { position: sticky; bottom: 0; display: flex; gap: 8px; align-items: flex-end; padding: 10px 12px 104px; background: var(--bg); border-top: 1px solid var(--hair); }
+  .compose textarea { flex: 1; resize: none; min-height: 42px; max-height: 160px; background: var(--s2); border: 1px solid var(--hair); border-radius: 20px; padding: 10px 14px; }
+  #new { padding: 14px; display: grid; gap: 10px; }
+  #new input { background: var(--s2); border: 1px solid var(--hair); border-radius: 12px; padding: 12px; }
+  .note { color: var(--muted); font-size: 13px; padding: 6px 14px; }
+</style>
+</head>
+<body>
+<section id="inbox">
+  <header><h1>Messages</h1><button id="newBtn" class="primary">New</button></header>
+  <div class="tabs" role="group" aria-label="Show"><button id="tInbox" aria-pressed="true">Inbox</button><button id="tReq" aria-pressed="false">Requests</button></div>
+  <div class="note" id="status" role="status"></div>
+  <ul id="list"></ul>
+</section>
+<section id="new" hidden aria-label="New message">
+  <header style="margin:-14px -14px 0"><button class="ghost" id="newBack">‹ Back</button><h1>New message</h1></header>
+  <label for="to">To: an npub or a hex public key</label>
+  <input id="to" autocomplete="off" spellcheck="false" placeholder="npub1…">
+  <div><button class="primary" id="go" disabled>Open the conversation</button></div>
+</section>
+<section id="thread" hidden aria-label="Conversation">
+  <header><button class="ghost" id="back">‹ Back</button><div class="av" id="tav" style="width:32px;height:32px;font-size:14px"></div><h1 id="tname"></h1></header>
+  <div class="note" id="older" hidden><button id="olderBtn">Older messages</button></div>
+  <div id="bubbles" role="log" aria-live="polite"></div>
+  <div class="compose" id="form"><textarea id="text" rows="1" placeholder="Message" aria-label="Message"></textarea><button type="button" class="primary" id="send" disabled>Send</button></div>
+</section>
+<script>
+// The Messages napplet (plan P7): your direct messages through NAP-DM. This frame has no network and no key: the
+// shell reads, decrypts and sends with its own DM stack (NIP-17 sealed and gift-wrapped there, NIP-42 AUTH there) and
+// hands over only text. Inbox and Requests (strangers, as the classic page splits them), a conversation with older
+// pages, live messages, and a new conversation from an npub. The shell opens one by intent (napplet:dm/open { pubkey }).
+
+// ---- pure (test/napplet-messages.test.mjs loads this block) ----
+const HEX = /^[0-9a-f]{64}$/
+const B32 = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+/** "npub1…" or "nprofile1…" or 64 hex -> hex pubkey, else null. */
+function pubkeyOf(input) {
+  const s = String(input ?? "").trim().replace(/^nostr:/i, "").toLowerCase()
+  if (HEX.test(s)) return s
+  const p = s.lastIndexOf("1")
+  if (p < 1 || !/^n(pub|profile)$/.test(s.slice(0, p))) return null
+  const words = []
+  for (const c of s.slice(p + 1, -6)) { const v = B32.indexOf(c); if (v < 0) return null; words.push(v) }
+  let acc = 0, bits = 0; const bytes = []
+  for (const w of words) { acc = (acc << 5) | w; bits += 5; while (bits >= 8) { bits -= 8; bytes.push((acc >> bits) & 255) } }
+  let key = null
+  if (s.startsWith("npub1")) key = bytes.length === 32 ? bytes : null
+  else for (let i = 0; i + 2 <= bytes.length;) { const t = bytes[i], l = bytes[i + 1]; if (t === 0 && l === 32) { key = bytes.slice(i + 2, i + 34); break } i += 2 + l }
+  const hex = key ? key.map(x => x.toString(16).padStart(2, "0")).join("") : ""
+  return HEX.test(hex) ? hex : null
+}
+/** Merge a page or a live message into a thread: one per id, oldest first. */
+function mergeThread(have, more) {
+  const by = new Map(have.map(m => [m.id, m]))
+  for (const m of more) if (m && typeof m.id === "string") by.set(m.id, m)
+  return [...by.values()].sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1))
+}
+function dayOf(ts, now = Date.now()) {
+  const d = new Date(ts * 1000), t = new Date(now), start = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const days = Math.round((start(t) - start(d)) / 86400000)
+  return days === 0 ? "Today" : days === 1 ? "Yesterday" : d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: d.getFullYear() === t.getFullYear() ? undefined : "numeric" })
+}
+function ago(ts, now = Date.now() / 1000) { const s = Math.max(0, now - ts); return s < 60 ? "now" : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d` }
+// ---- end pure ----
+
+const n = window.napplet || {}
+const $ = id => document.getElementById(id)
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
+let me = "", convs = [], showReq = false, open = null, msgs = [], cursor = null, sending = false
+const pics = new Map(), labels = new Map()
+const nameOf = pk => labels.get(pk) || `${pk.slice(0, 10)}…`
+const hue = pk => parseInt(pk.slice(0, 6), 16) % 360
+
+function avatar(node, pk, url) {
+  node.style.background = `hsl(${hue(pk)} 29% 48%)`; node.textContent = (Array.from(nameOf(pk))[0] || "?").toUpperCase()
+  if (!url || !n.resource) return
+  ;(pics.get(url) ?? (pics.set(url, n.resource.bytes(url).then(b => URL.createObjectURL(b)).catch(() => "")), pics.get(url)))
+    .then(src => { if (!src) return; const i = el("img", node.className); i.alt = ""; i.src = src; i.style.cssText = node.style.cssText; i.id = node.id; node.replaceWith(i) })
+}
+
+async function loadList() {
+  try {
+    const page = await n.dm.conversations({ limit: 200 })
+    convs = page.conversations
+    for (const c of convs) { const p = c.participants[0]; if (p?.label) labels.set(p.pubkey, p.label) }
+    $("status").textContent = ""
+  } catch (e) { $("status").textContent = `Can't read your messages here: ${e.message}` }
+  drawList()
+}
+function drawList() {
+  const inbox = convs.filter(c => !c.request), req = convs.filter(c => c.request)
+  const unreadReq = req.reduce((a, c) => a + c.unread, 0)
+  $("tReq").textContent = req.length ? `Requests · ${req.length}${unreadReq ? ` (${unreadReq} new)` : ""}` : "Requests"
+  const list = showReq ? req : inbox
+  $("list").replaceChildren(...(list.length ? list.map(c => {
+    const pk = c.participants[0].pubkey, li = el("li"), b = el("button", "row"), av = el("div", "av"), who = el("div", "who"), meta = el("div", "meta")
+    avatar(av, pk, c.participants[0].avatar)
+    who.append(el("b", "", nameOf(pk)), el("span", "", `${c.last?.senderPubkey === me ? "You: " : ""}${c.last?.content ?? ""}`))
+    meta.append(el("span", "", c.updatedAt ? ago(c.updatedAt) : "")); if (c.unread) meta.append(el("span", "badge", String(c.unread)))
+    b.append(av, who, meta); b.onclick = () => openThread(pk, c.participants[0].avatar)
+    li.append(b); return li
+  }) : [el("li", "empty", showReq ? "No requests. Messages from people you don't follow land here." : "No messages yet. Start one with New.")]))
+}
+$("tInbox").onclick = () => { showReq = false; $("tInbox").setAttribute("aria-pressed", "true"); $("tReq").setAttribute("aria-pressed", "false"); drawList() }
+$("tReq").onclick = () => { showReq = true; $("tInbox").setAttribute("aria-pressed", "false"); $("tReq").setAttribute("aria-pressed", "true"); drawList() }
+
+function show(which) { for (const s of ["inbox", "new", "thread"]) $(s).hidden = s !== which; scrollTo(0, which === "thread" ? document.body.scrollHeight : 0) }
+async function openThread(pk, url) {
+  open = pk; msgs = []; cursor = null
+  $("tname").textContent = nameOf(pk); avatar($("tav"), pk, url || convs.find(c => c.id === pk)?.participants[0].avatar)
+  $("bubbles").replaceChildren(el("div", "day", "Loading…")); $("text").value = ""; syncSend()
+  show("thread")
+  try { const page = await n.dm.messages({ conversationId: pk, limit: 50 }); msgs = mergeThread([], page.messages); cursor = page.cursor ?? null } catch (e) { msgs = []; $("bubbles").replaceChildren(el("div", "day", `Couldn't open it: ${e.message}`)); return }
+  drawThread(true)
+  loadList() // its unread count is gone now
+}
+function drawThread(toEnd) {
+  $("older").hidden = !cursor
+  const out = []; let day = ""
+  for (const m of msgs) {
+    const d = dayOf(m.createdAt); if (d !== day) { day = d; out.push(el("div", "day", d)) }
+    const b = el("div", `b${m.senderPubkey === me ? " mine" : ""}${m.status === "failed" ? " failed" : ""}`, m.content)
+    b.append(el("time", "", m.status === "failed" ? "Not sent" : new Date(m.createdAt * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })))
+    out.push(b)
+  }
+  $("bubbles").replaceChildren(...(out.length ? out : [el("div", "day", "No messages yet. Say hello.")]))
+  if (toEnd) scrollTo(0, document.body.scrollHeight)
+}
+$("olderBtn").onclick = async () => { const page = await n.dm.messages({ conversationId: open, cursor, limit: 50 }).catch(() => null); if (!page) return; msgs = mergeThread(msgs, page.messages); cursor = page.cursor ?? null; drawThread(false) }
+$("back").onclick = () => { open = null; show("inbox"); loadList() }
+const syncSend = () => { $("send").disabled = sending || !$("text").value.trim() }
+$("text").oninput = () => { syncSend(); $("text").style.height = "auto"; $("text").style.height = `${Math.min(160, $("text").scrollHeight)}px` }
+// No <form>: the frame's sandbox has no allow-forms, so a submit never reaches its handler.
+$("text").onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendNow() } }
+$("send").onclick = () => sendNow()
+async function sendNow() {
+  const text = $("text").value.trim(); if (!text || sending || !open) return
+  sending = true; syncSend()
+  const to = open
+  try {
+    const r = await n.dm.send({ recipients: [to], conversationId: to, content: text })
+    if (open === to) { msgs = mergeThread(msgs, [r.message]); drawThread(true) }
+    if (r.ok) $("text").value = ""
+  } catch (err) { if (open === to) { msgs = mergeThread(msgs, [{ id: `failed:${Date.now()}`, conversationId: to, senderPubkey: me, createdAt: Math.floor(Date.now() / 1000), content: text, status: "failed" }]); drawThread(true) } }
+  sending = false; syncSend()
+}
+$("newBtn").onclick = () => { $("to").value = ""; $("go").disabled = true; show("new"); $("to").focus() }
+$("newBack").onclick = () => show("inbox")
+$("to").oninput = () => { $("go").disabled = !pubkeyOf($("to").value) }
+$("go").onclick = () => { const pk = pubkeyOf($("to").value); if (pk) openThread(pk) }
+
+;(async () => {
+  if (n.theme?.get) n.theme.get().then(t => { const c = t?.colors ?? {}, r = document.documentElement.style; if (c.background) r.setProperty("--bg", c.background); if (c.text) r.setProperty("--text", c.text); if (c.primary) { r.setProperty("--accent", c.primary); r.setProperty("--mine", c.primary) } }).catch(() => {})
+  n.intent?.onDelivery?.(d => {
+    if (d?.archetype !== "dm") return
+    if (d.action === "refresh") { loadList().then(() => { if (open) $("tname").textContent = nameOf(open) }); return }
+    const pk = d?.payload?.pubkey; if (HEX.test(pk ?? "")) openThread(pk)
+  })
+  if (!n.dm) { $("status").textContent = "This shell doesn't offer direct messages."; return }
+  const st = await n.dm.status().catch(() => null)
+  if (!st?.available) { $("status").textContent = "Your direct messages aren't shared with this napplet."; return }
+  me = st.ownerPubkey
+  $("status").textContent = "Opening your messages…"
+  n.dm.onMessage(m => {
+    if (open && m.conversationId === open) { msgs = mergeThread(msgs, [m]); drawThread(true) }
+    clearTimeout(window.__lt); window.__lt = setTimeout(loadList, 300)
+  })
+  await n.dm.subscribe({}).catch(() => {})
+  loadList()
+})()
+</script>
+</body>
+</html>

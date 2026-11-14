@@ -31,9 +31,9 @@ test("catalog: newest per (publisher, d), bad signatures and blocked publishers 
 })
 
 test("catalog: one that needs a domain this shell lacks is listed, not installable, and says why", () => {
-  const [e] = catalogEntries([man({ R: ["identity", "dm"] })])
+  const [e] = catalogEntries([man({ R: ["identity", "llm"] })])
   assert.equal(e.runs, false)
-  assert.match(e.why, /no dm/)
+  assert.match(e.why, /no llm/)
 })
 
 test("catalog: only https icons", () => {

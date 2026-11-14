@@ -27,7 +27,7 @@ import { markTourDone, tourDone } from "./src/net/first-run.js"
 import { runAndWait, resumeImportJobs } from "./src/net/import-jobs.js"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { startNavDepth } from "./src/components/nav-depth.js"
-import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, RelayScreen, DesktopShell, VaultDashboard, NappletShell, ReaderPane, WotPane } from "./src/screens/lazy-screens.js"
+import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, RelayScreen, DesktopShell, VaultDashboard, NappletShell, ReaderPane, WotPane, MessagesPane } from "./src/screens/lazy-screens.js"
 import { nappletsOn } from "./src/napplet/flag.js"
 import { readerOpenFor } from "./src/napplet/reader-intents.js"
 import { warmScreens } from "./src/screens/warm-screens.js"
@@ -327,11 +327,12 @@ function PhoneScreens({ ctx, route, arg, other }) {
       {route === "search" && <SearchScreen ctx={ctx} onProfile={pk => { location.hash = `#/profile/${pk}` }} />}
       {route === "notifications" && <NotificationsScreen ctx={ctx} vaultMenu />}
       {!reader && route === "thread" && <ThreadScreen key={arg} ctx={ctx} id={arg} />}
-      {route === "messages" && <MessagesScreen ctx={ctx} vaultMenu />}
+      {route === "messages" && !nappletsOn() && <MessagesScreen ctx={ctx} vaultMenu />}
+      {(route === "messages" || route === "dm") && nappletsOn() && <MessagesPane ctx={ctx} open={route === "dm" ? arg : null} vaultMenu />}
       {route === "bookmarks" && <BookmarksScreen ctx={ctx} />}
       {route === "emoji" && <EmojiScreen ctx={ctx} />}
       {route === "apps" && <NappletShell ctx={ctx} showSwitch={false} vaultMenu />}
-      {route === "dm" && <ConversationScreen key={arg} ctx={ctx} peer={arg} />}
+      {route === "dm" && !nappletsOn() && <ConversationScreen key={arg} ctx={ctx} peer={arg} />}
       {route === "vault" && <VaultScreen ctx={ctx} />}
       {route === "settings" && <SettingsScreen key={arg} ctx={ctx} page={arg} />}
       {route === "accounts" && <AccountsScreen ctx={ctx} />}

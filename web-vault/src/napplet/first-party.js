@@ -6,6 +6,7 @@ import reader from "../../napplets/reader/index.html?raw"
 import compose from "../../napplets/compose/index.html?raw"
 import media from "../../napplets/media/index.html?raw"
 import wotHtml from "../../napplets/wot/index.html?raw"
+import messages from "../../napplets/messages/index.html?raw"
 import wotPure from "../net/wot-pure.js?raw"
 import wotGlobe from "../net/wot-globe.js?raw"
 import { injectWot } from "./wot-inject.js"
@@ -15,6 +16,7 @@ export const READER_DTAG = "nv-reader"
 export const COMPOSE_DTAG = "nv-compose"
 export const MEDIA_DTAG = "nv-media"
 export const WOT_DTAG = "nv-wot"
+export const MESSAGES_DTAG = "nv-messages"
 export const FIRST_PARTY = [
   { dTag: EMOJI_DTAG, title: "Emoji", html: emoji, domains: ["identity", "relay", "resource", "storage", "inc", "intent"] },
   // Plan P4: Feed + Thread + Profile, and Compose on its own (opened by the Reader's intents, ReaderPane.jsx).
@@ -25,6 +27,8 @@ export const FIRST_PARTY = [
   // Plan P6: the WoT globe (WotPane.jsx). The shell computes the web (decision 6); the napplet draws it with the app's
   // own maths, put in at build (wot-inject.js).
   { dTag: WOT_DTAG, title: "Web of Trust", html: injectWot(wotHtml, [wotPure, wotGlobe]), pane: true, domains: ["resource", "intent", "theme"] },
+  // Plan P7: Messages (MessagesPane.jsx) over NAP-DM; keys, decryption and sealing stay in the shell (dm-dispatch.js).
+  { dTag: MESSAGES_DTAG, title: "Messages", html: messages, pane: true, domains: ["dm", "resource", "intent", "theme"] },
   { dTag: "nv-note-drafts", title: "Note Drafts", html: noteDrafts },
 ]
 export const firstParty = dTag => FIRST_PARTY.find(n => n.dTag === dTag)
