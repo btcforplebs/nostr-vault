@@ -1,17 +1,12 @@
-// A photo in a direct message, as the iPhone sends one (DMThreadView.prepareAttachment / DMAttachment): one photo per
-// message, uploaded to the account's media servers before the message goes out (a link no server holds would reach
-// them dead), its URL sent on its own line after the text. A GIF keeps its own bytes; anything else is redrawn as a
+// A photo in a direct message: one photo per message, cleaned here, then encrypted and uploaded to the account's media
+// servers before the message goes out as a kind 15 file message (dm-file.js; a link no server holds would reach them
+// dead). A GIF keeps its frames with every metadata block stripped (gif-strip.js); anything else is redrawn as a
 // JPEG at most 2400 px on the long edge (LongFormComposeView.coverJPEG), which leaves its EXIF, location included,
 // behind: the photo is going to one person, not the camera's record of where it was taken.
+import { stripGif } from "./gif-strip.js"
+
 export const MAX_EDGE = 2400
 export const JPEG_QUALITY = 0.85
-
-/** DMAttachment.content: the typed text, then the photo's URL on its own line. */
-export function dmContent(text, url) {
-  const t = String(text ?? "").trim()
-  if (!url) return t
-  return t ? `${t}\n${url}` : url
-}
 
 /** A GIF by its own header ("GIF8"), never by its type: a browser takes the type from the file name, so a JPEG
  *  renamed .gif would otherwise go up as it is, EXIF and all. */
@@ -29,13 +24,17 @@ export function fitSize(width, height, max = MAX_EDGE) {
 }
 
 /**
- * The file to upload for a picked, pasted or dropped photo: a GIF as it is, anything else redrawn as a JPEG with no
+ * The file to upload for a picked, pasted or dropped photo: a GIF with its metadata blocks stripped, anything else redrawn as a JPEG with no
  * metadata (the browser turns it the right way up from its EXIF first). Throws "Couldn't read that photo." for a file
  * that isn't an image the browser can draw. `draw` is for tests.
  */
 export async function preparePhoto(file, { draw = drawJpeg } = {}) {
   if (!file || !(/^image\//.test(file.type) || !file.type)) throw new Error("Couldn't read that photo.")
-  if (await isGif(file)) return new File([file], file.name || "photo.gif", { type: "image/gif" })
+  if (await isGif(file)) {
+    let clean
+    try { clean = stripGif(new Uint8Array(await file.arrayBuffer())) } catch { throw new Error("Couldn't read that photo.") }
+    return new File([clean], file.name || "photo.gif", { type: "image/gif" })
+  }
   let blob
   try { blob = await draw(file) } catch { blob = null }
   if (!blob) throw new Error("Couldn't read that photo.")
