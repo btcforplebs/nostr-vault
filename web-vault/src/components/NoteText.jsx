@@ -15,6 +15,8 @@ import { NoteMedia } from "./NoteMedia.jsx"
 import { inlineMarks } from "../net/inline-md.js"
 import { LinkCard } from "./LinkCard.jsx"
 import { BlossomMedia } from "./BlossomMedia.jsx"
+import { DmPhoto } from "./DmPhoto.jsx"
+import { isFileLink } from "../net/dm-file.js"
 import { parseBlossomUri } from "../net/blossom-uri.js"
 import { liveDrops, liveRefs, trimAroundLive } from "../net/live-note.js"
 
@@ -69,6 +71,8 @@ export function NoteText(props) {
         // A .fips link left in the text (a DM, or images off) stays plain text: as an <img>, <video> or <a> it would
         // send the name to DNS.
         if (meshHost(s)) return <span key={i}>{s}</span>
+        // An encrypted DM photo (kind 15, net/dm-file.js): decrypted in the page, never drawn from its link.
+        if (dm && isFileLink(s)) return <DmPhoto key={i} link={s} load={images} />
         const type = mediaType(s)
         if (type === "image") return images ? <img key={i} class="note-media" src={s} alt="" loading="lazy" referrerpolicy="no-referrer" /> : <TapImage key={i} src={s} />
         if (type === "video" && !dm && images) return <video key={i} class="note-media" src={s} controls preload="metadata" playsinline referrerpolicy="no-referrer" />

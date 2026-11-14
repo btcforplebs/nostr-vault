@@ -1,6 +1,7 @@
 // One conversation (iPhone DMThreadView): their messages on the left, the user's on the right, a field and Send at
 // the bottom. Sending is NIP-17 through net/dms.js; the sent text shows at once and stays in memory only. A photo
-// (picked, pasted or dropped, one per message) is uploaded first and its link sent after the text (net/dm-photo.js).
+// (picked, pasted or dropped, one per message) is cleaned (net/dm-photo.js), encrypted and uploaded first, then sent as a
+// kind 15 file message after the text (net/dm-file.js).
 import { useEffect, useRef, useState } from "preact/hooks"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
@@ -10,7 +11,8 @@ import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { dmPrefill, dropFailed, hasLegacy, sendMessage, sendFailure, threadShown, warmDmRelays } from "../net/dms.js"
-import { dmContent, preparePhoto } from "../net/dm-photo.js"
+import { preparePhoto } from "../net/dm-photo.js"
+import { encryptedPhoto } from "../net/dm-file.js"
 import { markRead } from "../net/dm-read.js"
 import { mediaServers, uploadPhoto } from "../net/upload.js"
 import { useMessages, SignerTrouble, AuthTrouble, OpenMore } from "./MessagesScreen.jsx"
@@ -81,7 +83,8 @@ export function ConversationScreen({ ctx, peer }) {
     try {
       await sendMessage(ctx, peer, t, sending ? {
         preview: t ? `${t}\n(photo)` : "(photo)",
-        prepare: async () => dmContent(t, (await uploadPhoto(sending.file, { ctx, servers: await mediaServers(ctx) })).url),
+        // Encrypted before it goes up (dm-file.js): the server gets ciphertext, the key goes inside the sealed kind 15.
+        prepare: async () => encryptedPhoto(sending.file, { upload: async f => uploadPhoto(f, { ctx, servers: await mediaServers(ctx), raw: true }) }),
       } : {})
     } catch (err) { setStatus(sendFailure(err)) } finally { if (sending) URL.revokeObjectURL(sending.preview) }
   }

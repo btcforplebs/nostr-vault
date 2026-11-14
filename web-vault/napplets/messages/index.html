@@ -113,9 +113,10 @@ function dayOf(ts, now = Date.now()) {
   const days = Math.round((start(t) - start(d)) / 86400000)
   return days === 0 ? "Today" : days === 1 ? "Yesterday" : d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: d.getFullYear() === t.getFullYear() ? undefined : "numeric" })
 }
-/** A message's lines as text and photos: a line that is just an https link to a picture is a photo (a DM photo is
- *  sent as its link on its own line, net/dm-photo.js). */
-const PHOTO = /^https:\/\/[^\s]+\.(?:jpe?g|png|gif|webp|avif)(?:[?#][^\s]*)?$/i
+/** A message's lines as text and photos: a line that is just an https link to a picture is a photo (an old DM photo
+ *  was sent as its link on its own line), and so is an encrypted kind 15 photo's link ("#nv-dm=", net/dm-file.js),
+ *  which the shell decrypts when it fetches it. */
+const PHOTO = /^https:\/\/[^\s]+\.(?:jpe?g|png|gif|webp|avif)(?:[?#][^\s]*)?$|^https:\/\/[^\s#]+#nv-dm=[A-Za-z0-9_-]+$/i
 function partsOf(content) {
   const out = []
   for (const line of String(content ?? "").split("\n")) {

@@ -91,10 +91,12 @@ export async function precheck(server, { sha256, size, mime, auth, fetch, signal
  * throws with every server's reason when none did. A server whose answer names another hash, or none, is not used.
  * Where it was taken is removed first (media-privacy.js); one whose location can't be removed isn't uploaded.
  * `signal` stops it (an AbortError; before the signer is asked, if it hasn't been yet); `onProgress(0..1)` follows the PUT.
+ * `raw`: the bytes go up exactly as they are (a DM's encrypted file, dm-file.js: ciphertext has no location to remove,
+ * and a change to it would break its hash and its seal).
  */
-export async function uploadPhoto(file, { ctx, servers, fetch, signal, onProgress }) {
+export async function uploadPhoto(file, { ctx, servers, fetch, signal, onProgress, raw = false }) {
   const stopped = () => { if (signal?.aborted) throw abortError() }
-  const bytes = withoutLocation(new Uint8Array(await file.arrayBuffer()))
+  const bytes = raw ? new Uint8Array(await file.arrayBuffer()) : withoutLocation(new Uint8Array(await file.arrayBuffer()))
   const sha256 = await sha256Hex(bytes)
   stopped() // removed before its turn came: no signer prompt for it
   const template = uploadAuthTemplate(sha256)
