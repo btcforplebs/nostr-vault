@@ -22,6 +22,10 @@ pub struct EndpointOptions {
     /// Enable host-wide authenticated loopback composition. Useful for tests
     /// and for composing with another FIPS instance on the same machine.
     pub local_rendezvous: bool,
+    /// Advertise and look up peers on public Nostr relays. On by default; off
+    /// for tests that must not publish anything and pair over local
+    /// rendezvous alone.
+    pub nostr_discovery: bool,
 }
 
 impl EndpointOptions {
@@ -47,6 +51,7 @@ impl EndpointOptions {
             nsec: nsec.into(),
             discovery_scope: discovery_scope.into(),
             local_rendezvous: false,
+            nostr_discovery: true,
         }
     }
 
@@ -54,6 +59,12 @@ impl EndpointOptions {
     pub fn generate_nsec() -> String {
         let identity = Identity::generate();
         fips_endpoint::encode_nsec(&identity.keypair().secret_key())
+    }
+
+    /// Turn Nostr-relay discovery off (see the field).
+    pub fn nostr_discovery(mut self, enabled: bool) -> Self {
+        self.nostr_discovery = enabled;
+        self
     }
 
     /// Enable host-wide loopback composition. See [`Self::with_identity`] for
@@ -83,8 +94,8 @@ fn endpoint_config(options: &EndpointOptions) -> Config {
     let scope = options.discovery_scope.as_str();
     let mut config = Config::new();
 
-    config.node.discovery.nostr.enabled = true;
-    config.node.discovery.nostr.advertise = true;
+    config.node.discovery.nostr.enabled = options.nostr_discovery;
+    config.node.discovery.nostr.advertise = options.nostr_discovery;
     config.node.discovery.nostr.policy = NostrDiscoveryPolicy::Open;
     config.node.discovery.nostr.share_local_candidates = true;
     config.node.discovery.nostr.app = scope.to_string();
@@ -92,7 +103,7 @@ fn endpoint_config(options: &EndpointOptions) -> Config {
     config.node.discovery.local.enabled = options.local_rendezvous;
     config.transports.udp = TransportInstances::Single(UdpConfig {
         bind_addr: Some("0.0.0.0:0".to_string()),
-        advertise_on_nostr: Some(true),
+        advertise_on_nostr: Some(options.nostr_discovery),
         public: Some(false),
         outbound_only: Some(false),
         accept_connections: Some(true),
