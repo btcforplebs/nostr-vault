@@ -55,8 +55,9 @@ screens; check what each import is still used by before deleting.
   - long video (it arrives whole before it plays; it needs ranges over `resource.bytes`)
   - the shim's 30 s timeout on large uploads and downloads
   - "Posted in N notes", file-note tiles, the stats panel
-- **WoT:** See their web, and Follow/Unfollow on a card. Kind 3 is never signed for a napplet, so this needs a shell
-  intent that asks first.
+- **WoT:** done (gap run). See their web (#/wot/<hex>/web, "‹ You" back) and Follow/Unfollow on a card. Kind 3 is
+  still never signed for a napplet: the card's button asks the shell (napplet:wot/follow, only on the WoT pane's own
+  bus), and the shell runs the classic card's setFollow with all its list safety, the same one tap as the classic card.
 - **Messages:** photos, search, group DMs, and the name for a brand-new conversation.
 - **Not part of this plan, stay classic:** your own profile (its editor), Search, Notifications, Settings, the Vault
   pages and the dashboard.

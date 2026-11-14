@@ -306,8 +306,10 @@ function App() {
   )
 }
 
-/** The WoT tab as the WoT napplet (plan P6): with the switch on, except "See their web" (#/wot/<hex>/web), still classic. */
-const wotInNapplet = (hash = location.hash) => nappletsOn() && !/^#\/wot\/[0-9a-f]{64}\/web/.test(hash)
+/** The WoT tab as the WoT napplet (plan P6) with the switch on, "See their web" (#/wot/<hex>/web) included (gap run). */
+const wotInNapplet = () => nappletsOn()
+/** "#/wot/<hex>/web" -> { root: hex }, "#/wot/<hex>" -> { open: hex }, else {}. */
+const wotAddress = (hash = location.hash) => { const m = /^#\/wot\/([0-9a-f]{64})(\/web)?/.exec(hash); return m ? (m[2] ? { root: m[1] } : { open: m[1] }) : {} }
 
 /** Does this screen show as the Reader napplet? Only with the switch on, and never your own profile (its editor stays). */
 const readsInNapplet = (route, other) => nappletsOn() && (route === "feed" || route === "thread" || (route === "profile" && !!other))
@@ -323,7 +325,7 @@ function PhoneScreens({ ctx, route, arg, other }) {
       {!reader && route === "feed" && <FeedScreen ctx={ctx} />}
       {route === "compose" && <ComposeScreen ctx={ctx} />}
       {!reader && route === "profile" && (other ? <PersonScreen key={arg} ctx={ctx} pubkey={arg} /> : <ProfileScreen ctx={ctx} />)}
-      {route === "wot" && (wotInNapplet() ? <WotPane ctx={ctx} open={/^[0-9a-f]{64}$/.test(arg) ? arg : null} /> : <WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(arg) ? arg : undefined} />)}
+      {route === "wot" && (wotInNapplet() ? <WotPane ctx={ctx} open={wotAddress().open ?? null} root={wotAddress().root ?? null} /> : <WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(arg) ? arg : undefined} />)}
       {route === "search" && <SearchScreen ctx={ctx} onProfile={pk => { location.hash = `#/profile/${pk}` }} />}
       {route === "notifications" && <NotificationsScreen ctx={ctx} vaultMenu />}
       {!reader && route === "thread" && <ThreadScreen key={arg} ctx={ctx} id={arg} />}

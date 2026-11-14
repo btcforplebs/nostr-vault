@@ -17,6 +17,7 @@ const script = html.slice(html.indexOf("<script>") + 8, html.indexOf("// ---- en
 const box = {}
 vm.runInNewContext(`${script}\n;Object.assign(box, { webOf, litOf, nodesOf, findPeople, trustPathText, layout })`, { box, TextEncoder, Map, Set })
 const plain = x => JSON.parse(JSON.stringify(x))
+const H = c => c.repeat(64)
 
 // A web with ~3 layers: me, 12 follows, people they follow (some by many: vouched, most by few: further out).
 const hex = i => crypto.createHash("sha256").update(String(i)).digest("hex")
@@ -79,11 +80,37 @@ test("find: by name word or key start, follows first", () => {
   assert.deepEqual(plain(box.findPeople(web, names, "Lee An")), [O[1]]) // a whole name with its space
 })
 
-test("the WoT tab swaps with the switch on; See their web stays classic; the napplet has no network domain", () => {
+test("the WoT tab swaps with the switch on, See their web included; the napplet has no network domain", () => {
   const main = read("main.jsx")
-  assert.match(main, /const wotInNapplet = \(hash = location\.hash\) => nappletsOn\(\) && !\/\^#\\\/wot\\\/\[0-9a-f\]\{64\}\\\/web\/\.test\(hash\)/)
-  assert.match(main, /wotInNapplet\(\) \? <WotPane/)
+  assert.match(main, /const wotInNapplet = \(\) => nappletsOn\(\)/)
+  assert.match(main, /<WotPane ctx=\{ctx\} open=\{wotAddress\(\)\.open \?\? null\} root=\{wotAddress\(\)\.root \?\? null\} \/>/)
   assert.match(read("src/napplet/first-party-list.js"), /dTag: WOT_DTAG, [^\n]*domains: \["resource", "intent", "theme"\]/)
+})
+
+test("their web: the scene says whose it is and which of its people you follow; the card speaks about their web", () => {
+  const web = buildWeb(ME, F, lists, { extendedMin: 3 })
+  const mine = new Set([F[0], O[0]])
+  const s = sceneOf(web, { profile, whose: "Ann", myFollows: mine })
+  assert.equal(s.whose, "Ann")
+  assert.deepEqual(new Set(s.iFollow), new Set([F[0], O[0]].filter(pk => pk === F[0] || web.layerOf(pk))))
+  const box2 = {}
+  vm.runInNewContext(`${script}\n;Object.assign(box2, { webOf, cardLine })`, { box2, TextEncoder, Map, Set })
+  const w = box2.webOf(JSON.parse(JSON.stringify(s)))
+  const nm = x => x.slice(0, 4)
+  assert.equal(box2.cardLine(w, F[1], nm, "Ann"), "Ann follows them")
+  assert.equal(box2.cardLine(w, ME, nm, "Ann"), "This is Ann.")
+  assert.equal(box2.cardLine(w, H("9"), nm, "Ann"), "Not in Ann's web")
+  assert.equal(box2.cardLine(w, F[1], nm, null), trustPathText(web, F[1], nm), "on your own globe: the trust path, as before")
+})
+
+test("WotPane: Follow goes through the classic setFollow (never a napplet-signed kind 3); See their web is an address", () => {
+  const pane = read("src/napplet/WotPane.jsx")
+  assert.match(pane, /actions: \["follow"\][\s\S]*await setFollow\(\{[^}]*ownRelays: account\.relays\.listed/)
+  assert.match(pane, /if \(signer\?\.readOnly\) return \{ ok: false/)
+  assert.match(pane, /location\.hash = p\.pubkey === ctxRef\.current\.session\.pubkey \? "#\/wot" : `#\/wot\/\$\{p\.pubkey\}\/web`/)
+  const html = read("napplets/wot/index.html")
+  assert.match(html, /napplet:wot\/follow/)
+  assert.doesNotMatch(html, /kind: 3\b|outbox\.publish/)
 })
 
 test("every delivery the bus sends passes the shim's own check, the shell's own asks included (no convention given)", async () => {
@@ -103,4 +130,20 @@ test("every delivery the bus sends passes the shim's own check, the shell's own 
   await bus.invoke(shell, { archetype: "note", action: "open", convention: "napplet:note/open", payload: { id: ME } })
   assert.equal(sent.length, 3)
   for (const m of sent) assert.equal(isIntentDelivery(m.delivery), true, JSON.stringify(m.delivery))
+})
+
+test("a napplet stays mounted through app re-renders: no pane keys its mount on the ctx object", () => {
+  // App builds a new ctx every render; a mount on [ctx] reopened the napplet on any account reload (a Follow closed
+  // the card it was tapped on). Mounts key on the person, vault and signer; shell deps read today's ctx live.
+  for (const f of ["src/napplet/usePaneNapplet.js", "src/napplet/ReaderPane.jsx", "src/napplet/ComposeEmoji.jsx"]) {
+    const src = read(f)
+    assert.doesNotMatch(src, /\}, \[ctx(, grants)?\]\)/, f)
+    assert.match(src, /\}, \[ctx\.session\.pubkey, ctx\.vault, ctx\.signer, grants\]\)/, f)
+    assert.match(src, /shellDeps\(liveCtx, /, f)
+  }
+})
+
+test("WotPane: a card asked for by address (#/wot/<hex>) is spent only on a scene that has the globe", () => {
+  const pane = read("src/napplet/WotPane.jsx")
+  assert.match(pane, /const built = theirRoot \? !!theirs : !!web\n\s*const first = built && open && opened\.current !== open \? open : null\n\s*if \(built\) opened\.current = open/)
 })

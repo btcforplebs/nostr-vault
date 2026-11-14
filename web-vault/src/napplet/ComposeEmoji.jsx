@@ -9,12 +9,14 @@ import { createBus } from "./bus.js"
 import { shellDeps } from "./shell-deps.js"
 import { firstParty, EMOJI_DTAG } from "./first-party.js"
 import { composeEmoji } from "./emoji-intent.js"
+import { useLiveCtx } from "./usePaneNapplet.js"
 import "./napplet.css"
 
 export function ComposeEmoji({ ctx, onPick, onClose }) {
   const host = useRef(null)
   const [note, setNote] = useState("")
   const grants = useMemo(() => grantStore(localStorage, ctx.session.pubkey), [ctx.session.pubkey])
+  const liveCtx = useLiveCtx(ctx)
   const pickRef = useRef(onPick)
   pickRef.current = onPick
 
@@ -27,7 +29,7 @@ export function ComposeEmoji({ ctx, onPick, onClose }) {
       const r = await openNapplet({
         html: n.html, name: n.dTag, title: n.title, firstParty: true, domains: n.domains, container: host.current, grants,
         consent: async () => null, // first-party: never asked
-        makeDeps: saveGrant => shellDeps(ctx, { ask: async () => false, saveGrant, bus }),
+        makeDeps: saveGrant => shellDeps(liveCtx, { ask: async () => false, saveGrant, bus }),
         onRevoke: why => { if (!gone && why !== "closed by shell") setNote(`Emoji closed: ${why}.`) },
       })
       mounted = r.mounted
@@ -39,7 +41,7 @@ export function ComposeEmoji({ ctx, onPick, onClose }) {
     const wire = composeEmoji({ bus, open, onPick: p => pickRef.current(p) })
     wire.ask().then(r => { if (!r?.ok && !gone) setNote(`Emoji couldn't open: ${r?.error ?? "unknown"}.`) })
     return () => { gone = true; wire.close(); mounted?.close() }
-  }, [ctx, grants])
+  }, [ctx.session.pubkey, ctx.vault, ctx.signer, grants])
 
   return (
     <Dialog label="Add emoji" onClose={onClose}>

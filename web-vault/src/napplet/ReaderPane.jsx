@@ -9,6 +9,7 @@ import { createBus } from "./bus.js"
 import { shellDeps } from "./shell-deps.js"
 import { firstParty, READER_DTAG, COMPOSE_DTAG } from "./first-party.js"
 import { readerIntents } from "./reader-intents.js"
+import { useLiveCtx } from "./usePaneNapplet.js"
 import { verifyEvent } from "nostr-tools/pure"
 import { repostWithUndo } from "../components/repost-undo.js"
 import { ZapSheet, MenuSheet } from "./NoteSheets.jsx"
@@ -24,6 +25,7 @@ export function ReaderPane({ ctx, open = null }) {
   const [note, setNote] = useState("")
   const [sheet, setSheet] = useState(null) // { kind: "zap" | "menu", note }
   const grants = useMemo(() => grantStore(localStorage, ctx.session.pubkey), [ctx.session.pubkey])
+  const liveCtx = useLiveCtx(ctx)
   const live = useRef(null) // { bus, me, reader }
   const openRef = useRef(open)
   openRef.current = open
@@ -36,7 +38,7 @@ export function ReaderPane({ ctx, open = null }) {
       const r = await openNapplet({
         html: n.html, name: n.dTag, title: n.title, firstParty: true, domains: n.domains, container, grants,
         consent: async () => null, // first-party: never asked
-        makeDeps: saveGrant => shellDeps(ctx, { ask: async () => false, saveGrant, bus }),
+        makeDeps: saveGrant => shellDeps(liveCtx, { ask: async () => false, saveGrant, bus }),
         onRevoke: why => { onGone(); if (!gone && why !== "closed by shell") setNote(`${n.title} closed: ${why}.`) },
       })
       return r.mounted
@@ -65,7 +67,7 @@ export function ReaderPane({ ctx, open = null }) {
       onComposeUndone: () => setComposeAside(false),
       openUrl: url => window.open(url, "_blank", "noopener,noreferrer"),
       verify: verifyEvent,
-      onRepost: n => repostWithUndo(ctx, n),
+      onRepost: n => repostWithUndo(liveCtx, n),
       onZap: n => setSheet({ kind: "zap", note: n }),
       onMenu: n => setSheet({ kind: "menu", note: n }),
     })
@@ -81,7 +83,7 @@ export function ReaderPane({ ctx, open = null }) {
       } catch (e) { if (!gone) setNote(`The Reader couldn't open: ${e?.message ?? e}`) }
     })()
     return () => { gone = true; wire.close(); live.current?.reader?.offs.forEach(f => f()); reader?.close(); compose?.close(); live.current = null }
-  }, [ctx, grants])
+  }, [ctx.session.pubkey, ctx.vault, ctx.signer, grants])
 
   // A new address (another thread or profile) while the Reader is up: hand it over instead of mounting again.
   const opened = useRef(JSON.stringify(open))

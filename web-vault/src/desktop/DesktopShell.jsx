@@ -102,7 +102,7 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
       <div class="desk-left">
       <Sidebar ctx={ctx} side={side} rail />
       <section class="desk-main">
-        {view.route === "wot" ? <div class="desk-full">{nappletsOn() && !/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? <WotPane ctx={ctx} open={/^[0-9a-f]{64}$/.test(view.arg) ? view.arg : null} /> : <WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(view.arg) ? view.arg : undefined} />}</div>
+        {view.route === "wot" ? <div class="desk-full">{nappletsOn() ? <WotPane ctx={ctx} open={/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? null : /^[0-9a-f]{64}$/.test(view.arg) ? view.arg : null} root={/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? view.arg : null} /> : <WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(view.arg) ? view.arg : undefined} />}</div>
           : page ? <div class="desk-page" key={view.path}>{page}</div>
           : full ? null /* the Dashboard: main.jsx keeps the relay screen mounted and lays it over this area */
           : <SplitPane list={list} detail={detail} onBack={closeDetail} />}
