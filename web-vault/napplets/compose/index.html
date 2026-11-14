@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compose</title>
+<style>
+  :root { color-scheme: dark; --bg: #000; --text: #f2f2f2; --muted: #9a9a9f; --hair: #26262a; --s2: #1c1c1f; --accent: #e67326;
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 14px; background: var(--bg); color: var(--text); display: flex; flex-direction: column; gap: 10px; min-height: 100vh; }
+  .to { color: var(--muted); font-size: 13px; border-left: 3px solid var(--hair); padding: 4px 10px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 7.5em; overflow: hidden; }
+  textarea { flex: 1; min-height: 140px; width: 100%; resize: none; background: var(--s2); color: inherit; border: 1px solid var(--hair); border-radius: 12px; padding: 12px; font: inherit; }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row span { flex: 1; color: var(--muted); font-size: 13px; }
+  button { font: inherit; color: var(--text); background: var(--s2); border: 1px solid var(--hair); border-radius: 999px; min-height: 40px; padding: 0 18px; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 650; }
+  button:disabled { opacity: .45; cursor: default; }
+</style>
+</head>
+<body>
+<div id="to" class="to" hidden></div>
+<textarea id="text" placeholder="What's happening?" aria-label="Note"></textarea>
+<div class="row"><span id="status" role="status"></span><button id="cancel">Cancel</button><button id="post" class="primary" disabled>Post</button></div>
+<script>
+// The Compose napplet (plan P4): a note or a reply, signed by the shell (outbox.publish; this frame has no key). Opened
+// by intent: napplet:compose/new, or napplet:compose/reply with { event } (the note answered, NIP-10 marked tags). A
+// draft is kept per note answered in this napplet's storage until it is sent. When it is sent, "nv.compose.sent"
+// { event } goes out so the Reader shows it at once; "nv.compose.done" tells the shell to close the sheet.
+
+// ---- pure (test/napplet-reader.test.mjs loads this block) ----
+const HEX = /^[0-9a-f]{64}$/
+const MAX_NOTE = 20000
+function replyTags(parent) {
+  const e = (parent.tags ?? []).filter(t => t[0] === "e" && HEX.test(t[1] ?? ""))
+  const root = (e.find(t => t[3] === "root") ?? (e.some(t => t[3]) ? null : e[0]))?.[1] ?? parent.id
+  const tags = [["e", root, "", "root"]]
+  if (root !== parent.id) tags.push(["e", parent.id, "", "reply"])
+  for (const p of [...new Set([parent.pubkey, ...(parent.tags ?? []).filter(t => t[0] === "p" && HEX.test(t[1] ?? "")).map(t => t[1])])]) tags.push(["p", p])
+  return tags
+}
+/** What Post sends -> { kind, content, tags } or null when there is nothing to send. Hashtags become t tags. */
+function noteTemplate(text, parent) {
+  const content = String(text ?? "").trim()
+  if (!content || content.length > MAX_NOTE) return null
+  const tags = parent && HEX.test(parent.id ?? "") && HEX.test(parent.pubkey ?? "") ? replyTags(parent) : []
+  for (const t of new Set([...content.matchAll(/(?:^|\s)#([\p{L}\p{N}_]{1,64})/gu)].map(m => m[1].toLowerCase()))) tags.push(["t", t])
+  return { kind: 1, content, tags }
+}
+// ---- end pure ----
+
+const n = window.napplet || {}
+const $ = id => document.getElementById(id)
+let parent = null, sending = false
+const draftKey = () => `draft:${parent?.id ?? "new"}`
+const status = t => { $("status").textContent = t }
+const sync = () => { $("post").disabled = sending || !noteTemplate($("text").value, parent) }
+
+async function open(d) {
+  const p = d?.payload ?? {}
+  parent = d?.action === "reply" && p.event && HEX.test(p.event.id ?? "") ? p.event : null
+  $("to").hidden = !parent
+  $("to").textContent = parent ? `Replying to: ${String(parent.content ?? "").slice(0, 280)}` : ""
+  $("text").placeholder = parent ? "Write your reply" : "What's happening?"
+  $("text").value = (await n.storage?.getItem(draftKey()).catch(() => null)) ?? ""
+  status(""); sync(); $("text").focus()
+}
+let saveTimer = null
+$("text").addEventListener("input", () => {
+  sync()
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => n.storage?.setItem(draftKey(), $("text").value).catch(() => {}), 300)
+})
+$("cancel").onclick = () => n.inc?.emit("nv.compose.done", { sent: false })
+$("post").onclick = async () => {
+  const t = noteTemplate($("text").value, parent)
+  if (!t || sending) return
+  sending = true; sync(); status("Sending…")
+  const r = await n.outbox.publish(t).catch(e => ({ ok: false, error: String(e?.message ?? e) }))
+  sending = false
+  if (r?.ok === false) { status(`Not sent: ${r.error || "no relay took it"}`); sync(); return }
+  clearTimeout(saveTimer)
+  await n.storage?.removeItem(draftKey()).catch(() => {})
+  $("text").value = ""; status("Sent."); sync()
+  if (r?.event) n.inc?.emit("nv.compose.sent", { event: r.event })
+  n.inc?.emit("nv.compose.done", { sent: true })
+}
+if (n.theme?.get) n.theme.get().then(t => { const c = t?.colors ?? {}, r = document.documentElement.style; if (c.background) r.setProperty("--bg", c.background); if (c.text) r.setProperty("--text", c.text); if (c.primary) r.setProperty("--accent", c.primary) }).catch(() => {})
+n.intent?.onDelivery?.(open)
+</script>
+</body>
+</html>

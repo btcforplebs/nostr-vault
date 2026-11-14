@@ -29,3 +29,9 @@
 .apps-what .small { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .apps-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 @media (max-width: 560px) { .apps-row { flex-wrap: wrap; } .apps-acts { width: 100%; justify-content: flex-start; } }
+/* The Reader pane (ReaderPane.jsx, P4): the Reader napplet fills the screen; Compose sits in a sheet. */
+.reader-pane { display: flex; flex-direction: column; height: 100%; min-height: 100dvh; }
+.reader-host { flex: 1; min-height: 0; padding: 0; display: flex; }
+.reader-host .napplet-frame { border: 0; border-radius: 0; background: var(--bg); min-height: 100dvh; }
+.compose-napplet-host { min-height: min(52vh, 420px); padding: 0; display: flex; }
+.compose-napplet-host .napplet-frame { border: 0; }

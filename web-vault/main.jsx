@@ -27,7 +27,9 @@ import { markTourDone, tourDone } from "./src/net/first-run.js"
 import { runAndWait, resumeImportJobs } from "./src/net/import-jobs.js"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { startNavDepth } from "./src/components/nav-depth.js"
-import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, RelayScreen, DesktopShell, VaultDashboard, NappletShell } from "./src/screens/lazy-screens.js"
+import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, RelayScreen, DesktopShell, VaultDashboard, NappletShell, ReaderPane } from "./src/screens/lazy-screens.js"
+import { nappletsOn } from "./src/napplet/flag.js"
+import { readerOpenFor } from "./src/napplet/reader-intents.js"
 import { warmScreens } from "./src/screens/warm-screens.js"
 import { GuestApp } from "./src/guest/GuestApp.jsx"
 import { SettingsScreen, resetBrowser } from "./src/screens/SettingsScreen.jsx"
@@ -293,7 +295,7 @@ function App() {
       {/* A box has its own mesh and no in-page relay: its Box screen (src/box) instead of the browser relay's. */}
       {BOX ? (route === "box" || route === "relay") && <div class="box-host"><BoxScreen ctx={ctx} /></div>
         : <div class="relay-host" hidden={route !== "relay"}>{relayShown && <RelayScreen ctx={ctx} log={log} />}</div>}
-      {!desk && (route === "feed" || route === "search" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
+      {!desk && (route === "feed" && !readsInNapplet(route, other) || route === "search" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
       {!desk && <TabBar ctx={ctx} route={tabOf(route, other)} pubkey={session.pubkey} />}
       <FloatingPlayer />
       {isDashboardOpen() && <VaultDashboard ctx={ctx} />}
@@ -304,17 +306,24 @@ function App() {
   )
 }
 
+/** Does this screen show as the Reader napplet? Only with the switch on, and never your own profile (its editor stays). */
+const readsInNapplet = (route, other) => nappletsOn() && (route === "feed" || route === "thread" || (route === "profile" && !!other))
+
 /** The phone layout's screens, one at a time, as before the desktop layout existed. */
 function PhoneScreens({ ctx, route, arg, other }) {
+  // The napplet switch on: Feed, Thread and someone's Profile are the Reader napplet, one element so it stays mounted
+  // as you move between them (plan P4). Off: the screens below, unchanged.
+  const reader = readsInNapplet(route, other)
   return (
     <>
-      {route === "feed" && <FeedScreen ctx={ctx} />}
+      {reader && <ReaderPane ctx={ctx} open={readerOpenFor(route, arg)} />}
+      {!reader && route === "feed" && <FeedScreen ctx={ctx} />}
       {route === "compose" && <ComposeScreen ctx={ctx} />}
-      {route === "profile" && (other ? <PersonScreen key={arg} ctx={ctx} pubkey={arg} /> : <ProfileScreen ctx={ctx} />)}
+      {!reader && route === "profile" && (other ? <PersonScreen key={arg} ctx={ctx} pubkey={arg} /> : <ProfileScreen ctx={ctx} />)}
       {route === "wot" && <WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(arg) ? arg : undefined} />}
       {route === "search" && <SearchScreen ctx={ctx} onProfile={pk => { location.hash = `#/profile/${pk}` }} />}
       {route === "notifications" && <NotificationsScreen ctx={ctx} vaultMenu />}
-      {route === "thread" && <ThreadScreen key={arg} ctx={ctx} id={arg} />}
+      {!reader && route === "thread" && <ThreadScreen key={arg} ctx={ctx} id={arg} />}
       {route === "messages" && <MessagesScreen ctx={ctx} vaultMenu />}
       {route === "bookmarks" && <BookmarksScreen ctx={ctx} />}
       {route === "emoji" && <EmojiScreen ctx={ctx} />}

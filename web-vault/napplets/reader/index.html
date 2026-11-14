@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reader</title>
+<style>
+  :root { color-scheme: dark; --bg: #000; --text: #f2f2f2; --muted: #9a9a9f; --hair: #26262a; --s1: #111113; --s2: #1c1c1f; --accent: #e67326;
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); }
+  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 8px 14px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--hair); }
+  header h1 { flex: 1; margin: 0; font-size: 17px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button { font: inherit; color: var(--text); background: var(--s2); border: 1px solid var(--hair); border-radius: 999px; min-height: 36px; padding: 0 14px; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 650; }
+  button.ghost { background: none; border: 0; color: var(--muted); padding: 0 8px; }
+  button.ghost.on { color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  #fresh { position: sticky; top: 60px; z-index: 3; display: block; margin: 8px auto 0; }
+  #fresh[hidden], [hidden] { display: none !important; }
+  #list { list-style: none; margin: 0; padding: 0; }
+  article { display: grid; grid-template-columns: 44px 1fr; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--hair); cursor: pointer; }
+  article.focus { background: var(--s1); cursor: default; }
+  .av { width: 44px; height: 44px; border-radius: 50%; background: var(--s2); object-fit: cover; display: grid; place-items: center; color: var(--muted); font-weight: 700; border: 0; padding: 0; }
+  .who { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+  .who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .who span { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .body { white-space: pre-wrap; overflow-wrap: anywhere; margin: 2px 0 6px; }
+  .body a, .body .tag { color: var(--accent); text-decoration: none; cursor: pointer; }
+  .media { display: grid; gap: 6px; margin: 6px 0; }
+  .media img { width: 100%; max-height: 420px; object-fit: cover; border-radius: 12px; background: var(--s2); min-height: 80px; }
+  .media .vid { padding: 12px; border-radius: 12px; background: var(--s2); color: var(--muted); font-size: 13px; }
+  .quote { border: 1px solid var(--hair); border-radius: 12px; padding: 8px 10px; margin: 6px 0; color: var(--muted); font-size: 14px; }
+  .acts { display: flex; gap: 4px; margin-left: -8px; }
+  .rp { color: var(--muted); font-size: 13px; margin: 0 0 4px; }
+  .reply-line { color: var(--muted); font-size: 13px; margin-bottom: 2px; }
+  .indent { padding-left: 30px; }
+  .prof { padding: 14px; border-bottom: 1px solid var(--hair); }
+  .prof .top { display: flex; gap: 12px; align-items: center; }
+  .prof .av { width: 64px; height: 64px; font-size: 22px; }
+  .prof h2 { margin: 0; font-size: 19px; }
+  .prof p { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); margin: 10px 0 0; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .empty, .more { text-align: center; padding: 22px 14px; color: var(--muted); }
+  /* Room under the last note: the app's tab bar floats over the bottom of this frame on a phone. */
+  #foot { padding-bottom: 120px; }
+</style>
+</head>
+<body>
+<header><button id="back" class="ghost" hidden aria-label="Back">‹ Back</button><h1 id="title">Following</h1><button id="new" class="primary">Post</button></header>
+<button id="fresh" class="primary" hidden></button>
+<main id="list" role="feed" aria-busy="true"></main>
+<div id="foot" class="more"></div>
+<script>
+// The Reader napplet (plan P4): Feed, Thread and Profile in one frame. It has no network and no key: every note comes
+// from the shell (outbox: the vault first, then relays, block-filtered), pictures come as bytes from the shell, and a
+// reaction is signed by the shell. Reply and Post hand off to the Compose napplet by intent (napplet:compose/reply,
+// napplet:compose/new); a link opens through the shell (napplet:link/open). The shell opens a thread or profile here
+// by intent too (napplet:note/open, napplet:profile/open), from #/thread/<id> and #/profile/<pubkey>.
+
+// ---- pure (test/napplet-reader.test.mjs loads this block) ----
+const HEX = /^[0-9a-f]{64}$/
+const B32 = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+function bech32Bytes(str) {
+  const s = String(str).toLowerCase(), p = s.lastIndexOf("1")
+  if (p < 1 || s.length - p < 7) return null
+  const words = []
+  for (const c of s.slice(p + 1, -6)) { const v = B32.indexOf(c); if (v < 0) return null; words.push(v) }
+  let acc = 0, bits = 0; const out = []
+  for (const w of words) { acc = (acc << 5) | w; bits += 5; while (bits >= 8) { bits -= 8; out.push((acc >> bits) & 255) } }
+  return { prefix: s.slice(0, p), bytes: out }
+}
+const hexOf = b => b.map(x => x.toString(16).padStart(2, "0")).join("")
+/** nostr:npub/nprofile/note/nevent -> { type: "profile", pubkey } | { type: "note", id } | null (TLV type 0 = the key). */
+function decodeNostr(ref) {
+  const d = bech32Bytes(ref)
+  if (!d) return null
+  let key = null
+  if (d.prefix === "npub" || d.prefix === "note") key = d.bytes.length === 32 ? hexOf(d.bytes) : null
+  else if (d.prefix === "nprofile" || d.prefix === "nevent") {
+    for (let i = 0; i + 2 <= d.bytes.length;) { const t = d.bytes[i], l = d.bytes[i + 1]; if (t === 0 && l === 32) { key = hexOf(d.bytes.slice(i + 2, i + 34)); break } i += 2 + l }
+  } else return null
+  if (!key || !HEX.test(key)) return null
+  return d.prefix === "npub" || d.prefix === "nprofile" ? { type: "profile", pubkey: key } : { type: "note", id: key }
+}
+const TOKEN = /(https?:\/\/[^\s<>"]+|nostr:(?:npub|nprofile|note|nevent)1[02-9ac-hj-np-z]+|#[\p{L}\p{N}_]{1,64})/gu
+const IMG = /\.(jpe?g|png|gif|webp|avif)(\?[^\s]*)?$/i, VID = /\.(mp4|mov|webm|m4v|m3u8)(\?[^\s]*)?$/i
+/** A note's text -> parts: text, link, image, video, profile, note, tag. Trailing punctuation stays text. */
+function tokenize(content) {
+  const out = [], s = String(content ?? "")
+  let at = 0
+  for (const m of s.matchAll(TOKEN)) {
+    let tok = m[0], tail = ""
+    if (tok.startsWith("http")) { const t = /[.,;:!?)\]]+$/.exec(tok); if (t) { tail = t[0]; tok = tok.slice(0, -tail.length) } }
+    if (m.index > at) out.push({ t: "text", v: s.slice(at, m.index) })
+    if (tok.startsWith("http")) out.push({ t: IMG.test(tok) ? "image" : VID.test(tok) ? "video" : "link", v: tok })
+    else if (tok.startsWith("#")) out.push({ t: "tag", v: tok.slice(1) })
+    else { const d = decodeNostr(tok.slice(6)); out.push(d ? { t: d.type, v: d.type === "note" ? d.id : d.pubkey } : { t: "text", v: tok }) }
+    if (tail) out.push({ t: "text", v: tail })
+    at = m.index + m[0].length
+  }
+  if (at < s.length) out.push({ t: "text", v: s.slice(at) })
+  return out.reduce((a, p) => (p.t === "text" && a.length && a[a.length - 1].t === "text" ? (a[a.length - 1].v += p.v, a) : (a.push(p), a)), [])
+}
+const eTags = ev => (ev?.tags ?? []).filter(t => t[0] === "e" && HEX.test(t[1] ?? ""))
+/** NIP-10: the thread's root id (marked, else the first e tag, else the note itself). */
+function rootOf(ev) { const e = eTags(ev); return (e.find(t => t[3] === "root") ?? (e.some(t => t[3]) ? null : e[0]))?.[1] ?? ev.id }
+/** NIP-10: the note it answers (marked reply, else marked root, else the last e tag), or null. */
+function parentOf(ev) { const e = eTags(ev); if (!e.length) return null; return (e.find(t => t[3] === "reply") ?? e.find(t => t[3] === "root") ?? (e.some(t => t[3]) ? null : e[e.length - 1]))?.[1] ?? null }
+const reactionTags = ev => [["e", ev.id], ["p", ev.pubkey], ["k", String(ev.kind)]]
+/** A kind 6 repost's note, if its content carries a signed-looking one. */
+function repostOf(ev) { if (ev?.kind !== 6) return null; try { const r = JSON.parse(ev.content); return r && HEX.test(r.id ?? "") && HEX.test(r.pubkey ?? "") && typeof r.content === "string" ? r : null } catch { return null } }
+/** Feed rows: newest first, one per id, at most `cap`. */
+function mergeNotes(have, more, cap = 400) {
+  const seen = new Set(), all = []
+  for (const ev of [...have, ...more]) if (ev && HEX.test(ev.id ?? "") && !seen.has(ev.id)) { seen.add(ev.id); all.push(ev) }
+  return all.sort((a, b) => b.created_at - a.created_at).slice(0, cap)
+}
+/** A thread from its root and replies: root first, then each reply under the note it answers, oldest first. */
+function threadRows(rootId, events) {
+  const byParent = new Map(), byId = new Map(events.map(e => [e.id, e]))
+  for (const e of events) if (e.id !== rootId) { const p = byId.has(parentOf(e)) ? parentOf(e) : rootId; if (!byParent.has(p)) byParent.set(p, []); byParent.get(p).push(e) }
+  const rows = [], walk = (id, depth) => { for (const e of (byParent.get(id) ?? []).sort((a, b) => a.created_at - b.created_at)) { rows.push({ ev: e, depth }); walk(e.id, Math.min(depth + 1, 4)) } }
+  if (byId.has(rootId)) rows.push({ ev: byId.get(rootId), depth: 0 })
+  walk(rootId, 1)
+  return rows
+}
+function ago(ts, now = Date.now() / 1000) {
+  const s = Math.max(0, now - ts)
+  return s < 60 ? "now" : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : s < 604800 ? `${Math.floor(s / 86400)}d` : new Date(ts * 1000).toLocaleDateString()
+}
+// ---- end pure ----
+
+const n = window.napplet || {}
+const $ = id => document.getElementById(id)
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
+const PAGE = 40
+const profiles = new Map(), asked = new Set(), pics = new Map(), reacted = new Set()
+let me = "", follows = [], view = { kind: "feed" }, stack = [], notes = [], pending = [], live = null, loading = false, done = false
+
+async function q(filters) { return ((await n.outbox.query(filters).catch(() => ({ events: [] }))).events ?? []).map(r => r.event).filter(Boolean) }
+
+// Profiles: asked in batches, kept for the session.
+let wanted = new Set(), wantTimer = null
+function want(pk) {
+  if (!HEX.test(pk) || asked.has(pk)) return
+  asked.add(pk); wanted.add(pk)
+  clearTimeout(wantTimer); wantTimer = setTimeout(loadProfiles, 60)
+}
+async function loadProfiles() {
+  const pks = [...wanted]; wanted = new Set()
+  for (let i = 0; i < pks.length; i += 100) {
+    for (const ev of await q([{ kinds: [0], authors: pks.slice(i, i + 100), limit: 100 }])) {
+      const had = profiles.get(ev.pubkey)
+      if (had && had.at >= ev.created_at) continue
+      try { const p = JSON.parse(ev.content); profiles.set(ev.pubkey, { at: ev.created_at, name: String(p.display_name || p.name || "").slice(0, 60), picture: typeof p.picture === "string" ? p.picture : "", about: String(p.about || "").slice(0, 600) }) } catch {}
+    }
+  }
+  for (const node of document.querySelectorAll("[data-pk]")) paintWho(node)
+}
+const nameOf = pk => profiles.get(pk)?.name || `${pk.slice(0, 8)}…`
+function paintWho(node) {
+  const pk = node.dataset.pk, p = profiles.get(pk)
+  if (node.classList.contains("av")) { if (p?.picture) picture(node, p.picture); else node.textContent = (p?.name || "?").slice(0, 1).toUpperCase() }
+  else node.textContent = (node.dataset.at ? "@" : "") + nameOf(pk)
+}
+
+// Pictures: bytes from the shell (its IP rules), only once in view, a few at a time.
+let inFlight = 0; const queue = []
+const seen = new IntersectionObserver(es => { for (const e of es) if (e.isIntersecting) { seen.unobserve(e.target); queue.push(e.target); pump() } }, { rootMargin: "400px" })
+function picture(node, url) { if (!/^https:\/\//i.test(url) || node.dataset.src === url) return; node.dataset.src = url; seen.observe(node) }
+function pump() {
+  while (inFlight < 4 && queue.length) {
+    const node = queue.shift(), url = node.dataset.src
+    inFlight++
+    ;(pics.get(url) ?? (pics.set(url, n.resource?.bytes(url).then(b => URL.createObjectURL(b)).catch(() => "")), pics.get(url)))
+      .then(src => { if (src && node.dataset.src === url) { if (node.tagName === "IMG") node.src = src; else { const i = el("img", "av"); i.alt = ""; i.src = src; i.dataset.src = url; node.replaceWith(i) } } })
+      .finally(() => { inFlight--; pump() })
+  }
+}
+
+function avatar(pk) {
+  const b = el("button", "av"); b.type = "button"; b.dataset.pk = pk; b.setAttribute("aria-label", "Profile")
+  b.onclick = e => { e.stopPropagation(); go({ kind: "profile", pubkey: pk }) }
+  want(pk); paintWho(b); return b
+}
+function body(ev) {
+  const div = el("div", "body"), media = el("div", "media")
+  for (const p of tokenize(ev.content)) {
+    if (p.t === "text") div.append(p.v)
+    else if (p.t === "image") { const i = el("img"); i.alt = ""; i.loading = "lazy"; picture(i, p.v); media.append(i) }
+    else if (p.t === "video") media.append(el("div", "vid", "Video: plays in the classic view for now"))
+    else if (p.t === "link") { const a = el("a", "", p.v.replace(/^https?:\/\//, "").slice(0, 60)); a.href = "#"; a.title = p.v; a.onclick = e => { e.preventDefault(); e.stopPropagation(); openLink(p.v) }; div.append(a) }
+    else if (p.t === "tag") div.append(el("span", "tag", `#${p.v}`))
+    else if (p.t === "profile") { const a = el("a"); a.href = "#"; a.dataset.pk = p.v; a.dataset.at = "1"; want(p.v); paintWho(a); a.onclick = e => { e.preventDefault(); e.stopPropagation(); go({ kind: "profile", pubkey: p.v }) }; div.append(a) }
+    else if (p.t === "note") { const a = el("a", "", "a note ↗"); a.href = "#"; a.onclick = e => { e.preventDefault(); e.stopPropagation(); go({ kind: "thread", id: p.v }) }; div.append(a) }
+  }
+  const f = document.createDocumentFragment(); f.append(div); if (media.childElementCount) f.append(media); return f
+}
+function card(ev, { focus = false, depth = 0, by = null } = {}) {
+  const shown = repostOf(ev) ?? ev
+  const a = el("article", focus ? "focus" : ""); a.dataset.id = shown.id
+  if (depth) a.style.paddingLeft = `${14 + Math.min(depth, 4) * 18}px`
+  a.append(avatar(shown.pubkey))
+  const col = el("div")
+  if (by || ev.kind === 6) { const r = el("p", "rp", "↻ reposted by "); const w = el("span"); w.dataset.pk = by ?? ev.pubkey; paintWho(w); r.append(w); col.append(r) }
+  const who = el("div", "who"), name = el("b"); name.dataset.pk = shown.pubkey; paintWho(name)
+  name.onclick = e => { e.stopPropagation(); go({ kind: "profile", pubkey: shown.pubkey }) }
+  who.append(name, el("span", "", `· ${ago(shown.created_at)}`)); col.append(who)
+  const parent = parentOf(shown)
+  if (parent && !depth && !focus) col.append(el("div", "reply-line", "replying in a thread"))
+  col.append(body(shown))
+  const acts = el("div", "acts")
+  const reply = el("button", "ghost", "Reply"); reply.onclick = e => { e.stopPropagation(); compose("reply", shown) }
+  const like = el("button", `ghost${reacted.has(shown.id) ? " on" : ""}`, reacted.has(shown.id) ? "♥ Liked" : "♡ Like")
+  like.onclick = async e => { e.stopPropagation(); if (reacted.has(shown.id)) return; like.disabled = true; const r = await n.outbox.publish({ kind: 7, content: "+", tags: reactionTags(shown) }).catch(err => ({ ok: false, error: String(err) })); like.disabled = false; if (r?.ok !== false) { reacted.add(shown.id); like.textContent = "♥ Liked"; like.classList.add("on") } else like.title = r.error || "not sent" }
+  acts.append(reply, like); col.append(acts)
+  a.append(col)
+  if (!focus) a.onclick = () => go({ kind: "thread", id: shown.id, event: shown })
+  return a
+}
+
+function compose(action, ev) { n.intent?.invoke(`napplet:compose/${action}`, { payload: ev ? { event: ev } : {} }).catch(() => {}) }
+function openLink(url) { n.intent?.invoke("napplet:link/open", { payload: { url } }).catch(() => {}) }
+
+function go(next, push = true) {
+  if (push) stack.push(view)
+  view = next; stopLive(); render()
+}
+$("back").onclick = () => { if (stack.length) { view = stack.pop(); stopLive(); render() } }
+$("new").onclick = () => compose("new")
+$("fresh").onclick = () => { notes = mergeNotes(pending, notes); pending = []; $("fresh").hidden = true; drawFeed(); scrollTo(0, 0) }
+function stopLive() { live?.close?.(); live = null; pending = []; $("fresh").hidden = true }
+
+async function render() {
+  $("back").hidden = !stack.length
+  $("list").replaceChildren(); $("foot").textContent = "Loading…"; $("list").setAttribute("aria-busy", "true")
+  if (view.kind === "feed") return showFeed()
+  if (view.kind === "thread") return showThread(view.id, view.event)
+  if (view.kind === "profile") return showProfile(view.pubkey)
+}
+
+async function showFeed() {
+  $("title").textContent = "Following"
+  if (!follows.length) follows = await n.identity.getFollows().catch(() => [])
+  const authors = [...new Set([me, ...follows])].filter(Boolean)
+  if (!notes.length) { notes = mergeNotes([], await q([{ kinds: [1, 6], authors, limit: PAGE }])); done = false }
+  drawFeed()
+  const since = Math.floor(Date.now() / 1000)
+  live = n.outbox.subscribe([{ kinds: [1, 6], authors, since }])
+  live.on("event", r => { const ev = r.event; if (!ev || notes.some(x => x.id === ev.id) || pending.some(x => x.id === ev.id)) return; if (ev.pubkey === me) { notes = mergeNotes([ev], notes); drawFeed() } else { pending.push(ev); $("fresh").hidden = false; $("fresh").textContent = `${pending.length} new` } })
+}
+function drawFeed() {
+  const list = $("list"); list.replaceChildren(...notes.map(ev => card(ev)))
+  list.setAttribute("aria-busy", "false")
+  $("foot").replaceChildren()
+  if (!notes.length) { $("foot").textContent = follows.length ? "No notes yet." : "Follow people to fill this feed."; return }
+  if (!done) { const more = el("button", "", "Older notes"); more.onclick = loadOlder; $("foot").append(more) }
+}
+async function loadOlder() {
+  if (loading || view.kind !== "feed") return
+  loading = true
+  const until = notes[notes.length - 1]?.created_at - 1
+  const older = await q([{ kinds: [1, 6], authors: [...new Set([me, ...follows])], until, limit: PAGE }])
+  loading = false
+  if (!older.length) done = true
+  notes = mergeNotes(notes, older); drawFeed()
+}
+
+async function showThread(id, given) {
+  $("title").textContent = "Thread"
+  let focus = given ?? (await q([{ ids: [id], limit: 1 }]))[0]
+  if (!focus) { $("foot").textContent = "Couldn't find this note."; return }
+  const rootId = rootOf(focus)
+  const [root] = rootId === focus.id ? [focus] : await q([{ ids: [rootId], limit: 1 }])
+  const replies = await q([{ kinds: [1], "#e": [rootId], limit: 300 }])
+  const rows = threadRows(rootId, [...(root ? [root] : []), focus, ...replies])
+  if (!root) rows.unshift({ ev: focus, depth: 0 })
+  $("list").replaceChildren(...rows.map(r => card(r.ev, { focus: r.ev.id === focus.id, depth: r.depth })))
+  $("list").setAttribute("aria-busy", "false")
+  $("foot").textContent = replies.length ? "" : "No replies yet."
+  $("list").querySelector("article.focus")?.scrollIntoView({ block: "center" })
+}
+
+async function showProfile(pk) {
+  want(pk); $("title").dataset.pk = pk; $("title").textContent = nameOf(pk)
+  const head = el("section", "prof"), top = el("div", "top"), av = avatar(pk), name = el("h2"); name.dataset.pk = pk; paintWho(name)
+  top.append(av, el("div")); top.lastChild.append(name, el("div", "muted", `${pk.slice(0, 12)}…`)); head.append(top)
+  const about = el("p"); head.append(about)
+  const fill = () => { about.textContent = profiles.get(pk)?.about ?? ""; $("title").textContent = nameOf(pk) }
+  setTimeout(fill, 600)
+  const evs = await q([{ kinds: [1, 6], authors: [pk], limit: PAGE }])
+  fill()
+  $("list").replaceChildren(head, ...mergeNotes([], evs).map(ev => card(ev)))
+  $("list").setAttribute("aria-busy", "false")
+  $("foot").textContent = evs.length ? "" : "No notes from them yet."
+}
+
+async function start() {
+  if (n.theme?.get) { try { const t = await n.theme.get(); const c = t?.colors ?? {}; const r = document.documentElement.style; if (c.background) r.setProperty("--bg", c.background); if (c.text) r.setProperty("--text", c.text); if (c.primary) r.setProperty("--accent", c.primary) } catch {} }
+  me = await n.identity.getPublicKey().catch(() => "")
+  // The shell opens a note or a profile here by intent; a reply this account just posted lands in the thread at once.
+  n.intent?.onDelivery?.(d => {
+    const p = d?.payload ?? {}
+    if (d.archetype === "note" && HEX.test(p.id ?? "")) go({ kind: "thread", id: p.id }, view.kind !== "feed" || stack.length > 0)
+    else if (d.archetype === "profile" && HEX.test(p.pubkey ?? "")) go({ kind: "profile", pubkey: p.pubkey }, view.kind !== "feed" || stack.length > 0)
+    else if (d.archetype === "feed") { stack = []; go({ kind: "feed" }, false) }
+  })
+  n.inc?.on?.("nv.compose.sent", e => {
+    const ev = e?.payload?.event
+    if (!ev || !HEX.test(ev.id ?? "")) return
+    if (view.kind === "feed") { notes = mergeNotes([ev], notes); drawFeed() }
+    else if (view.kind === "thread") showThread(view.id, view.event)
+  })
+  render()
+}
+start()
+</script>
+</body>
+</html>
