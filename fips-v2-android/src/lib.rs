@@ -194,6 +194,53 @@ struct Running {
     read_anyone: bool,
     stop: tokio::sync::oneshot::Sender<()>,
     node_thread: std::thread::JoinHandle<()>,
+    /// The node's peers as last read by `peer_watch`; status reads this.
+    peers: Arc<std::sync::Mutex<Vec<String>>>,
+    peer_watch: Option<PeerWatch>,
+}
+
+/// Reads the node's peers every [`PEER_WATCH_EVERY`] on its own thread, so
+/// `status_json` (polled on the iOS and Mac main thread) never waits on the
+/// node's loop.
+struct PeerWatch {
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    thread: std::thread::JoinHandle<()>,
+}
+
+const PEER_WATCH_EVERY: Duration = Duration::from_secs(2);
+
+impl PeerWatch {
+    fn start(
+        control: tokio::sync::mpsc::Sender<fips::control::ControlMessage>,
+        peers: Arc<std::sync::Mutex<Vec<String>>>,
+    ) -> Option<Self> {
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = stop.clone();
+        let thread = std::thread::Builder::new()
+            .name("fips-peers".into())
+            .spawn(move || {
+                while !flag.load(Ordering::Relaxed) && !control.is_closed() {
+                    // A missed read keeps the last list: a busy node is not
+                    // every device gone.
+                    match mesh_peers(&control) {
+                        Ok(now) => *peers.lock().unwrap_or_else(|e| e.into_inner()) = now,
+                        Err(e) => tracing::debug!("mesh peers unread: {e:#}"),
+                    }
+                    let end = Instant::now() + PEER_WATCH_EVERY;
+                    while Instant::now() < end && !flag.load(Ordering::Relaxed) {
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                }
+            })
+            .map_err(|e| tracing::warn!("no peer watch, status peers stay empty: {e}"))
+            .ok()?;
+        Some(Self { stop, thread })
+    }
+
+    fn stop(self) {
+        self.stop.store(true, Ordering::Relaxed);
+        let _ = self.thread.join();
+    }
 }
 
 impl Running {
@@ -426,6 +473,8 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
             return Err(e.into());
         }
     };
+    let peers = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let peer_watch = PeerWatch::start(control.clone(), peers.clone());
     *state = Some(Running {
         npub,
         address,
@@ -442,6 +491,8 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
         read_anyone: opts.read_anyone,
         stop: stop_tx,
         node_thread,
+        peers,
+        peer_watch,
     });
     Ok(())
 }
@@ -629,15 +680,51 @@ fn has_tree_parent(data: Option<&serde_json::Value>) -> bool {
     data.map_or(false, |d| d["is_root"] == false && d["depth"].as_u64().map_or(false, |n| n > 0))
 }
 
+/// How long one peer read waits for the node. A busy node reads as no peers
+/// until the next read.
+const STATUS_PEERS_TIMEOUT: Duration = Duration::from_millis(500);
+
+/// Npubs of the node's peers: devices on a direct link to this one, which is
+/// what "in reach" means to the app. The fork's `peers` command answers the
+/// rows `show_peers` gives on a control socket. Every row counts, `stale`
+/// too: that only means quiet for a heartbeat interval, and the node drops
+/// a dead link itself.
+fn mesh_peers(control: &tokio::sync::mpsc::Sender<fips::control::ControlMessage>) -> Result<Vec<String>> {
+    control_request_within(control, "peers", serde_json::json!({}), STATUS_PEERS_TIMEOUT).map(|d| peer_npubs(d.as_ref()))
+}
+
+/// The npubs in a `peers` answer, in order, without repeats.
+fn peer_npubs(data: Option<&serde_json::Value>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for row in data.and_then(|d| d["peers"].as_array()).into_iter().flatten() {
+        if let Some(npub) = row["npub"].as_str().filter(|n| n.starts_with("npub1"))
+            && !out.iter().any(|n| n == npub)
+        {
+            out.push(npub.to_string());
+        }
+    }
+    out
+}
+
 /// One control command, answered by the node's rx loop. Its data on "ok".
 fn control_request(
     control: &tokio::sync::mpsc::Sender<fips::control::ControlMessage>,
     command: &str,
     params: serde_json::Value,
 ) -> Result<Option<serde_json::Value>> {
+    control_request_within(control, command, params, ADD_PEER_TIMEOUT)
+}
+
+/// [`control_request`] with its own wait.
+fn control_request_within(
+    control: &tokio::sync::mpsc::Sender<fips::control::ControlMessage>,
+    command: &str,
+    params: serde_json::Value,
+    timeout: Duration,
+) -> Result<Option<serde_json::Value>> {
     let request = fips::control::protocol::Request { command: command.into(), params: Some(params) };
     let (tx, mut rx) = tokio::sync::oneshot::channel();
-    let end = Instant::now() + ADD_PEER_TIMEOUT;
+    let end = Instant::now() + timeout;
     // A full queue is a burst of opens, not a failure: wait for room.
     let mut message = (request, tx);
     loop {
@@ -657,7 +744,7 @@ fn control_request(
             Err(tokio::sync::oneshot::error::TryRecvError::Empty) if Instant::now() < end => {
                 std::thread::sleep(Duration::from_millis(5));
             }
-            Err(_) => anyhow::bail!("node did not answer in {ADD_PEER_TIMEOUT:?}"),
+            Err(_) => anyhow::bail!("node did not answer in {timeout:?}"),
         }
     };
     anyhow::ensure!(response.status == "ok", "{}", response.message.unwrap_or_default());
@@ -672,6 +759,9 @@ pub fn stop() {
         s.stop();
     }
     run.ctl.stop();
+    if let Some(w) = run.peer_watch.take() {
+        w.stop();
+    }
     let _ = run.stack_thread.join();
     let _ = run.stop.send(());
     let _ = run.node_thread.join();
@@ -704,7 +794,7 @@ pub fn status_json() -> String {
             address: Some(run.address.to_string()),
             uptime_s: run.started.elapsed().as_secs(),
             exported: run.exported.filter(|_| !run.cap_reached()).into_iter().collect(),
-            peers: Vec::new(),
+            peers: run.peers.lock().map(|p| p.clone()).unwrap_or_default(),
             reading: run.reading.iter().map(|r| Reading { npub: r.npub.clone(), port: r.port, via_mesh: r.via_mesh }).collect(),
             counters: CountersOut::from(&run.ctl.counters),
             cap_reached: run.cap_reached(),
@@ -1018,6 +1108,62 @@ mod tests {
         }
         let _ = node.stop.send(());
         let _ = node.thread.join();
+    }
+
+    /// A `peers` answer gives each row's npub once, in order; junk rows and
+    /// no answer give none.
+    #[test]
+    fn peer_npubs_reads_the_rows() {
+        use serde_json::json;
+        let a = Identity::generate().npub();
+        let b = Identity::generate().npub();
+        let data = json!({"peers": [{"npub": a, "connectivity": "connected"}, {"npub": b, "connectivity": "stale"}, {"npub": a}, {"npub": 7}, {}]});
+        assert_eq!(peer_npubs(Some(&data)), vec![a, b]);
+        assert!(peer_npubs(Some(&json!({"peers": []}))).is_empty());
+        assert!(peer_npubs(Some(&json!({}))).is_empty());
+        assert!(peer_npubs(None).is_empty());
+    }
+
+    /// Two offline nodes on loopback UDP, one dialing the other: each lists
+    /// the other in `mesh_peers` once the link is up (fork `peers` command).
+    /// Before this, status `peers` was always empty and every "in reach" read
+    /// false.
+    #[test]
+    fn mesh_peers_lists_a_linked_device() {
+        let port = |s: std::net::UdpSocket| s.local_addr().unwrap().port();
+        let b_port = port(std::net::UdpSocket::bind("127.0.0.1:0").unwrap());
+        let yaml = |nsec: &str, bind: String, peers: String| {
+            format!(
+                "node:\n  identity:\n    nsec: \"{nsec}\"\n  control:\n    enabled: false\n  rendezvous:\n    nostr:\n      enabled: false\ndns:\n  enabled: false\ntransports:\n  udp:\n    bind_addr: \"{bind}\"\n{peers}"
+            )
+        };
+        let (a_nsec, b_nsec) = (generate_nsec(), generate_nsec());
+        let b_npub = Identity::from_secret_key(decode_nsec(&b_nsec).unwrap()).npub();
+        let a_npub = Identity::from_secret_key(decode_nsec(&a_nsec).unwrap()).npub();
+        let b_cfg: Config = serde_yaml::from_str(&yaml(&b_nsec, format!("127.0.0.1:{b_port}"), "peers: []\n".into())).unwrap();
+        let b = node::spawn(b_cfg, "fips-test-peers-b").expect("node b");
+        assert!(mesh_peers(&b.control).unwrap().is_empty(), "control: no peers before the link");
+        let dial_b = format!(
+            "peers:\n  - npub: \"{b_npub}\"\n    addresses:\n      - transport: udp\n        addr: \"127.0.0.1:{b_port}\"\n    connect_policy: auto_connect\n"
+        );
+        let a_cfg: Config = serde_yaml::from_str(&yaml(&a_nsec, "127.0.0.1:0".into(), dial_b)).unwrap();
+        let a = node::spawn(a_cfg, "fips-test-peers-a").expect("node a");
+        let end = Instant::now() + Duration::from_secs(15);
+        let (mut on_a, mut on_b) = (Vec::new(), Vec::new());
+        while Instant::now() < end {
+            on_a = mesh_peers(&a.control).unwrap();
+            on_b = mesh_peers(&b.control).unwrap();
+            if on_a.contains(&b_npub) && on_b.contains(&a_npub) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert_eq!(on_a, vec![b_npub], "a lists b");
+        assert_eq!(on_b, vec![a_npub], "b lists a");
+        for n in [a, b] {
+            let _ = n.stop.send(());
+            let _ = n.thread.join();
+        }
     }
 
     /// A reading phone answers offers from its own devices only, or from no
