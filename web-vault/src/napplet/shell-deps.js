@@ -6,7 +6,7 @@ import { pool, publishRelays, DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { firstTaken } from "../net/actions.js"
 import { checkSigned } from "../net/sync.js"
 import { getBlocks } from "../net/blocks.js"
-import { uploadPhoto, mediaServers, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
+import { uploadPhoto, mediaServers, lockedFileServers, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
 import { parseBlossomUri, candidateServers, fetchVerified, readCapped, MAX_BYTES, serverOrigin, authorServers } from "../net/blossom-uri.js"
 import { showNotice } from "../net/notify-show.js"
 import { blockedUrl } from "./fetch-policy.js"
@@ -16,7 +16,8 @@ import { catalogFilter, catalogEntries, fetchArtifact } from "./catalog.js"
 import { listBlobs, mirrorBlob, deleteBlob } from "../net/blossom-gallery.js"
 import { getMessages, onMessages, sendMessage, dropFailed } from "../net/dms.js"
 import { markRead } from "../net/dm-read.js"
-import { dmContent, preparePhoto } from "../net/dm-photo.js"
+import { preparePhoto } from "../net/dm-photo.js"
+import { encryptedPhoto, openFileLink, parseFileLink } from "../net/dm-file.js"
 import { getProfile } from "../net/profiles.js"
 import { findMine, newestMine } from "./shell-deps-find.js"
 import { SEND_ACTIONS, countdownText, sendDelaySeconds, startCountdown } from "../net/send-delay.js"
@@ -55,6 +56,12 @@ export function appTheme(doc = document) {
 }
 
 async function fetchBytes(url, { servers = [], range } = {}) {
+  // A DM photo (dm-file.js): its ciphertext fetched like any https file, checked against its hash and decrypted here,
+  // so the Messages napplet draws the photo without ever holding the file's fetch.
+  if (parseFileLink(url)) {
+    const blob = await openFileLink(url, { fetchBytes: async u => new Uint8Array(await (await fetchBytes(u)).blob.arrayBuffer()) }).catch(e => { throw e?.code ? e : codeError("network-error", String(e?.message ?? e)) })
+    return { blob, mime: blob.type }
+  }
   if (typeof url === "string" && url.startsWith("blossom:")) {
     const b = parseBlossomUri(url)
     if (!b) throw codeError("invalid-request")
@@ -162,13 +169,14 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
       searchName: dm.searchName ?? (() => ""), follows: dm.follows ?? (() => false), lookup: dm.lookup ?? (() => {}),
       profile: pk => getProfile(pk),
       onChange: cb => onMessages(cb),
-      // A photo takes the classic thread's own path (ConversationScreen.jsx): redrawn without its metadata
-      // (preparePhoto), uploaded to your media servers, its link sent after the text; "(photo)" shows while it goes.
+      // A photo takes the classic thread's own path (ConversationScreen.jsx): redrawn or stripped of its metadata
+      // (preparePhoto), encrypted and uploaded to your media servers, sent as a kind 15 after the text (dm-file.js);
+      // "(photo)" shows while it goes.
       async send(peer, text, photo = null) {
         const before = new Set([...getMessages().messages.values()].map(m => m.id))
         const preview = photo ? (text ? `${text}\n(photo)` : "(photo)") : null
         let sentText = text
-        const opts = photo ? { preview, prepare: async () => (sentText = dmContent(text, (await uploadPhoto(await preparePhoto(photo), { ctx, servers: await mediaServers(ctx) })).url)) } : {}
+        const opts = photo ? { preview, prepare: async () => { const m = await encryptedPhoto(await preparePhoto(photo), { upload: async f => uploadPhoto(f, { ctx, servers: lockedFileServers(await mediaServers(ctx)), raw: true }) }); sentText = m.shown; return m } } : {}
         try { await sendMessage(ctx, peer, text, opts) } catch (e) {
           const failed = findMine(getMessages().messages, ctx.session.pubkey, peer, preview ?? text, true, before) ?? findMine(getMessages().messages, ctx.session.pubkey, peer, sentText, true, before)
           throw Object.assign(new Error(String(e?.fixed ? e.message : "The message wasn't sent.")), { failedId: failed?.id })

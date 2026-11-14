@@ -19,6 +19,7 @@ import { checkSigned } from "./sync.js"
 import { AUTH_WAIT, LIVE_RETRY, authedSubscribe, forgetDeclinedAuth, queryWithAuth } from "./dm-read-auth.js"
 import { chunkBytesFor, dmCache } from "./dm-cache.js"
 import { settleWatch } from "./settle-early.js"
+import { fileContentOf, isFileLink } from "./dm-file.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -35,9 +36,10 @@ export function cryptoFor(session, { ext, signer } = {}) {
   return session.method === "nip07" ? extensionCrypto(session.pubkey) : session.method === "local" ? { reason: "your key isn't unlocked" } : { reason: "your bunker isn't connected" }
 }
 
-/** The kind 14 the other person reads: unsigned, its id computed like any event's. */
-export function rumorFor(me, peer, content, created_at = now()) {
-  const rumor = { kind: 14, pubkey: me, created_at, tags: [["p", peer]], content }
+/** The kind 14 the other person reads (or a kind 15 file message, `tags` its file tags after the p): unsigned, its id
+ *  computed like any event's. */
+export function rumorFor(me, peer, content, created_at = now(), { kind = 14, tags = [] } = {}) {
+  const rumor = { kind, pubkey: me, created_at, tags: [["p", peer], ...tags], content }
   return { ...rumor, id: getEventHash(rumor) }
 }
 
@@ -80,12 +82,15 @@ export async function unwrap(wrap, crypto, me) {
     const seal = JSON.parse(await signerCall(() => crypto.decrypt(wrap.pubkey, wrap.content)))
     if (seal?.kind !== 13 || !verifyEvent(seal)) return null
     const rumor = JSON.parse(await signerCall(() => crypto.decrypt(seal.pubkey, seal.content)))
-    if (rumor?.kind !== 14 || rumor.pubkey !== seal.pubkey || typeof rumor.content !== "string") return null
+    if ((rumor?.kind !== 14 && rumor?.kind !== 15) || rumor.pubkey !== seal.pubkey || typeof rumor.content !== "string") return null
+    // A kind 15 file message (dm-file.js) is kept as its link with what opens it; one that names no https file isn't a message.
+    const content = rumor.kind === 15 ? fileContentOf(rumor) : rumor.content
+    if (content === null) return null
     const names = (rumor.tags ?? []).some(t => t[0] === "p" && t[1] === me)
     // Mine: the other person is the p tag, or me for a note to self. Theirs: a rumor that doesn't name me isn't mine.
     const peer = rumor.pubkey === me ? (pTag(rumor.tags, me) ?? (names ? me : null)) : names ? rumor.pubkey : null
     if (!peer) return null
-    return { id: wrap.id, from: rumor.pubkey, peer, content: rumor.content, at: dmTime(rumor.created_at), legacy: false }
+    return { id: wrap.id, from: rumor.pubkey, peer, content, at: dmTime(rumor.created_at), legacy: false }
   } catch (e) { return passOn(e) }
 }
 
@@ -522,26 +527,40 @@ const firstOk = promises => new Promise((ok, no) => {
   for (const p of promises) p.then(ok, () => { if (--left === 0) no(new Error("none took it")) })
 })
 
-export async function sendMessage(ctx, peer, text, { crypto, query, chat, publish = (urls, ev, opts) => pool.publish(urls, ev, opts), drop = dropRelay, wait, prepare, preview } = {}) {
+export async function sendMessage(ctx, peer, text, { crypto, query, chat, publish = (urls, ev, opts) => pool.publish(urls, ev, opts), drop = dropRelay, wait, prepare, preview, file = null } = {}) {
   const me = ctx.session.pubkey
   const c = crypto ?? cryptoFor(ctx.session, { signer: ctx.signer })
   if (c.reason) throw sendError(`Can't send: ${c.reason}`)
   const pid = `pending:${++pendingSeq}`
   const at = now()
-  const shown = { id: pid, from: me, peer, content: preview ?? text, at, legacy: false, pending: true }
+  let shown = { id: pid, from: me, peer, content: preview ?? text, at, legacy: false, pending: true }
   putMessage(me, pid, shown)
   // `again`: a photo that never uploaded is uploaded again on Try again; once it has, the message with its link is resent.
   const fail = (err, content, again = {}) => {
     const failed = sendFailure(err)
-    putMessage(me, pid, { ...shown, content: again.preview ?? content, pending: false, failed, resend: () => { dropFailed(pid); return sendMessage(ctx, peer, content, { crypto, query, chat, publish, drop, wait, ...again }) } })
+    putMessage(me, pid, { ...shown, content: again.preview ?? content, pending: false, failed, resend: () => { dropFailed(pid); return sendMessage(ctx, peer, again.file ? "" : content, { crypto, query, chat, publish, drop, wait, ...again }) } })
     throw err?.fixed ? err : sendError(failed)
   }
   let content = text
   // A photo goes up first (prepare -> the message with its link): a message naming a link no server holds would
   // reach them dead. Its failure is the screen's own sentence.
-  if (prepare) { try { content = await prepare() } catch (e) { return fail(sendError(e?.fixed ? e.message : "The photo didn't upload, so nothing was sent."), text, { prepare, preview }) } }
+  if (prepare) {
+    try { const got = await prepare(); if (got && typeof got === "object") file = got; else content = got } catch (e) { return fail(sendError(e?.fixed ? e.message : "The photo didn't upload, so nothing was sent."), text, { prepare, preview }) }
+  }
+  let rumor
+  if (file) {
+    // A photo is a kind 15 file message of its own (dm-file.js): its words, if any, go first as a kind 14, and the
+    // photo one second after so it sorts below them. A failure past here keeps the upload: Try again resends `file`.
+    const words = content.trim()
+    if (words) {
+      try { await sendMessage(ctx, peer, words, { crypto: c, query, chat, publish, drop, wait }) } catch (e) { return fail(e, "", { file, preview: "(photo)" }) }
+      putMessage(me, pid, (shown = { ...shown, content: "(photo)" }))
+    }
+    rumor = rumorFor(me, peer, file.content, words ? Math.max(at, now()) + 1 : at, { kind: 15, tags: file.tags })
+    content = file.shown
+  } else rumor = rumorFor(me, peer, content, at)
+  const again = file ? { file, preview: "(photo)" } : {}
   const env = { signer: ctx.signer, crypto: c, me }
-  const rumor = rumorFor(me, peer, content, at)
   const lookup = lookupFor(ctx)
   // Tests hand in `query`: those look up afresh; the app uses the kept lookups.
   const relaysOf = pk => query ? dmRelaysFor(pk, lookup, { query, fallback: ctx.account.relays.write }) : cachedDmRelays(pk, lookup, { fallback: ctx.account.relays.write })
@@ -549,12 +568,12 @@ export async function sendMessage(ctx, peer, text, { crypto, query, chat, publis
   let theirs, mine, toMe, toThem
   try {
     ;[theirs, mine] = await Promise.all([relaysOf(peer), relaysOf(me)])
-  } catch { return fail(sendError(SEND_FAILED.other), content) }
+  } catch { return fail(sendError(SEND_FAILED.other), content, again) }
   try {
     // Both seals at once, as the iPhone makes both wraps concurrently.
     ;[toMe, toThem] = await Promise.all([wrapFor(rumor, env, me), self ? null : wrapFor(rumor, env, peer)])
     if (self) toThem = toMe
-  } catch (e) { return fail(e?.fixed ? e : sendError(e?.wrongAccount ? WRONG_ACCOUNT : e?.unreachable ? SEND_FAILED.unreachable : SEND_FAILED.signer), content) }
+  } catch (e) { return fail(e?.fixed ? e : sendError(e?.wrongAccount ? WRONG_ACCOUNT : e?.unreachable ? SEND_FAILED.unreachable : SEND_FAILED.signer), content, again) }
   const send = (urls, ev, to) => {
     const ms = wait ?? (ctx.session.method === "nip46" ? PUBLISH_WAIT.nip46 : PUBLISH_WAIT.other)
     const asked = new Set() // relays that asked for AUTH on this send
@@ -577,12 +596,12 @@ export async function sendMessage(ctx, peer, text, { crypto, query, chat, publis
   const delivered = await toThemSend.first.then(() => true, () => false)
   if (!delivered) {
     const n = (await toThemSend.all).length
-    return fail(sendError(`Not delivered: none of their ${n} relay${n === 1 ? "" : "s"} took it.`), content)
+    return fail(sendError(`Not delivered: none of their ${n} relay${n === 1 ? "" : "s"} took it.`), content, again)
   }
   // Delivered: the bubble is the real message now; the rest (other relays, the self-copy, Haven) finishes behind it.
   opened.add(toMe.id); opened.add(toThem.id)
   if (state.pubkey === me) {
-    const sent = { id: toMe.id, from: me, peer, content, at, legacy: false }
+    const sent = { id: toMe.id, from: me, peer, content, at: dmTime(rumor.created_at), legacy: false }
     state.messages.delete(pid); state.messages.set(toMe.id, sent); kept?.add(sent); state = { ...state }; changed()
   }
   const mineSend = self ? null : send(mineUrls, toMe, "me")
@@ -600,6 +619,7 @@ export const peerOf = (hash = location.hash) => /^#\/?dm\/([0-9a-f]{64})$/.exec(
 /** The inbox row's last line, as DMInboxView's lastMessagePreview: the first 60 characters, "…" past them, and
  *  "No message content" for an empty message. Runs of white space are one space (the row is one line here). */
 export function lastPreview(content) {
+  if (isFileLink(String(content ?? "").trim())) return "Photo"
   const t = String(content ?? "").replace(/\s+/g, " ").trim()
   if (!t) return "No message content"
   const chars = [...t]

@@ -1,15 +1,9 @@
-// Photos in DMs: the message the iPhone builds (DMAttachment.content), GIFs kept as they are, everything else
+// Photos in DMs: GIFs stripped of their metadata (dm-gif-strip.test.mjs), everything else
 // redrawn as a JPEG no larger than 2400 px (so no EXIF or location goes with it). The drawing is stubbed: node has no
 // canvas, and what matters here is what reaches the upload.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { dmContent, fitSize, isGif, preparePhoto, MAX_EDGE } from "../src/net/dm-photo.js"
-
-test("the photo's link goes on its own line after the text, or alone", () => {
-  assert.equal(dmContent("  look  ", "https://blossom.example/ab.jpg"), "look\nhttps://blossom.example/ab.jpg")
-  assert.equal(dmContent("", "https://blossom.example/ab.jpg"), "https://blossom.example/ab.jpg")
-  assert.equal(dmContent(" hi ", null), "hi")
-})
+import { fitSize, isGif, preparePhoto, MAX_EDGE } from "../src/net/dm-photo.js"
 
 test("the long edge comes down to 2400 px, keeping the shape; small photos stay their size", () => {
   assert.deepEqual(fitSize(4800, 3600), { width: MAX_EDGE, height: 1800 })
@@ -29,14 +23,6 @@ test("a JPEG named .gif is redrawn, not uploaded with its EXIF", async () => {
   assert.equal(drew, true)
   assert.equal(out.type, "image/jpeg")
   assert.equal(await out.text(), "clean")
-})
-
-test("a GIF goes up in its own bytes, without being redrawn", async () => {
-  let drew = false
-  const out = await preparePhoto(new File(["GIF89a-bytes"], "cat.gif", { type: "image/gif" }), { draw: async () => { drew = true } })
-  assert.equal(drew, false)
-  assert.equal(out.type, "image/gif")
-  assert.equal(await out.text(), "GIF89a-bytes")
 })
 
 test("any other photo is replaced by the redrawn JPEG, so its original bytes (and EXIF) never go up", async () => {
