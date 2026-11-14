@@ -257,6 +257,7 @@ func StartRelayC(importMode bool) {
 		return
 	}
 
+	startupMark("engine start")
 	err := relayLC.startCycle(func(cycle *relayCycle) error {
 		if err := prepareCSharedEnv(); err != nil {
 			return err
@@ -398,6 +399,7 @@ func StartRelayC(importMode bool) {
 			protocol = "https"
 		}
 		log.Printf("🔗 listening at %s://%s", protocol, addr)
+		startupMark("listening")
 		return nil
 	})
 

@@ -54,6 +54,7 @@ class AppDelegate: NSObject, ObservableObject {
         ConfigService.shared.warmActiveSigningKey()
         RelayProcessManager.shared.appendLaunchLine("Keychain: \(CredentialStore.locationReport())",
                                                     in: ConfigService.shared.relayDataDir)
+        RelayProcessManager.shared.startupMark("app launch")
 
         // Check if setup is complete
         if !ConfigService.shared.config.hasCompletedSetup {
@@ -63,11 +64,10 @@ class AppDelegate: NSObject, ObservableObject {
             // window (NotificationAsk), never before it.
             PushNotificationService.shared.refreshAnswer()
 
-            // Auto-start relay after the app is fully initialised.
-            // Uses a Task with a brief sleep so the SwiftUI scene and
-            // Go runtime are ready before we call into StartRelayC.
+            // Auto-start relay right away (it used to wait a fixed 1 s; the Go
+            // runtime is ready once the app is, and its stores open while
+            // the window draws).
             Task { @MainActor in
-                try? await Task.sleep(for: .seconds(1))
                 // Posts waiting for an outside media server. Started before the
                 // relay guards so a queued post is never stranded by a setting.
                 MediaPostQueue.shared.start()

@@ -33,6 +33,7 @@ extension RelayProcessManager {
 
         // Immediately claim the state so no second call can slip through.
         self.state = .booting
+        startupMark("engine start asked")
         // A stop hands its stragglers to a reaper, and Go refuses a start
         // until they finish: a Restart (stop, then start) right away used to
         // be refused and sit on "Booting…". Wait it out here, as backup and
@@ -70,18 +71,9 @@ extension RelayProcessManager {
             performClearDatabaseLocks(at: relayDataDir)
         }
 
-        // 3. Copy templates directory — always refresh so new/updated
-        //    templates (e.g. feed.html) are deployed on app update.
-        let destURL = relayDataDir.appendingPathComponent("templates")
-        if let templatesPath = Bundle.main.path(forResource: "templates", ofType: "") {
-            if FileManager.default.fileExists(atPath: destURL.path) {
-                try? FileManager.default.removeItem(at: destURL)
-            }
-            try? FileManager.default.copyItem(at: URL(fileURLWithPath: templatesPath), to: destURL)
-            logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Copied templates to \(destURL.path)"))
-        } else {
-            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Templates folder not found in Bundle"))
-        }
+        // 3. Templates: copied when the app was installed or updated, not
+        //    on every launch (startup time).
+        copyTemplatesIfChanged(to: relayDataDir)
 
         #if os(iOS)
         await resolveMacMeshRelay(config: config)
@@ -190,6 +182,7 @@ extension RelayProcessManager {
         beginRelayActivity()
 
         // Launch the C-Shared relay on a background thread
+        startupMark("engine called")
         DispatchQueue.global().async { [weak self] in
             // 0 = false (not in import mode)
             StartRelayC(0)

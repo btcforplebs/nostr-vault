@@ -98,6 +98,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Before anything can fetch: URLSession.shared refuses .fips hosts on iOS.
         FipsHostBlocker.install()
         secureKeysAtRest(application)
+        RelayProcessManager.shared.startupMark("app launch")
+        // The engine starts here, not when the first screen appears: its
+        // stores open while the UI draws. Not for a background launch
+        // (refresh/processing tasks start it themselves, ensureRelayRunning).
+        if ConfigService.shared.config.hasCompletedSetup,
+           application.applicationState != .background,
+           RelayProcessManager.shared.state == .idle {
+            RelayProcessManager.shared.startRelay(config: ConfigService.shared.config)
+        }
         // Muted feed videos and sounds mix with the user's music instead of
         // stopping it. This lived in HavenApp/App/iOSAppDelegate.swift, which
         // no target compiles, so the session stayed .soloAmbient.
@@ -174,6 +183,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             }
         }
 
+        RelayProcessManager.shared.startupMark("launch handler done")
         return true
     }
 
