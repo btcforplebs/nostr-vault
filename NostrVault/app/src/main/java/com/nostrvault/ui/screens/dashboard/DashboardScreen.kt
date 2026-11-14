@@ -351,6 +351,9 @@ fun DashboardScreen(
     LaunchedEffect(Unit) {
         TabReselect.of(Screen.Dashboard).collect { listState.animateScrollToItem(0) }
     }
+    // A chip switch opens the page at its top (Logen 2026-11-14).
+    val pageChip by viewModel.pageChip.collectAsState()
+    com.nostrvault.ui.components.ScrollTopOnChange(listState, pageChip)
     // New notes, likes or zaps landing above the top row show, as on "Vault".
     RevealNewestEffect(listState) {
         when (viewMode) {

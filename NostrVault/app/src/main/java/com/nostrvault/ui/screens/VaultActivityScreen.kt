@@ -105,6 +105,7 @@ import kotlinx.serialization.json.longOrNull
 import javax.inject.Inject
 import com.nostrvault.ui.screens.dashboard.IconFilterButton
 import com.nostrvault.ui.components.RevealNewestEffect
+import com.nostrvault.ui.components.ScrollTopOnChange
 
 /** The "Vault" list, with the tab's pill and Vault button (as the other lists). */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -220,6 +221,9 @@ internal fun VaultActivityScreen(
     // New lines (a refresh on coming back to the tab, a tick) land above the
     // top line: show them rather than keep the old top line in place.
     RevealNewestEffect(listState) { rows.map { if (others) it.key else it.line.id } }
+    // A chip switch opens the new list at its top, not at the old one's
+    // scroll offset over different rows (Logen 2026-11-14).
+    ScrollTopOnChange(listState, currentChip)
 
     GlassScaffold(
         toolbar = {
