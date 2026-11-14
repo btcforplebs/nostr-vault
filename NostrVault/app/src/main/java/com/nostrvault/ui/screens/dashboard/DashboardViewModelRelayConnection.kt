@@ -221,8 +221,10 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.MAX_SEEN
         // want ALL notes where the user is tagged, not just recent ones (older
         // tagged notes never appeared otherwise). A top-up re-send already holds
         // them, so it asks only for the gap (iOS #2034: return = top-up), instead
-        // of replaying 500 tagged events per account on every return.
-        val mentionSince = if (topUp) sinceClause else ""
+        // of replaying 500 tagged events per account on every return. The same
+        // once the store read answered for this account: it read them already.
+        val storeRead = storeAnswered == ownerHex.lowercase() && isLocalVaultRelay(relayUrl)
+        val mentionSince = if (topUp || storeRead) sinceClause else ""
         val filters = vaultFilters(authors, ownerHex, sinceClause, mentionSince).joinToString(",")
 
         Log.d(TAG, "sendVaultSubscription: subId=$subId, fullReload=$isFullReload")

@@ -90,6 +90,14 @@ class RelayForegroundService : Service() {
         private val _connections = MutableStateFlow(0)
         val connections: StateFlow<Int> = _connections.asStateFlow()
 
+        /**
+         * Counts engine starts in this process: bumped as soon as the Go engine
+         * returned from its start, before the port health check. The Vault
+         * reads its rows from the store then (VaultStoreRead).
+         */
+        internal val _engineStarts = MutableStateFlow(0)
+        val engineStarts: StateFlow<Int> = _engineStarts.asStateFlow()
+
         /** Feed connections should wait until this is true (3s after RUNNING). */
         internal val _readyForConnections = MutableStateFlow(false)
         val readyForConnections: StateFlow<Boolean> = _readyForConnections.asStateFlow()

@@ -102,8 +102,6 @@ class DashboardViewModel @Inject constructor(
         /** Zaps > Given reads the wallet's 200 most recent payments. */
         internal const val WALLET_GIVEN_PAGES = 4
         internal const val WALLET_GIVEN_PAGE_SIZE = 50
-        internal const val SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000L // 24 hours
-        internal const val SNAPSHOT_FILE = "vault_snapshot.json"
         private const val FOLLOWERS_POLL_MS = 60_000L
         internal const val SAVED_VIEW_MODE = "vault.viewMode"
         internal const val SAVED_NOTE_SCOPE = "vault.noteScope"
@@ -318,8 +316,12 @@ class DashboardViewModel @Inject constructor(
     /** All raw events from the local relay (all kinds including 7, 9735). */
     internal val allEvents = mutableListOf<NostrEvent>()
     internal val allEventsMutex = Mutex()
-    /** The account [allEvents] belong to: its saved screen is what gets written. */
-    @Volatile internal var heldAccount: String = nostrService.activeHexPubkey
+    /** The account whose window the store read answered (VaultStoreRead); "" none yet. */
+    @Volatile internal var storeAnswered: String = ""
+    /** Bumped on an account switch: a store read still running for the old account is dropped. */
+    internal val storeEpoch = java.util.concurrent.atomic.AtomicInteger(0)
+    /** One store read at a time; a call during a read waits and reads again after it. */
+    internal val storeReadMutex = Mutex()
     internal val seenIds = ConcurrentHashMap.newKeySet<String>()
 
     /** Newest created_at seen — lets resume re-subscribes fetch only the gap. */
@@ -388,22 +390,24 @@ class DashboardViewModel @Inject constructor(
                 .collect { scheduleUpdateDisplayData() }
         }
 
-        // Restore disk snapshot immediately — show cached events before the relay is ready
-        viewModelScope.launch {
-            val restored = restoreSnapshotIfAvailable()
-            if (restored) {
-                _notesHasLoadedOnce.value = true
-                updateDisplayData(updateGeneration)
-                Log.d(TAG, "Vault snapshot restored: ${allEvents.size} events")
-            }
+        // The saved screens of earlier builds go: the store read replaced them.
+        viewModelScope.launch(Dispatchers.IO) {
+            configStore.config.value.appSupportDir?.let { com.nostrvault.relay.VaultStoreRead.removeOldSavedScreens(File(it)) }
         }
 
-        // Wait for readyForConnections (fires 500ms after RUNNING) before
-        // establishing WebSocket connections to the local relay.
+        // The rows straight from the store as soon as the engine is up, before
+        // its port is (VaultStoreRead); the socket below tops up and stays live.
+        viewModelScope.launch {
+            RelayForegroundService.engineStarts.collect { if (it > 0) readVaultFromStore() }
+        }
+
+        // Wait for readyForConnections before establishing WebSocket
+        // connections to the local relay. Rows the store read already showed
+        // still need the live socket, so it connects whenever there is none.
         viewModelScope.launch {
             RelayForegroundService.readyForConnections.collect { ready ->
                 Log.d(TAG, "readyForConnections=$ready, notesLoaded=${_notesHasLoadedOnce.value}, color=${_connectionColor.value}")
-                if (ready && (!_notesHasLoadedOnce.value || _connectionColor.value == "red")) {
+                if (ready && (outboxClient == null || !_notesHasLoadedOnce.value || _connectionColor.value == "red")) {
                     connectToLocalRelay()
                 }
             }
@@ -509,12 +513,10 @@ class DashboardViewModel @Inject constructor(
     /** Clears all per-account event state and reconnects fresh. See init{}'s observer. */
     private fun resetForAccountSwitch() {
         disconnectFromLocalRelay()
+        storeEpoch.incrementAndGet()
+        storeAnswered = ""
         viewModelScope.launch {
-            // The account left keeps its screen for when you come back.
-            val left = heldAccount // empty (unknown at launch): nothing is saved
-            val held = allEventsMutex.withLock { allEvents.toList().also { allEvents.clear() } }
-            heldAccount = nostrService.activeHexPubkey
-            withContext(Dispatchers.IO) { writeSnapshot(left, held) }
+            allEventsMutex.withLock { allEvents.clear() }
             seenIds.clear()
             forgetGivenLookups()
             walletGivenGen++
@@ -547,12 +549,9 @@ class DashboardViewModel @Inject constructor(
             olderCursors.clear()
             _noOlderPages.value = emptySet()
             _isLoadingOlder.value = false
-            // The new account's last screen at once; the reconnect tops it up.
-            val gen = updateGeneration
-            if (restoreSnapshotIfAvailable(heldAccount) && gen == updateGeneration) {
-                _notesHasLoadedOnce.value = true
-                updateDisplayData(updateGeneration)
-            }
+            // The new account's rows from the store at once (tens of ms); the
+            // socket after it only tops up.
+            readVaultFromStore()
             refreshFollowers()
             connectToLocalRelay()
         }
@@ -563,6 +562,8 @@ class DashboardViewModel @Inject constructor(
      * Re-sends subscriptions on existing connections or reconnects if dropped.
      */
     fun onResume() {
+        // What came while away, from the store; the socket below stays for live.
+        viewModelScope.launch { readVaultFromStore() }
         // Surface cached data immediately — don't wait for new events
         if (allEvents.isNotEmpty()) {
             _notesHasLoadedOnce.value = true
@@ -600,7 +601,6 @@ class DashboardViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        persistSnapshot()
         disconnectFromLocalRelay()
     }
 
@@ -626,13 +626,6 @@ class DashboardViewModel @Inject constructor(
     /** The "Vault" list is on screen: every list's own dot clears (iOS #506). */
     fun markAllListsViewed() {
         VaultDots.eventLists.forEach(::markListViewed)
-    }
-
-    fun persistSnapshot() {
-        val account = heldAccount.ifEmpty { nostrService.activeHexPubkey }
-        viewModelScope.launch(Dispatchers.IO) {
-            writeSnapshot(account, allEventsMutex.withLock { allEvents.toList() })
-        }
     }
 
     /** The Vault pill's pick. Media only flips the tab's half; the lists keep their state. */
@@ -697,9 +690,3 @@ class DashboardViewModel @Inject constructor(
         resolveWhitelistedHexPubkeys().contains(pubkey)
 
 }
-
-@kotlinx.serialization.Serializable
-data class DiskVaultSnapshot(
-    val events: List<com.nostrvault.service.NostrEvent>,
-    val savedAt: Long,
-)

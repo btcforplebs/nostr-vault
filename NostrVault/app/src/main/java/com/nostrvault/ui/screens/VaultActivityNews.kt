@@ -3,33 +3,12 @@ package com.nostrvault.ui.screens
 import com.nostrvault.data.model.VaultActivity
 import com.nostrvault.data.model.VaultMode
 import com.nostrvault.data.model.VaultNewsAccounts
-import kotlinx.serialization.Serializable
 
 /**
- * The "Vault" list's saved screen and news check (Logen 2026-11-13; iOS
- * #2034): what VaultActivityViewModel keeps on disk per account, and whether
- * a list the relay proposed for the dot has real news.
+ * Whether a list the relay proposed for the Vault dot has real news (Logen
+ * 2026-11-13; iOS #2034), and which lists a visit sees.
  */
-internal object VaultActivitySavedScreen {
-    /** One held event as saved; its pictures are worked out again on read. */
-    @Serializable
-    data class Saved(
-        val id: String,
-        val pubkey: String,
-        val kind: Int,
-        val createdAt: Long,
-        val content: String,
-        val tags: List<List<String>>,
-    )
-
-    fun save(event: VaultActivity.Event) =
-        Saved(event.id, event.pubkey, event.kind, event.createdAt, event.content, event.tags)
-
-    fun load(saved: Saved) = VaultActivity.Event(
-        saved.id, saved.pubkey, saved.kind, saved.createdAt, saved.content, saved.tags,
-        VaultActivity.pictures(saved.id, saved.pubkey, saved.kind, saved.createdAt, saved.content, saved.tags),
-    )
-
+internal object VaultActivityNews {
     /** The lists a visit to [mode] sees: "Vault" shows everything. */
     fun visited(mode: VaultMode): List<VaultMode> =
         if (mode == VaultMode.ACTIVITY) NEWS_LISTS else listOf(mode)

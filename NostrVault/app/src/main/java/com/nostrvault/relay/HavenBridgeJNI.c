@@ -701,3 +701,26 @@ JNIEXPORT jint JNICALL
 Java_com_nostrvault_relay_HavenBridge_activeConnections(JNIEnv *env, jobject thiz) {
     return (jint) ActiveConnectionsC();
 }
+
+// ---- Vault direct read (haven-go vault_read.go, startup PR B) ----
+// Bytes both ways, not jstring: NewStringUTF / GetStringUTFChars use
+// modified UTF-8 and break on emoji and other 4-byte characters in notes.
+extern char* QueryVaultC(char* request);
+
+JNIEXPORT jbyteArray JNICALL
+Java_com_nostrvault_relay_VaultStoreRead_queryVaultNative(JNIEnv *env, jobject thiz, jbyteArray request) {
+    if (request == NULL) return NULL;
+    jsize n = (*env)->GetArrayLength(env, request);
+    char *cRequest = malloc((size_t)n + 1);
+    if (cRequest == NULL) return NULL;
+    (*env)->GetByteArrayRegion(env, request, 0, n, (jbyte*)cRequest);
+    cRequest[n] = '\0';
+    char *answer = QueryVaultC(cRequest);
+    free(cRequest);
+    if (answer == NULL) return NULL;
+    size_t len = strlen(answer);
+    jbyteArray out = (*env)->NewByteArray(env, (jsize)len);
+    if (out != NULL) (*env)->SetByteArrayRegion(env, out, 0, (jsize)len, (const jbyte*)answer);
+    free(answer);
+    return out;
+}

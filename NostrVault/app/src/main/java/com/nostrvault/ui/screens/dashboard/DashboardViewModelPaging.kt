@@ -13,62 +13,9 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
-import java.io.File
-import com.nostrvault.data.local.VaultSnapshotStore
 import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
 import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.LOAD_MORE_TIMEOUT_MS
-import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.SNAPSHOT_MAX_AGE_MS
-import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.SNAPSHOT_FILE
 import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.OLDER_PAGE_SIZE
-
-    /**
-     * Puts [account]'s saved Notes / Likes / Zaps events in memory (one file
-     * per account, VaultSnapshotStore; iOS #2034). The old shared file is read
-     * once for the active account, then dropped. True when something came back.
-     */
-    internal suspend fun DashboardViewModel.restoreSnapshotIfAvailable(
-        account: String = nostrService.activeHexPubkey,
-    ): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val dir = configStore.config.value.appSupportDir ?: return@withContext false
-            val events = VaultSnapshotStore(File(dir)).read(
-                VaultSnapshotStore.NOTES, account, NostrEvent.serializer(), SNAPSHOT_MAX_AGE_MS,
-            ) ?: readLegacySnapshot(File(dir, SNAPSHOT_FILE))
-            if (events.isNullOrEmpty()) return@withContext false
-
-            allEventsMutex.withLock {
-                for (event in events) {
-                    if (seenIds.add(event.id)) allEvents.add(event)
-                }
-                newestEventCreatedAt = allEvents.maxOfOrNull { it.createdAt } ?: 0L
-            }
-            true
-        } catch (e: Exception) {
-            Log.w(TAG, "Vault snapshot restore failed: ${e.message}")
-            false
-        }
-    }
-
-    /** The one shared file the app saved before saved screens were per account. */
-    private fun DashboardViewModel.readLegacySnapshot(file: File): List<NostrEvent>? {
-        if (!file.exists()) return null
-        val snapshot = runCatching { json.decodeFromString<DiskVaultSnapshot>(file.readText()) }.getOrNull()
-        file.delete()
-        if (snapshot == null || System.currentTimeMillis() - snapshot.savedAt > SNAPSHOT_MAX_AGE_MS) return null
-        return snapshot.events
-    }
-
-    /** Saves [events] as [account]'s Notes / Likes / Zaps screen. */
-    internal fun DashboardViewModel.writeSnapshot(account: String, events: List<NostrEvent>) {
-        try {
-            val dir = configStore.config.value.appSupportDir ?: return
-            VaultSnapshotStore(File(dir)).write(
-                VaultSnapshotStore.NOTES, account, events, NostrEvent.serializer(),
-            ) { it.createdAt }
-        } catch (e: Exception) {
-            Log.w(TAG, "Vault snapshot save failed: ${e.message}")
-        }
-    }
 
     internal fun DashboardViewModel.buildAuthorSet(): Set<String> {
         val config = configStore.config.value

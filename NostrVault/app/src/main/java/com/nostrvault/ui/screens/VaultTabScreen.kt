@@ -128,11 +128,6 @@ fun VaultTabScreen(
         viewModel.onResume()
         activity.refresh()
     }
-    // Save a snapshot when the app goes to background so the next cold launch is instant.
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
-        viewModel.persistSnapshot()
-        activity.persistSavedScreen()
-    }
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         // Every minute while the tab is on screen and the app is in front.
