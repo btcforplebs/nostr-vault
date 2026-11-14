@@ -1,6 +1,7 @@
 // Local server for the built app: serves dist/ under /vault/ (the site layout). Open it as http://localhost:PORT/vault/,
 // which is a secure context (service worker, storage.persist, IndexedDB); on a phone, via `adb reverse`.
 import http from "node:http"; import fs from "node:fs"; import path from "node:path"
+import { loaderCsp, LOADER_FILE } from "./src/napplet/csp.js"
 const root = path.resolve("dist"), port = Number(process.env.PORT || 8799)
 const types = { ".html": "text/html", ".js": "text/javascript", ".wasm": "application/wasm", ".svg": "image/svg+xml", ".json": "application/json", ".css": "text/css" }
 http.createServer((req, res) => {
@@ -13,6 +14,8 @@ http.createServer((req, res) => {
   res.setHeader("Content-Type", types[path.extname(p)] || "application/octet-stream")
   // Vite's assets/ names carry a content hash, so they never change; everything else revalidates (ETag, 304).
   res.setHeader("Cache-Control", /\/assets\//.test(p.slice(root.length)) ? "public, max-age=31536000, immutable" : "no-cache")
+  // The napplet loader's own CSP, as nginx sends it (src/napplet/csp.js).
+  if (p === path.join(root, LOADER_FILE)) res.setHeader("Content-Security-Policy", loaderCsp())
   send(req, res, p)
 }).listen(port, () => console.log(`http://localhost:${port}/vault/`))
 

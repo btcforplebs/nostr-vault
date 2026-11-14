@@ -13,3 +13,9 @@ export const frameCsp = () => [
   "form-action 'none'",
   "base-uri 'none'",
 ].join("; ")
+
+// The loader page's header CSP (/vault/napplet-frame.html): the frame's rules, plus who may frame it. Served by
+// website/nginx.conf (same string, checked by test/napplet-runtime.test.mjs), vite dev and server.mjs. The written
+// napplet keeps this policy (document.write doesn't change a document's CSP), and its own <meta> one on top.
+export const loaderCsp = () => `${frameCsp()}; frame-ancestors 'self'`
+export const LOADER_FILE = "napplet-frame.html"
