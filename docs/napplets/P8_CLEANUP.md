@@ -51,10 +51,13 @@ screens; check what each import is still used by before deleting.
     content warnings, the send delay with Undo
   - Compose has no media or emoji yet
   - feed modes other than Following; desktop's thread and profile right pane
-- **Media:**
-  - long video (it arrives whole before it plays; it needs ranges over `resource.bytes`)
-  - the shim's 30 s timeout on large uploads and downloads
-  - "Posted in N notes", file-note tiles, the stats panel
+- **Media:** done (gap run): the stats panel (the classic one, worked out in the napplet), "Posted in N notes"
+  (the shell reads your vault, napplet:media/postedIn -> media/notes; a row opens the thread), the live file-note
+  "New" tiles (the shell runs watchFileNotes -> media/tiles; saved emoji images stay off Media), and big files in
+  8 MB ranged parts, so the shim's 30 s wait no longer kills a long video. The shim (0.38) doesn't pass `range`, so
+  the napplet names it in the link's fragment (`#nv-bytes=S-E`, never sent to a server). Left: a video still arrives
+  whole before it plays (parts, not a stream; capped at 1 GB); an upload over 30 s still times out in the shim;
+  testing a server.
 - **WoT:** done (gap run). See their web (#/wot/<hex>/web, "‹ You" back) and Follow/Unfollow on a card. Kind 3 is
   still never signed for a napplet: the card's button asks the shell (napplet:wot/follow, only on the WoT pane's own
   bus), and the shell runs the classic card's setFollow with all its list safety, the same one tap as the classic card.

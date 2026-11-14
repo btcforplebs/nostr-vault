@@ -191,6 +191,18 @@ test("dispatch: resource passes range and the private flag, maps errors to NAP c
   assert.deepEqual(many.items.map(i => i.ok), [true, false])
 })
 
+test("dispatch: a range named in the link's fragment (the shim passes no range) is taken off the link and asked for", async () => {
+  const { handlers, calls } = make(defaultGrant())
+  await handlers.resource({ type: "resource.bytes", id: "1", url: "https://x/v.mp4#nv-bytes=8388608-16777215" })
+  assert.deepEqual([calls.fetch.url, calls.fetch.range], ["https://x/v.mp4", { start: 8388608, end: 16777215 }])
+  await handlers.resource({ type: "resource.bytes", id: "2", url: "https://x/v.mp4#nv-bytes=5-" })
+  assert.deepEqual([calls.fetch.url, calls.fetch.range], ["https://x/v.mp4", { start: 5, end: undefined }])
+  for (const url of ["https://x/v.mp4#nv-bytes=9-3", "https://x/v.mp4#other", "blossom:abc#nv-bytes=0-1", "https://x/v.mp4#nv-bytes=a-b"]) {
+    await handlers.resource({ type: "resource.bytes", id: "3", url })
+    assert.deepEqual([calls.fetch.url, calls.fetch.range], [url, undefined], url)
+  }
+})
+
 test("dispatch: upload asks first for an outside napplet; a no uploads nothing", async () => {
   const yes = make(defaultGrant())
   const r = await yes.handlers.upload({ type: "upload.upload", id: "1", request: { data: new Blob(["abc"]), mimeType: "image/png" } })
