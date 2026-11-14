@@ -112,12 +112,24 @@ function drawFiles() {
   $("files").replaceChildren(...media.map((m, i) => { const s = document.createElement("span"), x = document.createElement("button"); s.textContent = m.name || "file"; x.textContent = "✕"; x.setAttribute("aria-label", `Remove ${m.name || "file"}`); x.onclick = () => { media.splice(i, 1); drawFiles(); sync() }; s.append(x); return s }))
 }
 // A photo or video: uploaded through the shell (NAP-UPLOAD to your media servers); its link and imeta go in the note.
+/** A long upload is answered "uploading" (the shell answers within 20 s and carries on): its end comes as
+ *  upload.status.changed, and upload.status every 15 s catches one this missed. */
+function finished(r, waiting = () => {}) {
+  if (!r || (r.status !== "uploading" && r.status !== "pending")) return Promise.resolve(r)
+  waiting()
+  return new Promise(res => {
+    let sub = null, t = 0
+    const done = st => { if (st?.uploadId !== r.uploadId || st.status === "uploading" || st.status === "pending") return; sub?.close(); clearInterval(t); res(st) }
+    sub = n.upload.onStatus?.(done) ?? null
+    t = setInterval(() => n.upload.status?.(r.uploadId).then(done).catch(() => {}), 15000)
+  })
+}
 $("add").onchange = async e => {
   const f = e.target.files?.[0]; e.target.value = ""
   if (!f || !n.upload) return
   uploading++; sync(); status(`Uploading ${f.name}…`)
   try {
-    const r = await n.upload.upload({ data: f, mimeType: f.type, filename: f.name })
+    const r = await finished(await n.upload.upload({ data: f, mimeType: f.type, filename: f.name }), () => status(`Uploading ${f.name}… still going, it's a big one`))
     if (!r?.ok) throw new Error(r?.error || "not uploaded")
     media.push({ url: r.url, mime: r.mimeType || f.type, sha256: r.sha256, size: r.size, name: f.name }); drawFiles(); status("")
   } catch (err) { status(`${f.name}: ${err.message}`) }

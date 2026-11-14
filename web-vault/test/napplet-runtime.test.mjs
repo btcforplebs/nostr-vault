@@ -211,6 +211,33 @@ test("dispatch: upload asks first for an outside napplet; a no uploads nothing",
   assert.equal((await no.handlers.upload({ type: "upload.upload", id: "2", request: { data: new Blob(["abc"]) } })).result.status, "cancelled")
 })
 
+test("dispatch: a long upload is answered 'uploading' inside the shim's wait, and its end is pushed and kept", async () => {
+  let finish
+  const slow = make(defaultGrant({ firstParty: true }), { uploadAnswerMs: 20, upload: (blob, mime) => new Promise(res => { finish = () => res({ url: "https://m/big", sha256: H, size: blob.size, mime }) }) })
+  const nap = napplet()
+  const r = await slow.handlers.upload({ type: "upload.upload", id: "1", request: { data: new Blob(["abcd"]), mimeType: "video/mp4" } }, nap)
+  assert.deepEqual([r.type, r.result.ok, r.result.status, r.result.uploadId, r.result.bytesTotal, r.result.updatedAt], ["upload.upload.result", true, "uploading", "u-1", 4, undefined])
+  assert.equal((await slow.handlers.upload({ type: "upload.status", id: "2", uploadId: "u-1" })).status.status, "uploading")
+  assert.equal(nap.sent.length, 0)
+  finish(); await new Promise(res => setTimeout(res, 5))
+  assert.deepEqual([nap.sent[0].type, nap.sent[0].status.status, nap.sent[0].status.url, nap.sent[0].status.uploadId], ["upload.status.changed", "complete", "https://m/big", "u-1"])
+  assert.equal((await slow.handlers.upload({ type: "upload.status", id: "3", uploadId: "u-1" })).status.url, "https://m/big")
+  // A failure after the answer is pushed too.
+  const bad = make(defaultGrant({ firstParty: true }), { uploadAnswerMs: 10, upload: () => new Promise((_, rej) => setTimeout(() => rej(new Error("server said 413")), 30)) })
+  const nap2 = napplet()
+  assert.equal((await bad.handlers.upload({ type: "upload.upload", id: "1", request: { data: new Blob(["x"]) } }, nap2)).result.status, "uploading")
+  await new Promise(res => setTimeout(res, 50))
+  assert.deepEqual([nap2.sent[0].status.ok, nap2.sent[0].status.status, nap2.sent[0].status.error], [false, "failed", "server said 413"])
+})
+
+test("napplets that upload wait for an 'uploading' answer to end (Media, Compose)", () => {
+  for (const f of ["media", "compose"]) {
+    const html = fs.readFileSync(new URL(`../napplets/${f}/index.html`, import.meta.url), "utf8")
+    assert.match(html, /await finished\(await n\.upload\.upload\(/, f)
+    assert.match(html, /sub = n\.upload\.onStatus\?\.\(done\)/, f)
+  }
+})
+
 test("dispatch: notify asks once, then keeps the yes", async () => {
   const grant = defaultGrant()
   const { handlers, calls } = make(grant)

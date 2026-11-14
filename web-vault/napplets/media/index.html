@@ -329,12 +329,24 @@ $("del").onclick = async () => {
   if (!b.servers.length) { files = files.filter(f => f !== b); hide() } else $("vnote").textContent = summary(results, "Deleted")
   status(summary(results, "Deleted")); draw()
 }
+/** A long upload is answered "uploading" (the shell answers within 20 s and carries on): its end comes as
+ *  upload.status.changed, and upload.status every 15 s catches one this missed. */
+function finished(r, waiting = () => {}) {
+  if (!r || (r.status !== "uploading" && r.status !== "pending")) return Promise.resolve(r)
+  waiting()
+  return new Promise(res => {
+    let sub = null, t = 0
+    const done = st => { if (st?.uploadId !== r.uploadId || st.status === "uploading" || st.status === "pending") return; sub?.close(); clearInterval(t); res(st) }
+    sub = n.upload.onStatus?.(done) ?? null
+    t = setInterval(() => n.upload.status?.(r.uploadId).then(done).catch(() => {}), 15000)
+  })
+}
 $("up").onchange = async e => {
   const picked = [...e.target.files]; e.target.value = ""
   for (const [i, f] of picked.entries()) {
     status(`Uploading ${i + 1} of ${picked.length}: ${f.name}…`)
     try {
-      const r = await n.upload.upload({ data: f, mimeType: f.type, filename: f.name })
+      const r = await finished(await n.upload.upload({ data: f, mimeType: f.type, filename: f.name }), () => status(`Uploading ${i + 1} of ${picked.length}: ${f.name}… still going, it's a big one`))
       if (!r.ok) { status(`${f.name}: ${r.error || "not uploaded"}`); continue }
     } catch (err) { status(`${f.name}: ${err.message}`); continue }
   }
