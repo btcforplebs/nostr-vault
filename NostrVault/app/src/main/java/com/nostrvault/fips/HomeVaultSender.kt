@@ -72,6 +72,13 @@ class HomeVaultSender @Inject constructor(
     /** Signs a `/files` event (1063, its kind 5, the AUTH) with this device's mesh key, never the owner's; swapped in tests. */
     internal var fileNoteSign: (kind: Int, tags: List<List<String>>) -> String? = { kind, tags -> MeshKeySigner.fileNotes(kind, tags) }
 
+    /**
+     * This phone's own vault on loopback (`http://127.0.0.1:<relayPort>`), or null with an outside relay. With no home
+     * vault this phone is the vault, and its emoji notes go to its own `/files` ([OwnVaultFilesLane]); swapped in tests.
+     */
+    internal var ownFilesBase: () -> String? =
+        { configStore.config.value.takeIf { !it.useExternalRelay }?.let { "http://127.0.0.1:${it.relayPort}" } }
+
     /** The owner's hex pubkey. Wired by NostrService. */
     @Volatile
     var ownerHex: () -> String = { "" }
