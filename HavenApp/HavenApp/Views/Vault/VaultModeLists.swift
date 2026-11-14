@@ -10,6 +10,7 @@ extension VaultView {
         // the iOS, wide-mac and compact-mac layouts.
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
+                Color.clear.frame(height: 0).id(Self.listTopAnchor)
                 // The Vault list draws its own row; every other page but Media here.
                 if showsAccountRowOnTop && viewMode != .activity {
                     accountChipRow
@@ -44,9 +45,20 @@ extension VaultView {
             .onAppear { consumeRelayFocus(proxy: proxy) }
             // Another account's chip picked: a new page reads what it needs.
             .onChange(of: viewMode) { _, _ in vaultPageChanged() }
-            .onReceive(AccountUnreadStore.shared.$state.removeDuplicates().debounce(for: .seconds(1), scheduler: RunLoop.main)) { _ in
-                // Something came in for an account: top the shown ones up.
-                if showsOtherAccounts && viewMode != .activity && viewMode != .media { loadOtherAccountPages() }
+            // Another account or All picked: its list starts at the top, not
+            // at the old list's offset over different rows (Logen 2026-11-14).
+            .onChange(of: accountChip) { _, _ in proxy.scrollTo(Self.listTopAnchor, anchor: .top) }
+            .onReceive(AccountUnreadStore.shared.$state.removeDuplicates().debounce(for: .seconds(1), scheduler: RunLoop.main)) { state in
+                // Something came in for an account on show: top it up.
+                if viewMode != .activity && viewMode != .media && shownAccountsGotNews(state) { loadOtherAccountPages() }
+            }
+            // A block or mute: lines that now hide must go, so read anew
+            // rather than top up.
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))) { _ in
+                rereadOtherAccounts()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: MuteListStore.settled)) { _ in
+                rereadOtherAccounts()
             }
             .task(id: followersOwnerHex) { await pollFollowers() }
             // On every page, not only the Vault list: a post opened from Notes,

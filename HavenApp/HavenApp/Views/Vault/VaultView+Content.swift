@@ -89,7 +89,7 @@ extension VaultView {
         // Your accounts tagging each other came in or left the list.
         .onChange(of: configService.config.notifyOwnAccountTags) { _, _ in
             scheduleUpdateDisplayData()
-            if showsOtherAccounts { loadOtherAccountActivity() }
+            if showsOtherAccounts { loadOtherAccountActivity(replacing: true) }
         }
         .onChange(of: configService.config.activeAccountNpub) { _, _ in
             listSwapAccountSwitched()

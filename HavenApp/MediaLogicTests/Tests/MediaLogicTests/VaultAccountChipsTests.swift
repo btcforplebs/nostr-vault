@@ -173,4 +173,54 @@ final class VaultAccountChipsTests: XCTestCase {
         XCTAssertTrue(VaultAccountChips.needsRead(.all, accounts: accounts, active: "aa", loaded: ["bb"]))
         XCTAssertFalse(VaultAccountChips.needsRead(.all, accounts: accounts, active: "aa", loaded: ["bb", "cc"]))
     }
+
+    // MARK: Steady switch (Logen 2026-11-14)
+
+    /// A re-read only adds and updates: what it brought wins by id, what it
+    /// didn't bring stays, newest first.
+    func testTopUpAddsAndUpdatesButNeverDrops() {
+        let held = [line("b", at: 200), line("a", at: 100)]
+        var grown = line("b", at: 250)
+        grown = VaultActivity(id: grown.id, kind: .reaction, actors: ["y", "x"], createdAt: 250, openId: "p", preview: "")
+        let read = [line("c", at: 300), grown]
+        let out = VaultAccountChips.topUp(held: held, read: read, id: \.id, at: \.createdAt)
+        XCTAssertEqual(out.map(\.id), ["c", "b", "a"])
+        XCTAssertEqual(out[1].actors, ["y", "x"], "the re-read's version of a line wins")
+    }
+
+    /// A read that came back empty (the port closed after a return) takes
+    /// nothing away.
+    func testEmptyReadKeepsWhatIsHeld() {
+        let held = [line("b", at: 200), line("a", at: 100)]
+        XCTAssertEqual(VaultAccountChips.topUp(held: held, read: [], id: \.id, at: \.createdAt).map(\.id), ["b", "a"])
+    }
+
+    /// Same time: ordered by id, so the list never shuffles between reads.
+    func testTopUpOrderIsSteadyOnTies() {
+        let one = VaultAccountChips.topUp(held: [line("y", at: 5)], read: [line("x", at: 5)], id: \.id, at: \.createdAt)
+        let two = VaultAccountChips.topUp(held: [line("x", at: 5)], read: [line("y", at: 5)], id: \.id, at: \.createdAt)
+        XCTAssertEqual(one.map(\.id), ["x", "y"])
+        XCTAssertEqual(two.map(\.id), ["x", "y"])
+    }
+
+    /// The tap's own "seen" drops counts: no re-read. Only a count going up is.
+    func testOnlyARisingCountIsNews() {
+        let before = ["a": 3, "b": 0]
+        XCTAssertFalse(VaultAccountChips.countRose(among: ["a", "b"], before: { before[$0] ?? 0 }, after: { _ in 0 }))
+        XCTAssertFalse(VaultAccountChips.countRose(among: ["a", "b"], before: { before[$0] ?? 0 }, after: { before[$0] ?? 0 }))
+        XCTAssertTrue(VaultAccountChips.countRose(among: ["a", "b"], before: { before[$0] ?? 0 }, after: { $0 == "b" ? 1 : 3 }))
+        // An account not on show doesn't count.
+        XCTAssertFalse(VaultAccountChips.countRose(among: ["a"], before: { _ in 0 }, after: { $0 == "z" ? 9 : 0 }))
+    }
+
+    /// The people the first rows show, each once, first rows only.
+    func testFirstScreenActors() {
+        let lines = (0..<30).map { i in
+            VaultActivity(id: "l\(i)", kind: .reaction, actors: ["p\(i)", "p\(i + 1)", "p\(i + 2)", "p\(i + 3)"],
+                          createdAt: Int64(100 - i), openId: nil, preview: "")
+        }
+        let actors = VaultAccountChips.firstScreenActors(lines, rows: 2)
+        XCTAssertEqual(actors, ["p0", "p1", "p2", "p3"])
+        XCTAssertEqual(Set(VaultAccountChips.firstScreenActors(lines)).count, VaultAccountChips.firstScreenRows + 2)
+    }
 }

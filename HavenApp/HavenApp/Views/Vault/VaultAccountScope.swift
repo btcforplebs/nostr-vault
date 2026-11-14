@@ -72,6 +72,7 @@ extension VaultView {
             let last = AccountUnreadStore.shared.markVaultSeen(hex: hex, at: now)
             // A first visit marks nothing: everything would be "new".
             otherAccountUnreadSince[hex] = Int64(last > 0 ? last : now)
+            otherAccountSeenCounts[hex] = 0
         }
         let onActivity = viewMode == .activity
         let loaded = Set(onActivity ? Array(otherAccountActivity.keys) : Array(otherAccountEvents.keys))
@@ -84,8 +85,10 @@ extension VaultView {
                 loadOtherAccountPages(for: chip, then: { applyAccountChip(chip) })
             }
         } else {
+            // Its lines are held: show them. No read here; a new badge, the
+            // relay coming up or a refresh tops them up (Logen 2026-11-14:
+            // the tap itself triggers no reload).
             applyAccountChip(chip)
-            if onActivity { loadOtherAccountActivity() } else { loadOtherAccountPages() }
         }
     }
 
@@ -101,6 +104,29 @@ extension VaultView {
         } else if viewMode != .media {
             loadOtherAccountPages()
         }
+    }
+
+    /// A block or mute changed: the shown accounts are read anew (not topped
+    /// up), so lines that now hide go.
+    func rereadOtherAccounts() {
+        guard showsOtherAccounts else { return }
+        if viewMode == .activity {
+            loadOtherAccountActivity(replacing: true)
+        } else if viewMode != .media {
+            loadOtherAccountPages(replacing: true)
+        }
+    }
+
+    /// Whether `state` has news for an account on show besides the active
+    /// one: a count above the one it had when last read or tapped. The
+    /// counts are taken as the new baseline either way.
+    func shownAccountsGotNews(_ state: AccountUnread) -> Bool {
+        guard showsOtherAccounts else { return false }
+        let me = followersOwnerHex.lowercased()
+        let shown = pageOwners.filter { $0 != me }.sorted()
+        let before = otherAccountSeenCounts
+        for hex in shown { otherAccountSeenCounts[hex] = state.count(for: hex) }
+        return VaultAccountChips.countRose(among: shown, before: { before[$0] ?? 0 }, after: { state.count(for: $0) })
     }
 
     /// The list switches to `chip` (its lines are read, or are being topped up).
@@ -132,6 +158,7 @@ extension VaultView {
         otherFollowerSnapshots = [:]
         pageNoteAccount = [:]
         otherAccountUnreadSince = [:]
+        otherAccountSeenCounts = [:]
         otherAccountLoading = false
         otherAccountLimit = VaultAccountChips.otherAccountPage
         otherAccountReadFull = false
@@ -179,12 +206,15 @@ extension VaultView {
     /// Reads the picked chip's other accounts from the device's relay and
     /// builds their lines with the same rules as the active account's.
     /// `chip` is a pick still waiting for its read (the list on screen
-    /// stays, so no spinner); `then` runs once that read is in.
-    func loadOtherAccountActivity(for chip: VaultAccountChip? = nil, then: (() -> Void)? = nil) {
+    /// stays, so no spinner); `then` runs once that read is in, and the first
+    /// screen's profiles are in or `profileWait` passed. The read tops up what
+    /// is held (`topUp`) unless `replacing`: a rule changed and lines must go.
+    func loadOtherAccountActivity(for chip: VaultAccountChip? = nil, replacing: Bool = false,
+                                  then: (() -> Void)? = nil) {
         // A re-read (relay up, a notification) while a pick waits: it reads
         // for that pick and still switches to it, rather than leaving it stuck.
         if chip == nil, let waiting = pendingAccountChip {
-            loadOtherAccountActivity(for: waiting, then: { applyAccountChip(waiting) })
+            loadOtherAccountActivity(for: waiting, replacing: replacing, then: { applyAccountChip(waiting) })
             return
         }
         let me = followersOwnerHex.lowercased()
@@ -267,11 +297,30 @@ extension VaultView {
                 }
             }
             guard !Task.isCancelled else { return }
-            for (hex, lines) in built { otherAccountActivity[hex] = lines }
+            service.fetchMissingProfiles(for: Array(Set(built.values.flatMap { $0.flatMap { $0.actors.prefix(5) } })))
+            if then != nil {
+                // The list on screen stays while the picked one's first
+                // names come in, so its rows don't change under the eye.
+                let first = VaultAccountChips.firstScreenActors(
+                    VaultAccountChips.merge(built, order: vaultAccountHexes, limit: VaultAccountChips.firstScreenRows).map(\.line))
+                await Self.awaitProfiles(first, service: service)
+                guard !Task.isCancelled else { return }
+            }
+            for (hex, lines) in built {
+                otherAccountActivity[hex] = replacing ? lines : VaultAccountChips.topUp(
+                    held: otherAccountActivity[hex] ?? [], read: lines, id: \.id, at: \.createdAt)
+            }
             otherAccountReadFull = readFull
             otherAccountLoading = false
             then?()
-            service.fetchMissingProfiles(for: Array(Set(built.values.flatMap { $0.flatMap { $0.actors.prefix(5) } })))
+        }
+    }
+
+    /// Waits until `pubkeys` all have a profile, or `profileWait` passes.
+    static func awaitProfiles(_ pubkeys: [String], service: NostrService) async {
+        guard pubkeys.contains(where: { service.profiles[$0] == nil }) else { return }
+        _ = await NotificationReadiness.wait(timeout: VaultAccountChips.profileWait, interval: 0.05) {
+            await MainActor.run { pubkeys.allSatisfy { service.profiles[$0] != nil } }
         }
     }
 
@@ -281,10 +330,12 @@ extension VaultView {
     /// from (their posts and likes, what tags them, likes and zaps on them,
     /// zaps they sent, and the posts they liked or zapped) and their
     /// followers ledger. `chip` is a pick still waiting for this read (the
-    /// list on screen stays); `then` runs once it is in.
-    func loadOtherAccountPages(for chip: VaultAccountChip? = nil, then: (() -> Void)? = nil) {
+    /// list on screen stays); `then` runs once it is in and the first rows'
+    /// profiles are in or `profileWait` passed. The read tops up what is held.
+    func loadOtherAccountPages(for chip: VaultAccountChip? = nil, replacing: Bool = false,
+                               then: (() -> Void)? = nil) {
         if chip == nil, let waiting = pendingAccountChip {
-            loadOtherAccountPages(for: waiting, then: { applyAccountChip(waiting) })
+            loadOtherAccountPages(for: waiting, replacing: replacing, then: { applyAccountChip(waiting) })
             return
         }
         let me = followersOwnerHex.lowercased()
@@ -337,11 +388,21 @@ extension VaultView {
                 }
             }
             guard !Task.isCancelled else { return }
-            for (hex, events) in built { otherAccountEvents[hex] = events }
+            service.fetchMissingProfiles(for: Array(Set(built.values.flatMap { $0.prefix(100).map(\.pubkey) })))
+            if then != nil {
+                let newest = built.values.joined().sorted { $0.created_at > $1.created_at }
+                    .prefix(VaultAccountChips.firstScreenRows)
+                var seen = Set<String>()
+                await Self.awaitProfiles(newest.map(\.pubkey).filter { seen.insert($0).inserted }, service: service)
+                guard !Task.isCancelled else { return }
+            }
+            for (hex, events) in built {
+                otherAccountEvents[hex] = replacing ? events : VaultAccountChips.topUp(
+                    held: otherAccountEvents[hex] ?? [], read: events, id: \.id, at: \.created_at)
+            }
             for (hex, ledger) in ledgers { otherFollowerSnapshots[hex] = ledger }
             then?()
             scheduleUpdateDisplayData()
-            service.fetchMissingProfiles(for: Array(Set(built.values.flatMap { $0.prefix(100).map(\.pubkey) })))
         }
     }
 
