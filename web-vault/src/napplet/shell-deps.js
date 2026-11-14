@@ -18,6 +18,9 @@ import { getMessages, onMessages, sendMessage } from "../net/dms.js"
 import { markRead } from "../net/dm-read.js"
 import { getProfile } from "../net/profiles.js"
 import { findMine } from "./shell-deps-find.js"
+import { SEND_ACTIONS, countdownText, sendDelaySeconds, startCountdown } from "../net/send-delay.js"
+import { showToast, hideToast } from "../components/Toast.jsx"
+import { delayActionOf } from "./publish-delay.js"
 
 const QUERY_WAIT_MS = 4000
 const codeError = (code, message) => Object.assign(new Error(message ?? code), { code })
@@ -59,7 +62,8 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
     pubkey: ctx.session.pubkey,
     account: () => ctx.account,
     blocked: () => getBlocks().blocked,
-    verify: ev => { try { return !!ev && verifyEvent(ev) } catch { return false } },
+    // A plain copy: nostr-tools caches "verified" under a symbol that a spread copy keeps (reader-intents.js actionNote).
+    verify: ev => { try { return !!ev && verifyEvent(JSON.parse(JSON.stringify(ev))) } catch { return false } },
     // dispatch.js already ran signDecision; this is the last stop before the signer, so it says no again on its own.
     async sign(template) {
       if (protectedKind(template.kind)) throw new Error(`kind ${template.kind} is never signed for a napplet`)
@@ -139,6 +143,16 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
       ask,
       randomId: () => crypto.randomUUID(),
     },
+    // Send Delay with Undo for what a napplet posts (publish-delay.js): the classic pill, in the shared toast.
+    // -> true when the countdown ran out (sign and send), false on Undo.
+    delay: template => new Promise(resolve => {
+      const action = delayActionOf(template), key = `napplet-send:${crypto.randomUUID()}`
+      let handle = null
+      const pill = left => showToast({ key, icon: action === "repost" ? "repost" : "send", seconds: 0, message: countdownText(action, left), action: { label: "Undo", onClick: () => { if (handle?.cancel()) { hideToast(key); resolve(false) } } } })
+      const seconds = sendDelaySeconds()
+      handle = startCountdown({ seconds, onTick: pill, onDone: () => { hideToast(key); if (seconds > 0) showToast({ key, icon: "send", tone: "success", message: SEND_ACTIONS[action].done }); resolve(true) } })
+      if (seconds > 0) pill(seconds)
+    }),
     ask,
     saveGrant,
     bus,

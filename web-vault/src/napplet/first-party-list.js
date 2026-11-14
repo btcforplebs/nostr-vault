@@ -15,8 +15,8 @@ export const FIRST_PARTY_LIST = [
   // Plan P4: Feed + Thread + Profile, and Compose on its own (opened by the Reader's intents, ReaderPane.jsx).
   { dTag: READER_DTAG, title: "Reader", file: "reader", pane: true, domains: ["identity", "outbox", "resource", "intent", "inc", "theme"], intents: ["note/open", "profile/open", "feed/open"],
     summary: "Your follows' notes, threads and profiles. Likes; replies hand off to Compose." },
-  { dTag: COMPOSE_DTAG, title: "Compose", file: "compose", pane: true, domains: ["identity", "outbox", "storage", "intent", "inc", "theme"], intents: ["compose/new", "compose/reply"],
-    summary: "Write a note or a reply (NIP-10), with a draft kept until it's sent." },
+  { dTag: COMPOSE_DTAG, title: "Compose", file: "compose", pane: true, domains: ["identity", "outbox", "storage", "upload", "intent", "inc", "theme"], intents: ["compose/new", "compose/reply", "compose/quote"],
+    summary: "Write a note, a reply (NIP-10) or a quote, with photos, and a draft kept until it's sent." },
   // Plan P5: Vault › Media (MediaPane.jsx): your media servers' files through NAP-BLOSSOM, bytes through resource.
   { dTag: MEDIA_DTAG, title: "Media", file: "media", pane: true, domains: ["identity", "blossom", "resource", "upload", "storage", "intent", "theme"], intents: ["media/open"],
     summary: "The files on your Blossom servers: filter, play, copy to missing servers, delete, upload." },

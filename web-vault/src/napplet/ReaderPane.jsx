@@ -3,13 +3,15 @@
 // are ours (first-party grant, policy.js), answered by the same runtime as the Apps pane. Switch off: the old screens.
 // `open`: { archetype, action, payload } to show first (a #/thread/<id> or #/profile/<pubkey> address), else the feed.
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
-import { Dialog } from "../components/Moderation.jsx"
 import { openNapplet } from "./runtime.js"
 import { grantStore } from "./policy.js"
 import { createBus } from "./bus.js"
 import { shellDeps } from "./shell-deps.js"
 import { firstParty, READER_DTAG, COMPOSE_DTAG } from "./first-party.js"
 import { readerIntents } from "./reader-intents.js"
+import { verifyEvent } from "nostr-tools/pure"
+import { repostWithUndo } from "../components/repost-undo.js"
+import { ZapSheet, MenuSheet } from "./NoteSheets.jsx"
 import "./napplet.css"
 
 const READY_WAIT_MS = 5000
@@ -18,7 +20,9 @@ const whenReady = async m => { await Promise.race([m.napplet.ready, new Promise(
 export function ReaderPane({ ctx, open = null }) {
   const host = useRef(null), composeHost = useRef(null)
   const [composing, setComposing] = useState(false)
+  const [composeAside, setComposeAside] = useState(false) // a post counting down: the sheet steps aside, still mounted
   const [note, setNote] = useState("")
+  const [sheet, setSheet] = useState(null) // { kind: "zap" | "menu", note }
   const grants = useMemo(() => grantStore(localStorage, ctx.session.pubkey), [ctx.session.pubkey])
   const live = useRef(null) // { bus, me, reader }
   const openRef = useRef(open)
@@ -52,12 +56,18 @@ export function ReaderPane({ ctx, open = null }) {
           composeWaiters.splice(0).forEach(w => w.resolve(napplet))
         } catch (e) { composeWaiters.splice(0).forEach(w => w.reject(e)) }
       },
-      closeCompose: () => { compose?.close(); compose = null; setComposing(false) },
+      closeCompose: () => { compose?.close(); compose = null; setComposing(false); setComposeAside(false) },
     }
     const wire = readerIntents({
       bus, openCompose,
       onComposeDone: () => live.current?.closeCompose(),
+      onComposeWaiting: () => setComposeAside(true),
+      onComposeUndone: () => setComposeAside(false),
       openUrl: url => window.open(url, "_blank", "noopener,noreferrer"),
+      verify: verifyEvent,
+      onRepost: n => repostWithUndo(ctx, n),
+      onZap: n => setSheet({ kind: "zap", note: n }),
+      onMenu: n => setSheet({ kind: "menu", note: n }),
     })
     live.current.me = wire.me
     ;(async () => {
@@ -65,7 +75,7 @@ export function ReaderPane({ ctx, open = null }) {
         reader = await mount(READER_DTAG, host.current, () => { reader = null })
         if (gone) return reader.close()
         const readerNapplet = await whenReady(reader)
-        const offs = ["note", "profile", "feed"].map(archetype => bus.register({ id: "nv-reader", title: "Reader", archetype, actions: ["open"], conventions: [], open: async () => readerNapplet }))
+        const offs = ["note", "profile", "feed"].map(archetype => bus.register({ id: "nv-reader", title: "Reader", archetype, actions: archetype === "note" ? ["open", "removed"] : ["open"], conventions: [], open: async () => readerNapplet }))
         live.current.reader = { offs }
         if (openRef.current) bus.invoke(wire.me, openRef.current)
       } catch (e) { if (!gone) setNote(`The Reader couldn't open: ${e?.message ?? e}`) }
@@ -87,12 +97,23 @@ export function ReaderPane({ ctx, open = null }) {
     <main class="screen reader-pane">
       {note && <p class="muted small napplet-note" role="status">{note}</p>}
       <div class="napplet-host reader-host" ref={host} />
-      {composing && (
-        <Dialog label="Compose" onClose={() => live.current?.closeCompose()}>
-          <ComposeMount onMount={el => live.current?.mountCompose(el)} />
-        </Dialog>
-      )}
+      {sheet?.kind === "zap" && <ZapSheet ctx={ctx} note={sheet.note} onClose={() => setSheet(null)} />}
+      {sheet?.kind === "menu" && <MenuSheet ctx={ctx} note={sheet.note} onClose={() => setSheet(null)}
+        onDeleted={id => { const l = live.current; if (l?.reader) l.bus.invoke(l.me, { archetype: "note", action: "removed", payload: { id } }) }} />}
+      {composing && <ComposeSheet aside={composeAside} onClose={() => live.current?.closeCompose()} onMount={el => live.current?.mountCompose(el)} />}
     </main>
+  )
+}
+
+/** Compose's sheet: a modal <dialog> that closes (not unmounts) while a post counts down, so the page behind it, with
+ *  the Send Delay pill and its Undo, can be used; a closed <dialog> keeps its frame, so Undo brings the text back. */
+function ComposeSheet({ aside, onClose, onMount }) {
+  const ref = useRef(null)
+  useEffect(() => { const d = ref.current; if (!d) return; if (aside) { if (d.open) d.close() } else if (!d.open) d.showModal() }, [aside])
+  return (
+    <dialog ref={ref} class="mod-dialog" aria-label="Compose" onCancel={e => { e.preventDefault(); onClose() }}>
+      <ComposeMount onMount={onMount} />
+    </dialog>
   )
 }
 
