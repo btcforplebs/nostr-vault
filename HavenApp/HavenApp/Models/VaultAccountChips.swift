@@ -121,6 +121,13 @@ enum VaultAccountChips {
         return picked
     }
 
+    /// Every account but the active one: whose lines are read ahead of a
+    /// tap, whichever chip is picked.
+    static func otherAccounts(_ accounts: [String], active: String) -> [String] {
+        let me = active.lowercased()
+        return unique(accounts).filter { $0 != me }
+    }
+
     /// The accounts whose lines the chip's list shows.
     static func accounts(for chip: VaultAccountChip, accounts: [String]) -> [String] {
         switch chip {

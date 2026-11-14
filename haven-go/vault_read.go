@@ -26,8 +26,10 @@ import (
 var errVaultReadNotReady = errors.New("vault read not ready")
 
 const (
-	// vaultReadMaxLimit caps each filter: the app asks 400 notes / 200 other.
-	vaultReadMaxLimit = 500
+	// vaultReadMaxLimit caps each filter: the Vault asks 400 notes / 200
+	// other, its account chips up to 1000 (the relay's MaxLimit) on "load
+	// more".
+	vaultReadMaxLimit = 1000
 	// vaultReadMaxFilters: the app sends 4.
 	vaultReadMaxFilters = 8
 	vaultReadTimeout    = 5 * time.Second

@@ -62,6 +62,22 @@ final class VaultReturnRulesTests: XCTestCase {
         XCTAssertNil(VaultStoreAnswer.rows(Data("not json".utf8)))
     }
 
+    private struct Row: Decodable {
+        let id: String
+        let tags: [[String]]
+    }
+
+    func testStoreAnswerDecodesEvents() {
+        let answer = #"{"events":[{"id":"a","pubkey":"p","created_at":5,"kind":1,"tags":[["p","q"]],"content":"hi","sig":"s"}]}"#
+        let events = VaultStoreAnswer.events(Data(answer.utf8), as: Row.self)
+        XCTAssertEqual(events?.map(\.id), ["a"])
+        XCTAssertEqual(events?.first?.tags, [["p", "q"]])
+        XCTAssertEqual(VaultStoreAnswer.events(Data(#"{"events":[]}"#.utf8), as: Row.self)?.count, 0)
+        // Not ready: nil, so the chip reads over the socket instead.
+        XCTAssertNil(VaultStoreAnswer.events(Data(#"{"events":null,"error":"vault read not ready"}"#.utf8), as: Row.self))
+        XCTAssertNil(VaultStoreAnswer.events(Data("not json".utf8), as: Row.self))
+    }
+
     // MARK: - One dot per account
 
     func testEachAccountKeepsItsOwnDot() {

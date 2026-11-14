@@ -77,6 +77,26 @@ extension NostrService {
         return VaultStoreAnswer.rows(answer)
     }
 
+    /// One filter's events from the store, read and decoded off the main
+    /// thread: another account's lines for the Vault chips. Nil when the
+    /// store can't answer now (the caller reads over the socket instead).
+    nonisolated static func storeEvents(filter: [String: Any]) async -> [NostrEvent]? {
+        await Task.detached(priority: .userInitiated) { () -> [NostrEvent]? in
+            guard let body = try? JSONSerialization.data(withJSONObject: ["filters": [filter]]),
+                  let request = String(data: body, encoding: .utf8) else { return nil }
+            guard let ptr = request.withCString({ QueryVaultC(UnsafeMutablePointer(mutating: $0)) }) else { return nil }
+            defer { free(ptr) }
+            return VaultStoreAnswer.events(Data(bytes: ptr, count: strlen(ptr)), as: NostrEvent.self)
+        }.value
+    }
+
+    /// The Vault chips' read: the store when it can answer, else the
+    /// device's relay over the socket as before.
+    func vaultAccountEvents(filter: [String: Any], from relays: [String]) async -> [NostrEvent] {
+        if let events = await Self.storeEvents(filter: filter) { return events }
+        return await fetchEvents(filter: filter, from: relays, includeLoopback: true)
+    }
+
     /// Deletes the saved Vault screens of earlier builds, off the main thread.
     nonisolated static func removeOldVaultSnapshots() {
         guard let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?

@@ -223,4 +223,10 @@ final class VaultAccountChipsTests: XCTestCase {
         XCTAssertEqual(actors, ["p0", "p1", "p2", "p3"])
         XCTAssertEqual(Set(VaultAccountChips.firstScreenActors(lines)).count, VaultAccountChips.firstScreenRows + 2)
     }
+
+    // Read ahead of a tap: every account but the active one, whichever chip.
+    func testOtherAccountsAreEveryoneButTheActive() {
+        XCTAssertEqual(VaultAccountChips.otherAccounts(["A", "b", "c", "B"], active: "B"), ["a", "c"])
+        XCTAssertEqual(VaultAccountChips.otherAccounts(["a"], active: "a"), [])
+    }
 }
