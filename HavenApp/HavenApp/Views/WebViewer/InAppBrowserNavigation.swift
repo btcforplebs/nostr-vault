@@ -21,6 +21,8 @@ final class InAppBrowserNavigation: NSObject, WKNavigationDelegate, WKUIDelegate
     var onFailure: ((Error) -> Void)?
     /// The reader tapped a link from a mesh page to the internet: ask first.
     var onLeaveMesh: ((URL) -> Void)?
+    /// WebKit's page process died (memory, a crash in the page): the view is blank until something reloads it.
+    var onProcessGone: (() -> Void)?
     /// The one internet page a mesh page may go to next: what the reader
     /// typed, or confirmed. Used once.
     var allowedOnce: URL?
@@ -64,6 +66,10 @@ final class InAppBrowserNavigation: NSObject, WKNavigationDelegate, WKUIDelegate
         // WebKit's own "frame load interrupted" when a policy cancelled it.
         if (error as NSError).domain == "WebKitErrorDomain", (error as NSError).code == 102 { return }
         onFailure?(error)
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        onProcessGone?()
     }
 
     // MARK: New windows
