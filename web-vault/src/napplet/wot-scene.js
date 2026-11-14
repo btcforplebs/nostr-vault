@@ -10,7 +10,7 @@ const HEX = /^[0-9a-f]{64}$/
  * who links whom as indices into `follows`, who follows you back, names and pictures (follows and face candidates),
  * the full layer counts, a status line, and whose card to open.
  */
-export function sceneOf(web, { profile = () => null, status = "", open = null } = {}) {
+export function sceneOf(web, { profile = () => null, status = "", open = null, whose = null, myFollows = null } = {}) {
   const extended = shownByKey(web.extended, EXTENDED_CAP), further = shownByKey(web.further, FURTHER_CAP)
   const index = new Map(web.follows.map((pk, i) => [pk, i]))
   const linkers = {}
@@ -23,7 +23,11 @@ export function sceneOf(web, { profile = () => null, status = "", open = null } 
   if (open) wanted.add(open)
   const profiles = {}
   for (const pk of wanted) { const p = profile(pk); if (p && (p.name || p.picture)) profiles[pk] = [String(p.name ?? "").slice(0, 80), /^https:\/\//i.test(p.picture ?? "") ? p.picture : ""] }
-  return { me: web.me, follows: [...web.follows], extended, further, linkers, followsMe: [...web.followsMe], profiles, counts: layerCounts(web), status, open: HEX.test(open ?? "") ? open : null }
+  // Which of the people on this globe you follow (the card's Follow / Unfollow), whosever globe it is.
+  const mine = myFollows ?? new Set(web.follows)
+  const iFollow = [...new Set([...web.follows, ...extended, ...further, ...(open ? [open] : []), web.me])].filter(pk => mine.has(pk))
+  return { me: web.me, follows: [...web.follows], extended, further, linkers, followsMe: [...web.followsMe], profiles, counts: layerCounts(web), status, open: HEX.test(open ?? "") ? open : null,
+    whose: whose ? String(whose).slice(0, 80) : null, iFollow }
 }
 
 

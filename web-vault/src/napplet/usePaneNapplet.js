@@ -13,11 +13,24 @@ import { firstParty } from "./first-party.js"
 
 export const READY_WAIT_MS = 5000
 
+/**
+ * The app's ctx as one steady object that always reads the newest ctx. App builds a new ctx on every render, so a
+ * napplet mounted on `[ctx]` was closed and opened again on any re-render (a Follow's account reload wiped the WoT
+ * card; a block from the Reader's menu reloaded the feed). The napplet now stays up for one person, vault and
+ * signer, and the shell's deps still see today's account through this.
+ */
+export function useLiveCtx(ctx) {
+  const ref = useRef(ctx)
+  ref.current = ctx
+  return useMemo(() => new Proxy({}, { get: (_, k) => ref.current[k], has: (_, k) => k in ref.current }), [])
+}
+
 export function usePaneNapplet(ctx, host, { dTag, actions = {}, handlers = [], ask = async () => false, extra = {}, onReady } = {}) {
   const [note, setNote] = useState("")
   const [ready, setReady] = useState(false)
   const live = useRef(null)
   const grants = useMemo(() => grantStore(localStorage, ctx.session.pubkey), [ctx.session.pubkey])
+  const liveCtx = useLiveCtx(ctx)
   useEffect(() => {
     const bus = createBus(), me = { dTag: "shell", send: () => {} }
     const offs = handlers.map(h => bus.register(h))
@@ -29,7 +42,7 @@ export function usePaneNapplet(ctx, host, { dTag, actions = {}, handlers = [], a
         const r = await openNapplet({
           html: n.html, name: n.dTag, title: n.title, firstParty: true, domains: n.domains, container: host.current, grants,
           consent: async () => null, // first-party: never asked
-          makeDeps: saveGrant => shellDeps(ctx, { ask, saveGrant, bus, ...extra }),
+          makeDeps: saveGrant => shellDeps(liveCtx, { ask, saveGrant, bus, ...extra }),
           onRevoke: why => { if (!gone && why !== "closed by shell") setNote(`${n.title} closed: ${why}.`) },
         })
         mounted = r.mounted
@@ -43,6 +56,6 @@ export function usePaneNapplet(ctx, host, { dTag, actions = {}, handlers = [], a
       } catch (e) { if (!gone) setNote(`${n.title} couldn't open: ${e?.message ?? e}`) }
     })()
     return () => { gone = true; offs.forEach(f => f()); mounted?.close(); live.current = null }
-  }, [ctx, grants])
+  }, [ctx.session.pubkey, ctx.vault, ctx.signer, grants])
   return { live, note, ready }
 }

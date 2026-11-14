@@ -38,6 +38,7 @@
 <body>
 <canvas id="globe" tabindex="0" role="img" aria-label="Globe of your web. Drag to spin, scroll or pinch to zoom, double-click to come back to the start."></canvas>
 <div class="bar">
+  <button id="home" hidden aria-label="Back to your web">‹ You</button>
   <select id="layer" aria-label="Layer"></select>
   <button id="back" aria-pressed="false" title="Only your follows who follow you back">Follow you back</button>
   <span class="grow"></span>
@@ -50,7 +51,7 @@
 <section id="card" hidden aria-label="Trust card">
   <div class="face" id="cface"></div>
   <div><h2 id="cname"></h2><p id="cline"></p></div>
-  <div class="acts"><button class="primary" id="cprofile">Open profile</button><button id="cclose">Close</button></div>
+  <div class="acts"><button class="primary" id="cfollow" hidden>Follow</button><button id="cweb" hidden>See their web</button><button id="cprofile">Open profile</button><button id="cclose">Close</button></div>
 </section>
 <script>
 // The WoT globe napplet (plan P6). Logen's decision 6: the web of trust is computed in the shell (Haven), never here.
@@ -80,6 +81,13 @@ function nodesOf(web, layer, lit, hasPicture) {
   const ring = [...web.follows].filter(pk => !lit || lit.has(pk)).sort((a, b) => n(b) - n(a))
   return layout(web, web.further, faces, new Set(pictured(ring, hasPicture, RING_FACES)))
 }
+/** The card's line. On your globe, the trust path to you (trustPathText); on someone else's, where they sit in theirs. */
+function cardLine(web, pk, nameOf, whose) {
+  if (!whose) return trustPathText(web, pk, nameOf)
+  if (pk === web.me) return `This is ${whose}.`
+  const l = web.layerOf(pk)
+  return l === "follow" ? `${whose} follows them` : l === "extended" ? `Vouched for in ${whose}'s web` : l === "further" ? `Further out in ${whose}'s web` : `Not in ${whose}'s web`
+}
 /** Find: people whose name (or a word of it, or a phrase in it) or key starts with what was typed, follows first. */
 function findPeople(web, names, q, max = 30) {
   const s = String(q ?? "").trim().toLowerCase()
@@ -94,6 +102,10 @@ const n = window.napplet || {}
 const $ = id => document.getElementById(id)
 let scene = null, web = null, names = {}, nodes = [], layer = "everyone", followsBackOn = false, picked = null
 const nameOf = pk => names[pk]?.[0] || `${pk.slice(0, 10)}…`
+const middleName = () => scene?.whose || "You"
+let iFollow = new Set(), following = false
+const settled = new Map() // pk -> what you just chose (follow true/false), kept until a scene agrees: a scene built before
+                           // the shell reloaded your account would otherwise flip the button back
 const pictureOf = pk => names[pk]?.[1] || ""
 const hueOf = pk => Math.round(fraction(pk, 0) * 360)
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -180,7 +192,7 @@ function draw(dt) {
   }
   drawn = out
   g.font = "700 13px -apple-system, BlinkMacSystemFont, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "top"
-  g.lineWidth = 3; g.lineJoin = "round"; g.strokeStyle = "rgb(0 0 0 / .65)"; g.strokeText("You", me.x, me.y + me.r + 5); g.fillStyle = "#fff"; g.fillText("You", me.x, me.y + me.r + 5)
+  g.lineWidth = 3; g.lineJoin = "round"; g.strokeStyle = "rgb(0 0 0 / .65)"; g.strokeText(middleName(), me.x, me.y + me.r + 5); g.fillStyle = "#fff"; g.fillText(middleName(), me.x, me.y + me.r + 5)
   const p = picked && out.find(d => d.node.pk === picked)
   if (p && !p.face && p.depth > -0.2) { g.beginPath(); g.arc(p.x, p.y, 9, 0, 2 * Math.PI); g.lineWidth = 2; g.strokeStyle = "rgb(255 214 10)"; g.stroke() }
 }
@@ -244,19 +256,40 @@ canvas.addEventListener("keydown", e => {
 
 // ---------- the card, the bar, Find ----------
 function tapped(pk) {
-  if (!pk || pk === web.me || pk === picked) { picked = null; $("card").hidden = true; return }
+  if (!pk || (pk === web.me && !scene?.whose) || pk === picked) { picked = null; $("card").hidden = true; return }
   open(pk)
 }
 function open(pk) {
   picked = pk; $("search").hidden = true
   cam = flyTo(cam, facing(direction(pk)))
   $("cname").textContent = nameOf(pk)
-  $("cline").textContent = trustPathText(web, pk, nameOf)
+  $("cline").textContent = cardLine(web, pk, nameOf, scene?.whose)
+  fillCardActions(pk)
   const f = $("cface"); f.replaceChildren(); f.style.background = `hsl(${hueOf(pk)} 29% 48%)`; f.textContent = (Array.from(nameOf(pk))[0] || "?").toUpperCase()
   const url = pictureOf(pk)
   if (url && n.resource) n.resource.bytes(url).then(b => { if (picked !== pk) return; const i = document.createElement("img"); i.className = "face"; i.alt = ""; i.src = URL.createObjectURL(b); f.replaceWith(i); i.id = "cface" }).catch(() => {})
   $("card").hidden = false; request()
 }
+function fillCardActions(pk) {
+  const you = scene?.you, mine = pk === you
+  $("cfollow").hidden = mine || !you
+  $("cfollow").disabled = following
+  $("cfollow").textContent = following ? "…" : iFollow.has(pk) ? "Unfollow" : "Follow"
+  $("cweb").hidden = pk === web.me // already in the middle
+  $("cweb").textContent = mine ? "Back to your web" : "See their web"
+}
+// Follow / Unfollow: the shell changes your follow list (a napplet never signs it) and sends the globe again.
+$("cfollow").onclick = async () => {
+  const pk = picked; if (!pk || following) return
+  following = true; fillCardActions(pk)
+  const r = await n.intent?.invoke("napplet:wot/follow", { payload: { pubkey: pk, follow: !iFollow.has(pk) } }).catch(e => ({ ok: false, error: e.message }))
+  following = false
+  if (r && r.ok === false) $("cline").textContent = `Didn't change: ${r.error}`
+  else { const now = !iFollow.has(pk); settled.set(pk, now); if (now) iFollow.add(pk); else iFollow.delete(pk) }
+  if (picked === pk) fillCardActions(pk)
+}
+$("cweb").onclick = () => picked && n.intent?.invoke("napplet:wot/web", { payload: { pubkey: picked } }).catch(() => {})
+$("home").onclick = () => scene?.you && n.intent?.invoke("napplet:wot/web", { payload: { pubkey: scene.you } }).catch(() => {})
 $("cclose").onclick = () => tapped(null)
 $("cprofile").onclick = () => picked && n.intent?.invoke("napplet:profile/open", { payload: { pubkey: picked } }).catch(() => {})
 function fillLayers() {
@@ -271,19 +304,27 @@ $("back").onclick = () => {
   place()
 }
 $("find").onclick = () => { $("search").hidden = !$("search").hidden; if (!$("search").hidden) $("q").focus() }
-$("q").oninput = () => $("results").replaceChildren(...findPeople(web, names, $("q").value).map(pk => { const li = document.createElement("li"), b = document.createElement("button"); b.textContent = `${nameOf(pk)} · ${{ follow: "you follow", extended: "vouched", further: "further out" }[web.layerOf(pk)]}`; b.onclick = () => open(pk); li.append(b); return li }))
+$("q").oninput = () => $("results").replaceChildren(...findPeople(web, names, $("q").value).map(pk => { const li = document.createElement("li"), b = document.createElement("button"); b.textContent = `${nameOf(pk)} · ${{ follow: scene?.whose ? `${scene.whose} follows` : "you follow", extended: "vouched", further: "further out" }[web.layerOf(pk)]}`; b.onclick = () => open(pk); li.append(b); return li }))
 $("again").onclick = () => { note("Reading your follows' lists again…"); n.intent?.invoke("napplet:wot/refresh", { payload: {} }).catch(() => {}) }
 let noteTimer = null
 function note(text, ms = 0) { clearTimeout(noteTimer); $("pill").textContent = text; $("pill").hidden = !text; if (ms) noteTimer = setTimeout(() => { $("pill").hidden = true }, ms) }
 
 function place() { if (!web) return; nodes = nodesOf(web, layer, litOf(web, followsBackOn), pk => !!pictureOf(pk)); fillLayers(); request() }
 function show(s) {
-  scene = s; web = webOf(s); names = s.profiles ?? {}
+  const moved = scene && scene.me !== s.me // a different person in the middle: start the globe over
+  scene = s; web = webOf(s); names = s.profiles ?? {}; iFollow = new Set(s.iFollow ?? [])
+  for (const [pk, want] of settled) { if (iFollow.has(pk) === want) settled.delete(pk); else if (want) iFollow.add(pk); else iFollow.delete(pk) }
+  if (moved) { picked = null; $("card").hidden = true; cam = home(cam); fades = new Map() }
+  $("home").hidden = !s.whose
+  $("q").placeholder = s.whose ? `Name or npub in ${s.whose}'s web` : "Name or npub in your web"
+  $("search").setAttribute("aria-label", s.whose ? `Find someone in ${s.whose}'s web` : "Find someone in your web")
+  $("back").hidden = !!s.whose // Follow you back is about your own follows
+  if (s.whose && followsBackOn) { followsBackOn = false; $("back").setAttribute("aria-pressed", "false") }
   $("middle").textContent = s.waiting ? s.status : !web.follows.length ? (s.status || "Follow people to grow your web.") : ""
   note(s.waiting ? "" : s.status || "")
   place()
   if (s.open && web.layerOf(s.open)) open(s.open)
-  else if (picked) { $("cname").textContent = nameOf(picked); $("cline").textContent = trustPathText(web, picked, nameOf) }
+  else if (picked) { $("cname").textContent = nameOf(picked); $("cline").textContent = cardLine(web, picked, nameOf, s.whose); fillCardActions(picked) }
 }
 n.intent?.onDelivery?.(d => { if (d?.archetype === "wot" && d.action === "show" && d.payload?.me) show(d.payload) })
 if (n.theme?.get) n.theme.get().then(t => { const c = t?.colors ?? {}; if (c.primary) document.documentElement.style.setProperty("--accent", c.primary) }).catch(() => {})
