@@ -182,7 +182,7 @@ class DashboardViewModel @Inject constructor(
     internal val _zapsFilter = MutableStateFlow(VaultZapsFilter.ON_MY_NOTES)
     val zapsFilter: StateFlow<VaultZapsFilter> = _zapsFilter.asStateFlow()
 
-    internal val _followersFilter = MutableStateFlow(VaultFollowersFilter.NEW)
+    internal val _followersFilter = MutableStateFlow(VaultFollowersFilter.WEB)
     val followersFilter: StateFlow<VaultFollowersFilter> = _followersFilter.asStateFlow()
 
     /** Notes, Articles or Highlights. Only the Vault tab's mode menu changes it. */
@@ -662,6 +662,7 @@ class DashboardViewModel @Inject constructor(
         val snapshot = withContext(Dispatchers.IO) {
             FollowerSnapshot.parse(com.nostrvault.relay.HavenBridge.getFollowers(owner))
                 ?.without(feedService.blockedHexForActiveAccount())
+                ?.let { feedService.followersJudged(it, owner) }
         } ?: return
         if (owner != nostrService.activeHexPubkey) return
         followerSnapshots[owner.lowercase()] = snapshot

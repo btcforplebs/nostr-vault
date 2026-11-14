@@ -76,7 +76,8 @@ object VaultPageAccounts {
     /**
      * Several accounts' followers as one list: each follower once (a current
      * follow over an ended one, then the newest), follows we watched first as the ledger orders
-     * them. Counts add up per account, so someone following two of them
+     * them. Someone in any one account's web is in the merged list's web.
+     * Counts add up per account, so someone following two of them
      * counts twice, as each account's own count does.
      */
     fun mergeFollowers(snapshots: List<FollowerSnapshot>): FollowerSnapshot? {
@@ -86,8 +87,10 @@ object VaultPageAccounts {
         val newestFirst = snapshots.flatMap { it.followers.orEmpty() }.sortedWith(
             compareByDescending<FollowerSnapshot.Entry> { it.following }.thenByDescending { maxOf(it.followedAt, it.listAt) },
         )
+        // In the web of any account they follow: in the merged list.
+        val inSomeWeb = newestFirst.filterNot { it.outside }.mapTo(HashSet()) { it.pubkey }
         for (entry in newestFirst) {
-            byPubkey.putIfAbsent(entry.pubkey, entry)
+            if (entry.pubkey !in byPubkey) byPubkey[entry.pubkey] = entry.copy(outside = entry.pubkey !in inSomeWeb)
         }
         val counts = snapshots.map { it.counts }.reduce { a, b ->
             FollowerSnapshot.Counts(

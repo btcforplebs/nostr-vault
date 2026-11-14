@@ -38,9 +38,10 @@ export const MODES = [
 /**
  * Each mode's filters, named as the phone names them (VaultFilterChoice.name); `pill` is the short form the closed
  * pill shows when the name is long. Logen 2026-11-04 (RESEARCH/NV_TOOLBAR_FILTER_AUDIT.md): "All" is never a button.
- * On a page in CLEARABLE, no filter on ("") is All, and tapping the lit filter again turns it off. Likes, Zaps and
- * Followers keep both of theirs, the first one being the default. At most two up front; `group: "type"` folds into
- * one type menu (Media), and `more: true` goes in the page's ··· menu.
+ * On a page in CLEARABLE, no filter on ("") is All, and tapping the lit filter again turns it off. Likes and Zaps
+ * keep both of theirs, the first one being the default. Followers (Logen 2026-11-14) is clearable like the Vault
+ * page: off is the followers in your web, and "Outside your web" in ··· is the rest. At most two up front;
+ * `group: "type"` folds into one type menu (Media), and `more: true` goes in the page's ··· menu.
  */
 export const FILTERS = {
   activity: [{ id: "mentions", title: "Mentions" }, { id: "outside", title: "Outside your web", pill: "Outside", more: true }],
@@ -52,12 +53,12 @@ export const FILTERS = {
     { id: "notes", title: "In your notes", pill: "Notes", more: true }],
   likes: [{ id: "received", title: "Likes received", pill: "Received" }, { id: "given", title: "Likes given", pill: "Given" }],
   zaps: [{ id: "received", title: "Zaps received", pill: "Received" }, { id: "given", title: "Zaps given", pill: "Given" }],
-  followers: [{ id: "new", title: "Newest followers", pill: "Newest" }, { id: "all", title: "All followers", pill: "All" }],
+  followers: [{ id: "outside", title: "Outside your web", pill: "Outside", more: true }],
 }
 /** The pages whose filters can all be off: off is everything ("" ). */
-export const CLEARABLE = new Set(["activity", "notes", "articles", "highlights", "media"])
+export const CLEARABLE = new Set(["activity", "notes", "articles", "highlights", "media", "followers"])
 /** What a page with no filter on is called, for the closed pill and its spoken label. */
-export const ALL_TITLE = { activity: "Everything", notes: "All notes", articles: "All articles", highlights: "All highlights", media: "All media" }
+export const ALL_TITLE = { activity: "Everything", notes: "All notes", articles: "All articles", highlights: "All highlights", media: "All media", followers: "Followers" }
 
 export const isMode = id => MODES.some(m => m.id === id)
 export const defaultFilter = mode => (CLEARABLE.has(mode) ? "" : FILTERS[mode]?.[0]?.id ?? "")
@@ -184,7 +185,8 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
     preview: myText.get(f.target) ?? lent.get(f.target) ?? "", emojis: uniq(f.emojis), sats: f.sats, images: myImages.get(f.target) ?? [], imagesBy: me }))
   const days = new Map()
   for (const f of follows) {
-    if (f.pubkey === me || blocked.has(f.pubkey)) continue
+    // In your web only: a follower outside it is listed under Followers' ··· filter, not announced (Logen 2026-11-14).
+    if (f.pubkey === me || blocked.has(f.pubkey) || out(f.pubkey)) continue
     const d = dayOf(f.at)
     days.set(d, [...(days.get(d) ?? []), f])
   }
@@ -292,8 +294,14 @@ export function followersOf(lists, me, blocked = new Set()) {
   return [...newest.values()].filter(ev => tagsMe(ev, me) && !blocked.has(ev.pubkey)).map(ev => ({ pubkey: ev.pubkey, at: followedAtOf(ev) ?? ev.created_at })).sort((a, b) => b.at - a.at)
 }
 
-/** "Newest followers" are those that arrived after you last looked at the list; "all" is everyone. */
-export const followersFilter = (list, filter, seenAt) => filter === "new" ? list.filter(f => f.at > (seenAt ?? 0)) : list
+/** Followers in your web (no filter, "") or the rest ("outside"), by the Vault list's rule (activityRows `out`): it
+ *  fails closed, an empty `trusted` puts everyone outside; null (no network, the tests) checks nobody. Logen 2026-11-14. */
+export function followersFilter(list, filter, me, trusted = null) {
+  const out = f => !!trusted && isOutside(f.pubkey, me, new Set(), trusted)
+  return filter === "outside" ? list.filter(out) : list.filter(f => !out(f))
+}
+/** The followers the dot and the dashboard's +N count: those in your web. */
+export const followersInWeb = (list, me, trusted) => followersFilter(list, "", me, trusted)
 
 const SEEN = "nv-vault-followers-seen"
 export const followersSeenAt = (me, storage = globalThis.localStorage) => Number(storage?.getItem(`${SEEN}:${me}`)) || 0
@@ -516,7 +524,7 @@ export function keepLists(me, lists, storage = globalThis.localStorage) {
 // ---- What the screen draws ----
 
 /** The rows the current mode and filter show, newest first: built once per change of what they're built from. */
-export function itemsFor(mode, filter, { own = [], inbound = [], given = [], followers = [], me, blocked = new Set(), seenAt = 0, trusted = null }) {
+export function itemsFor(mode, filter, { own = [], inbound = [], given = [], followers = [], me, blocked = new Set(), trusted = null }) {
   switch (mode) {
     case "activity": return activityRows(inbound, me, { mine: own, follows: followers, blocked, trusted, outside: filter === "outside" }).filter(r => activityFilter(r, filter))
     case "notes": return notesFor(own, inbound, me, filter, blocked, trusted)
@@ -525,7 +533,7 @@ export function itemsFor(mode, filter, { own = [], inbound = [], given = [], fol
     case "media": return filter === "notes" ? mediaFor(own) : []
     case "likes": return likesFor(own, inbound, me, filter, blocked)
     case "zaps": return zapsFor(given, inbound, me, filter, blocked)
-    case "followers": return followersFilter(followers, filter, seenAt)
+    case "followers": return followersFilter(followers, filter, me, trusted)
     default: return []
   }
 }

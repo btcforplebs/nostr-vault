@@ -61,10 +61,13 @@ enum class VaultZapsFilter(val displayName: String) {
     MY_ZAPS("Given"),
 }
 
-/** Followers from the relay's follower ledger, spam left out: the latest ones, or everyone. */
+/**
+ * Followers from the relay's follower ledger, spam left out: the ones in the
+ * account's web (the list), or the rest (the ··· "Outside your web" filter).
+ */
 enum class VaultFollowersFilter(val displayName: String) {
-    NEW("New"),
-    ALL("All"),
+    WEB("Followers"),
+    OUTSIDE("Outside your web"),
 }
 
 data class ParsedZapReceipt(

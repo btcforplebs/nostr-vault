@@ -76,6 +76,18 @@ class VaultPageAccountsTest {
         assertNull(VaultPageAccounts.mergeFollowers(emptyList()))
     }
 
+    @Test
+    fun aFollowerInOneAccountsWebIsInTheMergedWeb() {
+        fun e(pk: String, at: Long) = FollowerSnapshot.Entry(pubkey = pk, following = true, followedAt = at)
+        // x follows both; newest follow is b's, where x is outside; a's web has x.
+        val a = FollowerSnapshot(FollowerSnapshot.Counts(), listOf(e("x", 10), e("z", 3))).judged { it == "z" }
+        val b = FollowerSnapshot(FollowerSnapshot.Counts(), listOf(e("x", 20))).judged { true }
+        val merged = VaultPageAccounts.mergeFollowers(listOf(a, b))!!
+        assertEquals(listOf("x"), merged.entries(VaultFollowersFilter.WEB).map { it.pubkey })
+        assertEquals(20L, merged.followers!!.first { it.pubkey == "x" }.followedAt)
+        assertEquals(listOf("z"), merged.entries(VaultFollowersFilter.OUTSIDE).map { it.pubkey })
+    }
+
     // ── Report / Block on page rows (iOS #1562) ──
 
     @Test

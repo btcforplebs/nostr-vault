@@ -120,6 +120,7 @@ class FeedDashboardViewModel @Inject constructor(
             }
             val followers = async(Dispatchers.IO) {
                 runCatching { FollowerSnapshot.parse(HavenBridge.getFollowers(owner)) }.getOrNull()
+                    ?.let { feedService.followersJudged(it, owner) }
             }
 
             val built = withContext(Dispatchers.Default) {

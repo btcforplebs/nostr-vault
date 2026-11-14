@@ -110,11 +110,12 @@ class LocalNotificationService @Inject constructor(
          * service that signed the receipt, not the zapper; the relay already
          * admitted the receipt by the zapper's own standing (haven-go
          * zapimport.go inboxTrustKey), so it is not judged again. iOS:
-         * NotificationPolicy.authorMayNotify. Follows pass as well: they are
-         * never dropped for trust, only told differently ([followIsNamed]).
+         * NotificationPolicy.authorMayNotify. Follows too: a follower outside
+         * your web is listed under Followers' ··· filter, not announced
+         * (Logen 2026-11-14).
          */
         fun authorMayNotify(author: String, type: String, trusted: Set<String>, own: Set<String>): Boolean {
-            if (author.isEmpty() || type == "giftwrap" || type == "summary" || type == "zap" || type == "follow") return true
+            if (author.isEmpty() || type == "giftwrap" || type == "summary" || type == "zap") return true
             return author in own || author in trusted
         }
 

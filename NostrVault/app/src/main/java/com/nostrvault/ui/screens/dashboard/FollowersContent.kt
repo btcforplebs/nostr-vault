@@ -78,8 +78,10 @@ internal fun FollowersContent(
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(6.dp))
+                // The list's own count: the relay's tiers use one web for every
+                // account, so they would not match the list.
                 Text(
-                    text = "${snapshot.counts.total} followers",
+                    text = followersSummary(entries.size, filter),
                     color = PrimaryText,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
@@ -100,7 +102,7 @@ internal fun FollowersContent(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "No followers here yet",
+                        text = if (filter == VaultFollowersFilter.OUTSIDE) "No followers from outside your web" else "No followers here yet",
                         color = PrimaryText,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
@@ -184,5 +186,14 @@ private fun FollowerRow(
                 fontSize = 12.sp,
             )
         }
+    }
+}
+
+/** The line over the list: how many it shows, and from where. */
+internal fun followersSummary(count: Int, filter: VaultFollowersFilter): String {
+    val people = if (count == 1) "follower" else "followers"
+    return when (filter) {
+        VaultFollowersFilter.WEB -> "$count $people in your web"
+        VaultFollowersFilter.OUTSIDE -> "$count $people outside your web"
     }
 }

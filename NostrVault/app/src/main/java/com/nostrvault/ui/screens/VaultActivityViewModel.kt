@@ -397,9 +397,9 @@ class VaultActivityViewModel @Inject constructor(
         return VaultActivity.Event(id, pubkey, kind, createdAt, content, tags, images)
     }
 
-    /** The follows the Followers list marks as news, from the relay's ledger. */
+    /** The follows the Followers list marks as news, from the relay's ledger: in-web only. */
     fun setFollowers(snapshot: FollowerSnapshot?) {
-        val news = snapshot?.current.orEmpty().filter { it.isNews }.map { VaultActivity.Follow(it.pubkey, it.followedAt) }
+        val news = snapshot?.current.orEmpty().filter { it.isNewsInWeb }.map { VaultActivity.Follow(it.pubkey, it.followedAt) }
         if (news == follows) return
         follows = news
         scheduleRebuild()
@@ -619,7 +619,8 @@ class VaultActivityViewModel @Inject constructor(
             val whitelist = config.whitelistedNpubs?.mapNotNull { nostrService.npubToHex(it) }?.toSet().orEmpty()
             val trusted = feedService.trustedPubkeysFor(hex)
             val news = runCatching { FollowerSnapshot.parse(HavenBridge.getFollowers(hex)) }.getOrNull()
-                ?.current.orEmpty().filter { it.isNews }.map { VaultActivity.Follow(it.pubkey, it.followedAt) }
+                ?.let { feedService.followersJudged(it, hex) }
+                ?.current.orEmpty().filter { it.isNewsInWeb }.map { VaultActivity.Follow(it.pubkey, it.followedAt) }
             val quietOwn = ownAccountTagRule(config)
             VaultActivity.build(
                 events = events,
