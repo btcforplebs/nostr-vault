@@ -22,3 +22,28 @@ export const frameCsp = () => [
 // own frame (CSP has no navigate-to): see docs/napplets/P1_RUNTIME.md, "What 'no network' does not cover".
 export const loaderCsp = () => `${frameCsp()}; frame-ancestors 'self'; sandbox allow-scripts`
 export const LOADER_FILE = "napplet-frame.html"
+
+// The napplet-origin loader (plan P2, origin.js): the same rules, a real origin (allow-same-origin is safe here: the
+// origin is the napplet's own, never the vault's), its one service worker allowed, and only the vault may frame it.
+// Same headers from vite dev and server.mjs (test-checked). `vault`: the vault's origin(s), space-separated.
+export const SW_FILE = "napplet-sw.js"
+export const isolatedLoaderCsp = ({ self, vault, base = "/vault/" }) =>
+  frameCsp().replace("worker-src blob:", `worker-src blob: ${self}${base}${SW_FILE}`) +
+  `; frame-ancestors ${vault}; sandbox allow-scripts allow-same-origin`
+export const isolatedLoaderHeaders = ({ self, vault, base }) => ({
+  "Content-Security-Policy": isolatedLoaderCsp({ self, vault, base }),
+  "X-DNS-Prefetch-Control": "off",
+  "Referrer-Policy": "no-referrer",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), display-capture=(), usb=(), serial=(), hid=(), bluetooth=(), payment=(), publickey-credentials-get=(), clipboard-read=()",
+  "Cache-Control": "no-cache",
+})
+
+/** For vite dev and server.mjs: a request on a napplet origin -> { file, headers } for the two files it may have,
+ *  or null (404: a napplet origin serves nothing else, never the app). `host` is the request's Host. */
+export function nappletOriginFile(pathname, { host, proto = "http", base = "/vault/", vaultHosts }) {
+  const self = `${proto}://${host}`
+  const vault = vaultHosts.map(h => `${proto}://${h}`).join(" ")
+  if (pathname === `${base}${LOADER_FILE}`) return { file: LOADER_FILE, type: "text/html", headers: isolatedLoaderHeaders({ self, vault, base }) }
+  if (pathname === `${base}${SW_FILE}`) return { file: SW_FILE, type: "text/javascript", headers: { "Cache-Control": "no-cache", "Service-Worker-Allowed": base } }
+  return null
+}

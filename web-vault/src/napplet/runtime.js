@@ -6,20 +6,25 @@ import { mountNapplet, artifactHash, LOADER_PATH } from "./host.js"
 import { parseManifest, checkArtifact, domainsFor, nappletKey, SHELL_DOMAINS } from "./manifest.js"
 import { defaultGrant } from "./policy.js"
 import { createHandlers } from "./dispatch.js"
+import { nappletOrigin } from "./origin.js"
 
 /** A napplet with no manifest (a file the user picked): asks for every domain the shell has; the user trims it. */
-export const localManifest = (name, hash, title = name) => ({ kind: 0, publisher: "local", dTag: name, hash, required: ["shell"], optional: SHELL_DOMAINS.filter(d => d !== "shell"), roles: [], intents: [], title })
+export const localManifest = (name, hash, title = name, domains = SHELL_DOMAINS) => ({ kind: 0, publisher: "local", dTag: name, hash, required: ["shell"], optional: domains.filter(d => d !== "shell" && SHELL_DOMAINS.includes(d)), roles: [], intents: [], title })
 
 /**
  * openNapplet({ html, manifestEvent?, name?, title?, firstParty?, container, grants, consent, makeDeps, loader?, onRevoke? })
  *   grants:   policy.js grantStore for the account.
  *   consent:  ({ ident, domains }) -> Promise<grant | null>: the user's answer the first time (NappletShell's sheet).
  *   makeDeps: (grantSaver) -> deps for dispatch.js (shell-deps.js shellDeps).
+ *   origin:   where it runs (origin.js; tests pass their own). An outside napplet runs only on its own origin, behind
+ *             the loader's guards (P2): this site without a napplet host runs our own napplets only.
  * -> { ident, grant, domains, mounted } or throws (bad manifest, wrong hash, can't run here, the user said no).
  */
-export async function openNapplet({ html, manifestEvent, name = "napplet", title, firstParty = false, container, grants, consent, makeDeps, loader = new URL(LOADER_PATH, document.baseURI).href, onRevoke }) {
+export async function openNapplet({ html, manifestEvent, name = "napplet", title, firstParty = false, domains: only, container, grants, consent, makeDeps, loader = new URL(LOADER_PATH, document.baseURI).href, onRevoke, origin }) {
   const hash = await artifactHash(html)
-  const manifest = manifestEvent ? parseManifest(manifestEvent) : localManifest(name, hash, title)
+  origin ??= nappletOrigin(hash)
+  if (!origin && !firstParty) throw new Error("This site can't wall off an outside napplet yet (no napplet host), so it won't open one.")
+  const manifest = manifestEvent ? parseManifest(manifestEvent) : localManifest(name, hash, title, firstParty && only ? only : undefined)
   if (manifestEvent) checkArtifact(manifest, hash)
   const asked = domainsFor(manifest)
   const ident = { publisher: firstParty ? "nostr-vault" : manifest.publisher, dTag: manifest.dTag, hash, title: manifest.title }
@@ -36,7 +41,7 @@ export async function openNapplet({ html, manifestEvent, name = "napplet", title
   const { handlers, close } = createHandlers({ ident, grant, domains, deps })
   let mounted = null
   mounted = await mountNapplet({
-    html, dTag: ident.dTag, domains, handlers, container, loader, title: ident.title, expectHash: hash,
+    html, dTag: ident.dTag, domains, handlers, container, loader, origin: origin || undefined, needGuards: !firstParty, title: ident.title, expectHash: hash,
     onClose: () => { close(); if (mounted) deps.bus.forget(mounted.napplet) },
     onRevoke,
   })

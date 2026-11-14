@@ -3,7 +3,9 @@
 import { execSync } from "node:child_process"
 import { precompress } from "../web-relay/vite.config.js"
 import { preloadHaven } from "./nv-preload.js"
-import { loaderCsp, LOADER_FILE } from "./src/napplet/csp.js"
+import { readFileSync } from "node:fs"
+import { loaderCsp, LOADER_FILE, nappletOriginFile } from "./src/napplet/csp.js"
+import { nappletParentHost } from "./src/napplet/origin.js"
 
 // The commit About shows: NV_COMMIT from the site build (website/Dockerfile, set by deploy.sh; the image has no .git),
 // else this checkout's own, else none.
@@ -20,18 +22,31 @@ const nappletLoaderCsp = () => ({
   name: "nv-napplet-loader-csp",
   configureServer(server) {
     server.middlewares.use((req, res, next) => {
-      if (new URL(req.url, "http://x").pathname.endsWith(`/${LOADER_FILE}`)) res.setHeader("Content-Security-Policy", loaderCsp())
+      const pathname = new URL(req.url, "http://x").pathname
+      // A napplet's own origin (n-<id>.localhost, src/napplet/origin.js): its loader and service worker, nothing else.
+      const parentHost = nappletParentHost(req.headers.host)
+      if (parentHost) {
+        const hit = nappletOriginFile(pathname, { host: req.headers.host, vaultHosts: vaultHostsFor(parentHost) })
+        if (!hit) { res.statusCode = 404; return res.end() }
+        for (const [k, v] of Object.entries(hit.headers)) res.setHeader(k, v)
+        res.setHeader("Content-Type", hit.type)
+        return res.end(readFileSync(new URL(`./public/${hit.file}`, import.meta.url)))
+      }
+      if (pathname.endsWith(`/${LOADER_FILE}`)) res.setHeader("Content-Security-Policy", loaderCsp())
       next()
     })
   },
 })
+
+// The vault origins that may frame a napplet origin's loader: its parent host, and on this machine 127.0.0.1 too.
+export const vaultHostsFor = (parentHost) => parentHost.startsWith("localhost") ? [parentHost, parentHost.replace(/^localhost/, "127.0.0.1")] : [parentHost]
 
 export default {
   base: box ? "/" : "/vault/",
   build: { outDir: "dist", emptyOutDir: true, target: "es2022" },
   esbuild: { jsx: "automatic", jsxImportSource: "preact" },
   resolve: { dedupe: ["nostr-tools", "preact"] },
-  define: { __NV_COMMIT__: JSON.stringify(commit), __NV_BOX__: JSON.stringify(box) },
+  define: { __NV_COMMIT__: JSON.stringify(commit), __NV_BOX__: JSON.stringify(box), __NV_NAPPLET_HOST__: JSON.stringify(process.env.NV_NAPPLET_HOST || "") },
   server: { fs: { allow: [".."] } },
   plugins: [precompress(), nappletLoaderCsp(), ...(box ? [] : [preloadHaven()])], // haven.wasm's preload: index.html, for someone signed in
 }

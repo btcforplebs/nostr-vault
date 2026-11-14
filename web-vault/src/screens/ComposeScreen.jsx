@@ -28,6 +28,10 @@ import { ArticleCompose } from "./compose/ArticleCompose.jsx"
 import { RecipeCompose } from "./compose/RecipeCompose.jsx"
 import { DivineCompose } from "./compose/DivineCompose.jsx"
 import { PollCompose } from "./compose/PollCompose.jsx"
+import { EmojiPicker } from "../components/ReactionButton.jsx"
+import { ComposeEmoji } from "./lazy-screens.js"
+import { nappletsOn } from "../napplet/flag.js"
+import { emojiTags } from "../napplet/emoji-intent.js"
 import { HighlightCompose } from "./compose/HighlightCompose.jsx"
 import { ListingCompose } from "./compose/ListingCompose.jsx"
 import { SEND_ACTIONS, countdownText, sendAction, sendDelaySeconds, startCountdown } from "../net/send-delay.js"
@@ -80,8 +84,10 @@ export const replySnippet = content => content.replace(/https?:\/\/\S+|nostr:\S+
 
 export { draftKey, idbDrafts } from "./compose/drafts.js"
 
-/** What a draft keeps: the text as shown (with @Name tokens), whose each token is, and the media already uploaded. */
-export const draftOf = (text, mentions, photos) => ({
+// Custom emoji still in the text ride along with the draft (only when there are some, so plain drafts stay as they were).
+const keptEmojis = (text, emojis, d) => { const t = emojiTags(text, emojis); return t.length ? { ...d, emojis: Object.fromEntries(t.map(([, c, u]) => [c, u])) } : d }
+/** What a draft keeps: the text as shown (with @Name tokens), whose each token is, and the media already uploaded, and its custom emoji. */
+export const draftOf = (text, mentions, photos, emojis = {}) => keptEmojis(text, emojis, {
   // Placeholders of photos still going up aren't kept: read back, they'd have nothing behind them.
   text: withoutTokens(text, photos.filter(p => !p.url).map(p => p.id)), mentions: Object.fromEntries(Object.entries(mentions).filter(([t]) => text.includes(t))),
   photos: photos.filter(p => p.url).map(({ url, sha256, mime, size, width, height, alt }) => ({ url, sha256, mime, size, width, height, ...(alt?.trim() ? { alt } : {}) })),
@@ -93,7 +99,7 @@ const emptyDraft = d => !d.text.trim() && !d.photos.length
 /** Content and tags for a post: tokens -> nostr:npub, photo links where they were placed and the rest appended (as
  *  the iPhone does; draft-model.js placeBody), then the reply or quote's tags, a p tag per mention still in the text,
  *  one imeta per photo. `photos`: the uploaded ones. */
-export function buildPost({ text, mentions, photos, target, parent, drop = [] }) {
+export function buildPost({ text, mentions, photos, target, parent, drop = [], emojis = {} }) {
   const body = toNostr(placeBody(text, photos, drop), mentions)
   const base = !parent ? { content: body, tags: [] } : target.mode === "reply" ? { content: body, tags: replyTags(parent) } : quoteOf(parent, body)
   const tags = [...base.tags]
@@ -101,6 +107,8 @@ export function buildPost({ text, mentions, photos, target, parent, drop = [] })
   for (const p of photos) { const t = imetaTag(p); if (t) tags.push(t) }
   // NIP-24 t tags for the typed #hashtags (ComposeView+Posting), so hashtag feeds find the note.
   for (const t of hashtagTags(text)) if (!tags.some(x => x[0] === "t" && x[1] === t[1])) tags.push(t)
+  // NIP-30: one emoji tag per custom emoji (picked in the Emoji napplet) still in the text.
+  for (const t of emojiTags(text, emojis)) if (!tags.some(x => x[0] === "emoji" && x[1] === t[1])) tags.push(t)
   return { content: base.content, tags }
 }
 
@@ -170,7 +178,7 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
   // "done" | "failed", progress?, error?, file?, url?, alt?, ... }] }. A photo's upload and its place in the text change
   // together (draft-model.js).
   const [draft, setDraft] = useState(EMPTY_DRAFT)
-  const { text, mentions, photos } = draft
+  const { text, mentions, photos, emojis = {} } = draft
   const setText = t => setDraft(d => ({ ...d, text: t }))
   const setMentions = f => setDraft(d => ({ ...d, mentions: typeof f === "function" ? f(d.mentions) : f }))
   const clearDraft = () => setDraft(EMPTY_DRAFT)
@@ -221,7 +229,7 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
     setLoaded(null); clearDraft(); setMention(null); setWaitPost(false)
     drafts.current.get(key).catch(() => null).then(d => {
       if (!live) return
-      if (d) setDraft({ text: d.text ?? "", mentions: d.mentions ?? {}, photos: (d.photos ?? []).map(p => ({ ...p, id: ++nextPhoto, status: "done", preview: p.url })) })
+      if (d) setDraft({ text: d.text ?? "", mentions: d.mentions ?? {}, emojis: d.emojis ?? {}, photos: (d.photos ?? []).map(p => ({ ...p, id: ++nextPhoto, status: "done", preview: p.url })) })
       setLoaded(key)
     })
     return () => { live = false }
@@ -229,10 +237,10 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
   const saving = useRef(Promise.resolve())
   useEffect(() => {
     if (loaded !== key) return
-    const d = draftOf(text, mentions, photos)
+    const d = draftOf(text, mentions, photos, emojis)
     // One write after another, so an older one can't land last.
     saving.current = saving.current.then(() => (emptyDraft(d) ? drafts.current.delete(key) : drafts.current.put(key, d))).catch(() => {})
-  }, [text, mentions, photos, loaded])
+  }, [text, mentions, photos, emojis, loaded])
 
   // Photos: hashed, signed and uploaded one at a time (one signer prompt after another), the moment they're added. A
   // photo removed before its turn is skipped (no signer prompt); one going up is stopped.
@@ -275,6 +283,22 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
     const c = at + token.length + (el.value[at + token.length] === "\n" ? 1 : 0)
     el.focus(); el.setSelectionRange(c, c)
   })
+  // Emoji: the Emoji napplet when napplets are on (src/napplet/flag.js; it opens by intent and also offers your custom
+  // emoji), else the reaction picker's sheet. A pick goes in at the caret; a custom one keeps its picture for the tag.
+  const [emojiOpen, setEmojiOpen] = useState(false)
+  const addEmoji = ({ text: piece, tag }) => {
+    const el = box.current
+    setDraft(d => {
+      const at = el?.selectionStart ?? d.text.length
+      const end = el?.selectionEnd ?? at
+      const before = d.text.slice(0, at), after = d.text.slice(end)
+      const pad = tag && before && !/\s$/.test(before) ? " " : ""
+      const ins = pad + piece + (tag && !/^\s/.test(after) ? " " : "")
+      const caret = before.length + ins.length
+      requestAnimationFrame(() => { const e = box.current; if (e) e.setSelectionRange(caret, caret) })
+      return { ...d, text: before + ins + after, emojis: tag ? { ...(d.emojis ?? {}), [tag[1]]: tag[2] } : d.emojis }
+    })
+  }
   const addFiles = files => {
     const media = [...files].filter(isMedia)
     if (!media.length) return
@@ -341,7 +365,7 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
     setErr(""); setResult(null); setUndone(false)
     if (uploading) return setWaitPost(true)
     let built
-    try { built = buildPost({ text, mentions, photos: ready, target, parent, drop: notReady }) } catch (e) { return setErr(String(e?.message ?? e)) }
+    try { built = buildPost({ text, mentions, photos: ready, target, parent, drop: notReady, emojis }) } catch (e) { return setErr(String(e?.message ?? e)) }
     // Never an empty kind 1, whatever led here (Tron, #1510).
     if (!built.content.trim()) return setErr("There's nothing to post yet.")
     const action = sendAction(target), seconds = sendDelaySeconds()
@@ -395,8 +419,8 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
   const postLabel = busy ? (ctx.signer.method === "nip46" ? "Waiting for your signer…" : `${SEND_ACTIONS[sendAction(target)].label}…`) : waitPost ? "Waiting for uploads…" : target?.mode === "reply" ? "Reply" : "Post"
   const keyboard = useKeyboardFrame(!inline)
   const postButton = cls => <button class={cls} disabled={!canPost} onClick={post} aria-busy={busy || waitPost || undefined}>{postLabel}</button>
-  const preview = !inline && <ComposePreview pubkey={ctx.session.pubkey} uploading={goingUp} deps={[text, mentions, ready.length, ready.map(p => p.alt).join("\u0000"), parent?.id]}
-    build={() => buildPost({ text, mentions, photos: ready, target, parent, drop: notReady })} />
+  const preview = !inline && <ComposePreview pubkey={ctx.session.pubkey} uploading={goingUp} deps={[text, mentions, emojis, ready.length, ready.map(p => p.alt).join("\u0000"), parent?.id]}
+    build={() => buildPost({ text, mentions, photos: ready, target, parent, drop: notReady, emojis })} />
   return (
     <main class={`screen ${inline ? "compose-inline" : `compose-sheet${keyboard ? " keyboard" : ""} view-${view}`}`}
       style={keyboard ? { "--kb-top": `${keyboard.top}px`, "--kb-height": `${keyboard.height}px` } : undefined}>
@@ -443,6 +467,12 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
             <span class="compose-add-photo-label">Photo or video</span>
           </button>
           <input ref={picker} type="file" accept="image/*,video/*" multiple hidden onChange={e => { addFiles(e.currentTarget.files); e.currentTarget.value = "" }} />
+          <button type="button" class="small compose-add-emoji" disabled={!!pending || busy} onClick={() => setEmojiOpen(true)} aria-label="Emoji" title="Emoji">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0" /><path d="M9 9.5h.01M15 9.5h.01" /></svg>
+          </button>
+          {emojiOpen && (nappletsOn()
+            ? <ComposeEmoji ctx={ctx} onPick={addEmoji} onClose={() => { setEmojiOpen(false); box.current?.focus() }} />
+            : <EmojiPicker title="Add Emoji" action="Add" onPick={e => addEmoji({ text: e })} onClose={() => { setEmojiOpen(false); box.current?.focus() }} />)}
           {photos.length > 0 && <span class="muted small">{photos.length} of {MAX_PHOTOS}</span>}
           {loaded === key && (text.trim() || ready.length > 0) && !result && <span class="muted small compose-draft">Draft saved</span>}
         </div>

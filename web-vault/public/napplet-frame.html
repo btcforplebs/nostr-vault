@@ -1,10 +1,18 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><title>napplet</title></head><body><script>
-// The napplet loader (src/napplet/host.js, docs/napplets/P0_SPIKE.md): served with its own CSP (website/nginx.conf,
-// vite.config.js), framed sandbox="allow-scripts" (origin null). It says ready once; the shell answers with the
-// checked napplet document, and this page replaces itself with it. Nothing else is accepted, and only once.
+// The napplet loader (src/napplet/host.js; docs/napplets/P1_RUNTIME.md, P2_EMOJI.md). Served with its own CSP. It says
+// ready once; the shell answers with the checked napplet document, and this page replaces itself with it. Nothing
+// else is accepted, and only once.
+// On a napplet's own origin (src/napplet/origin.js, P2) it first puts up the guards an opaque frame can't have:
+//  - its service worker (napplet-sw.js), which answers every request but this page and itself with a network error;
+//  - a Navigation API listener that cancels every navigation of this frame (a link, location = …, a meta refresh,
+//    a reload), so nothing leaves by navigating, and tells the shell, which closes the napplet. The listener is on
+//    `navigation`, which the document.open below keeps (checked in Chrome);
+//  - RTCPeerConnection and friends removed from this window. Only a speed bump: a child frame has its own (P2 doc).
+// The ready message says which guards are up; the shell runs outside napplets only with all of them.
 (function () {
   var done = false
+  var real = self.origin !== "null" // the document's own origin: "null" when sandboxed without allow-same-origin (location.origin is the URL's)
   addEventListener("message", function (e) {
     if (done || e.source !== parent || !e.data || e.data.type !== "nv-loader.write" || typeof e.data.html !== "string") return
     done = true
@@ -12,6 +20,24 @@
     document.write(e.data.html)
     document.close()
   })
-  parent.postMessage({ type: "nv-loader.ready" }, "*")
+  function guards() {
+    var nav = false
+    if (real && typeof navigation !== "undefined" && navigation.addEventListener) {
+      navigation.addEventListener("navigate", function (e) {
+        if (!e.cancelable) return
+        e.preventDefault()
+        parent.postMessage({ type: "nv-loader.left" }, "*")
+      })
+      nav = true
+    }
+    for (var k of Object.getOwnPropertyNames(window)) if (/^(webkit|moz)?RTC/.test(k)) try { delete window[k] } catch (x) {}
+    if (!real || !navigator.serviceWorker) return Promise.resolve({ nav: nav, sw: false })
+    var sw = navigator.serviceWorker
+    return sw.register("napplet-sw.js").then(function () { return sw.ready }).then(function () {
+      if (sw.controller) return
+      return new Promise(function (ok) { sw.addEventListener("controllerchange", ok, { once: true }); setTimeout(ok, 4000) })
+    }).then(function () { return { nav: nav, sw: !!sw.controller } }, function () { return { nav: nav, sw: false } })
+  }
+  guards().then(function (g) { parent.postMessage({ type: "nv-loader.ready", guards: g }, "*") })
 })()
 </script></body></html>
