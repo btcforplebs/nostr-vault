@@ -39,7 +39,6 @@ import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.service.BlossomService
-import com.nostrvault.service.DMFileSend
 import com.nostrvault.service.DMMessage
 import com.nostrvault.service.DMService
 import com.nostrvault.service.MediaPrivacy
@@ -182,14 +181,8 @@ class DMThreadViewModel @Inject constructor(
             try {
                 // A NIP-17 photo is locked (kind 15, DMLockedPhoto): its words go first as
                 // their own message, the photo one second after so it sorts below them.
-                if (image != null && !_useNIP04.value && !isVideo(image)) {
-                    val file = DMLockedPhoto.prepare(context, image, blossomService)
-                    if (text.isNotEmpty()) {
-                        dmService.sendMessage(counterpartyPubkey, text, false)
-                        wordsSent = true
-                    }
-                    val after = if (wordsSent) System.currentTimeMillis() / 1000 + 1 else 0
-                    dmService.sendMessage(counterpartyPubkey, "", false, DMFileSend(file, after))
+                if (image != null && !_useNIP04.value && !DMLockedPhoto.isVideo(context, image)) {
+                    DMLockedPhoto.send(context, image, text, counterpartyPubkey, blossomService, dmService) { wordsSent = true }
                     DMPastedImage.discard(image)
                     return@launch
                 }
@@ -219,9 +212,6 @@ class DMThreadViewModel @Inject constructor(
             }
         }
     }
-
-    private fun isVideo(uri: Uri): Boolean =
-        DMVideo.isVideoMime(context.contentResolver.getType(uri) ?: DMPastedImage.mimeType(uri))
 
     private suspend fun uploadImage(uri: Uri): String? = withContext(Dispatchers.IO) {
         try {

@@ -34,6 +34,34 @@ object DMLockedPhoto {
         return DMFile.fileMessage(url, enc, type)
     }
 
+    /**
+     * Sends [text] (if any) as a kind 14, then the photo locked as a kind 15 one second later so
+     * it sorts below them (web dms.js sendMessage). [onWordsSent] runs once the words are out, so a
+     * failed photo doesn't hand back words that already went.
+     */
+    suspend fun send(
+        context: Context,
+        uri: Uri,
+        text: String,
+        recipient: String,
+        blossom: BlossomService,
+        dmService: com.nostrvault.service.DMService,
+        onWordsSent: () -> Unit = {},
+    ) {
+        val file = prepare(context, uri, blossom)
+        var after = 0L
+        if (text.isNotEmpty()) {
+            dmService.sendMessage(recipient, text, false)
+            onWordsSent()
+            after = System.currentTimeMillis() / 1000 + 1
+        }
+        dmService.sendMessage(recipient, "", false, com.nostrvault.service.DMFileSend(file, after))
+    }
+
+    /** Whether [uri] is a video (sent as a plain link; only photos are locked). */
+    fun isVideo(context: Context, uri: Uri): Boolean =
+        DMVideo.isVideoMime(context.contentResolver.getType(uri) ?: DMPastedImage.mimeType(uri))
+
     /** The bytes to lock and their type. */
     internal fun clean(context: Context, uri: Uri): Pair<ByteArray, String> {
         val resolver = context.contentResolver

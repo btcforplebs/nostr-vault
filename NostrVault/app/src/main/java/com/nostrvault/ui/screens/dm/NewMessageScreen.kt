@@ -155,18 +155,25 @@ class NewMessageViewModel @Inject constructor(
         viewModelScope.launch {
             _isSending.value = true
             try {
-                // A photo that failed to upload stops the send, as iOS does,
-                // instead of sending the text alone or a blank DM.
-                val imageUrl = image?.let { uploadImage(it) ?: throw DMPhotoUploadException() }
-                val content = buildString {
-                    append(text)
-                    if (imageUrl != null) {
-                        if (text.isNotEmpty()) append("\n")
-                        append(imageUrl)
+                // A photo is locked (kind 15, DMLockedPhoto) like one sent from the thread.
+                if (image != null && !DMLockedPhoto.isVideo(context, image)) {
+                    DMLockedPhoto.send(context, image, text, recipient, blossomService, dmService) {
+                        _messageText.value = "" // the words went: a failed photo must not send them twice
                     }
-                }
-                if (content.isNotEmpty()) {
-                    dmService.sendDM(content, recipient)
+                } else {
+                    // A photo that failed to upload stops the send, as iOS does,
+                    // instead of sending the text alone or a blank DM.
+                    val imageUrl = image?.let { uploadImage(it) ?: throw DMPhotoUploadException() }
+                    val content = buildString {
+                        append(text)
+                        if (imageUrl != null) {
+                            if (text.isNotEmpty()) append("\n")
+                            append(imageUrl)
+                        }
+                    }
+                    if (content.isNotEmpty()) {
+                        dmService.sendDM(content, recipient)
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e
