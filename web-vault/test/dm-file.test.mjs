@@ -57,7 +57,7 @@ test("the link kept on this device holds key, nonce, hash and type in its fragme
   const link = fileLink(URL_, { ...enc, mime: "image/gif" })
   assert.ok(link.startsWith(URL_ + "#nv-dm=")); assert.ok(isFileLink(link)); assert.ok(!isFileLink(URL_))
   assert.match(link, /[A-Za-z0-9_-]$/, "nothing a link trimmer would cut")
-  assert.deepEqual(parseFileLink(link), { url: URL_, key: enc.key, nonce: enc.nonce, x: enc.x, mime: "image/gif" })
+  assert.deepEqual(parseFileLink(link), { url: URL_, key: enc.key, nonce: enc.nonce, x: enc.x, ox: enc.ox, mime: "image/gif" })
   assert.equal(parseFileLink(URL_ + "#nv-dm=junk"), null)
   assert.equal(parseFileLink("http://plain.example/a#nv-dm=" + link.split("#nv-dm=")[1]), null, "https only")
 })
@@ -87,7 +87,7 @@ test("a kind 15 wrap opens as the photo for the other person, and an old kind 14
   const rumor = rumorFor(pk(A), pk(B), m.content, undefined, { kind: 15, tags: m.tags })
   assert.equal(rumor.kind, 15); assert.deepEqual(rumor.tags[0], ["p", pk(B)])
   const got = await unwrap(await wrapFor(rumor, envOf(A), pk(B)), cryptoOf(B), pk(B))
-  assert.deepEqual(parseFileLink(got.content), { url: URL_, key: enc.key, nonce: enc.nonce, x: enc.x, mime: "image/jpeg" })
+  assert.deepEqual(parseFileLink(got.content), { url: URL_, key: enc.key, nonce: enc.nonce, x: enc.x, ox: enc.ox, mime: "image/jpeg" })
   assert.equal(lastPreview(got.content), "Photo")
   const old = await unwrap(await wrapFor(rumorFor(pk(A), pk(B), "look\n" + URL_ + ".jpg"), envOf(A), pk(B)), cryptoOf(B), pk(B))
   assert.equal(old.content, "look\n" + URL_ + ".jpg")
@@ -167,4 +167,30 @@ test("a locked DM file tries the account's servers, then nostr.download", async 
   assert.deepEqual(puts, ["https://blossom.primal.net/upload", "https://nostr.download/upload"])
   assert.equal(msg.kind ?? 15, 15)
   assert.ok(JSON.stringify(msg).includes("https://nostr.download/"))
+})
+
+test("the shared kind 15 vectors (DM_FILE_VECTORS.json): x, then decrypt, then ox; bad algorithm or key isn't opened", async () => {
+  const { readFile } = await import("node:fs/promises")
+  const { vectors } = JSON.parse(await readFile(new URL("./fixtures/DM_FILE_VECTORS.json", import.meta.url), "utf8"))
+  const bytes = h => Uint8Array.from(h.match(/../g) ?? [], b => parseInt(b, 16))
+  const { fileContentOf } = await import("../src/net/dm-file.js")
+  assert.ok(vectors.length >= 10)
+  for (const v of vectors) {
+    const shown = fileContentOf(v.rumor)
+    const f = parseFileLink(shown)
+    if (v.expect === "reject_algorithm" || v.expect === "reject_key") {
+      assert.equal(f, null, `${v.id}: not opened as a file`)
+      continue
+    }
+    assert.ok(f, `${v.id}: parsed`)
+    assert.equal(f.ox, v.ox, `${v.id}: ox carried into the link`)
+    const run = openFileLink(shown, { fetchBytes: async () => bytes(v.ciphertext_hex) })
+    if (v.expect === "ok") {
+      const plain = new Uint8Array(await (await run).arrayBuffer())
+      assert.deepEqual(plain, bytes(v.plaintext_hex), v.id)
+    } else {
+      const want = { reject_x: /changed on the server/, reject_ox: /isn't the one that was sent/ }[v.expect]
+      await assert.rejects(run, want ?? (() => true), v.id)
+    }
+  }
 })

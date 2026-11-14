@@ -30,29 +30,32 @@ export async function encryptFile(bytes) {
   return { cipher, key: hex(raw), nonce: hex(iv), x: await sha256Hex(cipher), ox: await sha256Hex(plain) }
 }
 
-/** The original bytes; throws when `cipher` isn't the file named by `x` (when given) or doesn't open with the key. */
-export async function decryptFile(cipher, { key, nonce, x }) {
+/** The original bytes; throws when `cipher` isn't the file named by `x` (when given), doesn't open with the key, or
+ *  opens to something other than the original named by `ox` (when given). */
+export async function decryptFile(cipher, { key, nonce, x, ox }) {
   const c = cipher instanceof Uint8Array ? cipher : new Uint8Array(cipher)
   if (x && (await sha256Hex(c)) !== x) throw new Error("the file was changed on the server")
   const k = await crypto.subtle.importKey("raw", unhex(key), "AES-GCM", false, ["decrypt"])
-  return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: unhex(nonce) }, k, c))
+  const plain = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: unhex(nonce) }, k, c))
+  if (ox && (await sha256Hex(plain)) !== ox) throw new Error("the file isn't the one that was sent")
+  return plain
 }
 
 /** "<url>#nv-dm=…": the message as this device keeps and shows it. */
-export function fileLink(url, { key, nonce, x, mime }) {
-  return `${url}${MARK}${b64url(JSON.stringify({ k: key, n: nonce, x, m: mime }))}`
+export function fileLink(url, { key, nonce, x, ox, mime }) {
+  return `${url}${MARK}${b64url(JSON.stringify({ k: key, n: nonce, x, o: ox, m: mime }))}`
 }
 
 export const isFileLink = s => typeof s === "string" && /^https:\/\/[^\s#]+#nv-dm=[A-Za-z0-9_-]+$/.test(s)
 
-/** -> { url, key, nonce, x, mime } or null. */
+/** -> { url, key, nonce, x, ox, mime } or null. "o" (ox) is the same field the Apple app keeps. */
 export function parseFileLink(s) {
   if (!isFileLink(s)) return null
   const i = s.indexOf(MARK)
   try {
     const d = JSON.parse(unb64url(s.slice(i + MARK.length)))
-    if (!HEX64.test(d?.k ?? "") || !NONCE.test(d?.n ?? "") || (d.x != null && !HEX64.test(d.x))) return null
-    return { url: s.slice(0, i), key: d.k, nonce: d.n, x: d.x ?? undefined, mime: MIME.test(d.m ?? "") ? d.m : "application/octet-stream" }
+    if (!HEX64.test(d?.k ?? "") || !NONCE.test(d?.n ?? "") || (d.x != null && !HEX64.test(d.x)) || (d.o != null && !HEX64.test(d.o))) return null
+    return { url: s.slice(0, i), key: d.k, nonce: d.n, x: d.x ?? undefined, ox: d.o ?? undefined, mime: MIME.test(d.m ?? "") ? d.m : "application/octet-stream" }
   } catch { return null }
 }
 
@@ -79,9 +82,9 @@ export function fileContentOf(rumor) {
   const tag = k => (rumor.tags ?? []).find(t => Array.isArray(t) && t[0] === k)?.[1]
   const alg = String(tag("encryption-algorithm") ?? "").toLowerCase()
   const key = String(tag("decryption-key") ?? "").toLowerCase(), nonce = String(tag("decryption-nonce") ?? "").toLowerCase()
-  const x = String(tag("x") ?? "").toLowerCase()
+  const x = String(tag("x") ?? "").toLowerCase(), ox = String(tag("ox") ?? "").toLowerCase()
   if (alg !== "aes-gcm" || !HEX64.test(key) || !NONCE.test(nonce)) return url
-  return fileLink(url, { key, nonce, x: HEX64.test(x) ? x : undefined, mime: MIME.test(tag("file-type") ?? "") ? tag("file-type") : undefined })
+  return fileLink(url, { key, nonce, x: HEX64.test(x) ? x : undefined, ox: HEX64.test(ox) ? ox : undefined, mime: MIME.test(tag("file-type") ?? "") ? tag("file-type") : undefined })
 }
 
 export const MAX_FILE = 60 * 1024 * 1024
