@@ -66,4 +66,20 @@ class CopySettingsSyncTest {
         val secret = """{"v":1,"updated_at":50,"keys":{"dm_relays":["nsec1${"q".repeat(58)}"]}}"""
         assertEquals(Step.Write(now), CopySettingsSync.step(mine, secret, mine.toString(), 100, now, setupDone = true))
     }
+
+    @Test
+    fun `a file with the retired condensed layout is applied and written over clean`() {
+        val old = HavenConfig(feedLayoutModes = mapOf("Music" to "condensed"), zapsOnlyMode = true)
+        val raw = CopySettings.file(CopySettings.keys(old).let {
+            kotlinx.serialization.json.JsonObject(it + ("feed_layouts" to kotlinx.serialization.json.JsonObject(mapOf("Music" to kotlinx.serialization.json.JsonPrimitive("condensed")))))
+        }, 50)
+        val s = CopySettingsSync.step(mine, raw, mine.toString(), 100, now, setupDone = true)
+        assertTrue(s is Step.Apply)
+        assertEquals(now, (s as Step.Apply).rewriteAt)
+        // Not during setup: nothing is written then.
+        assertEquals(null, (CopySettingsSync.step(mine, raw, null, 0, now, setupDone = false) as Step.Apply).rewriteAt)
+        // A clean foreign file is only applied.
+        assertEquals(null, (CopySettingsSync.step(mine, CopySettings.file(theirs, 50), mine.toString(), 100, now, setupDone = true) as Step.Apply).rewriteAt)
+    }
 }
+

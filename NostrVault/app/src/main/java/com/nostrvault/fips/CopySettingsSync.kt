@@ -55,7 +55,7 @@ class CopySettingsSync internal constructor(
          */
         data class Write(val at: Long) : Step
         /** The engine left a file this device didn't write: apply it. */
-        data class Apply(val file: CopySettings.Checked) : Step
+        data class Apply(val file: CopySettings.Checked, val rewriteAt: Long? = null) : Step
     }
 
     private val lock = Mutex()
@@ -88,8 +88,10 @@ class CopySettingsSync internal constructor(
             is Step.Apply -> {
                 configStore.updateAsync { CopySettings.apply(it, s.file.keys) }
                 // What this device holds now (its own mesh servers kept), so applying is not read as a change here.
-                baseline.keys = CopySettings.keys(configStore.config.value).toString()
-                baseline.at = s.file.updatedAt
+                val applied = CopySettings.keys(configStore.config.value)
+                s.rewriteAt?.let { write(file, CopySettings.file(applied, it)) }
+                baseline.keys = applied.toString()
+                baseline.at = s.rewriteAt ?: s.file.updatedAt
             }
         }
     }
@@ -119,7 +121,10 @@ class CopySettingsSync internal constructor(
             val write = if (setupDone) Step.Write(if (raw == null) FIRST_FILE_AT else nowS) else Step.Nothing
             val checked = raw?.let { CopySettings.check(it, nowS).first } ?: return write
             val foreign = baselineKeys == null || checked.updatedAt != baselineAt
-            if (foreign) return if (checked.keys == current) Step.Nothing else Step.Apply(checked)
+            // A file with the retired "condensed" layout is applied, then written over clean (dated now), so it stops
+            // reaching linked devices (11/14). Not during setup: nothing is written then.
+            if (foreign) return if (checked.keys == current) Step.Nothing
+            else Step.Apply(checked, rewriteAt = nowS.takeIf { setupDone && CopySettings.holdsRetiredLayout(checked.keys) })
             return if (sameKeys(baselineKeys!!, current)) Step.Nothing else write
         }
 

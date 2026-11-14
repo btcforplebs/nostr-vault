@@ -107,6 +107,17 @@ class CopySettingsTest {
         assertEquals(listOf("wss://mine.example"), applied.dmRelays)
     }
 
+    @Test
+    fun `the retired condensed layout reads and is sent as expanded`() {
+        val file = Json.parseToJsonElement("""{"feed_layouts":{"Music":"condensed","Global":"threaded"}}""") as JsonObject
+        val applied = CopySettings.apply(HavenConfig(), file)
+        assertEquals(mapOf("Music" to "expanded", "Global" to "threaded"), applied.feedLayoutModes)
+        val exported = CopySettings.keys(HavenConfig(feedLayoutModes = mapOf("Music" to "condensed")))["feed_layouts"]
+        assertEquals(Json.parseToJsonElement("""{"Music":"expanded"}"""), exported)
+        assertTrue(CopySettings.holdsRetiredLayout(file))
+        assertFalse(CopySettings.holdsRetiredLayout(CopySettings.keys(applied)))
+    }
+
     private fun full() = HavenConfig(
         feedLayoutModes = mapOf("following" to "cards", "global" to "compact"),
         zapsOnlyMode = true,

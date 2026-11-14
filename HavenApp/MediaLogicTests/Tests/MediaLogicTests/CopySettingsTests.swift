@@ -125,4 +125,26 @@ final class CopySettingsSecretExportTests: XCTestCase {
             return XCTFail("the export must pass the refuse check")
         }
     }
+
+    // MARK: - Retired "condensed" layout (11/14)
+
+    func testApplyReadsCondensedAsExpanded() {
+        let applied = CopySettings.apply(["feed_layouts": ["Music": "condensed", "Global": "threaded"]], to: HavenConfig.default)
+        XCTAssertEqual(applied.feedLayoutModes["Music"], "expanded")
+        XCTAssertEqual(applied.feedLayoutModes["Global"], "threaded")
+    }
+
+    func testExportWritesCondensedAsExpanded() throws {
+        var config = HavenConfig.default
+        config.feedLayoutModes = ["Music": "condensed"]
+        let layouts = try XCTUnwrap(CopySettings.keys(config)["feed_layouts"] as? [String: String])
+        XCTAssertEqual(layouts, ["Music": "expanded"])
+    }
+
+    func testCondensedFileNeedsRewrite() {
+        XCTAssertTrue(CopySettings.holdsRetiredLayout(["feed_layouts": ["Music": "condensed"]]))
+        XCTAssertFalse(CopySettings.holdsRetiredLayout(["feed_layouts": ["Music": "expanded"]]))
+        XCTAssertFalse(CopySettings.holdsRetiredLayout(["zaps_only": true]))
+    }
 }
+

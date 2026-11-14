@@ -35,6 +35,9 @@ struct HavenConfig: Codable, Equatable {
     var ownerNcryptsec: String = "" // NIP-49 encrypted private key
     var ownerNsec: String = "" // Deprecated: kept for migration purposes only
     var showReplies: Bool = true // Added to toggle visibility of replies in feed
+    /// Set once replies were turned back on after the "condensed" loop
+    /// (11/14) kept switching them off. New installs start with it set.
+    var repliesBackOnV1: Bool = true
     var themeColor: String = "orange"
     var autoLoadNewPosts: Bool = false
     var showReposts: Bool = true
@@ -326,7 +329,7 @@ struct HavenConfig: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
-        case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, autoplayVideos, vertexLookups, fanfaresAutoCheck, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
+        case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, autoplayVideos, vertexLookups, fanfaresAutoCheck, ownerNcryptsec, ownerNsec, showReplies, repliesBackOnV1, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
         case useOLED, textSizeScale, feedLayoutModes, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage, hideNostrVaultBadge
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications, notifyOwnAccountTags, showDMTextInNotifications
@@ -403,10 +406,20 @@ struct HavenConfig: Codable, Equatable {
         // legacy compact choice instead of jumping to Threaded View.
         feedLayoutModes = try container.decodeIfPresent([String: String].self, forKey: .feedLayoutModes) ?? [:]
         // Compact view is gone (Logen, 2026-11-11): a compact feed opens
-        // expanded, with replies off as switching to expanded sets them.
-        let migrated = FeedLayoutMode.migrateCompact(layouts: feedLayoutModes, legacyCompact: feedCompactModes)
+        // expanded. Replies go off only for the legacy per-feed compact
+        // switch, which no copied settings file can bring back; a
+        // "condensed" layout (one can, 11/14) changes the layout only.
+        let saved = feedLayoutModes
+        let migrated = FeedLayoutMode.migrateCompact(layouts: saved, legacyCompact: feedCompactModes)
         feedLayoutModes = migrated.layouts
-        if migrated.hadCompact { showReplies = false }
+        let legacyCompact = feedCompactModes.contains { $0.value && saved[$0.key] == nil }
+        if legacyCompact { showReplies = false }
+        // Once: a copied "condensed" layout turned replies off on every load
+        // until 11/14, so they come back on.
+        if try container.decodeIfPresent(Bool.self, forKey: .repliesBackOnV1) != true, !legacyCompact {
+            showReplies = true
+        }
+        repliesBackOnV1 = true
         defaultReactionEmoji = try container.decodeIfPresent(String.self, forKey: .defaultReactionEmoji) ?? defaults.defaultReactionEmoji
         appIcon = try container.decodeIfPresent(String.self, forKey: .appIcon) ?? defaults.appIcon
         zapsOnlyMode = try container.decodeIfPresent(Bool.self, forKey: .zapsOnlyMode) ?? defaults.zapsOnlyMode
