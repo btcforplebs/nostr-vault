@@ -285,9 +285,27 @@ class RelayForegroundService : Service() {
         @Volatile var firstRun = false
         @Volatile var otherVaultRelay: String? = null
 
+        /**
+         * Whether MainActivity starts the relay in onCreate, before the first
+         * frame: setup done, the embedded relay in use, no import holding the
+         * database (the import starts the relay itself when it ends).
+         */
+        fun startsAtLaunch(setupDone: Boolean, externalRelay: Boolean, importing: Boolean): Boolean =
+            setupDone && !externalRelay && !importing
+
+        /**
+         * The wait before a start: only a system restart (START_STICKY, a null
+         * intent) right after the last start waits [delayMs], to keep a crash
+         * from looping. Someone opening the app again within [windowMs] of the
+         * last start used to wait it too (3 s of every quick relaunch).
+         */
+        fun crashRestartDelay(stickyRestart: Boolean, sinceLastStartMs: Long, windowMs: Long, delayMs: Long): Long =
+            if (stickyRestart && sinceLastStartMs in 1 until windowMs) delayMs else 0L
+
         /** [duringSetup]: first run starts the relay before setup is finished (it serves while `setup` runs). */
         fun start(context: Context, duringSetup: Boolean = false) {
             if (externalMode) return
+            StartupMarks.markOnce("engine start asked")
             // Never under a running import: this service's StopRelayC on any later destroy would cancel it
             // (Tron's import risks #7). The import starts the relay itself when it ends.
             if (com.nostrvault.service.RelayImportService.importRunning) {
@@ -550,9 +568,10 @@ class RelayForegroundService : Service() {
             val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val lastStart = prefs.getLong(PREF_LAST_START_TIME, 0)
             val elapsed = System.currentTimeMillis() - lastStart
-            if (elapsed in 1 until CRASH_RESTART_WINDOW_MS) {
-                Log.w(TAG, "Rapid restart detected (last start ${elapsed}ms ago), delaying ${CRASH_RESTART_DELAY_MS}ms")
-                delay(CRASH_RESTART_DELAY_MS)
+            val crashWait = crashRestartDelay(intent == null, elapsed, CRASH_RESTART_WINDOW_MS, CRASH_RESTART_DELAY_MS)
+            if (crashWait > 0) {
+                Log.w(TAG, "Rapid restart detected (last start ${elapsed}ms ago), delaying ${crashWait}ms")
+                delay(crashWait)
             }
             if (stickyWait > 0) {
                 Log.w(TAG, "Crash-loop restart, waiting ${stickyWait / 1000}s first")

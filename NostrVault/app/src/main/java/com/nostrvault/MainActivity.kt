@@ -116,6 +116,16 @@ class MainActivity : FragmentActivity() {
 
         // Load persisted config so hasCompletedSetup reflects saved state
         configStore.reload()
+        com.nostrvault.relay.StartupMarks.mark("activity create")
+        // The engine starts now, not after the first frame (the
+        // LaunchedEffect below, which stays for a setup that finishes later).
+        // Opening the vault's stores is most of a cold start; the screen is
+        // drawn while it runs (Logen 2026-11-14, Vault rows < 0.5 s).
+        val startedAtLaunch = configStore.config.value.let { c ->
+            RelayForegroundService.startsAtLaunch(c.hasCompletedSetup, c.useExternalRelay, relayImportService.isImporting.value) &&
+                // Not allowed from here on some devices: the LaunchedEffect starts it after the first frame instead.
+                runCatching { RelayForegroundService.start(this) }.isSuccess
+        }
 
         // Posts waiting for an outside media server: watch the network and
         // retry every minute while any wait. Started right after the config
@@ -167,7 +177,7 @@ class MainActivity : FragmentActivity() {
                     // so reading it once here is enough.
                     if (config.useExternalRelay) {
                         RelayForegroundService.useExternalRelay(this@MainActivity)
-                    } else if (!relayImportService.isImporting.value) {
+                    } else if (!relayImportService.isImporting.value && !startedAtLaunch) {
                         // Setup's import tour can finish with the import still
                         // running ("Keep it running in the background"). The
                         // import holds the relay's database and restarts the

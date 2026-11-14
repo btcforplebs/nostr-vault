@@ -332,6 +332,7 @@ class VaultActivityViewModel @Inject constructor(
             val asked = RelayForegroundService.newsDot.proposed()
             readsRunning.incrementAndGet()
             _isRefreshing.value = true
+            com.nostrvault.relay.StartupMarks.markOnce("vault read asked")
             try {
                 fetch(
                     listOf(
@@ -382,6 +383,7 @@ class VaultActivityViewModel @Inject constructor(
     private suspend fun fetch(filters: List<String>): Int {
         val gen = generation
         val raw = runCatching { nostrService.queryRawEvents(filters, relays(), QUERY_TIMEOUT_MS) }.getOrDefault(emptyList())
+        com.nostrvault.relay.StartupMarks.markOnce("vault read back")
         val now = VaultActivity.nowSeconds()
         val valid = raw.mapNotNull(::parse).filter { !VaultActivity.isFuture(it.createdAt, now) && keepsZap(it) }
         if (gen != generation) return 0
@@ -424,7 +426,9 @@ class VaultActivityViewModel @Inject constructor(
     private fun scheduleRebuild() {
         rebuildJob?.cancel()
         rebuildJob = viewModelScope.launch {
-            delay(150)
+            // Nothing on screen yet: build now. The 150 ms gathers a burst
+            // into one rebuild only once there is a list to keep steady.
+            if (_lines.value.isNotEmpty()) delay(150)
             rebuild()
         }
     }
@@ -457,7 +461,9 @@ class VaultActivityViewModel @Inject constructor(
             foldsOutsideLikes = true,
         )
         if (gen != generation) return@withContext
+        val saved = showsSavedScreen
         if (!publishesNow(snapshot.isNotEmpty())) return@withContext
+        if (lines.isNotEmpty()) com.nostrvault.relay.StartupMarks.markOnce(if (saved) "vault saved screen shown" else "vault rows shown")
         _lines.value = lines
         _outsideLines.value = outside
         nostrService.fetchMissingProfiles(

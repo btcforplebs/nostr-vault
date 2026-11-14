@@ -64,6 +64,7 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
     lateinit var autoMirrorOnOpen: com.nostrvault.service.AutoMirrorOnOpen
 
     override fun onCreate() {
+        com.nostrvault.relay.StartupMarks.mark("app create")
         warmUpOffMain()
         // The saved feed is read while Hilt builds the app, for the first frame.
         com.nostrvault.service.FeedSnapshotPreload.start(this)
@@ -153,6 +154,7 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
         Thread({
             runCatching { com.nostrvault.data.local.CredentialStore.init(this) }
             com.nostrvault.relay.HavenBridge.isLoaded
+            com.nostrvault.relay.StartupMarks.mark("go loaded")
         }, "nv-startup-warmup").start()
     }
 
