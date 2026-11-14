@@ -157,6 +157,8 @@ func queryVault(requestJSON string) []byte {
 	if err != nil {
 		return answer(vaultReadAnswer{Error: err.Error()})
 	}
+	// Answered: background setup may start (first_vault_read.go).
+	c.markVaultRead()
 	if marks {
 		startupMark(fmt.Sprintf("vault query encoded %d KB", len(b)/1024))
 	}
