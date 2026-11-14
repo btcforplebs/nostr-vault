@@ -99,14 +99,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         FipsHostBlocker.install()
         secureKeysAtRest(application)
         RelayProcessManager.shared.startupMark("app launch")
-        // The engine starts here, not when the first screen appears: its
-        // stores open while the UI draws. Not for a background launch
-        // (refresh/processing tasks start it themselves, ensureRelayRunning).
-        if ConfigService.shared.config.hasCompletedSetup,
-           application.applicationState != .background,
-           RelayProcessManager.shared.state == .idle {
-            RelayProcessManager.shared.startRelay(config: ConfigService.shared.config)
-        }
+        // The engine starts when the window's scene connects
+        // (SceneDelegate), not here: with scenes, applicationState is
+        // .background in this handler on every launch, so a start gated on
+        // it here never ran and the engine waited for the first frame.
         // Muted feed videos and sounds mix with the user's music instead of
         // stopping it. This lived in HavenApp/App/iOSAppDelegate.swift, which
         // no target compiles, so the session stayed .soloAmbient.

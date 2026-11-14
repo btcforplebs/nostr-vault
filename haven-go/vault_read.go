@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
+	"sync/atomic"
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
@@ -147,9 +149,19 @@ func queryVault(requestJSON string) []byte {
 	if events == nil {
 		events = []*nostr.Event{}
 	}
+	marks := vaultReadMarks.Add(1) <= 2 // the launch's first reads only
+	if marks {
+		startupMark(fmt.Sprintf("vault query read %d", len(events)))
+	}
 	b, err := json.Marshal(vaultReadAnswer{Events: events})
 	if err != nil {
 		return answer(vaultReadAnswer{Error: err.Error()})
 	}
+	if marks {
+		startupMark(fmt.Sprintf("vault query encoded %d KB", len(b)/1024))
+	}
 	return b
 }
+
+// vaultReadMarks counts reads, so only the launch's first ones log marks.
+var vaultReadMarks atomic.Int32

@@ -19,12 +19,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             }
         }
 
-        // NOTE: Do NOT call StartRelayC here directly.
-        // RelayProcessManager.startRelay() is called from ContentView.onAppear,
-        // which also updates all state flags (isRunning, isBooting, etc.).
-        // Calling StartRelayC() directly here bypasses that state management,
-        // leaving relayManager.isRunning = false forever, which causes the
-        // ViewerView notes fetch guard to always bail.
+        // The engine starts here, before the first frame is drawn, so its
+        // stores open while the UI draws (startup, Logen 2026-11-14: Vault
+        // rows < 0.5 s). Only a window's scene connects here, so a background
+        // launch (refresh/processing tasks start it themselves,
+        // ensureRelayRunning) never does. Through RelayProcessManager, never
+        // StartRelayC directly: it keeps isRunning/isBooting right.
+        // ContentView.onAppear's start then finds it booting and does nothing.
+        if ConfigService.shared.config.hasCompletedSetup,
+           RelayProcessManager.shared.state == .idle {
+            RelayProcessManager.shared.startRelayAtLaunch(config: ConfigService.shared.config)
+        }
 
         let window = UIWindow(windowScene: windowScene)
         

@@ -43,3 +43,21 @@ enum TemplatesCopy {
         !templatesPresent || copiedStamp?.trimmingCharacters(in: .whitespacesAndNewlines) != currentStamp
     }
 }
+
+/// Whether the launch's vault start runs right in the launch handler
+/// (RelayProcessManager.startRelayAtLaunch) or waits on the lifecycle chain:
+/// now only when nothing is queued before it, no earlier engine is still
+/// draining, and no Mac relay needs a mesh dial first.
+enum LaunchStart {
+    static func startsNow(chainBusy: Bool, draining: Bool, meshDial: Bool) -> Bool {
+        !chainBusy && !draining && !meshDial
+    }
+}
+
+/// The Vault list's update debounce: none until the launch's first rows are
+/// on screen, then 150 ms so rapid triggers coalesce.
+enum VaultFirstRows {
+    static func debounceNanos(firstRowsShown: Bool) -> UInt64 {
+        firstRowsShown ? 150_000_000 : 0
+    }
+}

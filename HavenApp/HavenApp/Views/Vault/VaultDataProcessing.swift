@@ -28,9 +28,12 @@ extension VaultView {
         updateTask?.cancel()
         updateGeneration += 1
         let gen = updateGeneration
+        // The launch's first rows don't wait (startup, Logen 2026-11-14:
+        // rows < 0.5 s): nothing is on screen to churn yet.
+        let debounce = VaultFirstRows.debounceNanos(firstRowsShown: Self.firstRowsMarked)
         updateTask = Task { @MainActor in
             // Debounce: wait 150ms so rapid-fire triggers coalesce into one update
-            try? await Task.sleep(nanoseconds: 150_000_000)
+            if debounce > 0 { try? await Task.sleep(nanoseconds: debounce) }
             guard !Task.isCancelled, gen == updateGeneration else { return }
             updateDisplayData()
         }
