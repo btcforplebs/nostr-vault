@@ -25,7 +25,7 @@ import { VaultSearch } from "./VaultSearch.jsx"
 import { BlossomGallery } from "./BlossomGallery.jsx"
 import { newestByMode, readSeen, writeSeen, markSeen, baseline, newModes } from "../net/vault-new.js"
 import {
-  MODES, FILTERS, CLEARABLE, ALL_TITLE, isMode, defaultFilter, nextFilter, validFilter, previewOf, highlightSource, followersOf, followersSeenAt, markFollowersSeen,
+  MODES, FILTERS, CLEARABLE, ALL_TITLE, isMode, defaultFilter, nextFilter, validFilter, previewOf, highlightSource, followersOf, followersInWeb, followersSeenAt, markFollowersSeen,
   readOwn, readInbound, readOlder, fetchVault, READ_PAGE, keepVault, keptVault, sinceKept,
   readLists, keepLists, mergeLists, itemsFor, peopleOf, clampSince,
 } from "../net/vault-lists.js"
@@ -83,7 +83,6 @@ export function VaultScreen({ ctx, desk = false }) {
   const [loaded, setLoaded] = useState(!!k)
   const { blocked } = useBlocks(ctx)
   const network = useDmTrust(ctx) // who counts as inside the network: notes from outside it stay out of the Vault list
-  const seenAt = useRef(followersSeenAt(me))
   // Lines newer than the last look show a dot (VaultActivityList unreadSince): the Vault list's mark as this visit
   // found it, else when this browser started watching the account (notify-watch.js readSince).
   const unreadSince = useRef(unreadFrom(readSeen(me)?.activity ?? 0, readSince(me)))
@@ -199,8 +198,10 @@ export function VaultScreen({ ctx, desk = false }) {
     setPaging(false)
   }
   const followers = useMemo(() => followersOf(lists, me, blocked), [lists, blocked])
-  // Seeing the Followers list is what makes its "new" ones old, as on the phone; the current visit still shows them.
-  useEffect(() => { if (mode === "followers" && followers.length) markFollowersSeen(me, followers[0].at) }, [mode, followers.length])
+  // The ones in your web: only they light the dot (Logen 2026-11-14); the rest wait in Followers' ··· filter.
+  const webFollowers = useMemo(() => followersInWeb(followers, me, network), [followers, network])
+  // Seeing the Followers list is what makes its "new" ones old, as on the phone.
+  useEffect(() => { if (mode === "followers" && webFollowers.length) markFollowersSeen(me, webFollowers[0].at) }, [mode, webFollowers[0]?.at])
 
   // "New" in the mode menu: what others sent since each mode was last open. The mode on screen counts as looked at.
   const [seen, setSeen] = useState(() => readSeen(me))
@@ -229,10 +230,10 @@ export function VaultScreen({ ctx, desk = false }) {
     return () => { const s = readSeen(me); if (s) writeSeen(me, markSeen(s, "activity", nowSec())) }
   }, [mode, me])
   const followersSeen = followersSeenAt(me)
-  const fresh = loaded && seen ? newModes(newest, seen, { current: mode, followersAt: followers[0]?.at, followersSeen: followersSeen || Infinity }) : new Set()
+  const fresh = loaded && seen ? newModes(newest, seen, { current: mode, followersAt: webFollowers[0]?.at, followersSeen: followersSeen || Infinity }) : new Set()
 
   // The current list's rows, sorted once per change of what they're built from, not on every render.
-  const items = useMemo(() => itemsFor(mode, filter, { own, inbound, given, followers, me, blocked, seenAt: seenAt.current, trusted: network }), [mode, filter, own, inbound, given, followers, blocked, network])
+  const items = useMemo(() => itemsFor(mode, filter, { own, inbound, given, followers, me, blocked, trusted: network }), [mode, filter, own, inbound, given, followers, blocked, network])
   // Likes and Zaps rows name the note they were about.
   const wanted = mode === "likes" || mode === "zaps" ? items.map(r => r.noteId).filter(id => id && !notes.has(id)) : []
   useEffect(() => { if (wanted.length) fetchNotes(vault, wanted, relays).then(found => setNotes(prev => new Map([...prev, ...found]))).catch(() => {}) }, [wanted.join()])
@@ -373,8 +374,8 @@ export function List({ ctx, mode, filter, items, me, followers, notes, trusted, 
     case "followers": {
       const list = items
       return list.length
-        ? <>{followers.length > 0 && <div class="section-label">{followers.length} follower{followers.length === 1 ? "" : "s"}</div>}{paged(list, f => <a key={f.pubkey} class="person-row" data-row-id={f.pubkey} href={`#/profile/${f.pubkey}`}><Avatar pubkey={f.pubkey} size={40} load={trusted(f.pubkey)} /><span class="person-names"><AuthorName pubkey={f.pubkey} /><span class="person-sub">followed you {ago(f.at)} ago</span></span></a>)}</>
-        : <Empty text={filter === "new" ? "No new followers since you last looked." : "No followers found on your relays yet."} />
+        ? <><div class="section-label">{list.length} follower{list.length === 1 ? "" : "s"} {filter === "outside" ? "outside" : "in"} your web</div>{paged(list, f => <a key={f.pubkey} class="person-row" data-row-id={f.pubkey} href={`#/profile/${f.pubkey}`}><Avatar pubkey={f.pubkey} size={40} load={trusted(f.pubkey)} /><span class="person-names"><AuthorName pubkey={f.pubkey} /><span class="person-sub">followed you {ago(f.at)} ago</span></span></a>)}</>
+        : <Empty text={filter === "outside" ? "No followers from outside your web." : followers.length ? "No followers in your web yet. The ··· menu lists the ones outside it." : "No followers found on your relays yet."} />
     }
     default: return null
   }

@@ -59,13 +59,13 @@ internal fun DashboardViewModel.blockedHexFor(hex: String): Set<String> {
     return config.blockedFor(npub).mapNotNull { nostrService.npubToHex(it) }.toSet()
 }
 
-/** The other accounts' follower ledgers, each without its own blocks. */
+/** The other accounts' follower ledgers, each without its own blocks and judged by its own web. */
 internal suspend fun DashboardViewModel.refreshOtherFollowers(active: String) {
     val others = accountHexes.value.filter { it != active.lowercase() }
     val read = withContext(Dispatchers.IO) {
         others.mapNotNull { hex ->
             runCatching { FollowerSnapshot.parse(com.nostrvault.relay.HavenBridge.getFollowers(hex)) }
-                .getOrNull()?.without(blockedHexFor(hex))?.let { hex to it }
+                .getOrNull()?.without(blockedHexFor(hex))?.let { hex to feedService.followersJudged(it, hex) }
         }
     }
     if (active != nostrService.activeHexPubkey) return

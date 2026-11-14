@@ -7,7 +7,8 @@ import { Avatar } from "./Avatar.jsx"
 import { useAutoLook } from "./auto-look.js"
 import { AuthorName } from "./NoteCard.jsx"
 import { fetchProfiles } from "../net/profiles.js"
-import { readLists, followersOf } from "../net/vault-lists.js"
+import { readLists, followersOf, followersInWeb } from "../net/vault-lists.js"
+import { useDmTrust } from "./useDmTrust.js"
 import { globalTrust } from "../readers/trust.js"
 import { savePollScope } from "../readers/polls.js"
 import { saveScope as saveMarketScope } from "../readers/market.js"
@@ -46,6 +47,7 @@ const Icon = ({ d, size = 16 }) => <svg viewBox="0 0 24 24" width={size} height=
 
 export function FeedDashboard({ ctx, blocked = new Set(), onPick, onClose }) {
   const me = ctx.session?.pubkey, follows = ctx.account.follows, read = ctx.account.relays.read
+  const network = useDmTrust(ctx)
   const key = `${me}:${follows.length}`
   const [snap, setSnap] = useState(() => (kept.key === key ? kept.snapshot : null))
   const [loading, setLoading] = useState(false)
@@ -58,7 +60,8 @@ export function FeedDashboard({ ctx, blocked = new Set(), onPick, onClose }) {
     setLoading(true)
     try {
       const now = Math.floor(Date.now() / 1000)
-      const newFollowers = newFollowersSince(followersOf(readLists(me), me, blocked), now - WINDOW_S)
+      // In your web only, as the Followers dot (Logen 2026-11-14).
+      const newFollowers = newFollowersSince(followersInWeb(followersOf(readLists(me), me, blocked), me, network), now - WINDOW_S)
       const s = await fetchDashboard({ follows, owner: me, readRelays: read, blocked, newFollowers, now, ctx })
       if (n !== seq.current) return
       Object.assign(kept, { key, at: Date.now(), snapshot: s })

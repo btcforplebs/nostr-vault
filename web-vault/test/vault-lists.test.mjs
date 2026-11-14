@@ -6,7 +6,7 @@ import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import { itemsFor,
   MODES, FILTERS, CLEARABLE, nextFilter, validFilter, defaultFilter, isMode, imagesOf, previewOf, activityRows, activityFilter, notesFor, articlesFor, isRecipe,
-  highlightsFor, highlightSource, mediaFor, likesFor, zapsFor, zapSender, followersOf, followersFilter, followersSeenAt, markFollowersSeen,
+  highlightsFor, highlightSource, mediaFor, likesFor, zapsFor, zapSender, followersOf, followersFilter, followersInWeb, followersSeenAt, markFollowersSeen,
   readOwn, readInbound, fetchOwnExtras, fetchVault, INBOUND_KINDS,
 } from "../src/net/vault-lists.js"
 
@@ -192,9 +192,25 @@ test("followers: each author's newest list counts, only while it still names you
   const f = followersOf(lists, ME)
   assert.deepEqual(f, [{ pubkey: CAROL, at: 300 }, { pubkey: BOB, at: 150 }])
   assert.deepEqual(followersOf(lists, ME, new Set([CAROL])).map(x => x.pubkey), [BOB])
-  assert.deepEqual(followersFilter(f, "new", 200).map(x => x.pubkey), [CAROL])
-  assert.deepEqual(followersFilter(f, "new", undefined).length, 2)
-  assert.equal(followersFilter(f, "all", 999).length, 2)
+  // No network (null) checks nobody: everyone is in the list.
+  assert.equal(followersFilter(f, "", ME).length, 2)
+  assert.equal(followersFilter(f, "outside", ME).length, 0)
+})
+
+test("followers: the list is your web, ··· Outside is the rest; an empty web puts everyone outside", () => {
+  const f = [{ pubkey: CAROL, at: 300 }, { pubkey: BOB, at: 150 }, { pubkey: ALICE, at: 100 }]
+  const web = new Set([BOB])
+  assert.deepEqual(followersFilter(f, "", ME, web).map(x => x.pubkey), [BOB])
+  assert.deepEqual(followersFilter(f, "outside", ME, web).map(x => x.pubkey), [CAROL, ALICE])
+  assert.deepEqual(followersInWeb(f, ME, web).map(x => x.pubkey), [BOB])
+  assert.deepEqual(followersInWeb(f, ME, new Set()), [], "fails closed, as the Vault list does")
+})
+
+test("a follower outside your web is no follow line (and so no notification)", () => {
+  const day = Math.floor(Date.UTC(2026, 9, 14, 12) / 1000)
+  const follows = [{ pubkey: ALICE, at: day }, { pubkey: BOB, at: day + 60 }]
+  const rows = activityRows([], ME, { follows, trusted: new Set([ALICE]) })
+  assert.deepEqual(rows.filter(r => r.kind === "follow").flatMap(r => r.actors), [ALICE])
 })
 
 test("the followers seen mark is per account in storage", () => {
@@ -271,16 +287,18 @@ test("the filter trim: no All button, the lit one clears, two up front, extras i
   }
   assert.ok(FILTERS.activity.find(f => f.id === "outside").more, "Outside sits in the Vault page's ···")
   assert.ok(FILTERS.media.find(f => f.id === "notes").more, "In your notes sits in Media's ···")
-  for (const m of ["activity", "notes", "articles", "highlights", "media"]) assert.equal(defaultFilter(m), "")
+  assert.ok(FILTERS.followers.find(f => f.id === "outside").more, "Outside sits in Followers' ···")
+  for (const m of ["activity", "notes", "articles", "highlights", "media", "followers"]) assert.equal(defaultFilter(m), "")
   assert.equal(defaultFilter("likes"), "received")
-  assert.equal(defaultFilter("followers"), "new")
   assert.equal(nextFilter("notes", "mine", "mine"), "", "the lit one, tapped again: All")
   assert.equal(nextFilter("notes", "", "mine"), "mine")
   assert.equal(nextFilter("articles", "mine", "recipes"), "recipes", "a radio: Recipes replaces Yours")
   assert.equal(nextFilter("likes", "received", "received"), "received", "Likes keeps one of its two on")
   assert.equal(validFilter("notes", "tagged"), "", "a filter kept from before the trim falls back")
   assert.equal(validFilter("media", "all"), "")
-  assert.equal(validFilter("followers", "all"), "all")
+  assert.equal(validFilter("followers", "all"), "", "New / All folded into the list (Logen 2026-11-14)")
+  assert.equal(validFilter("followers", "new"), "")
+  assert.equal(nextFilter("followers", "outside", "outside"), "", "Outside tapped again: back to your web")
 })
 
 test("Articles: Yours is your own only; Recipes takes yours and the ones tagging you", () => {

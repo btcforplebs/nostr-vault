@@ -33,9 +33,10 @@ class NotificationAuthorTrustTest {
     }
 
     @Test
-    fun `follows are never dropped for trust, only strangers go unnamed`() {
-        assertTrue(LocalNotificationService.authorMayNotify("stranger", "follow", trusted, emptySet()))
-        assertTrue(LocalNotificationService.authorMayNotify("stranger", "follow", emptySet(), emptySet()))
+    fun `only followers in your web notify (Logen 2026-11-14)`() {
+        assertTrue(LocalNotificationService.authorMayNotify("friend", "follow", trusted, emptySet()))
+        assertFalse(LocalNotificationService.authorMayNotify("stranger", "follow", trusted, emptySet()))
+        assertFalse(LocalNotificationService.authorMayNotify("stranger", "follow", emptySet(), emptySet()))
         assertTrue(LocalNotificationService.followIsNamed("friend", trusted))
         assertFalse(LocalNotificationService.followIsNamed("stranger", trusted))
         // A new account has no graph yet: nobody is named.

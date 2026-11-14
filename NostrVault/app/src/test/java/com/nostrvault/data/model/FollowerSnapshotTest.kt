@@ -53,13 +53,26 @@ class FollowerSnapshotTest {
     }
 
     @Test
-    fun newCapsAtOneHundredAndAllIsUncapped() {
-        val many = (0 until 150).map { i -> entry("pk$i", existing = true, listAt = i.toLong()) }
-        val snap = FollowerSnapshot(FollowerSnapshot.Counts(others = 150), many)
-        val new = snap.entries(VaultFollowersFilter.NEW)
-        assertEquals(FollowerSnapshot.NEW_LIMIT, new.size)
-        assertEquals("pk149", new.first().pubkey) // newest list first
-        assertEquals(150, snap.entries(VaultFollowersFilter.ALL).size)
+    fun listIsTheWebAndOutsideIsTheRestNewestFirst() {
+        val snap = snapshot(
+            entry("friend-new", followedAt = 300),
+            entry("stranger-new", followedAt = 200),
+            entry("friend-old", existing = true, listAt = 90),
+            entry("stranger-old", existing = true, listAt = 80),
+            entry("bot", tier = "spam", followedAt = 400),
+        ).judged { it.startsWith("stranger") || it == "bot" }
+        assertEquals(listOf("friend-new", "friend-old"), snap.entries(VaultFollowersFilter.WEB).map { it.pubkey })
+        // Spam stays out of both.
+        assertEquals(listOf("stranger-new", "stranger-old"), snap.entries(VaultFollowersFilter.OUTSIDE).map { it.pubkey })
+    }
+
+    @Test
+    fun aStrangersFollowDoesNotLightTheDot() {
+        val stranger = snapshot(entry("stranger", followedAt = 300)).judged { true }
+        assertFalse(stranger.hasNewSince(0))
+        assertFalse(stranger.followers!!.single().isNewsInWeb)
+        val friend = snapshot(entry("friend", followedAt = 300)).judged { false }
+        assertTrue(friend.hasNewSince(0))
     }
 
     @Test

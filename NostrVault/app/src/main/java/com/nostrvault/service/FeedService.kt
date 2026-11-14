@@ -195,6 +195,18 @@ class FeedService @Inject constructor(
             _pooledWotPubkeys.value
         }
 
+    /**
+     * [snapshot] (one account's follower ledger) with each follower marked in
+     * or outside [ownerHex]'s web, by the rule the Vault page's Outside filter
+     * uses: not you, not whitelisted, not in [trustedPubkeysFor]. Fails closed
+     * like it: with no web yet, everyone else is outside.
+     */
+    fun followersJudged(snapshot: com.nostrvault.data.model.FollowerSnapshot, ownerHex: String): com.nostrvault.data.model.FollowerSnapshot {
+        val whitelist = configStore.config.value.whitelistedNpubs?.mapNotNull { nostrService.npubToHex(it) }?.toSet().orEmpty()
+        val trusted = trustedPubkeysFor(ownerHex)
+        return snapshot.judged { com.nostrvault.data.model.VaultContentFilter.isOutside(it, ownerHex, whitelist, trusted) }
+    }
+
     fun globalTrustSet(): Set<String>? = globalTrustSetImpl()
 
     /**

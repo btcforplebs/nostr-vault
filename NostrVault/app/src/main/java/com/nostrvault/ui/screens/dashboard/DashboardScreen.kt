@@ -41,6 +41,7 @@ import com.nostrvault.ui.navigation.RelayFocus
 import com.nostrvault.ui.navigation.Screen
 import com.nostrvault.ui.navigation.TabReselect
 import com.nostrvault.ui.theme.*
+import com.nostrvault.ui.screens.VaultActivityMore
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
@@ -88,7 +89,7 @@ internal object NotesFilterPick {
 /**
  * The trailing pill's filters for [viewMode], as bare icons. Notes and
  * Highlights: Mine. Articles: Mine · Recipes. Likes and Zaps: Received ·
- * Given. Followers: New · All. [onPicked] gets each tap, and whether it
+ * Given. Followers: ··· with Outside your web. [onPicked] gets each tap, and whether it
  * changed the list.
  */
 @Composable
@@ -157,12 +158,17 @@ private fun RowScope.RelayFilters(
                 viewModel.setZapsFilter(VaultZapsFilter.MY_ZAPS)
             }
         }
+        // The list is your web; the rest sit in ···, as on the Vault page
+        // (Logen 2026-11-14). New folded into the list: newest first already.
         VaultViewMode.FOLLOWERS -> {
-            filter(RelayFilterChoice(NostrVaultIcons.Discover, "Newest followers", "No followers yet", waitsForList = false), "New", followersFilter == VaultFollowersFilter.NEW) {
-                viewModel.setFollowersFilter(VaultFollowersFilter.NEW)
-            }
-            filter(RelayFilterChoice(NostrVaultIcons.Groups, "All followers", "No followers yet", waitsForList = false), "All", followersFilter == VaultFollowersFilter.ALL) {
-                viewModel.setFollowersFilter(VaultFollowersFilter.ALL)
+            val outside = followersFilter == VaultFollowersFilter.OUTSIDE
+            VaultActivityMore(outside = outside) {
+                viewModel.setFollowersFilter(if (outside) VaultFollowersFilter.WEB else VaultFollowersFilter.OUTSIDE)
+                onPicked(
+                    if (outside) RelayFilterChoice(NostrVaultIcons.People, "Followers in your web", "No followers in your web yet", waitsForList = false)
+                    else RelayFilterChoice(NostrVaultIcons.OutsideNetwork, "Outside your web", "No followers from outside your web", waitsForList = false),
+                    true,
+                )
             }
         }
         // Bookmarks has no filters.

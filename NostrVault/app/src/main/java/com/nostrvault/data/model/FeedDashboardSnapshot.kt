@@ -181,8 +181,9 @@ data class FeedDashboardSnapshot(
             }
 
             // The relay's ledger, not raw kind 3s: a refollow bot republishing
-            // its list is not a new follower (#393).
-            val newFollowers = followers?.current?.count { it.isNews && it.followedAt >= since } ?: 0
+            // its list is not a new follower (#393). In-web only: someone
+            // outside the web is listed under Followers' ··· filter, not counted.
+            val newFollowers = followers?.current?.count { it.isNewsInWeb && it.followedAt >= since } ?: 0
 
             return FeedDashboardSnapshot(
                 posts = posts,

@@ -2,6 +2,7 @@ package com.nostrvault.data.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.Json
 
 /**
@@ -37,6 +38,12 @@ data class FollowerSnapshot(
         val follows: Int = 0,
         /** Their latest list time: the only "when" for a follow that predates the ledger. */
         @SerialName("list_at") val listAt: Long = 0,
+        /**
+         * Outside the web of the account this follower follows ([judged]).
+         * The app judges it, per account, not the relay: the relay's tier uses
+         * one web for every account.
+         */
+        @Transient val outside: Boolean = false,
     ) {
         val isSpam: Boolean get() = tier == "spam"
         val isReturning: Boolean get() = follows > 1
@@ -46,6 +53,9 @@ data class FollowerSnapshot(
          * comeback. A refollow bot republishing its list is neither.
          */
         val isNews: Boolean get() = following && !isSpam && (!existing || isReturning)
+
+        /** A follow we watched happen from inside the web: the dot, the Vault page's follow lines, the dashboard's +N. */
+        val isNewsInWeb: Boolean get() = isNews && !outside
     }
 
     /**
@@ -60,14 +70,27 @@ data class FollowerSnapshot(
         watched + earlier
     }
 
+    /**
+     * The list: followers in the account's web, or (the ··· filter) the rest.
+     * Logen 2026-11-14: someone outside the web shows only once that filter
+     * is picked, as on the Vault page.
+     */
     fun entries(filter: VaultFollowersFilter): List<Entry> = when (filter) {
-        VaultFollowersFilter.NEW -> current.take(NEW_LIMIT)
-        VaultFollowersFilter.ALL -> current
+        VaultFollowersFilter.WEB -> current.filterNot { it.outside }
+        VaultFollowersFilter.OUTSIDE -> current.filter { it.outside }
     }
 
-    /** True when a follow we watched happen is newer than [seenAt] (epoch seconds): the red dot. */
+    /** True when a follow from inside the web is newer than [seenAt] (epoch seconds): the red dot. */
     fun hasNewSince(seenAt: Long): Boolean =
-        followers.orEmpty().any { it.isNews && it.followedAt > seenAt }
+        followers.orEmpty().any { it.isNewsInWeb && it.followedAt > seenAt }
+
+    /**
+     * This snapshot with each follower marked in or outside one account's web.
+     * [isOutside] is that account's rule (VaultContentFilter.isOutside: not you,
+     * not whitelisted, not in its web). Run before [VaultPageAccounts.mergeFollowers].
+     */
+    fun judged(isOutside: (String) -> Boolean): FollowerSnapshot =
+        copy(followers = followers?.map { it.copy(outside = isOutside(it.pubkey)) })
 
     /**
      * This snapshot minus [hidden] (hex pubkeys), counts taken down to match.
@@ -93,8 +116,6 @@ data class FollowerSnapshot(
     }
 
     companion object {
-        const val NEW_LIMIT = 100
-
         private val json = Json { ignoreUnknownKeys = true }
 
         /** Null for `{"error": ...}` (relay stopped, ledger not open) or bad JSON. */

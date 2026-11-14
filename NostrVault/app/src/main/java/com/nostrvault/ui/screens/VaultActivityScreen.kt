@@ -390,10 +390,11 @@ internal fun VaultActivityScreen(
 /**
  * The Vault page's ···: Outside your web, the posts tagging you from people
  * outside your web of trust that the list leaves out. It moved here from the
- * Notes toolbar's person-with-? (toolbar audit, Logen 2026-11-04).
+ * Notes toolbar's person-with-? (toolbar audit, Logen 2026-11-04). Followers
+ * uses the same ··· for its followers outside your web (Logen 2026-11-14).
  */
 @Composable
-private fun VaultActivityMore(outside: Boolean, onOutside: () -> Unit) {
+internal fun VaultActivityMore(outside: Boolean, onOutside: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconFilterButton(

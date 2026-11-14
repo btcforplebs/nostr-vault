@@ -160,6 +160,18 @@ class FeedDashboardSnapshotTest {
     }
 
     @Test
+    fun `a new follower outside the web is not counted`() {
+        val ledger = FollowerSnapshot(
+            counts = FollowerSnapshot.Counts(),
+            followers = listOf(
+                FollowerSnapshot.Entry(alice, following = true, followedAt = now - 100),
+                FollowerSnapshot.Entry(stranger, following = true, followedAt = now - 100),
+            ),
+        ).judged { it == stranger }
+        assertEquals(1, build(emptyList(), followers = ledger).newFollowers)
+    }
+
+    @Test
     fun `music counts posts with a Wavlake track link`() {
         val s = build(
             listOf(
