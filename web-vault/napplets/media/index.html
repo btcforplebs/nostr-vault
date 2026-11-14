@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Media</title>
+<style>
+  :root { color-scheme: dark; --bg: #000; --text: #f2f2f2; --muted: #9a9a9f; --hair: #26262a; --s1: #111113; --s2: #1c1c1f; --accent: #e67326;
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text); padding-bottom: 120px; }
+  header { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--hair); }
+  .chips { display: flex; gap: 6px; flex: 1 0 100%; overflow-x: auto; scrollbar-width: none; }
+  #sort { margin-right: auto; }
+  button, select, label.button { font: inherit; color: var(--text); background: var(--s2); border: 1px solid var(--hair); border-radius: 999px; min-height: 36px; padding: 0 14px; cursor: pointer; display: inline-flex; align-items: center; }
+  .chips button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+  button.primary, label.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 650; }
+  button.danger { color: #ff6b5e; }
+  button:disabled { opacity: .45; cursor: default; }
+  #status { padding: 8px 14px 0; color: var(--muted); font-size: 13px; min-height: 1em; }
+  h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 14px 14px 6px; text-transform: none; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 3px; padding: 0 3px; }
+  .tile { position: relative; aspect-ratio: 1; background: var(--s1); border: 0; border-radius: 0; padding: 0; overflow: hidden; min-height: 0; display: block; }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tile .k { position: absolute; left: 6px; bottom: 6px; font-size: 12px; color: #fff; background: rgba(0,0,0,.55); border-radius: 6px; padding: 1px 6px; }
+  .tile .n { position: absolute; right: 6px; top: 6px; font-size: 11px; color: #fff; background: rgba(0,0,0,.55); border-radius: 6px; padding: 1px 5px; }
+  .tile .ph { width: 100%; height: 100%; display: grid; place-items: center; color: var(--muted); font-size: 26px; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 20px; }
+  #viewer { position: fixed; inset: 0; z-index: 5; background: var(--bg); overflow: auto; padding: 0 0 40px; }
+  #viewer .bar { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--bg); border-bottom: 1px solid var(--hair); }
+  #stage { display: grid; place-items: center; background: #000; min-height: 220px; }
+  #stage img, #stage video { max-width: 100%; max-height: 62vh; display: block; }
+  #stage .ph { color: var(--muted); padding: 40px; text-align: center; }
+  .facts { padding: 12px 14px; display: grid; gap: 10px; }
+  .link { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; user-select: all; background: var(--s1); border-radius: 10px; padding: 8px 10px; }
+  .hosts { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 14px; }
+  .hosts li span { color: var(--muted); }
+  .acts { display: flex; flex-wrap: wrap; gap: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="chips" role="group" aria-label="Show">
+    <button data-f="all" aria-pressed="true">All</button><button data-f="photos">Photos</button><button data-f="videos">Videos</button><button data-f="gifs">GIFs</button>
+  </div>
+  <select id="sort" aria-label="Sort"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="type">Media type</option></select>
+  <label class="button primary" id="upLabel">Upload<input id="up" type="file" accept="image/*,video/*,audio/*" multiple hidden></label>
+  <button id="refresh" aria-label="Look again">↻</button>
+</header>
+<div id="status" role="status"></div>
+<main id="grid"></main>
+<section id="viewer" hidden aria-label="File">
+  <div class="bar"><button id="close">‹ Media</button><span id="vkind" class="muted"></span></div>
+  <div id="stage"></div>
+  <div class="facts">
+    <div class="link" id="vlink"></div>
+    <div id="vmeta" style="color:var(--muted);font-size:13px"></div>
+    <ul class="hosts" id="vhosts"></ul>
+    <div class="acts"><button id="copy">Copy link</button><button id="mirror">Copy to missing servers</button><button id="del" class="danger">Delete from mirrors</button></div>
+    <div id="vnote" style="color:var(--muted);font-size:13px"></div>
+  </div>
+</section>
+<script>
+// The Media napplet (plan P5, from the classic Vault › Media page): the files on your media servers, merged by hash
+// so each shows once with the servers that hold it, filtered (Photos, Videos, GIFs) and sorted (newest, oldest, type).
+// A file opens with its link, its servers, Copy to missing servers and Delete from mirrors. Upload sends files through
+// the shell. This frame has no network and no key: lists, copies and deletes are NAP-BLOSSOM (the shell signs every
+// Blossom auth and asks before a delete), pictures and video are bytes from the shell (NAP-RESOURCE).
+
+// ---- pure (test/napplet-media.test.mjs loads this block) ----
+const HEX = /^[0-9a-f]{64}$/
+function kindOf(b) {
+  const m = String(b?.type ?? "").toLowerCase(), ext = ((/\.([a-z0-9]+)(?:[?#]|$)/i.exec(b?.url ?? "") || [])[1] || "").toLowerCase()
+  if (m === "image/gif" || ext === "gif") return "gif"
+  if (m.startsWith("image/") || ["jpg", "jpeg", "png", "webp", "avif", "heic"].includes(ext)) return "photo"
+  if (m.startsWith("video/") || ["mp4", "mov", "webm", "m4v"].includes(ext)) return "video"
+  if (m.startsWith("audio/") || ["mp3", "m4a", "ogg", "wav", "flac", "opus"].includes(ext)) return "audio"
+  return "other"
+}
+/** Each server's list -> one row per file: { sha256, url, type, size, uploaded, kind, servers }, newest first. */
+function mergeLists(lists) {
+  const by = new Map()
+  for (const { server, blobs } of lists) for (const b of blobs ?? []) {
+    if (!HEX.test(b?.sha256 ?? "") || typeof b.url !== "string" || !/^https?:\/\//i.test(b.url)) continue
+    const have = by.get(b.sha256)
+    if (have) { if (!have.servers.includes(server)) have.servers.push(server); continue }
+    by.set(b.sha256, { sha256: b.sha256, url: b.url, type: String(b.type ?? ""), size: Number(b.size) || 0, uploaded: Number(b.uploaded) || 0, servers: [server] })
+  }
+  return [...by.values()].map(b => ({ ...b, kind: kindOf(b) })).sort((a, b) => b.uploaded - a.uploaded)
+}
+const FILTERS = { all: () => true, photos: b => b.kind === "photo", videos: b => b.kind === "video", gifs: b => b.kind === "gif" }
+const RANK = { photo: 0, gif: 1, video: 2, audio: 3, other: 4 }
+/** The grid's sections: by day for the date sorts ("Today", "Yesterday", a date), one untitled run for "type". */
+function sections(blobs, sort, now = Date.now()) {
+  if (!blobs.length) return []
+  if (sort === "type") return [{ day: "", blobs: [...blobs].sort((a, b) => RANK[a.kind] - RANK[b.kind] || b.uploaded - a.uploaded) }]
+  const sorted = [...blobs].sort((a, b) => (sort === "oldest" ? a.uploaded - b.uploaded : b.uploaded - a.uploaded))
+  const out = []
+  for (const b of sorted) { const d = dayLabel(b.uploaded, now); if (!out.length || out[out.length - 1].day !== d) out.push({ day: d, blobs: [] }); out[out.length - 1].blobs.push(b) }
+  return out
+}
+function dayLabel(ts, now = Date.now()) {
+  if (!ts) return "Unknown date"
+  const d = new Date(ts * 1000), t = new Date(now), start = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const days = Math.round((start(t) - start(d)) / 86400000)
+  return days === 0 ? "Today" : days === 1 ? "Yesterday" : d.toLocaleDateString(undefined, { year: d.getFullYear() === t.getFullYear() ? undefined : "numeric", month: "long", day: "numeric" })
+}
+/** Where Copy and Delete go: the servers missing it, and every server of yours (a list can miss a file it holds). */
+const missingFrom = (blob, servers) => servers.filter(s => !blob.servers.includes(s))
+function bytes(n) { return !n ? "" : n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB` }
+/** "Deleted on 2 of 3 servers. b.example: 401" from per-server results [{ server, ok, error }]. */
+function summary(results, verb) {
+  const host = s => { try { return new URL(s).host } catch { return s } }
+  const ok = results.filter(r => r.ok).length, bad = results.filter(r => !r.ok).map(r => `${host(r.server)}: ${r.error || "refused"}`)
+  return `${verb} on ${ok} of ${results.length} server${results.length === 1 ? "" : "s"}${bad.length ? `. ${bad.join(" · ")}` : "."}`
+}
+// ---- end pure ----
+
+const n = window.napplet || {}
+const $ = id => document.getElementById(id)
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
+let me = "", servers = [], files = [], filter = "all", sort = "newest", open = null, loading = false
+const thumbs = new Map()
+const status = t => { $("status").textContent = t }
+
+async function load() {
+  if (loading) return
+  loading = true; status("Asking your media servers…"); $("refresh").disabled = true
+  try {
+    servers = ((await n.blossom.servers()).servers ?? []).slice(0, 8)
+    const lists = [], problems = []
+    await Promise.all(servers.map(async server => {
+      try {
+        const r = await n.blossom.list({ server, pubkey: me })
+        if (r.ok) lists.push({ server, blobs: r.blobs }); else problems.push(`${new URL(server).host}: ${r.error}`)
+        files = mergeLists(lists); draw()
+      } catch (e) { problems.push(`${server}: ${e.message}`) }
+    }))
+    files = mergeLists(lists)
+    status(`${files.length} file${files.length === 1 ? "" : "s"} on ${servers.length - problems.length} of ${servers.length} servers${problems.length ? `. ${problems.join(" · ")}` : ""}`)
+  } catch (e) { status(`Couldn't ask your servers: ${e.message}`) }
+  loading = false; $("refresh").disabled = false
+  draw()
+}
+
+let inFlight = 0; const queue = []
+const seen = new IntersectionObserver(es => { for (const e of es) if (e.isIntersecting) { seen.unobserve(e.target); queue.push(e.target); pump() } }, { rootMargin: "300px" })
+function pump() {
+  while (inFlight < 4 && queue.length) {
+    const img = queue.shift(), url = img.dataset.src
+    inFlight++
+    ;(thumbs.get(url) ?? (thumbs.set(url, n.resource.bytes(url).then(b => URL.createObjectURL(b)).catch(() => "")), thumbs.get(url)))
+      .then(src => { if (src) img.src = src; else img.replaceWith(el("div", "ph", "⚠︎")) })
+      .finally(() => { inFlight--; pump() })
+  }
+}
+function tile(b) {
+  const t = el("button", "tile"); t.type = "button"; t.setAttribute("aria-label", `${b.kind} ${bytes(b.size)}`)
+  if (b.kind === "photo" || b.kind === "gif") { const i = el("img"); i.alt = ""; i.dataset.src = b.url; seen.observe(i); t.append(i) }
+  else t.append(el("div", "ph", b.kind === "video" ? "▶" : b.kind === "audio" ? "♪" : "▢"))
+  if (b.kind !== "photo") t.append(el("span", "k", b.kind === "gif" ? "GIF" : b.kind === "video" ? `Video ${bytes(b.size)}` : bytes(b.size)))
+  if (servers.length > 1) t.append(el("span", "n", `${b.servers.length}/${servers.length}`))
+  t.onclick = () => show(b)
+  return t
+}
+function draw() {
+  const shown = files.filter(FILTERS[filter])
+  const parts = sections(shown, sort).flatMap(s => { const g = el("div", "grid"); g.append(...s.blobs.map(tile)); return s.day ? [el("h2", "", s.day), g] : [g] })
+  $("grid").replaceChildren(...(parts.length ? parts : [el("p", "empty", loading ? "" : files.length ? "Nothing of this kind." : "No files on your media servers yet. Upload one, or post a picture.")]))
+}
+
+async function show(b) {
+  open = b
+  $("viewer").hidden = false; document.body.style.overflow = "hidden"
+  $("vkind").textContent = `${b.kind === "gif" ? "GIF" : b.kind[0].toUpperCase() + b.kind.slice(1)} · ${bytes(b.size)}`
+  $("vlink").textContent = b.url; $("vnote").textContent = ""
+  $("vmeta").textContent = b.uploaded ? `Uploaded ${new Date(b.uploaded * 1000).toLocaleString()}` : ""
+  const miss = missingFrom(b, servers)
+  $("vhosts").replaceChildren(...servers.map(s => { const li = el("li"); li.append(b.servers.includes(s) ? "✓ " : "– ", new URL(s).host, el("span", "", b.servers.includes(s) ? "" : "  not here")); return li }))
+  $("mirror").disabled = !miss.length
+  $("mirror").textContent = miss.length ? `Copy to ${miss.length} missing server${miss.length === 1 ? "" : "s"}` : "On every server"
+  const stage = $("stage")
+  if (b.kind === "photo" || b.kind === "gif") { const i = el("img"); i.alt = ""; stage.replaceChildren(i); i.src = (await (thumbs.get(b.url) ?? n.resource.bytes(b.url).then(x => URL.createObjectURL(x)).catch(() => ""))) || "" }
+  else if (b.kind === "video" || b.kind === "audio") {
+    const play = el("button", "primary", `Play (${bytes(b.size) || "size unknown"})`)
+    play.onclick = async () => {
+      play.disabled = true; play.textContent = "Loading…"
+      try {
+        const blob = await n.resource.bytes(b.url)
+        if (open !== b) return
+        const v = el(b.kind === "video" ? "video" : "audio"); v.controls = true; v.playsInline = true; v.src = URL.createObjectURL(blob)
+        stage.replaceChildren(v); v.play().catch(() => {})
+      } catch (e) { play.disabled = false; play.textContent = `Couldn't load it: ${e.message}. Try again` }
+    }
+    stage.replaceChildren(play)
+  } else stage.replaceChildren(el("div", "ph", "No preview for this kind of file."))
+}
+function hide() {
+  open = null; $("viewer").hidden = true; document.body.style.overflow = ""
+  for (const v of $("stage").querySelectorAll("video,audio")) { v.pause(); URL.revokeObjectURL(v.src) }
+  $("stage").replaceChildren()
+}
+$("close").onclick = hide
+$("copy").onclick = async () => { try { await navigator.clipboard.writeText(open.url); $("vnote").textContent = "Link copied." } catch { getSelection().selectAllChildren($("vlink")); $("vnote").textContent = "Selected: copy it with your keyboard." } }
+$("mirror").onclick = async () => {
+  const b = open, miss = missingFrom(b, servers)
+  $("mirror").disabled = true; $("vnote").textContent = "Copying…"
+  const results = await Promise.all(miss.map(async server => { try { const r = await n.blossom.mirror({ server, url: b.url, sha256: b.sha256 }); return { server, ok: r.ok, error: r.error } } catch (e) { return { server, ok: false, error: e.message } } }))
+  for (const r of results) if (r.ok && !b.servers.includes(r.server)) b.servers.push(r.server)
+  $("vnote").textContent = summary(results, "Copied"); if (open === b) show(b); $("vnote").textContent = summary(results, "Copied")
+  draw()
+}
+$("del").onclick = async () => {
+  const b = open
+  $("del").disabled = true; $("vnote").textContent = "Deleting…"
+  const results = []
+  for (const server of servers) { // one at a time: the shell asks once, the first time
+    try { const r = await n.blossom.delete({ server, sha256: b.sha256 }); results.push({ server, ok: r.ok, error: r.error }); if (r.status === 403) break } catch (e) { results.push({ server, ok: false, error: e.message }) }
+  }
+  $("del").disabled = false
+  if (results.length === 1 && results[0].error === "the user said no") { $("vnote").textContent = "Kept."; return }
+  b.servers = b.servers.filter(s => !results.some(r => r.ok && r.server === s))
+  if (!b.servers.length) { files = files.filter(f => f !== b); hide() } else $("vnote").textContent = summary(results, "Deleted")
+  status(summary(results, "Deleted")); draw()
+}
+$("up").onchange = async e => {
+  const picked = [...e.target.files]; e.target.value = ""
+  for (const [i, f] of picked.entries()) {
+    status(`Uploading ${i + 1} of ${picked.length}: ${f.name}…`)
+    try {
+      const r = await n.upload.upload({ data: f, mimeType: f.type, filename: f.name })
+      if (!r.ok) { status(`${f.name}: ${r.error || "not uploaded"}`); continue }
+    } catch (err) { status(`${f.name}: ${err.message}`); continue }
+  }
+  load()
+}
+for (const b of document.querySelectorAll(".chips button")) b.onclick = () => setFilter(b.dataset.f)
+function setFilter(f) { if (!FILTERS[f]) return; filter = f; for (const x of document.querySelectorAll(".chips button")) x.setAttribute("aria-pressed", String(x.dataset.f === f)); draw() }
+$("sort").onchange = e => { sort = e.target.value; n.storage?.setItem("sort", sort).catch(() => {}); draw() }
+$("refresh").onclick = load
+
+;(async () => {
+  if (n.theme?.get) { try { const c = (await n.theme.get())?.colors ?? {}, r = document.documentElement.style; if (c.background) r.setProperty("--bg", c.background); if (c.text) r.setProperty("--text", c.text); if (c.primary) r.setProperty("--accent", c.primary) } catch {} }
+  const s = await n.storage?.getItem("sort").catch(() => null)
+  if (s && ["newest", "oldest", "type"].includes(s)) { sort = s; $("sort").value = s }
+  // The Vault's Media pill picks the filter (napplet:media/open { filter }).
+  n.intent?.onDelivery?.(d => { if (d?.archetype === "media") setFilter(d.payload?.filter ?? "all") })
+  me = await n.identity.getPublicKey().catch(() => "")
+  if (!n.blossom || !me) { status("This shell can't show your media servers' files."); return }
+  load()
+})()
+</script>
+</body>
+</html>

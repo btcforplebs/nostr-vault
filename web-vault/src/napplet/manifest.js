@@ -7,7 +7,7 @@ const HEX64 = /^[0-9a-f]{64}$/
 const DOMAIN = /^[a-z][a-z0-9-]{0,31}$/
 
 /** The domains this shell answers (src/napplet/dispatch.js). Anything else a manifest asks for is unsupported. */
-export const SHELL_DOMAINS = ["shell", "identity", "theme", "storage", "outbox", "relay", "resource", "upload", "intent", "inc", "notify"]
+export const SHELL_DOMAINS = ["shell", "identity", "theme", "storage", "outbox", "relay", "resource", "upload", "intent", "inc", "notify", "blossom"]
 
 const values = (tags, name) => tags.filter(t => Array.isArray(t) && t[0] === name && typeof t[1] === "string").map(t => t[1])
 

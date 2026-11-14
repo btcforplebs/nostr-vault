@@ -35,3 +35,8 @@
 .reader-host .napplet-frame { border: 0; border-radius: 0; background: var(--bg); min-height: 100dvh; }
 .compose-napplet-host { min-height: min(52vh, 420px); padding: 0; display: flex; }
 .compose-napplet-host .napplet-frame { border: 0; }
+/* Vault › Media as the Media napplet (MediaPane.jsx, P5). */
+.media-pane { display: flex; flex-direction: column; min-height: 70vh; }
+.media-host { flex: 1; padding: 0; display: flex; }
+.media-host .napplet-frame { border: 0; border-radius: 0; min-height: calc(100dvh - 120px); background: var(--bg); }
+.napplet-danger { background: #d6453d; border-color: #d6453d; color: #fff; font-weight: 650; }

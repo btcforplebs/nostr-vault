@@ -6,6 +6,7 @@
 // Message shapes: @napplet/nap 0.40 types (outbox, relay, resource, storage, theme, intent, inc, notify, upload).
 import { visibleEvents, seesPrivate, signDecision, resendDecision, deletionTargets, protectedKind } from "./policy.js"
 import { nappletKey, nappletLine } from "./manifest.js"
+import { blossomHandler } from "./blossom-dispatch.js"
 
 export const MAX_EVENTS = 500
 export const MAX_FILTERS = 10
@@ -277,6 +278,9 @@ export function createHandlers({ ident, grant, domains, deps }) {
       if (m.type === "inc.unsubscribe") { deps.bus.unsubscribe(napplet, m.topic); return undefined }
       if (m.type.startsWith("inc.channel.") && m.id) return { type: `${m.type}.result`, id: m.id, error: "unsupported" }
     },
+
+    // The user's files on their media servers (blossom-dispatch.js): the shell signs every Blossom auth itself.
+    blossom: deps.blossom ? blossomHandler({ grant, who, deps: deps.blossom }) : m => (m?.id ? { type: `${m.type}.result`, id: m.id, error: "unsupported" } : undefined),
 
     notify: async m => {
       const id = m.id
