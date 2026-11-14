@@ -29,5 +29,7 @@ export const VaultDashboard = lazyScreen("VaultDashboard", () => import("./Vault
 export const DesktopShell = lazyScreen("DesktopShell", () => import("../desktop/DesktopShell.jsx"), { fallback: () => h(Splash, null, "Opening Nostr Vault…") })
 // The napplet shell page (?shell=1, main.jsx): hidden until the Apps pane (P3); its runtime is in no other chunk.
 export const NappletShell = lazyScreen("NappletShell", () => import("../napplet/NappletShell.jsx"))
+// Feed, Thread and someone's Profile as napplets when the switch is on (plan P4): the runtime loads only then.
+export const ReaderPane = lazyScreen("ReaderPane", () => import("../napplet/ReaderPane.jsx"))
 // Compose's emoji panel when napplets are on (src/napplet/flag.js, plan P2): the napplet runtime, only when opened.
 export const ComposeEmoji = lazyScreen("ComposeEmoji", () => import("../napplet/ComposeEmoji.jsx"), { fallback: () => null, failed: () => null })

@@ -5,7 +5,7 @@ const TOPIC = /^[\w.:/-]{1,128}$/
 
 /**
  * handlers: [{ id, title, archetype, actions: [..], conventions: [..], open: () => Promise<napplet> }]: napplets that
- * can take an intent (first-party ones are listed by the shell; a manifest's `i` tags in P3).
+ * can take an intent (or `deliver: (payload, from) => result` for one the shell answers itself, with no napplet) (first-party ones are listed by the shell; a manifest's `i` tags in P3).
  */
 export function createBus({ handlers = [] } = {}) {
   const topics = new Map() // topic -> Set(napplet)
@@ -37,6 +37,11 @@ export function createBus({ handlers = [] } = {}) {
     const h = (wanted && fit.find(x => x.id === wanted)) || fit[0]
     if (!h) return { ok: false, error: "no handler", archetype: req.archetype, action: req.action }
     try {
+      // A shell-handled intent (link/open): no napplet to open, the shell does it itself.
+      if (h.deliver) {
+        const r = await h.deliver(req.payload, from)
+        return r?.ok === false ? { ok: false, error: r.error ?? "refused", archetype: req.archetype, action: req.action } : { ok: true, archetype: req.archetype, action: req.action, convention: req.convention ?? "", handler: h.id }
+      }
       const target = await h.open()
       target.send({ type: "intent.deliver", delivery: { sender: from.dTag, archetype: req.archetype, action: req.action, convention: req.convention ?? "", payload: req.payload } })
       return { ok: true, archetype: req.archetype, action: req.action, convention: req.convention ?? "", handler: h.id }

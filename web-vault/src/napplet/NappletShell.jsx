@@ -9,7 +9,7 @@ import { openNapplet } from "./runtime.js"
 import { grantStore } from "./policy.js"
 import { createBus } from "./bus.js"
 import { shellDeps, readCatalog, fetchAppArtifact } from "./shell-deps.js"
-import { FIRST_PARTY } from "./first-party.js"
+import { LISTED } from "./first-party.js"
 import { nappletsOn, setNappletsOn } from "./flag.js"
 import { domainWord, PRIVATE_WORDS, askWords } from "./consent-words.js"
 import { appStore, updateFor, removeApp, retireVersion, MAX_ARTIFACT } from "./catalog.js"
@@ -127,7 +127,7 @@ export function NappletShell({ ctx, showSwitch = true, vaultMenu = false }) {
   return (
     <main class="screen napplet-shell">
       <header class="screen-head">{vaultMenu ? <><VaultPagesMenu ctx={ctx} current="apps" /><h2 class="sr-only">Apps</h2></> : <h2>Apps <span class="muted small">preview</span></h2>}</header>
-      {showSwitch && <label class="napplet-inapp muted small"><input type="checkbox" checked={inApp} onChange={e => { setNappletsOn(e.currentTarget.checked); setInApp(e.currentTarget.checked) }} /> Use napplets in the app (preview): Apps in the Vault menu, and Compose's emoji button opens the Emoji napplet</label>}
+      {showSwitch && <label class="napplet-inapp muted small"><input type="checkbox" checked={inApp} onChange={e => { setNappletsOn(e.currentTarget.checked); setInApp(e.currentTarget.checked) }} /> Use napplets in the app (preview): the Feed, threads and other people's profiles are the Reader napplet, Apps is in the Vault menu, and Compose's emoji button opens the Emoji napplet</label>}
       {note && <p class="muted small napplet-note" role="status">{note}</p>}
       {open && (
         <div class="napplet-running">
@@ -163,7 +163,7 @@ export function NappletShell({ ctx, showSwitch = true, vaultMenu = false }) {
       <section class="apps-section" aria-label="Nostr Vault's own">
         <h3>Nostr Vault's own</h3>
         <div class="napplet-bar">
-          {FIRST_PARTY.map(n => <button type="button" key={n.dTag} onClick={() => launch({ html: n.html, name: n.dTag, title: n.title, firstParty: true, domains: n.domains })}>{n.title}</button>)}
+          {LISTED.map(n => <button type="button" key={n.dTag} onClick={() => launch({ html: n.html, name: n.dTag, title: n.title, firstParty: true, domains: n.domains })}>{n.title}</button>)}
           <label class="button">Open a file…<input type="file" accept=".html,text/html" hidden onChange={pickFile} /></label>
         </div>
       </section>
