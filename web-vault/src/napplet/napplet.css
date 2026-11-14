@@ -40,3 +40,7 @@
 .media-host { flex: 1; padding: 0; display: flex; }
 .media-host .napplet-frame { border: 0; border-radius: 0; min-height: calc(100dvh - 120px); background: var(--bg); }
 .napplet-danger { background: #d6453d; border-color: #d6453d; color: #fff; font-weight: 650; }
+/* The WoT tab as the WoT napplet (WotPane.jsx, P6): the globe fills the screen. */
+.wot-pane { display: flex; flex-direction: column; height: 100dvh; }
+.wot-host { flex: 1; min-height: 0; padding: 0; display: flex; }
+.wot-host .napplet-frame { border: 0; border-radius: 0; background: #000; }

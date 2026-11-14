@@ -8,7 +8,7 @@ import { FeedScreen } from "../screens/FeedScreen.jsx"
 import { SettingsScreen } from "../screens/SettingsScreen.jsx"
 // Every other screen comes as its own chunk, when it is first shown (screens/lazy.jsx), the same wrappers the phone
 // layout uses: the boot bundle carries the desktop layout and the Feed, not Compose's editors or the Vault's gallery.
-import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, NappletShell, ReaderPane } from "../screens/lazy-screens.js"
+import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, NappletShell, ReaderPane, WotPane } from "../screens/lazy-screens.js"
 import { nappletsOn } from "../napplet/flag.js"
 import { compose } from "../net/actions.js"
 import { parseHash, withParam, sideOf, SPLIT, FULL } from "./routes.js"
@@ -101,7 +101,7 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
       <div class="desk-left">
       <Sidebar ctx={ctx} side={side} rail />
       <section class="desk-main">
-        {view.route === "wot" ? <div class="desk-full"><WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(view.arg) ? view.arg : undefined} /></div>
+        {view.route === "wot" ? <div class="desk-full">{nappletsOn() && !/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? <WotPane ctx={ctx} open={/^[0-9a-f]{64}$/.test(view.arg) ? view.arg : null} /> : <WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(view.arg) ? view.arg : undefined} />}</div>
           : page ? <div class="desk-page" key={view.path}>{page}</div>
           : full ? null /* the Dashboard: main.jsx keeps the relay screen mounted and lays it over this area */
           : <SplitPane list={list} detail={detail} onBack={closeDetail} />}

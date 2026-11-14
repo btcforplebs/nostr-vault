@@ -3,7 +3,7 @@
 // them, everyone further out on a faint outer shell. A person's spot comes from their key, so they sit in the same
 // place every time. Faces fade and shrink as they roll toward the rim and round the back, and a face that would pile
 // onto a nearer one gives up its seat and fades to a dot. Pure maths: the screen (WotGlobe.jsx) draws it.
-import { fraction } from "./wot.js"
+import { fraction } from "./wot-pure.js"
 
 /** TrustMap's shell radii: you at 0, follows, the extended network, further out. */
 export const RADIUS = { me: 0, follow: 1.0, extended: 1.3, further: 1.62 }

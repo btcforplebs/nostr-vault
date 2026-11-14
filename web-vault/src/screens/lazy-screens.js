@@ -32,6 +32,8 @@ export const NappletShell = lazyScreen("NappletShell", () => import("../napplet/
 // Feed, Thread and someone's Profile as napplets when the switch is on (plan P4): the runtime loads only then.
 export const ReaderPane = lazyScreen("ReaderPane", () => import("../napplet/ReaderPane.jsx"))
 // Vault › Media as the Media napplet when the switch is on (plan P5).
+// The WoT tab as the WoT napplet when the switch is on (plan P6).
+export const WotPane = lazyScreen("WotPane", () => import("../napplet/WotPane.jsx"))
 export const MediaPane = lazyScreen("MediaPane", () => import("../napplet/MediaPane.jsx"))
 // Compose's emoji panel when napplets are on (src/napplet/flag.js, plan P2): the napplet runtime, only when opened.
 export const ComposeEmoji = lazyScreen("ComposeEmoji", () => import("../napplet/ComposeEmoji.jsx"), { fallback: () => null, failed: () => null })

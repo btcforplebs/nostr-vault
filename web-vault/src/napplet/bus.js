@@ -2,6 +2,8 @@
 // INTENT (one napplet asks for an archetype's action; the shell finds a handler, opens it if needed, and delivers).
 // One bus per shell page. Pure apart from what `open` does, so node tests drive it.
 const TOPIC = /^[\w.:/-]{1,128}$/
+/** The convention a delivery carries: the one asked for, else napplet:<archetype>/<action>. */
+export const conventionOf = req => req.convention || `napplet:${req.archetype}/${req.action}`
 
 /**
  * handlers: [{ id, title, archetype, actions: [..], conventions: [..], open: () => Promise<napplet> }]: napplets that
@@ -40,11 +42,13 @@ export function createBus({ handlers = [] } = {}) {
       // A shell-handled intent (link/open): no napplet to open, the shell does it itself.
       if (h.deliver) {
         const r = await h.deliver(req.payload, from)
-        return r?.ok === false ? { ok: false, error: r.error ?? "refused", archetype: req.archetype, action: req.action } : { ok: true, archetype: req.archetype, action: req.action, convention: req.convention ?? "", handler: h.id }
+        return r?.ok === false ? { ok: false, error: r.error ?? "refused", archetype: req.archetype, action: req.action } : { ok: true, archetype: req.archetype, action: req.action, convention: conventionOf(req), handler: h.id }
       }
       const target = await h.open()
-      target.send({ type: "intent.deliver", delivery: { sender: from.dTag, archetype: req.archetype, action: req.action, convention: req.convention ?? "", payload: req.payload } })
-      return { ok: true, archetype: req.archetype, action: req.action, convention: req.convention ?? "", handler: h.id }
+      // The shim drops a delivery whose convention isn't napplet:<archetype>/<action> (isIntentDelivery), so one the
+      // shell starts itself, with no convention, gets that one.
+      target.send({ type: "intent.deliver", delivery: { sender: from.dTag, archetype: req.archetype, action: req.action, convention: conventionOf(req), payload: req.payload } })
+      return { ok: true, archetype: req.archetype, action: req.action, convention: conventionOf(req), handler: h.id }
     } catch (e) {
       return { ok: false, error: String(e?.message || e), archetype: req.archetype, action: req.action }
     }
