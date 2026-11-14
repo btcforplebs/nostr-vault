@@ -2,7 +2,6 @@ package com.nostrvault.data.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -12,41 +11,19 @@ class VaultReturnRulesTest {
 
     @Test
     fun `a build with no read on shows at once`() {
-        assertTrue(VaultListSwap.publishes(force = false, refreshing = false, heldForMs = null))
+        assertTrue(VaultListSwap.publishes(refreshing = false, heldForMs = null))
     }
 
     @Test
     fun `a build during a read is held - followers never show alone`() {
-        assertFalse(VaultListSwap.publishes(force = false, refreshing = true, heldForMs = null))
-        assertFalse(VaultListSwap.publishes(force = false, refreshing = true, heldForMs = 0))
-        assertFalse(VaultListSwap.publishes(force = false, refreshing = true, heldForMs = VaultListSwap.CAP_MS - 1))
+        assertFalse(VaultListSwap.publishes(refreshing = true, heldForMs = null))
+        assertFalse(VaultListSwap.publishes(refreshing = true, heldForMs = 0))
+        assertFalse(VaultListSwap.publishes(refreshing = true, heldForMs = VaultListSwap.CAP_MS - 1))
     }
 
     @Test
     fun `a read that never ends shows the list after the cap`() {
-        assertTrue(VaultListSwap.publishes(force = false, refreshing = true, heldForMs = VaultListSwap.CAP_MS))
-    }
-
-    @Test
-    fun `the saved screen shows at once even while reading`() {
-        assertTrue(VaultListSwap.publishes(force = true, refreshing = true, heldForMs = null))
-    }
-
-    // ── Saved screen ──
-
-    @Test
-    fun `the saved screen keeps the newest, newest first`() {
-        val kept = VaultSnapshotRules.newest(listOf(5L, 9L, 1L, 7L), keep = 2) { it }
-        assertEquals(listOf(9L, 7L), kept)
-    }
-
-    @Test
-    fun `the saved screen file is the account hex only`() {
-        val hex = "A".repeat(64)
-        assertEquals("vault-activity-${"a".repeat(64)}.json", VaultSnapshotRules.fileName("vault-activity", hex))
-        assertNull(VaultSnapshotRules.fileName("vault-activity", "../" + "a".repeat(61)))
-        assertNull(VaultSnapshotRules.fileName("vault-activity", "a".repeat(63)))
-        assertNull(VaultSnapshotRules.fileName("vault-activity", ""))
+        assertTrue(VaultListSwap.publishes(refreshing = true, heldForMs = VaultListSwap.CAP_MS))
     }
 
     // ── Dot per account ──

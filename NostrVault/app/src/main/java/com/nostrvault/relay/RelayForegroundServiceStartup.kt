@@ -241,6 +241,8 @@ import kotlinx.coroutines.withTimeoutOrNull
                 HavenBridge.startRelay(importMode = false)
                 StartupMarks.markOnce("engine returned")
             }
+            // The store answers reads now; the port comes up next.
+            RelayForegroundService._engineStarts.value += 1
 
             // Verify the relay is actually listening before declaring success
             val healthy = waitForRelayHealthy(config.relayPort)

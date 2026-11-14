@@ -212,13 +212,36 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.MAX_SEEN
         activeRelayUrls.add(relayUrl)
         relayEoseReceived[relayUrl] = false
 
-        val authorsJson = authors.joinToString(",") { "\"$it\"" }
         // Always cap the stored-event replay. Without a limit the relay dumps the
         // entire vault history on every connect. When we already hold events
         // (resume re-subscribe), only ask for the gap since the newest one.
         val newest = newestEventCreatedAt
         val sinceClause = if (!isFullReload && newest > 0) ",\"since\":${newest - 60}" else ""
+        // IMPORTANT: a first connect's mentions filter does NOT use sinceClause - we
+        // want ALL notes where the user is tagged, not just recent ones (older
+        // tagged notes never appeared otherwise). A top-up re-send already holds
+        // them, so it asks only for the gap (iOS #2034: return = top-up), instead
+        // of replaying 500 tagged events per account on every return. The same
+        // once the store read answered for this account: it read them already.
+        val storeRead = storeAnswered == ownerHex.lowercase() && isLocalVaultRelay(relayUrl)
+        val mentionSince = if (topUp || storeRead) sinceClause else ""
+        val filters = vaultFilters(authors, ownerHex, sinceClause, mentionSince).joinToString(",")
 
+        Log.d(TAG, "sendVaultSubscription: subId=$subId, fullReload=$isFullReload")
+        client.send("""["REQ","$subId",$filters]""")
+    }
+
+    /**
+     * The Vault's read for [ownerHex]: what [authors] wrote, each other
+     * account's own notes, and what tags the owner and the other accounts.
+     */
+    internal fun DashboardViewModel.vaultFilters(
+        authors: Set<String>,
+        ownerHex: String,
+        sinceClause: String,
+        mentionSince: String,
+    ): List<String> {
+        val authorsJson = authors.joinToString(",") { "\"$it\"" }
         val authorFilter = """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"authors":[$authorsJson]$sinceClause,"limit":500}"""
         // The device's other accounts, each with its own limit so the active
         // account's window stays what it was: the pages' chips filter what is
@@ -228,23 +251,11 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.MAX_SEEN
             """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"authors":["$hex"]$sinceClause,"limit":500}"""
         }
 
-        val filters = if (ownerHex.isNotEmpty()) {
-            // IMPORTANT: a first connect's mentions filter does NOT use sinceClause - we
-            // want ALL notes where the user is tagged, not just recent ones (older
-            // tagged notes never appeared otherwise). A top-up re-send already holds
-            // them, so it asks only for the gap (iOS #2034: return = top-up), instead
-            // of replaying 500 tagged events per account on every return.
-            val mentionSince = if (topUp) sinceClause else ""
-            val mentionsFilters = (listOf(ownerHex) + others).map { hex ->
-                """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"#p":["$hex"]$mentionSince,"limit":500}"""
-            }
-            (listOf(authorFilter) + otherAuthorFilters + mentionsFilters).joinToString(",")
-        } else {
-            authorFilter
+        if (ownerHex.isEmpty()) return listOf(authorFilter)
+        val mentionsFilters = (listOf(ownerHex) + others).map { hex ->
+            """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"#p":["$hex"]$mentionSince,"limit":500}"""
         }
-
-        Log.d(TAG, "sendVaultSubscription: subId=$subId, fullReload=$isFullReload")
-        client.send("""["REQ","$subId",$filters]""")
+        return listOf(authorFilter) + otherAuthorFilters + mentionsFilters
     }
 
     /**
@@ -260,70 +271,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.MAX_SEEN
             when (type) {
                 "EVENT" -> {
                     if (parsed.size < 3) return
-                    val eventObj = parsed[2].jsonObject
-                    val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return
-                    if (!seenIds.add(id)) return
-
-                    val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return
-                    val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return
-                    val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: return
-                    // A wrong clock dated it ahead: it would top the pages (VaultActivity.isFuture).
-                    if (VaultActivity.isFuture(createdAt, VaultActivity.nowSeconds())) return
-                    val sig = eventObj["sig"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val tags = eventObj["tags"]?.jsonArray?.map { tagArr ->
-                        tagArr.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
-                    } ?: emptyList()
-
-                    // Metadata events go to NostrService
-                    if (kind in listOf(0, 10002, 10050, 10063, 10000)) {
-                        nostrService.processRelayMessage(msg, relayUrl)
-                        return
-                    }
-
-                    // NIP-57: a zap receipt is spoofable by anyone who can reach a relay
-                    // we query — only trust it if it came from the pubkey the recipient's
-                    // own LNURL endpoint designates as authorized to publish on their behalf.
-                    if (kind == 9735) {
-                        val recipientPubkey = tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
-                        if (recipientPubkey == null || !ZapValidationService.isValidReceipt(
-                                receiptPubkey = pubkey,
-                                recipientPubkey = recipientPubkey,
-                                profiles = nostrService.profiles.value,
-                            )
-                        ) {
-                            return
-                        }
-                    }
-
-                    val nostrEvent = NostrEvent(
-                        id = id,
-                        pubkey = pubkey,
-                        createdAt = createdAt,
-                        kind = kind,
-                        tags = tags,
-                        content = content,
-                        sig = sig,
-                    )
-
-                    allEventsMutex.withLock {
-                        allEvents.add(nostrEvent)
-                        trimAllEventsLocked()
-                    }
-                    // Future-dated junk must not poison the resume catch-up window
-                    val nowSecs = System.currentTimeMillis() / 1000
-                    if (createdAt > newestEventCreatedAt && createdAt <= nowSecs + 60) {
-                        newestEventCreatedAt = createdAt
-                    }
-
-                    if (seenIds.size > MAX_SEEN_IDS) {
-                        val retained = allEventsMutex.withLock { allEvents.mapTo(HashSet()) { it.id } }
-                        seenIds.retainAll(retained)
-                        seenIds.add(id)
-                    }
-
-                    nostrService.fetchMissingProfiles(listOf(pubkey))
-                    scheduleUpdateDisplayData()
+                    processVaultEvent(parsed[2].jsonObject, relayUrl) { msg }
                 }
                 "EOSE" -> {
                     if (parsed.size >= 2) {
@@ -344,6 +292,81 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.MAX_SEEN
         } catch (e: Exception) {
             Log.w(TAG, "Parse error: ${e.message}")
         }
+    }
+
+    /**
+     * One event of the Vault's read: dedupes via seenIds, routes metadata to
+     * NostrService ([rawMessage] is the relay message carrying it), keeps
+     * content events in allEvents and schedules a display update.
+     */
+    internal suspend fun DashboardViewModel.processVaultEvent(
+        eventObj: JsonObject,
+        relayUrl: String,
+        rawMessage: () -> String,
+    ) {
+        val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return
+        if (!seenIds.add(id)) return
+
+        val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return
+        val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return
+        val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
+        val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: return
+        // A wrong clock dated it ahead: it would top the pages (VaultActivity.isFuture).
+        if (VaultActivity.isFuture(createdAt, VaultActivity.nowSeconds())) return
+        val sig = eventObj["sig"]?.jsonPrimitive?.contentOrNull ?: ""
+        val tags = eventObj["tags"]?.jsonArray?.map { tagArr ->
+            tagArr.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
+        } ?: emptyList()
+
+        // Metadata events go to NostrService
+        if (kind in listOf(0, 10002, 10050, 10063, 10000)) {
+            nostrService.processRelayMessage(rawMessage(), relayUrl)
+            return
+        }
+
+        // NIP-57: a zap receipt is spoofable by anyone who can reach a relay
+        // we query — only trust it if it came from the pubkey the recipient's
+        // own LNURL endpoint designates as authorized to publish on their behalf.
+        if (kind == 9735) {
+            val recipientPubkey = tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
+            if (recipientPubkey == null || !ZapValidationService.isValidReceipt(
+                    receiptPubkey = pubkey,
+                    recipientPubkey = recipientPubkey,
+                    profiles = nostrService.profiles.value,
+                )
+            ) {
+                return
+            }
+        }
+
+        val nostrEvent = NostrEvent(
+            id = id,
+            pubkey = pubkey,
+            createdAt = createdAt,
+            kind = kind,
+            tags = tags,
+            content = content,
+            sig = sig,
+        )
+
+        allEventsMutex.withLock {
+            allEvents.add(nostrEvent)
+            trimAllEventsLocked()
+        }
+        // Future-dated junk must not poison the resume catch-up window
+        val nowSecs = System.currentTimeMillis() / 1000
+        if (createdAt > newestEventCreatedAt && createdAt <= nowSecs + 60) {
+            newestEventCreatedAt = createdAt
+        }
+
+        if (seenIds.size > MAX_SEEN_IDS) {
+            val retained = allEventsMutex.withLock { allEvents.mapTo(HashSet()) { it.id } }
+            seenIds.retainAll(retained)
+            seenIds.add(id)
+        }
+
+        nostrService.fetchMissingProfiles(listOf(pubkey))
+        scheduleUpdateDisplayData()
     }
 
     /** Caller must hold [allEventsMutex]. Trims oldest events past the cap. */

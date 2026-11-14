@@ -33,5 +33,10 @@ object StartupMarks {
         if (once.add(step)) mark(step)
     }
 
+    /** Logs [step] the first time [key] is marked only (a step whose text carries a count). */
+    fun markOnce(key: String, step: String) {
+        if (once.add(key)) mark(step)
+    }
+
     internal fun line(step: String, ms: Long): String = "⏱ startup $step +${ms}ms"
 }
