@@ -1126,7 +1126,7 @@ checksum = "80bb028c8b4148c9ee0cca68fcd9add6044e81d3619f48577ddf13a263d047a2"
 [[package]]
 name = "fips-mesh"
 version = "0.5.3"
-source = "git+https://github.com/btcforplebs/fips?rev=d0392b7d#d0392b7d0d4c8fb84c1ce2947038b38b35ef288e"
+source = "git+https://github.com/btcforplebs/fips?rev=eb642842#eb6428426efb6248579265f943fdd011afc0948c"
 dependencies = [
  "arc-swap",
  "bech32 0.12.0",
