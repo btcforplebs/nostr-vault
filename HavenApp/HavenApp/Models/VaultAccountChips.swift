@@ -187,6 +187,39 @@ enum VaultAccountChips {
         return Array(sorted.prefix(max(0, limit)))
     }
 
+    // MARK: Steady switch (Logen 2026-11-14: switching accounts should be instant)
+
+    /// A re-read folded into what is held: what it read wins by id, what it
+    /// didn't read stays, newest first (ties by id, as `VaultActivity.build`
+    /// sorts). A re-read only adds and updates, so the list never reshuffles
+    /// under the finger, and a read that came back empty (the relay's port
+    /// closed after a return) takes nothing away.
+    static func topUp<T>(held: [T], read: [T], id: (T) -> String, at: (T) -> Int64) -> [T] {
+        let readIds = Set(read.map(id))
+        let kept = held.filter { !readIds.contains(id($0)) }
+        return (read + kept).sorted { at($0) != at($1) ? at($0) > at($1) : id($0) < id($1) }
+    }
+
+    /// Whether a badge change is news for the accounts on show: a count went
+    /// up. A chip tap marks its accounts seen, which drops their counts; that
+    /// is not a reason to read again.
+    static func countRose(among accounts: [String], before: (String) -> Int, after: (String) -> Int) -> Bool {
+        accounts.contains { after($0) > before($0) }
+    }
+
+    /// The people the first screen of lines names and pictures: the first
+    /// `rows` lines' leading actors. Their profiles are asked for, and briefly
+    /// waited on, before a picked chip's list shows, so names don't pop in.
+    static func firstScreenActors(_ lines: [VaultActivity], rows: Int = firstScreenRows) -> [String] {
+        var seen = Set<String>()
+        return lines.prefix(rows).flatMap { $0.actors.prefix(3) }.filter { seen.insert($0).inserted }
+    }
+
+    static let firstScreenRows = 20
+    /// The longest a pick waits for those profiles; past it the list shows
+    /// and the rest fill in.
+    static let profileWait: TimeInterval = 0.8
+
     /// Each filter's `limit` for reading another account's lines from the
     /// device's relay: the first read, and each "load more" after it.
     static let otherAccountPage = 300

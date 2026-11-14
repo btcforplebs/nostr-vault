@@ -89,6 +89,9 @@ struct VaultView: View {
     @State var otherAccountActivity: [String: [VaultActivity]] = [:]
     /// Per other account: its lines newer than this are new since its last visit.
     @State var otherAccountUnreadSince: [String: Int64] = [:]
+    /// The badge counts the shown accounts had when last read or tapped: a
+    /// re-read waits for one to go above them (`shownAccountsGotNews`).
+    @State var otherAccountSeenCounts: [String: Int] = [:]
     @State var otherAccountLoading = false
     /// Each filter's limit for the other accounts' read; "load more" raises it.
     @State var otherAccountLimit = VaultAccountChips.otherAccountPage
@@ -230,6 +233,8 @@ struct VaultView: View {
     // Static regex pattern to avoid recompilation
     /// Scroll target for tapping the Relay tab again.
     static let topAnchor = "vaultTop"
+    /// The top of `listContent`, inside every platform's scroll view.
+    static let listTopAnchor = "vaultListTop"
     nonisolated static let hexPattern = try! NSRegularExpression(pattern: "[a-f0-9]{64}", options: .caseInsensitive)
 
 
@@ -508,7 +513,7 @@ struct VaultView: View {
         // Your accounts tagging each other came in or left the list.
         .onChange(of: configService.config.notifyOwnAccountTags) { _, _ in
             scheduleUpdateDisplayData()
-            if showsOtherAccounts { loadOtherAccountActivity() }
+            if showsOtherAccounts { loadOtherAccountActivity(replacing: true) }
         }
         .onChange(of: configService.config.activeAccountNpub) { _, _ in
             listSwapAccountSwitched()

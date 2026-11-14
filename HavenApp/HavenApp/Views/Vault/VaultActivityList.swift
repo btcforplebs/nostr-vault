@@ -23,9 +23,10 @@ extension VaultView {
             activityBody(lines: lines, tagged: tagged, others: others, isEmpty: isEmpty, isLoading: isLoading)
         }
         .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
-        .onReceive(AccountUnreadStore.shared.$state.removeDuplicates().debounce(for: .seconds(1), scheduler: RunLoop.main)) { _ in
-            // A notification came in for some account: top the others up.
-            if showsOtherAccounts { loadOtherAccountActivity() }
+        .onReceive(AccountUnreadStore.shared.$state.removeDuplicates().debounce(for: .seconds(1), scheduler: RunLoop.main)) { state in
+            // A notification came in for an account on show: top it up. Not
+            // the tap's own "seen", which only drops counts.
+            if shownAccountsGotNews(state) { loadOtherAccountActivity() }
         }
     }
 

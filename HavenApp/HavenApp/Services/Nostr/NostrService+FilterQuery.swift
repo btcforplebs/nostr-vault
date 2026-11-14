@@ -20,6 +20,11 @@ extension NostrService {
             var resumed = false
             var clients: [WebSocketClient] = []
             var subs = Set<AnyCancellable>()
+            // The client hands every message over on main; each event's
+            // parse and signature check runs here instead, in arrival order
+            // (an EOSE never overtakes its events). Up to ~2,700 events for
+            // the Vault's All chip used to freeze the screen (Logen 2026-11-14).
+            let parseQueue = DispatchQueue(label: "haven.fetchEvents.parse", qos: .userInitiated)
 
             func finish() {
                 lock.lock()
@@ -41,6 +46,7 @@ extension NostrService {
                     clients.append(client)
                     let subId = "q-\(UUID().uuidString.prefix(6))"
                     client.messageSubject
+                        .receive(on: parseQueue)
                         .sink { message in
                             guard let data = message.data(using: .utf8),
                                   let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
