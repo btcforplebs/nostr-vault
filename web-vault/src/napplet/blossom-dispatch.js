@@ -8,7 +8,8 @@
 //                                              napplet ours too, once per file for a minute (Delete from mirrors
 //                                              sends one delete per server). A server that is one of the user's own
 //                                              vaults keeps its copy (blossom-gallery.js deleteBlob).
-// Outside napplets need the private-data grant to see the list (it can be auth-gated) and are asked before a mirror.
+// The servers and file lists are vault-private: outside napplets never see them (Logen, 2026-11-14), and are asked
+// before a mirror.
 // Anything else (get, upload, server list edits) is "unsupported": bytes come through resource, uploads through upload.
 import { seesPrivate } from "./policy.js"
 
@@ -37,10 +38,10 @@ export function blossomHandler({ grant, who, deps }) {
     const r = m.request ?? {}
     switch (m.type) {
       case "blossom.servers":
-        if (!seesPrivate(grant)) return refuse(m, "private: no private-data grant")
+        if (!seesPrivate(grant)) return refuse(m, "private: only Nostr Vault's own napplets")
         return reply(m, { ok: true, servers: await deps.servers().catch(() => []) })
       case "blossom.list": {
-        if (!seesPrivate(grant)) return refuse(m, "private: no private-data grant")
+        if (!seesPrivate(grant)) return refuse(m, "private: only Nostr Vault's own napplets")
         if (r.pubkey !== deps.pubkey) return refuse(m, "only your own files are listed")
         const server = await own(r.server)
         if (!server) return refuse(m, "not one of your media servers")

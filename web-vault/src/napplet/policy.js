@@ -1,16 +1,19 @@
-// What a napplet may see and sign. Pure, so node tests load it. Logen's decision 2 (RESEARCH/NV_WEB_NAPPLET_PLAN.md
-// §8): an outside napplet sees vault-private data only when the user authorizes it, per napplet. Our own napplets
-// (first-party, built into this app, matched by artifact hash) are trusted like the screens they replace.
+// What a napplet may see and sign. Pure, so node tests load it. Logen's rules (nv-3.0, 2026-11-14; plan
+// RESEARCH/NV_WEB_NAPPLET_PLAN.md §8):
+//   - Vault-private data goes to our own napplets only (first-party: built into this app, matched by artifact hash,
+//     trusted like the screens they replace). An outside napplet never gets it, whatever it is granted (15:20Z).
+//   - Every napplet, ours too, reads relays only through Haven and sees only what passed the web of trust
+//     (13:41Z): dispatch.js read/subscribe, wot-gate.js.
 //
 // "Vault-private" here is:
-//   - anything read out of the in-page Haven (the vault: the user's cache of their feed, inbox and own events);
+//   - Haven's own routes beyond the public feed cache: the user's events (/) and what others sent them (/inbox);
 //   - private kinds wherever they come from: DMs and gift wraps, the DM relay list, app data, mute lists, wallet;
 //   - the user's mute and block lists (identity.getMutes / getBlocked);
-//   - the vault's own files (resource from the vault or the mesh).
-// Without the grant an outside napplet reads the network only, through the shell's pool, with private kinds removed.
-// The shell's block list (the WoT side, decision 6) applies to every napplet, granted or not.
+//   - the vault's own files and media servers (blossom), and DMs (dm).
+// An outside napplet reads Haven's public feed cache and, through the shell, the network: WoT-gated, private kinds
+// removed. The shell's block list applies to every napplet.
 
-/** Kinds no outside napplet sees without the private-data grant, even from a public relay. */
+/** Kinds no outside napplet ever sees, even from a public relay. */
 export const PRIVATE_KINDS = new Set([
   4, 13, 14, 15, 1059, 1060, // DMs, seals, gift wraps (NIP-04, NIP-17, NIP-59)
   10000, 10050, 30078, // mute list, DM relays, app data
@@ -18,8 +21,9 @@ export const PRIVATE_KINDS = new Set([
 ])
 
 /** Kinds no napplet may have signed, ours included: one bad list wipes the account's follows or relays. Lists are
- *  edited only by the app's own guarded editors (test/user-list-sign-guard.test.mjs); a napplet asks the shell. */
-export const ACCOUNT_KINDS = new Set([0, 3, 10000, 10002, 10006, 10050, 10063])
+ *  edited only by the app's own guarded editors (test/user-list-sign-guard.test.mjs); a napplet asks the shell.
+ *  10030/30030: the emoji list and emoji sets (Tara, 2026-11-14): the Emoji napplet only reads them. */
+export const ACCOUNT_KINDS = new Set([0, 3, 10000, 10002, 10006, 10030, 10050, 10063, 30030])
 
 /** Kinds no napplet ever gets signed, ours included: a credential (relay AUTH, Blossom auth, HTTP auth, NWC), or the
  *  account's end (62, NIP-62 Request to Vanish). */
@@ -39,10 +43,18 @@ export function deletionTargets(template) {
 
 /** A napplet's grant: what the user said yes to. First-party napplets get everything they ask for. */
 export function defaultGrant({ firstParty = false, domains = [] } = {}) {
-  return { firstParty, domains: [...domains], privateData: firstParty, publish: firstParty ? "allow" : "ask", notify: firstParty }
+  return { firstParty, domains: [...domains], publish: firstParty ? "allow" : "ask", notify: firstParty }
 }
 
-export const seesPrivate = grant => !!(grant?.firstParty || grant?.privateData)
+/** An outside napplet's grant as the shell uses it, from whatever was saved (an older build kept a private-data
+ *  switch): never first-party, never private data, every post asked. Only a yes to notifications carries over. */
+export function outsideGrant(saved) {
+  const domains = Array.isArray(saved?.domains) ? saved.domains.filter(d => typeof d === "string") : []
+  return { ...defaultGrant({ domains }), notify: saved?.notify === true }
+}
+
+/** Only our own napplets see vault-private data. A grant's old `privateData` means nothing. */
+export const seesPrivate = grant => grant?.firstParty === true
 
 /** May this already-signed event be re-sent for a napplet (relay.publish)? Same refusals as signing: an old signed
  *  follow list, relay list or vanish request of the user's must not be replayed. -> { ok } or { ok: false, error }. */
@@ -75,8 +87,8 @@ export function signDecision(grant, template) {
     const bad = t.kinds.find(k => !Number.isInteger(k) || protectedKind(k))
     if (bad !== undefined) return { ok: false, error: `a napplet can't delete kind ${bad}` }
   }
-  if (grant?.firstParty) return { ok: true, ask: false }
-  if (PRIVATE_KINDS.has(kind) && !grant?.privateData) return { ok: false, error: `kind ${kind} is private; this napplet has no private-data grant` }
+  if (grant?.firstParty === true) return { ok: true, ask: false }
+  if (PRIVATE_KINDS.has(kind)) return { ok: false, error: `kind ${kind} is private; only Nostr Vault's own napplets handle it` }
   return { ok: true, ask: grant?.publish !== "allow" }
 }
 

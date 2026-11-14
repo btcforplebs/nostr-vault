@@ -3,6 +3,9 @@
 // shell's real pieces through `deps` (shell-deps.js wires them to Haven, the signer and the pool; tests pass fakes).
 // Shell boundary (Logen's decisions 5 and 6): keys, Haven + FIPS and the network plumbing they need stay here;
 // everything a napplet reads comes through these handlers, block-filtered, never from its own relay list.
+// Reads (Logen 2026-11-14): Haven answers first; what the shell fetches from the network must pass the web of trust
+// (wot-gate.js) and is put into Haven before a napplet sees it. Haven's public feed cache (/feed) keeps the feed
+// kinds; anything it doesn't keep (likes, lists, zaps) still passes the same gate. Our own napplets too.
 // Message shapes: @napplet/nap 0.40 types (outbox, relay, resource, storage, theme, intent, inc, notify, upload).
 import { visibleEvents, seesPrivate, signDecision, resendDecision, deletionTargets, protectedKind } from "./policy.js"
 import { nappletKey, nappletLine } from "./manifest.js"
@@ -44,32 +47,46 @@ export function createHandlers({ ident, grant, domains, deps }) {
   const who = { ...ident, grant }
   const ask = (what, detail) => deps.ask({ napplet: who, what, detail })
 
-  // Reads: the vault first for napplets that may see it, then the network; always block-filtered.
+  // Reads: Haven first (all its routes for our own napplets, the public feed cache for outside ones), then the
+  // network through the shell. Everything passes the WoT gate and the block list; network events that pass go into
+  // Haven before they are handed over.
+  const routes = () => (seesPrivate(grant) ? "all" : "public")
+  const gateOf = async () => {
+    const wot = await deps.wotGate().catch(() => ev => ev?.pubkey === deps.pubkey) // no web: only your own
+    return ev => wot(ev) && visibleEvents([ev], grant, { blocked: deps.blocked() }).length > 0 // a block applies at once
+  }
+  const store = evs => (evs.length ? deps.havenStore(evs).catch(() => []) : Promise.resolve([]))
   async function read(filters) {
     const fs = cleanFilters(filters)
     const limit = Math.max(...fs.map(f => f.limit))
-    const fromVault = seesPrivate(grant) ? await deps.vaultQuery(fs).catch(() => []) : []
-    const fromNet = fromVault.length >= limit ? [] : await deps.netQuery(fs).catch(() => [])
-    return newestFirst(visibleEvents(dedupe([...fromVault, ...fromNet]), grant, { blocked: deps.blocked() })).slice(0, limit)
+    const pass = await gateOf()
+    const fromHaven = (await deps.vaultQuery(fs, { routes: routes() }).catch(() => [])).filter(pass)
+    const fromNet = fromHaven.length >= limit ? [] : (await deps.netQuery(fs).catch(() => [])).filter(pass)
+    await store(dedupe(fromNet))
+    return newestFirst(dedupe([...fromHaven, ...fromNet])).slice(0, limit)
   }
   const results = evs => evs.map(event => ({ event }))
 
   function subscribe(filters, napplet, onEvent, onEose) {
     if (subs.size >= MAX_SUBS) throw new Error(`at most ${MAX_SUBS} subscriptions`)
     const fs = cleanFilters(filters)
-    let seen = new Set()
-    const pass = ev => {
-      if (!ev?.id || seen.has(ev.id)) return
-      if (!visibleEvents([ev], grant, { blocked: deps.blocked() }).length) return
+    let seen = new Set(), closed = false, stopNet = () => {}
+    const mark = ev => {
+      if (!ev?.id || seen.has(ev.id)) return false
       seen.add(ev.id)
       if (seen.size > 5000) seen = new Set([ev.id])
-      onEvent(ev)
+      return true
     }
-    let closed = false, stopNet = () => {}
     const start = async () => {
-      if (seesPrivate(grant)) for (const ev of await deps.vaultQuery(fs).catch(() => [])) if (!closed) pass(ev)
+      const pass = await gateOf()
+      for (const ev of await deps.vaultQuery(fs, { routes: routes() }).catch(() => [])) if (!closed && pass(ev) && mark(ev)) onEvent(ev)
       if (closed) return
-      stopNet = deps.netSubscribe(fs, pass, () => !closed && onEose?.())
+      // Each network event in order: into Haven, then to the napplet.
+      let queue = Promise.resolve()
+      stopNet = deps.netSubscribe(fs, ev => {
+        if (closed || !pass(ev) || !mark(ev)) return
+        queue = queue.then(() => store([ev])).then(() => { if (!closed) onEvent(ev) })
+      }, () => { queue = queue.then(() => { if (!closed) onEose?.() }) })
     }
     start()
     return () => { closed = true; stopNet() }
@@ -133,7 +150,7 @@ export function createHandlers({ ident, grant, domains, deps }) {
         }
         case "identity.getMutes":
         case "identity.getBlocked":
-          if (!seesPrivate(grant)) return { type: `${m.type}.result`, id, pubkeys: [], error: "private: no private-data grant" }
+          if (!seesPrivate(grant)) return { type: `${m.type}.result`, id, pubkeys: [], error: "private: only Nostr Vault's own napplets" }
           return { type: `${m.type}.result`, id, pubkeys: [...(deps.blocked() ?? [])] }
         default:
           return m.id ? { type: `${m.type}.result`, id, error: "unsupported" } : undefined
@@ -207,7 +224,7 @@ export function createHandlers({ ident, grant, domains, deps }) {
           const rd = resendDecision(ev)
           if (!rd.ok) return { type: "relay.publish.result", id, ok: false, error: rd.error }
           const vis = visibleEvents([ev], grant)
-          if (!vis.length) return { type: "relay.publish.result", id, ok: false, error: `kind ${ev.kind} is private; this napplet has no private-data grant` }
+          if (!vis.length) return { type: "relay.publish.result", id, ok: false, error: `kind ${ev.kind} is private; only Nostr Vault's own napplets handle it` }
           if (!grant.firstParty && !(await ask("relay-publish", { kind: ev.kind, content: ev.content, tags: ev.tags, author: ev.pubkey }))) return { type: "relay.publish.result", id, ok: false, error: "the user said no" }
           const sent = await deps.publish(ev)
           return { type: "relay.publish.result", id, ok: !!sent.ok, event: ev, eventId: ev.id, ...(sent.ok ? {} : { error: sent.error ?? "no relay took it" }) }

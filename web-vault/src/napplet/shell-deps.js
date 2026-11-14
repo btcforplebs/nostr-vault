@@ -21,9 +21,31 @@ import { findMine } from "./shell-deps-find.js"
 import { SEND_ACTIONS, countdownText, sendDelaySeconds, startCountdown } from "../net/send-delay.js"
 import { showToast, hideToast } from "../components/Toast.jsx"
 import { delayActionOf } from "./publish-delay.js"
+import { globalTrust } from "../readers/trust.js"
+import { wotGate, namedSets } from "./wot-gate.js"
 
 const QUERY_WAIT_MS = 4000
-const codeError = (code, message) => Object.assign(new Error(message ?? code), { code })
+const WOT_TTL_MS = 10 * 60_000
+
+// The web, worked out once per account and kept for WOT_TTL_MS (it asks every follow's follow list), as the
+// reader feeds' Global does (readers/trust.js globalTrust), plus the emoji sets the user's own 10030 names. Until the
+// follows' follow lists are in, the gate is you and your follows only: narrower, never wider, so a napplet's first
+// read doesn't wait seconds for the whole web. The gate reads the current web on every event, so it widens in place.
+let wotCache = null // { key, at, gate: Promise<ev => bool> }
+function nappletWot(ctx) {
+  const me = ctx.session.pubkey, follows = [...(ctx.account.follows ?? [])]
+  const key = `${me}:${follows.length}`
+  if (wotCache?.key === key && Date.now() - wotCache.at < WOT_TTL_MS) return wotCache.gate
+  const web = { trust: new Set([me, ...follows]), named: new Set() }
+  globalTrust(me, follows).then(t => { if (t) web.trust = t }).catch(() => {})
+  const gate = ctx.vault.outbox.query([{ kinds: [10030], authors: [me], limit: 1 }]).catch(() => []).then(lists => {
+    const list = lists.filter(ev => ev?.pubkey === me).sort((x, y) => y.created_at - x.created_at)[0]
+    web.named = namedSets(list)
+    return ev => wotGate({ me, trust: web.trust, named: web.named })(ev)
+  })
+  wotCache = { key, at: Date.now(), gate }
+  return gate
+}
 
 /** The theme a napplet draws with: the app's own colours, read from its CSS variables. */
 export function appTheme(doc = document) {
@@ -80,11 +102,18 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
       if (event.pubkey === ctx.session.pubkey) await ctx.vault.outbox.event(event).catch(() => {})
       return { ok: true, relays: { [urls[first]]: true } }
     },
-    // The vault: the user's own events (/), the feed cache (/feed) and what others sent them (/inbox).
-    async vaultQuery(filters) {
-      const routes = [ctx.vault.outbox, ctx.vault.feed, ctx.vault.inbox]
-      return (await Promise.all(routes.map(r => r.query(filters).catch(() => [])))).flat()
+    // Haven: the user's own events (/), the feed cache (/feed) and what others sent them (/inbox). `routes`:
+    // "all", or "public" (the feed cache only) for an outside napplet.
+    async vaultQuery(filters, { routes = "all" } = {}) {
+      const list = routes === "public" ? [ctx.vault.feed] : [ctx.vault.outbox, ctx.vault.feed, ctx.vault.inbox]
+      return (await Promise.all(list.map(r => r.query(filters).catch(() => [])))).flat()
     },
+    // Network events that passed the WoT gate, into Haven's feed cache before a napplet sees them (as thread.js
+    // syncThread does). /feed keeps the feed kinds and refuses the rest; those are still handed over, gated.
+    async havenStore(events) {
+      return (await Promise.all(events.map(ev => ctx.vault.feed.event(ev).then(r => (r?.ok ? ev : null)).catch(() => null)))).filter(Boolean)
+    },
+    wotGate: () => nappletWot(ctx),
     async netQuery(filters) {
       const relays = readRelays()
       return (await Promise.all(filters.map(f => pool.querySync(relays, f, { maxWait: QUERY_WAIT_MS }).catch(() => [])))).flat()

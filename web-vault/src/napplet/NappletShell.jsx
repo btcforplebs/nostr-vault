@@ -6,12 +6,12 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { Dialog } from "../components/Moderation.jsx"
 import { openNapplet } from "./runtime.js"
-import { grantStore } from "./policy.js"
+import { grantStore, outsideGrant } from "./policy.js"
 import { createBus } from "./bus.js"
 import { shellDeps, readCatalog, fetchAppArtifact } from "./shell-deps.js"
 import { LISTED } from "./first-party.js"
 import { nappletsOn, setNappletsOn } from "./flag.js"
-import { domainWord, PRIVATE_WORDS, askWords } from "./consent-words.js"
+import { domainWord, PUBLIC_WORDS, PUBLIC_ONLY, askWords } from "./consent-words.js"
 import { appStore, updateFor, removeApp, retireVersion, MAX_ARTIFACT } from "./catalog.js"
 import { parseManifest, nappletKey, domainsFor } from "./manifest.js"
 import { idbNappletStorage, idbArtifacts } from "./storage-idb.js"
@@ -109,10 +109,10 @@ export function NappletShell({ ctx, showSwitch = true, vaultMenu = false }) {
     try { domains = domainsFor(parseManifest(app.event)) } catch {}
     setAccess({ app, key, grant: grants.get(key), domains })
   }
-  function saveAccess({ domains, privateData }) {
+  function saveAccess({ domains }) {
     const { app, key, grant } = access
-    // Same shape the consent sheet makes (runtime.js); only what it may ask for and the private-data answer change.
-    grants.set(key, { ...grant, domains, privateData: !!privateData })
+    // Same shape the consent sheet makes (runtime.js outsideGrant); only what it may ask for changes.
+    grants.set(key, outsideGrant({ ...grant, domains }))
     if (open?.line === app.line) { open.mounted.close(); setNote("Closed it so the new access applies; open it again.") }
     setAccess(null)
     bump(n => n + 1)
@@ -131,7 +131,7 @@ export function NappletShell({ ctx, showSwitch = true, vaultMenu = false }) {
       {note && <p class="muted small napplet-note" role="status">{note}</p>}
       {open && (
         <div class="napplet-running">
-          <p class="muted small napplet-who">{open.ident.title} · {open.grant.firstParty ? "Nostr Vault's own" : open.grant.privateData ? "can see your vault's private data" : "public data only"} · {open.ident.hash.slice(0, 12)}</p>
+          <p class="muted small napplet-who">{open.ident.title} · {open.grant.firstParty ? "Nostr Vault's own" : PUBLIC_ONLY} · {open.ident.hash.slice(0, 12)}</p>
           <button type="button" onClick={() => open.mounted.close()}>Close {open.ident.title}</button>
         </div>
       )}
@@ -146,7 +146,7 @@ export function NappletShell({ ctx, showSwitch = true, vaultMenu = false }) {
               return (
                 <li key={app.line} class="apps-row">
                   <span class="apps-icon" aria-hidden="true">{m.title.slice(0, 1).toUpperCase()}</span>
-                  <div class="apps-what"><b>{m.title}</b><span class="muted small">by {short(m.publisher)} · {grant?.privateData ? "can see your vault's private data" : "public data only"}</span></div>
+                  <div class="apps-what"><b>{m.title}</b><span class="muted small">by {short(m.publisher)} · {PUBLIC_ONLY}</span></div>
                   <div class="apps-acts">
                     <button type="button" class="primary" disabled={busy === app.line} onClick={() => openApp(app)}>{busy === app.line ? "Opening…" : "Open"}</button>
                     {upd && <button type="button" disabled={!!busy} onClick={() => install(upd, app)}>Update</button>}
@@ -209,7 +209,6 @@ export function NappletShell({ ctx, showSwitch = true, vaultMenu = false }) {
 function GrantSheet({ title, from, domains, grant = null, yes, onDone }) {
   const offered = domains.filter(d => d !== "shell")
   const [on, setOn] = useState(() => new Set(grant ? offered.filter(d => grant.domains.includes(d)) : offered))
-  const [priv, setPriv] = useState(!!grant?.privateData)
   const toggle = d => setOn(s => { const n = new Set(s); n.has(d) ? n.delete(d) : n.add(d); return n })
   return (
     <Dialog label={title} onClose={() => onDone(null)}>
@@ -218,9 +217,9 @@ function GrantSheet({ title, from, domains, grant = null, yes, onDone }) {
       <ul class="napplet-grants">
         {offered.map(d => <li key={d}><label><input type="checkbox" checked={on.has(d)} onChange={() => toggle(d)} /> {domainWord(d)}</label></li>)}
       </ul>
-      <label class="napplet-private"><input type="checkbox" checked={priv} onChange={e => setPriv(e.currentTarget.checked)} /> <span><b>{PRIVATE_WORDS.label}</b><br /><span class="muted small">{PRIVATE_WORDS.help}</span></span></label>
+      <p class="muted small napplet-private">{PUBLIC_WORDS}</p>
       <div class="mod-row">
-        <button type="button" class="primary" onClick={() => onDone({ domains: ["shell", ...on], privateData: priv })}>{yes}</button>
+        <button type="button" class="primary" onClick={() => onDone({ domains: ["shell", ...on] })}>{yes}</button>
         <button type="button" onClick={() => onDone(null)}>Cancel</button>
       </div>
     </Dialog>

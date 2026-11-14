@@ -1,5 +1,5 @@
 // The napplet shell runtime's rules (plan P1): manifests and the hash gate (manifest.js), what an outside napplet may
-// see and sign (policy.js, Logen's decision 2: vault-private data only with the user's grant), the per-domain answers
+// see and sign (policy.js: vault-private data for our own napplets only, Logen 2026-11-14), the per-domain answers
 // on fake shell pieces (dispatch.js), napplet-to-napplet (bus.js), which URLs the shell fetches (fetch-policy.js), and
 // the loader page's CSP being the same string everywhere it is served. The frame itself: docs/napplets/P1_RUNTIME.md.
 import test from "node:test"
@@ -11,7 +11,7 @@ import { createHandlers, cleanFilters, MAX_EVENTS, STORAGE_VALUE_MAX, MAX_SUBS }
 import { createBus } from "../src/napplet/bus.js"
 import { blockedUrl } from "../src/napplet/fetch-policy.js"
 import { loaderCsp, LOADER_FILE } from "../src/napplet/csp.js"
-import { askWords, domainWord, PRIVATE_WORDS, tagSummary } from "../src/napplet/consent-words.js"
+import { askWords, domainWord, PUBLIC_WORDS, tagSummary } from "../src/napplet/consent-words.js"
 
 const PUB = "a".repeat(64), H = "b".repeat(64), ME = "c".repeat(64), BAD = "d".repeat(64)
 const manifest = (tags, kind = 35129) => ({ kind, pubkey: PUB, id: "e".repeat(64), tags })
@@ -36,11 +36,11 @@ test("manifest: the artifact must hash to x; required domains the shell lacks re
   assert.equal(nappletLine({ publisher: PUB, dTag: "x" }), `${PUB}:x`)
 })
 
-test("policy: outside napplets lose private kinds and blocked authors; first-party keeps private, never blocked", () => {
+test("policy: outside napplets lose private kinds and blocked authors, grant or not; first-party keeps private, never blocked", () => {
   const evs = [{ id: "1", kind: 1, pubkey: PUB }, { id: "2", kind: 4, pubkey: PUB }, { id: "3", kind: 1059, pubkey: PUB }, { id: "4", kind: 1, pubkey: BAD }]
   const blocked = new Set([BAD])
   assert.deepEqual(visibleEvents(evs, defaultGrant(), { blocked }).map(e => e.id), ["1"])
-  assert.deepEqual(visibleEvents(evs, { ...defaultGrant(), privateData: true }, { blocked }).map(e => e.id), ["1", "2", "3"])
+  assert.deepEqual(visibleEvents(evs, { ...defaultGrant(), privateData: true }, { blocked }).map(e => e.id), ["1"]) // an old grant: nothing
   assert.deepEqual(visibleEvents(evs, defaultGrant({ firstParty: true }), { blocked }).map(e => e.id), ["1", "2", "3"])
   assert.ok(PRIVATE_KINDS.has(4) && PRIVATE_KINDS.has(1059) && PRIVATE_KINDS.has(10000) && !PRIVATE_KINDS.has(1))
 })
@@ -52,7 +52,7 @@ test("policy: what may be signed, and when the user is asked first", () => {
   for (const k of [0, 3, 10000, 10002]) for (const g of [out, ours]) assert.equal(signDecision(g, { kind: k, content: "", tags: [] }).ok, false) // account lists: no napplet
   for (const k of [22242, 24242, 27235]) assert.equal(signDecision(ours, { kind: k, content: "", tags: [] }).ok, false) // credentials: nobody
   assert.equal(signDecision(out, { kind: 4, content: "x", tags: [] }).ok, false)
-  assert.equal(signDecision({ ...out, privateData: true }, { kind: 4, content: "x", tags: [] }).ok, true)
+  assert.equal(signDecision({ ...out, privateData: true }, { kind: 4, content: "x", tags: [] }).ok, false)
   assert.equal(signDecision(out, { kind: 1, content: 5, tags: [] }).ok, false)
   assert.equal(signDecision(out, { kind: 1, content: "x", tags: [["p", 1]] }).ok, false)
   assert.equal(signDecision(out, { kind: 1.5, content: "x" }).ok, false)
@@ -80,7 +80,9 @@ function fakeDeps(over = {}) {
     verify: ev => ev?.sig === "good",
     sign: async t => { calls.signed.push(t); return { ...t, id: "s".repeat(64), pubkey: ME, sig: "good" } },
     publish: async ev => { calls.published.push(ev); return { ok: true, relays: { "wss://w": true } } },
-    vaultQuery: async () => { calls.vault++; return vault },
+    vaultQuery: async (fs, { routes = "all" } = {}) => { calls.vault++; calls.routes = routes; return routes === "public" ? [] : vault },
+    havenStore: async evs => evs,
+    wotGate: async () => () => true,
     netQuery: async () => { calls.net++; return net },
     netSubscribe: (fs, onEvent, onEose) => { for (const e of net) onEvent(e); onEose(); return () => { calls.closedSub = true } },
     theme: () => ({ colors: { background: "#000", text: "#fff", primary: "#e67326" } }),
@@ -101,18 +103,18 @@ const ident = { publisher: PUB, dTag: "t", hash: H, title: "Test" }
 const napplet = () => { const sent = []; return { dTag: "t", hash: H, sent, send: m => sent.push(m) } }
 const make = (grant, over) => { const f = fakeDeps(over); return { ...f, ...createHandlers({ ident, grant, domains: SHELL_DOMAINS, deps: f.deps }) } }
 
-test("dispatch: an outside napplet without the grant never reads the vault, and gets no private or blocked events", async () => {
+test("dispatch: an outside napplet reads only Haven's public cache, and gets no private or blocked events", async () => {
   const { handlers, calls } = make(defaultGrant())
   const r = await handlers.outbox({ type: "outbox.query", id: "q", filters: [{ kinds: [1, 4] }] }, napplet())
-  assert.equal(calls.vault, 0)
+  assert.equal(calls.routes, "public")
   assert.deepEqual(r.events.map(x => x.event.id), ["n1"])
   const m = await handlers.identity({ type: "identity.getMutes", id: "m" })
   assert.deepEqual(m.pubkeys, [])
   assert.match(m.error, /private/)
 })
 
-test("dispatch: with the grant it reads the vault first, newest first, still block-filtered", async () => {
-  const { handlers, calls } = make({ ...defaultGrant(), privateData: true })
+test("dispatch: our own napplet reads all of Haven first, newest first, still block-filtered", async () => {
+  const { handlers, calls } = make(defaultGrant({ firstParty: true }))
   const r = await handlers.relay({ type: "relay.query", id: "q", filters: [{ kinds: [1, 4] }] }, napplet())
   assert.equal(calls.vault, 1)
   assert.deepEqual(r.events.map(x => x.event.id), ["v4", "v1", "n1"])
@@ -293,7 +295,7 @@ test("ask sheet: deletions say so; unnamed kinds show their tags; the grant says
   assert.match(odd.body, /Tags: 2 p \(people\), 1 e \(events\)/)
   assert.doesNotMatch(askWords("publish", {}, { kind: 1, content: "hi", tags: [["p", PUB]] }).body, /Tags/)
   assert.equal(tagSummary([]), "No tags.")
-  assert.match(PRIVATE_WORDS.help, /send what it sees to whoever made it/)
+  assert.match(PUBLIC_WORDS, /never sees your vault's private data/)
 })
 
 test("storage: two picked files with the same name don't share storage", async () => {

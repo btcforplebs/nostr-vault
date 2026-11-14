@@ -4,7 +4,7 @@
 // bus.js, host.js.
 import { mountNapplet, artifactHash, LOADER_PATH } from "./host.js"
 import { parseManifest, checkArtifact, domainsFor, nappletKey, SHELL_DOMAINS } from "./manifest.js"
-import { defaultGrant } from "./policy.js"
+import { defaultGrant, outsideGrant } from "./policy.js"
 import { createHandlers } from "./dispatch.js"
 import { nappletOrigin } from "./origin.js"
 
@@ -29,11 +29,13 @@ export async function openNapplet({ html, manifestEvent, name = "napplet", title
   const asked = domainsFor(manifest)
   const ident = { publisher: firstParty ? "nostr-vault" : manifest.publisher, dTag: manifest.dTag, hash, title: manifest.title }
   const key = nappletKey(ident)
-  let grant = firstParty ? defaultGrant({ firstParty: true, domains: asked }) : grants.get(key)
+  // First-party comes from the bytes being ours (the caller's built-in list), never from a saved grant.
+  const saved = firstParty ? null : grants.get(key)
+  let grant = firstParty ? defaultGrant({ firstParty: true, domains: asked }) : saved && outsideGrant(saved)
   if (!grant) {
-    grant = await consent({ ident, domains: asked })
-    if (!grant) throw new Error("not opened: the user said no")
-    grant = { ...defaultGrant({ domains: grant.domains }), privateData: !!grant.privateData }
+    const said = await consent({ ident, domains: asked })
+    if (!said) throw new Error("not opened: the user said no")
+    grant = outsideGrant({ domains: said.domains })
     grants.set(key, grant)
   }
   const domains = ["shell", ...asked.filter(d => d !== "shell" && grant.domains.includes(d))]
