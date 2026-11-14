@@ -225,45 +225,11 @@ final class NotificationAuthorTrustTests: XCTestCase {
         XCTAssertTrue(NotificationPolicy.authorMayNotify("throwaway", type: "giftwrap", trusted: trusted, own: []))
         // The receipt is signed by the lightning service, never in anyone's WoT.
         XCTAssertTrue(NotificationPolicy.authorMayNotify("lnurl-service", type: "zap", trusted: trusted, own: []))
-        // A follow is never dropped for trust; followIsNamed decides how it is told.
-        XCTAssertTrue(NotificationPolicy.authorMayNotify("stranger", type: "follow", trusted: trusted, own: []))
-        XCTAssertTrue(NotificationPolicy.authorMayNotify("stranger", type: "follow", trusted: [], own: []))
-    }
-
-    /// Only a follower in your Web of Trust is named; a stranger, and everyone
-    /// on a new account with no graph yet, goes to the nameless folded alert.
-    func testOnlyTrustedFollowersAreNamed() {
-        XCTAssertTrue(NotificationPolicy.followIsNamed("friend", trusted: ["friend"]))
-        XCTAssertFalse(NotificationPolicy.followIsNamed("stranger", trusted: ["friend"]))
-        XCTAssertFalse(NotificationPolicy.followIsNamed("friend", trusted: []))
-    }
-
-    /// The folded alert counts each stranger once, keeps counting while it is
-    /// still showing, and starts over once it was tapped or cleared.
-    func testFoldedFollowersCountEachStrangerOnce() {
-        typealias Fold = NotificationPolicy.FoldedFollowers
-        var showing = NotificationPolicy.foldedFollowers(showing: Fold(), adding: "a")
-        XCTAssertFalse(Fold().isShowing)
-        XCTAssertTrue(showing.isShowing)
-        showing = NotificationPolicy.foldedFollowers(showing: showing, adding: "b")
-        showing = NotificationPolicy.foldedFollowers(showing: showing, adding: "a")
-        XCTAssertEqual(showing, Fold(members: ["b", "a"], count: 2))
-        XCTAssertEqual(NotificationPolicy.foldedFollowers(showing: Fold(), adding: "c"), Fold(members: ["c"], count: 1))
-        XCTAssertEqual(NotificationPolicy.foldedFollowersText(count: 1).0, "New follower")
-        XCTAssertEqual(NotificationPolicy.foldedFollowersText(count: 3).0, "3 new followers")
-    }
-
-    /// Only the latest strangers ride in the alert, so it stays small; the
-    /// count keeps going past them.
-    func testFoldedFollowersKeepCountingPastTheCap() {
-        var showing = NotificationPolicy.FoldedFollowers()
-        for i in 0..<1000 { showing = NotificationPolicy.foldedFollowers(showing: showing, adding: "k\(i)") }
-        XCTAssertEqual(showing.count, 1000)
-        XCTAssertEqual(showing.members.count, 32)
-        XCTAssertEqual(showing.members.last, "k999")
-        // An alert saved before the count was stored counts its members.
-        let old = NotificationPolicy.FoldedFollowers(members: ["a", "b"], count: 0)
-        XCTAssertEqual(NotificationPolicy.foldedFollowers(showing: old, adding: "c").count, 3)
+        // A follow is judged like a post: only a follower in your web alerts,
+        // and with no graph yet nobody but your own accounts does.
+        XCTAssertTrue(NotificationPolicy.authorMayNotify("friend", type: "follow", trusted: ["friend"], own: []))
+        XCTAssertFalse(NotificationPolicy.authorMayNotify("stranger", type: "follow", trusted: trusted, own: []))
+        XCTAssertFalse(NotificationPolicy.authorMayNotify("stranger", type: "follow", trusted: [], own: []))
     }
 
     func testFollowerKeyMustBe64Hex() {

@@ -46,6 +46,12 @@ final class FeedDashboardStore: ObservableObject {
         let owner = ConfigService.shared.activeAccountHexPubkey
         guard !follows.isEmpty || !owner.isEmpty else { return }
         isLoading = true
+        // +N counts followers in your web only, the Followers page's rule.
+        let trusted = FeedService.shared.trustedPubkeys(for: owner)
+        let whitelist = ConfigService.shared.whitelistedHexPubkeys
+        let followerIsOutside: @Sendable (String) -> Bool = {
+            ContentFilter.isOutside(author: $0, owner: owner, whitelist: whitelist, trusted: trusted)
+        }
 
         let since = Int(Date().timeIntervalSince1970 - Self.window)
         let config = ConfigService.shared.config
@@ -87,6 +93,7 @@ final class FeedDashboardStore: ObservableObject {
                 events: events,
                 zapReceipts: zapEvents,
                 followers: followers,
+                followerIsOutside: followerIsOutside,
                 follows: Set(follows),
                 owner: owner,
                 blocked: ConfigService.shared.activeAccountBlockedHexPubkeys,
@@ -202,7 +209,7 @@ struct FeedDashboardSnapshot: Equatable {
     }
 
     static func build(events: [[String: Any]], zapReceipts: [[String: Any]], followers: FollowerSnapshot?,
-                      follows: Set<String>, owner: String, blocked: Set<String>,
+                      followerIsOutside: (String) -> Bool, follows: Set<String>, owner: String, blocked: Set<String>,
                       since: Int64, now: Int64) -> FeedDashboardSnapshot {
         var s = FeedDashboardSnapshot()
         var seen = Set<String>()
@@ -324,7 +331,7 @@ struct FeedDashboardSnapshot: Equatable {
         // The relay's ledger, not raw kind 3s: a refollow bot republishing
         // its list is not a new follower (#393).
         if let followers {
-            s.newFollowers = followers.current.filter { $0.isNews && $0.followedAt >= since }.count
+            s.newFollowers = followers.news(isOutside: followerIsOutside).filter { $0.followedAt >= since }.count
         }
         return s
     }

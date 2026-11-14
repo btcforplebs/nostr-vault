@@ -93,54 +93,18 @@ enum NotificationPolicy {
     /// already admitted the receipt on the zapper's standing (haven-go
     /// inboxTrustKey), and a relay from before that marker change names the
     /// lightning service, which is never in anyone's Web of Trust.
-    /// Follows pass as well: they are never dropped for trust, only told
-    /// differently (followIsNamed).
+    /// Follows are judged like posts: only a follower in your web alerts
+    /// (Logen 2026-11-14, the Followers page's rule); the rest wait behind
+    /// the Followers page's "Outside your web".
     static func authorMayNotify(_ author: String, type: String, trusted: Set<String>, own: Set<String>) -> Bool {
-        if author.isEmpty || type == "giftwrap" || type == "summary" || type == "zap" || type == "follow" { return true }
+        if author.isEmpty || type == "giftwrap" || type == "summary" || type == "zap" { return true }
         if own.contains(author) { return true }
         return trusted.contains(author)
-    }
-
-    /// Whether a new follower is announced by name ("Alice followed you").
-    /// Only someone in your Web of Trust is. Anyone else, and everyone while
-    /// the graph is empty (a brand-new account), is folded into one nameless
-    /// "N new followers" alert: a stranger's follow is the cheapest event to
-    /// forge, so it must not put a chosen name or picture on the lock screen,
-    /// but you still hear that you gained followers.
-    static func followIsNamed(_ follower: String, trusted: Set<String>) -> Bool {
-        trusted.contains(follower)
-    }
-
-    /// The folded alert once `follower` joins it. `showing` is the alert still
-    /// on screen (empty once it was tapped or cleared, so the count starts
-    /// over). Only the latest `cap` strangers ride along, so the alert stays
-    /// small however many follow; they exist to count a repeat once, and the
-    /// count itself is stored apart from them.
-    static func foldedFollowers(showing: FoldedFollowers, adding follower: String, cap: Int = 32) -> FoldedFollowers {
-        let count = max(showing.count, showing.members.count)
-        let repeat_ = showing.members.contains(follower)
-        let members = Array((showing.members.filter { $0 != follower } + [follower]).suffix(cap))
-        return FoldedFollowers(members: members, count: repeat_ ? count : count + 1)
-    }
-
-    /// Who the folded strangers' alert counts, and how many.
-    struct FoldedFollowers: Equatable {
-        var members: [String] = []
-        var count: Int = 0
-        /// Already on screen: an update to it changes the number, silently.
-        var isShowing: Bool { count > 0 }
     }
 
     /// A follower key as the relay marker should carry it: 64 hex characters.
     static func isPubkeyHex(_ s: String) -> Bool {
         s.count == 64 && s.allSatisfy(\.isHexDigit)
-    }
-
-    /// Title and body of the folded strangers' alert.
-    static func foldedFollowersText(count: Int) -> (String, String) {
-        count <= 1
-            ? ("New follower", "Someone new followed you. Tap to see your followers.")
-            : ("\(count) new followers", "Tap to see your followers")
     }
 
     /// Which account a notification is for, shown under its title. Nil with

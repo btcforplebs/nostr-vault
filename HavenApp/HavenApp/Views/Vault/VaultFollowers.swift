@@ -1,67 +1,8 @@
 import SwiftUI
 
-// MARK: - Follower ledger model
+// MARK: - Follower ledger read
 
-/// One owner's followers from the relay's follower ledger (`GetFollowersC`).
-/// The relay already sorts them newest follow first and puts each in a tier.
-struct FollowerSnapshot: Decodable {
-    struct Counts: Decodable {
-        let trusted: Int
-        let others: Int
-        let spam: Int
-        let unfollowed: Int
-    }
-
-    struct Entry: Decodable, Identifiable {
-        let pubkey: String
-        let tier: String
-        let following: Bool
-        /// Followed before the ledger started: not news.
-        let existing: Bool
-        let followedAt: Int64
-        /// Follow starts we saw; more than one means they left and came back.
-        let follows: Int
-        /// Their latest list time. For a follow that predates the ledger it is
-        /// the only "when" there is, so it orders those.
-        let listAt: Int64
-
-        var id: String { pubkey }
-        var isSpam: Bool { tier == "spam" }
-        var isReturning: Bool { follows > 1 }
-        /// A follow we watched happen: a first follow since the ledger began,
-        /// or a comeback. A refollow bot republishing its list is neither.
-        var isNews: Bool { following && !isSpam && (!existing || isReturning) }
-        var followedDate: Date { Date(timeIntervalSince1970: TimeInterval(followedAt)) }
-
-        enum CodingKeys: String, CodingKey {
-            case pubkey, tier, following, existing, follows
-            case followedAt = "followed_at"
-            case listAt = "list_at"
-        }
-    }
-
-    let counts: Counts
-    let followers: [Entry]
-
-    /// Current followers, spam left out, newest first: follows we watched
-    /// happen (the relay already sorts them newest first), then everyone who
-    /// followed before tracking began, newest list first.
-    var current: [Entry] {
-        let current = followers.filter { $0.following && !$0.isSpam }
-        let watched = current.filter(\.isNews)
-        let earlier = current.filter { !$0.isNews }.sorted { $0.listAt > $1.listAt }
-        return watched + earlier
-    }
-
-    func entries(for filter: FollowersFilter) -> [Entry] {
-        switch filter {
-        case .new: return Array(current.prefix(Self.newLimit))
-        case .all: return current
-        }
-    }
-
-    static let newLimit = 100
-
+extension FollowerSnapshot {
     /// Reads the ledger from the embedded relay. Nil while the relay is
     /// stopped or the ledger hasn't opened yet.
     static func load(owner: String) -> FollowerSnapshot? {
@@ -86,6 +27,15 @@ extension VaultView {
 
     private var followersSeenKey: String { "followersSeenAt.\(followersOwnerHex)" }
 
+    /// Whether a follower of `owner` is outside that account's web: the
+    /// Notes page's rule with the account's own web (each account judged by
+    /// its own, like its alerts).
+    func followerIsOutside(owner: String) -> (String) -> Bool {
+        let trusted = FeedService.shared.trustedPubkeys(for: owner)
+        let whitelist = configService.whitelistedHexPubkeys
+        return { ContentFilter.isOutside(author: $0, owner: owner, whitelist: whitelist, trusted: trusted) }
+    }
+
     /// Reloads the ledger, refreshes the red dot and asks for the profiles
     /// the list is about to show.
     func refreshFollowers() {
@@ -100,7 +50,8 @@ extension VaultView {
                     markFollowersSeen()
                 } else {
                     let seen = Int64(UserDefaults.standard.double(forKey: followersSeenKey))
-                    let hasNew = snapshot.followers.contains { $0.isNews && $0.followedAt > seen }
+                    // Only follows from inside your web light the dot.
+                    let hasNew = snapshot.news(isOutside: followerIsOutside(owner: owner)).contains { $0.followedAt > seen }
                     if hasNew != hasNewFollowers {
                         withAnimation(Motion.fade) { hasNewFollowers = hasNew }
                     }
@@ -133,22 +84,26 @@ extension VaultView {
         }
     }
 
-    /// The ledgers the chip shows: the active account's, or each picked
-    /// account's (read with the other accounts' pages). Nil until one is read.
-    var shownFollowerSnapshots: [FollowerSnapshot]? {
+    /// The ledgers the chip shows, with their owners: the active account's,
+    /// or each picked account's (read with the other accounts' pages). Nil
+    /// until one is read.
+    var shownFollowerSnapshots: [(owner: String, snapshot: FollowerSnapshot)]? {
         let me = followersOwnerHex.lowercased()
         let owners = pageOwners
-        guard owners != [me] else { return followerSnapshot.map { [$0] } }
-        let read = owners.sorted().compactMap { $0 == me ? followerSnapshot : otherFollowerSnapshots[$0] }
+        guard owners != [me] else { return followerSnapshot.map { [(me, $0)] } }
+        let read = owners.sorted().compactMap { owner in
+            (owner == me ? followerSnapshot : otherFollowerSnapshots[owner]).map { (owner, $0) }
+        }
         return read.isEmpty ? nil : read
     }
 
-    /// One ledger's entries as is; several merged (VaultAccountChips.mergeFollowers).
-    func followerEntries(_ snapshots: [FollowerSnapshot]) -> [FollowerSnapshot.Entry] {
-        guard snapshots.count > 1 else { return snapshots.first?.entries(for: followersFilter) ?? [] }
-        let merged = VaultAccountChips.mergeFollowers(snapshots.map(\.current), id: \.pubkey, isNews: \.isNews,
-                                                      followedAt: \.followedAt, listAt: \.listAt)
-        return followersFilter == .new ? Array(merged.prefix(FollowerSnapshot.newLimit)) : merged
+    /// Each ledger cut to the picked side of its own account's web; several
+    /// merged (VaultAccountChips.mergeFollowers).
+    func followerEntries(_ snapshots: [(owner: String, snapshot: FollowerSnapshot)]) -> [FollowerSnapshot.Entry] {
+        let lists = snapshots.map { $0.snapshot.entries(for: followersFilter, isOutside: followerIsOutside(owner: $0.owner)) }
+        guard lists.count > 1 else { return lists.first ?? [] }
+        return VaultAccountChips.mergeFollowers(lists, id: \.pubkey, isNews: \.isNews,
+                                                followedAt: \.followedAt, listAt: \.listAt)
     }
 
     @ViewBuilder
@@ -156,7 +111,7 @@ extension VaultView {
         if let snapshots = shownFollowerSnapshots {
             let entries = followerEntries(snapshots)
             LazyVStack(spacing: 0) {
-                followersSummary(snapshots)
+                followersSummary(entries.count)
                 if entries.isEmpty {
                     followersEmptyState
                 } else {
@@ -187,13 +142,14 @@ extension VaultView {
         }
     }
 
-    /// One count. Spam is left out on purpose.
-    private func followersSummary(_ snapshots: [FollowerSnapshot]) -> some View {
+    /// The count of the list on show. Spam is left out on purpose.
+    private func followersSummary(_ count: Int) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: "person.2.fill")
+            Image(systemName: followersFilter == .outside ? "person.crop.circle.badge.questionmark" : "person.2.fill")
                 .foregroundColor(.havenPurple)
-            // Several accounts: their totals added (someone following two counts twice).
-            Text("\(snapshots.reduce(0) { $0 + $1.counts.trusted + $1.counts.others }) followers")
+            Text(followersFilter == .outside
+                 ? "\(count) outside your web"
+                 : "\(count) \(count == 1 ? "follower" : "followers") in your web")
                 .font(.appSystem(size: 15, weight: .bold))
             Spacer()
         }
@@ -206,7 +162,7 @@ extension VaultView {
             Image(systemName: "person.2")
                 .font(.appSystem(size: 40, weight: .thin))
                 .foregroundColor(.havenPurple)
-            Text("No followers here yet")
+            Text(followersFilter == .outside ? "No followers outside your web" : "No followers in your web yet")
                 .font(.appSystem(size: 17, weight: .bold))
         }
         .frame(maxWidth: .infinity)

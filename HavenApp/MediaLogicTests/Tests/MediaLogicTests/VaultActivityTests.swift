@@ -256,6 +256,16 @@ final class VaultActivityTests: XCTestCase {
         XCTAssertNil(lines[1].openId)
     }
 
+    /// A follow from outside your web gets no line (Logen 2026-11-14): it is
+    /// on the Followers page's "Outside your web" list instead.
+    func testFollowLinesOnlyFromInsideYourWeb() {
+        let day1 = Int64(1_790_000_000)
+        let lines = build([], follows: [(ann, day1), (cat, day1 + 10)], isOutside: { $0 == self.cat })
+        XCTAssertEqual(lines.map(\.kind), [.follow])
+        XCTAssertEqual(lines[0].actors, [ann])
+        XCTAssertTrue(build([], follows: [(cat, day1)], isOutside: { $0 == self.cat }).isEmpty)
+    }
+
     func testNoOwnerNoLines() {
         XCTAssertTrue(VaultActivity.build(events: [event("x", ann, at: 1, tags: [["p", ""]])],
                                           owner: "", noteKinds: noteKinds).isEmpty)

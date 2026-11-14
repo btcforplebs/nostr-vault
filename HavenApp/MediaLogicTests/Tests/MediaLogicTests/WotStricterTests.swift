@@ -44,13 +44,15 @@ final class WotStricterTests: XCTestCase {
 
     // MARK: A
 
-    func testAllKeepsInsideLikesZapsAndFollowsButFoldsStrangersLikesAndReposts() {
+    func testAllKeepsInsideLikesAndZapsButFoldsStrangersLikesAndReposts() {
         let all = build()
         let reaction = all.first { $0.kind == .reaction }
         XCTAssertEqual(reaction?.actors, [friend])
         XCTAssertNil(all.first { $0.kind == .repost })
         XCTAssertEqual(all.first { $0.kind == .zap }?.actors, [s1], "a stranger's zap keeps its line")
-        XCTAssertEqual(all.first { $0.kind == .follow }?.actors, [s2], "a stranger's follow keeps its line")
+        // Logen 2026-11-14: a stranger's follow has no line; it waits on the
+        // Followers page's "Outside your web".
+        XCTAssertNil(all.first { $0.kind == .follow }, "a stranger's follow has no line")
         XCTAssertNil(all.first { $0.kind == .reply }, "an outside reply is left out, as before")
     }
 

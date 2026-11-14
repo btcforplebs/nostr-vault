@@ -33,13 +33,6 @@ extension ViewMode {
     }
 }
 
-/// Followers from the relay's follower ledger, spam left out: the latest
-/// ones, or everyone.
-enum FollowersFilter {
-    case new
-    case all
-}
-
 /// The "Vault" list's filters: everything, only what you might answer, or
 /// what tagged you from outside your web (Logen 11-04: the Notes "?" filter
 /// moved here, into the pill's ··· menu; All lists none of it).
@@ -123,8 +116,8 @@ enum VaultFilterChoice: Equatable {
         case .recipes: return "fork.knife"
         case .likes(.onMyNotes), .zaps(.onMyNotes): return "tray.and.arrow.down.fill"
         case .likes(.myLikes), .zaps(.myZaps): return "tray.and.arrow.up.fill"
-        case .followers(.new): return "sparkles"
-        case .followers(.all): return "person.3.fill"
+        case .followers(.inWeb): return "person.3.fill"
+        case .followers(.outside): return "person.crop.circle.badge.questionmark"
         }
     }
 
@@ -152,8 +145,8 @@ enum VaultFilterChoice: Equatable {
         case .likes(.myLikes): return "Likes given"
         case .zaps(.onMyNotes): return "Zaps received"
         case .zaps(.myZaps): return "Zaps given"
-        case .followers(.new): return "Newest followers"
-        case .followers(.all): return "All followers"
+        case .followers(.inWeb): return "Followers in your web"
+        case .followers(.outside): return "Outside your web"
         }
     }
 }

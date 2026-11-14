@@ -397,6 +397,7 @@ extension VaultView {
         // A follower alert lands on the Followers list; there is no event to find.
         if request.type == "followers" {
             viewMode = .followers
+            followersFilter = .inWeb
             return
         }
         switch request.type {
