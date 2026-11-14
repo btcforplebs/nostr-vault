@@ -11,6 +11,7 @@
   },
   "type": "module",
   "dependencies": {
+    "@napplet/shim": "0.38.1",
     "@scure/base": "2.0.0",
     "hls.js": "^1.7.3",
     "jsqr": "1.4.0",
