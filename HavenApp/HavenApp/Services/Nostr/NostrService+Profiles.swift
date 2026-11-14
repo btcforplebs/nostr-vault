@@ -132,7 +132,10 @@ extension NostrService {
         let now = Date()
         if now.timeIntervalSince(lastProfileSave) > profileSaveThrottle {
             lastProfileSave = now
-            ProfileRepository.saveProfiles(profiles)
+            // The accounts' own profiles and the active account's follows
+            // stay on disk whatever the cap drops.
+            let keep = ConfigService.shared.allAccountHexes.union(FeedService.shared.followedPubkeys.map { $0.lowercased() })
+            ProfileRepository.saveProfiles(profiles, keep: keep)
             ProfileRepository.saveRelayLists(relayLists)
             ProfileRepository.saveOutboxRelays(outboxRelays)
             ProfileRepository.saveDMRelayLists(dmRelayLists)
