@@ -235,9 +235,11 @@ import kotlinx.coroutines.withTimeoutOrNull
             // Start the relay
             Log.i(TAG, "Starting Go relay on port ${config.relayPort} (attempt ${retryCount + 1})")
             withContext(Dispatchers.IO) {
+                StartupMarks.markOnce("engine called")
                 // An earlier service's stop still queued would tear this run down (RelayStopper).
                 RelayForegroundService.awaitPendingStop()
                 HavenBridge.startRelay(importMode = false)
+                StartupMarks.markOnce("engine returned")
             }
 
             // Verify the relay is actually listening before declaring success
@@ -262,6 +264,7 @@ import kotlinx.coroutines.withTimeoutOrNull
             // serving; the 500 ms "settle" wait that used to sit here only held
             // the feed back on every launch.
             _readyForConnections.value = true
+            StartupMarks.markOnce("relay ready")
 
             // Start the health watchdog so we detect if Go dies post-startup
             startHealthWatchdog()
