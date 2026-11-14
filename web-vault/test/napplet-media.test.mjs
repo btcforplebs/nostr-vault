@@ -13,7 +13,7 @@ import { askWords, domainWord } from "../src/napplet/consent-words.js"
 
 const html = fs.readFileSync(new URL("../napplets/media/index.html", import.meta.url), "utf8")
 const box = {}
-vm.runInNewContext(`${html.slice(html.indexOf("// ---- pure"), html.indexOf("// ---- end pure ----"))}\n;Object.assign(box, { kindOf, mergeLists, sections, missingFrom, summary, FILTERS })`, { box, Date, URL })
+vm.runInNewContext(`${html.slice(html.indexOf("// ---- pure"), html.indexOf("// ---- end pure ----"))}\n;Object.assign(box, { kindOf, mergeLists, sections, missingFrom, summary, FILTERS, formatBytes, galleryStats, health, withNoteTiles, rangesOf, CHUNK })`, { box, Date, URL })
 const plain = x => JSON.parse(JSON.stringify(x))
 const H = c => c.repeat(64), ME = H("a"), OTHER = H("b")
 const S1 = "https://one.example", S2 = "https://two.example"
@@ -139,4 +139,39 @@ test("the Reader plays a note's video from shell bytes on a tap, and the Vault's
   assert.match(reader, /function videoSlot\(url\)[\s\S]*n\.resource\.bytes\(url\)/)
   const vault = fs.readFileSync(new URL("../src/screens/VaultScreen.jsx", import.meta.url), "utf8")
   assert.match(vault, /nappletsOn\(\) \? <MediaPane ctx=\{ctx\} filter=\{filter\} \/> : <BlossomGallery/)
+})
+
+test("media: the stats panel is the classic one (sizes, Backed Up unknown while a server is silent, health words)", () => {
+  assert.deepEqual([0, 512, 1500, 1_234_567, 2_000_000_000].map(box.formatBytes), ["Zero KB", "512 bytes", "2 KB", "1.2 MB", "2 GB"])
+  const A = "https://a.example", B = "https://b.example"
+  const files = [{ size: 10, servers: [A, B] }, { size: 5, servers: [A] }]
+  assert.deepEqual(plain(box.galleryStats(files, [A, B], { [A]: "ok", [B]: "ok" })), { totalFiles: 2, size: 15, mirrors: 2, answering: 2, backedUp: 1, percent: 50 })
+  assert.equal(box.galleryStats(files, [A, B], { [A]: "ok" }).percent, null)
+  assert.deepEqual([box.health("ok"), box.health(undefined, true), box.health(undefined), box.health("didn't answer"), box.health("401 unauthorized")], ["Healthy", "Checking…", "Offline", "Offline", "Refused · 401 unauthorized"])
+})
+
+test("media: a paired device's new file shows once as New until a server lists it; saved emoji images stay off Media", () => {
+  const S = c => c.repeat(64)
+  const files = box.mergeLists([{ server: "https://a.example", blobs: [{ sha256: S("1"), url: "https://a.example/1.jpg", uploaded: 100 }, { sha256: S("e"), url: "https://a.example/e.png", uploaded: 50 }] }])
+  const tiles = [{ sha256: S("2"), url: "https://a.example/2.mp4", type: "video/mp4", size: 9, uploaded: 200 }, { sha256: S("1"), url: "https://a.example/1.jpg", uploaded: 100 }, { sha256: "nope", url: "https://x" }, { sha256: S("3"), url: "javascript:1" }]
+  const out = plain(box.withNoteTiles(files, tiles, [S("e")]))
+  assert.deepEqual(out.map(b => [b.sha256[0], b.kind, !!b.fromNote, b.servers.length]), [["2", "video", true, 0], ["1", "photo", false, 1]])
+})
+
+test("media: big files come in 8 MB parts, small ones whole", () => {
+  assert.equal(box.rangesOf(box.CHUNK), null)
+  assert.equal(box.rangesOf(0), null)
+  assert.deepEqual(plain(box.rangesOf(box.CHUNK * 2 + 5)), [{ start: 0, end: box.CHUNK - 1 }, { start: box.CHUNK, end: box.CHUNK * 2 - 1 }, { start: box.CHUNK * 2, end: box.CHUNK * 2 + 4 }])
+  const html2 = fs.readFileSync(new URL("../napplets/media/index.html", import.meta.url), "utf8")
+  assert.match(html2, /#nv-bytes=\$\{r\.start\}-\$\{r\.end\}/)
+  assert.match(html2, /if \(part\.size !== r\.end - r\.start \+ 1\) throw/) // a server that ignored the range is caught
+})
+
+test("media pane: Posted in rows carry no tags or signature; live tiles map to the napplet's rows", () => {
+  const src = fs.readFileSync(new URL("../src/napplet/MediaPane.jsx", import.meta.url), "utf8")
+  // MediaPane.jsx is JSX (not loadable in node): its shapes are checked in its source.
+  assert.match(src, /return \{ id: ev\.id, pubkey: ev\.pubkey, createdAt: ev\.created_at, name: [^\n]*, preview: notePreview\(ev\.content\)\.slice\(0, 160\) \}/)
+  assert.match(src, /export const tileRows = tiles => tiles\.filter\(t => t\?\.urls\?\.length\)\.map\(t => \(\{ sha256: t\.sha256, url: t\.urls\[0\], type: t\.mime, size: t\.size, uploaded: t\.createdAt \}\)\)/)
+  assert.match(src, /actions: \{ media: \["open", "notes", "tiles"\] \}/)
+  assert.match(src, /archetype: "note", actions: \["open"\][\s\S]*location\.hash = `#\/thread\/\$\{p\.id\}`/)
 })

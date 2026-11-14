@@ -38,6 +38,21 @@
   .hosts { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 14px; }
   .hosts li span { color: var(--muted); }
   .acts { display: flex; flex-wrap: wrap; gap: 8px; }
+  #stats { margin: 10px 14px 0; }
+  #stats .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  #stats .stat { display: flex; flex-direction: column; gap: 2px; padding: 10px 8px; border-radius: 12px; background: var(--s1); border: 1px solid var(--hair); min-width: 0; }
+  #stats .stat span { color: var(--muted); font-size: 12px; }
+  #stats .stat strong { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #stats details { margin-top: 8px; padding: 8px 12px; border-radius: 12px; background: var(--s1); border: 1px solid var(--hair); font-size: 13px; }
+  #stats .srv { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+  #stats .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: #ff453a; }
+  #stats .dot.ok { background: #33d980; }
+  #stats .host { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, monospace; }
+  .tile .new { position: absolute; left: 6px; top: 6px; font-size: 11px; color: #000; background: var(--accent); border-radius: 6px; padding: 1px 6px; font-weight: 650; }
+  #vnotes { display: grid; gap: 6px; }
+  #vnotes .head { color: var(--muted); font-size: 13px; }
+  #vnotes button { display: grid; gap: 2px; text-align: left; border-radius: 12px; padding: 8px 12px; min-height: 44px; }
+  #vnotes button span { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -49,6 +64,7 @@
   <label class="button primary" id="upLabel">Upload<input id="up" type="file" accept="image/*,video/*,audio/*" multiple hidden></label>
   <button id="refresh" aria-label="Look again">↻</button>
 </header>
+<section id="stats" aria-label="Media servers" hidden></section>
 <div id="status" role="status"></div>
 <main id="grid"></main>
 <section id="viewer" hidden aria-label="File">
@@ -60,6 +76,7 @@
     <ul class="hosts" id="vhosts"></ul>
     <div class="acts"><button id="copy">Copy link</button><button id="mirror">Copy to missing servers</button><button id="del" class="danger">Delete from mirrors</button></div>
     <div id="vnote" style="color:var(--muted);font-size:13px"></div>
+    <div id="vnotes" aria-label="Notes that use it"></div>
   </div>
 </section>
 <script>
@@ -116,33 +133,88 @@ function summary(results, verb) {
   const ok = results.filter(r => r.ok).length, bad = results.filter(r => !r.ok).map(r => `${host(r.server)}: ${r.error || "refused"}`)
   return `${verb} on ${ok} of ${results.length} server${results.length === 1 ? "" : "s"}${bad.length ? `. ${bad.join(" · ")}` : "."}`
 }
+/** "1.2 GB", as the classic stats panel (BlossomStats.jsx formatBytes, the iPhone's ByteCountFormatter). */
+function formatBytes(n) {
+  if (!(n > 0)) return "Zero KB"
+  const units = ["bytes", "KB", "MB", "GB", "TB"]
+  let i = 0, v = n
+  while (v >= 1000 && i < units.length - 1) { v /= 1000; i++ }
+  return i === 0 ? `${v} bytes` : `${i >= 2 ? v.toFixed(1).replace(/\.0$/, "") : Math.round(v)} ${units[i]}`
+}
+/** BlossomStats.jsx galleryStats: a server that didn't answer could hold anything, so Backed Up is then unknown. */
+function galleryStats(blobs, servers, status) {
+  const answering = servers.filter(s => status[s] === "ok").length
+  const backedUp = blobs.filter(b => servers.length > 0 && servers.every(s => b.servers.includes(s))).length
+  return {
+    totalFiles: blobs.length, size: blobs.reduce((n, b) => n + (b.size || 0), 0), mirrors: servers.length, answering,
+    backedUp, percent: answering < servers.length ? null : blobs.length ? Math.floor((backedUp / blobs.length) * 100) : 0,
+  }
+}
+/** BlossomStats.jsx health: Healthy, Checking…, Offline, or Refused with the server's reason. */
+const health = (st, pending = false) => (st === "ok" ? "Healthy" : !st && pending ? "Checking…" : !st || st === "didn't answer" || /fetch|network/i.test(st) ? "Offline" : `Refused · ${st}`)
+/** The classic page's merge (blossom-gallery.js mergeNoteTiles + withoutEmoji): a file a paired device just added (a
+ *  live file note, not listed by a server yet) shows as "New"; saved emoji images show on the Emoji page, not here. */
+function withNoteTiles(files, tiles, emojiOnly) {
+  const listed = new Set(files.map(b => b.sha256)), hidden = new Set(emojiOnly ?? [])
+  const added = (tiles ?? []).filter(t => HEX.test(t?.sha256 ?? "") && !listed.has(t.sha256) && /^https?:\/\//i.test(t.url ?? ""))
+    .map(t => { const b = { sha256: t.sha256, url: t.url, type: String(t.type ?? ""), size: Number(t.size) || 0, uploaded: Number(t.uploaded) || 0, servers: [], fromNote: true }; return { ...b, kind: kindOf(b) } })
+  const all = added.length ? [...added, ...files].sort((a, b) => b.uploaded - a.uploaded) : files
+  return hidden.size ? all.filter(b => !hidden.has(b.sha256)) : all
+}
+/** Byte ranges for a big file, each small enough to come through the shell well inside the shim's 30 s wait. */
+const CHUNK = 8 * 1024 * 1024
+function rangesOf(size, chunk = CHUNK) {
+  if (!(size > chunk)) return null
+  const out = []
+  for (let start = 0; start < size; start += chunk) out.push({ start, end: Math.min(size, start + chunk) - 1 })
+  return out
+}
 // ---- end pure ----
 
 const n = window.napplet || {}
 const $ = id => document.getElementById(id)
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
 let me = "", servers = [], files = [], filter = "all", sort = "newest", open = null, loading = false
+let said = {}, noteTiles = [], emojiOnly = [] // said: server -> "ok" or why not; the rest from the shell (media/tiles)
+const handled = new Set() // "New" files copied or deleted here: the shell's later tile lists keep them, so they're kept out
+const listed = () => withNoteTiles(files, noteTiles.filter(t => !handled.has(t.sha256)), emojiOnly)
 const thumbs = new Map()
 const status = t => { $("status").textContent = t }
 
 async function load() {
   if (loading) return
-  loading = true; status("Asking your media servers…"); $("refresh").disabled = true
+  loading = true; status("Asking your media servers…"); $("refresh").disabled = true; said = {}
   try {
     servers = ((await n.blossom.servers()).servers ?? []).slice(0, 8)
+    drawStats()
     const lists = [], problems = []
     await Promise.all(servers.map(async server => {
       try {
         const r = await n.blossom.list({ server, pubkey: me })
-        if (r.ok) lists.push({ server, blobs: r.blobs }); else problems.push(`${new URL(server).host}: ${r.error}`)
+        if (r.ok) { lists.push({ server, blobs: r.blobs }); said[server] = "ok" } else { problems.push(`${new URL(server).host}: ${r.error}`); said[server] = String(r.error || "refused") }
         files = mergeLists(lists); draw()
-      } catch (e) { problems.push(`${server}: ${e.message}`) }
+      } catch (e) { problems.push(`${server}: ${e.message}`); said[server] = "didn't answer" }
     }))
     files = mergeLists(lists)
     status(`${files.length} file${files.length === 1 ? "" : "s"} on ${servers.length - problems.length} of ${servers.length} servers${problems.length ? `. ${problems.join(" · ")}` : ""}`)
   } catch (e) { status(`Couldn't ask your servers: ${e.message}`) }
   loading = false; $("refresh").disabled = false
   draw()
+}
+// The classic page's stats (BlossomStats.jsx): Total Files, Storage Used, Active Servers, Backed Up, then each server.
+function drawStats() {
+  const box = $("stats")
+  if (!servers.length) { box.hidden = true; return }
+  const st = galleryStats(files, servers, said)
+  const host = u => { try { return new URL(u).host } catch { return u } }
+  const tiles = el("div", "tiles")
+  for (const [t, v] of [["Total Files", st.totalFiles.toLocaleString()], ["Storage Used", formatBytes(st.size)], ["Active Servers", `${st.answering}/${st.mirrors}`], ["Backed Up", loading ? "…" : st.percent == null ? "?" : `${st.percent}%`]]) {
+    const d = el("div", "stat"); d.append(el("span", "", t), el("strong", "", v)); tiles.append(d)
+  }
+  const det = el("details"), sum = el("summary", "", `${servers.length} configured${loading ? "" : st.percent == null ? ` · ${st.mirrors - st.answering} didn't list your files, so Backed Up can't be told` : st.backedUp < st.totalFiles ? ` · ${(st.totalFiles - st.backedUp).toLocaleString()} not on every server` : ""}`)
+  det.open = box.querySelector("details")?.open ?? false
+  det.append(sum, ...servers.map(sv => { const r = el("div", "srv"); r.append(el("span", `dot${said[sv] === "ok" ? " ok" : ""}`), el("span", "host", host(sv)), el("span", "", health(said[sv], loading))); return r }))
+  box.replaceChildren(tiles, det); box.hidden = false
 }
 
 let inFlight = 0; const queue = []
@@ -161,14 +233,16 @@ function tile(b) {
   if (b.kind === "photo" || b.kind === "gif") { const i = el("img"); i.alt = ""; i.dataset.src = b.url; seen.observe(i); t.append(i) }
   else t.append(el("div", "ph", b.kind === "video" ? "▶" : b.kind === "audio" ? "♪" : "▢"))
   if (b.kind !== "photo") t.append(el("span", "k", b.kind === "gif" ? "GIF" : b.kind === "video" ? `Video ${bytes(b.size)}` : bytes(b.size)))
-  if (servers.length > 1) t.append(el("span", "n", `${b.servers.length}/${servers.length}`))
+  if (b.fromNote) { const x = el("span", "new", "New"); x.title = "Just added from one of your devices"; t.append(x) }
+  else if (servers.length > 1) t.append(el("span", "n", `${b.servers.length}/${servers.length}`))
   t.onclick = () => show(b)
   return t
 }
 function draw() {
-  const shown = files.filter(FILTERS[filter])
+  drawStats()
+  const all = listed(), shown = all.filter(FILTERS[filter])
   const parts = sections(shown, sort).flatMap(s => { const g = el("div", "grid"); g.append(...s.blobs.map(tile)); return s.day ? [el("h2", "", s.day), g] : [g] })
-  $("grid").replaceChildren(...(parts.length ? parts : [el("p", "empty", loading ? "" : files.length ? "Nothing of this kind." : "No files on your media servers yet. Upload one, or post a picture.")]))
+  $("grid").replaceChildren(...(parts.length ? parts : [el("p", "empty", loading ? "" : all.length ? "Nothing of this kind." : "No files on your media servers yet. Upload one, or post a picture.")]))
 }
 
 async function show(b) {
@@ -176,6 +250,9 @@ async function show(b) {
   $("viewer").hidden = false; document.body.style.overflow = "hidden"
   $("vkind").textContent = `${b.kind === "gif" ? "GIF" : b.kind[0].toUpperCase() + b.kind.slice(1)} · ${bytes(b.size)}`
   $("vlink").textContent = b.url; $("vnote").textContent = ""
+  // Posted in N notes: the shell looks through your vault's notes (napplet:media/postedIn) and answers with media/notes.
+  $("vnotes").replaceChildren(el("div", "head", "Looking for notes that use it…"))
+  n.intent?.invoke("napplet:media/postedIn", { payload: { sha256: b.sha256, url: b.url } }).catch(() => $("vnotes").replaceChildren())
   $("vmeta").textContent = b.uploaded ? `Uploaded ${new Date(b.uploaded * 1000).toLocaleString()}` : ""
   const miss = missingFrom(b, servers)
   $("vhosts").replaceChildren(...servers.map(s => { const li = el("li"); li.append(b.servers.includes(s) ? "✓ " : "– ", new URL(s).host, el("span", "", b.servers.includes(s) ? "" : "  not here")); return li }))
@@ -188,7 +265,7 @@ async function show(b) {
     play.onclick = async () => {
       play.disabled = true; play.textContent = "Loading…"
       try {
-        const blob = await n.resource.bytes(b.url)
+        const blob = await bytesOf(b, done => { if (open === b) play.textContent = `Loading… ${done}%` })
         if (open !== b) return
         const v = el(b.kind === "video" ? "video" : "audio"); v.controls = true; v.playsInline = true; v.src = URL.createObjectURL(blob)
         stage.replaceChildren(v); v.play().catch(() => {})
@@ -196,6 +273,31 @@ async function show(b) {
     }
     stage.replaceChildren(play)
   } else stage.replaceChildren(el("div", "ph", "No preview for this kind of file."))
+}
+/** The whole file through the shell; a big one in 8 MB parts (rangesOf), each well inside the shim's 30 s wait. A
+ *  server that answers a part with something else (it ignored the range) is caught, not glued together. */
+const MAX_WHOLE = 1024 * 1024 * 1024
+async function bytesOf(b, progress = () => {}) {
+  const parts = b.size <= MAX_WHOLE ? rangesOf(b.size) : null
+  if (b.size > MAX_WHOLE) throw new Error("it's over 1 GB, too big to play here")
+  if (!parts) return n.resource.bytes(b.url)
+  const got = []
+  for (const [i, r] of parts.entries()) {
+    const part = await n.resource.bytes(`${b.url.split("#")[0]}#nv-bytes=${r.start}-${r.end}`)
+    if (part.size !== r.end - r.start + 1) throw new Error("this server didn't send the file in parts")
+    got.push(part); progress(Math.floor(((i + 1) / parts.length) * 100))
+  }
+  return new Blob(got, { type: b.type || got[0]?.type || "" })
+}
+function drawNotes(sha256, notes) {
+  if (!open || open.sha256 !== sha256) return
+  if (!notes.length) { $("vnotes").replaceChildren(el("div", "head", "No note on your vault uses this file.")); return }
+  $("vnotes").replaceChildren(el("div", "head", `Posted in ${notes.length === 1 ? "1 note" : `${notes.length} notes`}`), ...notes.map(x => {
+    const r = el("button"); r.type = "button"
+    r.append(el("b", "", `${x.name || `${x.pubkey.slice(0, 8)}…`} · ${dayLabel(x.createdAt)}`), el("span", "", x.preview || ""))
+    r.onclick = () => n.intent?.invoke("napplet:note/open", { payload: { id: x.id } }).catch(() => {})
+    return r
+  }))
 }
 function hide() {
   open = null; $("viewer").hidden = true; document.body.style.overflow = ""
@@ -209,6 +311,7 @@ $("mirror").onclick = async () => {
   $("mirror").disabled = true; $("vnote").textContent = "Copying…"
   const results = await Promise.all(miss.map(async server => { try { const r = await n.blossom.mirror({ server, url: b.url, sha256: b.sha256 }); return { server, ok: r.ok, error: r.error } } catch (e) { return { server, ok: false, error: e.message } } }))
   for (const r of results) if (r.ok && !b.servers.includes(r.server)) b.servers.push(r.server)
+  if (b.fromNote && b.servers.length) { handled.add(b.sha256); delete b.fromNote; files = [b, ...files.filter(f => f.sha256 !== b.sha256)] } // now a listed file
   $("vnote").textContent = summary(results, "Copied"); if (open === b) show(b); $("vnote").textContent = summary(results, "Copied")
   draw()
 }
@@ -222,6 +325,7 @@ $("del").onclick = async () => {
   $("del").disabled = false
   if (results.length === 1 && results[0].error === "the user said no") { $("vnote").textContent = "Kept."; return }
   b.servers = b.servers.filter(s => !results.some(r => r.ok && r.server === s))
+  if (b.fromNote) handled.add(b.sha256)
   if (!b.servers.length) { files = files.filter(f => f !== b); hide() } else $("vnote").textContent = summary(results, "Deleted")
   status(summary(results, "Deleted")); draw()
 }
@@ -246,7 +350,13 @@ $("refresh").onclick = load
   const s = await n.storage?.getItem("sort").catch(() => null)
   if (s && ["newest", "oldest", "type"].includes(s)) { sort = s; $("sort").value = s }
   // The Vault's Media pill picks the filter (napplet:media/open { filter }).
-  n.intent?.onDelivery?.(d => { if (d?.archetype === "media") setFilter(d.payload?.filter ?? "all") })
+  n.intent?.onDelivery?.(d => {
+    if (d?.archetype !== "media") return
+    if (d.action === "notes") return drawNotes(d.payload?.sha256, Array.isArray(d.payload?.notes) ? d.payload.notes : [])
+    // Live file notes (the classic page's watchFileNotes, run by the shell): a paired device's upload shows at once.
+    if (d.action === "tiles") { noteTiles = Array.isArray(d.payload?.tiles) ? d.payload.tiles : []; emojiOnly = Array.isArray(d.payload?.emojiOnly) ? d.payload.emojiOnly : []; draw(); return }
+    setFilter(d.payload?.filter ?? "all")
+  })
   me = await n.identity.getPublicKey().catch(() => "")
   if (!n.blossom || !me) { status("This shell can't show your media servers' files."); return }
   load()

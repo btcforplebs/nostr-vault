@@ -13,6 +13,16 @@ import { blossomHandler } from "./blossom-dispatch.js"
 import { dmHandler } from "./dm-dispatch.js"
 import { DELAYED_KINDS } from "./publish-delay.js"
 
+/** "https://x/f.mp4#nv-bytes=0-8388607" -> { url: "https://x/f.mp4", range: { start: 0, end: 8388607 } }; any other
+ *  link comes back as it is, with no range. Only http(s) links: a blossom: name is fetched whole and checked. */
+export function rangeInUrl(url) {
+  const m = typeof url === "string" ? /^(https?:\/\/[^#]*)#nv-bytes=(\d{1,15})-(\d{1,15})?$/i.exec(url) : null
+  if (!m) return { url, range: undefined }
+  const start = Number(m[2]), end = m[3] === undefined ? undefined : Number(m[3])
+  if (end !== undefined && end < start) return { url, range: undefined }
+  return { url: m[1], range: { start, end } }
+}
+
 export const MAX_EVENTS = 500
 export const MAX_FILTERS = 10
 export const STORAGE_KEY_MAX = 256
@@ -259,8 +269,11 @@ export function createHandlers({ ident, grant, domains, deps }) {
       if (m.type === "resource.bytes") {
         try {
           // `range` ({ start, end? } bytes, inclusive end) is our extension: long video without the whole file first.
-          const range = m.range && Number.isInteger(m.range.start) && m.range.start >= 0 ? { start: m.range.start, end: Number.isInteger(m.range.end) ? m.range.end : undefined } : undefined
-          const { blob, mime } = await one(m.url, m.servers, range)
+          // The shim (0.38) passes only url and servers on, so a napplet can also name the range in the link's
+          // fragment ("#nv-bytes=START-END", rangeInUrl), which is never sent to a server.
+          const inUrl = rangeInUrl(m.url)
+          const range = m.range && Number.isInteger(m.range.start) && m.range.start >= 0 ? { start: m.range.start, end: Number.isInteger(m.range.end) ? m.range.end : undefined } : inUrl.range
+          const { blob, mime } = await one(inUrl.url, m.servers, range)
           return { type: "resource.bytes.result", id, blob, mime }
         } catch (e) { return { type: "resource.bytes.error", id, error: e?.code ?? "network-error", message: err(e) } }
       }
