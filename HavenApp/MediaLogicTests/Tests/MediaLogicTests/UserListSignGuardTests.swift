@@ -96,6 +96,9 @@ final class UserListSignGuardTests: XCTestCase {
             // Restore of a list version the vault kept: only on a tap, after a fresh
             // editBase, the undo copy in the vault, and the person seeing the change.
             "HavenApp/Services/Nostr/NostrService+ListRestore.swift": ["old.kind"],
+            // Emoji list (10030) and emoji sets (30030) through ListVersionSave: a fresh editBase, the undo copy
+            // in the vault first, the vault keeps the new version before relays (EmojiListHistoryGuardTests).
+            "HavenApp/Services/Nostr/NostrService+ListVersionSave.swift": ["kind"],
             "HavenApp/Services/Nostr/NostrService+Lookups.swift": ["VertexReputation.requestKind"],
             "HavenApp/Services/Nostr/NostrService+Signing.swift": ["_", "eventJSON", "kind"],
         ])

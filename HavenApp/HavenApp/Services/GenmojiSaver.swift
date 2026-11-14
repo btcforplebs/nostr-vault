@@ -49,15 +49,14 @@ final class GenmojiSaver: ObservableObject {
 
         state = .working("Saving to \(title)…")
         let emoji = CustomEmoji(shortcode: shortcode, url: url, setAddress: address)
-        let event = await nostr.publishMergedList(kind: 30030, author: me, signAsNpub: nil, dTag: d) { published in
-            if let published { _ = await VaultSocket.publish(published) }
-            return (GenmojiSets.setTags(base: published?.tags, d: d, title: title, adding: emoji), published?.content ?? "")
+        // Old set kept in the vault first, new one stored there before relays (ListVersionSave).
+        let saved = await nostr.saveListVersion(kind: 30030, author: me, dTag: d, verb: "save") { published in
+            .ready(tags: GenmojiSets.setTags(base: published?.tags, d: d, title: title, adding: emoji), content: published?.content ?? "")
         }
-        guard let event else {
-            state = .failed("Your set couldn't be read or signed, so it wasn't changed. The image is uploaded; try Save again.")
+        if case .refused(let message, _) = saved {
+            state = .failed("\(message) The image is uploaded; try Save again.")
             return
         }
-        _ = await VaultSocket.publish(event)
 
         let library = EmojiListService.shared
         if !library.library.sets.contains(where: { $0.address == address }) {
