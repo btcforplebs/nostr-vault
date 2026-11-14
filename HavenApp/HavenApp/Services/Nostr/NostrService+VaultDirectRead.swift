@@ -28,34 +28,62 @@ extension NostrService {
                                                now: Int64(Date().timeIntervalSince1970))
         let authors = VaultView.activitySources(ConfigService.shared).authors
         let filters = Self.vaultFilters(ownerHex: owner, authors: authors, until: nil, since: since)
+        let passes = VaultDirectRead.storePasses(filters, split: since == nil)
         // Local, so processEvent never injects these back into the relay.
         let local = ConfigService.shared.config.nostrURL
         let generation = eventsResetGeneration
         if vaultStoreAnswered != owner { RelayProcessManager.shared.startupMark("vault store asked") }
 
         Task.detached(priority: .userInitiated) { [weak self] in
-            let rows = Self.queryVaultStore(filters: filters)
+            // Not ready while the engine starts: ask again every 20 ms rather
+            // than wait for the "ready" log line (VaultDirectRead.retriesNotReady).
+            let asked = Date()
+            var rows = Self.queryVaultStore(filters: passes.first)
+            while rows == nil {
+                let booting = await MainActor.run { RelayProcessManager.shared.state == .booting }
+                guard VaultDirectRead.retriesNotReady(booting: booting, waited: Date().timeIntervalSince(asked)) else { break }
+                try? await Task.sleep(nanoseconds: VaultDirectRead.notReadyRetry)
+                rows = Self.queryVaultStore(filters: passes.first)
+            }
             if let rows, rows.isEmpty == false { RelayProcessManager.startupMarkOffMain("vault store answered \(rows.count)") }
             guard let self else { return }
             guard let rows else {
                 await MainActor.run { self.vaultStoreReadDone(account: nil) }
                 return
             }
-            // The socket's queue: the same ordering and threading as its events.
-            self.processingQueue.async { [weak self] in
-                guard let self else { return }
-                for row in rows { self.processEvent(row, from: local) }
-                if rows.isEmpty == false { RelayProcessManager.startupMarkOffMain("vault store rows taken \(rows.count)") }
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    // A switch meanwhile: these were the old account's.
-                    let current = generation == self.eventsResetGeneration && self.activeHexPubkey.lowercased() == owner
-                    self.flushEventBuffer()
-                    self.events.sort(by: { $0.created_at > $1.created_at })
-                    self.vaultStoreReadDone(account: current ? owner : nil)
-                    self.eventUpdateSubject.send()
-                    if current, rows.isEmpty == false { RelayProcessManager.shared.startupMark("vault store read \(rows.count)") }
+            await self.takeStoreRows(rows, owner: owner, generation: generation, from: local) { current in
+                self.vaultStoreReadDone(account: current ? owner : nil)
+                if current, rows.isEmpty == false { RelayProcessManager.shared.startupMark("vault store read \(rows.count)") }
+                // The follower lists after the rows are up; they don't hold
+                // the list (the read is done), and a miss here leaves them to
+                // the socket as before.
+                guard current, !passes.after.isEmpty else { return }
+                Task.detached(priority: .utility) { [weak self] in
+                    guard let lists = Self.queryVaultStore(filters: passes.after), !lists.isEmpty, let self else { return }
+                    await self.takeStoreRows(lists, owner: owner, generation: generation, from: local) { current in
+                        if current { RelayProcessManager.shared.startupMark("vault store lists \(lists.count)") }
+                    }
                 }
+            }
+        }
+    }
+
+    /// Store rows through the socket's path (processingQueue, processEvent),
+    /// then published on main; done gets whether they still belong to the
+    /// active account (a switch meanwhile: they were the old account's).
+    private func takeStoreRows(_ rows: [[String: Any]], owner: String, generation: Int, from local: String,
+                               done: @escaping @MainActor (Bool) -> Void) {
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            for row in rows { self.processEvent(row, from: local) }
+            if rows.isEmpty == false { RelayProcessManager.startupMarkOffMain("vault store rows taken \(rows.count)") }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let current = generation == self.eventsResetGeneration && self.activeHexPubkey.lowercased() == owner
+                self.flushEventBuffer()
+                self.events.sort(by: { $0.created_at > $1.created_at })
+                done(current)
+                self.eventUpdateSubject.send()
             }
         }
     }

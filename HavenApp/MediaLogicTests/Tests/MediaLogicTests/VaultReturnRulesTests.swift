@@ -165,3 +165,34 @@ final class VaultReturnRulesTests: XCTestCase {
         XCTAssertFalse(capture.contains("newActivityModes.formUnion(landed)"))
     }
 }
+
+final class VaultStorePassesTests: XCTestCase {
+    func testFirstReadPutsFollowerListsInTheSecondPass() {
+        let filters: [[String: Any]] = [
+            ["kinds": [1, 20], "limit": 400],
+            ["kinds": [0, 3, 7], "limit": 200, "#p": ["me"]],
+            ["kinds": [3], "limit": 50],
+        ]
+        let passes = VaultDirectRead.storePasses(filters, split: true)
+        XCTAssertEqual(passes.first.map { $0["kinds"] as? [Int] }, [[1, 20], [0, 7]])
+        XCTAssertEqual(passes.first[1]["#p"] as? [String], ["me"])
+        XCTAssertEqual(passes.first[1]["limit"] as? Int, 200)
+        XCTAssertEqual(passes.after.map { $0["kinds"] as? [Int] }, [[3], [3]])
+        XCTAssertEqual(passes.after[0]["#p"] as? [String], ["me"])
+        XCTAssertEqual(passes.after[1]["limit"] as? Int, 50)
+    }
+
+    func testLaterReadsStayOnePass() {
+        let filters: [[String: Any]] = [["kinds": [0, 3, 7], "since": 5]]
+        let passes = VaultDirectRead.storePasses(filters, split: false)
+        XCTAssertEqual(passes.first.count, 1)
+        XCTAssertEqual(passes.first[0]["kinds"] as? [Int], [0, 3, 7])
+        XCTAssertTrue(passes.after.isEmpty)
+    }
+
+    func testNotReadyRetriesOnlyWhileStartingAndBounded() {
+        XCTAssertTrue(VaultDirectRead.retriesNotReady(booting: true, waited: 0.1))
+        XCTAssertFalse(VaultDirectRead.retriesNotReady(booting: false, waited: 0.1))
+        XCTAssertFalse(VaultDirectRead.retriesNotReady(booting: true, waited: VaultDirectRead.notReadyGiveUp))
+    }
+}

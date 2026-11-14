@@ -45,6 +45,44 @@ enum VaultDirectRead {
         answeredBefore ? VaultActivity.refreshSince(newest: newest, now: now) : nil
     }
 
+    /// A first store read's filters in two passes (startup, Logen
+    /// 2026-11-14: rows < 0.5 s): the row kinds first, then the follower
+    /// lists (kind 3). On a phone those lists were 213 of 400 events and most
+    /// of a 15 MB answer, and the rows don't need them to draw. Each filter
+    /// that asks for kind 3 is cut in two, same limit, so neither pass starves
+    /// the other. Later reads (only what's new) stay one pass.
+    static func storePasses(_ filters: [[String: Any]], split: Bool) -> (first: [[String: Any]], after: [[String: Any]]) {
+        guard split else { return (filters, []) }
+        var first: [[String: Any]] = []
+        var after: [[String: Any]] = []
+        for filter in filters {
+            guard let kinds = filter["kinds"] as? [Int], kinds.contains(3) else {
+                first.append(filter)
+                continue
+            }
+            let rest = kinds.filter { $0 != 3 }
+            if !rest.isEmpty {
+                var f = filter
+                f["kinds"] = rest
+                first.append(f)
+            }
+            var lists = filter
+            lists["kinds"] = [3]
+            after.append(lists)
+        }
+        return (first, after)
+    }
+
+    /// Whether a store read that came back not ready tries again (every
+    /// notReadyRetry): only while the engine is still starting, up to
+    /// notReadyGiveUp. The read no longer waits for the "ready" log line,
+    /// which reached the app ~180 ms after the store could answer.
+    static func retriesNotReady(booting: Bool, waited: TimeInterval) -> Bool {
+        booting && waited < notReadyGiveUp
+    }
+    static let notReadyRetry: UInt64 = 20_000_000 // 20 ms
+    static let notReadyGiveUp: TimeInterval = 5
+
     /// `since` for the socket read of a refresh. After a store read the
     /// socket only tops up; a full refresh still reads everything when the
     /// store didn't answer, or from a Mac relay, which the store can't see.
