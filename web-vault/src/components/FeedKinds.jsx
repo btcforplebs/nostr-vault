@@ -2,7 +2,7 @@
 // an article (ArticleInlineBody), a highlight (HighlightInlineBody) and a poll (PollCardView). The card around them
 // keeps its header, its actions and its tap to the thread; an article's thread is the article itself.
 import { useEffect, useState } from "preact/hooks"
-import { verifyEvent } from "nostr-tools/pure"
+import { verifiedCopy } from "../net/thread.js"
 import { NoteText } from "./NoteText.jsx"
 import { QuotedNote } from "./QuotedNote.jsx"
 import { LinkCard } from "./LinkCard.jsx"
@@ -94,7 +94,7 @@ function PollBody({ poll, memoryOnly }) {
     setLoading(true)
     pool.querySync(relays, { kinds: [VOTE_KIND], "#e": [poll.id], limit: 1000 }, { maxWait: 6000 }).then(found => {
       const store = votes.get(poll.id) ?? { events: new Map(), at: 0 }
-      for (const ev of found) if (ev?.kind === VOTE_KIND && verifyEvent({ ...ev })) store.events.set(ev.id, ev)
+      for (const ev of found) if (ev?.kind === VOTE_KIND && verifiedCopy(ev)) store.events.set(ev.id, ev)
       store.at = Date.now()
       votes.set(poll.id, store)
       if (live) setEvs([...store.events.values()])

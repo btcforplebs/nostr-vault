@@ -3,7 +3,7 @@
 // the same signed event to the relays you tick. Nothing is signed here: the event goes out exactly as it came in.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { neventEncode, noteEncode, npubEncode } from "nostr-tools/nip19"
-import { verifyEvent } from "nostr-tools/pure"
+import { verifiedCopy } from "../net/thread.js"
 import { Dialog } from "./Moderation.jsx"
 import { AuthorName } from "./NoteCard.jsx"
 import { pool, uniq } from "../net/pool.js"
@@ -35,7 +35,7 @@ export function EventInfoButton({ event, account }) {
 
 function EventInfo({ event, account, onClose }) {
   const ev = signedFields(event)
-  const [valid] = useState(() => { try { return verifyEvent({ ...ev }) } catch { return false } })
+  const [valid] = useState(() => { try { return !!verifiedCopy(ev) } catch { return false } })
   const [copied, setCopied] = useState("")
   const [showJson, setShowJson] = useState(false)
   const { relays, ticked: initial } = infoRelays(account)

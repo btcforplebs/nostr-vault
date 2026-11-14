@@ -3,7 +3,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { registerHooks } from "node:module"
-import { readFileSync } from "node:fs"
+import fs, { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils" // Vite 8's own transformer
 import { generateSecretKey, finalizeEvent, verifyEvent, verifiedSymbol } from "nostr-tools/pure"
@@ -212,4 +212,13 @@ test("a network sync still running for the previous note doesn't take over the n
     pool.querySync = querySync
     pool.subscribeEose = subscribeEose
   }
+})
+
+test("no screen verifies a spread copy: a spread keeps nostr-tools' verified flag, so it must be a field-pick (verifiedCopy)", () => {
+  const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => (e.isDirectory() ? walk(`${d}/${e.name}`) : /\.(js|jsx)$/.test(e.name) ? [`${d}/${e.name}`] : []))
+  const root = new URL("../src", import.meta.url).pathname
+  const files = walk(root)
+  assert.ok(files.length > 50) // the scan sees the tree
+  const bad = files.filter(f => /verifyEvent\(\s*\{\s*\.\.\./.test(fs.readFileSync(f, "utf8")))
+  assert.deepEqual(bad, [])
 })
