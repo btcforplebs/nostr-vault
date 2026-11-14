@@ -215,13 +215,25 @@ func TestTidyRecoversAStoppedSwap(t *testing.T) {
 
 	// Stopped after the copy came in, before the old was removed: old goes.
 	p = filepath.Join(base, "b")
-	mk(t, p, "new")
+	mk(t, p, "MANIFEST")
 	mk(t, p+tidyOldSuffix, "old")
 	if err := recoverTidy(p); err != nil {
 		t.Fatal(err)
 	}
-	if !has(p, "new") || has(p+tidyOldSuffix, "old") {
+	if !has(p, "MANIFEST") || has(p+tidyOldSuffix, "old") {
 		t.Fatal("finished swap not cleaned")
+	}
+
+	// Stopped between the renames, then a folder appeared where the store
+	// was (no MANIFEST): the folder goes aside, the old comes back.
+	p = filepath.Join(base, "d")
+	mk(t, p, "stray")
+	mk(t, p+tidyOldSuffix, "old")
+	if err := recoverTidy(p); err != nil {
+		t.Fatal(err)
+	}
+	if !has(p, "old") || has(p, "stray") || !has(p+tidyStraySuffix, "stray") || has(p+tidyOldSuffix, "old") {
+		t.Fatal("old store deleted beside a folder that is no store")
 	}
 
 	// Stopped while copying: the half copy goes, the store stays.
@@ -233,5 +245,35 @@ func TestTidyRecoversAStoppedSwap(t *testing.T) {
 	}
 	if !has(p, "old") || has(p+tidyNewSuffix, "half") {
 		t.Fatal("half copy not removed")
+	}
+}
+
+// A tidy cut off twice waits a day; a finished one clears the count.
+func TestTidyWaitsAfterTwoCutOffs(t *testing.T) {
+	dir, kept := tidyFixture(t, 20)
+	s := newBadgerStoreFor(dir, "ios")
+	marker := dir + tidyTrySuffix
+	if err := os.WriteFile(marker, []byte("2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res, err := tidyBadgerDir(dir, s.BadgerOptionsModifier)
+	if err != nil || res.Tidied || res.SkippedBecause != "cut off before, waiting" {
+		t.Fatalf("tidied again after two cut-offs: %+v %v", res, err)
+	}
+
+	// A day later it tries again, and a finished tidy removes the marker.
+	day := time.Now().Add(-tidyRetryAfter - time.Minute)
+	if err := os.Chtimes(marker, day, day); err != nil {
+		t.Fatal(err)
+	}
+	res, err = tidyBadgerDir(dir, s.BadgerOptionsModifier)
+	if err != nil || !res.Tidied {
+		t.Fatalf("not tidied a day later: %+v %v", res, err)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("marker left after a finished tidy")
+	}
+	if got := storedIDs(t, dir); !sameIDs(got, kept) {
+		t.Fatalf("lost events: %d, want %d", len(got), len(kept))
 	}
 }

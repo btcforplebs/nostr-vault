@@ -36,8 +36,15 @@ import (
 var badgerTidyMaxVlogs = 256 // a var for the tests
 
 const (
-	tidyNewSuffix = ".tidy-new"
-	tidyOldSuffix = ".tidy-old"
+	tidyNewSuffix   = ".tidy-new"
+	tidyOldSuffix   = ".tidy-old"
+	tidyStraySuffix = ".tidy-stray"
+	tidyTrySuffix   = ".tidy-try"
+	// A tidy cut off this many times (iOS suspended or killed the app
+	// mid-copy) waits tidyRetryAfter before it is tried again, so a store too
+	// big to copy in one launch doesn't cost every launch a full copy.
+	tidyMaxTries   = 2
+	tidyRetryAfter = 24 * time.Hour
 )
 
 // tidyCounts: keys per first byte (eventstore uses one byte per key type,
@@ -69,17 +76,33 @@ type tidyResult struct {
 }
 
 // recoverTidy finishes or undoes a swap a stopped process left halfway.
-// Old and current both present: the swap finished, the old goes. Only the
-// old present: the swap stopped between the renames, the old comes back. A
-// fresh copy left over was never swapped in, so it goes.
+// Old and a complete store (MANIFEST) both present: the swap finished, the
+// old goes. Only the old present, or beside a folder that is no store (made
+// after the stop): the swap stopped between the renames, the folder is moved
+// aside and the old comes back. A fresh copy left over was never swapped in,
+// so it goes.
 func recoverTidy(path string) error {
 	old, fresh := path+tidyOldSuffix, path+tidyNewSuffix
 	if _, err := os.Stat(old); err == nil {
-		if _, err := os.Stat(path); err == nil {
+		_, statErr := os.Stat(path)
+		_, manifestErr := os.Stat(filepath.Join(path, "MANIFEST"))
+		switch {
+		case manifestErr == nil:
 			if err := os.RemoveAll(old); err != nil {
 				return err
 			}
-		} else if os.IsNotExist(err) {
+		case statErr == nil:
+			stray := path + tidyStraySuffix
+			if err := os.RemoveAll(stray); err != nil {
+				return err
+			}
+			if err := os.Rename(path, stray); err != nil {
+				return err
+			}
+			if err := os.Rename(old, path); err != nil {
+				return err
+			}
+		case os.IsNotExist(statErr):
 			if err := os.Rename(old, path); err != nil {
 				return err
 			}
@@ -162,6 +185,10 @@ func tidyBadgerDir(path string, opts func(badgerdb.Options) badgerdb.Options) (t
 		res.SkippedBecause = "few files"
 		return res, nil
 	}
+	if !tidyTry(path) {
+		res.SkippedBecause = "cut off before, waiting"
+		return res, nil
+	}
 	start := time.Now()
 	fresh := path + tidyNewSuffix
 
@@ -187,10 +214,32 @@ func tidyBadgerDir(path string, opts func(badgerdb.Options) badgerdb.Options) (t
 	if err := os.RemoveAll(old); err != nil {
 		slog.Warn("tidy: old store left behind, removed next open", "path", old, "err", err)
 	}
+	os.Remove(path + tidyTrySuffix)
 	res.VlogsAfter, res.BytesAfter, _ = dirFiles(path)
 	res.Tidied = true
 	res.Took = time.Since(start)
 	return res, nil
+}
+
+// tidyTry counts a tidy attempt in a marker beside the store and says
+// whether to make it: not when tidyMaxTries attempts within tidyRetryAfter
+// never finished. A finished tidy removes the marker; an older one counts
+// from zero again.
+func tidyTry(path string) bool {
+	marker := path + tidyTrySuffix
+	tries := 0
+	if info, err := os.Stat(marker); err == nil && time.Since(info.ModTime()) < tidyRetryAfter {
+		if b, err := os.ReadFile(marker); err == nil {
+			fmt.Sscanf(string(b), "%d", &tries)
+		}
+		if tries >= tidyMaxTries {
+			return false
+		}
+	}
+	if err := os.WriteFile(marker, []byte(fmt.Sprintf("%d\n", tries+1)), 0o600); err != nil {
+		return false // can't count it: don't start what might never finish
+	}
+	return true
 }
 
 // copyLiveKeys streams src's live keys into a fresh store at dst and checks
