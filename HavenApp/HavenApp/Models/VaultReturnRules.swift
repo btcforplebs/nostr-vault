@@ -39,10 +39,14 @@ enum VaultDirectRead {
         return storeReading || socketReading || booting || nothingYet
     }
 
-    /// `since` for a store read: the whole window the first time for an
-    /// account, only what's new after that.
-    static func storeSince(answeredBefore: Bool, newest: Int64?, now: Int64) -> Int64? {
-        answeredBefore ? VaultActivity.refreshSince(newest: newest, now: now) : nil
+    /// A store read: the whole window every time (Logen 11-14), so a note
+    /// stored late, dated before the newest held (a reply the inbox fetched
+    /// later), shows as soon as the store has it. In two passes
+    /// (`storePasses`); the follower lists, most of the bytes, only on the
+    /// first read for an account: the live socket brings new ones.
+    static func storeRead(_ filters: [[String: Any]], answeredBefore: Bool) -> (first: [[String: Any]], after: [[String: Any]]) {
+        let passes = storePasses(filters, split: true)
+        return (passes.first, answeredBefore ? [] : passes.after)
     }
 
     /// A first store read's filters in two passes (startup, Logen

@@ -12,9 +12,10 @@ import Foundation
 /// them as before. When the store isn't ready (engine starting, import, a
 /// stop) nothing happens here and the socket reads as it always did.
 extension NostrService {
-    /// Reads the active account's Vault events from the store. The first read
-    /// for an account takes the whole window, later ones what's new. One at a
-    /// time; a call during a read runs once more after it.
+    /// Reads the active account's Vault events from the store: the whole
+    /// window every time (VaultDirectRead.storeRead), so a note stored late
+    /// shows too. One at a time; a call during a read runs once more after
+    /// it.
     func readVaultFromStore() {
         let owner = activeHexPubkey.lowercased()
         guard !owner.isEmpty else { return }
@@ -23,12 +24,9 @@ extension NostrService {
             return
         }
         vaultStoreReading = true
-        let since = VaultDirectRead.storeSince(answeredBefore: vaultStoreAnswered == owner,
-                                               newest: events.map(\.created_at).max(),
-                                               now: Int64(Date().timeIntervalSince1970))
         let authors = VaultView.activitySources(ConfigService.shared).authors
-        let filters = Self.vaultFilters(ownerHex: owner, authors: authors, until: nil, since: since)
-        let passes = VaultDirectRead.storePasses(filters, split: since == nil)
+        let filters = Self.vaultFilters(ownerHex: owner, authors: authors, until: nil, since: nil)
+        let passes = VaultDirectRead.storeRead(filters, answeredBefore: vaultStoreAnswered == owner)
         // Local, so processEvent never injects these back into the relay.
         let local = ConfigService.shared.config.nostrURL
         let generation = eventsResetGeneration

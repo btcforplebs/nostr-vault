@@ -41,10 +41,37 @@ final class VaultReturnRulesTests: XCTestCase {
                                                booting: false, nothingYet: false))
     }
 
-    func testStoreReadsTheWholeWindowFirstThenOnlyWhatIsNew() {
-        XCTAssertNil(VaultDirectRead.storeSince(answeredBefore: false, newest: 1_000, now: 2_000))
-        XCTAssertEqual(VaultDirectRead.storeSince(answeredBefore: true, newest: 1_000, now: 2_000), 940)
-        XCTAssertNil(VaultDirectRead.storeSince(answeredBefore: true, newest: nil, now: 2_000))
+    /// Every store read takes the whole window (Logen 11-14): a note stored
+    /// late, dated before the newest held, showed a notification but never
+    /// a Vault row while later reads asked only for what was newer.
+    func testStoreRereadsTheWholeWindowEveryTime() {
+        let filters: [[String: Any]] = [["kinds": [1, 20], "limit": 400], ["kinds": [0, 3, 7], "limit": 200]]
+        let first = VaultDirectRead.storeRead(filters, answeredBefore: false)
+        XCTAssertEqual(first.after.map { $0["kinds"] as? [Int] }, [[3]])
+        let again = VaultDirectRead.storeRead(filters, answeredBefore: true)
+        XCTAssertEqual(again.first.map { $0["kinds"] as? [Int] }, [[1, 20], [0, 7]])
+        XCTAssertTrue(again.first.allSatisfy { $0["since"] == nil })
+        // The follower lists (most of the bytes) only on the first read; the
+        // live socket brings new ones.
+        XCTAssertTrue(again.after.isEmpty)
+    }
+
+    func testTheStoreReadAsksNoSince() throws {
+        let direct = try vaultAppSource("HavenApp/Services/Nostr/NostrService+VaultDirectRead.swift")
+        XCTAssertTrue(direct.contains("until: nil, since: nil)"))
+    }
+
+    func testSocketTopUpNeverStartsAheadOfNow() {
+        // A note dated 5 minutes ahead must not hide notes made now.
+        XCTAssertEqual(VaultDirectRead.socketSince(full: false, storeAnswered: true, remoteRelay: false, newest: 2_300, now: 2_000), 1_940)
+    }
+
+    func testANotificationReadsTheStore() throws {
+        let capture = try vaultAppSource("HavenApp/Services/Relay/RelayProcessManager+OutputCapture.swift")
+        let markers = try XCTUnwrap(capture.range(of: "LocalNotificationService.shared.handle(marker)"))
+        let read = try XCTUnwrap(capture.range(of: "NostrService.shared.readVaultFromStore()", options: .backwards))
+        XCTAssertLessThan(markers.lowerBound, read.lowerBound)
+        XCTAssertTrue(capture.contains("if !batch.notifyMarkers.isEmpty"))
     }
 
     func testSocketOnlyTopsUpAfterTheStoreUnlessAMacRelayIsRead() {
@@ -200,4 +227,11 @@ final class VaultStorePassesTests: XCTestCase {
         XCTAssertFalse(VaultDirectRead.retriesNotReady(booting: false, waited: 0.1))
         XCTAssertFalse(VaultDirectRead.retriesNotReady(booting: true, waited: VaultDirectRead.notReadyGiveUp))
     }
+}
+
+/// A file of the app, for the wiring checks.
+private func vaultAppSource(_ path: String) throws -> String {
+    let app = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().deletingLastPathComponent()
+    return try String(contentsOf: app.appendingPathComponent(path), encoding: .utf8)
 }

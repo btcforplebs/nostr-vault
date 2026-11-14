@@ -421,6 +421,9 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch {
             RelayForegroundService.inboxActivityTick.drop(1).collectLatest {
                 delay(1_500)  // let the import burst settle; restarts on further activity
+                // The store has them whatever their date (a notification's
+                // note included, Logen 11-14); the socket only tops up.
+                readVaultFromStore()
                 resendVaultSubscriptions()
             }
         }
