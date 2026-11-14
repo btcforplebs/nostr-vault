@@ -13,6 +13,7 @@ import { useMessages, SignerTrouble, AuthTrouble, OpenMore, BunkerNote } from ".
 import { MESSAGES_DTAG } from "./first-party.js"
 import { usePaneNapplet } from "./usePaneNapplet.js"
 import { VaultPagesMenu } from "../screens/VaultPagesMenu.jsx"
+import { searchName } from "../screens/MessagesTools.jsx"
 import "./napplet.css"
 
 const HEX = /^[0-9a-f]{64}$/
@@ -25,11 +26,21 @@ export function MessagesPane({ ctx, open = null, vaultMenu = false }) {
   const blockedRef = useRef(blocked), trustedRef = useRef(trusted)
   blockedRef.current = blocked; trustedRef.current = trusted
   const host = useRef(null)
+  const ctxRef = useRef(ctx), looked = useRef(new Set())
+  ctxRef.current = ctx
   const openRef = useRef(open)
   openRef.current = open
   const { live, note } = usePaneNapplet(ctx, host, {
     dTag: MESSAGES_DTAG, actions: { dm: ["open", "refresh"] },
-    extra: { dm: { blocked: () => blockedRef.current, trusted: () => trustedRef.current, unread: msgs => unreadCounts(msgs, me, blockedRef.current) } },
+    extra: { dm: {
+      blocked: () => blockedRef.current, trusted: () => trustedRef.current, unread: msgs => unreadCounts(msgs, me, blockedRef.current),
+      // Search by the names the classic page searches by; your follows' photos load without a tap, as there; a
+      // brand-new conversation's name is looked up as the classic thread looks it up.
+      searchName, follows: pk => ctxRef.current.account.follows.includes(pk),
+      // Once per person while the page is up: a key with no profile anywhere would otherwise be asked for again on
+      // every refresh the napplet gets.
+      lookup: pks => { const fresh = pks.filter(pk => !looked.current.has(pk)); fresh.forEach(pk => looked.current.add(pk)); if (fresh.length) fetchProfiles(ctxRef.current.vault, fresh, uniq([...ctxRef.current.account.relays.read, ...PROFILE_RELAYS, ...DEFAULT_RELAYS])).catch(() => {}) },
+    } },
     onReady: l => {
       if (HEX.test(openRef.current ?? "")) l.invoke({ archetype: "dm", action: "open", payload: { pubkey: openRef.current } })
       // Names that landed before the napplet was up: one redraw now; later arrivals redraw through onProfiles below.
