@@ -350,6 +350,7 @@ private fun DMInboxEmptyState() {
 internal fun dmPreviewText(content: String?): String {
     val message = content.orEmpty()
     if (message.isEmpty()) return "No message content"
+    com.nostrvault.service.DMFile.previewOf(message)?.let { return it }
     return message.take(60).trim() + if (message.length > 60) "\u2026" else ""
 }
 

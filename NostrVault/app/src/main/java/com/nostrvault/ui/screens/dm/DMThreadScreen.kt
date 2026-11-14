@@ -177,7 +177,15 @@ class DMThreadViewModel @Inject constructor(
             _isSending.value = true
             messageField.clearText()
             _attachedImage.value = null
+            var wordsSent = false
             try {
+                // A NIP-17 photo is locked (kind 15, DMLockedPhoto): its words go first as
+                // their own message, the photo one second after so it sorts below them.
+                if (image != null && !_useNIP04.value && !DMLockedPhoto.isVideo(context, image)) {
+                    DMLockedPhoto.send(context, image, text, counterpartyPubkey, blossomService, dmService) { wordsSent = true }
+                    DMPastedImage.discard(image)
+                    return@launch
+                }
                 // The photo goes up first: a message naming a URL no server
                 // holds would reach them as a dead link (as iOS).
                 val imageUrl = image?.let { uploadImage(it) ?: throw DMPhotoUploadException() }
@@ -195,8 +203,8 @@ class DMThreadViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // Hand the message back unless something new was typed meanwhile.
-                if (messageField.text.isEmpty()) messageField.setTextAndPlaceCursorAtEnd(text)
+                // Hand the message back unless something new was typed meanwhile (not words already sent).
+                if (messageField.text.isEmpty() && !wordsSent) messageField.setTextAndPlaceCursorAtEnd(text)
                 if (_attachedImage.value == null) _attachedImage.value = image else DMPastedImage.discard(image)
                 _sendError.value = DMSendFailure.message(e)
             } finally {
@@ -213,6 +221,11 @@ class DMThreadViewModel @Inject constructor(
             val contentType = context.contentResolver.getType(uri)
                 ?: DMPastedImage.mimeType(uri)
                 ?: "image/jpeg"
+            // A GIF keeps only its frames (NIP-04 sends it as a plain link; NIP-17 locks it, DMLockedPhoto).
+            if (stripGifInPlace(tempFile) == false) {
+                tempFile.delete()
+                return@withContext null
+            }
             if (!MediaPrivacy.removeLocation(tempFile, contentType)) {
                 tempFile.delete()
                 return@withContext null

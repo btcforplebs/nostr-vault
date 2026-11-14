@@ -375,7 +375,7 @@ internal fun FullScreenMediaPager(
                             },
                         )
                     }
-                    if (viewModel.canMirror) {
+                    if (viewModel.canMirror && !com.nostrvault.service.DMFile.isFileLink(currentUrl)) {
                         MirrorToBlossomPill(
                             state = mirrorState,
                             onMirror = { viewModel.mirror(currentUrl) },

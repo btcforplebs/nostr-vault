@@ -56,7 +56,12 @@ class FeedMediaMirrorViewModel @Inject constructor(
             // when the server only says application/octet-stream.
             val hint = if (isVideoUrl(url)) MediaSaveService.mimeTypeForExtension(url) else null
             // A blossom: link saves the file that hashed to it, not a URL.
-            val result = if (com.nostrvault.data.model.BlossomUri.isUri(url)) {
+            val result = if (com.nostrvault.service.DMFile.isFileLink(url)) {
+                // A locked DM photo saves the opened photo, never its ciphertext.
+                runCatching { com.nostrvault.service.DMFileLoader.openToFile(appContext, url) }.getOrNull()
+                    ?.let { (file, mime) -> mediaSaveService.saveToGallery(file, mime).also { file.delete() } }
+                    ?: Result.failure(Exception("Media unavailable"))
+            } else if (com.nostrvault.data.model.BlossomUri.isUri(url)) {
                 com.nostrvault.service.BlossomUriLoader.file(appContext, url)
                     ?.let { mediaSaveService.saveToGallery(it, hint) }
                     ?: Result.failure(Exception("Media unavailable"))

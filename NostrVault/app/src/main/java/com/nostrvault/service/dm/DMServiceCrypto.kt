@@ -100,16 +100,12 @@ internal suspend fun DMService.createGiftWrappedDMWithBunker(
     recipientPubkey: String,
     /** See [NIP17Service.createGiftWrappedDM]: your own copy is sealed to you, filed under [recipientPubkey]. */
     giftWrapRecipient: String = recipientPubkey,
+    rumor: DMRumor = DMRumor(),
 ): String? = withContext(Dispatchers.IO) {
     try {
         if (!ensureDmBunkerConnected(senderPubkey)) return@withContext null
 
-        val rumorJson = EventPublisher.buildUnsignedEvent(
-            pubkey = senderPubkey,
-            kind = 14,
-            content = content,
-            tags = listOf(listOf("p", recipientPubkey)),
-        )
+        val rumorJson = rumor.build(senderPubkey, recipientPubkey, content)
 
         val sealedContent = NIP46Service.nip44Encrypt(giftWrapRecipient, rumorJson)
             ?: run { Log.e(TAG, "Bunker NIP-44 encrypt failed for seal"); return@withContext null }

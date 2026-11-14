@@ -393,12 +393,14 @@ class DMService @Inject constructor(
         content: String,
         recipientHexPubkey: String,
         useNIP04: Boolean = false,
+        /** A locked photo: NIP-17 only (kind 15). */
+        file: DMFileSend? = null,
     ) {
         scope.async {
-            if (useNIP04) {
+            if (useNIP04 && file == null) {
                 sendNIP04DM(content, recipientHexPubkey)
             } else {
-                sendNIP17DM(content, recipientHexPubkey)
+                sendNIP17DM(content, recipientHexPubkey, file)
             }
         }.await()
     }
@@ -432,8 +434,8 @@ class DMService @Inject constructor(
     fun markConversationRead(pubkey: String) = markRead(pubkey)
 
     /** Alias for sendDM, used by DMThreadViewModel. */
-    suspend fun sendMessage(recipientPubkey: String, content: String, useNIP04: Boolean = false) {
-        sendDM(content, recipientPubkey, useNIP04)
+    suspend fun sendMessage(recipientPubkey: String, content: String, useNIP04: Boolean = false, file: DMFileSend? = null) {
+        sendDM(content, recipientPubkey, useNIP04, file)
     }
 
     fun markAllAsRead() {

@@ -81,4 +81,11 @@ class DMAttachmentTest {
         assertEquals(clip, DMAttachment.videoLink(clip, "mov"))
         assertEquals("https://cdn.example.com/abc123", DMAttachment.videoLink("https://cdn.example.com/abc123", ""))
     }
+
+    @Test fun lockedPhotoLinkIsAPhoto() {
+        val link = com.nostrvault.service.DMFile.fileLink("https://nostr.download/" + "a".repeat(64), "1".repeat(64), "2".repeat(24), "a".repeat(64), "image/jpeg")
+        val parts = DMAttachment.split(link, withVideos = true)
+        assertEquals(listOf(link), parts.images)
+        assertEquals("", parts.text)
+    }
 }

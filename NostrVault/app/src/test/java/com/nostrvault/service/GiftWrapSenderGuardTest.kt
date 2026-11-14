@@ -45,6 +45,12 @@ class GiftWrapSenderGuardTest {
     }
 
     @Test
+    fun `a kind 15 file message from the sealer is accepted`() {
+        assertTrue(NIP17Service.isAuthoredBySealer(seal(alice), rumor(alice, kind = 15)))
+        assertFalse(NIP17Service.isAuthoredBySealer(seal(mallory), rumor(alice, kind = 15)))
+    }
+
+    @Test
     fun `unparseable rumor is rejected`() {
         assertFalse(NIP17Service.isAuthoredBySealer(seal(alice), "not json"))
     }
