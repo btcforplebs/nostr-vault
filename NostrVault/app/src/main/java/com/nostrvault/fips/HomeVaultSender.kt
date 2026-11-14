@@ -72,6 +72,13 @@ class HomeVaultSender @Inject constructor(
     /** Signs a `/files` event (1063, its kind 5, the AUTH) with this device's mesh key, never the owner's; swapped in tests. */
     internal var fileNoteSign: (kind: Int, tags: List<List<String>>) -> String? = { kind, tags -> MeshKeySigner.fileNotes(kind, tags) }
 
+    /**
+     * This phone's own vault on loopback (`http://127.0.0.1:<relayPort>`), or null with an outside relay. With no home
+     * vault this phone is the vault, and its emoji notes go to its own `/files` ([OwnVaultFilesLane]); swapped in tests.
+     */
+    internal var ownFilesBase: () -> String? =
+        { configStore.config.value.takeIf { !it.useExternalRelay }?.let { "http://127.0.0.1:${it.relayPort}" } }
+
     /** The owner's hex pubkey. Wired by NostrService. */
     @Volatile
     var ownerHex: () -> String = { "" }
@@ -94,6 +101,9 @@ class HomeVaultSender @Inject constructor(
 
     private val queue = HomeVaultQueue(File(context.filesDir, "home_vault_queue"))
 
+    /** Emoji notes for this phone's own vault, when it is the vault (no home vault). */
+    private val ownFiles = OwnVaultFilesLane(File(context.filesDir, "own_vault_files_queue"), this)
+
     /** One queue for the mobile vault and per Mac in My Devices ([MeshSendTargets]), each sent on its own. */
     private val macQueues = java.util.concurrent.ConcurrentHashMap<String, HomeVaultQueue>()
     private val macQueueRoot get() = File(filesDir, "mesh_send_queue")
@@ -115,7 +125,7 @@ class HomeVaultSender @Inject constructor(
      * launch the config may not be loaded yet, and a queue left by a removed Mac goes on its next pass.
      */
     private fun waitingCount(): Int =
-        queue.size + (macQueueRoot.listFiles()?.filter { it.isDirectory }?.sumOf { macQueue(it.name).size } ?: 0)
+        queue.size + ownFiles.size + (macQueueRoot.listFiles()?.filter { it.isDirectory }?.sumOf { macQueue(it.name).size } ?: 0)
 
     /**
      * Blobs a note was published for while only the home vault had them.
@@ -366,13 +376,13 @@ class HomeVaultSender @Inject constructor(
      * full": that line is about media.
      */
     fun queueEmojiNotes(offers: List<EmojiNoteOffer>): Set<String> {
-        if (activeVault == null) return emptySet()
         val drafts = offers.filter { FileNote.isHex64(it.sha256.lowercase()) }.map {
             HomeVaultQueue.FileNoteDraft(HomeVaultQueue.FileNoteDraft.EMOJI, it.sha256.lowercase(), safeType(it.contentType), it.size, emptyList(), it.codes, it.sets)
         }
         if (drafts.isEmpty()) return emptySet()
         val queued = try {
-            queue.addFileNotes(drafts)
+            // No home vault: this phone is the vault, and the note goes into its own /files.
+            if (activeVault == null) ownFiles.add(drafts) else queue.addFileNotes(drafts)
         } catch (e: Exception) {
             Log.w(TAG, "home vault: could not queue emoji notes: ${e.message}")
             emptySet()
@@ -508,6 +518,8 @@ class HomeVaultSender @Inject constructor(
         val lanes = lanes()
         dropRemovedMacQueues(lanes)
         for ((target, q) in lanes) drainLane(target.npub, q, target.role, userInitiated)
+        ownFiles.drain(userInitiated)
+        if (ownFiles.size > 0) scheduleRetry()
         publish()
     }
 
@@ -746,7 +758,14 @@ class HomeVaultSender @Inject constructor(
      * is done. Accepted or `duplicate:` is done, `restricted:` (this device unpaired, an account key) is dropped,
      * anything else waits ([HomeVaultRules.eventOutcome]).
      */
-    internal suspend fun sendFileNote(base: String, item: HomeVaultQueue.Item, vaultNpub: String, http: OkHttpClient = client): HomeVaultSend {
+    internal suspend fun sendFileNote(
+        base: String,
+        item: HomeVaultQueue.Item,
+        vaultNpub: String,
+        http: OkHttpClient = client,
+        // The own vault's /files before the engine has this device's mesh key: wait, don't drop.
+        restrictedWaits: Boolean = false,
+    ): HomeVaultSend {
         val draft = item.fileNote ?: return HomeVaultSend.REJECTED
         val owner = ownerHex().lowercase()
         val url = FileNote.filesUrl(base) ?: return HomeVaultSend.REJECTED
@@ -780,6 +799,7 @@ class HomeVaultSender @Inject constructor(
             val signed = fileNoteSign(kind, tags) ?: return HomeVaultSend.RETRY
             val (accepted, message) = socket.publish(signed) ?: return HomeVaultSend.RETRY
             if (!accepted) Log.w(TAG, "home vault /files refused a ${draft.action} for ${draft.sha256.take(8)}: $message")
+            if (!accepted && restrictedWaits && message.startsWith("restricted:")) return HomeVaultSend.RETRY
             return HomeVaultRules.eventOutcome(accepted, message)
         } finally {
             socket.close()
@@ -807,7 +827,7 @@ class HomeVaultSender @Inject constructor(
                 delay(REACH_CHECK_MS)
                 sinceDrain += REACH_CHECK_MS
                 val lanes = lanes()
-                if (lanes.none { it.second.size > 0 }) break
+                if (lanes.none { it.second.size > 0 } && ownFiles.size == 0) break
                 val now = connectedPeers()
                 val newly = HomeVaultRules.newlyInReach(now, peers)
                 peers = now
