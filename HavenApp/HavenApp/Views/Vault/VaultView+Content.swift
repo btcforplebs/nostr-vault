@@ -108,6 +108,9 @@ extension VaultView {
             if viewMode == .likes { updateLikesSettleState() }
             if viewMode == .zaps { updateZapsSettleState() }
         }
+        .onChange(of: nostrService.vaultStoreReading) { _, _ in
+            listSwapReadChanged()
+        }
         .onChange(of: relayManager.isBooting) { _, _ in
             listSwapReadChanged()
             if viewMode == .likes { updateLikesSettleState() }

@@ -26,6 +26,10 @@ extension VaultView {
             return
         }
 
+        // The store answers at once, no debounce (VaultDirectRead); only the
+        // socket below waits for lifecycle events to settle.
+        nostrService.readVaultFromStore()
+
         // A full refresh must never be downgraded by a later incremental
         // request landing in the same debounce window.
         if mode == .full { pendingFullRefresh = true }
@@ -66,11 +70,15 @@ extension VaultView {
 
         // Incremental: re-issue the live REQs on the existing connections,
         // bounded to what's newer than we already have (60s overlap for
-        // boundary safety). fetchNotes reuses connected clients as-is.
-        let since: Int64? = needsFull
-            ? nil
-            : VaultActivity.refreshSince(newest: nostrService.events.map(\.created_at).max(),
-                                         now: Int64(Date().timeIntervalSince1970))
+        // boundary safety). fetchNotes reuses connected clients as-is. Once
+        // the store read answered, a full refresh only tops up too, unless a
+        // Mac relay (which the store can't see) is read.
+        let since = VaultDirectRead.socketSince(
+            full: needsFull,
+            storeAnswered: nostrService.vaultStoreAnswered == nostrService.activeHexPubkey.lowercased(),
+            remoteRelay: !configService.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            newest: nostrService.events.map(\.created_at).max(),
+            now: Int64(Date().timeIntervalSince1970))
 
         nostrService.fetchNotes(from: urls, since: since, authors: authors)
     }

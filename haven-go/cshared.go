@@ -2157,6 +2157,23 @@ func GetFollowersC(owner *C.char) *C.char {
 	return C.CString(string(result))
 }
 
+// QueryVaultC reads the Vault's rows straight from the in-process outbox
+// and inbox stores (vault_read.go). In: {"filters":[...]}. Out:
+// {"events":[...]} newest first, or {"error":...}; "vault read not ready"
+// means read over the socket instead. The caller frees the result. Call it
+// off the main thread.
+//
+//export QueryVaultC
+func QueryVaultC(request *C.char) (ret *C.char) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("QueryVaultC: recovered from panic: %v", r)
+			ret = C.CString(`{"error":"vault read not ready"}`)
+		}
+	}()
+	return C.CString(string(queryVault(C.GoString(request))))
+}
+
 // Dummy main() function required for buildmode=c-archive
 // This is never called; entry points are the exported C functions above
 func main() {

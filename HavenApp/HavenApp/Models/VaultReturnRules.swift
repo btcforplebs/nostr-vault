@@ -5,7 +5,7 @@ import Foundation
 /// followers first, then everything else gets injected after").
 ///
 /// Pure rules, so MediaLogicTests can hold them; the app wires them in
-/// VaultView (the list swap), NostrService+VaultSnapshot (the saved screen)
+/// VaultView (the list swap), NostrService+VaultDirectRead (the store read)
 /// and RelayProcessManager+NewsDot (one dot per account).
 enum VaultListSwap {
     /// The longest a refresh keeps the old list up before the new one shows
@@ -16,31 +16,41 @@ enum VaultListSwap {
     /// is reading, the list on screen stays and the new one waits until the
     /// read is done (or `cap` passed), so rows don't pop in one batch at a
     /// time and followers (read from disk, first) never show alone.
-    /// `force`: the build is the saved screen for an account just switched
-    /// to, which shows at once.
-    static func publishes(force: Bool, refreshing: Bool, heldFor: TimeInterval?) -> Bool {
-        if force || !refreshing { return true }
+    static func publishes(refreshing: Bool, heldFor: TimeInterval?) -> Bool {
+        if !refreshing { return true }
         guard let heldFor else { return false }
         return heldFor >= cap
     }
 }
 
-/// What the saved Vault screen keeps: the newest events, enough for the
-/// first page of every Vault list.
-enum VaultSnapshotRules {
-    static let keep = 400
-
-    /// The newest `keep` items, newest first.
-    static func newest<T>(_ items: [T], keep: Int = keep, createdAt: (T) -> Int64) -> [T] {
-        Array(items.sorted { createdAt($0) > createdAt($1) }.prefix(keep))
+/// The Vault reads its rows straight from the on-device store (Logen
+/// 2026-11-14, NostrService+VaultDirectRead): tens of ms, whatever the relay
+/// port is doing. The socket stays for live updates and the Mac relay.
+enum VaultDirectRead {
+    /// Whether the Vault list counts as reading (VaultListSwap holds it).
+    /// Once the store read answered for this account, only that read holds
+    /// the list; the socket after it tops up live and never holds it. Before
+    /// that (engine not up yet, or a store not ready): the socket read and
+    /// the boot do, as before, and nothing read yet counts as reading, so
+    /// followers never show alone.
+    static func reading(storeAnswered: Bool, storeReading: Bool, socketReading: Bool,
+                        booting: Bool, nothingYet: Bool) -> Bool {
+        if storeAnswered { return storeReading }
+        return storeReading || socketReading || booting || nothingYet
     }
 
-    /// The file name for an account's saved screen: its hex pubkey, nothing
-    /// else, so a malformed key can't reach outside the folder.
-    static func fileName(account hex: String) -> String? {
-        let hex = hex.lowercased()
-        guard hex.count == 64, hex.allSatisfy({ $0.isHexDigit }) else { return nil }
-        return "vault-\(hex).json"
+    /// `since` for a store read: the whole window the first time for an
+    /// account, only what's new after that.
+    static func storeSince(answeredBefore: Bool, newest: Int64?, now: Int64) -> Int64? {
+        answeredBefore ? VaultActivity.refreshSince(newest: newest, now: now) : nil
+    }
+
+    /// `since` for the socket read of a refresh. After a store read the
+    /// socket only tops up; a full refresh still reads everything when the
+    /// store didn't answer, or from a Mac relay, which the store can't see.
+    static func socketSince(full: Bool, storeAnswered: Bool, remoteRelay: Bool, newest: Int64?, now: Int64) -> Int64? {
+        if full && (!storeAnswered || remoteRelay) { return nil }
+        return VaultActivity.refreshSince(newest: newest, now: now)
     }
 }
 
@@ -69,5 +79,16 @@ struct VaultNewsAccounts<Mode: Hashable> {
     static func isNews(createdAt: [Int64], lastVisit: Int64?) -> Bool {
         guard let lastVisit else { return !createdAt.isEmpty }
         return createdAt.contains { $0 > lastVisit }
+    }
+}
+
+/// QueryVaultC's answer: {"events":[...]} or {"error":...}.
+enum VaultStoreAnswer {
+    /// The events, or nil for an error (not ready included) or a bad answer.
+    static func rows(_ data: Data) -> [[String: Any]]? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["error"] == nil,
+              let events = object["events"] as? [[String: Any]] else { return nil }
+        return events
     }
 }
