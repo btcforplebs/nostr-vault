@@ -249,6 +249,12 @@ extension RelayProcessManager {
         for marker in batch.notifyMarkers {
             LocalNotificationService.shared.handle(marker)
         }
+        // What the notification is about (or anything else that just landed
+        // in the inbox), on the Vault screen now: the store already holds it,
+        // whatever its date (Logen 11-14). Reads coalesce while one runs.
+        if !batch.notifyMarkers.isEmpty || !batch.inboxActivityKinds.isEmpty, state == .running {
+            NostrService.shared.readVaultFromStore()
+        }
         // Each account's count in the account switcher.
         if let listRules {
             AccountUnreadStore.shared.record(markers: batch.notifyMarkers, rules: listRules)

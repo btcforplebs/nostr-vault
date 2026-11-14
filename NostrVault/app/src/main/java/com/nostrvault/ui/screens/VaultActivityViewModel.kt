@@ -133,7 +133,26 @@ class VaultActivityViewModel @Inject constructor(
     val relayBootStatus: StateFlow<String> = logStore.bootStatusMessage
 
 
-    private companion object {
+    internal companion object {
+        /** A refresh's filters: the store's and the socket's. */
+        data class RefreshFilters(val store: List<String>, val socket: List<String>)
+
+        /**
+         * The store reads the whole window every time (Logen 11-14): a note stored late, dated before the
+         * newest held, showed a notification but no row while the read asked only for what was newer. The
+         * socket (the Mac relay, or the store not ready) still only tops up from [since].
+         */
+        fun refreshFilters(owner: String, since: Long?): RefreshFilters {
+            fun filters(clause: String) = listOf(
+                """{"kinds":${kindsJson(VaultMode.RELAY_TAB_NOTE_KINDS)},"authors":["$owner"]$clause,"limit":$PAGE}""",
+                """{"kinds":${kindsJson(TAGGED_KINDS)},"#p":["$owner"]$clause,"limit":$PAGE}""",
+            )
+            return RefreshFilters(store = filters(""), socket = filters(since?.let { ",\"since\":$it" } ?: ""))
+        }
+
+        fun kindsJson(kinds: Set<Int>) = kinds.sorted().joinToString(",", "[", "]")
+
+    
         const val PAGE = 500
         const val OLDER_PAGE = 200
         const val QUERY_TIMEOUT_MS = 8_000L
@@ -343,8 +362,7 @@ class VaultActivityViewModel @Inject constructor(
         val owner = nostrService.activeHexPubkey
         if (owner.isEmpty()) return
         val newest = eventsMutex.withLock { events.values.maxOfOrNull { it.createdAt } }
-        val since = VaultActivity.refreshSince(newest, VaultActivity.nowSeconds())
-            ?.let { ",\"since\":$it" } ?: ""
+        val filters = refreshFilters(owner, VaultActivity.refreshSince(newest, VaultActivity.nowSeconds()))
         // The dot's lists the relay proposed before this read: it settles them.
         val asked = RelayForegroundService.newsDot.proposed()
         readsRunning.incrementAndGet()
@@ -363,14 +381,10 @@ class VaultActivityViewModel @Inject constructor(
             // The read is done: the list built meanwhile goes up in one swap.
             if (running == 0) scheduleRebuild()
         }
-        val filters = listOf(
-            """{"kinds":${kindsJson(VaultMode.RELAY_TAB_NOTE_KINDS)},"authors":["$owner"]$since,"limit":$PAGE}""",
-            """{"kinds":${kindsJson(TAGGED_KINDS)},"#p":["$owner"]$since,"limit":$PAGE}""",
-        )
         try {
             // The Mac relay's read runs beside the queue, so a slow Mac never
             // holds the next refresh (an account switch's) behind it.
-            read(filters, macAside = { settleNews(asked, owner) }) { release() }
+            read(filters.socket, storeFilters = filters.store, macAside = { settleNews(asked, owner) }) { release() }
         } finally {
             release()
             settleNews(asked, owner)
@@ -415,11 +429,12 @@ class VaultActivityViewModel @Inject constructor(
      */
     private suspend fun read(
         filters: List<String>,
+        storeFilters: List<String> = filters,
         macAside: (suspend () -> Unit)? = null,
         storeDone: suspend () -> Unit = {},
     ): Int {
         val gen = generation
-        val stored = withContext(Dispatchers.IO) { VaultStoreRead.query(filters) }
+        val stored = withContext(Dispatchers.IO) { VaultStoreRead.query(storeFilters) }
             ?: return fetch(filters, relays())
         com.nostrvault.relay.StartupMarks.markOnce("vault store read", "vault store read ${stored.size}")
         val added = keep(stored, gen)
@@ -758,5 +773,4 @@ class VaultActivityViewModel @Inject constructor(
         super.onCleared()
     }
 
-    private fun kindsJson(kinds: Set<Int>) = kinds.sorted().joinToString(",", "[", "]")
 }

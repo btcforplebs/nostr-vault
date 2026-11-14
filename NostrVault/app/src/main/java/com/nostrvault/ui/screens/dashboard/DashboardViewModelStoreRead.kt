@@ -12,18 +12,18 @@ import kotlinx.coroutines.withContext
  * The Notes / Likes / Zaps lists' rows straight from the store (VaultStoreRead;
  * iOS NostrService+VaultDirectRead): the same filters as the socket, through
  * the same per-event path (processVaultEvent), so the lists, dots and zap
- * checks read them as before. The first read for an account takes the whole
- * window, later ones what is new. Not ready: nothing happens here and the
- * socket reads as it always did.
+ * checks read them as before. Every read takes the whole window, so a note
+ * stored late shows too. Not ready: nothing happens here and the socket reads
+ * as it always did.
  */
 internal suspend fun DashboardViewModel.readVaultFromStore() = storeReadMutex.withLock {
     val owner = nostrService.activeHexPubkey.lowercase()
     if (owner.isEmpty()) return@withLock
     val local = configStore.config.value.nostrURL ?: return@withLock
     val epoch = storeEpoch.get()
-    val newest = newestEventCreatedAt
-    val since = if (storeAnswered == owner && newest > 0) ",\"since\":${newest - 60}" else ""
-    val filters = vaultFilters(buildAuthorSet(), owner, since, since)
+    // The whole window every time (Logen 11-14): a note stored late, dated
+    // before the newest held, must show as soon as the store has it.
+    val filters = vaultFilters(buildAuthorSet(), owner, "", "")
     val rows = withContext(Dispatchers.IO) { VaultStoreRead.query(filters) } ?: return@withLock
     if (epoch != storeEpoch.get() || nostrService.activeHexPubkey.lowercase() != owner) return@withLock
     withContext(Dispatchers.IO) {

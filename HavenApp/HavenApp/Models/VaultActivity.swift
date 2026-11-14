@@ -315,9 +315,10 @@ extension VaultActivity {
     }
 
     /// The `since` of a top-up: a minute before the newest event held, and
-    /// never later than the clock allows, so a stray future date can't stop
-    /// new events from arriving. Nil when nothing is held.
+    /// never ahead of now, so a note dated a few minutes ahead (kept, up to
+    /// `maxFutureSkew`) can't hide the notes made meanwhile (Logen 11-14).
+    /// Nil when nothing is held.
     static func refreshSince(newest: Int64?, now: Int64) -> Int64? {
-        newest.map { min($0, now + maxFutureSkew) - 60 }
+        newest.map { min($0, now) - 60 }
     }
 }

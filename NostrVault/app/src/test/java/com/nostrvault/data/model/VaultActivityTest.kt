@@ -269,7 +269,9 @@ class VaultActivityTest {
         val now = 1_800_000_000L
         assertNull(VaultActivity.refreshSince(null, now))
         assertEquals(now - 3_660, VaultActivity.refreshSince(now - 3_600, now))
-        assertEquals(now + 540, VaultActivity.refreshSince(now + 31_536_000, now))
+        // Never ahead of now (Logen 11-14): a note dated minutes ahead must not hide the ones made meanwhile.
+        assertEquals(now - 60, VaultActivity.refreshSince(now + 31_536_000, now))
+        assertEquals(now - 60, VaultActivity.refreshSince(now + 300, now))
     }
 
     @Test fun aFutureDatedLikeOnAnOldNoteMakesNoLine() {

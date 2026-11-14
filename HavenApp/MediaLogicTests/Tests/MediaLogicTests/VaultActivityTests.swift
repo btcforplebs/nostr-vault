@@ -284,8 +284,10 @@ final class VaultActivityTests: XCTestCase {
         let now: Int64 = 1_800_000_000
         XCTAssertNil(VaultActivity.refreshSince(newest: nil, now: now))
         XCTAssertEqual(VaultActivity.refreshSince(newest: now - 3_600, now: now), now - 3_660)
-        // A note dated a year ahead must not hold the top-up in the future.
-        XCTAssertEqual(VaultActivity.refreshSince(newest: now + 31_536_000, now: now), now + 540)
+        // A note dated ahead (a year, or minutes) must not hold the top-up
+        // in the future: never look ahead of now (Logen 11-14).
+        XCTAssertEqual(VaultActivity.refreshSince(newest: now + 31_536_000, now: now), now - 60)
+        XCTAssertEqual(VaultActivity.refreshSince(newest: now + 300, now: now), now - 60)
     }
 
     func testAFutureDatedLikeOnAnOldNoteMakesNoLine() {

@@ -216,7 +216,10 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.MAX_SEEN
         // entire vault history on every connect. When we already hold events
         // (resume re-subscribe), only ask for the gap since the newest one.
         val newest = newestEventCreatedAt
-        val sinceClause = if (!isFullReload && newest > 0) ",\"since\":${newest - 60}" else ""
+        // Never ahead of now (VaultActivity.refreshSince, Logen 11-14).
+        val sinceClause = if (!isFullReload && newest > 0) {
+            ",\"since\":${com.nostrvault.data.model.VaultActivity.refreshSince(newest, com.nostrvault.data.model.VaultActivity.nowSeconds())}"
+        } else ""
         // IMPORTANT: a first connect's mentions filter does NOT use sinceClause - we
         // want ALL notes where the user is tagged, not just recent ones (older
         // tagged notes never appeared otherwise). A top-up re-send already holds

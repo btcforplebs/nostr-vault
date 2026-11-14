@@ -96,9 +96,10 @@ data class VaultActivity(
 
         /**
          * The `since` of a top-up: a minute before the newest event held, never
-         * later than the clock allows. Null when nothing is held.
+         * ahead of now, so a note dated minutes ahead (kept, up to MAX_FUTURE_SKEW)
+         * can't hide the notes made meanwhile (Logen 11-14). Null when nothing is held.
          */
-        fun refreshSince(newest: Long?, now: Long): Long? = newest?.let { minOf(it, now + MAX_FUTURE_SKEW) - 60 }
+        fun refreshSince(newest: Long?, now: Long): Long? = newest?.let { minOf(it, now) - 60 }
 
         /**
          * Builds the list. [noteKinds] are the kinds the Vault lists (the relay
