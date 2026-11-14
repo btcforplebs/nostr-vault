@@ -8,12 +8,16 @@
 const OWN = /\/(napplet-frame\.html|napplet-sw\.js)$/
 const STREAM = /\/nv-stream\/([A-Za-z0-9]{16,64})$/
 const PART = 4 * 1024 * 1024, WAIT_MS = 60000
+// Only a <video>/<audio> fetch is answered, and always typed as media: a navigation or a frame there would be a
+// document from the page's bytes without this origin's CSP header.
+const MEDIA_DEST = new Set(["video", "audio"]), MEDIA_TYPE = /^(video|audio)\/[\w.+-]+$/
 self.addEventListener("install", () => self.skipWaiting())
 self.addEventListener("activate", e => e.waitUntil(self.clients.claim()))
 self.addEventListener("fetch", e => {
   const u = new URL(e.request.url)
   if (u.origin === location.origin && OWN.test(u.pathname) && !u.search) return
-  const s = u.origin === location.origin && !u.search && e.request.method === "GET" && STREAM.exec(u.pathname)
+  const s = u.origin === location.origin && !u.search && e.request.method === "GET" &&
+    e.request.mode !== "navigate" && MEDIA_DEST.has(e.request.destination) && STREAM.exec(u.pathname)
   e.respondWith(s ? stream(e, s[1]).catch(() => Response.error()) : Response.error())
 })
 
@@ -37,7 +41,11 @@ async function stream(e, id) {
     if (!got || !got.ok) continue
     if (start >= got.size) return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${got.size}` } })
     const n = got.buf.byteLength
-    return new Response(got.buf, { status: 206, headers: { "Content-Range": `bytes ${start}-${start + n - 1}/${got.size}`, "Content-Length": String(n), "Accept-Ranges": "bytes", "Content-Type": got.type || "application/octet-stream" } })
+    return new Response(got.buf, { status: 206, headers: { "Content-Range": `bytes ${start}-${start + n - 1}/${got.size}`, "Content-Length": String(n), "Accept-Ranges": "bytes", "Content-Type": mediaType(e.request.destination, got.type) } })
   }
   return Response.error()
+}
+function mediaType(dest, t) {
+  const v = String(t || "").split(";")[0].trim().toLowerCase()
+  return MEDIA_TYPE.test(v) && v.startsWith(dest + "/") ? v : dest === "audio" ? "audio/mpeg" : "video/mp4"
 }

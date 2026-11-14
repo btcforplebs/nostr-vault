@@ -129,9 +129,11 @@ test("the napplet service worker: every request errors but its own two files and
   const self = { addEventListener: (t, f) => (listeners[t] = f), skipWaiting() {}, clients: { claim: async () => {}, matchAll: async () => [client] } }
   let fetched = 0
   vm.runInNewContext(sw, { self, location: new URL(ORIGIN + "/vault/napplet-sw.js"), URL, Response, MessageChannel, setTimeout, clearTimeout, Number, Math, String, fetch: () => { fetched++ } })
-  const go = async (path, headers = {}, method = "GET") => {
+  const go = async (path, headers = {}, method = "GET", destination = "video") => {
     let answer = "passed through"
-    listeners.fetch({ request: new Request(path.startsWith("http") ? path : ORIGIN + path, { headers, method }), clientId: "c1", respondWith: r => { answer = r } })
+    const request = new Request(path.startsWith("http") ? path : ORIGIN + path, { headers, method })
+    Object.defineProperty(request, "destination", { value: destination }) // a <video>'s fetch; Node's Request is always ""
+    listeners.fetch({ request, clientId: "c1", respondWith: r => { answer = r } })
     return answer === "passed through" ? answer : await answer
   }
   assert.equal(await go("/vault/napplet-frame.html"), "passed through")
