@@ -15,6 +15,20 @@ enum CopySettings {
     /// A file dated further ahead than this is refused.
     static let futureSlack: Int64 = 600
 
+    /// Compact View's layout, retired 11/11. A linked device on an older
+    /// build may still send it; it reads (and is sent on) as expanded.
+    static let retiredLayout = "condensed"
+
+    static func cleanLayouts(_ layouts: [String: String]) -> [String: String] {
+        layouts.mapValues { $0 == retiredLayout ? FeedLayoutMode.expanded.rawValue : $0 }
+    }
+
+    /// Whether a file still holds the retired layout, so it is written over
+    /// with the clean one.
+    static func holdsRetiredLayout(_ keys: [String: Any]) -> Bool {
+        (keys["feed_layouts"] as? [String: String])?.values.contains(retiredLayout) ?? false
+    }
+
     enum ValueType: String {
         case bool, int
         case strings = "string[]"
@@ -45,7 +59,7 @@ enum CopySettings {
     static func keys(_ config: HavenConfig) -> [String: Any] {
         let prefs = config.notificationPrefsPerAccount[config.ownerNpub] ?? NotificationPreferences()
         return [
-            "feed_layouts": config.feedLayoutModes,
+            "feed_layouts": cleanLayouts(config.feedLayoutModes),
             "zaps_only": config.zapsOnlyMode,
             "auto_load_new_posts": config.autoLoadNewPosts,
             "new_posts_pill": config.showNewPostsPill,
@@ -90,7 +104,7 @@ enum CopySettings {
     /// this device's value. Call only with keys `check` passed.
     static func apply(_ keys: [String: Any], to config: HavenConfig) -> HavenConfig {
         var c = config
-        if let v = keys["feed_layouts"] as? [String: String] { c.feedLayoutModes = v }
+        if let v = keys["feed_layouts"] as? [String: String] { c.feedLayoutModes = cleanLayouts(v) }
         if let v = bool(keys["zaps_only"]) { c.zapsOnlyMode = v }
         if let v = bool(keys["auto_load_new_posts"]) { c.autoLoadNewPosts = v }
         if let v = bool(keys["new_posts_pill"]) { c.showNewPostsPill = v }

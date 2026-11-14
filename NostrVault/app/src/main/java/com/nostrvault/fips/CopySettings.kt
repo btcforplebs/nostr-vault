@@ -20,6 +20,16 @@ object CopySettings {
     const val FILE = "copy-settings.json"
     private const val FUTURE_SLACK_S = 600L
 
+    /** Compact View's layout, retired 11/11. A linked device on an older build may still send it: read and sent as expanded. */
+    private const val RETIRED_LAYOUT = "condensed"
+
+    private fun cleanLayouts(layouts: Map<String, String>) =
+        layouts.mapValues { if (it.value == RETIRED_LAYOUT) com.nostrvault.data.model.FeedLayoutMode.EXPANDED.storageKey else it.value }
+
+    /** Whether a file still holds the retired layout, so it is written over with the clean one (11/14). */
+    fun holdsRetiredLayout(keys: JsonObject): Boolean =
+        (keys["feed_layouts"] as? JsonObject)?.values?.any { (it as? JsonPrimitive)?.content == RETIRED_LAYOUT } == true
+
     enum class Type { BOOL, INT, STRINGS, OBJECT_STRING, OBJECT_BOOL }
 
     /** settings-allowlist.json, key for key (a test checks they match). */
@@ -44,7 +54,7 @@ object CopySettings {
     /** The allowlisted keys for [c]. A home vault or a Mac on the mesh (`.fips`) is this device's own, never sent. */
     fun keys(c: HavenConfig): JsonObject = JsonObject(
         linkedMapOf(
-            "feed_layouts" to JsonObject(c.feedLayoutModes.mapValues { JsonPrimitive(it.value) }),
+            "feed_layouts" to JsonObject(cleanLayouts(c.feedLayoutModes).mapValues { JsonPrimitive(it.value) }),
             "zaps_only" to JsonPrimitive(c.zapsOnlyMode),
             "auto_load_new_posts" to JsonPrimitive(c.autoLoadNewPosts),
             "new_posts_pill" to JsonPrimitive(c.showNewPostsPill),
@@ -80,7 +90,7 @@ object CopySettings {
     /** [c] with every key in [keys] applied; a key not in the file keeps this device's value. */
     fun apply(c: HavenConfig, keys: JsonObject): HavenConfig {
         var out = c
-        keys["feed_layouts"]?.let { el -> out = out.copy(feedLayoutModes = (el as JsonObject).mapValues { (it.value as JsonPrimitive).content }) }
+        keys["feed_layouts"]?.let { el -> out = out.copy(feedLayoutModes = cleanLayouts((el as JsonObject).mapValues { (it.value as JsonPrimitive).content })) }
         bool(keys, "zaps_only")?.let { out = out.copy(zapsOnlyMode = it) }
         bool(keys, "auto_load_new_posts")?.let { out = out.copy(autoLoadNewPosts = it) }
         bool(keys, "new_posts_pill")?.let { out = out.copy(showNewPostsPill = it) }

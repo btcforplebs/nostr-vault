@@ -41,7 +41,8 @@ class FeedFilterPersistenceTest {
     fun `saved switches use the iOS keys and survive a save by this build`() = runBlocking {
         // The shape iOS HavenConfig writes. A build without these fields drops
         // them on load, so the next save erases them.
-        configFile.writeText("""{"showReposts": false, "showReplies": false}""")
+        // With the one-time replies reset done (repliesBackOnV1), as on any device after its first load.
+        configFile.writeText("""{"showReposts": false, "showReplies": false, "repliesBackOnV1": true}""")
 
         val store = ConfigStore(context).apply { reload() }
         store.updateAsync { it }

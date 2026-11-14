@@ -42,6 +42,10 @@ final class CopySettingsSync {
     private func writeIfChanged(_ config: HavenConfig) {
         guard !applying, config.hasCompletedSetup else { return }
         guard CopySettings.differs(config, from: readFile()?.keys) else { return }
+        write(config)
+    }
+
+    private func write(_ config: HavenConfig) {
         let keys = CopySettings.keys(config)
         // No file yet: nothing here has changed since a copy, so the first
         // file is dated oldest and any real change on a linked device wins.
@@ -56,6 +60,12 @@ final class CopySettingsSync {
     func applyFromFile() {
         guard let checked = readFile() else { return }
         let config = ConfigService.shared.config
+        // A file with the retired "condensed" layout reads as expanded, so
+        // nothing differs, but it is written over now, clean, so it stops
+        // reaching linked devices (11/14).
+        if CopySettings.holdsRetiredLayout(checked.keys), config.hasCompletedSetup {
+            write(CopySettings.differs(config, from: checked.keys) ? CopySettings.apply(checked.keys, to: config) : config)
+        }
         guard CopySettings.differs(config, from: checked.keys) else { return }
         applying = true
         ConfigService.shared.config = CopySettings.apply(checked.keys, to: config)

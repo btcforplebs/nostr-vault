@@ -38,17 +38,33 @@ class ConfigStoreLayoutMigrationTest {
     }
 
     @Test
-    fun `a condensed feed loads expanded with replies off and the file is rewritten`() {
-        configFile.writeText("""{"feedLayoutModes":{"FOLLOWING":"condensed","GLOBAL":"threaded"},"showReplies":true}""")
+    fun `a condensed feed loads expanded, keeps replies on, and the file is rewritten`() {
+        configFile.writeText("""{"feedLayoutModes":{"FOLLOWING":"condensed","GLOBAL":"threaded"},"showReplies":true,"repliesBackOnV1":true}""")
 
         val config = store().config.value
         assertEquals(mapOf("FOLLOWING" to "expanded", "GLOBAL" to "threaded"), config.feedLayoutModes)
-        assertFalse(config.showReplies)
+        // A copied settings file can bring "condensed" back on every launch (11/14), so it no longer turns replies off.
+        assertTrue(config.showReplies)
 
-        // The rewrite is saved, so the next launch does not turn replies off again.
         val deadline = System.currentTimeMillis() + 5_000
         while (configFile.readText().contains("condensed") && System.currentTimeMillis() < deadline) Thread.sleep(20)
         assertFalse(configFile.readText().contains("condensed"))
+    }
+
+    @Test
+    fun `replies left off by the condensed loop come back on once`() {
+        configFile.writeText("""{"feedLayoutModes":{"GLOBAL":"threaded"},"showReplies":false}""")
+        assertTrue(store().config.value.showReplies)
+
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!configFile.readText().contains("repliesBackOnV1") && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        assertTrue(Regex(""""repliesBackOnV1"\s*:\s*true""").containsMatchIn(configFile.readText()))
+    }
+
+    @Test
+    fun `after the one time reset, replies turned off stay off`() {
+        configFile.writeText("""{"feedLayoutModes":{"GLOBAL":"threaded"},"showReplies":false,"repliesBackOnV1":true}""")
+        assertFalse(store().config.value.showReplies)
     }
 
     @Test

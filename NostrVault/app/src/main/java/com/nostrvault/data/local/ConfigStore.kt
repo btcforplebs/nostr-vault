@@ -231,10 +231,14 @@ class ConfigStore @Inject constructor(
         )
 
         // Compact View is gone (2026-11-11): a saved "condensed" feed becomes
-        // expanded, which starts with replies off.
-        // Saved below, so it runs once.
+        // expanded. The layout only: a copied settings file brought "condensed"
+        // back on every launch and turning replies off with it kept them off
+        // (11/14). Saved below, so it runs once.
         val condensedLayouts = com.nostrvault.data.model.FeedLayoutMode.migrateCondensed(loaded.feedLayoutModes)
-        condensedLayouts?.let { loaded = loaded.copy(feedLayoutModes = it, showReplies = false) }
+        condensedLayouts?.let { loaded = loaded.copy(feedLayoutModes = it) }
+        // Once: replies that loop left off come back on.
+        val repliesBackOn = !loaded.repliesBackOnV1
+        if (repliesBackOn) loaded = loaded.copy(showReplies = true, repliesBackOnV1 = true)
 
         // Ensure runtime paths are always populated — these are derived from the
         // app's filesystem and intentionally not persisted, but every service that
@@ -299,7 +303,7 @@ class ConfigStore @Inject constructor(
         }
 
         setConfig(loaded)
-        if (removedStarterPicks || droppedDamus || condensedLayouts != null || keyInFile != null || secretsInFile.isNotEmpty()) CoroutineScope(Dispatchers.IO).launch { save() }
+        if (removedStarterPicks || droppedDamus || condensedLayouts != null || repliesBackOn || keyInFile != null || secretsInFile.isNotEmpty()) CoroutineScope(Dispatchers.IO).launch { save() }
 
     }
 

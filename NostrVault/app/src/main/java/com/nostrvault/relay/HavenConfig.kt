@@ -245,6 +245,11 @@ data class HavenConfig(
     /** Replies in the feed. Mirrors iOS HavenConfig.showReplies. */
     val showReplies: Boolean = true,
     /**
+     * Set once replies were turned back on after the "condensed" loop (11/14) kept switching them off. A config
+     * without it gets replies on once. Mirrors iOS HavenConfig.repliesBackOnV1.
+     */
+    val repliesBackOnV1: Boolean = false,
+    /**
      * The floating "New Posts" pill over the feed. Off, waiting posts load on
      * pull-to-refresh (or by themselves at the top with Auto-Load). On by
      * default. Mirrors iOS HavenConfig.showNewPostsPill.
