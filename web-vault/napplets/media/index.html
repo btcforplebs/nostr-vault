@@ -264,6 +264,13 @@ async function show(b) {
     const play = el("button", "primary", `Play (${bytes(b.size) || "size unknown"})`)
     play.onclick = async () => {
       play.disabled = true; play.textContent = "Loading…"
+      // Streamed where this origin's service worker can (it plays while it comes); else the whole file in parts.
+      const live = streamUrl(b)
+      if (live) {
+        const v = el(b.kind === "video" ? "video" : "audio"); v.controls = true; v.playsInline = true; v.preload = "auto"; v.src = live
+        v.onerror = () => { if (open === b && streams.size) { streams.clear(); play.disabled = false; play.textContent = "Couldn't stream it. Try again"; stage.replaceChildren(play) } }
+        stage.replaceChildren(v); v.play().catch(() => {}); return
+      }
       try {
         const blob = await bytesOf(b, done => { if (open === b) play.textContent = `Loading… ${done}%` })
         if (open !== b) return
@@ -289,6 +296,31 @@ async function bytesOf(b, progress = () => {}) {
   }
   return new Blob(got, { type: b.type || got[0]?.type || "" })
 }
+// Streaming (napplet-sw.js nv-stream/<id>): the worker asks this page for a part; the page gets it from the shell.
+const streams = new Map() // id -> { url, size, type }, while the file is open
+function streamUrl(b) {
+  if (!navigator.serviceWorker?.controller || !(b.size > 0) || !n.resource) return null
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), x => x.toString(16).padStart(2, "0")).join("")
+  streams.set(id, { url: b.url.split("#")[0], size: b.size, type: b.type || (b.kind === "audio" ? "audio/mpeg" : "video/mp4") })
+  return new URL(`nv-stream/${id}`, location.href).href
+}
+if (navigator.serviceWorker) {
+  navigator.serviceWorker.addEventListener("message", async e => {
+    const d = e.data, port = e.ports?.[0]
+    if (d?.type !== "nv-stream.want" || !port) return
+    const s = streams.get(d.id)
+    if (!s || !Number.isInteger(d.start) || !Number.isInteger(d.end)) return port.postMessage({ ok: false })
+    if (d.start >= s.size) return port.postMessage({ ok: true, buf: new ArrayBuffer(0), size: s.size, type: s.type })
+    const end = Math.min(d.end, s.size - 1)
+    try {
+      const part = await n.resource.bytes(`${s.url}#nv-bytes=${d.start}-${end}`)
+      if (part.size !== end - d.start + 1) throw new Error("not a part")
+      const buf = await part.arrayBuffer()
+      port.postMessage({ ok: true, buf, size: s.size, type: s.type }, [buf])
+    } catch { port.postMessage({ ok: false }) }
+  })
+  navigator.serviceWorker.startMessages?.()
+}
 function drawNotes(sha256, notes) {
   if (!open || open.sha256 !== sha256) return
   if (!notes.length) { $("vnotes").replaceChildren(el("div", "head", "No note on your vault uses this file.")); return }
@@ -300,6 +332,7 @@ function drawNotes(sha256, notes) {
   }))
 }
 function hide() {
+  streams.clear()
   open = null; $("viewer").hidden = true; document.body.style.overflow = ""
   for (const v of $("stage").querySelectorAll("video,audio")) { v.pause(); URL.revokeObjectURL(v.src) }
   $("stage").replaceChildren()

@@ -55,8 +55,10 @@ screens; check what each import is still used by before deleting.
   (the shell reads your vault, napplet:media/postedIn -> media/notes; a row opens the thread), the live file-note
   "New" tiles (the shell runs watchFileNotes -> media/tiles; saved emoji images stay off Media), and big files in
   8 MB ranged parts, so the shim's 30 s wait no longer kills a long video. The shim (0.38) doesn't pass `range`, so
-  the napplet names it in the link's fragment (`#nv-bytes=S-E`, never sent to a server). Left: a video still arrives
-  whole before it plays (parts, not a stream; capped at 1 GB); an upload over 30 s is answered "uploading" and finishes (gap run 2);
+  the napplet names it in the link's fragment (`#nv-bytes=S-E`, never sent to a server). A video now streams: the
+  napplet origin's service worker answers `nv-stream/<id>` with 4 MB parts the page gets through the shell (gap run
+  2); the Reader's in-note video still arrives whole (it has no size to stream with). An upload over 30 s is
+  answered "uploading" and finishes (gap run 2). Left:
   testing a server.
 - **WoT:** done (gap run). See their web (#/wot/<hex>/web, "‹ You" back) and Follow/Unfollow on a card. Kind 3 is
   still never signed for a napplet: the card's button asks the shell (napplet:wot/follow, only on the WoT pane's own

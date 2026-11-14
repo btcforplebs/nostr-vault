@@ -4,7 +4,7 @@
 // `napplet.hello`; anything else from its window means the document was replaced, and the frame is removed.
 // Spec: NIP-5D (nostr-protocol/nips PR #2303), napplet.run/docs "NIP-5D explained". P0 findings: docs/napplets/P0_SPIKE.md.
 import { preludeFor } from "./prelude.js"
-import { frameCsp, LOADER_FILE } from "./csp.js"
+import { frameCsp, LOADER_FILE, STREAM_PATH } from "./csp.js"
 import { artifactHash, buildSrcdoc } from "./srcdoc.js"
 
 export { artifactHash }
@@ -41,7 +41,9 @@ export async function mountNapplet({ html, dTag, domains, handlers, container, e
   let portUp
   // `ready`: resolves once the napplet has handed over its port (its one napplet.hello), so a send will arrive.
   const napplet = { dTag, hash, send: (m) => port && !closed && port.postMessage(m), ready: new Promise(r => { portUp = r }) }
-  const srcdoc = buildSrcdoc(html, preludeFor(domains), frameCsp())
+  // On its own origin the napplet may stream media from its service worker's path (csp.js STREAM_PATH), only there.
+  const stream = origin && loader ? `${origin}${new URL(loader).pathname.replace(/[^/]*$/, "")}${STREAM_PATH}` : ""
+  const srcdoc = buildSrcdoc(html, preludeFor(domains), frameCsp({ stream }))
   const maxLoads = loader ? 2 : 1
 
   const revoke = (why) => {

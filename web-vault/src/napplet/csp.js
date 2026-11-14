@@ -1,12 +1,16 @@
 // The napplet frame's own Content-Security-Policy, injected as a <meta> at the top of its srcdoc. Default deny: no
 // network at all. Bytes come through NAP-RESOURCE as Blobs, so images and media may only be blob: or data:.
 // Inline script and style are allowed because a napplet is one self-contained file.
-export const frameCsp = () => [
+// `stream`: on a napplet's own origin, its stream path (`<origin><base>nv-stream/`, STREAM_PATH): a <video> there is
+// answered by the origin's service worker from bytes the napplet got through the shell (napplet-sw.js), never the
+// network, so a long video plays while it comes instead of arriving whole first.
+export const STREAM_PATH = "nv-stream/"
+export const frameCsp = ({ stream = "" } = {}) => [
   "default-src 'none'",
   "script-src 'unsafe-inline' 'unsafe-eval' blob:",
   "style-src 'unsafe-inline'",
   "img-src blob: data:",
-  "media-src blob: data:",
+  `media-src blob: data:${stream ? ` ${stream}` : ""}`,
   "font-src data:",
   "worker-src blob:",
   "connect-src 'none'",
@@ -28,7 +32,7 @@ export const LOADER_FILE = "napplet-frame.html"
 // Same headers from vite dev and server.mjs (test-checked). `vault`: the vault's origin(s), space-separated.
 export const SW_FILE = "napplet-sw.js"
 export const isolatedLoaderCsp = ({ self, vault, base = "/vault/" }) =>
-  frameCsp().replace("worker-src blob:", `worker-src blob: ${self}${base}${SW_FILE}`) +
+  frameCsp({ stream: `${self}${base}${STREAM_PATH}` }).replace("worker-src blob:", `worker-src blob: ${self}${base}${SW_FILE}`) +
   `; frame-ancestors ${vault}; sandbox allow-scripts allow-same-origin`
 export const isolatedLoaderHeaders = ({ self, vault, base }) => ({
   "Content-Security-Policy": isolatedLoaderCsp({ self, vault, base }),
