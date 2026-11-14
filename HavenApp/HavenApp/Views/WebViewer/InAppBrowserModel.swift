@@ -40,6 +40,7 @@ final class InAppBrowserModel: ObservableObject {
     private let navigation = InAppBrowserNavigation()
     private var observers: [NSKeyValueObservation] = []
     private var pending: URL?
+    private var recovery = BrowserCrashRecovery()
 
     init(url: URL, ingress: @escaping FipsSchemeHandler.Ingress = FipsSchemeHandler.live) {
         handler = FipsSchemeHandler(ingress: ingress)
@@ -72,6 +73,7 @@ final class InAppBrowserModel: ObservableObject {
         navigation.onFailure = { [weak self] error in
             self?.failure = (error as NSError).localizedDescription
         }
+        navigation.onProcessGone = { [weak self] in self?.processGone() }
         observe()
         pending = url
         Task { await installRules() }
@@ -128,6 +130,20 @@ final class InAppBrowserModel: ObservableObject {
         }
     }
 
+    /// The page's process died and the view went blank: reload once, and if it dies again right away say so with
+    /// Try Again (BrowserCrashRecovery) instead of a blank page.
+    private func processGone() {
+        let url = webView.url ?? URL(string: address)
+        switch recovery.processDied(at: Date()) {
+        case .reload where url != nil:
+            failure = nil
+            if webView.url != nil { webView.reload() } else if let url { load(url) }
+        default:
+            isLoading = false
+            failure = BrowserCrashRecovery.message
+        }
+    }
+
     // MARK: - Actions
 
     /// Opens `url` here: a `.fips` site over the mesh, an http(s) page on the web.
@@ -136,6 +152,11 @@ final class InAppBrowserModel: ObservableObject {
             pending = url
             return
         }
+        recovery.readerActed()
+        load(url)
+    }
+
+    private func load(_ url: URL) {
         failure = nil
         switch FipsURL.route(url, inApp: true) {
         case .mesh(let viewer):
