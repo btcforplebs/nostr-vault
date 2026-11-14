@@ -108,10 +108,24 @@ test("blossom: your own vault keeps its copy; get/upload/server edits are unsupp
   for (const t of ["blossom.get", "blossom.upload", "blossom.addServer", "blossom.removeServer"]) assert.equal((await r.send(t, {})).error, "unsupported")
 })
 
+test("blossom: the delete sheet is told what the file is (url, size, type) from the shell's own look, and still asks if the look fails", async () => {
+  const seen = []
+  for (const describe of [async () => ({ size: 9, type: "image/png" }), async () => { throw new Error("down") }]) {
+    const h = blossomHandler({ grant: defaultGrant({ firstParty: true }), who: {}, deps: { pubkey: ME, servers: async () => [S1], now: () => 0, describe, ask: async q => { seen.push(q.detail); return false }, remove: async () => assert.fail("sent") } })
+    assert.equal((await h({ type: "blossom.delete", id: "1", request: { server: S1, sha256: H("1") } })).result.status, 403)
+  }
+  assert.deepEqual(seen.map(d => [d.url, d.server, d.size, d.type]), [[`${S1}/${H("1")}`, S1, 9, "image/png"], [`${S1}/${H("1")}`, S1, undefined, undefined]])
+})
+
 test("blossom is a shell domain only when the shell wires it, with words for the consent and ask sheets", async () => {
   assert.ok(SHELL_DOMAINS.includes("blossom"))
   assert.match(domainWord("blossom"), /media servers/)
   assert.match(askWords("blossom-delete", { title: "Media" }, { sha256: H("1") }).title, /Media wants to delete a file/)
+  const w = askWords("blossom-delete", { title: "Media" }, { sha256: H("1"), server: S1, url: `${S1}/${H("1")}`, size: 2_400_000, type: "image/jpeg" })
+  assert.equal(w.image, `${S1}/${H("1")}`) // the sheet shows the picture, not only its hash
+  assert.match(w.title, new RegExp(new URL(S1).host))
+  assert.match(w.body, /image\/jpeg · 2\.4 MB/)
+  assert.equal(askWords("blossom-delete", {}, { sha256: H("1"), server: S1, url: `${S1}/${H("1")}`, type: "video/mp4" }).image, null)
   const { handlers } = createHandlers({ ident: { publisher: "p", dTag: "d", hash: H("c"), title: "t" }, grant: defaultGrant({ firstParty: true }), domains: ["blossom"], deps: { bus: {} } })
   assert.equal((await handlers.blossom({ type: "blossom.list", id: "9" })).error, "unsupported")
 })

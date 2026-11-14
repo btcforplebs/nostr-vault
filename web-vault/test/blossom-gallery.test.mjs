@@ -93,7 +93,7 @@ test("delete goes to every server holding the file with a delete auth for its ha
 test("mirror asks only the servers missing the file, and counts a copy only when the hash comes back", async () => {
   const blob = { sha256: H("b"), url: `${A}/${H("b")}`, servers: [A] }
   const asked = []
-  const r = await mirrorBlob(blob, [A, B, C], { ctx, fetch: async (url, opt) => { asked.push(url); assert.deepEqual(JSON.parse(opt.body), { url: blob.url }); assert.deepEqual(authOf(opt.headers.Authorization).tags.slice(0, 2), [["t", "upload"], ["x", H("b")]]); return url.startsWith(B) ? res(200, { sha256: H("b") }) : res(200, { sha256: H("c") }) } })
+  const r = await mirrorBlob(blob, [A, B, C], { ctx, fetch: async (url, opt) => { asked.push(url); assert.deepEqual(JSON.parse(opt.body), { url: blob.url }); assert.deepEqual(authOf(opt.headers.Authorization).tags.slice(0, 2), [["t", "upload"], ["x", H("b")]]); assert.deepEqual(authOf(opt.headers.Authorization).tags.find(t => t[0] === "server"), ["server", new URL(url).hostname]); return url.startsWith(B) ? res(200, { sha256: H("b") }) : res(200, { sha256: H("c") }) } })
   assert.deepEqual(asked, [`${B}/mirror`, `${C}/mirror`])
   assert.deepEqual(r.map(x => [x.server, x.ok]), [[B, true], [C, false]])
   assert.match(outcome(r, "Copied"), /^Copied on 1 of 2 servers\. c\.example: didn't confirm/)

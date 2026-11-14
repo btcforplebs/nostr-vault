@@ -202,9 +202,10 @@ export async function deleteBlob(blob, { ctx, fetch = globalThis.fetch, servers 
 export async function mirrorBlob(blob, servers, { ctx, fetch = globalThis.fetch }) {
   const missing = servers.filter(s => !blob.servers.includes(s))
   if (!missing.length) return []
-  const auth = await signAuth(ctx, "upload", blob.sha256)
   return Promise.all(missing.map(async server => {
     try {
+      // One auth per server, scoped to its host (as delete does), so no server can replay it at another.
+      const auth = await signAuth(ctx, "upload", blob.sha256, hostnameOf(server))
       const res = await fetch(`${server}/mirror`, { method: "PUT", headers: { Authorization: auth, "Content-Type": "application/json" }, body: JSON.stringify({ url: blob.url }) })
       if (!res.ok) return { server, ok: false, message: res.headers?.get?.("X-Reason") || `HTTP ${res.status}` }
       const d = await res.json().catch(() => null)

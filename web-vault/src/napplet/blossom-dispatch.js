@@ -19,7 +19,8 @@ const fail = (status, error) => ({ ok: false, status, error })
 
 /**
  * deps: { pubkey, servers(): Promise<[server]>, list(server, pubkey) -> { blobs, status }, mirror(blob, server) ->
- * [{ ok, message }], remove(blob, server) -> [{ ok, kept?, message }], ask({ napplet, what, detail }) -> bool, now() }
+ * [{ ok, message }], remove(blob, server) -> [{ ok, kept?, message }], ask({ napplet, what, detail }) -> bool, now(),
+ * describe?(url) -> { size, type } | null (what the delete sheet shows besides the picture) }
  */
 export function blossomHandler({ grant, who, deps }) {
   let said = new Map() // sha256 -> when the user said yes to deleting it
@@ -62,7 +63,10 @@ export function blossomHandler({ grant, who, deps }) {
         if (!HEX64.test(r.sha256 ?? "")) return refuse(m, "a delete needs the file's sha256")
         const t = said.get(r.sha256)
         if (!(t && deps.now() - t < DELETE_YES_MS)) {
-          if (!(await deps.ask({ napplet: who, what: "blossom-delete", detail: { sha256: r.sha256 } }))) return reply(m, fail(403, "the user said no"))
+          // Hashes are public (any note names them), so the sheet shows which file this is: its picture, size and type.
+          const url = `${server}/${r.sha256}`
+          const seen = await deps.describe?.(url).catch(() => null)
+          if (!(await deps.ask({ napplet: who, what: "blossom-delete", detail: { sha256: r.sha256, server, url, size: seen?.size, type: seen?.type } }))) return reply(m, fail(403, "the user said no"))
           said.set(r.sha256, deps.now())
           if (said.size > 200) said = new Map([[r.sha256, deps.now()]])
         }

@@ -108,6 +108,11 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
       list: (server, pubkey) => listBlobs([server], pubkey, { ctx }),
       mirror: (blob, server) => mirrorBlob(blob, [server], { ctx }),
       remove: (blob, server) => deleteBlob(blob, { ctx, servers: [server] }),
+      describe: async url => {
+        const res = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(5000) })
+        if (!res.ok) return null
+        return { size: Number(res.headers.get("Content-Length")) || undefined, type: res.headers.get("Content-Type") || undefined }
+      },
       ask,
       now: () => Date.now(),
     },

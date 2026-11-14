@@ -17,6 +17,7 @@ export const PRIVATE_WORDS = {
   help: "Your saved feed, inbox and DMs, your mute list and the vault's files. It can send what it sees to whoever made it. Off: it reads public relays only.",
 }
 export const domainWord = d => DOMAIN_WORDS[d] ?? d
+const sizeWords = n => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`)
 const hostOf = u => { try { return new URL(u).host } catch { return String(u ?? "") } }
 
 const KIND_NAMES = { 1: "a note", 6: "a repost", 7: "a reaction", 16: "a repost", 1111: "a comment", 30023: "an article", 9802: "a highlight" }
@@ -43,7 +44,11 @@ export function askWords(what, napplet, detail = {}) {
   if (what === "publish") return { title: `${who} wants to post ${kindName(detail.kind)} as you`, body: withTags(detail.kind, detail.tags, preview), yes: "Post", no: "Don't post" }
   if (what === "relay-publish") return { title: `${who} wants to send ${kindName(detail.kind)}`, body: withTags(detail.kind, detail.tags, preview), yes: "Send", no: "Don't send" }
   if (what === "upload") return { title: `${who} wants to upload a file`, body: `${detail.filename || "A file"} · ${(detail.size / 1e6).toFixed(1)} MB · ${detail.mime || "unknown type"}. It goes to your media servers.`, yes: "Upload", no: "Don't upload" }
-  if (what === "blossom-delete") return { title: `${who} wants to delete a file from your media servers`, body: `File ${String(detail.sha256 ?? "").slice(0, 12)}…\n\nEvery mirror that holds it is asked to drop it. Your own vaults keep their copy. This can't be undone.`, yes: "Delete", no: "Keep it" }
+  if (what === "blossom-delete") {
+    const facts = [detail.type || "unknown type", Number.isFinite(detail.size) && detail.size > 0 ? sizeWords(detail.size) : null].filter(Boolean).join(" · ")
+    const image = /^image\//i.test(detail.type ?? "") || (!detail.type && /^https:\/\//i.test(detail.url ?? "")) ? detail.url : null
+    return { title: `${who} wants to delete a file from ${hostOf(detail.server) || "your media servers"}`, body: `File ${String(detail.sha256 ?? "").slice(0, 12)}… · ${facts}\n\nOnly that server is asked to drop it, and a vault of yours keeps its copy. This can't be undone.`, image, yes: "Delete", no: "Keep it" }
+  }
   if (what === "blossom-mirror") return { title: `${who} wants to copy a file to ${hostOf(detail.server)}`, body: `File ${String(detail.sha256 ?? "").slice(0, 12)}…\n\nThat server fetches it from where it is now.`, yes: "Copy", no: "Don't copy" }
   if (what === "notify") return { title: `${who} wants to show notifications`, body: "Asked once. You can take it back by removing the napplet.", yes: "Allow", no: "Don't allow" }
   return { title: `${who} asks: ${what}`, body: "", yes: "Allow", no: "Don't allow" }
