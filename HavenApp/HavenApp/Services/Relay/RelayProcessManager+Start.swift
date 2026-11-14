@@ -234,6 +234,10 @@ extension RelayProcessManager {
             // StartRelayC returns instantly because http.ListenAndServe runs in a goroutine
             DispatchQueue.main.async {
                 self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Relay C-Shared process started"))
+                // The Vault's rows as soon as the store opens: the read asks
+                // again every 20 ms while booting instead of waiting for the
+                // "ready" log line (VaultDirectRead.retriesNotReady).
+                NostrService.shared.readVaultFromStore()
             }
         }
         
