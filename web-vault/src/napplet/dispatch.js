@@ -7,6 +7,7 @@
 import { visibleEvents, seesPrivate, signDecision, resendDecision, deletionTargets, protectedKind } from "./policy.js"
 import { nappletKey, nappletLine } from "./manifest.js"
 import { blossomHandler } from "./blossom-dispatch.js"
+import { dmHandler } from "./dm-dispatch.js"
 
 export const MAX_EVENTS = 500
 export const MAX_FILTERS = 10
@@ -36,6 +37,7 @@ export function cleanFilters(raw) {
  */
 export function createHandlers({ ident, grant, domains, deps }) {
   const subs = new Map() // subId -> close()
+  let dm = null // the dm domain's handler, made on first use (it pushes dm.message to this napplet)
   const uploads = new Map() // uploadId -> status
   const instanceScope = nappletKey(ident), sharedScope = nappletLine(ident)
   const who = { ...ident, grant }
@@ -282,6 +284,9 @@ export function createHandlers({ ident, grant, domains, deps }) {
     // The user's files on their media servers (blossom-dispatch.js): the shell signs every Blossom auth itself.
     blossom: deps.blossom ? blossomHandler({ grant, who, deps: deps.blossom }) : m => (m?.id ? { type: `${m.type}.result`, id: m.id, error: "unsupported" } : undefined),
 
+    // Direct messages through the shell's own DM stack (dm-dispatch.js): keys, decryption and sealing stay here.
+    dm: deps.dm ? (m, napplet) => (dm ??= dmHandler({ grant, who, deps: deps.dm, push: x => napplet.send(x) })).handle(m) : m => (m?.id ? { type: `${m.type}.result`, id: m.id, error: "unsupported" } : undefined),
+
     notify: async m => {
       const id = m.id
       const allowed = async () => {
@@ -301,6 +306,6 @@ export function createHandlers({ ident, grant, domains, deps }) {
     },
   }
 
-  const close = () => { for (const stop of subs.values()) try { stop() } catch {} subs.clear() }
+  const close = () => { for (const stop of subs.values()) try { stop() } catch {} subs.clear(); dm?.close() }
   return { handlers, close }
 }

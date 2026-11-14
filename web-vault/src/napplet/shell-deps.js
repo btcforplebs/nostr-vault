@@ -14,6 +14,10 @@ import { protectedKind, deletionTargets } from "./policy.js"
 import { idbNappletStorage } from "./storage-idb.js"
 import { catalogFilter, catalogEntries, fetchArtifact } from "./catalog.js"
 import { listBlobs, mirrorBlob, deleteBlob } from "../net/blossom-gallery.js"
+import { getMessages, onMessages, sendMessage } from "../net/dms.js"
+import { markRead } from "../net/dm-read.js"
+import { getProfile } from "../net/profiles.js"
+import { findMine } from "./shell-deps-find.js"
 
 const QUERY_WAIT_MS = 4000
 const codeError = (code, message) => Object.assign(new Error(message ?? code), { code })
@@ -49,7 +53,7 @@ async function fetchBytes(url, { servers = [], range } = {}) {
  * deps for dispatch.js. `ask`: the consent sheet's question (NappletShell). `saveGrant(grant)`: keep a changed grant.
  * `bus`: the page's createBus().
  */
-export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorage(ctx.session.pubkey) }) {
+export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorage(ctx.session.pubkey), dm = null }) {
   const readRelays = () => uniq([...(ctx.account.relays?.read ?? []), ...DEFAULT_RELAYS])
   return {
     pubkey: ctx.session.pubkey,
@@ -115,6 +119,25 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
       },
       ask,
       now: () => Date.now(),
+    },
+    // NAP-DM (dm-dispatch.js) on the classic Messages code; `dm` from the pane: { blocked(), trusted(), unread() }.
+    dm: dm && {
+      me: ctx.session.pubkey,
+      messages: () => getMessages().messages,
+      blocked: dm.blocked, trusted: dm.trusted, unread: dm.unread,
+      profile: pk => getProfile(pk),
+      onChange: cb => onMessages(cb),
+      async send(peer, text) {
+        const before = new Set([...getMessages().messages.values()].map(m => m.id))
+        try { await sendMessage(ctx, peer, text) } catch (e) {
+          const failed = findMine(getMessages().messages, ctx.session.pubkey, peer, text, true, before)
+          throw Object.assign(new Error(String(e?.fixed ? e.message : "The message wasn't sent.")), { failedId: failed?.id })
+        }
+        return findMine(getMessages().messages, ctx.session.pubkey, peer, text, false, before) ?? { id: `sent:${crypto.randomUUID()}`, from: ctx.session.pubkey, peer, content: text, at: Math.floor(Date.now() / 1000) }
+      },
+      markRead: list => markRead(ctx.session.pubkey, list),
+      ask,
+      randomId: () => crypto.randomUUID(),
     },
     ask,
     saveGrant,

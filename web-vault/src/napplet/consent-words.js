@@ -1,4 +1,5 @@
 // The words the consent and ask sheets use (NappletShell.jsx). Pure, so the copy is tested with the rules.
+import { npubEncode } from "nostr-tools/nip19"
 export const DOMAIN_WORDS = {
   identity: "See your public key, profile, follows and relays",
   theme: "Use Nostr Vault's colours",
@@ -11,6 +12,7 @@ export const DOMAIN_WORDS = {
   inc: "Talk to other open napplets",
   notify: "Ask to show notifications",
   blossom: "See the files on your media servers, and ask to copy or delete them",
+  dm: "Read your direct messages, and ask to send them",
 }
 export const PRIVATE_WORDS = {
   label: "Your vault's private data",
@@ -50,6 +52,15 @@ export function askWords(what, napplet, detail = {}) {
     return { title: `${who} wants to delete a file from ${hostOf(detail.server) || "your media servers"}`, body: `File ${String(detail.sha256 ?? "").slice(0, 12)}… · ${facts}\n\nOnly that server is asked to drop it, and a vault of yours keeps its copy. This can't be undone.`, image, yes: "Delete", no: "Keep it" }
   }
   if (what === "blossom-mirror") return { title: `${who} wants to copy a file to ${hostOf(detail.server)}`, body: `File ${String(detail.sha256 ?? "").slice(0, 12)}…\n\nThat server fetches it from where it is now.`, yes: "Copy", no: "Don't copy" }
+  if (what === "dm-send") {
+    // A profile name is the stranger's own choice (anyone can be "Mom"), so the key always shows beside it.
+    const to = String(detail.to ?? "")
+    let npub = to; try { npub = npubEncode(to) } catch {}
+    const key = `${npub.slice(0, 16)}…`
+    const text = String(detail.content ?? "")
+    const more = text.length > 500 ? `\n\n… and ${text.length - 500} more characters` : ""
+    return { title: `${who} wants to send a direct message as you`, body: `To ${detail.name ? `${detail.name} (${key})` : key}:\n\n${text.slice(0, 500)}${more}`, yes: "Send", no: "Don't send" }
+  }
   if (what === "notify") return { title: `${who} wants to show notifications`, body: "Asked once. You can take it back by removing the napplet.", yes: "Allow", no: "Don't allow" }
   return { title: `${who} asks: ${what}`, body: "", yes: "Allow", no: "Don't allow" }
 }
