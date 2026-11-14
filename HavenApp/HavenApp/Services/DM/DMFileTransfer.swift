@@ -50,13 +50,19 @@ enum DMFileTransfer {
     // MARK: Down
 
     private static var directory: URL {
-        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        var base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        #if os(macOS)
+        // Outside the sandbox Caches is the user's shared folder: keep the plain copies under the app's own name.
+        if ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] == nil, let id = Bundle.main.bundleIdentifier {
+            base = base.appendingPathComponent(id, isDirectory: true)
+        }
+        #endif
         return base.appendingPathComponent("dm-files", isDirectory: true)
     }
 
-    /// Where the opened file lives on this device: named by its ciphertext hash, with an extension for its type.
+    /// Where the opened file lives on this device (DMFile.openedName), with an extension for its type.
     static func localURL(_ s: DMFile.Sealed) -> URL {
-        let name = s.x ?? DMFile.sha256Hex(Data((s.url.absoluteString + s.key).utf8))
+        let name = DMFile.openedName(s)
         let ext: String
         switch s.mime.lowercased() {
         case "image/gif": ext = "gif"
@@ -72,6 +78,11 @@ enum DMFileTransfer {
     /// A decrypted copy this file keeps (and only those): what the media views may read from disk.
     static func isOpenedFile(_ url: URL) -> Bool {
         url.isFileURL && url.standardizedFileURL.path.hasPrefix(directory.standardizedFileURL.path + "/")
+    }
+
+    /// Removes every decrypted copy (Clear Cache, Delete Account): each is opened again from its message when needed.
+    static func removeAll() {
+        try? FileManager.default.removeItem(at: directory)
     }
 
     static func cached(_ s: DMFile.Sealed) -> URL? {

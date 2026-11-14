@@ -147,6 +147,13 @@ enum DMFile {
         return Sealed(url: url, key: k, nonce: n, x: x, ox: ox, mime: isMime(m) ? m : "application/octet-stream")
     }
 
+    /// The name this device keeps an opened copy under: the hash, key and nonce together, not the hash alone.
+    /// AES-GCM doesn't tie a ciphertext to one key, so a message naming a hash already opened in another chat
+    /// must not be handed that chat's photo.
+    static func openedName(_ s: Sealed) -> String {
+        sha256Hex(Data(((s.x ?? s.url.absoluteString) + "|" + s.key + "|" + s.nonce).utf8))
+    }
+
     /// The message as a preview or a notification shows it: a file link becomes "Photo" (or "File"), so the key in
     /// its fragment is never drawn on a lock screen.
     static func displayText(_ content: String) -> String {

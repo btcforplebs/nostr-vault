@@ -71,6 +71,8 @@ enum AppDataWipe {
         var roots = [appSupport]
         roots += ownCacheFolders(bundleID: bundleID, fm: fm)
         for root in roots { removeNamed(in: root, hex: hex, npub: npub, fm: fm) }
+        // Decrypted DM photos are named by their file, not the account: drop them all (they reopen from the message).
+        DMFileTransfer.removeAll()
         let defaults = UserDefaults.standard
         for (key, value) in defaults.dictionaryRepresentation() {
             if AccountDataSweep.belongs(key, hex: hex, npub: npub) {

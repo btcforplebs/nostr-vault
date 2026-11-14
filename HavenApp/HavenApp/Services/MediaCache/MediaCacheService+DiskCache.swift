@@ -97,6 +97,7 @@ extension MediaCacheService {
                 }
             }
         }
+        DMFileTransfer.removeAll()
         imageCache.removeAllObjects()
         thumbnailMemoryCache.removeAllObjects()
         let freed = max(0, sizeBefore - cacheSizeBytes())

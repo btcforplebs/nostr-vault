@@ -1,4 +1,5 @@
 import SwiftUI
+import ImageIO
 
 /// A locked DM photo (NIP-17 kind 15, DMFile) in a bubble: downloaded, checked and decrypted on this device, then
 /// drawn from the plain copy. A file that fails its hash or key shows why instead of a picture, and never the link.
@@ -11,6 +12,8 @@ struct LockedDMPhotoTile: View {
 
     private enum Phase: Equatable { case loading, ready(URL), failed(String) }
     @State private var phase: Phase
+    @State private var thumb: PlatformImage?
+    @Environment(\.displayScale) private var displayScale
 
     init(sealed: DMFile.Sealed, size: CGFloat, mediaZoom: Namespace.ID? = nil, onOpen: ((URL) -> Void)? = nil) {
         self.sealed = sealed
@@ -27,7 +30,7 @@ struct LockedDMPhotoTile: View {
                 Button { onOpen?(url) } label: {
                     // Drawn from the plain copy on disk: the network image views read only remote and vault URLs.
                     Group {
-                        if let image = Self.image(at: url) {
+                        if let image = thumb {
                             Image(platformImage: image).resizable().aspectRatio(contentMode: .fill)
                         } else {
                             Rectangle().fill(Color.gray.opacity(0.1))
@@ -40,6 +43,7 @@ struct LockedDMPhotoTile: View {
                 .buttonStyle(.plain)
                 .mediaZoomSource(url, namespace: mediaZoom)
                 .accessibilityLabel("Photo")
+                .task(id: url) { await loadThumb(url) }
             case .ready:
                 status(icon: "doc.fill", text: "File (\(sealed.mime))")
             case .loading:
@@ -71,12 +75,32 @@ struct LockedDMPhotoTile: View {
         .background(Color.gray.opacity(0.1))
     }
 
-    /// The decrypted photo, kept in the shared image cache so the viewer opens it without reading the disk again.
-    private static func image(at url: URL) -> PlatformImage? {
-        if let hit = MediaCacheService.shared.cachedImage(for: url) { return hit }
-        guard let image = PlatformImage(contentsOfFile: url.path) else { return nil }
-        MediaCacheService.shared.cacheImage(image, for: url)
-        return image
+    /// The bubble's picture: an ImageIO thumbnail at the tile's pixel size, made off the main thread. Never the full
+    /// decode: a stranger's small PNG can claim huge pixel dimensions and would take gigabytes once decoded.
+    private func loadThumb(_ url: URL) async {
+        let key = url.appendingPathExtension("tile")
+        if let hit = MediaCacheService.shared.cachedImage(for: key) { thumb = hit; return }
+        let maxPixel = max(1, Int((size * displayScale).rounded(.up)))
+        let image = await Task.detached(priority: .userInitiated) { Self.thumbnail(at: url, maxPixel: maxPixel) }.value
+        guard let image, !Task.isCancelled else { return }
+        MediaCacheService.shared.cacheImage(image, for: key)
+        thumb = image
+    }
+
+    nonisolated static func thumbnail(at url: URL, maxPixel: Int) -> PlatformImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        #if os(macOS)
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+        #else
+        return UIImage(cgImage: cg)
+        #endif
     }
 
     private func load() async {

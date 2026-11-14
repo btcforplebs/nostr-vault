@@ -169,3 +169,20 @@ final class GIFStripTests: XCTestCase {
         }
     }
 }
+
+extension DMFileTests {
+    /// Tron #2076 item 5: the same server hash under another key or nonce is another file on this device.
+    func testOpenedCopyIsNamedByHashKeyAndNonce() {
+        let url = URL(string: "https://example.com/" + String(repeating: "a", count: 64))!
+        let x = String(repeating: "a", count: 64)
+        let k1 = String(repeating: "1", count: 64), k2 = String(repeating: "2", count: 64)
+        let n1 = String(repeating: "3", count: 24), n2 = String(repeating: "4", count: 24)
+        let base = DMFile.Sealed(url: url, key: k1, nonce: n1, x: x, ox: nil, mime: "image/jpeg")
+        let otherKey = DMFile.Sealed(url: url, key: k2, nonce: n1, x: x, ox: nil, mime: "image/jpeg")
+        let otherNonce = DMFile.Sealed(url: url, key: k1, nonce: n2, x: x, ox: nil, mime: "image/jpeg")
+        XCTAssertNotEqual(DMFile.openedName(base), DMFile.openedName(otherKey))
+        XCTAssertNotEqual(DMFile.openedName(base), DMFile.openedName(otherNonce))
+        XCTAssertEqual(DMFile.openedName(base), DMFile.openedName(base))
+        XCTAssertNotEqual(DMFile.openedName(base), x, "never the bare hash")
+    }
+}

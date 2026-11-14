@@ -31,7 +31,8 @@ extension FeedMediaViewer {
                 .accessibilityLabel(photosSave == .saved ? "Saved to Photos" : "Save to Photos")
             }
             #endif
-            if !isLoadingType && !isMirroring, let localURL = viewerLocalURL(),
+            // A locked DM photo opened here is a private plain copy: never Mirror it to public servers or copy a link.
+            if !isLoadingType && !isMirroring, !DMFileTransfer.isOpenedFile(url), let localURL = viewerLocalURL(),
                configService.hasExternalShareURL(for: localURL) {
                 if isOnMirror {
                     actionCapsule(icon: "checkmark.circle.fill", label: "Mirrored", showLabel: showLabels, fill: Self.doneGreen)
@@ -103,6 +104,7 @@ extension FeedMediaViewer {
     }
 
     private func mirrorToBlossomTapped() {
+        guard !DMFileTransfer.isOpenedFile(url) else { return }
         isMirroring = true
         mirrorStatus = .loading
 
