@@ -56,7 +56,7 @@ screens; check what each import is still used by before deleting.
   "New" tiles (the shell runs watchFileNotes -> media/tiles; saved emoji images stay off Media), and big files in
   8 MB ranged parts, so the shim's 30 s wait no longer kills a long video. The shim (0.38) doesn't pass `range`, so
   the napplet names it in the link's fragment (`#nv-bytes=S-E`, never sent to a server). Left: a video still arrives
-  whole before it plays (parts, not a stream; capped at 1 GB); an upload over 30 s still times out in the shim;
+  whole before it plays (parts, not a stream; capped at 1 GB); an upload over 30 s is answered "uploading" and finishes (gap run 2);
   testing a server.
 - **WoT:** done (gap run). See their web (#/wot/<hex>/web, "‹ You" back) and Follow/Unfollow on a card. Kind 3 is
   still never signed for a napplet: the card's button asks the shell (napplet:wot/follow, only on the WoT pane's own
@@ -64,8 +64,8 @@ screens; check what each import is still used by before deleting.
 - **Messages:** done (gap run): photos (pick, paste or drop one; the shell redraws it without metadata, uploads it and
   sends its link, the classic path; photos show at once from you or a follow, on a tap from anyone else), search (the
   classic on-device one, through `dm.conversations` `query`), and a brand-new conversation's name (`ids`). Group DMs:
-  the classic page has none either, so none here. A failed send has Try again and Remove (gap run 2), as on the classic thread. Left: a very
-  slow upload can pass the shim's 30 s wait.
+  the classic page has none either, so none here. A failed send has Try again and Remove (gap run 2), as on the classic thread. A slow upload no longer
+  fails at the shim's 30 s wait (an "uploading" answer, then upload.status.changed).
 - **Not part of this plan, stay classic:** your own profile (its editor), Search, Notifications, Settings, the Vault
   pages and the dashboard.
 

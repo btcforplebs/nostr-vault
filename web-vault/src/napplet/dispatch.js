@@ -13,6 +13,9 @@ import { blossomHandler } from "./blossom-dispatch.js"
 import { dmHandler } from "./dm-dispatch.js"
 import { DELAYED_KINDS } from "./publish-delay.js"
 
+/** How long an upload may take before the answer is "uploading" (well inside the shim's 30 s wait). */
+export const UPLOAD_ANSWER_MS = 20_000
+
 /** "https://x/f.mp4#nv-bytes=0-8388607" -> { url: "https://x/f.mp4", range: { start: 0, end: 8388607 } }; any other
  *  link comes back as it is, with no range. Only http(s) links: a blossom: name is fetched whole and checked. */
 export function rangeInUrl(url) {
@@ -287,7 +290,11 @@ export function createHandlers({ ident, grant, domains, deps }) {
       }
     },
 
-    upload: async m => {
+    // NAP-UPLOAD. An upload that finishes within UPLOAD_ANSWER_MS is answered with its result; a longer one (a big
+    // video, a slow link, or the ask sheet left open) is answered "uploading" with its uploadId, and its end is pushed
+    // as upload.status.changed (upload.status answers too). The shim gives up on any answer after 30 s, so a long
+    // upload used to fail in the napplet while the shell went on and finished it.
+    upload: async (m, napplet) => {
       const id = m.id
       if (m.type === "upload.info") return { type: "upload.info.result", id, info: { rails: [{ rail: "blossom", enabled: true, returns: ["url", "sha256"] }] } }
       if (m.type === "upload.status") return { type: "upload.status.result", id, ...(uploads.has(m.uploadId) ? { status: uploads.get(m.uploadId) } : { error: "not-found" }) }
@@ -297,20 +304,22 @@ export function createHandlers({ ident, grant, domains, deps }) {
       if (!blob) return { type: "upload.upload.result", id, error: "data must be a Blob or ArrayBuffer" }
       const mime = req.mimeType || blob.type || "application/octet-stream"
       const uploadId = deps.randomId()
-      const base = { uploadId, rail: "blossom", updatedAt: Date.now() }
-      if (!grant.firstParty && !(await ask("upload", { size: blob.size, mime, filename: typeof req.filename === "string" ? req.filename.slice(0, 120) : "" }))) {
-        return { type: "upload.upload.result", id, result: { ...base, ok: false, status: "cancelled", error: "the user said no" } }
-      }
-      try {
-        const up = await deps.upload(blob, mime)
-        const result = { ok: true, uploadId, status: "complete", rail: "blossom", url: up.url, sha256: up.sha256, size: up.size, mimeType: up.mime }
-        uploads.set(uploadId, { ...result, updatedAt: Date.now() })
-        return { type: "upload.upload.result", id, result }
-      } catch (e) {
-        const result = { ok: false, uploadId, status: "failed", rail: "blossom", error: err(e) }
-        uploads.set(uploadId, { ...result, updatedAt: Date.now() })
-        return { type: "upload.upload.result", id, result }
-      }
+      const keep = r => { const st = { ...r, updatedAt: Date.now() }; uploads.set(uploadId, st); return st }
+      const job = (async () => {
+        if (!grant.firstParty && !(await ask("upload", { size: blob.size, mime, filename: typeof req.filename === "string" ? req.filename.slice(0, 120) : "" })))
+          return { ok: false, uploadId, status: "cancelled", rail: "blossom", error: "the user said no" }
+        try {
+          const up = await deps.upload(blob, mime)
+          return { ok: true, uploadId, status: "complete", rail: "blossom", url: up.url, sha256: up.sha256, size: up.size, mimeType: up.mime }
+        } catch (e) { return { ok: false, uploadId, status: "failed", rail: "blossom", error: err(e) } }
+      })()
+      let timer = null
+      const first = await Promise.race([job, new Promise(res => { timer = setTimeout(() => res(null), deps.uploadAnswerMs ?? UPLOAD_ANSWER_MS) })])
+      clearTimeout(timer)
+      if (first) { keep(first); return { type: "upload.upload.result", id, result: first } }
+      const going = keep({ ok: true, uploadId, status: "uploading", rail: "blossom", bytesTotal: blob.size })
+      job.then(done => napplet?.send({ type: "upload.status.changed", status: keep(done) }))
+      return { type: "upload.upload.result", id, result: (({ updatedAt, ...r }) => r)(going) }
     },
 
     intent: (m, napplet) => {
