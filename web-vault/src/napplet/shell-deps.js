@@ -14,11 +14,11 @@ import { protectedKind, deletionTargets } from "./policy.js"
 import { idbNappletStorage } from "./storage-idb.js"
 import { catalogFilter, catalogEntries, fetchArtifact } from "./catalog.js"
 import { listBlobs, mirrorBlob, deleteBlob } from "../net/blossom-gallery.js"
-import { getMessages, onMessages, sendMessage } from "../net/dms.js"
+import { getMessages, onMessages, sendMessage, dropFailed } from "../net/dms.js"
 import { markRead } from "../net/dm-read.js"
 import { dmContent, preparePhoto } from "../net/dm-photo.js"
 import { getProfile } from "../net/profiles.js"
-import { findMine } from "./shell-deps-find.js"
+import { findMine, newestMine } from "./shell-deps-find.js"
 import { SEND_ACTIONS, countdownText, sendDelaySeconds, startCountdown } from "../net/send-delay.js"
 import { showToast, hideToast } from "../components/Toast.jsx"
 import { delayActionOf } from "./publish-delay.js"
@@ -175,6 +175,16 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
         }
         return findMine(getMessages().messages, ctx.session.pubkey, peer, sentText, false, before) ?? { id: `sent:${crypto.randomUUID()}`, from: ctx.session.pubkey, peer, content: sentText, at: Math.floor(Date.now() / 1000) }
       },
+      // Try again / Remove: the classic thread's own buttons (ConversationScreen.jsx: m.resend(), dropFailed).
+      async retry(id) {
+        const old = getMessages().messages.get(id), before = new Set(getMessages().messages.keys())
+        try { await old.resend() } catch (e) {
+          const failed = newestMine(getMessages().messages, ctx.session.pubkey, old.peer, true, before)
+          throw Object.assign(new Error(String(e?.fixed ? e.message : "The message wasn't sent.")), { failedId: failed?.id })
+        }
+        return newestMine(getMessages().messages, ctx.session.pubkey, old.peer, false, before) ?? { id: `sent:${crypto.randomUUID()}`, from: ctx.session.pubkey, peer: old.peer, content: old.content, at: Math.floor(Date.now() / 1000) }
+      },
+      discard: id => dropFailed(id),
       markRead: list => markRead(ctx.session.pubkey, list),
       ask,
       randomId: () => crypto.randomUUID(),

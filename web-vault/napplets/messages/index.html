@@ -46,6 +46,8 @@
   .b img.photo { display: block; max-width: 100%; max-height: 360px; border-radius: 12px; margin: 4px 0; }
   .b button.photo { display: block; margin: 4px 0; background: rgb(0 0 0 / .25); border-color: transparent; color: inherit; }
   .b.pending { opacity: .7; }
+  .b .again { display: flex; gap: 10px; margin-top: 4px; font-size: 12px; }
+  .b .again button { min-height: 28px; padding: 0 10px; font-size: 12px; background: rgb(0 0 0 / .25); border-color: transparent; color: inherit; }
   #pick { padding: 0 12px; min-width: 44px; min-height: 42px; }
   #attach { position: relative; display: inline-block; margin: 0 12px; }
   #attach img { display: block; max-height: 96px; max-width: 160px; border-radius: 12px; }
@@ -216,7 +218,13 @@ function drawThread(toEnd) {
     const mine = m.senderPubkey === me
     const b = el("div", `b${mine ? " mine" : ""}${m.status === "failed" ? " failed" : ""}`)
     fill(b, m.content, mine || follows.get(open))
-    b.append(el("time", "", m.status === "failed" ? "Not sent" : new Date(m.createdAt * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })))
+    b.append(el("time", "", m.status === "failed" ? (m.retrying ? "Sending again…" : "Not sent") : new Date(m.createdAt * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })))
+    // The classic thread's "Not sent · Try again · Remove" (ConversationScreen.jsx).
+    if (m.status === "failed" && mine && !m.retrying) {
+      const row = el("div", "again"), go = el("button", "", "Try again"), rm = el("button", "", "Remove")
+      go.type = rm.type = "button"; go.onclick = () => tryAgain(m); rm.onclick = () => tryAgain(m, true)
+      row.append(go, rm); b.append(row)
+    }
     out.push(b)
   }
   if (pending && pending.to === open) { const b = el("div", "b mine pending"); if (pending.text) b.append(pending.text); b.append(el("time", "", "Sending photo…")); out.push(b) }
@@ -264,22 +272,40 @@ $("text").oninput = () => { syncSend(); $("text").style.height = "auto"; $("text
 // No <form>: the frame's sandbox has no allow-forms, so a submit never reaches its handler.
 $("text").onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendNow() } }
 $("send").onclick = () => sendNow()
+/** Try again (or Remove) a message that wasn't sent. The shell keeps its own failed messages with their resend (a photo
+ *  that never uploaded uploads again); one it never kept (the send was refused before it began) comes back to the box. */
+async function tryAgain(m, discard = false) {
+  const to = open
+  if (!m.id || /^(failed|refused):/.test(m.id)) {
+    msgs = msgs.filter(x => x !== m); drawThread(false)
+    if (!discard && !$("text").value.trim()) { $("text").value = String(m.content ?? "").replace(/\n?\(photo\)$/, ""); syncSend(); $("text").focus() }
+    return
+  }
+  m.retrying = !discard; drawThread(false)
+  const r = await n.dm.send({ recipients: [to], conversationId: to, content: "", retry: m.id, ...(discard ? { discard: true } : {}) }).catch(e => ({ ok: false, error: e.message, message: null }))
+  if (open !== to) return
+  msgs = msgs.filter(x => x.id !== m.id)
+  if (r.message && !r.message.removed) msgs = mergeThread(msgs, [r.message])
+  $("tnote").hidden = r.ok !== false; if (r.ok === false) $("tnote").textContent = r.message?.error || r.error || "Not sent. Try again later."
+  drawThread(!discard)
+}
 async function sendNow() {
   const text = $("text").value.trim(), ph = photo; if ((!text && !ph) || sending || !open) return
   sending = true; syncSend()
   const to = open
   // A photo uploads first: its bubble shows at once ("Sending photo…") and the box clears, as on the classic thread.
   if (ph) { pending = { to, text }; $("text").value = ""; photo = null; $("attachRow").hidden = true; drawThread(true) }
-  let ok = false
+  let ok = false, kept = false // kept: the shell holds the failed message, so its bubble has Try again
   try {
     const r = await n.dm.send({ recipients: [to], conversationId: to, content: text, ...(ph ? { photo: ph } : {}) })
-    ok = r.ok
+    ok = r.ok; kept = !r.ok && !!r.message?.id && !/^(failed|refused):/.test(r.message.id)
     pending = null
     if (open === to) { msgs = mergeThread(msgs, [r.message]); drawThread(true) }
-    if (r.ok && !ph) $("text").value = ""
+    if ((r.ok || kept) && !ph) $("text").value = ""
+    if (!r.ok && r.message?.error && open === to) { $("tnote").textContent = r.message.error; $("tnote").hidden = false }
   } catch (err) { pending = null; if (open === to) { msgs = mergeThread(msgs, [{ id: `failed:${Date.now()}`, conversationId: to, senderPubkey: me, createdAt: Math.floor(Date.now() / 1000), content: ph ? (text ? `${text}\n(photo)` : "(photo)") : text, status: "failed" }]); drawThread(true) } }
-  // Not sent: the photo and its words come back to the box, ready to try again.
-  if (ph) { if (!ok && open === to && !photo) { setPhoto(ph); if (!$("text").value) $("text").value = text } else if (photoUrl && !photo) clearPhoto() }
+  // Not sent and not kept by the shell: the photo and its words come back to the box, ready to try again.
+  if (ph) { if (!ok && !kept && open === to && !photo) { setPhoto(ph); if (!$("text").value) $("text").value = text } else if (photoUrl && !photo) clearPhoto() }
   sending = false; syncSend()
 }
 $("newBtn").onclick = () => { $("to").value = ""; $("go").disabled = true; show("new"); $("to").focus() }

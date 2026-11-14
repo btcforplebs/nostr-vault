@@ -64,8 +64,8 @@ screens; check what each import is still used by before deleting.
 - **Messages:** done (gap run): photos (pick, paste or drop one; the shell redraws it without metadata, uploads it and
   sends its link, the classic path; photos show at once from you or a follow, on a tap from anyone else), search (the
   classic on-device one, through `dm.conversations` `query`), and a brand-new conversation's name (`ids`). Group DMs:
-  the classic page has none either, so none here. Left: a failed send has no Try again in the napplet (the words and
-  photo come back to the box instead); a very slow upload can pass the shim's 30 s wait.
+  the classic page has none either, so none here. A failed send has Try again and Remove (gap run 2), as on the classic thread. Left: a very
+  slow upload can pass the shim's 30 s wait.
 - **Not part of this plan, stay classic:** your own profile (its editor), Search, Notifications, Settings, the Vault
   pages and the dashboard.
 
