@@ -176,7 +176,8 @@ export function NappletShell({ ctx, showSwitch = true, vaultMenu = false }) {
         <ul class="apps-list">
           {shown.map(e => (
             <li key={e.line} class="apps-row">
-              {e.picture ? <img class="apps-icon" src={e.picture} alt="" referrerpolicy="no-referrer" loading="lazy" /> : <span class="apps-icon" aria-hidden="true">{e.manifest.title.slice(0, 1).toUpperCase()}</span>}
+              {/* Letter icon only: a publisher-named icon host would see the IP of everyone who opens the catalog. */}
+              <span class="apps-icon" aria-hidden="true">{e.manifest.title.slice(0, 1).toUpperCase()}</span>
               <div class="apps-what"><b>{e.manifest.title}</b><span class="muted small">by {short(e.manifest.publisher)}{e.summary ? ` · ${e.summary}` : ""}</span>{!e.runs && <span class="muted small">{e.why}</span>}</div>
               <div class="apps-acts">
                 {has.has(e.line) ? <span class="muted small">Installed</span>

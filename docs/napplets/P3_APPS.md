@@ -44,3 +44,4 @@ Outside napplets still open only where there is a napplet host (P2): on the live
   no grant, no bytes, no storage rows and no frame. 0 events published.
 - The run caught a bug before merge: Update left v1's own storage behind, where Remove could no longer find it.
   Fixed with `retireVersion`, tested.
+- Tron review (PASS): S1 fixed. Catalog rows show the letter icon only; loading the publisher-named `icon` URL would show that host the IP of everyone who opens the catalog. `entry.picture` stays parsed for a later fetchVerified/blob path. S2 (bytes keyed by hash only, Remove can drop another app's identical artifact) is harmless: it refetches on next open.
