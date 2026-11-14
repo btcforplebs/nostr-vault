@@ -6,6 +6,8 @@
 import { stripGif } from "./gif-strip.js"
 
 export const MAX_EDGE = 2400
+/** A picked photo before it's cleaned, as the Messages napplet's limit (dm-dispatch.js MAX_PHOTO). */
+export const MAX_PHOTO = 50 * 1024 * 1024
 export const JPEG_QUALITY = 0.85
 
 /** A GIF by its own header ("GIF8"), never by its type: a browser takes the type from the file name, so a JPEG
@@ -30,6 +32,7 @@ export function fitSize(width, height, max = MAX_EDGE) {
  */
 export async function preparePhoto(file, { draw = drawJpeg } = {}) {
   if (!file || !(/^image\//.test(file.type) || !file.type)) throw new Error("Couldn't read that photo.")
+  if (file.size > MAX_PHOTO) throw new Error("That photo is too big to send (at most 50 MB).")
   if (await isGif(file)) {
     let clean
     try { clean = stripGif(new Uint8Array(await file.arrayBuffer())) } catch { throw new Error("Couldn't read that photo.") }

@@ -16,15 +16,16 @@ export function stripGif(bytes) {
   if (b[10] & 0x80) i += 3 * (1 << ((b[10] & 7) + 1)) // global colour table
   if (b.length < i) throw bad()
   const out = [b.subarray(0, i)]
-  // Sub-blocks from `at`: -> the index after the 0 terminator, and the data joined (only kept for the loop block).
-  const blocks = at => {
+  // Sub-blocks from `at`: -> the index after the 0 terminator, and with `keep`, the first `keep` data bytes (only the
+  // loop block needs any). Frame bytes are never copied: a 50 MB GIF as a JS array was 1.5 GB (Tron, #2075 review).
+  const blocks = (at, keep = 0) => {
     const data = []
     for (;;) {
       if (at >= b.length) throw bad()
       const n = b[at++]
       if (n === 0) return { end: at, data }
       if (at + n > b.length) throw bad()
-      for (let k = 0; k < n; k++) data.push(b[at + k])
+      for (let k = 0; k < n && data.length < keep; k++) data.push(b[at + k])
       at += n
     }
   }
@@ -50,7 +51,7 @@ export function stripGif(bytes) {
     }
     if (kind !== 0x21 || i + 2 > b.length) throw bad()
     const label = b[i + 1]
-    const { end, data } = blocks(i + 2)
+    const { end, data } = blocks(i + 2, label === 0xff ? 14 : 0)
     if (label === 0xf9) {
       if (end - i !== 8 || b[i + 2] !== 4) throw bad()
       control = b.subarray(i, end)

@@ -8,8 +8,10 @@
 // leaves in a fetch, so an <img> that ever drew the link as it is would only get ciphertext. openFileLink fetches the
 // ciphertext, checks its hash, and decrypts.
 
+import { readCapped } from "./blossom-uri.js"
+
 const HEX64 = /^[0-9a-f]{64}$/
-const HEX24 = /^[0-9a-f]{24}$/
+const NONCE = /^(?:[0-9a-f]{24}|[0-9a-f]{32})$/ // 12 bytes (ours, and GCM's usual) or 16 (some other NIP-17 apps)
 const MARK = "#nv-dm="
 const hex = b => [...b].map(x => x.toString(16).padStart(2, "0")).join("")
 const unhex = s => Uint8Array.from(s.match(/../g) ?? [], h => parseInt(h, 16))
@@ -49,7 +51,7 @@ export function parseFileLink(s) {
   const i = s.indexOf(MARK)
   try {
     const d = JSON.parse(unb64url(s.slice(i + MARK.length)))
-    if (!HEX64.test(d?.k ?? "") || !HEX24.test(d?.n ?? "") || (d.x != null && !HEX64.test(d.x))) return null
+    if (!HEX64.test(d?.k ?? "") || !NONCE.test(d?.n ?? "") || (d.x != null && !HEX64.test(d.x))) return null
     return { url: s.slice(0, i), key: d.k, nonce: d.n, x: d.x ?? undefined, mime: MIME.test(d.m ?? "") ? d.m : "application/octet-stream" }
   } catch { return null }
 }
@@ -78,7 +80,7 @@ export function fileContentOf(rumor) {
   const alg = String(tag("encryption-algorithm") ?? "").toLowerCase()
   const key = String(tag("decryption-key") ?? "").toLowerCase(), nonce = String(tag("decryption-nonce") ?? "").toLowerCase()
   const x = String(tag("x") ?? "").toLowerCase()
-  if (alg !== "aes-gcm" || !HEX64.test(key) || !HEX24.test(nonce)) return url
+  if (alg !== "aes-gcm" || !HEX64.test(key) || !NONCE.test(nonce)) return url
   return fileLink(url, { key, nonce, x: HEX64.test(x) ? x : undefined, mime: MIME.test(tag("file-type") ?? "") ? tag("file-type") : undefined })
 }
 
@@ -88,8 +90,9 @@ async function fetchCapped(url) {
   const res = await fetch(url, { credentials: "omit", referrerPolicy: "no-referrer", redirect: "error", signal: AbortSignal.timeout?.(60_000) })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   if (Number(res.headers.get("content-length")) > MAX_FILE) throw new Error("too large")
-  const b = new Uint8Array(await res.arrayBuffer())
-  if (b.length > MAX_FILE) throw new Error("too large")
+  // Read in chunks and stopped at the cap: a body with no length that never ends would otherwise fill the tab.
+  const b = await readCapped(res, MAX_FILE)
+  if (!b) throw new Error("too large")
   return b
 }
 

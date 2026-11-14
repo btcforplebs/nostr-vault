@@ -70,3 +70,22 @@ test("preparePhoto sends a GIF with its metadata stripped, never redrawn", async
 test("preparePhoto refuses a broken GIF in our words", async () => {
   await assert.rejects(preparePhoto(new File(["GIF89a-bytes"], "cat.gif", { type: "image/gif" })), /^Error: Couldn't read that photo\.$/)
 })
+
+test("a big GIF is stripped without copying its frames into a JS array (Tron #3)", () => {
+  // One frame of 40 MB, as a long GIF's one big frame would be: 255-byte sub-blocks.
+  const blocks = 160_000, big = new Uint8Array(head.length + 11 + blocks * 256 + 2)
+  big.set(head); let at = head.length
+  big.set([0x2c, 0, 0, 0, 0, 2, 0, 2, 0, 0, 0x02], at); at += 11
+  for (let k = 0; k < blocks; k++) { big[at] = 255; at += 256 }
+  big[at++] = 0; big[at] = 0x3b
+  const before = process.resourceUsage().maxRSS * 1024 // peak, so a copy freed again still counts
+  const out = stripGif(big.subarray(0, at + 1))
+  const grew = process.resourceUsage().maxRSS * 1024 - before
+  assert.equal(out.length, at + 1)
+  assert.ok(grew < 150 * 1024 * 1024, `peak memory grew ${Math.round(grew / 1048576)} MB`)
+})
+
+test("preparePhoto refuses a photo over 50 MB before reading it", async () => {
+  const huge = new File([new Uint8Array(51 * 1024 * 1024)], "big.gif", { type: "image/gif" })
+  await assert.rejects(preparePhoto(huge), /at most 50 MB/)
+})

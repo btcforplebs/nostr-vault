@@ -127,3 +127,19 @@ test("a photo that went up but whose message didn't go keeps its upload for Try 
   const [m] = getMessages().messages.values()
   assert.ok(parseFileLink(m.content))
 })
+
+test("a file whose server never stops sending is cut off at the cap, not read until the tab dies (Tron #2)", async () => {
+  const enc = await encryptFile(PLAIN)
+  const real = globalThis.fetch
+  let sent = 0
+  globalThis.fetch = async () => new Response(new ReadableStream({ pull(c) { if (sent >= 70 * (1 << 20)) return c.close(); sent += 1 << 20; c.enqueue(new Uint8Array(1 << 20)) } }))
+  try { await assert.rejects(openFileLink(fileLink(URL_, { ...enc, mime: "image/jpeg" })), /too large/) } finally { globalThis.fetch = real }
+  assert.ok(sent <= 62 * (1 << 20), `read ${sent} bytes`)
+})
+
+test("a 16-byte nonce from another NIP-17 app opens too", async () => {
+  const tags = [["file-type", "image/jpeg"], ["encryption-algorithm", "aes-gcm"], ["decryption-key", "a".repeat(64)], ["decryption-nonce", "b".repeat(32)]]
+  const r = rumorFor(pk(A), pk(B), URL_, undefined, { kind: 15, tags })
+  const got = await unwrap(await wrapFor(r, envOf(A), pk(B)), cryptoOf(B), pk(B))
+  assert.equal(parseFileLink(got.content)?.nonce, "b".repeat(32))
+})
