@@ -10,11 +10,8 @@ import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { followLists, missingLists, buildWeb, filterWeb, shownByKey, FURTHER_CAP, EXTENDED_CAP } from "../net/wot.js"
 import { layerFaceCandidates } from "../net/wot-globe.js"
 import { sceneOf, waitingScene } from "./wot-scene.js"
-import { openNapplet } from "./runtime.js"
-import { grantStore } from "./policy.js"
-import { createBus } from "./bus.js"
-import { shellDeps } from "./shell-deps.js"
-import { firstParty, WOT_DTAG } from "./first-party.js"
+import { WOT_DTAG } from "./first-party.js"
+import { usePaneNapplet } from "./usePaneNapplet.js"
 import "./napplet.css"
 
 const HEX = /^[0-9a-f]{64}$/
@@ -28,11 +25,8 @@ export function WotPane({ ctx, open = null }) {
   const [lists, setLists] = useState(null)
   const [status, setStatus] = useState("")
   const [round, setRound] = useState(0)
-  const [note, setNote] = useState("")
   const [profilesIn, bump] = useState(0)
   const host = useRef(null)
-  const live = useRef(null) // { bus, me, napplet }
-  const grants = useMemo(() => grantStore(localStorage, me), [me])
 
   // The web, as the classic tab builds it.
   useEffect(() => {
@@ -57,33 +51,13 @@ export function WotPane({ ctx, open = null }) {
   }, [web])
 
   // The napplet: mounted once; the shell answers Open profile and Look again itself.
-  useEffect(() => {
-    const bus = createBus(), shell = { dTag: "shell", send: () => {} }
-    let mounted = null, gone = false
-    const offs = [
-      bus.register({ id: "shell-profile", title: "Profile", archetype: "profile", actions: ["open"], conventions: [], deliver: p => { if (!HEX.test(p?.pubkey ?? "")) return { ok: false, error: "not a pubkey" }; location.hash = `#/profile/${p.pubkey}`; return { ok: true } } }),
-      bus.register({ id: "shell-wot", title: "Web of Trust", archetype: "wot", actions: ["refresh"], conventions: [], deliver: () => { setRound(r => r + 1); return { ok: true } } }),
-    ]
-    ;(async () => {
-      try {
-        const n = firstParty(WOT_DTAG)
-        const r = await openNapplet({
-          html: n.html, name: n.dTag, title: n.title, firstParty: true, domains: n.domains, container: host.current, grants,
-          consent: async () => null,
-          makeDeps: saveGrant => shellDeps(ctx, { ask: async () => false, saveGrant, bus }),
-          onRevoke: why => { if (!gone && why !== "closed by shell") setNote(`The globe closed: ${why}.`) },
-        })
-        mounted = r.mounted
-        if (gone) return mounted.close()
-        await Promise.race([mounted.napplet.ready, new Promise(res => setTimeout(res, 5000))])
-        // napplet:wot/show goes to the napplet itself (its only intent target).
-        offs.push(bus.register({ id: "nv-wot", title: "Web of Trust", archetype: "wot", actions: ["show"], conventions: [], open: async () => mounted.napplet }))
-        live.current = { bus, me: shell }
-        bump(n => n + 1)
-      } catch (e) { if (!gone) setNote(`The globe couldn't open: ${e?.message ?? e}`) }
-    })()
-    return () => { gone = true; offs.forEach(f => f()); mounted?.close(); live.current = null }
-  }, [ctx, grants])
+  const { live, note, ready } = usePaneNapplet(ctx, host, {
+    dTag: WOT_DTAG, actions: { wot: ["show"] },
+    handlers: [
+      { id: "shell-profile", title: "Profile", archetype: "profile", actions: ["open"], conventions: [], deliver: p => { if (!HEX.test(p?.pubkey ?? "")) return { ok: false, error: "not a pubkey" }; location.hash = `#/profile/${p.pubkey}`; return { ok: true } } },
+      { id: "shell-wot", title: "Web of Trust", archetype: "wot", actions: ["refresh"], conventions: [], deliver: () => { setRound(r => r + 1); return { ok: true } } },
+    ],
+  })
 
   // Send the scene when the web, the profiles or the address change, at most every SEND_EVERY_MS.
   const sentAt = useRef(0), pending = useRef(null), opened = useRef(null)
@@ -94,13 +68,13 @@ export function WotPane({ ctx, open = null }) {
       pending.current = null; sentAt.current = Date.now()
       const first = open && opened.current !== open ? open : null
       opened.current = open
-      l.bus.invoke(l.me, { archetype: "wot", action: "show", payload: web ? sceneOf(web, { profile: getProfile, status, open: first }) : waitingScene(me, status || "Loading your follows…") })
+      l.invoke({ archetype: "wot", action: "show", payload: web ? sceneOf(web, { profile: getProfile, status, open: first }) : waitingScene(me, status || "Loading your follows…") })
     }
     clearTimeout(pending.current)
     const wait = SEND_EVERY_MS - (Date.now() - sentAt.current)
     if (wait <= 0 || open !== opened.current) send(); else pending.current = setTimeout(send, wait)
     return () => clearTimeout(pending.current)
-  }, [web, profilesIn, status, open])
+  }, [web, profilesIn, status, open, ready])
 
   return (
     <main class="screen wot-pane">

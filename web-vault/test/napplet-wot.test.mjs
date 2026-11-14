@@ -83,7 +83,7 @@ test("the WoT tab swaps with the switch on; See their web stays classic; the nap
   const main = read("main.jsx")
   assert.match(main, /const wotInNapplet = \(hash = location\.hash\) => nappletsOn\(\) && !\/\^#\\\/wot\\\/\[0-9a-f\]\{64\}\\\/web\/\.test\(hash\)/)
   assert.match(main, /wotInNapplet\(\) \? <WotPane/)
-  assert.match(read("src/napplet/first-party.js"), /dTag: WOT_DTAG, [^\n]*domains: \["resource", "intent", "theme"\]/)
+  assert.match(read("src/napplet/first-party-list.js"), /dTag: WOT_DTAG, [^\n]*domains: \["resource", "intent", "theme"\]/)
 })
 
 test("every delivery the bus sends passes the shim's own check, the shell's own asks included (no convention given)", async () => {

@@ -128,7 +128,7 @@ test("dm is a shell domain with words for the sheets; ours asks for dm, resource
   assert.match(w.title, /X wants to send a direct message as you/)
   assert.match(w.body, /^To Ann \(npub1[0-9a-z]{11}…\):\n\nhello$/) // a chosen name never stands alone
   assert.match(askWords("dm-send", {}, { to: ANN, content: "x".repeat(800) }).body, /^To npub1[0-9a-z]{11}…:\n\nx{500}\n\n… and 300 more characters$/)
-  assert.match(fs.readFileSync(new URL("../src/napplet/first-party.js", import.meta.url), "utf8"), /dTag: MESSAGES_DTAG, [^\n]*domains: \["dm", "resource", "intent", "theme"\]/)
+  assert.match(fs.readFileSync(new URL("../src/napplet/first-party-list.js", import.meta.url), "utf8"), /dTag: MESSAGES_DTAG, [^\n]*domains: \["dm", "resource", "intent", "theme"\]/)
 })
 
 test("messages napplet: npub/nprofile/hex to a pubkey; threads merge once per id, oldest first", () => {
