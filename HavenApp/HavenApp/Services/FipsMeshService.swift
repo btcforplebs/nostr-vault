@@ -85,6 +85,8 @@ final class FipsMeshService: ObservableObject {
     /// Short trips out of the app keep the engine (FipsMeshService+KeepWarm).
     var awayClock = MeshKeepWarm.Clock()
     var keepWarmTask: UIBackgroundTaskIdentifier = .invalid
+    /// The trip `keepWarmTask` was taken for: only that trip's endings end it.
+    var keepWarmTrip = 0
     /// Client starts queued or dialing. clientActive is set only once a dial
     /// returns (~10 s, a relay push up to 90 s), and each start carries the
     /// My Devices it was queued with, so a revoke must count these too.

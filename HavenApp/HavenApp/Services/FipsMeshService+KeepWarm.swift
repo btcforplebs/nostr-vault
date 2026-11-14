@@ -17,10 +17,13 @@ extension FipsMeshService {
         print("FipsMesh: app left the screen, mesh kept for \(Int(MeshKeepWarm.grace)) s")
         // Background time of its own, so the grace ends with a clean stop and
         // never with iOS freezing the engine. Its expiry stops it at once.
-        let task = UIApplication.shared.beginBackgroundTask(withName: "mesh-keep-warm") { [weak self] in
+        // Each trip ends only its own task: a later trip's must outlive an
+        // earlier trip's timer (Tron, #2052).
+        endKeepWarmTask(trip: keepWarmTrip)
+        keepWarmTrip = trip
+        keepWarmTask = UIApplication.shared.beginBackgroundTask(withName: "mesh-keep-warm") { [weak self] in
             MainActor.assumeIsolated { self?.graceEnded(trip: trip) }
         }
-        keepWarmTask = task
         DispatchQueue.main.asyncAfter(deadline: .now() + MeshKeepWarm.grace) { [weak self] in
             MainActor.assumeIsolated { self?.graceEnded(trip: trip) }
         }
@@ -29,7 +32,7 @@ extension FipsMeshService {
     /// The app is back on screen. Runs before kiosk mode or sharing-while-open
     /// is brought back, so a kept engine is found running and reused.
     func appReturned() {
-        endKeepWarmTask()
+        endKeepWarmTask(trip: keepWarmTrip)
         switch awayClock.returned(at: Date()) {
         case .none:
             return
@@ -49,14 +52,16 @@ extension FipsMeshService {
     /// Still away on `trip` when the grace (or its background time) ran out:
     /// stop as leaving the app always did.
     private func graceEnded(trip: Int) {
-        defer { endKeepWarmTask() }
+        defer { endKeepWarmTask(trip: trip) }
         guard awayClock.graceEnded(trip: trip), UIApplication.shared.applicationState == .background else { return }
         if kioskActive || starting { stopKiosk(leavingApp: true) }
         stopClientIfBackground()
     }
 
-    private func endKeepWarmTask() {
-        guard keepWarmTask != .invalid else { return }
+    /// Ends the background task `trip` took, once. A later trip's task is
+    /// left alone, so an earlier trip's timer can't cut its time short.
+    private func endKeepWarmTask(trip: Int) {
+        guard trip == keepWarmTrip, keepWarmTask != .invalid else { return }
         UIApplication.shared.endBackgroundTask(keepWarmTask)
         keepWarmTask = .invalid
     }
