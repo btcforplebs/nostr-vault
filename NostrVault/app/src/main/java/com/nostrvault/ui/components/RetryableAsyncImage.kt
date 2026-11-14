@@ -60,6 +60,23 @@ fun RetryableAsyncImage(
         val meshPhase = com.nostrvault.fips.MeshMediaStatus.phaseFor(meshPhases, model as? String)
         if (meshPhase != null) {
             MeshMediaStatusOverlay(url = model as? String, compact = true, modifier = Modifier.matchParentSize())
+        } else if ((loadState as? AsyncImagePainter.State.Error)?.result?.throwable is com.nostrvault.service.DMFileLoader.TooBig) {
+            // A big locked DM photo isn't opened in the thread; tapping the tile opens it in the viewer.
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.align(Alignment.Center),
+            ) {
+                Icon(
+                    imageVector = NostrVaultIcons.Media,
+                    contentDescription = null,
+                    tint = TertiaryText,
+                    modifier = Modifier.size(36.dp),
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(text = "Large photo", color = SecondaryText, fontSize = 13.sp)
+                Text(text = "Tap to open", color = TertiaryText, fontSize = 12.sp)
+            }
         } else if (loadState is AsyncImagePainter.State.Error) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,

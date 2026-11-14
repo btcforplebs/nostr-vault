@@ -59,6 +59,8 @@ fun ZoomableImage(
                 .data(model)
                 // A photo whose URL fails is read from its author's vault over the mesh, as in the feed.
                 .withMeshAuthor(meshAuthor)
+                // A locked DM photo opens here at any size up to the cap (the thread only shows small ones).
+                .setParameter(com.nostrvault.service.DMFileLoader.FULL, true, memoryCacheKey = null)
                 // The feed's smaller copy, already in memory, stands in while
                 // the full image loads — so the zoom from the feed never flies
                 // an empty frame.
