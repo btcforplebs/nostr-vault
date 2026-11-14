@@ -3,56 +3,30 @@
 // pictures and video as bytes from the shell. The shell asks before any delete, ours too; that sheet is here.
 // `filter`: the Vault's Media pill (all, photos, videos, gifs), handed to the napplet by intent (napplet:media/open).
 // Switch off, or the "In your notes" pill: the classic page (BlossomGallery.jsx, VaultScreen.jsx).
-import { useEffect, useMemo, useRef, useState } from "preact/hooks"
+import { useEffect, useRef, useState } from "preact/hooks"
 import { Dialog } from "../components/Moderation.jsx"
-import { openNapplet } from "./runtime.js"
-import { grantStore } from "./policy.js"
-import { createBus } from "./bus.js"
-import { shellDeps } from "./shell-deps.js"
-import { firstParty, MEDIA_DTAG } from "./first-party.js"
+import { MEDIA_DTAG } from "./first-party.js"
+import { usePaneNapplet } from "./usePaneNapplet.js"
 import { askWords } from "./consent-words.js"
 import "./napplet.css"
 
 export function MediaPane({ ctx, filter = "all" }) {
   const host = useRef(null)
-  const [note, setNote] = useState("")
   const [asking, setAsking] = useState(null) // { words, resolve }
-  const grants = useMemo(() => grantStore(localStorage, ctx.session.pubkey), [ctx.session.pubkey])
-  const live = useRef(null) // { bus, me }
   const filterRef = useRef(filter)
   filterRef.current = filter
-
-  useEffect(() => {
-    const bus = createBus()
-    const me = { dTag: "shell", send: () => {} }
-    let mounted = null, gone = false, off = null
-    const ask = ({ napplet, what, detail }) => new Promise(resolve => setAsking({ words: askWords(what, napplet, detail), resolve }))
-    ;(async () => {
-      try {
-        const n = firstParty(MEDIA_DTAG)
-        const r = await openNapplet({
-          html: n.html, name: n.dTag, title: n.title, firstParty: true, domains: n.domains, container: host.current, grants,
-          consent: async () => null, // first-party: never asked
-          makeDeps: saveGrant => shellDeps(ctx, { ask, saveGrant, bus }),
-          onRevoke: why => { if (!gone && why !== "closed by shell") setNote(`Media closed: ${why}.`) },
-        })
-        mounted = r.mounted
-        if (gone) return mounted.close()
-        await Promise.race([mounted.napplet.ready, new Promise(res => setTimeout(res, 5000))])
-        off = bus.register({ id: "nv-media", title: "Media", archetype: "media", actions: ["open"], conventions: [], open: async () => mounted.napplet })
-        live.current = { bus, me }
-        if (filterRef.current !== "all") bus.invoke(me, { archetype: "media", action: "open", payload: { filter: filterRef.current } })
-      } catch (e) { if (!gone) setNote(`Media couldn't open: ${e?.message ?? e}`) }
-    })()
-    return () => { gone = true; off?.(); mounted?.close(); live.current = null }
-  }, [ctx, grants])
+  const { live, note } = usePaneNapplet(ctx, host, {
+    dTag: MEDIA_DTAG, actions: { media: ["open"] },
+    ask: ({ napplet, what, detail }) => new Promise(resolve => setAsking({ words: askWords(what, napplet, detail), resolve })),
+    onReady: l => { if (filterRef.current !== "all") l.invoke({ archetype: "media", action: "open", payload: { filter: filterRef.current } }) },
+  })
 
   const sent = useRef(filter)
   useEffect(() => {
     if (filter === sent.current) return
     sent.current = filter
     const l = live.current
-    if (l) l.bus.invoke(l.me, { archetype: "media", action: "open", payload: { filter } })
+    if (l) l.invoke({ archetype: "media", action: "open", payload: { filter } })
   }, [filter])
 
   const answer = yes => { asking?.resolve(yes); setAsking(null) }
