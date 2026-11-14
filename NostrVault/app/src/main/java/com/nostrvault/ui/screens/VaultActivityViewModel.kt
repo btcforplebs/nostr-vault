@@ -48,6 +48,7 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.FollowersSeenStore
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.FollowerSnapshot
+import com.nostrvault.data.model.VaultOtherAccounts
 import com.nostrvault.data.model.VaultActivity
 import com.nostrvault.data.model.AccountUnread
 import com.nostrvault.data.model.VaultAccountChip
@@ -230,6 +231,10 @@ class VaultActivityViewModel @Inject constructor(
 
     private var otherJob: Job? = null
 
+    /** Each other account's events, held across reads and account switches (VaultOtherAccounts). */
+    private val otherEvents = HashMap<String, Map<String, VaultActivity.Event>>()
+    private val otherEventsMutex = Mutex()
+
     init {
         // The last screen first (VaultSnapshotStore), then the refresh tops it up.
         RelayForegroundService.newsDot.setJudged(true)
@@ -241,7 +246,12 @@ class VaultActivityViewModel @Inject constructor(
         }
         // As the Vault's lists: load once the local relay takes connections.
         viewModelScope.launch {
-            RelayForegroundService.readyForConnections.collect { ready -> if (ready) refresh() }
+            RelayForegroundService.readyForConnections.collect { ready ->
+                if (ready) {
+                    refresh()
+                    loadOtherAccounts()
+                }
+            }
         }
         // The relay's importer writes inbound events straight to its DBs; the
         // log poller's tick says when, so they show up live.
@@ -249,17 +259,15 @@ class VaultActivityViewModel @Inject constructor(
             RelayForegroundService.inboxActivityTick.drop(1).collectLatest {
                 delay(1_500)
                 refresh()
-                if (_accountChip.value != null) loadOtherAccounts()
+                loadOtherAccounts()
             }
         }
         // Your accounts tagging each other came into the list or left it.
         viewModelScope.launch {
             configStore.config.map { it.notifyOwnAccountTags }.distinctUntilChanged().drop(1).collect {
                 scheduleRebuild()
-                if (_accountChip.value != null) {
-                    _otherLines.value = emptyMap()
-                    loadOtherAccounts()
-                }
+                // Rebuilt from the held events with the new rule, in place.
+                loadOtherAccounts()
             }
         }
         viewModelScope.launch {
@@ -283,7 +291,12 @@ class VaultActivityViewModel @Inject constructor(
                 val saved = readSavedScreen(nostrService.activeHexPubkey)
                 if (gen == generation) putSavedScreen(saved)
                 refresh()
+                loadOtherAccounts()
             }
+        }
+        // An account added or removed: its list is read ahead too.
+        viewModelScope.launch {
+            accountHexes.drop(1).collect { loadOtherAccounts() }
         }
         // Who counts as blocked or outside your network changes the lines.
         viewModelScope.launch {
@@ -568,21 +581,20 @@ class VaultActivityViewModel @Inject constructor(
     }
 
     /**
-     * Reads the picked chip's other accounts from the same relays and builds
-     * their lines with the same rules as the active account's. The device's
-     * relay serves every account, so nothing else needs asking.
-     */
-    /**
-     * [pick] is a chip still waiting for its read: the list on screen stays (no
-     * spinner) and switches to it once the read is in. A plain re-read while a
-     * pick waits reads for that pick, so it can't be left stuck.
+     * Reads every other account from the phone's own vault and builds their
+     * lines with the same rules as the active account's, ahead of any tap, so
+     * picking a chip only flips it (Logen 2026-11-14). Runs on each inbox tick,
+     * after a switch and once the relay is up; each read tops up what is held.
+     * [pick] is a chip picked before its accounts were ever read: the list on
+     * screen stays (no spinner) and switches to it once the read is in. A plain
+     * re-read while a pick waits still applies that pick, so it can't be left stuck.
      */
     fun loadOtherAccounts(pick: VaultAccountChip? = null) {
         val me = _activeHex.value
         val accounts = accountHexes.value
         val waiting = pick ?: _pendingChip.value
-        val chip = waiting ?: VaultAccountChips.resolve(_accountChip.value, accounts, me)
-        val wanted = VaultAccountChips.accounts(chip, accounts).filter { it != me }
+        val chip = VaultAccountChips.resolve(waiting ?: _accountChip.value, accounts, me)
+        val wanted = VaultOtherAccounts.wanted(accounts, me)
         otherJob?.cancel()
         if (wanted.isEmpty()) {
             _otherLoading.value = false
@@ -590,30 +602,45 @@ class VaultActivityViewModel @Inject constructor(
             return
         }
         val gen = generation
-        if (waiting == null) _otherLoading.value = _otherLines.value.isEmpty()
+        // The spinner only for a picked chip with nothing to show yet.
+        if (waiting == null) _otherLoading.value = !VaultAccountChips.isDefault(chip, me) &&
+            VaultAccountChips.accounts(chip, accounts).any { it != me && it !in _otherLines.value }
         otherJob = viewModelScope.launch {
             val built = wanted.map { hex -> async { hex to linesFor(hex) } }.awaitAll()
             if (gen != generation) return@launch
-            _otherLines.value = _otherLines.value + built
+            // Folded in quietly: an account whose lines did not change keeps them.
+            val next = (_otherLines.value + built).filterKeys { it in wanted }
+            if (next != _otherLines.value) _otherLines.value = next
             _otherLoading.value = false
             if (waiting != null && _pendingChip.value == waiting) applyChip(waiting)
             nostrService.fetchMissingProfiles(built.flatMap { (_, lines) -> lines.take(SHOW_STEP).flatMap { it.actors.take(6) } }.distinct())
         }
     }
 
+    /**
+     * [hex]'s lines: what is held, topped up from the phone's own vault since
+     * the newest held (all of it the first time). Never the Mac relay: a chip
+     * must not wait on a remote socket.
+     */
     private suspend fun linesFor(hex: String): List<VaultActivity> {
+        val now = VaultActivity.nowSeconds()
+        val held = otherEventsMutex.withLock { otherEvents[hex].orEmpty() }
+        val since = VaultOtherAccounts.sinceClause(held.values, now)
+        val config = configStore.config.value
         val raw = runCatching {
             nostrService.queryRawEvents(
                 listOf(
-                    """{"kinds":${kindsJson(VaultMode.RELAY_TAB_NOTE_KINDS)},"authors":["$hex"],"limit":$PAGE}""",
-                    """{"kinds":${kindsJson(TAGGED_KINDS)},"#p":["$hex"],"limit":$PAGE}""",
+                    """{"kinds":${kindsJson(VaultMode.RELAY_TAB_NOTE_KINDS)},"authors":["$hex"]$since,"limit":$PAGE}""",
+                    """{"kinds":${kindsJson(TAGGED_KINDS)},"#p":["$hex"]$since,"limit":$PAGE}""",
                 ),
-                relays(), QUERY_TIMEOUT_MS,
+                VaultOtherAccounts.localRelays(config.nostrURL, config.localInboxURL), QUERY_TIMEOUT_MS,
             )
         }.getOrDefault(emptyList())
-        val events = raw.mapNotNull(::parse).filter { keepsZap(it) }.distinctBy { it.id }
+        val fresh = raw.mapNotNull(::parse).filter { !VaultActivity.isFuture(it.createdAt, now) && keepsZap(it) }
+        val events = otherEventsMutex.withLock {
+            VaultOtherAccounts.fold(otherEvents[hex].orEmpty(), fresh).also { otherEvents[hex] = it }
+        }.values.toList()
         return withContext(Dispatchers.Default) {
-            val config = configStore.config.value
             val npub = config.allAccountNpubs().firstOrNull { nostrService.npubToHex(it)?.lowercase() == hex }
             val blocked = npub?.let { config.blockedFor(it) }.orEmpty().mapNotNull { nostrService.npubToHex(it) }.toSet()
             val whitelist = config.whitelistedNpubs?.mapNotNull { nostrService.npubToHex(it) }?.toSet().orEmpty()
