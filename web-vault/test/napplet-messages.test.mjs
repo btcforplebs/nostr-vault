@@ -115,6 +115,10 @@ test("findMine: the shell's own sent (or failed) bubble for this text, never a p
   assert.equal(findMine(m, ME, ANN, "t").id, "b")
   assert.equal(findMine(m, ME, ANN, "t", true).id, "d")
   assert.equal(findMine(m, ME, BOB, "t"), null)
+  // Re-sending the same text: the ids that were there before the send never answer it.
+  assert.equal(findMine(m, ME, ANN, "t", false, new Set(["a", "b"])), null)
+  m.set("e", msg("e", ME, ANN, 8, "t"))
+  assert.equal(findMine(m, ME, ANN, "t", false, new Set(["a", "b", "c", "d"])).id, "e")
 })
 
 test("dm is a shell domain with words for the sheets; ours asks for dm, resource, intent, theme only", () => {
@@ -122,7 +126,8 @@ test("dm is a shell domain with words for the sheets; ours asks for dm, resource
   assert.match(domainWord("dm"), /direct messages/)
   const w = askWords("dm-send", { title: "X" }, { to: ANN, name: "Ann", content: "hello" })
   assert.match(w.title, /X wants to send a direct message as you/)
-  assert.match(w.body, /To Ann:\n\nhello/)
+  assert.match(w.body, /^To Ann \(npub1[0-9a-z]{11}…\):\n\nhello$/) // a chosen name never stands alone
+  assert.match(askWords("dm-send", {}, { to: ANN, content: "x".repeat(800) }).body, /^To npub1[0-9a-z]{11}…:\n\nx{500}\n\n… and 300 more characters$/)
   assert.match(fs.readFileSync(new URL("../src/napplet/first-party.js", import.meta.url), "utf8"), /dTag: MESSAGES_DTAG, [^\n]*domains: \["dm", "resource", "intent", "theme"\]/)
 })
 

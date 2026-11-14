@@ -128,11 +128,12 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
       profile: pk => getProfile(pk),
       onChange: cb => onMessages(cb),
       async send(peer, text) {
+        const before = new Set([...getMessages().messages.values()].map(m => m.id))
         try { await sendMessage(ctx, peer, text) } catch (e) {
-          const failed = findMine(getMessages().messages, ctx.session.pubkey, peer, text, true)
+          const failed = findMine(getMessages().messages, ctx.session.pubkey, peer, text, true, before)
           throw Object.assign(new Error(String(e?.fixed ? e.message : "The message wasn't sent.")), { failedId: failed?.id })
         }
-        return findMine(getMessages().messages, ctx.session.pubkey, peer, text) ?? { id: `sent:${crypto.randomUUID()}`, from: ctx.session.pubkey, peer, content: text, at: Math.floor(Date.now() / 1000) }
+        return findMine(getMessages().messages, ctx.session.pubkey, peer, text, false, before) ?? { id: `sent:${crypto.randomUUID()}`, from: ctx.session.pubkey, peer, content: text, at: Math.floor(Date.now() / 1000) }
       },
       markRead: list => markRead(ctx.session.pubkey, list),
       ask,
