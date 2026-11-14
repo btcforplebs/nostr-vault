@@ -43,7 +43,9 @@ object DMAttachment {
             val kept = mutableListOf<String>()
             var removedAny = false
             for (word in line.split(" ")) {
-                val url = mediaUrl(word, imageOrGifExtensions)
+                // A locked photo (kind 15, DMFile) is a photo whatever its link's path says.
+                val url = word.trim().takeIf { com.nostrvault.service.DMFile.isFileLink(it) }
+                    ?: mediaUrl(word, imageOrGifExtensions)
                 val video = if (url == null && withVideos) mediaUrl(word, videoExtensions) else null
                 if (url != null) {
                     if (url !in images) images.add(url)

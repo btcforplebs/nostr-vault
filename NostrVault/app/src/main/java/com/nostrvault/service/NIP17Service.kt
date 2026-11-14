@@ -37,15 +37,11 @@ object NIP17Service {
         senderPubkey: String,
         recipientPubkey: String,
         giftWrapRecipient: String = recipientPubkey,
+        rumor: DMRumor = DMRumor(),
     ): String? {
         try {
-            // Step 1: Build the rumor (unsigned kind 14)
-            val rumorJson = EventPublisher.buildUnsignedEvent(
-                pubkey = senderPubkey,
-                kind = 14,
-                content = content,
-                tags = listOf(listOf("p", recipientPubkey)),
-            )
+            // Step 1: Build the rumor (unsigned kind 14, or a kind 15 file message)
+            val rumorJson = rumor.build(senderPubkey, recipientPubkey, content)
 
             // Step 2: Seal with NIP-44 (encrypt rumor for recipient)
             val sealedContent = NIP44Service.encrypt(rumorJson, giftWrapRecipient, senderSecretKey)
@@ -121,15 +117,11 @@ object NIP17Service {
         recipientPubkey: String,
         amberSignerService: AmberSignerService,
         giftWrapRecipient: String = recipientPubkey,
+        rumor: DMRumor = DMRumor(),
     ): String? {
         try {
-            // Step 1: Build the rumor (unsigned kind 14)
-            val rumorJson = EventPublisher.buildUnsignedEvent(
-                pubkey = senderPubkey,
-                kind = 14,
-                content = content,
-                tags = listOf(listOf("p", recipientPubkey)),
-            )
+            // Step 1: Build the rumor (unsigned kind 14, or a kind 15 file message)
+            val rumorJson = rumor.build(senderPubkey, recipientPubkey, content)
 
             // Step 2: Amber NIP-44 encrypts the rumor for the recipient
             val sealedContent = amberSignerService.nip44Encrypt(rumorJson, giftWrapRecipient)
@@ -298,7 +290,8 @@ object NIP17Service {
         }
         val sealKind = (sealObj["kind"] as? kotlinx.serialization.json.JsonPrimitive)?.content
         val rumorKind = (rumorObj["kind"] as? kotlinx.serialization.json.JsonPrimitive)?.content
-        if (sealKind != "13" || rumorKind != "14") {
+        // 14 a message, 15 a file message (DMFile).
+        if (sealKind != "13" || (rumorKind != "14" && rumorKind != "15")) {
             Log.w(TAG, "Unexpected seal/rumor kind ($sealKind/$rumorKind), dropping")
             return false
         }

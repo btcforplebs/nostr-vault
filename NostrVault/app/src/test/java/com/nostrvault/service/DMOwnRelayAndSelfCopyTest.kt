@@ -41,12 +41,14 @@ class DMOwnRelayAndSelfCopyTest {
             for (builder in listOf("fun createGiftWrappedDM(", "fun createGiftWrappedDMWithAmber(", "fun DMService.createGiftWrappedDMWithBunker(")) {
                 if (builder !in s) continue
                 val body = s.substringAfter(builder).substringBefore("\n    }\n").substringBefore("\n}\n")
-                val rumor = body.substringAfter("kind = 14,").substringBefore(")),")
-                assertTrue("$builder rumor p", "listOf(\"p\", recipientPubkey" in rumor)
-                val afterRumor = body.substringAfter("kind = 14,").substringAfter(")),")
+                // The rumor (kind 14 or a kind 15 file message) is built by DMRumor, p = recipientPubkey.
+                val call = "rumor.build(senderPubkey, recipientPubkey, content)"
+                assertTrue("$builder rumor p", call in body)
+                val afterRumor = body.substringAfter(call)
                 assertFalse("$builder seals or wraps to recipientPubkey", Regex("""[(,]\s*recipientPubkey[,)]""").containsMatchIn(afterRumor))
                 assertTrue("$builder uses giftWrapRecipient", "giftWrapRecipient" in afterRumor)
             }
         }
+        assertTrue("DMRumor p", "listOf(listOf(\"p\", recipientPubkey)) + fileTags" in src("service/dm/DMRumor.kt"))
     }
 }

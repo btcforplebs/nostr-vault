@@ -8,16 +8,23 @@ import java.util.UUID
 import com.nostrvault.service.DMService.Companion.MAX_SENT_SELF_WRAP_IDS
 import com.nostrvault.service.DMService.Companion.TAG
 
-    internal suspend fun DMService.sendNIP17DM(content: String, recipientHexPubkey: String) {
+    /**
+     * @param file a locked photo ([DMFile]): sent as a kind 15 file message whose content is its
+     *   link, and shown here as its link with what opens it. [content] is unused then.
+     */
+    internal suspend fun DMService.sendNIP17DM(content: String, recipientHexPubkey: String, file: DMFileSend? = null) {
         val generation = switchGeneration
         val cacheKey = loadedCacheKey
+        val rumor = file?.let { DMRumor.file(it.message, it.notBefore) } ?: DMRumor()
+        val shown = file?.message?.shown ?: content
+        @Suppress("NAME_SHADOWING") val content = file?.message?.content ?: content
 
         // Optimistic UI update
         val optimisticId = UUID.randomUUID().toString()
         val optimisticMessage = DMMessage(
             id = optimisticId,
-            content = content,
-            timestamp = System.currentTimeMillis() / 1000,
+            content = shown,
+            timestamp = maxOf(System.currentTimeMillis() / 1000, file?.notBefore ?: 0),
             senderPubkey = nostrService.activeHexPubkey,
             isFromMe = true,
             isNIP04 = false,
@@ -43,6 +50,7 @@ import com.nostrvault.service.DMService.Companion.TAG
                             senderPubkey = ownHexPubkey,
                             recipientPubkey = recipientHexPubkey,
                             amberSignerService = amberSignerService,
+                            rumor = rumor,
                         ) ?: throw Exception("Failed to create recipient wrap via Amber")
                         selfEvent = NIP17Service.createGiftWrappedDMWithAmber(
                             content = content,
@@ -50,6 +58,7 @@ import com.nostrvault.service.DMService.Companion.TAG
                             recipientPubkey = recipientHexPubkey,
                             giftWrapRecipient = ownHexPubkey,
                             amberSignerService = amberSignerService,
+                            rumor = rumor,
                         ) ?: throw Exception("Failed to create self wrap via Amber")
                     }
                     DMCrypto.BUNKER -> {
@@ -59,12 +68,14 @@ import com.nostrvault.service.DMService.Companion.TAG
                             content = content,
                             senderPubkey = ownHexPubkey,
                             recipientPubkey = recipientHexPubkey,
+                            rumor = rumor,
                         ) ?: throw Exception("Your signer could not seal this message")
                         selfEvent = createGiftWrappedDMWithBunker(
                             content = content,
                             senderPubkey = ownHexPubkey,
                             recipientPubkey = recipientHexPubkey,
                             giftWrapRecipient = ownHexPubkey,
+                            rumor = rumor,
                         ) ?: throw Exception("Your signer could not seal your own copy")
                     }
                     DMCrypto.NONE -> throw Exception(
@@ -80,6 +91,7 @@ import com.nostrvault.service.DMService.Companion.TAG
                                 senderSecretKey = privkey,
                                 senderPubkey = ownHexPubkey,
                                 recipientPubkey = recipientHexPubkey,
+                                rumor = rumor,
                             )
                         }
                         val selfWrap = async {
@@ -89,6 +101,7 @@ import com.nostrvault.service.DMService.Companion.TAG
                                 senderPubkey = ownHexPubkey,
                                 recipientPubkey = recipientHexPubkey,
                                 giftWrapRecipient = ownHexPubkey,
+                                rumor = rumor,
                             )
                         }
 

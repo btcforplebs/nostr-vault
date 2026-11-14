@@ -22,4 +22,10 @@ class DMPreviewTextTest {
         val long = "a".repeat(59) + " " + "b".repeat(20)
         assertEquals("a".repeat(59) + "…", dmPreviewText(long))
     }
+
+    @Test
+    fun aLockedPhotoIsNamedNotShownAsItsLink() {
+        val link = com.nostrvault.service.DMFile.fileLink("https://a.example/f", "1".repeat(64), "2".repeat(24), null, "image/png")
+        assertEquals("Photo", dmPreviewText(link))
+    }
 }

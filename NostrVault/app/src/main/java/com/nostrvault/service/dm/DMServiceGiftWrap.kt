@@ -93,7 +93,13 @@ import com.nostrvault.service.DMService.Companion.TAG
                 // Parse the rumor JSON to extract sender, content, timestamp, tags
                 val rumorObj = json.parseToJsonElement(rumorJson).jsonObject
                 val senderPubkey = rumorObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@withContext true
-                val content = rumorObj["content"]?.jsonPrimitive?.contentOrNull ?: return@withContext true
+                // A kind 15 file message is kept as its link with what opens it (DMFile); one
+                // that names no https file isn't a message.
+                val content = if (rumorObj["kind"]?.jsonPrimitive?.intOrNull == 15) {
+                    DMFile.contentOf(rumorObj) ?: return@withContext true
+                } else {
+                    rumorObj["content"]?.jsonPrimitive?.contentOrNull ?: return@withContext true
+                }
                 val timestamp = rumorObj["created_at"]?.jsonPrimitive?.longOrNull ?: return@withContext true
                 val rumorTags = rumorObj["tags"]?.jsonArray?.map { t ->
                     t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }

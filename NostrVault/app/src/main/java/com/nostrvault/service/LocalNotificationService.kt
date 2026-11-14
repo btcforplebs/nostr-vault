@@ -782,7 +782,7 @@ class LocalNotificationService @Inject constructor(
             val profile = awaitAuthor(message.senderPubkey)
             val profiles = nostrService.get().profiles.value
             val text = dmNotificationText(
-                NostrMentions.toPlainText(message.content, profiles),
+                DMFile.previewOf(message.content) ?: NostrMentions.toPlainText(message.content, profiles),
                 configStore.config.value.showDMTextInNotifications,
             )
             val (title, body) = buildContent(type, profile?.bestName, text)
