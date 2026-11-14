@@ -284,7 +284,7 @@ func StartRelayC(importMode bool) {
 		log.Println("✅ Databases ready")
 
 		log.Println("⏳ Starting background services [3/3]")
-		cycle.spawn("background-setup", func() {
+		cycle.spawn("background-setup", cycle.afterFirstVaultRead(func() {
 			// Initialize WOT (can take time, so run in background)
 			log.Println("  → Initializing Web of Trust")
 			wotModel := wot.NewSimpleInMemory(
@@ -335,7 +335,7 @@ func StartRelayC(importMode bool) {
 			cycle.spawn("wot.RefreshOnFollowListChange", func() { wot.RefreshOnFollowListChange(cycle.ctx, wot.FollowListCheckInterval, ownerFollowListAt) })
 			// A first-run job cut by the last stop picks up where it was.
 			cycle.spawn("importJobs.resume", func() { resumeImportJobs(cycle.ctx, cycle.spawn) })
-		})
+		}))
 
 		// Use a fresh ServeMux each cycle so stop/start never panics on
 		// duplicate pattern registration in the default mux.

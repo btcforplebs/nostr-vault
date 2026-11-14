@@ -65,6 +65,11 @@ type relayCycle struct {
 	// querying databases the stop had closed.
 	hijackedMu sync.Mutex
 	hijacked   map[net.Conn]struct{}
+
+	// vaultRead closes when the app's first Vault store read answered
+	// (first_vault_read.go); background setup waits for it.
+	vaultRead     chan struct{}
+	vaultReadOnce sync.Once
 }
 
 type cycleCtxKey struct{}
@@ -74,7 +79,7 @@ type cycleCtxKey struct{}
 // spawnFromCtx.
 func newRelayCycle() *relayCycle {
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &relayCycle{cancel: cancel}
+	c := &relayCycle{cancel: cancel, vaultRead: make(chan struct{})}
 	c.ctx = context.WithValue(ctx, cycleCtxKey{}, c)
 	return c
 }
