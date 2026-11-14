@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web of Trust</title>
+<style>
+  :root { color-scheme: dark; --bg: #000; --text: #f2f2f2; --muted: #9a9a9f; --hair: #26262a; --s1: #111113; --s2: #1c1c1f; --accent: #e67326;
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; outline: none; }
+  .bar { position: fixed; top: 10px; left: 8px; right: 8px; z-index: 2; display: flex; gap: 6px; align-items: center; }
+  .bar > * { flex: none; }
+  .bar select { min-width: 0; flex: 0 1 auto; padding: 0 10px; }
+  .bar button { padding: 0 12px; }
+  button, select { font: inherit; color: var(--text); background: color-mix(in srgb, var(--s2) 86%, transparent); backdrop-filter: blur(12px);
+    border: 1px solid var(--hair); border-radius: 999px; min-height: 40px; padding: 0 14px; cursor: pointer; }
+  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 650; }
+  .grow { flex: 1; }
+  .pill { position: fixed; left: 50%; transform: translateX(-50%); top: 60px; z-index: 2; background: color-mix(in srgb, var(--s2) 90%, transparent);
+    border: 1px solid var(--hair); border-radius: 999px; padding: 6px 14px; font-size: 13px; color: var(--text); white-space: nowrap; }
+  .middle { position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
+  #search { position: fixed; top: 60px; left: 10px; right: 10px; z-index: 3; background: var(--s1); border: 1px solid var(--hair); border-radius: 16px; padding: 10px; max-height: 60vh; overflow: auto; }
+  #search input { width: 100%; font: inherit; color: var(--text); background: var(--s2); border: 1px solid var(--hair); border-radius: 10px; padding: 10px; }
+  #results { list-style: none; margin: 8px 0 0; padding: 0; }
+  #results button { width: 100%; text-align: left; border-radius: 10px; margin: 2px 0; background: none; border: 0; }
+  #card { position: fixed; left: 10px; right: 10px; bottom: 104px; z-index: 3; background: color-mix(in srgb, var(--s1) 94%, transparent); backdrop-filter: blur(14px);
+    border: 1px solid var(--hair); border-radius: 20px; padding: 14px; display: grid; grid-template-columns: 56px 1fr; gap: 12px; align-items: center; }
+  #card .face { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; display: grid; place-items: center; font-weight: 700; font-size: 22px; color: #fff; }
+  #card h2 { margin: 0; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #card p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  #card .acts { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+  #card .acts button.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 650; }
+</style>
+</head>
+<body>
+<canvas id="globe" tabindex="0" role="img" aria-label="Globe of your web. Drag to spin, scroll or pinch to zoom, double-click to come back to the start."></canvas>
+<div class="bar">
+  <select id="layer" aria-label="Layer"></select>
+  <button id="back" aria-pressed="false" title="Only your follows who follow you back">Follow you back</button>
+  <span class="grow"></span>
+  <button id="find" aria-label="Find someone">Find</button>
+  <button id="again" aria-label="Look again">↻</button>
+</div>
+<div id="pill" class="pill" role="status" hidden></div>
+<div id="middle" class="middle">Loading your web…</div>
+<section id="search" hidden aria-label="Find someone in your web"><input id="q" type="search" placeholder="Name or npub in your web" autocomplete="off"><ul id="results"></ul></section>
+<section id="card" hidden aria-label="Trust card">
+  <div class="face" id="cface"></div>
+  <div><h2 id="cname"></h2><p id="cline"></p></div>
+  <div class="acts"><button class="primary" id="cprofile">Open profile</button><button id="cclose">Close</button></div>
+</section>
+<script>
+// The WoT globe napplet (plan P6). Logen's decision 6: the web of trust is computed in the shell (Haven), never here.
+// The shell hands over a drawing-ready scene by intent (napplet:wot/show): you, your follows, the vouched and further
+// out people it shows, who links whom, who follows you back, and names and pictures. This frame draws it: the
+// globe (the app's own maths, net/wot-pure.js and net/wot-globe.js, injected below as they are), the layer picker,
+// Follow you back, Find, and trust cards. Pictures are bytes from the shell; Open profile asks the shell
+// (napplet:profile/open); ↻ asks it to read the follow lists again (napplet:wot/refresh). No network, no key.
+
+/*@wot-maths*/
+
+// ---- pure (test/napplet-wot.test.mjs loads this block with the maths above) ----
+/** The shell's scene -> the web object the maths reads (net/wot.js buildWeb's shape). */
+function webOf(scene) {
+  const f = scene.follows ?? []
+  const linkers = new Map(Object.entries(scene.linkers ?? {}).map(([pk, ix]) => [pk, ix.map(i => f[i]).filter(Boolean)]))
+  const layer = new Map([[scene.me, "me"], ...f.map(p => [p, "follow"]), ...(scene.extended ?? []).map(p => [p, "extended"]), ...(scene.further ?? []).map(p => [p, "further"])])
+  return { me: scene.me, follows: f, extended: scene.extended ?? [], further: scene.further ?? [], linkers, followsMe: new Set(scene.followsMe ?? []), layerOf: pk => layer.get(pk) ?? null }
+}
+/** Who stays lit: Follow you back's people, or everyone (null). */
+const litOf = (web, followsBackOn) => (followsBackOn ? web.followsMe : null)
+/** Everyone the globe draws, as WotScreen.jsx places them: layer faces, then the ring's faces, then layout(). */
+function nodesOf(web, layer, lit, hasPicture) {
+  const candidates = layerFaceCandidates(web, layer).filter(pk => !lit || lit.has(pk))
+  const faces = pictured(candidates, hasPicture, LAYER_FACES[layer])
+  const n = pk => web.linkers.get(pk)?.length ?? 0
+  const ring = [...web.follows].filter(pk => !lit || lit.has(pk)).sort((a, b) => n(b) - n(a))
+  return layout(web, web.further, faces, new Set(pictured(ring, hasPicture, RING_FACES)))
+}
+/** Find: people whose name (or a word of it, or a phrase in it) or key starts with what was typed, follows first. */
+function findPeople(web, names, q, max = 30) {
+  const s = String(q ?? "").trim().toLowerCase()
+  if (!s) return []
+  const all = [...web.follows, ...web.extended, ...web.further]
+  const hit = name => { const t = name.toLowerCase(); return t.startsWith(s) || t.split(/\s+/).some(w => w.startsWith(s)) || (s.includes(" ") && t.includes(s)) }
+  return all.filter(pk => pk.startsWith(s) || hit(names[pk]?.[0] ?? "")).slice(0, max)
+}
+// ---- end pure ----
+
+const n = window.napplet || {}
+const $ = id => document.getElementById(id)
+let scene = null, web = null, names = {}, nodes = [], layer = "everyone", followsBackOn = false, picked = null
+const nameOf = pk => names[pk]?.[0] || `${pk.slice(0, 10)}…`
+const pictureOf = pk => names[pk]?.[1] || ""
+const hueOf = pk => Math.round(fraction(pk, 0) * 360)
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches
+const DIMMED = 0.08, LOADS_PER_FRAME = 8, BITMAP = 96
+
+// ---------- drawing: net/screens/WotGlobe.jsx's frame, as it is, on this canvas ----------
+const canvas = $("globe")
+let cam = newCamera(), size = { w: 0, h: 0 }, drawn = [], fades = new Map(), fading = false, frame = 0, last = 0, loadsLeft = 0
+const images = new Map() // picture url -> bitmap | "loading" | "failed"
+function request() { if (!frame) frame = requestAnimationFrame(tick) }
+function tick(t) {
+  frame = 0
+  const dt = last ? Math.min(0.05, (t - last) / 1000) : 1 / 60
+  if (moving(cam)) cam = step(cam, dt, reducedMotion())
+  if (web) draw(dt)
+  if (moving(cam) || fading) { last = t; request() } else last = 0
+}
+function draw(dt) {
+  const { w, h } = size, dpr = devicePixelRatio || 1, g = canvas.getContext("2d")
+  g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h)
+  const k = cam, project = projector(k, w, h), reduce = reducedMotion()
+  loadsLeft = LOADS_PER_FRAME
+  const weights = LAYER_WEIGHTS[layer] ?? LAYER_WEIGHTS.everyone, lit = litOf(web, followsBackOn)
+  const path = picked ? (trustPath(web, picked)?.all ?? []) : []
+  const target = picked && picked !== web.me ? picked : null
+  const traced = target && path.length ? new Set([target, ...path]) : null
+  const pinned = pk => pk === target || !!traced?.has(pk)
+  const shade = pk => (!lit || lit.has(pk) || pinned(pk) ? 1 : DIMMED)
+  const out = [], faces = [], bands = new Map()
+  for (const node of nodes) {
+    if (node.layer === "me") continue
+    const weight = pinned(node.pk) ? 1 : weights[node.layer] * shade(node.pk)
+    if (!weight) continue
+    const p = project(node.p)
+    if (!p || !onScreen(p.x, p.y, w, h)) continue
+    if (traced ? traced.has(node.pk) : node.face && shade(node.pk) === 1) {
+      const lead = node.layer === "follow"
+      const kind = node.pk === target ? "traced" : traced ? "bridge" : lead ? "follow" : "outer"
+      faces.push({ pk: node.pk, node, kind, x: p.x, y: p.y, depth: p.depth, r: faceSize(kind === "traced" ? "traced" : lead ? "follow" : "outer", p, k.zoom), lead: lead || !!traced, alpha: Math.min(1, (lead || traced ? 1 : OUTER_ALPHA) * weight) })
+      continue
+    }
+    const light = dotLight(p.depth)
+    const kind = traced?.has(node.pk) ? "hot" : node.layer === "follow" ? "ring" : node.layer
+    const key = `${kind}|${weight}|${Math.min(3, Math.floor((light - 0.35) / 0.65 * 4))}`
+    const list = bands.get(key); if (list) list.push(p); else bands.set(key, [p])
+    out.push({ node, x: p.x, y: p.y, depth: p.depth, face: false })
+  }
+  for (const [key, list] of bands) {
+    const [kind, weight, b] = key.split("|"), star = STAR[kind], s0 = SIZE[kind === "hot" ? "ring" : kind]
+    g.beginPath()
+    for (const p of list) { const s = s0 * p.scale * Math.min(k.zoom, 1.8); g.moveTo(p.x + s, p.y); g.arc(p.x, p.y, s, 0, 2 * Math.PI) }
+    g.fillStyle = `rgb(${star[0]} ${star[1]} ${star[2]} / ${Math.min(1, starAlpha(star, 0.35 + 0.65 * (+b + 0.5) / 4) * +weight)})`; g.fill()
+  }
+  const meP = project([0, 0, 0])
+  const me = { pk: web.me, node: nodes[0], kind: "me", x: meP.x, y: meP.y, depth: Infinity, r: faceSize("me", meP, k.zoom), lead: true, alpha: 1, shown: 1, me: true }
+  const seated = seats([me, ...faces]), next = new Map()
+  let still = true
+  for (const f of faces) {
+    const was = fades.get(f.pk) ?? 0, now = seatFade(was, seated.has(f.pk), dt, reduce)
+    if (now !== (seated.has(f.pk) ? 1 : 0)) still = false
+    next.set(f.pk, now); f.shown = faceShown(f.depth) * now
+  }
+  fades = next; fading = !still
+  const all = [...faces.sort((a, b) => a.depth - b.depth), me]
+  const glow = g.createRadialGradient(me.x, me.y, 0, me.x, me.y, me.r * 3)
+  glow.addColorStop(0, "rgb(230 115 38 / .32)"); glow.addColorStop(1, "rgb(230 115 38 / 0)")
+  g.fillStyle = glow; g.beginPath(); g.arc(me.x, me.y, me.r * 3, 0, 2 * Math.PI); g.fill()
+  const at = new Map(); for (const d of out) at.set(d.node.pk, d); for (const f of faces) at.set(f.pk, f)
+  const to = target && at.get(target)
+  if (to && traced) {
+    const legs = []
+    for (const pk of path) { const b = at.get(pk); if (b && b.depth >= -0.2 && (b.shown ?? 1) >= 0.3) legs.push(b) }
+    const stroke = (width, colour, inner) => { g.beginPath(); for (const b of legs) { if (inner) { g.moveTo(me.x, me.y); g.lineTo(b.x, b.y) } else { g.moveTo(b.x, b.y); g.lineTo(to.x, to.y) } } g.lineWidth = width; g.strokeStyle = colour; g.stroke() }
+    stroke(3, "rgb(230 115 38 / .16)", true); stroke(3, "rgb(230 115 38 / .25)", false); stroke(0.8, "rgb(255 168 77 / .45)", true); stroke(1.3, "rgb(255 168 77 / .9)", false)
+  }
+  for (const f of all) {
+    if (!f.me && f.shown < 1) {
+      const star = f.kind === "bridge" || f.kind === "traced" ? STAR.hot : f.kind === "follow" ? STAR.ring : STAR.extended
+      g.beginPath(); g.arc(f.x, f.y, SIZE.ring * f.r / SIZE.follow, 0, 2 * Math.PI)
+      g.fillStyle = `rgb(${star[0]} ${star[1]} ${star[2]} / ${starAlpha(star, dotLight(f.depth)) * (1 - f.shown)})`; g.fill()
+    }
+    if (f.shown > 0.01) face(g, f.pk, f.x, f.y, f.me ? f.r : faceRadius(f.r, f.shown), f.shown * f.alpha, f.kind, f.me || seated.has(f.pk))
+    out.push({ node: f.node, x: f.x, y: f.y, depth: f.depth, r: f.r, shown: f.shown, face: true })
+  }
+  drawn = out
+  g.font = "700 13px -apple-system, BlinkMacSystemFont, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "top"
+  g.lineWidth = 3; g.lineJoin = "round"; g.strokeStyle = "rgb(0 0 0 / .65)"; g.strokeText("You", me.x, me.y + me.r + 5); g.fillStyle = "#fff"; g.fillText("You", me.x, me.y + me.r + 5)
+  const p = picked && out.find(d => d.node.pk === picked)
+  if (p && !p.face && p.depth > -0.2) { g.beginPath(); g.arc(p.x, p.y, 9, 0, 2 * Math.PI); g.lineWidth = 2; g.strokeStyle = "rgb(255 214 10)"; g.stroke() }
+}
+function face(g, pk, x, y, r, alpha, kind, load) {
+  const url = pictureOf(pk), img = url && images.get(url)
+  if (url && !img && load && r >= 6 && loadsLeft > 0 && n.resource) {
+    loadsLeft--; images.set(url, "loading")
+    n.resource.bytes(url).then(b => createImageBitmap(b)).then(bm => { images.set(url, roundBitmap(bm)); request() }).catch(() => images.set(url, "failed"))
+  }
+  g.globalAlpha = alpha
+  const [rr, rg, rb] = kind === "me" ? [230, 115, 38] : RIM[kind] ?? RIM.follow
+  g.beginPath(); g.arc(x, y, r + 1.5, 0, 2 * Math.PI); g.lineWidth = 4; g.strokeStyle = `rgb(${rr} ${rg} ${rb} / .22)`; g.stroke()
+  if (img && typeof img === "object") g.drawImage(img, x - r, y - r, 2 * r, 2 * r)
+  else {
+    g.beginPath(); g.arc(x, y, r, 0, 2 * Math.PI); g.fillStyle = `hsl(${hueOf(pk)} 29% 48%)`; g.fill()
+    const initial = Array.from((names[pk]?.[0] ?? "").trim())[0]?.toUpperCase()
+    if (initial && r >= 7) { g.font = `700 ${Math.round(r)}px -apple-system, BlinkMacSystemFont, system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = "rgb(255 255 255 / .92)"; g.fillText(initial, x, y + 0.5) }
+  }
+  g.beginPath(); g.arc(x, y, r, 0, 2 * Math.PI); g.lineWidth = Math.max(1.2, r * 0.12); g.strokeStyle = `rgb(${rr} ${rg} ${rb})`; g.stroke()
+  g.globalAlpha = 1
+}
+function roundBitmap(im) {
+  const c = document.createElement("canvas"); c.width = c.height = BITMAP
+  const g = c.getContext("2d"), side = Math.min(im.width || BITMAP, im.height || BITMAP)
+  g.beginPath(); g.arc(BITMAP / 2, BITMAP / 2, BITMAP / 2, 0, 2 * Math.PI); g.clip()
+  g.drawImage(im, ((im.width || side) - side) / 2, ((im.height || side) - side) / 2, side, side, 0, 0, BITMAP, BITMAP)
+  return c
+}
+new ResizeObserver(() => { const dpr = devicePixelRatio || 1; size = { w: innerWidth, h: innerHeight }; canvas.width = size.w * dpr; canvas.height = size.h * dpr; request() }).observe(document.documentElement)
+
+// ---------- gestures: drag spins (a flick carries on), pinch or wheel zooms, double-click goes home, tap opens a card ----------
+const pointers = new Map(); let gesture = null
+const local = e => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top] }
+const pinchDist = () => { const [a, b] = [...pointers.values()]; return Math.hypot(a[0] - b[0], a[1] - b[1]) }
+canvas.addEventListener("pointerdown", e => { canvas.setPointerCapture?.(e.pointerId); pointers.set(e.pointerId, local(e)); cam = { ...cam, spin: [0, 0, 0], target: null, dragging: true }; const [x, y] = local(e); gesture = { startX: x, startY: y, moved: 0, samples: [[performance.now(), x, y]], pinch: pointers.size === 2 ? pinchDist() : null }; request() })
+canvas.addEventListener("pointermove", e => {
+  if (!pointers.has(e.pointerId) || !gesture) return
+  const prev = pointers.get(e.pointerId), now = local(e); pointers.set(e.pointerId, now)
+  if (pointers.size >= 2) { const d = pinchDist(); if (gesture.pinch > 0) cam = zoomNow(cam, d / gesture.pinch); gesture.pinch = d; gesture.moved = Infinity }
+  else { cam = drag(cam, now[0] - prev[0], now[1] - prev[1]); gesture.moved = Math.max(gesture.moved, Math.hypot(now[0] - gesture.startX, now[1] - gesture.startY)); gesture.samples.push([performance.now(), now[0], now[1]]); if (gesture.samples.length > 6) gesture.samples.shift() }
+  request()
+})
+const up = e => {
+  pointers.delete(e.pointerId)
+  const gs = gesture; if (!gs) return
+  if (pointers.size) { gs.pinch = pointers.size === 2 ? pinchDist() : null; return }
+  gesture = null; cam = { ...cam, dragging: false }
+  if (gs.moved < 6) { const [x, y] = local(e); const hitNode = hit(drawn, x, y); tapped(hitNode ? hitNode.pk : null); request(); return }
+  const t = performance.now(), recent = gs.samples.filter(s => t - s[0] < 80)
+  if (recent.length >= 2) { const [t0, x0, y0] = recent[0], [t1, x1, y1] = recent.at(-1); const dt = Math.max(0.008, (t1 - t0) / 1000); cam = flick(cam, (x1 - x0) / dt, (y1 - y0) / dt, reducedMotion()) }
+  request()
+}
+canvas.addEventListener("pointerup", up); canvas.addEventListener("pointercancel", up)
+canvas.addEventListener("wheel", e => { e.preventDefault(); cam = zoomBy(cam, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0018)), reducedMotion()); request() }, { passive: false })
+canvas.addEventListener("dblclick", () => { cam = home(cam); request() })
+canvas.addEventListener("keydown", e => {
+  const turns = { ArrowLeft: [-40, 0], ArrowRight: [40, 0], ArrowUp: [0, -40], ArrowDown: [0, 40] }
+  if (turns[e.key]) cam = drag(cam, ...turns[e.key]); else if (e.key === "+" || e.key === "=") cam = zoomBy(cam, 1.25, reducedMotion()); else if (e.key === "-") cam = zoomBy(cam, 0.8, reducedMotion()); else if (e.key === "0" || e.key === "Home") cam = home(cam); else return
+  e.preventDefault(); request()
+})
+
+// ---------- the card, the bar, Find ----------
+function tapped(pk) {
+  if (!pk || pk === web.me || pk === picked) { picked = null; $("card").hidden = true; return }
+  open(pk)
+}
+function open(pk) {
+  picked = pk; $("search").hidden = true
+  cam = flyTo(cam, facing(direction(pk)))
+  $("cname").textContent = nameOf(pk)
+  $("cline").textContent = trustPathText(web, pk, nameOf)
+  const f = $("cface"); f.replaceChildren(); f.style.background = `hsl(${hueOf(pk)} 29% 48%)`; f.textContent = (Array.from(nameOf(pk))[0] || "?").toUpperCase()
+  const url = pictureOf(pk)
+  if (url && n.resource) n.resource.bytes(url).then(b => { if (picked !== pk) return; const i = document.createElement("img"); i.className = "face"; i.alt = ""; i.src = URL.createObjectURL(b); f.replaceWith(i); i.id = "cface" }).catch(() => {})
+  $("card").hidden = false; request()
+}
+$("cclose").onclick = () => tapped(null)
+$("cprofile").onclick = () => picked && n.intent?.invoke("napplet:profile/open", { payload: { pubkey: picked } }).catch(() => {})
+function fillLayers() {
+  const c = web ? layerCounts(web) : null, full = scene?.counts ?? c
+  $("layer").replaceChildren(...LAYERS.map(([id, title]) => { const o = document.createElement("option"); o.value = id; o.textContent = full ? `${title} · ${full[id].toLocaleString()}` : title; o.selected = id === layer; return o }))
+}
+$("layer").onchange = e => { layer = e.target.value; place() }
+$("back").onclick = () => {
+  followsBackOn = !followsBackOn; $("back").setAttribute("aria-pressed", String(followsBackOn))
+  const k = web?.followsMe.size ?? 0
+  note(!followsBackOn ? "Follow you back off" : k === 0 ? "None of your follows follow you back" : k === 1 ? "1 follows you back" : `${k.toLocaleString()} follow you back`, 2000)
+  place()
+}
+$("find").onclick = () => { $("search").hidden = !$("search").hidden; if (!$("search").hidden) $("q").focus() }
+$("q").oninput = () => $("results").replaceChildren(...findPeople(web, names, $("q").value).map(pk => { const li = document.createElement("li"), b = document.createElement("button"); b.textContent = `${nameOf(pk)} · ${{ follow: "you follow", extended: "vouched", further: "further out" }[web.layerOf(pk)]}`; b.onclick = () => open(pk); li.append(b); return li }))
+$("again").onclick = () => { note("Reading your follows' lists again…"); n.intent?.invoke("napplet:wot/refresh", { payload: {} }).catch(() => {}) }
+let noteTimer = null
+function note(text, ms = 0) { clearTimeout(noteTimer); $("pill").textContent = text; $("pill").hidden = !text; if (ms) noteTimer = setTimeout(() => { $("pill").hidden = true }, ms) }
+
+function place() { if (!web) return; nodes = nodesOf(web, layer, litOf(web, followsBackOn), pk => !!pictureOf(pk)); fillLayers(); request() }
+function show(s) {
+  scene = s; web = webOf(s); names = s.profiles ?? {}
+  $("middle").textContent = s.waiting ? s.status : !web.follows.length ? (s.status || "Follow people to grow your web.") : ""
+  note(s.waiting ? "" : s.status || "")
+  place()
+  if (s.open && web.layerOf(s.open)) open(s.open)
+  else if (picked) { $("cname").textContent = nameOf(picked); $("cline").textContent = trustPathText(web, picked, nameOf) }
+}
+n.intent?.onDelivery?.(d => { if (d?.archetype === "wot" && d.action === "show" && d.payload?.me) show(d.payload) })
+if (n.theme?.get) n.theme.get().then(t => { const c = t?.colors ?? {}; if (c.primary) document.documentElement.style.setProperty("--accent", c.primary) }).catch(() => {})
+</script>
+</body>
+</html>

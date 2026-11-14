@@ -27,7 +27,7 @@ import { markTourDone, tourDone } from "./src/net/first-run.js"
 import { runAndWait, resumeImportJobs } from "./src/net/import-jobs.js"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { startNavDepth } from "./src/components/nav-depth.js"
-import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, RelayScreen, DesktopShell, VaultDashboard, NappletShell, ReaderPane } from "./src/screens/lazy-screens.js"
+import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, RelayScreen, DesktopShell, VaultDashboard, NappletShell, ReaderPane, WotPane } from "./src/screens/lazy-screens.js"
 import { nappletsOn } from "./src/napplet/flag.js"
 import { readerOpenFor } from "./src/napplet/reader-intents.js"
 import { warmScreens } from "./src/screens/warm-screens.js"
@@ -306,6 +306,9 @@ function App() {
   )
 }
 
+/** The WoT tab as the WoT napplet (plan P6): with the switch on, except "See their web" (#/wot/<hex>/web), still classic. */
+const wotInNapplet = (hash = location.hash) => nappletsOn() && !/^#\/wot\/[0-9a-f]{64}\/web/.test(hash)
+
 /** Does this screen show as the Reader napplet? Only with the switch on, and never your own profile (its editor stays). */
 const readsInNapplet = (route, other) => nappletsOn() && (route === "feed" || route === "thread" || (route === "profile" && !!other))
 
@@ -320,7 +323,7 @@ function PhoneScreens({ ctx, route, arg, other }) {
       {!reader && route === "feed" && <FeedScreen ctx={ctx} />}
       {route === "compose" && <ComposeScreen ctx={ctx} />}
       {!reader && route === "profile" && (other ? <PersonScreen key={arg} ctx={ctx} pubkey={arg} /> : <ProfileScreen ctx={ctx} />)}
-      {route === "wot" && <WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(arg) ? arg : undefined} />}
+      {route === "wot" && (wotInNapplet() ? <WotPane ctx={ctx} open={/^[0-9a-f]{64}$/.test(arg) ? arg : null} /> : <WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(arg) ? arg : undefined} />)}
       {route === "search" && <SearchScreen ctx={ctx} onProfile={pk => { location.hash = `#/profile/${pk}` }} />}
       {route === "notifications" && <NotificationsScreen ctx={ctx} vaultMenu />}
       {!reader && route === "thread" && <ThreadScreen key={arg} ctx={ctx} id={arg} />}
