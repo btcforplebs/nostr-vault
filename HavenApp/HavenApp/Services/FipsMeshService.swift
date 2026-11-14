@@ -80,8 +80,13 @@ final class FipsMeshService: ObservableObject {
     private var startGen = 0
     /// The engine is running only to reach other vaults (the home vault
     /// sender), not to share this one. Kiosk mode reuses it.
-    private var clientActive = false
+    private(set) var clientActive = false
     private var clientBackgroundObserver: NSObjectProtocol?
+    /// Short trips out of the app keep the engine (FipsMeshService+KeepWarm).
+    var awayClock = MeshKeepWarm.Clock()
+    var keepWarmTask: UIBackgroundTaskIdentifier = .invalid
+    /// The trip `keepWarmTask` was taken for: only that trip's endings end it.
+    var keepWarmTrip = 0
     /// Client starts queued or dialing. clientActive is set only once a dial
     /// returns (~10 s, a relay push up to 90 s), and each start carries the
     /// My Devices it was queued with, so a revoke must count these too.
@@ -117,6 +122,8 @@ final class FipsMeshService: ObservableObject {
     private static let pausedNotePostedKey = "fipsMesh.pausedNotePosted"
 
     private func resumeIfWanted() {
+        // A short trip kept the engine: found running here, it is reused.
+        appReturned()
         if UserDefaults.standard.bool(forKey: Self.pausedNotePostedKey) {
             UserDefaults.standard.set(false, forKey: Self.pausedNotePostedKey)
             let id = Self.pausedNoteID
@@ -222,7 +229,8 @@ final class FipsMeshService: ObservableObject {
     /// `leavingApp`: the app left the screen, so kiosk mode comes back with it.
     /// Otherwise the owner turned it off. Kiosk mode never signs a 10063:
     /// only Save does (Logen, 2026-10-31).
-    func stopKiosk(leavingApp: Bool = false) {
+    /// `notify: false` restarts a frozen engine without the paused note.
+    func stopKiosk(leavingApp: Bool = false, notify: Bool = true) {
         // A copy window ends with any stop; it never comes back on its own
         // and never posts the paused note.
         let forCopy = isTemporaryShare
@@ -244,7 +252,7 @@ final class FipsMeshService: ObservableObject {
         resignObserver = nil
         stopEngine()
         status = nil
-        if leavingApp && !forCopy { notifyPaused() }
+        if leavingApp && !forCopy && notify { notifyPaused() }
     }
 
     /// My Devices changed. A running engine keeps the `own_devices` it started
@@ -348,12 +356,14 @@ final class FipsMeshService: ObservableObject {
             // Today's budget was used up before this start: strangers wait
             // for tomorrow from the first poll on.
             if budget.spent { pausedUntil = KioskDailyBudget.nextDay(after: Date()) }
-            // Leaving the app ends kiosk mode: iOS would suspend the mesh anyway.
-            // A banner or Control Center (willResignActive) does not.
+            // Leaving the app ends kiosk mode after a short grace: iOS would
+            // suspend the mesh anyway, and a quick trip out keeps it running
+            // (FipsMeshService+KeepWarm). A banner or Control Center
+            // (willResignActive) does not count.
             resignObserver = NotificationCenter.default.addObserver(
                 forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
             ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.stopKiosk(leavingApp: true) }
+                MainActor.assumeIsolated { self?.appLeftScreen() }
             }
             pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refresh() }
@@ -460,13 +470,12 @@ final class FipsMeshService: ObservableObject {
         guard !kioskActive, !starting, !clientActive else { return }
         clientActive = true
         // iOS suspends the engine in the background anyway; stop it cleanly
-        // once the sender has had its background window.
+        // once the sender has had its background window (MeshKeepWarm.grace,
+        // under background time held for it: FipsMeshService+KeepWarm).
         clientBackgroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 25) {
-                MainActor.assumeIsolated { self?.stopClientIfBackground() }
-            }
+            MainActor.assumeIsolated { self?.appLeftScreen() }
         }
     }
 
@@ -592,7 +601,7 @@ final class FipsMeshService: ObservableObject {
         return status?.relay_link == true
     }
 
-    private func stopClientIfBackground() {
+    func stopClientIfBackground() {
         guard clientActive, UIApplication.shared.applicationState == .background else { return }
         // The Mac's full-history copy runs over this engine: keep it up until
         // the copy ends, then give the usual 25 s.
@@ -607,6 +616,17 @@ final class FipsMeshService: ObservableObject {
         guard !kioskActive, !starting else { return }
         stopEngine()
         print("FipsMesh: client engine stopped in the background")
+    }
+
+    /// A client engine iOS froze: stopped now; the next read starts it fresh.
+    func dropClientEngine() {
+        guard clientActive else { return }
+        clientActive = false
+        if let clientBackgroundObserver { NotificationCenter.default.removeObserver(clientBackgroundObserver) }
+        clientBackgroundObserver = nil
+        guard !kioskActive, !starting else { return }
+        stopEngine()
+        status = nil
     }
 
     private func macSyncNeedsMesh() -> Bool {
