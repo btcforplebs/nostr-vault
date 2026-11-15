@@ -20,9 +20,12 @@ enum AppTheme: String, CaseIterable, Identifiable {
 
     var displayName: String { "Sunset Orange" }
 
-    var primaryColor: Color { Color(red: 0.90, green: 0.45, blue: 0.15) } // #E67326
-    var lightColor: Color { Color(red: 0.98, green: 0.58, blue: 0.28) }   // #FA9447
-    var darkColor: Color { Color(red: 0.70, green: 0.32, blue: 0.08) }    // #B35214
+    // Light mode deepens each step so orange text reads on the paper page
+    // (#C2571A is 4.6:1 on white; #E67326 is 3.1:1). White labels still read
+    // on the deeper fill.
+    var primaryColor: Color { Color(lightHex: 0xC2571A, darkHex: 0xE67326) }
+    var lightColor: Color { Color(lightHex: 0xE67326, darkHex: 0xFA9447) }
+    var darkColor: Color { Color(lightHex: 0x9A4512, darkHex: 0xB35214) }
     var paleColor: Color { primaryColor.opacity(0.1) }
 }
 
@@ -57,7 +60,7 @@ extension Color {
     /// pills, and go-ahead buttons (Start Relay) all mean the same thing and
     /// should read as the same color — not a system default in one place and a
     /// custom mint somewhere else.
-    static var havenOnline: Color { Color(red: 0.2, green: 0.85, blue: 0.5) }
+    static var havenOnline: Color { Color(light: Color(hex: 0x1A9E57), dark: Color(red: 0.2, green: 0.85, blue: 0.5)) }
 
     /// The one zap gold (#F2A33A): a warm step off the brand orange, so sats read
     /// as their own thing without leaving the palette. Was three ambers.
@@ -88,7 +91,7 @@ extension Color {
     /// health signal — and the two were close enough (#33CC99 against #33D980)
     /// that the app had drifted into using a health colour for trust and a
     /// second, brighter teal (#33E6B3) for the same idea two views away.
-    static let havenVerified = Color(red: 0.2, green: 0.8, blue: 0.6)
+    static let havenVerified = Color(light: Color(hex: 0x16916B), dark: Color(red: 0.2, green: 0.8, blue: 0.6))
 
     // MARK: - Surface ramp
     //
@@ -107,16 +110,16 @@ extension Color {
     // Use the semantic `platform*` tokens in views. These are the raw steps.
 
     /// The page. Windows, scroll backgrounds, anything the content sits *on*.
-    static let surface0 = Color(red: 0.0, green: 0.0, blue: 0.0)          // #000000
+    static let surface0 = Color(lightHex: 0xF6F1EB, darkHex: 0x000000)    // light: warm paper
 
     /// Resting content: cards, grouped rows, controls, sheets.
-    static let surface1 = Color(red: 0.110, green: 0.110, blue: 0.118)    // #1C1C1E
+    static let surface1 = Color(lightHex: 0xFFFFFF, darkHex: 0x1C1C1E)    // light: white cards
 
     /// Content on top of `surface1`: a field inside a card, a nested row.
-    static let surface2 = Color(red: 0.173, green: 0.173, blue: 0.180)    // #2C2C2E
+    static let surface2 = Color(lightHex: 0xEFE9E2, darkHex: 0x2C2C2E)
 
     /// Transient overlays: menus, popovers, tooltips, pressed states.
-    static let surface3 = Color(red: 0.227, green: 0.227, blue: 0.235)    // #3A3A3C
+    static let surface3 = Color(lightHex: 0xE2DBD3, darkHex: 0x3A3A3C)
 
     // MARK: - Borders
     //
@@ -129,17 +132,16 @@ extension Color {
 
     /// 1.35:1 on `surface0`. A seam, not a boundary. Only legitimate when the
     /// two sides already differ in fill.
-    static let borderHairline = Color.ink.opacity(0.14)
+    static let borderHairline = Color(lightHex: 0x1C1C1E, darkHex: 0xFFFFFF, lightAlpha: 0.16, darkAlpha: 0.14)
 
     /// 3.14:1 on `surface0`. Meets the non-text contrast floor. Use wherever the
     /// border alone communicates the control — an unselected checkbox, a focus
     /// ring, an empty drop target.
-    static let borderStrong = Color.ink.opacity(0.36)
+    static let borderStrong = Color(lightHex: 0x3A3A3C, darkHex: 0xFFFFFF, lightAlpha: 0.6, darkAlpha: 0.36)
 
     // MARK: - Ink, shade and labels
     //
-    // The app is dark-only today, so these resolve to plain white / black. They
-    // exist so a light mode can flip them in one place
+    // Each flips with Settings › Appearance › Mode (AppAppearance)
     // (PLANS/NV_LIGHT_MODE_AND_CUSTOM_COLORS.md). Pick by what the colour sits on:
     //
     // - `ink`: text, icons, strokes and tints on the app's own surfaces
@@ -153,9 +155,17 @@ extension Color {
     //   such as text over a photo or video, the media viewer, the player, the
     //   trust globe, or a black scrim.
 
-    static let ink = Color.white
-    static let shade = Color.black
+    static let ink = Color(lightHex: 0x000000, darkHex: 0xFFFFFF)
+    /// Light: a warm brown-grey, so shadows look like the paper's own.
+    static let shade = Color(lightHex: 0x3C2814, darkHex: 0x000000)
     static let onAccent = Color.white
+
+    /// A note card's outline: the accent in dark, the dark greys in light
+    /// (an orange ring round every card on the paper page was too loud).
+    @MainActor
+    static func cardLine(_ darkOpacity: Double) -> Color {
+        Color(light: Color(hex: 0x1C1C1E).opacity(0.22), dark: .havenPurple.opacity(darkOpacity))
+    }
 
     static var controlBackgroundColor: Color {
         #if os(macOS)

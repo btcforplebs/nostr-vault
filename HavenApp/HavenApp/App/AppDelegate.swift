@@ -24,6 +24,8 @@ class AppDelegate: NSObject, ObservableObject {
         // Ignore SIGPIPE so broken pipe writes (e.g. from the Go relay's
         // stdout redirection) don't silently kill the process.
         signal(SIGPIPE, SIG_IGN)
+        // Settings › Appearance › Mode: dark unless picked otherwise.
+        AppAppearance.apply()
 
         #if os(macOS)
         startFocusLifecycleObservers()

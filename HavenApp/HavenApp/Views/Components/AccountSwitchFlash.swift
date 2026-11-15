@@ -62,7 +62,7 @@ struct AccountSwitchBubble: View {
         .padding(.horizontal, 28)
         .padding(.vertical, 22)
         .frame(minWidth: 200, maxWidth: 280)
-        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color(white: 0.22).opacity(0.94)))
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color(light: Color.surface1, dark: Color(white: 0.22)).opacity(0.94)))
         .shadow(color: Color.shade.opacity(0.35), radius: 18, y: 6)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Switched to \(name)")

@@ -24,7 +24,7 @@ struct HavenApp: App {
                 .environmentObject(relayManager)
                 .environmentObject(nostrService)
                 .environmentObject(statsService)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(AppAppearance.colorScheme)
         } label: {
             MenuBarIconLabel()
         }
@@ -46,7 +46,7 @@ struct HavenApp: App {
             .environmentObject(relayManager)
             .environmentObject(nostrService)
             .environmentObject(statsService)
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(AppAppearance.colorScheme)
             .frame(minWidth: 500, minHeight: 650)
         }
         .windowStyle(.hiddenTitleBar)
@@ -60,7 +60,7 @@ struct HavenApp: App {
                 .environmentObject(relayManager)
                 .environmentObject(nostrService)
                 .environmentObject(statsService)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(AppAppearance.colorScheme)
         }
 
         Window("Nostr Vault", id: "viewer-window") {
@@ -73,7 +73,7 @@ struct HavenApp: App {
                 .environmentObject(relayManager)
                 .environmentObject(nostrService)
                 .environmentObject(statsService)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(AppAppearance.colorScheme)
                 // Small enough for a 13" MacBook Air (about 919 pt usable at
                 // the default 1470x956); the content scrolls below this.
                 .frame(minWidth: 800, minHeight: 640)
@@ -89,7 +89,7 @@ struct HavenApp: App {
                 .environmentObject(relayManager)
                 .environmentObject(nostrService)
                 .environmentObject(statsService)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(AppAppearance.colorScheme)
         }
         #endif
     }

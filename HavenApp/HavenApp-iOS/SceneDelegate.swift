@@ -46,7 +46,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             .environmentObject(statsService)
             .environmentObject(AppState.shared)
         
-        window.overrideUserInterfaceStyle = .dark
+        window.overrideUserInterfaceStyle = AppAppearance.interfaceStyle
         window.rootViewController = UIHostingController(rootView: contentView)
         self.window = window
         window.makeKeyAndVisible()
@@ -56,7 +56,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // no touches except on the banners themselves.
         let banners = BannerWindow(windowScene: windowScene)
         banners.windowLevel = .alert - 1
-        banners.overrideUserInterfaceStyle = .dark
+        banners.overrideUserInterfaceStyle = AppAppearance.interfaceStyle
         // The zap strike flies here too: drawn in the app's own window, a bolt
         // fired from a profile or a note sheet went off behind that sheet.
         let host = UIHostingController(rootView: ZStack {

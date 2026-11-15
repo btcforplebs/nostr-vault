@@ -46,6 +46,8 @@ struct HavenConfig: Codable, Equatable {
     /// the decoder forces it true regardless of what was saved.
     var useOLED: Bool = true
     var textSizeScale: Double = 1.0
+    /// Settings › Appearance › Mode: "dark", "light" or "system" (match the device). Dark by default.
+    var appearanceMode: String = "dark"
     /// Per-feed layout choice (expanded / threaded), keyed by
     /// FeedMode.rawValue. A compact choice saved by an older build (here or
     /// in the legacy `feedCompactModes` key) is rewritten as expanded on load
@@ -330,7 +332,7 @@ struct HavenConfig: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
         case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, autoplayVideos, vertexLookups, fanfaresAutoCheck, ownerNcryptsec, ownerNsec, showReplies, repliesBackOnV1, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
-        case useOLED, textSizeScale, feedLayoutModes, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage, hideNostrVaultBadge
+        case useOLED, textSizeScale, appearanceMode, feedLayoutModes, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage, hideNostrVaultBadge
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications, notifyOwnAccountTags, showDMTextInNotifications
         case macRelayURL, publicOnWeb, keepFullCopy, fullCopyWifiOnly
@@ -399,6 +401,7 @@ struct HavenConfig: Codable, Equatable {
         // that had it switched off must not come back looking like the old theme.
         useOLED = true
         textSizeScale = try container.decodeIfPresent(Double.self, forKey: .textSizeScale) ?? defaults.textSizeScale
+        appearanceMode = try container.decodeIfPresent(String.self, forKey: .appearanceMode) ?? defaults.appearanceMode
         // Read only to migrate: older builds saved a per-feed compact switch.
         let legacy = try decoder.container(keyedBy: LegacyCompactKeys.self)
         let feedCompactModes = try legacy.decodeIfPresent([String: Bool].self, forKey: .feedCompactModes) ?? [:]

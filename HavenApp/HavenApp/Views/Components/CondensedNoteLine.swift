@@ -542,7 +542,7 @@ struct ThreadCardBackground: ViewModifier {
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(
-                        Color.havenPurple.opacity(isOLED ? 0.30 : 0.15),
+                        Color.cardLine(isOLED ? 0.30 : 0.15),
                         lineWidth: isOLED ? 1.0 : 0.5
                     )
             )

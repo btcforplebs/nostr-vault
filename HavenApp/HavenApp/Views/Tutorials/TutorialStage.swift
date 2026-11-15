@@ -113,7 +113,7 @@ struct TutorialStage: View {
         .background {
             let shape = TutorialCardShape(tail: placement.tail)
             shape
-                .fill(Color(white: 0.12))
+                .fill(Color(light: Color.surface1, dark: Color(white: 0.12)))
                 .shadow(color: Color.shade.opacity(0.5), radius: 16, y: 6)
                 .overlay(shape.stroke(Color.havenPurple.opacity(0.6), lineWidth: 1))
         }
