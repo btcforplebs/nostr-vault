@@ -19,7 +19,11 @@ import kotlinx.serialization.json.*
         val blockedPubkeys = config.blockedForActiveAccount()
             .mapNotNull { nostrService.npubToHex(it) }.toSet()
 
-        _filteredNotes.value = filterForCurrentFeed(_notes.value, config, blockedPubkeys)
+        val all = filterForCurrentFeed(_notes.value, config, blockedPubkeys)
+        // Underrated shows the first pages asked for (50 at a time); others whole.
+        dvmFilteredTotal = all.size
+        val shown = LocalDvmFeeds.shownCount(all.size, dvmRevealed, LocalDvmFeeds.pageSize(_feedMode.value))
+        _filteredNotes.value = if (shown < all.size) all.take(shown) else all
 
         _filteredMediaNotes.value = feedFilterEngine.filterMediaNotes(
             notes = _notes.value,

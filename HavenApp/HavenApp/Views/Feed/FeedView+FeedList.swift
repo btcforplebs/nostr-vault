@@ -267,7 +267,8 @@ extension FeedView {
                         if let dvm = feedService.feedMode.localDvm,
                            LocalDvmFeed.showsEndOfList(mode: dvm,
                                                        hasNotes: isThreadedModeActive ? !feedThreads.isEmpty : !feedService.filteredNotes.isEmpty,
-                                                       isLoading: feedService.isLoadingFeed || feedService.isLoadingLocalDvm) {
+                                                       isLoading: feedService.isLoadingFeed || feedService.isLoadingLocalDvm,
+                                                       hasMore: feedService.dvmHasMore) {
                             LocalDvmEndOfListFooter(feed: dvm) { feedService.refresh() }
                         }
 

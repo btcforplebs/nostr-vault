@@ -30,6 +30,7 @@ extension FeedService {
         let account = ConfigService.shared.activeAccountHexPubkey
         let showingOld = !notes.isEmpty
         if !showingOld {
+            dvmRevealed = 0
             isLoadingFeed = true
             shouldScrollToTopOnLoad = true
             connectionStatus = feed.loadingStatus
@@ -128,6 +129,23 @@ extension FeedService {
                 self.recomputeFilteredNotes()
                 if !feedNotes.isEmpty { self.captureModeCache(for: mode) }
             }
+        }
+    }
+
+    /// Works Underrated out again every 10 minutes while the feed is on
+    /// screen (LocalDvmFeed.quietRefreshInterval), swapping the new list in
+    /// under the old one. FeedView runs it in a `.task` keyed on the feed, so
+    /// it stops when the view goes or another feed is picked.
+    @MainActor
+    func refreshWhileOnScreen() async {
+        guard let feed = feedMode.localDvm, feed.refreshesWhileOnScreen else { return }
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(nanoseconds: UInt64(LocalDvmFeed.quietRefreshInterval * 1_000_000_000))
+            } catch { return }
+            guard feedMode.localDvm == feed else { return }
+            // In the background resumeFeed recomputes on the way back.
+            if !isPaused { loadLocalDvmFeed() }
         }
     }
 

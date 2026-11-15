@@ -146,6 +146,7 @@ struct FeedView: View {
                 openNotificationNote()
             }
             .onReceive(feedService.$filteredNotes, perform: updatePopularRanks)
+            .task(id: feedService.feedMode) { await feedService.refreshWhileOnScreen() }
         #else
         VStack(spacing: 0) {
             macFeedHeader
@@ -153,6 +154,7 @@ struct FeedView: View {
             rootContent
         }
         .onReceive(feedService.$filteredNotes, perform: updatePopularRanks)
+        .task(id: feedService.feedMode) { await feedService.refreshWhileOnScreen() }
         #endif
     }
 

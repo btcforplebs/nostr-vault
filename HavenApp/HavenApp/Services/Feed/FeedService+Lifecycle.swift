@@ -121,6 +121,7 @@ extension FeedService {
         }
 
         // 5. Kick off relay traffic.
+        dvmRevealed = 0
         if feedMode.isLocalDvm {
             // Local DVM feeds are ephemeral — always re-fetch on account switch.
             loadLocalDvmFeed()
@@ -291,6 +292,7 @@ extension FeedService {
         unavailableNoteIds.removeAll()
         noteStats.removeAll()
         popularNoteScores.removeAll()
+        dvmRevealed = 0
         newNoteCount = 0
         newSinceLastView = Date()
         lastEventTimestamp = 0
@@ -342,8 +344,11 @@ extension FeedService {
             // itself, so the note pipeline stays idle underneath the grid.
             MarketplaceFeedService.shared.loadIfNeeded()
         } else if mode.isLocalDvm {
-            // Computed, not streamed: a recent result is shown as it was.
-            if let cachedAge, cachedAge < Self.popularCacheFreshFor {
+            // Computed, not streamed: a recent result is shown as it was,
+            // except Underrated, worked out again on every open (it stays
+            // on screen while the new one is computed).
+            if let cachedAge, cachedAge < Self.popularCacheFreshFor,
+               mode.localDvm?.recomputesOnEveryOpen != true {
                 connectionStatus = "Live"
             } else {
                 loadLocalDvmFeed()
@@ -510,8 +515,9 @@ extension FeedService {
         print("FeedService: resuming — reconnecting relay clients")
         #endif
         if feedMode.isLocalDvm {
-            // Local DVM feeds don't use relay subscriptions — re-fetch if stale
-            if notes.isEmpty { loadLocalDvmFeed() }
+            // Local DVM feeds don't use relay subscriptions: re-fetch when
+            // empty, and Underrated on every return to the app.
+            if notes.isEmpty || feedMode.localDvm?.recomputesOnEveryOpen == true { loadLocalDvmFeed() }
         } else {
             // Route through the idempotent reconciler so resume reconnects the
             // right relay set and (re)subscribes with the current follow set —

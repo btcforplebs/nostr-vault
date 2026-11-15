@@ -29,6 +29,10 @@ import com.nostrvault.ui.components.SkeletonFeed
 import com.nostrvault.ui.components.rememberFilterNoteState
 import com.nostrvault.ui.theme.*
 import com.nostrvault.service.FeedLanguage
+import com.nostrvault.service.LocalDvmFeeds
+import kotlinx.coroutines.delay
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 /**
  * Main feed screen with mode tabs, pull-to-refresh, and infinite scroll.
@@ -210,6 +214,18 @@ fun FeedScreen(
         }
     }
     LoadMoreEffect(shouldLoadMore, isLoadingMore, notes.size, viewModel::loadMore)
+
+    // Underrated is computed again every 10 minutes while it is on screen and
+    // the app is in front, the new list swapped in under the old (iOS
+    // FeedService.refreshWhileOnScreen). Leaving the feed or the screen stops it.
+    val feedLifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(feedMode) {
+        if (!LocalDvmFeeds.refreshesWhileOnScreen(feedMode)) return@LaunchedEffect
+        while (true) {
+            delay(LocalDvmFeeds.QUIET_REFRESH_MS)
+            if (feedLifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) viewModel.refreshLocalDvmFeed()
+        }
+    }
 
     // Load the next rows' photos and avatars while these are on screen.
     // Reads the lists through rememberUpdatedState inside the effect, so a

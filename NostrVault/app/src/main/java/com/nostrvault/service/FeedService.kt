@@ -353,6 +353,20 @@ class FeedService @Inject constructor(
     /** Local DVM feeds being computed now (FeedServiceLocalDvmFeeds.kt), one at a time each. */
     internal val localDvmLoading: MutableSet<FeedMode> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
+    /**
+     * Underrated shows its list 50 at a time ([LocalDvmFeeds.pageSize]): how
+     * many have been asked for (0 = the first page) and how many the filtered
+     * list holds. Reset on a feed or account switch.
+     */
+    @Volatile internal var dvmRevealed = 0
+    @Volatile internal var dvmFilteredTotal = 0
+
+    /** Computes the local DVM feed on screen again, keeping the list up meanwhile (Underrated's 10-minute refresh). */
+    fun refreshLocalDvmFeed() {
+        val mode = _feedMode.value
+        if (mode.isLocalDvm) loadLocalDvmFeed(mode)
+    }
+
     internal val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 

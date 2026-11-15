@@ -169,7 +169,8 @@ func capPerAuthor(notes []PopularNote, limit int) []PopularNote {
 	return kept
 }
 
-// fetchEngagementInto pulls the last 24h of engagement events from the seed
+// fetchEngagementInto pulls the last `window` of engagement events (Popular
+// 24h, Underrated 48h) from the seed
 // relays and folds them into an existing tally. This is the original
 // snapshot path, kept as the backfill for a device whose passive tally has not
 // been running long enough to answer on its own — a phone the OS suspends
@@ -181,7 +182,7 @@ func capPerAuthor(notes []PopularNote, limit int) []PopularNote {
 // locally" is otherwise indistinguishable from "the fetch failed and its error
 // was swallowed", which is exactly how the first version of that test passed
 // against code that always fetched.
-var fetchEngagementInto = func(ctx context.Context, tally map[string]map[string]float64) error {
+var fetchEngagementInto = func(ctx context.Context, tally map[string]map[string]float64, window time.Duration) error {
 	if pool == nil {
 		return fmt.Errorf("relay pool not initialized")
 	}
@@ -190,7 +191,7 @@ var fetchEngagementInto = func(ctx context.Context, tally map[string]map[string]
 		return fmt.Errorf("no seed relays configured")
 	}
 
-	since := nostr.Timestamp(time.Now().Add(-24 * time.Hour).Unix())
+	since := nostr.Timestamp(time.Now().Add(-window).Unix())
 	engagementFilter := nostr.Filter{
 		Kinds: []int{7, 6, 9735},
 		Since: &since,
@@ -425,7 +426,7 @@ func computePopularNotes(ctx context.Context) ([]PopularNote, error) {
 	// awake for ten minutes knows about ten minutes of engagement. Backfill.
 	local := coverage >= popularTallyMinCoverage
 	if !local {
-		if err := fetchEngagementInto(ctx, tally); err != nil && len(tally) == 0 {
+		if err := fetchEngagementInto(ctx, tally, popularWindow); err != nil && len(tally) == 0 {
 			return nil, err
 		}
 	}

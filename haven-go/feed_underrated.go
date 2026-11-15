@@ -20,7 +20,6 @@ import (
 	"log"
 	"math"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/fiatjaf/eventstore"
@@ -36,9 +35,11 @@ const (
 	// Candidates whose bodies are looked up, most engaged first.
 	// Most of the engagement your web sees is on your own follows' notes,
 	// which Underrated leaves out, so it looks further down than Popular.
-	underratedMaxCandidates = 600
+	// 1,000 and 300 (Logen 2026-11-15, "show more"; were 600 and 100): the
+	// apps show 50 at a time and load the next 50 at the end of the list.
+	underratedMaxCandidates = 1000
 	// Notes one Underrated result lists, and the most per author.
-	underratedMaxNotes       = 100
+	underratedMaxNotes       = 300
 	underratedMaxPerAuthor   = 2
 	underratedBridgeBoost    = 1.5
 	underratedPostCountLimit = 200
@@ -46,12 +47,10 @@ const (
 	// a follow, so not in feedDB): no "posts less" boost for an unknown, or
 	// a stranger posting a thousand times a day would count as one post.
 	underratedUnknownPosts = 8
-)
 
-var (
-	underratedCache       []PopularNote
-	underratedCacheExpiry time.Time
-	underratedCacheMu     sync.Mutex
+	// How far back Underrated looks: two days (Popular looks back one). The
+	// tally keeps this long for it (tallyRetention).
+	underratedWindow = 48 * time.Hour
 )
 
 // reachModel is the part of the web of trust Underrated reads: how many of
@@ -295,15 +294,12 @@ func localPostCounts(ctx context.Context, authors []string, since nostr.Timestam
 
 // computeUnderratedNotes answers the Underrated feed, and when the answer is
 // empty, why (underratedWebIncomplete and the rest; "" when it is not).
+//
+// Always computed fresh, no cached answer: the apps ask on open, on pull and
+// every 10 minutes while it is on screen, and each must see what changed
+// (Logen 2026-11-15; Popular's 5-minute cache made a pull show the same list).
 func computeUnderratedNotes(ctx context.Context) ([]PopularNote, string, error) {
 	now := time.Now()
-	underratedCacheMu.Lock()
-	if now.Before(underratedCacheExpiry) && len(underratedCache) > 0 {
-		cached := append([]PopularNote(nil), underratedCache...)
-		underratedCacheMu.Unlock()
-		return cached, "", nil
-	}
-	underratedCacheMu.Unlock()
 
 	// Fails closed, as Popular does (computePopularNotes).
 	model, gated := trustGraph(ctx)
@@ -319,10 +315,10 @@ func computeUnderratedNotes(ctx context.Context) ([]PopularNote, string, error) 
 		return underratedEmptyReason(true, depth, vouched)
 	}
 
-	tally := popularTally.snapshot(now)
-	local := popularTally.coverage(now) >= popularTallyMinCoverage
+	tally := popularTally.snapshotWithin(now, underratedWindow)
+	local := popularTally.coverageWithin(now, underratedWindow) >= popularTallyMinCoverage
 	if !local {
-		if err := fetchEngagementInto(ctx, tally); err != nil && len(tally) == 0 {
+		if err := fetchEngagementInto(ctx, tally, underratedWindow); err != nil && len(tally) == 0 {
 			return nil, "", err
 		}
 	}
@@ -343,7 +339,7 @@ func computeUnderratedNotes(ctx context.Context) ([]PopularNote, string, error) 
 		}
 	}
 	var drops underratedDrops
-	in := underratedInputs{posts: localPostCounts(ctx, authors, nostr.Timestamp(now.Add(-popularWindow).Unix())), drops: &drops}
+	in := underratedInputs{posts: localPostCounts(ctx, authors, nostr.Timestamp(now.Add(-underratedWindow).Unix())), drops: &drops}
 	if rm, ok := model.(reachModel); ok {
 		in.oneStepOut = oneStepOutFrom(rm)
 	}
@@ -352,14 +348,5 @@ func computeUnderratedNotes(ctx context.Context) ([]PopularNote, string, error) 
 		len(ids), len(events), len(results), map[bool]string{true: "local", false: "backfilled"}[local],
 		depth, follows, vouched,
 		len(ids)-len(events), drops.notOneStepOut, drops.belowBar, drops.perAuthorCap, drops.overLimit)
-
-	ttl := popularCacheTTL
-	if local {
-		ttl = popularLocalCacheTTL
-	}
-	underratedCacheMu.Lock()
-	underratedCache = append([]PopularNote(nil), results...)
-	underratedCacheExpiry = now.Add(ttl)
-	underratedCacheMu.Unlock()
 	return results, emptyReason(results), nil
 }

@@ -174,11 +174,14 @@ internal fun FeedService.restoreModeCache(mode: FeedMode): Long? {
 }
 
 /**
- * Popular on a switch: a result under five minutes old is shown as it was;
- * anything older (or none) is computed again.
+ * Popular and Catch Up on a switch: a result under five minutes old is shown
+ * as it was; anything older (or none) is computed again. Underrated always is.
  */
 internal fun FeedService.showCachedLocalDvmOrLoad(mode: FeedMode, cachedAgeMs: Long?) {
-    if (cachedAgeMs == null || cachedAgeMs >= FeedModeCaches.POPULAR_FRESH_MS) return loadLocalDvmFeed(mode)
+    // Underrated is computed again on every open; the cached list stays up meanwhile.
+    if (cachedAgeMs == null || cachedAgeMs >= FeedModeCaches.POPULAR_FRESH_MS ||
+        LocalDvmFeeds.recomputesOnEveryOpen(mode)
+    ) return loadLocalDvmFeed(mode)
     if (mode == FeedMode.POPULAR) _isLoadingPopular.value = false
     _connectionStatus.value = mode.displayName
 }
