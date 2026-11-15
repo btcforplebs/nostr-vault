@@ -181,6 +181,14 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 .desk-toast { position: fixed; z-index: 50; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 10px 16px; border-radius: 999px;
   background: var(--s3); border: 1px solid var(--strong); font: var(--t-foot); font-weight: 600; }
 .desk-split.single .desk-detail-head .desk-x { display: none; } /* Back is the way out */
+/* A tapped note beside the list (plan step 2, napplets on): two columns where the left side has the room, the list as
+   it was on the left (the [hidden] it gets when a note covers it is lifted), the thread on the right with its × */
+@container left (min-width: 1000px) {
+  .desk-split.beside.open { grid-template-columns: minmax(360px, 1fr) minmax(380px, 1fr); }
+  .desk-split.beside.open > .desk-list[hidden] { display: block; border-right: 1px solid var(--hair); }
+  .desk-split.beside.open > .desk-detail > .desk-back { display: none; }
+  .desk-split.beside.open .desk-detail-head .desk-x { display: inline-flex; }
+}
 
 /* Column toolbars. On the phone a screen's title is a floating glass pill; on the iPad and Mac it sits in the
    navigation bar (.navigationTitle + .toolbar). Every desktop column gets that bar: 52px, sticky, black glass with a

@@ -2,7 +2,9 @@
 // conversation or thread covers the list, with ‹ Back; Back finds the list where it was left.
 import { useLayoutEffect, useRef } from "preact/hooks"
 
-export function SplitPane({ list, detail, onBack }) {
+// `beside` (napplets on, plan step 2): where the column has room (styles/desktop.css, the left container 1000px and up)
+// the open note sits beside the list instead of covering it; the list stays where it was, its row marked.
+export function SplitPane({ list, detail, onBack, beside = false }) {
   const listEl = useRef()
   const scroll = useRef(0)
   // The list is hidden under an open page, and a hidden element forgets its scroll: note it on the way in and put it
@@ -17,7 +19,7 @@ export function SplitPane({ list, detail, onBack }) {
     return () => el.removeEventListener("scroll", f)
   }, [!!detail])
   return (
-    <div class="desk-split single">
+    <div class={`desk-split single${beside ? " beside" : ""}${beside && detail ? " open" : ""}`}>
       <div class="desk-list" ref={listEl} hidden={!!detail}>{list}</div>
       {detail && (
         <div class="desk-detail slide">

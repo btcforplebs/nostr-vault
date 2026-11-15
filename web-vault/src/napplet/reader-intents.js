@@ -43,7 +43,7 @@ import { READER_DTAG as READER } from "./first-party-list.js"
 import { mediaViewOf } from "./media-view.js"
 import { CARD_KINDS } from "./kind-cards.js"
 import { askedEmoji } from "./note-stats.js"
-import { KEY_TOPIC, HOVER_TOPIC } from "./napplet-keys.js"
+import { KEY_TOPIC, HOVER_TOPIC, CTX_TOPIC } from "./napplet-keys.js"
 const HEX = /^[0-9a-f]{64}$/
 
 /** A link a napplet asked to open -> the URL to open, or null. http(s) only, no user:pass, at most 2048 characters. */
@@ -116,9 +116,9 @@ export function likedNote(raw, verify) {
   return ev.kind === 6 ? actionNote(ev, verify) : null
 }
 
-export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, onMedia = () => {}, preview = async () => null, card = async () => null, vote = async () => null, onArticle = () => {}, onProfile = null, stats = null, like = null, onKey = null, onHover = null, outside = null, webPeople = null }) {
+export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, onMedia = () => {}, preview = async () => null, card = async () => null, vote = async () => null, onArticle = () => {}, onProfile = null, stats = null, like = null, onKey = null, onHover = null, onCtx = null, beside = null, outside = null, webPeople = null }) {
   const on = { [COMPOSE_DONE]: onComposeDone, [COMPOSE_WAITING]: onComposeWaiting, [COMPOSE_UNDONE]: onComposeUndone,
-    ...(onKey ? { [KEY_TOPIC]: onKey } : {}), ...(onHover ? { [HOVER_TOPIC]: onHover } : {}) }
+    ...(onKey ? { [KEY_TOPIC]: onKey } : {}), ...(onHover ? { [HOVER_TOPIC]: onHover } : {}), ...(onCtx ? { [CTX_TOPIC]: onCtx } : {}) }
   const me = { dTag: "shell", send: m => { if (m?.type === "inc.event" && on[m.topic]) on[m.topic](m.payload) } }
   for (const t of Object.keys(on)) bus.subscribe(me, t)
   const off = [
@@ -142,6 +142,12 @@ export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaitin
       if (ev?.kind !== 1068 || !picks.length) return { ok: false, error: "not a signed poll with a pick" }
       try { return { ok: true, data: await vote(ev, picks) } } catch (e) { return { ok: false, error: String(e?.message ?? e) } }
     } }),
+    // A note's thread beside the list (desktop, plan step 2): the shell opens it; refused, the Reader opens it in place.
+    ...(beside ? [bus.register({ id: "shell-note-beside", title: "Beside", archetype: "note", actions: ["beside"], conventions: [], deliver: (p, from) => {
+      if (from?.dTag !== READER) return { ok: false, error: "the Reader's only" }
+      if (!HEX.test(p?.id ?? "")) return { ok: false, error: "not a note id" }
+      return beside(p.id) ? { ok: true } : { ok: false, error: "no room beside the list" }
+    } })] : []),
     ...(onProfile ? [bus.register({ id: "shell-profile-show", title: "Profile", archetype: "profile", actions: ["show"], conventions: [], deliver: p => {
       if (!HEX.test(p?.pubkey ?? "")) return { ok: false, error: "not a pubkey" }
       onProfile(p.pubkey)

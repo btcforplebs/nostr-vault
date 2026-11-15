@@ -63,10 +63,12 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   useShortcuts({ ctx, composing, closeCompose, closeDetail, hasDetail: !!(note || dm), help, setHelp,
     foldSpace: () => space && setSpaceFolded(!spaceFolded) })
 
+  // The Reader's tapped note: its thread beside the list, as a classic row's (plan step 2).
+  const openBeside = id => { location.hash = withParam(withParam(location.hash || "#/feed", "dm", null), "note", id); return true }
   const listKey = other ? `person:${view.arg}` : view.route
   const list = (
     <>
-      {kept.feed && <div class="desk-pane" hidden={listKey !== "feed"}>{nappletsOn() ? <ReaderPane ctx={ctx} open={readerOpenFor("feed", "", hash)} /> : <FeedScreen ctx={ctx} />}</div>}
+      {kept.feed && <div class="desk-pane" hidden={listKey !== "feed"}>{nappletsOn() ? <ReaderPane ctx={ctx} open={readerOpenFor("feed", "", hash)} beside={openBeside} openId={note ?? ""} /> : <FeedScreen ctx={ctx} />}</div>}
       {kept.search && <div class="desk-pane" hidden={listKey !== "search"}><SearchScreen ctx={ctx} onProfile={pk => { location.hash = `#/profile/${pk}` }} /></div>}
       {listKey !== "feed" && listKey !== "search" && (
         <div class="desk-pane" key={listKey}>
@@ -89,7 +91,7 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
     // With napplets on, the Messages napplet shows the conversation itself (MessagesPane).
     if (dm && !nappletsOn()) detail = <div class="desk-pane"><ConversationScreen key={dm} ctx={ctx} peer={dm} /></div>
   } else if (note) {
-    detail = <ThreadPane key={note} ctx={ctx} id={note} onClose={closeDetail} />
+    detail = <ThreadPane key={nappletsOn() ? "reader" : note} ctx={ctx} id={note} onClose={closeDetail} reader={nappletsOn()} />
   }
 
   const full = view.route === "wot" || view.route === "relay"
@@ -107,7 +109,7 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
         {view.route === "wot" ? <div class="desk-full">{nappletsOn() ? <WotPane ctx={ctx} open={/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? null : /^[0-9a-f]{64}$/.test(view.arg) ? view.arg : null} root={/^#\/wot\/[0-9a-f]{64}\/web/.test(location.hash) ? view.arg : null} /> : <WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(view.arg) ? view.arg : undefined} />}</div>
           : page ? <div class="desk-page" key={view.path}>{page}</div>
           : full ? null /* the Dashboard: main.jsx keeps the relay screen mounted and lays it over this area */
-          : <SplitPane list={list} detail={detail} onBack={closeDetail} />}
+          : <SplitPane list={list} detail={detail} onBack={closeDetail} beside={nappletsOn() && view.route === "feed"} />}
         <Current note={note} dm={dm} />
       </section>
       </div>
@@ -130,7 +132,8 @@ function Current({ note, dm }) {
 }
 
 /** The open note's thread, and the reply box under it (design §4: the thread stays on screen while you type). */
-function ThreadPane({ ctx, id, onClose }) {
+// `reader`: with napplets on, the thread is the Reader napplet's own (its Reply opens Compose), not the classic screen.
+function ThreadPane({ ctx, id, onClose, reader = false }) {
   return (
     <div class="desk-pane desk-thread">
       <header class="desk-detail-head">
@@ -139,8 +142,9 @@ function ThreadPane({ ctx, id, onClose }) {
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
       </header>
-      <ThreadScreen ctx={ctx} id={id} />
-      {!ctx.signer?.readOnly && <div class="desk-reply"><ComposeScreen ctx={ctx} fixed={{ mode: "reply", id }} inline /></div>}
+      {reader ? <ReaderPane ctx={ctx} open={{ archetype: "note", action: "open", payload: { id, side: true } }} keys={false} />
+        : <ThreadScreen ctx={ctx} id={id} />}
+      {!reader && !ctx.signer?.readOnly && <div class="desk-reply"><ComposeScreen ctx={ctx} fixed={{ mode: "reply", id }} inline /></div>}
     </div>
   )
 }
