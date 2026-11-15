@@ -37,6 +37,10 @@ struct iPhoneTabView: View {
     /// The window's own safe area on the right (`WindowTrailingInsetReader`),
     /// so drawing the rail into it (`stripRail`) doesn't change the reading.
     @State private var trailingInset: CGFloat = 0
+    /// The page on screen was pushed, so iOS shows its back button. On the
+    /// closed Duo iOS draws that button inside the camera strip, just under
+    /// the clock, where the rail's account picture sits (`backSlot`).
+    @State private var pagePushed = false
     /// The open Duo's Your space half is folded to its rail: the app takes
     /// the rest of the screen, crease included.
     @State private var foldSpaceFolded = false
@@ -46,6 +50,13 @@ struct iPhoneTabView: View {
     /// The iPhone Duo, closed or open: the rail inside iOS's camera strip on the right.
     private var stripRail: ShellLayout.StripRail? {
         ShellLayout.stripRail(layout: layout, trailingInset: trailingInset, railWidth: BottomTabBar.railWidth)
+    }
+
+    /// The closed Duo's rail moves down past iOS's back button while a pushed
+    /// page shows it, so the button is seen and takes the tap; at a tab's
+    /// root the account picture goes back up under the clock.
+    private var duoBackSlot: CGFloat {
+        layout == .duoClosed && stripRail != nil && pagePushed ? ShellLayout.duoBackButtonSlot : 0
     }
 
     /// iPad (regular width): every tab's list sits in a `NoteSplitPane`, in
@@ -181,10 +192,12 @@ struct iPhoneTabView: View {
                     .overlay(alignment: .leading) {
                         if !layout.railOnRight { shellRule }
                     }
-                    .padding(.top, stripRail?.topClearance ?? 0)
+                    .padding(.top, (stripRail?.topClearance ?? 0) + duoBackSlot)
                     .frame(width: stripRail?.width)
+                    .animation(.easeInOut(duration: 0.2), value: duoBackSlot)
             }
         }
+        .background(PushedPageReader(active: layout == .duoClosed, pushed: $pagePushed))
         // Duo: the rail takes the strip, the app the width it freed.
         .ignoresSafeArea(.container, edges: stripRail == nil ? [] : .trailing)
         .background(WindowTrailingInsetReader(inset: $trailingInset))
@@ -414,6 +427,80 @@ private struct WindowTrailingInsetReader: UIViewRepresentable {
         private func send() {
             guard let window else { return }
             report?(window.safeAreaInsets.right)
+        }
+    }
+}
+
+/// Whether the page on screen was pushed onto its navigation stack, so iOS
+/// shows its back button. Looks at the navigation controllers in the window
+/// that are on screen (not ones in sheets: their back button is in the
+/// sheet). SwiftUI does not report a push outside the stack it happens in,
+/// so this checks a few times a second, and only while `active`.
+private struct PushedPageReader: UIViewRepresentable {
+    let active: Bool
+    @Binding var pushed: Bool
+
+    func makeUIView(context: Context) -> Reader {
+        let reader = Reader()
+        reader.report = { value in
+            DispatchQueue.main.async { if pushed != value { pushed = value } }
+        }
+        return reader
+    }
+
+    func updateUIView(_ reader: Reader, context: Context) { reader.active = active }
+
+    static func dismantleUIView(_ reader: Reader, coordinator: ()) { reader.active = false }
+
+    final class Reader: UIView {
+        var report: ((Bool) -> Void)?
+        var active = false { didSet { if active != oldValue { restart() } } }
+        private var timer: Timer?
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+            isHidden = true
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            restart()
+        }
+
+        private func restart() {
+            timer?.invalidate()
+            timer = nil
+            guard active, window != nil else { report?(false); return }
+            check()
+            timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.check() }
+        }
+
+        private func check() {
+            guard let root = window?.rootViewController else { return }
+            report?(Self.showsBackButton(root))
+        }
+
+        /// Walks child view controllers only: presented ones are sheets.
+        private static func showsBackButton(_ controller: UIViewController) -> Bool {
+            if let nav = controller as? UINavigationController, onScreen(nav.viewIfLoaded),
+               nav.viewControllers.count > 1, !nav.isNavigationBarHidden,
+               nav.topViewController?.navigationItem.hidesBackButton != true {
+                return true
+            }
+            return controller.children.contains { showsBackButton($0) }
+        }
+
+        private static func onScreen(_ view: UIView?) -> Bool {
+            guard let view, view.window != nil else { return false }
+            var next: UIView? = view
+            while let current = next {
+                if current.isHidden || current.alpha < 0.01 { return false }
+                next = current.superview
+            }
+            return true
         }
     }
 }
