@@ -10,6 +10,12 @@
 //                                                            has no network, and no other napplet gets a fetcher.
 //   napplet:media/view { event, url }                     -> the shell's full-screen viewer over the note's own media
 //                                                            (media-view.js), opened at the tapped picture
+//   napplet:note/card { event }                           -> { data }: an article, highlight or poll card's strings,
+//                                                            worked out by the shell from the signed event
+//                                                            (kind-cards.js); a poll's with its vote count
+//   napplet:poll/vote { event, picks }                    -> the classic vote (poll-votes.js sendVote: your signer,
+//                                                            your write relays and the poll's own), { data } = the card
+//   napplet:article/open { event }                        -> the classic article reader over the Reader
 //   napplet:note/repost|zap|menu { event }                -> the classic flows, run by the shell (gap run, after P8):
 //                                                            repost with the Send Delay's Undo, the zap picker, the
 //                                                            ⋯ menu (copy, bookmark, block, report, delete). The
@@ -23,6 +29,7 @@ export const COMPOSE_DONE = "nv.compose.done"
 export const COMPOSE_WAITING = "nv.compose.waiting", COMPOSE_UNDONE = "nv.compose.undone"
 import { READER_DTAG as READER } from "./first-party-list.js"
 import { mediaViewOf } from "./media-view.js"
+import { CARD_KINDS } from "./kind-cards.js"
 const HEX = /^[0-9a-f]{64}$/
 
 /** A link a napplet asked to open -> the URL to open, or null. http(s) only, no user:pass, at most 2048 characters. */
@@ -79,7 +86,14 @@ export function previewCard(meta) {
   return { title: str(meta.title), description: str(meta.description), siteName: str(meta.siteName), image: /^https:\/\//i.test(meta.image ?? "") ? meta.image : null }
 }
 
-export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, onMedia = () => {}, preview = async () => null }) {
+/** A plain copy of the handed-over event if its signature checks (actionNote's rule, any kind), else null. */
+export function signedOf(raw, verify) {
+  let ev = null
+  try { ev = raw && typeof raw === "object" ? JSON.parse(JSON.stringify(raw)) : null } catch {}
+  try { return ev && verify(ev) ? ev : null } catch { return null }
+}
+
+export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, onMedia = () => {}, preview = async () => null, card = async () => null, vote = async () => null, onArticle = () => {} }) {
   const on = { [COMPOSE_DONE]: onComposeDone, [COMPOSE_WAITING]: onComposeWaiting, [COMPOSE_UNDONE]: onComposeUndone }
   const me = { dTag: "shell", send: m => { if (m?.type === "inc.event" && on[m.topic]) on[m.topic](m.payload) } }
   for (const t of Object.keys(on)) bus.subscribe(me, t)
@@ -91,6 +105,25 @@ export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaitin
       run(note)
       return { ok: true }
     } })),
+    bus.register({ id: "shell-note-card", title: "Card", archetype: "note", actions: ["card"], conventions: [], deliver: async (p, from) => {
+      if (from?.dTag !== READER) return { ok: false, error: "the Reader's only" }
+      const ev = signedOf(p?.event, verify)
+      if (!ev || !CARD_KINDS.includes(ev.kind)) return { ok: false, error: "not a signed article, highlight or poll" }
+      return { ok: true, data: await card(ev) }
+    } }),
+    bus.register({ id: "shell-poll-vote", title: "Vote", archetype: "poll", actions: ["vote"], conventions: [], deliver: async (p, from) => {
+      if (from?.dTag !== READER) return { ok: false, error: "the Reader's only" }
+      const ev = signedOf(p?.event, verify)
+      const picks = Array.isArray(p?.picks) ? p.picks.filter(x => typeof x === "string").slice(0, 32) : []
+      if (ev?.kind !== 1068 || !picks.length) return { ok: false, error: "not a signed poll with a pick" }
+      try { return { ok: true, data: await vote(ev, picks) } } catch (e) { return { ok: false, error: String(e?.message ?? e) } }
+    } }),
+    bus.register({ id: "shell-article-open", title: "Read", archetype: "article", actions: ["open"], conventions: [], deliver: p => {
+      const ev = signedOf(p?.event, verify)
+      if (ev?.kind !== 30023) return { ok: false, error: "not a signed article" }
+      onArticle(ev)
+      return { ok: true }
+    } }),
     bus.register({ id: "shell-media-view", title: "View", archetype: "media", actions: ["view"], conventions: [], deliver: p => {
       const note = actionNote(p?.event, verify)
       const view = note && mediaViewOf(note, p?.url)
