@@ -17,6 +17,15 @@
   button.ghost { background: none; border: 0; color: var(--muted); padding: 0 8px; }
   button.ghost.on { color: var(--accent); }
   button:disabled { opacity: .45; cursor: default; }
+  #pick { padding: 0 6px; font-size: 15px; margin-right: auto; }
+  #pick:not([hidden]) ~ #new { margin-left: 0; }
+  header:has(#pick:not([hidden])) h1 { flex: 0 1 auto; cursor: pointer; }
+  #picker { position: sticky; top: 52px; z-index: 3; display: grid; gap: 2px; padding: 6px; margin: 0 10px; border: 1px solid var(--hair); border-radius: 14px;
+    background: var(--s1); box-shadow: 0 10px 30px #000a; }
+  #picker button { text-align: left; border: 0; background: none; border-radius: 10px; }
+  #picker button.on { color: var(--accent); background: var(--s2); }
+  #picker form { display: flex; gap: 6px; padding: 4px 2px 2px; }
+  #picker input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--s2); border: 1px solid var(--hair); border-radius: 999px; padding: 0 12px; min-height: 36px; }
   #fresh { position: sticky; top: 60px; z-index: 3; display: block; margin: 8px auto 0; }
   #fresh[hidden], [hidden] { display: none !important; }
   #list { list-style: none; margin: 0; padding: 0; }
@@ -88,7 +97,8 @@
 </style>
 </head>
 <body>
-<header><button id="back" class="ghost" hidden aria-label="Back">‹ Back</button><h1 id="title">Following</h1><button id="new" class="primary">Post</button></header>
+<header><button id="back" class="ghost" hidden aria-label="Back">‹ Back</button><h1 id="title">Following</h1><button id="pick" class="ghost" aria-haspopup="menu" aria-expanded="false" aria-label="Choose a feed">▾</button><button id="new" class="primary">Post</button></header>
+<div id="picker" role="menu" hidden></div>
 <button id="fresh" class="primary" hidden></button>
 <main id="list" role="feed" aria-busy="true"></main>
 <div id="foot" class="more"></div>
@@ -185,6 +195,30 @@ function inlineMarks(text) {
 }
 // What the feed shows: notes, reposts, and articles, highlights and polls (their cards are worked out by the shell).
 const FEED_KINDS = [1, 6, 30023, 9802, 1068], CARD_KINDS = [30023, 9802, 1068]
+// The feeds the title's picker offers (the classic picker's that fit the napplet rule: every read stays inside your web).
+const FEED_MODES = [["following", "Following"], ["global", "Global"], ["media", "Media"], ["articles", "Articles"], ["polls", "Polls"]]
+const TRUSTED_CAP = 500 // the classic Global's first filter names this many of your web (readers/trust.js)
+/** A feed page's filters. Following and Media: you and your follows. Global, Articles, Polls: as the classic Global asks,
+ *  once naming your web's people (`web`, from the shell) so strangers can't crowd them out, once open; the shell keeps
+ *  only your web's either way. [] when there is nothing to ask (no follows / no web yet). */
+function feedFilters(mode, { me = "", follows = [], web = [], until, limit = 40 } = {}) {
+  const page = { limit, ...(until ? { until } : {}) }
+  const mine = [...new Set([me, ...follows])].filter(Boolean)
+  if (mode === "following" || mode === "media") return mine.length ? [{ kinds: FEED_KINDS, authors: mine, ...page }] : []
+  if (!web.length) return []
+  const kinds = mode === "articles" ? [30023] : mode === "polls" ? [1068] : FEED_KINDS
+  return [{ kinds, authors: web.slice(0, TRUSTED_CAP), ...page }, { kinds, ...page }]
+}
+/** Whether a note belongs on a feed: Global leaves replies out (the classic globalShows), Media keeps notes with a
+ *  picture or video (a repost's note counts), Articles and Polls their kind. */
+function feedKeeps(mode, ev) {
+  const shown = repostOf(ev) ?? ev
+  if (mode === "global") return !(shown.kind === 1 && parentOf(shown))
+  if (mode === "media") return shown.kind === 1 && (tokenize(shown.content).some(p => p.t === "image" || p.t === "video") || (shown.tags ?? []).some(t => t[0] === "imeta" && /url https:\/\//.test(t.slice(1).join(" "))))
+  if (mode === "articles") return shown.kind === 30023
+  if (mode === "polls") return shown.kind === 1068
+  return true
+}
 /** "in 3 hours", "tomorrow": when an open poll closes (the classic card's endsIn). */
 function endsIn(ts, now = Date.now() / 1000) {
   const s = ts - now
@@ -231,6 +265,8 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 const PAGE = 40
 const profiles = new Map(), asked = new Set(), pics = new Map()
 let me = "", follows = [], view = { kind: "feed" }, stack = [], notes = [], pending = [], live = null, loading = false, done = false
+let mode = "following", web = null // the feed picked, and your web's people (napplet:web/people) once asked
+const feeds = new Map() // mode -> { notes, done }: each feed kept while you look at another
 
 async function q(filters) { return ((await n.outbox.query(filters).catch(() => ({ events: [] }))).events ?? []).map(r => r.event).filter(Boolean) }
 
@@ -569,11 +605,12 @@ function go(next, push = true) {
 }
 $("back").onclick = () => { if (stack.length) { view = stack.pop(); stopLive(); render() } }
 $("new").onclick = () => compose("new")
-$("fresh").onclick = () => { notes = mergeNotes(pending, notes); pending = []; $("fresh").hidden = true; drawFeed(); scrollTo(0, 0) }
+$("fresh").onclick = () => { notes = mergeNotes(pending, notes); pending = []; $("fresh").hidden = true; keep(); drawFeed(); scrollTo(0, 0) }
 function stopLive() { live?.close?.(); live = null; pending = []; $("fresh").hidden = true }
 
 async function render() {
   $("back").hidden = !stack.length
+  $("pick").hidden = view.kind !== "feed"; closePicker()
   $("list").replaceChildren(); $("foot").textContent = "Loading…"; $("list").setAttribute("aria-busy", "true")
   if (view.kind === "feed") return showFeed()
   if (view.kind === "thread") return showThread(view.id, view.event)
@@ -595,31 +632,70 @@ async function showTag(tag) {
 }
 
 async function showFeed() {
-  $("title").textContent = "Following"
+  $("title").textContent = FEED_MODES.find(m => m[0] === mode)?.[1] ?? "Following"
   if (!follows.length) follows = await n.identity.getFollows().catch(() => [])
-  const authors = [...new Set([me, ...follows])].filter(Boolean)
-  if (!notes.length) { notes = mergeNotes([], await q([{ kinds: FEED_KINDS, authors, limit: PAGE }])); done = false }
+  if (mode !== "following" && mode !== "media" && web === null) web = await n.intent?.invoke("napplet:web/people", { payload: {} }).then(r => (r?.ok ? r.data?.people ?? [] : [])).catch(() => []) ?? []
+  const held = feeds.get(mode)
+  if (held) { notes = held.notes; done = held.done }
+  else { const at = mode; const got = await page(); if (mode !== at || view.kind !== "feed") return; notes = mergeNotes([], got); done = false; keep() }
   drawFeed()
+  if (mode !== "following" && mode !== "media") return // the others are pages, as the classic Global's
+  const authors = [...new Set([me, ...follows])].filter(Boolean)
   const since = Math.floor(Date.now() / 1000)
   live = n.outbox.subscribe([{ kinds: FEED_KINDS, authors, since }])
-  live.on("event", r => { const ev = r.event; if (!ev || notes.some(x => x.id === ev.id) || pending.some(x => x.id === ev.id)) return; if (ev.pubkey === me) { notes = mergeNotes([ev], notes); drawFeed() } else { pending.push(ev); $("fresh").hidden = false; $("fresh").textContent = `${pending.length} new` } })
+  live.on("event", r => { const ev = r.event; if (!ev || !feedKeeps(mode, ev) || notes.some(x => x.id === ev.id) || pending.some(x => x.id === ev.id)) return; if (ev.pubkey === me) { notes = mergeNotes([ev], notes); keep(); drawFeed() } else { pending.push(ev); $("fresh").hidden = false; $("fresh").textContent = `${pending.length} new` } })
+}
+const keep = () => feeds.set(mode, { notes, done })
+async function page(until) {
+  const fs = feedFilters(mode, { me, follows, web: web ?? [], until, limit: PAGE })
+  return fs.length ? (await q(fs)).filter(ev => feedKeeps(mode, ev)) : []
 }
 function drawFeed() {
   const list = $("list"); list.replaceChildren(...notes.map(ev => card(ev)))
   list.setAttribute("aria-busy", "false")
   $("foot").replaceChildren()
-  if (!notes.length) { $("foot").textContent = follows.length ? "No notes yet." : "Follow people to fill this feed."; return }
+  if (!notes.length) {
+    $("foot").textContent = !follows.length ? "Follow people to fill this feed."
+      : mode === "following" ? "No notes yet." : mode === "media" ? "No pictures or videos from the people you follow yet."
+      : !web?.length ? "Your web is still loading. Try again in a moment." : `No ${mode === "articles" ? "articles" : mode === "polls" ? "polls" : "notes"} from your web yet.`
+    return
+  }
   if (!done) { const more = el("button", "", "Older notes"); more.onclick = loadOlder; $("foot").append(more) }
 }
 async function loadOlder() {
   if (loading || view.kind !== "feed") return
   loading = true
-  const until = notes[notes.length - 1]?.created_at - 1
-  const older = await q([{ kinds: FEED_KINDS, authors: [...new Set([me, ...follows])], until, limit: PAGE }])
+  const at = mode, older = await page(notes[notes.length - 1]?.created_at - 1)
   loading = false
+  if (mode !== at) return
   if (!older.length) done = true
-  notes = mergeNotes(notes, older); drawFeed()
+  notes = mergeNotes(notes, older); keep(); drawFeed()
 }
+// The title's picker: the feeds above, and a hashtag (its notes in your web).
+function openPicker() {
+  const box = $("picker"), open = box.hidden
+  box.hidden = !open; $("pick").setAttribute("aria-expanded", String(open))
+  if (!open) return
+  box.replaceChildren(...FEED_MODES.map(([id, label]) => {
+    const b = el("button", id === mode && view.kind === "feed" ? "on" : "", label); b.type = "button"; b.setAttribute("role", "menuitemradio"); b.setAttribute("aria-checked", String(id === mode))
+    b.onclick = () => pickFeed(id)
+    return b
+  }))
+  const f = el("form"), i = el("input"), go_ = el("button", "", "Open"); i.placeholder = "#hashtag"; i.setAttribute("aria-label", "Hashtag"); go_.type = "button"
+  const openTag = () => { const t = i.value.trim().replace(/^#+/, "").toLowerCase(); if (/^[\p{L}\p{N}_]{1,64}$/u.test(t) && /\p{L}/u.test(t)) { closePicker(); go({ kind: "tag", tag: t }) } }
+  go_.onclick = openTag; i.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); openTag() } }
+  f.append(i, go_); box.append(f)
+}
+function closePicker() { $("picker").hidden = true; $("pick").setAttribute("aria-expanded", "false") }
+function pickFeed(id) {
+  closePicker()
+  if (pending.length && mode === "following") pending = []
+  mode = id; stack = []
+  go({ kind: "feed" }, false); scrollTo(0, 0)
+}
+$("pick").onclick = e => { e.stopPropagation(); openPicker() }
+$("title").onclick = e => { if (view.kind === "feed") { e.stopPropagation(); openPicker() } }
+document.addEventListener("pointerdown", e => { if (!$("picker").hidden && !e.target.closest("#picker, #pick, #title")) closePicker() })
 
 async function showThread(id, given) {
   $("title").textContent = "Thread"
@@ -670,6 +746,7 @@ async function start() {
     else if (d.archetype === "note" && d.action === "removed" && HEX.test(p.id ?? "")) {
       // Deleted from the ⋯ menu: gone from the feed at once, and from a thread or profile on screen.
       notes = notes.filter(x => x.id !== p.id && (repostOf(x)?.id !== p.id))
+      for (const [k, f] of feeds) feeds.set(k, { ...f, notes: f.notes.filter(x => x.id !== p.id && (repostOf(x)?.id !== p.id)) })
       for (const a of document.querySelectorAll(`article[data-id="${p.id}"]`)) a.remove()
       if (view.kind === "feed") drawFeed()
     }
@@ -679,7 +756,7 @@ async function start() {
   n.inc?.on?.("nv.compose.sent", e => {
     const ev = e?.payload?.event
     if (!ev || !HEX.test(ev.id ?? "")) return
-    if (view.kind === "feed") { notes = mergeNotes([ev], notes); drawFeed() }
+    if (view.kind === "feed" && feedKeeps(mode, ev)) { notes = mergeNotes([ev], notes); keep(); drawFeed() }
     else if (view.kind === "thread") showThread(view.id, view.event)
   })
   render()
