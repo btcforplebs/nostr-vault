@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Nostr Vault (tray)
+Comment=The Nostr Vault icon in the tray, with the vault's status
+Exec=nostr-vault-desktop --tray
+Icon=nostr-vault
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

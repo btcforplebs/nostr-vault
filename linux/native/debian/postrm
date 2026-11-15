@@ -1,0 +1,14 @@
+#!/bin/sh
+# Purge removes the settings and the drop-ins, never the vault's data: that stays where it is, and says so.
+set -e
+if [ "$1" = remove ] || [ "$1" = purge ]; then
+  if command -v gtk-update-icon-cache >/dev/null; then gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true; fi
+  if command -v update-desktop-database >/dev/null; then update-desktop-database -q /usr/share/applications || true; fi
+fi
+if [ "$1" = purge ]; then
+  data=$(sed -n 's/^NV_DATA_DIR=//p' /etc/nostr-vault/vault.env 2>/dev/null | tail -1)
+  rm -rf /etc/nostr-vault /etc/systemd/system/nostr-vault.service.d /etc/systemd/system/nostr-vault-mesh.service.d
+  echo "Nostr Vault's data is left in ${data:-/var/lib/nostr-vault}. Delete it yourself if you don't want it."
+fi
+if [ -d /run/systemd/system ]; then systemctl daemon-reload >/dev/null 2>&1 || true; fi
+exit 0

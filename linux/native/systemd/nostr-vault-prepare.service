@@ -1,0 +1,13 @@
+# Nostr Vault for Linux, native: sets up the data dir before the vault and the mesh start (what supervise.sh does
+# as root in the container). Two folders only: the data dir is the vault's (0711, so the mesh can reach mesh/ but not
+# list the rest), mesh/ is the mesh's (0755; it makes key/ 0700 inside).
+[Unit]
+Description=Nostr Vault: set up the data folder
+ConditionPathExists=/etc/nostr-vault/vault.env
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=NV_DATA_DIR=/var/lib/nostr-vault
+EnvironmentFile=/etc/nostr-vault/vault.env
+ExecStart=/usr/lib/nostr-vault/prepare

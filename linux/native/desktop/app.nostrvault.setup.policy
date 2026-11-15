@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Nostr Vault</vendor>
+  <action id="app.nostrvault.setup">
+    <description>Set up Nostr Vault</description>
+    <message>Nostr Vault needs your password to set up the vault as a service on this computer.</message>
+    <icon_name>nostr-vault</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/nostr-vault-setup</annotate>
+  </action>
+</policyconfig>

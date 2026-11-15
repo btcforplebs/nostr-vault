@@ -1,0 +1,54 @@
+# Nostr Vault for Linux, native: the vault (havend, which runs haven-engine on 127.0.0.1:3355): the relay, Blossom,
+# the web app and the owner-only box API, all on NV_PORT. The same program the nostr-vault-linux container runs.
+# Settings: /etc/nostr-vault/vault.env (nostr-vault-setup writes it). Never root, no capabilities.
+[Unit]
+Description=Nostr Vault
+Documentation=https://github.com/btcforplebs/nostr-vault/tree/master/linux
+Wants=network-online.target nostr-vault-mesh.service
+After=network-online.target nostr-vault-prepare.service
+Requires=nostr-vault-prepare.service
+ConditionPathExists=/etc/nostr-vault/vault.env
+
+[Service]
+Type=simple
+User=nvvault
+Group=nvvault
+Environment=NV_DATA_DIR=/var/lib/nostr-vault NV_PORT=8080 NV_MESH_DOOR_PORT=8081 HAVEN_MESH_PLAIN_PORT=8081
+Environment=NV_WEB_DIR=/usr/share/nostr-vault/web NV_ENGINE_BIN=/usr/lib/nostr-vault/haven-engine
+# No NV_UPDATE_HOOK: the app's Update says to run the installer again, which is how this package updates.
+Environment=NV_MOVE_ROOT=/mnt
+EnvironmentFile=/etc/nostr-vault/vault.env
+EnvironmentFile=-/etc/nostr-vault/secrets.env
+ExecStart=/usr/lib/nostr-vault/havend
+Restart=always
+RestartSec=2
+# A small board has other jobs (as the container's limits).
+Nice=10
+MemoryMax=1536M
+CPUWeight=25
+UMask=0022
+# Locked down: the vault faces the network.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+# The data dir (nostr-vault-setup adds another one in a drop-in) and where Storage > Move vault may go (NV_MOVE_ROOT).
+ReadWritePaths=/var/lib/nostr-vault -/mnt
+
+[Install]
+WantedBy=multi-user.target

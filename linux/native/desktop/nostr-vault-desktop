@@ -1,0 +1,465 @@
+#!/usr/bin/python3 -I
+"""Nostr Vault for Linux: the desktop window and tray icon (the Mac app's window and menu bar item).
+
+The vault itself is a system service (nostr-vault.service, havend + the mesh) that runs on boot, with or without this
+app. This app shows it: a window with the web app the vault serves (feed, vault, My Devices, settings; the
+same pages a phone gets on the vault's :8080 page) and a tray icon with the vault's status and shortcuts.
+First run (no owner yet): a setup page asks whose vault it is and where it lives, then runs nostr-vault-setup through
+pkexec. The app never holds the vault's or the mesh's keys; signing in is the web app's (as in any browser).
+
+  nostr-vault-desktop            open the window
+  nostr-vault-desktop --tray     tray icon only (what login starts)
+  nostr-vault-desktop --open R   open the window on route R (feed, vault, devices, settings, compose)
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+try:
+    gi.require_version("WebKit2", "4.1")
+except ValueError:
+    gi.require_version("WebKit2", "4.0")
+from gi.repository import Gdk, Gio, GLib, Gtk, WebKit2  # noqa: E402
+
+Indicator = None
+for _name, _ver in (("AyatanaAppIndicator3", "0.1"), ("AppIndicator3", "0.1")):
+    try:
+        gi.require_version(_name, _ver)
+        Indicator = getattr(__import__("gi.repository", fromlist=[_name]), _name)
+        break
+    except (ValueError, ImportError):
+        pass
+
+APP_ID = "app.nostrvault.Desktop"
+ENV_FILE = "/etc/nostr-vault/vault.env"
+SHARE = os.environ.get("NV_DESKTOP_SHARE", "/usr/share/nostr-vault/desktop")
+SETUP = "/usr/bin/nostr-vault-setup"
+ROUTES = {  # the Mac app's tabs, as the web app's routes
+    "feed": "#/feed",
+    "vault": "#/vault",
+    "devices": "#/box",
+    "settings": "#/settings",
+    "compose": "#/compose",
+}
+BG = "#000000"
+
+
+def read_env(path=ENV_FILE):
+    """vault.env as a dict (KEY=value lines; it holds an npub and paths, no secrets)."""
+    out = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    out[k.strip()] = v.strip().strip('"')
+    except OSError:
+        pass
+    return out
+
+
+def vault_port(env):
+    try:
+        p = int(env.get("NV_PORT", "8080"))
+        return p if 0 < p < 65536 else 8080
+    except ValueError:
+        return 8080
+
+
+def mesh_status(env):
+    """The mesh's status.json (written every 5 s by nv-mesh, world-readable), or {}."""
+    path = os.path.join(env.get("NV_DATA_DIR", "/var/lib/nostr-vault"), "mesh", "status.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def box_npub(env):
+    path = os.path.join(env.get("NV_DATA_DIR", "/var/lib/nostr-vault"), "mesh", "npub")
+    try:
+        with open(path, encoding="utf-8") as f:
+            s = f.read().strip()
+            return s if s.startswith("npub1") else ""
+    except OSError:
+        return ""
+
+
+def service_state():
+    """systemd's word for nostr-vault.service: active, activating, inactive, failed, … or 'missing'."""
+    try:
+        r = subprocess.run(["systemctl", "is-active", "nostr-vault.service"], capture_output=True, text=True, timeout=5)
+        return r.stdout.strip() or "missing"
+    except (OSError, subprocess.SubprocessError):
+        return "missing"
+
+
+def answers(port):
+    try:
+        urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=2).close()
+        return True
+    except urllib.error.HTTPError:
+        return True  # anything answering HTTP is havend
+    except Exception:  # noqa: BLE001 - connection refused, timeout: not up
+        return False
+
+
+def drive_choices():
+    """Places the vault could live: real drives, most free space first (as the installer suggests)."""
+    seen, out = set(), []
+    try:
+        with open("/proc/mounts", encoding="utf-8") as f:
+            mounts = [line.split() for line in f]
+    except OSError:
+        mounts = []
+    skip = ("/boot", "/snap", "/run", "/dev", "/sys", "/proc", "/tmp", "/etc", "/var/lib/docker")
+    for m in mounts:
+        dev, mnt = m[0], m[1].replace("\\040", " ")
+        fstype, opts = (m[2], m[3].split(",")) if len(m) > 3 else ("", [])
+        if "ro" in opts or fstype in ("iso9660", "squashfs", "udf"):
+            continue  # a CD, a snap or anything read-only can't hold a vault
+        if not dev.startswith("/dev/") or any(mnt == s or mnt.startswith(s + "/") for s in skip) or dev in seen:
+            continue
+        seen.add(dev)
+        try:
+            du = shutil.disk_usage(mnt)
+        except OSError:
+            continue
+        path = "/var/lib/nostr-vault" if mnt in ("/", "/var") else mnt.rstrip("/") + "/nostr-vault"
+        out.append({"path": path, "free": du.free, "sd": dev.startswith("/dev/mmcblk")})
+    out.sort(key=lambda d: -d["free"])
+    return out
+
+
+class App(Gtk.Application):
+    def __init__(self):
+        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
+        self.window = None
+        self.view = None
+        self.indicator = None
+        self.status_item = None
+        self.env = read_env()
+        self.page = None  # "vault", "setup" or "waiting": what the window shows
+        self.pending_route = None
+        self.setup_running = False
+
+    # ---- start-up
+
+    def do_startup(self):
+        Gtk.Application.do_startup(self)
+        settings = Gtk.Settings.get_default()
+        if settings:
+            settings.set_property("gtk-application-prefer-dark-theme", True)
+        for name, keys, fn in (
+            ("new-note", ["<Primary>n"], lambda *_: self.show("compose")),
+            ("feed", ["<Primary>1"], lambda *_: self.show("feed")),
+            ("vault", ["<Primary>2"], lambda *_: self.show("vault")),
+            ("devices", ["<Primary>3"], lambda *_: self.show("devices")),
+            ("settings", ["<Primary>comma"], lambda *_: self.show("settings")),
+            ("reload", ["<Primary>r", "F5"], lambda *_: self.reload()),
+            ("close", ["<Primary>w"], lambda *_: self.window and self.window.hide()),
+            ("quit", ["<Primary>q"], lambda *_: self.quit()),
+        ):
+            act = Gio.SimpleAction.new(name, None)
+            act.connect("activate", fn)
+            self.add_action(act)
+            self.set_accels_for_action("app." + name, keys)
+        self.hold()  # the tray keeps the app alive with the window closed, as the Mac's menu bar item does
+        self.make_tray()
+        GLib.timeout_add_seconds(5, self.tick)
+
+    def do_command_line(self, cmd):
+        args = cmd.get_arguments()[1:]
+        if "--tray" in args:
+            if self.indicator is None:  # no tray here: a window is the only way to see the vault
+                self.show(None)
+            return 0
+        route = None
+        if "--open" in args:
+            i = args.index("--open")
+            route = args[i + 1] if i + 1 < len(args) else None
+        self.show(route)
+        return 0
+
+    # ---- tray (the Mac's menu bar item)
+
+    def make_tray(self):
+        if Indicator is None:
+            return
+        menu = Gtk.Menu()
+        self.status_item = Gtk.MenuItem(label="Checking the vault…")
+        self.status_item.set_sensitive(False)
+        menu.append(self.status_item)
+        menu.append(Gtk.SeparatorMenuItem())
+        for label, fn in (
+            ("Open Nostr Vault", lambda *_: self.show(None)),
+            ("New Note", lambda *_: self.show("compose")),
+            (None, None),
+            ("Feed", lambda *_: self.show("feed")),
+            ("Vault", lambda *_: self.show("vault")),
+            ("My Devices", lambda *_: self.show("devices")),
+            ("Settings", lambda *_: self.show("settings")),
+            (None, None),
+            ("Copy box npub", lambda *_: self.copy_npub()),
+            (None, None),
+            ("Quit window and tray", lambda *_: self.quit()),
+        ):
+            item = Gtk.SeparatorMenuItem() if label is None else Gtk.MenuItem(label=label)
+            if fn:
+                item.connect("activate", fn)
+            menu.append(item)
+        menu.show_all()
+        ind = Indicator.Indicator.new(APP_ID, "nostr-vault-tray", Indicator.IndicatorCategory.APPLICATION_STATUS)
+        ind.set_title("Nostr Vault")
+        ind.set_status(Indicator.IndicatorStatus.ACTIVE)
+        ind.set_menu(menu)
+        self.indicator = ind
+        self.tick()
+
+    def status_line(self):
+        if not read_env().get("NV_OWNER"):
+            return "Not set up yet"
+        state = service_state()
+        if state != "active":
+            return {"activating": "Vault starting…", "failed": "Vault stopped (failed)",
+                    "missing": "Vault not installed"}.get(state, "Vault stopped")
+        mesh = mesh_status(self.env)
+        n = mesh.get("devices")
+        updated = mesh.get("updated")
+        # nv-mesh writes its status every 5 s; an older one is from a mesh that stopped (as havend reads it).
+        if not isinstance(updated, (int, float)) or abs(time.time() - updated) > 30:
+            return "Vault running · mesh not running"
+        if mesh.get("error"):
+            return "Vault running · mesh: " + str(mesh["error"])[:60]
+        if isinstance(n, int):
+            return f"Vault running · {n} device{'s' if n != 1 else ''} on the mesh"
+        return "Vault running"
+
+    def tick(self):
+        self.env = read_env()
+        if self.status_item is not None:
+            self.status_item.set_label(self.status_line())
+        if self.page == "waiting" and answers(vault_port(self.env)):
+            self.load_vault(self.pending_route)
+        return True
+
+    def copy_npub(self):
+        npub = box_npub(self.env)
+        if not npub:
+            self.notify("No box npub yet", "The mesh makes it on its first start.")
+            return
+        Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(npub, -1)
+        self.notify("Box npub copied", "Add it on your phone: Profile › Mesh › My Devices › Add a device.")
+
+    def notify(self, title, body):
+        n = Gio.Notification.new(title)
+        n.set_body(body)
+        self.send_notification(None, n)
+
+    # ---- window
+
+    def make_window(self):
+        ctx = WebKit2.WebContext.new_with_website_data_manager(WebKit2.WebsiteDataManager(
+            base_data_directory=os.path.join(GLib.get_user_data_dir(), "nostr-vault-desktop"),
+            base_cache_directory=os.path.join(GLib.get_user_cache_dir(), "nostr-vault-desktop")))
+        ucm = WebKit2.UserContentManager()
+        ucm.register_script_message_handler("nv")
+        ucm.connect("script-message-received::nv", self.on_message)
+        view = WebKit2.WebView(web_context=ctx, user_content_manager=ucm)
+        # Sign-ins survive a restart: cookies on disk, next to the web app's own storage.
+        ctx.get_cookie_manager().set_persistent_storage(
+            os.path.join(GLib.get_user_data_dir(), "nostr-vault-desktop", "cookies.sqlite"),
+            WebKit2.CookiePersistentStorage.SQLITE)
+        s = view.get_settings()
+        s.set_enable_developer_extras(os.environ.get("NV_DESKTOP_DEBUG") == "1")
+        s.set_javascript_can_access_clipboard(True)
+        s.set_enable_write_console_messages_to_stdout(os.environ.get("NV_DESKTOP_DEBUG") == "1")
+        view.set_background_color(Gdk.RGBA(0, 0, 0, 1))
+        view.connect("decide-policy", self.on_policy)
+        view.connect("permission-request", self.on_permission)
+        view.connect("create", self.on_create)
+        view.connect("load-failed", self.on_load_failed)
+
+        win = Gtk.ApplicationWindow(application=self, title="Nostr Vault")
+        win.set_default_size(1240, 860)  # the Mac window's first size
+        win.set_size_request(800, 640)
+        win.set_icon_name("nostr-vault")
+        win.add(view)
+        # Closing hides the window; the vault and the tray keep running (as on the Mac). With no tray, close quits.
+        win.connect("delete-event", lambda w, _e: (w.hide(), True)[1] if self.indicator else False)
+        win.show_all()
+        self.window, self.view = win, view
+
+    def show(self, route):
+        if self.window is None:
+            self.make_window()
+        self.env = read_env()
+        if not self.env.get("NV_OWNER"):
+            self.load_setup()
+        elif self.page == "vault" and route:
+            self.view.run_javascript(f"location.hash = {json.dumps(ROUTES.get(route, '#/feed'))}", None, None, None)
+        elif self.page != "vault":
+            if answers(vault_port(self.env)):
+                self.load_vault(route)
+            else:
+                self.load_waiting(route)
+        self.window.present()
+
+    def reload(self):
+        if self.view is not None:
+            self.view.reload()
+
+    def origin(self):
+        return f"http://127.0.0.1:{vault_port(self.env)}"
+
+    def load_vault(self, route):
+        self.page = "vault"
+        self.view.load_uri(self.origin() + "/" + ROUTES.get(route or "", ""))
+
+    def load_local(self, name, state):
+        """One of this app's own pages (setup, waiting), with its state handed in before its script runs."""
+        with open(os.path.join(SHARE, name), encoding="utf-8") as f:
+            html = f.read().replace("/*NV_STATE*/null", json.dumps(state))
+        self.view.load_html(html, "nv-desktop://local/")
+
+    def load_setup(self):
+        self.page = "setup"
+        self.load_local("setup.html", {"page": "setup", "drives": drive_choices(), "setup": os.access(SETUP, os.X_OK)})
+
+    def load_waiting(self, route):
+        self.page = "waiting"
+        self.pending_route = route
+        state = service_state()
+        self.load_local("setup.html", {"page": "waiting", "state": state, "port": vault_port(self.env)})
+
+    # ---- web view policies
+
+    def on_policy(self, view, decision, kind):
+        if kind != WebKit2.PolicyDecisionType.NAVIGATION_ACTION and kind != WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION:
+            return False
+        uri = decision.get_navigation_action().get_request().get_uri() or ""
+        if uri.startswith(self.origin() + "/") or uri == self.origin() or uri.startswith(("about:", "nv-desktop:", "blob:")):
+            if kind == WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION:
+                decision.ignore()
+                view.load_uri(uri)
+                return True
+            return False
+        # Anything else (a link to a website, a lightning: or nostr: link) goes to the system's own handler.
+        decision.ignore()
+        try:
+            Gio.AppInfo.launch_default_for_uri(uri, None)
+        except GLib.Error:
+            pass
+        return True
+
+    def on_create(self, view, action):
+        uri = action.get_request().get_uri() or ""
+        if uri:
+            try:
+                Gio.AppInfo.launch_default_for_uri(uri, None)
+            except GLib.Error:
+                pass
+        return None
+
+    def on_permission(self, view, req):
+        # Notifications (new DMs, mentions) and the clipboard, for the vault's own pages only.
+        ok = (WebKit2.NotificationPermissionRequest,)
+        if hasattr(WebKit2, "ClipboardPermissionRequest"):
+            ok += (WebKit2.ClipboardPermissionRequest,)
+        if isinstance(req, ok) and (view.get_uri() or "").startswith(self.origin()):
+            req.allow()
+        else:
+            req.deny()
+        return True
+
+    def on_load_failed(self, view, _event, uri, _err):
+        if uri.startswith(self.origin()):
+            self.load_waiting(None)
+            return True
+        return False
+
+    # ---- the local pages' messages
+
+    def on_message(self, _ucm, result):
+        try:
+            value = result.get_js_value() if hasattr(result, "get_js_value") else result
+            msg = json.loads(value.to_string())
+        except (ValueError, AttributeError):
+            return
+        # Only this app's own pages (setup, waiting) may ask for these: never the vault's web app or anything it loads.
+        if not isinstance(msg, dict) or self.page not in ("setup", "waiting") \
+                or not (self.view.get_uri() or "").startswith("nv-desktop://local/"):
+            return
+        what = msg.get("do")
+        if what == "setup" and not self.setup_running:
+            self.run_setup(str(msg.get("owner", "")), str(msg.get("data", "")), bool(msg.get("sdOk")), bool(msg.get("newOk")))
+        elif what == "start":
+            self.run_root(["systemctl", "start", "nostr-vault.service"], "Couldn't start the vault")
+        elif what == "logs":
+            subprocess.Popen(["x-terminal-emulator", "-e", "journalctl", "-fu", "nostr-vault", "-u", "nostr-vault-mesh"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) if shutil.which("x-terminal-emulator") else None
+
+    def js(self, fn, arg):
+        self.view.run_javascript(f"window.{fn} && window.{fn}({json.dumps(arg)})", None, None, None)
+
+    def run_setup(self, owner, data, sd_ok, new_ok):
+        argv = ["pkexec", SETUP, "--owner", owner, "--data", data]
+        if sd_ok:
+            argv.append("--sd-ok")
+        if new_ok:
+            argv.append("--new-ok")
+        self.setup_running = True
+        self.spawn(argv, self.setup_done)
+
+    def setup_done(self, ok, out):
+        self.setup_running = False
+        if ok:
+            self.env = read_env()
+            self.js("nvSetupResult", {"ok": True, "text": out.strip().splitlines()[-1] if out.strip() else ""})
+            GLib.timeout_add(900, lambda: (self.load_vault(None), False)[1])
+        else:
+            text = out.strip().splitlines()[-1] if out.strip() else "Setup was cancelled."
+            self.js("nvSetupResult", {"ok": False, "text": text.replace("nostr-vault-setup: ", "")})
+
+    def run_root(self, argv, failed):
+        self.spawn(["pkexec"] + argv, lambda ok, out: None if ok else self.notify(failed, out.strip()[-200:]))
+
+    def spawn(self, argv, done):
+        try:
+            p = Gio.Subprocess.new(argv, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE)
+        except GLib.Error as e:
+            done(False, e.message)
+            return
+
+        def finished(proc, res):
+            try:
+                _ok, out, _err = proc.communicate_utf8_finish(res)
+            except GLib.Error as e:
+                done(False, e.message)
+                return
+            done(proc.get_successful(), out or "")
+
+        p.communicate_utf8_async(None, None, finished)
+
+
+def main():
+    if not Gtk.init_check()[0]:
+        print("nostr-vault-desktop: no display. The vault runs anyway; open http://<this machine>:8080/ "
+              "from a phone or computer on your network.", file=sys.stderr)
+        return 1
+    return App().run(sys.argv)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

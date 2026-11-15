@@ -1,0 +1,121 @@
+#!/bin/sh
+# nostr-vault-setup: whose vault this is and where it lives, then start it (the Mac app's Setup, for Linux).
+# Run by install.sh, by the desktop app (through pkexec) or by hand, as root:
+#   nostr-vault-setup --owner npub1… [--data /path] [--port 8080] [--sd-ok] [--new-ok]
+#   nostr-vault-setup --show      the current settings, as KEY=value lines
+#   nostr-vault-setup --suggest   where the vault should live: the drive with the most free space
+# It writes /etc/nostr-vault/vault.env (no secrets in it: an npub and paths), lets the vault write to the data dir,
+# and enables the vault and its mesh (so they start on boot) and starts them.
+set -eu
+ETC=/etc/nostr-vault
+ENV=$ETC/vault.env
+DEFAULT_DATA=/var/lib/nostr-vault
+
+die() { printf 'nostr-vault-setup: %s\n' "$*" >&2; exit 1; }
+# A first install has no vault.env: old prints nothing and still succeeds (set -e would end setup with no word).
+old() { if [ -r "$ENV" ]; then sed -n "s/^$1=//p" "$ENV" | tail -1; fi; }
+
+biggest() { # a real drive's mount point, most free space first (as install.sh)
+  df -P -k 2>/dev/null | awk 'NR > 1 && $1 ~ /^\/dev\// && $6 !~ /^\/(boot|snap|run|dev|sys|proc|tmp|etc|var\/lib\/docker)(\/|$)/ { print $4, $6 }' \
+    | sort -rn | while read -r _ m; do [ -d "$m" ] && { printf '%s' "$m"; break; }; done
+}
+suggest() {
+  s=$(old NV_DATA_DIR)
+  if [ -z "$s" ]; then
+    m=$(biggest); [ -n "$m" ] || m=/
+    case "$m" in /|/var|/var/lib) s=$DEFAULT_DATA ;; *) s="${m%/}/nostr-vault" ;; esac
+  fi
+  printf '%s\n' "$s"
+}
+
+owner="" data="" port="" sd_ok=0 new_ok=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --owner) owner=${2:-}; shift 2 ;;
+    --data) data=${2:-}; shift 2 ;;
+    --port) port=${2:-}; shift 2 ;;
+    --sd-ok) sd_ok=1; shift ;;
+    --new-ok) new_ok=1; shift ;;
+    --show) [ -r "$ENV" ] && grep -E '^NV_(OWNER|DATA_DIR|PORT)=' "$ENV"; exit 0 ;;
+    --suggest) suggest; exit 0 ;;
+    -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) die "unknown option $1 (see --help)" ;;
+  esac
+done
+[ "$(id -u)" = 0 ] || die "run as root (sudo nostr-vault-setup …)"
+
+# Whose: only this npub can manage the vault. Never claimed by whoever visits first, and no secret key here.
+owner=${owner:-$(old NV_OWNER)}
+printf '%s' "$owner" | grep -Eq '^npub1[02-9ac-hj-np-z]{58}$' || die "--owner must be your npub (npub1 and 58 more letters and digits)"
+
+# Where. A full path, a folder (or nothing yet), not a symlink, not inside the system's own folders.
+data=${data:-$(old NV_DATA_DIR)}; data=${data:-$DEFAULT_DATA}; data=${data%/}
+case "$data" in /*) ;; *) die "--data must be a full path, starting with /" ;; esac
+case "$data" in *[!A-Za-z0-9._/@+-]*) die "--data may only have letters, digits and . _ / @ + - in it" ;; esac
+case "$data" in /|/bin*|/boot*|/dev*|/etc*|/lib*|/proc*|/run*|/sbin*|/sys*|/usr*|/tmp*) die "$data is a system folder; pick another place" ;; esac
+[ -L "$data" ] && die "$data is a symlink; give the real path"
+[ -e "$data" ] && [ ! -d "$data" ] && die "$data is a file, not a folder"
+at=$data; while [ ! -e "$at" ]; do at=$(dirname "$at"); done
+case "$(df -P "$at" | awk 'NR == 2 { print $1 }')" in
+  /dev/mmcblk*) [ "$sd_ok" = 1 ] || die "$data is on an SD card, which a vault wears out (a USB SSD is much better); add --sd-ok to use it anyway" ;;
+esac
+was=$(old NV_DATA_DIR)
+if [ -n "$was" ] && [ "$was" != "$data" ] && [ -n "$(ls -A "$was" 2>/dev/null)" ] && [ "$new_ok" != 1 ]; then
+  die "your vault's data is in $was; $data would start an empty vault ($was stays as it is). Add --new-ok for that, or use Storage > Move vault in the app to move it"
+fi
+
+# Port: the vault's, on every address of this machine. The engine (3355) and the mesh door (port+1) are on loopback.
+port=${port:-$(old NV_PORT)}; port=${port:-8080}
+if ! printf '%s' "$port" | grep -Eq '^[0-9]+$' || [ "$port" -lt 1024 ] || [ "$port" -gt 65534 ]; then die "--port must be 1024 to 65534"; fi
+if [ "$port" = 3355 ] || [ "$port" = 3354 ]; then die "port 3355 is the engine's"; fi
+door=$((port + 1))
+if ! systemctl -q is-active nostr-vault.service 2>/dev/null; then
+  for p in "$port" "$door" 3355; do
+    if command -v ss >/dev/null 2>&1 && ss -Hltn "sport = :$p" 2>/dev/null | grep -q .; then
+      die "port $p is in use on this machine (ss -ltnp shows by what)"
+    fi
+  done
+fi
+
+install -d -m 755 "$ETC"
+tmp=$(mktemp "$ETC/.vault.env.XXXXXX")
+{
+  echo "# Nostr Vault: written by nostr-vault-setup (run it again to change these)."
+  echo "NV_OWNER=$owner"
+  echo "NV_DATA_DIR=$data"
+  echo "NV_PORT=$port"
+  echo "NV_MESH_DOOR_PORT=$door"
+  echo "HAVEN_MESH_PLAIN_PORT=$door"
+  # Anything else that was set by hand stays.
+  if [ -r "$ENV" ]; then grep -vE '^(#|NV_OWNER=|NV_DATA_DIR=|NV_PORT=|NV_MESH_DOOR_PORT=|HAVEN_MESH_PLAIN_PORT=)' "$ENV" | grep . || true; fi
+} >"$tmp"
+chmod 644 "$tmp" && mv -f "$tmp" "$ENV"
+
+# The services may write only their own folders; a data dir elsewhere is added to each one's list.
+for unit in nostr-vault nostr-vault-mesh; do
+  d=/etc/systemd/system/$unit.service.d
+  if [ "$data" = "$DEFAULT_DATA" ]; then rm -f "$d/data-dir.conf"; continue; fi
+  mkdir -p "$d"
+  sub=$data; [ "$unit" = nostr-vault-mesh ] && sub=$data/mesh
+  {
+    echo "# Written by nostr-vault-setup: the data dir is $data."
+    echo "[Service]"
+    echo "ReadWritePaths=$sub"
+    case "$data" in /home/*|/root/*) echo "ProtectHome=read-only" ;; esac
+  } >"$d/data-dir.conf"
+done
+
+systemctl daemon-reload
+systemctl enable -q nostr-vault.service nostr-vault-mesh.service
+systemctl restart nostr-vault-prepare.service nostr-vault.service nostr-vault-mesh.service
+
+i=0
+until [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/" 2>/dev/null || true)" != 000 ]; do
+  i=$((i + 1))
+  if [ $i -gt 60 ]; then
+    journalctl -u nostr-vault.service -n 20 --no-pager >&2 || true
+    die "the vault didn't answer on port $port (journalctl -u nostr-vault shows why)"
+  fi
+  sleep 1
+done
+echo "ok: the vault is running on port $port, data in $data, owner $owner"
