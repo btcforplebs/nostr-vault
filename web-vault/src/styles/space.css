@@ -86,12 +86,25 @@
 .sp-tools .sp-btn:disabled { opacity: .3; background: none; }
 .sp-tools .sp-off:hover { color: var(--red); }
 .sp-grip { display: inline-grid; place-items: center; width: 24px; height: 28px; color: var(--text-3); cursor: grab; }
-.space-dock.editing .sp-slot { cursor: grab; }
-.space-dock.editing .sp-panel { border-style: dashed; }
+.sp-cards.editing .sp-slot { cursor: grab; }
+.sp-cards.editing .sp-panel { border-style: dashed; max-height: none; } /* headers only while editing: no panel cap clips the tools */
 /* A slot is a box only while editing (to drag and to draw the drop line); otherwise it is not there, so the panels
    share the column's height as they always have. */
 .sp-slot { position: relative; display: flex; flex-direction: column; flex: none; }
-.space-dock:not(.editing) .sp-slot { display: contents; }
+.sp-cards:not(.editing) .sp-slot:not(.sized) { display: contents; }
+/* A column's cards (CardColumn.jsx): not a box of their own unless editing (the drop area for a card from the other
+   column), so the cards stay the column's own flex items. */
+.sp-cards { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 120px; }
+.sp-cards:not(.editing) { display: contents; }
+/* A size picked (columns.js SIZE_PX on the slot): the card fills it and its list scrolls inside. */
+.sp-slot.sized > .sp-panel { flex: 1; min-height: 0; max-height: none; }
+/* Editing: the tools get a row of their own under the card's name. */
+.sp-cards.editing .sp-head { flex-wrap: wrap; row-gap: 6px; }
+.sp-cards.editing .sp-head .sp-tools { margin-left: auto; }
+.sp-sizes { display: inline-flex; gap: 2px; margin-right: 4px; padding: 2px; border-radius: 8px; background: var(--s2); }
+.sp-size { min-width: 30px; height: 24px; min-height: 24px; padding: 0 6px; border: 0; border-radius: 6px; background: none; color: var(--text-2);
+  font: 600 11px var(--font); }
+.sp-size.on { background: var(--accent); color: var(--on-badge); }
 .sp-slot.drop-before::before, .sp-slot.drop-after::after { content: ""; position: absolute; left: 8px; right: 8px; height: 3px;
   border-radius: 3px; background: var(--accent); }
 .sp-slot.drop-before::before { top: -8px; }
@@ -114,4 +127,35 @@
   color: var(--accent-light); font: 600 12px var(--font); text-align: left; cursor: pointer; }
 .sp-feed-pin.on { background: var(--accent); color: var(--on-badge); }
 /* Editing, every slot keeps its height and the column scrolls (the feed chips below made the column taller). */
-.space-dock.editing .sp-slot { flex-shrink: 0; }
+.sp-cards.editing .sp-slot { flex-shrink: 0; }
+
+/* The left column (LeftDock.jsx): cards under the menu, beside the rail, at full width once it has any. */
+.left-dock { display: flex; flex-direction: column; flex: none; width: var(--left-w); min-height: 0; height: 100dvh; border-right: 1px solid var(--hair);
+  background: linear-gradient(180deg, rgb(var(--accent-rgb) / .06), transparent 240px), var(--dock); }
+.left-dock .sp-panels { padding-top: 12px; }
+
+/* An app's card (AppCard.jsx): the shell's header, the app's frame below it at the card's size. */
+.sp-app .sp-head h3 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.sp-app-icon { font: 700 13px var(--font); }
+.sp-app-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.sp-app-host { flex: 1; min-height: 0; padding: 0; }
+.sp-app-host:not(.on) { display: none; }
+.sp-app-host .napplet-frame { border: 0; border-radius: 0; background: var(--s1); }
+.sp-app-more { position: relative; }
+.sp-app-menu { position: absolute; z-index: 5; top: 36px; right: 0; display: grid; min-width: 200px; padding: 5px; border-radius: 10px;
+  background: var(--s2); border: 1px solid var(--hair); box-shadow: 0 12px 30px -12px rgb(0 0 0 / .5); }
+.sp-app-menu button { justify-content: flex-start; min-height: 36px; padding: 0 10px; border: 0; border-radius: 7px; background: none; color: var(--text); font: 500 13px var(--font); text-align: left; }
+.sp-app-menu button:hover { background: var(--s3); }
+.sp-app-menu .danger { color: var(--danger); }
+
+/* + Add's sheet (AddSheet.jsx). */
+.mod-dialog:has(.sp-addsheet) { width: min(520px, calc(100vw - 32px)); }
+.sp-addsheet { display: grid; gap: 10px; min-width: 0; }
+.sp-addsheet .apps-row { min-width: 0; }
+.sp-addsheet h3 { margin: 0; }
+.sp-addsheet .apps-head .sp-link { font: 600 12px var(--font); }
+.sp-addsheet h4 { margin: 6px 0 6px; font: 600 12px var(--font); letter-spacing: .04em; text-transform: uppercase; color: var(--text-3); }
+.sp-addsheet .apps-list { max-height: 34vh; overflow-y: auto; }
+.sp-addsheet-side { display: inline-flex; justify-self: start; gap: 2px; padding: 3px; border-radius: 999px; background: var(--s2); }
+.sp-addsheet-side button { min-height: 30px; padding: 0 16px; border: 0; border-radius: 999px; background: none; color: var(--text-2); font: 600 13px var(--font); }
+.sp-addsheet-side button.on { background: var(--accent); color: var(--on-badge); }

@@ -20,7 +20,7 @@ test("the rail: dashboard first, then one icon per shown panel, each with an ico
 })
 
 test("a click: folded opens on it, the open one folds, another switches", () => {
-  assert.match(dock, /if \(folded\) \{ setOnly\(id\); onFold\(false\) \}\s*else if \(single === id\) onFold\(true\)\s*else \{ setOnly\(id\); setEditing\(false\) \}/)
+  assert.match(dock, /if \(folded\) \{ setOnly\(id\); onFold\(false\) \}\s*else if \(single === id\) onFold\(true\)\s*else \{ setOnly\(id\); onEdit\(false\) \}/)
   assert.match(dock, /\{Only \? <Only\.Panel ctx=\{ctx\} open tools=\{null\} \/>/, "one panel alone, open")
   assert.match(src("styles/space.css"), /\.sp-panels\.sp-only > \.sp-panel \{ flex: 1; max-height: none; \}/, "full height")
 })

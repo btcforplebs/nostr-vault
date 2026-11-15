@@ -193,7 +193,8 @@ test("normalize is the doc's: what the iPad wrote survives a web round trip", ()
 test("the layout is this browser's only: no NIP-78 (kind 30078) publish, pull, refocus read or retry (Logen 2026-11-05)", () => {
   const src = f => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8")
   assert.match(src("desktop/Sidebar.jsx"), /useLayout\(ctx\.session\.pubkey\)/)
-  assert.match(src("desktop/space/SpaceDock.jsx"), /useLayout\(ctx\.session\.pubkey\)/)
+  assert.match(src("desktop/space/SpaceDock.jsx"), /useLayout\(me\)/)
+  assert.match(src("desktop/space/LeftDock.jsx"), /useLayout\(ctx\.session\.pubkey\)/)
   // The code, not the comments (which say what was removed).
   const store = src("desktop/space/layout-store.js").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
   for (const gone of [/space-sync/, /startSync/, /useLayoutSync/, /pullLayout|pushLayout/, /visibilitychange/, /setTimeout/, /30078/]) assert.doesNotMatch(store, gone)

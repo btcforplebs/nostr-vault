@@ -1,10 +1,12 @@
-// "Your space"'s edit pieces (SpaceDock.jsx): a panel's collapse chevron, its buttons while editing (drag handle, up,
-// down, take off), the "+ add" list of panels taken off, and the drag-and-drop between panels. They only report what
-// was asked; SpaceDock.jsx changes the layout (space-layout.js).
+// The side columns' edit pieces (CardColumn.jsx): a card's collapse chevron, its buttons while editing (size, other
+// column, up, down, take off, drag handle), and the drag-and-drop between cards and across the two columns. They only
+// report what was asked; CardColumn.jsx changes the layout (columns.js).
 import { useState } from "preact/hooks"
 import { Icon, ICON } from "../icons.jsx"
 
 const UP = "M6 15l6-6 6 6", DOWN = ICON.chevron, OFF = "M6 6l12 12M18 6L6 18", ADD = "M12 5v14M5 12h14"
+const ACROSS = "M7 7h13l-4-4M17 17H4l4 4"
+const SIZE_WORD = { S: "Small", M: "Medium", L: "Large" }
 const GRIP = "M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"
 
 /** Open or collapse a panel to its header. */
@@ -15,55 +17,66 @@ export const CollapseButton = ({ name, open, onToggle }) => (
   </button>
 )
 
-/** A panel's buttons while editing. The grip is where a drag starts (the whole panel drags). */
-export const EditTools = ({ name, first, last, onMove, onHide }) => (
+/** A card's buttons while editing. The grip is where a drag starts (the whole card drags). `sizes`: the sizes it can
+ *  take (null = its own height, ours only); `across`: the label of the button that moves it to the other column. */
+export const EditTools = ({ name, first, last, onMove, onHide, sizes = null, size = null, onSize, across, onAcross }) => (
   <span class="sp-tools">
+    {sizes && (
+      <span class="sp-sizes" role="radiogroup" aria-label={`Size of ${name}`}>
+        {sizes.map(s => (
+          <button key={s ?? "fit"} type="button" role="radio" aria-checked={size === s} aria-label={s ? SIZE_WORD[s] : "Its own height"} class={size === s ? "sp-size on" : "sp-size"}
+            title={s ? `${SIZE_WORD[s]} (${name})` : `Its own height (${name})`} onClick={() => onSize(s)}>{s ?? "Fit"}</button>
+        ))}
+      </span>
+    )}
+    {onAcross && <button type="button" class="sp-btn" title={`${across}: ${name}`} aria-label={`${across}: ${name}`} onClick={onAcross}><Icon d={ACROSS} size={16} /></button>}
     <button type="button" class="sp-btn" disabled={first} title={`Move ${name} up`} aria-label={`Move ${name} up`} onClick={() => onMove(-1)}><Icon d={UP} size={16} /></button>
     <button type="button" class="sp-btn" disabled={last} title={`Move ${name} down`} aria-label={`Move ${name} down`} onClick={() => onMove(1)}><Icon d={DOWN} size={16} /></button>
-    <button type="button" class="sp-btn sp-off" title={`Take ${name} off Your space`} aria-label={`Take ${name} off Your space`} onClick={onHide}><Icon d={OFF} size={16} /></button>
+    <button type="button" class="sp-btn sp-off" title={`Take ${name} off`} aria-label={`Take ${name} off`} onClick={onHide}><Icon d={OFF} size={16} /></button>
     <span class="sp-grip" title="Drag to move" aria-hidden="true"><Icon d={GRIP} size={18} /></span>
   </span>
 )
 
-/** The panels taken off, to add back, and the way back to the start. */
-export const AddPanels = ({ names, onAdd, onReset }) => (
-  <div class="sp-add">
-    {names.length > 0 && <h4>Add to Your space</h4>}
-    {names.map(([id, name]) => (
-      <button key={id} type="button" class="sp-add-row" onClick={() => onAdd(id)}><Icon d={ADD} size={16} />{name}</button>
-    ))}
-    {onReset && <button type="button" class="sp-link sp-reset" onClick={onReset}>Reset to the default</button>}
-  </div>
-)
+// The card being dragged, shared by both columns so a card dropped in the other column lands there.
+let dragging = null
 
 /**
- * Drag a panel onto another to move it there: above that panel when dropped on its top half, below it on its bottom
- * half. -> { over, side, slot(id) }: the panel under the pointer and which half, for the drop line, and the props each
- * panel's slot takes. `ids` is the drawn order; `onDrop(id, beforeId)` (beforeId null = at the end).
+ * Drag a card onto another to move it there: above that card when dropped on its top half, below it on its bottom half;
+ * onto a column's empty space, to that column's end. Works across the two columns. -> { over, side, slot(id), area }:
+ * the card under the pointer and which half (for the drop line), the props each card's slot takes, and the props of
+ * the column's list. `ids` is this column's drawn order; `onDrop(id, beforeId)` (beforeId null = at the end).
  */
 export function useDragPanels(ids, onDrop) {
-  const [drag, setDrag] = useState(null) // { id, over, side }
+  const [hover, setHover] = useState(null) // { over, side }
   const half = e => {
     const r = e.currentTarget.getBoundingClientRect()
     return e.clientY < r.top + r.height / 2 ? "before" : "after"
   }
+  const end = () => { dragging = null; setHover(null) }
   const slot = id => ({
     draggable: true,
-    onDragStart: e => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", id); setDrag({ id, over: null, side: null }) },
+    onDragStart: e => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", id); dragging = id },
     onDragOver: e => {
-      if (!drag) return
+      if (!dragging) return
       e.preventDefault()
+      e.stopPropagation()
       const side = half(e)
-      if (drag.over !== id || drag.side !== side) setDrag({ ...drag, over: id, side })
+      if (hover?.over !== id || hover?.side !== side) setHover({ over: id, side })
     },
     onDrop: e => {
       e.preventDefault()
-      if (!drag) return
+      e.stopPropagation()
+      if (!dragging) return
       const i = ids.indexOf(id)
-      onDrop(drag.id, half(e) === "before" ? id : (ids[i + 1] ?? null))
-      setDrag(null)
+      const moving = dragging
+      end()
+      onDrop(moving, half(e) === "before" ? id : (ids[i + 1] ?? null))
     },
-    onDragEnd: () => setDrag(null),
+    onDragEnd: end,
   })
-  return { over: drag?.over !== drag?.id ? drag?.over : null, side: drag?.side, slot }
+  const area = {
+    onDragOver: e => { if (dragging) { e.preventDefault(); if (hover) setHover(null) } },
+    onDrop: e => { if (!dragging) return; e.preventDefault(); const moving = dragging; end(); onDrop(moving, null) },
+  }
+  return { over: hover?.over !== dragging ? hover?.over : null, side: hover?.side, slot, area }
 }

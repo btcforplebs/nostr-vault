@@ -70,8 +70,11 @@ test("rule 1: an outside napplet with an old grant sees none of your media serve
 })
 
 test("rule 1: the Access and consent sheets no longer offer private data", () => {
-  const src = fs.readFileSync(new URL("../src/napplet/NappletShell.jsx", import.meta.url), "utf8")
-  assert.doesNotMatch(src, /privateData|PRIVATE_WORDS/)
+  // The sheets live in GrantSheet.jsx, shared by the Apps pane and the side columns' app cards.
+  for (const f of ["NappletShell.jsx", "GrantSheet.jsx", "../desktop/space/AppCard.jsx"]) {
+    const src = fs.readFileSync(new URL(`../src/napplet/${f}`, import.meta.url), "utf8")
+    assert.doesNotMatch(src, /privateData|PRIVATE_WORDS/, f)
+  }
 })
 
 // ---- 2. reads only through Haven, only inside the web of trust ----

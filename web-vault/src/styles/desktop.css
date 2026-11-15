@@ -2,13 +2,14 @@
    rail down the left edge (Sidebar.jsx, BottomTabBar's vertical sidebar), the app as on the iPhone in the middle, one
    page at a time, and on the right, from 1024px, "Your space" (space.css). Each part scrolls on its own; the page
    itself never scrolls. --bar-h is the height of Your space's header and the column toolbars' row. */
-.desk-app { --bar-h: 56px; --rail-w: 68px; --dock-w: 0px; height: 100dvh; overflow: hidden; overflow: clip; }
+.desk-app { --bar-h: 56px; --rail-w: 68px; --dock-w: 0px; --left-w: 0px; height: 100dvh; overflow: hidden; overflow: clip; }
 /* Two classes so it beats app.css's .app, which loads later: the phone's room for its tab bar (144px) made the page
    144px taller than the window, and a focus or scrollIntoView near the bottom scrolled the whole layout up under the
    window's top edge, bar and all. overflow: clip (not hidden) also means nothing can scroll this box. */
 .app.desk-app { padding-bottom: 0; }
 .desk-app:has(.desk.space) { --dock-w: 436px; } /* 380px of panels + Your space's 56px icon rail */
 .desk-app:has(.desk.space.folded) { --dock-w: 56px; }
+.desk-app:has(.desk.left-on) { --left-w: 300px; } /* the left side column (space/LeftDock.jsx) */
 .desk { display: grid; grid-template-columns: minmax(0, 1fr) var(--dock-w); height: 100dvh; }
 .desk-left { display: flex; min-width: 0; min-height: 0; container: left / inline-size; }
 
@@ -122,7 +123,7 @@
 .desk-full .wot-myweb-button { position: absolute; right: 24px; bottom: 20px; }
 
 /* The Dashboard (main.jsx keeps the relay screen mounted outside the shell): laid over the left column's page. */
-.desk-app .relay-host:not([hidden]) { position: fixed; z-index: 4; top: 0; bottom: 0; right: var(--dock-w); left: var(--rail-w); overflow-y: auto; background: var(--bg); }
+.desk-app .relay-host:not([hidden]) { position: fixed; z-index: 4; top: 0; bottom: 0; right: var(--dock-w); left: calc(var(--rail-w) + var(--left-w)); overflow-y: auto; background: var(--bg); }
 .desk-app .relay-host .screen { max-width: 760px; }
 
 /* Vault modes as a segmented header (B1). Icons only when the column is narrow. */

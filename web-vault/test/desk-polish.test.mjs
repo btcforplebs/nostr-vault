@@ -53,7 +53,7 @@ test("the desktop sections are a slim left rail in the iPad's order, and the Fee
   assert.match(css, /^\.desk-side \{[^}]*flex-direction: column;[^}]*width: var\(--rail-w\);[^}]*height: 100dvh;/m)
   assert.match(css, /^\.desk-left \{ display: flex; min-width: 0;/m, "rail and page side by side, not a bar over the page")
   assert.match(css, /^\.desk-app \.screen-head\.feed-head \{[^}]*border-bottom: 0;/m)
-  assert.match(css, /relay-host:not\(\[hidden\]\) \{[^}]*top: 0;[^}]*left: var\(--rail-w\);/, "the Dashboard lies beside the rail")
+  assert.match(css, /relay-host:not\(\[hidden\]\) \{[^}]*top: 0;[^}]*left: calc\(var\(--rail-w\) \+ var\(--left-w\)\);/, "the Dashboard lies beside the rail (and the left column, when it shows)")
   assert.match(css, /^\.desk-full \.wot-myweb-button \{ position: absolute;/m, "My Web stays in the WoT column, off Your space")
 })
 

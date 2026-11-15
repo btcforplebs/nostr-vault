@@ -4,18 +4,20 @@
 // The consent sheet asks the first time an outside napplet opens; "Access" shows that answer again and lets the user
 // change it; Remove takes the app, its grants, its storage and its kept bytes away (catalog.js removeApp).
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
-import { Dialog } from "../components/Moderation.jsx"
 import { openNapplet } from "./runtime.js"
-import { grantStore, outsideGrant } from "./policy.js"
+import { grantStore } from "./policy.js"
 import { createBus } from "./bus.js"
 import { shellDeps, readCatalog, fetchAppArtifact } from "./shell-deps.js"
 import { LISTED } from "./first-party.js"
 import { nappletsOn, setNappletsOn } from "./flag.js"
-import { domainWord, PUBLIC_WORDS, PUBLIC_ONLY, askWords } from "./consent-words.js"
+import { PUBLIC_ONLY, askWords } from "./consent-words.js"
+import { GrantSheet, AskDialog, saveAccessGrant } from "./GrantSheet.jsx"
 import { appStore, updateFor, removeApp, retireVersion, MAX_ARTIFACT } from "./catalog.js"
 import { parseManifest, nappletKey, domainsFor } from "./manifest.js"
 import { idbNappletStorage, idbArtifacts } from "./storage-idb.js"
 import { VaultPagesMenu } from "../screens/VaultPagesMenu.jsx"
+import { changeLayout } from "../desktop/space/layout-store.js"
+import { dropApp } from "../desktop/space/columns.js"
 import "./napplet.css"
 
 const short = pk => `${pk.slice(0, 8)}…`
@@ -100,6 +102,7 @@ export function NappletShell({ ctx, showSwitch = true, vaultMenu = false }) {
   async function remove(app) {
     if (open?.line === app.line) open.mounted.close()
     await removeApp(app.line, { apps, grants, storage, artifacts })
+    changeLayout(account, l => dropApp(l, app.line)) // its cards in the side columns go too (desktop/space/columns.js)
     setNote(`Removed ${parseManifest(app.event).title}, with what it kept and what it was allowed.`)
     bump(n => n + 1)
   }
@@ -111,8 +114,7 @@ export function NappletShell({ ctx, showSwitch = true, vaultMenu = false }) {
   }
   function saveAccess({ domains }) {
     const { app, key, grant } = access
-    // Same shape the consent sheet makes (runtime.js outsideGrant); only what it may ask for changes.
-    grants.set(key, outsideGrant({ ...grant, domains }))
+    saveAccessGrant(grants, key, grant, domains)
     if (open?.line === app.line) { open.mounted.close(); setNote("Closed it so the new access applies; open it again.") }
     setAccess(null)
     bump(n => n + 1)
@@ -190,38 +192,7 @@ export function NappletShell({ ctx, showSwitch = true, vaultMenu = false }) {
 
       {consent && <GrantSheet title={`Open ${consent.ident.title}?`} from={consent.ident.publisher === "local" ? "a file you picked" : short(consent.ident.publisher)} domains={consent.domains} yes="Open" onDone={g => { consent.resolve(g); setConsent(null) }} />}
       {access && <GrantSheet title={`What ${parseManifest(access.app.event).title} may do`} from={short(parseManifest(access.app.event).publisher)} domains={access.domains} grant={access.grant} yes="Save" onDone={g => (g ? saveAccess(g) : setAccess(null))} />}
-      {asking && (
-        <Dialog label={asking.words.title} onClose={() => { asking.resolve(false); setAsking(null) }}>
-          <h3>{asking.words.title}</h3>
-          {asking.words.image && <img class="napplet-ask-image" src={asking.words.image} alt="" referrerpolicy="no-referrer" style="max-width:100%;max-height:220px;border-radius:8px;object-fit:contain" />}
-          {asking.words.body && <p class="napplet-preview">{asking.words.body}</p>}
-          <div class="mod-row">
-            <button type="button" class="primary" onClick={() => { asking.resolve(true); setAsking(null) }}>{asking.words.yes}</button>
-            <button type="button" onClick={() => { asking.resolve(false); setAsking(null) }}>{asking.words.no}</button>
-          </div>
-        </Dialog>
-      )}
+      {asking && <AskDialog words={asking.words} onDone={yes => { asking.resolve(yes); setAsking(null) }} />}
     </main>
-  )
-}
-
-/** The consent sheet, first time (no `grant`) or again from Access (`grant`: what the user said before). */
-function GrantSheet({ title, from, domains, grant = null, yes, onDone }) {
-  const offered = domains.filter(d => d !== "shell")
-  const [on, setOn] = useState(() => new Set(grant ? offered.filter(d => grant.domains.includes(d)) : offered))
-  const toggle = d => setOn(s => { const n = new Set(s); n.has(d) ? n.delete(d) : n.add(d); return n })
-  return (
-    <Dialog label={title} onClose={() => onDone(null)}>
-      <h3>{title}</h3>
-      <p class="muted small">From {from}. It runs walled off: no network and no keys of its own. Choose what it may ask Nostr Vault for.</p>
-      <ul class="napplet-grants">
-        {offered.map(d => <li key={d}><label><input type="checkbox" checked={on.has(d)} onChange={() => toggle(d)} /> {domainWord(d)}</label></li>)}
-      </ul>
-      <p class="muted small napplet-private">{PUBLIC_WORDS}</p>
-      <div class="mod-row">
-        <button type="button" class="primary" onClick={() => onDone({ domains: ["shell", ...on] })}>{yes}</button>
-        <button type="button" onClick={() => onDone(null)}>Cancel</button>
-      </div>
-    </Dialog>
   )
 }
