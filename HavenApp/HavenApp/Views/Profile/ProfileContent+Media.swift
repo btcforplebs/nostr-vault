@@ -126,7 +126,10 @@ extension ProfileContent {
                 Spacer()
 
                 MediaPagerView(items: displayMedia, selection: $selectedMedia, enableKeyboardNavigation: true, showsPositionBar: false) { mediaItem in
-                    ViewerViewMediaItem(mediaItem: mediaItem, isOnScreen: mediaItem == selectedMedia)
+                    ViewerViewMediaItem(mediaItem: mediaItem, isOnScreen: mediaItem == selectedMedia, onPiPStart: {
+                        selectedMedia = nil
+                        dragOffset = .zero
+                    })
                         #if os(iOS)
                         .transition(.opacity.animation(Motion.media))
                         #endif

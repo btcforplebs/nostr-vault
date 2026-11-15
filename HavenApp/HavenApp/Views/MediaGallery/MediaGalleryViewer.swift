@@ -12,12 +12,15 @@ struct MediaItemRenderer: View {
     let mediaItem: MediaItem
     /// False for the pages the pager builds either side of the one showing.
     var isOnScreen: Bool = true
+    /// Picture in Picture took the clip over: the viewer closes.
+    var onPiPStart: (() -> Void)? = nil
     @State private var resolvedType: MediaItem.MediaType
     @State private var isLoadingType = false
 
-    init(mediaItem: MediaItem, isOnScreen: Bool = true) {
+    init(mediaItem: MediaItem, isOnScreen: Bool = true, onPiPStart: (() -> Void)? = nil) {
         self.mediaItem = mediaItem
         self.isOnScreen = isOnScreen
+        self.onPiPStart = onPiPStart
         self._resolvedType = State(initialValue: mediaItem.type)
     }
 
@@ -31,10 +34,19 @@ struct MediaItemRenderer: View {
                 ProgressView()
                     .tint(.white)
             } else if resolvedType == .video || isVideoByMime {
+                #if os(iOS)
+                // The same player the feed's viewer uses: same controls, PiP,
+                // and the clip keeps playing where the feed left it. Only the
+                // page on screen gets one, so the pages either side stay quiet.
+                if isOnScreen {
+                    FullScreenVideoPlayer(url: mediaItem.url, mimeType: mediaItem.mimeType, onPiPStart: onPiPStart)
+                        .turnsSidewaysForWideClip(mediaItem.url)
+                } else {
+                    Color.black
+                }
+                #else
                 VideoPlayerView(url: mediaItem.url, mimeType: mediaItem.mimeType)
-                    #if os(iOS)
-                    .turnsSidewaysForWideClip(isOnScreen ? mediaItem.url : nil)
-                    #endif
+                #endif
             } else if resolvedType == .audio {
                 AudioPlayerView(url: mediaItem.url)
             } else if resolvedType == .unknown {
@@ -167,7 +179,10 @@ extension MediaGalleryView {
                 Spacer()
 
                 MediaPagerView(items: displayMedia, selection: $selectedMedia, enableKeyboardNavigation: true, showsPositionBar: false) { mediaItem in
-                    MediaItemRenderer(mediaItem: mediaItem, isOnScreen: mediaItem == selectedMedia)
+                    MediaItemRenderer(mediaItem: mediaItem, isOnScreen: mediaItem == selectedMedia, onPiPStart: {
+                        selectedMedia = nil
+                        dragOffset = .zero
+                    })
                         #if os(iOS)
                         .transition(.opacity.animation(Motion.media))
                         #endif
