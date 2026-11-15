@@ -9,8 +9,8 @@ import kotlin.math.roundToInt
 
 /**
  * Settings > Appearance > Accent: the app's orange or one of eight ready-made
- * colours (PLANS/NV_LIGHT_MODE_AND_CUSTOM_COLORS.md; the colour wheel comes
- * later on Android). Twin of AccentPalette.swift and web-vault/src/net/accent.js:
+ * colours or any colour from the wheel (PLANS/NV_LIGHT_MODE_AND_CUSTOM_COLORS.md).
+ * Twin of AccentPalette.swift and web-vault/src/net/accent.js:
  *
  * - Dark shows the colour as picked, lifted only if it fails 4.5:1 on a card.
  * - Light deepens it in OKLab until it reads as text on white (4.5:1).
@@ -47,6 +47,9 @@ object AccentPalette {
         val pick = normalize(hex) ?: DEFAULT_HEX
         return if (pick == DEFAULT_HEX) AppTheme.DEFAULT.key else pick
     }
+
+    /** True when [hex] is one of the ready-made row. */
+    fun isPreset(hex: String): Boolean = presets.any { it.hex == normalize(hex) }
 
     fun swatch(hex: String): Color = color(rgb(normalize(hex) ?: DEFAULT_HEX))
 
