@@ -373,7 +373,7 @@ struct iPhoneTabView: View {
             }
         }
         // App settings / Mesh settings picked from the account menus.
-        .profileMenuSheets()
+        .profileMenuSheets(cameraStripWidth: layout == .duoClosed ? stripRail?.width ?? 0 : 0)
         .onChange(of: selectedTab) { _, tab in
             if tab == 0 { feedService.markViewed() }
         }

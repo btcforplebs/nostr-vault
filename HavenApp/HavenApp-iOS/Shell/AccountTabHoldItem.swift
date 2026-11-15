@@ -120,9 +120,11 @@ final class ProfileMenuSheets: ObservableObject {
 
 private struct ProfileMenuSheetsHost: ViewModifier {
     @ObservedObject private var sheets = ProfileMenuSheets.shared
+    let cameraStripWidth: CGFloat
 
     func body(content: Content) -> some View {
         content.sheet(item: $sheets.open) { page in
+            Group {
             switch page {
             case .app:
                 NavigationStack {
@@ -144,11 +146,49 @@ private struct ProfileMenuSheetsHost: ViewModifier {
                 MeshSettingsSheet(onClose: { sheets.open = nil })
                     .environmentObject(ConfigService.shared)
             }
+            }
+            .modifier(CameraStripSheet(stripWidth: cameraStripWidth))
         }
     }
 }
 
 extension View {
     /// Presents App settings or Mesh settings when the profile picture's menu picks one.
-    func profileMenuSheets() -> some View { modifier(ProfileMenuSheetsHost()) }
+    /// `cameraStripWidth`: the iPhone Duo's camera strip on the right, 0 elsewhere.
+    func profileMenuSheets(cameraStripWidth: CGFloat) -> some View {
+        modifier(ProfileMenuSheetsHost(cameraStripWidth: cameraStripWidth))
+    }
+}
+
+/// On the iPhone Duo a sheet is as wide as the screen, so its page ran on
+/// under the clock in the camera strip on the right. There the sheet gets
+/// the app's own column edge: the page keeps left of the strip (its safe
+/// area) and a hairline marks where the strip starts, as the rail's edge
+/// does on the main screens, so the clock sits in its strip, not on the
+/// page. (The sheet's own surface can't be cleared: iOS 27 keeps a layer
+/// under `presentationBackground`.) Elsewhere (`stripWidth` 0) unchanged.
+struct CameraStripSheet: ViewModifier {
+    let stripWidth: CGFloat
+
+    /// The page's cards keep this far off the strip, as the feed's do off the rail.
+    static let edgeGap: CGFloat = 16
+
+    func body(content: Content) -> some View {
+        if stripWidth > 0 {
+            content
+                // A list's margin here replaces the safe area rather than
+                // adding to it, so it is the strip plus the gap.
+                .contentMargins(.trailing, stripWidth + Self.edgeGap, for: .scrollContent)
+                .overlay(alignment: .trailing) {
+                    Rectangle()
+                        .fill(Color.ink.opacity(0.08))
+                        .frame(width: 1)
+                        .ignoresSafeArea(edges: .vertical)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+        } else {
+            content
+        }
+    }
 }
