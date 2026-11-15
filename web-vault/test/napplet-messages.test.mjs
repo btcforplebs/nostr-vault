@@ -193,7 +193,7 @@ test("messages pane: shell deps get search names, follows and a once-per-person 
   assert.match(pane, /searchName, follows: pk => ctxRef\.current\.account\.follows\.includes\(pk\)/)
   assert.match(pane, /const fresh = pks\.filter\(pk => !looked\.current\.has\(pk\)\)/)
   const deps = fs.readFileSync(new URL("../src/napplet/shell-deps.js", import.meta.url), "utf8")
-  assert.match(deps, /prepare: async \(\) => \{ const m = await encryptedPhoto\(await preparePhoto\(photo\), \{ upload: async f => uploadPhoto\(f, \{ ctx, servers: lockedFileServers\(await mediaServers\(ctx\)\), raw: true \}\) \}\); sentText = m\.shown; return m \}/)
+  assert.match(deps, /prepare: async \(\) => \{ const m = await encryptedPhoto\(await \(video \? prepareVideo\(photo\) : preparePhoto\(photo\)\), \{ upload: async f => uploadPhoto\(f, \{ ctx, servers: lockedFileServers\(await mediaServers\(ctx\)\), raw: true \}\) \}\); sentText = m\.shown; return m \}/)
 })
 
 test("dm: a failed send hands back its message with the reason on it, never the result's error (the shim would drop it all)", async () => {
@@ -233,4 +233,30 @@ test("newestMine: what a Try again left, whatever its text", async () => {
   assert.equal(newestMine(m, ME, ANN, false, new Set(["a"])).id, "b")
   assert.equal(newestMine(m, ME, ANN, true).id, "d")
   assert.equal(newestMine(m, ME, BOB), null)
+})
+
+test("dm: a video (a Blob) is sent like a photo, at most 100 MB, and shows as (video) while it goes", async () => {
+  const { ask, calls } = rig()
+  const clip = new Blob([new Uint8Array([0, 0, 0, 8])], { type: "video/mp4" })
+  const ok = await ask("dm.send", { recipients: [ANN], content: "", photo: clip })
+  assert.equal(ok.ok, true)
+  assert.equal(calls.sent[0][2], clip)
+  const f = rig({ sendFails: true })
+  const r = await f.ask("dm.send", { recipients: [ANN], content: "watch", photo: clip })
+  assert.deepEqual([r.ok, r.message.content], [false, "watch\n(video)"])
+})
+
+test("messages napplet: a locked video link is a video; previews say Video", async () => {
+  const { fileLink } = await import("../src/net/dm-file.js")
+  const html = fs.readFileSync(new URL("../napplets/messages/index.html", import.meta.url), "utf8")
+  const box = {}
+  vm.runInNewContext(`${html.slice(html.indexOf("// ---- pure"), html.indexOf("// ---- end pure ----"))}\n;Object.assign(box, { partsOf, previewOf })`, { box, Date, atob, TextDecoder, Uint8Array, JSON })
+  const plain = x => JSON.parse(JSON.stringify(x))
+  const x = "a".repeat(64)
+  const video = fileLink(`https://b.example/${x}`, { key: "1".repeat(64), nonce: "2".repeat(24), x, mime: "video/mp4", size: 1234567 })
+  const photo = fileLink(`https://b.example/${x}`, { key: "1".repeat(64), nonce: "2".repeat(24), x, mime: "image/png" })
+  assert.deepEqual(plain(box.partsOf(`look\n${video}`)), [{ text: "look" }, { video, size: 1234567 }])
+  assert.deepEqual(plain(box.partsOf(photo)), [{ photo }])
+  assert.equal(box.previewOf(video), "Video")
+  assert.equal(box.previewOf(photo), "Photo")
 })

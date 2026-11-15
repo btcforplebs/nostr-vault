@@ -13,6 +13,7 @@ import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { dmPrefill, dropFailed, hasLegacy, sendMessage, sendFailure, threadShown, warmDmRelays } from "../net/dms.js"
 import { preparePhoto } from "../net/dm-photo.js"
 import { encryptedPhoto } from "../net/dm-file.js"
+import { prepareVideo, isVideoFile } from "../net/dm-video.js"
 import { markRead } from "../net/dm-read.js"
 import { lockedFileServers, mediaServers, uploadPhoto } from "../net/upload.js"
 import { useMessages, SignerTrouble, AuthTrouble, OpenMore } from "./MessagesScreen.jsx"
@@ -25,6 +26,8 @@ const fiveLines = el => { const cs = getComputedStyle(el); return parseFloat(cs.
 
 // A pasted image can come without a type; preparePhoto decides whether it's a drawable image.
 const isImageFile = f => !f.type || /^image\//.test(f.type)
+// A video goes locked too (net/dm-video.js); one photo or video per message.
+const isAttachable = f => isImageFile(f) || isVideoFile(f)
 
 export function ConversationScreen({ ctx, peer }) {
   const { messages, note, trouble, retry, refresh, more, loaded } = useMessages(ctx)
@@ -61,14 +64,15 @@ export function ConversationScreen({ ctx, peer }) {
   const clearPhoto = () => setPhoto(p => { if (p) URL.revokeObjectURL(p.preview); return null })
   useEffect(() => clearPhoto, [peer])
   const attach = async files => {
-    const file = [...(files ?? [])].find(isImageFile)
+    const file = [...(files ?? [])].find(isAttachable)
     if (!file || preparing) return
     setStatus(""); setPreparing(true)
+    const video = isVideoFile(file)
     try {
-      const ready = await preparePhoto(file)
+      const ready = video ? await prepareVideo(file) : await preparePhoto(file)
       clearPhoto()
-      setPhoto({ file: ready, preview: URL.createObjectURL(ready) })
-    } catch (err) { setStatus(err?.message || "Couldn't read that photo.") } finally { setPreparing(false) }
+      setPhoto({ file: ready, preview: URL.createObjectURL(ready), video })
+    } catch (err) { setStatus(err?.message || `Couldn't read that ${video ? "video" : "photo"}.`) } finally { setPreparing(false) }
   }
 
   const send = async e => {
@@ -82,7 +86,7 @@ export function ConversationScreen({ ctx, peer }) {
     field.current?.focus()
     try {
       await sendMessage(ctx, peer, t, sending ? {
-        preview: t ? `${t}\n(photo)` : "(photo)",
+        preview: `${t ? `${t}\n` : ""}(${sending.video ? "video" : "photo"})`,
         // Encrypted before it goes up (dm-file.js): the server gets ciphertext, the key goes inside the sealed kind 15.
         prepare: async () => encryptedPhoto(sending.file, { upload: async f => uploadPhoto(f, { ctx, servers: lockedFileServers(await mediaServers(ctx)), raw: true }) }),
       } : {})
@@ -132,18 +136,18 @@ export function ConversationScreen({ ctx, peer }) {
           {status && <div class="status-line error" role="status">{status}</div>}
           {photo && (
             <div class="dm-attachment">
-              <img src={photo.preview} alt="Photo to send" />
-              <button type="button" class="dm-attachment-remove" onClick={clearPhoto} aria-label="Remove photo">×</button>
+              {photo.video ? <video src={photo.preview} muted playsinline preload="metadata" aria-label="Video to send" /> : <img src={photo.preview} alt="Photo to send" />}
+              <button type="button" class="dm-attachment-remove" onClick={clearPhoto} aria-label={photo.video ? "Remove video" : "Remove photo"}>×</button>
             </div>
           )}
           <div class="dm-compose-row">
-            <button type="button" class="small dm-photo-button" onClick={() => picker.current?.click()} disabled={preparing} aria-label="Attach photo">{preparing ? "Photo…" : "Photo"}</button>
-            <input ref={picker} type="file" accept="image/*" hidden onChange={e => { attach(e.currentTarget.files); e.currentTarget.value = "" }} />
+            <button type="button" class="small dm-photo-button" onClick={() => picker.current?.click()} disabled={preparing} aria-label="Attach photo or video">{preparing ? "Photo…" : "Photo"}</button>
+            <input ref={picker} type="file" accept="image/*,video/*" hidden onChange={e => { attach(e.currentTarget.files); e.currentTarget.value = "" }} />
             <textarea ref={field} rows={1} value={text} onInput={e => setText(e.currentTarget.value)} placeholder="Message…" aria-label="Message"
               onKeyDown={e => { if (sendsOnEnter(e, coarse())) { e.preventDefault(); e.currentTarget.form?.requestSubmit() } }}
               onPaste={e => {
                 const files = [...(e.clipboardData?.files ?? [])]
-                if (!files.some(isImageFile)) return
+                if (!files.some(isAttachable)) return
                 if (!e.clipboardData.getData("text/plain")) e.preventDefault() // text copied with the image still pastes
                 attach(files)
               }} />

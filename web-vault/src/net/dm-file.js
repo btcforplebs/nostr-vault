@@ -41,21 +41,23 @@ export async function decryptFile(cipher, { key, nonce, x, ox }) {
   return plain
 }
 
-/** "<url>#nv-dm=…": the message as this device keeps and shows it. */
-export function fileLink(url, { key, nonce, x, ox, mime }) {
-  return `${url}${MARK}${b64url(JSON.stringify({ k: key, n: nonce, x, o: ox, m: mime }))}`
+/** "<url>#nv-dm=…": the message as this device keeps and shows it. `size` (s, the encrypted bytes) when known, so a
+ *  video shows its size before it loads. */
+export function fileLink(url, { key, nonce, x, ox, mime, size }) {
+  return `${url}${MARK}${b64url(JSON.stringify({ k: key, n: nonce, x, o: ox, m: mime, s: size }))}`
 }
 
 export const isFileLink = s => typeof s === "string" && /^https:\/\/[^\s#]+#nv-dm=[A-Za-z0-9_-]+$/.test(s)
 
-/** -> { url, key, nonce, x, ox, mime } or null. "o" (ox) is the same field the Apple app keeps. */
+/** -> { url, key, nonce, x, ox, mime, size } or null. "o" (ox) is the same field the Apple app keeps. */
 export function parseFileLink(s) {
   if (!isFileLink(s)) return null
   const i = s.indexOf(MARK)
   try {
     const d = JSON.parse(unb64url(s.slice(i + MARK.length)))
     if (!HEX64.test(d?.k ?? "") || !NONCE.test(d?.n ?? "") || (d.x != null && !HEX64.test(d.x)) || (d.o != null && !HEX64.test(d.o))) return null
-    return { url: s.slice(0, i), key: d.k, nonce: d.n, x: d.x ?? undefined, ox: d.o ?? undefined, mime: MIME.test(d.m ?? "") ? d.m : "application/octet-stream" }
+    const size = Number.isSafeInteger(d.s) && d.s > 0 && d.s <= MAX_FILE ? d.s : undefined
+    return { url: s.slice(0, i), key: d.k, nonce: d.n, x: d.x ?? undefined, ox: d.o ?? undefined, mime: MIME.test(d.m ?? "") ? d.m : "application/octet-stream", ...(size ? { size } : {}) }
   } catch { return null }
 }
 
@@ -71,7 +73,7 @@ export function fileMessage(url, enc, { mime, dim } = {}) {
     ["size", String(enc.cipher?.length ?? enc.size)],
   ]
   if (dim) tags.push(["dim", dim])
-  return { kind: 15, content: url, tags, shown: fileLink(url, { ...enc, mime }) }
+  return { kind: 15, content: url, tags, shown: fileLink(url, { ...enc, mime, size: enc.cipher?.length ?? enc.size }) }
 }
 
 /** A received kind 15 rumor as this device keeps it: its link with what opens it, the bare link when it isn't
@@ -84,26 +86,35 @@ export function fileContentOf(rumor) {
   const key = String(tag("decryption-key") ?? "").toLowerCase(), nonce = String(tag("decryption-nonce") ?? "").toLowerCase()
   const x = String(tag("x") ?? "").toLowerCase(), ox = String(tag("ox") ?? "").toLowerCase()
   if (alg !== "aes-gcm" || !HEX64.test(key) || !NONCE.test(nonce)) return url
-  return fileLink(url, { key, nonce, x: HEX64.test(x) ? x : undefined, ox: HEX64.test(ox) ? ox : undefined, mime: MIME.test(tag("file-type") ?? "") ? tag("file-type") : undefined })
+  const size = Number(tag("size"))
+  return fileLink(url, { key, nonce, x: HEX64.test(x) ? x : undefined, ox: HEX64.test(ox) ? ox : undefined, mime: MIME.test(tag("file-type") ?? "") ? tag("file-type") : undefined, size: Number.isSafeInteger(size) && size > 0 && size <= MAX_FILE ? size : undefined })
 }
 
-export const MAX_FILE = 60 * 1024 * 1024
+/** The most one encrypted file may be: 100 MB, room for a video (Logen 2026-11-15). */
+export const MAX_FILE = 100 * 1024 * 1024
 
-async function fetchCapped(url) {
-  const res = await fetch(url, { credentials: "omit", referrerPolicy: "no-referrer", redirect: "error", signal: AbortSignal.timeout?.(60_000) })
+/** A kept file link whose file is a video (its file-type starts with "video/"). */
+export const isVideoLink = s => /^video\//i.test(parseFileLink(typeof s === "string" ? s.trim() : s)?.mime ?? "")
+
+async function fetchCapped(url, onProgress) {
+  // A 100 MB video on a slow line takes minutes: ten of them, where a photo needed one.
+  const res = await fetch(url, { credentials: "omit", referrerPolicy: "no-referrer", redirect: "error", signal: AbortSignal.timeout?.(600_000) })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  if (Number(res.headers.get("content-length")) > MAX_FILE) throw new Error("too large")
+  const length = Number(res.headers.get("content-length"))
+  if (length > MAX_FILE) throw new Error("too large")
   // Read in chunks and stopped at the cap: a body with no length that never ends would otherwise fill the tab.
-  const b = await readCapped(res, MAX_FILE)
+  const b = await readCapped(res, MAX_FILE, onProgress && (got => onProgress(got, length > 0 ? length : -1)))
   if (!b) throw new Error("too large")
+  onProgress?.(b.length, b.length)
   return b
 }
 
-/** The photo behind a file link, as a Blob of its own type. `fetchBytes(url)` -> bytes is for tests and the shell. */
-export async function openFileLink(link, { fetchBytes = fetchCapped } = {}) {
+/** The photo or video behind a file link, as a Blob of its own type. `onProgress(got, total or -1)` hears the
+ *  ciphertext arrive. `fetchBytes(url, onProgress)` -> bytes is for tests and the shell. */
+export async function openFileLink(link, { fetchBytes = fetchCapped, onProgress } = {}) {
   const f = parseFileLink(link)
   if (!f) throw new Error("not a DM file")
-  const plain = await decryptFile(await fetchBytes(f.url), f)
+  const plain = await decryptFile(await fetchBytes(f.url, onProgress), f)
   return new Blob([plain], { type: f.mime })
 }
 
@@ -112,6 +123,6 @@ export async function openFileLink(link, { fetchBytes = fetchCapped } = {}) {
 export async function encryptedPhoto(file, { upload }) {
   const enc = await encryptFile(new Uint8Array(await file.arrayBuffer()))
   const up = await upload(new File([enc.cipher], "dm-file", { type: "application/octet-stream" }))
-  if (!up?.url || up.sha256 !== enc.x) throw new Error("The photo didn't upload, so nothing was sent.")
+  if (!up?.url || up.sha256 !== enc.x) throw new Error(`The ${/^video\//.test(file.type) ? "video" : "photo"} didn't upload, so nothing was sent.`)
   return fileMessage(up.url, enc, { mime: file.type || "application/octet-stream" })
 }

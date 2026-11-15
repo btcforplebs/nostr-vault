@@ -87,7 +87,7 @@ test("a kind 15 wrap opens as the photo for the other person, and an old kind 14
   const rumor = rumorFor(pk(A), pk(B), m.content, undefined, { kind: 15, tags: m.tags })
   assert.equal(rumor.kind, 15); assert.deepEqual(rumor.tags[0], ["p", pk(B)])
   const got = await unwrap(await wrapFor(rumor, envOf(A), pk(B)), cryptoOf(B), pk(B))
-  assert.deepEqual(parseFileLink(got.content), { url: URL_, key: enc.key, nonce: enc.nonce, x: enc.x, ox: enc.ox, mime: "image/jpeg" })
+  assert.deepEqual(parseFileLink(got.content), { url: URL_, key: enc.key, nonce: enc.nonce, x: enc.x, ox: enc.ox, mime: "image/jpeg", size: enc.cipher.length })
   assert.equal(lastPreview(got.content), "Photo")
   const old = await unwrap(await wrapFor(rumorFor(pk(A), pk(B), "look\n" + URL_ + ".jpg"), envOf(A), pk(B)), cryptoOf(B), pk(B))
   assert.equal(old.content, "look\n" + URL_ + ".jpg")
@@ -132,9 +132,9 @@ test("a file whose server never stops sending is cut off at the cap, not read un
   const enc = await encryptFile(PLAIN)
   const real = globalThis.fetch
   let sent = 0
-  globalThis.fetch = async () => new Response(new ReadableStream({ pull(c) { if (sent >= 70 * (1 << 20)) return c.close(); sent += 1 << 20; c.enqueue(new Uint8Array(1 << 20)) } }))
+  globalThis.fetch = async () => new Response(new ReadableStream({ pull(c) { if (sent >= 110 * (1 << 20)) return c.close(); sent += 1 << 20; c.enqueue(new Uint8Array(1 << 20)) } }))
   try { await assert.rejects(openFileLink(fileLink(URL_, { ...enc, mime: "image/jpeg" })), /too large/) } finally { globalThis.fetch = real }
-  assert.ok(sent <= 62 * (1 << 20), `read ${sent} bytes`)
+  assert.ok(sent <= 102 * (1 << 20), `read ${sent} bytes`)
 })
 
 test("a 16-byte nonce from another NIP-17 app opens too", async () => {
