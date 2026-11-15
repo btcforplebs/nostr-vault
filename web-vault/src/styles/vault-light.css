@@ -16,12 +16,12 @@
 
 /* Cards lit from above: a faint top edge and a soft fall-off shadow, on the spec's accent hairline and #1C1C1E fill. */
 .desk-app .note, .desk-app .article {
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / .06), 0 1px 0 rgb(0 0 0 / .6), 0 14px 28px -18px rgb(0 0 0 / .9); }
-.desk-app .desk-list .note:hover { background: #222224; border-color: rgb(230 115 38 / .45);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / .08), 0 1px 0 rgb(0 0 0 / .6), 0 18px 34px -18px rgb(0 0 0 / .95); }
+  box-shadow: inset 0 1px 0 rgb(var(--ink) / .06), 0 1px 0 rgb(0 0 0 / .6), 0 14px 28px -18px rgb(0 0 0 / .9); }
+.desk-app .desk-list .note:hover { background: var(--s1-hover); border-color: rgb(230 115 38 / .45);
+  box-shadow: inset 0 1px 0 rgb(var(--ink) / .08), 0 1px 0 rgb(0 0 0 / .6), 0 18px 34px -18px rgb(0 0 0 / .95); }
 
 /* The feed's pills and the column bars' buttons: the same top edge, so they read as lit by the same source. */
 .desk-app .screen-head button.small, .desk-app .feed-mode-pill, .desk-app .feed-toolbar {
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / .07), 0 8px 20px -10px rgb(0 0 0 / .8); }
+  box-shadow: inset 0 1px 0 rgb(var(--ink) / .07), 0 8px 20px -10px rgb(0 0 0 / .8); }
 
 @media (forced-colors: active) { .desk-main::before { display: none; } }

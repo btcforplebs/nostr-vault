@@ -247,7 +247,7 @@ button.default-reaction:active { transform: none; }
 .relay-name { display: grid; gap: 2px; white-space: normal; }
 .relay-name .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .relay-probe { display: inline-flex; align-items: center; gap: 6px; font: var(--t-cap); color: var(--text-3); }
-.relay-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: rgb(255 255 255 / .25); }
+.relay-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: rgb(var(--ink) / .25); }
 .relay-probe.ok .relay-dot { background: var(--online); }
 .relay-probe.slow { color: #ff9f0a; } .relay-probe.slow .relay-dot { background: #ff9f0a; }
 .relay-probe.down { color: var(--danger); } .relay-probe.down .relay-dot { background: var(--danger); }

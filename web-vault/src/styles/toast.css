@@ -3,7 +3,7 @@
 .toasts { position: fixed; z-index: 40; top: calc(env(safe-area-inset-top, 0px) + 10px); left: 50%; transform: translateX(-50%);
   display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; width: max-content; max-width: calc(100vw - 32px); }
 .toast { display: flex; align-items: center; gap: 5px; min-height: 32px; padding: 6px 14px; border-radius: 999px;
-  background: var(--accent); color: #fff; font: 600 13px/1.25 var(--font); font-variant-numeric: tabular-nums; text-align: center;
+  background: var(--accent); color: var(--on-accent); font: 600 13px/1.25 var(--font); font-variant-numeric: tabular-nums; text-align: center;
   box-shadow: 0 6px 20px rgb(0 0 0 / .35); }
 .toast svg { flex: none; }
 .toast span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

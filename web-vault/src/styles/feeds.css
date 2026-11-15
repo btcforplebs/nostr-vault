@@ -73,8 +73,8 @@
 .condensed-repost .author-name { font-weight: 400; }
 .condensed-thumb img.failed { display: none; }
 .condensed-text { margin: 0; font-size: 14px; line-height: 1.35; color: var(--text); display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-.condensed.reply .condensed-text { font-size: 13px; color: rgb(255 255 255 / .8); }
-.condensed.reply .condensed-head .author-name { color: rgb(255 255 255 / .92); }
+.condensed.reply .condensed-text { font-size: 13px; color: rgb(var(--ink) / .8); }
+.condensed.reply .condensed-head .author-name { color: rgb(var(--ink) / .92); }
 /* The square keeps the text column one width; a photo sits whole, at its own shape, in its top right corner. */
 .condensed-thumb { --thumb: 56px; position: relative; flex: none; width: var(--thumb); height: var(--thumb); display: grid; place-items: start end; }
 .condensed-thumb.big { --thumb: 80px; }
@@ -108,7 +108,7 @@
 .feed-empty h3 { margin: 4px 0 0; font: 700 22px/1.2 var(--font); letter-spacing: .2px; }
 .feed-empty p { margin: 0; color: var(--text-2); font: 13px var(--mono); letter-spacing: .3px; }
 .new-posts { position: sticky; top: 12px; z-index: 5; display: flex; align-items: center; gap: 8px; margin: 0 auto 8px; padding: 10px 20px;
-  border: 0; border-radius: 999px; background: var(--accent); color: #fff; font: 700 13px var(--font); box-shadow: 0 4px 8px rgb(0 0 0 / .4); font-variant-numeric: tabular-nums; }
+  border: 0; border-radius: 999px; background: var(--accent); color: var(--on-accent); font: 700 13px var(--font); box-shadow: 0 4px 8px rgb(0 0 0 / .4); font-variant-numeric: tabular-nums; }
 .new-posts.small { gap: 4px; padding: 5px 10px; font-size: 12px; box-shadow: 0 2px 4px rgb(0 0 0 / .4); }
 .feed-filter { position: relative; margin-left: 8px; }
 .screen-head .feed-filter > button.small { display: inline-flex; align-items: center; }

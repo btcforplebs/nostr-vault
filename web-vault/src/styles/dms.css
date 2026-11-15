@@ -34,7 +34,7 @@
 /* Unread (DMInboxView): the name and last line bold, the count in an accent pill. */
 .dm-row.unread .author-name { font-weight: 700; color: var(--text); }
 .dm-row.unread .dm-row-last { font-weight: 500; color: var(--text); opacity: .8; }
-.dm-unread { min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--accent-grad); color: #fff; font: var(--t-cap); font-weight: 700;
+.dm-unread { min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--accent-grad); color: var(--on-accent); font: var(--t-cap); font-weight: 700;
   line-height: 20px; text-align: center; }
 
 .dm-title { display: inline-flex; align-items: center; gap: 8px; max-width: 60%; }
@@ -45,9 +45,9 @@
 .dm-line .dm-bubble { max-width: 100%; min-width: 0; }
 .dm-face { flex: none; display: inline-flex; }
 .dm-bubble { max-width: 78%; align-self: flex-start; padding: 8px 12px; border-radius: 18px 18px 18px 6px; background: var(--s2); }
-.dm-bubble.mine { align-self: flex-end; background: var(--accent-grad); color: #fff; border-radius: 18px 18px 6px 18px; }
+.dm-bubble.mine { align-self: flex-end; background: var(--accent-grad); color: var(--on-accent); border-radius: 18px 18px 6px 18px; }
 .dm-bubble .note-text { margin: 0; font: var(--t-body); }
-.dm-bubble.mine .note-text a, .dm-bubble.mine .mention { color: #fff; text-decoration: underline; }
+.dm-bubble.mine .note-text a, .dm-bubble.mine .mention { color: var(--on-accent); text-decoration: underline; }
 .dm-meta { display: block; margin-top: 2px; font: var(--t-cap); color: var(--text-3); text-align: right; }
 .dm-bubble.mine .dm-meta { color: rgb(255 255 255 / .7); }
 .dm-compose { position: sticky; bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 8px + env(safe-area-inset-bottom)); display: grid; gap: 6px;

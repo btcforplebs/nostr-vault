@@ -16,7 +16,7 @@
 .edit-feeds-row:hover { background: var(--s2); }
 .edit-feeds-list li.shown .edit-feeds-row { color: var(--text); }
 .edit-feeds-check { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
-  border: 2px solid var(--text-3); font-size: 12px; font-weight: 800; color: #fff; }
+  border: 2px solid var(--text-3); font-size: 12px; font-weight: 800; color: var(--on-accent); }
 .edit-feeds-list li.shown .edit-feeds-check { background: var(--accent); border-color: var(--accent); }
 .edit-feeds-list li.shown .edit-feeds-check.pinned { background: var(--text-3); border-color: var(--text-3); }
 .edit-feeds-icon { display: grid; place-items: center; width: 24px; }

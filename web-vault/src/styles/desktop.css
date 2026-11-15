@@ -37,9 +37,9 @@
   box-shadow: 0 0 0 2px var(--bg); }
 /* New Post: the one filled button, round, under the account (the iPad's floating Post, held in the rail). */
 .desk-side .side-post { width: 44px; min-height: 44px; height: 44px; margin: 6px 0 2px; padding: 0; border-radius: 50%; background: var(--accent-grad);
-  color: #fff; box-shadow: 0 4px 10px rgb(230 115 38 / .3); }
+  color: var(--on-accent); box-shadow: 0 4px 10px rgb(230 115 38 / .3); }
 .desk-side .side-post .side-label { display: none; }
-.desk-side .side-post:hover { background: var(--accent-grad); color: #fff; filter: brightness(1.08); }
+.desk-side .side-post:hover { background: var(--accent-grad); color: var(--on-accent); filter: brightness(1.08); }
 .side-post.off { background: var(--s2); color: var(--text-3); box-shadow: none; cursor: not-allowed; }
 .side-post.off:hover { background: var(--s2); color: var(--text-3); filter: none; }
 
@@ -108,7 +108,7 @@
 
 /* The open row, and the row j/k selected. */
 .desk-list .note, .desk-list .dm-row { cursor: pointer; transition: background var(--press), border-color var(--press); }
-.desk-list .note:hover { background: #222224; }
+.desk-list .note:hover { background: var(--s1-hover); }
 .desk-list .note:hover .note-actions { opacity: 1; }
 .kbd-on { outline: 2px solid var(--strong); outline-offset: 2px; }
 .kbd-on:focus { outline: 2px solid var(--strong); }
@@ -174,7 +174,7 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 .ctx-menu button { min-height: 30px; padding: 0 12px; border: 0; border-radius: 6px; background: none; justify-content: flex-start; text-align: left;
   font: var(--t-foot); font-weight: 500; color: var(--text); }
 .ctx-menu button:active:not(:disabled) { transform: none; }
-.ctx-menu button:hover, .ctx-menu button:focus-visible { background: var(--accent); color: #fff; outline: none; }
+.ctx-menu button:hover, .ctx-menu button:focus-visible { background: var(--accent); color: var(--on-accent); outline: none; }
 .ctx-menu button.danger { color: var(--danger); }
 .ctx-menu button.danger:hover, .ctx-menu button.danger:focus-visible { background: var(--danger); color: #fff; }
 .ctx-menu hr { border: 0; border-top: 1px solid var(--hair); margin: 4px 6px; }
@@ -236,7 +236,7 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 
 /* Thin, dark scrollbars: three columns of default grey bars are the loudest thing on the page otherwise. */
 .desk-list, .desk-detail, .desk-app .relay-host, .desk-compose {
-  scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / .18) transparent; }
+  scrollbar-width: thin; scrollbar-color: rgb(var(--ink) / .18) transparent; }
 
 .side-account-btn:hover { background: var(--s1); }
 .desk-thread .screen { padding-top: 10px; }

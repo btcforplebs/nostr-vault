@@ -15,7 +15,7 @@ button, a.button, .post-button, .chip {
   transition: transform var(--press), opacity var(--press);
 }
 button:active:not(:disabled), .post-button:active, .chip:active { transform: scale(.96); }
-button.primary, a.button.primary { background: var(--accent-grad); border-color: transparent; color: #fff; font-weight: 700; }
+button.primary, a.button.primary { background: var(--accent-grad); border-color: transparent; color: var(--on-accent); font-weight: 700; }
 a.button { display: inline-flex; align-items: center; text-decoration: none; }
 button:disabled { background: var(--s3); border-color: transparent; color: var(--text-3); cursor: default; }
 button.small { min-height: 34px; padding: 0 14px; font: var(--t-foot); font-weight: 600; }
