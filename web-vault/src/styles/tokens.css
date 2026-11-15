@@ -2,6 +2,7 @@
    The app has one appearance: OLED black with the orange accent. Spec: PLANS/NV_WEB_DESIGN.md. */
 :root, [data-theme="dark"] {
   color-scheme: dark;
+  accent-color: var(--accent);  /* checkboxes, radios, sliders and progress bars follow the accent */
 
   /* Surface ramp: Apple's dark grouped-background steps (surface0..3). */
   --bg: #000;
@@ -18,12 +19,24 @@
   --accent-line: rgb(var(--accent-rgb) / .30);  /* note-card border, OLED weight */
   --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-light));
   --on-accent: #fff;  /* a label on an accent fill */
+  --on-badge: #1a0d03;  /* a count badge's number on an accent dot */
 
   /* Meaning colours: green = running only; teal = vouched-for only. */
   --online: #33d980;
   --verified: #33cc99;
   --booting: #ffd60a;
   --danger: #ff453a;
+
+  /* iOS system colours, for meaning (zaps and warnings orange, done green, quotes blue, highlights yellow). As text
+     they swap to deeper twins in light mode (light.css); a white glyph on a filled tile keeps these. */
+  --orange: #ff9f0a;
+  --green: #30d158;
+  --red: #ff453a;
+  --blue: #0a84ff;
+  --yellow: #ffd60a;
+  --gold: #f7b500;
+  --purple: #bf5af2;
+  --grey: #8e8e93;
 
   /* Text (iOS dark label ramp). */
   --text: #fff;
@@ -45,6 +58,17 @@
 
   /* Menus that open over the page (the feed picker). */
   --menu: rgb(44 44 46 / .94);
+
+  /* Shadows and scrims: rgb(var(--shade) / calc(.6 * var(--shade-k))). Black at full strength on black; light mode
+     makes them a soft warm grey (light.css). */
+  --shade: 0 0 0;
+  --shade-k: 1;
+  --scrim-k: 1;  /* the dim behind a sheet or dialog */
+
+  /* The desktop's sticky column bars (page headers, the reply and message boxes): the page colour, see-through. */
+  --bar-rgb: 0 0 0;
+  /* Your space, the desktop's right-hand column, and its rail: a shade under the page. */
+  --dock: #050403;
 
   /* Glass (tab bar, top chrome). */
   --glass: rgb(40 40 42 / .55);

@@ -57,4 +57,4 @@
 /* The Reader's ⋯ as a shell sheet (NoteSheets.jsx). */
 .note-menu-sheet { display: grid; gap: 4px; min-width: min(320px, 80vw); }
 .note-menu-sheet button { text-align: left; min-height: 44px; }
-.note-menu-sheet .danger { color: #ff6b5e; }
+.note-menu-sheet .danger { color: var(--red); }

@@ -132,7 +132,7 @@ button.person-row:hover { border-color: var(--accent-line); }
 .card > .muted.small { margin: 0 0 10px; }
 .card .k { font: 600 11px/1.2 var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
 .relay-state { display: flex; align-items: center; gap: 8px; font: var(--t-headline); }
-.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); } .dot.on { background: var(--online); box-shadow: 0 0 8px rgb(51 217 128 / .6); }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); } .dot.on { background: var(--online); box-shadow: 0 0 8px color-mix(in srgb, var(--online) 60%, transparent); }
 .stats { display: flex; gap: 24px; margin: 14px 0; }
 .stats .v { font: 600 22px var(--mono); }
 .card .fips-address { margin: 6px 0 4px; padding: 10px 12px; border-radius: 8px; background: var(--bg); border: 1px solid var(--hair);
