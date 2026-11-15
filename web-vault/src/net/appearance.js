@@ -6,8 +6,11 @@ export const APPEARANCE_KEY = "display.appearance"
 export const APPEARANCE_CHOICES = ["dark", "light", "auto"]
 export const APPEARANCE_DEFAULT = "dark"
 export const APPEARANCE_LABELS = { dark: "Dark", light: "Light", auto: "Auto" }
-// The page colour per mode, for the browser's own bars (<meta name="theme-color">). Same as --bg in each mode.
-const BAR = { dark: "#000000", light: "#f6f1eb" }
+import { accent, paper } from "./accent.js"
+
+// The page colour per mode, for the browser's own bars (<meta name="theme-color">). Same as --bg in each mode: Light's
+// paper carries 5% of the accent.
+const bar = (mode, storage) => (mode === "light" ? paper(accent(storage)) : "#000000")
 
 const listeners = new Set()
 
@@ -26,17 +29,17 @@ export function resolveAppearance(choice, win = globalThis) {
 }
 
 /** Puts a resolved mode on the page: the data-theme attribute and the browser bar colour. */
-export function paintAppearance(mode, doc = globalThis.document) {
+export function paintAppearance(mode, doc = globalThis.document, storage = globalThis.localStorage) {
   if (!doc?.documentElement) return
   if (mode === "light") doc.documentElement.dataset.theme = "light"
   else delete doc.documentElement.dataset.theme
-  doc.querySelector?.('meta[name="theme-color"]')?.setAttribute("content", BAR[mode] ?? BAR.dark)
+  doc.querySelector?.('meta[name="theme-color"]')?.setAttribute("content", bar(mode, storage))
 }
 
 export function setAppearance(choice, storage = globalThis.localStorage, win = globalThis) {
   const v = APPEARANCE_CHOICES.includes(choice) ? choice : APPEARANCE_DEFAULT
   try { storage?.setItem?.(APPEARANCE_KEY, v) } catch {}
-  paintAppearance(resolveAppearance(v, win), win?.document)
+  paintAppearance(resolveAppearance(v, win), win?.document, storage)
   listeners.forEach(f => f(v))
 }
 
@@ -44,7 +47,7 @@ export function onAppearance(fn) { listeners.add(fn); return () => listeners.del
 
 /** At startup: paints the saved mode, and on Auto follows the device when it switches (sunset, Control Centre). */
 export function startAppearance(win = globalThis) {
-  const paint = () => paintAppearance(resolveAppearance(appearance(win?.localStorage), win), win?.document)
+  const paint = () => paintAppearance(resolveAppearance(appearance(win?.localStorage), win), win?.document, win?.localStorage)
   paint()
   win?.matchMedia?.("(prefers-color-scheme: light)")?.addEventListener?.("change", () => { if (appearance(win?.localStorage) === "auto") paint() })
   // Another tab changed it.

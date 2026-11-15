@@ -86,8 +86,16 @@ export function accentTokens(hex) {
     dark: { "--accent": dark, "--accent-rgb": rgb, "--accent-light": shade(dark, 0.08), "--accent-dark": shade(dark, -0.12), "--on-accent": labelOn(dark) },
     // The fill's light end: the colour itself only as pale as a white label can stand (3:1), so a gradient
     // button never fades its label out at one end.
-    light: { "--accent": lightText, "--accent-rgb": rgb, "--accent-light": readableOn(pick, WHITE, LABEL_MIN, -1), "--accent-dark": shade(lightText, -0.1), "--on-accent": labelOn(lightText) },
+    light: { "--bg": paper(pick), "--accent": lightText, "--accent-rgb": rgb, "--accent-light": readableOn(pick, WHITE, LABEL_MIN, -1), "--accent-dark": shade(lightText, -0.1), "--on-accent": labelOn(lightText) },
   }
+}
+
+/** Light mode's page colour: the warm paper with 5% of the picked accent (light.css --bg does the same in CSS). */
+export const PAPER = "#f6f1eb"
+export const PAPER_TINT = 0.05
+export function paper(hex) {
+  const a = rgbOf(PAPER), b = rgbOf(normalizeHex(hex) ?? ACCENT_DEFAULT)
+  return hexOf(a.map((v, i) => v + (b[i] - v) * PAPER_TINT))
 }
 
 const block = (sel, t) => `${sel} { ${Object.entries(t).map(([k, v]) => `${k}: ${v};`).join(" ")} }`
@@ -123,6 +131,8 @@ export function setAccent(hex, storage = globalThis.localStorage, doc = globalTh
     else storage?.removeItem?.(ACCENT_CSS_KEY)
   } catch {}
   paintAccent(css, doc)
+  // Light's page (and so the browser bar) carries 5% of the accent.
+  if (doc?.documentElement?.dataset?.theme === "light") doc.querySelector?.('meta[name="theme-color"]')?.setAttribute("content", paper(pick))
   listeners.forEach(f => f(pick))
 }
 export function onAccent(fn) { listeners.add(fn); return () => listeners.delete(fn) }

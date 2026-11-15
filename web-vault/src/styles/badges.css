@@ -1,8 +1,8 @@
 /* Verified seal and Nostr Vault badge after a name (Badges.jsx). The badge is the icon's doorway: an arch, lit. */
 .badge-seal { flex: none; display: inline-flex; color: var(--verified); font-size: 11px; line-height: 0; }
-.badge-nv { flex: none; display: inline-block; width: 8px; height: 10px; border: 1.3px solid var(--accent-light); border-bottom: 0;
-  border-radius: 5px 5px 0 0; background: radial-gradient(circle at 50% 72%, rgb(var(--accent-rgb) / .55), transparent 70%);
-  box-shadow: 0 0 2px var(--accent), 0 0 5px rgb(var(--accent-rgb) / .6); }
+.badge-nv { flex: none; display: inline-block; width: 8px; height: 10px; border: 1.3px solid var(--nv-orange-light); border-bottom: 0;
+  border-radius: 5px 5px 0 0; background: radial-gradient(circle at 50% 72%, rgb(var(--nv-orange-rgb) / .55), transparent 70%);
+  box-shadow: 0 0 2px var(--nv-orange), 0 0 5px rgb(var(--nv-orange-rgb) / .6); }
 .condensed-head .badge-seal { font-size: 9px; }
 
 /* The note a reply answers, above the reply (ParentPreview.jsx). */

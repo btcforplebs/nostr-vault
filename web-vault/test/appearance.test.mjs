@@ -33,7 +33,8 @@ test("painting light sets data-theme and the bar colour; dark removes it", () =>
   const doc = fakeDoc()
   paintAppearance("light", doc)
   assert.equal(doc.documentElement.dataset.theme, "light")
-  assert.equal(doc.meta.attrs.content, "#f6f1eb")
+  // Warm paper with 5% of the (default orange) accent.
+  assert.equal(doc.meta.attrs.content, "#f5ebe1")
   paintAppearance("dark", doc)
   assert.equal(doc.documentElement.dataset.theme, undefined)
   assert.equal(doc.meta.attrs.content, "#000000")
