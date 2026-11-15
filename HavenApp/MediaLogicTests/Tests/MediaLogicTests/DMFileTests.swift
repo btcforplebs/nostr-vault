@@ -118,6 +118,51 @@ final class DMFileTests: XCTestCase {
         XCTAssertFalse(split.text.contains(enc.key))
     }
 
+    // MARK: videos (DM videos, 2026-11-15)
+
+    func testWeSendTheSharedVideoVectorByteForByte() throws {
+        let v = try XCTUnwrap((json("DM_FILE_VECTORS")["vectors"] as? [[String: Any]])?.first { $0["id"] as? String == "mp4-video-12-byte-nonce" })
+        let enc = try DMFile.encrypt(try bytes(v["plaintext_hex"]), key: try bytes(v["key"]), nonce: try bytes(v["nonce"]))
+        XCTAssertEqual(enc.cipher, try bytes(v["ciphertext_hex"]))
+        let rumor = try XCTUnwrap(v["rumor"] as? [String: Any])
+        let tags = try XCTUnwrap(rumor["tags"] as? [[String]])
+        XCTAssertEqual(DMFile.tags(enc, mime: "video/mp4"), Array(tags.dropFirst()), "same tags after the p tag")
+        let kept = try XCTUnwrap(DMFile.messageContent(kind: 15, content: try XCTUnwrap(rumor["content"] as? String), tags: tags))
+        let sealed = try XCTUnwrap(DMFile.parseLink(kept))
+        XCTAssertTrue(sealed.isVideo)
+        XCTAssertFalse(sealed.isImage)
+        XCTAssertEqual(DMFile.fileExtension(sealed.mime), "mp4")
+    }
+
+    func testALockedVideoIsAVideoNeverTextOrAPhoto() throws {
+        let enc = try DMFile.encrypt(Data("clip".utf8))
+        let link = DMFile.link(DMFile.Sealed(url: URL(string: "https://nostr.download/\(enc.x)")!, key: enc.key, nonce: enc.nonce,
+                                             x: enc.x, ox: enc.ox, mime: "video/mp4"))
+        for withVideos in [true, false] {
+            let split = DMAttachment.split("watch\n\(link)", withVideos: withVideos)
+            XCTAssertEqual(split.text, "watch")
+            XCTAssertEqual(split.videos.map(\.absoluteString), [link])
+            XCTAssertTrue(split.images.isEmpty)
+        }
+        XCTAssertEqual(DMFile.displayText(link), "Video")
+        XCTAssertFalse(DMFile.displayText("see \(link)").contains(enc.key))
+    }
+
+    func testVideoSizeCapAndDownloadCaps() {
+        XCTAssertEqual(DMFile.maxVideoBytes, 100 * 1024 * 1024)
+        XCTAssertTrue(DMFile.videoFits(byteCount: DMFile.maxVideoBytes))
+        XCTAssertFalse(DMFile.videoFits(byteCount: DMFile.maxVideoBytes + 1))
+        let url = URL(string: "https://h.example/a")!
+        let video = DMFile.Sealed(url: url, key: "", nonce: "", x: nil, ox: nil, mime: "video/quicktime")
+        let photo = DMFile.Sealed(url: url, key: "", nonce: "", x: nil, ox: nil, mime: "image/jpeg")
+        XCTAssertEqual(DMFile.maxDownloadBytes(video), DMFile.maxVideoBytes + 16, "ciphertext carries the 16-byte tag")
+        XCTAssertEqual(DMFile.maxDownloadBytes(photo), DMFile.maxFileBytes)
+        XCTAssertEqual(DMFile.fileExtension("video/quicktime"), "mov")
+        XCTAssertEqual(DMFile.fileExtension("image/png"), "png")
+        XCTAssertEqual(DMFile.fileExtension("image/jpeg"), "jpg")
+        XCTAssertEqual(DMFile.fileExtension("application/zip"), "bin")
+    }
+
     func testPreviewsNeverShowTheKey() throws {
         let enc = try DMFile.encrypt(Data("x".utf8))
         let link = DMFile.link(DMFile.Sealed(url: URL(string: "https://h.example/\(enc.x)")!, key: enc.key, nonce: enc.nonce, x: enc.x, ox: nil, mime: "image/png"))

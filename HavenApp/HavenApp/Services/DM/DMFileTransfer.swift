@@ -10,17 +10,24 @@ enum DMFileTransfer {
     static let lockedFileFallback = "https://nostr.download"
 
     enum TransferError: LocalizedError {
-        case notUploaded, notSaved, meshOnly, http(Int), tooLarge
+        case notUploaded, notSaved, meshOnly, http(Int), tooLarge, videoTooLarge(Int)
 
         var errorDescription: String? {
             switch self {
-            case .notUploaded: return "The photo didn't upload, so nothing was sent."
-            case .notSaved: return "The photo couldn't be saved on this device."
-            case .meshOnly: return "This photo is on a mesh address and can't be opened here."
-            case .http(let code): return "The photo couldn't be downloaded (HTTP \(code))."
-            case .tooLarge: return "This photo is too large to open."
+            case .notUploaded: return "The file didn't upload, so nothing was sent."
+            case .notSaved: return "The file couldn't be saved on this device."
+            case .meshOnly: return "This file is on a mesh address and can't be opened here."
+            case .http(let code): return "The file couldn't be downloaded (HTTP \(code))."
+            case .tooLarge: return "This file is too large to open."
+            case .videoTooLarge(let bytes):
+                return "That video is \(DMFileTransfer.megabytes(bytes)) after compressing. DMs take up to \(DMFile.maxVideoBytes / 1_048_576) MB: trim it and try again."
             }
         }
+    }
+
+    /// "12.4 MB", as the send error and the loading tile show sizes.
+    static func megabytes(_ bytes: Int) -> String {
+        String(format: "%.1f MB", Double(bytes) / 1_048_576)
     }
 
     // MARK: Up
@@ -63,15 +70,7 @@ enum DMFileTransfer {
     /// Where the opened file lives on this device (DMFile.openedName), with an extension for its type.
     static func localURL(_ s: DMFile.Sealed) -> URL {
         let name = DMFile.openedName(s)
-        let ext: String
-        switch s.mime.lowercased() {
-        case "image/gif": ext = "gif"
-        case "image/png": ext = "png"
-        case "image/webp": ext = "webp"
-        case "image/heic": ext = "heic"
-        case let m where m.hasPrefix("image/"): ext = "jpg"
-        default: ext = "bin"
-        }
+        let ext = DMFile.fileExtension(s.mime)
         return directory.appendingPathComponent(name).appendingPathExtension(ext)
     }
 
@@ -90,7 +89,7 @@ enum DMFileTransfer {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
-    /// Keeps the plain bytes of a photo just sent, so the sender's own bubble needs no download.
+    /// Keeps the plain bytes of a photo or video just sent, so the sender's own bubble needs no download.
     @discardableResult
     static func keep(_ plain: Data, for s: DMFile.Sealed) -> URL? {
         let url = localURL(s)
@@ -101,19 +100,22 @@ enum DMFileTransfer {
         } catch { return nil }
     }
 
-    /// The opened photo on this device: downloads the ciphertext (stopping at DMFile.maxFileBytes), checks x,
-    /// decrypts, checks ox, keeps it. Throws DMFile.Refusal or TransferError.
-    static func open(_ s: DMFile.Sealed) async throws -> URL {
+    /// The opened photo or video on this device: downloads the ciphertext (stopping at DMFile.maxDownloadBytes),
+    /// checks x, decrypts, checks ox, keeps it. `progress` hears bytes so far and the total when the server says it.
+    /// Throws DMFile.Refusal or TransferError.
+    static func open(_ s: DMFile.Sealed, progress: (@MainActor (Int, Int?) -> Void)? = nil) async throws -> URL {
         if let url = cached(s) { return url }
         // A .fips address must never be resolved outside the mesh (MediaCacheService.isMeshOnly).
         if MediaCacheService.isMeshOnly(s.url) { throw TransferError.meshOnly }
+        let cap = DMFile.maxDownloadBytes(s)
         var request = URLRequest(url: s.url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
         request.httpShouldHandleCookies = false
         let (stream, response) = try await URLSession.shared.bytes(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) { throw TransferError.http(http.statusCode) }
-        if response.expectedContentLength > Int64(DMFile.maxFileBytes) { throw TransferError.tooLarge }
+        if response.expectedContentLength > Int64(cap) { throw TransferError.tooLarge }
+        let total = response.expectedContentLength > 0 ? Int(response.expectedContentLength) : nil
         var cipher = Data()
-        if response.expectedContentLength > 0 { cipher.reserveCapacity(Int(response.expectedContentLength)) }
+        if let total { cipher.reserveCapacity(total) }
         var chunk = [UInt8]()
         chunk.reserveCapacity(64 * 1024)
         for try await byte in stream {
@@ -122,11 +124,15 @@ enum DMFileTransfer {
                 cipher.append(contentsOf: chunk)
                 chunk.removeAll(keepingCapacity: true)
                 // Read in chunks and stopped at the cap: a body with no length that never ends would fill the phone.
-                if cipher.count > DMFile.maxFileBytes { throw TransferError.tooLarge }
+                if cipher.count > cap { throw TransferError.tooLarge }
+                if let progress, cipher.count % (512 * 1024) == 0 {
+                    let got = cipher.count
+                    await progress(got, total)
+                }
             }
         }
         cipher.append(contentsOf: chunk)
-        if cipher.count > DMFile.maxFileBytes { throw TransferError.tooLarge }
+        if cipher.count > cap { throw TransferError.tooLarge }
         let plain = try await Task.detached(priority: .userInitiated) { try DMFile.decrypt(cipher, s) }.value
         guard let url = keep(plain, for: s) else { throw TransferError.notSaved }
         return url

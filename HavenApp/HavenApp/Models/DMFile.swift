@@ -13,6 +13,29 @@ enum DMFile {
     static let marker = "#nv-dm="
     /// A download stops here: a link from someone that streams forever must not fill the phone (web: MAX_FILE).
     static let maxFileBytes = 60 * 1024 * 1024
+    /// A video goes out at most this big once compressed (DM videos, Logen 2026-11-15): the send says so when it
+    /// isn't, and a received video downloads up to this plus its 16-byte GCM tag.
+    static let maxVideoBytes = 100 * 1024 * 1024
+
+    static func videoFits(byteCount: Int) -> Bool { byteCount <= maxVideoBytes }
+
+    /// Where a download of this file stops (photos keep the web's MAX_FILE).
+    static func maxDownloadBytes(_ s: Sealed) -> Int { s.isVideo ? maxVideoBytes + 16 : maxFileBytes }
+
+    /// The extension an opened copy is kept under, so the image and video readers know what it is.
+    static func fileExtension(_ mime: String) -> String {
+        switch mime.lowercased() {
+        case "image/gif": return "gif"
+        case "image/png": return "png"
+        case "image/webp": return "webp"
+        case "image/heic": return "heic"
+        case let m where m.hasPrefix("image/"): return "jpg"
+        case "video/quicktime": return "mov"
+        case "video/webm": return "webm"
+        case let m where m.hasPrefix("video/"): return "mp4"
+        default: return "bin"
+        }
+    }
 
     /// What opens a file message: where it is and its key, nonce, hashes and type.
     struct Sealed: Equatable {
@@ -26,6 +49,7 @@ enum DMFile {
         let mime: String
 
         var isImage: Bool { mime.lowercased().hasPrefix("image/") }
+        var isVideo: Bool { mime.lowercased().hasPrefix("video/") }
     }
 
     /// A file encrypted for sending. Hex strings, lowercase.
@@ -154,14 +178,14 @@ enum DMFile {
         sha256Hex(Data(((s.x ?? s.url.absoluteString) + "|" + s.key + "|" + s.nonce).utf8))
     }
 
-    /// The message as a preview or a notification shows it: a file link becomes "Photo" (or "File"), so the key in
+    /// The message as a preview or a notification shows it: a file link becomes "Photo", "Video" or "File", so the key in
     /// its fragment is never drawn on a lock screen.
     static func displayText(_ content: String) -> String {
         guard content.contains(marker) else { return content }
         return content.components(separatedBy: "\n").map { line in
             line.split(separator: " ", omittingEmptySubsequences: false).map { word in
                 guard let s = parseLink(String(word)) else { return String(word) }
-                return s.isImage ? String(localized: "Photo") : String(localized: "File")
+                return s.isImage ? String(localized: "Photo") : s.isVideo ? String(localized: "Video") : String(localized: "File")
             }.joined(separator: " ")
         }.joined(separator: "\n")
     }

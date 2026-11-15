@@ -576,6 +576,7 @@
 		43E02A6DB11E2B376C20CB18 /* GifGridLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056C6D389655475872FFE265 /* GifGridLayout.swift */; };
 		43E57289E37F9E02582EB8D9 /* LongFormPreviewSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99C0558BBF96A014CC6EEFFD /* LongFormPreviewSection.swift */; };
 		43FFBE01440717065969B2B3 /* LockedDMPhotoTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86280F518C19B6E049A10780 /* LockedDMPhotoTile.swift */; };
+		8ABA3AAAF8AFEACBC1F295AD /* LockedDMVideoTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B17F236F65B770FEFC7C0DF /* LockedDMVideoTile.swift */; };
 		44301273464A7F36161CC317 /* NVLiveNowStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45A77B14EF0831DFFDED69C2 /* NVLiveNowStore.swift */; };
 		443513AFB69CE37E9C30FA03 /* NoteDetailView+Parents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6F3DA371A22E888542EB92 /* NoteDetailView+Parents.swift */; };
 		445527EDBD91D297AA159AE1 /* MeshSiteIngress.swift in Sources */ = {isa = PBXBuildFile; fileRef = C955166884F1CE9A5BA4B36E /* MeshSiteIngress.swift */; };
@@ -2005,6 +2006,7 @@
 		E2B2738EBDA7D5C838F74A5B /* SearchFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7FCD916FF45FB514C228BAB /* SearchFilter.swift */; };
 		E2B5D84651A43D0B22490254 /* PollComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B5E1DFD8D4BF82783CEDFDD /* PollComposeView.swift */; };
 		E2FA8E72F4285EC00E88D44D /* LockedDMPhotoTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86280F518C19B6E049A10780 /* LockedDMPhotoTile.swift */; };
+		96A02EB2829381CC1535BD5B /* LockedDMVideoTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B17F236F65B770FEFC7C0DF /* LockedDMVideoTile.swift */; };
 		E32275F028082E6F2E6CC702 /* ComposeView+Emoji.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E78E35BB936298192E20EA /* ComposeView+Emoji.swift */; };
 		E363C397778EDA4BA29B9B7E /* DraftService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3800D9290BD369F4F26BC5C3 /* DraftService.swift */; };
 		E3987DF06D639FD7B1B73D96 /* VideoScrubber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D905EF47BCDDE11DC1373D0 /* VideoScrubber.swift */; };
@@ -2916,6 +2918,7 @@
 		8532ED615B4236C01B42ACEB /* PinFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinFeedView.swift; sourceTree = "<group>"; };
 		85C517E5AC5352632A7A05A8 /* MeshSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshSettingsSheet.swift; sourceTree = "<group>"; };
 		86280F518C19B6E049A10780 /* LockedDMPhotoTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockedDMPhotoTile.swift; sourceTree = "<group>"; };
+		1B17F236F65B770FEFC7C0DF /* LockedDMVideoTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockedDMVideoTile.swift; sourceTree = "<group>"; };
 		863739F1E447BD3531D8C720 /* HavenApp-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "HavenApp-iOS.entitlements"; sourceTree = "<group>"; };
 		86AC01DAD7028DC8F433F5B5 /* LiveChatRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveChatRowView.swift; sourceTree = "<group>"; };
 		86B6DE9563AEAC1E8BF203EA /* ThreadEngagementQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadEngagementQuery.swift; sourceTree = "<group>"; };
@@ -3693,6 +3696,7 @@
 				0FCAB2E176636514B4B09244 /* DMSearchResultsList.swift */,
 				6A7402147FAE2D5DA87D95EF /* DMVideoAttachment.swift */,
 				86280F518C19B6E049A10780 /* LockedDMPhotoTile.swift */,
+				1B17F236F65B770FEFC7C0DF /* LockedDMVideoTile.swift */,
 			);
 			path = DM;
 			sourceTree = "<group>";
@@ -6007,6 +6011,7 @@
 				E0B0B7229805AE34DE01C716 /* LocalRelaySearchSession.swift in Sources */,
 				0C023E1B704C90CFD26B305B /* LocalTLSPolicy.swift in Sources */,
 				E2FA8E72F4285EC00E88D44D /* LockedDMPhotoTile.swift in Sources */,
+				96A02EB2829381CC1535BD5B /* LockedDMVideoTile.swift in Sources */,
 				5FC0EE276B0FC7751EE68E27 /* LockedKeyCopyButton.swift in Sources */,
 				0EA7C3C56E28349309CDCDF6 /* LockedKeyExport.swift in Sources */,
 				FF3796326AA660DE673215DB /* LogStore.swift in Sources */,
@@ -7153,6 +7158,7 @@
 				539D3D6266E27423491DEBF1 /* LocalRelaySearchSession.swift in Sources */,
 				77B0B3690B14A5102B5A66CA /* LocalTLSPolicy.swift in Sources */,
 				43FFBE01440717065969B2B3 /* LockedDMPhotoTile.swift in Sources */,
+				8ABA3AAAF8AFEACBC1F295AD /* LockedDMVideoTile.swift in Sources */,
 				F62F24F4BC67011BEF0E3006 /* LockedKeyCopyButton.swift in Sources */,
 				EDE7315495F487126CD71FAC /* LockedKeyExport.swift in Sources */,
 				CA3D7FC45AC4FC2943F69A70 /* LogStore.swift in Sources */,
