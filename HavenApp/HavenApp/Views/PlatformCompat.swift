@@ -74,6 +74,7 @@ extension Color {
 
     /// The page behind a grouped form: warm paper in Light, the system's
     /// grouped background in Dark (see `warmFormBackground()`).
+    @MainActor
     static var warmFormPage: Color {
         #if os(iOS)
         Color(light: .surface0, dark: Color(UIColor.systemGroupedBackground))

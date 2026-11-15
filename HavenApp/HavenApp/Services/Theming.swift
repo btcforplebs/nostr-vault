@@ -93,16 +93,17 @@ extension Color {
     // Use the semantic `platform*` tokens in views. These are the raw steps.
 
     /// The page. Windows, scroll backgrounds, anything the content sits *on*.
-    static let surface0 = Color(lightHex: 0xF6F1EB, darkHex: 0x000000)    // light: warm paper
+    /// Light: paper tinted toward the accent (`AccentPalette.paperTint`).
+    @MainActor static var surface0: Color { AccentPalette.current.surface0 }
 
     /// Resting content: cards, grouped rows, controls, sheets.
     static let surface1 = Color(lightHex: 0xFFFFFF, darkHex: 0x1C1C1E)    // light: white cards
 
     /// Content on top of `surface1`: a field inside a card, a nested row.
-    static let surface2 = Color(lightHex: 0xEFE9E2, darkHex: 0x2C2C2E)
+    @MainActor static var surface2: Color { AccentPalette.current.surface2 }
 
     /// Transient overlays: menus, popovers, tooltips, pressed states.
-    static let surface3 = Color(lightHex: 0xE2DBD3, darkHex: 0x3A3A3C)
+    @MainActor static var surface3: Color { AccentPalette.current.surface3 }
 
     // MARK: - Borders
     //
