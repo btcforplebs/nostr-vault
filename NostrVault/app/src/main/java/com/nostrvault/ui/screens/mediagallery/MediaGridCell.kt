@@ -38,7 +38,7 @@ internal fun AudioThumbnail(iconSize: androidx.compose.ui.unit.Dp) {
         contentAlignment = Alignment.Center,
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF1A1A24))
+            .background(lightOr(Surface2, Color(0xFF1A1A24)))
             .semantics { contentDescription = "Audio" },
     ) {
         Icon(

@@ -219,6 +219,7 @@ class MainActivity : FragmentActivity() {
                 // doesn't come back looking like the old theme.
                 appTheme = AppTheme.fromKey(config.themeColor),
                 textSizeScale = config.textSizeScale,
+                appearanceMode = config.appearanceMode,
                 oledMode = true,
                 zapsOnlyMode = config.zapsOnlyMode,
                 feedLineLimits = FeedLineLimits(config.compactLineLimit, config.threadedLineLimit),

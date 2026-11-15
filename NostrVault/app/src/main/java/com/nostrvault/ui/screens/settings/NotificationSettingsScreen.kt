@@ -164,7 +164,7 @@ fun NotificationSettingsScreen(
                 Switch(
                     checked = enabled,
                     onCheckedChange = onToggleEnabled,
-                    colors = SwitchDefaults.colors(checkedThumbColor = PrimaryText, checkedTrackColor = colors.primary),
+                    colors = SwitchDefaults.colors(checkedThumbColor = OnAccent, checkedTrackColor = colors.primary),
                 )
             }
 
@@ -343,7 +343,7 @@ private fun NotificationToggle(
             checked = checked,
             onCheckedChange = onToggle,
             enabled = enabled,
-            colors = SwitchDefaults.colors(checkedThumbColor = PrimaryText, checkedTrackColor = colors.primary),
+            colors = SwitchDefaults.colors(checkedThumbColor = OnAccent, checkedTrackColor = colors.primary),
         )
     }
 }

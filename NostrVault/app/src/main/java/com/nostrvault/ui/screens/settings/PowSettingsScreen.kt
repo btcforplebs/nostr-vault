@@ -144,7 +144,7 @@ private fun PowSection(
             checked = enabled,
             onCheckedChange = onToggle,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = PrimaryText,
+                checkedThumbColor = OnAccent,
                 checkedTrackColor = LocalNostrVaultColors.current.primary,
             ),
         )

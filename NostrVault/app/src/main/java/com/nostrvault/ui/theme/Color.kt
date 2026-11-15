@@ -31,6 +31,7 @@ enum class AppTheme(
     val key: String,
     val displayName: String,
     val colors: NostrVaultColorScheme,
+    val lightColors: NostrVaultColorScheme,
 ) {
     SUNSET_ORANGE(
         key = "orange",
@@ -40,6 +41,14 @@ enum class AppTheme(
             primaryLight = Color(0xFFFA9447),
             primaryDark = Color(0xFFB35214),
             primaryPale = Color(0xFFE67326).copy(alpha = 0.10f),
+        ),
+        // Light deepens each step so orange text reads on the paper page
+        // (#C2571A is 4.6:1 on white); white labels still read on it.
+        lightColors = NostrVaultColorScheme(
+            primary = Color(0xFFC2571A),
+            primaryLight = Color(0xFFE67326),
+            primaryDark = Color(0xFF9A4512),
+            primaryPale = Color(0xFFC2571A).copy(alpha = 0.10f),
         ),
     ),
     ;
@@ -59,8 +68,8 @@ enum class AppTheme(
 // ---------------------------------------------------------------------------
 // Ink, shade and labels (twin of Theming.swift ink / shade / onAccent)
 //
-// The app is dark-only today, so these are plain white / black. They exist so a
-// light mode can flip them in one place (PLANS/NV_LIGHT_MODE_AND_CUSTOM_COLORS.md).
+// Each flips with Settings > Appearance > Mode (AppPalette.light)
+// (PLANS/NV_LIGHT_MODE_AND_CUSTOM_COLORS.md).
 // Pick by what the colour sits on:
 // - Ink: text, icons, strokes and tints on the app's own surfaces (Surface0-3,
 //   cards, rows, sheets, bars). Use Ink.copy(alpha = x) for dimmer steps.
@@ -71,16 +80,19 @@ enum class AppTheme(
 //   trust globe, or a black scrim.
 // ---------------------------------------------------------------------------
 
-val Ink = Color.White
-val Shade = Color.Black
+/** One colour per mode, for the few fills that aren't a ramp step. */
+fun lightOr(light: Color, dark: Color): Color = if (AppPalette.light) light else dark
+
+val Ink: Color get() = if (AppPalette.light) Color.Black else Color.White
+val Shade: Color get() = if (AppPalette.light) Color(0xFF3C2814) else Color.Black  // light: warm brown-grey
 val OnAccent = Color.White
 
-val Surface0 = Color(0xFF000000) // page
-val Surface1 = Color(0xFF1C1C1E) // resting card
-val Surface2 = Color(0xFF2C2C2E) // raised
-val Surface3 = Color(0xFF3A3A3C) // highest
-val BorderHairline = Ink.copy(alpha = 0.14f)
-val BorderStrong = Ink.copy(alpha = 0.36f)
+val Surface0: Color get() = if (AppPalette.light) Color(0xFFF6F1EB) else Color(0xFF000000) // page (light: warm paper)
+val Surface1: Color get() = if (AppPalette.light) Color(0xFFFFFFFF) else Color(0xFF1C1C1E) // resting card
+val Surface2: Color get() = if (AppPalette.light) Color(0xFFEFE9E2) else Color(0xFF2C2C2E) // raised
+val Surface3: Color get() = if (AppPalette.light) Color(0xFFE2DBD3) else Color(0xFF3A3A3C) // highest
+val BorderHairline: Color get() = if (AppPalette.light) Color(0xFF1C1C1E).copy(alpha = 0.16f) else Color.White.copy(alpha = 0.14f)
+val BorderStrong: Color get() = if (AppPalette.light) Color(0xFF3A3A3C).copy(alpha = 0.6f) else Color.White.copy(alpha = 0.36f)
 
 // ---------------------------------------------------------------------------
 // Platform background colors (port of PlatformCompat.swift)
@@ -89,27 +101,27 @@ val BorderStrong = Ink.copy(alpha = 0.36f)
 // platformSecondaryGroupedBackground -> surface1, platformTertiaryGroupedBackground
 // -> surface2 on the Swift side (PlatformCompat.swift) — "Secondary"/"Tertiary" name
 // UIKit's own grouped-background tiers, not ramp step numbers.
-val WindowBackground = Surface0
-val SecondaryGroupedBg = Surface1
-val TertiaryGroupedBg = Surface2
-val SeparatorColor = Color(0xFF333338)
+val WindowBackground: Color get() = Surface0
+val SecondaryGroupedBg: Color get() = Surface1
+val TertiaryGroupedBg: Color get() = Surface2
+val SeparatorColor: Color get() = if (AppPalette.light) Color(0xFFDDD6CE) else Color(0xFF333338)
 
 // Standard card
-val CardBackground = Surface1
-val CardBorder = BorderHairline
+val CardBackground: Color get() = Surface1
+val CardBorder: Color get() = BorderHairline
 
 // OLED variants (toggled by user preference) — same ramp; page/card no longer invert.
-val OledCardBackground = Surface1
-val OledCardBorder = BorderHairline
+val OledCardBackground: Color get() = Surface1
+val OledCardBorder: Color get() = BorderHairline
 
 // Console / dashboard — matches platformConsoleHeaderBackground -> surface2.
-val ConsoleHeaderBg = Surface2
+val ConsoleHeaderBg: Color get() = Surface2
 
 // Text colors
-val PrimaryText = Ink
-val SecondaryText = Ink.copy(alpha = 0.60f)
-val TertiaryText = Ink.copy(alpha = 0.40f)
-val PlaceholderText = Ink.copy(alpha = 0.25f)
+val PrimaryText: Color get() = Ink
+val SecondaryText: Color get() = Ink.copy(alpha = 0.60f)
+val TertiaryText: Color get() = Ink.copy(alpha = 0.40f)
+val PlaceholderText: Color get() = Ink.copy(alpha = 0.25f)
 
 // Status colors
 val SuccessGreen = Color(0xFF34C759)

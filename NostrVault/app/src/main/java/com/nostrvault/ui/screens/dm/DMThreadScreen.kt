@@ -488,7 +488,7 @@ private fun MessageBubble(
         bottomStart = if (isFromMe) 18.dp else 6.dp,
         bottomEnd = if (isFromMe) 6.dp else 18.dp,
     )
-    val otherBubbleColor = if (oled) Color(0xFF14141A) else Color(0xFF292933)
+    val otherBubbleColor = lightOr(Surface1, if (oled) Color(0xFF14141A) else Color(0xFF292933))
 
     // A photo sent as its Blossom link shows as the photo; tap opens the viewer (iOS #288).
     val parts = remember(message.content) { DMAttachment.split(message.content, withVideos = true) }

@@ -31,6 +31,8 @@ import com.nostrvault.data.gif.NostrBuildGifs
 import com.nostrvault.ui.theme.Ink
 import com.nostrvault.ui.theme.SecondaryText
 import kotlinx.coroutines.launch
+import com.nostrvault.ui.theme.Surface1
+import com.nostrvault.ui.theme.lightOr
 
 /**
  * GIF picker backed by the official nostr.build GIF API. Search, tap a GIF,
@@ -76,7 +78,7 @@ fun GifPickerSheet(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF151518)) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = lightOr(Surface1, Color(0xFF151518))) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f).padding(horizontal = 12.dp)) {
             OutlinedTextField(
                 value = query,

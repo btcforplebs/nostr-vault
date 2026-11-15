@@ -187,7 +187,7 @@ private fun FeedToggle(
             checked = checked,
             onCheckedChange = onToggle,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = PrimaryText,
+                checkedThumbColor = OnAccent,
                 checkedTrackColor = LocalNostrVaultColors.current.primary,
             ),
         )

@@ -18,6 +18,8 @@ import androidx.compose.ui.unit.sp
 import com.nostrvault.service.CustomEmoji
 import com.nostrvault.ui.components.CustomEmojiImage
 import com.nostrvault.ui.theme.PrimaryText
+import com.nostrvault.ui.theme.Surface1
+import com.nostrvault.ui.theme.lightOr
 
 /**
  * One row of custom emoji chips for the `:name` being typed, docked above
@@ -36,7 +38,7 @@ internal fun EmojiSuggestions(
         items(results, key = { it.shortcode }) { emoji ->
             Surface(
                 onClick = { onSelect(emoji) },
-                color = Color(0xFF22222A),
+                color = lightOr(Surface1, Color(0xFF22222A)),
                 shape = RoundedCornerShape(50),
                 modifier = Modifier
                     .height(44.dp)

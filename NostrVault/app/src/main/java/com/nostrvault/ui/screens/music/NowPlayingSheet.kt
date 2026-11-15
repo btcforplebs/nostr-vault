@@ -32,6 +32,8 @@ import com.nostrvault.service.music.MusicRepeatMode
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
+import com.nostrvault.ui.theme.Surface1
+import com.nostrvault.ui.theme.lightOr
 
 /** Full player: big artwork, scrubber, shuffle / previous / play / next / repeat, the song's pages, Share and Up Next. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -65,7 +67,7 @@ fun NowPlayingSheet(actions: MusicActions, onDismiss: () -> Unit) {
     // Closes the player and opens the page in the Music feed.
     val go: (MusicPage) -> Unit = { page -> onDismiss(); MusicFeedState.reveal(page) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF151518)) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = lightOr(Surface1, Color(0xFF151518))) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp),

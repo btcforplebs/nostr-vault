@@ -36,7 +36,7 @@ internal fun MentionSuggestions(
         items(results) { profile ->
             Surface(
                 onClick = { onSelect(profile) },
-                color = Color(0xFF22222A),
+                color = lightOr(Surface1, Color(0xFF22222A)),
                 shape = RoundedCornerShape(50),
                 modifier = Modifier
                     .height(44.dp)

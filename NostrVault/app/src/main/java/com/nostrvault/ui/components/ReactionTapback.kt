@@ -75,6 +75,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import com.nostrvault.ui.theme.Surface1
+import com.nostrvault.ui.theme.lightOr
 
 /**
  * What a tap or a pick on the reaction button does (iOS #322). Pure, so the
@@ -438,7 +440,7 @@ private fun TapbackBar(
             }
             .shadow(14.dp, CircleShape)
             .clip(CircleShape)
-            .background(Color(0xFF2B2B2B))
+            .background(lightOr(Surface1, Color(0xFF2B2B2B)))
             .border(0.5.dp, Color.White.copy(alpha = 0.1f), CircleShape)
             .padding(INSET),
     ) {

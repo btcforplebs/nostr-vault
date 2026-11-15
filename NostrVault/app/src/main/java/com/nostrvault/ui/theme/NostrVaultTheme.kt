@@ -11,6 +11,11 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import android.app.Activity
+import androidx.core.view.WindowCompat
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
 
 /**
  * CompositionLocal providing the current NostrVaultColorScheme.
@@ -79,8 +84,7 @@ val LocalFeedLineLimits = staticCompositionLocalOf { FeedLineLimits() }
 /**
  * Master theme composable for Nostr Vault.
  *
- * The app is permanently dark-themed (no light mode), matching iOS.
- * All 6 color themes are supported via [appTheme].
+ * Dark by default; [appearanceMode] picks Dark / Light / Match phone, matching iOS.
  */
 @Composable
 fun NostrVaultTheme(
@@ -89,12 +93,31 @@ fun NostrVaultTheme(
     oledMode: Boolean = false,
     zapsOnlyMode: Boolean = false,
     feedLineLimits: FeedLineLimits = FeedLineLimits(),
+    /** Settings > Appearance > Mode. Null leaves the mode as the main activity set it. */
+    appearanceMode: String? = null,
     content: @Composable () -> Unit,
 ) {
-    val colors = appTheme.colors
+    val systemDark = isSystemInDarkTheme()
+    if (appearanceMode != null) {
+        val light = AppPalette.isLight(appearanceMode, systemDark)
+        // Set before the tree below reads any token, so the first frame is right.
+        if (AppPalette.light != light) AppPalette.light = light
+        val view = LocalView.current
+        if (!view.isInEditMode) {
+            SideEffect {
+                val window = (view.context as? Activity)?.window ?: return@SideEffect
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = light
+                    isAppearanceLightNavigationBars = light
+                }
+            }
+        }
+    }
+    val light = AppPalette.light
+    val colors = if (light) appTheme.lightColors else appTheme.colors
 
     // Map our theme colors to Material 3 color slots
-    val materialColors = darkColorScheme(
+    val materialColors = (if (light) lightColorScheme() else darkColorScheme()).copy(
         primary = colors.primary,
         onPrimary = OnAccent,
         primaryContainer = colors.primaryDark,

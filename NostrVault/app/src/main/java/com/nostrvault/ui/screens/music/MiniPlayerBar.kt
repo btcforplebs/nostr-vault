@@ -25,6 +25,8 @@ import com.nostrvault.service.music.MusicPlayer
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
+import com.nostrvault.ui.theme.Surface1
+import com.nostrvault.ui.theme.lightOr
 
 // ── Mini player ─────────────────────────────────────────────────
 
@@ -65,7 +67,7 @@ fun MiniPlayerBar(actions: MusicActions, modifier: Modifier = Modifier) {
             .padding(horizontal = 12.dp)
             .height(com.nostrvault.ui.navigation.FloatingButtonRow.miniPlayerHeight)
             .clip(RoundedCornerShape(26.dp))
-            .background(Color(0xFF1E1E22).copy(alpha = 0.96f))
+            .background(lightOr(Surface1, Color(0xFF1E1E22)).copy(alpha = 0.96f))
             .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(26.dp))
             .clickable(onClickLabel = if (minimizedStream != null) "Open the live stream" else "Open the player") {
                 if (minimizedStream != null) {

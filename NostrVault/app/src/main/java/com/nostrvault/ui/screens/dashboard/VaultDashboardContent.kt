@@ -69,6 +69,7 @@ import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 import com.nostrvault.ui.theme.SuccessGreen
 import com.nostrvault.ui.theme.ZapOrange
+import com.nostrvault.ui.theme.OnAccent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -429,7 +430,7 @@ internal fun VaultDashboardContent(
                 Switch(
                     checked = cfg.autoStartRelay,
                     onCheckedChange = null,
-                    colors = SwitchDefaults.colors(checkedThumbColor = PrimaryText, checkedTrackColor = colors.primary),
+                    colors = SwitchDefaults.colors(checkedThumbColor = OnAccent, checkedTrackColor = colors.primary),
                 )
             }
         }

@@ -210,6 +210,8 @@ data class HavenConfig(
     // Appearance
     val themeColor: String = "orange",
     val textSizeScale: Float = 1.0f,
+    /** Settings > Appearance > Mode: "dark", "light" or "system" (match the phone). Dark by default. */
+    val appearanceMode: String = "dark",
     /** OLED black is the only appearance now; the Appearance toggle is gone. */
     val oledMode: Boolean = true,
     /**
