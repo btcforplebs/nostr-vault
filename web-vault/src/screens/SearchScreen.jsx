@@ -40,12 +40,16 @@ const Icon = ({ d, size = 18 }) => <svg viewBox="0 0 24 24" width={size} height=
 const storage = () => globalThis.localStorage
 const hostOf = url => { try { return new URL(url).hostname } catch { return "" } }
 
-export function SearchScreen({ ctx, onProfile }) {
+/**
+ * Search's data, as the screen draws it (and the desktop Reader's Search, napplet/reader-search.js): live results 300 ms
+ * after the last key, a pasted profile shown at once, a pasted note opened, Return now. -> { text, setText, found,
+ * sources, finished, filter, setFilter, recent, setRecent, submit(onProfile), clear, shown, blocked }
+ */
+export function useSearch(ctx) {
   const [text, setText] = useState("")
   const [found, setFound] = useState(null) // null | { people: [pubkey], notes: [event], direct? } as the sources answered
   const [sources, setSources] = useState([]) // one chip per source: { id, label, state, count, reason }
   const [finished, setFinished] = useState(true)
-  const [tab, setTab] = useState("all")
   const [filter, setFilter] = useState(NO_FILTER)
   const [recent, setRecent] = useState(() => loadRecent(storage()))
   const seq = useRef(0) // a slow answer to an older query must not replace a newer one
@@ -85,27 +89,35 @@ export function SearchScreen({ ctx, onProfile }) {
   // Live: each keystroke restarts the wait; emptying the box clears at once.
   useEffect(() => {
     const n = ++seq.current
-    if (!text.trim()) { stop(); setFound(null); setTab("all"); return }
+    if (!text.trim()) { stop(); setFound(null); return }
     const t = setTimeout(() => run(text, n), DEBOUNCE_MS)
     return () => clearTimeout(t)
   }, [text])
 
   // Return: no waiting. "#tag" opens its feed and a pasted profile opens it; anything else searches now.
-  const submit = e => {
-    e.preventDefault()
+  const submit = onProfile => {
     const tag = hashtagOf(text)
     if (tag) { location.hash = `#/feed?tag=${encodeURIComponent(tag)}`; return }
     const q = parseQuery(text)
     if (q.type === "profile") { onProfile?.(q.pubkey); return }
     run(text, ++seq.current)
   }
-  const clear = () => { ++seq.current; stop(); setText(""); setFound(null); setTab("all") }
+  const clear = () => { ++seq.current; stop(); setText(""); setFound(null) }
 
   // A pasted npub still shows that profile, blocked or not: that is the way to find someone to unblock them.
   const shown = found && shapeResults({
     people: found.direct ? found.people : visiblePeople(found.people, blocked),
     notes: visibleNotes(found.notes, blocked),
   }, text, { me: ctx.session.pubkey, follows: ctx.account.follows, wot, filter: found.direct ? NO_FILTER : filter, fold: !found.direct })
+  return { text, setText, found, sources, finished, filter, setFilter, recent, setRecent, submit, clear, shown, blocked }
+}
+
+export function SearchScreen({ ctx, onProfile }) {
+  const { text, setText, found, sources, finished, filter, setFilter, recent, setRecent, submit: go, clear: wipe, shown, blocked } = useSearch(ctx)
+  const [tab, setTab] = useState("all")
+  useEffect(() => { if (!text.trim()) setTab("all") }, [text])
+  const submit = e => { e.preventDefault(); go(onProfile) }
+  const clear = () => { wipe(); setTab("all") }
   const count = shown && { users: shown.people.length, notes: shown.notes.length, hashtags: shown.hashtags.length, links: shown.links.length }
   // People and notes from outside your web, folded under one line below the results (net/outside-fold.js).
   const outsideShown = shown ? (tab === "all" || tab === "users" ? shown.outsidePeople.length : 0) + (tab === "all" || tab === "notes" ? shown.outsideNotes.length : 0) : 0
