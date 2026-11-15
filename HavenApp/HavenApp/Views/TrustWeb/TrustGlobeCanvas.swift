@@ -63,6 +63,7 @@ struct TrustGlobeCanvas: View {
     #endif
     @AppStorage(LiveArcsSetting.key) private var liveArcsOn = LiveArcsSetting.defaultOn
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.globeDay) private var day
     @State private var appIsActive = true
     /// Off when the tab or the post leaves the screen: a drifting globe's
     /// clock never runs behind another tab.
@@ -110,6 +111,7 @@ struct TrustGlobeCanvas: View {
                                     paused: !scene.awake || !clockAllowed)) { timeline in
                 Canvas { context, size in
                     let now = timeline.date.timeIntervalSinceReferenceDate
+                    scene.ink = day ? .day : .night
                     #if DEBUG
                     probe.frame(at: now, lines: { scene.arcsInFlight }) {
                         scene.tick(now: now)

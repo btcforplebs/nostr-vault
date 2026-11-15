@@ -20,6 +20,8 @@ struct TrustWebView: View {
     var isWOTTab = false
     @EnvironmentObject var nostrService: NostrService
     @Environment(\.floatingTabBarHeight) var tabBarHeight
+    /// The app's own scheme (read here, outside the globe's forced dark).
+    @Environment(\.colorScheme) private var appScheme
     @ObservedObject var buttonRow = FloatingButtonRow.shared
 
     /// One globe: who is at the core and what we know about their follows.
@@ -182,16 +184,18 @@ struct TrustWebView: View {
         }
         .measureWidth { paneWidth = $0 }
         .background(GlobeSpace())
-        // Space is dark whatever the app's appearance; sheets opened from here
-        // keep the app's own.
+        // The globe's glass (cards, search, pills) stays dark in every mode;
+        // sheets opened from here keep the app's own. Only the sky and what
+        // the globe draws follow Light, as a day sky (`globeDay`).
         .environment(\.colorScheme, .dark)
+        .environment(\.globeDay, appScheme == .light)
         #if os(iOS)
         // The WOT tab's bar is the feed's: two glass pills, no title.
         .navigationTitle(isWOTTab ? "" : centerKey == me ? "Web of Trust" : name(centerKey))
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(GlobeSpace.edge, for: .navigationBar)
+        .toolbarBackground(appScheme == .light ? GlobeSpace.dayEdge : GlobeSpace.edge, for: .navigationBar)
         .toolbarBackground(isWOTTab ? .hidden : .visible, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarColorScheme(appScheme == .light ? .light : .dark, for: .navigationBar)
         #else
         .navigationTitle(centerKey == me ? "Web of Trust" : name(centerKey))
         #endif

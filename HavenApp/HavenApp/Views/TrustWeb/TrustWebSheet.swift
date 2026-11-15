@@ -8,6 +8,7 @@ import UIKit
 struct TrustWebSheet: View {
     let author: String
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var appScheme
 
     /// The caller's path, if it had one, until the live one lands.
     private let initialPath: TrustPath?
@@ -40,6 +41,7 @@ struct TrustWebSheet: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(GlobeSpace())
                         .environment(\.colorScheme, .dark)
+                        .environment(\.globeDay, appScheme == .light)
                         .navigationTitle("Web of Trust")
                         #if os(iOS)
                         .navigationBarTitleDisplayMode(.inline)
