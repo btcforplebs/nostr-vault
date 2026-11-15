@@ -14,6 +14,7 @@ import { verifyEvent } from "nostr-tools/pure"
 import { repostWithUndo } from "../components/repost-undo.js"
 import { ZapSheet, MenuSheet } from "./NoteSheets.jsx"
 import { loadPreview } from "../components/link-preview.js"
+import { outsideReplies } from "./outside-count.js"
 import { NAPPLET_KEY_EVENT, PEEK_EVENT, READER_CMD_EVENT, ROW_CMDS, ROW_TOPIC, nappletKey, pageHover } from "./napplet-keys.js"
 import { MediaLightbox } from "../components/MediaLightbox.jsx"
 import { ArticleReader } from "../readers/ArticlesScreen.jsx"
@@ -98,6 +99,7 @@ export function ReaderPane({ ctx, open = null, hidden = false }) {
       // The desktop's keys and hover card over the frame (napplet-keys.js): handed to the page as events.
       onKey: p => { const k = nappletKey(p); if (k) dispatchEvent(new CustomEvent(NAPPLET_KEY_EVENT, { detail: k })) },
       onHover: p => { const h = pageHover(p, host.current?.querySelector("iframe")?.getBoundingClientRect()); if (h) dispatchEvent(new CustomEvent(PEEK_EVENT, { detail: h })) },
+      outside: id => outsideReplies(id, shellDeps(liveCtx, { ask: async () => false, saveGrant: () => {}, bus, storage: null })),
       preview: loadPreview,
     })
     live.current.me = wire.me

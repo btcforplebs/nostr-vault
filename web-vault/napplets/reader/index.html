@@ -68,6 +68,7 @@
   .acts { position: relative; }
   .tapback { position: absolute; bottom: 100%; left: 40px; z-index: 4; display: flex; gap: 2px; padding: 4px; border-radius: 999px; background: var(--s2); border: 1px solid var(--hair); box-shadow: 0 6px 20px #0008; }
   .tapback button { border: 0; background: none; font-size: 22px; min-height: 40px; padding: 0 6px; }
+  .outside { margin: 0; color: var(--muted); font-size: 13px; }
   .quote { border: 1px solid var(--hair); border-radius: 12px; padding: 8px 10px; margin: 6px 0; color: var(--muted); font-size: 14px; }
   .acts { display: flex; gap: 2px; margin-left: -8px; flex-wrap: wrap; }
   .quote { cursor: pointer; display: grid; gap: 2px; }
@@ -633,6 +634,13 @@ async function showThread(id, given) {
   $("list").setAttribute("aria-busy", "false")
   $("foot").textContent = replies.length ? "" : "No replies yet."
   $("list").querySelector("article.focus")?.scrollIntoView({ block: "center" })
+  // Replies from outside your web: never handed to a napplet, so only their number, from the shell.
+  n.intent?.invoke("napplet:thread/outside", { payload: { id: rootId } }).then(r => {
+    const c = r?.ok ? r.data?.count ?? 0 : 0
+    if (!c || view.kind !== "thread" || view.id !== id) return
+    const line = el("p", "outside", `${c} ${c === 1 ? "reply" : "replies"} from outside your web ${c === 1 ? "isn't" : "aren't"} shown here.`)
+    $("foot").replaceChildren(line)
+  }).catch(() => {})
 }
 
 async function showProfile(pk) {
