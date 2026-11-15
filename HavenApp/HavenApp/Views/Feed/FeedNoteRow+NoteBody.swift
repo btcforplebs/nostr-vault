@@ -127,7 +127,7 @@ extension FeedNoteRow {
                         noteText(NostrContentFormatter.format(piece, mediaURLs: body.mediaURLs, invoices: invoices),
                                  emojis: emojis)
                             .font(.appSystem(size: 17, weight: .regular, design: .default))
-                            .foregroundColor(Color(red: 1, green: 1, blue: 1))
+                            .foregroundColor(Color.ink)
                             .lineSpacing(2)
                             .lineLimit(nil)
                             .textSelection(.enabled)

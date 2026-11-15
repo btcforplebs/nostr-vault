@@ -101,7 +101,7 @@ extension NoteRow {
                                 case .text(let piece):
                                     Text(NostrContentFormatter.format(piece, mediaURLs: urls))
                                         .font(.appSystem(size: contentFontSize, weight: .regular, design: .default))
-                                        .foregroundColor(Color(red: 1, green: 1, blue: 1))
+                                        .foregroundColor(Color.ink)
                                         .lineSpacing(2)
                                         .lineLimit(show.lineLimit)
                                         .fixedSize(horizontal: false, vertical: true)
