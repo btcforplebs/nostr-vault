@@ -42,7 +42,8 @@ export function createBus({ handlers = [] } = {}) {
       // A shell-handled intent (link/open): no napplet to open, the shell does it itself.
       if (h.deliver) {
         const r = await h.deliver(req.payload, from)
-        return r?.ok === false ? { ok: false, error: r.error ?? "refused", archetype: req.archetype, action: req.action } : { ok: true, archetype: req.archetype, action: req.action, convention: conventionOf(req), handler: h.id }
+        // `data`: what a shell-answered intent hands back (link/preview's card); the shim passes the result object whole.
+        return r?.ok === false ? { ok: false, error: r.error ?? "refused", archetype: req.archetype, action: req.action } : { ok: true, archetype: req.archetype, action: req.action, convention: conventionOf(req), handler: h.id, ...(r?.data !== undefined ? { data: r.data } : {}) }
       }
       const target = await h.open()
       // The shim drops a delivery whose convention isn't napplet:<archetype>/<action> (isIntentDelivery), so one the

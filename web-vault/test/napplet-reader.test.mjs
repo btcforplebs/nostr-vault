@@ -6,7 +6,7 @@ import fs from "node:fs"
 import vm from "node:vm"
 import { nip19 } from "nostr-tools"
 import { createBus } from "../src/napplet/bus.js"
-import { readerIntents, linkTarget, readerOpenFor, COMPOSE_DONE } from "../src/napplet/reader-intents.js"
+import { readerIntents, linkTarget, readerOpenFor, previewCard, COMPOSE_DONE } from "../src/napplet/reader-intents.js"
 
 function pureOf(file, names) {
   const html = fs.readFileSync(new URL(`../napplets/${file}/index.html`, import.meta.url), "utf8")
@@ -16,7 +16,7 @@ function pureOf(file, names) {
   vm.runInNewContext(`${block}\n;Object.assign(box, { ${names.join(", ")} })`, { box, Date, URL })
   return box
 }
-const R = pureOf("reader", ["tokenize", "decodeNostr", "rootOf", "parentOf", "reactionTags", "repostOf", "mergeNotes", "threadRows", "ago"])
+const R = pureOf("reader", ["cardLinks", "withoutCards", "hostOf", "tokenize", "decodeNostr", "rootOf", "parentOf", "reactionTags", "repostOf", "mergeNotes", "threadRows", "ago"])
 const C = pureOf("compose", ["replyTags", "noteTemplate", "quoteOf", "imetaTag", "neventOf"])
 const A = "a".repeat(64), B = "b".repeat(64), C1 = "c".repeat(64), D = "d".repeat(64), E = "e".repeat(64)
 const ev = (id, tags = [], at = 1, extra = {}) => ({ id, pubkey: A, kind: 1, created_at: at, content: "", tags, ...extra })
@@ -125,6 +125,46 @@ test("bus: Reader's compose ask opens Compose and delivers the note; link/open i
   assert.equal(done, 1)
   wire.close()
   assert.equal((await bus.invoke(reader, { archetype: "compose", action: "new" })).ok, false)
+})
+
+test("link cards: up to 3 page links (no pictures, video, .fips, repeats) leave the text, the rest joined and trimmed", () => {
+  const parts = R.tokenize("Read https://a.example/x and https://b.example, pic https://a.example/p.jpg https://a.example/x https://m.fips/y https://c.example https://d.example\n")
+  assert.deepEqual(plain(R.cardLinks(parts)), ["https://a.example/x", "https://b.example", "https://c.example"])
+  const left = plain(R.withoutCards(parts, R.cardLinks(parts)))
+  assert.deepEqual(left.filter(p => p.t !== "text").map(p => p.v), ["https://a.example/p.jpg", "https://m.fips/y", "https://d.example"])
+  assert.equal(left[0].v, "Read  and , pic ")
+  assert.equal(left.at(-1).v.endsWith("\n"), false)
+  assert.deepEqual(plain(R.withoutCards(R.tokenize("only text"), [])), [{ t: "text", v: "only text" }])
+  assert.deepEqual(plain(R.withoutCards(R.tokenize("  https://a.example  "), ["https://a.example"])), [])
+  assert.equal(R.hostOf("https://www.Example.com/a"), "example.com")
+})
+
+test("link/preview: the shell reads the page for the Reader only and hands back just the card's strings", async () => {
+  const bus = createBus(), asked = []
+  const wire = readerIntents({ bus, openCompose: async () => ({}), onComposeDone: () => {}, openUrl: () => {},
+    preview: async url => { asked.push(url); return url.includes("none") ? null : { title: "T", description: "D", siteName: "S", image: "https://i.example/p.png", extra: "x" } } })
+  const reader = { dTag: "nv-reader", send: () => {} }, other = { dTag: "nv-messages", send: () => {} }
+  const r = await bus.invoke(reader, { archetype: "link", action: "preview", payload: { url: "https://a.example/x" } })
+  assert.equal(r.ok, true)
+  assert.deepEqual(r.data, { title: "T", description: "D", siteName: "S", image: "https://i.example/p.png" })
+  assert.equal((await bus.invoke(reader, { archetype: "link", action: "preview", payload: { url: "https://none.example" } })).data, null)
+  assert.equal((await bus.invoke(reader, { archetype: "link", action: "preview", payload: { url: "javascript:alert(1)" } })).ok, false)
+  assert.equal((await bus.invoke(other, { archetype: "link", action: "preview", payload: { url: "https://a.example/y" } })).ok, false)
+  assert.deepEqual(asked, ["https://a.example/x", "https://none.example/"])
+  wire.close()
+})
+
+test("previewCard: needs a title; strings only, cut to 300; the picture https only", () => {
+  assert.equal(previewCard(null), null)
+  assert.equal(previewCard({ description: "no title" }), null)
+  assert.deepEqual(previewCard({ title: "x".repeat(400), description: 5, image: "http://plain.example/p.png" }), { title: "x".repeat(300), description: null, siteName: null, image: null })
+})
+
+test("bus: a shell-answered intent's data rides back; none when it has no data", async () => {
+  const bus = createBus(), who = { dTag: "a", send: () => {} }
+  bus.register({ id: "x", title: "x", archetype: "t", actions: ["with", "without"], conventions: [], deliver: p => (p?.d ? { ok: true, data: { n: 1 } } : { ok: true }) })
+  assert.deepEqual((await bus.invoke(who, { archetype: "t", action: "with", payload: { d: 1 } })).data, { n: 1 })
+  assert.equal("data" in (await bus.invoke(who, { archetype: "t", action: "without", payload: {} })), false)
 })
 
 test("switch: Feed, Thread and other profiles swap only while napplets are on; own profile and the old screens stay", () => {

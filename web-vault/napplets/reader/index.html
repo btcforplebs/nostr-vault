@@ -32,6 +32,17 @@
   .media img { width: 100%; max-height: 420px; object-fit: cover; border-radius: 12px; background: var(--s2); min-height: 80px; }
   .media .vid { padding: 0 14px; min-height: 56px; border-radius: 12px; background: var(--s2); color: var(--text); font-size: 14px; text-align: left; }
   .media video { width: 100%; max-height: 420px; border-radius: 12px; background: #000; }
+  .card { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; background: var(--s2); border: 1px solid var(--hair);
+    color: var(--text); text-decoration: none; font-size: 13px; cursor: pointer; min-width: 0; }
+  .card .glyph { color: var(--accent); flex: none; }
+  .card .host { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card.rich { align-items: flex-start; }
+  .card.rich img { flex: none; width: 72px; height: 72px; min-height: 0; border-radius: 6px; object-fit: cover; background: var(--s1); }
+  .card .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .card .site, .card .dom { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .ttl, .card .desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+  .card .ttl { font-weight: 600; }
+  .card .desc { color: var(--muted); font-size: 12px; }
   .quote { border: 1px solid var(--hair); border-radius: 12px; padding: 8px 10px; margin: 6px 0; color: var(--muted); font-size: 14px; }
   .acts { display: flex; gap: 2px; margin-left: -8px; flex-wrap: wrap; }
   .quote { cursor: pointer; display: grid; gap: 2px; }
@@ -106,6 +117,28 @@ function tokenize(content) {
   if (at < s.length) out.push({ t: "text", v: s.slice(at) })
   return out.reduce((a, p) => (p.t === "text" && a.length && a[a.length - 1].t === "text" ? (a[a.length - 1].v += p.v, a) : (a.push(p), a)), [])
 }
+/** A note's links that become cards under the text (not pictures, not video, not .fips), at most 3, as the classic
+ *  feed's cardLinks; they leave the text. */
+function cardLinks(parts) {
+  const out = []
+  for (const p of parts) if (p.t === "link" && !/^https?:\/\/[^/?#]*\.fips(:\d+)?([/?#]|$)/i.test(p.v) && !out.includes(p.v)) out.push(p.v)
+  return out.slice(0, 3)
+}
+/** The parts with the carded links taken out, the text either side joined, the ends trimmed (classic withoutLinks). */
+function withoutCards(parts, cards) {
+  if (!cards.length) return parts
+  const out = []
+  for (const p of parts) {
+    if (p.t === "link" && cards.includes(p.v)) continue
+    if (p.t === "text" && out.length && out[out.length - 1].t === "text") out[out.length - 1] = { t: "text", v: out[out.length - 1].v + p.v }
+    else out.push(p)
+  }
+  if (out[0]?.t === "text") out[0] = { t: "text", v: out[0].v.replace(/^\s+/, "") }
+  const z = out.length - 1
+  if (out[z]?.t === "text") out[z] = { t: "text", v: out[z].v.replace(/\s+$/, "") }
+  return out.filter(p => p.t !== "text" || p.v)
+}
+const hostOf = url => { try { return new URL(url).hostname.replace(/^www\./, "") } catch { return url } }
 const eTags = ev => (ev?.tags ?? []).filter(t => t[0] === "e" && HEX.test(t[1] ?? ""))
 /** NIP-10: the thread's root id (marked, else the first e tag, else the note itself). */
 function rootOf(ev) { const e = eTags(ev); return (e.find(t => t[3] === "root") ?? (e.some(t => t[3]) ? null : e[0]))?.[1] ?? ev.id }
@@ -190,7 +223,8 @@ function avatar(pk) {
 }
 function body(ev) {
   const div = el("div", "body"), media = el("div", "media")
-  for (const p of tokenize(ev.content)) {
+  const all = tokenize(ev.content), cards = cardLinks(all)
+  for (const p of withoutCards(all, cards)) {
     if (p.t === "text") div.append(p.v)
     else if (p.t === "image") { const i = el("img"); i.alt = ""; i.loading = "lazy"; picture(i, p.v); media.append(i) }
     else if (p.t === "video") media.append(videoSlot(p.v))
@@ -199,7 +233,38 @@ function body(ev) {
     else if (p.t === "profile") { const a = el("a"); a.href = "#"; a.dataset.pk = p.v; a.dataset.at = "1"; want(p.v); paintWho(a); a.onclick = e => { e.preventDefault(); e.stopPropagation(); go({ kind: "profile", pubkey: p.v }) }; div.append(a) }
     else if (p.t === "note") media.append(quoteCard(p.v))
   }
+  for (const url of cards) media.append(linkCard(url))
   const f = document.createDocumentFragment(); f.append(div); if (media.childElementCount) f.append(media); return f
+}
+// A link as a card: the domain at once, then the page's title, picture and description if the shell could read them
+// (napplet:link/preview; most sites refuse a cross-site read and the card stays plain). A tap opens it through the shell.
+const previews = new Map()
+const cardSeen = new IntersectionObserver(es => { for (const e of es) if (e.isIntersecting) { cardSeen.unobserve(e.target); fillCard(e.target) } }, { rootMargin: "300px" })
+function linkCard(url) {
+  const a = el("a", "card"); a.href = "#"; a.title = url; a.dataset.url = url
+  a.onclick = e => { e.preventDefault(); e.stopPropagation(); openLink(url) }
+  const g = el("span", "glyph", "🔗"); g.setAttribute("aria-hidden", "true")
+  a.append(g, el("span", "host", hostOf(url)), el("span", "dom", "↗"))
+  cardSeen.observe(a)
+  return a
+}
+function fillCard(a) {
+  const url = a.dataset.url
+  if (!previews.has(url)) previews.set(url, n.intent?.invoke("napplet:link/preview", { payload: { url } }).then(r => r?.ok ? r.data ?? null : null).catch(() => null) ?? Promise.resolve(null))
+  previews.get(url).then(m => {
+    if (!m?.title) return
+    const txt = el("span", "txt")
+    if (m.siteName) txt.append(el("span", "site", m.siteName))
+    txt.append(el("span", "ttl", m.title))
+    if (m.description) txt.append(el("span", "desc", m.description))
+    txt.append(el("span", "dom", hostOf(url)))
+    a.classList.add("rich"); a.replaceChildren(txt)
+    if (m.image) {
+      const i = el("img"); i.alt = ""; i.onerror = () => i.remove(); a.prepend(i)
+      ;(pics.get(m.image) ?? (pics.set(m.image, n.resource?.bytes(m.image).then(b => URL.createObjectURL(b)).catch(() => "")), pics.get(m.image)))
+        .then(src => { if (src) i.src = src; else i.remove() })
+    }
+  })
 }
 // Video: tap to load it as bytes from the shell (its IP rules), then it plays here. Nothing loads until asked.
 function videoSlot(url) {
