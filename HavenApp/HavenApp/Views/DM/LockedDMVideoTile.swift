@@ -82,6 +82,9 @@ struct LockedDMVideoTile: View {
         do {
             let url = try await DMFileTransfer.open(sealed) { got, total in phase = .loading(got: got, total: total) }
             phase = .ready(url)
+        } catch is CancellationError {
+            // Scrolled off mid-download: stay loading, so it starts again when the tile comes back.
+        } catch let error as URLError where error.code == .cancelled {
         } catch let refusal as DMFile.Refusal {
             phase = .failed(refusal == .x || refusal == .ox ? "This video was changed on the server." : "This video couldn't be unlocked.")
         } catch {

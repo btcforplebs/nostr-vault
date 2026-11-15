@@ -107,6 +107,32 @@ enum DMFileTransfer {
         if let url = cached(s) { return url }
         // A .fips address must never be resolved outside the mesh (MediaCacheService.isMeshOnly).
         if MediaCacheService.isMeshOnly(s.url) { throw TransferError.meshOnly }
+        // A video can hold ~3x its size while it is decrypted: one at a time, so a thread of large clips can't
+        // push the app past its memory limit.
+        guard s.isVideo else { return try await fetchAndOpen(s, progress: progress) }
+        await videoGate.enter()
+        defer { Task { await videoGate.leave() } }
+        if let url = cached(s) { return url }
+        try Task.checkCancellation()
+        return try await fetchAndOpen(s, progress: progress)
+    }
+
+    private static let videoGate = OneAtATime()
+
+    /// Lets one caller through at a time; the rest wait in order.
+    private actor OneAtATime {
+        private var busy = false
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+        func enter() async {
+            if !busy { busy = true; return }
+            await withCheckedContinuation { waiting.append($0) }
+        }
+        func leave() {
+            if waiting.isEmpty { busy = false } else { waiting.removeFirst().resume() }
+        }
+    }
+
+    private static func fetchAndOpen(_ s: DMFile.Sealed, progress: (@MainActor (Int, Int?) -> Void)?) async throws -> URL {
         let cap = DMFile.maxDownloadBytes(s)
         var request = URLRequest(url: s.url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
         request.httpShouldHandleCookies = false
