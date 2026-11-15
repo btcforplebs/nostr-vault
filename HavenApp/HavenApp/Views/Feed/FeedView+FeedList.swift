@@ -304,6 +304,17 @@ extension FeedView {
                 }
                 .id(configService.activeAccountHexPubkey)
                 .transition(.opacity)
+                // At a cold launch FeedView appears before the cached feed is
+                // restored (prewarmFromCache), so its own pass grouped
+                // nothing, and this list only comes in with that restore:
+                // its filteredNotes observer misses the change that brought
+                // it. Group what is here now, or the cards stayed blank until
+                // the relay was ready and new posts arrived, or the Feed tab
+                // was tapped (over a minute on a big account).
+                .onAppear {
+                    if rowDataCache.isEmpty, !feedService.filteredNotes.isEmpty { rebuildRowDataCache(immediate: true) }
+                    if feedThreads.isEmpty, !feedService.filteredNotes.isEmpty { rebuildThreadsIfNeeded(immediate: true) }
+                }
                 .refreshable {
                     isRefreshing = true
                     // Pulling down takes in the posts waiting behind the New
