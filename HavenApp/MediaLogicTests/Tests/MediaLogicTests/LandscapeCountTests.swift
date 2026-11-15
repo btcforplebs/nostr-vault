@@ -30,4 +30,13 @@ final class LandscapeCountTests: XCTestCase {
         XCTAssertFalse(LandscapeCount.turnsSideways(CGSize(width: 1080, height: 1080)))
         XCTAssertFalse(LandscapeCount.turnsSideways(.zero))
     }
+
+    /// Photos and GIFs never turn the screen; only the clip on screen may,
+    /// and a closing viewer gives its slot up before it zooms away.
+    func testOnlyTheClipOnScreenHoldsASlot() {
+        XCTAssertTrue(LandscapeCount.pageHolds(isClip: true, isOnScreen: true, isClosing: false))
+        XCTAssertFalse(LandscapeCount.pageHolds(isClip: false, isOnScreen: true, isClosing: false), "photo")
+        XCTAssertFalse(LandscapeCount.pageHolds(isClip: true, isOnScreen: false, isClosing: false), "neighbour page")
+        XCTAssertFalse(LandscapeCount.pageHolds(isClip: true, isOnScreen: true, isClosing: true), "closing")
+    }
 }

@@ -10,11 +10,14 @@ import AppKit
 /// appropriate player/view.
 struct MediaItemRenderer: View {
     let mediaItem: MediaItem
+    /// False for the pages the pager builds either side of the one showing.
+    var isOnScreen: Bool = true
     @State private var resolvedType: MediaItem.MediaType
     @State private var isLoadingType = false
 
-    init(mediaItem: MediaItem) {
+    init(mediaItem: MediaItem, isOnScreen: Bool = true) {
         self.mediaItem = mediaItem
+        self.isOnScreen = isOnScreen
         self._resolvedType = State(initialValue: mediaItem.type)
     }
 
@@ -30,7 +33,7 @@ struct MediaItemRenderer: View {
             } else if resolvedType == .video || isVideoByMime {
                 VideoPlayerView(url: mediaItem.url, mimeType: mediaItem.mimeType)
                     #if os(iOS)
-                    .turnsSidewaysForWideClip(mediaItem.url)
+                    .turnsSidewaysForWideClip(isOnScreen ? mediaItem.url : nil)
                     #endif
             } else if resolvedType == .audio {
                 AudioPlayerView(url: mediaItem.url)
@@ -63,9 +66,12 @@ struct MediaItemRenderer: View {
         }
         #if os(iOS)
         // Only the full-screen gallery and profile viewers show this.
-        .allowsLandscapeWhileShown()
+        // Photos stay upright; only the clip on screen may turn the phone.
+        .landscapeSlot(held: LandscapeCount.pageHolds(isClip: isClip, isOnScreen: isOnScreen, isClosing: false))
         #endif
     }
+
+    private var isClip: Bool { resolvedType == .video || isVideoByMime }
 
     private func detectType() {
         if resolvedType != .unknown {
@@ -219,7 +225,7 @@ extension MediaGalleryView {
                 Spacer()
 
                 MediaPagerView(items: displayMedia, selection: $selectedMedia, enableKeyboardNavigation: true, showsPositionBar: false) { mediaItem in
-                    MediaItemRenderer(mediaItem: mediaItem)
+                    MediaItemRenderer(mediaItem: mediaItem, isOnScreen: mediaItem == selectedMedia)
                         #if os(iOS)
                         .transition(.opacity.animation(Motion.media))
                         #endif

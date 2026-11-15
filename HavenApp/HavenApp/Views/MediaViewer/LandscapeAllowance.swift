@@ -7,8 +7,9 @@ import UIKit
 /// Lets the phone turn sideways while a full-screen viewer is open, and turns
 /// it upright again once the last one closes.
 ///
-/// Every viewer that can show video opens a slot on the way in and closes it
-/// on the way out (`LandscapeCount`). A landscape clip turns the screen
+/// The clip page on screen holds a slot and gives it up when it is paged
+/// away or the viewer starts to close (`LandscapeCount.pageHolds`); photos
+/// never hold one. A landscape clip turns the screen
 /// sideways by itself (Logen, 2026-11-11: "auto-turn go"). iPad and Mac are
 /// left alone: they are never held upright.
 @MainActor
@@ -26,9 +27,15 @@ enum LandscapeAllowance {
         #endif
     }
 
-    static func close() {
+    /// `immediately` is for a viewer that is closing: it turns upright as
+    /// the close starts, so the zoom back into the post is not drawn sideways.
+    static func close(immediately: Bool = false) {
         #if os(iOS)
         guard isPhone, count.closed() else { return }
+        if immediately {
+            turn(to: .portrait)
+            return
+        }
         // Swiping between pages can close one page before the next opens.
         // Wait a turn of the run loop, so that does not snap the phone upright.
         DispatchQueue.main.async {
@@ -108,10 +115,10 @@ enum LandscapeAllowance {
 }
 
 extension View {
-    /// Holds a landscape slot for as long as this full-screen viewer shows.
-    func allowsLandscapeWhileShown() -> some View {
-        onAppear { LandscapeAllowance.open() }
-            .onDisappear { LandscapeAllowance.close() }
+    /// Holds a landscape slot while `held` is true (`LandscapeCount.pageHolds`).
+    /// Letting go while `closing` turns the phone upright at once.
+    func landscapeSlot(held: Bool, closing: Bool = false) -> some View {
+        modifier(LandscapeSlot(held: held, closing: closing))
     }
 
     /// Turns the screen sideways once a wide clip at `url` is showing.
@@ -119,6 +126,29 @@ extension View {
         task(id: url) {
             guard let url else { return }
             await LandscapeAllowance.turnSidewaysIfWide(url)
+        }
+    }
+}
+
+private struct LandscapeSlot: ViewModifier {
+    let held: Bool
+    let closing: Bool
+    @State private var holding = false
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { sync(held) }
+            .onChange(of: held) { _, now in sync(now) }
+            .onDisappear { sync(false) }
+    }
+
+    private func sync(_ want: Bool) {
+        guard want != holding else { return }
+        holding = want
+        if want {
+            LandscapeAllowance.open()
+        } else {
+            LandscapeAllowance.close(immediately: closing)
         }
     }
 }

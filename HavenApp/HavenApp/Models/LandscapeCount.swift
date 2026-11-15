@@ -22,6 +22,15 @@ struct LandscapeCount: Equatable {
         return open == 0
     }
 
+    /// Whether a viewer page holds a slot: only a clip, only while it is the
+    /// page on screen, and not once the viewer has started to close.
+    /// Photos never needed one: holding it let iOS turn a photo to however
+    /// the phone was lying, and a clip on the next page turned the photo
+    /// you were looking at.
+    static func pageHolds(isClip: Bool, isOnScreen: Bool, isClosing: Bool) -> Bool {
+        isClip && isOnScreen && !isClosing
+    }
+
     /// A clip turns the screen sideways by itself only when it is wider than
     /// it is tall. Square and portrait clips stay upright.
     static func turnsSideways(_ size: CGSize) -> Bool {

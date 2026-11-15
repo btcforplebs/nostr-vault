@@ -8,6 +8,8 @@ import SwiftUI
 /// holds, or the black would come back during the flight into the post.
 final class ZoomSwipeWatch: NSObject, ObservableObject {
     @Published private(set) var pull: CGFloat = 0
+    /// True once a swipe-down let go and the viewer is on its way out.
+    @Published private(set) var isClosing = false
 
     #if os(iOS)
     private weak var swipe: UIGestureRecognizer?
@@ -57,10 +59,12 @@ final class ZoomSwipeWatch: NSObject, ObservableObject {
         }
         if coordinator.isInteractive {
             coordinator.notifyWhenInteractionChanges { [weak self] in
-                if $0.isCancelled { self?.restore() }
+                if $0.isCancelled { self?.restore() } else { self?.isClosing = true }
             }
         } else if coordinator.isCancelled {
             restore()
+        } else {
+            isClosing = true
         }
     }
 
