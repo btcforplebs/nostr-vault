@@ -73,9 +73,12 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   const marks = nappletsOn() && view.route === "bookmarks"
   // And Notifications (plan step 6b, reader-notifications.js).
   const notifs = nappletsOn() && view.route === "notifications"
-  const inReader = mine || marks || notifs
+  // And Search (plan step 7, reader-search.js); its source stays mounted once opened, so going back keeps the results.
+  const finding = nappletsOn() && view.route === "search"
+  const inReader = mine || marks || notifs || finding
   // Feed and Search stay mounted once opened, so going back to them keeps the list, its results and where you were.
-  const [kept, setKept] = useState({ feed: view.route === "feed" || inReader, search: view.route === "search" })
+  const [kept, setKept] = useState({ feed: view.route === "feed" || inReader, search: view.route === "search" && !finding, finding })
+  useEffect(() => { if (finding && !kept.finding) setKept(was => ({ ...was, finding: true })) }, [finding])
   useEffect(() => { const k = inReader ? "feed" : view.route; if ((k === "feed" || k === "search") && !kept[k]) setKept(was => ({ ...was, [k]: true })) }, [view.route, inReader])
   // The screen a person was opened from names the crumb back to it.
   const from = useRef("search")
@@ -97,10 +100,11 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   const readerOpen = mine ? { archetype: "profile", action: "open", payload: { pubkey: me } }
     : marks ? { archetype: "feed", action: "open", payload: { list: "bookmarks" } }
     : notifs ? { archetype: "feed", action: "open", payload: { list: "notifications" } }
+    : finding ? { archetype: "feed", action: "open", payload: { list: "search" } }
     : readerOpenFor("feed", "", hash)
   const list = (
     <>
-      {kept.feed && <div class="desk-pane" hidden={listKey !== "feed"}>{nappletsOn() ? <ReaderPane ctx={ctx} open={readerOpen} notifications={notifs} beside={openBeside} openId={note ?? ""} fullCompose /> : <FeedScreen ctx={ctx} />}</div>}
+      {kept.feed && <div class="desk-pane" hidden={listKey !== "feed"}>{nappletsOn() ? <ReaderPane ctx={ctx} open={readerOpen} notifications={notifs} search={!!kept.finding} beside={openBeside} openId={note ?? ""} fullCompose /> : <FeedScreen ctx={ctx} />}</div>}
       {kept.search && <div class="desk-pane" hidden={listKey !== "search"}><SearchScreen ctx={ctx} onProfile={pk => { location.hash = `#/profile/${pk}` }} /></div>}
       {listKey !== "feed" && listKey !== "search" && (
         <div class="desk-pane" key={listKey}>

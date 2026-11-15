@@ -17,7 +17,9 @@ import "../styles/search-for-you.css"
 
 const FEED_SAMPLE = 300 // the newest notes on hand that Trending and Active are counted from
 
-export function SearchStart({ ctx, recent, onPick, onClearRecent, onProfile, blocked }) {
+/** What the start draws: Trending, Active in your feed, For you and Live now (the desktop Reader's Search draws the
+ *  same, napplet/reader-search.js). */
+export function useSearchStart(ctx, blocked) {
   const [notes, setNotes] = useState([])
   useEffect(() => {
     let live = true
@@ -33,6 +35,11 @@ export function SearchStart({ ctx, recent, onPick, onClearRecent, onProfile, blo
   const forYou = useForYou(ctx, notes, blocked)
   const hasForYou = forYou.people.length || forYou.topics.length || forYou.notes.length
   const liveStreams = useLiveNow(ctx, blocked)
+  return { trending, active, forYou, hasForYou, liveStreams }
+}
+
+export function SearchStart({ ctx, recent, onPick, onClearRecent, onProfile, blocked }) {
+  const { trending, active, forYou, hasForYou, liveStreams } = useSearchStart(ctx, blocked)
 
   if (!liveStreams.length && !recent.length && !hasForYou && !trending.length && !active.length) return (
     <div class="empty">

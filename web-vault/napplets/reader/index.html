@@ -96,6 +96,23 @@
   .prof h2 { margin: 0; font-size: 19px; }
   .prof p { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); margin: 10px 0 0; }
   .muted { color: var(--muted); font-size: 13px; }
+  #sbar { position: sticky; top: 52px; z-index: 2; display: grid; gap: 8px; padding: 10px 14px; background: var(--bg); border-bottom: 1px solid var(--hair); }
+  #sbar .srow { display: flex; gap: 8px; align-items: center; }
+  #sbar input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--s2); border: 1px solid var(--hair); border-radius: 999px; padding: 0 14px; min-height: 38px; }
+  #sbar .stabs { display: flex; gap: 2px; } #sbar .stabs button { border: 0; background: none; color: var(--muted); min-height: 32px; padding: 0 12px; }
+  #sbar .stabs button.on { background: var(--s2); color: var(--text); font-weight: 650; }
+  #sbar .fbtn.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .fmenu { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--hair); border-radius: 12px; background: var(--s1); }
+  .chiprow { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 14px 10px; }
+  .chiprow button { min-height: 30px; font-size: 13px; padding: 0 12px; }
+  .chiprow button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .slabel { margin: 0; padding: 12px 14px 4px; font-size: 12px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; align-items: center; }
+  .slabel button { min-height: 26px; font-size: 12px; text-transform: none; letter-spacing: 0; }
+  .person { display: grid; grid-template-columns: 40px 1fr auto; gap: 10px; align-items: center; width: 100%; padding: 8px 14px; border: 0; border-radius: 0; background: none; text-align: left; min-height: 56px; }
+  .person:hover { background: var(--s1); } .person .av { width: 40px; height: 40px; }
+  .person b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .person span.sub { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+  .srcs { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; }
+  .src { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--s2); color: var(--muted); } .src.hit { color: var(--text); } .src.failed { color: var(--danger); }
   .notif { display: grid; grid-template-columns: 28px 1fr; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--hair); }
   .notif.tap { cursor: pointer; } .notif.tap:hover { background: var(--s1); }
   .notif .badge { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--s2); color: var(--accent); font-size: 14px; }
@@ -139,6 +156,7 @@
 <body>
 <header><button id="back" class="ghost" hidden aria-label="Back">‹ Back</button><h1 id="title">Following</h1><button id="pick" class="ghost" aria-haspopup="menu" aria-expanded="false" aria-label="Choose a feed">▾</button><button id="new" class="primary">Post</button></header>
 <div id="picker" role="menu" hidden></div>
+<div id="sbar" hidden></div>
 <button id="fresh" class="primary" hidden></button>
 <main id="list" role="feed" aria-busy="true"></main>
 <div id="foot" class="more"></div>
@@ -685,6 +703,7 @@ function stopLive() { live?.close?.(); live = null; pending = []; $("fresh").hid
 async function render() {
   $("back").hidden = !stack.length
   $("pick").hidden = view.kind !== "feed"; closePicker()
+  $("sbar").hidden = view.kind !== "search"
   $("list").replaceChildren(); $("foot").textContent = "Loading…"; $("list").setAttribute("aria-busy", "true")
   if (view.kind === "feed") return showFeed()
   if (view.kind === "thread") return showThread(view.id, view.event)
@@ -692,6 +711,7 @@ async function render() {
   if (view.kind === "tag") return showTag(view.tag)
   if (view.kind === "bookmarks") return showBookmarks()
   if (view.kind === "notifications") return showNotifs()
+  if (view.kind === "search") return showSearch()
 }
 
 // A #tag's notes, as the shell gives them: your vault first, then relays, and only people in your web (the shell's
@@ -810,6 +830,113 @@ async function showProfile(pk) {
   $("foot").textContent = evs.length ? "" : "No notes from them yet."
 }
 
+
+// ---- search (plan step 7) ----
+// The shell searches with the Search screen's own rules and hands back people as strings and notes as signed events
+// (napplet:search/state); what is typed goes to it 300 ms after the last key (napplet:search/query), Return now
+// (napplet:search/submit). A person, tag or stream opens through the shell (search/open, search/live), a link through
+// link/open. The field is built once and kept out of the list, so a redraw never takes the caret away.
+const STABS = [["all", "All"], ["users", "Users"], ["notes", "Notes"], ["hashtags", "Hashtags"], ["links", "Links"]]
+const WHO_F = [["everyone", "Everyone"], ["follows", "People you follow"], ["you", "You"]]
+const WHEN_F = [["any", "Any time"], ["day", "Last 24 hours"], ["week", "Last week"], ["month", "Last month"]]
+let stab = "all", sdrawn = null, sfold = false, sfilterOpen = false, sinput = null, stimer = null, slast = null
+const sask = (what, payload = {}) => (n.intent?.invoke(`napplet:search/${what}`, { payload }) ?? Promise.resolve(null)).then(r => (r?.ok ? (r.data ?? true) : null)).catch(() => null)
+function searchBar() {
+  const bar = $("sbar")
+  if (sinput) return
+  const row = el("div", "srow")
+  sinput = el("input"); sinput.type = "search"; sinput.placeholder = "Search users, notes, hashtags..."; sinput.setAttribute("aria-label", "Users, notes, hashtags and links, or paste an npub")
+  sinput.autocapitalize = "off"; sinput.spellcheck = false; sinput.enterKeyHint = "search"
+  sinput.oninput = () => { clearTimeout(stimer); const v = sinput.value; if (!v.trim()) { sask("query", { text: "" }); stab = "all"; return } stimer = setTimeout(() => sask("query", { text: v }), 300) }
+  sinput.onkeydown = e => {
+    if (e.key === "Enter") { e.preventDefault(); clearTimeout(stimer); sask("query", { text: sinput.value }).then(() => sask("submit")) }
+    else if (e.key === "Escape" && sinput.value) { e.preventDefault(); sinput.value = ""; stab = "all"; sask("clear") }
+  }
+  const fb = el("button", "fbtn", "Filter"); fb.type = "button"; fb.id = "sfilter"; fb.setAttribute("aria-haspopup", "true")
+  fb.onclick = () => { sfilterOpen = !sfilterOpen; showSearch() }
+  row.append(sinput, fb)
+  const tabs = el("div", "stabs"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Results")
+  for (const [id, label] of STABS) { const b = el("button", "", label); b.type = "button"; b.dataset.tab = id; b.setAttribute("role", "tab"); b.onclick = () => { stab = id; showSearch() }; tabs.append(b) }
+  const menu = el("div", "fmenu"); menu.id = "fmenu"; menu.hidden = true
+  bar.append(row, tabs, menu)
+}
+function setSearchText(v) { sinput.value = v; clearTimeout(stimer); sask("query", { text: v }) }
+function personBtn(p, onClick) {
+  const b = el("button", "person"); b.type = "button"
+  const av = el("span", "av", (p.name || "?").slice(0, 1).toUpperCase()); if (p.picture) picture(av, p.picture)
+  const col = el("span"); col.append(el("b", "", p.name), el("span", "sub", p.sub))
+  b.append(av, col, el("span", "muted", p.vouches ? `${p.vouches} of your follows` : ""))
+  b.onclick = onClick || (() => sask("open", { kind: "person", id: p.id }))
+  return b
+}
+const chips = (items, label, run, cls = "") => { const w = el("div", "chiprow"); for (const t of items) { const b = el("button", cls, label(t)); b.type = "button"; b.onclick = () => run(t); w.append(b) } return w }
+const slabel = (text, act) => { const h = el("h3", "slabel"); h.append(el("span", "", text)); if (act) h.append(act); return h }
+function searchStart(st) {
+  const out = []
+  if (!st) return out
+  if (st.live.length) { out.push(slabel("Live now")); for (const r of st.live) out.push(personBtn({ id: r.id, name: r.name, sub: r.title || "Live now", picture: r.picture }, () => sask("live", { id: r.id }))); if (st.liveMore) out.push(el("p", "muted sect-note", `+${st.liveMore} more live`)) }
+  if (st.recent.length) { const c = el("button", "", "Clear"); c.type = "button"; c.onclick = () => sask("forget"); out.push(slabel("Recent", c), chips(st.recent, q => q, q => setSearchText(q))) }
+  const fy = st.forYou
+  if (fy.people.length || fy.topics.length || fy.notes.length) {
+    out.push(slabel("For you · ranked by your vault"))
+    if (fy.people.length) { out.push(el("p", "muted sect-note", "People you may know")); out.push(...fy.people.map(p => personBtn(p))) }
+    if (fy.topics.length) { out.push(el("p", "muted sect-note", "Your topics")); out.push(chips(fy.topics, t => `#${t}`, t => sask("open", { kind: "tag", tag: t }))) }
+    if (fy.notes.length) { out.push(el("p", "muted sect-note", "Picked from your topics")); out.push(...fy.notes.map(ev => card(ev))) }
+  }
+  if (st.trending.length) out.push(slabel("Trending"), chips(st.trending, t => `#${t}`, t => setSearchText(`#${t}`)))
+  if (st.active.length) { out.push(slabel("Active in your feed")); out.push(...st.active.map(p => personBtn(p))) }
+  if (!out.length) { const e = el("div", "empty"); e.append(el("p", "", "Search"), el("p", "muted", "Find users, notes, hashtags and links. Or paste a note1 or nevent1 ID.")); out.push(e) }
+  return out
+}
+async function showSearch(again = false) {
+  $("title").textContent = "Search"; $("sbar").hidden = false
+  searchBar()
+  const d = await sask("state")
+  if (view.kind !== "search") return
+  if (d && document.activeElement !== sinput && sinput.value !== d.text) sinput.value = d.text
+  const key = JSON.stringify([d, stab, sfold, sfilterOpen])
+  if (again && key === sdrawn) return
+  sdrawn = key; slast = d
+  for (const b of $("sbar").querySelectorAll(".stabs button")) { const on = b.dataset.tab === stab; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)) }
+  const fb = $("sfilter"); fb.classList.toggle("on", !!d?.caption); fb.title = d?.caption || "Filter"; fb.setAttribute("aria-expanded", String(sfilterOpen))
+  const menu = $("fmenu"); menu.hidden = !sfilterOpen; menu.replaceChildren()
+  if (sfilterOpen && d) {
+    const f = d.filter, pick = (k, v) => sask("query", { filter: { ...f, [k]: v } })
+    menu.append(el("div", "muted", "Who"), chips(WHO_F, x => x[1], x => pick("who", x[0])), el("div", "muted", "When"), chips(WHEN_F, x => x[1], x => pick("when", x[0])))
+    menu.querySelectorAll(".chiprow").forEach((row, i) => [...row.children].forEach((b, j) => b.classList.toggle("on", (i === 0 ? WHO_F : WHEN_F)[j][0] === (i === 0 ? f.who : f.when))))
+  }
+  $("list").setAttribute("aria-busy", "false")
+  const foot = $("foot"); foot.replaceChildren()
+  if (!d) { $("list").replaceChildren(); foot.textContent = "Opening Search…"; return }
+  if (!d.text.trim()) { $("list").replaceChildren(...searchStart(d.start)); return }
+  const out = []
+  if (d.caption && !d.direct) { const c = el("button", "", "Clear filter"); c.type = "button"; c.onclick = () => sask("query", { filter: { who: "everyone", when: "any" } }); out.push(slabel(d.caption, c)) }
+  if (d.sources.length) { const w = el("div", "srcs"); w.setAttribute("role", "status"); for (const x of d.sources) w.append(el("span", `src ${x.state}${x.state === "found" && x.count ? " hit" : ""}`, `${x.label}: ${x.state === "searching" ? (x.count ? `${x.count} so far` : "searching") : x.state === "found" ? `${x.count} found` : `no answer: ${x.reason || "no answer"}`}`)); out.push(w) }
+  const r = d.results
+  const count = r ? { users: r.people.length, notes: r.notes.length, hashtags: r.hashtags.length, links: r.links.length } : null
+  const any = count && (Object.values(count).some(Boolean) || r.outsidePeople.length + r.outsideNotes.length > 0)
+  if (!any) {
+    if (!d.finished) foot.textContent = "Searching…"
+    else if (r) { const e = el("div", "empty"); e.append(el("p", "", "No results found")); if (d.caption && d.filteredOut) { const c = el("button", "", "Clear filter"); c.type = "button"; c.onclick = () => sask("query", { filter: { who: "everyone", when: "any" } }); e.append(c) } out.push(e) }
+    $("list").replaceChildren(...out); return
+  }
+  const show = id => (stab === "all" || stab === id) && count[id] > 0
+  if (show("users")) {
+    out.push(slabel("Users")); out.push(...(stab === "all" ? r.people.slice(0, 5) : r.people).map(p => personBtn(p)))
+    if (stab === "all" && r.people.length > 5) { const b = el("button", "fold", `See all ${r.people.length} users`); b.type = "button"; b.onclick = () => { stab = "users"; showSearch() }; out.push(b) }
+  }
+  if (show("notes")) { out.push(slabel("Notes")); out.push(...r.notes.map(ev => card(ev))) }
+  if (show("hashtags")) out.push(slabel("Hashtags"), chips(r.hashtags, t => `#${t}`, t => sask("open", { kind: "tag", tag: t })))
+  if (show("links")) { out.push(slabel("Links")); for (const l of r.links) out.push(personBtn({ name: l.title || l.host, sub: l.host, picture: "" }, () => openLink(l.url))) }
+  const op = (stab === "all" || stab === "users" ? r.outsidePeople.length : 0) + (stab === "all" || stab === "notes" ? r.outsideNotes.length : 0)
+  if (op) {
+    const f = el("button", "fold", `${sfold ? "Hide" : "Show"} ${op} from outside your web`); f.type = "button"; f.setAttribute("aria-expanded", String(sfold)); f.onclick = () => { sfold = !sfold; showSearch() }
+    out.push(f)
+    if (sfold) { if (stab === "all" || stab === "users") out.push(...r.outsidePeople.map(p => personBtn(p))); if (stab === "all" || stab === "notes") out.push(...r.outsideNotes.map(ev => card(ev))) }
+  }
+  if (stab !== "all" && !count[stab] && !op) { const e = el("div", "empty"); e.append(el("p", "", `No ${STABS.find(t => t[0] === stab)[1].toLowerCase()} matched “${d.text.trim()}”`), el("p", "muted", "Other tabs have results.")); out.push(e) }
+  $("list").replaceChildren(...out)
+}
 
 // ---- notifications (plan step 6b) ----
 // The shell reads them with the Notifications screen's own rules and hands each row as plain strings
@@ -996,6 +1123,7 @@ async function start() {
     const p = d?.payload ?? {}
     if (d.archetype === "note" && d.action !== "removed" && HEX.test(p.id ?? "")) { if (p.side === true) { document.body.classList.add("side"); stack = []; return go({ kind: "thread", id: p.id }, false) } go({ kind: "thread", id: p.id }, view.kind !== "feed" || stack.length > 0) }
     else if (d.archetype === "profile" && HEX.test(p.pubkey ?? "")) go({ kind: "profile", pubkey: p.pubkey }, view.kind !== "feed" || stack.length > 0)
+    else if (d.archetype === "feed" && p.list === "search") { stack = []; go({ kind: "search" }, false) }
     else if (d.archetype === "feed" && p.list === "notifications") { stack = []; go({ kind: "notifications" }, false) }
     else if (d.archetype === "feed" && p.list === "bookmarks") { stack = []; go({ kind: "bookmarks" }, false) }
     else if (d.archetype === "feed" && typeof p.tag === "string" && /^[\p{L}\p{N}_]{1,64}$/u.test(p.tag)) go({ kind: "tag", tag: p.tag.toLowerCase() })
@@ -1012,6 +1140,7 @@ async function start() {
   n.inc?.on?.("nv.key.cmd", e => rowCmd(e?.payload?.cmd))
   n.inc?.on?.("nv.note.open", e => markOpen(e?.payload?.id))
   // Your profile saved, or its follower count came in: the header again, the tab as it was.
+  n.inc?.on?.("nv.search.changed", () => { if (view.kind === "search") showSearch(true) })
   n.inc?.on?.("nv.notifications.changed", () => { if (view.kind === "notifications") showNotifs(true) })
   n.inc?.on?.("nv.bookmarks.changed", () => { if (view.kind === "bookmarks") showBookmarks() })
   n.inc?.on?.("nv.profile.changed", () => { if (view.kind === "profile" && view.pubkey === me) mineHeadNow().then(drawMine) })
