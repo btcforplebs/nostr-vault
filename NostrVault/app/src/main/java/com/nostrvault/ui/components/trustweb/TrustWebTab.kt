@@ -45,7 +45,7 @@ fun TrustWebTab(
     LaunchedEffect(me, tutorialRevision) {
         TutorialCenter.startIfEligible(TutorialID.WOT, me)
     }
-    Box(Modifier.fillMaxSize().background(Color.Black).background(SpaceBrush)) {
+    Box(Modifier.fillMaxSize().background(SpaceBase).background(SpaceBrush)) {
         // A new account draws a new globe; the globe keeps up with your follows itself.
         if (me.isNotEmpty()) androidx.compose.runtime.key(me) {
             remember(me) { keep.account(me) }

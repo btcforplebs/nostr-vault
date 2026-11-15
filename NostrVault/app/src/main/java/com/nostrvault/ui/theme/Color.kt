@@ -87,7 +87,7 @@ val Ink: Color get() = if (AppPalette.light) Color.Black else Color.White
 val Shade: Color get() = if (AppPalette.light) Color(0xFF3C2814) else Color.Black  // light: warm brown-grey
 val OnAccent: Color get() = AccentPalette.ramp(AppPalette.accent, AppPalette.light).onAccent
 
-val Surface0: Color get() = if (AppPalette.light) Color(0xFFF6F1EB) else Color(0xFF000000) // page (light: warm paper)
+val Surface0: Color get() = if (AppPalette.light) AccentPalette.paper(AppPalette.accent) else Color(0xFF000000) // page (light: warm paper + 5% accent)
 val Surface1: Color get() = if (AppPalette.light) Color(0xFFFFFFFF) else Color(0xFF1C1C1E) // resting card
 val Surface2: Color get() = if (AppPalette.light) Color(0xFFEFE9E2) else Color(0xFF2C2C2E) // raised
 val Surface3: Color get() = if (AppPalette.light) Color(0xFFE2DBD3) else Color(0xFF3A3A3C) // highest

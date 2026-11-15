@@ -511,7 +511,8 @@ val LocalHideNostrVaultBadge = androidx.compose.runtime.compositionLocalOf { fal
 fun NostrVaultBadge(size: androidx.compose.ui.unit.Dp = 11.dp, leadingGap: androidx.compose.ui.unit.Dp = 0.dp) {
     if (LocalHideNostrVaultBadge.current) return
     if (leadingGap > 0.dp) Spacer(Modifier.width(leadingGap))
-    val colors = LocalNostrVaultColors.current
+    // Always Nostr Vault's own orange (this mode's ramp), never the picked accent.
+    val colors = AccentPalette.ramp(AppTheme.DEFAULT.key, AppPalette.light).scheme
     val color = colors.primary
     androidx.compose.foundation.Canvas(
         Modifier.size(width = size * 0.78f, height = size)

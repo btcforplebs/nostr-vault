@@ -25,18 +25,36 @@ import com.nostrvault.data.model.TrustPath
 import com.nostrvault.service.FeedService
 import com.nostrvault.tutorials.TutorialContent
 import com.nostrvault.tutorials.tutorialAnchor
+import com.nostrvault.ui.theme.AppPalette
 
-/** Deep space behind the globe: dark whatever the app's appearance. */
+/** Deep space behind the globe in Dark. */
 private val SpaceTop = Color(red = 0.07f, green = 0.08f, blue = 0.13f)
-internal val SpaceBrush = Brush.radialGradient(listOf(SpaceTop, Color.Black), radius = 2400f)
+private val DarkSpace = Brush.radialGradient(listOf(SpaceTop, Color.Black), radius = 2400f)
 
-/** The globe's warm accent (iOS system orange) and the author's ring (yellow). */
-internal val GlobeAccent = Color(0xFFFF9F0A)
-internal val AuthorTint = Color(0xFFFFD60A)
-internal val RingColor = Color(red = 0.72f, green = 0.82f, blue = 1f)
-internal val HazeColor = Color(red = 0.62f, green = 0.55f, blue = 0.9f)
-/** Warm amber for the threads, lighter than the glow behind them. */
-internal val ThreadColor = Color(red = 1f, green = 0.66f, blue = 0.3f)
+/** Light: a late-morning sky, pale blue overhead to a warm haze low down. */
+private val SkyHigh = Color(0xFFA7CDEE)
+private val SkyMid = Color(0xFFD3E5F2)
+internal val SkyLow = Color(0xFFF4E8D8)
+private val DaySky = Brush.verticalGradient(0f to SkyHigh, 0.55f to SkyMid, 1f to SkyLow)
+
+/** The globe draws a daytime sky when the user chose Light (the chrome over it stays dark glass). */
+internal val globeDay: Boolean get() = AppPalette.lightChosen
+
+/** What fills behind the globe: deep space in Dark, the sky in Light. */
+internal val SpaceBrush: Brush get() = if (globeDay) DaySky else DarkSpace
+internal val SpaceBase: Color get() = if (globeDay) SkyLow else Color.Black
+
+/** The globe's warm accent (iOS system orange) and the author's ring (yellow); deeper by day to read on the sky. */
+internal val GlobeAccent: Color get() = if (globeDay) Color(0xFFE5730A) else Color(0xFFFF9F0A)
+internal val AuthorTint: Color get() = if (globeDay) Color(0xFFD9A400) else Color(0xFFFFD60A)
+internal val RingColor: Color get() = if (globeDay) Color(0xFF2F6CB3) else Color(red = 0.72f, green = 0.82f, blue = 1f)
+internal val HazeColor: Color get() = if (globeDay) Color(0xFF6A62A8) else Color(red = 0.62f, green = 0.55f, blue = 0.9f)
+/** Your mutuals' stars: white in space, a slate blue by day. */
+internal val MutualStar: Color get() = if (globeDay) Color(0xFF2E3B4E) else Color.White
+/** Warm amber for the threads, lighter than the glow behind them (deeper by day). */
+internal val ThreadColor: Color get() = if (globeDay) Color(0xFFCF6A14) else Color(red = 1f, green = 0.66f, blue = 0.3f)
+/** The core's name under it. */
+internal val GlobeLabel: Color get() = if (globeDay) Color(0xFF1E2733) else Color.White
 
 /**
  * The full globe shows about this many times [TrustMap]'s face counts: more

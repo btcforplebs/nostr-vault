@@ -88,7 +88,7 @@ fun TrustWebDialog(
         } else {
             Modifier.fillMaxSize()
         }
-        Surface(color = Color.Black, modifier = size) {
+        Surface(color = SpaceBase, modifier = size) {
             Box(Modifier.fillMaxSize().background(SpaceBrush)) {
                 val trust = rememberTrustPathServices().trustPathService()
                 var path by remember(author) { mutableStateOf(initialPath) }
