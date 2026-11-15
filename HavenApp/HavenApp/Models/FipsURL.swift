@@ -194,6 +194,30 @@ enum FipsURL {
         return target
     }
 
+    /// An app's "open this in Safari" wrapper (X sends in-app browsers to
+    /// `x-safari-https://redirect.x.com/…`): the real http(s) link inside it,
+    /// or nil for anything else. A `url=` http(s) target wins over the
+    /// wrapper's own address.
+    static func unwrapAppRedirect(_ url: URL) -> URL? {
+        let text = url.absoluteString
+        guard text.lowercased().hasPrefix(appRedirectPrefix) else { return nil }
+        guard var parts = URLComponents(string: String(text.dropFirst(appRedirectPrefix.count))) else { return nil }
+        parts.scheme = parts.scheme?.lowercased()
+        guard let inner = parts.url, isWeb(inner), inner.host != nil else { return nil }
+        if let target = URLComponents(url: inner, resolvingAgainstBaseURL: false)?.queryItems?
+            .first(where: { $0.name == "url" })?.value.flatMap(URL.init(string:)), isWeb(target), target.host != nil {
+            return target
+        }
+        return inner
+    }
+
+    private static let appRedirectPrefix = "x-safari-"
+
+    private static func isWeb(_ url: URL) -> Bool {
+        let s = url.scheme?.lowercased()
+        return s == "http" || s == "https"
+    }
+
     // MARK: - Content rules
 
     /// WebKit content-rule `url-filter`s that block every http(s)/ws(s) load

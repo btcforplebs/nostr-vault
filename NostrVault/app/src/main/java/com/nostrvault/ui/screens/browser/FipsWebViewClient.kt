@@ -46,10 +46,18 @@ internal class FipsWebViewClient(
      */
     @Volatile var allowedOnce: String? = null
 
+    /** The last link taken out of an app's open-in-Safari wrapper: wrapped again, it goes to the system browser. */
+    private var lastUnwrapped: String? = null
+
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
         val url = request.url.toString()
         val isMain = request.isForMainFrame
         val fromMesh = FipsUrl.meshNpub(view.url) != null
+        // x.com sends in-app browsers to `x-safari-https://…`: open the real link here.
+        if (isMain) FipsUrl.unwrapAppRedirect(url)?.let { real ->
+            if (real == lastUnwrapped) { lastUnwrapped = null; onExternal(real) } else { lastUnwrapped = real; view.loadUrl(real) }
+            return true
+        }
         return when (val nav = FipsUrl.navigation(url, isMain, fromMesh)) {
             FipsUrl.Navigation.Allow -> false
             is FipsUrl.Navigation.Load -> { view.loadUrl(nav.url); true }

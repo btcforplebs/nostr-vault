@@ -26,6 +26,9 @@ final class InAppBrowserNavigation: NSObject, WKNavigationDelegate, WKUIDelegate
     /// The one internet page a mesh page may go to next: what the reader
     /// typed, or confirmed. Used once.
     var allowedOnce: URL?
+    /// The last link taken out of an app's open-in-Safari wrapper: if the
+    /// site wraps it again, it goes to the system browser instead of looping.
+    private var lastUnwrapped: URL?
 
     // MARK: Navigation
 
@@ -34,6 +37,18 @@ final class InAppBrowserNavigation: NSObject, WKNavigationDelegate, WKUIDelegate
         guard let url = action.request.url else { return decisionHandler(.cancel) }
         let isMain = action.targetFrame?.isMainFrame ?? true
         let fromMesh = webView.url?.scheme?.lowercased() == FipsURL.scheme
+        // x.com sends in-app browsers to `x-safari-https://…`: open the real link here.
+        if isMain, let real = FipsURL.unwrapAppRedirect(url) {
+            decisionHandler(.cancel)
+            if real == lastUnwrapped {
+                lastUnwrapped = nil
+                onExternal?(real)
+            } else {
+                lastUnwrapped = real
+                webView.load(URLRequest(url: real))
+            }
+            return
+        }
         switch FipsURL.navigation(to: url, isMainFrame: isMain, fromMesh: fromMesh) {
         case .allow:
             decisionHandler(.allow)

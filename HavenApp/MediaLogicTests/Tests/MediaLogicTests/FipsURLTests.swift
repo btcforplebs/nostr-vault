@@ -170,6 +170,25 @@ final class FipsURLTests: XCTestCase {
         XCTAssertEqual(FipsURL.htmlEscaped(#"<a href="x">'&'</a>"#), "&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;")
         XCTAssertEqual(FipsURL.htmlEscaped("plain"), "plain")
     }
+
+    // X sends in-app browsers to `x-safari-https://…` (its open-in-Safari wrapper).
+    func testXSafariWrapperUnwrapsToTheRealLink() {
+        XCTAssertEqual(FipsURL.unwrapAppRedirect(url("x-safari-https://redirect.x.com/?ct=rw-null&rw_tt=thread"))?.absoluteString,
+                       "https://redirect.x.com/?ct=rw-null&rw_tt=thread")
+        XCTAssertEqual(FipsURL.unwrapAppRedirect(url("X-Safari-HTTPS://x.com/jack/status/20"))?.absoluteString,
+                       "https://x.com/jack/status/20")
+        XCTAssertEqual(FipsURL.unwrapAppRedirect(url("x-safari-http://example.com/a"))?.absoluteString, "http://example.com/a")
+        let target = "https://x.com/jack/status/20?s=1"
+        let wrapped = "x-safari-https://redirect.x.com/?url=" + target.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
+        XCTAssertEqual(FipsURL.unwrapAppRedirect(url(wrapped))?.absoluteString, target, "a url= target is the real link")
+        XCTAssertNil(FipsURL.unwrapAppRedirect(url("x-safari-javascript:alert(1)")), "only http(s) comes out")
+        XCTAssertEqual(FipsURL.unwrapAppRedirect(url("x-safari-https://redirect.x.com/?url=javascript%3Aalert(1)"))?.scheme, "https",
+                       "a non-http url= target is ignored: the wrapper's own https link opens")
+        XCTAssertNil(FipsURL.unwrapAppRedirect(url("https://x.com/jack")))
+        XCTAssertNil(FipsURL.unwrapAppRedirect(url("twitter://user?screen_name=jack")))
+        XCTAssertEqual(FipsURL.navigation(to: url("x-safari-https://x.com/a"), isMainFrame: true, fromMesh: false), .external,
+                       "the wrapper itself is still another scheme: the browser unwraps it before asking")
+    }
 }
 
 /// The engine's ingress codes as the browser reads them.
@@ -185,4 +204,5 @@ final class MeshSiteIngressTests: XCTestCase {
         XCTAssertEqual(MeshSiteIngress.ready(base).url, base)
         XCTAssertNil(MeshSiteIngress.notReady.url)
     }
+
 }
