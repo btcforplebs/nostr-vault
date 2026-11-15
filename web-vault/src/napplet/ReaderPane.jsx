@@ -26,7 +26,7 @@ import "./napplet.css"
 const READY_WAIT_MS = 5000
 const whenReady = async m => { await Promise.race([m.napplet.ready, new Promise(r => setTimeout(r, READY_WAIT_MS))]); return m.napplet }
 
-export function ReaderPane({ ctx, open = null }) {
+export function ReaderPane({ ctx, open = null, hidden = false }) {
   const host = useRef(null), composeHost = useRef(null)
   const [composing, setComposing] = useState(false)
   const [composeAside, setComposeAside] = useState(false) // a post counting down: the sheet steps aside, still mounted
@@ -82,6 +82,7 @@ export function ReaderPane({ ctx, open = null }) {
       card: ev => kindCard(liveCtx, ev),
       vote: (ev, picks) => pollVote(liveCtx, ev, picks),
       onArticle: ev => setSheet({ kind: "article", event: ev }),
+      onProfile: pk => { location.hash = `#/profile/${pk}` },
       preview: loadPreview,
     })
     live.current.me = wire.me
@@ -109,7 +110,7 @@ export function ReaderPane({ ctx, open = null }) {
   }, [open])
 
   return (
-    <main class="screen reader-pane">
+    <main class="screen reader-pane" hidden={hidden}>
       {note && <p class="muted small napplet-note" role="status">{note}</p>}
       <div class="napplet-host reader-host" ref={host} />
       {sheet?.kind === "zap" && <ZapSheet ctx={ctx} note={sheet.note} onClose={() => setSheet(null)} />}
