@@ -158,6 +158,11 @@ struct InlineFeedVideoPlayer: View {
                 VStack(spacing: 0) {
                     Spacer()
                     HStack(spacing: 0) {
+                        // How long the clip is, counting down while it plays.
+                        if let player {
+                            InlineTimeLeftPill(player: player)
+                                .padding(8)
+                        }
                         Spacer()
                         if PiPRules.showsButton(supported: PiPManager.isSupported), player != nil, playerLayer != nil {
                             Button(action: startPiP) {
@@ -169,6 +174,20 @@ struct InlineFeedVideoPlayer: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Picture in Picture")
+                            .padding(.vertical, 8)
+                        }
+                        // Says out loud what a tap on the clip already does.
+                        if let onTap, player != nil {
+                            Button(action: onTap) {
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                    .font(.appSystem(size: 13, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(8)
+                                    .background(Circle().fill(Color.black.opacity(0.6)))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Open full screen")
+                            .padding(.leading, 8)
                             .padding(.vertical, 8)
                         }
                         Button(action: toggleMute) {
@@ -289,5 +308,47 @@ struct InlineFeedVideoPlayer: View {
             cachedPlayer.play()
             isPlaying = true
         }
+    }
+}
+
+/// "0:42" on a dark pill, counting down. Hidden for live streams and until
+/// the clip's length is known.
+private struct InlineTimeLeftPill: View {
+    let player: AVPlayer
+    @State private var label: String?
+    @State private var observer: Any?
+
+    var body: some View {
+        // Always in the tree, only hidden: an empty view never appears, and
+        // then the clock would never start.
+        Text(label ?? "0:00")
+            .font(.appSystem(size: 11, weight: .semibold).monospacedDigit())
+            .foregroundColor(.white)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color.black.opacity(0.6)))
+            .opacity(label == nil ? 0 : 1)
+            .accessibilityLabel(label.map { "\($0) left" } ?? "")
+            .accessibilityHidden(label == nil)
+            .onAppear(perform: start)
+        .onDisappear(perform: stop)
+    }
+
+    private func start() {
+        guard observer == nil else { return }
+        update()
+        observer = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { _ in
+            update()
+        }
+    }
+
+    private func update() {
+        let duration = player.currentItem.map { CMTimeGetSeconds($0.duration) } ?? .nan
+        label = VideoTimeLeft.label(elapsed: CMTimeGetSeconds(player.currentTime()), duration: duration)
+    }
+
+    private func stop() {
+        if let observer { player.removeTimeObserver(observer) }
+        observer = nil
     }
 }

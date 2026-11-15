@@ -594,7 +594,7 @@ struct MessageBubbleView: View {
                         Button {
                             onOpenImage?(url, openable)
                         } label: {
-                            DMVideoTile(size: min(240, containerWidth * 0.6))
+                            DMVideoTile(url: url, size: min(240, containerWidth * 0.6))
                         }
                         .buttonStyle(.plain)
                         .mediaZoomSource(url, namespace: mediaZoom)
