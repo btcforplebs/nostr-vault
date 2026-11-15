@@ -301,6 +301,9 @@ export const shareLink = note => `https://nostrvault.app/thread/${neventEncode({
 
 // Reply and quote hand the note to Compose through here, so Compose needn't fetch what the card already had.
 const handed = new Map()
+/** A window event the composer fires with the signed note once it's sent (detail: the event), so a Reader showing the
+ *  feed or its thread puts it in at once (ReaderPane -> inc nv.compose.sent). */
+export const NOTE_SENT_EVENT = "nv:note-sent"
 export function compose(mode, note) {
   handed.set(note.id, note)
   primeKeyboard() // inside the tap, so the reply opens with the keyboard up
