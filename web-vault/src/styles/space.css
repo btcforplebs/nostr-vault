@@ -159,3 +159,6 @@
 .sp-addsheet-side { display: inline-flex; justify-self: start; gap: 2px; padding: 3px; border-radius: 999px; background: var(--s2); }
 .sp-addsheet-side button { min-height: 30px; padding: 0 16px; border: 0; border-radius: 999px; background: none; color: var(--text-2); font: 600 13px var(--font); }
 .sp-addsheet-side button.on { background: var(--accent); color: var(--on-badge); }
+/* Our panels as widget cards (plan NV_WEB_ONE_PLAN.md step 4, WidgetCard.jsx): the frame is the body, its height the
+   card's own (Fit, reported by the napplet) or the slot's (S/M/L). */
+.sp-widget-body { min-height: 48px; overflow: hidden; border-radius: 0 0 14px 14px; }

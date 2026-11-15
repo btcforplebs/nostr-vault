@@ -1,13 +1,16 @@
 // Our own napplets, as data (plan P8): what each is called, which file it is, the NAP domains it asks for, the intents
 // it takes (napplet:<archetype>/<action>) and a line about it. Pure, so tools/napplet-release.mjs builds the publishable
 // files from the same list the app runs (first-party.js adds the bytes). `maths`: carries the WoT maths (wot-inject.js).
-// `pane`: runs in its own screen of the app, not in the Apps list.
+// `pane`: runs in its own screen of the app, not in the Apps list. `widget`: a card of Your space (plan NV_WEB_ONE_PLAN.md
+// step 4), drawn at these sizes (the manifest's ["surface","widget",...] tag); `card`: the Your space panel id it draws.
 export const EMOJI_DTAG = "nv-emoji"
 export const READER_DTAG = "nv-reader"
 export const COMPOSE_DTAG = "nv-compose"
 export const MEDIA_DTAG = "nv-media"
 export const WOT_DTAG = "nv-wot"
 export const MESSAGES_DTAG = "nv-messages"
+export const LIVE_NOW_DTAG = "nv-live-now"
+export const ON_THIS_DAY_DTAG = "nv-on-this-day"
 
 export const FIRST_PARTY_LIST = [
   { dTag: EMOJI_DTAG, title: "Emoji", file: "emoji", domains: ["identity", "relay", "resource", "storage", "inc", "intent", "theme"], intents: ["emoji/pick"],
@@ -27,6 +30,12 @@ export const FIRST_PARTY_LIST = [
   // Plan P7: Messages (MessagesPane.jsx) over NAP-DM; keys, decryption and sealing stay in the shell (dm-dispatch.js).
   { dTag: MESSAGES_DTAG, title: "Messages", file: "messages", pane: true, domains: ["dm", "resource", "intent", "theme"], intents: ["dm/open", "dm/refresh"],
     summary: "Your direct messages, through the shell's NAP-DM: it holds the keys, this only sees text." },
+  // One plan step 4: today's Your space cards as cards (widgets). The shell answers what each draws (widget-answers.js)
+  // through shell-answered intents, so the rules stay the panels' own; the card's header is the shell's.
+  { dTag: LIVE_NOW_DTAG, title: "Live now", file: "live-now", pane: true, widget: ["S", "M", "L"], card: "live-now", domains: ["resource", "intent", "inc", "theme"], intents: [],
+    summary: "Streams from people you follow that are on air." },
+  { dTag: ON_THIS_DAY_DTAG, title: "On this day", file: "on-this-day", pane: true, widget: ["S", "M", "L"], card: "on-this-day", domains: ["intent", "inc", "theme"], intents: [],
+    summary: "Your own notes from this date one and two years ago, read from your vault." },
   { dTag: "nv-note-drafts", title: "Note Drafts", file: "note-drafts", domains: ["identity", "storage", "outbox", "theme"], intents: [], sample: true,
     summary: "A sample: write a note, it saves as you type." },
 ]

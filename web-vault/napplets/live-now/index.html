@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Live now</title>
+<style>
+  /* A card's body only (plan step 4): the shell draws the header (icon, name, count, edit tools). */
+  :root { color-scheme: dark; --bg: #1c1c1e; --s2: #2c2c2e; --text: #fff; --text-2: rgb(255 255 255 / .60); --text-3: rgb(255 255 255 / .38);
+    font: 13px/1.35 -apple-system, system-ui, sans-serif; }
+  html, body { margin: 0; background: var(--s1, var(--bg)); color: var(--text); }
+  html.sized, html.sized body { height: 100%; }
+  html.sized body { overflow-y: auto; overscroll-behavior: contain; }
+  ul { list-style: none; margin: 0; padding: 4px 0; }
+  .empty { padding: 16px 14px; color: var(--text-2); }
+  .row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; height: 58px; padding: 0 12px;
+    border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .row:hover { background: var(--s2); }
+  .av { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; display: grid; place-items: center; background: var(--s2);
+    color: var(--text-2); font-weight: 700; box-shadow: 0 0 0 2px #ff3b30; }
+  .main { display: grid; min-width: 0; }
+  .who, .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who { color: var(--text); font-weight: 600; }
+  .what { color: var(--text-3); }
+  .badge { padding: 1px 6px; border-radius: 999px; background: #ff3b30; color: #fff; font: 800 10px/16px -apple-system, system-ui, sans-serif; letter-spacing: .04em; }
+  .more { padding: 6px 14px 12px; color: var(--text-2); }
+</style>
+</head>
+<body>
+<ul id="rows"><li class="empty">Looking for live streams…</li></ul>
+<script>
+/*@nv-theme*/
+  // Live now as a card (plan step 4). The shell finds the streams with the Live feed's own rules (live-now.js) and
+  // answers napplet:space/livenow with only what this card draws; a click asks the shell to open the player
+  // (napplet:live/open). Pictures come through resource (the shell's IP rules). Asks again every two minutes, and when the shell says (inc nv.card.again).
+  const n = window.napplet || {}
+  nvTheme(n)
+  const $ = id => document.getElementById(id)
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
+  const ask = (what, payload = {}) => n.intent ? n.intent.invoke(what, { payload }).then(r => (r && r.ok ? r.data : null)).catch(() => null) : Promise.resolve(null)
+  const pics = new Map()
+  function face(row) {
+    const f = el("span", "av", (row.name || "?").slice(0, 1).toUpperCase())
+    if (n.resource && /^https:\/\//i.test(row.picture)) {
+      if (!pics.has(row.picture)) pics.set(row.picture, n.resource.bytes(row.picture).then(b => URL.createObjectURL(b)).catch(() => ""))
+      pics.get(row.picture).then(src => { if (src) { const i = el("img", "av"); i.alt = ""; i.src = src; f.replaceWith(i) } })
+    }
+    return f
+  }
+  function draw(d) {
+    const ul = $("rows")
+    ul.replaceChildren()
+    if (!d) { ul.append(el("li", "empty", "Couldn't look for live streams.")); return }
+    if (!d.rows.length) ul.append(el("li", "empty", d.empty))
+    for (const s of d.rows) {
+      const b = el("button", "row"); b.type = "button"; b.title = s.title || "Open the stream"
+      const main = el("span", "main"); main.append(el("span", "who", s.name || s.host.slice(0, 8) + "…"), el("span", "what", s.title || "Live now"))
+      const side = el("span"); side.append(el("span", "badge", "LIVE"))
+      b.append(face(s), main, side)
+      b.onclick = () => ask("napplet:live/open", { address: s.address })
+      const li = el("li"); li.append(b); ul.append(li)
+    }
+    if (d.more > 0) ul.append(el("li", "more", `+${d.more} more live`))
+    ask("napplet:card/count", { count: d.count })
+  }
+  // Fit: tell the shell this card's height; S/M/L: the shell fixes it and this scrolls.
+  ask("napplet:shell/surface").then(s => { if (s && s.size) document.documentElement.classList.add("sized") })
+  new ResizeObserver(() => ask("napplet:card/height", { height: $("rows").scrollHeight })).observe($("rows"))
+  const look = () => ask("napplet:space/livenow").then(draw)
+  look()
+  setInterval(look, 2 * 60 * 1000)
+  // The shell says when what this card shows may have changed (the account loaded, a follow, a block).
+  if (n.inc && n.inc.on) n.inc.on("nv.card.again", look)
+</script>
+</body>
+</html>

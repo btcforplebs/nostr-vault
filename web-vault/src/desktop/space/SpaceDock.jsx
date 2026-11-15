@@ -16,21 +16,16 @@ import { PANEL_IDS } from "./panels.js"
 import { CardColumn, PANEL_BY_ID, cardsOn, cardName } from "./CardColumn.jsx"
 import { AppCard } from "./AppCard.jsx"
 import { Icon, ICON } from "../Sidebar.jsx"
-import { WOT_GLOBE } from "../../components/wot-glyph.js"
+import { CARD_ICON } from "./card-icons.js"
+import { WidgetCard, isWidget } from "./WidgetCard.jsx"
+import { nappletsOn } from "../../napplet/flag.js"
 import "../../styles/space.css"
 
 const FOLD = "M9 6l6 6-6 6"
 const APP_ICON = "M4 4h16v16H4zM4 9h16"
 /** The rail's icons: the dashboard, then each panel's own (the glyphs their headers draw). */
 const DASHBOARD = "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"
-const RAIL_ICON = {
-  "live-vault": ICON.vault,
-  "wot-mini": WOT_GLOBE,
-  messages: ICON.messages,
-  "my-devices": "M3 6a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v7H3zM1 17h12M18 9h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z",
-  "live-now": "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM6.3 6.3a8 8 0 0 0 0 11.4M17.7 6.3a8 8 0 0 1 0 11.4",
-  "on-this-day": "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2",
-}
+const RAIL_ICON = CARD_ICON
 
 /** [folded, setFolded] for the signed-in account. */
 export function useSpaceFolded(me) {
@@ -79,7 +74,8 @@ export function SpaceDock({ ctx, folded, onFold, editing, onEdit, onAdd, canLeft
           <button type="button" class="sp-btn" title="Fold Your space (])" aria-label="Fold Your space" onClick={() => onFold(true)}><Icon d={FOLD} size={18} /></button>
         </header>
         <div class={single ? "sp-panels sp-only" : "sp-panels"}>
-          {Only ? <Only.Panel ctx={ctx} open tools={null} />
+          {Only && nappletsOn() && isWidget(single) ? <WidgetCard ctx={ctx} id={single} name={onlyName} open editing={false} tools={null} side={RIGHT} full />
+            : Only ? <Only.Panel ctx={ctx} open tools={null} />
             : single ? <AppCard ctx={ctx} id={single} open size="L" editing={false} tools={null} />
             : <CardColumn ctx={ctx} side={RIGHT} layout={layout} change={change} editing={editing} canLeft={canLeft} onAdd={onAdd} onEdit={() => onEdit(true)}
                 footer={isDefault ? null : <button type="button" class="sp-link sp-reset" onClick={() => change(l => resetColumns(l, PANEL_IDS))}>Reset both columns to the default</button>} />}
