@@ -379,7 +379,7 @@ func TestSparseDataDoesNotClaimCoverage(t *testing.T) {
 // from a point the tally can no longer hold.
 func TestIngestSinceResumesFromWatermark(t *testing.T) {
 	now := time.Now()
-	windowStart := now.Add(-popularWindow).Unix()
+	windowStart := now.Add(-tallyRetention).Unix()
 
 	if got := ingestSince(0, now); int64(got) != windowStart {
 		t.Errorf("first pass resumed at %d, want the window start %d", got, windowStart)
@@ -388,7 +388,7 @@ func TestIngestSinceResumesFromWatermark(t *testing.T) {
 	if got := ingestSince(recent, now); int64(got) != recent {
 		t.Errorf("reconnect resumed at %d, want the watermark %d", got, recent)
 	}
-	stale := now.Add(-48 * time.Hour).Unix()
+	stale := now.Add(-72 * time.Hour).Unix()
 	if got := ingestSince(stale, now); int64(got) != windowStart {
 		t.Errorf("stale watermark resumed at %d, want the window start %d", got, windowStart)
 	}
@@ -499,7 +499,7 @@ func withStubbedFetch(t *testing.T, hours int) *bool {
 	popularCacheMu.Unlock()
 
 	fetched := false
-	fetchEngagementInto = func(context.Context, map[string]map[string]float64) error {
+	fetchEngagementInto = func(context.Context, map[string]map[string]float64, time.Duration) error {
 		fetched = true
 		return nil
 	}

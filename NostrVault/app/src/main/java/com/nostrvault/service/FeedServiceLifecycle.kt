@@ -111,6 +111,7 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
         val previousSubId = primaryFeedSubId()
         captureModeCache(_feedMode.value)
         _feedMode.value = mode
+        dvmRevealed = 0
 
         // Pending notes are raw, unfiltered for the previous mode — drop them so
         // the "New Posts" count doesn't carry over stale entries. Live subs for
@@ -221,6 +222,11 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
      */
     internal fun FeedService.resumeFeedImpl() {
         if (BuildConfig.DEBUG) Log.d(TAG, "resumeFeed: notes=${_notes.value.size}, followedPubkeys=${_followedPubkeys.value.size}")
+
+        // Underrated is computed again on every return to the app, with the
+        // list it showed kept up meanwhile (an empty one reloads below).
+        val mode = _feedMode.value
+        if (LocalDvmFeeds.recomputesOnEveryOpen(mode) && _notes.value.isNotEmpty()) loadLocalDvmFeed(mode)
 
         // Back inside the grace: the sockets never closed and their REQs are
         // still live, so there is nothing to redial. A socket that dropped

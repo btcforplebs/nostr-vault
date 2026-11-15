@@ -30,9 +30,44 @@ final class LocalDvmFeedTests: XCTestCase {
         XCTAssertFalse(LocalDvmFeed.showsEndOfList(mode: .catchUp, hasNotes: true, isLoading: true))
     }
 
+    // Logen 2026-11-15: Underrated refreshes more and shows more.
+
+    func testEndOfListWaitsWhileUnderratedHasMoreToShow() {
+        XCTAssertFalse(LocalDvmFeed.showsEndOfList(mode: .underrated, hasNotes: true, isLoading: false, hasMore: true))
+        XCTAssertTrue(LocalDvmFeed.showsEndOfList(mode: .underrated, hasNotes: true, isLoading: false, hasMore: false))
+    }
+
+    func testOnlyUnderratedRecomputesOnEveryOpenAndOnATimer() {
+        XCTAssertTrue(LocalDvmFeed.underrated.recomputesOnEveryOpen)
+        XCTAssertTrue(LocalDvmFeed.underrated.refreshesWhileOnScreen)
+        XCTAssertFalse(LocalDvmFeed.popular.recomputesOnEveryOpen)
+        XCTAssertFalse(LocalDvmFeed.catchUp.refreshesWhileOnScreen)
+        XCTAssertEqual(LocalDvmFeed.quietRefreshInterval, 600)
+    }
+
+    func testUnderratedShowsFiftyAtATime() {
+        let page = LocalDvmFeed.underrated.pageSize
+        XCTAssertEqual(page, 50)
+        XCTAssertNil(LocalDvmFeed.popular.pageSize, "Popular is shown whole")
+        XCTAssertEqual(LocalDvmFeed.shownCount(total: 300, revealed: 0, pageSize: page), 50)
+        XCTAssertEqual(LocalDvmFeed.shownCount(total: 30, revealed: 0, pageSize: page), 30)
+        XCTAssertEqual(LocalDvmFeed.shownCount(total: 120, revealed: 150, pageSize: page), 120)
+        XCTAssertEqual(LocalDvmFeed.shownCount(total: 100, revealed: 0, pageSize: nil), 100)
+    }
+
+    func testReachingTheEndAsksForFiftyMoreUntilAllAreShown() {
+        let page = LocalDvmFeed.underrated.pageSize
+        XCTAssertEqual(LocalDvmFeed.nextRevealed(total: 300, revealed: 50, pageSize: page), 100)
+        XCTAssertEqual(LocalDvmFeed.nextRevealed(total: 300, revealed: 0, pageSize: page), 100)
+        XCTAssertEqual(LocalDvmFeed.nextRevealed(total: 120, revealed: 100, pageSize: page), 150)
+        XCTAssertNil(LocalDvmFeed.nextRevealed(total: 120, revealed: 150, pageSize: page), "all shown")
+        XCTAssertNil(LocalDvmFeed.nextRevealed(total: 40, revealed: 0, pageSize: page), "one page holds it")
+        XCTAssertNil(LocalDvmFeed.nextRevealed(total: 300, revealed: 50, pageSize: nil), "not paged")
+    }
+
     func testEndOfListCopyIsPerFeed() {
         XCTAssertEqual(LocalDvmFeed.underrated.endOfListStatus + " Pull to refresh.",
-                       "That's today's underrated list. Pull to refresh.")
+                       "That's the underrated list from the last two days. Pull to refresh.")
         XCTAssertEqual(Set(LocalDvmFeed.allCases.map(\.endOfListStatus)).count, 3)
     }
 

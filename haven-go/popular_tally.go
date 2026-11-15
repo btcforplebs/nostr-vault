@@ -38,6 +38,11 @@ const (
 	// for, so the two paths remain comparable.
 	popularWindow = 24 * time.Hour
 
+	// How long the tally keeps engagement: the longest window any feed reads
+	// (Underrated, 48h). Popular still scores only its own 24h of it
+	// (snapshot, coverage).
+	tallyRetention = underratedWindow
+
 	// A bucket is one clock hour of engagement. Eviction is then dropping a
 	// map, not scanning one, and the window edge is exact.
 	popularBucketSpan = time.Hour
@@ -78,7 +83,8 @@ const (
 	popularMaxClockSkew = 10 * time.Minute
 )
 
-// engagementTally is a rolling 24h record of who engaged with what.
+// engagementTally is a rolling record of who engaged with what, kept for
+// tallyRetention (48h): Popular reads the last 24h of it, Underrated all of it.
 //
 // Shape inside a bucket is deliberately identical to the map dvm.go's batch
 // path builds (target -> reactor -> that reactor's strongest weight) so the
@@ -137,7 +143,7 @@ func (t *engagementTally) add(ev *nostr.Event, now time.Time) {
 		return
 	}
 	at := ev.CreatedAt.Time()
-	if at.After(now.Add(popularMaxClockSkew)) || at.Before(now.Add(-popularWindow)) {
+	if at.After(now.Add(popularMaxClockSkew)) || at.Before(now.Add(-tallyRetention)) {
 		return
 	}
 
@@ -224,7 +230,7 @@ func (t *engagementTally) markAlive(now time.Time) {
 
 // pruneLocked drops buckets that have fallen out of the window.
 func (t *engagementTally) pruneLocked(now time.Time) {
-	oldest := bucketIndex(now.Add(-popularWindow))
+	oldest := bucketIndex(now.Add(-tallyRetention))
 	for idx, bucket := range t.buckets {
 		if idx < oldest {
 			t.total -= len(bucket)
@@ -262,12 +268,22 @@ func (t *engagementTally) rebuildInternLocked() {
 // once, at their strongest weight — the same rule addEngagement applies within
 // a single batch, so splitting the window into buckets cannot change a score.
 func (t *engagementTally) snapshot(now time.Time) map[string]map[string]float64 {
+	return t.snapshotWithin(now, popularWindow)
+}
+
+// snapshotWithin is snapshot over the last `window` only (at most
+// tallyRetention): Popular reads 24h, Underrated 48h.
+func (t *engagementTally) snapshotWithin(now time.Time, window time.Duration) map[string]map[string]float64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.pruneLocked(now)
 
+	oldest := bucketIndex(now.Add(-window))
 	merged := make(map[string]map[string]float64)
-	for _, bucket := range t.buckets {
+	for idx, bucket := range t.buckets {
+		if idx < oldest {
+			continue
+		}
 		for target, reactors := range bucket {
 			into := merged[target]
 			if into == nil {
@@ -297,23 +313,32 @@ func (t *engagementTally) snapshot(now time.Time) map[string]map[string]float64 
 // tally 0.1% covered and sent it to the network for data it was already
 // holding, which is the very query this work exists to remove.
 func (t *engagementTally) coverage(now time.Time) float64 {
+	return t.coverageWithin(now, popularWindow)
+}
+
+// coverageWithin is coverage of the last `window` only: the tally keeps 48h
+// for Underrated, and Popular's 24h must not be credited with the day before.
+func (t *engagementTally) coverageWithin(now time.Time, window time.Duration) float64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.pruneLocked(now)
 
+	oldest := bucketIndex(now.Add(-window))
 	var seconds float64
-	for _, s := range t.covered {
-		seconds += s
+	for idx, s := range t.covered {
+		if idx >= oldest {
+			seconds += s
+		}
 	}
-	uptime := seconds / popularWindow.Seconds()
+	uptime := seconds / window.Seconds()
 
 	populated := 0
-	for _, bucket := range t.buckets {
-		if len(bucket) >= popularBucketMinTargets {
+	for idx, bucket := range t.buckets {
+		if idx >= oldest && len(bucket) >= popularBucketMinTargets {
 			populated++
 		}
 	}
-	data := float64(populated) / float64(popularWindow/popularBucketSpan)
+	data := float64(populated) / float64(window/popularBucketSpan)
 	if data > 1 {
 		data = 1
 	}
@@ -454,7 +479,7 @@ func (t *engagementTally) load(path string, now time.Time) {
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	oldest := bucketIndex(now.Add(-popularWindow))
+	oldest := bucketIndex(now.Add(-tallyRetention))
 	for idx, bucket := range in.Buckets {
 		if idx < oldest {
 			continue
@@ -595,14 +620,15 @@ func ingestPopularEngagement(ctx context.Context) {
 
 // ingestSince is where a subscription resumes from.
 //
-// The first pass asks for the whole window, and the relays' replay of it is
+// The first pass asks for the whole retention (48h, Underrated's window), and
+// the relays' replay of it is
 // what makes a cold start useful immediately (measured: 24 buckets filled in
 // 90 seconds). Every reconnect after that resumes from the newest event
 // already seen — without the watermark a flaky connection would re-download
 // the same day of history on every retry, which on cellular is the sort of
 // thing that gets an app uninstalled.
 func ingestSince(watermark int64, now time.Time) nostr.Timestamp {
-	windowStart := now.Add(-popularWindow).Unix()
+	windowStart := now.Add(-tallyRetention).Unix()
 	if watermark > windowStart {
 		return nostr.Timestamp(watermark)
 	}

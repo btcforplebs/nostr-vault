@@ -197,6 +197,7 @@ import com.nostrvault.service.FeedService.Companion.AVATAR_PREWARM_COUNT
         accumulator.drain()
         // The list is emptied for this account: what fills it from here is its own.
         notesAccount = nostrService.activeHexPubkey.ifEmpty { null }
+        dvmRevealed = 0
         _notes.value = emptyList()
         _pendingNotes.value = emptyList()
         _noteStats.value = emptyMap()

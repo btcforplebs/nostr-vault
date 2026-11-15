@@ -18,7 +18,14 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
         // Popular, Catch Up and Underrated are fixed scored sets: an older page would add unscored
         // notes under it. Feeds with their own service have no timeline page.
         val mode = _feedMode.value
-        if (mode.isLocalDvm || mode in OWN_SERVICE_MODES) return
+        // Underrated shows its fixed set 50 at a time: the end asks for the next 50.
+        if (mode.isLocalDvm) {
+            val next = LocalDvmFeeds.nextRevealed(dvmFilteredTotal, dvmRevealed, LocalDvmFeeds.pageSize(mode)) ?: return
+            dvmRevealed = next
+            recomputeFilteredNotes()
+            return
+        }
+        if (mode in OWN_SERVICE_MODES) return
         // An author-scoped feed with no authors would page the whole network
         // (the filter just omits `authors`). Same guards as the live REQ.
         if (mode == FeedMode.DISCOVERY && _extendedNetworkPubkeys.value.isEmpty()) return

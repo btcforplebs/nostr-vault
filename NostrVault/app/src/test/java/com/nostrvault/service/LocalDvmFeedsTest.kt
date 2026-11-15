@@ -113,4 +113,37 @@ class LocalDvmFeedsTest {
         assertEquals("Build your wider network", UnderratedEmptyState.BUILD_TITLE)
         assertEquals("Building your wider network\u2026", UnderratedEmptyState.BUILDING_TITLE)
     }
+
+    // Logen 2026-11-15: Underrated refreshes more and shows more (iOS LocalDvmFeedTests).
+
+    @Test
+    fun `only Underrated recomputes on every open and on a 10-minute timer`() {
+        assertTrue(LocalDvmFeeds.recomputesOnEveryOpen(FeedMode.UNDERRATED))
+        assertTrue(LocalDvmFeeds.refreshesWhileOnScreen(FeedMode.UNDERRATED))
+        assertFalse(LocalDvmFeeds.recomputesOnEveryOpen(FeedMode.POPULAR))
+        assertFalse(LocalDvmFeeds.refreshesWhileOnScreen(FeedMode.CATCH_UP))
+        assertEquals(600_000L, LocalDvmFeeds.QUIET_REFRESH_MS)
+    }
+
+    @Test
+    fun `Underrated shows fifty at a time`() {
+        val page = LocalDvmFeeds.pageSize(FeedMode.UNDERRATED)
+        assertEquals(50, page)
+        assertEquals(null, LocalDvmFeeds.pageSize(FeedMode.POPULAR))
+        assertEquals(50, LocalDvmFeeds.shownCount(300, 0, page))
+        assertEquals(30, LocalDvmFeeds.shownCount(30, 0, page))
+        assertEquals(120, LocalDvmFeeds.shownCount(120, 150, page))
+        assertEquals(100, LocalDvmFeeds.shownCount(100, 0, null))
+    }
+
+    @Test
+    fun `reaching the end asks for fifty more until all are shown`() {
+        val page = LocalDvmFeeds.pageSize(FeedMode.UNDERRATED)
+        assertEquals(100, LocalDvmFeeds.nextRevealed(300, 50, page))
+        assertEquals(100, LocalDvmFeeds.nextRevealed(300, 0, page))
+        assertEquals(150, LocalDvmFeeds.nextRevealed(120, 100, page))
+        assertEquals(null, LocalDvmFeeds.nextRevealed(120, 150, page))
+        assertEquals(null, LocalDvmFeeds.nextRevealed(40, 0, page))
+        assertEquals(null, LocalDvmFeeds.nextRevealed(300, 50, null))
+    }
 }

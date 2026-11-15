@@ -37,14 +37,48 @@ enum LocalDvmFeed: String, CaseIterable {
         switch self {
         case .popular: return "That's what's popular from the last day."
         case .catchUp: return "You're caught up on everyone you follow from the last two weeks."
-        case .underrated: return "That's today's underrated list."
+        case .underrated: return "That's the underrated list from the last two days."
         }
     }
 
-    /// The end-of-list footer draws only on a local DVM feed that has notes
-    /// and is not loading; an empty feed keeps its own empty state.
-    static func showsEndOfList(mode: LocalDvmFeed?, hasNotes: Bool, isLoading: Bool) -> Bool {
-        mode != nil && hasNotes && !isLoading
+    /// The end-of-list footer draws only on a local DVM feed that has notes,
+    /// is not loading and has nothing left to show (Underrated shows its list
+    /// 50 at a time); an empty feed keeps its own empty state.
+    static func showsEndOfList(mode: LocalDvmFeed?, hasNotes: Bool, isLoading: Bool, hasMore: Bool = false) -> Bool {
+        mode != nil && hasNotes && !isLoading && !hasMore
+    }
+
+    // MARK: - Underrated: fresh and more (Logen 2026-11-15)
+
+    /// Underrated is worked out again on every open, pull and return to the
+    /// app, never shown from a recent answer (the relay keeps none either).
+    /// Popular and Catch Up keep their 5-minute reuse.
+    var recomputesOnEveryOpen: Bool { self == .underrated }
+
+    /// Underrated recomputes quietly this often while it is on screen.
+    static let quietRefreshInterval: TimeInterval = 10 * 60
+
+    /// Whether the feed is worked out again on a timer while on screen.
+    var refreshesWhileOnScreen: Bool { self == .underrated }
+
+    /// Notes Underrated shows at a time: the relay answers up to 300, and the
+    /// list grows by this many when you reach its end. nil: shown whole.
+    var pageSize: Int? { self == .underrated ? 50 : nil }
+
+    /// How many of `total` notes are shown when `revealed` were asked for: a
+    /// page at least, never past the end. nil pageSize shows them all.
+    static func shownCount(total: Int, revealed: Int, pageSize: Int?) -> Int {
+        guard let pageSize else { return total }
+        return min(total, max(revealed, pageSize))
+    }
+
+    /// What reaching the end asks for: one more page. nil when there is
+    /// nothing more to show (or the feed is not paged).
+    static func nextRevealed(total: Int, revealed: Int, pageSize: Int?) -> Int? {
+        guard let pageSize else { return nil }
+        let shown = shownCount(total: total, revealed: revealed, pageSize: pageSize)
+        guard shown < total else { return nil }
+        return shown + pageSize
     }
 
     /// Popular and Underrated are scored against the web of trust inside

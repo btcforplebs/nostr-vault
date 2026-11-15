@@ -51,6 +51,30 @@ internal object LocalDvmFeeds {
         followsNobody -> "Follow people to build your web of trust"
         else -> "Building your web of trust…"
     }
+
+    // Underrated: fresh and more (Logen 2026-11-15). iOS LocalDvmFeed.
+
+    /** Underrated is computed again on every open, pull and return to the app, never reused (the relay keeps no answer either). */
+    fun recomputesOnEveryOpen(mode: FeedMode): Boolean = mode == FeedMode.UNDERRATED
+
+    /** Underrated is computed again on this timer while it is on screen. */
+    const val QUIET_REFRESH_MS = 10 * 60 * 1000L
+
+    fun refreshesWhileOnScreen(mode: FeedMode): Boolean = mode == FeedMode.UNDERRATED
+
+    /** Notes Underrated shows at a time (the relay answers up to 300); null: shown whole. */
+    fun pageSize(mode: FeedMode): Int? = if (mode == FeedMode.UNDERRATED) 50 else null
+
+    /** How many of [total] are shown when [revealed] were asked for: a page at least, never past the end. */
+    fun shownCount(total: Int, revealed: Int, pageSize: Int?): Int =
+        if (pageSize == null) total else minOf(total, maxOf(revealed, pageSize))
+
+    /** What reaching the end asks for: one more page, or null when nothing more is left (or the feed is not paged). */
+    fun nextRevealed(total: Int, revealed: Int, pageSize: Int?): Int? {
+        if (pageSize == null) return null
+        val shown = shownCount(total, revealed, pageSize)
+        return if (shown < total) shown + pageSize else null
+    }
 }
 
 /**

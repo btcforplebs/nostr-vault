@@ -230,6 +230,14 @@ class FeedService: ObservableObject {
     /// Used to sort the Popular feed by engagement rank.
     var popularNoteScores: [String: Double] = [:]
 
+    /// Underrated shows its list 50 at a time (LocalDvmFeed.pageSize): how
+    /// many have been asked for (0 = the first page), how many the filtered
+    /// list holds, and whether more are left to show. Reset on a feed or
+    /// account switch and on a load onto an empty screen.
+    var dvmRevealed = 0
+    var dvmFilteredTotal = 0
+    @Published var dvmHasMore = false
+
     /// Replies to the Popular and Global posts, fetched only for Threaded View.
     /// Kept out of `notes`: both feeds list top-level posts (the filter drops
     /// replies), so without these a threaded card had nothing under it.

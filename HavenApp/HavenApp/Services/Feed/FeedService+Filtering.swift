@@ -8,6 +8,28 @@ extension FeedService {
         noteIndex = Dictionary(notes.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
     }
 
+    /// Underrated's list cut to the pages asked for so far (50 at a time);
+    /// every other feed whole.
+    private func pagedDvmNotes(_ all: [FeedNote]) -> [FeedNote] {
+        let pageSize = feedMode.localDvm?.pageSize
+        dvmFilteredTotal = all.count
+        let shown = LocalDvmFeed.shownCount(total: all.count, revealed: dvmRevealed, pageSize: pageSize)
+        let hasMore = shown < all.count
+        if dvmHasMore != hasMore { dvmHasMore = hasMore }
+        return shown < all.count ? Array(all.prefix(shown)) : all
+    }
+
+    /// Shows Underrated's next 50, when the end of the list is reached.
+    /// Returns false when there is nothing more to show.
+    @discardableResult
+    func revealMoreDvmNotes() -> Bool {
+        guard let next = LocalDvmFeed.nextRevealed(total: dvmFilteredTotal, revealed: dvmRevealed,
+                                                   pageSize: feedMode.localDvm?.pageSize) else { return false }
+        dvmRevealed = next
+        recomputeFilteredNotes()
+        return true
+    }
+
     /// Recompute the cached filtered-notes arrays. Called after any mutation to
     /// `notes`, `feedMode`, or relevant config (showReposts / showReplies / blocked).
     func recomputeFilteredNotes() {
@@ -17,7 +39,7 @@ extension FeedService {
         // Your web with today's follows, so a follow passes Global at once.
         let trusted = feedTrustedPubkeys
 
-        let newFiltered = FeedFilterEngine.filterFeedNotes(
+        let allFiltered = FeedFilterEngine.filterFeedNotes(
             notes: notes,
             mode: feedMode,
             articlesGlobal: articlesFeedMode == .global,
@@ -36,6 +58,7 @@ extension FeedService {
             languageOf: { [unowned self] note in self.language(of: note) },
             authorOf: { [unowned self] id in self.findNote(id: id)?.pubkey }
         ).filter { !mutes.hides($0) }
+        let newFiltered = pagedDvmNotes(allFiltered)
 
         // Only publish a change when the visible list actually differs.
         // Uses lazy zip to avoid allocating temporary [String] arrays.

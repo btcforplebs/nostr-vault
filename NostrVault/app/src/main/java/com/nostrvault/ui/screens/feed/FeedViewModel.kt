@@ -741,6 +741,9 @@ class FeedViewModel @Inject constructor(
 
     fun loadMore() = feedService.loadOlderNotes()
 
+    /** Underrated's 10-minute refresh while on screen: no pull spinner, the list stays up. */
+    fun refreshLocalDvmFeed() = feedService.refreshLocalDvmFeed()
+
     /** Tap ([emoji] null) toggles the reaction; a picked emoji is sent or, if already sent, taken back. */
     fun likeNote(noteId: String, emoji: String? = null) = feedService.likeNote(noteId, emoji)
 
