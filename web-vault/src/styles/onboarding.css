@@ -1,7 +1,7 @@
 /* Create an account (src/screens/CreateAccount.jsx): one centred column, the iPhone wizard's glass cards, step dots. */
 .onboard { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; box-sizing: border-box;
   padding: max(16px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
-  background: radial-gradient(120% 50% at 50% 0%, rgb(230 115 38 / .12), transparent 60%), var(--bg); }
+  background: radial-gradient(120% 50% at 50% 0%, rgb(var(--accent-rgb) / .12), transparent 60%), var(--bg); }
 .onboard-head { width: 100%; max-width: 440px; min-height: 44px; display: flex; align-items: center; gap: 12px; }
 .onboard-dots { display: flex; gap: 6px; margin: 0 0 0 auto; padding: 0; list-style: none; }
 .onboard-dots li { width: 8px; height: 8px; border-radius: 50%; background: var(--s3); }
@@ -9,7 +9,7 @@
 .onboard-dots li.on { width: 22px; border-radius: 4px; background: var(--accent); }
 .onboard-body { width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 14px; padding-top: 12px; }
 .onboard-body:focus { outline: none; }
-.onboard-logo { width: 56px; height: 56px; margin: 8px auto 4px; border-radius: 13px; box-shadow: 0 10px 40px -8px rgb(230 115 38 / .55); }
+.onboard-logo { width: 56px; height: 56px; margin: 8px auto 4px; border-radius: 13px; box-shadow: 0 10px 40px -8px rgb(var(--accent-rgb) / .55); }
 .onboard-title { margin: 0; font: var(--t-title); text-align: center; letter-spacing: -.01em; }
 .onboard-sub { margin: -6px 0 4px; font: var(--t-sub); color: var(--text-2); text-align: center; text-wrap: balance; }
 

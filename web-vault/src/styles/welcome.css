@@ -7,7 +7,7 @@
   padding: 16px 0; text-align: center; }
 /* The icon with its orange glow (vaultMark): 112 on a tall phone, 92 on a short one. */
 .welcome-mark { --mark: 112px; position: relative; display: block; width: var(--mark); height: var(--mark); }
-.welcome-mark::before { content: ""; position: absolute; inset: calc(var(--mark) * -.3); border-radius: 50%; background: rgb(230 115 38 / .35);
+.welcome-mark::before { content: ""; position: absolute; inset: calc(var(--mark) * -.3); border-radius: 50%; background: rgb(var(--accent-rgb) / .35);
   filter: blur(56px); }
 .welcome-mark img { position: relative; display: block; width: 100%; height: 100%; border-radius: 22.37%; box-shadow: 0 0 0 1px rgb(var(--ink) / .08); }
 @media (max-height: 800px) { .welcome-mark { --mark: 92px; } }
@@ -26,7 +26,7 @@ html[data-shell="learn"] .welcome-learn { visibility: hidden; } /* the page is a
 .welcome-actions { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 12px; padding-top: 16px; }
 .welcome .welcome-door { width: 100%; min-height: 52px; border-radius: 14px; background: var(--s1); border: 1px solid var(--hair);
   font: 600 17px/1 var(--font); }
-.welcome .welcome-door.primary { background: var(--accent-grad); border-color: transparent; box-shadow: 0 2px 8px rgb(230 115 38 / .35); }
+.welcome .welcome-door.primary { background: var(--accent-grad); border-color: transparent; box-shadow: 0 2px 8px rgb(var(--accent-rgb) / .35); }
 .welcome-door:active { transform: scale(.97); }
 /* Looking around without an account: a small link, the search once it's tapped. */
 .welcome-look { align-self: center; min-height: 44px; padding: 0 16px; border: 0; background: none; color: var(--text-2); font: 500 15px/1 var(--font); }
@@ -71,12 +71,12 @@ html[data-shell="learn"] .welcome-learn { visibility: hidden; } /* the page is a
     width: min(600px, 86vw); transform: translateX(-50%); border-radius: 300px 300px 0 0; pointer-events: none; }
   /* The light inside the door: brightest low, at the threshold, the same orange as the icon's glow. */
   .welcome::before { background:
-    radial-gradient(70% 38% at 50% 100%, rgb(230 115 38 / .20), transparent 72%),
-    radial-gradient(90% 60% at 50% 30%, rgb(230 115 38 / .06), transparent 70%); }
+    radial-gradient(70% 38% at 50% 100%, rgb(var(--accent-rgb) / .20), transparent 72%),
+    radial-gradient(90% 60% at 50% 30%, rgb(var(--accent-rgb) / .06), transparent 70%); }
   /* The frame: the icon's bronze rim, a hairline that fades out toward the floor. */
   .welcome::after { border: 1.5px solid rgb(201 162 122 / .28); border-bottom: 0;
     -webkit-mask-image: linear-gradient(to bottom, #000 10%, rgb(0 0 0 / .5) 55%, transparent 92%);
     mask-image: linear-gradient(to bottom, #000 10%, rgb(0 0 0 / .5) 55%, transparent 92%); }
-  .welcome-mark::before { background: rgb(230 115 38 / .42); }
+  .welcome-mark::before { background: rgb(var(--accent-rgb) / .42); }
 }
 @media (forced-colors: active) { .welcome::before, .welcome::after { display: none; } }

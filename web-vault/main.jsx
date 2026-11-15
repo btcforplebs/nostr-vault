@@ -28,6 +28,7 @@ import { runAndWait, resumeImportJobs } from "./src/net/import-jobs.js"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { startNavDepth } from "./src/components/nav-depth.js"
 import { startAppearance } from "./src/net/appearance.js"
+import { startAccent } from "./src/net/accent.js"
 import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, RelayScreen, DesktopShell, VaultDashboard, NappletShell, ReaderPane, WotPane, MessagesPane } from "./src/screens/lazy-screens.js"
 import { nappletsOn, switchFromAddress } from "./src/napplet/flag.js"
 import { readerOpenFor } from "./src/napplet/reader-intents.js"
@@ -70,6 +71,7 @@ const bootHash = location.hash
 // Compose closes back to the page it came from, or shows Done when it was the first page (src/components/nav-depth.js).
 startNavDepth()
 startAppearance()
+startAccent()
 if (loadSession() && !BOX) preloadHaven() // a box's vault is the box: no haven.wasm
 
 // 760px and up is the desktop layout (src/desktop). The address is fixed up for the layout before anything renders:

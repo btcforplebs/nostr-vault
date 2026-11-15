@@ -60,7 +60,7 @@
 .condensed-name { min-width: 0; overflow: hidden; color: inherit; }
 .condensed-marks { margin-left: auto; padding-left: 4px; display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
 .condensed-mark { flex: none; }
-.condensed-mark.reply { color: rgb(230 115 38 / .7); }
+.condensed-mark.reply { color: rgb(var(--accent-rgb) / .7); }
 .condensed-mark.repost { color: rgb(51 217 128 / .7); }
 .condensed-mark.quote { color: rgb(10 132 255 / .7); }
 .condensed-link { display: inline-flex; align-items: center; gap: 3px; color: var(--accent-light); font-size: 11px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 1px; }
@@ -84,10 +84,10 @@
 .condensed-thumb img { display: block; width: auto; height: auto; max-width: var(--thumb); max-height: var(--thumb); object-fit: contain; background: var(--s2); }
 .condensed-play { color: var(--text-2); font-size: 18px; }
 .condensed-more { position: absolute; right: 4px; bottom: 4px; padding: 2px 6px; border-radius: 999px; background: rgb(0 0 0 / .7); color: #fff; font-size: 10px; font-weight: 700; }
-.condensed-rail { position: absolute; left: calc(var(--indent, 0px) - 4px); top: 0; bottom: 0; width: 1.5px; background: rgb(230 115 38 / .35); }
+.condensed-rail { position: absolute; left: calc(var(--indent, 0px) - 4px); top: 0; bottom: 0; width: 1.5px; background: rgb(var(--accent-rgb) / .35); }
 .thread-card { padding: 6px 4px; display: flex; flex-direction: column; }
 .thread-missing { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font: 500 12px var(--mono); }
-.thread-missing svg { color: rgb(230 115 38 / .7); flex: none; }
+.thread-missing svg { color: rgb(var(--accent-rgb) / .7); flex: none; }
 .thread-fold { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; margin: 2px 0 2px 22px; min-height: 28px; padding: 6px 10px; border: 0; border-radius: 8px;
   background: var(--accent-pale); color: var(--accent); font: 700 12px var(--font-round); }
 .thread-open-link { display: flex; align-items: center; gap: 6px; margin-left: 22px; padding: 6px 10px; color: var(--text-2); font: 700 12px var(--font-round); }
@@ -122,7 +122,7 @@
 @media (prefers-reduced-motion: no-preference) { .more .spinner { animation: spin .8s linear infinite; } }
 .pull-indicator { display: grid; place-items: center; height: calc(var(--pull) * 44px); overflow: hidden; color: var(--accent); opacity: var(--pull); }
 .pull-indicator svg { transform: rotate(calc(var(--pull) * 270deg)); }
-.condensed-mark.article { color: rgb(230 115 38 / .7); }
+.condensed-mark.article { color: rgb(var(--accent-rgb) / .7); }
 .condensed-mark.highlight { color: rgb(255 214 10 / .7); }
 .condensed-mark.poll { color: rgb(100 210 255 / .7); }
 

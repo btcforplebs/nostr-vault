@@ -1,6 +1,6 @@
 /* "Your space" (src/desktop/space): the desktop layout's right-hand column of pinned panels, from 1024px. */
 .space-dock { display: flex; min-width: 0; min-height: 0; height: 100dvh; border-left: 1px solid var(--hair);
-  background: linear-gradient(180deg, rgb(230 115 38 / .06), transparent 240px), #050403; }
+  background: linear-gradient(180deg, rgb(var(--accent-rgb) / .06), transparent 240px), #050403; }
 .sp-top { display: flex; align-items: center; gap: 6px; flex: none; height: var(--bar-h); padding: 0 10px 0 18px; border-bottom: 1px solid var(--hair); }
 .sp-top h2 { margin: 0 auto 0 0; font: 700 16px/1.2 var(--font); }
 .sp-btn { display: inline-grid; place-items: center; width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 0;
@@ -20,7 +20,7 @@
 .sp-head h3 { margin: 0 auto 0 0; font: 600 14px var(--font); }
 .sp-icon { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: var(--accent-pale); color: var(--accent-light); }
 .sp-live { display: inline-flex; align-items: center; gap: 5px; font: 600 10px var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--accent-light); }
-.sp-pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgb(230 115 38 / .25); }
+.sp-pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .25); }
 .sp-count { min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 999px; background: var(--accent);
   color: #1a0d03; font: 700 11px/20px var(--font); text-align: center; }
 

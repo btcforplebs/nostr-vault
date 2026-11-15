@@ -11,7 +11,7 @@
 /* A 72 avatar half over the banner; the name column starts under the banner and runs to the right edge. */
 .profile-id { align-items: flex-start; margin-top: 0; }
 .profile-id > .avatar { margin-top: -36px; }
-.profile-id > .avatar.ring { box-shadow: 0 0 0 3px var(--bg), 0 0 0 4.5px rgb(230 115 38 / .35); }
+.profile-id > .avatar.ring { box-shadow: 0 0 0 3px var(--bg), 0 0 0 4.5px rgb(var(--accent-rgb) / .35); }
 .profile-names { flex: 1; padding: 8px 0 0; display: grid; gap: 4px; }
 .profile-name-row { gap: 6px; }
 .profile-name-row h1 { font: 700 20px/1.2 var(--font); }
