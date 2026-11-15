@@ -16,6 +16,14 @@ import androidx.compose.runtime.setValue
 object AppPalette {
     var light by mutableStateOf(false)
 
+    /**
+     * True while the trust globe is the screen on top. The globe stays dark in
+     * every mode, so its pills, the dock and the status bar draw dark over it
+     * too (Apple forces TrustWebView and the dock dark the same way). Written
+     * by NavGraph; [NostrVaultTheme] folds it into [light].
+     */
+    var overGlobe by mutableStateOf(false)
+
     /** Settings > Appearance > Accent, as saved in themeColor ("orange" or "#rrggbb"). */
     var accent by mutableStateOf("orange")
 

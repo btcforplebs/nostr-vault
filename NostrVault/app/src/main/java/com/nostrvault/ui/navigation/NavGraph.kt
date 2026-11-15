@@ -19,6 +19,7 @@ import androidx.navigation.NavBackStackEntry
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.nostrvault.ui.theme.AppPalette
 import com.nostrvault.ui.theme.Motion
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -126,6 +127,13 @@ fun NostrVaultNavHost(
     val currentRoute = backStackEntry?.destination?.route
     val backStack by navController.currentBackStack.collectAsState()
     val selectedTab = selectedTabRoute(backStack.map { it.destination.route })
+
+    // The trust globe stays dark in every mode, so the app draws dark while it
+    // is on top (AppPalette.overGlobe). Written here, during composition, so
+    // the theme flips in the same frame the globe appears.
+    val onGlobe = currentRoute == Screen.WOT.route
+    if (AppPalette.overGlobe != onGlobe) AppPalette.overGlobe = onGlobe
+    DisposableEffect(Unit) { onDispose { AppPalette.overGlobe = false } }
 
     // In picture-in-picture the window shows the video only (PiP plan lane C).
     val isInPiP by com.nostrvault.ui.components.VideoPiPBridge.isInPiP.collectAsState()
