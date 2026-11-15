@@ -584,6 +584,12 @@ struct NostrVaultBadge: View {
     var size: CGFloat = 11
     @ObservedObject private var configService = ConfigService.shared
 
+    /// The logo is always Nostr Vault orange, whatever accent the person
+    /// picked (the app's own ramp: E67326 / FA9447 in Dark, C2571A / E67326
+    /// in Light).
+    private static let orange = AppTheme.orange.primaryColor
+    private static let orangeLight = AppTheme.orange.lightColor
+
     var body: some View {
         if !configService.config.hideNostrVaultBadge { mark }
     }
@@ -593,24 +599,24 @@ struct NostrVaultBadge: View {
             // Lit from the keyhole, like the icon's doorway.
             VaultDoorway()
                 .fill(RadialGradient(
-                    colors: [Color.havenPurple.opacity(0.55), Color.havenPurple.opacity(0)],
+                    colors: [Self.orange.opacity(0.55), Self.orange.opacity(0)],
                     center: UnitPoint(x: 0.5, y: 0.72), startRadius: 0, endRadius: size * 0.6
                 ))
             // Lighter along the top edge for a little depth.
             VaultDoorway()
-                .stroke(LinearGradient(colors: [Color.havenPurpleLight, Color.havenPurple],
+                .stroke(LinearGradient(colors: [Self.orangeLight, Self.orange],
                                        startPoint: .top, endPoint: .bottom),
                         lineWidth: max(1, size * 0.12))
             Circle()
-                .fill(Color.havenPurpleLight)
+                .fill(Self.orangeLight)
                 .frame(width: size * 0.26, height: size * 0.26)
-                .shadow(color: Color.havenPurple, radius: size * 0.2)
+                .shadow(color: Self.orange, radius: size * 0.2)
                 .padding(.bottom, size * 0.2)
         }
         .frame(width: size * 0.78, height: size)
         // Soft glow: a tight bright ring plus a wider haze.
-        .shadow(color: Color.havenPurple.opacity(0.9), radius: size * 0.12)
-        .shadow(color: Color.havenPurple.opacity(0.6), radius: size * 0.35)
+        .shadow(color: Self.orange.opacity(0.9), radius: size * 0.12)
+        .shadow(color: Self.orange.opacity(0.6), radius: size * 0.35)
         .accessibilityLabel("Sent from Nostr Vault")
     }
 }
