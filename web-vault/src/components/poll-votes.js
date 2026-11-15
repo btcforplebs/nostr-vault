@@ -35,7 +35,10 @@ export async function sendVote(ctx, poll, ids) {
   // The poll's own public relays, deduplicated and at most 8 (the read path's set): a stranger's poll must not
   // choose how many hosts get your signed vote and your IP.
   const pub = pollRelays(poll)
-  const template = { kind: VOTE_KIND, created_at: Math.floor(Date.now() / 1000), content: "", tags: voteTags(poll, ids, pub[0] ?? "") }
+  const tags = voteTags(poll, ids, pub[0] ?? "")
+  // No pick matched an option: an empty 1018 would be the newest vote and silently withdraw your real one.
+  if (!tags.some(t => t[0] === "response")) throw new Error("no valid pick")
+  const template = { kind: VOTE_KIND, created_at: Math.floor(Date.now() / 1000), content: "", tags }
   const { event } = await publishAction(ctx, template)
   if (pub.length) Promise.allSettled(pool.publish(pub, event)).catch(() => {})
   const store = votes.get(poll.id) ?? { events: new Map(), at: Date.now() }
