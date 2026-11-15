@@ -49,7 +49,9 @@ export async function openNapplet({ html, manifestEvent, name = "napplet", title
   let stopTheme = null, gone = false
   mounted = await mountNapplet({
     html, dTag: ident.dTag, domains, handlers, container, loader, origin: origin || undefined, needGuards: !firstParty, title: ident.title, expectHash: hash,
-    head: themed ? themeHead(deps.theme()) : "",
+    // Only ours: the block outranks a napplet's own :root, and an outside napplet styles itself (it still gets theme.get
+    // and theme.changed, and follows if it wants).
+    head: themed && firstParty ? themeHead(deps.theme()) : "",
     onClose: () => { gone = true; stopTheme?.(); close(); if (mounted) deps.bus.forget(mounted.napplet) },
     onRevoke,
   })
