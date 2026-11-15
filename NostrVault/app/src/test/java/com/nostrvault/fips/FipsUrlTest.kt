@@ -173,4 +173,21 @@ class FipsUrlTest {
         assertEquals("&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;", FipsUrl.htmlEscaped("<a href=\"x\">'&'</a>"))
         assertEquals("plain", FipsUrl.htmlEscaped("plain"))
     }
+
+    // X sends in-app browsers to `x-safari-https://…` (its open-in-Safari wrapper). Parity with FipsURLTests.swift.
+    @Test fun xSafariWrapperUnwrapsToTheRealLink() {
+        assertEquals("https://redirect.x.com/?ct=rw-null&rw_tt=thread", FipsUrl.unwrapAppRedirect("x-safari-https://redirect.x.com/?ct=rw-null&rw_tt=thread"))
+        assertEquals("https://x.com/jack/status/20", FipsUrl.unwrapAppRedirect("X-Safari-HTTPS://x.com/jack/status/20"))
+        assertEquals("http://example.com/a", FipsUrl.unwrapAppRedirect("x-safari-http://example.com/a"))
+        val target = "https://x.com/jack/status/20?s=1"
+        assertEquals("a url= target is the real link", target,
+            FipsUrl.unwrapAppRedirect("x-safari-https://redirect.x.com/?url=" + URLEncoder.encode(target, "UTF-8")))
+        assertNull("only http(s) comes out", FipsUrl.unwrapAppRedirect("x-safari-javascript:alert(1)"))
+        assertEquals("a non-http url= target is ignored", "https://redirect.x.com/?url=javascript%3Aalert(1)",
+            FipsUrl.unwrapAppRedirect("x-safari-https://redirect.x.com/?url=javascript%3Aalert(1)"))
+        assertNull(FipsUrl.unwrapAppRedirect("https://x.com/jack"))
+        assertNull(FipsUrl.unwrapAppRedirect("twitter://user?screen_name=jack"))
+        assertEquals("the wrapper itself is still another scheme: the browser unwraps it first",
+            Navigation.External, FipsUrl.navigation("x-safari-https://x.com/a", isMainFrame = true, fromMesh = false))
+    }
 }

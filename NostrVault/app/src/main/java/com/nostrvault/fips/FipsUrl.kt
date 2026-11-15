@@ -174,6 +174,30 @@ object FipsUrl {
         return text
     }
 
+    private const val APP_REDIRECT_PREFIX = "x-safari-"
+
+    /**
+     * An app's "open this in Safari" wrapper (X sends in-app browsers to `x-safari-https://redirect.x.com/…`):
+     * the real http(s) link inside it, or null for anything else. A `url=` http(s) target wins over the
+     * wrapper's own address. iOS/Mac: FipsURL.unwrapAppRedirect.
+     */
+    fun unwrapAppRedirect(url: String): String? {
+        val text = url.trim()
+        if (!text.startsWith(APP_REDIRECT_PREFIX, ignoreCase = true)) return null
+        val rest = text.substring(APP_REDIRECT_PREFIX.length)
+        val inner = rest.substringBefore(':').lowercase() + ":" + rest.substringAfter(':', "")
+        if (!isWebLink(inner)) return null
+        val target = parse(inner)?.rawQuery?.split('&')
+            ?.firstOrNull { it.startsWith("url=") }
+            ?.let { try { URLDecoder.decode(it.removePrefix("url=").replace("+", "%2B"), "UTF-8") } catch (_: Exception) { null } }
+        return target?.takeIf { isWebLink(it) } ?: inner
+    }
+
+    private fun isWebLink(url: String): Boolean {
+        val s = schemeOf(url)
+        return (s == "http" || s == "https") && !hostOf(url).isNullOrEmpty()
+    }
+
     // Every request the page makes (WebViewClient.shouldInterceptRequest)
 
     sealed interface Request {
