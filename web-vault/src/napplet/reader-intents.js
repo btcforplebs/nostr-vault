@@ -26,6 +26,8 @@
 //                                                            ⋯ menu (copy, bookmark, block, report, delete). The
 //                                                            event must carry a valid signature: a napplet can't make
 //                                                            the shell repost, zap or delete a note it made up.
+//   Reader -> shell inc: nv.key { key, … } (the desktop's keys), nv.hover { pubkey, rect } | { out } (its hover card);
+//                    shell -> Reader inc nv.key.cmd { cmd } for j/k/Enter/r/l/z on the Reader's rows (napplet-keys.js)
 //   shell -> Reader: napplet:note/open { id }, napplet:profile/open { pubkey }, napplet:feed/open { tag? } (a #tag
 //                    link, #/feed?tag=<t>, opens that tag's notes in the Reader)
 export const COMPOSE_DONE = "nv.compose.done"
@@ -36,6 +38,7 @@ import { READER_DTAG as READER } from "./first-party-list.js"
 import { mediaViewOf } from "./media-view.js"
 import { CARD_KINDS } from "./kind-cards.js"
 import { askedEmoji } from "./note-stats.js"
+import { KEY_TOPIC, HOVER_TOPIC } from "./napplet-keys.js"
 const HEX = /^[0-9a-f]{64}$/
 
 /** A link a napplet asked to open -> the URL to open, or null. http(s) only, no user:pass, at most 2048 characters. */
@@ -108,8 +111,9 @@ export function likedNote(raw, verify) {
   return ev.kind === 6 ? actionNote(ev, verify) : null
 }
 
-export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, onMedia = () => {}, preview = async () => null, card = async () => null, vote = async () => null, onArticle = () => {}, onProfile = null, stats = null, like = null }) {
-  const on = { [COMPOSE_DONE]: onComposeDone, [COMPOSE_WAITING]: onComposeWaiting, [COMPOSE_UNDONE]: onComposeUndone }
+export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, onMedia = () => {}, preview = async () => null, card = async () => null, vote = async () => null, onArticle = () => {}, onProfile = null, stats = null, like = null, onKey = null, onHover = null }) {
+  const on = { [COMPOSE_DONE]: onComposeDone, [COMPOSE_WAITING]: onComposeWaiting, [COMPOSE_UNDONE]: onComposeUndone,
+    ...(onKey ? { [KEY_TOPIC]: onKey } : {}), ...(onHover ? { [HOVER_TOPIC]: onHover } : {}) }
   const me = { dTag: "shell", send: m => { if (m?.type === "inc.event" && on[m.topic]) on[m.topic](m.payload) } }
   for (const t of Object.keys(on)) bus.subscribe(me, t)
   const off = [

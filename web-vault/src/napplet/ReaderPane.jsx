@@ -14,6 +14,7 @@ import { verifyEvent } from "nostr-tools/pure"
 import { repostWithUndo } from "../components/repost-undo.js"
 import { ZapSheet, MenuSheet } from "./NoteSheets.jsx"
 import { loadPreview } from "../components/link-preview.js"
+import { NAPPLET_KEY_EVENT, PEEK_EVENT, READER_CMD_EVENT, ROW_CMDS, ROW_TOPIC, nappletKey, pageHover } from "./napplet-keys.js"
 import { MediaLightbox } from "../components/MediaLightbox.jsx"
 import { ArticleReader } from "../readers/ArticlesScreen.jsx"
 import { articleCard, highlightCard, pollCard } from "./kind-cards.js"
@@ -94,12 +95,18 @@ export function ReaderPane({ ctx, open = null, hidden = false }) {
         likeWithFeedback(liveCtx, note, emoji === undefined ? undefined : pickFor(actionState(note.id).like === "sent" ? displayEmoji(reactionOf(note.id)) : null, emoji))
         return ""
       },
+      // The desktop's keys and hover card over the frame (napplet-keys.js): handed to the page as events.
+      onKey: p => { const k = nappletKey(p); if (k) dispatchEvent(new CustomEvent(NAPPLET_KEY_EVENT, { detail: k })) },
+      onHover: p => { const h = pageHover(p, host.current?.querySelector("iframe")?.getBoundingClientRect()); if (h) dispatchEvent(new CustomEvent(PEEK_EVENT, { detail: h })) },
       preview: loadPreview,
     })
     live.current.me = wire.me
     // Your Like and the zap totals, pushed to the Reader as they change (note-stats.js), for the notes it asked about.
     const push = id => { if (watched.has(id)) bus.emit(wire.me, STATS_TOPIC, statsNow(id)) }
     const offStats = [onActionState(push), onZapTotals(push)]
+    // j/k/Enter/r/l/z for the Reader's rows (the shell has none to move along): passed in while this pane is shown.
+    const rowCmd = e => { if (!host.current?.closest("[hidden]") && ROW_CMDS.has(e.detail?.cmd)) bus.emit(wire.me, ROW_TOPIC, { cmd: e.detail.cmd }) }
+    addEventListener(READER_CMD_EVENT, rowCmd)
     ;(async () => {
       try {
         reader = await mount(READER_DTAG, host.current, () => { reader = null })
@@ -110,7 +117,7 @@ export function ReaderPane({ ctx, open = null, hidden = false }) {
         if (openRef.current) bus.invoke(wire.me, openRef.current)
       } catch (e) { if (!gone) setNote(`The Reader couldn't open: ${e?.message ?? e}`) }
     })()
-    return () => { gone = true; offStats.forEach(f => f()); wire.close(); live.current?.reader?.offs.forEach(f => f()); reader?.close(); compose?.close(); live.current = null }
+    return () => { removeEventListener(READER_CMD_EVENT, rowCmd); gone = true; offStats.forEach(f => f()); wire.close(); live.current?.reader?.offs.forEach(f => f()); reader?.close(); compose?.close(); live.current = null }
   }, [ctx.session.pubkey, ctx.vault, ctx.signer, grants])
 
   // A new address (another thread or profile) while the Reader is up: hand it over instead of mounting again.

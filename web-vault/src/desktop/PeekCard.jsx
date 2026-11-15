@@ -5,6 +5,7 @@ import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
 import { useProfile } from "../components/useProfile.js"
 import { setFollow } from "../net/follows.js"
+import { PEEK_EVENT } from "../napplet/napplet-keys.js"
 
 const SHOW_MS = 400, HIDE_MS = 250
 const HEX = /^[0-9a-f]{64}$/
@@ -39,6 +40,18 @@ export function PeekCard({ ctx }) {
     }
     const out = e => { if (targetOf(e.target) || e.target.closest?.(".peek")) hideSoon() }
     const gone = () => { clearTimeout(t.show); setAt(null) }
+    // A name or avatar hovered inside the Reader napplet's frame (napplet-keys.js): its rect, already in page terms.
+    const fromNapplet = e => {
+      const d = e.detail
+      if (d?.out) return hideSoon()
+      if (!d?.pubkey) return
+      clearTimeout(t.hide); clearTimeout(t.show)
+      t.show = setTimeout(() => {
+        const r = d.rect, above = r.bottom + 220 > innerHeight
+        setAt({ pubkey: d.pubkey, left: Math.max(8, Math.min(r.left, innerWidth - W - 8)), top: above ? r.top - 8 : r.bottom + 8, above })
+      }, SHOW_MS)
+    }
+    addEventListener(PEEK_EVENT, fromNapplet)
     document.addEventListener("pointerover", over)
     document.addEventListener("pointerout", out)
     addEventListener("scroll", gone, true)
@@ -48,6 +61,7 @@ export function PeekCard({ ctx }) {
     return () => {
       document.removeEventListener("pointerover", over); document.removeEventListener("pointerout", out)
       removeEventListener("scroll", gone, true); removeEventListener("hashchange", gone); removeEventListener("pointerdown", press)
+      removeEventListener(PEEK_EVENT, fromNapplet)
       clearTimeout(t.show); clearTimeout(t.hide)
     }
   }, [])

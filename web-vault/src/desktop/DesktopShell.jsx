@@ -11,6 +11,7 @@ import { SettingsScreen } from "../screens/SettingsScreen.jsx"
 import { ComposeScreen, ProfileScreen, PersonScreen, SearchScreen, NotificationsScreen, ThreadScreen, MessagesScreen, ConversationScreen, VaultScreen, AccountsScreen, WalletScreen, WotScreen, BookmarksScreen, EmojiScreen, NappletShell, ReaderPane, WotPane, MessagesPane } from "../screens/lazy-screens.js"
 import { nappletsOn } from "../napplet/flag.js"
 import { readerOpenFor } from "../napplet/reader-intents.js"
+import { NAPPLET_KEY_EVENT, READER_CMD_EVENT, ROW_CMDS } from "../napplet/napplet-keys.js"
 import { compose } from "../net/actions.js"
 import { parseHash, withParam, sideOf, SPLIT, FULL } from "./routes.js"
 import { keyCommand, SHEET } from "./keys.js"
@@ -196,6 +197,9 @@ function listRows() {
   return pane ? [...pane.querySelectorAll(ROW)].filter(r => !r.parentElement.closest(".note") && r.getClientRects().length) : []
 }
 
+/** The Reader napplet is the list on screen (the switch on, its pane shown). */
+const readerShown = () => !!document.querySelector(".desk-list:not([hidden]) .desk-pane:not([hidden]) .reader-host iframe")
+
 function useShortcuts(o) {
   const ref = useRef(o)
   ref.current = o
@@ -235,6 +239,8 @@ function useShortcuts(o) {
         }
       }
       if (s.composing) return false
+      // The Reader napplet's pane has no rows the page can see: its row commands go to it (napplet-keys.js).
+      if (ROW_CMDS.has(c.cmd) && !listRows().length && readerShown()) return void dispatchEvent(new CustomEvent(READER_CMD_EVENT, { detail: { cmd: c.cmd } }))
       switch (c.cmd) {
         case "next": case "prev": {
           const rows = listRows()
@@ -281,6 +287,17 @@ function useShortcuts(o) {
       if (run(c, e) !== false) e.preventDefault()
     }
     addEventListener("keydown", onKey)
-    return () => { removeEventListener("keydown", onKey); clearTimeout(timer) }
+    // A key pressed inside the Reader napplet's frame, passed over by its pane: the same map, the same commands.
+    const onNappletKey = e => {
+      const k = e.detail
+      const c = keyCommand({ ...k, pending })
+      pending = null; clearTimeout(timer)
+      if (!c) return
+      if (c.pending) { pending = c.pending; timer = setTimeout(() => { pending = null }, 1200); return }
+      if (ROW_CMDS.has(c.cmd)) return void dispatchEvent(new CustomEvent(READER_CMD_EVENT, { detail: { cmd: c.cmd } }))
+      run(c, null)
+    }
+    addEventListener(NAPPLET_KEY_EVENT, onNappletKey)
+    return () => { removeEventListener("keydown", onKey); removeEventListener(NAPPLET_KEY_EVENT, onNappletKey); clearTimeout(timer) }
   }, [])
 }
