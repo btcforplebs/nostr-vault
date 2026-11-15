@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Emoji</title>
 <style>
-  :root { color-scheme: light dark; --bg: #fff; --fg: #111; --muted: #666; --line: #e3e3e6; --cell: #f2f2f4; --accent: #e67326;
+  :root { color-scheme: dark; --bg: #000; --s2: #2c2c2e; --text: #fff; --text-2: rgb(255 255 255 / .60); --hair: rgb(255 255 255 / .14); --accent: #e67326;
+    --fg: var(--text); --muted: var(--text-2); --line: var(--hair); --cell: var(--s2);
     font: 15px/1.35 -apple-system, system-ui, sans-serif; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #0b0b0c; --fg: #eee; --muted: #999; --line: #26262a; --cell: #17171a; } }
   html, body { margin: 0; background: var(--bg); color: var(--fg); }
   body { padding: 10px 12px 14px; }
   input { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--cell); color: inherit; font: inherit; }
@@ -25,6 +25,7 @@
 <input id="q" type="search" placeholder="Search emoji" aria-label="Search emoji" autocomplete="off">
 <div id="out"></div>
 <script>
+/*@nv-theme*/
   // The Emoji napplet (plan P2), our first real napplet: Unicode emoji by category, your recent ones, and your own
   // custom emoji (your kind 10030 list and the 30030 sets it names, NIP-30), read through the shell. Pictures come as
   // bytes from the shell: this frame has no network. A pick goes out on the INC topic "nv.emoji.picked" as { emoji } or
@@ -33,6 +34,7 @@
   const CATEGORIES = [["Smileys","😀 😃 😄 😁 😆 😅 🤣 😂 🙂 😉 😊 😇 🥰 😍 🤩 😘 😋 😛 😜 🤪 🤔 🤨 😐 😑 😶 🙄 😏 😬 😌 😔 😴 😷 🤒 🤯 🥳 😎 🤓 🧐 😕 😟 🙁 😮 😲 😳 🥺 😢 😭 😱 😤 😡 🤬 💀 🤡 👻 👽 🤖 💩"],["Hearts & Hands","❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 💯 💕 💖 💗 👍 👎 👌 🤌 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ☝️ 👋 🤚 ✋ 🖖 👏 🙌 🫶 👐 🤲 🤝 🙏 💪 🫡"],["Fun & Activities","🎉 🎊 🎁 🎈 ✨ 🔥 ⚡ 🌟 ⭐ 💫 🚀 🏆 🥇 🎯 🎮 🎲 🎵 🎶 🎸 🎤 🍕 🍔 🍟 🌮 🍣 🍩 🍪 🎂 🍺 🍻 🥂 🍷 ☕ 🧡 🫂 👀 🧠 💡 💰 ₿"],["Animals & Nature","🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🙈 🙉 🙊 🐔 🐧 🐦 🦅 🦉 🐺 🐴 🦄 🐝 🦋 🐢 🐍 🐙 🦀 🐬 🐳 🌸 🌻 🌹 🌲 🌵 🍀 🍁 🌈 ☀️ 🌙 ❄️ 🌊"]]
   const KEYWORDS = {"😀":"smile happy grin","😂":"laugh lol joy tears","🤣":"laugh rofl lol","😊":"smile blush happy","😍":"love heart eyes","🥰":"love hearts","😘":"kiss","😎":"cool sunglasses","🤔":"think hmm","🙄":"eyeroll","😴":"sleep tired","🤯":"mind blown wow","🥳":"party celebrate","😮":"wow surprised oh","😲":"shocked wow","😳":"flushed embarrassed","🥺":"please pleading","😢":"sad cry tear","😭":"cry sob sad","😱":"scream scared","😡":"angry mad","🤬":"angry swear","💀":"dead skull dying","🤡":"clown","👻":"ghost","💩":"poop","❤️":"heart love red","🧡":"heart orange bitcoin","💔":"broken heart","💯":"hundred perfect","👍":"thumbs up yes like ok","👎":"thumbs down no dislike","👌":"ok perfect","🤙":"shaka call hang loose","👋":"wave hello hi bye","👏":"clap applause","🙌":"hands raise praise","🫶":"heart hands love","🤝":"handshake deal","🙏":"pray please thanks","💪":"strong muscle flex","🫡":"salute","🎉":"party tada celebrate","✨":"sparkles magic","🔥":"fire hot lit","⚡":"lightning zap bolt","🌟":"star","⭐":"star","🚀":"rocket moon launch","🏆":"trophy win","🎯":"target bullseye","🎵":"music note","🍕":"pizza","🍺":"beer","☕":"coffee","👀":"eyes look","🧠":"brain smart","💡":"idea bulb","💰":"money bag","₿":"bitcoin btc","🐶":"dog puppy","🐱":"cat kitty","🦄":"unicorn","🐝":"bee","🌈":"rainbow","☀️":"sun","🌙":"moon night","🌊":"wave ocean sea"}
   const n = window.napplet || {}
+  nvTheme(n) // the shell's Mode and accent, live (theme-client.js)
   const $ = id => document.getElementById(id)
   const RECENT_MAX = 16, CUSTOM_MAX = 120, SETS_MAX = 10
   const SHORTCODE = /^[A-Za-z0-9_-]{1,64}$/

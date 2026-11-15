@@ -4,16 +4,17 @@
 <meta charset="utf-8">
 <title>Note Drafts</title>
 <style>
-  :root { color-scheme: dark; font: 15px/1.4 -apple-system, system-ui, sans-serif; }
-  body { margin: 0; padding: 14px; background: #0b0b0c; color: #eee; }
+  :root { color-scheme: dark; --bg: #000; --s2: #2c2c2e; --text: #fff; --text-2: rgb(255 255 255 / .60); --hair: rgb(255 255 255 / .14); --accent: #e67326; --on-accent: #fff;
+    font: 15px/1.4 -apple-system, system-ui, sans-serif; }
+  body { margin: 0; padding: 14px; background: var(--bg); color: var(--text); }
   h1 { font-size: 15px; margin: 0 0 8px; font-weight: 600; }
-  textarea { width: 100%; box-sizing: border-box; min-height: 90px; background: #151517; color: inherit; border: 1px solid #2a2a2e; border-radius: 10px; padding: 10px; font: inherit; }
+  textarea { width: 100%; box-sizing: border-box; min-height: 90px; background: var(--s2); color: inherit; border: 1px solid var(--hair); border-radius: 10px; padding: 10px; font: inherit; }
   .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-  button { background: #e67326; color: #000; border: 0; border-radius: 999px; padding: 7px 14px; font: inherit; font-weight: 600; }
+  button { background: var(--accent); color: var(--on-accent); border: 0; border-radius: 999px; padding: 7px 14px; font: inherit; font-weight: 600; }
   button:disabled { opacity: .4; }
-  #status { color: #999; font-size: 13px; }
+  #status { color: var(--text-2); font-size: 13px; }
   ul { padding: 0; list-style: none; margin: 12px 0 0; }
-  li { border-top: 1px solid #222; padding: 8px 0; font-size: 14px; white-space: pre-wrap; }
+  li { border-top: 1px solid var(--hair); padding: 8px 0; font-size: 14px; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -23,8 +24,10 @@
 <div class="row"><button id="post" disabled>Post</button><span id="status" role="status"></span></div>
 <ul id="mine"></ul>
 <script>
+/*@nv-theme*/
   // A sample napplet, plain JS, no build: identity -> storage autosave -> outbox publish -> outbox query.
   const n = window.napplet || {}
+  nvTheme(n)
   const $ = (id) => document.getElementById(id)
   const status = (t) => { $("status").textContent = t }
   const missing = ["identity", "storage", "outbox"].filter((d) => !n[d])

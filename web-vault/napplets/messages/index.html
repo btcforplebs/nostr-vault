@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Messages</title>
 <style>
-  :root { color-scheme: dark; --bg: #000; --text: #f2f2f2; --muted: #9a9a9f; --hair: #26262a; --s1: #111113; --s2: #1c1c1f; --accent: #e67326; --mine: #e67326;
+  :root { color-scheme: dark; --bg: #000; --s1: #1c1c1e; --s2: #2c2c2e; --s3: #3a3a3c; --text: #fff; --text-2: rgb(255 255 255 / .60); --text-3: rgb(255 255 255 / .35); --hair: rgb(255 255 255 / .14); --accent: #e67326; --accent-rgb: 230 115 38; --on-accent: #fff; --on-badge: #1a0d03; --danger: #ff453a; --online: #33d980; --shade: 0 0 0; --shade-k: 1;
+    --muted: var(--text-2); --mine: var(--accent);
     font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
@@ -15,7 +16,7 @@
   header h1 { flex: 1; margin: 0; font-size: 17px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   button, input, textarea { font: inherit; color: var(--text); }
   button { background: var(--s2); border: 1px solid var(--hair); border-radius: 999px; min-height: 36px; padding: 0 14px; cursor: pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 650; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 650; }
   button.ghost { background: none; border: 0; color: var(--muted); padding: 0 6px; }
   button:disabled { opacity: .45; cursor: default; }
   .tabs { display: flex; gap: 6px; padding: 10px 14px 4px; }
@@ -27,13 +28,13 @@
   .who b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .who span { display: block; color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .meta { text-align: right; color: var(--muted); font-size: 12px; display: grid; gap: 4px; justify-items: end; }
-  .badge { background: var(--accent); color: #000; font-weight: 700; border-radius: 999px; min-width: 20px; padding: 0 6px; font-size: 12px; line-height: 20px; text-align: center; }
+  .badge { background: var(--accent); color: var(--on-badge); font-weight: 700; border-radius: 999px; min-width: 20px; padding: 0 6px; font-size: 12px; line-height: 20px; text-align: center; }
   .empty { text-align: center; color: var(--muted); padding: 40px 20px; }
   #thread { display: flex; flex-direction: column; min-height: 100vh; }
   #bubbles { flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 12px 12px 12px; }
   .b { max-width: 80%; padding: 8px 12px; border-radius: 18px; background: var(--s2); white-space: pre-wrap; overflow-wrap: anywhere; align-self: flex-start; }
-  .b.mine { align-self: flex-end; background: var(--mine); color: #000; }
-  .b.failed { outline: 1px solid #ff6b5e; }
+  .b.mine { align-self: flex-end; background: var(--mine); color: var(--on-accent); }
+  .b.failed { outline: 1px solid var(--danger); }
   .b time { display: block; font-size: 11px; opacity: .65; margin-top: 2px; }
   .day { align-self: center; color: var(--muted); font-size: 12px; margin: 8px 0 2px; }
   .compose { position: sticky; bottom: 0; display: flex; gap: 8px; align-items: flex-end; padding: 10px 12px 104px; background: var(--bg); border-top: 1px solid var(--hair); }
@@ -79,6 +80,7 @@
   <div class="compose" id="form"><button type="button" id="pick" aria-label="Attach photo or video">Photo</button><input type="file" id="file" accept="image/*,video/*" hidden><textarea id="text" rows="1" placeholder="Message" aria-label="Message"></textarea><button type="button" class="primary" id="send" disabled>Send</button></div>
 </section>
 <script>
+/*@nv-theme*/
 // The Messages napplet (plan P7): your direct messages through NAP-DM. This frame has no network and no key: the
 // shell reads, decrypts and sends with its own DM stack (NIP-17 sealed and gift-wrapped there, NIP-42 AUTH there) and
 // hands over only text. Inbox and Requests (strangers, as the classic page splits them), a conversation with older
@@ -370,7 +372,7 @@ $("to").oninput = () => { $("go").disabled = !pubkeyOf($("to").value) }
 $("go").onclick = () => { const pk = pubkeyOf($("to").value); if (pk) openThread(pk) }
 
 ;(async () => {
-  if (n.theme?.get) n.theme.get().then(t => { const c = t?.colors ?? {}, r = document.documentElement.style; if (c.background) r.setProperty("--bg", c.background); if (c.text) r.setProperty("--text", c.text); if (c.primary) { r.setProperty("--accent", c.primary); r.setProperty("--mine", c.primary) } }).catch(() => {})
+  nvTheme(n)
   n.intent?.onDelivery?.(d => {
     if (d?.archetype !== "dm") return
     if (d.action === "refresh") { loadList().then(() => { if (!open) return; $("tname").textContent = nameOf(open); if (!labels.has(open)) askName(open) }); return }

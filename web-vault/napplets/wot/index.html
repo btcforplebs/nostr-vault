@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Web of Trust</title>
 <style>
-  :root { color-scheme: dark; --bg: #000; --text: #f2f2f2; --muted: #9a9a9f; --hair: #26262a; --s1: #111113; --s2: #1c1c1f; --accent: #e67326;
+  :root { color-scheme: dark; --bg: #000; --s1: #1c1c1e; --s2: #2c2c2e; --s3: #3a3a3c; --text: #fff; --text-2: rgb(255 255 255 / .60); --text-3: rgb(255 255 255 / .35); --hair: rgb(255 255 255 / .14); --accent: #e67326; --accent-rgb: 230 115 38; --accent-light: #fa9447; --on-accent: #fff;
+    --muted: var(--text-2);
     font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
@@ -17,7 +18,7 @@
   .bar button { padding: 0 12px; }
   button, select { font: inherit; color: var(--text); background: color-mix(in srgb, var(--s2) 86%, transparent); backdrop-filter: blur(12px);
     border: 1px solid var(--hair); border-radius: 999px; min-height: 40px; padding: 0 14px; cursor: pointer; }
-  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 650; }
+  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 650; }
   .grow { flex: 1; }
   .pill { position: fixed; left: 50%; transform: translateX(-50%); top: 60px; z-index: 2; background: color-mix(in srgb, var(--s2) 90%, transparent);
     border: 1px solid var(--hair); border-radius: 999px; padding: 6px 14px; font-size: 13px; color: var(--text); white-space: nowrap; }
@@ -32,7 +33,7 @@
   #card h2 { margin: 0; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #card p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
   #card .acts { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
-  #card .acts button.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 650; }
+  #card .acts button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 650; }
 </style>
 </head>
 <body>
@@ -54,6 +55,7 @@
   <div class="acts"><button class="primary" id="cfollow" hidden>Follow</button><button id="cweb" hidden>See their web</button><button id="cprofile">Open profile</button><button id="cclose">Close</button></div>
 </section>
 <script>
+/*@nv-theme*/
 // The WoT globe napplet (plan P6). Logen's decision 6: the web of trust is computed in the shell (Haven), never here.
 // The shell hands over a drawing-ready scene by intent (napplet:wot/show): you, your follows, the vouched and further
 // out people it shows, who links whom, who follows you back, and names and pictures. This frame draws it: the
@@ -115,6 +117,15 @@ const DIMMED = 0.08, LOADS_PER_FRAME = 8, BITMAP = 96
 const canvas = $("globe")
 let cam = newCamera(), size = { w: 0, h: 0 }, drawn = [], fades = new Map(), fading = false, frame = 0, last = 0, loadsLeft = 0
 const images = new Map() // picture url -> bitmap | "loading" | "failed"
+// The accent the canvas paints with ("r g b" channels), read from the theme tokens; redrawn when they change.
+const tint = { accent: "230 115 38", light: "250 148 71" }
+function channels(v) { const m = /^#([0-9a-f]{6})$/i.exec(String(v).trim()); return m ? [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16)).join(" ") : null }
+function readTint() {
+  const css = getComputedStyle(document.documentElement)
+  tint.accent = css.getPropertyValue("--accent-rgb").trim() || tint.accent
+  tint.light = channels(css.getPropertyValue("--accent-light")) || tint.light
+}
+readTint()
 function request() { if (!frame) frame = requestAnimationFrame(tick) }
 function tick(t) {
   frame = 0
@@ -171,7 +182,7 @@ function draw(dt) {
   fades = next; fading = !still
   const all = [...faces.sort((a, b) => a.depth - b.depth), me]
   const glow = g.createRadialGradient(me.x, me.y, 0, me.x, me.y, me.r * 3)
-  glow.addColorStop(0, "rgb(230 115 38 / .32)"); glow.addColorStop(1, "rgb(230 115 38 / 0)")
+  glow.addColorStop(0, `rgb(${tint.accent} / .32)`); glow.addColorStop(1, `rgb(${tint.accent} / 0)`)
   g.fillStyle = glow; g.beginPath(); g.arc(me.x, me.y, me.r * 3, 0, 2 * Math.PI); g.fill()
   const at = new Map(); for (const d of out) at.set(d.node.pk, d); for (const f of faces) at.set(f.pk, f)
   const to = target && at.get(target)
@@ -179,7 +190,7 @@ function draw(dt) {
     const legs = []
     for (const pk of path) { const b = at.get(pk); if (b && b.depth >= -0.2 && (b.shown ?? 1) >= 0.3) legs.push(b) }
     const stroke = (width, colour, inner) => { g.beginPath(); for (const b of legs) { if (inner) { g.moveTo(me.x, me.y); g.lineTo(b.x, b.y) } else { g.moveTo(b.x, b.y); g.lineTo(to.x, to.y) } } g.lineWidth = width; g.strokeStyle = colour; g.stroke() }
-    stroke(3, "rgb(230 115 38 / .16)", true); stroke(3, "rgb(230 115 38 / .25)", false); stroke(0.8, "rgb(255 168 77 / .45)", true); stroke(1.3, "rgb(255 168 77 / .9)", false)
+    stroke(3, `rgb(${tint.accent} / .16)`, true); stroke(3, `rgb(${tint.accent} / .25)`, false); stroke(0.8, `rgb(${tint.light} / .45)`, true); stroke(1.3, `rgb(${tint.light} / .9)`, false)
   }
   for (const f of all) {
     if (!f.me && f.shown < 1) {
@@ -327,7 +338,9 @@ function show(s) {
   else if (picked) { $("cname").textContent = nameOf(picked); $("cline").textContent = cardLine(web, picked, nameOf, s.whose); fillCardActions(picked) }
 }
 n.intent?.onDelivery?.(d => { if (d?.archetype === "wot" && d.action === "show" && d.payload?.me) show(d.payload) })
-if (n.theme?.get) n.theme.get().then(t => { const c = t?.colors ?? {}; if (c.primary) document.documentElement.style.setProperty("--accent", c.primary) }).catch(() => {})
+// The globe stays a dark island in Light, as the classic screen does; its accent follows the shell (theme-client.js).
+nvTheme(n, { island: "dark" })
+addEventListener("nv-theme", () => { readTint(); request() })
 </script>
 </body>
 </html>

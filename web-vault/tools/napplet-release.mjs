@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Ready-to-publish files for our napplets (plan P8, Logen's decision 3: publish only after the whole build, and only
 // on his say). For each napplet in src/napplet/first-party-list.js (samples left out) this writes:
-//   <out>/<d>/index.html             the exact bytes the app runs (the WoT maths injected as in the app)
+//   <out>/<d>/index.html             the exact bytes the app runs (the WoT maths and theme code injected as in the app)
 //   <out>/<d>/manifest.unsigned.json a kind 35129 template: d, x (the sha256 of index.html), title, summary, R per NAP
 //                                    domain, i per intent. Unsigned, never sent.
 //   <out>/RELEASE.md                 hashes, sizes and the steps that are still to do.
@@ -12,6 +12,7 @@ import crypto from "node:crypto"
 import { fileURLToPath } from "node:url"
 import { FIRST_PARTY_LIST } from "../src/napplet/first-party-list.js"
 import { injectWot } from "../src/napplet/wot-inject.js"
+import { injectTheme } from "../src/napplet/theme-inject.js"
 import { parseManifest } from "../src/napplet/manifest.js"
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..")
@@ -20,7 +21,8 @@ const read = p => fs.readFileSync(path.join(root, p), "utf8")
 /** One napplet's artifact bytes, as the app builds them (first-party.js). */
 export function artifactOf(n, readFile = read) {
   const html = readFile(`napplets/${n.file}/index.html`)
-  return n.maths ? injectWot(html, [readFile("src/net/wot-pure.js"), readFile("src/net/wot-globe.js")]) : html
+  const withMaths = n.maths ? injectWot(html, [readFile("src/net/wot-pure.js"), readFile("src/net/wot-globe.js")]) : html
+  return injectTheme(withMaths, readFile("src/napplet/theme-client.js"))
 }
 
 /** The unsigned kind 35129 for an artifact. `created_at` is left for whoever signs it. */

@@ -26,6 +26,9 @@ import { showToast, hideToast } from "../components/Toast.jsx"
 import { delayActionOf } from "./publish-delay.js"
 import { globalTrust } from "../readers/trust.js"
 import { wotGate, namedSets } from "./wot-gate.js"
+import { readTheme, onThemeChange } from "./theme.js"
+import { onAppearance } from "../net/appearance.js"
+import { onAccent } from "../net/accent.js"
 
 const QUERY_WAIT_MS = 4000
 const WOT_TTL_MS = 10 * 60_000
@@ -50,11 +53,8 @@ function nappletWot(ctx) {
   return gate
 }
 
-/** The theme a napplet draws with: the app's own colours, read from its CSS variables. */
-export function appTheme(doc = document) {
-  const css = getComputedStyle(doc.documentElement), v = n => css.getPropertyValue(n).trim()
-  return { colors: { background: v("--bg") || "#000", text: v("--text") || "#fff", primary: v("--accent") || "#e67326" }, title: "Nostr Vault" }
-}
+/** The theme a napplet draws with: the app's own colours and every token, as the page draws them now (theme.js). */
+export const appTheme = (doc = document) => readTheme(doc)
 
 /** The last locked DM file asked for, one slot for videos and one for photos: { url, blob: Promise<Blob>, stop }.
  *  A photo never takes a video's slot; a file that takes a slot aborts the download it replaces. */
@@ -155,6 +155,8 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
       return () => subs.forEach(s => s.close())
     },
     theme: () => appTheme(),
+    // theme.changed (runtime.js): Mode, Auto following the device, the accent, or another tab changing them.
+    themeChanges: fn => onThemeChange(fn, { onAppearance, onAccent }),
     storage,
     resourceSchemes: () => ["data", "https", "blossom"],
     fetchBytes,

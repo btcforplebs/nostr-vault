@@ -23,9 +23,10 @@ export const LOADER_PATH = LOADER_FILE
 //             checked against that origin both ways.
 //   domains:  the NAP domains this napplet may use. Only these are injected AND only these are answered: hiding a
 //             shim object does not stop a napplet posting any envelope it likes.
+//   head:     more for <head> after the bootstrap (runtime.js: the theme's first-paint block).
 //   handlers: { [domain]: (msg, napplet) => reply | Promise<reply> | undefined }. A reply object is posted back as is
 //             (it carries its own `type` and `id`); undefined means the handler answers later through napplet.send.
-export async function mountNapplet({ html, dTag, domains, handlers, container, expectHash, onRevoke, onClose, loader, origin, needGuards = !!origin, title = dTag }) {
+export async function mountNapplet({ html, dTag, domains, handlers, container, expectHash, onRevoke, onClose, loader, origin, needGuards = !!origin, title = dTag, head = "" }) {
   if (origin && origin === globalThis.location?.origin) throw new Error("a napplet never runs on the vault's own origin")
   const hash = await artifactHash(html)
   if (expectHash && expectHash !== hash) throw new Error(`napplet ${dTag}: artifact hash ${hash} is not the manifest's ${expectHash}`)
@@ -43,7 +44,7 @@ export async function mountNapplet({ html, dTag, domains, handlers, container, e
   const napplet = { dTag, hash, send: (m) => port && !closed && port.postMessage(m), ready: new Promise(r => { portUp = r }) }
   // On its own origin the napplet may stream media from its service worker's path (csp.js STREAM_PATH), only there.
   const stream = origin && loader ? `${origin}${new URL(loader).pathname.replace(/[^/]*$/, "")}${STREAM_PATH}` : ""
-  const srcdoc = buildSrcdoc(html, preludeFor(domains), frameCsp({ stream }))
+  const srcdoc = buildSrcdoc(html, preludeFor(domains), frameCsp({ stream }), head)
   const maxLoads = loader ? 2 : 1
 
   const revoke = (why) => {
