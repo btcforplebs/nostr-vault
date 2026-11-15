@@ -68,7 +68,7 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   const listKey = other ? `person:${view.arg}` : view.route
   const list = (
     <>
-      {kept.feed && <div class="desk-pane" hidden={listKey !== "feed"}>{nappletsOn() ? <ReaderPane ctx={ctx} open={readerOpenFor("feed", "", hash)} beside={openBeside} openId={note ?? ""} /> : <FeedScreen ctx={ctx} />}</div>}
+      {kept.feed && <div class="desk-pane" hidden={listKey !== "feed"}>{nappletsOn() ? <ReaderPane ctx={ctx} open={readerOpenFor("feed", "", hash)} beside={openBeside} openId={note ?? ""} fullCompose /> : <FeedScreen ctx={ctx} />}</div>}
       {kept.search && <div class="desk-pane" hidden={listKey !== "search"}><SearchScreen ctx={ctx} onProfile={pk => { location.hash = `#/profile/${pk}` }} /></div>}
       {listKey !== "feed" && listKey !== "search" && (
         <div class="desk-pane" key={listKey}>
@@ -142,7 +142,7 @@ function ThreadPane({ ctx, id, onClose, reader = false }) {
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
       </header>
-      {reader ? <ReaderPane ctx={ctx} open={{ archetype: "note", action: "open", payload: { id, side: true } }} keys={false} />
+      {reader ? <ReaderPane ctx={ctx} open={{ archetype: "note", action: "open", payload: { id, side: true } }} keys={false} fullCompose />
         : <ThreadScreen ctx={ctx} id={id} />}
       {!reader && !ctx.signer?.readOnly && <div class="desk-reply"><ComposeScreen ctx={ctx} fixed={{ mode: "reply", id }} inline /></div>}
     </div>

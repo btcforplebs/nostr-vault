@@ -8,7 +8,7 @@ import { grantStore } from "./policy.js"
 import { createBus } from "./bus.js"
 import { shellDeps } from "./shell-deps.js"
 import { firstParty, READER_DTAG, COMPOSE_DTAG } from "./first-party.js"
-import { readerIntents } from "./reader-intents.js"
+import { COMPOSE_SENT, readerIntents } from "./reader-intents.js"
 import { useLiveCtx } from "./usePaneNapplet.js"
 import { verifyEvent } from "nostr-tools/pure"
 import { repostWithUndo } from "../components/repost-undo.js"
@@ -25,7 +25,7 @@ import { heldVotes, loadVotes, sendVote, votesFresh } from "../components/poll-v
 import { isClosed, parsePoll } from "../components/polls.js"
 import { getBlocks } from "../net/blocks.js"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
-import { actionState, loadSent, onActionState, reactionOf } from "../net/actions.js"
+import { NOTE_SENT_EVENT, actionState, compose as composeFull, loadSent, onActionState, reactionOf } from "../net/actions.js"
 import { onZapTotals, wantTotals, zapTotal } from "../net/zaps.js"
 import { displayEmoji, likeWithFeedback, pickFor } from "../components/ReactionButton.jsx"
 import { STATS_TOPIC, statsOf } from "./note-stats.js"
@@ -36,8 +36,9 @@ const whenReady = async m => { await Promise.race([m.napplet.ready, new Promise(
 
 // `beside(id)`: the desktop list's Reader opens a tapped note's thread beside the list (plan step 2); true when it did.
 // `openId`: the note open beside it, marked in the list. `keys`: takes j/k/Enter/r/l/z (the list's Reader, not the one
-// beside it).
-export function ReaderPane({ ctx, open = null, hidden = false, beside = null, openId = "", keys = true }) {
+// beside it). `fullCompose`: Post, Reply and Quote open the site's full composer (#/compose, the desktop's dialog) in
+// place of the Compose napplet (plan step 2b); what it sends comes back to the Reader as inc nv.compose.sent.
+export function ReaderPane({ ctx, open = null, hidden = false, beside = null, openId = "", keys = true, fullCompose = false }) {
   const host = useRef(null), composeHost = useRef(null)
   const [composing, setComposing] = useState(false)
   const [composeAside, setComposeAside] = useState(false) // a post counting down: the sheet steps aside, still mounted
@@ -84,6 +85,7 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
     const watched = new Set() // the notes whose Like and zaps the Reader asked about (napplet:note/stats)
     const wire = readerIntents({
       bus, openCompose,
+      fullCompose: fullCompose ? (mode, ev) => { if (ev) composeFull(mode, ev); else location.hash = "#/compose" } : null,
       onComposeDone: () => live.current?.closeCompose(),
       onComposeWaiting: () => setComposeAside(true),
       onComposeUndone: () => setComposeAside(false),
@@ -119,6 +121,9 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
     // j/k/Enter/r/l/z for the Reader's rows (the shell has none to move along): passed in while this pane is shown.
     const rowCmd = e => { if (!host.current?.closest("[hidden]") && ROW_CMDS.has(e.detail?.cmd)) bus.emit(wire.me, ROW_TOPIC, { cmd: e.detail.cmd }) }
     if (keys) addEventListener(READER_CMD_EVENT, rowCmd)
+    // A note the full composer sent (fullCompose): the Reader shows it at once, as it does one from the Compose napplet.
+    const sentNote = e => { if (e.detail?.id) bus.emit(wire.me, COMPOSE_SENT, { event: e.detail }) }
+    if (fullCompose) addEventListener(NOTE_SENT_EVENT, sentNote)
     ;(async () => {
       try {
         reader = await mount(READER_DTAG, host.current, () => { reader = null })
@@ -130,7 +135,7 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
         if (openIdRef.current) bus.emit(wire.me, OPEN_TOPIC, { id: openIdRef.current })
       } catch (e) { if (!gone) setNote(`The Reader couldn't open: ${e?.message ?? e}`) }
     })()
-    return () => { removeEventListener(READER_CMD_EVENT, rowCmd); gone = true; offStats.forEach(f => f()); wire.close(); live.current?.reader?.offs.forEach(f => f()); reader?.close(); compose?.close(); live.current = null }
+    return () => { removeEventListener(READER_CMD_EVENT, rowCmd); removeEventListener(NOTE_SENT_EVENT, sentNote); gone = true; offStats.forEach(f => f()); wire.close(); live.current?.reader?.offs.forEach(f => f()); reader?.close(); compose?.close(); live.current = null }
   }, [ctx.session.pubkey, ctx.vault, ctx.signer, grants])
 
   // The note open beside the list, marked in it (nv.note.open); "" when the side pane closes.

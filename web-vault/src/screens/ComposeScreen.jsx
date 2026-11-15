@@ -8,7 +8,7 @@
 // Write / Preview switch on a phone, where the keyboard owns the bottom half).
 import { useCallback, useEffect, useRef, useState } from "preact/hooks"
 import { publishNote, republish, sameUnsent } from "../net/sync.js"
-import { composeTarget, findNote, quoteOf, replyTags } from "../net/actions.js"
+import { NOTE_SENT_EVENT, composeTarget, findNote, quoteOf, replyTags } from "../net/actions.js"
 import { MAX_PHOTOS, imetaTag, mediaServers, uploadPhoto } from "../net/upload.js"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { NoteText } from "../components/NoteText.jsx"
@@ -407,6 +407,7 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
       unsent.current = reachedRelay(sent) ? null : sent.event
       setResult(sent)
       setMention(null)
+      if (reachedRelay(sent) && sent.event) globalThis.dispatchEvent?.(new CustomEvent(NOTE_SENT_EVENT, { detail: sent.event }))
       const cleared = await forgetIfSent(sent, { stopSaving: () => setLoaded(null), clear: clearSent, saving, drafts: drafts.current, key })
       if (!cleared) setErr(NOT_SENT)
       else if (inline) setLoaded(key) // saving again, for the next reply

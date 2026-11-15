@@ -2,6 +2,10 @@
 // note or a profile in it. Pure apart from the callbacks, so node tests drive it with a fake bus participant.
 //   napplet:compose/new, napplet:compose/reply { event }  -> the Compose napplet (openCompose mounts it in a sheet)
 //   napplet:compose/quote { event }                       -> Compose, quoting it (net/actions.js quoteOf's format)
+//                                                            With `fullCompose` (the desktop, plan step 2b) the three
+//                                                            are shell-answered instead: the site's own full composer
+//                                                            (mentions, emoji, photos with ALT, preview, the other kinds)
+//                                                            opens; a reply or quote needs a signed event.
 //   napplet:link/open { url }                             -> a new tab, http(s) only, no opener, no referrer
 //   napplet:link/preview { url }                          -> { data: { title, description, siteName, image } | null }:
 //                                                            the page's OpenGraph, read by the shell as the classic
@@ -36,6 +40,8 @@
 //   shell -> Reader: napplet:note/open { id }, napplet:profile/open { pubkey }, napplet:feed/open { tag? } (a #tag
 //                    link, #/feed?tag=<t>, opens that tag's notes in the Reader)
 export const COMPOSE_DONE = "nv.compose.done"
+/** A sent note, to the Reader (the Compose napplet emits it; the shell does for the full composer). */
+export const COMPOSE_SENT = "nv.compose.sent"
 /** Compose posted and the Send Delay counts down (hide the sheet so the pill's Undo can be reached), or it was undone
  *  (show it again, text intact). */
 export const COMPOSE_WAITING = "nv.compose.waiting", COMPOSE_UNDONE = "nv.compose.undone"
@@ -116,13 +122,21 @@ export function likedNote(raw, verify) {
   return ev.kind === 6 ? actionNote(ev, verify) : null
 }
 
-export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, onMedia = () => {}, preview = async () => null, card = async () => null, vote = async () => null, onArticle = () => {}, onProfile = null, stats = null, like = null, onKey = null, onHover = null, onCtx = null, beside = null, outside = null, webPeople = null }) {
+export function readerIntents({ bus, openCompose, fullCompose = null, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, onMedia = () => {}, preview = async () => null, card = async () => null, vote = async () => null, onArticle = () => {}, onProfile = null, stats = null, like = null, onKey = null, onHover = null, onCtx = null, beside = null, outside = null, webPeople = null }) {
   const on = { [COMPOSE_DONE]: onComposeDone, [COMPOSE_WAITING]: onComposeWaiting, [COMPOSE_UNDONE]: onComposeUndone,
     ...(onKey ? { [KEY_TOPIC]: onKey } : {}), ...(onHover ? { [HOVER_TOPIC]: onHover } : {}), ...(onCtx ? { [CTX_TOPIC]: onCtx } : {}) }
   const me = { dTag: "shell", send: m => { if (m?.type === "inc.event" && on[m.topic]) on[m.topic](m.payload) } }
   for (const t of Object.keys(on)) bus.subscribe(me, t)
   const off = [
-    bus.register({ id: "nv-compose", title: "Compose", archetype: "compose", actions: ["new", "reply", "quote"], conventions: [], open: openCompose }),
+    ...(fullCompose ? [
+      bus.register({ id: "shell-compose-new", title: "Compose", archetype: "compose", actions: ["new"], conventions: [], deliver: () => { fullCompose("new", null); return { ok: true } } }),
+      ...["reply", "quote"].map(action => bus.register({ id: `shell-compose-${action}`, title: "Compose", archetype: "compose", actions: [action], conventions: [], deliver: p => {
+        const ev = signedOf(p?.event, verify)
+        if (!ev) return { ok: false, error: "not a signed note" }
+        fullCompose(action, ev)
+        return { ok: true }
+      } })),
+    ] : [bus.register({ id: "nv-compose", title: "Compose", archetype: "compose", actions: ["new", "reply", "quote"], conventions: [], open: openCompose })]),
     ...[["repost", onRepost], ["zap", onZap], ["menu", onMenu]].map(([action, run]) => bus.register({ id: `shell-note-${action}`, title: action, archetype: "note", actions: [action], conventions: [], deliver: p => {
       const note = actionNote(p?.event, verify)
       if (!note) return { ok: false, error: "not a signed note" }
