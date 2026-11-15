@@ -4,7 +4,7 @@
 .tabbar { position: fixed; z-index: 10; left: 0; right: 0; bottom: calc(var(--tabbar-gap) + env(safe-area-inset-bottom));
   margin: 0 auto; width: var(--tabbar-w); height: var(--tabbar-h); overflow: hidden;
   border-radius: 999px; background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--hair); box-shadow: 0 8px 24px rgb(0 0 0 / .5); }
+  border: 1px solid var(--hair); box-shadow: 0 8px 24px rgb(var(--shade) / calc(.5 * var(--shade-k))); }
 .tabs-full { position: absolute; left: 50%; top: 50%; translate: -50% -50%; width: var(--tabbar-full); height: var(--tabbar-h); padding: 0 8px;
   display: flex; justify-content: space-around; align-items: center; }
 .tab { position: relative; flex: 1; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;

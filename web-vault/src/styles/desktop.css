@@ -49,7 +49,7 @@
 .side-account-btn:active:not(:disabled) { transform: none; }
 .side-account .side-label { display: none; }
 .side-pop { position: fixed; z-index: 30; top: 12px; left: calc(var(--rail-w) + 6px); min-width: 220px; display: grid; padding: 6px;
-  background: var(--s2); border: 1px solid var(--strong); border-radius: 12px; box-shadow: 0 12px 32px rgb(0 0 0 / .6); }
+  background: var(--s2); border: 1px solid var(--strong); border-radius: 12px; box-shadow: 0 12px 32px rgb(var(--shade) / calc(.6 * var(--shade-k))); }
 .side-pop [role=menuitem] { display: flex; align-items: center; min-height: 36px; padding: 0 12px; border-radius: 8px; border: 0;
   background: none; color: var(--text); font: var(--t-sub); text-align: left; justify-content: flex-start; }
 .side-pop [role=menuitem]:hover, .side-pop [role=menuitem]:focus-visible { background: var(--s3); }
@@ -91,12 +91,12 @@
 /* An open thread, with the reply box pinned under it. */
 .desk-thread { display: flex; flex-direction: column; min-height: 100%; }
 .desk-detail-head { position: sticky; top: 0; z-index: 7; display: flex; align-items: center; justify-content: space-between;
-  padding: 10px var(--gutter); background: rgb(0 0 0 / .72); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  padding: 10px var(--gutter); background: rgb(var(--bar-rgb) / .72); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   border-bottom: 1px solid var(--hair); font: var(--t-headline); }
 .desk-thread .screen { max-width: 680px; width: 100%; flex: 1; }
 .desk-thread .screen > .screen-head, .desk-thread .thread-bar { display: none; } /* ‹ Back and Reply are here */
 .desk-x { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
-.desk-reply { position: sticky; bottom: 0; z-index: 7; padding: 10px 0 12px; background: rgb(0 0 0 / .86);
+.desk-reply { position: sticky; bottom: 0; z-index: 7; padding: 10px 0 12px; background: rgb(var(--bar-rgb) / .86);
   -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border-top: 1px solid var(--hair); }
 .compose-inline.screen { padding: 0; max-width: 680px; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; align-items: end; }
 .compose-inline > * { grid-column: 1 / -1; }
@@ -138,9 +138,9 @@
 .desk-list { container-type: inline-size; }
 
 /* Compose dialog (New Post, Quote, a card's Reply). */
-.desk-compose-back { position: fixed; z-index: 40; inset: 0; display: grid; place-items: start center; padding-top: 10vh; background: rgb(0 0 0 / .6); }
+.desk-compose-back { position: fixed; z-index: 40; inset: 0; display: grid; place-items: start center; padding-top: 10vh; background: rgb(var(--shade) / calc(.6 * var(--scrim-k))); }
 .desk-compose { position: relative; width: min(600px, calc(100vw - 48px)); max-height: 80vh; overflow-y: auto; border-radius: 16px;
-  background: var(--s1); border: 1px solid var(--strong); box-shadow: 0 24px 64px rgb(0 0 0 / .7); }
+  background: var(--s1); border: 1px solid var(--strong); box-shadow: 0 24px 64px rgb(var(--shade) / calc(.7 * var(--shade-k))); }
 .desk-compose > .desk-x { position: absolute; z-index: 8; top: 10px; right: 10px; }
 .desk-compose .screen { padding: 12px 0 4px; max-width: none; }
 .desk-compose .screen-head { position: static; margin-top: 0; padding-top: 0; padding-right: 56px; }
@@ -156,7 +156,7 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 
 /* Hover profile card */
 .peek { position: fixed; z-index: 35; padding: 14px; display: grid; gap: 10px; border-radius: 14px;
-  background: var(--s2); border: 1px solid var(--strong); box-shadow: 0 16px 40px rgb(0 0 0 / .65); animation: peek-in .12s ease-out; }
+  background: var(--s2); border: 1px solid var(--strong); box-shadow: 0 16px 40px rgb(var(--shade) / calc(.65 * var(--shade-k))); animation: peek-in .12s ease-out; }
 @keyframes peek-in { from { opacity: 0; } }
 .peek-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .peek-names { min-width: 0; }
@@ -170,7 +170,7 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 
 /* Right-click menu and its toast */
 .ctx-menu { position: fixed; z-index: 45; min-width: 200px; display: grid; padding: 5px; border-radius: 10px;
-  background: var(--s2); border: 1px solid var(--strong); box-shadow: 0 12px 32px rgb(0 0 0 / .65); }
+  background: var(--s2); border: 1px solid var(--strong); box-shadow: 0 12px 32px rgb(var(--shade) / calc(.65 * var(--shade-k))); }
 .ctx-menu button { min-height: 30px; padding: 0 12px; border: 0; border-radius: 6px; background: none; justify-content: flex-start; text-align: left;
   font: var(--t-foot); font-weight: 500; color: var(--text); }
 .ctx-menu button:active:not(:disabled) { transform: none; }
@@ -187,7 +187,7 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
    hairline under it, the title as plain text on the left and the screen's buttons on the right. */
 .desk-app .screen { padding-top: 0; }
 .desk-app .screen-head { min-height: 52px; margin: 0 0 10px; padding: 8px 12px 8px var(--gutter); gap: 8px; flex-wrap: nowrap;
-  background: rgb(0 0 0 / .82); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border-bottom: 1px solid var(--hair); }
+  background: rgb(var(--bar-rgb) / .82); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border-bottom: 1px solid var(--hair); }
 .desk-app .screen-head h2 { min-width: 0; margin-right: auto; padding: 0; border: 0; border-radius: 0; background: none;
   -webkit-backdrop-filter: none; backdrop-filter: none; font: var(--t-headline); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .desk-app .screen-head button.small, .desk-app .screen-head a.button.small { flex: none; min-height: 32px; padding: 0 12px;
@@ -199,8 +199,8 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
    the posts under a fade, with no bar or hairline behind them (Logen, 2026-11-03). */
 .desk-app .screen-head.feed-head { min-height: 60px; padding-top: 10px; border-bottom: 0; -webkit-backdrop-filter: none; backdrop-filter: none;
   background: linear-gradient(to bottom, var(--bg) 40%, color-mix(in srgb, var(--bg) 55%, transparent)); }
-.desk-detail-head { min-height: 52px; padding: 8px 12px 8px var(--gutter); background: rgb(0 0 0 / .82); }
-.desk-crumb { padding: 10px var(--gutter); background: rgb(0 0 0 / .82); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+.desk-detail-head { min-height: 52px; padding: 8px 12px 8px var(--gutter); background: rgb(var(--bar-rgb) / .82); }
+.desk-crumb { padding: 10px var(--gutter); background: rgb(var(--bar-rgb) / .82); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   border-bottom: 1px solid var(--hair); }
 .desk-crumb button { background: var(--s1); }
 .desk-crumb + .screen .screen-head { top: 55px; }
@@ -289,7 +289,7 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 .desk-side .side-edit-btn.on { color: var(--accent); background: var(--s1); }
 .rail-edit { position: fixed; z-index: 30; top: 12px; bottom: 12px; left: calc(var(--rail-w) + 6px); width: 340px; display: flex; flex-direction: column;
   gap: 10px; padding: 12px; overflow-y: auto; box-sizing: border-box; background: var(--s1); border: 1px solid var(--strong); border-radius: 14px;
-  box-shadow: 0 16px 40px rgb(0 0 0 / .65); scrollbar-width: thin; }
+  box-shadow: 0 16px 40px rgb(var(--shade) / calc(.65 * var(--shade-k))); scrollbar-width: thin; }
 .rail-edit-head { display: flex; align-items: center; justify-content: space-between; }
 .rail-edit-head h3 { margin: 0; font: 700 16px var(--font); }
 .rail-edit-hint { margin: 0; color: var(--text-2); font: var(--t-foot); }
@@ -298,7 +298,7 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
   background: var(--s2); cursor: grab; }
 .rail-edit-row .sp-btn { width: 28px; min-width: 28px; height: 28px; min-height: 28px; }
 .rail-edit-row .sp-btn:disabled { opacity: .3; background: none; }
-.rail-edit-row .sp-off:hover:not(:disabled) { color: #ff6b5e; }
+.rail-edit-row .sp-off:hover:not(:disabled) { color: var(--red); }
 .rail-edit-stay { flex: none; width: 28px; }
 .rail-edit-icon { display: grid; place-items: center; width: 28px; color: var(--text-2); }
 .rail-edit-name { flex: 1; min-width: 0; display: grid; font: 600 14px/1.2 var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

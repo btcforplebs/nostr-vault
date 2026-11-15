@@ -1,6 +1,6 @@
 /* "Your space" (src/desktop/space): the desktop layout's right-hand column of pinned panels, from 1024px. */
 .space-dock { display: flex; min-width: 0; min-height: 0; height: 100dvh; border-left: 1px solid var(--hair);
-  background: linear-gradient(180deg, rgb(var(--accent-rgb) / .06), transparent 240px), #050403; }
+  background: linear-gradient(180deg, rgb(var(--accent-rgb) / .06), transparent 240px), var(--dock); }
 .sp-top { display: flex; align-items: center; gap: 6px; flex: none; height: var(--bar-h); padding: 0 10px 0 18px; border-bottom: 1px solid var(--hair); }
 .sp-top h2 { margin: 0 auto 0 0; font: 700 16px/1.2 var(--font); }
 .sp-btn { display: inline-grid; place-items: center; width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 0;
@@ -22,7 +22,7 @@
 .sp-live { display: inline-flex; align-items: center; gap: 5px; font: 600 10px var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--accent-light); }
 .sp-pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .25); }
 .sp-count { min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 999px; background: var(--accent);
-  color: #1a0d03; font: 700 11px/20px var(--font); text-align: center; }
+  color: var(--on-badge); font: 700 11px/20px var(--font); text-align: center; }
 
 .sp-faces { display: flex; align-items: center; flex: none; margin: 0 12px; padding: 2px 0 10px; border-bottom: 1px solid var(--hair); }
 .sp-faces .avatar { box-shadow: 0 0 0 2px var(--s1); }
@@ -62,13 +62,13 @@
 /* One panel opened from the rail fills the column. */
 .sp-panels.sp-only > .sp-panel { flex: 1; max-height: none; }
 /* Folded: the rail alone. */
-.space-dock.folded { background: #050403; }
+.space-dock.folded { background: var(--dock); }
 .space-dock.folded .sp-rail { border-left: 0; }
 .sp-mini { position: relative; display: grid; place-items: center; width: 40px; min-width: 40px; height: 40px; min-height: 40px; padding: 0;
   border: 0; border-radius: 11px; background: var(--s1); color: var(--accent-light); }
 .sp-mini:hover { background: var(--s2); }
 .sp-mini-badge { position: absolute; top: -5px; right: -6px; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 999px;
-  background: var(--accent); color: #1a0d03; font: 700 10px/18px var(--font); text-align: center; box-shadow: 0 0 0 2px #050403; }
+  background: var(--accent); color: var(--on-badge); font: 700 10px/18px var(--font); text-align: center; box-shadow: 0 0 0 2px var(--dock); }
 
 /* Collapsed: the header alone (with its count). Editing collapses every panel, so they are easy to drag. */
 .sp-panel.closed > :not(.sp-head) { display: none; }
@@ -78,13 +78,13 @@
 .sp-fold.closed svg { transform: rotate(-90deg); }
 
 /* Editing (SpaceEdit.jsx). */
-.sp-done { min-height: 30px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--accent-grad); color: #1a0d03; font: 700 13px var(--font); }
+.sp-done { min-height: 30px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--accent-grad); color: var(--on-badge); font: 700 13px var(--font); }
 .sp-done:hover { filter: brightness(1.08); }
 .sp-edit-hint { margin: 0 2px; color: var(--text-2); font: var(--t-foot); }
 .sp-tools { display: inline-flex; align-items: center; gap: 2px; margin-right: -4px; }
 .sp-tools .sp-btn { width: 28px; min-width: 28px; height: 28px; min-height: 28px; }
 .sp-tools .sp-btn:disabled { opacity: .3; background: none; }
-.sp-tools .sp-off:hover { color: #ff6b5e; }
+.sp-tools .sp-off:hover { color: var(--red); }
 .sp-grip { display: inline-grid; place-items: center; width: 24px; height: 28px; color: var(--text-3); cursor: grab; }
 .space-dock.editing .sp-slot { cursor: grab; }
 .space-dock.editing .sp-panel { border-style: dashed; }
@@ -112,6 +112,6 @@
 .sp-feed-pins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
 .sp-feed-pin { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border: 0; border-radius: 999px; background: var(--accent-pale);
   color: var(--accent-light); font: 600 12px var(--font); text-align: left; cursor: pointer; }
-.sp-feed-pin.on { background: var(--accent); color: #1a0d03; }
+.sp-feed-pin.on { background: var(--accent); color: var(--on-badge); }
 /* Editing, every slot keeps its height and the column scrolls (the feed chips below made the column taller). */
 .space-dock.editing .sp-slot { flex-shrink: 0; }

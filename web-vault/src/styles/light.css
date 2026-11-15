@@ -4,6 +4,7 @@
    (#c2571a, 4.5:1 on white); orange fills keep their gradient. */
 :root[data-theme="light"], [data-theme="light"] {
   color-scheme: light;
+  accent-color: var(--accent);
 
   --bg: #f6f1eb;  /* warm paper */
   --s1: #fff;     /* cards sit white on the paper */
@@ -36,6 +37,23 @@
   --menu: rgb(255 252 248 / .94);
   --seg-on: #fff;
   --glass: rgb(255 252 248 / .8);
+
+  --on-badge: var(--on-accent);
+  /* Apple's increased-contrast light system colours: each reads as text on white (4.5:1). */
+  --orange: #c93400;
+  --green: #1e7b34;
+  --red: #d70015;
+  --blue: #0040dd;
+  --yellow: #b25000;
+  --gold: #a05a00;
+  --purple: #8944ab;
+  --grey: #6c6c70;
+
+  --shade: 60 40 20;  /* a warm brown-grey, so shadows look like the paper's own */
+  --shade-k: .3;
+  --scrim-k: .55;
+  --bar-rgb: 246 241 235;  /* --bg */
+  --dock: #efe9e2;  /* --s2: a step under the paper, white panels on it */
 }
 
 /* A note under the finger: a darker edge and a soft orange glow (the mockup Logen picked). */
