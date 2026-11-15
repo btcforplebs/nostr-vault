@@ -19,7 +19,7 @@ struct MusicAlbumPage: View {
             VStack(spacing: 6) {
                 MusicArtwork(url: shown.artURL, size: 220)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
-                    .shadow(color: .black.opacity(0.3), radius: 14, y: 6)
+                    .shadow(color: Color.shade.opacity(0.3), radius: 14, y: 6)
                     .padding(.bottom, 6)
                 Text(shown.title)
                     .font(.appSystem(size: 22, weight: .bold))

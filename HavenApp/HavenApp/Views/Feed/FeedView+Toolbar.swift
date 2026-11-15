@@ -105,9 +105,9 @@ extension FeedView {
             .background(
                 Capsule()
                     .fill(Color.havenPurple)
-                    .shadow(color: Color.black.opacity(0.4), radius: compact ? 4 : 8, x: 0, y: compact ? 2 : 4)
+                    .shadow(color: Color.shade.opacity(0.4), radius: compact ? 4 : 8, x: 0, y: compact ? 2 : 4)
             )
-            .foregroundColor(.white)
+            .foregroundColor(.onAccent)
             // The small pill's tap target, without growing the pill.
             .padding(compact ? 8 : 0)
             .contentShape(Rectangle())

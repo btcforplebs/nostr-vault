@@ -177,7 +177,7 @@ struct VaultDashboardView: View {
                 Button(action: fixRelay) {
                     Text(runState == .paused ? "Start vault" : "Restart vault")
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.onAccent)
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: 44)
                         .background(Color.havenPurple, in: RoundedRectangle(cornerRadius: 10))

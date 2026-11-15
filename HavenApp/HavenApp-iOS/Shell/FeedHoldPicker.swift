@@ -18,11 +18,11 @@ struct FeedTabHoldItem: View {
             VStack(spacing: 4) {
                 Image(systemName: "person.2.wave.2")
                     .font(.appSystem(size: 20, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? Color.havenPurple : .white)
+                    .foregroundStyle(selected ? Color.havenPurple : Color.ink)
                     .frame(height: 24)
                 Text("Feed")
                     .font(.appSystem(size: 10, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? Color.havenPurple : .white)
+                    .foregroundStyle(selected ? Color.havenPurple : Color.ink)
             }
             .frame(maxWidth: .infinity)
         }

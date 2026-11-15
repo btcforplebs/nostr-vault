@@ -59,7 +59,7 @@ extension TrustWebView {
                 Text("My Web")
                     .font(.appSystem(size: 14, weight: .bold, design: .rounded))
             }
-            .foregroundColor(.white)
+            .foregroundColor(.onAccent)
             .frame(height: FloatingButtonRow.buttonHeight)
             .padding(.horizontal, 18)
             .background(

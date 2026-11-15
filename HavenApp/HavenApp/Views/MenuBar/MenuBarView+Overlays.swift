@@ -6,24 +6,24 @@ extension MenuBarView {
             // MARK: - Import Overlay
             if relayManager.isImporting {
                 ZStack {
-                    Color.black.opacity(0.8)
+                    Color.shade.opacity(0.8)
                         .ignoresSafeArea()
                     
                     VStack(spacing: 24) {
                         Text("Importing Notes")
                             .font(.appTitle2.bold())
-                            .foregroundColor(.white)
+                            .foregroundColor(.ink)
                         
                         // Progress Bar Custom Style
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Text(relayManager.importStatusMessage)
                                     .font(.appCaption)
-                                    .foregroundColor(.white.opacity(0.8))
+                                    .foregroundColor(.ink.opacity(0.8))
                                 Spacer()
                                 Text("\(Int(relayManager.importProgress * 100))%")
                                     .font(.appCaption.monospaced())
-                                    .foregroundColor(.white)
+                                    .foregroundColor(.ink)
                             }
                             
                             GeometryReader { geo in
@@ -49,10 +49,10 @@ extension MenuBarView {
                         
                         Text("Please keep the app open.")
                             .font(.appFootnote)
-                            .foregroundColor(.white.opacity(0.5))
+                            .foregroundColor(.ink.opacity(0.5))
                         
                         Divider()
-                            .background(Color.white.opacity(0.2))
+                            .background(Color.ink.opacity(0.2))
                         
                         if relayManager.importProgress >= 1.0 || relayManager.importStatusMessage.contains("Failed") || relayManager.importStatusMessage.contains("Complete") {
                             Button(action: {
@@ -60,7 +60,7 @@ extension MenuBarView {
                             }) {
                                 Text("Close")
                                     .font(.appSystem(size: 14, weight: .bold))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(.onAccent)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 10)
                                     .background(Color.havenPurple)
@@ -86,7 +86,7 @@ extension MenuBarView {
                     .padding(24)
                     .background(Color.platformControlBackground)
                     .cornerRadius(12)
-                    .shadow(color: Color.black.opacity(0.3), radius: 20)
+                    .shadow(color: Color.shade.opacity(0.3), radius: 20)
                 }
                 .transition(.opacity)
             }
@@ -98,7 +98,7 @@ extension MenuBarView {
     var processKillAlertOverlay: some View {
             // MARK: - Critical Process Kill Alert Overlay
             if relayManager.showProcessKillAlert {
-                Color.black
+                Color.surface0
                     .ignoresSafeArea()
 
                 VStack(spacing: 20) {
@@ -109,11 +109,11 @@ extension MenuBarView {
                     VStack(spacing: 6) {
                         Text(String(localized: "relay.error.processKill.title"))
                             .font(.appTitle2.bold())
-                            .foregroundColor(.white)
+                            .foregroundColor(.ink)
 
                         Text(String(localized: "relay.error.processKill.message"))
                             .multilineTextAlignment(.center)
-                            .foregroundColor(.white.opacity(0.9))
+                            .foregroundColor(.ink.opacity(0.9))
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -132,7 +132,7 @@ extension MenuBarView {
                 }
                 .padding(30)
                 .frame(width: 400)
-                .background(Color.black)
+                .background(Color.surface0)
                 .cornerRadius(16)
                 .transition(.scale.combined(with: .opacity))
                 .zIndex(100)

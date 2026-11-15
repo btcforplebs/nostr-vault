@@ -348,7 +348,7 @@ extension ComposeView {
         } label: {
             Text("ALT")
                 .font(.appSystem(size: 10, weight: .bold))
-                .foregroundColor(described ? .white : .white.opacity(0.85))
+                .foregroundColor(described ? .onAccent : .white.opacity(0.85))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(

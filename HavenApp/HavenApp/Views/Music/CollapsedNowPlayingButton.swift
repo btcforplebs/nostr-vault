@@ -33,7 +33,7 @@ struct CollapsedNowPlayingButton: View {
                 .overlay {
                     // Live has no progress: a steady red ring says "on air".
                     Circle()
-                        .stroke(track.isLive ? Color.red.opacity(0.8) : Color.white.opacity(0.2), lineWidth: 2)
+                        .stroke(track.isLive ? Color.red.opacity(0.8) : Color.ink.opacity(0.2), lineWidth: 2)
                     if !track.isLive {
                         Circle()
                             .trim(from: 0, to: progress)

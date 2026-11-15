@@ -111,7 +111,7 @@ struct UploadPill: View {
                     Text("\(Int(notification.progress * 100))%")
                         .font(.appSystem(size: 10, weight: .bold))
                         .monospacedDigit()
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundColor(.onAccent.opacity(0.8))
                 }
             }
         }
@@ -124,7 +124,7 @@ struct UploadPill: View {
         case .uploading:
             ProgressView()
                 .controlSize(.small)
-                .tint(.white)
+                .tint(Color.onAccent)
         case .success:
             Image(systemName: "checkmark.circle.fill")
                 .font(PillSize.regular.iconFont)

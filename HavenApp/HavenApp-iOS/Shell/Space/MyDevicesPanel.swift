@@ -65,13 +65,13 @@ struct MyDevicesPanel: View {
             ZStack(alignment: .bottomTrailing) {
                 Image(systemName: device.role.icon)
                     .font(.appSystem(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.ink)
                     .frame(width: 32, height: 32)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.ink.opacity(0.08)))
                 Circle()
                     .fill(Self.dot(s.state))
                     .frame(width: 10, height: 10)
-                    .overlay(Circle().stroke(Color.black, lineWidth: 2))
+                    .overlay(Circle().stroke(Color.surface0, lineWidth: 2))
                     .offset(x: 3, y: 3)
             }
             VStack(alignment: .leading, spacing: 2) {
@@ -92,7 +92,7 @@ struct MyDevicesPanel: View {
         switch state {
         case .connected, .online: return .green
         case .offline: return .gray
-        case .unknown, .unchecked: return Color.white.opacity(0.25)
+        case .unknown, .unchecked: return Color.ink.opacity(0.25)
         }
     }
 }

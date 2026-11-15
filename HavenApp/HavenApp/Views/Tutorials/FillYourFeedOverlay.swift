@@ -23,7 +23,7 @@ struct FillYourFeedOverlay: View {
     var body: some View {
         ZStack {
             if dims {
-                Color.black.opacity(0.45)
+                Color.shade.opacity(0.45)
                     .ignoresSafeArea()
                     .transition(.opacity)
                     .accessibilityHidden(true)
@@ -114,7 +114,7 @@ struct FillYourFeedOverlay: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(FillYourFeedGuide.meterTitle(guide.meter, compact: compactText))
                     .font(.appSubheadline.weight(.semibold))
-                    .foregroundColor(gold ? Gold.light : .white)
+                    .foregroundColor(gold ? Gold.light : .ink)
                 if !compactText {
                     Text(FillYourFeedGuide.meterSubtitle(guide.meter))
                         .font(.appCaption)
@@ -170,7 +170,7 @@ struct FillYourFeedOverlay: View {
                             Circle()
                                 .inset(by: 2)
                                 .stroke(style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
-                                .foregroundColor(.white.opacity(0.35))
+                                .foregroundColor(.ink.opacity(0.35))
                         )
                         .overlay(Circle().stroke(Color(white: 0.08), lineWidth: 2))
                         .frame(width: size, height: size)
@@ -187,7 +187,7 @@ struct FillYourFeedOverlay: View {
         } label: {
             HStack(spacing: 8) {
                 ZStack {
-                    Circle().stroke(Color.white.opacity(0.18), lineWidth: 3)
+                    Circle().stroke(Color.ink.opacity(0.18), lineWidth: 3)
                     Circle()
                         .trim(from: 0, to: FillYourFeedGuide.ringFraction(guide.meter))
                         .stroke(gold ? Gold.mid : Color.havenPurple, style: StrokeStyle(lineWidth: 3, lineCap: .round))
@@ -199,7 +199,7 @@ struct FillYourFeedOverlay: View {
                 .frame(width: 26, height: 26)
                 Text(FillYourFeedGuide.pillText(guide.meter))
                     .font(.appSubheadline.weight(.semibold))
-                    .foregroundColor(gold ? Gold.light : .white)
+                    .foregroundColor(gold ? Gold.light : .ink)
             }
             .padding(.leading, 6)
             .padding(.trailing, 12)
@@ -217,9 +217,9 @@ struct FillYourFeedOverlay: View {
             .fill(.ultraThinMaterial)
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(gold ? Gold.mid.opacity(0.75) : Color.white.opacity(0.1), lineWidth: 1)
+                    .stroke(gold ? Gold.mid.opacity(0.75) : Color.ink.opacity(0.1), lineWidth: 1)
             )
-            .shadow(color: gold ? Gold.mid.opacity(0.35) : .black.opacity(0.3), radius: gold ? 12 : 8)
+            .shadow(color: gold ? Gold.mid.opacity(0.35) : Color.shade.opacity(0.3), radius: gold ? 12 : 8)
     }
 
     /// The zap: a bolt crossing the meter, then a flash. Drawn over the
@@ -300,7 +300,7 @@ private struct GuideCard<Content: View>: View {
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(Color(white: 0.12))
-                .shadow(color: .black.opacity(0.5), radius: 16, y: 6)
+                .shadow(color: Color.shade.opacity(0.5), radius: 16, y: 6)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -315,7 +315,7 @@ private struct PrimaryButton: View {
     var wide = false
     var disabled = false
     var fill: AnyShapeStyle = AnyShapeStyle(Color.havenPurple)
-    var textColor: Color = .white
+    var textColor: Color = .onAccent
     let action: () -> Void
 
     var body: some View {
@@ -336,14 +336,14 @@ private struct PrimaryButton: View {
 @MainActor private func title(_ text: String) -> some View {
     Text(text)
         .font(.appTitle3.weight(.bold))
-        .foregroundColor(.white)
+        .foregroundColor(.ink)
         .accessibilityAddTraits(.isHeader)
 }
 
 @MainActor private func bodyText(_ text: String) -> some View {
     Text(text)
         .font(.appSubheadline)
-        .foregroundColor(.white.opacity(0.85))
+        .foregroundColor(.ink.opacity(0.85))
         .fixedSize(horizontal: false, vertical: true)
 }
 
@@ -393,7 +393,7 @@ private struct WebOfTrustDiagram: View {
                     let a = base + Double(j) * 0.38
                     let o = CGPoint(x: center.x + 120 * cos(a), y: center.y + 52 * sin(a))
                     var line = Path(); line.move(to: p); line.addLine(to: o)
-                    context.stroke(line, with: .color(.white.opacity(0.18)), lineWidth: 1)
+                    context.stroke(line, with: .color(Color.ink.opacity(0.18)), lineWidth: 1)
                     context.fill(Path(ellipseIn: CGRect(x: o.x - 5, y: o.y - 5, width: 10, height: 10)),
                                  with: .color(Color(white: 0.36)))
                 }
@@ -410,7 +410,7 @@ private struct WebOfTrustDiagram: View {
             let you = CGRect(x: center.x - 17, y: center.y - 17, width: 34, height: 34)
             context.fill(Path(ellipseIn: you), with: .color(.havenPurple))
             context.stroke(Path(ellipseIn: you), with: .color(Color(white: 0.12)), lineWidth: 3)
-            context.draw(Text("You").font(.system(size: 11, weight: .bold)).foregroundColor(.white), at: center)
+            context.draw(Text("You").font(.system(size: 11, weight: .bold)).foregroundColor(.onAccent), at: center)
             context.draw(Text("your follows").font(.system(size: 10)).foregroundColor(.secondary),
                          at: CGPoint(x: size.width / 2 - 100, y: size.height - 6))
             context.draw(Text("their follows").font(.system(size: 10)).foregroundColor(.secondary),
@@ -477,7 +477,7 @@ private struct TopicChips: View {
                         .padding(.horizontal, 12)
                         .frame(minHeight: 36)
                         .background(Capsule().fill(on ? Color.havenPurple : Color(white: 0.18)))
-                        .overlay(Capsule().stroke(on ? Color.havenPurple : Color.white.opacity(0.1), lineWidth: 1))
+                        .overlay(Capsule().stroke(on ? Color.havenPurple : Color.ink.opacity(0.1), lineWidth: 1))
                         .padding(.vertical, 4)
                         .contentShape(Rectangle())
                 }
@@ -636,7 +636,7 @@ private struct ReadyCard: View {
                 if let reach, reach > 0 {
                     Text(reach.formatted())
                         .font(.appTitle.weight(.bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.ink)
                     Text("people your \(guide.meter.count) follows bring into your web of trust")
                         .font(.appFootnote)
                         .foregroundColor(.secondary)
@@ -651,7 +651,7 @@ private struct ReadyCard: View {
             .accessibilityElement(children: .combine)
             Text("Find more people on Discover. It shows posts from the people your follows follow.")
                 .font(.appSubheadline)
-                .foregroundColor(.white.opacity(0.85))
+                .foregroundColor(.ink.opacity(0.85))
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
                 .fixedSize(horizontal: false, vertical: true)

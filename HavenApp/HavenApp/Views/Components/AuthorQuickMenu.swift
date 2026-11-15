@@ -49,10 +49,10 @@ struct AuthorQuickMenu: View {
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
         .modifier(LiquidGlassVerticalModifier())
-        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+        .shadow(color: Color.shade.opacity(0.12), radius: 8, y: 3)
     }
 
-    private func glassIcon(_ icon: String, asset: Bool = false, tint: Color = .white, index: Int,
+    private func glassIcon(_ icon: String, asset: Bool = false, tint: Color = .ink, index: Int,
                            action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Group {
@@ -92,7 +92,7 @@ struct LiquidGlassVerticalModifier: ViewModifier {
                         shape
                             .fill(
                                 LinearGradient(
-                                    colors: [Color.white.opacity(0.12), Color.clear],
+                                    colors: [Color.ink.opacity(0.12), Color.clear],
                                     startPoint: .top,
                                     endPoint: .center
                                 )
@@ -103,7 +103,7 @@ struct LiquidGlassVerticalModifier: ViewModifier {
                     shape
                         .strokeBorder(
                             LinearGradient(
-                                colors: [Color.white.opacity(0.25), Color.white.opacity(0.08)],
+                                colors: [Color.ink.opacity(0.25), Color.ink.opacity(0.08)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             ),

@@ -20,7 +20,7 @@ struct SuggestedMediaServersSection: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(server.host)
                                 .font(.appSystem(size: 12, design: .monospaced))
-                                .foregroundColor(.white)
+                                .foregroundColor(.ink)
                             Text(server.note)
                                 .font(.appCaption)
                                 .foregroundColor(.secondary)

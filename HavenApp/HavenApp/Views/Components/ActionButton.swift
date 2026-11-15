@@ -21,7 +21,7 @@ struct ActionButton: View {
     @State private var isHovered = false
 
     private var foreground: Color {
-        emphasis == .primary ? .white : Color.havenPurpleLight
+        emphasis == .primary ? .onAccent : Color.havenPurpleLight
     }
 
     private var isHighlighted: Bool { isHovered && isEnabled }
@@ -85,7 +85,7 @@ struct ActionButton: View {
     private var borderColor: Color {
         switch emphasis {
         case .primary:
-            return Color.white.opacity(0.12)
+            return Color.onAccent.opacity(0.12)
         case .secondary:
             return Color.havenPurple.opacity(isHighlighted ? 0.65 : 0.4)
         }

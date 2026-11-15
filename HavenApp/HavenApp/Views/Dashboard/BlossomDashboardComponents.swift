@@ -152,7 +152,7 @@ struct UnifiedActionButton: View {
             .cornerRadius(10)
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.white.opacity(isHovered ? 0.12 : 0.06), lineWidth: 1)
+                    .stroke(Color.ink.opacity(isHovered ? 0.12 : 0.06), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)

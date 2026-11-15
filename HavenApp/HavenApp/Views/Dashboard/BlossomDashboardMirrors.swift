@@ -68,7 +68,7 @@ struct MirrorRow: View {
         .background(Color.platformSecondaryGroupedBackground)
         .overlay(
             Rectangle()
-                .fill(Color.white.opacity(0.03))
+                .fill(Color.ink.opacity(0.03))
                 .frame(height: 0.5),
             alignment: .bottom
         )
@@ -121,7 +121,7 @@ struct BlossomStorageRow: View {
         .background(Color.platformSecondaryGroupedBackground)
         .overlay(
             Rectangle()
-                .fill(Color.white.opacity(0.03))
+                .fill(Color.ink.opacity(0.03))
                 .frame(height: 0.5),
             alignment: .bottom
         )

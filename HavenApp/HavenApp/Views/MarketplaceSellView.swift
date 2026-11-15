@@ -194,7 +194,7 @@ struct MarketplaceSellView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(Color.havenPurple)
-                    .foregroundColor(.white)
+                    .foregroundColor(.onAccent)
                     .clipShape(Capsule())
                     .padding(5)
             }

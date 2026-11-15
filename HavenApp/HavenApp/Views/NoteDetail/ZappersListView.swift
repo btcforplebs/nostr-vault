@@ -19,7 +19,7 @@ struct ZappersListView: View {
                     HStack(spacing: 12) {
                         AvatarView(url: profile?.pictureURL, pubkey: zap.zapperPubkey, size: 40)
                             .overlay(Circle().stroke(Color.platformSecondaryGroupedBackground, lineWidth: 2))
-                            .shadow(color: Color.black.opacity(0.1), radius: 3)
+                            .shadow(color: Color.shade.opacity(0.1), radius: 3)
 
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {

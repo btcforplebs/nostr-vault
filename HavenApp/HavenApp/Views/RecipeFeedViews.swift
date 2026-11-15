@@ -80,7 +80,7 @@ struct RecipeCategoryBar: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(isOn ? Color.havenPurple : Color.havenPurplePale)
-                .foregroundColor(isOn ? .white : .havenPurple)
+                .foregroundColor(isOn ? .onAccent : .havenPurple)
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)

@@ -661,7 +661,7 @@ struct SetupWizardView: View {
 
     private var processKillOverlay: some View {
         ZStack {
-            Color.black.opacity(0.8).ignoresSafeArea()
+            Color.shade.opacity(0.8).ignoresSafeArea()
 
             VStack(spacing: 20) {
                 Image(systemName: "exclamationmark.triangle.fill")

@@ -175,7 +175,7 @@ struct HashtagFeedView: View {
                     Text(isFollowingTag ? "Following" : "Follow")
                         .font(.appSystem(size: 13, weight: .semibold))
                 }
-                .foregroundColor(isFollowingTag ? .white : .havenPurple)
+                .foregroundColor(isFollowingTag ? .onAccent : .havenPurple)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
                 .background(isFollowingTag ? Color.havenPurple : Color.havenPurple.opacity(0.12))

@@ -673,7 +673,7 @@ struct ConversationRow: View {
 
                         Text("\(conversation.unreadCount)")
                             .font(.appSystem(size: 11, weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundColor(.onAccent)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 2)
                             .background(Color.havenPurple)

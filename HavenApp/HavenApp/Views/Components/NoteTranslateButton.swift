@@ -45,7 +45,7 @@ struct NoteTranslateButton: View {
                     if showingTranslation, let translated {
                         Text(translated)
                             .font(.appSystem(size: 17))
-                            .foregroundColor(.white.opacity(0.92))
+                            .foregroundColor(.ink.opacity(0.92))
                             .lineSpacing(2)
                             .textSelection(.enabled)
                             .padding(.leading, 10)

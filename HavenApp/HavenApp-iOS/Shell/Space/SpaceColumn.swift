@@ -75,7 +75,7 @@ struct SpaceColumn: View {
         .overlay(alignment: .leading) {
             if !fillsFoldHalf {
                 Rectangle()
-                    .fill(Color.white.opacity(0.08))
+                    .fill(Color.ink.opacity(0.08))
                     .frame(width: 1)
                     .ignoresSafeArea()
             }
@@ -275,7 +275,7 @@ struct SpaceColumn: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
-                        .background(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.15), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                        .background(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.ink.opacity(0.15), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -305,7 +305,7 @@ struct SpaceColumn: View {
     /// The hairline between the rail and the panels.
     private var railRule: some View {
         Rectangle()
-            .fill(Color.white.opacity(0.06))
+            .fill(Color.ink.opacity(0.06))
             .frame(width: 1)
             .ignoresSafeArea()
     }
@@ -315,7 +315,7 @@ struct SpaceColumn: View {
         VStack(spacing: 6) {
             railButton(nil, symbol: "square.grid.2x2", title: "Your space")
             Rectangle()
-                .fill(Color.white.opacity(0.1))
+                .fill(Color.ink.opacity(0.1))
                 .frame(width: 24, height: 1)
                 .padding(.vertical, 4)
             ForEach(railIds, id: \.self) { id in
@@ -357,7 +357,7 @@ struct SpaceColumn: View {
         if let text = AccountUnread.badge(badge) {
             Text(text)
                 .font(.appSystem(size: 10, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(.onAccent)
                 .padding(.horizontal, 4)
                 .frame(minWidth: 16, minHeight: 16)
                 .background(Capsule().fill(Color.havenPurple))
@@ -378,7 +378,7 @@ struct SpaceColumn: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
-        .foregroundStyle(isOpen ? Color.havenPurple : .white)
+        .foregroundStyle(isOpen ? Color.havenPurple : Color.ink)
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
@@ -407,7 +407,7 @@ struct SpaceColumn: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.white.opacity(0.04))
+                    .fill(Color.ink.opacity(0.04))
             )
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .padding(12)

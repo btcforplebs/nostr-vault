@@ -154,9 +154,9 @@ struct ReactionTapbackBar: View {
             Button { onChoose(options.count) } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(Color.ink.opacity(0.8))
                     .frame(width: 34, height: 34)
-                    .background(Circle().fill(Color.white.opacity(0.12)))
+                    .background(Circle().fill(Color.ink.opacity(0.12)))
                     .frame(width: ReactionTapback.slot, height: ReactionTapback.slot)
                     .scaleEffect(highlighted == options.count ? 1.3 : 1)
             }
@@ -168,8 +168,8 @@ struct ReactionTapbackBar: View {
         .background(
             Capsule()
                 .fill(Color(white: 0.17))
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5))
-                .shadow(color: .black.opacity(0.45), radius: 14, y: 6)
+                .overlay(Capsule().strokeBorder(Color.ink.opacity(0.1), lineWidth: 0.5))
+                .shadow(color: Color.shade.opacity(0.45), radius: 14, y: 6)
         )
     }
 }

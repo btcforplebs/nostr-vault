@@ -103,7 +103,7 @@ struct ShareProfileSheet: View {
                 Label("Share", systemImage: "square.and.arrow.up")
                     .font(.appSystem(size: 15, weight: .semibold))
                     .frame(maxWidth: .infinity, minHeight: 44)
-                    .foregroundColor(.white)
+                    .foregroundColor(.onAccent)
                     .background(Color.havenPurple)
                     .cornerRadius(10)
                     .contentShape(RoundedRectangle(cornerRadius: 10))

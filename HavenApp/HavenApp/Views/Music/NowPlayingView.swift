@@ -46,7 +46,7 @@ struct NowPlayingView: View {
                     } else {
                         MusicArtwork(url: track.artworkURL, size: Self.artSize)
                             .clipShape(RoundedRectangle(cornerRadius: 18))
-                            .shadow(color: .black.opacity(0.3), radius: 16, y: 6)
+                            .shadow(color: Color.shade.opacity(0.3), radius: 16, y: 6)
                             .accessibilityHidden(true)
                     }
                 }

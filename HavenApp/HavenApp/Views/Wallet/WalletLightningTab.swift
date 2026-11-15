@@ -118,7 +118,7 @@ struct WalletLightningTab: View {
             } label: {
                 Text("Connect a wallet")
                     .font(.appSystem(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.onAccent)
                     .padding(.horizontal, 20)
                     .padding(.vertical, 10)
                     .background(Capsule().fill(Color.havenPurple))

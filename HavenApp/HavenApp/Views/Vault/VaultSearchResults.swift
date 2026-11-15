@@ -116,10 +116,10 @@ struct VaultSearchResults: View {
                 if let count {
                     Text(count.formatted())
                         .font(.appSystem(size: 12, weight: .medium))
-                        .foregroundColor(isOn ? .white.opacity(0.8) : .secondary)
+                        .foregroundColor(isOn ? .onAccent.opacity(0.8) : .secondary)
                 }
             }
-            .foregroundColor(isOn ? .white : .primary)
+            .foregroundColor(isOn ? .onAccent : .primary)
             .padding(.horizontal, 12)
             .frame(height: 32)
             .background(Capsule().fill(isOn ? Color.havenPurple : Color.secondary.opacity(0.12)))

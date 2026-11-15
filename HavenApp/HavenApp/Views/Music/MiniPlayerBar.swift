@@ -96,8 +96,8 @@ struct MiniPlayerBar: View {
             }
             .foregroundColor(.primary)
             .background(.ultraThinMaterial, in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
-            .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
+            .overlay(Capsule().stroke(Color.ink.opacity(0.12), lineWidth: 1))
+            .shadow(color: Color.shade.opacity(0.25), radius: 8, y: 2)
             .contentShape(Capsule())
             .onTapGesture { showingFull = true }
             .contextMenu {

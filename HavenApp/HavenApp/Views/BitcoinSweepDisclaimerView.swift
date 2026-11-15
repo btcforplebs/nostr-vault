@@ -66,12 +66,12 @@ struct BitcoinSweepDisclaimerView: View {
                 VStack(spacing: 16) {
                     Text("Do not send to a hardware wallet.")
                         .font(.appSystem(size: 22, weight: .heavy))
-                        .foregroundColor(.white)
+                        .foregroundColor(.ink)
                         .multilineTextAlignment(.center)
 
                     Text("Do not send to an exchange.")
                         .font(.appSystem(size: 22, weight: .heavy))
-                        .foregroundColor(.white)
+                        .foregroundColor(.ink)
                         .multilineTextAlignment(.center)
                 }
 
@@ -90,7 +90,7 @@ struct BitcoinSweepDisclaimerView: View {
                 Button(action: { performDismiss() }) {
                     Text("Cancel")
                         .font(.appSystem(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.ink)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(Color.secondary.opacity(0.3))
@@ -103,7 +103,7 @@ struct BitcoinSweepDisclaimerView: View {
                 Button(action: { currentStep = 1 }) {
                     Text("I understand, continue")
                         .font(.appSystem(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.onAccent)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(Color.havenPurple)
@@ -153,7 +153,7 @@ struct BitcoinSweepDisclaimerView: View {
                 Button(action: { currentStep = 0 }) {
                     Text("Go Back")
                         .font(.appSystem(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.ink)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(Color.secondary.opacity(0.3))
@@ -164,7 +164,7 @@ struct BitcoinSweepDisclaimerView: View {
                 Button(action: { currentStep = 2 }) {
                     Text("I will NOT send to a hardware wallet or exchange")
                         .font(.appSystem(size: 14, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.onAccent)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(Color.havenPurple)
@@ -192,7 +192,7 @@ struct BitcoinSweepDisclaimerView: View {
                             VStack(spacing: 8) {
                                 Text("Important Security Warning")
                                     .font(.appSystem(size: 24, weight: .bold))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(.ink)
 
                                 Text("Sweeping your wallet requires careful consideration")
                                     .font(.appSystem(size: 14))
@@ -267,7 +267,7 @@ struct BitcoinSweepDisclaimerView: View {
                     Button(action: { currentStep = 1 }) {
                         Text("Go Back")
                             .font(.appSystem(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundColor(.ink)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
                             .background(Color.secondary.opacity(0.3))
@@ -310,7 +310,7 @@ struct BitcoinSweepDisclaimerView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
                 .font(.appSystem(size: 15, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(.ink)
 
             Text(description)
                 .font(.appSystem(size: 13))

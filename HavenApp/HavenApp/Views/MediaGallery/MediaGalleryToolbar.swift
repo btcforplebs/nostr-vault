@@ -282,7 +282,7 @@ extension MediaGalleryView {
                 Text("Upload")
                     .font(.appSystem(size: 12, weight: .semibold))
             }
-            .foregroundColor(.white)
+            .foregroundColor(.onAccent)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(

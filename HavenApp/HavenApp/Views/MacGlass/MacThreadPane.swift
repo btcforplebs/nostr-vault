@@ -20,7 +20,7 @@ struct MacThreadPane: View {
                         .font(.appSystem(size: 12, weight: .semibold))
                         .foregroundColor(.secondary)
                         .frame(width: 28, height: 28)
-                        .background(Circle().fill(Color.white.opacity(0.08)))
+                        .background(Circle().fill(Color.ink.opacity(0.08)))
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -31,7 +31,7 @@ struct MacThreadPane: View {
             .padding(.horizontal, 16)
             .frame(height: 52)
 
-            Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1)
+            Rectangle().fill(Color.ink.opacity(0.10)).frame(height: 1)
 
             Group {
                 if let note = selection.note {

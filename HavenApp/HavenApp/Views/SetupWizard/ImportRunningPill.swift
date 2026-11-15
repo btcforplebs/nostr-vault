@@ -15,7 +15,7 @@ struct ImportRunningPill: View {
             PillSlot("importRunning", level: .ambient) {
                 let stage = ImportTourStage(statusMessage: relayManager.importStatusMessage, completed: false)
                 HStack(spacing: 6) {
-                    ProgressView().controlSize(.mini).tint(.white)
+                    ProgressView().controlSize(.mini).tint(Color.onAccent)
                     Text("Importing · \(Self.shortText(stage))")
                         .lineLimit(1)
                 }

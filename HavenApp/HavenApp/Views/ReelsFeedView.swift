@@ -582,7 +582,7 @@ private struct ReelPageView: View {
             VStack(spacing: 3) {
                 Image(systemName: "plus")
                     .font(.appSystem(size: 22, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.onAccent)
                     .frame(width: 46, height: 46)
                     .background(Circle().fill(Color.havenPurple))
                     .overlay(Circle().stroke(Color.white, lineWidth: 2))

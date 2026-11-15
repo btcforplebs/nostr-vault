@@ -107,7 +107,7 @@ struct WelcomeWindowView: View {
                             .font(.appSystem(size: 16, weight: .semibold))
                         Image(systemName: "arrow.right")
                     }
-                    .foregroundColor(.white)
+                    .foregroundColor(.onAccent)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
                     .background(

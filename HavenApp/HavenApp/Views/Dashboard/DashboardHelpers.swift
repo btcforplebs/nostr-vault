@@ -25,7 +25,7 @@ struct BlobTypeRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
                     .font(.appSystem(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.ink)
                 Text("\(count) \(count == 1 ? "blob" : "blobs")")
                     .font(.appSystem(size: 10, design: .monospaced))
                     .foregroundColor(.secondary)
@@ -89,7 +89,7 @@ struct StorageRow: View {
 
             Text(label)
                 .font(.appSystem(size: 14, weight: .semibold))
-                .foregroundColor(.white)
+                .foregroundColor(.ink)
 
             Spacer()
 
@@ -137,7 +137,7 @@ struct KindRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
                     .font(.appSystem(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.ink)
                 Text(kind >= 0 ? "kind \(kind)" : "—")
                     .font(.appSystem(size: 10, design: .monospaced))
                     .foregroundColor(.secondary)

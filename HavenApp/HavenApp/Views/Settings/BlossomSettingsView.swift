@@ -85,7 +85,7 @@ struct BlossomSettingsView: View {
                             HStack(spacing: 8) {
                                 Text("Desktop vault sync")
                                     .font(.appSubheadline.bold())
-                                    .foregroundColor(.white)
+                                    .foregroundColor(.ink)
                                 
                                 Text("Active")
                                     .font(.appSystem(size: 9, weight: .bold))
@@ -164,7 +164,7 @@ struct BlossomSettingsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(url)
                                     .font(.appSystem(size: 12, design: .monospaced))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(.ink)
                                 ServerHealthLine(server: health.server(configured: url), missing: missingLine(url)) {
                                     if let id = HavenConfig.blossomUploadServer(url) { Task { await health.test(id) } }
                                 }

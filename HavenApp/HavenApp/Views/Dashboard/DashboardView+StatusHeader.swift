@@ -188,7 +188,7 @@ extension DashboardView {
                     Text(relayManager.isRunning ? "Restart" : "Start Vault")
                         .font(.appSystem(size: 12, weight: .bold))
                 }
-                .foregroundColor(.white)
+                .foregroundColor(.onAccent)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
                 .background(
@@ -219,7 +219,7 @@ extension DashboardView {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(statusTitle)
                             .font(.appSystem(size: 16, weight: .bold, design: .monospaced))
-                            .foregroundColor(.white)
+                            .foregroundColor(.ink)
                             .accessibilityLabel(Text("Relay status"))
                             .accessibilityValue(Text(statusTitle))
 
@@ -257,7 +257,7 @@ extension DashboardView {
                             gradient: Gradient(colors: [
                                 statusColor.opacity(0.35),
                                 Color.platformCardBorder,
-                                Color.white.opacity(0.02)
+                                Color.ink.opacity(0.02)
                             ]),
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -297,7 +297,7 @@ extension DashboardView {
                                 Text("Force Restart")
                             }
                             .font(.appSystem(size: 13, weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundColor(.onAccent)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
                             .background(Color.havenPurple)

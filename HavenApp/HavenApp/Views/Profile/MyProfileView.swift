@@ -163,7 +163,7 @@ struct MyProfileView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 11)
                 .background(Color.havenPurple)
-                .foregroundColor(.white)
+                .foregroundColor(.onAccent)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -179,7 +179,7 @@ struct MyProfileView: View {
                     Text("Post")
                         .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                 }
-                .foregroundColor(.white)
+                .foregroundColor(.onAccent)
                 .frame(height: 48)
                 .padding(.horizontal, 18)
                 .background(

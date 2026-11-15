@@ -113,7 +113,7 @@ extension Color {
         if ConfigService.shared.config.useOLED {
             return .borderHairline
         }
-        return Color.white.opacity(0.04)
+        return Color.ink.opacity(0.04)
     }
 
     /// Console/terminal header background
@@ -357,9 +357,9 @@ extension View {
                 .clipShape(Capsule())
                 .overlay(
                     Capsule()
-                        .stroke(.white.opacity(isOLED ? 0.20 : 0.08), lineWidth: 0.5)
+                        .stroke(Color.ink.opacity(isOLED ? 0.20 : 0.08), lineWidth: 0.5)
                 )
-                .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
+                .shadow(color: Color.shade.opacity(0.05), radius: 10, x: 0, y: 4)
         }
     }
     
@@ -387,9 +387,9 @@ extension View {
                 .clipShape(Circle())
                 .overlay(
                     Circle()
-                        .stroke(.white.opacity(isOLED ? 0.30 : 0.15), lineWidth: 0.5)
+                        .stroke(Color.ink.opacity(isOLED ? 0.30 : 0.15), lineWidth: 0.5)
                 )
-                .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
+                .shadow(color: Color.shade.opacity(0.15), radius: 10, x: 0, y: 5)
         }
     }
 
@@ -417,9 +417,9 @@ extension View {
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
                 .overlay(
                     RoundedRectangle(cornerRadius: cornerRadius)
-                        .stroke(.white.opacity(isOLED ? 0.30 : 0.15), lineWidth: 0.5)
+                        .stroke(Color.ink.opacity(isOLED ? 0.30 : 0.15), lineWidth: 0.5)
                 )
-                .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
+                .shadow(color: Color.shade.opacity(0.15), radius: 10, x: 0, y: 5)
         }
     }
 

@@ -80,15 +80,15 @@ struct TutorialStage: View {
             }
             Text(step.title)
                 .font(.appHeadline)
-                .foregroundColor(.white)
+                .foregroundColor(.ink)
             Text(step.body)
                 .font(.appSubheadline)
-                .foregroundColor(.white.opacity(0.85))
+                .foregroundColor(.ink.opacity(0.85))
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
                 if center.stepIndex > 0 {
                     Button("Back") { center.back() }
-                        .foregroundColor(.white.opacity(0.85))
+                        .foregroundColor(.ink.opacity(0.85))
                 }
                 Spacer()
                 if center.isLastStep, let next = center.next(after: id) {
@@ -97,14 +97,14 @@ struct TutorialStage: View {
                         .padding(.horizontal, 18)
                         .padding(.vertical, 8)
                         .background(Capsule().fill(Color.havenPurple))
-                        .foregroundColor(.white)
+                        .foregroundColor(.onAccent)
                 } else {
                     Button(center.isLastStep ? "Done" : "Next") { center.next(account: account) }
                     .font(.appBody.weight(.semibold))
                     .padding(.horizontal, 18)
                     .padding(.vertical, 8)
                     .background(Capsule().fill(Color.havenPurple))
-                    .foregroundColor(.white)
+                    .foregroundColor(.onAccent)
                 }
             }
             .padding(.top, 2)
@@ -114,7 +114,7 @@ struct TutorialStage: View {
             let shape = TutorialCardShape(tail: placement.tail)
             shape
                 .fill(Color(white: 0.12))
-                .shadow(color: .black.opacity(0.5), radius: 16, y: 6)
+                .shadow(color: Color.shade.opacity(0.5), radius: 16, y: 6)
                 .overlay(shape.stroke(Color.havenPurple.opacity(0.6), lineWidth: 1))
         }
         .accessibilityElement(children: .contain)

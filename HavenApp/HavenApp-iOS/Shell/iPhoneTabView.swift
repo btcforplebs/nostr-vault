@@ -169,7 +169,7 @@ struct iPhoneTabView: View {
                     .frame(width: foldSpaceFolded ? SpaceColumn.foldRailWidth : half)
                 // The hairline between Your space and the app, as on the rails.
                 Rectangle()
-                    .fill(Color.white.opacity(0.08))
+                    .fill(Color.ink.opacity(0.08))
                     .frame(width: 1)
                     .ignoresSafeArea()
                     .accessibilityHidden(true)
@@ -233,7 +233,7 @@ struct iPhoneTabView: View {
     /// The hairline between the app and a column beside it, as on the rails.
     private var shellRule: some View {
         Rectangle()
-            .fill(Color.white.opacity(0.08))
+            .fill(Color.ink.opacity(0.08))
             .frame(width: 1)
             .ignoresSafeArea()
             .accessibilityHidden(true)

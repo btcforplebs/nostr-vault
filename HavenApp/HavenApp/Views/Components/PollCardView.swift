@@ -49,7 +49,7 @@ struct PollCardView: View {
                 } label: {
                     Text(myPicks.isEmpty ? "Vote" : "Change vote")
                         .font(.appSystem(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.onAccent)
                         .frame(maxWidth: .infinity, minHeight: 36)
                         .background(Color.havenPurple)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))

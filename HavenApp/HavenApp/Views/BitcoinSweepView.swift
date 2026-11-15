@@ -196,7 +196,7 @@ struct BitcoinSweepView: View {
                 Divider()
                 feePreviewRow(label: "You'll send",
                               value: formatSats(max(0, sendAmount)),
-                              color: sendAmount > BitcoinSweepEstimate.dustLimit ? .white : .red)
+                              color: sendAmount > BitcoinSweepEstimate.dustLimit ? .ink : .red)
             }
             .padding(14)
             .background(Color.secondary.opacity(0.06))
@@ -217,14 +217,14 @@ struct BitcoinSweepView: View {
                     if case .sweeping = sweepState {
                         ProgressView()
                             .scaleEffect(0.8)
-                            .tint(.white)
+                            .tint(Color.onAccent)
                     } else {
                         Image(systemName: "bitcoinsign.circle.fill")
                     }
                     Text(sweepState.isSweeping ? "Broadcasting…" : "Sweep")
                         .font(.appSystem(size: 16, weight: .semibold))
                 }
-                .foregroundColor(.white)
+                .foregroundColor(.onAccent)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(canSweep ? Color.havenPurple : Color.secondary.opacity(0.3))
@@ -252,10 +252,10 @@ struct BitcoinSweepView: View {
 
             Text("Swept!")
                 .font(.appTitle2.bold())
-                .foregroundColor(.white)
+                .foregroundColor(.ink)
 
             VStack(spacing: 6) {
-                feePreviewRow(label: "Sent", value: formatSats(amount), color: .white)
+                feePreviewRow(label: "Sent", value: formatSats(amount), color: .ink)
                 feePreviewRow(label: "Fee paid", value: formatSats(fee), color: .secondary)
             }
             .padding(14)

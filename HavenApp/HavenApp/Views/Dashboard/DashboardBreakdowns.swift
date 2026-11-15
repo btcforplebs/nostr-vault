@@ -91,7 +91,7 @@ struct EventKindBreakdownView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("\(total)")
                                         .font(.appSystem(size: 28, weight: .bold, design: .monospaced))
-                                        .foregroundColor(.white)
+                                        .foregroundColor(.ink)
                                     Text("Total Events")
                                         .font(.appSystem(size: 12))
                                         .foregroundColor(.secondary)
@@ -224,7 +224,7 @@ struct BlossomBreakdownView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("\(totalCount)")
                                         .font(.appSystem(size: 28, weight: .bold, design: .monospaced))
-                                        .foregroundColor(.white)
+                                        .foregroundColor(.ink)
                                     Text("Total Blobs")
                                         .font(.appSystem(size: 12))
                                         .foregroundColor(.secondary)
@@ -233,7 +233,7 @@ struct BlossomBreakdownView: View {
                                 VStack(alignment: .trailing, spacing: 4) {
                                     Text(ByteCountFormatter.string(fromByteCount: Int64(totalSize), countStyle: .file))
                                         .font(.appSystem(size: 28, weight: .bold, design: .monospaced))
-                                        .foregroundColor(.white)
+                                        .foregroundColor(.ink)
                                     Text("Total Size")
                                         .font(.appSystem(size: 12))
                                         .foregroundColor(.secondary)
@@ -351,7 +351,7 @@ struct MediaCacheBreakdownView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("\(totalCount)")
                                         .font(.appSystem(size: 28, weight: .bold, design: .monospaced))
-                                        .foregroundColor(.white)
+                                        .foregroundColor(.ink)
                                     Text("Cached Files")
                                         .font(.appSystem(size: 12))
                                         .foregroundColor(.secondary)
@@ -360,7 +360,7 @@ struct MediaCacheBreakdownView: View {
                                 VStack(alignment: .trailing, spacing: 4) {
                                     Text(ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file))
                                         .font(.appSystem(size: 28, weight: .bold, design: .monospaced))
-                                        .foregroundColor(.white)
+                                        .foregroundColor(.ink)
                                     Text("Total Size")
                                         .font(.appSystem(size: 12))
                                         .foregroundColor(.secondary)
@@ -555,7 +555,7 @@ struct StorageBreakdownView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(ByteCountFormatter.string(fromByteCount: statsService.storageSize, countStyle: .file))
                                     .font(.appSystem(size: 28, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(.ink)
                                 Text("Total Storage Used")
                                     .font(.appSystem(size: 12))
                                     .foregroundColor(.secondary)

@@ -242,7 +242,7 @@ struct DockHoldMenuOverlay: View {
                         max(halfHeight + 12, geo.size.height - halfHeight - 12))
             ZStack(alignment: .topLeading) {
                 if menu.isOpen {
-                    Color.black.opacity(0.28)
+                    Color.shade.opacity(0.28)
                         .ignoresSafeArea()
                         .contentShape(Rectangle())
                         .onTapGesture { menu.close() }
@@ -273,7 +273,7 @@ struct DockHoldMenuOverlay: View {
             let grow: UnitPoint = menu.centered ? .bottom : (trailing ? .bottomTrailing : .bottomLeading)
             ZStack(alignment: alignment) {
                 if menu.isOpen {
-                    Color.black.opacity(0.28)
+                    Color.shade.opacity(0.28)
                         .ignoresSafeArea()
                         .contentShape(Rectangle())
                         .onTapGesture { menu.close() }
@@ -310,7 +310,7 @@ struct DockHoldMenuOverlay: View {
         .padding(6)
         .fixedSize()
         .applyGlassRect(cornerRadius: 22)
-        .shadow(color: .black.opacity(0.35), radius: 18, y: 6)
+        .shadow(color: Color.shade.opacity(0.35), radius: 18, y: 6)
     }
 
     private func row(_ entry: DockHoldEntry) -> some View {
@@ -342,7 +342,7 @@ struct DockHoldMenuOverlay: View {
                         .font(.appSystem(size: 13, weight: .bold))
                 }
             }
-            .foregroundStyle(hovered ? Color.white : (entry.isCurrent ? Color.havenPurple : Color.primary))
+            .foregroundStyle(hovered ? Color.onAccent : (entry.isCurrent ? Color.havenPurple : Color.primary))
             .padding(.horizontal, 14)
             .frame(width: 210, height: entry.subtitle == nil ? 42 : 50)
             .background(

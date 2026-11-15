@@ -111,7 +111,7 @@ struct WelcomeStepView: View {
                 .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: corner, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        .stroke(Color.ink.opacity(0.08), lineWidth: 1)
                 )
         }
         .frame(height: size + 4)

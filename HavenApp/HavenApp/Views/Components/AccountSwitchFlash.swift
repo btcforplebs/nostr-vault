@@ -55,7 +55,7 @@ struct AccountSwitchBubble: View {
             AvatarView(url: nostrService.profiles[hex]?.pictureURL, pubkey: hex, size: 72)
             Text("Switched to \(name)")
                 .font(.appSystem(size: 18, weight: .semibold))
-                .foregroundColor(.white)
+                .foregroundColor(.ink)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
         }
@@ -63,7 +63,7 @@ struct AccountSwitchBubble: View {
         .padding(.vertical, 22)
         .frame(minWidth: 200, maxWidth: 280)
         .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color(white: 0.22).opacity(0.94)))
-        .shadow(color: .black.opacity(0.35), radius: 18, y: 6)
+        .shadow(color: Color.shade.opacity(0.35), radius: 18, y: 6)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Switched to \(name)")
     }

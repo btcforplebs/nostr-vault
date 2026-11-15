@@ -176,7 +176,7 @@ struct GifPickerSheet: View {
                 } label: {
                     Text(candidate.title)
                         .font(.appSystem(size: 13, weight: .semibold))
-                        .foregroundColor(candidate == source ? .white : .secondary)
+                        .foregroundColor(candidate == source ? .onAccent : .secondary)
                         .frame(maxWidth: .infinity)
                         .frame(height: 38)
                         .background {
@@ -240,7 +240,7 @@ struct GifPickerSheet: View {
                                 Image(systemName: "chevron.down")
                             }
                             .font(.appSystem(size: 13, weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundColor(.onAccent)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 9)
                             .background(Color.havenPurple)

@@ -56,7 +56,7 @@ extension View {
             .background(
                 Capsule()
                     .fill(tone.color)
-                    .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
+                    .shadow(color: Color.shade.opacity(0.4), radius: 8, x: 0, y: 4)
             )
             .padding(.horizontal, PillStyle.sideMargin)
     }

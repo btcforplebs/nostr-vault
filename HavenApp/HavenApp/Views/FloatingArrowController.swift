@@ -135,7 +135,7 @@ struct FloatingArrowView: View {
 
             Text("Your relay lives here")
                 .font(.appSystem(size: 11, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
+                .foregroundColor(.onAccent)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 5)
                 .background(
