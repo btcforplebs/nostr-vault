@@ -19,7 +19,7 @@ function pureOf(file, names) {
   vm.runInNewContext(`${block}\n;Object.assign(box, { ${names.join(", ")} })`, { box, Date, URL })
   return box
 }
-const R = pureOf("reader", ["inlineMarks", "MARKS", "cardLinks", "withoutCards", "hostOf", "tokenize", "decodeNostr", "rootOf", "parentOf", "reactionTags", "repostOf", "mergeNotes", "threadRows", "ago"])
+const R = pureOf("reader", ["inlineMarks", "MARKS", "cardLinks", "withoutCards", "hostOf", "tokenize", "decodeNostr", "rootOf", "parentOf", "repostOf", "mergeNotes", "threadRows", "ago"])
 const C = pureOf("compose", ["replyTags", "noteTemplate", "quoteOf", "imetaTag", "neventOf"])
 const A = "a".repeat(64), B = "b".repeat(64), C1 = "c".repeat(64), D = "d".repeat(64), E = "e".repeat(64)
 const ev = (id, tags = [], at = 1, extra = {}) => ({ id, pubkey: A, kind: 1, created_at: at, content: "", tags, ...extra })
@@ -79,8 +79,7 @@ test("compose note: trimmed, hashtags as t tags, a quote's line and q tag, files
   assert.deepEqual(withFile.tags, [["imeta", "url https://x.example/a.jpg", "m image/jpeg"]])
 })
 
-test("reader: reaction tags name the note, its author and kind; reposts unwrap only a whole note", () => {
-  assert.deepEqual(plain(R.reactionTags(ev(B))), [["e", B], ["p", A], ["k", "1"]])
+test("reader: reposts unwrap only a whole note (a Like's tags are the shell's now: napplet:note/like)", () => {
   const inner = ev(C1, [], 5, { content: "hi" })
   assert.equal(R.repostOf({ kind: 6, content: JSON.stringify(inner) }).id, C1)
   assert.equal(R.repostOf({ kind: 6, content: "{\"id\":\"x\"}" }), null)

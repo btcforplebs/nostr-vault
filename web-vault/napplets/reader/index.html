@@ -64,6 +64,9 @@
   .poll-pct { color: var(--muted); font-size: 13px; }
   .poll-vote { justify-self: start; }
   .poll-err { margin: 0; color: #ff6b6b; font-size: 13px; }
+  .acts { position: relative; }
+  .tapback { position: absolute; bottom: 100%; left: 40px; z-index: 4; display: flex; gap: 2px; padding: 4px; border-radius: 999px; background: var(--s2); border: 1px solid var(--hair); box-shadow: 0 6px 20px #0008; }
+  .tapback button { border: 0; background: none; font-size: 22px; min-height: 40px; padding: 0 6px; }
   .quote { border: 1px solid var(--hair); border-radius: 12px; padding: 8px 10px; margin: 6px 0; color: var(--muted); font-size: 14px; }
   .acts { display: flex; gap: 2px; margin-left: -8px; flex-wrap: wrap; }
   .quote { cursor: pointer; display: grid; gap: 2px; }
@@ -197,7 +200,6 @@ const eTags = ev => (ev?.tags ?? []).filter(t => t[0] === "e" && HEX.test(t[1] ?
 function rootOf(ev) { const e = eTags(ev); return (e.find(t => t[3] === "root") ?? (e.some(t => t[3]) ? null : e[0]))?.[1] ?? ev.id }
 /** NIP-10: the note it answers (marked reply, else marked root, else the last e tag), or null. */
 function parentOf(ev) { const e = eTags(ev); if (!e.length) return null; return (e.find(t => t[3] === "reply") ?? e.find(t => t[3] === "root") ?? (e.some(t => t[3]) ? null : e[e.length - 1]))?.[1] ?? null }
-const reactionTags = ev => [["e", ev.id], ["p", ev.pubkey], ["k", String(ev.kind)]]
 /** A kind 6 repost's note, if its content carries a signed-looking one. */
 function repostOf(ev) { if (ev?.kind !== 6) return null; try { const r = JSON.parse(ev.content); return r && HEX.test(r.id ?? "") && HEX.test(r.pubkey ?? "") && typeof r.content === "string" ? r : null } catch { return null } }
 /** Feed rows: newest first, one per id, at most `cap`. */
@@ -225,7 +227,7 @@ const n = window.napplet || {}
 const $ = id => document.getElementById(id)
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
 const PAGE = 40
-const profiles = new Map(), asked = new Set(), pics = new Map(), reacted = new Set()
+const profiles = new Map(), asked = new Set(), pics = new Map()
 let me = "", follows = [], view = { kind: "feed" }, stack = [], notes = [], pending = [], live = null, loading = false, done = false
 
 async function q(filters) { return ((await n.outbox.query(filters).catch(() => ({ events: [] }))).events ?? []).map(r => r.event).filter(Boolean) }
@@ -369,10 +371,10 @@ function card(ev, { focus = false, depth = 0, by = null } = {}) {
   col.append(CARD_KINDS.includes(shown.kind) ? kindBody(shown) : body(shown))
   const acts = el("div", "acts")
   const reply = el("button", "ghost", "Reply"); reply.onclick = e => { e.stopPropagation(); compose("reply", shown) }
-  const like = el("button", `ghost${reacted.has(shown.id) ? " on" : ""}`, reacted.has(shown.id) ? "♥ Liked" : "♡ Like")
-  like.onclick = async e => { e.stopPropagation(); if (reacted.has(shown.id)) return; like.disabled = true; const r = await n.outbox.publish({ kind: 7, content: "+", tags: reactionTags(shown) }).catch(err => ({ ok: false, error: String(err) })); like.disabled = false; if (r?.ok !== false) { reacted.add(shown.id); like.textContent = "♥ Liked"; like.classList.add("on") } else like.title = r.error || "not sent" }
+  const like = likeButton(shown), zap = ACT("⚡", "Zap", () => shellAct("zap", shown)); zap.dataset.zap = shown.id
+  askStats(a, shown)
   acts.append(reply, ACT("⟲", "Repost", () => shellAct("repost", shown)), ACT("❝", "Quote", () => compose("quote", shown)), like,
-    ACT("⚡", "Zap", () => shellAct("zap", shown)), ACT("⋯", "More", () => shellAct("menu", shown)))
+    zap, ACT("⋯", "More", () => shellAct("menu", shown)))
   col.append(acts)
   a.append(col)
   // An article's thread is the article itself (the classic card): the shell's article reader opens.
@@ -467,6 +469,42 @@ async function castVote(box, ev, d, picks) {
   const r = await n.intent?.invoke("napplet:poll/vote", { payload: { event: ev, picks } }).catch(e => ({ ok: false, error: String(e?.message ?? e) }))
   if (r?.ok && r.data) { cardsAsked.set(ev.id, Promise.resolve(r.data)); drawPoll(box, ev, r.data) }
   else drawPoll(box, ev, d, null, r?.error || "Your vote wasn't sent.")
+}
+// Like and zap totals: the app's own (napplet:note/stats when a note comes into view, then inc nv.note.stats as they
+// change). A tap likes or takes it back; a hold or right-click opens the tapback row; the shell signs (napplet:note/like).
+const TAPBACK = ["❤️", "🤙", "🔥", "😂", "😮", "😢"]
+const stats = new Map() // note id -> the shell's latest stats
+const statsSeen = new IntersectionObserver(es => { for (const e of es) if (e.isIntersecting) { statsSeen.unobserve(e.target); const ev = e.target._ev; n.intent?.invoke("napplet:note/stats", { payload: { event: ev } }).then(r => { if (r?.ok && r.data) showStats(r.data) }).catch(() => {}) } }, { rootMargin: "300px" })
+function askStats(row, ev) { row._ev = ev; if (stats.has(ev.id)) queueMicrotask(() => showStats(stats.get(ev.id))); statsSeen.observe(row) }
+function showStats(d) {
+  if (!d || !HEX.test(d.id ?? "")) return
+  stats.set(d.id, d)
+  for (const b of document.querySelectorAll(`button[data-like="${d.id}"]`)) paintLike(b, d)
+  for (const b of document.querySelectorAll(`button[data-zap="${d.id}"]`)) { b.textContent = d.zapSats ? `⚡ ${d.zapSats.toLocaleString("en-US")}` : "⚡"; b.classList.toggle("on", d.zapMine); b.title = d.zapSats ? `Zap · ${d.zapSats.toLocaleString("en-US")} sats` : "Zap" }
+}
+function paintLike(b, d) {
+  const mine = d?.like === "sent" || d?.like === "pending"
+  b.textContent = mine ? (d.emoji === "❤️" || !d.emoji ? "♥ Liked" : `${d.emoji} Reacted`) : "♡ Like"
+  b.classList.toggle("on", mine); b.disabled = d?.like === "busy"
+  b.title = d?.like === "error" ? `Didn't go out: ${d.error}. Try again` : mine ? "Your reaction. Tap to take it back, hold to change it" : "Like. Hold for more reactions"
+}
+function likeButton(ev) {
+  const b = el("button", "ghost", "♡ Like"); b.dataset.like = ev.id; paintLike(b, stats.get(ev.id))
+  const send = emoji => n.intent?.invoke("napplet:note/like", { payload: { event: ev, ...(emoji ? { emoji } : {}) } }).then(r => { if (r && !r.ok) b.title = r.error || "Not sent" }).catch(() => {})
+  let timer = null, held = false
+  b.onpointerdown = () => { held = false; timer = setTimeout(() => { held = true; tapback(b, send) }, 350) }
+  b.onpointerup = b.onpointerleave = () => clearTimeout(timer)
+  b.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); clearTimeout(timer); tapback(b, send) }
+  b.onclick = e => { e.stopPropagation(); if (held) { held = false; return } send() }
+  return b
+}
+function tapback(b, send) {
+  document.querySelector(".tapback")?.remove()
+  const bar = el("div", "tapback"); bar.setAttribute("role", "menu")
+  for (const e of TAPBACK) { const x = el("button", "", e); x.type = "button"; x.setAttribute("role", "menuitem"); x.onclick = ev => { ev.stopPropagation(); bar.remove(); send(e) }; bar.append(x) }
+  b.after(bar)
+  const away = ev => { if (!bar.contains(ev.target)) { bar.remove(); removeEventListener("pointerdown", away, true) } }
+  setTimeout(() => addEventListener("pointerdown", away, true))
 }
 // A tap on a picture: the shell's own full-screen viewer, over the whole app, from the signed note's media.
 function viewMedia(ev, url) { n.intent?.invoke("napplet:media/view", { payload: { event: ev, url } }).catch(() => {}) }
@@ -584,6 +622,7 @@ async function start() {
       if (view.kind === "feed") drawFeed()
     }
   })
+  n.inc?.on?.("nv.note.stats", e => showStats(e?.payload))
   n.inc?.on?.("nv.compose.sent", e => {
     const ev = e?.payload?.event
     if (!ev || !HEX.test(ev.id ?? "")) return
