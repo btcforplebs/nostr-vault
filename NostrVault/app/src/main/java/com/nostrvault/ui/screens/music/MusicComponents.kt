@@ -32,7 +32,9 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.nostrvault.data.music.WavlakeTrack
 import com.nostrvault.service.music.MusicPlayer
+import com.nostrvault.ui.theme.Ink
 import com.nostrvault.ui.theme.LocalNostrVaultColors
+import com.nostrvault.ui.theme.OnAccent
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 
@@ -99,9 +101,9 @@ fun MusicPillButton(
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 16.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = if (filled) Color.White else accent, modifier = Modifier.size(18.dp))
+        Icon(icon, contentDescription = null, tint = if (filled) OnAccent else accent, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(6.dp))
-        Text(title, color = if (filled) Color.White else accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Text(title, color = if (filled) OnAccent else accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -123,7 +125,7 @@ fun CollectionTile(
 
 @Composable
 fun Artwork(url: String?, size: androidx.compose.ui.unit.Dp, shape: Shape = RoundedCornerShape(8.dp)) {
-    Box(Modifier.size(size).clip(shape).background(Color.White.copy(alpha = 0.08f)), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(size).clip(shape).background(Ink.copy(alpha = 0.08f)), contentAlignment = Alignment.Center) {
         Icon(Icons.Filled.MusicNote, contentDescription = null, tint = SecondaryText)
         if (url != null) AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
     }

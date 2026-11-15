@@ -115,7 +115,7 @@ internal fun RelayActivityRow(item: PlainLog.Item, compact: Boolean = false) {
                         fontSize = if (compact) 10.sp else 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier
-                            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(50))
+                            .background(Ink.copy(alpha = 0.08f), RoundedCornerShape(50))
                             .padding(horizontal = 5.dp, vertical = 1.dp),
                     )
                 }

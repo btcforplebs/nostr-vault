@@ -66,6 +66,7 @@ import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.components.glassPillBackground
 import com.nostrvault.ui.components.zapFlightOrigin
 import com.nostrvault.ui.theme.ErrorRed
+import com.nostrvault.ui.theme.Ink
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.LocalOledMode
 import com.nostrvault.ui.theme.Motion
@@ -505,7 +506,7 @@ private fun NavTab(
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = if (selected) selectedColor else Color.White,
+                tint = if (selected) selectedColor else Ink,
                 // iOS: a 20pt symbol in a 24pt frame. A Material icon keeps
                 // a 2dp margin inside its box, so 24dp draws the same glyph.
                 modifier = Modifier
@@ -516,7 +517,7 @@ private fun NavTab(
                 text = label,
                 fontSize = 10.sp,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (selected) selectedColor else Color.White,
+                color = if (selected) selectedColor else Ink,
             )
         }
         // On the icon's top-right corner: the icon is 24dp wide, centred, 6dp down.
@@ -572,7 +573,7 @@ private fun ProfileTab(
                     .background(SecondaryGroupedBg)
                     .border(
                         width = if (selected) 2.dp else 1.dp,
-                        color = if (selected) selectedColor else Color.White.copy(alpha = 0.5f),
+                        color = if (selected) selectedColor else Ink.copy(alpha = 0.5f),
                         shape = CircleShape,
                     ),
                 contentAlignment = Alignment.Center,
@@ -598,7 +599,7 @@ private fun ProfileTab(
             text = "Profile",
             fontSize = 10.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (selected) selectedColor else Color.White,
+            color = if (selected) selectedColor else Ink,
         )
     }
 }

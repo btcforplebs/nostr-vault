@@ -35,6 +35,7 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.VaultAccountChip
 import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.theme.LocalNostrVaultColors
+import com.nostrvault.ui.theme.OnAccent
 import com.nostrvault.ui.theme.PrimaryText
 
 /** The size of each account's picture in the row. */
@@ -87,7 +88,7 @@ internal fun AccountChipRow(
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 16.dp).heightIn(min = AccountChipPictureSize + 6.dp)) {
                         Text(
                             title,
-                            color = if (isSelected) Color.White else PrimaryText,
+                            color = if (isSelected) OnAccent else PrimaryText,
                             fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                         )

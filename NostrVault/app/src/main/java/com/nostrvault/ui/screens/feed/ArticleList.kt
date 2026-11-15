@@ -252,7 +252,7 @@ private fun RecipeCategoryChip(title: String, isOn: Boolean, onClick: () -> Unit
     val colors = LocalNostrVaultColors.current
     Text(
         text = title,
-        color = if (isOn) Color.White else colors.primary,
+        color = if (isOn) OnAccent else colors.primary,
         fontSize = 12.sp,
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier

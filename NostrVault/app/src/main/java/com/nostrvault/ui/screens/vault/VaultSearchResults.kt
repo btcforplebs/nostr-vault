@@ -48,8 +48,10 @@ import com.nostrvault.data.model.VaultSearchLogic.Status
 import com.nostrvault.ui.components.VaultNoteCard
 import com.nostrvault.ui.navigation.LocalOpenHashtag
 import com.nostrvault.ui.screens.SearchProfileRow
+import com.nostrvault.ui.theme.Ink
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
+import com.nostrvault.ui.theme.OnAccent
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 import com.nostrvault.ui.theme.ZapOrange
@@ -191,15 +193,15 @@ private fun Chip(title: String, icon: ImageVector, count: Int?, isOn: Boolean, o
         horizontalArrangement = Arrangement.spacedBy(5.dp),
         modifier = Modifier
             .height(32.dp)
-            .background(if (isOn) accent else Color.White.copy(alpha = 0.12f), CircleShape)
+            .background(if (isOn) accent else Ink.copy(alpha = 0.12f), CircleShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp)
             .semantics { selected = isOn },
     ) {
-        Icon(icon, contentDescription = null, tint = if (isOn) Color.White else PrimaryText, modifier = Modifier.size(14.dp))
-        Text(title, color = if (isOn) Color.White else PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Icon(icon, contentDescription = null, tint = if (isOn) OnAccent else PrimaryText, modifier = Modifier.size(14.dp))
+        Text(title, color = if (isOn) OnAccent else PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         if (count != null) {
-            Text("%,d".format(count), color = if (isOn) Color.White.copy(alpha = 0.8f) else SecondaryText, fontSize = 12.sp)
+            Text("%,d".format(count), color = if (isOn) OnAccent.copy(alpha = 0.8f) else SecondaryText, fontSize = 12.sp)
         }
     }
 }
@@ -213,7 +215,7 @@ private fun HashtagRow(tag: String) {
         modifier = Modifier
             .padding(horizontal = 16.dp, vertical = 3.dp)
             .fillMaxWidth()
-            .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
+            .background(Ink.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
             .clickable(enabled = open != null) { open?.invoke(tag) }
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
@@ -232,7 +234,7 @@ private fun LinkRow(link: VaultSearchLogic.Link) {
         modifier = Modifier
             .padding(horizontal = 16.dp, vertical = 3.dp)
             .fillMaxWidth()
-            .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
+            .background(Ink.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
             .clickable { runCatching { uri.openUri(link.url) } }
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {

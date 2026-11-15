@@ -56,12 +56,31 @@ enum class AppTheme(
 // Elevation ramp (port of Theming.swift surface0-3 / borderHairline / borderStrong)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Ink, shade and labels (twin of Theming.swift ink / shade / onAccent)
+//
+// The app is dark-only today, so these are plain white / black. They exist so a
+// light mode can flip them in one place (PLANS/NV_LIGHT_MODE_AND_CUSTOM_COLORS.md).
+// Pick by what the colour sits on:
+// - Ink: text, icons, strokes and tints on the app's own surfaces (Surface0-3,
+//   cards, rows, sheets, bars). Use Ink.copy(alpha = x) for dimmer steps.
+// - Shade: shadows and dimming drawn over the app's own surfaces.
+// - OnAccent: a label on an accent fill (primary buttons, badges).
+// - Plain Color.White / Color.Black: only where the backdrop is dark in every
+//   mode, such as text over a photo or video, the media viewer, the player, the
+//   trust globe, or a black scrim.
+// ---------------------------------------------------------------------------
+
+val Ink = Color.White
+val Shade = Color.Black
+val OnAccent = Color.White
+
 val Surface0 = Color(0xFF000000) // page
 val Surface1 = Color(0xFF1C1C1E) // resting card
 val Surface2 = Color(0xFF2C2C2E) // raised
 val Surface3 = Color(0xFF3A3A3C) // highest
-val BorderHairline = Color.White.copy(alpha = 0.14f)
-val BorderStrong = Color.White.copy(alpha = 0.36f)
+val BorderHairline = Ink.copy(alpha = 0.14f)
+val BorderStrong = Ink.copy(alpha = 0.36f)
 
 // ---------------------------------------------------------------------------
 // Platform background colors (port of PlatformCompat.swift)
@@ -87,10 +106,10 @@ val OledCardBorder = BorderHairline
 val ConsoleHeaderBg = Surface2
 
 // Text colors
-val PrimaryText = Color.White
-val SecondaryText = Color.White.copy(alpha = 0.60f)
-val TertiaryText = Color.White.copy(alpha = 0.40f)
-val PlaceholderText = Color.White.copy(alpha = 0.25f)
+val PrimaryText = Ink
+val SecondaryText = Ink.copy(alpha = 0.60f)
+val TertiaryText = Ink.copy(alpha = 0.40f)
+val PlaceholderText = Ink.copy(alpha = 0.25f)
 
 // Status colors
 val SuccessGreen = Color(0xFF34C759)

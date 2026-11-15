@@ -145,7 +145,7 @@ private fun FrontDoorHero(iconSize: Dp, onWhatsInside: () -> Unit) {
             modifier = Modifier
                 .size(iconSize)
                 .clip(corner)
-                .border(1.dp, Color.White.copy(alpha = 0.08f), corner),
+                .border(1.dp, Ink.copy(alpha = 0.08f), corner),
         )
     }
 

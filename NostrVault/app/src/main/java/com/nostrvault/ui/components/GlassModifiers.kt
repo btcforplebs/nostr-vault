@@ -19,9 +19,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.nostrvault.ui.theme.Ink
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.LocalOledMode
 import com.nostrvault.ui.theme.SecondaryGroupedBg
+import com.nostrvault.ui.theme.Shade
 
 /**
  * Glass pill, circle, and rect modifiers matching the iOS LiquidGlassModifier.
@@ -74,7 +76,7 @@ private fun glassCircleBorderBottomAlpha(isOled: Boolean): Float =
 
 private val HighlightGradient = Brush.verticalGradient(
     colorStops = arrayOf(
-        0.0f to Color.White.copy(alpha = 0.12f),
+        0.0f to Ink.copy(alpha = 0.12f),
         0.5f to Color.Transparent,
     ),
 )
@@ -93,8 +95,8 @@ fun Modifier.glassPillBackground(
     .shadow(
         elevation = 8.dp,
         shape = PillShape,
-        ambientColor = Color.Black.copy(alpha = 0.12f),
-        spotColor = Color.Black.copy(alpha = 0.12f),
+        ambientColor = Shade.copy(alpha = 0.12f),
+        spotColor = Shade.copy(alpha = 0.12f),
     )
     .background(SecondaryGroupedBg.copy(alpha = if (opaque) 1f else glassBgAlpha(isOled)), PillShape)
     .background(accentColor.copy(alpha = 0.06f), PillShape)
@@ -103,8 +105,8 @@ fun Modifier.glassPillBackground(
         width = 0.5.dp,
         brush = Brush.verticalGradient(
             listOf(
-                Color.White.copy(alpha = glassBorderTopAlpha(isOled)),
-                Color.White.copy(alpha = glassBorderBottomAlpha(isOled)),
+                Ink.copy(alpha = glassBorderTopAlpha(isOled)),
+                Ink.copy(alpha = glassBorderBottomAlpha(isOled)),
             ),
         ),
         shape = PillShape,
@@ -121,8 +123,8 @@ fun Modifier.glassCircleBackground(
     .shadow(
         elevation = 8.dp,
         shape = CircleShape,
-        ambientColor = Color.Black.copy(alpha = 0.15f),
-        spotColor = Color.Black.copy(alpha = 0.15f),
+        ambientColor = Shade.copy(alpha = 0.15f),
+        spotColor = Shade.copy(alpha = 0.15f),
     )
     .background(SecondaryGroupedBg.copy(alpha = glassBgAlpha(isOled)), CircleShape)
     .background(accentColor.copy(alpha = 0.06f), CircleShape)
@@ -131,8 +133,8 @@ fun Modifier.glassCircleBackground(
         width = 0.5.dp,
         brush = Brush.verticalGradient(
             listOf(
-                Color.White.copy(alpha = glassCircleBorderTopAlpha(isOled)),
-                Color.White.copy(alpha = glassCircleBorderBottomAlpha(isOled)),
+                Ink.copy(alpha = glassCircleBorderTopAlpha(isOled)),
+                Ink.copy(alpha = glassCircleBorderBottomAlpha(isOled)),
             ),
         ),
         shape = CircleShape,
@@ -153,8 +155,8 @@ fun Modifier.glassRectBackground(
         .shadow(
             elevation = 8.dp,
             shape = shape,
-            ambientColor = Color.Black.copy(alpha = 0.15f),
-            spotColor = Color.Black.copy(alpha = 0.15f),
+            ambientColor = Shade.copy(alpha = 0.15f),
+            spotColor = Shade.copy(alpha = 0.15f),
         )
         .background(SecondaryGroupedBg.copy(alpha = glassBgAlpha(isOled)), shape)
         .background(accentColor.copy(alpha = 0.06f), shape)
@@ -163,8 +165,8 @@ fun Modifier.glassRectBackground(
             width = 0.5.dp,
             brush = Brush.verticalGradient(
                 listOf(
-                    Color.White.copy(alpha = glassBorderTopAlpha(isOled)),
-                    Color.White.copy(alpha = glassBorderBottomAlpha(isOled)),
+                    Ink.copy(alpha = glassBorderTopAlpha(isOled)),
+                    Ink.copy(alpha = glassBorderBottomAlpha(isOled)),
                 ),
             ),
             shape = shape,

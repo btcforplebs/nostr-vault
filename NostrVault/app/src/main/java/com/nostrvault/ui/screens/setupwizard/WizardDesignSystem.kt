@@ -126,14 +126,14 @@ internal fun WizardPrimaryButton(
         ) {
             if (isLoading) {
                 CircularProgressIndicator(
-                    color = Color.White,
+                    color = OnAccent,
                     strokeWidth = 2.dp,
                     modifier = Modifier.size(22.dp),
                 )
             } else {
                 Text(
                     text = text,
-                    color = Color.White,
+                    color = OnAccent,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                 )

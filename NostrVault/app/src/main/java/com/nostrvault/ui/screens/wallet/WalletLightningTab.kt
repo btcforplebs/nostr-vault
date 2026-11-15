@@ -770,7 +770,7 @@ private fun NoWalletCard(onConnectWallet: () -> Unit) {
             )
             Button(
                 onClick = onConnectWallet,
-                colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = OnAccent),
                 modifier = Modifier
                     .padding(top = 4.dp)
                     .tutorialAnchor(TutorialContent.WALLET_CONNECT_BUTTON),

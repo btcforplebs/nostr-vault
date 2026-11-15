@@ -57,8 +57,10 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.nostrvault.data.model.ListingDraft
 import com.nostrvault.data.model.MarketCategory
+import com.nostrvault.ui.theme.Ink
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
+import com.nostrvault.ui.theme.OnAccent
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 import com.nostrvault.ui.theme.WindowBackground
@@ -247,7 +249,7 @@ private fun PhotoStrip(photos: List<Uri>, enabled: Boolean, onChange: (List<Uri>
                 if (index == 0) {
                     Text(
                         "Cover",
-                        color = Color.White,
+                        color = OnAccent,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier
@@ -281,7 +283,7 @@ private fun PhotoStrip(photos: List<Uri>, enabled: Boolean, onChange: (List<Uri>
                 modifier = Modifier
                     .size(88.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(Color.White.copy(alpha = 0.08f))
+                    .background(Ink.copy(alpha = 0.08f))
                     .clickable {
                         val request = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         if (remaining >= 2) pickMany.launch(request) else pickOne.launch(request)

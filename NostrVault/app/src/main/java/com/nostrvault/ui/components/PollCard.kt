@@ -57,6 +57,7 @@ import com.nostrvault.service.NostrService
 import com.nostrvault.service.PollStore
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
+import com.nostrvault.ui.theme.OnAccent
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 import com.nostrvault.ui.theme.ErrorRed
@@ -171,7 +172,7 @@ fun PollCard(
             ) {
                 Text(
                     text = if (myPicks.isEmpty()) "Vote" else "Change vote",
-                    color = Color.White,
+                    color = OnAccent,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                 )

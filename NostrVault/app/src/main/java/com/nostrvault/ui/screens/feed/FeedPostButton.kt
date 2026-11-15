@@ -71,12 +71,12 @@ internal fun FeedPostButton(
                         else -> NostrVaultIcons.Compose
                     },
                     contentDescription = "Compose",
-                    tint = Color.White,
+                    tint = OnAccent,
                     modifier = Modifier.size(18.dp),
                 )
                 Text(
                     text = modeComposer?.buttonTitle ?: "Post",
-                    color = Color.White,
+                    color = OnAccent,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                 )

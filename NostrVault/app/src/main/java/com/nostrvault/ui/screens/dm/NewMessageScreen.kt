@@ -374,12 +374,12 @@ fun NewMessageScreen(
                             .clickable(enabled = canSend, role = Role.Button) { viewModel.send(onMessageSent) }
                             .padding(horizontal = 18.dp, vertical = 10.dp),
                     ) {
-                        Text("Send", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Send", color = OnAccent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.width(6.dp))
                         Icon(
                             imageVector = NostrVaultIcons.Send,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = OnAccent,
                             modifier = Modifier.size(13.dp),
                         )
                     }

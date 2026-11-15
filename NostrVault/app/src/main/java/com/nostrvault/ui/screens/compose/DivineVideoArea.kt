@@ -129,9 +129,9 @@ internal fun DivineVideoArea(clip: PickedClip?, busy: Boolean, onPicked: (Uri) -
                 colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
-                Icon(NostrVaultIcons.Video, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                Icon(NostrVaultIcons.Video, contentDescription = null, tint = OnAccent, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Record a video", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text("Record a video", color = OnAccent, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             }
             OutlinedButton(
                 onClick = ::choose,

@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.theme.LocalNostrVaultColors
+import com.nostrvault.ui.theme.OnAccent
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 import kotlinx.coroutines.delay
@@ -235,7 +236,7 @@ private fun TutorialCard(
             Spacer(Modifier.weight(1f))
             Button(
                 onClick = onNext,
-                colors = ButtonDefaults.buttonColors(containerColor = primary, contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = primary, contentColor = OnAccent),
             ) {
                 Text(nextLabel, fontWeight = FontWeight.SemiBold)
             }

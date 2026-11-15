@@ -48,6 +48,7 @@ import com.nostrvault.fips.FipsUrl
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
+import com.nostrvault.ui.theme.Surface0
 
 /**
  * The in-app browser (iOS/Mac: InAppBrowserView.swift): Done, a Mesh/Web badge, the address bar and reload on
@@ -63,7 +64,7 @@ fun InAppBrowserScreen(
     var badgeInfo by remember { mutableStateOf(false) }
     BackHandler { if (model.canGoBack) model.goBack() else onClose() }
 
-    Column(Modifier.fillMaxSize().background(Color.Black).statusBarsPadding().navigationBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(Surface0).statusBarsPadding().navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onClose) { Text("Done", color = PrimaryText) }
             Badge(model.kind) { badgeInfo = true }

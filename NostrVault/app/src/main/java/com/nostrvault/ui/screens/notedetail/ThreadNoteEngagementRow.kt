@@ -37,7 +37,7 @@ internal fun EngagementPill(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .clip(RoundedCornerShape(if (compact) 6.dp else 8.dp))
-            .background(androidx.compose.ui.graphics.Color.White.copy(alpha = if (compact) 0.04f else 0.05f))
+            .background(Ink.copy(alpha = if (compact) 0.04f else 0.05f))
             .clickable(onClick = onClick)
             .semantics(mergeDescendants = true) { contentDescription = description }
             .padding(horizontal = if (compact) 6.dp else 8.dp, vertical = if (compact) 3.dp else 5.dp),

@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.TrustPath
 import com.nostrvault.ui.theme.NostrVaultIcons
+import com.nostrvault.ui.theme.OnAccent
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 import com.nostrvault.ui.theme.Surface2
@@ -225,7 +226,7 @@ private fun CardButton(
     short: String? = null,
     icon: ImageVector? = null,
 ) {
-    val tint = if (filled) Color.White else accent
+    val tint = if (filled) OnAccent else accent
     BoxWithConstraints(
         contentAlignment = Alignment.Center,
         modifier = modifier

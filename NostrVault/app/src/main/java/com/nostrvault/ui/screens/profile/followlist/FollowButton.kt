@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.theme.LocalNostrVaultColors
+import com.nostrvault.ui.theme.OnAccent
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 
@@ -62,7 +63,7 @@ internal fun FollowButton(state: FollowButtonState, name: String, onClick: () ->
         ) {
             Text(
                 if (filled) "Follow" else "Following",
-                color = if (filled) Color.White else PrimaryText,
+                color = if (filled) OnAccent else PrimaryText,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,

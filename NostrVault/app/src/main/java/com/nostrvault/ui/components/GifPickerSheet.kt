@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.nostrvault.data.gif.NostrBuildGif
 import com.nostrvault.data.gif.NostrBuildGifs
+import com.nostrvault.ui.theme.Ink
 import com.nostrvault.ui.theme.SecondaryText
 import kotlinx.coroutines.launch
 
@@ -122,7 +123,7 @@ fun GifPickerSheet(
                             .fillMaxWidth()
                             .aspectRatio(gif.aspectRatio)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color.White.copy(alpha = 0.06f))
+                            .background(Ink.copy(alpha = 0.06f))
                             .clickable { onPick(gif) }
                             .semantics { contentDescription = gif.title.ifBlank { "GIF from nostr.build" } },
                     )

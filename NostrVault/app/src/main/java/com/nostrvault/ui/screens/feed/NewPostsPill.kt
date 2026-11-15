@@ -64,8 +64,8 @@ internal fun NewPostsPill(
                 .shadow(
                     elevation = if (compact) 4.dp else 8.dp,
                     shape = shape,
-                    ambientColor = Color.Black.copy(alpha = 0.4f),
-                    spotColor = Color.Black.copy(alpha = 0.4f),
+                    ambientColor = Shade.copy(alpha = 0.4f),
+                    spotColor = Shade.copy(alpha = 0.4f),
                 )
                 .clip(shape)
                 .background(colors.primary)
