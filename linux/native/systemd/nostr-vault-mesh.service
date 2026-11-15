@@ -41,7 +41,7 @@ RestrictNamespaces=yes
 LockPersonality=yes
 SystemCallArchitectures=native
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
-ReadWritePaths=/var/lib/nostr-vault/mesh
+ReadWritePaths=-/var/lib/nostr-vault/mesh
 
 [Install]
 WantedBy=multi-user.target
