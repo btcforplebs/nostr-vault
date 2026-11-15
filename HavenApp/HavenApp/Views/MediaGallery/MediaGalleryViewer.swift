@@ -109,8 +109,8 @@ typealias ViewerViewMediaItem = MediaItemRenderer
 extension MediaGalleryView {
 
     /// The full-screen media viewer content for a given item. Contains the
-    /// media display (via `MediaItemRenderer`), toolbar buttons (copy link,
-    /// save to photos, delete, mirror status), drag down to dismiss, drag up
+    /// media display (via `MediaItemRenderer`), the shared `ViewerActionBar`
+    /// (copy, save, share, ··· link and delete), mirror status, drag down to dismiss, drag up
     /// (or the grabber, or ↑ on the Mac) for the notes that use the file,
     /// and left/right navigation via `TabView`.
     @ViewBuilder
@@ -128,71 +128,13 @@ extension MediaGalleryView {
             VStack {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        if configService.hasExternalShareURL(for: item.url) {
-                            Button(action: {
-                                PlatformClipboard.copy(item.shareURL(with: configService).absoluteString)
-                                withAnimation(Motion.snapBack) {
-                                    isCopied = true
-                                }
-                                ActionToastManager.shared.show(icon: "link", message: "Link copied", tone: .success)
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                                    withAnimation(Motion.fade) {
-                                        isCopied = false
-                                    }
-                                }
-                            }) {
-                                Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
-                                    .font(.appSystem(size: 16, weight: .semibold))
-                                    .foregroundColor(isCopied ? .green : .white)
-                                    .padding(10)
-                                    .background(Color.white.opacity(0.1))
-                                    .cornerRadius(8)
-                                    .scaleEffect(isCopied ? 1.15 : 1.0)
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                        #if os(iOS)
-                        if item.type == .image || item.type == .video {
-                            Button(action: {
-                                saveMediaToPhotos(item: item)
-                            }) {
-                                Image(systemName: "square.and.arrow.down")
-                                    .font(.appSystem(size: 16, weight: .semibold))
-                                    .padding(10)
-                                    .background(Color.white.opacity(0.1))
-                                    .cornerRadius(8)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        #endif
-
-                        Menu {
-                            Button(role: .destructive, action: {
-                                pendingViewerDelete = .mirrors
-                            }) {
-                                Label("Delete from media servers", systemImage: "trash")
-                            }
-                            Button(role: .destructive, action: {
-                                pendingViewerDelete = .everywhere
-                            }) {
-                                Label("Delete everywhere", systemImage: "trash.fill")
-                            }
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.appSystem(size: 16, weight: .semibold))
-                                .foregroundColor(.white)
-                                .padding(10)
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(8)
-                                .contentShape(Rectangle())
-                        }
-                        #if os(macOS)
-                        // Without .button, macOS drops the tile its neighbours have.
-                        .menuStyle(.button)
-                        .menuIndicator(.hidden)
-                        #endif
-                        .buttonStyle(.plain)
+                        ViewerActionBar(
+                            url: item.url,
+                            isClip: item.type == .video,
+                            link: configService.hasExternalShareURL(for: item.url)
+                                ? item.shareURL(with: configService).absoluteString : nil,
+                            onDelete: { pendingViewerDelete = $0 }
+                        )
 
                         SourceIndicatorView(
                             url: item.url,

@@ -1,9 +1,6 @@
 import SwiftUI
 import Combine
 import ImageIO
-#if os(iOS)
-import Photos
-#endif
 
 extension ProfileContent {
     // MARK: - Media
@@ -96,33 +93,12 @@ extension ProfileContent {
             VStack {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        if configService.hasExternalShareURL(for: item.url) {
-                            Button(action: {
-                                PlatformClipboard.copy(item.shareURL(with: configService).absoluteString)
-                            }) {
-                                Image(systemName: "doc.on.doc")
-                                    .font(.appSystem(size: 16, weight: .semibold))
-                                    .padding(10)
-                                    .background(Color.white.opacity(0.1))
-                                    .cornerRadius(8)
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                        #if os(iOS)
-                        if item.type == .image || item.type == .video {
-                            Button(action: {
-                                saveMediaToPhotos(item: item)
-                            }) {
-                                Image(systemName: "square.and.arrow.down")
-                                    .font(.appSystem(size: 16, weight: .semibold))
-                                    .padding(10)
-                                    .background(Color.white.opacity(0.1))
-                                    .cornerRadius(8)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        #endif
+                        ViewerActionBar(
+                            url: item.url,
+                            isClip: item.type == .video,
+                            link: configService.hasExternalShareURL(for: item.url)
+                                ? item.shareURL(with: configService).absoluteString : nil
+                        )
 
                         SourceIndicatorView(url: item.url)
 
@@ -203,47 +179,6 @@ extension ProfileContent {
         #endif
     }
 
-    #if os(iOS)
-    private func saveMediaToPhotos(item: MediaItem) {
-        Task {
-            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
-            guard status == .authorized || status == .limited else {
-                await MainActor.run {
-                    ErrorNotificationManager.shared.show("Photo library access denied")
-                }
-                return
-            }
-
-            let session = URLSession(configuration: .default, delegate: LocalhostTrustDelegate(), delegateQueue: nil)
-            do {
-                let (data, _) = try await session.data(from: item.url)
-
-                if item.type == .video {
-                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
-                    try data.write(to: tempURL)
-                    try await PHPhotoLibrary.shared().performChanges {
-                        PHAssetCreationRequest.forAsset().addResource(with: .video, fileURL: tempURL, options: nil)
-                    }
-                    try? FileManager.default.removeItem(at: tempURL)
-                } else {
-                    try await PHPhotoLibrary.shared().performChanges {
-                        let request = PHAssetCreationRequest.forAsset()
-                        let options = PHAssetResourceCreationOptions()
-                        request.addResource(with: .photo, data: data, options: options)
-                    }
-                }
-
-                await MainActor.run {
-                    ActionToastManager.shared.show(icon: "photo.on.rectangle", message: "Saved to Photos", tone: .success)
-                }
-            } catch {
-                await MainActor.run {
-                    ErrorNotificationManager.shared.show("Failed to save")
-                }
-            }
-        }
-    }
-    #endif
 
     #if os(macOS)
     func installKeyMonitor() {

@@ -100,9 +100,6 @@ struct MediaGalleryView: View {
     @State var isPastingContent = false
     @State var activeUploadTasks: [Task<Void, Never>] = []
 
-    #if os(iOS)
-    #endif
-    @State var isCopied = false
 
     @State var maxDisplayedItems: Int = 50
 
@@ -505,7 +502,6 @@ struct MediaGalleryView: View {
             noteMediaCount: nostrService.noteMedia.count,
             wotCount: feedService.wotPubkeys.count,
             activeAccountNpub: configService.config.activeAccountNpub,
-            onSelectedMediaChange: { isCopied = false },
             onScheduleUpdate: { scheduleUpdateDisplayData() },
             onAccountChange: {
                 mediaHasLoadedOnce = false
@@ -624,7 +620,6 @@ struct MediaGalleryChangeHandlers: ViewModifier {
     let wotCount: Int
     let activeAccountNpub: String
 
-    let onSelectedMediaChange: () -> Void
     let onScheduleUpdate: () -> Void
     let onAccountChange: () -> Void
     let onMirrorComplete: () -> Void
@@ -633,7 +628,6 @@ struct MediaGalleryChangeHandlers: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onChange(of: selectedMedia) { _, _ in onSelectedMediaChange() }
             .onChange(of: mediaSourceFilter) { _, _ in onScheduleUpdate() }
             .onChange(of: mediaLocationFilter) { _, _ in onScheduleUpdate() }
             .onChange(of: mediaTypeFilter) { _, _ in onScheduleUpdate() }

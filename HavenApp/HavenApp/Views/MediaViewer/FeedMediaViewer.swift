@@ -2,9 +2,6 @@ import SwiftUI
 import AVKit
 import CryptoKit
 import os.log
-#if os(iOS)
-import Photos
-#endif
 
 struct FeedMediaViewer: View {
     let url: URL
@@ -56,14 +53,6 @@ struct FeedMediaViewer: View {
     @State var isOnMirror: Bool = false
     @State var pendingDelete: MediaDeleteScope?
     @State var deleteStatus: DeleteStatus? = nil
-    @State var mediaCopy: MediaCopy = .idle
-    @State var shareFile: ViewerShareFile?
-    @State var isPreparingShare = false
-
-    enum MediaCopy { case idle, copying, copied }
-    @State var photosSave: PhotosSave = .idle
-
-    enum PhotosSave { case idle, saving, saved }
 
     enum MirrorStatus {
         case loading
@@ -230,15 +219,11 @@ struct FeedMediaViewer: View {
             
             VStack {
                 HStack {
-                    // Short labels, and icons only when even those don't fit
-                    // (larger text, narrow phones): a squeezed capsule wraps
-                    // its label one letter per line.
-                    ViewThatFits(in: .horizontal) {
-                        topActions(showLabels: true)
-                        topActions(showLabels: false)
+                    if !isLoadingType {
+                        actionBar()
+                            .padding(.leading, 16)
+                            .padding(.vertical, 20)
                     }
-                    .padding(.leading, 16)
-                    .padding(.vertical, 20)
                     Spacer()
                     Button {
                         performDismiss()
@@ -266,12 +251,6 @@ struct FeedMediaViewer: View {
                 deleteStatusView(status)
             }
         }
-        #if os(iOS)
-        .sheet(item: $shareFile) { file in
-            ShareSheet(activityItems: [file.url])
-                .presentationDetents([.medium, .large])
-        }
-        #endif
         .confirmMediaDelete($pendingDelete, hash: extractSHA256FromURL()) { scope in
             switch scope {
             case .mirrors: deleteFromMirrorsTapped()
@@ -279,7 +258,6 @@ struct FeedMediaViewer: View {
             }
         }
         .task(id: url) {
-            photosSave = .idle
             updateMirrorStatus()
         }
         #if os(iOS)
@@ -338,52 +316,4 @@ struct FeedMediaViewer: View {
         }
     }
 
-    #if os(iOS)
-    /// Downloads the media as shown and adds it to the Photos library.
-    /// A video goes in as a file so Photos keeps it a video.
-    func saveToPhotosTapped() {
-        photosSave = .saving
-        let mediaURL = url
-        let asVideo = isVideo
-        Task {
-            func fail(_ message: String) async {
-                await MainActor.run {
-                    photosSave = .idle
-                    ErrorNotificationManager.shared.show(message, icon: "exclamationmark.triangle.fill")
-                }
-            }
-            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
-            guard status == .authorized || status == .limited else {
-                await fail("Allow Nostr Vault to add to Photos in Settings")
-                return
-            }
-            let session = URLSession(configuration: .default, delegate: LocalhostTrustDelegate(), delegateQueue: nil)
-            defer { session.finishTasksAndInvalidate() }
-            do {
-                let (data, response) = try await session.data(from: mediaURL)
-                if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                    await fail("Couldn't download the media (HTTP \(http.statusCode))")
-                    return
-                }
-                if asVideo {
-                    let ext = mediaURL.pathExtension.isEmpty ? "mp4" : mediaURL.pathExtension
-                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "." + ext)
-                    try data.write(to: tempURL)
-                    defer { try? FileManager.default.removeItem(at: tempURL) }
-                    try await PHPhotoLibrary.shared().performChanges {
-                        PHAssetCreationRequest.forAsset().addResource(with: .video, fileURL: tempURL, options: nil)
-                    }
-                } else {
-                    try await PHPhotoLibrary.shared().performChanges {
-                        PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)
-                    }
-                }
-                await MainActor.run { photosSave = .saved }
-            } catch {
-                logger.error("Save to Photos failed: \(error.localizedDescription)")
-                await fail("Couldn't save to Photos")
-            }
-        }
-    }
-    #endif
 }
