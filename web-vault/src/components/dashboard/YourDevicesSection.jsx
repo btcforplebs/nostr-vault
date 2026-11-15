@@ -9,7 +9,9 @@ import { deviceRows, pairedDevices } from "../../net/pair-devices.js"
 import "../../styles/my-devices.css"
 import "../../styles/pair.css"
 
-export function YourDevicesSection({ ctx, onPair, load = loadMyDevices }) {
+/** This browser's devices and their mesh adverts, read again every REFRESH_MS while the page is in front. Shared with
+ *  the Dashboard napplet (napplet/DashboardPane.jsx). */
+export function useYourDevices(ctx, load = loadMyDevices) {
   const [data, setData] = useState(null)
   useEffect(() => {
     let alive = true
@@ -18,6 +20,11 @@ export function YourDevicesSection({ ctx, onPair, load = loadMyDevices }) {
     const stop = lookInFront(look, { every: REFRESH_MS })
     return () => { alive = false; stop() }
   }, [ctx.session.pubkey])
+  return data
+}
+
+export function YourDevicesSection({ ctx, onPair, load = loadMyDevices }) {
+  const data = useYourDevices(ctx, load)
   const now = Math.floor(Date.now() / 1000)
   const rows = deviceRows(data?.devices, pairedDevices()).map(d => ({ d, s: deviceStatus(data.adverts.get(d.hex), now, { checked: data.checked }) }))
   const onMesh = rows.filter(r => r.s.state === "online" || r.s.state === "connected").length

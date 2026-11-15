@@ -16,6 +16,7 @@ import { AdvancedSection } from "../components/dashboard/AdvancedSection.jsx"
 import { StillToBringIn } from "../components/dashboard/StillToBringIn.jsx"
 import { YourDevicesSection } from "../components/dashboard/YourDevicesSection.jsx"
 import { PairDevice } from "./PairDevice.jsx"
+import { DashboardPane } from "../napplet/DashboardPane.jsx"
 import { useBlocks } from "../components/useBlocks.js"
 import { useDmTrust } from "../components/useDmTrust.js"
 import { routeClient, deviceKey } from "../haven/vault.js"
@@ -126,7 +127,8 @@ export function useVaultDashboard(ctx) {
     skip: () => skip.current?.abort(), items, startedInMs, relayCount, syncing, trusted: trusted.size, blocked: blocked.size }
 }
 
-export function VaultDashboard({ ctx }) {
+/** `napplet`: the desktop with napplets on, where the dashboard itself is the Dashboard napplet (one plan step 9). */
+export function VaultDashboard({ ctx, napplet = false }) {
   const { vault, session } = ctx
   const d = useVaultDashboard(ctx)
   const { counts, media, storage, followSavedAt, servers, jobs, history, historyRelays, setHistoryRelays, look, exportFile, mediaFile, importNotes, items, startedInMs, relayCount, syncing } = d
@@ -150,8 +152,9 @@ export function VaultDashboard({ ctx }) {
           <h2 id="dash-title"><DashIcon />{view === "activity" ? "Vault Activity" : view === "pair" ? "Link a device" : "Vault Dashboard"}</h2>
           <button type="button" class="dash-link done" onClick={closeDashboard} autofocus>Done</button>
         </header>
-        <div class="dash-scroll">
-          {view === "activity" ? <ActivityWindow items={items} version={`${APP_VERSION}${APP_COMMIT ? ` · ${APP_COMMIT}` : ""}`} />
+        <div class={view === "dashboard" && napplet ? "dash-scroll napp" : "dash-scroll"}>
+          {view === "dashboard" && napplet ? <DashboardPane ctx={ctx} d={d} onPair={pair} version={`${APP_VERSION}${APP_COMMIT ? ` · ${APP_COMMIT}` : ""}`} />
+          : view === "activity" ? <ActivityWindow items={items} version={`${APP_VERSION}${APP_COMMIT ? ` · ${APP_COMMIT}` : ""}`} />
           : view === "pair" ? <PairDevice key={pairMode} ctx={ctx} mode={pairMode} onMode={setPairMode} onClose={() => setView("dashboard")} /> : <>
             <StatusCard syncing={syncing} />
             <YourDevicesSection ctx={ctx} onPair={pair} />

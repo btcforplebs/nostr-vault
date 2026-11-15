@@ -9,6 +9,10 @@
 .dash-bar-top h2 { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 0; font: 600 17px/1.2 var(--font); }
 .dash-bar-top .done { justify-self: end; font-weight: 600; }
 .dash-scroll { flex: 1; overflow-y: auto; padding: 8px 16px calc(32px + env(safe-area-inset-bottom)); display: grid; gap: 24px; align-content: start; }
+/* The Dashboard napplet (one plan step 9) fills the sheet under its bar and scrolls itself. */
+.dash-scroll.napp { display: flex; padding: 0; overflow: hidden; }
+.dash-napplet { flex: 1; min-height: 0; padding: 0; }
+.dash-napplet .napplet-frame { border: 0; border-radius: 0; background: var(--bg); }
 .dash-link { background: none; border: 0; padding: 6px 2px; color: var(--accent); font: var(--t-body); cursor: pointer; text-decoration: none; }
 
 .dash-section { display: grid; gap: 8px; }
