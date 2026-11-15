@@ -2,9 +2,6 @@ import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
 import CryptoKit
-#if os(iOS)
-import Photos
-#endif
 
 // MARK: - Upload & Media Management
 
@@ -16,51 +13,6 @@ extension MediaGalleryView {
         AutoMirrorOnOpen.runIfDue()
     }
 
-    #if os(iOS)
-    func saveMediaToPhotos(item: MediaItem) {
-        Task {
-            // Request photo library permission
-            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
-            guard status == .authorized || status == .limited else {
-                await MainActor.run {
-                    ErrorNotificationManager.shared.show("Photo library access denied")
-                }
-                return
-            }
-
-            // Download media data
-            let session = URLSession(configuration: .default, delegate: LocalhostTrustDelegate(), delegateQueue: nil)
-            do {
-                let (data, _) = try await session.data(from: item.url)
-
-                if item.type == .video {
-                    // Videos need a temp file
-                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
-                    try data.write(to: tempURL)
-                    try await PHPhotoLibrary.shared().performChanges {
-                        PHAssetCreationRequest.forAsset().addResource(with: .video, fileURL: tempURL, options: nil)
-                    }
-                    try? FileManager.default.removeItem(at: tempURL)
-                } else {
-                    try await PHPhotoLibrary.shared().performChanges {
-                        let request = PHAssetCreationRequest.forAsset()
-                        let options = PHAssetResourceCreationOptions()
-                        request.addResource(with: .photo, data: data, options: options)
-                    }
-                }
-
-                await MainActor.run {
-                    ActionToastManager.shared.show(icon: "photo.on.rectangle", message: "Saved to Photos", tone: .success)
-                }
-            } catch {
-                await MainActor.run {
-                    ErrorNotificationManager.shared.show("Failed to save")
-                }
-                print("Save to Photos error: \(error.localizedDescription)")
-            }
-        }
-    }
-    #endif
 
     func handleUploadSelectedItems(_ items: [PhotosPickerItem]) {
         guard !items.isEmpty else { return }
