@@ -30,7 +30,8 @@ enum DMAttachment {
     /// links whose path ends in an image or GIF extension count — anything
     /// else stays in the text as the sender wrote it. `withVideos` also takes
     /// out video links (DMs show them as videos; Live chat keeps them as text). A locked file link
-    /// (DMFile, `#nv-dm=`) counts as a photo whatever its path: the bubble opens it with its key.
+    /// (DMFile, `#nv-dm=`) counts as a photo, or a video when its type says so, whatever its path (even without
+    /// `withVideos`: its key must never show as text); the bubble opens it with its key.
     static func split(_ content: String, withVideos: Bool = false) -> (text: String, images: [URL], videos: [URL]) {
         var images: [URL] = []
         var videos: [URL] = []
@@ -38,9 +39,11 @@ enum DMAttachment {
             var kept: [Substring] = []
             var removedAny = false
             for word in line.split(separator: " ", omittingEmptySubsequences: false) {
-                if DMFile.isLink(String(word)), DMFile.parseLink(String(word)) != nil, let url = URL(string: String(word)) {
-                    // A locked (kind 15) file: shown as a photo the bubble decrypts, never as text with its key.
-                    if !images.contains(url) { images.append(url) }
+                if DMFile.isLink(String(word)), let sealed = DMFile.parseLink(String(word)), let url = URL(string: String(word)) {
+                    // A locked (kind 15) file: a video or photo the bubble decrypts, never text with its key.
+                    if sealed.isVideo {
+                        if !videos.contains(url) { videos.append(url) }
+                    } else if !images.contains(url) { images.append(url) }
                     removedAny = true
                 } else if let url = imageURL(String(word)) {
                     if !images.contains(url) { images.append(url) }

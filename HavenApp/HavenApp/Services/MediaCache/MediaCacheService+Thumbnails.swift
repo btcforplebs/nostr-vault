@@ -100,7 +100,8 @@ extension MediaCacheService {
         // 3. Persist + broadcast
         if let image = image {
             thumbnailMemoryCache.setObject(image, forKey: key as NSString, cost: Self.decodedCost(of: image))
-            saveThumbnailToDisk(image, key: key)
+            // A frame of a decrypted DM file (DMFile) stays in memory only: on disk it would outlive Delete Account.
+            if !DMFileTransfer.isOpenedFile(url) { saveThumbnailToDisk(image, key: key) }
         }
 
         let waiters = downloadLock.withLock {

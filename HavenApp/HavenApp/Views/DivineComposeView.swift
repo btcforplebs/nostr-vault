@@ -398,21 +398,16 @@ struct PreparedClip {
         }
     }
 
-    static func make(from source: URL) async throws -> PreparedClip {
-        let asset = AVURLAsset(url: source)
-        guard try await !asset.loadTracks(withMediaType: .video).isEmpty else { throw PrepareError.noVideoTrack }
-
-        let output = FileManager.default.temporaryDirectory
-            .appendingPathComponent("divine-\(UUID().uuidString).mp4")
+    /// The feed's video export: H.264 MP4 at up to 1080p, laid out for streaming. Also what a DM video goes
+    /// through before it is locked (DMVideoAttachment.compressed); `forSharing` drops location and other
+    /// identifying metadata as it copies.
+    static func export(_ asset: AVAsset, to output: URL, timeRange: CMTimeRange? = nil, forSharing: Bool = false) async throws {
         guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPreset1920x1080) else {
             throw PrepareError.exportFailed("no exporter")
         }
         session.shouldOptimizeForNetworkUse = true
-        let limit = CMTime(seconds: DivineComposeView.recordLimit, preferredTimescale: 600)
-        let wasTrimmed = try await asset.load(.duration) > limit
-        if wasTrimmed {
-            session.timeRange = CMTimeRange(start: .zero, duration: limit)
-        }
+        if let timeRange { session.timeRange = timeRange }
+        if forSharing { session.metadataItemFilter = .forSharing() }
         if #available(iOS 18, macOS 15, *) {
             do {
                 try await session.export(to: output, as: .mp4)
@@ -429,6 +424,17 @@ struct PreparedClip {
                 throw PrepareError.exportFailed(session.error?.localizedDescription ?? "unknown error")
             }
         }
+    }
+
+    static func make(from source: URL) async throws -> PreparedClip {
+        let asset = AVURLAsset(url: source)
+        guard try await !asset.loadTracks(withMediaType: .video).isEmpty else { throw PrepareError.noVideoTrack }
+
+        let output = FileManager.default.temporaryDirectory
+            .appendingPathComponent("divine-\(UUID().uuidString).mp4")
+        let limit = CMTime(seconds: DivineComposeView.recordLimit, preferredTimescale: 600)
+        let wasTrimmed = try await asset.load(.duration) > limit
+        try await export(asset, to: output, timeRange: wasTrimmed ? CMTimeRange(start: .zero, duration: limit) : nil)
 
         let exported = AVURLAsset(url: output)
         let duration = try await exported.load(.duration).seconds

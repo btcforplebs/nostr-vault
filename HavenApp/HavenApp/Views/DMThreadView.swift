@@ -14,6 +14,8 @@ struct DMThreadView: View {
 
     @State private var messageInput: String = ""
     @State private var isSending: Bool = false
+    /// What a long send is doing (compressing, then sending a video), shown above the message box.
+    @State private var sendStage: String?
     @State private var sendError: String?
     @State private var scrollPosition: String?
     @State private var useNIP04: Bool = false
@@ -146,6 +148,17 @@ struct DMThreadView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 10)
                     .padding(.bottom, 6)
+
+                    if let sendStage {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text(sendStage).font(.appSystem(size: 13)).foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 6)
+                        .accessibilityElement(children: .combine)
+                    }
 
                     if let attachment {
                         HStack {
@@ -465,7 +478,35 @@ struct DMThreadView: View {
                 // The photo or video goes up first: a message that names a
                 // URL no server holds would reach them as a dead link.
                 var mediaURL: URL?
-                if let video = photo?.video {
+                if let video = photo?.video, !useNIP04 {
+                    // A NIP-17 video goes locked like a photo (DMFile, kind 15): compressed with the feed's export,
+                    // then encrypted here; only ciphertext is uploaded, the key travels inside the sealed message.
+                    await MainActor.run { sendStage = "Compressing video…" }
+                    let clip = try await video.compressed()
+                    defer { try? FileManager.default.removeItem(at: clip) }
+                    let size = (try? FileManager.default.attributesOfItem(atPath: clip.path))?[.size] as? Int ?? 0
+                    guard DMFile.videoFits(byteCount: size) else { throw DMFileTransfer.TransferError.videoTooLarge(size) }
+                    let plain = try Data(contentsOf: clip)
+                    await MainActor.run { sendStage = "Sending video (\(DMFileTransfer.megabytes(plain.count)))…" }
+                    // Up to 100 MB: sealed and hashed off the main thread so the thread keeps scrolling.
+                    let enc = try await Task.detached(priority: .userInitiated) { try DMFile.encrypt(plain) }.value
+                    let url = try await DMFileTransfer.upload(enc, configService: configService, nostrService: nostrService)
+                    DMFileTransfer.keep(plain, for: DMFile.Sealed(url: url, key: enc.key, nonce: enc.nonce, x: enc.x,
+                                                                  ox: enc.ox, mime: "video/mp4"))
+                    if !messageToSend.isEmpty {
+                        try await dmService.sendDM(content: messageToSend, to: counterpartyPubkey)
+                        wordsSent = true
+                    }
+                    try await dmService.sendDMFile(url: url, encrypted: enc, mime: "video/mp4",
+                                                   to: counterpartyPubkey, after: wordsSent)
+                    await MainActor.run {
+                        isSending = false
+                        sendStage = nil
+                        video.discard()
+                    }
+                    return
+                } else if let video = photo?.video {
+                    // NIP-04 has no file message: the video stays a link, as before.
                     let url = try await ModePostPublisher.upload(
                         fileURL: video.file, mimeType: video.mimeType,
                         configService: configService, nostrService: nostrService).url
@@ -504,6 +545,7 @@ struct DMThreadView: View {
                 let sentWords = wordsSent
                 await MainActor.run {
                     isSending = false
+                    sendStage = nil
                     if !sentWords { messageInput = messageToSend }
                     if attachment == nil { attachment = photo } else { photo?.video?.discard() }
                     sendError = error.localizedDescription
@@ -569,8 +611,8 @@ struct MessageBubbleView: View {
             VStack(alignment: message.isFromMe ? .trailing : .leading, spacing: 3) {
                 VStack(alignment: .leading, spacing: 0) {
                     let split = parts
-                    // Locked photos (DMFile) open from their decrypted copy; the swipe list holds only plain links.
-                    let openable = split.images.filter { DMFile.parseLink($0.absoluteString) == nil } + split.videos
+                    // Locked photos and videos (DMFile) open from their decrypted copy; the swipe list holds only plain links.
+                    let openable = (split.images + split.videos).filter { DMFile.parseLink($0.absoluteString) == nil }
                     ForEach(split.images, id: \.absoluteString) { url in
                         if let sealed = DMFile.parseLink(url.absoluteString) {
                             LockedDMPhotoTile(sealed: sealed, size: min(240, containerWidth * 0.6), mediaZoom: mediaZoom) { local in
@@ -591,6 +633,11 @@ struct MessageBubbleView: View {
                         }
                     }
                     ForEach(split.videos, id: \.absoluteString) { url in
+                        if let sealed = DMFile.parseLink(url.absoluteString) {
+                            LockedDMVideoTile(sealed: sealed, size: min(240, containerWidth * 0.6), mediaZoom: mediaZoom) { local in
+                                onOpenImage?(local, [local])
+                            }
+                        } else {
                         Button {
                             onOpenImage?(url, openable)
                         } label: {
@@ -598,6 +645,7 @@ struct MessageBubbleView: View {
                         }
                         .buttonStyle(.plain)
                         .mediaZoomSource(url, namespace: mediaZoom)
+                        }
                     }
 
                     if !split.text.isEmpty || (split.images.isEmpty && split.videos.isEmpty) {
