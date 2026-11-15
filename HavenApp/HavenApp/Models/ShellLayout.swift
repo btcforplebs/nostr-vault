@@ -58,6 +58,12 @@ enum ShellLayout: Equatable {
     /// 2026-11-11: open too.
     static let duoStripTopClearance: CGFloat = 150
 
+    /// On a pushed page iOS draws the closed Duo's back button in that strip
+    /// too, just under the clock (about 174-222 pt from the top), where the
+    /// rail's account picture sits; the rail moves this much further down
+    /// while the button shows.
+    static let duoBackButtonSlot: CGFloat = 60
+
     /// Where the side rail goes when it sits inside the Duo's camera strip:
     /// pushed down below the camera and as wide as the strip (never narrower
     /// than the rail). Nil when there is no strip on the right: any other
