@@ -102,7 +102,7 @@ fun NostrVaultTheme(
     if (accent != null && AppPalette.accent != accent) AppPalette.accent = accent
     val systemDark = isSystemInDarkTheme()
     if (appearanceMode != null) {
-        val light = AppPalette.isLight(appearanceMode, systemDark)
+        val light = AppPalette.isLight(appearanceMode, systemDark) && !AppPalette.overGlobe
         // Set before the tree below reads any token, so the first frame is right.
         if (AppPalette.light != light) AppPalette.light = light
         val view = LocalView.current
