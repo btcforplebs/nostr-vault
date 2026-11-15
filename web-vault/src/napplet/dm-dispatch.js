@@ -30,7 +30,7 @@ import { searchChats } from "../net/dm-search.js"
 const HEX = /^[0-9a-f]{64}$/
 export const PAGE = 50, MAX_PAGE = 200, MAX_TEXT = 20000, MAX_DM_SUBS = 4, MAX_QUERY = 200, MAX_IDS = 20
 export const MAX_PHOTO = 50 * 1024 * 1024 // a picked photo before it's redrawn; what goes up is far smaller
-export const MAX_VIDEO = 100 * 1024 * 1024 - 16 // a video goes up as it is, encrypted (+16 bytes): dm-file.js MAX_FILE
+export const MAX_VIDEO = 100 * 1024 * 1024 // a video goes up as it is, encrypted (+16 bytes): dm-file.js MAX_FILE
 
 export const statusOf = m => (m.failed ? "failed" : m.pending ? "sent" : null)
 /** A message as NAP-DM has it. */

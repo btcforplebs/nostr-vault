@@ -22,8 +22,16 @@ const movie = () => new Uint8Array([
 ])
 const vectors = async () => JSON.parse(await readFile(new URL("./fixtures/DM_FILE_VECTORS.json", import.meta.url), "utf8")).vectors
 
-test("a locked file may be up to 100 MB", () => {
-  assert.equal(MAX_FILE, 100 * 1024 * 1024)
+test("a locked file may be up to 100 MB plus its 16-byte tag", () => {
+  assert.equal(MAX_FILE, 100 * 1024 * 1024 + 16)
+})
+
+test("a tapped open reads a full 100 MB video from the apps (100 MB + 16 bytes of ciphertext)", async () => {
+  const enc = await encryptFile(new Uint8Array([1, 2, 3]))
+  const link = fileLink("https://b.example/x", { ...enc, mime: "video/mp4" })
+  let asked
+  await openFileLink(link, { fetchBytes: async (_u, _p, { max }) => { asked = max; return enc.cipher } })
+  assert.equal(asked, 100 * 1024 * 1024 + 16)
 })
 
 test("a picked video loses its location and keeps its type", async () => {
