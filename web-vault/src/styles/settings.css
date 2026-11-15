@@ -251,3 +251,20 @@ button.default-reaction:active { transform: none; }
 .relay-probe.ok .relay-dot { background: var(--online); }
 .relay-probe.slow { color: #ff9f0a; } .relay-probe.slow .relay-dot { background: #ff9f0a; }
 .relay-probe.down { color: var(--danger); } .relay-probe.down .relay-dot { background: var(--danger); }
+
+/* Settings › Appearance › Accent (components/AccentColorPicker.jsx): a row of colour circles, the chosen one ringed;
+   the last is a colour wheel; then the colour on a dark and a light card. */
+.accent-row { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 12px; padding-bottom: 12px; }
+.accent-dot { position: relative; flex: none; width: 30px; height: 30px; min-height: 0; padding: 0; border: 0; border-radius: 50%;
+  background: var(--dot); box-shadow: inset 0 0 0 1px rgb(var(--ink) / .12); cursor: pointer; }
+.accent-dot.on { box-shadow: 0 0 0 2px var(--s1), 0 0 0 4px var(--text); }
+.accent-dot:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+.accent-custom { background: conic-gradient(#ff453a, #ffd60a, #30d158, #40c8e0, #0a84ff, #bf5af2, #ff375f, #ff453a); }
+.accent-custom.on { background: radial-gradient(circle, var(--dot) 0 9px, transparent 10px), conic-gradient(#ff453a, #ffd60a, #30d158, #40c8e0, #0a84ff, #bf5af2, #ff375f, #ff453a); }
+.accent-custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.accent-previews { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 4px; }
+.accent-preview { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px; border-radius: var(--radius);
+  background: var(--bg); border: 1px solid var(--hair); }
+.accent-preview-mode { font: var(--t-cap); color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; }
+.accent-preview-link { font: var(--t-sub); color: var(--accent); }
+.accent-preview-fill { padding: 6px 14px; border-radius: 999px; background: var(--accent-grad); color: var(--on-accent); font: 600 13px var(--font); }

@@ -24,4 +24,4 @@
 a.post-button { position: fixed; z-index: 10; right: max(20px, calc(50% - 320px + 20px));
   bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 6px + env(safe-area-inset-bottom));
   display: inline-flex; align-items: center; gap: 6px; height: 48px; padding: 0 18px; border: 0;
-  background: var(--accent-grad); color: var(--on-accent); font: 700 14px/1 var(--font-round); box-shadow: 0 4px 8px rgb(230 115 38 / .35); }
+  background: var(--accent-grad); color: var(--on-accent); font: 700 14px/1 var(--font-round); box-shadow: 0 4px 8px rgb(var(--accent-rgb) / .35); }

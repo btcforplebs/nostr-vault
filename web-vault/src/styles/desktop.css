@@ -37,7 +37,7 @@
   box-shadow: 0 0 0 2px var(--bg); }
 /* New Post: the one filled button, round, under the account (the iPad's floating Post, held in the rail). */
 .desk-side .side-post { width: 44px; min-height: 44px; height: 44px; margin: 6px 0 2px; padding: 0; border-radius: 50%; background: var(--accent-grad);
-  color: var(--on-accent); box-shadow: 0 4px 10px rgb(230 115 38 / .3); }
+  color: var(--on-accent); box-shadow: 0 4px 10px rgb(var(--accent-rgb) / .3); }
 .desk-side .side-post .side-label { display: none; }
 .desk-side .side-post:hover { background: var(--accent-grad); color: var(--on-accent); filter: brightness(1.08); }
 .side-post.off { background: var(--s2); color: var(--text-3); box-shadow: none; cursor: not-allowed; }

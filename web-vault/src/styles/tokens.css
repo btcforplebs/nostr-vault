@@ -11,10 +11,11 @@
 
   /* Accent (AppTheme.orange). */
   --accent: #e67326;
+  --accent-rgb: 230 115 38;  /* the accent as channels, for glows and tints: rgb(var(--accent-rgb) / .3) */
   --accent-light: #fa9447;
   --accent-dark: #b35214;
-  --accent-pale: rgb(230 115 38 / .10);
-  --accent-line: rgb(230 115 38 / .30);  /* note-card border, OLED weight */
+  --accent-pale: rgb(var(--accent-rgb) / .10);
+  --accent-line: rgb(var(--accent-rgb) / .30);  /* note-card border, OLED weight */
   --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-light));
   --on-accent: #fff;  /* a label on an accent fill */
 

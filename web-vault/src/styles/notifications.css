@@ -1,7 +1,7 @@
 /* Notifications rows, laid out as the iPhone's VaultActivityRow: the kind's badge in its own column, then the faces
    and time, who did what (names bold), and their words or the user's note behind a rule. Unread rows are tinted. */
 .note.notification:has(> .notif-body) { display: flex; align-items: flex-start; gap: 12px; }
-.note.notification.unread { background: linear-gradient(rgb(230 115 38 / .06), rgb(230 115 38 / .06)), var(--s1); }
+.note.notification.unread { background: linear-gradient(rgb(var(--accent-rgb) / .06), rgb(var(--accent-rgb) / .06)), var(--s1); }
 
 .notif-badge { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
   color: var(--kind, var(--accent)); background: color-mix(in srgb, var(--kind, var(--accent)) 15%, transparent); }
