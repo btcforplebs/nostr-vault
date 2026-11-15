@@ -5,7 +5,9 @@ import { useEffect, useState } from "preact/hooks"
 import { readAlarms, alarmLine, dismissAlarm, WATCH_MS } from "../../net/list-wipe-alarm.js"
 import { mergeKind } from "../../net/list-version-merge.js"
 
-export function ListWipeBanner({ ctx, watchMs = WATCH_MS }) {
+/** The alarms the banner shows (read again every `watchMs`), and "Keep the new list" for one. Shared with the
+ *  Dashboard napplet (napplet/dashboard-answer.js). */
+export function useWipeAlarms(ctx, watchMs = WATCH_MS) {
   const [alarms, setAlarms] = useState([])
   const me = ctx?.session?.pubkey
   useEffect(() => {
@@ -15,6 +17,12 @@ export function ListWipeBanner({ ctx, watchMs = WATCH_MS }) {
     const t = setInterval(look, watchMs)
     return () => { live = false; clearInterval(t) }
   }, [me])
+  const keep = a => { dismissAlarm(a); setAlarms(l => l.filter(x => x.after.id !== a.after.id)) }
+  return { alarms, keep }
+}
+
+export function ListWipeBanner({ ctx, watchMs = WATCH_MS }) {
+  const { alarms, keep } = useWipeAlarms(ctx, watchMs)
   if (!alarms.length) return null
   return (
     <section class="dash-section list-wipe" aria-label="Lists that lost entries">
@@ -28,7 +36,7 @@ export function ListWipeBanner({ ctx, watchMs = WATCH_MS }) {
           </p>
           <div class="list-wipe-actions">
             {mergeKind(a.after.kind) && <a class="button primary" href={`#/settings/recover-list?kind=${a.after.kind}`}>Recover</a>}
-            <button type="button" onClick={() => { dismissAlarm(a); setAlarms(l => l.filter(x => x.after.id !== a.after.id)) }}>Keep the new list</button>
+            <button type="button" onClick={() => keep(a)}>Keep the new list</button>
           </div>
         </div>
       ))}

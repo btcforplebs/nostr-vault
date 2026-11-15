@@ -6,7 +6,8 @@ import { Row, Section } from "./parts.jsx"
 import { LONG_JOBS, RUN, cancelImportJob, loadJobs, onImportJobs, runImportJob, runningJob } from "../../net/import-jobs.js"
 import { JOB_ABOUT, JOB_TITLE, jobButton, jobLine, unreadLines } from "../../net/import-jobs-words.js"
 
-export function StillToBringIn({ ctx }) {
+/** The long import jobs as the card shows them, and Run / Cancel for one. Shared with the Dashboard napplet. */
+export function useImportJobs(ctx) {
   const me = ctx.session.pubkey
   const [file, setFile] = useState(() => loadJobs(me))
   const [note, setNote] = useState("")
@@ -20,6 +21,11 @@ export function StillToBringIn({ ctx }) {
     if (code === RUN.busy) setNote("Another import is running, here or in another tab. Run this when it's done.")
     setFile(loadJobs(me))
   }
+  return { file, here, busy, note, press }
+}
+
+export function StillToBringIn({ ctx }) {
+  const { file, here, busy, note, press } = useImportJobs(ctx)
   return (
     <Section title="Still to bring in">
       {file.jobs.filter(j => LONG_JOBS.includes(j.name)).map(j => {

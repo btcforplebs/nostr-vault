@@ -37,12 +37,11 @@ import "../styles/dashboard.css"
 const today = () => new Date().toISOString().slice(0, 10)
 const toMs = t => (t > 1e12 ? t : t * 1000)
 
-export function VaultDashboard({ ctx }) {
+/** The Dashboard's data and jobs (shared with the Dashboard napplet, napplet/dashboard-answer.js): counts, media,
+ *  storage, the follow-list save, media servers, the import/backup/export jobs and the activity log. */
+export function useVaultDashboard(ctx) {
   const { vault, session, account } = ctx
   const me = session.pubkey
-  const [view, setView] = useState("dashboard") // or "activity" (View All), or "pair" (Link a device)
-  const [pairMode, setPairMode] = useState("show") // PairDevice: "show" this browser's code or "scan" the other's
-  const pair = mode => { setPairMode(mode); setView("pair") }
   // Import notes: also ask the history relays (the user's tick, off each time the sheet opens), and the Skip button's
   // signal for the list scan.
   const [historyRelays, setHistoryRelays] = useState(HISTORY_DEFAULT_ON)
@@ -75,14 +74,6 @@ export function VaultDashboard({ ctx }) {
     mediaServers(ctx).then(l => setServers(l.length)).catch(() => {})
   }
   useEffect(look, [me])
-  // Escape closes the sheet wherever focus is (the HUD that opened it keeps focus), unless a dialog over it has it.
-  // The desktop shell leaves the keys to the sheet while it is open (DesktopShell's OVERLAY), so l/r/j/k can't act
-  // on the note behind it.
-  useEffect(() => {
-    const onKey = e => { if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector("dialog[open]")) { e.preventDefault(); closeDashboard() } }
-    addEventListener("keydown", onKey)
-    return () => removeEventListener("keydown", onKey)
-  }, [])
 
   const job = (key, fn) => async () => {
     setJobs(j => ({ ...j, [key]: true, status: null }))
@@ -131,6 +122,25 @@ export function VaultDashboard({ ctx }) {
   const relayCount = uniq([...account.relays.read, ...account.relays.write]).length
   // Building who can reach you: the trust list is empty while follows' lists are still being read.
   const syncing = trusted.size === 0 && (account.follows?.length ?? 0) > 0
+  return { me, counts, media, storage, followSavedAt, servers, jobs, history, historyRelays, setHistoryRelays, look, exportFile, mediaFile, importNotes,
+    skip: () => skip.current?.abort(), items, startedInMs, relayCount, syncing, trusted: trusted.size, blocked: blocked.size }
+}
+
+export function VaultDashboard({ ctx }) {
+  const { vault, session } = ctx
+  const d = useVaultDashboard(ctx)
+  const { counts, media, storage, followSavedAt, servers, jobs, history, historyRelays, setHistoryRelays, look, exportFile, mediaFile, importNotes, items, startedInMs, relayCount, syncing } = d
+  const [view, setView] = useState("dashboard") // or "activity" (View All), or "pair" (Link a device)
+  const [pairMode, setPairMode] = useState("show") // PairDevice: "show" this browser's code or "scan" the other's
+  const pair = mode => { setPairMode(mode); setView("pair") }
+  // Escape closes the sheet wherever focus is (the HUD that opened it keeps focus), unless a dialog over it has it.
+  // The desktop shell leaves the keys to the sheet while it is open (DesktopShell's OVERLAY), so l/r/j/k can't act
+  // on the note behind it.
+  useEffect(() => {
+    const onKey = e => { if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector("dialog[open]")) { e.preventDefault(); closeDashboard() } }
+    addEventListener("keydown", onKey)
+    return () => removeEventListener("keydown", onKey)
+  }, [])
   return (
     <div class="dash-sheet" role="dialog" aria-modal="true" aria-labelledby="dash-title">
       <div class="dash-scrim" onClick={closeDashboard} />
@@ -147,12 +157,12 @@ export function VaultDashboard({ ctx }) {
             <YourDevicesSection ctx={ctx} onPair={pair} />
             <ListWipeBanner ctx={ctx} />
             <SafetySection method={session.method} followSavedAt={followSavedAt} backupAt={history.notesBackup} onBackup={exportFile} backupBusy={jobs.export} />
-            <ReachSection trusted={trusted.size} blocked={blocked.size} />
+            <ReachSection trusted={d.trusted} blocked={d.blocked} />
             <ContentsSection {...counts} usage={storage.usage} kept={storage.kept} media={media} onRetry={look} me={session.pubkey} />
             {!vault.box && <StillToBringIn ctx={ctx} />}
             <KeepFullSection startDate={IMPORT_START_DATE} history={history} importing={jobs.importing} mediaBusy={jobs.media} exportBusy={jobs.export}
               status={jobs.status} onImport={importNotes} onMedia={mediaFile} onExport={exportFile}
-              historyRelays={historyRelays} onHistoryRelays={setHistoryRelays} onSkip={() => skip.current?.abort()} />
+              historyRelays={historyRelays} onHistoryRelays={setHistoryRelays} onSkip={d.skip} />
             <SettingsSection relays={relayCount} mediaServers={servers} />
             <ActivitySection items={items} onViewAll={() => setView("activity")} />
             <AdvancedSection startedInMs={startedInMs} />
