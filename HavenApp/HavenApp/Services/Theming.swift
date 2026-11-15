@@ -30,30 +30,13 @@ enum AppTheme: String, CaseIterable, Identifiable {
 }
 
 extension Color {
-    @MainActor
-    static var havenPurple: Color {
-        let themeName = ConfigService.shared.config.themeColor
-        return AppTheme(rawValue: themeName)?.primaryColor ?? AppTheme.orange.primaryColor
-    }
+    // The accent ramp (Settings › Appearance › Accent, AccentPalette). The
+    // names predate the orange; they are the accent, whatever colour it is.
+    @MainActor static var havenPurple: Color { AccentPalette.current.primary }
+    @MainActor static var havenPurpleLight: Color { AccentPalette.current.light }
+    @MainActor static var havenPurpleDark: Color { AccentPalette.current.dark }
+    @MainActor static var havenPurplePale: Color { AccentPalette.current.primary.opacity(0.1) }
 
-    @MainActor
-    static var havenPurpleLight: Color {
-        let themeName = ConfigService.shared.config.themeColor
-        return AppTheme(rawValue: themeName)?.lightColor ?? AppTheme.orange.lightColor
-    }
-
-    @MainActor
-    static var havenPurpleDark: Color {
-        let themeName = ConfigService.shared.config.themeColor
-        return AppTheme(rawValue: themeName)?.darkColor ?? AppTheme.orange.darkColor
-    }
-
-    @MainActor
-    static var havenPurplePale: Color {
-        let themeName = ConfigService.shared.config.themeColor
-        return AppTheme(rawValue: themeName)?.paleColor ?? AppTheme.orange.paleColor
-    }
-    
     // Colors are now primarily defined here to ensure project-wide availability
 
     /// The one "things are working" green in the app. Status dots, running-state
@@ -158,7 +141,7 @@ extension Color {
     static let ink = Color(lightHex: 0x000000, darkHex: 0xFFFFFF)
     /// Light: a warm brown-grey, so shadows look like the paper's own.
     static let shade = Color(lightHex: 0x3C2814, darkHex: 0x000000)
-    static let onAccent = Color.white
+    @MainActor static var onAccent: Color { AccentPalette.current.onAccent }
 
     /// A note card's outline: the accent in dark, the dark greys in light
     /// (an orange ring round every card on the paper page was too loud).
