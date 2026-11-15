@@ -4,6 +4,12 @@
 import { SettingInfo } from "../../components/SettingInfo.jsx"
 import { Section } from "./Section.jsx"
 
+/** The page's sections: a label, its note, and the one switch (always off on the web). */
+export const PRIVACY_SECTIONS = [
+  { label: "Profiles", note: "Off, a profile's follower count comes from your relays, which may count fewer.", title: "Follower Counts from Vertex", info: "privacy.vertex" },
+  { label: "Articles", note: "Off, a locked Fanfares article links out to Fanfares, where you open it.", title: "Check Fanfares Articles", info: "privacy.fanfares" },
+]
+
 export const WEB_NOTE = "Nostr Vault on the web doesn't make either lookup yet, so both stay off here."
 
 const Row = ({ title, info }) => (
@@ -16,12 +22,7 @@ const Row = ({ title, info }) => (
 export function PrivacyPage() {
   return (
     <>
-      <Section label="Profiles" note="Off, a profile's follower count comes from your relays, which may count fewer.">
-        <Row title="Follower Counts from Vertex" info="privacy.vertex" />
-      </Section>
-      <Section label="Articles" note="Off, a locked Fanfares article links out to Fanfares, where you open it.">
-        <Row title="Check Fanfares Articles" info="privacy.fanfares" />
-      </Section>
+      {PRIVACY_SECTIONS.map(s => <Section key={s.label} label={s.label} note={s.note}><Row title={s.title} info={s.info} /></Section>)}
       <p class="settings-note muted small" id="privacy-web-note">{WEB_NOTE}</p>
     </>
   )

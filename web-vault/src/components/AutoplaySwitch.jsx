@@ -4,6 +4,8 @@ import { useState } from "preact/hooks"
 import { autoplayOn, setAutoplay } from "../net/media-prefs.js"
 import { SettingInfo } from "./SettingInfo.jsx"
 
+export const autoplayNote = on => (on ? "Plays videos automatically as you scroll." : "Videos wait for you to tap play.")
+
 export function AutoplaySwitch() {
   const [on, setOn] = useState(() => autoplayOn())
   return (
@@ -12,7 +14,7 @@ export function AutoplaySwitch() {
         <span class="settings-title">Autoplay Videos<SettingInfo topic="media.autoplay" /></span>
         <input type="checkbox" role="switch" checked={on} onChange={e => { setAutoplay(e.currentTarget.checked); setOn(autoplayOn()) }} />
       </label>
-      <p class="settings-note muted small">{on ? "Plays videos automatically as you scroll." : "Videos wait for you to tap play."}</p>
+      <p class="settings-note muted small">{autoplayNote(on)}</p>
     </>
   )
 }
