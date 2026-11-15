@@ -393,7 +393,9 @@ struct HavenConfig: Codable, Equatable {
         // Retired themes (purple/blue/green/pink/slate) resolve to orange rather
         // than being carried forward as an unrenderable key.
         let savedTheme = try container.decodeIfPresent(String.self, forKey: .themeColor) ?? defaults.themeColor
-        themeColor = AppTheme(rawValue: savedTheme)?.rawValue ?? AppTheme.orange.rawValue
+        // A picked accent is saved as "#rrggbb" (Settings › Appearance › Accent).
+        let isHex = savedTheme.range(of: "^#[0-9a-fA-F]{6}$", options: .regularExpression) != nil
+        themeColor = isHex ? savedTheme.lowercased() : AppTheme(rawValue: savedTheme)?.rawValue ?? AppTheme.orange.rawValue
         autoLoadNewPosts = try container.decodeIfPresent(Bool.self, forKey: .autoLoadNewPosts) ?? defaults.autoLoadNewPosts
         showReposts = try container.decodeIfPresent(Bool.self, forKey: .showReposts) ?? defaults.showReposts
         showBitcoinWallet = try container.decodeIfPresent(Bool.self, forKey: .showBitcoinWallet) ?? defaults.showBitcoinWallet

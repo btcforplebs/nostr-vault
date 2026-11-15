@@ -29,6 +29,8 @@ struct AppearanceSettingsView: View {
                 Text("Photos, videos and the trust globe stay dark in every mode.")
             }
 
+            AccentSettingsSection()
+
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
