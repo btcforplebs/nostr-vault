@@ -10,7 +10,7 @@ export const WOT_DTAG = "nv-wot"
 export const MESSAGES_DTAG = "nv-messages"
 
 export const FIRST_PARTY_LIST = [
-  { dTag: EMOJI_DTAG, title: "Emoji", file: "emoji", domains: ["identity", "relay", "resource", "storage", "inc", "intent"], intents: ["emoji/pick"],
+  { dTag: EMOJI_DTAG, title: "Emoji", file: "emoji", domains: ["identity", "relay", "resource", "storage", "inc", "intent", "theme"], intents: ["emoji/pick"],
     summary: "Unicode emoji and your custom sets (NIP-30), picked into whatever asked." },
   // Plan P4: Feed + Thread + Profile, and Compose on its own (opened by the Reader's intents, ReaderPane.jsx).
   { dTag: READER_DTAG, title: "Reader", file: "reader", pane: true, domains: ["identity", "outbox", "resource", "intent", "inc", "theme"], intents: ["note/open", "profile/open", "feed/open"],
@@ -27,6 +27,6 @@ export const FIRST_PARTY_LIST = [
   // Plan P7: Messages (MessagesPane.jsx) over NAP-DM; keys, decryption and sealing stay in the shell (dm-dispatch.js).
   { dTag: MESSAGES_DTAG, title: "Messages", file: "messages", pane: true, domains: ["dm", "resource", "intent", "theme"], intents: ["dm/open", "dm/refresh"],
     summary: "Your direct messages, through the shell's NAP-DM: it holds the keys, this only sees text." },
-  { dTag: "nv-note-drafts", title: "Note Drafts", file: "note-drafts", domains: ["identity", "storage", "outbox"], intents: [], sample: true,
+  { dTag: "nv-note-drafts", title: "Note Drafts", file: "note-drafts", domains: ["identity", "storage", "outbox", "theme"], intents: [], sample: true,
     summary: "A sample: write a note, it saves as you type." },
 ]

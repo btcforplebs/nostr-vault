@@ -5,9 +5,10 @@ const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart
 // anything to them.
 export const artifactHash = async (html) => hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(html)))
 
-// The bootstrap (CSP meta + prelude script) goes first in <head>, so it runs before any napplet script.
-export const buildSrcdoc = (html, bootstrap, csp) => {
-  const head = `<meta http-equiv="Content-Security-Policy" content="${csp}"><script>${bootstrap}</script>`
+// The bootstrap (CSP meta + prelude script) goes first in <head>, so it runs before any napplet script. `extra`: more
+// head the shell adds after it (the theme's first-paint block, theme.js themeHead).
+export const buildSrcdoc = (html, bootstrap, csp, extra = "") => {
+  const head = `<meta http-equiv="Content-Security-Policy" content="${csp}"><script>${bootstrap}</script>${extra}`
   const at = html.search(/<head[^>]*>/i)
   if (at < 0) return `<!doctype html><html><head>${head}</head><body>${html}</body></html>`
   const end = html.indexOf(">", at) + 1

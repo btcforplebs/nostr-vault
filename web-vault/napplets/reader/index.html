@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Reader</title>
 <style>
-  :root { color-scheme: dark; --bg: #000; --text: #f2f2f2; --muted: #9a9a9f; --hair: #26262a; --s1: #111113; --s2: #1c1c1f; --accent: #e67326;
+  :root { color-scheme: dark; --bg: #000; --s1: #1c1c1e; --s2: #2c2c2e; --s3: #3a3a3c; --text: #fff; --text-2: rgb(255 255 255 / .60); --text-3: rgb(255 255 255 / .35); --hair: rgb(255 255 255 / .14); --accent: #e67326; --accent-rgb: 230 115 38; --on-accent: #fff; --on-badge: #1a0d03; --danger: #ff453a; --online: #33d980; --shade: 0 0 0; --shade-k: 1;
+    --muted: var(--text-2);
     font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); }
@@ -13,7 +14,7 @@
     background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--hair); }
   header h1 { flex: 1; margin: 0; font-size: 17px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   button { font: inherit; color: var(--text); background: var(--s2); border: 1px solid var(--hair); border-radius: 999px; min-height: 36px; padding: 0 14px; cursor: pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 650; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 650; }
   button.ghost { background: none; border: 0; color: var(--muted); padding: 0 8px; }
   button.ghost.on { color: var(--accent); }
   button:disabled { opacity: .45; cursor: default; }
@@ -21,7 +22,7 @@
   #pick:not([hidden]) ~ #new { margin-left: 0; }
   header:has(#pick:not([hidden])) h1 { flex: 0 1 auto; cursor: pointer; }
   #picker { position: sticky; top: 52px; z-index: 3; display: grid; gap: 2px; padding: 6px; margin: 0 10px; border: 1px solid var(--hair); border-radius: 14px;
-    background: var(--s1); box-shadow: 0 10px 30px #000a; }
+    background: var(--s1); box-shadow: 0 10px 30px rgb(var(--shade) / calc(.66 * var(--shade-k))); }
   #picker button { text-align: left; border: 0; background: none; border-radius: 10px; }
   #picker button.on { color: var(--accent); background: var(--s2); }
   #picker form { display: flex; gap: 6px; padding: 4px 2px 2px; }
@@ -73,9 +74,9 @@
   .poll-label { flex: 1; }
   .poll-pct { color: var(--muted); font-size: 13px; }
   .poll-vote { justify-self: start; }
-  .poll-err { margin: 0; color: #ff6b6b; font-size: 13px; }
+  .poll-err { margin: 0; color: var(--danger); font-size: 13px; }
   .acts { position: relative; }
-  .tapback { position: absolute; bottom: 100%; left: 40px; z-index: 4; display: flex; gap: 2px; padding: 4px; border-radius: 999px; background: var(--s2); border: 1px solid var(--hair); box-shadow: 0 6px 20px #0008; }
+  .tapback { position: absolute; bottom: 100%; left: 40px; z-index: 4; display: flex; gap: 2px; padding: 4px; border-radius: 999px; background: var(--s2); border: 1px solid var(--hair); box-shadow: 0 6px 20px rgb(var(--shade) / calc(.5 * var(--shade-k))); }
   .tapback button { border: 0; background: none; font-size: 22px; min-height: 40px; padding: 0 6px; }
   .outside { margin: 0; color: var(--muted); font-size: 13px; }
   .quote { border: 1px solid var(--hair); border-radius: 12px; padding: 8px 10px; margin: 6px 0; color: var(--muted); font-size: 14px; }
@@ -103,6 +104,7 @@
 <main id="list" role="feed" aria-busy="true"></main>
 <div id="foot" class="more"></div>
 <script>
+/*@nv-theme*/
 // The Reader napplet (plan P4): Feed, Thread and Profile in one frame. It has no network and no key: every note comes
 // from the shell (outbox: the vault first, then relays, block-filtered), pictures come as bytes from the shell, and a
 // reaction is signed by the shell. Reply and Post hand off to the Compose napplet by intent (napplet:compose/reply,
@@ -734,7 +736,7 @@ async function showProfile(pk) {
 }
 
 async function start() {
-  if (n.theme?.get) { try { const t = await n.theme.get(); const c = t?.colors ?? {}; const r = document.documentElement.style; if (c.background) r.setProperty("--bg", c.background); if (c.text) r.setProperty("--text", c.text); if (c.primary) r.setProperty("--accent", c.primary) } catch {} }
+  nvTheme(n)
   me = await n.identity.getPublicKey().catch(() => "")
   // The shell opens a note or a profile here by intent; a reply this account just posted lands in the thread at once.
   n.intent?.onDelivery?.(d => {

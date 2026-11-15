@@ -7,6 +7,7 @@ import { parseManifest, checkArtifact, domainsFor, nappletKey, SHELL_DOMAINS } f
 import { defaultGrant, outsideGrant } from "./policy.js"
 import { createHandlers } from "./dispatch.js"
 import { nappletOrigin } from "./origin.js"
+import { themeHead } from "./theme.js"
 
 /** A napplet with no manifest (a file the user picked): asks for every domain the shell has; the user trims it. */
 export const localManifest = (name, hash, title = name, domains = SHELL_DOMAINS) => ({ kind: 0, publisher: "local", dTag: name, hash, required: ["shell"], optional: domains.filter(d => d !== "shell" && SHELL_DOMAINS.includes(d)), roles: [], intents: [], title })
@@ -42,10 +43,18 @@ export async function openNapplet({ html, manifestEvent, name = "napplet", title
   const deps = makeDeps(g => grants.set(key, g))
   const { handlers, close } = createHandlers({ ident, grant, domains, deps })
   let mounted = null
+  // The theme (theme.js), for a napplet given it: in the document before its first paint, then theme.changed on every
+  // change, so a page in Light is never black for a frame and follows Mode and the accent with no reload.
+  const themed = domains.includes("theme") && typeof deps.theme === "function"
+  let stopTheme = null, gone = false
   mounted = await mountNapplet({
     html, dTag: ident.dTag, domains, handlers, container, loader, origin: origin || undefined, needGuards: !firstParty, title: ident.title, expectHash: hash,
-    onClose: () => { close(); if (mounted) deps.bus.forget(mounted.napplet) },
+    // Only ours: the block outranks a napplet's own :root, and an outside napplet styles itself (it still gets theme.get
+    // and theme.changed, and follows if it wants).
+    head: themed && firstParty ? themeHead(deps.theme()) : "",
+    onClose: () => { gone = true; stopTheme?.(); close(); if (mounted) deps.bus.forget(mounted.napplet) },
     onRevoke,
   })
+  if (themed && deps.themeChanges && !gone) stopTheme = deps.themeChanges(() => mounted.send({ type: "theme.changed", theme: deps.theme() }))
   return { ident, grant, domains, mounted }
 }
