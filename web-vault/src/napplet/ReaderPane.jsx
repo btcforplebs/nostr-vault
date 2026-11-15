@@ -35,6 +35,12 @@ import { notifIntents, notifAnswer, NOTIF_TOPIC } from "./reader-notifications.j
 import { ReaderNotifSource } from "./ReaderNotifSource.jsx"
 import { searchIntents, searchAnswer, SEARCH_TOPIC } from "./reader-search.js"
 import { ReaderSearchSource } from "./ReaderSearchSource.jsx"
+import { vaultIntents, vaultAnswer, VAULT_TOPIC } from "./reader-vault.js"
+import { ReaderVaultSource } from "./ReaderVaultSource.jsx"
+import { verb as vaultVerb } from "../screens/VaultScreen.jsx"
+import { lineHref } from "../net/notify-watch.js"
+import { formatSats } from "../net/notifications.js"
+import { openDashboard } from "../net/dashboard-route.js"
 import { rowsOf as liveRowsOf } from "../desktop/space/live-now.js"
 import { LiveSheet } from "../readers/LiveEmbed.jsx"
 import { rowHref, verb as notifVerb } from "../screens/NotificationsScreen.jsx"
@@ -64,7 +70,7 @@ const whenReady = async m => { await Promise.race([m.napplet.ready, new Promise(
 // `openId`: the note open beside it, marked in the list. `keys`: takes j/k/Enter/r/l/z (the list's Reader, not the one
 // beside it). `fullCompose`: Post, Reply and Quote open the site's full composer (#/compose, the desktop's dialog) in
 // place of the Compose napplet (plan step 2b); what it sends comes back to the Reader as inc nv.compose.sent.
-export function ReaderPane({ ctx, open = null, hidden = false, beside = null, openId = "", keys = true, fullCompose = false, notifications = false, search = false }) {
+export function ReaderPane({ ctx, open = null, hidden = false, beside = null, openId = "", keys = true, fullCompose = false, notifications = false, search = false, vault = null }) {
   const host = useRef(null), composeHost = useRef(null)
   const [composing, setComposing] = useState(false)
   const [composeAside, setComposeAside] = useState(false) // a post counting down: the sheet steps aside, still mounted
@@ -75,6 +81,8 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
   // Notifications (plan step 6b): the latest list from ReaderNotifSource, while the desktop shows Notifications.
   // Search (plan step 7): the latest from ReaderSearchSource and its controls, while the desktop shows Search.
   const searchPipe = useMemo(() => ({ last: null, ctl: null, tell: () => {}, put(v) { this.last = v; this.tell() } }), [])
+  // The Vault's list pages (plan step 8a): the latest from ReaderVaultSource and its controls.
+  const vaultPipe = useMemo(() => ({ last: null, ctl: null, tell: () => {}, put(v) { this.last = v; this.tell() } }), [])
   const notifPipe = useMemo(() => ({ list: null, tell: () => {}, put(l) { this.list = l; this.tell() } }), [])
   const live = useRef(null) // { bus, me, reader }
   const openRef = useRef(open)
@@ -176,6 +184,11 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
       bus, play: stream => setSheet({ kind: "live", stream }), openHash: to => { location.hash = to },
       pipe: { get ctl() { return searchPipe.ctl }, answer: () => (searchPipe.last ? searchAnswer(searchPipe.last, { profileOf: getProfile, npubOf: npubEncode, liveRowsOf }) : null) },
     })
+    vaultPipe.tell = () => bus.emit(wire.me, VAULT_TOPIC, {})
+    const offVault = vaultIntents({
+      bus, openHash: to => { location.hash = to }, openDashboard,
+      pipe: { get ctl() { return vaultPipe.ctl }, answer: () => (vaultPipe.last ? vaultAnswer(vaultPipe.last, { profileOf: getProfile, verbOf: vaultVerb, whoOf: whoText, hrefOf: lineHref, formatSats, now: Math.floor(Date.now() / 1000) }) : null) },
+    })
     const offMine = mineIntents({
       bus,
       profile: async () => {
@@ -212,7 +225,7 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
         if (openIdRef.current) bus.emit(wire.me, OPEN_TOPIC, { id: openIdRef.current })
       } catch (e) { if (!gone) setNote(`The Reader couldn't open: ${e?.message ?? e}`) }
     })()
-    return () => { removeEventListener(READER_CMD_EVENT, rowCmd); removeEventListener(NOTE_SENT_EVENT, sentNote); gone = true; offStats.forEach(f => f()); offMine(); offBookmarks(); offNotif(); notifPipe.tell = () => {}; offSearch(); searchPipe.tell = () => {}; wire.close(); live.current?.reader?.offs.forEach(f => f()); reader?.close(); compose?.close(); live.current = null }
+    return () => { removeEventListener(READER_CMD_EVENT, rowCmd); removeEventListener(NOTE_SENT_EVENT, sentNote); gone = true; offStats.forEach(f => f()); offMine(); offBookmarks(); offNotif(); notifPipe.tell = () => {}; offSearch(); searchPipe.tell = () => {}; offVault(); vaultPipe.tell = () => {}; wire.close(); live.current?.reader?.offs.forEach(f => f()); reader?.close(); compose?.close(); live.current = null }
   }, [ctx.session.pubkey, ctx.vault, ctx.signer, grants])
 
   // The note open beside the list, marked in it (nv.note.open); "" when the side pane closes.
@@ -245,6 +258,7 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
       {sheet?.kind === "media" && <MediaLightbox items={sheet.items} author={sheet.author} start={sheet.start} onClose={() => setSheet(null)} />}
       {notifications && <ReaderNotifSource ctx={ctx} pipe={notifPipe} />}
       {search && <ReaderSearchSource ctx={ctx} pipe={searchPipe} />}
+      {vault && <ReaderVaultSource ctx={ctx} mode={vault === true ? null : vault} pipe={vaultPipe} />}
       {sheet?.kind === "live" && <LiveSheet ctx={ctx} stream={sheet.stream} onClose={() => setSheet(null)} />}
       {composing && <ComposeSheet aside={composeAside} onClose={() => live.current?.closeCompose()} onMount={el => live.current?.mountCompose(el)} />}
     </main>

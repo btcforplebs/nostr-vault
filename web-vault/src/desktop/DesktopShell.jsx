@@ -75,7 +75,10 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   const notifs = nappletsOn() && view.route === "notifications"
   // And Search (plan step 7, reader-search.js); its source stays mounted once opened, so going back keeps the results.
   const finding = nappletsOn() && view.route === "search"
-  const inReader = mine || marks || notifs || finding
+  // And the Vault's list pages (plan step 8a, reader-vault.js). Media stays the Media napplet's page (VaultScreen).
+  const vaultMode = view.route === "vault" ? (view.arg || null) : null
+  const vaulting = nappletsOn() && view.route === "vault" && vaultMode !== "media"
+  const inReader = mine || marks || notifs || finding || vaulting
   // Feed and Search stay mounted once opened, so going back to them keeps the list, its results and where you were.
   const [kept, setKept] = useState({ feed: view.route === "feed" || inReader, search: view.route === "search" && !finding, finding })
   useEffect(() => { if (finding && !kept.finding) setKept(was => ({ ...was, finding: true })) }, [finding])
@@ -101,10 +104,11 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
     : marks ? { archetype: "feed", action: "open", payload: { list: "bookmarks" } }
     : notifs ? { archetype: "feed", action: "open", payload: { list: "notifications" } }
     : finding ? { archetype: "feed", action: "open", payload: { list: "search" } }
+    : vaulting ? { archetype: "feed", action: "open", payload: { list: "vault" } }
     : readerOpenFor("feed", "", hash)
   const list = (
     <>
-      {kept.feed && <div class="desk-pane" hidden={listKey !== "feed"}>{nappletsOn() ? <ReaderPane ctx={ctx} open={readerOpen} notifications={notifs} search={!!kept.finding} beside={openBeside} openId={note ?? ""} fullCompose /> : <FeedScreen ctx={ctx} />}</div>}
+      {kept.feed && <div class="desk-pane" hidden={listKey !== "feed"}>{nappletsOn() ? <ReaderPane ctx={ctx} open={readerOpen} notifications={notifs} search={!!kept.finding} vault={vaulting ? (vaultMode ?? true) : null} beside={openBeside} openId={note ?? ""} fullCompose /> : <FeedScreen ctx={ctx} />}</div>}
       {kept.search && <div class="desk-pane" hidden={listKey !== "search"}><SearchScreen ctx={ctx} onProfile={pk => { location.hash = `#/profile/${pk}` }} /></div>}
       {listKey !== "feed" && listKey !== "search" && (
         <div class="desk-pane" key={listKey}>

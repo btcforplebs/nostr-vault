@@ -113,6 +113,15 @@
   .person b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .person span.sub { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
   .srcs { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; }
   .src { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--s2); color: var(--muted); } .src.hit { color: var(--text); } .src.failed { color: var(--danger); }
+  .vmodes { display: flex; gap: 2px; overflow-x: auto; padding: 8px 10px; border-bottom: 1px solid var(--hair); }
+  .vmodes button { border: 0; background: none; color: var(--muted); min-height: 32px; padding: 0 10px; white-space: nowrap; position: relative; }
+  .vmodes button.on { background: var(--s2); color: var(--text); font-weight: 650; }
+  .vmodes button .dot { position: absolute; top: 5px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .vtools { display: flex; gap: 8px; align-items: center; padding: 8px 14px 0; flex-wrap: wrap; }
+  .vtools .grow { flex: 1; }
+  .engage { display: grid; grid-template-columns: 32px 1fr auto; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--hair); }
+  .engage.tap { cursor: pointer; } .engage.tap:hover { background: var(--s1); }
+  .engage .av { width: 32px; height: 32px; font-size: 12px; } .engage time { color: var(--muted); font-size: 12px; }
   .notif { display: grid; grid-template-columns: 28px 1fr; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--hair); }
   .notif.tap { cursor: pointer; } .notif.tap:hover { background: var(--s1); }
   .notif .badge { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--s2); color: var(--accent); font-size: 14px; }
@@ -712,6 +721,7 @@ async function render() {
   if (view.kind === "bookmarks") return showBookmarks()
   if (view.kind === "notifications") return showNotifs()
   if (view.kind === "search") return showSearch()
+  if (view.kind === "vault") return showVault()
 }
 
 // A #tag's notes, as the shell gives them: your vault first, then relays, and only people in your web (the shell's
@@ -831,6 +841,67 @@ async function showProfile(pk) {
 }
 
 
+// ---- the Vault's list pages (plan step 8a) ----
+// The shell reads them with the Vault screen's own rules (napplet:vault/state): your notes, articles and highlights as
+// the signed events (drawn as cards), the other lines as strings. A page or filter is asked for by name (vault/mode,
+// vault/filter), a row opens by its id (vault/open), older rows come with vault/more. Media is the Media napplet's own
+// page: the shell opens it there.
+let vdrawn = null, vfilterOpen = false
+const vask = (what, payload = {}) => (n.intent?.invoke(`napplet:vault/${what}`, { payload }) ?? Promise.resolve(null)).then(r => (r?.ok ? (r.data ?? true) : null)).catch(() => null)
+function engageRow(r) {
+  const a = el("article", `engage${r.open ? " tap" : ""}`)
+  const f = r.faces[0] ?? {}, av = el("span", "av", (f.name || "?").slice(0, 1).toUpperCase()); if (f.picture) picture(av, f.picture)
+  const col = el("div"), who = el("div"); who.append(el("b", "", r.who), ` ${r.what}`); col.append(who)
+  if (r.about) { const ab = el("div", "nabout"); if (r.about.name) ab.append(el("b", "", `${r.about.name}: `)); ab.append(r.about.text); col.append(ab) }
+  const t = el("time", "", ago(r.at)); t.dateTime = new Date(r.at * 1000).toISOString()
+  a.append(av, col, t)
+  if (r.open) { a.tabIndex = 0; a.setAttribute("role", "link"); a.onclick = () => vask("open", { id: r.id }); a.onkeydown = e => { if (e.key === "Enter") a.onclick() } }
+  return a
+}
+const vline = r => notifRow({ ...r, about: r.about || r.thumbs.length ? { text: r.about, thumbs: r.thumbs, more: 0 } : null }, "vault")
+async function showVault(again = false) {
+  $("title").textContent = "Vault"
+  // A state with nothing yet answers ok with no data: that is "not yet", not a page.
+  const got = await vask("state"), d = got && typeof got === "object" ? got : null
+  if (view.kind !== "vault") return
+  const key = JSON.stringify([d, vfilterOpen])
+  if (again && key === vdrawn) return
+  vdrawn = key
+  const out = []
+  const foot = $("foot"); foot.replaceChildren()
+  if (!d) { $("list").replaceChildren(); foot.textContent = "Reading your vault…"; return }
+  const modes = el("div", "vmodes"); modes.setAttribute("role", "tablist"); modes.setAttribute("aria-label", "Vault")
+  for (const m of d.modes) {
+    const b = el("button", m.id === d.mode ? "on" : "", m.title); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(m.id === d.mode)); b.title = m.fresh ? `${m.title}: new` : m.title
+    if (m.fresh) { const dot = el("span", "dot"); dot.setAttribute("aria-label", "new"); b.append(dot) }
+    b.onclick = () => vask("mode", { mode: m.id })
+    modes.append(b)
+  }
+  out.push(modes)
+  const tools = el("div", "vtools")
+  const cur = d.filters.find(x => x.on)
+  if (d.filters.length) { const fb = el("button", cur ? "on" : "", `Filter: ${cur ? cur.title : d.allTitle}`); fb.type = "button"; fb.setAttribute("aria-expanded", String(vfilterOpen)); fb.onclick = () => { vfilterOpen = !vfilterOpen; showVault() }; tools.append(fb) }
+  tools.append(el("span", "grow"))
+  const dash = el("button", "", "Dashboard"); dash.type = "button"; dash.title = "Vault Dashboard"; dash.onclick = () => vask("dashboard"); tools.append(dash)
+  out.push(tools)
+  if (vfilterOpen && d.filters.length) {
+    const opts = d.filters.map(x => [x.id, x.title])
+    if (d.clearable) opts.push([cur.id, `Show ${d.allTitle.toLowerCase()}`])
+    const row = chips(opts, x => x[1], x => { vfilterOpen = false; vask("filter", { id: x[0] }) })
+    ;[...row.children].forEach((b, i) => b.classList.toggle("on", i < d.filters.length && d.filters[i].on))
+    out.push(row)
+  }
+  if (d.status) out.push(el("p", "muted sect-note", d.status))
+  if (d.count != null && d.rows.length) out.push(slabel(`${d.count} follower${d.count === 1 ? "" : "s"} ${d.outsideFollowers ? "outside" : "in"} your web`))
+  const draw = d.kind === "events" ? ev => card(ev) : d.kind === "engage" ? engageRow : d.kind === "people" ? p => personBtn(p, () => vask("open", { id: p.id })) : vline
+  out.push(...d.rows.map(draw))
+  $("list").replaceChildren(...out)
+  $("list").setAttribute("aria-busy", String(!d.loaded))
+  if (!d.loaded || (!d.rows.length && !d.ready)) foot.textContent = "Reading your vault…"
+  else if (!d.rows.length && !d.more) foot.textContent = d.empty
+  else if (d.more) { const b = el("button", "", d.busy ? "Loading…" : "Older"); b.type = "button"; b.disabled = d.busy; b.onclick = () => { b.disabled = true; vask("more") }; foot.append(b) }
+}
+
 // ---- search (plan step 7) ----
 // The shell searches with the Search screen's own rules and hands back people as strings and notes as signed events
 // (napplet:search/state); what is typed goes to it 300 ms after the last key (napplet:search/query), Return now
@@ -891,7 +962,7 @@ function searchStart(st) {
 async function showSearch(again = false) {
   $("title").textContent = "Search"; $("sbar").hidden = false
   searchBar()
-  const d = await sask("state")
+  const got = await sask("state"), d = got && typeof got === "object" ? got : null
   if (view.kind !== "search") return
   if (d && document.activeElement !== sinput && sinput.value !== d.text) sinput.value = d.text
   const key = JSON.stringify([d, stab, sfold, sfilterOpen])
@@ -944,7 +1015,7 @@ async function showSearch(again = false) {
 // Older pages: napplet:notifications/more. A change comes as nv.notifications.changed.
 const NBADGE = { reply: "↩", mention: "@", quote: "❝", reaction: "♥", repost: "⟲", zap: "⚡", article: "▤", highlight: "✎", follow: "+" }
 let nfilter = "all", ndrawn = null, nfold = false
-function notifRow(r) {
+function notifRow(r, from = "notifications") {
   const a = el("article", `notif${r.unread ? " unread" : ""}${r.open ? " tap" : ""}`)
   const badge = el("span", "badge", NBADGE[r.type] ?? "•"); badge.setAttribute("aria-hidden", "true")
   const col = el("div"), top = el("div", "ntop")
@@ -959,7 +1030,7 @@ function notifRow(r) {
     if (r.about.thumbs.length) { const th = el("div", "nthumbs"); for (const u of r.about.thumbs) { const i = el("img"); i.alt = ""; picture(i, u); th.append(i) } col.append(th) }
   }
   a.append(badge, col)
-  if (r.open) { a.tabIndex = 0; a.setAttribute("role", "link"); a.onclick = () => n.intent?.invoke("napplet:notifications/open", { payload: { id: r.id } }).catch(() => {}); a.onkeydown = e => { if (e.key === "Enter") a.onclick() } }
+  if (r.open) { a.tabIndex = 0; a.setAttribute("role", "link"); a.onclick = () => n.intent?.invoke(`napplet:${from}/open`, { payload: { id: r.id } }).catch(() => {}); a.onkeydown = e => { if (e.key === "Enter") a.onclick() } }
   return a
 }
 async function showNotifs(again = false) {
@@ -982,9 +1053,9 @@ async function showNotifs(again = false) {
     const f = el("button", "fold", `${nfold ? "Hide" : "Show"} ${d.outsideCount} from outside your web`); f.type = "button"; f.setAttribute("aria-expanded", String(nfold))
     f.onclick = () => { nfold = !nfold; showNotifs() }
     rows.push(f)
-    if (nfold) rows.push(...d.outside.map(notifRow))
+    if (nfold) rows.push(...d.outside.map(r => notifRow(r)))
   }
-  if (d?.rows) rows.push(...d.rows.map(notifRow))
+  if (d?.rows) rows.push(...d.rows.map(r => notifRow(r)))
   $("list").replaceChildren(...rows)
   $("list").setAttribute("aria-busy", String(!d || d.loading))
   const foot = $("foot"); foot.replaceChildren()
@@ -1123,6 +1194,7 @@ async function start() {
     const p = d?.payload ?? {}
     if (d.archetype === "note" && d.action !== "removed" && HEX.test(p.id ?? "")) { if (p.side === true) { document.body.classList.add("side"); stack = []; return go({ kind: "thread", id: p.id }, false) } go({ kind: "thread", id: p.id }, view.kind !== "feed" || stack.length > 0) }
     else if (d.archetype === "profile" && HEX.test(p.pubkey ?? "")) go({ kind: "profile", pubkey: p.pubkey }, view.kind !== "feed" || stack.length > 0)
+    else if (d.archetype === "feed" && p.list === "vault") { stack = []; go({ kind: "vault" }, false) }
     else if (d.archetype === "feed" && p.list === "search") { stack = []; go({ kind: "search" }, false) }
     else if (d.archetype === "feed" && p.list === "notifications") { stack = []; go({ kind: "notifications" }, false) }
     else if (d.archetype === "feed" && p.list === "bookmarks") { stack = []; go({ kind: "bookmarks" }, false) }
@@ -1140,6 +1212,7 @@ async function start() {
   n.inc?.on?.("nv.key.cmd", e => rowCmd(e?.payload?.cmd))
   n.inc?.on?.("nv.note.open", e => markOpen(e?.payload?.id))
   // Your profile saved, or its follower count came in: the header again, the tab as it was.
+  n.inc?.on?.("nv.vault.changed", () => { if (view.kind === "vault") showVault(true) })
   n.inc?.on?.("nv.search.changed", () => { if (view.kind === "search") showSearch(true) })
   n.inc?.on?.("nv.notifications.changed", () => { if (view.kind === "notifications") showNotifs(true) })
   n.inc?.on?.("nv.bookmarks.changed", () => { if (view.kind === "bookmarks") showBookmarks() })
