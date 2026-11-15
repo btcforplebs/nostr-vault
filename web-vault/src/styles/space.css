@@ -162,3 +162,5 @@
 /* Our panels as widget cards (plan NV_WEB_ONE_PLAN.md step 4, WidgetCard.jsx): the frame is the body, its height the
    card's own (Fit, reported by the napplet) or the slot's (S/M/L). */
 .sp-widget-body { min-height: 48px; overflow: hidden; border-radius: 0 0 14px 14px; }
+/* A widget card at its own height fits what it draws: the Live Vault panel's floor (above) is for the panel only. */
+.sp-panel.sp-widget.live-vault { min-height: 0; flex-shrink: 0; }
