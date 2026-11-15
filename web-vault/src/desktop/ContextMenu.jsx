@@ -12,6 +12,7 @@ import { noteById } from "./noteIndex.js"
 import { changeLayout, currentLayout } from "./space/layout-store.js"
 import { setPins } from "./space/space-layout.js"
 import { favourite, isPinned, pin, pinKey, unpin } from "./rail/rail-favs.js"
+import { CTX_EVENT } from "../napplet/napplet-keys.js"
 
 const person = pk => favourite("person", pk, getProfile(pk)?.display_name || getProfile(pk)?.name)
 const railOf = me => currentLayout(me).pins
@@ -50,7 +51,10 @@ export function ContextMenu({ ctx }) {
       setMenu({ x: e.clientX, y: e.clientY, ...t })
     }
     document.addEventListener("contextmenu", open)
-    return () => document.removeEventListener("contextmenu", open)
+    // A right-click inside the Reader napplet, passed over by its pane with the note's signature already checked.
+    const fromReader = e => { const d = e.detail; if (d && (d.note || d.pubkey)) setMenu(d) }
+    addEventListener(CTX_EVENT, fromReader)
+    return () => { document.removeEventListener("contextmenu", open); removeEventListener(CTX_EVENT, fromReader) }
   }, [])
   useEffect(() => {
     if (!menu) return

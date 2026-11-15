@@ -16,7 +16,8 @@ import { ZapSheet, MenuSheet } from "./NoteSheets.jsx"
 import { loadPreview } from "../components/link-preview.js"
 import { outsideReplies } from "./outside-count.js"
 import { globalTrust, TRUSTED_AUTHORS_CAP } from "../readers/trust.js"
-import { NAPPLET_KEY_EVENT, PEEK_EVENT, READER_CMD_EVENT, ROW_CMDS, ROW_TOPIC, nappletKey, pageHover } from "./napplet-keys.js"
+import { CTX_EVENT, NAPPLET_KEY_EVENT, OPEN_TOPIC, PEEK_EVENT, READER_CMD_EVENT, ROW_CMDS, ROW_TOPIC, nappletKey, pageHover, pageMenu } from "./napplet-keys.js"
+import { likedNote } from "./reader-intents.js"
 import { MediaLightbox } from "../components/MediaLightbox.jsx"
 import { ArticleReader } from "../readers/ArticlesScreen.jsx"
 import { articleCard, highlightCard, pollCard } from "./kind-cards.js"
@@ -33,7 +34,10 @@ import "./napplet.css"
 const READY_WAIT_MS = 5000
 const whenReady = async m => { await Promise.race([m.napplet.ready, new Promise(r => setTimeout(r, READY_WAIT_MS))]); return m.napplet }
 
-export function ReaderPane({ ctx, open = null, hidden = false }) {
+// `beside(id)`: the desktop list's Reader opens a tapped note's thread beside the list (plan step 2); true when it did.
+// `openId`: the note open beside it, marked in the list. `keys`: takes j/k/Enter/r/l/z (the list's Reader, not the one
+// beside it).
+export function ReaderPane({ ctx, open = null, hidden = false, beside = null, openId = "", keys = true }) {
   const host = useRef(null), composeHost = useRef(null)
   const [composing, setComposing] = useState(false)
   const [composeAside, setComposeAside] = useState(false) // a post counting down: the sheet steps aside, still mounted
@@ -44,6 +48,8 @@ export function ReaderPane({ ctx, open = null, hidden = false }) {
   const live = useRef(null) // { bus, me, reader }
   const openRef = useRef(open)
   openRef.current = open
+  const besideRef = useRef(beside)
+  besideRef.current = beside
 
   useEffect(() => {
     const bus = createBus()
@@ -100,6 +106,8 @@ export function ReaderPane({ ctx, open = null, hidden = false }) {
       // The desktop's keys and hover card over the frame (napplet-keys.js): handed to the page as events.
       onKey: p => { const k = nappletKey(p); if (k) dispatchEvent(new CustomEvent(NAPPLET_KEY_EVENT, { detail: k })) },
       onHover: p => { const h = pageHover(p, host.current?.querySelector("iframe")?.getBoundingClientRect()); if (h) dispatchEvent(new CustomEvent(PEEK_EVENT, { detail: h })) },
+      onCtx: p => { const m = pageMenu(p, host.current?.querySelector("iframe")?.getBoundingClientRect(), ev => likedNote(ev, verifyEvent)); if (m) dispatchEvent(new CustomEvent(CTX_EVENT, { detail: m })) },
+      beside: besideRef.current ? id => !!besideRef.current?.(id) : null,
       outside: id => outsideReplies(id, shellDeps(liveCtx, { ask: async () => false, saveGrant: () => {}, bus, storage: null })),
       webPeople: () => webPeopleOf(liveCtx),
       preview: loadPreview,
@@ -110,7 +118,7 @@ export function ReaderPane({ ctx, open = null, hidden = false }) {
     const offStats = [onActionState(push), onZapTotals(push)]
     // j/k/Enter/r/l/z for the Reader's rows (the shell has none to move along): passed in while this pane is shown.
     const rowCmd = e => { if (!host.current?.closest("[hidden]") && ROW_CMDS.has(e.detail?.cmd)) bus.emit(wire.me, ROW_TOPIC, { cmd: e.detail.cmd }) }
-    addEventListener(READER_CMD_EVENT, rowCmd)
+    if (keys) addEventListener(READER_CMD_EVENT, rowCmd)
     ;(async () => {
       try {
         reader = await mount(READER_DTAG, host.current, () => { reader = null })
@@ -119,10 +127,16 @@ export function ReaderPane({ ctx, open = null, hidden = false }) {
         const offs = ["note", "profile", "feed"].map(archetype => bus.register({ id: "nv-reader", title: "Reader", archetype, actions: archetype === "note" ? ["open", "removed"] : ["open"], conventions: [], open: async () => readerNapplet }))
         live.current.reader = { offs }
         if (openRef.current) bus.invoke(wire.me, openRef.current)
+        if (openIdRef.current) bus.emit(wire.me, OPEN_TOPIC, { id: openIdRef.current })
       } catch (e) { if (!gone) setNote(`The Reader couldn't open: ${e?.message ?? e}`) }
     })()
     return () => { removeEventListener(READER_CMD_EVENT, rowCmd); gone = true; offStats.forEach(f => f()); wire.close(); live.current?.reader?.offs.forEach(f => f()); reader?.close(); compose?.close(); live.current = null }
   }, [ctx.session.pubkey, ctx.vault, ctx.signer, grants])
+
+  // The note open beside the list, marked in it (nv.note.open); "" when the side pane closes.
+  const openIdRef = useRef(openId)
+  openIdRef.current = openId
+  useEffect(() => { const l = live.current; if (l?.reader) l.bus.emit(l.me, OPEN_TOPIC, { id: openId || "" }) }, [openId])
 
   // A new address (another thread or profile) while the Reader is up: hand it over instead of mounting again.
   const opened = useRef(JSON.stringify(open))

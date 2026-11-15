@@ -33,6 +33,10 @@
   article { display: grid; grid-template-columns: 44px 1fr; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--hair); cursor: pointer; }
   article.focus { background: var(--s1); cursor: default; }
   article.kbd { box-shadow: inset 3px 0 0 var(--accent); background: var(--s1); }
+  article.open { background: var(--s2); box-shadow: inset 3px 0 0 var(--accent); }
+  /* Beside the list (plan step 2): the shell's bar names the thread and closes it; only ‹ Back stays here, when needed. */
+  body.side #title, body.side #new { display: none; }
+  body.side header:has(#back[hidden]) { display: none; }
   .av { width: 44px; height: 44px; border-radius: 50%; background: var(--s2); object-fit: cover; display: grid; place-items: center; color: var(--muted); font-weight: 700; border: 0; padding: 0; }
   .who { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
   .who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
@@ -383,7 +387,7 @@ function videoSlot(url) {
 const quoted = new Map()
 function quoteCard(id) {
   const box = el("div", "quote", "Loading the quoted note…")
-  box.onclick = e => { e.stopPropagation(); go({ kind: "thread", id }) }
+  box.onclick = e => { e.stopPropagation(); openNote(id) }
   ;(quoted.get(id) ?? (quoted.set(id, n.outbox.getEvent(id).then(r => r?.result?.event ?? null).catch(() => null)), quoted.get(id))).then(ev => {
     if (!ev) { box.textContent = "A note that couldn't be found."; return }
     const who = el("b"); who.dataset.pk = ev.pubkey; want(ev.pubkey); paintWho(who)
@@ -399,6 +403,7 @@ const shellAct = (action, ev) => n.intent?.invoke(`napplet:note/${action}`, { pa
 function card(ev, { focus = false, depth = 0, by = null } = {}) {
   const shown = repostOf(ev) ?? ev
   const a = el("article", focus ? "focus" : ""); a.dataset.id = shown.id
+  if (shown.id === openId && !focus) a.classList.add("open")
   if (depth) a.style.paddingLeft = `${14 + Math.min(depth, 4) * 18}px`
   a.append(avatar(shown.pubkey))
   const col = el("div")
@@ -419,7 +424,7 @@ function card(ev, { focus = false, depth = 0, by = null } = {}) {
   a.append(col)
   // An article's thread is the article itself (the classic card): the shell's article reader opens.
   if (shown.kind === 30023) a.onclick = () => openArticle(shown)
-  else if (!focus) a.onclick = () => go({ kind: "thread", id: shown.id, event: shown })
+  else if (!focus) a.onclick = () => openNote(shown.id, shown)
   return a
 }
 
@@ -467,6 +472,38 @@ document.addEventListener("pointerover", e => {
 document.addEventListener("pointerout", e => { if (hovering && !hovering.contains(e.relatedTarget)) hoverOut() })
 addEventListener("scroll", hoverOut, { passive: true })
 document.addEventListener("pointerdown", hoverOut)
+// A note's thread: on the desktop the shell opens it beside the list (napplet:note/beside, plan step 2) and this list
+// stays where it was; anywhere it can't (the phone, a thread already open here, an older shell), it opens in place.
+function openNote(id, ev) {
+  if (view.kind === "thread") return go({ kind: "thread", id, event: ev })
+  const r = n.intent?.invoke("napplet:note/beside", { payload: { id } })
+  if (!r) return go({ kind: "thread", id, event: ev })
+  r.then(x => { if (x?.ok) markOpen(id); else go({ kind: "thread", id, event: ev }) }, () => go({ kind: "thread", id, event: ev }))
+}
+// The note open beside the list, marked as the classic list marks it (the shell says which: inc nv.note.open).
+let openId = ""
+function markOpen(id) {
+  openId = HEX.test(id ?? "") ? id : ""
+  for (const a of document.querySelectorAll("#list > article.open")) a.classList.remove("open")
+  if (openId) for (const a of document.querySelectorAll(`#list > article[data-id="${openId}"]`)) a.classList.add("open")
+}
+// Right-click on a note or a person: the shell's own menu (desktop/ContextMenu.jsx), which this frame can't open, so
+// the note (signed, checked by the shell) or the pubkey goes over with where the click was. Shift, selected text, a
+// link, a picture or a field keep the browser's menu, as on the classic page.
+// The selection as it was before the button went down: Safari selects the word under a right-click first.
+let selBefore = ""
+document.addEventListener("pointerdown", e => { if (e.button === 2) selBefore = String(getSelection?.() ?? "").trim() }, true)
+document.addEventListener("contextmenu", e => {
+  if (e.shiftKey || selBefore) return
+  const t = e.target
+  if (t.closest?.("input, textarea, select, img, video, audio, a[href]")) return
+  const who = t.closest?.(".av[data-pk], .who b[data-pk], [data-pk]")
+  const row = t.closest?.("article[data-id]")
+  const ev = row && (row._ev ?? null)
+  if (!who && !ev) return
+  e.preventDefault()
+  n.inc?.emit("nv.ctx", { x: e.clientX, y: e.clientY, ...(who ? { pubkey: who.dataset.pk } : { event: ev }) })
+})
 function openArticle(ev) { n.intent?.invoke("napplet:article/open", { payload: { event: ev } }).catch(() => {}) }
 // An article, highlight or poll: its card's strings come from the shell (napplet:note/card), worked out from the signed
 // event as the classic feed card does; the napplet only draws them.
@@ -516,7 +553,7 @@ function addrCard({ kind, pubkey, d }) {
     const who = el("b"); who.dataset.pk = ev.pubkey; want(ev.pubkey); paintWho(who)
     const title = (ev.tags ?? []).find(t => t[0] === "title")?.[1] || String(ev.content ?? "").split("\n").find(Boolean)?.replace(/^[#\s]+/, "") || "Untitled"
     b.replaceChildren(who, el("div", "", String(title).slice(0, 200)))
-    b.onclick = e => { e.stopPropagation(); ev.kind === 30023 ? openArticle(ev) : go({ kind: "thread", id: ev.id, event: ev }) }
+    b.onclick = e => { e.stopPropagation(); ev.kind === 30023 ? openArticle(ev) : openNote(ev.id, ev) }
   })
   return b
 }
@@ -741,7 +778,7 @@ async function start() {
   // The shell opens a note or a profile here by intent; a reply this account just posted lands in the thread at once.
   n.intent?.onDelivery?.(d => {
     const p = d?.payload ?? {}
-    if (d.archetype === "note" && d.action !== "removed" && HEX.test(p.id ?? "")) go({ kind: "thread", id: p.id }, view.kind !== "feed" || stack.length > 0)
+    if (d.archetype === "note" && d.action !== "removed" && HEX.test(p.id ?? "")) { if (p.side === true) { document.body.classList.add("side"); stack = []; return go({ kind: "thread", id: p.id }, false) } go({ kind: "thread", id: p.id }, view.kind !== "feed" || stack.length > 0) }
     else if (d.archetype === "profile" && HEX.test(p.pubkey ?? "")) go({ kind: "profile", pubkey: p.pubkey }, view.kind !== "feed" || stack.length > 0)
     else if (d.archetype === "feed" && typeof p.tag === "string" && /^[\p{L}\p{N}_]{1,64}$/u.test(p.tag)) go({ kind: "tag", tag: p.tag.toLowerCase() })
     else if (d.archetype === "feed") { stack = []; go({ kind: "feed" }, false) }
@@ -755,6 +792,7 @@ async function start() {
   })
   n.inc?.on?.("nv.note.stats", e => showStats(e?.payload))
   n.inc?.on?.("nv.key.cmd", e => rowCmd(e?.payload?.cmd))
+  n.inc?.on?.("nv.note.open", e => markOpen(e?.payload?.id))
   n.inc?.on?.("nv.compose.sent", e => {
     const ev = e?.payload?.event
     if (!ev || !HEX.test(ev.id ?? "")) return
