@@ -21,6 +21,9 @@
 //                                                            back), signed by your signer; the result comes as stats
 //   napplet:thread/outside { id }                         -> { data: { count } }: replies to that thread from outside
 //                                                            your web, which no napplet is shown (outside-count.js)
+//   napplet:web/people {}                                 -> { data: { people } }: up to 500 of your web (you, your
+//                                                            follows, theirs), sorted, as the classic Global names them
+//                                                            in its first filter; built from public follow lists
 //   napplet:profile/show { pubkey }                       -> the full classic profile (#/profile/<pk>), Reader kept
 //   napplet:article/open { event }                        -> the classic article reader over the Reader
 //   napplet:note/repost|zap|menu { event }                -> the classic flows, run by the shell (gap run, after P8):
@@ -113,7 +116,7 @@ export function likedNote(raw, verify) {
   return ev.kind === 6 ? actionNote(ev, verify) : null
 }
 
-export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, onMedia = () => {}, preview = async () => null, card = async () => null, vote = async () => null, onArticle = () => {}, onProfile = null, stats = null, like = null, onKey = null, onHover = null, outside = null }) {
+export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, onMedia = () => {}, preview = async () => null, card = async () => null, vote = async () => null, onArticle = () => {}, onProfile = null, stats = null, like = null, onKey = null, onHover = null, outside = null, webPeople = null }) {
   const on = { [COMPOSE_DONE]: onComposeDone, [COMPOSE_WAITING]: onComposeWaiting, [COMPOSE_UNDONE]: onComposeUndone,
     ...(onKey ? { [KEY_TOPIC]: onKey } : {}), ...(onHover ? { [HOVER_TOPIC]: onHover } : {}) }
   const me = { dTag: "shell", send: m => { if (m?.type === "inc.event" && on[m.topic]) on[m.topic](m.payload) } }
@@ -162,6 +165,11 @@ export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaitin
       if (!HEX.test(p?.id ?? "")) return { ok: false, error: "not a note id" }
       const count = await outside(p.id).catch(() => 0)
       return { ok: true, data: { count: Number.isInteger(count) && count > 0 ? count : 0 } }
+    } })] : []),
+    ...(webPeople ? [bus.register({ id: "shell-web-people", title: "Your web", archetype: "web", actions: ["people"], conventions: [], deliver: async (p, from) => {
+      if (from?.dTag !== READER) return { ok: false, error: "the Reader's only" }
+      const people = await webPeople().catch(() => null)
+      return { ok: true, data: { people: Array.isArray(people) ? people.filter(pk => HEX.test(pk ?? "")).slice(0, 500) : [] } }
     } })] : []),
     bus.register({ id: "shell-article-open", title: "Read", archetype: "article", actions: ["open"], conventions: [], deliver: p => {
       const ev = signedOf(p?.event, verify)

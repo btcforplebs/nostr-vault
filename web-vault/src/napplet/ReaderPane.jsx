@@ -15,6 +15,7 @@ import { repostWithUndo } from "../components/repost-undo.js"
 import { ZapSheet, MenuSheet } from "./NoteSheets.jsx"
 import { loadPreview } from "../components/link-preview.js"
 import { outsideReplies } from "./outside-count.js"
+import { globalTrust, TRUSTED_AUTHORS_CAP } from "../readers/trust.js"
 import { NAPPLET_KEY_EVENT, PEEK_EVENT, READER_CMD_EVENT, ROW_CMDS, ROW_TOPIC, nappletKey, pageHover } from "./napplet-keys.js"
 import { MediaLightbox } from "../components/MediaLightbox.jsx"
 import { ArticleReader } from "../readers/ArticlesScreen.jsx"
@@ -100,6 +101,7 @@ export function ReaderPane({ ctx, open = null, hidden = false }) {
       onKey: p => { const k = nappletKey(p); if (k) dispatchEvent(new CustomEvent(NAPPLET_KEY_EVENT, { detail: k })) },
       onHover: p => { const h = pageHover(p, host.current?.querySelector("iframe")?.getBoundingClientRect()); if (h) dispatchEvent(new CustomEvent(PEEK_EVENT, { detail: h })) },
       outside: id => outsideReplies(id, shellDeps(liveCtx, { ask: async () => false, saveGrant: () => {}, bus, storage: null })),
+      webPeople: () => webPeopleOf(liveCtx),
       preview: loadPreview,
     })
     live.current.me = wire.me
@@ -186,3 +188,15 @@ async function pollVote(ctx, ev, picks) {
 
 /** A note's Like and zap total as the classic card has them now (note-stats.js). */
 const statsNow = id => statsOf(id, { state: actionState(id), reaction: reactionOf(id), total: zapTotal(id) }, displayEmoji)
+
+// napplet:web/people: your web as the classic Global names it in its first filter (readers/trust.js), worked out once
+// per account and follow count and kept for ten minutes (it asks every follow's follow list).
+let webCache = null // { key, at, people: Promise<string[]> }
+function webPeopleOf(ctx) {
+  const me = ctx.session.pubkey, follows = [...(ctx.account.follows ?? [])]
+  const key = `${me}:${follows.length}`
+  if (webCache?.key !== key || Date.now() - webCache.at > 10 * 60_000) {
+    webCache = { key, at: Date.now(), people: globalTrust(me, follows).then(t => (t ? [...t].sort().slice(0, TRUSTED_AUTHORS_CAP) : [])).catch(() => []) }
+  }
+  return webCache.people
+}

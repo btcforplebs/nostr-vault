@@ -83,5 +83,6 @@ test("Reader: asks the feed for articles, highlights and polls; poll foot line",
   assert.equal(box.pollMeta({ voters: 1, multiple: true, endsAt: null }), "1 vote · Pick any")
   assert.equal(box.pollMeta({ voters: 4, multiple: false, endsAt: 100, closed: true }), "4 votes · Final results")
   assert.match(box.pollMeta({ voters: 0, multiple: false, endsAt: 100 + 7200, closed: false }, 100), /^0 votes · Ends in 2 hours$/)
-  assert.equal((html.match(/kinds: FEED_KINDS/g) ?? []).length, 4, "feed, live, older and profile all ask")
+  assert.equal((html.match(/kinds: FEED_KINDS/g) ?? []).length, 3, "feed pages (feedFilters, also Older), live and profile all ask")
+  assert.match(html, /: FEED_KINDS\n/, "Global's kinds")
 })
