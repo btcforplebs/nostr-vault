@@ -49,8 +49,13 @@ const MEDIA_RECHECK_MS = 5 * 60_000 // and Media asks the media servers again th
 const scroller = el => el?.closest(".desk-list") ?? null
 const modeOf = (hash = location.hash) => { const m = /^#\/?vault\/([a-z]+)/.exec(hash)?.[1]; return isMode(m) ? m : null }
 
-/** `desk`: the desktop's list column, where the modes are a segmented header and Messages is a sidebar row. */
-export function VaultScreen({ ctx, desk = false }) {
+/**
+ * The Vault tab's data, as the screen draws it (and the desktop Reader's Vault, napplet/reader-vault.js): your own events
+ * from Haven's outbox, what others sent from its inbox and the relays, followers from kind 3s, zaps given, each mode's
+ * rows and "new" dots, older pages from Haven, kept between visits. `root`: the screen's element (the row being read is
+ * held while answers land; null: nothing to hold).
+ */
+export function useVault(ctx, root) {
   const { vault, account, session } = ctx
   const me = session.pubkey
   const relays = uniq([...account.relays.read, ...account.relays.write, ...DEFAULT_RELAYS])
@@ -172,7 +177,6 @@ export function VaultScreen({ ctx, desk = false }) {
   }, [me])
   // What the tab keeps when it's left. The scroll (the desktop's list column, else the page) is noted as it moves:
   // by the time the screen unmounts, the next one may already have changed it.
-  const root = useRef()
   const scrolled = useRef(k && !link ? k.scrollY : 0)
   useEffect(() => {
     const el = scroller(root.current), on = el ?? window
@@ -255,6 +259,13 @@ export function VaultScreen({ ctx, desk = false }) {
   const trusted = pk => pk === me || account.follows.includes(pk)
   const filters = FILTERS[mode]
   const f = filters.find(x => x.id === filter) ?? { id: "", title: ALL_TITLE[mode] ?? "All", pill: "All" }
+  return { me, mode, filter, filters, f, fresh, pick, choose, searching, setSearching, status, loaded, items, followers, notes, trusted, unreadSince: unreadSince.current, refreshes, ready, shown, onMore, paging, older }
+}
+
+/** `desk`: the desktop's list column, where the modes are a segmented header and Messages is a sidebar row. */
+export function VaultScreen({ ctx, desk = false }) {
+  const root = useRef()
+  const { me, mode, filter, filters, f, fresh, pick, choose, searching, setSearching, status, loaded, items, followers, notes, trusted, unreadSince, refreshes, ready, shown, onMore, paging, older } = useVault(ctx, root)
   return (
     <main class="screen vault" ref={root}>
       <header class="screen-head vault-head">
@@ -288,7 +299,7 @@ export function VaultScreen({ ctx, desk = false }) {
       </header>
       {searching ? <VaultSearch ctx={ctx} onClose={() => setSearching(false)} /> : <>
       <div class="status-line keep">{status}</div>
-      {!loaded ? <VaultSkeleton mode={mode} /> : <List ctx={ctx} mode={mode} filter={filter} items={items} me={me} followers={followers} notes={notes} trusted={trusted} unreadSince={unreadSince.current} refreshes={refreshes} fetched={ready} page={{ shown, onMore, busy: paging, older: older.own || older.inbound }} onFollowers={() => pick("followers")} />}
+      {!loaded ? <VaultSkeleton mode={mode} /> : <List ctx={ctx} mode={mode} filter={filter} items={items} me={me} followers={followers} notes={notes} trusted={trusted} unreadSince={unreadSince} refreshes={refreshes} fetched={ready} page={{ shown, onMore, busy: paging, older: older.own || older.inbound }} onFollowers={() => pick("followers")} />}
       </>}
       <VaultButton desk={desk} />
     </main>
