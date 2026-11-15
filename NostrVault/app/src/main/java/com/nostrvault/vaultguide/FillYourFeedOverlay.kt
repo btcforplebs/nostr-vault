@@ -85,10 +85,13 @@ import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.components.formatTimestamp
+import com.nostrvault.ui.theme.Ink
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
+import com.nostrvault.ui.theme.OnAccent
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
+import com.nostrvault.ui.theme.Shade
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.PI
@@ -161,7 +164,7 @@ fun FillYourFeedOverlay(
 
         val dims = phase == FillYourFeedPhase.INTRO || phase == FillYourFeedPhase.READY
         if (dims) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).clickable(enabled = false) {})
+            Box(Modifier.fillMaxSize().background(Shade.copy(alpha = 0.45f)).clickable(enabled = false) {})
         }
 
         // The ready card sits up top like the hint: centred, it covered half
@@ -322,7 +325,7 @@ private fun PrimaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     container: Color = LocalNostrVaultColors.current.primary,
-    content: Color = Color.White,
+    content: Color = OnAccent,
     onClick: () -> Unit,
 ) {
     Button(
@@ -371,7 +374,7 @@ private fun WebOfTrustDiagram(modifier: Modifier) {
             for (j in -1..1) {
                 val a = base + j * 0.38f
                 val o = Offset(c.x + 120 * d * cos(a), c.y + 52 * d * sin(a))
-                drawLine(Color.White.copy(alpha = 0.18f), p, o, strokeWidth = 1 * d)
+                drawLine(Ink.copy(alpha = 0.18f), p, o, strokeWidth = 1 * d)
                 drawCircle(Color(0xFF5A5A60), 5 * d, o)
             }
         }
@@ -382,7 +385,7 @@ private fun WebOfTrustDiagram(modifier: Modifier) {
         }
         drawCircle(primary, 17 * d, c)
         drawCircle(CardSurface, 17 * d, c, style = Stroke(3 * d))
-        val you = measurer.measure("You", TextStyle(color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold))
+        val you = measurer.measure("You", TextStyle(color = OnAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold))
         drawText(you, topLeft = Offset(c.x - you.size.width / 2, c.y - you.size.height / 2))
         val small = TextStyle(color = SecondaryText, fontSize = 10.sp)
         val l = measurer.measure("your follows", small)
@@ -433,7 +436,7 @@ private fun TopicChips(topics: List<String>, selected: MutableList<String>, onMo
                     .heightIn(min = 40.dp)
                     .clip(RoundedCornerShape(20.dp))
                     .background(if (on) primary else ChipSurface)
-                    .border(1.dp, if (on) primary else Color.White.copy(alpha = 0.1f), RoundedCornerShape(20.dp))
+                    .border(1.dp, if (on) primary else Ink.copy(alpha = 0.1f), RoundedCornerShape(20.dp))
                     .clickable(role = Role.Checkbox) { if (on) selected.remove(topic) else selected.add(topic) }
                     .semantics { this.selected = on }
                     .padding(horizontal = 12.dp),
@@ -571,7 +574,7 @@ private fun MeterBar(
     Box(
         modifier
             .fillMaxWidth()
-            .shadow(if (gold) 12.dp else 8.dp, shape, ambientColor = if (gold) GoldMid else Color.Black, spotColor = if (gold) GoldMid else Color.Black)
+            .shadow(if (gold) 12.dp else 8.dp, shape, ambientColor = if (gold) GoldMid else Shade, spotColor = if (gold) GoldMid else Shade)
             .background(Color(0xF02A2A2D), shape)
             .border(1.dp, if (gold) GoldMid.copy(alpha = 0.75f) else Color.White.copy(alpha = 0.1f), shape)
             .clip(shape)
@@ -710,7 +713,7 @@ private fun PicksSheet(
                     Text("Unfollow", color = primary, fontWeight = FontWeight.SemiBold)
                 }
             }
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            HorizontalDivider(color = Ink.copy(alpha = 0.1f))
         }
         PrimaryButton("Done", modifier = Modifier.fillMaxWidth(), onClick = onDone)
         TextButton(onClick = onHide, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
@@ -772,7 +775,7 @@ private fun ProfileCard(
                 Text(content, color = PrimaryText, fontSize = 15.sp, maxLines = 6, overflow = TextOverflow.Ellipsis)
                 Text(formatTimestamp(at), color = SecondaryText, fontSize = 12.sp)
             }
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            HorizontalDivider(color = Ink.copy(alpha = 0.1f))
         }
     }
         // Pinned under the scrolling part, so the half-height card never cuts it off.

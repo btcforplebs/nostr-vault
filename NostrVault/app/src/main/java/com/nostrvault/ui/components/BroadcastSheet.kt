@@ -312,7 +312,7 @@ fun BroadcastSheet(
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = colors.primary,
-                        contentColor = Color.White,
+                        contentColor = OnAccent,
                         disabledContainerColor = SecondaryText.copy(alpha = 0.4f),
                         disabledContentColor = Color.White,
                     ),

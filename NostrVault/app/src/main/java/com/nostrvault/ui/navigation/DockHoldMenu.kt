@@ -69,7 +69,9 @@ import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.LocalOledMode
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
+import com.nostrvault.ui.theme.OnAccent
 import com.nostrvault.ui.theme.PrimaryText
+import com.nostrvault.ui.theme.Shade
 import kotlin.math.PI
 import kotlin.math.roundToInt
 
@@ -335,7 +337,7 @@ fun <T> DockHoldMenuOverlay(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.28f))
+                    .background(Shade.copy(alpha = 0.28f))
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -385,7 +387,7 @@ fun <T> DockHoldMenuOverlay(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                     modifier = Modifier
-                        .shadow(18.dp, RoundedCornerShape(22.dp), ambientColor = Color.Black.copy(alpha = 0.35f), spotColor = Color.Black.copy(alpha = 0.35f))
+                        .shadow(18.dp, RoundedCornerShape(22.dp), ambientColor = Shade.copy(alpha = 0.35f), spotColor = Shade.copy(alpha = 0.35f))
                         .glassRectBackground(cornerRadius = 22.dp, isOled = LocalOledMode.current)
                         .padding(6.dp),
                 ) {
@@ -427,7 +429,7 @@ private fun DockHoldMenuRow(
         label = "dockRowScale",
     )
     val tint = when {
-        hovered -> Color.White
+        hovered -> OnAccent
         spec.current -> accent
         else -> PrimaryText
     }

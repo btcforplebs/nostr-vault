@@ -50,6 +50,7 @@ import com.nostrvault.service.ReturnPillManager
 import com.nostrvault.ui.navigation.FloatingButtonRow
 import com.nostrvault.service.music.MusicPlayer
 import com.nostrvault.ui.theme.NostrVaultIcons
+import com.nostrvault.ui.theme.Shade
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -188,7 +189,7 @@ private fun ReturnPillCapsule(text: String, spoken: String, arrowAt: Float?) {
     }
 }
 
-private val ShadowColor = Color.Black.copy(alpha = 0.4f)
+private val ShadowColor = Shade.copy(alpha = 0.4f)
 
 /**
  * A capsule with a small triangle hanging from its bottom edge at [arrowAt]

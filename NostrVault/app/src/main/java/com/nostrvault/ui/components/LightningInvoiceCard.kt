@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.NWCService
 import com.nostrvault.ui.theme.ErrorRed
+import com.nostrvault.ui.theme.Ink
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
@@ -158,7 +159,7 @@ fun LightningInvoiceCard(match: NoteInvoices.Match, modifier: Modifier = Modifie
                         .weight(1f)
                         .heightIn(min = 36.dp)
                         .clip(CircleShape)
-                        .background(if (lit) ZapOrange else Color.White.copy(alpha = 0.08f))
+                        .background(if (lit) ZapOrange else Ink.copy(alpha = 0.08f))
                         .clickable(enabled = payEnabled) { confirming = true }
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.Center,
@@ -186,7 +187,7 @@ fun LightningInvoiceCard(match: NoteInvoices.Match, modifier: Modifier = Modifie
                     modifier = Modifier
                         .heightIn(min = 36.dp)
                         .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.08f))
+                        .background(Ink.copy(alpha = 0.08f))
                         .clickable {
                             clipboard.setText(AnnotatedString(match.invoice))
                             copied = true

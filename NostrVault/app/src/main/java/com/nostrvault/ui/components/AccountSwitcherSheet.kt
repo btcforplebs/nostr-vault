@@ -38,8 +38,10 @@ import com.nostrvault.data.model.AccountUnread
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
+import com.nostrvault.ui.theme.Ink
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
+import com.nostrvault.ui.theme.OnAccent
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryGroupedBg
 import com.nostrvault.ui.theme.SecondaryText
@@ -133,7 +135,7 @@ fun AccountSwitcherSheet(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
             )
 
-            HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+            HorizontalDivider(color = Ink.copy(alpha = 0.08f))
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -241,7 +243,7 @@ private fun AccountRow(
                 text = badge,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = OnAccent,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .semantics { contentDescription = "$badge new" }

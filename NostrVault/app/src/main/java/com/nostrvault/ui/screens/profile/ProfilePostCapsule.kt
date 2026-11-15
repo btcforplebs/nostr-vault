@@ -33,6 +33,7 @@ import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.Motion
 import com.nostrvault.ui.theme.NostrVaultIcons
+import com.nostrvault.ui.theme.OnAccent
 
 /**
  * The Profile tab's floating "Post" capsule, which opens the note composer.
@@ -78,8 +79,8 @@ internal fun ProfilePostCapsule(onPost: () -> Unit) {
                     .height(48.dp)
                     .padding(horizontal = 18.dp),
             ) {
-                Icon(NostrVaultIcons.Compose, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                Text("Post", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Icon(NostrVaultIcons.Compose, contentDescription = null, tint = OnAccent, modifier = Modifier.size(18.dp))
+                Text("Post", color = OnAccent, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             }
         }
     }

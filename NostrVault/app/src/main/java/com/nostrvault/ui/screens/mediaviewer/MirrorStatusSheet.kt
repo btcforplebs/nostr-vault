@@ -113,7 +113,7 @@ internal fun MirrorStatusSheet(
                                 modifier = Modifier.padding(start = 32.dp, bottom = 8.dp),
                             )
                         }
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                        HorizontalDivider(color = Ink.copy(alpha = 0.08f))
                     }
 
                     val missingCount = mirrorStatus.count { (mirror, found) -> !found && results[mirror] != BlobCopyOutcome.Copied }

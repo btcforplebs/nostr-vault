@@ -46,7 +46,7 @@ internal fun CoverPicker(cover: Uri?, onPicked: (Uri?) -> Unit) {
             .fillMaxWidth()
             .height(160.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.08f))
+            .background(Ink.copy(alpha = 0.08f))
             .clickable { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
         contentAlignment = Alignment.Center,
     ) {

@@ -556,7 +556,7 @@ private fun MessageBubble(
                         // accent-colored selection would vanish on our own accent
                         // bubble, so it is white there.
                         val selectionColors = if (isFromMe) {
-                            TextSelectionColors(handleColor = Color.White, backgroundColor = Color.White.copy(alpha = 0.35f))
+                            TextSelectionColors(handleColor = OnAccent, backgroundColor = OnAccent.copy(alpha = 0.35f))
                         } else {
                             TextSelectionColors(handleColor = colors.primary, backgroundColor = colors.primary.copy(alpha = 0.4f))
                         }
@@ -707,7 +707,7 @@ private fun MessageInputBar(
                             Icon(
                                 imageVector = NostrVaultIcons.ArrowUp,
                                 contentDescription = "Send",
-                                tint = Color.White,
+                                tint = OnAccent,
                                 modifier = Modifier.size(18.dp),
                             )
                         }

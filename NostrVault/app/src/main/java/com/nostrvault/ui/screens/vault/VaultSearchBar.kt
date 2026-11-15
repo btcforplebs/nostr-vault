@@ -40,6 +40,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nostrvault.ui.theme.Ink
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.Motion
 import com.nostrvault.ui.theme.NostrVaultIcons
@@ -102,7 +103,7 @@ internal fun VaultSearchBar(
                 .width(width)
                 .fillMaxHeight()
                 .background(Surface2, CircleShape)
-                .border(0.8.dp, Color.White.copy(alpha = 0.12f), CircleShape),
+                .border(0.8.dp, Ink.copy(alpha = 0.12f), CircleShape),
         )
         Row(
             verticalAlignment = Alignment.CenterVertically,

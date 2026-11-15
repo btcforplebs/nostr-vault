@@ -186,14 +186,14 @@ internal fun FanfaresGatedArticleBody(
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = colors.primary,
-                contentColor = Color.White,
+                contentColor = OnAccent,
                 disabledContainerColor = colors.primary.copy(alpha = 0.6f),
-                disabledContentColor = Color.White,
+                disabledContentColor = OnAccent,
             ),
             modifier = Modifier.fillMaxWidth(),
         ) {
             if (busy) {
-                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                CircularProgressIndicator(color = OnAccent, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
             } else {
                 Icon(if (paid && unpaid.isEmpty()) Icons.Filled.Refresh else Icons.Filled.Bolt, contentDescription = null,
                     modifier = Modifier.size(18.dp))

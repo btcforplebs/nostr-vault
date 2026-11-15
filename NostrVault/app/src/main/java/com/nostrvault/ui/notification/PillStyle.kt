@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.LocalNostrVaultColors
+import com.nostrvault.ui.theme.Shade
 import com.nostrvault.ui.theme.SuccessGreen
 import com.nostrvault.ui.theme.ZapOrange
 
@@ -111,8 +112,8 @@ fun Modifier.pillCapsule(
     .shadow(
         elevation = 8.dp,
         shape = PillStyle.shape,
-        ambientColor = Color.Black.copy(alpha = 0.4f),
-        spotColor = Color.Black.copy(alpha = 0.4f),
+        ambientColor = Shade.copy(alpha = 0.4f),
+        spotColor = Shade.copy(alpha = 0.4f),
     )
     .background(color, PillStyle.shape)
     .clip(PillStyle.shape)

@@ -23,6 +23,7 @@ import com.nostrvault.data.music.WavlakeApi
 import com.nostrvault.data.music.WavlakeTrack
 import com.nostrvault.service.music.MusicPlayer
 import com.nostrvault.service.music.PlayerTrack
+import com.nostrvault.ui.theme.Ink
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
@@ -60,7 +61,7 @@ fun WavlakeTrackCard(
     val t = track
     if (t == null) {
         if (!failed) {
-            Box(modifier.fillMaxWidth().height(68.dp).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.06f)))
+            Box(modifier.fillMaxWidth().height(68.dp).clip(RoundedCornerShape(12.dp)).background(Ink.copy(alpha = 0.06f)))
         } else if (fallbackUrl != null) {
             com.nostrvault.ui.components.LinkFallbackCard(fallbackUrl, modifier)
         }
@@ -69,7 +70,7 @@ fun WavlakeTrackCard(
     val isCurrent = current?.id == t.id
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.06f)).padding(10.dp),
+        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Ink.copy(alpha = 0.06f)).padding(10.dp),
     ) {
         // The song itself opens its artist's page in Music, scrolled to this
         // song; the play button plays it right here.
@@ -121,7 +122,7 @@ fun AudioFileCard(url: String, modifier: Modifier = Modifier) {
     val accent = LocalNostrVaultColors.current.primary
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.06f)).padding(10.dp),
+        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Ink.copy(alpha = 0.06f)).padding(10.dp),
     ) {
         Box(
             Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)).background(accent.copy(alpha = 0.15f)),

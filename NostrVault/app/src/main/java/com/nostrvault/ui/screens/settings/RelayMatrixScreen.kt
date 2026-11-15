@@ -895,7 +895,7 @@ private fun LockedDot(on: Boolean, accent: Color) {
                 .background(if (on) accent else Color.Transparent, CircleShape)
                 .border(1.5.dp, if (on) accent else TertiaryText, CircleShape),
         ) {
-            if (on) Icon(NostrVaultIcons.Lock, contentDescription = null, tint = Color.White, modifier = Modifier.size(11.dp))
+            if (on) Icon(NostrVaultIcons.Lock, contentDescription = null, tint = OnAccent, modifier = Modifier.size(11.dp))
         }
     }
 }

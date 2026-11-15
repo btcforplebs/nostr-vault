@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nostrvault.ui.theme.OnAccent
 
 @Composable
 internal fun FooterButton(
@@ -48,7 +49,7 @@ internal fun FooterButton(
         }
         Text(
             title,
-            color = if (filled) Color.White else accent,
+            color = if (filled) OnAccent else accent,
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,

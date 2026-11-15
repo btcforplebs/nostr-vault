@@ -225,7 +225,7 @@ fun HashtagFeedScreen(
 @Composable
 private fun HashtagHeader(tag: String, isFollowing: Boolean, enabled: Boolean, onToggle: () -> Unit) {
     val colors = LocalNostrVaultColors.current
-    val content = if (isFollowing) Color.White else colors.primary
+    val content = if (isFollowing) OnAccent else colors.primary
     val background = if (isFollowing) colors.primary else colors.primary.copy(alpha = 0.12f)
     Row(
         verticalAlignment = Alignment.CenterVertically,

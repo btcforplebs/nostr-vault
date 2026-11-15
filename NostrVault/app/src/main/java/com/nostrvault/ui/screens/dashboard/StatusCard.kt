@@ -54,6 +54,7 @@ import com.nostrvault.ui.theme.CardBorder
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.Motion
 import com.nostrvault.ui.theme.NostrVaultIcons
+import com.nostrvault.ui.theme.OnAccent
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryGroupedBg
 import com.nostrvault.ui.theme.SecondaryText
@@ -238,7 +239,7 @@ internal fun StatusCard(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
             ) {
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.heightIn(min = 44.dp)) {
-                    Text(VaultDashboardModel.fixButtonTitle(runState), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text(VaultDashboardModel.fixButtonTitle(runState), color = OnAccent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }

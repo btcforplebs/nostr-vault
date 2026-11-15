@@ -468,9 +468,9 @@ fun ProfileScreen(
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                         ) {
-                            Icon(NostrVaultIcons.Marketplace, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Icon(NostrVaultIcons.Marketplace, contentDescription = null, tint = OnAccent, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Sell something", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text("Sell something", color = OnAccent, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

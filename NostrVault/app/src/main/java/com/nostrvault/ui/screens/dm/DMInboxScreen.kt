@@ -438,7 +438,7 @@ private fun ConversationRow(
                     Text(
                         // iOS shows the full count.
                         text = conversation.unreadCount.toString(),
-                        color = Color.White,
+                        color = OnAccent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier

@@ -85,7 +85,7 @@ internal fun ProfileActionRow(
                 ActionChip(
                     if (isFollowing) "Unfollow" else "Follow",
                     if (isFollowing) Icons.Filled.PersonRemove else NostrVaultIcons.PersonAdd,
-                    if (isFollowing) Color.White else colors.primary,
+                    if (isFollowing) OnAccent else colors.primary,
                     if (isFollowing) colors.primary else tint,
                     onClick = onFollow,
                     modifier = Modifier.weight(1f),
