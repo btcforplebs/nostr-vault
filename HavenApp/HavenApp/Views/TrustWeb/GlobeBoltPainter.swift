@@ -72,7 +72,7 @@ struct GlobeBoltPainter {
         return shape.alpha > 0.01 ? shape : nil
     }
 
-    static func draw(_ shapes: [Shape], in context: inout GraphicsContext, unit: Double) {
+    static func draw(_ shapes: [Shape], in context: inout GraphicsContext, unit: Double, core: Color = .white) {
         guard !shapes.isEmpty else { return }
         // The glow, all bolts in one blurred layer; a stronger zap glows wider.
         context.drawLayer { layer in
@@ -90,15 +90,15 @@ struct GlobeBoltPainter {
             context.drawLayer { layer in
                 layer.addFilter(.blur(radius: 2))
                 for s in flashing {
-                    layer.stroke(s.main, with: .color(.white.opacity(0.85 * s.alpha)),
+                    layer.stroke(s.main, with: .color(core.opacity(0.85 * s.alpha)),
                                  style: StrokeStyle(lineWidth: (3 + 3 * s.strength) * unit, lineCap: .round, lineJoin: .round))
                 }
             }
         }
         for s in shapes {
-            context.stroke(s.main, with: .color(.white.opacity(s.alpha)),
+            context.stroke(s.main, with: .color(core.opacity(s.alpha)),
                            style: StrokeStyle(lineWidth: (1.6 + 1.2 * s.strength) * unit, lineCap: .round, lineJoin: .round))
-            context.stroke(s.fork, with: .color(.white.opacity(0.8 * s.alpha)),
+            context.stroke(s.fork, with: .color(core.opacity(0.8 * s.alpha)),
                            style: StrokeStyle(lineWidth: (0.9 + 0.5 * s.strength) * unit, lineCap: .round, lineJoin: .round))
             // Where it strikes: a gold burst that opens and fades, and a thin
             // ring running out from it. Bigger for a bigger zap.
@@ -106,7 +106,7 @@ struct GlobeBoltPainter {
                 let scale = (1 + 0.8 * s.strength) * unit
                 let r = (6 + 16 * s.landing) * scale
                 context.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)),
-                             with: .radialGradient(Gradient(colors: [.white.opacity(0.9 * s.alpha * (1 - s.landing)),
+                             with: .radialGradient(Gradient(colors: [core.opacity(0.9 * s.alpha * (1 - s.landing)),
                                                                      color.opacity(0.8 * s.alpha * (1 - 0.6 * s.landing)), .clear]),
                                                    center: p, startRadius: 0, endRadius: r))
                 let ring = (8 + 26 * s.landing) * scale

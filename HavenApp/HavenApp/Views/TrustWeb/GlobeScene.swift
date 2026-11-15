@@ -551,10 +551,8 @@ final class GlobeScene: ObservableObject {
 
     // MARK: Drawing
 
-    private static let ringColor = Color(red: 0.72, green: 0.82, blue: 1)
-    private static let hazeColor = Color(red: 0.62, green: 0.55, blue: 0.9)
-    /// Warm amber for the threads, lighter than the glow behind them.
-    private static let threadColor = Color(red: 1, green: 0.66, blue: 0.3)
+    /// Night or day colours; the canvas sets this from `\.globeDay` each frame.
+    var ink: GlobeInk = .night
     /// How bright Everyone's few faces past your follows are drawn.
     private static let dimFace = 0.8
     /// Star brightness is rounded to this many steps, so each kind of star
@@ -620,9 +618,9 @@ final class GlobeScene: ObservableObject {
                              with: .color(color.opacity(Double(level) / Double(Self.levels))))
             }
         }
-        fill(.haze, Self.hazeColor)
-        fill(.ring, Self.ringColor)
-        fill(.mutual, .white)
+        fill(.haze, ink.haze)
+        fill(.ring, ink.ring)
+        fill(.mutual, ink.star)
 
         // Threads: core → bridge → author, drawn out over half a second.
         // Glow for every front thread goes in one blurred layer.
@@ -687,14 +685,14 @@ final class GlobeScene: ObservableObject {
             for level in 0..<bands {
                 let a = bandAlpha(level)
                 if !faint[level].isEmpty {
-                    context.stroke(faint[level], with: .color(Self.threadColor.opacity(a * 0.45)), lineWidth: 0.8)
+                    context.stroke(faint[level], with: .color(ink.thread.opacity(a * 0.45)), lineWidth: 0.8)
                 }
                 if !strong[level].isEmpty {
-                    context.stroke(strong[level], with: .color(Self.threadColor.opacity(a)), lineWidth: 1.3)
+                    context.stroke(strong[level], with: .color(ink.thread.opacity(a)), lineWidth: 1.3)
                 }
             }
             if !dashed.isEmpty {
-                context.stroke(dashed, with: .color(Self.threadColor.opacity(0.7)),
+                context.stroke(dashed, with: .color(ink.thread.opacity(0.7)),
                                style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round, dash: [5, 4]))
             }
         }
@@ -710,14 +708,14 @@ final class GlobeScene: ObservableObject {
         for key in faces {
             guard let p = position(key, project) else { continue }
             if traceTarget == nil, ringFaceSet.contains(key) {
-                drawn.append((key, p, Self.ringColor, 14, false))
+                drawn.append((key, p, ink.ring, 14, false))
             } else if traceTarget == nil, layerFaceSet.contains(key) {
-                drawn.append((key, p, Self.hazeColor, 14 - 2 * layerDim, dimLayer))
+                drawn.append((key, p, ink.haze, 14 - 2 * layerDim, dimLayer))
             } else {
                 drawn.append((key, p, accent, 15, false))
             }
         }
-        if let authorP { drawn.append((author, authorP, .yellow, 24, false)) }
+        if let authorP { drawn.append((author, authorP, ink.author, 24, false)) }
         // Faces the picked layer hides take no seat, so the lit ones get the room.
         drawn = drawn.filter { face in index[face.key].map { alpha[$0] * weight($0) > 0.02 } ?? true }
         drawn.sort { $0.p.depth < $1.p.depth }
@@ -778,7 +776,7 @@ final class GlobeScene: ObservableObject {
             if showLabel.contains(face.key) {
                 let text = context.resolve(Text(name(face.key))
                     .font(.system(size: face.key == author ? 14 : 11, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.9 * dim * shown * GlobeEdge.smoothstep(0.15, 0.35, face.p.depth))))
+                    .foregroundColor(ink.label.opacity(0.9 * dim * shown * GlobeEdge.smoothstep(0.15, 0.35, face.p.depth))))
                 context.draw(text, at: CGPoint(x: face.p.point.x, y: face.p.point.y + r + 10))
             }
         }
@@ -796,15 +794,15 @@ final class GlobeScene: ObservableObject {
                 guard !placed.contains(where: { $0.intersects(box) }) else { continue }
                 placed.append(box)
                 let text = context.resolve(Text(name(star.key)).font(.system(size: 10))
-                    .foregroundColor(.white.opacity(0.6 * star.a)))
+                    .foregroundColor(ink.label.opacity(0.6 * star.a)))
                 context.draw(text, at: CGPoint(x: star.at.x, y: star.at.y + star.r + 8))
             }
         }
 
         // The core last: it is always in front of its own shell.
-        drawFace(&context, key: center, at: core.point, r: coreR, tint: center == me ? accent : .white,
+        drawFace(&context, key: center, at: core.point, r: coreR, tint: center == me ? accent : ink.star,
                  opacity: 1, name: name)
-        let label = context.resolve(Text(name(center)).font(.system(size: 13, weight: .bold)).foregroundColor(.white))
+        let label = context.resolve(Text(name(center)).font(.system(size: 13, weight: .bold)).foregroundColor(ink.label))
         context.draw(label, at: CGPoint(x: core.point.x, y: core.point.y + coreR + 11))
     }
 
@@ -823,7 +821,7 @@ final class GlobeScene: ObservableObject {
 
     private func arcPainter(_ project: Projector, k: Double, zoom: Double) -> LiveArcsPainter {
         LiveArcsPainter(board: board, now: now, reduceMotion: reduceMotion, center: center, k: k, zoom: zoom,
-                        facing: project.facing, project: { project($0) }, place: arcPoint)
+                        facing: project.facing, project: { project($0) }, place: arcPoint, ink: ink)
     }
 
     private func drawFace(_ context: inout GraphicsContext, key: String, at p: CGPoint, r: Double,

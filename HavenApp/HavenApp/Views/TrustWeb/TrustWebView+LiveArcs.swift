@@ -318,9 +318,11 @@ struct LiveArcsPainter {
     /// Where someone sits on the globe; with a feed, where a star from them
     /// on that feed sets out.
     let place: (String, GlobeArcs.Ring?) -> SIMD3<Double>
+    /// Night or day colours, from the globe.
+    var ink: GlobeInk = .night
 
-    /// Every arrival is a small white star, like the stars of the globe itself.
-    static let starColor = Color.white
+    /// Every arrival is a small star in the globe's own star colour.
+    var starColor: Color { ink.star }
     /// A reaction's star beside a note's.
     static let reactionSize = 0.6
     /// Steps in a star's tail, each a little fainter and thinner than the last.
@@ -418,7 +420,7 @@ struct LiveArcsPainter {
                 }
             }
         }
-        let color = Self.starColor
+        let color = starColor
         for (band, path) in trails.paths {
             context.stroke(path, with: .color(color.opacity(0.14 * GlobeArcs.bandAlpha(band))),
                            style: StrokeStyle(lineWidth: 0.8, lineCap: .round, lineJoin: .round))
@@ -451,7 +453,7 @@ struct LiveArcsPainter {
             context.stroke(path, with: .color(color.opacity(GlobeArcs.bandAlpha(band))), lineWidth: 1)
         }
         // Bolts over the stars: a zap should flash brighter than a note.
-        GlobeBoltPainter.draw(bolts, in: &context, unit: unit)
+        GlobeBoltPainter.draw(bolts, in: &context, unit: unit, core: ink.boltCore)
     }
 
     /// Pictures at the ends of the lines, easing in as a star sets out and
@@ -475,7 +477,7 @@ struct LiveArcsPainter {
         }.sorted { $0.1.depth < $1.1.depth }
         for (key, p, a, edge) in faces {
             let r = GlobeEdge.faceRadius(13 * k * p.scale * min(zoom, 1.8), shown: edge)
-            face(&context, key, p.point, r, Self.starColor.opacity(0.85), a * edge * (0.4 + 0.6 * p.front))
+            face(&context, key, p.point, r, starColor.opacity(0.85), a * edge * (0.4 + 0.6 * p.front))
         }
     }
 }
