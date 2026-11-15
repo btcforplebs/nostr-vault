@@ -67,9 +67,11 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
   const note = HEX.test(view.params.get("note") ?? "") ? view.params.get("note") : null
   const dm = HEX.test(view.params.get("dm") ?? "") ? view.params.get("dm") : null
 
+  // Your own profile, with napplets on (plan step 5): the Feed's Reader, opened to it (reader-mine.js), so it is one frame.
+  const mine = nappletsOn() && view.route === "profile" && !other
   // Feed and Search stay mounted once opened, so going back to them keeps the list, its results and where you were.
-  const [kept, setKept] = useState({ feed: view.route === "feed", search: view.route === "search" })
-  useEffect(() => { if ((view.route === "feed" || view.route === "search") && !kept[view.route]) setKept(k => ({ ...k, [view.route]: true })) }, [view.route])
+  const [kept, setKept] = useState({ feed: view.route === "feed" || mine, search: view.route === "search" })
+  useEffect(() => { const k = mine ? "feed" : view.route; if ((k === "feed" || k === "search") && !kept[k]) setKept(was => ({ ...was, [k]: true })) }, [view.route, mine])
   // The screen a person was opened from names the crumb back to it.
   const from = useRef("search")
   if (!other && LABEL[view.route]) from.current = view.route
@@ -86,10 +88,11 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
 
   // The Reader's tapped note: its thread beside the list, as a classic row's (plan step 2).
   const openBeside = id => { location.hash = withParam(withParam(location.hash || "#/feed", "dm", null), "note", id); return true }
-  const listKey = other ? `person:${view.arg}` : view.route
+  const listKey = other ? `person:${view.arg}` : mine ? "feed" : view.route
+  const readerOpen = mine ? { archetype: "profile", action: "open", payload: { pubkey: me } } : readerOpenFor("feed", "", hash)
   const list = (
     <>
-      {kept.feed && <div class="desk-pane" hidden={listKey !== "feed"}>{nappletsOn() ? <ReaderPane ctx={ctx} open={readerOpenFor("feed", "", hash)} beside={openBeside} openId={note ?? ""} fullCompose /> : <FeedScreen ctx={ctx} />}</div>}
+      {kept.feed && <div class="desk-pane" hidden={listKey !== "feed"}>{nappletsOn() ? <ReaderPane ctx={ctx} open={readerOpen} beside={openBeside} openId={note ?? ""} fullCompose /> : <FeedScreen ctx={ctx} />}</div>}
       {kept.search && <div class="desk-pane" hidden={listKey !== "search"}><SearchScreen ctx={ctx} onProfile={pk => { location.hash = `#/profile/${pk}` }} /></div>}
       {listKey !== "feed" && listKey !== "search" && (
         <div class="desk-pane" key={listKey}>
