@@ -73,3 +73,52 @@ test("intents: the Reader only; real pages and filters only; a row only if hande
   off()
   assert.equal((await ask(reader, "state")).ok, false)
 })
+
+// One plan step 8b: the Vault's search in the Reader.
+const hs = { ...h, npubOf: pk => `npub1${pk.slice(0, 50)}` }
+const found = (over = {}) => ({ query: "sun", people: [], notes: [], articles: [], media: [], hashtags: [], links: [], cut: false, ...over })
+
+test("vault search: people as strings (a picture only if trusted), notes as events, empty sections out, routes by id", () => {
+  const note = { id: H("3"), kind: 1, pubkey: BOB, content: "sun", created_at: 1, sig: "s" }
+  const f = found({ people: [ANN, BOB, "nothex"], notes: [note], hashtags: ["sun", "bad tag!"], links: [{ url: "https://sun.example/a", title: "Sun", noteId: H("3") }, { url: "javascript:alert(1)", title: "x", noteId: H("4") }] })
+  const a = vaultAnswer({ ...base, mode: "activity", items: [], shown: 30, search: { text: "sun", found: f, busy: false } }, hs)
+  const s = a.data.search
+  assert.deepEqual(s.sections.map(x => [x.id, x.kind, x.count, x.rows.length]), [["people", "people", 3, 2], ["notes", "events", 1, 1], ["hashtags", "tags", 2, 1], ["links", "links", 2, 1]])
+  const [ann, bob] = s.sections[0].rows
+  assert.equal(ann.picture, "https://x/a.png"); assert.equal(bob.picture, "", "Bob isn't trusted"); assert.equal(bob.name, "Bob")
+  assert.equal(s.sections[1].rows[0], note)
+  assert.deepEqual(s.sections[3].rows[0], { url: "https://sun.example/a", title: "Sun", host: "sun.example", note: `note:${H("3")}` })
+  assert.equal(a.routes.get(ANN), `#/profile/${ANN}`); assert.equal(a.routes.get("tag:sun"), "#/feed?tag=sun"); assert.equal(a.routes.get(`note:${H("3")}`), `#/thread/${H("3")}`)
+  assert.equal(a.routes.has(`note:${H("4")}`), false, "a link left out hands out nothing")
+  assert.doesNotMatch(JSON.stringify(s), /#\//)
+})
+
+test("vault search: nothing typed is no search; one letter is short; a section is capped and says its full count", () => {
+  assert.equal(vaultAnswer({ ...base, mode: "activity", items: [], shown: 30, search: { text: "", found: null, busy: false } }, hs).data.search, null)
+  const one = vaultAnswer({ ...base, mode: "activity", items: [], shown: 30, search: { text: "s", found: null, busy: false } }, hs).data.search
+  assert.equal(one.short, true); assert.equal(one.sections, null)
+  const many = Array.from({ length: 250 }, (_, i) => ({ id: String(i).padStart(64, "0"), kind: 1, pubkey: ME, content: "sun", created_at: i, sig: "s" }))
+  const s = vaultAnswer({ ...base, mode: "activity", items: [], shown: 30, search: { text: "sun", found: found({ notes: many, cut: true }), busy: false } }, hs).data.search
+  assert.deepEqual([s.sections[0].count, s.sections[0].rows.length, s.cut, s.query], [250, 200, true, "sun"])
+})
+
+test("vault search intents: find sends text (now on Return), Reader only; a result opens only once handed out", async () => {
+  const found2 = found({ people: [ANN], hashtags: ["sun"] }), finds = [], opened = []
+  const bus = createBus()
+  const reader = { dTag: READER_DTAG, send: () => {} }, other = { dTag: "nv-wot", send: () => {} }
+  const ctl = { mode: () => "activity", choose: () => {}, more: () => {}, find: (t, now) => finds.push([t, now]) }
+  const off = vaultIntents({ bus, pipe: { ctl, answer: () => vaultAnswer({ ...base, mode: "activity", items: [], shown: 30, search: { text: "sun", found: found2, busy: false } }, hs) }, openHash: x => opened.push(x), openDashboard: () => {} })
+  const ask = (from, action, payload = {}) => bus.invoke(from, { archetype: "vault", action, payload })
+  assert.equal((await ask(other, "find", { text: "sun" })).ok, false)
+  assert.equal((await ask(reader, "find", { text: 5 })).ok, false)
+  assert.equal((await ask(reader, "find", { text: "sun" })).ok, true)
+  assert.equal((await ask(reader, "find", { text: "sun", now: true })).ok, true)
+  assert.deepEqual(finds, [["sun", false], ["sun", true]])
+  assert.equal((await ask(reader, "open", { id: "tag:sun" })).ok, false, "nothing handed out yet")
+  await ask(reader, "state")
+  assert.equal((await ask(reader, "open", { id: "tag:sun" })).ok, true)
+  assert.equal((await ask(reader, "open", { id: ANN })).ok, true)
+  assert.equal((await ask(reader, "open", { id: "tag:other" })).ok, false)
+  assert.deepEqual(opened, ["#/feed?tag=sun", `#/profile/${ANN}`])
+  off()
+})

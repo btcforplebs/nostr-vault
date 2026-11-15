@@ -187,7 +187,7 @@ export function ReaderPane({ ctx, open = null, hidden = false, beside = null, op
     vaultPipe.tell = () => bus.emit(wire.me, VAULT_TOPIC, {})
     const offVault = vaultIntents({
       bus, openHash: to => { location.hash = to }, openDashboard,
-      pipe: { get ctl() { return vaultPipe.ctl }, answer: () => (vaultPipe.last ? vaultAnswer(vaultPipe.last, { profileOf: getProfile, verbOf: vaultVerb, whoOf: whoText, hrefOf: lineHref, formatSats, now: Math.floor(Date.now() / 1000) }) : null) },
+      pipe: { get ctl() { return vaultPipe.ctl }, answer: () => (vaultPipe.last ? vaultAnswer(vaultPipe.last, { profileOf: getProfile, npubOf: npubEncode, verbOf: vaultVerb, whoOf: whoText, hrefOf: lineHref, formatSats, now: Math.floor(Date.now() / 1000) }) : null) },
     })
     const offMine = mineIntents({
       bus,
