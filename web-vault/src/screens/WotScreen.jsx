@@ -177,7 +177,7 @@ export function WotScreen({ ctx, pubkey }) {
   const noList = root !== me && frame?.ring && !frame.listFound ? `No relay had ${whose}'s follow list.` : ""
 
   return (
-    <main class="screen wot">
+    <main class="screen wot" data-theme="dark">
       {showing && <WotGlobe key={showing.root} web={showing.web} nodes={showing.nodes} picked={picked} onPick={tapped} centre={centre} onCentred={() => setCentre(null)}
         layer={showing.root === me ? layer : "everyone"} lit={lit} path={path} whose={showing.root === me ? null : nameOf(showing.root)} />}
       <div class="wot-top">

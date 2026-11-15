@@ -1,6 +1,6 @@
 /* Nostr Vault design tokens, taken from the iOS app (HavenApp/HavenApp/Services/Theming.swift).
    The app has one appearance: OLED black with the orange accent. Spec: PLANS/NV_WEB_DESIGN.md. */
-:root {
+:root, [data-theme="dark"] {
   color-scheme: dark;
 
   /* Surface ramp: Apple's dark grouped-background steps (surface0..3). */
@@ -38,6 +38,12 @@
   --s1-hover: #222224;
   --action: rgb(235 235 245 / .60);
   --action-bg: rgb(235 235 245 / .10);
+
+  /* The chosen segment of a segmented pill (iOS dark selected segment). */
+  --seg-on: #636366;
+
+  /* Menus that open over the page (the feed picker). */
+  --menu: rgb(44 44 46 / .94);
 
   /* Glass (tab bar, top chrome). */
   --glass: rgb(40 40 42 / .55);
