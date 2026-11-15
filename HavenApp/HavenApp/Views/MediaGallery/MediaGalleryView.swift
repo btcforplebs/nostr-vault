@@ -27,6 +27,9 @@ struct MediaGalleryView: View {
     /// Scroll target for tapping the Media tab again.
     static let topAnchor = "mediaTop"
     @State var selectedMedia: MediaItem? = nil
+    /// iPhone/iPad: the shared zoom viewer showing `selectedMedia`.
+    @State var viewerItem: IdentifiableURL?
+    @Namespace var mediaZoom
     /// The viewer's Delete menu choice, waiting on its confirmation.
     @State var pendingViewerDelete: MediaDeleteScope?
     @State var initialLoad = false
@@ -525,7 +528,9 @@ struct MediaGalleryView: View {
             showingPhotoPicker: $showingPhotoPicker,
             selectedUploadItems: $selectedUploadItems,
             photosPickerFilter: photosPickerFilter,
-            mediaViewerContent: { item in AnyView(mediaViewerContent(for: item)) },
+            viewerItem: $viewerItem,
+            zoomNamespace: mediaZoom,
+            makeViewerItem: { makeViewerItem(for: $0) },
             fullScreenOverlay: { AnyView(fullScreenOverlay) },
             onUploadFiles: { handleUploadFileURLs($0) },
             onUploadItems: { items in
@@ -664,7 +669,9 @@ struct MediaGallerySheetsModifier: ViewModifier {
     @Binding var showingPhotoPicker: Bool
     @Binding var selectedUploadItems: [PhotosPickerItem]
     let photosPickerFilter: PHPickerFilter
-    let mediaViewerContent: (MediaItem) -> AnyView
+    @Binding var viewerItem: IdentifiableURL?
+    let zoomNamespace: Namespace.ID
+    let makeViewerItem: (MediaItem) -> IdentifiableURL
     let fullScreenOverlay: () -> AnyView
     let onUploadFiles: ([URL]) -> Void
     let onUploadItems: ([PhotosPickerItem]) -> Void
@@ -675,10 +682,18 @@ struct MediaGallerySheetsModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             #if os(iOS)
-            .fullScreenCover(isPresented: isPresentingViewer) {
-                if let item = selectedMedia {
-                    mediaViewerContent(item)
+            // The feed's viewer: zooms out of the tile, same buttons and
+            // player, swipe down to put it back.
+            .mediaViewer(item: $viewerItem, namespace: zoomNamespace)
+            .onChange(of: selectedMedia) { _, item in
+                if let item {
+                    if viewerItem == nil { viewerItem = makeViewerItem(item) }
+                } else {
+                    viewerItem = nil
                 }
+            }
+            .onChange(of: viewerItem == nil) { _, closed in
+                if closed { isPresentingViewer.wrappedValue = false }
             }
             #else
             .overlay(fullScreenOverlay())

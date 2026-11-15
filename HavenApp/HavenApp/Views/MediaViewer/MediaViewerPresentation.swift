@@ -29,6 +29,27 @@ extension EnvironmentValues {
     }
 }
 
+/// What a screen with its own media list (the Media page, a profile's media
+/// grid) adds to the shared viewer. The feed passes none of it.
+struct MediaViewerExtras {
+    /// The screen already knows each file's type; the viewer then never
+    /// guesses from the network.
+    var mimeHint: (URL) -> String? = { _ in nil }
+    /// The note a file came from, for the mesh fallback.
+    var meshNote: (URL) -> MeshMediaNote? = { _ in nil }
+    /// Pages the photo and clip viewer cannot draw (audio, unknown files).
+    var customPage: (URL) -> AnyView? = { _ in nil }
+    /// Under the buttons: where the file lives and its backups.
+    var badge: ((URL) -> AnyView)? = nil
+    /// The screen's own delete, with its own tidy-up (the tile goes).
+    var onDelete: ((URL, MediaDeleteScope) -> Void)? = nil
+    /// Notes that use the file, behind a Notes grabber at the bottom.
+    var notes: ((URL) -> [NostrEvent])? = nil
+    var onOpenNote: ((String) -> Void)? = nil
+    /// The page swiped to, so the screen can follow it.
+    var onPage: ((URL) -> Void)? = nil
+}
+
 private struct MediaViewerPageKey: EnvironmentKey {
     static let defaultValue: URL? = nil
 }
@@ -69,7 +90,8 @@ private struct MediaViewerPresentation: ViewModifier {
                 .environment(\.mediaZoomNamespace, namespace)
                 .environment(\.mediaViewerPage, item == nil ? nil : page)
                 .fullScreenCover(item: $item, onDismiss: { page = nil }) { media in
-                    FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { item = nil }, onPage: { page = $0 })
+                    FeedMediaPager(urls: media.allURLs, selected: media.url, extras: media.extras,
+                                   onDismiss: { item = nil }, onPage: { page = $0; media.extras?.onPage?($0) })
                         .environment(\.mediaZoomPresented, true)
                         .presentationBackground(.clear)
                         // Close into the photo on screen, not the one tapped.
@@ -85,7 +107,8 @@ private struct MediaViewerPresentation: ViewModifier {
 
     private func sheetFallback(_ content: Content) -> some View {
         content.sheet(item: $item) { media in
-            FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { item = nil })
+            FeedMediaPager(urls: media.allURLs, selected: media.url, extras: media.extras,
+                           onDismiss: { item = nil }, onPage: { media.extras?.onPage?($0) })
         }
     }
 }

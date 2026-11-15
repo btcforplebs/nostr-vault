@@ -9,6 +9,8 @@ struct FeedMediaViewer: View {
     var onDismiss: (() -> Void)? = nil
     /// False for the pages a pager builds either side of the one showing.
     var isOnScreen: Bool = true
+    /// What the opening screen adds (Media page, profile grid); nil from the feed.
+    var extras: MediaViewerExtras? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.mediaZoomPresented) private var zoomPresented
     @EnvironmentObject var nostrService: NostrService
@@ -30,14 +32,16 @@ struct FeedMediaViewer: View {
     /// turns upright before the viewer zooms back into the post.
     @State private var closeStarted = false
 
-    init(url: URL, enableDragDismiss: Bool = true, isOnScreen: Bool = true, onDismiss: (() -> Void)? = nil) {
+    init(url: URL, enableDragDismiss: Bool = true, isOnScreen: Bool = true,
+         extras: MediaViewerExtras? = nil, onDismiss: (() -> Void)? = nil) {
         self.url = url
         self.enableDragDismiss = enableDragDismiss
         self.isOnScreen = isOnScreen
+        self.extras = extras
         self.onDismiss = onDismiss
         // A kind the feed already resolved is known before the first frame,
         // so the zoom never catches a spinner.
-        if let kind = MediaKindResolver.cachedKind(for: url) {
+        if let kind = MediaKindResolver.cachedKind(for: url, mimeHint: extras?.mimeHint(url)) {
             _isVideo = State(initialValue: kind == .video)
             _isGIF = State(initialValue: kind == .gif)
             _isLoadingType = State(initialValue: false)
@@ -52,6 +56,7 @@ struct FeedMediaViewer: View {
     /// server the user happens to list as a mirror is NOT their backup.
     @State var isOnMirror: Bool = false
     @State var pendingDelete: MediaDeleteScope?
+    @State private var showingNotes = false
     @State var deleteStatus: DeleteStatus? = nil
 
     enum MirrorStatus {
@@ -116,7 +121,9 @@ struct FeedMediaViewer: View {
                 .background { if zoomPresented { ZoomSwipeProbe(watch: zoomSwipe) } }
             
             Group {
-                if isLoadingType {
+                if let custom = extras?.customPage(url) {
+                    custom
+                } else if isLoadingType {
                     ProgressView().tint(.white)
                 } else if isVideo {
                     FullScreenVideoPlayer(url: url, onPiPStart: { performDismiss() })
@@ -125,6 +132,10 @@ struct FeedMediaViewer: View {
                 } else {
                     MediaViewerPhoto(url: url)
                 }
+            }
+            // The screen's own note for the file, for the mesh fallback.
+            .transformEnvironment(\.meshMediaNote) { note in
+                if let own = extras?.meshNote(url) { note = own }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .scaleEffect(scale * dragShrink)
@@ -220,9 +231,12 @@ struct FeedMediaViewer: View {
             VStack {
                 HStack {
                     if !isLoadingType {
-                        actionBar()
-                            .padding(.leading, 16)
-                            .padding(.vertical, 20)
+                        VStack(alignment: .leading, spacing: 8) {
+                            actionBar()
+                            extras?.badge?(url)
+                        }
+                        .padding(.leading, 16)
+                        .padding(.vertical, 20)
                     }
                     Spacer()
                     Button {
@@ -238,6 +252,18 @@ struct FeedMediaViewer: View {
                     .buttonStyle(.plain)
                 }
                 Spacer()
+
+                if extras?.notes != nil {
+                    // Tap, or swipe up on it. A swipe on the photo itself is
+                    // the zoom's close, so the grabber carries the swipe up.
+                    MediaViewerNoteGrabber(title: "Notes") { showingNotes = true }
+                        .simultaneousGesture(
+                            DragGesture(minimumDistance: 12).onEnded { value in
+                                if value.translation.height < -24 { showingNotes = true }
+                            }
+                        )
+                        .padding(.bottom, 24)
+                }
             }
             // The buttons get out of the way as soon as you pull, like Photos.
             .opacity(controlsOpacity)
@@ -251,7 +277,19 @@ struct FeedMediaViewer: View {
                 deleteStatusView(status)
             }
         }
+        .sheet(isPresented: $showingNotes) {
+            MediaNotesSheet(notes: extras?.notes?(url) ?? []) { id in
+                showingNotes = false
+                extras?.onOpenNote?(id)
+            }
+            .environmentObject(nostrService)
+        }
         .confirmMediaDelete($pendingDelete, hash: extractSHA256FromURL()) { scope in
+            // A screen with its own list deletes with its own tidy-up.
+            if let onDelete = extras?.onDelete {
+                onDelete(url, scope)
+                return
+            }
             switch scope {
             case .mirrors: deleteFromMirrorsTapped()
             case .everywhere: deleteEverywhereTapped()
@@ -283,14 +321,15 @@ struct FeedMediaViewer: View {
     }
     
     private func detectType() {
-        if let kind = MediaKindResolver.cachedKind(for: url) {
+        let hint = extras?.mimeHint(url)
+        if let kind = MediaKindResolver.cachedKind(for: url, mimeHint: hint) {
             apply(kind)
             isLoadingType = false
             return
         }
         isLoadingType = true
         Task { @MainActor in
-            apply(await MediaKindResolver.kind(for: url))
+            apply(await MediaKindResolver.kind(for: url, mimeHint: hint))
             isLoadingType = false
         }
     }

@@ -248,6 +248,43 @@ extension MediaGalleryView {
         #endif
     }
 
+    // MARK: Shared viewer (iPhone/iPad)
+
+    /// Opens the feed's viewer on `item`, paging across the Media page as it
+    /// is sorted and filtered, with what only this page has: the vault
+    /// badge, the notes that use the file, and its own delete.
+    func makeViewerItem(for item: MediaItem) -> IdentifiableURL {
+        let byURL = Dictionary(displayMedia.map { ($0.url, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen = Set<URL>()
+        let urls = displayMedia.map(\.url).filter { seen.insert($0).inserted }
+        let extras = MediaViewerExtras(
+            mimeHint: { byURL[$0]?.mimeType },
+            meshNote: { url in
+                byURL[url].flatMap { item in item.pubkey.map { MeshMediaNote(author: $0, tags: item.tags ?? []) } }
+            },
+            customPage: { url in
+                guard let item = byURL[url], item.type == .audio || item.type == .unknown else { return nil }
+                return AnyView(MediaItemRenderer(mediaItem: item))
+            },
+            badge: { url in
+                AnyView(SourceIndicatorView(url: url, onMirrorComplete: { loadLocalMedia(force: true) }))
+            },
+            onDelete: { url, scope in
+                guard let item = byURL[url] else { return }
+                switch scope {
+                case .mirrors: deleteMediaFromMirrors(item: item)
+                case .everywhere: deleteMediaEverywhere(item: item)
+                }
+            },
+            notes: { url in byURL[url].map { notesUsing($0) } ?? [] },
+            onOpenNote: { openNoteFromViewer($0) },
+            onPage: { url in
+                if let item = byURL[url] { selectedMedia = item }
+            }
+        )
+        return IdentifiableURL(url: item.url, allURLs: urls, extras: extras)
+    }
+
     // MARK: Full-Screen Overlay
 
     /// macOS path: traditional in-window overlay.
