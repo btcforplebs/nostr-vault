@@ -16,6 +16,8 @@ import { appStore, updateFor, removeApp, retireVersion, MAX_ARTIFACT } from "./c
 import { parseManifest, nappletKey, domainsFor } from "./manifest.js"
 import { idbNappletStorage, idbArtifacts } from "./storage-idb.js"
 import { VaultPagesMenu } from "../screens/VaultPagesMenu.jsx"
+import { changeLayout } from "../desktop/space/layout-store.js"
+import { dropApp } from "../desktop/space/columns.js"
 import "./napplet.css"
 
 const short = pk => `${pk.slice(0, 8)}…`
@@ -100,6 +102,7 @@ export function NappletShell({ ctx, showSwitch = true, vaultMenu = false }) {
   async function remove(app) {
     if (open?.line === app.line) open.mounted.close()
     await removeApp(app.line, { apps, grants, storage, artifacts })
+    changeLayout(account, l => dropApp(l, app.line)) // its cards in the side columns go too (desktop/space/columns.js)
     setNote(`Removed ${parseManifest(app.event).title}, with what it kept and what it was allowed.`)
     bump(n => n + 1)
   }

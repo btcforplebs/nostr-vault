@@ -97,6 +97,17 @@ The `panels` rules are the ones `space-layout.js` already keeps:
   shown and open.
 - **Default panels:** every panel, in `panels.js` order, `on` and `open`.
 
+**Web only, the two side columns** (`desktop/space/columns.js`, plan NV_WEB_ONE_PLAN.md step 3). The same `panels`
+array holds the cards of both desktop side columns. Each entry may also carry:
+
+- `side`: `"left"` puts it in the left column, under the menu. Missing means the right column (Your space), so a
+  layout from before this has every panel where it was. The left column shows at 1280px and wider.
+- `size`: `"S"`, `"M"` or `"L"` (160, 320 or 560px tall). Missing means the panel's own height; an app card is M.
+- App cards: `id` = `napplet:<publisher hex>:<d>`, an app this account installed (`napplet/catalog.js`). Taking one
+  off deletes its entry; removing the app deletes it too. The iPad keeps these entries as unknown ids.
+
+Reset puts back the default panels: every panel on the right, the left column empty, no app cards.
+
 Folding the whole Your space column is **not** in the layout. It stays per
 device (`nv-space-folded:<pubkey>`), because a narrow window and a wide one
 want different answers.

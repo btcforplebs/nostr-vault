@@ -24,7 +24,7 @@ export const EditTools = ({ name, first, last, onMove, onHide, sizes = null, siz
     {sizes && (
       <span class="sp-sizes" role="radiogroup" aria-label={`Size of ${name}`}>
         {sizes.map(s => (
-          <button key={s ?? "fit"} type="button" role="radio" aria-checked={size === s} class={size === s ? "sp-size on" : "sp-size"}
+          <button key={s ?? "fit"} type="button" role="radio" aria-checked={size === s} aria-label={s ? SIZE_WORD[s] : "Its own height"} class={size === s ? "sp-size on" : "sp-size"}
             title={s ? `${SIZE_WORD[s]} (${name})` : `Its own height (${name})`} onClick={() => onSize(s)}>{s ?? "Fit"}</button>
         ))}
       </span>

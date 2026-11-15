@@ -87,7 +87,7 @@
 .sp-tools .sp-off:hover { color: var(--red); }
 .sp-grip { display: inline-grid; place-items: center; width: 24px; height: 28px; color: var(--text-3); cursor: grab; }
 .sp-cards.editing .sp-slot { cursor: grab; }
-.sp-cards.editing .sp-panel { border-style: dashed; }
+.sp-cards.editing .sp-panel { border-style: dashed; max-height: none; } /* headers only while editing: no panel cap clips the tools */
 /* A slot is a box only while editing (to drag and to draw the drop line); otherwise it is not there, so the panels
    share the column's height as they always have. */
 .sp-slot { position: relative; display: flex; flex-direction: column; flex: none; }
@@ -149,8 +149,11 @@
 .sp-app-menu .danger { color: var(--danger); }
 
 /* + Add's sheet (AddSheet.jsx). */
-.sp-addsheet { display: grid; gap: 10px; width: min(520px, calc(100vw - 64px)); }
+.mod-dialog:has(.sp-addsheet) { width: min(520px, calc(100vw - 32px)); }
+.sp-addsheet { display: grid; gap: 10px; min-width: 0; }
+.sp-addsheet .apps-row { min-width: 0; }
 .sp-addsheet h3 { margin: 0; }
+.sp-addsheet .apps-head .sp-link { font: 600 12px var(--font); }
 .sp-addsheet h4 { margin: 6px 0 6px; font: 600 12px var(--font); letter-spacing: .04em; text-transform: uppercase; color: var(--text-3); }
 .sp-addsheet .apps-list { max-height: 34vh; overflow-y: auto; }
 .sp-addsheet-side { display: inline-flex; justify-self: start; gap: 2px; padding: 3px; border-radius: 999px; background: var(--s2); }
