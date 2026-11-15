@@ -15,10 +15,26 @@ export function statsOf(id, { state = {}, reaction = null, total = { sats: 0, mi
   }
 }
 
-/** The emoji a napplet asked to react with: one emoji, at most 16 characters; anything else is no emoji (a plain tap:
- *  the heart, or taking your reaction back). */
+// Built lazily and guarded: a /v regex literal or a top-level Intl.Segmenter would break this whole chunk on browsers
+// without them (Safari < 17, Firefox < 125). There, a napplet's emoji is just refused (a plain tap still likes).
+let rules
+function emojiRules() {
+  if (rules === undefined) {
+    try {
+      rules = { graphemes: new Intl.Segmenter(undefined, { granularity: "grapheme" }),
+        format: new RegExp("[\\p{Cf}--[\\u200D\\uFE0F]]", "v"), emoji: new RegExp("^\\p{RGI_Emoji}$", "v") }
+    } catch { rules = null }
+  }
+  return rules
+}
+
+/** The emoji a napplet asked to react with: exactly one emoji (one grapheme that is a whole RGI emoji, so no text after
+ *  it, no repeats, no direction or other format characters beside ZWJ and VS16). Anything else is no emoji (a plain
+ *  tap: the heart, or taking your reaction back). */
 export function askedEmoji(raw) {
   if (typeof raw !== "string") return undefined
   const t = raw.trim()
-  return t && t.length <= 16 && /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(t) && !/[<>"'`\\]/.test(t) ? t : undefined
+  const r = emojiRules()
+  if (!t || t.length > 16 || !r || r.format.test(t)) return undefined
+  return [...r.graphemes.segment(t)].length === 1 && r.emoji.test(t) ? t : undefined
 }

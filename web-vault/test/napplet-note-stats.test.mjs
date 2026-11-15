@@ -22,7 +22,13 @@ test("statsOf: your Like as a word, the emoji only when it's yours, zap sats as 
 test("askedEmoji: one emoji only; text, markup and long strings are no emoji", () => {
   assert.equal(askedEmoji("🔥"), "🔥")
   assert.equal(askedEmoji(" ❤️ "), "❤️")
-  for (const x of ["+", "hello", "<img>", "🔥".repeat(10), 5, null, ""]) assert.equal(askedEmoji(x), undefined, String(x))
+  assert.equal(askedEmoji("👩‍👩‍👧"), "👩‍👩‍👧", "a ZWJ family is one emoji")
+  assert.equal(askedEmoji("🇺🇸"), "🇺🇸")
+  for (const x of ["+", "hello", "<img>", "🔥".repeat(10), "🔥🔥", "❤️ buy now", "🤙\u202e", "\u202e🤙", "🤙\u200b", 5, null, ""]) assert.equal(askedEmoji(x), undefined, JSON.stringify(x))
+  // Tron #2088: text riding along, repeats under the old 16-char cap, and a right-to-left override are no emoji.
+  for (const x of ["❤️ buy now", "🔥".repeat(8), "🔥🔥", "🤙\u202E", "\u202E🤙", "🤙\u200B", "a"]) assert.equal(askedEmoji(x), undefined, JSON.stringify(x))
+  // Still one emoji: ZWJ sequences, skin tones, flags, keycaps.
+  for (const x of ["👨‍👩‍👧‍👦", "👍🏽", "🇺🇸", "1️⃣", "🤙"]) assert.equal(askedEmoji(x), x, x)
 })
 
 test("note/stats and note/like: Reader only, signed notes (and article/highlight/poll, repost's inner); emoji passed through", async () => {
