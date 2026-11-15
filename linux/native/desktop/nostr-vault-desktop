@@ -330,7 +330,8 @@ class App(Gtk.Application):
     def load_local(self, name, state):
         """One of this app's own pages (setup, waiting), with its state handed in before its script runs."""
         with open(os.path.join(SHARE, name), encoding="utf-8") as f:
-            html = f.read().replace("/*NV_STATE*/null", json.dumps(state))
+            # Inside an inline <script>: no "<" may survive, or a drive named "</script>…" writes the page.
+            html = f.read().replace("/*NV_STATE*/null", json.dumps(state).replace("<", "\\u003c"))
         self.view.load_html(html, "nv-desktop://local/")
 
     def load_setup(self):
@@ -402,7 +403,7 @@ class App(Gtk.Application):
                 or not (self.view.get_uri() or "").startswith("nv-desktop://local/"):
             return
         what = msg.get("do")
-        if what == "setup" and not self.setup_running:
+        if what == "setup" and self.page == "setup" and not self.setup_running:
             self.run_setup(str(msg.get("owner", "")), str(msg.get("data", "")), bool(msg.get("sdOk")), bool(msg.get("newOk")))
         elif what == "start":
             self.run_root(["systemctl", "start", "nostr-vault.service"], "Couldn't start the vault")

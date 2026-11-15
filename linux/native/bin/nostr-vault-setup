@@ -53,8 +53,17 @@ data=${data:-$(old NV_DATA_DIR)}; data=${data:-$DEFAULT_DATA}; data=${data%/}
 case "$data" in /*) ;; *) die "--data must be a full path, starting with /" ;; esac
 case "$data" in *[!A-Za-z0-9._/@+-]*) die "--data may only have letters, digits and . _ / @ + - in it" ;; esac
 case "$data" in /|/bin*|/boot*|/dev*|/etc*|/lib*|/proc*|/run*|/sbin*|/sys*|/usr*|/tmp*) die "$data is a system folder; pick another place" ;; esac
+case "$data" in */./*|*/../*|*/.|*/..) die "--data must not have . or .. in it" ;; esac
 [ -L "$data" ] && die "$data is a symlink; give the real path"
 [ -e "$data" ] && [ ! -d "$data" ] && die "$data is a file, not a folder"
+# The vault takes the folder over (prepare gives it to the vault's user), so never a top folder (/var, /home, /srv…)
+# or someone's home, and only a folder that is new, empty, or already a vault: never one full of other files.
+case "$data" in /*/*) ;; *) die "$data is a top-level folder; pick a folder inside it, e.g. $data/nostr-vault" ;; esac
+case "$data" in /root|/root/*) die "$data is root's home; pick another place" ;; esac
+case "$data" in /home/*/*) ;; /home/*) die "$data is someone's home folder; pick a folder inside it, e.g. $data/nostr-vault" ;; esac
+if [ -d "$data" ] && [ -n "$(ls -A "$data")" ] && [ ! -d "$data/box" ] && [ ! -d "$data/mesh" ] && [ ! -d "$data/vault" ]; then
+  die "$data already has other files in it; pick a new or empty folder (e.g. $data/nostr-vault)"
+fi
 at=$data; while [ ! -e "$at" ]; do at=$(dirname "$at"); done
 case "$(df -P "$at" | awk 'NR == 2 { print $1 }')" in
   /dev/mmcblk*) [ "$sd_ok" = 1 ] || die "$data is on an SD card, which a vault wears out (a USB SSD is much better); add --sd-ok to use it anyway" ;;

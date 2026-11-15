@@ -1,28 +1,56 @@
 #!/bin/sh
 # Run as root by nostr-vault-prepare.service before the vault and the mesh start: the native twin of what
 # supervise.sh does in the container. Only the two top folders are set; the rest is left as the programs made it.
-# A data dir brought over from the Docker box (same uids, 10002 and 10001) needs nothing more. If the users got other
-# uids here, the folders the container's users owned are handed to ours, once.
+#
+# The vault (nvvault) faces the network and owns the data dir, so it can rename or replace anything in it. As root,
+# this script must never follow a link it planted or take over a folder it made: both services are stopped while it
+# runs (they Require it), so one check before each change holds. It hands a folder over only when it is new (root's,
+# made here) or the Docker box's (the container's uids, 10002 vault and 10001 mesh, when ours differ); anything else
+# it refuses, and the vault doesn't start until the owner looks.
 set -eu
 : "${NV_DATA_DIR:=/var/lib/nostr-vault}"
 die() { echo "prepare: $*" >&2; exit 1; }
 case "$NV_DATA_DIR" in /*) ;; *) die "NV_DATA_DIR must be a full path" ;; esac
+case "$NV_DATA_DIR" in */./*|*/../*|*/.|*/..) die "NV_DATA_DIR must not have . or .. in it" ;; esac
 [ -L "$NV_DATA_DIR" ] && die "$NV_DATA_DIR is a symlink; give the real path"
 vault=$(id -u nvvault) || die "no nvvault user (reinstall nostr-vault)"
 mesh=$(id -u nvmesh) || die "no nvmesh user (reinstall nostr-vault)"
+DOCKER_VAULT=10002 DOCKER_MESH=10001
+# The container's uid counts as the Docker box's only when no account here has it: if one does, it is a person's
+# (that's why our user got another uid), and their files are never taken.
+docker_uid() { [ "$1" = "$2" ] && ! getent passwd "$1" >/dev/null; } # docker_uid <owner> <container uid>
 
+# The data dir: the vault's. New (made here, root's) or the Docker box's are taken over; any other owner is refused,
+# so a folder of someone else's never becomes the vault's.
 mkdir -p "$NV_DATA_DIR"
-# A Docker box's data under other uids than ours: hand it over (vault's files to nvvault, mesh/ to nvmesh).
+if [ ! -d "$NV_DATA_DIR" ] || [ -L "$NV_DATA_DIR" ]; then die "$NV_DATA_DIR isn't a folder"; fi
 cur=$(stat -c %u "$NV_DATA_DIR")
-if [ "$cur" != "$vault" ] && [ "$cur" != 0 ]; then
-  echo "prepare: $NV_DATA_DIR belongs to uid $cur; giving it to nvvault ($vault)" >&2
+if [ "$cur" = "$vault" ]; then :
+elif [ "$cur" = 0 ]; then
+  [ -z "$(ls -A "$NV_DATA_DIR")" ] || die "$NV_DATA_DIR belongs to root and isn't empty; give the vault a new or empty folder"
+elif docker_uid "$cur" "$DOCKER_VAULT"; then
+  echo "prepare: $NV_DATA_DIR is the Docker box's (uid $cur); giving its files to nvvault ($vault)" >&2
   find "$NV_DATA_DIR" -xdev -path "$NV_DATA_DIR/mesh" -prune -o -user "$cur" -exec chown -h "$vault:$vault" {} +
+else
+  die "$NV_DATA_DIR belongs to uid $cur, not the vault; give the vault a new or empty folder"
 fi
-chown "$vault:$vault" "$NV_DATA_DIR" && chmod 711 "$NV_DATA_DIR"
-mkdir -p "$NV_DATA_DIR/mesh"
-cur=$(stat -c %u "$NV_DATA_DIR/mesh")
-if [ "$cur" != "$mesh" ]; then
-  echo "prepare: $NV_DATA_DIR/mesh belongs to uid $cur; giving it to nvmesh ($mesh)" >&2
-  chown -hR "$mesh:$mesh" "$NV_DATA_DIR/mesh"
+chown -h "$vault:$vault" "$NV_DATA_DIR" && chmod 711 "$NV_DATA_DIR"
+
+# mesh/: the mesh's (its key lives in it). The vault can write the data dir, so mesh/ may be anything by now: never
+# follow a link, and never take over a mesh/ the vault made (it would pick the box's mesh key).
+m=$NV_DATA_DIR/mesh
+if [ -L "$m" ]; then die "$m is a symlink; something replaced the mesh's folder (the vault stays stopped)"; fi
+if [ ! -e "$m" ]; then
+  mkdir -m 755 "$m"
+  chown -h "$mesh:$mesh" "$m"
 fi
-chmod 755 "$NV_DATA_DIR/mesh"
+[ -d "$m" ] || die "$m isn't a folder (the vault stays stopped)"
+cur=$(stat -c %u "$m")
+if [ "$cur" = "$mesh" ]; then :
+elif docker_uid "$cur" "$DOCKER_MESH"; then
+  echo "prepare: $m is the Docker box's (uid $cur); giving it to nvmesh ($mesh)" >&2
+  chown -hR "$mesh:$mesh" "$m"
+else
+  die "$m belongs to uid $cur, not the mesh; something replaced the mesh's folder (the vault stays stopped)"
+fi
+chmod 755 "$m"
