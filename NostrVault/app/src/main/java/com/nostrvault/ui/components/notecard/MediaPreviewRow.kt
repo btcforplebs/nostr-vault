@@ -29,6 +29,8 @@ import kotlinx.coroutines.delay
 private val VIDEO_EXTENSIONS = setOf("mp4", "mov", "webm", "avi", "mkv", "m4v")
 
 internal fun isVideoUrl(url: String): Boolean {
+    // A locked DM file (kind 15): its type is in the link's fragment, not its path.
+    if (com.nostrvault.service.DMFile.isFileLink(url)) return com.nostrvault.service.DMFile.isVideoLink(url)
     val ext = url.substringAfterLast('.').substringBefore('?').lowercase()
     return ext in VIDEO_EXTENSIONS
 }

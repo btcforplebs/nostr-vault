@@ -114,4 +114,15 @@ class DMFileVectorsTest {
         assertEquals("Photo", DMFile.previewOf(DMFile.fileLink("https://a.example/f", "1".repeat(64), "2".repeat(24), null, null)))
         assertNull(DMFile.previewOf("https://plain.example/a.png"))
     }
+
+    @Test
+    fun `the video vector shows as a video in the thread`() {
+        val v = vectors.single { it.s("id") == "mp4-video-12-byte-nonce" }
+        val kept = DMFile.contentOf(v["rumor"]!!.jsonObject)!!
+        assertTrue(DMFile.isVideoLink(kept))
+        // Its size (the size tag) rides along, so the tile shows it before anything loads.
+        assertEquals(v["size"]!!.jsonPrimitive.int.toLong(), DMFile.parseFileLink(kept)!!.size)
+        val parts = com.nostrvault.ui.screens.dm.DMAttachment.split(kept, withVideos = true)
+        assertEquals(listOf(kept), parts.videos)
+    }
 }

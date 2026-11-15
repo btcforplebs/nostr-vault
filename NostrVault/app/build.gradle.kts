@@ -207,6 +207,9 @@ dependencies {
     // Music: a MediaSessionService keeps Wavlake playing in the background
     // with notification and lock-screen controls.
     implementation("androidx.media3:media3-session:1.11.1")
+    // A video for a DM is compressed before it is locked and sent (DMLockedVideo).
+    implementation("androidx.media3:media3-transformer:1.11.1")
+    implementation("androidx.media3:media3-effect:1.11.1")
 
     // ---- JSON ----
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")

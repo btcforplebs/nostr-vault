@@ -50,7 +50,8 @@ object DMFileLoader {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
-        .callTimeout(60, TimeUnit.SECONDS)
+        // A 100 MB video on a slow line takes minutes; a stalled one still stops at the read timeout.
+        .callTimeout(10, TimeUnit.MINUTES)
         .followRedirects(false)
         .followSslRedirects(false)
         .addNetworkInterceptor { chain ->
@@ -70,12 +71,19 @@ object DMFileLoader {
 
     /**
      * The opened photo's bytes and type. Throws when it can't be fetched or isn't the file that was
-     * sent, and [TooBig] when its ciphertext is over [max] (under [DMFile.MAX_FILE]).
+     * sent, and [TooBig] when its ciphertext is over [max] (under [DMFile.MAX_FILE]). [onProgress]
+     * hears (bytes so far, whole size or -1 when the server doesn't say) while the ciphertext arrives,
+     * and (size, size) once it is all here, from the server or the cache.
      */
-    suspend fun open(context: Context, link: String, max: Long = DMFile.MAX_FILE): Pair<ByteArray, String> =
-        gate.withPermit { withContext(Dispatchers.IO) { openNow(context, link, max) } }
+    suspend fun open(
+        context: Context,
+        link: String,
+        max: Long = DMFile.MAX_FILE,
+        onProgress: ((Long, Long) -> Unit)? = null,
+    ): Pair<ByteArray, String> =
+        gate.withPermit { withContext(Dispatchers.IO) { openNow(context, link, max, onProgress) } }
 
-    private fun openNow(context: Context, link: String, max: Long): Pair<ByteArray, String> {
+    private fun openNow(context: Context, link: String, max: Long, onProgress: ((Long, Long) -> Unit)?): Pair<ByteArray, String> {
         val f = DMFile.parseFileLink(link) ?: throw IOException("not a DM file")
         val name = f.x ?: DMFile.sha256Hex(f.url.toByteArray())
         val kept = File(directory(context), name)
@@ -83,6 +91,7 @@ object DMFileLoader {
         val cached = if (kept.isFile) runCatching { kept.readBytes() }.getOrNull() else null
         if (cached != null) {
             try {
+                onProgress?.invoke(cached.size.toLong(), cached.size.toLong())
                 val plain = DMFile.decrypt(cached, f.key, f.nonce, f.x, f.ox)
                 kept.setLastModified(System.currentTimeMillis())
                 return plain to f.mime
@@ -90,7 +99,7 @@ object DMFileLoader {
                 kept.delete()
             }
         }
-        val cipher = fetchCapped(f.url, max)
+        val cipher = fetchCapped(f.url, max, onProgress)
         val plain = DMFile.decrypt(cipher, f.key, f.nonce, f.x, f.ox)
         runCatching {
             val temp = File(kept.parentFile, "${kept.name}.${System.nanoTime()}.part")
@@ -112,13 +121,15 @@ object DMFileLoader {
     }
 
     /** GET [url], read in chunks and stopped at the cap: a body with no length that never ends can't fill memory. */
-    internal fun fetchCapped(url: String, max: Long = DMFile.MAX_FILE): ByteArray =
+    internal fun fetchCapped(url: String, max: Long = DMFile.MAX_FILE, onProgress: ((Long, Long) -> Unit)? = null): ByteArray =
         client.newCall(Request.Builder().url(url).get().build()).execute().use { r ->
             if (r.code != 200) throw IOException("HTTP ${r.code}")
             val body = r.body ?: throw IOException("empty")
             fun over(): IOException = if (max < DMFile.MAX_FILE) TooBig() else IOException("too large")
-            if (body.contentLength() > max) throw over()
-            val out = ByteArrayOutputStream()
+            val length = body.contentLength()
+            if (length > max) throw over()
+            val out = ByteArrayOutputStream(if (length > 0) length.toInt() else 64 * 1024)
+            var told = 0L
             body.byteStream().use { input ->
                 val buf = ByteArray(64 * 1024)
                 while (true) {
@@ -126,8 +137,14 @@ object DMFileLoader {
                     if (n < 0) break
                     if (out.size() + n > max) throw over()
                     out.write(buf, 0, n)
+                    // About every 256 KB: a progress ring, not a callback per read.
+                    if (onProgress != null && out.size() - told >= 256 * 1024) {
+                        told = out.size().toLong()
+                        onProgress(told, length)
+                    }
                 }
             }
+            onProgress?.invoke(out.size().toLong(), out.size().toLong())
             out.toByteArray()
         }
 

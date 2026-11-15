@@ -179,9 +179,9 @@ class DMThreadViewModel @Inject constructor(
             _attachedImage.value = null
             var wordsSent = false
             try {
-                // A NIP-17 photo is locked (kind 15, DMLockedPhoto): its words go first as
-                // their own message, the photo one second after so it sorts below them.
-                if (image != null && !_useNIP04.value && !DMLockedPhoto.isVideo(context, image)) {
+                // A NIP-17 photo or video is locked (kind 15, DMLockedPhoto): its words go first as
+                // their own message, the file one second after so it sorts below them.
+                if (image != null && !_useNIP04.value) {
                     DMLockedPhoto.send(context, image, text, counterpartyPubkey, blossomService, dmService) { wordsSent = true }
                     DMPastedImage.discard(image)
                     return@launch
@@ -277,7 +277,11 @@ fun DMThreadScreen(
 
     DisposableEffect(viewModel) {
         viewModel.setVisible(true)
-        onDispose { viewModel.setVisible(false) }
+        onDispose {
+            viewModel.setVisible(false)
+            // The opened video (up to 100 MB in memory) goes with the thread.
+            DMOpenedVideo.clear()
+        }
     }
 
     // Scroll to bottom on new messages
@@ -539,8 +543,12 @@ private fun MessageBubble(
                         )
                     }
                     parts.videos.forEachIndexed { index, url ->
-                        DMVideoTile(size = photoSize) {
-                            FullScreenMediaRouter.open(media, parts.images.size + index, zoomOrigin)
+                        val open = { FullScreenMediaRouter.open(media, parts.images.size + index, zoomOrigin) }
+                        // A locked video (kind 15) opens here, with its size and progress; a plain link plays in the viewer.
+                        if (com.nostrvault.service.DMFile.isFileLink(url)) {
+                            DMLockedVideoTile(link = url, size = photoSize, onOpen = open)
+                        } else {
+                            DMVideoTile(size = photoSize, onClick = open)
                         }
                     }
                     if (showText) {
