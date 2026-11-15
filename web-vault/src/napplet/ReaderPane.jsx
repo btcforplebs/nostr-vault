@@ -15,6 +15,12 @@ import { repostWithUndo } from "../components/repost-undo.js"
 import { ZapSheet, MenuSheet } from "./NoteSheets.jsx"
 import { loadPreview } from "../components/link-preview.js"
 import { MediaLightbox } from "../components/MediaLightbox.jsx"
+import { ArticleReader } from "../readers/ArticlesScreen.jsx"
+import { articleCard, highlightCard, pollCard } from "./kind-cards.js"
+import { heldVotes, loadVotes, sendVote, votesFresh } from "../components/poll-votes.js"
+import { isClosed, parsePoll } from "../components/polls.js"
+import { getBlocks } from "../net/blocks.js"
+import { READ_ONLY_SHORT } from "../signer/readonly.js"
 import "./napplet.css"
 
 const READY_WAIT_MS = 5000
@@ -73,6 +79,9 @@ export function ReaderPane({ ctx, open = null }) {
       onZap: n => setSheet({ kind: "zap", note: n }),
       onMenu: n => setSheet({ kind: "menu", note: n }),
       onMedia: v => setSheet({ kind: "media", ...v }),
+      card: ev => kindCard(liveCtx, ev),
+      vote: (ev, picks) => pollVote(liveCtx, ev, picks),
+      onArticle: ev => setSheet({ kind: "article", event: ev }),
       preview: loadPreview,
     })
     live.current.me = wire.me
@@ -106,6 +115,7 @@ export function ReaderPane({ ctx, open = null }) {
       {sheet?.kind === "zap" && <ZapSheet ctx={ctx} note={sheet.note} onClose={() => setSheet(null)} />}
       {sheet?.kind === "menu" && <MenuSheet ctx={ctx} note={sheet.note} onClose={() => setSheet(null)}
         onDeleted={id => { const l = live.current; if (l?.reader) l.bus.invoke(l.me, { archetype: "note", action: "removed", payload: { id } }) }} />}
+      {sheet?.kind === "article" && <div class="reader-article screen"><ArticleReader event={sheet.event} ctx={ctx} onBack={() => setSheet(null)} /></div>}
       {sheet?.kind === "media" && <MediaLightbox items={sheet.items} author={sheet.author} start={sheet.start} onClose={() => setSheet(null)} />}
       {composing && <ComposeSheet aside={composeAside} onClose={() => live.current?.closeCompose()} onMount={el => live.current?.mountCompose(el)} />}
     </main>
@@ -128,4 +138,24 @@ function ComposeMount({ onMount }) {
   const ref = useRef(null)
   useEffect(() => { onMount(ref.current) }, [])
   return <div class="napplet-host compose-napplet-host" ref={ref} />
+}
+
+/** napplet:note/card: an article, highlight or poll card's strings, from the signed event (kind-cards.js). A poll's
+ *  votes are read as the classic card reads them (poll-votes.js), blocked people left out. */
+async function kindCard(ctx, ev) {
+  if (ev.kind === 30023) return articleCard(ev)
+  if (ev.kind === 9802) return highlightCard(ev)
+  const poll = parsePoll(ev)
+  if (!poll) return null
+  const votes = votesFresh(poll.id) ? heldVotes(poll.id) : await loadVotes(poll, [...(ctx.account?.relays?.read ?? [])])
+  return pollCard(ev, votes, { me: ctx.session?.pubkey ?? "", blocked: getBlocks().blocked })
+}
+
+/** napplet:poll/vote: the classic vote, then the card again with it counted. */
+async function pollVote(ctx, ev, picks) {
+  if (ctx.signer?.readOnly) throw new Error(READ_ONLY_SHORT)
+  const poll = parsePoll(ev)
+  if (!poll || isClosed(poll)) throw new Error("This poll is closed.")
+  await sendVote(ctx, poll, picks)
+  return pollCard(ev, heldVotes(poll.id), { me: ctx.session?.pubkey ?? "", blocked: getBlocks().blocked })
 }

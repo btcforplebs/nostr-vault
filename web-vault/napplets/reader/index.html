@@ -45,6 +45,25 @@
   .card .ttl, .card .desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
   .card .ttl { font-weight: 600; }
   .card .desc { color: var(--muted); font-size: 12px; }
+  .kind { margin: 2px 0 6px; display: grid; gap: 6px; }
+  .kmeta { color: var(--muted); font-size: 12px; }
+  .art-img { width: 100%; max-height: 220px; object-fit: cover; border-radius: 10px; background: var(--s2); }
+  .art-title { margin: 0; font-size: 17px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .art-prev { margin: 0; color: var(--muted); font-size: 14px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .hl-comment { margin: 0; white-space: pre-wrap; }
+  .hl-passage { margin: 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--accent); font-family: Georgia, "Times New Roman", serif; font-size: 16px;
+    white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; }
+  .poll-q { margin: 0; font-weight: 600; white-space: pre-wrap; }
+  .poll-opts { display: grid; gap: 6px; }
+  .poll-opt { position: relative; overflow: hidden; display: flex; align-items: center; gap: 8px; border-radius: 10px; min-height: 40px; text-align: left; }
+  .poll-opt.on { border-color: var(--accent); }
+  .poll-opt:disabled { opacity: 1; }
+  .poll-bar { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--accent) 22%, transparent); pointer-events: none; }
+  .poll-mark, .poll-label, .poll-pct { position: relative; }
+  .poll-label { flex: 1; }
+  .poll-pct { color: var(--muted); font-size: 13px; }
+  .poll-vote { justify-self: start; }
+  .poll-err { margin: 0; color: #ff6b6b; font-size: 13px; }
   .quote { border: 1px solid var(--hair); border-radius: 12px; padding: 8px 10px; margin: 6px 0; color: var(--muted); font-size: 14px; }
   .acts { display: flex; gap: 2px; margin-left: -8px; flex-wrap: wrap; }
   .quote { cursor: pointer; display: grid; gap: 2px; }
@@ -158,6 +177,20 @@ function inlineMarks(text) {
   }
   if (at < text.length) out.push({ type: "text", text: text.slice(at) })
   return out
+}
+// What the feed shows: notes, reposts, and articles, highlights and polls (their cards are worked out by the shell).
+const FEED_KINDS = [1, 6, 30023, 9802, 1068], CARD_KINDS = [30023, 9802, 1068]
+/** "in 3 hours", "tomorrow": when an open poll closes (the classic card's endsIn). */
+function endsIn(ts, now = Date.now() / 1000) {
+  const s = ts - now
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" })
+  if (s < 3600) return rtf.format(Math.max(1, Math.round(s / 60)), "minute")
+  if (s < 86400) return rtf.format(Math.round(s / 3600), "hour")
+  return rtf.format(Math.round(s / 86400), "day")
+}
+/** A poll's foot line: "N votes · Pick any · Ends in 2 hours" / "· Final results". */
+function pollMeta(d, now = Date.now() / 1000) {
+  return `${d.voters === 1 ? "1 vote" : `${d.voters} votes`}${d.multiple ? " · Pick any" : ""}${d.endsAt ? (d.closed ? " · Final results" : ` · Ends ${endsIn(d.endsAt, now)}`) : ""}`
 }
 const eTags = ev => (ev?.tags ?? []).filter(t => t[0] === "e" && HEX.test(t[1] ?? ""))
 /** NIP-10: the thread's root id (marked, else the first e tag, else the note itself). */
@@ -331,9 +364,9 @@ function card(ev, { focus = false, depth = 0, by = null } = {}) {
   const who = el("div", "who"), name = el("b"); name.dataset.pk = shown.pubkey; paintWho(name)
   name.onclick = e => { e.stopPropagation(); go({ kind: "profile", pubkey: shown.pubkey }) }
   who.append(name, el("span", "", `· ${ago(shown.created_at)}`)); col.append(who)
-  const parent = parentOf(shown)
+  const parent = shown.kind === 1 ? parentOf(shown) : null // a highlight's e tag is its source, not a parent
   if (parent && !depth && !focus) col.append(el("div", "reply-line", "replying in a thread"))
-  col.append(body(shown))
+  col.append(CARD_KINDS.includes(shown.kind) ? kindBody(shown) : body(shown))
   const acts = el("div", "acts")
   const reply = el("button", "ghost", "Reply"); reply.onclick = e => { e.stopPropagation(); compose("reply", shown) }
   const like = el("button", `ghost${reacted.has(shown.id) ? " on" : ""}`, reacted.has(shown.id) ? "♥ Liked" : "♡ Like")
@@ -342,11 +375,99 @@ function card(ev, { focus = false, depth = 0, by = null } = {}) {
     ACT("⚡", "Zap", () => shellAct("zap", shown)), ACT("⋯", "More", () => shellAct("menu", shown)))
   col.append(acts)
   a.append(col)
-  if (!focus) a.onclick = () => go({ kind: "thread", id: shown.id, event: shown })
+  // An article's thread is the article itself (the classic card): the shell's article reader opens.
+  if (shown.kind === 30023) a.onclick = () => openArticle(shown)
+  else if (!focus) a.onclick = () => go({ kind: "thread", id: shown.id, event: shown })
   return a
 }
 
 function compose(action, ev) { n.intent?.invoke(`napplet:compose/${action}`, { payload: ev ? { event: ev } : {} }).catch(() => {}) }
+function openArticle(ev) { n.intent?.invoke("napplet:article/open", { payload: { event: ev } }).catch(() => {}) }
+// An article, highlight or poll: its card's strings come from the shell (napplet:note/card), worked out from the signed
+// event as the classic feed card does; the napplet only draws them.
+const cardsAsked = new Map()
+const cardOf = (ev, fresh) => {
+  if (fresh || !cardsAsked.has(ev.id)) cardsAsked.set(ev.id, n.intent?.invoke("napplet:note/card", { payload: { event: ev } }).then(r => r?.ok ? r.data ?? null : null).catch(() => null) ?? Promise.resolve(null))
+  return cardsAsked.get(ev.id)
+}
+function kindBody(ev) {
+  const box = el("div", `kind k${ev.kind}`, ev.kind === 30023 ? "Loading the article…" : ev.kind === 1068 ? "Loading the poll…" : "Loading the highlight…")
+  box.classList.add("muted")
+  cardOf(ev).then(d => {
+    box.classList.remove("muted")
+    if (!d) { box.textContent = ev.kind === 1068 ? "A poll this app can't show." : String(ev.content ?? "").slice(0, 280); return }
+    if (d.type === "article") drawArticle(box, d)
+    else if (d.type === "highlight") drawHighlight(box, d)
+    else if (d.type === "poll") drawPoll(box, ev, d)
+  })
+  return box
+}
+function bytesImg(url, cls) {
+  const i = el("img", cls); i.alt = ""
+  ;(pics.get(url) ?? (pics.set(url, n.resource?.bytes(url).then(b => URL.createObjectURL(b)).catch(() => "")), pics.get(url)))
+    .then(src => { if (src) i.src = src; else i.remove() })
+  return i
+}
+function drawArticle(box, d) {
+  box.replaceChildren()
+  if (d.image) box.append(bytesImg(d.image, "art-img"))
+  box.append(el("h3", "art-title", d.title), el("div", "kmeta", `📄 ${d.meta}`))
+  if (d.preview) box.append(el("p", "art-prev", d.preview))
+}
+function drawHighlight(box, d) {
+  box.replaceChildren()
+  if (d.comment) box.append(el("p", "hl-comment", d.comment))
+  box.append(el("div", "kmeta", "🖍 Highlighted"), el("blockquote", "hl-passage", d.passage))
+  const src = d.source
+  if (src?.note) box.append(quoteCard(src.note))
+  else if (src?.addr) box.append(addrCard(src.addr))
+  else if (src?.url) box.append(linkCard(src.url))
+}
+// A highlight's article (or other addressable event) as a small card: its title, a tap opens it.
+function addrCard({ kind, pubkey, d }) {
+  const b = el("div", "quote", "Loading the source…")
+  q([{ kinds: [kind], authors: [pubkey], "#d": [d], limit: 1 }]).then(([ev]) => {
+    if (!ev) { b.textContent = "A source that couldn't be found."; return }
+    const who = el("b"); who.dataset.pk = ev.pubkey; want(ev.pubkey); paintWho(who)
+    const title = (ev.tags ?? []).find(t => t[0] === "title")?.[1] || String(ev.content ?? "").split("\n").find(Boolean)?.replace(/^[#\s]+/, "") || "Untitled"
+    b.replaceChildren(who, el("div", "", String(title).slice(0, 200)))
+    b.onclick = e => { e.stopPropagation(); ev.kind === 30023 ? openArticle(ev) : go({ kind: "thread", id: ev.id, event: ev }) }
+  })
+  return b
+}
+function drawPoll(box, ev, d, picking = null, err = "") {
+  box.replaceChildren()
+  if (d.question) box.append(el("p", "poll-q", d.question))
+  const opts = el("div", "poll-opts"), canVote = !d.closed && !!me
+  const gathered = picking ?? d.mine
+  for (const o of d.options) {
+    const sel = gathered.includes(o.id)
+    const b = el("button", `poll-opt${sel ? " on" : ""}`); b.type = "button"; b.disabled = !canVote; b.setAttribute("aria-pressed", String(sel))
+    if (d.results) { const bar = el("span", "poll-bar"); bar.style.width = `${o.pct}%`; b.append(bar) }
+    b.append(el("span", "poll-mark", d.multiple ? (sel ? "☑" : "☐") : (sel ? "◉" : "○")), el("span", "poll-label", o.label))
+    if (d.results) b.append(el("span", "poll-pct", `${o.pct}%`))
+    b.setAttribute("aria-label", d.results ? `${o.label}, ${o.votes} votes` : o.label)
+    b.onclick = e => {
+      e.stopPropagation()
+      if (!d.multiple) { if (!(d.mine.length === 1 && d.mine[0] === o.id)) castVote(box, ev, d, [o.id]); return }
+      const cur = new Set(gathered); cur.has(o.id) ? cur.delete(o.id) : cur.add(o.id)
+      drawPoll(box, ev, d, [...cur])
+    }
+    opts.append(b)
+  }
+  box.append(opts)
+  const changed = d.multiple && picking && picking.length > 0 && [...picking].sort().join() !== [...d.mine].sort().join()
+  if (changed) { const v = el("button", "primary poll-vote", d.mine.length ? "Change vote" : "Vote"); v.onclick = e => { e.stopPropagation(); castVote(box, ev, d, picking) }; box.append(v) }
+  box.append(el("div", "kmeta", `📊 ${pollMeta(d)}`))
+  if (err) { const p = el("p", "poll-err", err); p.setAttribute("role", "alert"); box.append(p) }
+}
+async function castVote(box, ev, d, picks) {
+  for (const b of box.querySelectorAll("button")) b.disabled = true
+  box.querySelector(".kmeta")?.append(" · Sending…")
+  const r = await n.intent?.invoke("napplet:poll/vote", { payload: { event: ev, picks } }).catch(e => ({ ok: false, error: String(e?.message ?? e) }))
+  if (r?.ok && r.data) { cardsAsked.set(ev.id, Promise.resolve(r.data)); drawPoll(box, ev, r.data) }
+  else drawPoll(box, ev, d, null, r?.error || "Your vote wasn't sent.")
+}
 // A tap on a picture: the shell's own full-screen viewer, over the whole app, from the signed note's media.
 function viewMedia(ev, url) { n.intent?.invoke("napplet:media/view", { payload: { event: ev, url } }).catch(() => {}) }
 function openLink(url) { n.intent?.invoke("napplet:link/open", { payload: { url } }).catch(() => {}) }
@@ -386,10 +507,10 @@ async function showFeed() {
   $("title").textContent = "Following"
   if (!follows.length) follows = await n.identity.getFollows().catch(() => [])
   const authors = [...new Set([me, ...follows])].filter(Boolean)
-  if (!notes.length) { notes = mergeNotes([], await q([{ kinds: [1, 6], authors, limit: PAGE }])); done = false }
+  if (!notes.length) { notes = mergeNotes([], await q([{ kinds: FEED_KINDS, authors, limit: PAGE }])); done = false }
   drawFeed()
   const since = Math.floor(Date.now() / 1000)
-  live = n.outbox.subscribe([{ kinds: [1, 6], authors, since }])
+  live = n.outbox.subscribe([{ kinds: FEED_KINDS, authors, since }])
   live.on("event", r => { const ev = r.event; if (!ev || notes.some(x => x.id === ev.id) || pending.some(x => x.id === ev.id)) return; if (ev.pubkey === me) { notes = mergeNotes([ev], notes); drawFeed() } else { pending.push(ev); $("fresh").hidden = false; $("fresh").textContent = `${pending.length} new` } })
 }
 function drawFeed() {
@@ -403,7 +524,7 @@ async function loadOlder() {
   if (loading || view.kind !== "feed") return
   loading = true
   const until = notes[notes.length - 1]?.created_at - 1
-  const older = await q([{ kinds: [1, 6], authors: [...new Set([me, ...follows])], until, limit: PAGE }])
+  const older = await q([{ kinds: FEED_KINDS, authors: [...new Set([me, ...follows])], until, limit: PAGE }])
   loading = false
   if (!older.length) done = true
   notes = mergeNotes(notes, older); drawFeed()
@@ -431,7 +552,7 @@ async function showProfile(pk) {
   const about = el("p"); head.append(about)
   const fill = () => { about.textContent = profiles.get(pk)?.about ?? ""; $("title").textContent = nameOf(pk) }
   setTimeout(fill, 600)
-  const evs = await q([{ kinds: [1, 6], authors: [pk], limit: PAGE }])
+  const evs = await q([{ kinds: FEED_KINDS, authors: [pk], limit: PAGE }])
   fill()
   $("list").replaceChildren(head, ...mergeNotes([], evs).map(ev => card(ev)))
   $("list").setAttribute("aria-busy", "false")

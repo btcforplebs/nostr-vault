@@ -2,16 +2,17 @@
 // an article (ArticleInlineBody), a highlight (HighlightInlineBody) and a poll (PollCardView). The card around them
 // keeps its header, its actions and its tap to the thread; an article's thread is the article itself.
 import { useEffect, useState } from "preact/hooks"
-import { verifiedCopy } from "../net/thread.js"
 import { NoteText } from "./NoteText.jsx"
 import { QuotedNote } from "./QuotedNote.jsx"
 import { LinkCard } from "./LinkCard.jsx"
+import { highlightSource } from "./highlight-source.js"
+export { highlightSource }
 import { displayTitle, longFormMeta, plainText, readingMinutes } from "../readers/longform.js"
 import { gatedArticle, stripTeaser } from "../readers/gated.js"
-import { isClosed, parsePoll, pollRelays, share, tally, voteTags, VOTE_KIND } from "./polls.js"
-import { pool } from "../net/pool.js"
+import { isClosed, parsePoll, pollRelays, share, tally } from "./polls.js"
+import { heldVotes, loadVotes, sendVote, votesFresh } from "./poll-votes.js"
 import { getBlocks, onBlocks } from "../net/blocks.js"
-import { actionContext, publishAction } from "../net/actions.js"
+import { actionContext } from "../net/actions.js"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
 
 if (import.meta.env) import("../styles/feed-kinds.css")
@@ -60,45 +61,20 @@ function HighlightBody({ event, memoryOnly }) {
   )
 }
 
-/** A highlight's source (FeedHighlight): its `a` article, else its `e` note, else an http(s) `r` page. */
-export function highlightSource(tags) {
-  const a = tags.find(t => t[0] === "a" && t[1])?.[1]
-  if (a) {
-    const [kind, pubkey, ...d] = a.split(":")
-    if (/^[0-9a-f]{64}$/.test(pubkey ?? "")) return { q: { type: "addr", kind: Number(kind), pubkey, d: d.join(":"), relays: [] } }
-  }
-  const e = tags.find(t => t[0] === "e" && /^[0-9a-f]{64}$/.test(t[1] ?? ""))?.[1]
-  if (e) return { q: { type: "note", id: e, relays: [] } }
-  const r = tags.find(t => t[0] === "r" && /^https?:\/\//.test(t[1] ?? ""))?.[1]
-  return r ? { url: r } : null
-}
-
-// The votes on each poll this session, so a poll scrolled back to shows its count at once (PollStore).
-const votes = new Map() // poll id -> { events: Map, at }
-const RELOAD_AFTER_MS = 30_000
-
 /** The question, the options (results once you voted or it closed), and "N votes · Pick any · Ends …". */
 function PollBody({ poll, memoryOnly }) {
   const ctx = actionContext()
   const me = ctx?.session?.pubkey ?? ""
-  const [evs, setEvs] = useState(() => [...(votes.get(poll.id)?.events.values() ?? [])])
+  const [evs, setEvs] = useState(() => heldVotes(poll.id))
   const [loading, setLoading] = useState(false)
   const [blocked, setBlocked] = useState(() => getBlocks().blocked)
   useEffect(() => onBlocks(() => setBlocked(getBlocks().blocked)), [])
   useEffect(() => {
-    const held = votes.get(poll.id)
-    if (held && Date.now() - held.at < RELOAD_AFTER_MS) return
-    const relays = pollRelays(poll, [...(ctx?.account?.relays?.read ?? [])])
-    if (!relays.length) return
+    if (votesFresh(poll.id)) return
+    if (!pollRelays(poll, [...(ctx?.account?.relays?.read ?? [])]).length) return
     let live = true
     setLoading(true)
-    pool.querySync(relays, { kinds: [VOTE_KIND], "#e": [poll.id], limit: 1000 }, { maxWait: 6000 }).then(found => {
-      const store = votes.get(poll.id) ?? { events: new Map(), at: 0 }
-      for (const ev of found) if (ev?.kind === VOTE_KIND && verifiedCopy(ev)) store.events.set(ev.id, ev)
-      store.at = Date.now()
-      votes.set(poll.id, store)
-      if (live) setEvs([...store.events.values()])
-    }).catch(() => {}).finally(() => { if (live) setLoading(false) })
+    loadVotes(poll, [...(ctx?.account?.relays?.read ?? [])]).then(held => { if (live) setEvs(held) }).finally(() => { if (live) setLoading(false) })
     return () => { live = false }
   }, [poll.id])
   const t = tally(evs, poll, { blocked })
@@ -118,15 +94,8 @@ function PollBody({ poll, memoryOnly }) {
     if (sending || !ids.length || closed) return
     setSending(true); setError("")
     try {
-      // The poll's own public relays, deduplicated and at most 8 (the read path's set): a stranger's poll must not
-      // choose how many hosts get your signed vote and your IP.
-      const pub = pollRelays(poll)
-      const template = { kind: VOTE_KIND, created_at: Math.floor(Date.now() / 1000), content: "", tags: voteTags(poll, ids, pub[0] ?? "") }
-      const { event } = await publishAction(ctx, template)
-      if (pub.length) Promise.allSettled(pool.publish(pub, event)).catch(() => {})
-      const store = votes.get(poll.id) ?? { events: new Map(), at: Date.now() }
-      store.events.set(event.id, event); votes.set(poll.id, store)
-      setEvs([...store.events.values()]); setPicked(null)
+      await sendVote(ctx, poll, ids)
+      setEvs(heldVotes(poll.id)); setPicked(null)
     } catch (e) { setError(String(e?.message ?? e)) }
     finally { setSending(false) }
   }

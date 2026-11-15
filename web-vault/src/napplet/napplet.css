@@ -31,6 +31,9 @@
 @media (max-width: 560px) { .apps-row { flex-wrap: wrap; } .apps-acts { width: 100%; justify-content: flex-start; } }
 /* The Reader pane (ReaderPane.jsx, P4): the Reader napplet fills the screen; Compose sits in a sheet. */
 .reader-pane { display: flex; flex-direction: column; height: 100%; min-height: 100dvh; }
+.reader-article { position: fixed; inset: 0; z-index: 30; overflow-y: auto; background: var(--bg); }
+.desk-app .reader-pane { position: relative; }
+.desk-app .reader-article { position: absolute; }
 .reader-host { flex: 1; min-height: 0; padding: 0; display: flex; }
 .reader-host .napplet-frame { border: 0; border-radius: 0; background: var(--bg); min-height: 100dvh; }
 .compose-napplet-host { min-height: min(52vh, 420px); padding: 0; display: flex; }
