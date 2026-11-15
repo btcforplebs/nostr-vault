@@ -221,9 +221,27 @@ test("feed/open with a tag: #/feed?tag= opens the tag in the Reader; anything el
   assert.equal(readerOpenFor("search", "", "#/search?tag=x"), null)
 })
 
+test("profile/show: a name tapped in the Reader opens the app's full profile; only a real pubkey", async () => {
+  const bus = createBus(), shown = []
+  const wire = readerIntents({ bus, openCompose: async () => ({}), onComposeDone: () => {}, openUrl: () => {}, onProfile: pk => shown.push(pk) })
+  const reader = { dTag: "nv-reader", send: () => {} }
+  assert.equal((await bus.invoke(reader, { archetype: "profile", action: "show", payload: { pubkey: B } })).ok, true)
+  assert.equal((await bus.invoke(reader, { archetype: "profile", action: "show", payload: { pubkey: "x" } })).ok, false)
+  assert.deepEqual(shown, [B])
+  wire.close()
+  // no onProfile given (another shell): no handler, so the Reader opens its own small profile
+  const bus2 = createBus()
+  readerIntents({ bus: bus2, openCompose: async () => ({}), onComposeDone: () => {}, openUrl: () => {} })
+  assert.equal((await bus2.invoke(reader, { archetype: "profile", action: "show", payload: { pubkey: B } })).ok, false)
+})
+
 test("switch: Feed, Thread and other profiles swap only while napplets are on; own profile and the old screens stay", () => {
   const main = fs.readFileSync(new URL("../main.jsx", import.meta.url), "utf8")
-  assert.match(main, /const readsInNapplet = \(route, other\) => nappletsOn\(\) && \(route === "feed" \|\| route === "thread" \|\| \(route === "profile" && !!other\)\)/)
+  assert.match(main, /const readsInNapplet = \(route, other\) => nappletsOn\(\) && \(route === "feed" \|\| route === "thread"\)\n/)
+  // someone's profile is the full classic one, with the Reader kept (hidden) under it
+  assert.match(main, /const readerUnder = \(route, other\) => nappletsOn\(\) && route === "profile" && !!other/)
+  assert.match(main, /\{\(reader \|\| readerUnder\(route, other\)\) && <ReaderPane ctx=\{ctx\} open=\{readerOpen.current\} hidden=\{!reader\} \/>\}/)
+  assert.match(main, /\{!reader && route === "profile" && \(other \? <PersonScreen/)
   assert.match(main, /\{!reader && route === "feed" && <FeedScreen/)
   assert.match(main, /\{!reader && route === "thread" && <ThreadScreen/)
 })

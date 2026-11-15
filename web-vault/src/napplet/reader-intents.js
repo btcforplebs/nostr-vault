@@ -15,6 +15,7 @@
 //                                                            (kind-cards.js); a poll's with its vote count
 //   napplet:poll/vote { event, picks }                    -> the classic vote (poll-votes.js sendVote: your signer,
 //                                                            your write relays and the poll's own), { data } = the card
+//   napplet:profile/show { pubkey }                       -> the full classic profile (#/profile/<pk>), Reader kept
 //   napplet:article/open { event }                        -> the classic article reader over the Reader
 //   napplet:note/repost|zap|menu { event }                -> the classic flows, run by the shell (gap run, after P8):
 //                                                            repost with the Send Delay's Undo, the zap picker, the
@@ -93,7 +94,7 @@ export function signedOf(raw, verify) {
   try { return ev && verify(ev) ? ev : null } catch { return null }
 }
 
-export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, onMedia = () => {}, preview = async () => null, card = async () => null, vote = async () => null, onArticle = () => {} }) {
+export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, onMedia = () => {}, preview = async () => null, card = async () => null, vote = async () => null, onArticle = () => {}, onProfile = null }) {
   const on = { [COMPOSE_DONE]: onComposeDone, [COMPOSE_WAITING]: onComposeWaiting, [COMPOSE_UNDONE]: onComposeUndone }
   const me = { dTag: "shell", send: m => { if (m?.type === "inc.event" && on[m.topic]) on[m.topic](m.payload) } }
   for (const t of Object.keys(on)) bus.subscribe(me, t)
@@ -118,6 +119,11 @@ export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaitin
       if (ev?.kind !== 1068 || !picks.length) return { ok: false, error: "not a signed poll with a pick" }
       try { return { ok: true, data: await vote(ev, picks) } } catch (e) { return { ok: false, error: String(e?.message ?? e) } }
     } }),
+    ...(onProfile ? [bus.register({ id: "shell-profile-show", title: "Profile", archetype: "profile", actions: ["show"], conventions: [], deliver: p => {
+      if (!HEX.test(p?.pubkey ?? "")) return { ok: false, error: "not a pubkey" }
+      onProfile(p.pubkey)
+      return { ok: true }
+    } })] : []),
     bus.register({ id: "shell-article-open", title: "Read", archetype: "article", actions: ["open"], conventions: [], deliver: p => {
       const ev = signedOf(p?.event, verify)
       if (ev?.kind !== 30023) return { ok: false, error: "not a signed article" }
