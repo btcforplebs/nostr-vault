@@ -19,7 +19,7 @@ import { checkSigned } from "./sync.js"
 import { AUTH_WAIT, LIVE_RETRY, authedSubscribe, forgetDeclinedAuth, queryWithAuth } from "./dm-read-auth.js"
 import { chunkBytesFor, dmCache } from "./dm-cache.js"
 import { settleWatch } from "./settle-early.js"
-import { fileContentOf, isFileLink } from "./dm-file.js"
+import { fileContentOf, isFileLink, isVideoLink } from "./dm-file.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -619,7 +619,7 @@ export const peerOf = (hash = location.hash) => /^#\/?dm\/([0-9a-f]{64})$/.exec(
 /** The inbox row's last line, as DMInboxView's lastMessagePreview: the first 60 characters, "…" past them, and
  *  "No message content" for an empty message. Runs of white space are one space (the row is one line here). */
 export function lastPreview(content) {
-  if (isFileLink(String(content ?? "").trim())) return "Photo"
+  if (isFileLink(String(content ?? "").trim())) return isVideoLink(content) ? "Video" : "Photo"
   const t = String(content ?? "").replace(/\s+/g, " ").trim()
   if (!t) return "No message content"
   const chars = [...t]

@@ -28,8 +28,11 @@ import javax.crypto.spec.SecretKeySpec
  */
 object DMFile {
     const val MARK = "#nv-dm="
-    /** The most one encrypted file may be, as the web (dm-file.js MAX_FILE). */
-    const val MAX_FILE = 60L * 1024 * 1024
+    /**
+     * The most one encrypted file may be, as the web (dm-file.js MAX_FILE): 100 MB, room for a
+     * compressed video (Logen 2026-11-15).
+     */
+    const val MAX_FILE = 100L * 1024 * 1024
     const val ALGORITHM = "aes-gcm"
 
     private val HEX64 = Regex("^[0-9a-f]{64}$")
@@ -45,7 +48,7 @@ object DMFile {
     class Encrypted(val cipher: ByteArray, val key: String, val nonce: String, val x: String, val ox: String)
 
     /** What opens a kept link. */
-    data class Link(val url: String, val key: String, val nonce: String, val x: String?, val mime: String, val ox: String? = null)
+    data class Link(val url: String, val key: String, val nonce: String, val x: String?, val mime: String, val ox: String? = null, val size: Long? = null)
 
     /** A kind 15 rumor's content and tags (after the p tag), and [shown], its link for this device. */
     data class Message(val content: String, val tags: List<List<String>>, val shown: String)
@@ -83,21 +86,26 @@ object DMFile {
 
     /**
      * "<url>#nv-dm=…": the message as this device keeps and shows it. Same JSON as the web (k, n, x, m),
-     * plus o (the ox tag) when known, so a read can check the opened file too (the web ignores it).
+     * plus o (the ox tag) when known, so a read can check the opened file too (the web ignores it),
+     * and s (the size tag, encrypted bytes) when known, so a video shows its size before it loads.
      */
-    fun fileLink(url: String, key: String, nonce: String, x: String?, mime: String?, ox: String? = null): String {
+    fun fileLink(url: String, key: String, nonce: String, x: String?, mime: String?, ox: String? = null, size: Long? = null): String {
         val d = buildJsonObject {
             put("k", key)
             put("n", nonce)
             if (x != null) put("x", x)
             if (mime != null) put("m", mime)
             if (ox != null) put("o", ox)
+            if (size != null) put("s", size)
         }
         val b64 = Base64.getUrlEncoder().withoutPadding().encodeToString(d.toString().toByteArray(Charsets.UTF_8))
         return "$url$MARK$b64"
     }
 
     fun isFileLink(s: String?): Boolean = s != null && LINK.matches(s)
+
+    /** A kept file link whose file is a video (its type, from the file-type tag, starts with "video/"). */
+    fun isVideoLink(s: String?): Boolean = parseFileLink(s?.trim())?.mime?.lowercase()?.startsWith("video/") == true
 
     fun parseFileLink(s: String?): Link? {
         if (s == null || !isFileLink(s)) return null
@@ -112,7 +120,8 @@ object DMFile {
             val o = str("o")
             if (!HEX64.matches(k) || !NONCE.matches(n) || (x != null && !HEX64.matches(x)) || (o != null && !HEX64.matches(o))) return null
             val m = str("m")?.takeIf { MIME.matches(it) } ?: "application/octet-stream"
-            Link(s.substring(0, i), k, n, x, m, o)
+            val size = (d["s"] as? JsonPrimitive)?.takeIf { !it.isString }?.content?.toLongOrNull()?.takeIf { it in 1..MAX_FILE }
+            Link(s.substring(0, i), k, n, x, m, o, size)
         } catch (e: Exception) {
             null
         }
@@ -131,7 +140,7 @@ object DMFile {
             listOf("size", enc.cipher.size.toString()),
         )
         if (dim != null) tags.add(listOf("dim", dim))
-        return Message(url, tags, fileLink(url, enc.key, enc.nonce, enc.x, type, enc.ox))
+        return Message(url, tags, fileLink(url, enc.key, enc.nonce, enc.x, type, enc.ox, enc.cipher.size.toLong()))
     }
 
     /**
@@ -151,13 +160,18 @@ object DMFile {
         val nonce = tag("decryption-nonce").orEmpty().lowercase()
         val x = tag("x").orEmpty().lowercase()
         val ox = tag("ox").orEmpty().lowercase()
+        val size = tag("size")?.toLongOrNull()?.takeIf { it in 1..MAX_FILE }
         if (alg != ALGORITHM || !HEX64.matches(key) || !NONCE.matches(nonce)) return url
         val type = tag("file-type")?.takeIf { MIME.matches(it) }
-        return fileLink(url, key, nonce, x.takeIf { HEX64.matches(it) }, type, ox.takeIf { HEX64.matches(it) })
+        return fileLink(url, key, nonce, x.takeIf { HEX64.matches(it) }, type, ox.takeIf { HEX64.matches(it) }, size)
     }
 
     /** The inbox row / notification line for a kept file link, null for any other message. */
-    fun previewOf(content: String?): String? = if (isFileLink(content?.trim())) "Photo" else null
+    fun previewOf(content: String?): String? = when {
+        !isFileLink(content?.trim()) -> null
+        isVideoLink(content) -> "Video"
+        else -> "Photo"
+    }
 
     fun sha256Hex(b: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(b).hex()
 

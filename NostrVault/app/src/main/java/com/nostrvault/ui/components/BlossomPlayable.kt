@@ -19,6 +19,9 @@ internal sealed interface Playable {
     data object Loading : Playable
     data class Ready(val uri: String) : Playable
     data object Unavailable : Playable
+
+    /** A locked DM video, opened: its bytes, held only in memory. */
+    class Opened(val bytes: ByteArray) : Playable
 }
 
 /**
@@ -29,9 +32,13 @@ internal sealed interface Playable {
 @Composable
 internal fun rememberPlayable(url: String): State<Playable> {
     val context = LocalContext.current.applicationContext
-    val initial = if (BlossomUri.isUri(url)) Playable.Loading else Playable.Ready(url)
+    val locked = com.nostrvault.service.DMFile.isFileLink(url)
+    val initial = if (BlossomUri.isUri(url) || locked) Playable.Loading else Playable.Ready(url)
     return produceState(initial, url) {
-        if (value is Playable.Loading) {
+        if (locked) {
+            value = runCatching { com.nostrvault.ui.screens.dm.DMOpenedVideo.open(context, url) }
+                .getOrNull()?.let { Playable.Opened(it) } ?: Playable.Unavailable
+        } else if (value is Playable.Loading) {
             value = BlossomUriLoader.file(context, url)
                 ?.let { Playable.Ready(android.net.Uri.fromFile(it).toString()) }
                 ?: Playable.Unavailable
@@ -46,7 +53,7 @@ internal fun PlayableStatus(playable: Playable, modifier: Modifier = Modifier) {
         when (playable) {
             Playable.Loading -> CircularProgressIndicator(color = Color.White)
             Playable.Unavailable -> Text(MEDIA_UNAVAILABLE_TEXT, color = Color.White.copy(alpha = 0.85f))
-            is Playable.Ready -> {}
+            is Playable.Ready, is Playable.Opened -> {}
         }
     }
 }

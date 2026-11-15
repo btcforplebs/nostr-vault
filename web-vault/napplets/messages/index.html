@@ -44,6 +44,7 @@
   #q { display: block; width: calc(100% - 28px); margin: 6px 14px 4px; background: var(--s2); border: 1px solid var(--hair); border-radius: 12px; padding: 10px 12px; }
   .who span mark { background: none; color: var(--text); font-weight: 650; }
   .b img.photo { display: block; max-width: 100%; max-height: 360px; border-radius: 12px; margin: 4px 0; }
+  .b video.video { display: block; max-width: 100%; max-height: 360px; border-radius: 12px; margin: 4px 0; background: #000; cursor: zoom-in; }
   .b button.photo { display: block; margin: 4px 0; background: rgb(0 0 0 / .25); border-color: transparent; color: inherit; }
   .b.pending { opacity: .7; }
   .b .again { display: flex; gap: 10px; margin-top: 4px; font-size: 12px; }
@@ -74,8 +75,8 @@
   <div class="note" id="older" hidden><button id="olderBtn">Older messages</button></div>
   <div id="bubbles" role="log" aria-live="polite"></div>
   <div class="note" id="tnote" role="status" hidden></div>
-  <div id="attachRow" hidden><span id="attach"><img id="attachImg" alt="Photo to send"><button type="button" id="unattach" aria-label="Remove photo">×</button></span></div>
-  <div class="compose" id="form"><button type="button" id="pick" aria-label="Attach photo">Photo</button><input type="file" id="file" accept="image/*" hidden><textarea id="text" rows="1" placeholder="Message" aria-label="Message"></textarea><button type="button" class="primary" id="send" disabled>Send</button></div>
+  <div id="attachRow" hidden><span id="attach"><img id="attachImg" alt="Photo to send"><video id="attachVid" muted playsinline preload="metadata" aria-label="Video to send" hidden></video><button type="button" id="unattach" aria-label="Remove photo">×</button></span></div>
+  <div class="compose" id="form"><button type="button" id="pick" aria-label="Attach photo or video">Photo</button><input type="file" id="file" accept="image/*,video/*" hidden><textarea id="text" rows="1" placeholder="Message" aria-label="Message"></textarea><button type="button" class="primary" id="send" disabled>Send</button></div>
 </section>
 <script>
 // The Messages napplet (plan P7): your direct messages through NAP-DM. This frame has no network and no key: the
@@ -117,17 +118,29 @@ function dayOf(ts, now = Date.now()) {
  *  was sent as its link on its own line), and so is an encrypted kind 15 photo's link ("#nv-dm=", net/dm-file.js),
  *  which the shell decrypts when it fetches it. */
 const PHOTO = /^https:\/\/[^\s]+\.(?:jpe?g|png|gif|webp|avif)(?:[?#][^\s]*)?$|^https:\/\/[^\s#]+#nv-dm=[A-Za-z0-9_-]+$/i
+/** A locked link's type and size from its fragment ({ m, s }, net/dm-file.js fileLink), or null. */
+function lockedOf(link) {
+  const i = link.indexOf("#nv-dm=")
+  if (i < 0) return null
+  try {
+    const d = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(link.slice(i + 7).replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0))))
+    return { mime: typeof d?.m === "string" ? d.m : "", size: Number.isSafeInteger(d?.s) && d.s > 0 ? d.s : 0 }
+  } catch { return null }
+}
+/** A message's lines as text, photos and videos: a locked kind 15 file whose type is a video is a video. */
 function partsOf(content) {
   const out = []
   for (const line of String(content ?? "").split("\n")) {
-    if (PHOTO.test(line.trim())) out.push({ photo: line.trim() })
+    const locked = PHOTO.test(line.trim()) ? lockedOf(line.trim()) : null
+    if (locked && /^video\//i.test(locked.mime)) out.push({ video: line.trim(), ...(locked.size ? { size: locked.size } : {}) })
+    else if (PHOTO.test(line.trim())) out.push({ photo: line.trim() })
     else if (out.length && out.at(-1).text !== undefined) out.at(-1).text += `\n${line}`
     else out.push({ text: line })
   }
-  return out.filter(x => x.photo || x.text.trim())
+  return out.filter(x => x.photo || x.video || x.text.trim())
 }
-/** The preview line: a photo's link reads as "Photo". */
-const previewOf = content => partsOf(content).map(x => x.photo ? "Photo" : x.text.replace(/\s+/g, " ").trim()).join(" · ")
+/** The preview line: a photo's link reads as "Photo", a video's as "Video". */
+const previewOf = content => partsOf(content).map(x => x.photo ? "Photo" : x.video ? "Video" : x.text.replace(/\s+/g, " ").trim()).join(" · ")
 function ago(ts, now = Date.now() / 1000) { const s = Math.max(0, now - ts); return s < 60 ? "now" : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d` }
 // ---- end pure ----
 
@@ -228,7 +241,7 @@ function drawThread(toEnd) {
     }
     out.push(b)
   }
-  if (pending && pending.to === open) { const b = el("div", "b mine pending"); if (pending.text) b.append(pending.text); b.append(el("time", "", "Sending photo…")); out.push(b) }
+  if (pending && pending.to === open) { const b = el("div", "b mine pending"); if (pending.text) b.append(pending.text); b.append(el("time", "", pending.video ? "Sending video…" : "Sending photo…")); out.push(b) }
   $("bubbles").replaceChildren(...(out.length ? out : [el("div", "day", "No messages yet. Say hello.")]))
   if (toEnd) scrollTo(0, document.body.scrollHeight)
 }
@@ -237,10 +250,49 @@ function drawThread(toEnd) {
 function fill(b, content, load) {
   for (const part of partsOf(content)) {
     if (part.text !== undefined) { b.append(part.text); continue }
+    if (part.video) {
+      // A locked video: its size first; a small one from someone you trust opens at once, any other after a tap.
+      const size = part.size ? ` · ${mb(part.size)}` : ""
+      if (load && part.size && part.size <= AUTO_VIDEO) b.append(videoOf(part.video, size, true))
+      else { const t = el("button", "photo", `Video${size} · tap to load`); t.type = "button"; t.onclick = () => t.replaceWith(videoOf(part.video, size)); b.append(t) }
+      continue
+    }
     const url = part.photo
     if (load) b.append(photoOf(url))
     else { const t = el("button", "photo", "Photo · tap to load"); t.type = "button"; t.onclick = () => t.replaceWith(photoOf(url)); b.append(t) }
   }
+}
+const AUTO_VIDEO = 16 * 1024 * 1024 // the phones' and the classic thread's AUTO_SHOW_MAX
+/** The link marked as opened without a tap ("a": 1, net/dm-file.js autoLink): the shell then reads at most AUTO_VIDEO,
+ *  since the size tag is only the sender's word. */
+function autoLink(link) {
+  const i = link.indexOf("#nv-dm=")
+  if (i < 0) return link
+  try {
+    const d = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(link.slice(i + 7).replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0))))
+    const b = btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify({ ...d, a: 1 }))))
+    return link.slice(0, i + 7) + b.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+  } catch { return link }
+}
+const mb = n => n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`
+/** A locked video, opened by the shell (it fetches, checks and decrypts): silent in the bubble, a tap goes full screen. */
+function videoOf(url, size, auto = false) {
+  const wait = el("span", "", `Loading video${size}…`)
+  if (!n.resource) return el("span", "", url)
+  n.resource.bytes(auto ? autoLink(url) : url).then(blob => {
+    const v = el("video", "video"); v.muted = true; v.autoplay = true; v.loop = true; v.playsInline = true; v.setAttribute("aria-label", "Video")
+    v.src = URL.createObjectURL(blob)
+    v.onclick = () => { v.controls = true; v.muted = false; if (v.requestFullscreen) v.requestFullscreen().catch(() => {}); else v.webkitEnterFullscreen?.(); v.play?.().catch(() => {}) }
+    v.onfullscreenchange = () => { if (!document.fullscreenElement) { v.controls = false; v.muted = true } }
+    wait.replaceWith(v)
+  }, () => {
+    // The shell may still be fetching a big one (a request here gives up after 30 s), or it was bigger than its size
+    // said (an auto open stops there): a tap asks again, for the whole file.
+    const again = el("button", "photo", "This video isn't here yet or couldn't load · tap to try again"); again.type = "button"
+    again.onclick = () => again.replaceWith(videoOf(url, size))
+    wait.replaceWith(again)
+  })
+  return wait
 }
 function photoOf(url) {
   const i = el("img", "photo"); i.alt = "Photo"; i.loading = "lazy"
@@ -257,18 +309,21 @@ const syncSend = () => { $("send").disabled = sending || (!$("text").value.trim(
 function setPhoto(f) {
   if (!f) return
   $("tnote").hidden = true
-  if ((f.type && !/^image\//.test(f.type)) || f.size > 50 * 1024 * 1024) { $("tnote").textContent = "That isn't a photo this can send (one image, at most 50 MB)."; $("tnote").hidden = false; return }
+  const video = /^video\//.test(f.type ?? "")
+  if (video ? f.size > 100 * 1024 * 1024 - 16 : (f.type && !/^image\//.test(f.type)) || f.size > 50 * 1024 * 1024) { $("tnote").textContent = video ? "That video is too big to send (at most 100 MB). Try a shorter clip." : "That isn't a photo this can send (one image, at most 50 MB)."; $("tnote").hidden = false; return }
   clearPhoto(); photo = f; photoUrl = URL.createObjectURL(f)
-  $("attachImg").src = photoUrl; $("attachRow").hidden = false; syncSend()
+  $("attachImg").hidden = video; $("attachVid").hidden = !video
+  if (video) $("attachVid").src = photoUrl; else $("attachImg").src = photoUrl
+  $("attachRow").hidden = false; syncSend()
 }
-function clearPhoto() { if (photoUrl) URL.revokeObjectURL(photoUrl); photo = null; photoUrl = ""; $("attachRow").hidden = true; $("attachImg").removeAttribute("src"); syncSend() }
+function clearPhoto() { if (photoUrl) URL.revokeObjectURL(photoUrl); photo = null; photoUrl = ""; $("attachRow").hidden = true; $("attachImg").removeAttribute("src"); $("attachVid").removeAttribute("src"); syncSend() }
 $("pick").onclick = () => $("file").click()
 $("file").onchange = () => { setPhoto($("file").files[0]); $("file").value = "" }
 $("unattach").onclick = () => clearPhoto()
-$("text").addEventListener("paste", e => { const f = [...(e.clipboardData?.files ?? [])].find(x => !x.type || /^image\//.test(x.type)); if (f) { e.preventDefault(); setPhoto(f) } })
+$("text").addEventListener("paste", e => { const f = [...(e.clipboardData?.files ?? [])].find(x => !x.type || /^(image|video)\//.test(x.type)); if (f) { e.preventDefault(); setPhoto(f) } })
 $("thread").addEventListener("dragover", e => { if ([...(e.dataTransfer?.types ?? [])].includes("Files")) { e.preventDefault(); $("thread").classList.add("drop") } })
 $("thread").addEventListener("dragleave", () => $("thread").classList.remove("drop"))
-$("thread").addEventListener("drop", e => { $("thread").classList.remove("drop"); const f = [...(e.dataTransfer?.files ?? [])].find(x => !x.type || /^image\//.test(x.type)); if (f) { e.preventDefault(); setPhoto(f) } })
+$("thread").addEventListener("drop", e => { $("thread").classList.remove("drop"); const f = [...(e.dataTransfer?.files ?? [])].find(x => !x.type || /^(image|video)\//.test(x.type)); if (f) { e.preventDefault(); setPhoto(f) } })
 $("text").oninput = () => { syncSend(); $("text").style.height = "auto"; $("text").style.height = `${Math.min(160, $("text").scrollHeight)}px` }
 // No <form>: the frame's sandbox has no allow-forms, so a submit never reaches its handler.
 $("text").onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendNow() } }
@@ -279,7 +334,7 @@ async function tryAgain(m, discard = false) {
   const to = open
   if (!m.id || /^(failed|refused):/.test(m.id)) {
     msgs = msgs.filter(x => x !== m); drawThread(false)
-    if (!discard && !$("text").value.trim()) { $("text").value = String(m.content ?? "").replace(/\n?\(photo\)$/, ""); syncSend(); $("text").focus() }
+    if (!discard && !$("text").value.trim()) { $("text").value = String(m.content ?? "").replace(/\n?\((?:photo|video)\)$/, ""); syncSend(); $("text").focus() }
     return
   }
   m.retrying = !discard; drawThread(false)
@@ -295,7 +350,7 @@ async function sendNow() {
   sending = true; syncSend()
   const to = open
   // A photo uploads first: its bubble shows at once ("Sending photo…") and the box clears, as on the classic thread.
-  if (ph) { pending = { to, text }; $("text").value = ""; photo = null; $("attachRow").hidden = true; drawThread(true) }
+  if (ph) { pending = { to, text, video: /^video\//.test(ph.type ?? "") }; $("text").value = ""; photo = null; $("attachRow").hidden = true; drawThread(true) }
   let ok = false, kept = false // kept: the shell holds the failed message, so its bubble has Try again
   try {
     const r = await n.dm.send({ recipients: [to], conversationId: to, content: text, ...(ph ? { photo: ph } : {}) })
@@ -304,7 +359,7 @@ async function sendNow() {
     if (open === to) { msgs = mergeThread(msgs, [r.message]); drawThread(true) }
     if ((r.ok || kept) && !ph) $("text").value = ""
     if (!r.ok && r.message?.error && open === to) { $("tnote").textContent = r.message.error; $("tnote").hidden = false }
-  } catch (err) { pending = null; if (open === to) { msgs = mergeThread(msgs, [{ id: `failed:${Date.now()}`, conversationId: to, senderPubkey: me, createdAt: Math.floor(Date.now() / 1000), content: ph ? (text ? `${text}\n(photo)` : "(photo)") : text, status: "failed" }]); drawThread(true) } }
+  } catch (err) { pending = null; if (open === to) { msgs = mergeThread(msgs, [{ id: `failed:${Date.now()}`, conversationId: to, senderPubkey: me, createdAt: Math.floor(Date.now() / 1000), content: ph ? `${text ? `${text}\n` : ""}(${/^video\//.test(ph.type ?? "") ? "video" : "photo"})` : text, status: "failed" }]); drawThread(true) } }
   // Not sent and not kept by the shell: the photo and its words come back to the box, ready to try again.
   if (ph) { if (!ok && !kept && open === to && !photo) { setPhoto(ph); if (!$("text").value) $("text").value = text } else if (photoUrl && !photo) clearPhoto() }
   sending = false; syncSend()

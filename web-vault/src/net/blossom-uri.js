@@ -67,7 +67,7 @@ const MIME = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "im
 
 /** The body, or null once it passes `maxBytes`: a server that sends no Content-Length is cut off mid-stream instead of
  *  buffered whole (Tron, PR 2023 S1). Falls back to arrayBuffer() where there is no stream. */
-export async function readCapped(res, maxBytes) {
+export async function readCapped(res, maxBytes, onProgress) {
   const reader = res.body?.getReader?.()
   if (!reader) {
     const all = new Uint8Array(await res.arrayBuffer())
@@ -81,6 +81,7 @@ export async function readCapped(res, maxBytes) {
     total += value.byteLength
     if (total > maxBytes) { reader.cancel().catch(() => {}); return null }
     parts.push(value)
+    onProgress?.(total)
   }
   const out = new Uint8Array(total)
   let at = 0

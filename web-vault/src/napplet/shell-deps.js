@@ -17,6 +17,7 @@ import { listBlobs, mirrorBlob, deleteBlob } from "../net/blossom-gallery.js"
 import { getMessages, onMessages, sendMessage, dropFailed } from "../net/dms.js"
 import { markRead } from "../net/dm-read.js"
 import { preparePhoto } from "../net/dm-photo.js"
+import { prepareVideo, isVideoFile } from "../net/dm-video.js"
 import { encryptedPhoto, openFileLink, parseFileLink } from "../net/dm-file.js"
 import { getProfile } from "../net/profiles.js"
 import { findMine, newestMine } from "./shell-deps-find.js"
@@ -55,11 +56,32 @@ export function appTheme(doc = document) {
   return { colors: { background: v("--bg") || "#000", text: v("--text") || "#fff", primary: v("--accent") || "#e67326" }, title: "Nostr Vault" }
 }
 
+/** The last locked DM file asked for, one slot for videos and one for photos: { url, blob: Promise<Blob>, stop }.
+ *  A photo never takes a video's slot; a file that takes a slot aborts the download it replaces. */
+const lockedSlots = { video: null, photo: null }
+
 async function fetchBytes(url, { servers = [], range } = {}) {
   // A DM photo (dm-file.js): its ciphertext fetched like any https file, checked against its hash and decrypted here,
-  // so the Messages napplet draws the photo without ever holding the file's fetch.
-  if (parseFileLink(url)) {
-    const blob = await openFileLink(url, { fetchBytes: async u => new Uint8Array(await (await fetchBytes(u)).blob.arrayBuffer()) }).catch(e => { throw e?.code ? e : codeError("network-error", String(e?.message ?? e)) })
+  // so the Messages napplet draws the photo without ever holding the file's fetch. Read with dm-file's own fetch (up to
+  // MAX_FILE, minutes for a big video), after the same blocked-host check as any other link.
+  const locked = parseFileLink(url)
+  if (locked) {
+    const no = blockedUrl(locked.url)
+    if (no) throw codeError(no)
+    // The last locked file of each kind stays open: the napplet's request gives up after 30 s (@napplet/shim), so a big
+    // video on a slow line arrives after it; asked again, it is answered from here instead of fetched again. A link the
+    // napplet marks auto (dm-file.js autoLink) is held to AUTO_SHOW_MAX by openFileLink.
+    const kind = /^video\//i.test(locked.mime) ? "video" : "photo"
+    let slot = lockedSlots[kind]
+    if (slot?.url !== url) {
+      slot?.stop.abort()
+      const stop = new AbortController()
+      slot = lockedSlots[kind] = { url, stop, blob: openFileLink(url, { signal: stop.signal }) }
+    }
+    const blob = await slot.blob.catch(e => {
+      if (lockedSlots[kind] === slot) lockedSlots[kind] = null
+      throw e?.code ? e : codeError(e?.tooBig || /too large/.test(String(e?.message)) ? "too-large" : "network-error", String(e?.message ?? e))
+    })
     return { blob, mime: blob.type }
   }
   if (typeof url === "string" && url.startsWith("blossom:")) {
@@ -171,12 +193,13 @@ export function shellDeps(ctx, { ask, saveGrant, bus, storage = idbNappletStorag
       onChange: cb => onMessages(cb),
       // A photo takes the classic thread's own path (ConversationScreen.jsx): redrawn or stripped of its metadata
       // (preparePhoto), encrypted and uploaded to your media servers, sent as a kind 15 after the text (dm-file.js);
-      // "(photo)" shows while it goes.
+      // "(photo)" shows while it goes. A video goes the same way, its location taken out first (dm-video.js).
       async send(peer, text, photo = null) {
         const before = new Set([...getMessages().messages.values()].map(m => m.id))
-        const preview = photo ? (text ? `${text}\n(photo)` : "(photo)") : null
+        const video = isVideoFile(photo)
+        const preview = photo ? `${text ? `${text}\n` : ""}(${video ? "video" : "photo"})` : null
         let sentText = text
-        const opts = photo ? { preview, prepare: async () => { const m = await encryptedPhoto(await preparePhoto(photo), { upload: async f => uploadPhoto(f, { ctx, servers: lockedFileServers(await mediaServers(ctx)), raw: true }) }); sentText = m.shown; return m } } : {}
+        const opts = photo ? { preview, prepare: async () => { const m = await encryptedPhoto(await (video ? prepareVideo(photo) : preparePhoto(photo)), { upload: async f => uploadPhoto(f, { ctx, servers: lockedFileServers(await mediaServers(ctx)), raw: true }) }); sentText = m.shown; return m } } : {}
         try { await sendMessage(ctx, peer, text, opts) } catch (e) {
           const failed = findMine(getMessages().messages, ctx.session.pubkey, peer, preview ?? text, true, before) ?? findMine(getMessages().messages, ctx.session.pubkey, peer, sentText, true, before)
           throw Object.assign(new Error(String(e?.fixed ? e.message : "The message wasn't sent.")), { failedId: failed?.id })

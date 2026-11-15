@@ -58,6 +58,18 @@ class DMFileLoaderLimitsTest {
     }
 
     @Test
+    fun `a video opening does not hold up locked photos`() = runBlocking {
+        val release = java.util.concurrent.CountDownLatch(1)
+        val videoCtx = mockk<Context> { every { cacheDir } answers { release.await(); dir } }
+        val photoCtx = mockk<Context> { every { cacheDir } returns dir }
+        val video = async(kotlinx.coroutines.Dispatchers.Default) { DMFileLoader.open(videoCtx, kept(byteArrayOf(7)), video = true) }
+        val photo = kotlinx.coroutines.withTimeout(5_000) { DMFileLoader.open(photoCtx, kept(byteArrayOf(8))).first }
+        assertArrayEquals(byteArrayOf(8), photo)
+        release.countDown()
+        assertArrayEquals(byteArrayOf(7), video.await().first)
+    }
+
+    @Test
     fun `the cache drops the least recently used files past its cap`() {
         val d = File(dir, "trim").apply { mkdirs() }
         val now = System.currentTimeMillis()

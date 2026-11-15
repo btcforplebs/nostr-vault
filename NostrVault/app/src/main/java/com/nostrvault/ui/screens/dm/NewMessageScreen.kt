@@ -155,8 +155,8 @@ class NewMessageViewModel @Inject constructor(
         viewModelScope.launch {
             _isSending.value = true
             try {
-                // A photo is locked (kind 15, DMLockedPhoto) like one sent from the thread.
-                if (image != null && !DMLockedPhoto.isVideo(context, image)) {
+                // A photo or video is locked (kind 15, DMLockedPhoto) like one sent from the thread.
+                if (image != null) {
                     DMLockedPhoto.send(context, image, text, recipient, blossomService, dmService) {
                         _messageText.value = "" // the words went: a failed photo must not send them twice
                     }

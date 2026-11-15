@@ -58,7 +58,7 @@
 .dm-compose textarea { resize: none; overflow-y: auto; padding: 11px 14px; line-height: 20px; border-radius: 22px; box-sizing: border-box; }
 /* The photo waiting to go with the next message (DMThreadView: 64 pt, rounded, an x in the corner). */
 .dm-attachment { position: relative; width: 64px; height: 64px; }
-.dm-attachment img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; display: block; }
+.dm-attachment img, .dm-attachment video { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; display: block; }
 .dm-attachment-remove { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; min-height: 0; padding: 0; border-radius: 999px;
   border: 0; background: rgb(0 0 0 / .6); color: #fff; line-height: 22px; font-size: 16px; }
 
@@ -84,3 +84,6 @@
 .dm-end { scroll-margin-bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 96px + env(safe-area-inset-bottom)); }
 .desk-pane .dm-end { scroll-margin-bottom: 96px; }
 .dm-compose > .status-line { margin: 0; }
+/* A locked DM video: plays silently in the bubble, a tap opens it full screen; while it arrives, its size and a bar. */
+.dm-video { cursor: zoom-in; background: #000; }
+.dm-photo-loading progress { display: block; width: 160px; margin-top: 4px; }

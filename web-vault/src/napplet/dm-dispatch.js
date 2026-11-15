@@ -30,6 +30,7 @@ import { searchChats } from "../net/dm-search.js"
 const HEX = /^[0-9a-f]{64}$/
 export const PAGE = 50, MAX_PAGE = 200, MAX_TEXT = 20000, MAX_DM_SUBS = 4, MAX_QUERY = 200, MAX_IDS = 20
 export const MAX_PHOTO = 50 * 1024 * 1024 // a picked photo before it's redrawn; what goes up is far smaller
+export const MAX_VIDEO = 100 * 1024 * 1024 - 16 // a video goes up as it is, encrypted (+16 bytes): dm-file.js MAX_FILE
 
 export const statusOf = m => (m.failed ? "failed" : m.pending ? "sent" : null)
 /** A message as NAP-DM has it. */
@@ -102,10 +103,12 @@ export function dmHandler({ grant, who, deps, push }) {
     if (m.retry !== undefined) return again(m, to[0])
     const text = typeof m.content === "string" ? m.content.trim() : ""
     const photo = m.photo ?? null
-    if (photo !== null && !(photo instanceof Blob && photo.size > 0 && photo.size <= MAX_PHOTO && (!photo.type || /^image\//.test(photo.type)))) return refuse(m, "photo: one image, at most 50 MB")
+    const video = photo instanceof Blob && /^video\//.test(photo.type)
+    if (photo !== null && !(photo instanceof Blob && photo.size > 0 && (video ? photo.size <= MAX_VIDEO : photo.size <= MAX_PHOTO && (!photo.type || /^image\//.test(photo.type)))))
+      return refuse(m, "photo: one image (at most 50 MB) or one video (at most 100 MB)")
     if ((!text && !photo) || text.length > MAX_TEXT) return refuse(m, "a message needs text or a photo, text at most 20000 characters")
     if (deps.blocked().has(to[0])) return refuse(m, "you blocked them")
-    const shownText = photo ? (text ? `${text}\n(photo)` : "(photo)") : text // as the classic thread shows one in flight
+    const shownText = photo ? `${text ? `${text}\n` : ""}(${video ? "video" : "photo"})` : text // as the classic thread shows one in flight
     if (!grant.firstParty && !(await deps.ask({ napplet: who, what: "dm-send", detail: { to: to[0], name: deps.profile(to[0])?.name ?? "", content: shownText } })))
       return out(m, { ok: false, message: { id: `refused:${deps.randomId()}`, conversationId: to[0], senderPubkey: deps.me, createdAt: Math.floor(Date.now() / 1000), content: shownText, status: "failed", error: "the user said no" } })
     try {

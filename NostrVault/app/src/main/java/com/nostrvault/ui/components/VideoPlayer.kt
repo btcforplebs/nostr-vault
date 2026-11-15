@@ -99,6 +99,8 @@ fun VideoPlayer(
     // A blossom: link plays from its checked file, once there is one.
     when (val playable = rememberPlayable(uri).value) {
         is Playable.Ready -> UrlVideoPlayer(playable.uri, modifier, autoplay, controls)
+        // A locked DM video plays from its opened bytes, never from a file.
+        is Playable.Opened -> UrlVideoPlayer(uri, modifier, autoplay, controls, bytes = playable.bytes)
         else -> PlayableStatus(playable, modifier)
     }
 }
@@ -115,6 +117,8 @@ private fun UrlVideoPlayer(
      * player toggles the rail on every tap of its own.
      */
     controls: MutableState<Boolean>? = null,
+    /** The video itself, already opened (a locked DM video): played from memory, [uri] only names it. */
+    bytes: ByteArray? = null,
 ) {
     val context = LocalContext.current
     val isInPiP by VideoPiPBridge.isInPiP.collectAsState()
@@ -133,7 +137,10 @@ private fun UrlVideoPlayer(
     // Bumped on every control interaction to restart the auto-hide countdown
     var interactionEpoch by remember { mutableIntStateOf(0) }
 
-    val exoPlayer = remember { buildLoopingExoPlayer(context, uri, playWhenReady = autoplay) }
+    val exoPlayer = remember {
+        if (bytes != null) buildBytesExoPlayer(context, bytes, playWhenReady = autoplay)
+        else buildLoopingExoPlayer(context, uri, playWhenReady = autoplay)
+    }
 
     // Listen to player state changes, register for PiP, and release on dispose
     DisposableEffect(exoPlayer) {
@@ -423,6 +430,22 @@ internal fun buildLoopingExoPlayer(
                 .apply { if (mimeType != null) setMimeType(mimeType) }
                 .build(),
         )
+        repeatMode = Player.REPEAT_MODE_ALL
+        this.playWhenReady = playWhenReady
+        prepare()
+    }
+
+/**
+ * A looping ExoPlayer for a video held in memory (a locked DM video, opened by DMFileLoader): no
+ * cache, no network, no file. The caller owns it and must [ExoPlayer.release] it.
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+internal fun buildBytesExoPlayer(context: Context, bytes: ByteArray, playWhenReady: Boolean): ExoPlayer =
+    ExoPlayer.Builder(context).build().apply {
+        val source = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory {
+            androidx.media3.datasource.ByteArrayDataSource(bytes)
+        }.createMediaSource(MediaItem.fromUri(Uri.parse("nvdm://opened")))
+        setMediaSource(source)
         repeatMode = Player.REPEAT_MODE_ALL
         this.playWhenReady = playWhenReady
         prepare()
