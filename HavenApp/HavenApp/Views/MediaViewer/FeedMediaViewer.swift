@@ -54,10 +54,13 @@ struct FeedMediaViewer: View {
     /// `updateMirrorStatus()`, not by the URL's host: media served from a shared public
     /// server the user happens to list as a mirror is NOT their backup.
     @State var isOnMirror: Bool = false
-    @State var isDeleting: Bool = false
-    @State private var pendingDelete: MediaDeleteScope?
+    @State var pendingDelete: MediaDeleteScope?
     @State var deleteStatus: DeleteStatus? = nil
-    @State var isCopied: Bool = false
+    @State var mediaCopy: MediaCopy = .idle
+    @State var shareFile: ViewerShareFile?
+    @State var isPreparingShare = false
+
+    enum MediaCopy { case idle, copying, copied }
     @State var photosSave: PhotosSave = .idle
 
     enum PhotosSave { case idle, saving, saved }
@@ -250,44 +253,10 @@ struct FeedMediaViewer: View {
                     .buttonStyle(.plain)
                 }
                 Spacer()
-
-                if !isLoadingType && isDeleting {
-                    HStack(spacing: 16) {
-                        Button(role: .destructive) {
-                            pendingDelete = .mirrors
-                        } label: {
-                            Label("Delete from media servers", systemImage: "trash")
-                        }
-
-                        Button(role: .destructive) {
-                            pendingDelete = .everywhere
-                        } label: {
-                            Label("Delete everywhere", systemImage: "trash.fill")
-                        }
-
-                        Spacer()
-
-                        Button("Cancel") {
-                            isDeleting = false
-                            deleteStatus = nil
-                        }
-                    }
-                    .padding(16)
-                    .background(Color.black.opacity(0.8))
-                    .cornerRadius(8)
-                    .padding(16)
-                }
             }
             // The buttons get out of the way as soon as you pull, like Photos.
             .opacity(controlsOpacity)
             .allowsHitTesting(offset == .zero || scale > 1.0)
-            .onLongPressGesture {
-                if !isLoadingType && !isMirroring {
-                    withAnimation(Motion.fade) {
-                        isDeleting.toggle()
-                    }
-                }
-            }
 
             if let status = mirrorStatus {
                 mirrorStatusView(status)
@@ -297,6 +266,12 @@ struct FeedMediaViewer: View {
                 deleteStatusView(status)
             }
         }
+        #if os(iOS)
+        .sheet(item: $shareFile) { file in
+            ShareSheet(activityItems: [file.url])
+                .presentationDetents([.medium, .large])
+        }
+        #endif
         .confirmMediaDelete($pendingDelete, hash: extractSHA256FromURL()) { scope in
             switch scope {
             case .mirrors: deleteFromMirrorsTapped()

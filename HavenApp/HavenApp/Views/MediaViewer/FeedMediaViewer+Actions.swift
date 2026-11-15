@@ -8,13 +8,30 @@ extension FeedMediaViewer {
 
     private static let doneGreen = Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.8)
 
-    /// Save, then Mirror (or Mirrored + Copy). Labels drop out when
-    /// [showLabels] is false, leaving the icon in each capsule.
+    /// Copy (the media itself), Save, Share, then ··· for the link, Mirror
+    /// and Delete. Labels drop out when [showLabels] is false, leaving the
+    /// icon in each capsule. A locked DM file gets no ···: it stays on the
+    /// phone, so there is no link to copy and nothing on a server to delete.
     @ViewBuilder
     func topActions(showLabels: Bool) -> some View {
         HStack(spacing: 6) {
-            #if os(iOS)
-            if !isLoadingType && !isDeleting {
+            if !isLoadingType {
+                Button {
+                    copyMediaTapped()
+                } label: {
+                    actionCapsule(
+                        icon: mediaCopy == .copied ? "checkmark.circle.fill" : "doc.on.doc",
+                        label: mediaCopy == .copied ? "Copied" : "Copy",
+                        showLabel: showLabels,
+                        fill: mediaCopy == .copied ? Self.doneGreen : Color.black.opacity(0.6),
+                        busy: mediaCopy == .copying
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(mediaCopy == .copying)
+                .accessibilityLabel(mediaCopy == .copied ? "Copied" : (isVideo ? "Copy video" : "Copy photo"))
+
+                #if os(iOS)
                 Button {
                     saveToPhotosTapped()
                 } label: {
@@ -29,43 +46,130 @@ extension FeedMediaViewer {
                 .buttonStyle(.plain)
                 .disabled(photosSave != .idle)
                 .accessibilityLabel(photosSave == .saved ? "Saved to Photos" : "Save to Photos")
-            }
-            #endif
-            // A locked DM photo opened here is a private plain copy: never Mirror it to public servers or copy a link.
-            if !isLoadingType && !isMirroring, !DMFileTransfer.isOpenedFile(url), let localURL = viewerLocalURL(),
-               configService.hasExternalShareURL(for: localURL) {
-                if isOnMirror {
-                    actionCapsule(icon: "checkmark.circle.fill", label: "Mirrored", showLabel: showLabels, fill: Self.doneGreen)
-                        .accessibilityLabel("Copied to your media servers")
-                    Button {
-                        PlatformClipboard.copy(getMirroredLink())
-                        withAnimation(Motion.pop) { isCopied = true }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                            withAnimation(Motion.fade) { isCopied = false }
-                        }
-                    } label: {
-                        actionCapsule(
-                            icon: isCopied ? "checkmark.circle.fill" : "doc.on.doc.fill",
-                            label: isCopied ? "Copied" : "Copy",
-                            showLabel: showLabels,
-                            fill: isCopied ? Self.doneGreen : Color.white.opacity(0.2)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(isCopied ? "Link copied" : "Copy link")
-                } else {
-                    Button {
-                        mirrorToBlossomTapped()
-                    } label: {
-                        actionCapsule(icon: "arrow.down.circle.fill", label: "Mirror", showLabel: showLabels, fill: Color.black.opacity(0.6))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Copy to your media servers")
+
+                Button {
+                    shareTapped()
+                } label: {
+                    actionCapsule(icon: "square.and.arrow.up", label: "Share", showLabel: showLabels,
+                                  fill: Color.black.opacity(0.6), busy: isPreparingShare)
+                }
+                .buttonStyle(.plain)
+                .disabled(isPreparingShare)
+                .accessibilityLabel("Share")
+                #endif
+
+                if !DMFileTransfer.isOpenedFile(url) {
+                    moreMenu(showLabel: showLabels)
                 }
             }
         }
         .shadow(color: Color.black.opacity(0.3), radius: 4)
     }
+
+    /// Copy link, Mirror, Delete: the things you do less often, out of the
+    /// way of the photo but no longer hidden behind a long-press.
+    private func moreMenu(showLabel: Bool) -> some View {
+        Menu {
+            if let link = shareableLink() {
+                Button {
+                    PlatformClipboard.copy(link)
+                    ActionToastManager.shared.show(icon: "link", message: "Link copied", tone: .success)
+                } label: {
+                    Label("Copy link", systemImage: "link")
+                }
+            }
+            if canMirror {
+                if isOnMirror {
+                    Button {} label: {
+                        Label("On your media servers", systemImage: "checkmark.circle")
+                    }
+                    .disabled(true)
+                } else {
+                    Button {
+                        mirrorToBlossomTapped()
+                    } label: {
+                        Label("Copy to your media servers", systemImage: "arrow.down.circle")
+                    }
+                    .disabled(isMirroring)
+                }
+            }
+            Divider()
+            Button(role: .destructive) {
+                pendingDelete = .mirrors
+            } label: {
+                Label("Delete from media servers", systemImage: "trash")
+            }
+            Button(role: .destructive) {
+                pendingDelete = .everywhere
+            } label: {
+                Label("Delete everywhere", systemImage: "trash.fill")
+            }
+        } label: {
+            // Icon only: "···" says it, and a label would push Copy and
+            // Save into icons sooner on narrow phones.
+            actionCapsule(icon: "ellipsis", label: "", showLabel: false, fill: Color.black.opacity(0.6))
+                .contentShape(Capsule())
+        }
+        #if os(macOS)
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        #endif
+        .buttonStyle(.plain)
+        .accessibilityLabel("More")
+    }
+
+    /// Mirror needs a vault URL the media servers can be told about.
+    private var canMirror: Bool {
+        guard let localURL = viewerLocalURL() else { return false }
+        return configService.hasExternalShareURL(for: localURL)
+    }
+
+    /// The link Copy link gives: your own mirror once it is there, else the
+    /// public address the post used. Nothing for a file only this device has.
+    private func shareableLink() -> String? {
+        if isOnMirror && canMirror { return getMirroredLink() }
+        guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
+              let host = url.host?.lowercased(),
+              !["127.0.0.1", "localhost", "0.0.0.0"].contains(host),
+              !host.hasSuffix(".fips") else { return nil }
+        return url.absoluteString
+    }
+
+    private func copyMediaTapped() {
+        mediaCopy = .copying
+        let mediaURL = url
+        let clip = isVideo
+        Task {
+            do {
+                let prepared = try await ViewerMediaTransfer.prepare(mediaURL, isClip: clip)
+                try ViewerMediaTransfer.copy(prepared, isClip: clip)
+                withAnimation(Motion.pop) { mediaCopy = .copied }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    withAnimation(Motion.fade) { mediaCopy = .idle }
+                }
+            } catch {
+                mediaCopy = .idle
+                ErrorNotificationManager.shared.show(error.localizedDescription, icon: "exclamationmark.triangle.fill")
+            }
+        }
+    }
+
+    #if os(iOS)
+    private func shareTapped() {
+        isPreparingShare = true
+        let mediaURL = url
+        let clip = isVideo
+        Task {
+            defer { isPreparingShare = false }
+            do {
+                let prepared = try await ViewerMediaTransfer.prepare(mediaURL, isClip: clip)
+                shareFile = ViewerShareFile(url: prepared.file)
+            } catch {
+                ErrorNotificationManager.shared.show(error.localizedDescription, icon: "exclamationmark.triangle.fill")
+            }
+        }
+    }
+    #endif
 
     private func actionCapsule(icon: String, label: String, showLabel: Bool, fill: Color, busy: Bool = false) -> some View {
         HStack(spacing: 5) {
@@ -170,7 +274,6 @@ extension FeedMediaViewer {
                 await MainActor.run {
                     withAnimation(Motion.panel) {
                         deleteStatus = .failed("Could not extract hash from URL")
-                        isDeleting = false
                     }
                 }
                 return
@@ -191,7 +294,6 @@ extension FeedMediaViewer {
                         // Names the vault it left alone ("Deleted from mirrors. Skipped: …").
                         deleteStatus = .successNote(message.text)
                     }
-                    isDeleting = false
                 }
                 // A failure stays up until tapped, so it can't be missed.
                 guard report.allDeleted else { return }
@@ -213,7 +315,6 @@ extension FeedMediaViewer {
                 await MainActor.run {
                     withAnimation(Motion.panel) {
                         deleteStatus = .failed("Could not extract hash from URL")
-                        isDeleting = false
                     }
                 }
                 return
@@ -230,7 +331,6 @@ extension FeedMediaViewer {
                 withAnimation(Motion.panel) {
                     deleteStatus = leftover.map { .failed($0) } ?? .success
                     if localSuccess { isOnMirror = false }
-                    isDeleting = false
                 }
                 // A partial delete keeps the viewer and its banner open until
                 // the banner is tapped; closing after 2 s hid the failure.
