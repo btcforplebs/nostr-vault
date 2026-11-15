@@ -6,6 +6,8 @@ import fs from "node:fs"
 import vm from "node:vm"
 import { nip19 } from "nostr-tools"
 import { createBus } from "../src/napplet/bus.js"
+import { mediaViewOf } from "../src/napplet/media-view.js"
+import { finalizeEvent, generateSecretKey, verifyEvent } from "nostr-tools/pure"
 import { readerIntents, linkTarget, readerOpenFor, previewCard, COMPOSE_DONE } from "../src/napplet/reader-intents.js"
 
 function pureOf(file, names) {
@@ -165,6 +167,30 @@ test("bus: a shell-answered intent's data rides back; none when it has no data",
   bus.register({ id: "x", title: "x", archetype: "t", actions: ["with", "without"], conventions: [], deliver: p => (p?.d ? { ok: true, data: { n: 1 } } : { ok: true }) })
   assert.deepEqual((await bus.invoke(who, { archetype: "t", action: "with", payload: { d: 1 } })).data, { n: 1 })
   assert.equal("data" in (await bus.invoke(who, { archetype: "t", action: "without", payload: {} })), false)
+})
+
+test("media/view: the shell opens its viewer over the signed note's own media, at the tapped picture", async () => {
+  const sk = generateSecretKey()
+  const note = finalizeEvent({ kind: 1, created_at: 1, content: "two https://p.example/a.jpg, https://p.example/b.png and https://x.example/page", tags: [["imeta", "url https://p.example/c.webp", "m image/webp"]] }, sk)
+  const bus = createBus(), shown = []
+  const wire = readerIntents({ bus, openCompose: async () => ({}), onComposeDone: () => {}, openUrl: () => {}, verify: verifyEvent, onMedia: v => shown.push(v) })
+  const reader = { dTag: "nv-reader", send: () => {} }
+  const r = await bus.invoke(reader, { archetype: "media", action: "view", payload: { event: note, url: "https://p.example/b.png" } })
+  assert.equal(r.ok, true)
+  assert.deepEqual(shown[0].items.map(m => m.url), ["https://p.example/a.jpg", "https://p.example/b.png", "https://p.example/c.webp"])
+  assert.equal(shown[0].start, 1)
+  assert.equal(shown[0].author, note.pubkey)
+  // an address the note doesn't carry, or a note whose text was changed after signing: refused, nothing opens
+  assert.equal((await bus.invoke(reader, { archetype: "media", action: "view", payload: { event: note, url: "https://evil.example/x.jpg" } })).ok, false)
+  assert.equal((await bus.invoke(reader, { archetype: "media", action: "view", payload: { event: { ...note, content: note.content + " https://evil.example/x.jpg" }, url: "https://evil.example/x.jpg" } })).ok, false)
+  assert.equal(shown.length, 1)
+  wire.close()
+})
+
+test("mediaViewOf: trailing punctuation off the link; no media or no match -> null", () => {
+  assert.deepEqual(mediaViewOf({ content: "see https://p.example/a.jpg.", tags: [] }, "https://p.example/a.jpg"), { items: [{ url: "https://p.example/a.jpg", type: "image" }], start: 0 })
+  assert.equal(mediaViewOf({ content: "text only", tags: [] }, "https://p.example/a.jpg"), null)
+  assert.equal(mediaViewOf(null, "https://p.example/a.jpg"), null)
 })
 
 test("switch: Feed, Thread and other profiles swap only while napplets are on; own profile and the old screens stay", () => {

@@ -8,6 +8,8 @@
 //                                                            link card does (link-preview.js: public https only, CORS,
 //                                                            no cookies, no referrer). Reader only: the napplet itself
 //                                                            has no network, and no other napplet gets a fetcher.
+//   napplet:media/view { event, url }                     -> the shell's full-screen viewer over the note's own media
+//                                                            (media-view.js), opened at the tapped picture
 //   napplet:note/repost|zap|menu { event }                -> the classic flows, run by the shell (gap run, after P8):
 //                                                            repost with the Send Delay's Undo, the zap picker, the
 //                                                            ⋯ menu (copy, bookmark, block, report, delete). The
@@ -19,6 +21,7 @@ export const COMPOSE_DONE = "nv.compose.done"
  *  (show it again, text intact). */
 export const COMPOSE_WAITING = "nv.compose.waiting", COMPOSE_UNDONE = "nv.compose.undone"
 import { READER_DTAG as READER } from "./first-party-list.js"
+import { mediaViewOf } from "./media-view.js"
 const HEX = /^[0-9a-f]{64}$/
 
 /** A link a napplet asked to open -> the URL to open, or null. http(s) only, no user:pass, at most 2048 characters. */
@@ -64,7 +67,7 @@ export function previewCard(meta) {
   return { title: str(meta.title), description: str(meta.description), siteName: str(meta.siteName), image: /^https:\/\//i.test(meta.image ?? "") ? meta.image : null }
 }
 
-export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, preview = async () => null }) {
+export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaiting = () => {}, onComposeUndone = () => {}, openUrl, verify = () => false, onRepost = () => {}, onZap = () => {}, onMenu = () => {}, onMedia = () => {}, preview = async () => null }) {
   const on = { [COMPOSE_DONE]: onComposeDone, [COMPOSE_WAITING]: onComposeWaiting, [COMPOSE_UNDONE]: onComposeUndone }
   const me = { dTag: "shell", send: m => { if (m?.type === "inc.event" && on[m.topic]) on[m.topic](m.payload) } }
   for (const t of Object.keys(on)) bus.subscribe(me, t)
@@ -76,6 +79,13 @@ export function readerIntents({ bus, openCompose, onComposeDone, onComposeWaitin
       run(note)
       return { ok: true }
     } })),
+    bus.register({ id: "shell-media-view", title: "View", archetype: "media", actions: ["view"], conventions: [], deliver: p => {
+      const note = actionNote(p?.event, verify)
+      const view = note && mediaViewOf(note, p?.url)
+      if (!view) return { ok: false, error: note ? "not a picture in this note" : "not a signed note" }
+      onMedia({ ...view, author: note.pubkey })
+      return { ok: true }
+    } }),
     bus.register({ id: "shell-link", title: "Open link", archetype: "link", actions: ["open"], conventions: [], deliver: p => {
       const url = linkTarget(p?.url)
       if (!url) return { ok: false, error: "not an http(s) link" }
