@@ -14,6 +14,7 @@ import { verifyEvent } from "nostr-tools/pure"
 import { repostWithUndo } from "../components/repost-undo.js"
 import { ZapSheet, MenuSheet } from "./NoteSheets.jsx"
 import { loadPreview } from "../components/link-preview.js"
+import { MediaLightbox } from "../components/MediaLightbox.jsx"
 import "./napplet.css"
 
 const READY_WAIT_MS = 5000
@@ -71,6 +72,7 @@ export function ReaderPane({ ctx, open = null }) {
       onRepost: n => repostWithUndo(liveCtx, n),
       onZap: n => setSheet({ kind: "zap", note: n }),
       onMenu: n => setSheet({ kind: "menu", note: n }),
+      onMedia: v => setSheet({ kind: "media", ...v }),
       preview: loadPreview,
     })
     live.current.me = wire.me
@@ -104,6 +106,7 @@ export function ReaderPane({ ctx, open = null }) {
       {sheet?.kind === "zap" && <ZapSheet ctx={ctx} note={sheet.note} onClose={() => setSheet(null)} />}
       {sheet?.kind === "menu" && <MenuSheet ctx={ctx} note={sheet.note} onClose={() => setSheet(null)}
         onDeleted={id => { const l = live.current; if (l?.reader) l.bus.invoke(l.me, { archetype: "note", action: "removed", payload: { id } }) }} />}
+      {sheet?.kind === "media" && <MediaLightbox items={sheet.items} author={sheet.author} start={sheet.start} onClose={() => setSheet(null)} />}
       {composing && <ComposeSheet aside={composeAside} onClose={() => live.current?.closeCompose()} onMount={el => live.current?.mountCompose(el)} />}
     </main>
   )

@@ -29,6 +29,7 @@
   .body { white-space: pre-wrap; overflow-wrap: anywhere; margin: 2px 0 6px; }
   .body a, .body .tag { color: var(--accent); text-decoration: none; cursor: pointer; }
   .media { display: grid; gap: 6px; margin: 6px 0; }
+  .media img.zoom { cursor: zoom-in; }
   .media img { width: 100%; max-height: 420px; object-fit: cover; border-radius: 12px; background: var(--s2); min-height: 80px; }
   .media .vid { padding: 0 14px; min-height: 56px; border-radius: 12px; background: var(--s2); color: var(--text); font-size: 14px; text-align: left; }
   .media video { width: 100%; max-height: 420px; border-radius: 12px; background: #000; }
@@ -226,7 +227,7 @@ function body(ev) {
   const all = tokenize(ev.content), cards = cardLinks(all)
   for (const p of withoutCards(all, cards)) {
     if (p.t === "text") div.append(p.v)
-    else if (p.t === "image") { const i = el("img"); i.alt = ""; i.loading = "lazy"; picture(i, p.v); media.append(i) }
+    else if (p.t === "image") { const i = el("img", "zoom"); i.alt = ""; i.loading = "lazy"; i.title = "View full screen"; i.onclick = e => { e.stopPropagation(); viewMedia(ev, p.v) }; picture(i, p.v); media.append(i) }
     else if (p.t === "video") media.append(videoSlot(p.v))
     else if (p.t === "link") { const a = el("a", "", p.v.replace(/^https?:\/\//, "").slice(0, 60)); a.href = "#"; a.title = p.v; a.onclick = e => { e.preventDefault(); e.stopPropagation(); openLink(p.v) }; div.append(a) }
     else if (p.t === "tag") div.append(el("span", "tag", `#${p.v}`))
@@ -321,6 +322,8 @@ function card(ev, { focus = false, depth = 0, by = null } = {}) {
 }
 
 function compose(action, ev) { n.intent?.invoke(`napplet:compose/${action}`, { payload: ev ? { event: ev } : {} }).catch(() => {}) }
+// A tap on a picture: the shell's own full-screen viewer, over the whole app, from the signed note's media.
+function viewMedia(ev, url) { n.intent?.invoke("napplet:media/view", { payload: { event: ev, url } }).catch(() => {}) }
 function openLink(url) { n.intent?.invoke("napplet:link/open", { payload: { url } }).catch(() => {}) }
 
 function go(next, push = true) {
